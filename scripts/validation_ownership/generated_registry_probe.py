@@ -21,13 +21,18 @@ def _source_paths(schema) -> list[str]:
     if source is None:
         return []
     source_path = Path(source)
+    records = schema.load_records(source)
     if source_path.is_file():
-        return [source_path.as_posix()]
+        return sorted(
+            [
+                source_path.as_posix(),
+                *getattr(schema, "default_additional_sources", ()),
+            ]
+        )
     if not source_path.is_dir():
         raise RuntimeError(
             f"generated-data source {source!r} is neither a file nor a directory"
         )
-    records = schema.load_records(source)
     resolved = getattr(records, "source_paths", None)
     if resolved is None and isinstance(records, dict):
         resolved = records.get("source_paths")
@@ -49,29 +54,43 @@ def _source_paths(schema) -> list[str]:
                 f"generated-data source {relative.as_posix()!r} is not a file"
             )
         paths.append(relative.as_posix())
-    return sorted(set(paths))
+    paths.extend(getattr(schema, "default_additional_sources", ()))
+    return sorted(paths)
 
 
 def main() -> int:
-    records = []
-    for name in REGISTRY.all_names():
+    if len(sys.argv) == 2 and sys.argv[1] == "list":
+        payload = REGISTRY.all_names()
+    elif len(sys.argv) == 3 and sys.argv[1] == "metadata":
+        name = sys.argv[2]
         schema = REGISTRY.resolve(name)
-        records.append(
-            {
-                "default_hand_source": schema.default_hand_source,
-                "default_inventory_path": schema.default_inventory_path,
-                "default_output_name": schema.default_output_name,
-                "default_source": schema.default_source,
-                "dependencies": sorted(schema.dependencies()),
-                "dependency_tables": list(schema.dependency_tables()),
-                "name": name,
-                "resolved_sources": _source_paths(schema),
-                "version": schema.version,
-            }
+        payload = {
+            "default_additional_sources": list(
+                getattr(schema, "default_additional_sources", ())
+            ),
+            "default_hand_source": schema.default_hand_source,
+            "default_inventory_path": schema.default_inventory_path,
+            "default_output_name": schema.default_output_name,
+            "default_source": schema.default_source,
+            "default_source_pattern": getattr(
+                schema,
+                "default_source_pattern",
+                None,
+            ),
+            "dependencies": sorted(schema.dependencies()),
+            "dependency_tables": list(schema.dependency_tables()),
+            "name": name,
+            "version": schema.version,
+        }
+    elif len(sys.argv) == 3 and sys.argv[1] == "load":
+        payload = _source_paths(REGISTRY.resolve(sys.argv[2]))
+    else:
+        raise RuntimeError(
+            "generated registry probe requires list, metadata NAME, or load NAME"
         )
     sys.stdout.write(
         json.dumps(
-            records,
+            payload,
             ensure_ascii=True,
             separators=(",", ":"),
             sort_keys=True,

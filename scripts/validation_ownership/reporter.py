@@ -280,6 +280,13 @@ def _sha256(domain: bytes, value: Any) -> str:
     return hashlib.sha256(domain + normalized_json(value)).hexdigest()
 
 
+def _strict_utf8(data: bytes, label: str) -> str:
+    try:
+        return data.decode("utf-8")
+    except UnicodeDecodeError as error:
+        raise OwnershipError(f"{label} is not valid UTF-8") from error
+
+
 def _git(
     root: Path,
     *arguments: str,
@@ -295,7 +302,7 @@ def _git(
     except (OSError, pilot_reporter.PilotDataError) as error:
         raise OwnershipError(f"cannot execute trusted Git: {error}") from error
     if check and completed.returncode != 0:
-        detail = completed.stderr.decode("utf-8", errors="replace").strip()
+        detail = _strict_utf8(completed.stderr, "trusted Git stderr").strip()
         raise OwnershipError(
             f"Git {' '.join(arguments)} failed"
             + (f": {detail}" if detail else "")
@@ -463,7 +470,11 @@ class AuthorityLoader:
             )
         return entry
 
-    def read_blob(self, relative: str | Path, label: str) -> bytes:
+    def snapshot_blob(
+        self,
+        relative: str | Path,
+        label: str,
+    ) -> tuple[bytes, str]:
         entry = self.entry(relative, label)
         if self.revision is not None:
             completed = _git(
@@ -472,20 +483,133 @@ class AuthorityLoader:
                 "blob",
                 entry.object_id,
             )
-            return completed.stdout
-        path = self.root / entry.path
+            return completed.stdout, entry.mode
+
+        def signature(metadata: os.stat_result) -> tuple[int, ...]:
+            return (
+                metadata.st_dev,
+                metadata.st_ino,
+                metadata.st_mode,
+                metadata.st_size,
+                metadata.st_mtime_ns,
+                metadata.st_ctime_ns,
+            )
+
         try:
-            resolved = path.resolve(strict=True)
+            root = self.root.resolve(strict=True)
         except OSError as error:
-            raise OwnershipError(f"{label} {entry.path!r} is unavailable: {error}") from error
-        if path.is_symlink() or not resolved.is_file():
-            raise OwnershipError(f"{label} {entry.path!r} must be a regular file")
-        if self.root not in resolved.parents:
-            raise OwnershipError(f"{label} {entry.path!r} escapes repository root")
+            raise OwnershipError(
+                f"cannot snapshot {label} {entry.path!r} stably: {error}"
+            ) from error
+        components = Path(entry.path).parts
+        directory_flags = (
+            os.O_RDONLY
+            | os.O_DIRECTORY
+            | getattr(os, "O_CLOEXEC", 0)
+            | getattr(os, "O_NOFOLLOW", 0)
+        )
+        file_flags = (
+            os.O_RDONLY
+            | getattr(os, "O_CLOEXEC", 0)
+            | getattr(os, "O_NOFOLLOW", 0)
+        )
+        directories: list[int] = []
+        path_signatures: list[tuple[Path, tuple[int, ...]]] = []
+        descriptor = None
         try:
-            return resolved.read_bytes()
+            directory = os.open(root, directory_flags)
+            directories.append(directory)
+            path_signatures.append((root, signature(os.fstat(directory))))
+            current = root
+            for component in components[:-1]:
+                before_directory = os.stat(
+                    component,
+                    dir_fd=directory,
+                    follow_symlinks=False,
+                )
+                if not stat.S_ISDIR(before_directory.st_mode):
+                    raise OwnershipError(
+                        f"{label} {entry.path!r} has a non-directory path component"
+                    )
+                child = os.open(component, directory_flags, dir_fd=directory)
+                opened_directory = os.fstat(child)
+                if signature(before_directory) != signature(opened_directory):
+                    raise OwnershipError(
+                        f"{label} {entry.path!r} changed during snapshot"
+                    )
+                directories.append(child)
+                directory = child
+                current /= component
+                path_signatures.append(
+                    (current, signature(opened_directory))
+                )
+            before = os.stat(
+                components[-1],
+                dir_fd=directory,
+                follow_symlinks=False,
+            )
+            if not stat.S_ISREG(before.st_mode):
+                raise OwnershipError(
+                    f"{label} {entry.path!r} must be a regular file"
+                )
+            descriptor = os.open(
+                components[-1],
+                file_flags,
+                dir_fd=directory,
+            )
+            opened = os.fstat(descriptor)
+            if signature(before) != signature(opened):
+                raise OwnershipError(
+                    f"{label} {entry.path!r} changed during snapshot"
+                )
+            chunks = []
+            while True:
+                chunk = os.read(descriptor, 1024 * 1024)
+                if not chunk:
+                    break
+                chunks.append(chunk)
+            after_read = os.fstat(descriptor)
+            try:
+                after_path = os.stat(
+                    components[-1],
+                    dir_fd=directory,
+                    follow_symlinks=False,
+                )
+            except OSError as error:
+                raise OwnershipError(
+                    f"{label} {entry.path!r} changed during snapshot: {error}"
+                ) from error
+        except OwnershipError:
+            raise
         except OSError as error:
-            raise OwnershipError(f"cannot read {label} {entry.path!r}: {error}") from error
+            raise OwnershipError(
+                f"cannot snapshot {label} {entry.path!r} stably: {error}"
+            ) from error
+        finally:
+            if descriptor is not None:
+                os.close(descriptor)
+            for directory in reversed(directories):
+                os.close(directory)
+        try:
+            paths_stable = all(
+                signature(os.lstat(path)) == expected
+                for path, expected in path_signatures
+            )
+        except OSError as error:
+            raise OwnershipError(
+                f"{label} {entry.path!r} changed during snapshot: {error}"
+            ) from error
+        if not paths_stable or not (
+            signature(opened) == signature(after_read) == signature(after_path)
+        ):
+            raise OwnershipError(
+                f"{label} {entry.path!r} changed during snapshot"
+            )
+        mode = "100755" if opened.st_mode & 0o111 else "100644"
+        return b"".join(chunks), mode
+
+    def read_blob(self, relative: str | Path, label: str) -> bytes:
+        return self.snapshot_blob(relative, label)[0]
 
     def read_json(self, relative: str | Path, label: str) -> Any:
         try:
@@ -556,6 +680,8 @@ def _generated_registry_records(
         "name",
         "version",
         "default_source",
+        "default_source_pattern",
+        "default_additional_sources",
         "default_hand_source",
         "default_output_name",
         "default_inventory_path",
@@ -586,7 +712,11 @@ def _generated_registry_records(
             raise OwnershipError(f"{label} has invalid identity fields")
         names.add(name)
         ordered_names.append(name)
-        for list_field in ("dependencies", "dependency_tables"):
+        for list_field in (
+            "default_additional_sources",
+            "dependencies",
+            "dependency_tables",
+        ):
             values = record[list_field]
             if (
                 not isinstance(values, list)
@@ -596,8 +726,17 @@ def _generated_registry_records(
                     list_field == "dependencies"
                     and values != sorted(values)
                 )
+                or (
+                    list_field == "default_additional_sources"
+                    and values != sorted(values)
+                )
             ):
                 raise OwnershipError(f"{label}.{list_field} is invalid")
+        pattern = record["default_source_pattern"]
+        if pattern is not None and (
+            not isinstance(pattern, str) or not pattern
+        ):
+            raise OwnershipError(f"{label}.default_source_pattern is invalid")
         resolved_sources = record["resolved_sources"]
         if (
             not isinstance(resolved_sources, list)
@@ -1550,13 +1689,28 @@ def _parse_make_authorities(
         loader,
         required=require_dynamic_contracts,
     )
+    before_snapshot = _make_authority_state_sha256(loader)
     cache_key = _make_authority_cache_key(
         loader,
         requested_targets,
         require_dynamic_contracts,
+        state_sha256=before_snapshot,
     )
     cached = _MAKE_AUTHORITY_CACHE.pop(cache_key, None)
     if cached is not None:
+        after_snapshot = _make_authority_state_sha256(loader)
+        cached_snapshots = {
+            authority["record"].get("snapshot_sha256")
+            for authority in cached.values()
+        }
+        if (
+            after_snapshot != before_snapshot
+            or len(cached_snapshots) != 1
+            or None in cached_snapshots
+        ):
+            raise OwnershipError(
+                "Make authority source changed during cache validation"
+            )
         _MAKE_AUTHORITY_CACHE[cache_key] = cached
         return cached
     try:
@@ -1632,6 +1786,19 @@ def _parse_make_authorities(
     )
     for authority in result.values():
         authority["dynamic_dependencies"] = dynamic_values
+    observed_snapshots = {
+        authority["record"].get("snapshot_sha256")
+        for authority in result.values()
+    }
+    after_snapshot = _make_authority_state_sha256(loader)
+    if (
+        len(observed_snapshots) != 1
+        or None in observed_snapshots
+        or after_snapshot != before_snapshot
+    ):
+        raise OwnershipError(
+            "Make authority source changed during immutable snapshot"
+        )
     if len(_MAKE_AUTHORITY_CACHE) >= _MAKE_AUTHORITY_CACHE_LIMIT:
         _MAKE_AUTHORITY_CACHE.pop(next(iter(_MAKE_AUTHORITY_CACHE)))
     _MAKE_AUTHORITY_CACHE[cache_key] = result
@@ -1644,16 +1811,28 @@ def _make_authority_executor(max_workers: int):
 
 def _make_authority_state(
     loader: AuthorityLoader,
+    *,
+    include_descriptors: bool = False,
 ) -> tuple[tuple[str, ...], ...]:
     if loader.revision is not None:
         return tuple(
             (
                 path,
                 entry.mode,
-                entry.object_type,
-                entry.object_id,
+                (
+                    f"gitlink:{entry.object_id}"
+                    if entry.mode == GITLINK_MODE
+                    else entry.object_id
+                ),
             )
             for path, entry in sorted(loader.entries.items())
+            if (
+                (entry.mode == GITLINK_MODE and entry.object_type == "commit")
+                or (
+                    entry.object_type == "blob"
+                    and entry.mode in {"100644", "100755"}
+                )
+            )
         )
 
     head_entries = git_tree_entries(loader.root)
@@ -1675,50 +1854,65 @@ def _make_authority_state(
         }
     except UnicodeDecodeError as error:
         raise OwnershipError("Git returned a non-UTF-8 changed path") from error
-
     records = []
     for path, entry in sorted(loader.entries.items()):
-        head_entry = head_entries.get(path)
-        if head_entry == entry and path not in changed_paths:
-            identity = entry.object_id
-        elif entry.mode == GITLINK_MODE:
-            identity = f"gitlink:{entry.object_id}"
-        else:
+        descriptor = None
+        if include_descriptors:
             candidate = loader.root / path
             try:
-                path_stat = os.lstat(candidate)
+                metadata = os.lstat(candidate)
             except FileNotFoundError:
-                identity = "worktree:missing"
+                descriptor = "missing"
             except OSError as error:
                 raise OwnershipError(
                     f"cannot inspect Make cache path {path!r}: {error}"
                 ) from error
             else:
-                if stat.S_ISLNK(path_stat.st_mode):
-                    try:
-                        target = os.readlink(candidate)
-                    except OSError as error:
-                        raise OwnershipError(
-                            f"cannot read Make cache symlink {path!r}: {error}"
-                        ) from error
-                    identity = f"worktree:symlink:{target}"
-                elif stat.S_ISREG(path_stat.st_mode):
-                    mode = "100755" if path_stat.st_mode & 0o111 else "100644"
-                    digest = hashlib.sha256(
-                        loader.read_blob(path, "Make cache authority")
-                    ).hexdigest()
-                    identity = f"worktree:{mode}:{digest}"
-                else:
-                    identity = f"worktree:special:{stat.S_IFMT(path_stat.st_mode):o}"
+                descriptor = ":".join(
+                    str(value)
+                    for value in (
+                        metadata.st_dev,
+                        metadata.st_ino,
+                        metadata.st_mode,
+                        metadata.st_size,
+                        metadata.st_mtime_ns,
+                        metadata.st_ctime_ns,
+                    )
+                )
+        if entry.mode == GITLINK_MODE:
+            mode = entry.mode
+            identity = f"gitlink:{entry.object_id}"
+        elif entry.object_type == "blob" and entry.mode in {"100644", "100755"}:
+            if head_entries.get(path) == entry and path not in changed_paths:
+                mode = entry.mode
+                identity = entry.object_id
+            else:
+                content, mode = loader.snapshot_blob(
+                    path,
+                    "Make cache authority",
+                )
+                identity = hashlib.sha256(content).hexdigest()
+        else:
+            continue
         records.append(
             (
                 path,
-                entry.mode,
-                entry.object_type,
+                mode,
                 identity,
+                *(() if descriptor is None else (descriptor,)),
             )
         )
     return tuple(records)
+
+
+def _make_authority_state_sha256(loader: AuthorityLoader) -> str:
+    digest = hashlib.sha256(b"validation-ownership-make-snapshot-v1\0")
+    for record in _make_authority_state(loader, include_descriptors=True):
+        for value in record:
+            encoded = value.encode("utf-8")
+            digest.update(len(encoded).to_bytes(8, "little"))
+            digest.update(encoded)
+    return digest.hexdigest()
 
 
 def _entries_state(
@@ -1739,13 +1933,19 @@ def _make_authority_cache_key(
     loader: AuthorityLoader,
     requested_targets: Iterable[str],
     require_dynamic_contracts: bool,
+    *,
+    state_sha256: str | None = None,
 ) -> tuple[Any, ...]:
     return (
         "authoritative-gnu-make-v2",
         str(loader.root),
         loader.revision,
         tuple(sorted(requested_targets)),
-        _make_authority_state(loader),
+        (
+            _make_authority_state_sha256(loader)
+            if state_sha256 is None
+            else state_sha256
+        ),
         require_dynamic_contracts,
     )
 
@@ -3284,9 +3484,9 @@ def validate_executable_lifecycle(
                     "validation-ownership-check",
                 )
                 if initial.returncode != 0:
-                    detail = initial.stderr.decode(
-                        "utf-8",
-                        errors="replace",
+                    detail = _strict_utf8(
+                        initial.stderr,
+                        "lifecycle baseline stderr",
                     ).strip()
                     raise OwnershipError(
                         "stale executable lifecycle baseline does not pass"
@@ -3304,9 +3504,9 @@ def validate_executable_lifecycle(
                 raise OwnershipError(
                     "lifecycle proof removal did not fail"
                 )
-            removal_detail = removed.stderr.decode(
-                "utf-8",
-                errors="replace",
+            removal_detail = _strict_utf8(
+                removed.stderr,
+                "lifecycle removal stderr",
             )
             if LIFECYCLE_FAILURE_REASON not in removal_detail:
                 raise OwnershipError(

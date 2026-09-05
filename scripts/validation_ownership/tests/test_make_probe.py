@@ -37,6 +37,8 @@ class AuthoritativeMakeProbeTests(unittest.TestCase):
             "import os\n"
             "from pathlib import Path\n"
             "assert 'GITHUB_TOKEN' not in os.environ\n"
+            "assert not Path('/usr/bin/make').exists()\n"
+            "assert not Path('/usr/share').exists()\n"
             "try:\n"
             "    Path('/repo/forged').write_text('forged')\n"
             "except OSError:\n"
@@ -46,11 +48,16 @@ class AuthoritativeMakeProbeTests(unittest.TestCase):
             "class Schema:\n"
             "    version = 1\n"
             "    default_source = 'src/data/new_table.json'\n"
+            "    default_source_pattern = None\n"
+            "    default_additional_sources = ()\n"
             "    default_hand_source = None\n"
             "    default_output_name = 'data_new_table.c'\n"
             "    default_inventory_path = None\n"
             "    def dependencies(self): return ()\n"
             "    def dependency_tables(self): return ()\n"
+            "    def load_records(self, source):\n"
+            "        Path(source).read_text(encoding='ascii')\n"
+            "        return ()\n"
             "class Registry:\n"
             "    def all_names(self): return ('new-table',)\n"
             "    def resolve(self, name):\n"
@@ -85,12 +92,16 @@ class AuthoritativeMakeProbeTests(unittest.TestCase):
             "class Schema:\n"
             "    version = 1\n"
             "    default_source = 'src/data'\n"
+            "    default_source_pattern = '*_bundle.json'\n"
+            "    default_additional_sources = ('src/data/shared.json',)\n"
             "    default_hand_source = None\n"
             "    default_output_name = None\n"
             "    default_inventory_path = None\n"
             "    def dependencies(self): return ()\n"
             "    def dependency_tables(self): return ()\n"
             "    def load_records(self, source):\n"
+            "        (Path(source) / 'ch2_bundle.json').read_text(encoding='ascii')\n"
+            "        (Path(source) / 'shared.json').read_text(encoding='ascii')\n"
             "        return {'source_paths': (str(Path(source) / 'ch2_bundle.json'),)}\n"
             "class Registry:\n"
             "    def all_names(self): return ('chapterbundle',)\n"
@@ -105,6 +116,7 @@ class AuthoritativeMakeProbeTests(unittest.TestCase):
                 "scripts/generated_data/registry.py": registry,
                 "src/data/ch2_bundle.json": "{}\n",
                 "src/data/runtime_only.json": "{}\n",
+                "src/data/shared.json": "{}\n",
             },
         )
         with directory:
@@ -113,9 +125,168 @@ class AuthoritativeMakeProbeTests(unittest.TestCase):
             )
         self.assertEqual(
             records[0]["resolved_sources"],
-            ["src/data/ch2_bundle.json"],
+            ["src/data/ch2_bundle.json", "src/data/shared.json"],
         )
-        self.assertEqual(paths, {"src/data/ch2_bundle.json"})
+        self.assertEqual(
+            paths,
+            {"src/data/ch2_bundle.json", "src/data/shared.json"},
+        )
+
+    def test_generated_registry_read_observation_rejects_source_lies(self):
+        cases = {
+            "omitted": (
+                "*_bundle.json",
+                (
+                    "(Path(source) / 'a_bundle.json').read_text()\n"
+                    "        (Path(source) / 'b_bundle.json').read_text()\n"
+                    "        return {'source_paths': (str(Path(source) / 'a_bundle.json'),)}"
+                ),
+            ),
+            "extra": (
+                "*_bundle.json",
+                (
+                    "(Path(source) / 'a_bundle.json').read_text()\n"
+                    "        return {'source_paths': ("
+                    "str(Path(source) / 'a_bundle.json'),"
+                    "str(Path(source) / 'b_bundle.json'))}"
+                ),
+            ),
+            "dynamic": (
+                "a*_bundle.json",
+                (
+                    "(Path(source) / 'a_bundle.json').read_text()\n"
+                    "        (Path(source) / 'b_bundle.json').read_text()\n"
+                    "        return {'source_paths': (str(Path(source) / 'a_bundle.json'),)}"
+                ),
+            ),
+            "duplicate": (
+                "*_bundle.json",
+                (
+                    "(Path(source) / 'a_bundle.json').read_text()\n"
+                    "        return {'source_paths': ("
+                    "str(Path(source) / 'a_bundle.json'),"
+                    "str(Path(source) / 'a_bundle.json'))}"
+                ),
+            ),
+            "outside-declaration": (
+                "*_bundle.json",
+                (
+                    "(Path(source) / 'a_bundle.json').read_text()\n"
+                    "        list(Path('src').iterdir())\n"
+                    "        Path('Makefile').read_text()\n"
+                    "        return {'source_paths': ("
+                    "str(Path(source) / 'a_bundle.json'),"
+                    "str(Path(source) / 'b_bundle.json'))}"
+                ),
+            ),
+            "open-only": (
+                "a*_bundle.json",
+                (
+                    "handle = (Path(source) / 'a_bundle.json').open()\n"
+                    "        handle.close()\n"
+                    "        return {'source_paths': ("
+                    "str(Path(source) / 'a_bundle.json'),)}"
+                ),
+            ),
+        }
+        for label, (pattern, loader_body) in cases.items():
+            with self.subTest(label=label):
+                registry = (
+                    "from pathlib import Path\n"
+                    "class Schema:\n"
+                    "    version = 1\n"
+                    "    default_source = 'src/data'\n"
+                    f"    default_source_pattern = {pattern!r}\n"
+                    "    default_additional_sources = ()\n"
+                    "    default_hand_source = None\n"
+                    "    default_output_name = None\n"
+                    "    default_inventory_path = None\n"
+                    "    def dependencies(self): return ()\n"
+                    "    def dependency_tables(self): return ()\n"
+                    "    def load_records(self, source):\n"
+                    f"        {loader_body}\n"
+                    "class Registry:\n"
+                    "    def all_names(self): return ('fixture',)\n"
+                    "    def resolve(self, name): return Schema()\n"
+                    "REGISTRY = Registry()\n"
+                )
+                directory, root, entries = self.fixture(
+                    "all:\n\t@true\n",
+                    {
+                        "scripts/__init__.py": "",
+                        "scripts/generated_data/__init__.py": "",
+                        "scripts/generated_data/registry.py": registry,
+                        "src/data/a_bundle.json": "{}\n",
+                        "src/data/b_bundle.json": "{}\n",
+                    },
+                )
+                with directory, self.assertRaisesRegex(
+                    reporter.OwnershipError,
+                    "source authority differs|reports invalid sources|"
+                    "read undeclared candidate paths|"
+                    "opened undeclared candidate directories",
+                ):
+                    reporter._generated_registry_records(
+                        reporter.AuthorityLoader(root, entries)
+                    )
+
+    def test_generated_registry_rejects_escape_and_symlink_sources(self):
+        registry = (
+            "from pathlib import Path\n"
+            "class Schema:\n"
+            "    version = 1\n"
+            "    default_source = '/usr/bin/python3'\n"
+            "    default_source_pattern = None\n"
+            "    default_additional_sources = ()\n"
+            "    default_hand_source = None\n"
+            "    default_output_name = None\n"
+            "    default_inventory_path = None\n"
+            "    def dependencies(self): return ()\n"
+            "    def dependency_tables(self): return ()\n"
+            "    def load_records(self, source):\n"
+            "        Path(source).read_bytes()\n"
+            "        return ()\n"
+            "class Registry:\n"
+            "    def all_names(self): return ('fixture',)\n"
+            "    def resolve(self, name): return Schema()\n"
+            "REGISTRY = Registry()\n"
+        )
+        directory, root, entries = self.fixture(
+            "all:\n\t@true\n",
+            {
+                "scripts/__init__.py": "",
+                "scripts/generated_data/__init__.py": "",
+                "scripts/generated_data/registry.py": registry,
+            },
+        )
+        with directory, self.assertRaisesRegex(
+            reporter.OwnershipError,
+            "canonical relative path|registry probe failed",
+        ):
+            reporter._generated_registry_records(
+                reporter.AuthorityLoader(root, entries)
+            )
+
+        with tempfile.TemporaryDirectory(dir=SCRATCH_ROOT) as temporary:
+            tree = Path(temporary)
+            outside = tree / "outside.json"
+            outside.write_text("{}\n", encoding="ascii")
+            source = tree / "src/data/input.json"
+            source.parent.mkdir(parents=True)
+            source.symlink_to(outside)
+            with self.assertRaisesRegex(
+                make_probe.MakeProbeError,
+                "symlink",
+            ):
+                make_probe._registry_authorized_sources(
+                    tree,
+                    {
+                        "default_additional_sources": [],
+                        "default_source": "src/data/input.json",
+                        "default_source_pattern": None,
+                        "name": "fixture",
+                    },
+                )
 
     def test_candidate_generated_registry_output_is_bounded_while_running(self):
         registry = (
@@ -171,6 +342,59 @@ class AuthoritativeMakeProbeTests(unittest.TestCase):
             time.sleep(0.1)
             self.assertFalse(sentinel.exists())
 
+    def test_bounded_process_preserves_invalid_output_bytes(self):
+        completed = make_probe._run_bounded_process(
+            [
+                sys.executable,
+                "-c",
+                "import os;os.write(1,b'\\xff');os.write(2,b'\\xfe')",
+            ],
+            timeout=10,
+            max_output_bytes=16,
+            env={"PATH": "/usr/bin:/bin"},
+        )
+        self.assertEqual(completed.stdout, b"\xff")
+        self.assertEqual(completed.stderr, b"\xfe")
+
+    def test_bounded_process_terminates_on_unexpected_parser_failure(self):
+        with tempfile.TemporaryDirectory(dir=SCRATCH_ROOT) as directory:
+            sentinel = Path(directory) / "survived"
+            reader, writer = os.pipe()
+            stream = os.fdopen(reader, "rb", buffering=0)
+
+            class FailingParser:
+                def feed(self, chunk):
+                    raise RuntimeError(f"rejected {chunk!r}")
+
+            os.write(writer, b"forged")
+            try:
+                with self.assertRaisesRegex(RuntimeError, "rejected"):
+                    make_probe._run_bounded_process(
+                        [
+                            sys.executable,
+                            "-c",
+                            (
+                                "import pathlib,time;"
+                                "time.sleep(5);"
+                                f"pathlib.Path({str(sentinel)!r}).write_text("
+                                "'survived')"
+                            ),
+                        ],
+                        timeout=10,
+                        max_output_bytes=1024,
+                        channels={"fixture": (stream, FailingParser())},
+                        dummy_writers=[writer],
+                        env={"PATH": "/usr/bin:/bin"},
+                    )
+            finally:
+                stream.close()
+                try:
+                    os.close(writer)
+                except OSError:
+                    pass
+            time.sleep(0.1)
+            self.assertFalse(sentinel.exists())
+
     def test_sandbox_rejects_candidate_visible_control_state(self):
         with tempfile.TemporaryDirectory(dir=SCRATCH_ROOT) as directory:
             base = Path(directory)
@@ -195,6 +419,17 @@ class AuthoritativeMakeProbeTests(unittest.TestCase):
                     mapping_path=mapping,
                     read_only=[],
                 )
+
+    def test_command_root_recreates_removed_mount_placeholders(self):
+        with tempfile.TemporaryDirectory(dir=SCRATCH_ROOT) as directory:
+            base = Path(directory)
+            root = make_probe._prepare_command_root(base)
+            (root / "dev/null").unlink()
+            (root / "usr/bin/python3").unlink()
+            recreated = make_probe._prepare_command_root(base)
+            self.assertEqual(recreated, root)
+            self.assertTrue((root / "dev/null").is_file())
+            self.assertTrue((root / "usr/bin/python3").is_file())
 
     def fixture(self, makefile: str, files: dict[str, str] | None = None):
         directory = tempfile.TemporaryDirectory(dir=SCRATCH_ROOT)
@@ -910,6 +1145,62 @@ class AuthoritativeMakeProbeTests(unittest.TestCase):
                 [],
             )
 
+    def test_probe_program_and_domain_results_are_not_candidate_writable(self):
+        directory, root, entries = self.fixture(
+            "DEP ?= child\n"
+            "$(file >/work/domain-0,forged)\n"
+            "all: $(DEP)\n"
+            "child:\n\t@true\n"
+        )
+        with directory:
+            authority = self.probe(
+                root,
+                entries,
+                domains={"DEP": {"kind": "tracked-fallback"}},
+            )
+        self.assertEqual(authority["transitive"], ["child"])
+
+        attempts = (
+            (
+                "$(file >/probe/probe.mk,forged)\nall:\n\t@true\n",
+                "domain observer did not emit|GNU Make authority probe failed",
+            ),
+            (
+                "$(file >/probe/domain-0,forged)\nall:\n\t@true\n",
+                "domain observer did not emit|GNU Make authority probe failed",
+            ),
+            (
+                "include /probe/probe.mk\nall:\n\t@true\n",
+                "domain stream exceeds record bound",
+            ),
+            (
+                "FORGE := $(shell printf forged > /probe/probe.mk)\n"
+                "all:\n\t@true\n",
+                "command execution without exactly one sealed contract",
+            ),
+            (
+                "override export VO_COMMAND_COUNT := invalid\n"
+                "all:\n\t@true\n",
+                "domain observer did not emit|GNU Make authority probe failed",
+            ),
+        )
+        for makefile, message in attempts:
+            with self.subTest(makefile=makefile):
+                directory, root, entries = self.fixture(makefile)
+                with directory, self.assertRaisesRegex(
+                    make_probe.MakeProbeError,
+                    message,
+                ):
+                    self.probe(root, entries)
+
+        directory, root, entries = self.fixture(
+            "FORGE != ln -s /work/forged /probe/probe.mk\n"
+            "all:\n\t@true\n",
+        )
+        with directory:
+            authority = self.probe(root, entries)
+        self.assertEqual(authority["transitive"], [])
+
     def test_registered_command_has_no_supervisor_control_descriptors(self):
         script = (
             "import os\n"
@@ -917,7 +1208,7 @@ class AuthoritativeMakeProbeTests(unittest.TestCase):
             "Path('/work/events.bin').write_text('candidate', encoding='ascii')\n"
             "Path('/work/map').mkdir()\n"
             "Path('/work/map/forged.cmd').write_text('candidate', encoding='ascii')\n"
-            "for descriptor in (3, 4):\n"
+            "for descriptor in (3, 4, 5):\n"
             "    try:\n"
             "        os.write(descriptor, b'candidate')\n"
             "    except OSError:\n"
@@ -944,6 +1235,42 @@ class AuthoritativeMakeProbeTests(unittest.TestCase):
             self.assertEqual(
                 [item["authority_id"] for item in commands],
                 ["fixture-control-forgery"],
+            )
+
+    def test_domain_observer_without_control_is_logged_as_unregistered(self):
+        with tempfile.TemporaryDirectory(dir=SCRATCH_ROOT) as directory:
+            base = Path(directory)
+            interceptor = base / "interceptor"
+            make_probe._compile_interceptor(ROOT, interceptor)
+            event_path = base / "events.bin"
+            event_path.touch()
+            mapping_path = base / "mapping"
+            mapping_path.mkdir()
+            completed = subprocess.run(
+                [
+                    "/bin/bash",
+                    "-c",
+                    (
+                        'exec 3>"$1"; exec 4<"$2"; '
+                        'exec 5>/dev/null; exec 5>&-; '
+                        'exec -a /usr/bin/vo-domain-observer "$3"'
+                    ),
+                    "domain-test",
+                    str(event_path),
+                    str(mapping_path),
+                    str(interceptor),
+                ],
+                check=False,
+                env={"PATH": "/usr/bin:/bin", "VO_COMMAND_COUNT": "0"},
+            )
+            self.assertEqual(completed.returncode, 0)
+            events = make_probe._read_events(
+                event_path,
+                expected_mapping_count=0,
+            )
+            self.assertEqual(
+                [make_probe._event_command(event) for event in events],
+                ["/usr/bin/vo-domain-observer"],
             )
 
     def test_interceptor_event_count_and_format_are_supervisor_bound(self):
@@ -975,6 +1302,159 @@ class AuthoritativeMakeProbeTests(unittest.TestCase):
                 make_probe._read_events(
                     path,
                     expected_mapping_count=0,
+                )
+
+    def test_event_stream_rejects_byte_record_and_invalid_utf8_limits(self):
+        def event(command: str, argument: bytes | None = None) -> bytes:
+            raw = command.encode("utf-8") if argument is None else argument
+            command_hash = int(make_probe._command_hash(command), 16)
+            return (
+                struct.pack(
+                    "<IIIII",
+                    0xFFFFFFFF,
+                    0,
+                    command_hash & 0xFFFFFFFF,
+                    command_hash >> 32,
+                    1,
+                )
+                + struct.pack("<I", len(raw))
+                + raw
+            )
+
+        with mock.patch.object(make_probe, "MAX_EVENT_BYTES", 8):
+            parser = make_probe._EventStreamParser(0)
+            with self.assertRaisesRegex(
+                make_probe.MakeProbeError,
+                "event stream exceeds byte bound",
+            ):
+                parser.feed(event("printf"))
+
+        with mock.patch.object(make_probe, "MAX_EVENT_RECORDS", 1):
+            parser = make_probe._EventStreamParser(0)
+            with self.assertRaisesRegex(
+                make_probe.MakeProbeError,
+                "event stream exceeds record bound",
+            ):
+                parser.feed(event("printf") + event("printf"))
+
+        parser = make_probe._EventStreamParser(0)
+        with self.assertRaisesRegex(
+            make_probe.MakeProbeError,
+            "argument is not valid UTF-8",
+        ):
+            parser.feed(event("printf", b"\xff"))
+
+        directory, root, entries = self.fixture(
+            "ONE != printf one\n"
+            "TWO != printf two\n"
+            "all:\n\t@true\n"
+        )
+        with directory, mock.patch.object(
+            make_probe,
+            "MAX_EVENT_RECORDS",
+            1,
+        ), self.assertRaisesRegex(
+            make_probe.MakeProbeError,
+            "event stream exceeds record bound",
+        ):
+            self.probe(root, entries)
+
+    def test_pending_mapping_output_and_future_fanout_are_bounded(self):
+        makefile = (
+            "ONE != printf one\n"
+            "TWO != printf two\n"
+            "all:\n\t@true\n"
+        )
+        contracts = {
+            "$(shell one)": {
+                "id": "fixture-one",
+                "command_regex": "^printf one$",
+                "resolved_value": None,
+            },
+            "$(shell two)": {
+                "id": "fixture-two",
+                "command_regex": "^printf two$",
+                "resolved_value": None,
+            },
+        }
+        directory, root, entries = self.fixture(makefile)
+        with directory, mock.patch.object(
+            make_probe,
+            "MAX_PENDING_COMMANDS",
+            1,
+        ), self.assertRaisesRegex(
+            make_probe.MakeProbeError,
+            "pending command fanout exceeds count bound",
+        ):
+            self.probe(root, entries, dynamic=contracts)
+
+        directory, root, entries = self.fixture(makefile)
+        active = 0
+        maximum = 0
+        active_lock = make_probe.Lock()
+
+        def execute(*args, **kwargs):
+            nonlocal active, maximum
+            with active_lock:
+                active += 1
+                maximum = max(maximum, active)
+            time.sleep(0.02)
+            with active_lock:
+                active -= 1
+            return b"ok\n"
+
+        with directory, mock.patch.object(
+            make_probe,
+            "MAX_PARALLEL_REGISTERED_COMMANDS",
+            1,
+        ), mock.patch.object(
+            make_probe,
+            "_execute_registered_command",
+            side_effect=execute,
+        ):
+            self.probe(root, entries, dynamic=contracts)
+        self.assertEqual(maximum, 1)
+
+        mappings = [
+            {
+                "command": "printf one",
+                "output": b"1234",
+            },
+            {
+                "command": "printf two",
+                "output": b"5678",
+            },
+        ]
+        with tempfile.TemporaryDirectory(dir=SCRATCH_ROOT) as directory:
+            with mock.patch.object(
+                make_probe,
+                "MAX_MAPPING_COUNT",
+                1,
+            ), self.assertRaisesRegex(
+                make_probe.MakeProbeError,
+                "mapping exceeds count bound",
+            ):
+                make_probe._write_mapping(Path(directory) / "count", mappings)
+            with mock.patch.object(
+                make_probe,
+                "MAX_MAPPING_BYTES",
+                8,
+            ), self.assertRaisesRegex(
+                make_probe.MakeProbeError,
+                "mapping exceeds byte bound",
+            ):
+                make_probe._write_mapping(Path(directory) / "bytes", mappings)
+            with mock.patch.object(
+                make_probe,
+                "MAX_SANDBOX_OUTPUT_BYTES",
+                3,
+            ), self.assertRaisesRegex(
+                make_probe.MakeProbeError,
+                "individual byte bound",
+            ):
+                make_probe._write_mapping(
+                    Path(directory) / "individual",
+                    [mappings[0]],
                 )
 
     def test_mapping_materialization_appends_only_new_commands(self):
@@ -1081,8 +1561,8 @@ class AuthoritativeMakeProbeTests(unittest.TestCase):
             completed = subprocess.CompletedProcess(
                 args=[],
                 returncode=0,
-                stdout="sealed\n",
-                stderr="",
+                stdout=b"sealed\n",
+                stderr=b"",
             )
             make_probe._REGISTERED_COMMAND_CACHE.clear()
             with mock.patch.object(
@@ -1115,6 +1595,78 @@ class AuthoritativeMakeProbeTests(unittest.TestCase):
             self.assertEqual(first, b"sealed\n")
             self.assertEqual(second, b"sealed\n")
             self.assertEqual(sandbox.call_count, 1)
+
+    def test_registered_command_cache_preserves_distinct_raw_bytes(self):
+        with tempfile.TemporaryDirectory(dir=SCRATCH_ROOT) as directory:
+            base = Path(directory)
+            tree = base / "tree"
+            build_output = base / "build-output"
+            command_work = base / "command-work"
+            tree.mkdir()
+            build_output.mkdir()
+            command_work.mkdir()
+            contract = {
+                "id": "fixture-raw",
+                "resolved_value": None,
+            }
+            make_probe._REGISTERED_COMMAND_CACHE.clear()
+            outputs = iter((b"\xff", b"\xfe"))
+
+            def run(*args, **kwargs):
+                return subprocess.CompletedProcess(
+                    args=[],
+                    returncode=0,
+                    stdout=next(outputs),
+                    stderr=b"",
+                )
+
+            with mock.patch.object(make_probe, "_sandbox_run", side_effect=run):
+                first = make_probe._execute_registered_command(
+                    "python3 one.py",
+                    contract,
+                    base=base,
+                    build_output=build_output,
+                    cache_namespace=("first",),
+                    command_work=command_work,
+                    direct_arguments=["python3", "one.py"],
+                    tree=tree,
+                    environment={},
+                )
+                second = make_probe._execute_registered_command(
+                    "python3 two.py",
+                    contract,
+                    base=base,
+                    build_output=build_output,
+                    cache_namespace=("second",),
+                    command_work=command_work,
+                    direct_arguments=["python3", "two.py"],
+                    tree=tree,
+                    environment={},
+                )
+        self.assertEqual(first, b"\xff")
+        self.assertEqual(second, b"\xfe")
+        self.assertNotEqual(first, second)
+
+    def test_invalid_registered_output_rejects_make_text_parsing(self):
+        script = "import os\nos.write(1, b'\\xff')\n"
+        directory, root, entries = self.fixture(
+            "VALUE != python3 raw.py\nall: $(VALUE)\n",
+            {"raw.py": script},
+        )
+        contract = {
+            "id": "fixture-invalid-output",
+            "command_regex": "^python3 raw\\.py$",
+            "resolved_value": None,
+        }
+        with directory, self.assertRaisesRegex(
+            make_probe.MakeProbeError,
+            "GNU Make stdout is not valid UTF-8",
+        ):
+            self.probe(
+                root,
+                entries,
+                dynamic={"$(shell invalid-output)": contract},
+            )
 
     def test_registered_command_cache_tracks_live_worktree_bytes(self):
         directory, root, entries = self.fixture(
@@ -1151,6 +1703,218 @@ class AuthoritativeMakeProbeTests(unittest.TestCase):
             second["record"]["dynamic_commands"][0]["output_sha256"],
         )
 
+    def test_cache_namespace_comes_from_completed_snapshot_not_pre_copy_state(self):
+        directory, root, entries = self.fixture(
+            "all:\n\t@true\n",
+        )
+        loader = reporter.AuthorityLoader(root, entries)
+        with directory, mock.patch.object(
+            loader,
+            "content_state",
+            side_effect=AssertionError("pre-copy state must not be used"),
+        ):
+            authority = make_probe.run_probe(
+                loader,
+                {"all"},
+                {},
+                {},
+                scratch_root=root / "artifacts",
+            )
+        self.assertIn("all", authority)
+
+    def test_completed_revision_and_gitlink_snapshots_are_verified(self):
+        with tempfile.TemporaryDirectory(dir=SCRATCH_ROOT) as directory:
+            root = Path(directory)
+            source = root / "input.txt"
+            source.write_text("forged\n", encoding="ascii")
+            entries = {
+                "input.txt": reporter.GitTreeEntry(
+                    "input.txt",
+                    "100644",
+                    "blob",
+                    "0" * 40,
+                )
+            }
+            with self.assertRaisesRegex(
+                make_probe.MakeProbeError,
+                "differs from the selected revision",
+            ):
+                make_probe._snapshot_tree_state(
+                    root,
+                    entries,
+                    "fixture",
+                    root,
+                )
+
+        with tempfile.TemporaryDirectory(dir=SCRATCH_ROOT) as directory:
+            candidate = Path(directory) / "copied.txt"
+            candidate.write_text("original\n", encoding="ascii")
+            original_read = make_probe.os.read
+            changed = False
+
+            def racing_read(descriptor, size):
+                nonlocal changed
+                data = original_read(descriptor, size)
+                if not changed:
+                    changed = True
+                    candidate.write_text("modified\n", encoding="ascii")
+                return data
+
+            with mock.patch.object(
+                make_probe.os,
+                "read",
+                side_effect=racing_read,
+            ), self.assertRaisesRegex(
+                make_probe.MakeProbeError,
+                "changed while hashing",
+            ):
+                make_probe._file_identities(candidate)
+
+        gitlink = reporter.git_tree_entries(ROOT)["mgfembp"]
+        with tempfile.TemporaryDirectory(dir=SCRATCH_ROOT) as directory:
+            destination = Path(directory) / "mgfembp"
+            make_probe._copy_gitlink(
+                ROOT,
+                "mgfembp",
+                gitlink.object_id,
+                destination,
+            )
+            make_probe._verify_copied_gitlink(
+                ROOT,
+                "mgfembp",
+                gitlink.object_id,
+                destination,
+            )
+            candidate = next(
+                path for path in destination.rglob("*") if path.is_file()
+            )
+            candidate.write_bytes(candidate.read_bytes() + b"forged")
+            with self.assertRaisesRegex(
+                make_probe.MakeProbeError,
+                "differs from the selected commit",
+            ):
+                make_probe._verify_copied_gitlink(
+                    ROOT,
+                    "mgfembp",
+                    gitlink.object_id,
+                    destination,
+                )
+
+    def test_hash_then_change_is_rejected_against_completed_snapshot(self):
+        directory, root, entries = self.fixture(
+            "all:\n\t@true\n",
+        )
+        loader = reporter.AuthorityLoader(root, entries)
+
+        def changed_probe(*args, **kwargs):
+            (root / "Makefile").write_text(
+                "all:\n\t@printf changed\n",
+                encoding="ascii",
+            )
+            return {
+                "all": {
+                    "record": {
+                        "snapshot_sha256": reporter._make_authority_state_sha256(
+                            loader
+                        )
+                    }
+                }
+            }
+
+        with directory, mock.patch.object(
+            make_probe,
+            "run_probe",
+            side_effect=changed_probe,
+        ), self.assertRaisesRegex(
+            reporter.OwnershipError,
+            "changed during immutable snapshot",
+        ):
+            reporter._parse_make_authorities(loader, {"all"})
+
+    def test_live_snapshot_rejects_copy_time_content_type_mode_and_delete_races(self):
+        mutations = {
+            "content": lambda path: path.write_text("changed\n", encoding="ascii"),
+            "mode": lambda path: path.chmod(0o755),
+            "delete": lambda path: path.unlink(),
+            "type": lambda path: (
+                path.unlink(),
+                path.symlink_to("replacement"),
+            ),
+        }
+        for label, mutate in mutations.items():
+            with self.subTest(label=label):
+                with tempfile.TemporaryDirectory(dir=SCRATCH_ROOT) as directory:
+                    root = Path(directory)
+                    source = root / "input.txt"
+                    source.write_text("original\n", encoding="ascii")
+                    entries = {
+                        "input.txt": reporter.GitTreeEntry(
+                            "input.txt",
+                            "100644",
+                            "blob",
+                            "0" * 40,
+                        )
+                    }
+                    loader = reporter.AuthorityLoader(root, entries)
+                    original_read = reporter.os.read
+                    changed = False
+
+                    def racing_read(descriptor, size):
+                        nonlocal changed
+                        data = original_read(descriptor, size)
+                        if not changed:
+                            changed = True
+                            mutate(source)
+                        return data
+
+                    with mock.patch.object(
+                        reporter.os,
+                        "read",
+                        side_effect=racing_read,
+                    ), self.assertRaisesRegex(
+                        reporter.OwnershipError,
+                        "changed during snapshot",
+                    ):
+                        make_probe._copy_tree(loader, root / "copy")
+
+        with tempfile.TemporaryDirectory(dir=SCRATCH_ROOT) as directory:
+            root = Path(directory)
+            parent = root / "source"
+            parent.mkdir()
+            source = parent / "input.txt"
+            source.write_text("original\n", encoding="ascii")
+            entries = {
+                "source/input.txt": reporter.GitTreeEntry(
+                    "source/input.txt",
+                    "100644",
+                    "blob",
+                    "0" * 40,
+                )
+            }
+            loader = reporter.AuthorityLoader(root, entries)
+            original_read = reporter.os.read
+            changed = False
+
+            def replace_parent_with_alias(descriptor, size):
+                nonlocal changed
+                data = original_read(descriptor, size)
+                if not changed:
+                    changed = True
+                    moved = root / "moved"
+                    parent.rename(moved)
+                    parent.symlink_to(moved.name, target_is_directory=True)
+                return data
+
+            with mock.patch.object(
+                reporter.os,
+                "read",
+                side_effect=replace_parent_with_alias,
+            ), self.assertRaisesRegex(
+                reporter.OwnershipError,
+                "changed during snapshot",
+            ):
+                make_probe._copy_tree(loader, root / "copy")
+
     def test_build_touching_registered_command_skips_process_cache(self):
         with tempfile.TemporaryDirectory(dir=SCRATCH_ROOT) as directory:
             base = Path(directory)
@@ -1167,8 +1931,8 @@ class AuthoritativeMakeProbeTests(unittest.TestCase):
             completed = subprocess.CompletedProcess(
                 args=[],
                 returncode=0,
-                stdout="",
-                stderr="",
+                stdout=b"",
+                stderr=b"",
             )
             make_probe._REGISTERED_COMMAND_CACHE.clear()
             with mock.patch.object(

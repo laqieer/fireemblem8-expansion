@@ -12,6 +12,8 @@
 
 #define EVENT_FD 3
 #define MAPPING_FD 4
+#define DOMAIN_FD 5
+#define MAX_MAPPING_FILE_BYTES (1024 * 1024)
 
 static int write_all(int fd, const void *buffer, size_t size)
 {
@@ -59,6 +61,11 @@ static unsigned char *read_file_at(int directory, const char *path, size_t *size
             close(fd);
         return NULL;
     }
+    if ((uint64_t) status.st_size > MAX_MAPPING_FILE_BYTES)
+    {
+        close(fd);
+        return NULL;
+    }
     data = malloc((size_t) status.st_size + 1);
     if (data == NULL)
     {
@@ -85,6 +92,53 @@ static unsigned char *read_file_at(int directory, const char *path, size_t *size
     data[offset] = '\0';
     *size = offset;
     return data;
+}
+
+static int log_domains(void)
+{
+    const char *count_text = getenv("VO_DOMAIN_COUNT");
+    char *end;
+    unsigned long count;
+    unsigned long index;
+
+    if (count_text == NULL || *count_text == '\0')
+        return -1;
+    errno = 0;
+    count = strtoul(count_text, &end, 10);
+    if (errno != 0 || *end != '\0' || count > UINT32_MAX)
+        return -1;
+    if (write_u32(DOMAIN_FD, (uint32_t) count) != 0)
+        return -1;
+    for (index = 0; index < count; ++index)
+    {
+        char name[64];
+        const char *value;
+        size_t length;
+
+        if (snprintf(name, sizeof(name), "VO_DOMAIN_%lu", index)
+            >= (int) sizeof(name))
+        {
+            return -1;
+        }
+        value = getenv(name);
+        if (value == NULL)
+            return -1;
+        length = strlen(value);
+        if (length > UINT32_MAX
+            || write_u32(DOMAIN_FD, (uint32_t) length) != 0
+            || write_all(DOMAIN_FD, value, length) != 0)
+        {
+            return -1;
+        }
+    }
+    return 0;
+}
+
+static int has_domain_control(void)
+{
+    struct stat status;
+
+    return fstat(DOMAIN_FD, &status) == 0 && S_ISFIFO(status.st_mode);
 }
 
 static int log_event(
@@ -160,6 +214,7 @@ static char *direct_command(int argc, char **argv)
 int main(int argc, char **argv)
 {
     const char *count_text = getenv("VO_COMMAND_COUNT");
+    char *count_end;
     const char *command = NULL;
     char *owned_command = NULL;
     unsigned long count = 0;
@@ -174,7 +229,25 @@ int main(int argc, char **argv)
         command = owned_command;
     }
     if (count_text != NULL)
-        count = strtoul(count_text, NULL, 10);
+    {
+        errno = 0;
+        count = strtoul(count_text, &count_end, 10);
+        if (errno != 0 || *count_text == '\0' || *count_end != '\0'
+            || count > UINT32_MAX)
+        {
+            free(owned_command);
+            return 125;
+        }
+    }
+    if (command != NULL
+        && strcmp(command, "/usr/bin/vo-domain-observer") == 0
+        && has_domain_control())
+    {
+        int result = log_domains();
+
+        free(owned_command);
+        return result == 0 ? 0 : 125;
+    }
     if (command != NULL)
     {
         const unsigned char *cursor = (const unsigned char *) command;

@@ -25,6 +25,7 @@ PR_CAPBSET_DROP = 24
 LINUX_CAPABILITY_VERSION_3 = 0x20080522
 EVENT_FD = 3
 MAPPING_FD = 4
+DOMAIN_FD = 5
 
 
 class _CapabilityHeader(ctypes.Structure):
@@ -100,40 +101,79 @@ def _drop_sudo_privileges(uid: int, gid: int) -> None:
 
 
 def _open_control_descriptors(
+    domain_path: str | None,
     event_path: str | None,
     mapping_path: str | None,
 ) -> None:
     if (event_path is None) != (mapping_path is None):
-        raise RuntimeError("sandbox control descriptors must be paired")
+        raise RuntimeError("sandbox event and mapping controls must be paired")
+    if domain_path is not None and event_path is None:
+        raise RuntimeError("sandbox domain control requires event controls")
     if event_path is None:
-        for descriptor in (EVENT_FD, MAPPING_FD):
+        for descriptor in (EVENT_FD, MAPPING_FD, DOMAIN_FD):
             try:
                 os.close(descriptor)
             except OSError:
                 pass
         return
+    domain = (
+        None
+        if domain_path is None
+        else Path(domain_path).resolve(strict=True)
+    )
     event = Path(event_path).resolve(strict=True)
     mapping = Path(mapping_path).resolve(strict=True)
+    domain_fd = (
+        None
+        if domain is None
+        else os.open(
+            domain,
+            os.O_WRONLY | os.O_NOFOLLOW,
+        )
+    )
     event_fd = os.open(
         event,
-        os.O_WRONLY | os.O_APPEND | os.O_NOFOLLOW,
+        os.O_WRONLY | os.O_NOFOLLOW,
     )
     mapping_fd = os.open(
         mapping,
         os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
     )
-    if not stat.S_ISREG(os.fstat(event_fd).st_mode):
-        raise RuntimeError("sandbox event control is not a regular file")
+    if domain_fd is not None and not stat.S_ISFIFO(os.fstat(domain_fd).st_mode):
+        raise RuntimeError("sandbox domain control is not a FIFO")
+    if not stat.S_ISFIFO(os.fstat(event_fd).st_mode):
+        raise RuntimeError("sandbox event control is not a FIFO")
     if not stat.S_ISDIR(os.fstat(mapping_fd).st_mode):
         raise RuntimeError("sandbox mapping control is not a directory")
-    os.dup2(event_fd, EVENT_FD, inheritable=True)
-    os.dup2(mapping_fd, MAPPING_FD, inheritable=True)
+    safe_event_fd = os.dup(event_fd)
+    safe_mapping_fd = os.dup(mapping_fd)
+    safe_domain_fd = None if domain_fd is None else os.dup(domain_fd)
+    os.dup2(safe_event_fd, EVENT_FD, inheritable=True)
+    os.dup2(safe_mapping_fd, MAPPING_FD, inheritable=True)
+    if domain_fd is None:
+        try:
+            os.close(DOMAIN_FD)
+        except OSError:
+            pass
+    else:
+        os.dup2(safe_domain_fd, DOMAIN_FD, inheritable=True)
     os.set_inheritable(EVENT_FD, True)
     os.set_inheritable(MAPPING_FD, True)
-    if event_fd not in {EVENT_FD, MAPPING_FD}:
-        os.close(event_fd)
-    if mapping_fd not in {EVENT_FD, MAPPING_FD}:
-        os.close(mapping_fd)
+    if domain_fd is not None:
+        os.set_inheritable(DOMAIN_FD, True)
+    for descriptor in (
+        domain_fd,
+        event_fd,
+        mapping_fd,
+        safe_domain_fd,
+        safe_event_fd,
+        safe_mapping_fd,
+    ):
+        if (
+            descriptor is not None
+            and descriptor not in {EVENT_FD, MAPPING_FD, DOMAIN_FD}
+        ):
+            os.close(descriptor)
 
 
 def main() -> int:
@@ -144,6 +184,7 @@ def main() -> int:
     if set(config) != {
         "argv",
         "cwd",
+        "domain_path",
         "environment",
         "event_path",
         "mapping_path",
@@ -158,6 +199,7 @@ def main() -> int:
 
     root = Path(config["root"]).resolve(strict=True)
     _open_control_descriptors(
+        config["domain_path"],
         config["event_path"],
         config["mapping_path"],
     )

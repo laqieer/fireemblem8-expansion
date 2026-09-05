@@ -476,6 +476,13 @@ class OwnershipGraphTests(unittest.TestCase):
                         "scoped_variables": [],
                         "escaped_literals": [],
                     },
+                    "record": {
+                        "snapshot_sha256": (
+                            reporter._make_authority_state_sha256(
+                                selected_loader
+                            )
+                        ),
+                    },
                 }
                 for target in targets
             }
@@ -541,7 +548,7 @@ class OwnershipGraphTests(unittest.TestCase):
         calls = []
 
         def fake_probe(selected_loader, targets, *args, **kwargs):
-            del selected_loader, args, kwargs
+            del args, kwargs
             targets = tuple(sorted(targets))
             calls.append(targets)
             return {
@@ -558,6 +565,11 @@ class OwnershipGraphTests(unittest.TestCase):
                         "escaped_literals": [],
                     },
                     "record": {
+                        "snapshot_sha256": (
+                            reporter._make_authority_state_sha256(
+                                selected_loader
+                            )
+                        ),
                         "symbolic_recipe_names": [],
                     },
                 }

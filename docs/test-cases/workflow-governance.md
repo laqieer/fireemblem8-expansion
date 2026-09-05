@@ -1627,20 +1627,30 @@ Absolute `/dev/stdin`, dynamic, escaping, symlink, missing, and untracked
 includes reject. `build/../../work/evil.mk`, dot/repeated/encoded separator
 aliases, and intermediate symlinks cannot acquire `build/` authority;
 canonical regular build descendants are rebuilt from an empty overlay.
-Supervisor mappings and events are absent from candidate-visible paths. The
-trusted launcher opens a read-only mapping-directory descriptor and an
-append-only event descriptor before chroot; no `/proc` or `/dev/fd` alias is
-mounted. Make scratch, registered-command scratch, and build output are
-separate. Candidate `$(file ...)` attempts and a registered Python forgery
-script can create only private decoys, while truncated, wrong-count,
-wrong-hash, malformed, or unknown-match event records reject.
+Supervisor mappings, domain observations, and events are absent from
+candidate-writable paths. The final probe program is mounted read-only; the
+trusted launcher opens a read-only mapping-directory descriptor plus bounded
+domain/event FIFOs before chroot, with no `/proc` or `/dev/fd` alias mounted.
+Make scratch, registered-command scratch, and build output are separate.
+Candidate parse-time `$(file ...)`, shell, symlink, include, and eager-command
+attempts cannot replace the probe or domain results. Truncated, wrong-count,
+wrong-hash, malformed, invalid-byte, oversized, excessive-record, pending
+fanout, mapping, mapped-output, or unknown-match streams reject and terminate
+without an orphan.
 
-Generated-data ownership comes from a trusted typed probe of the exact
-candidate registry in a credential-free, networkless, read-only-tree process,
-not an import of the base registry into the trusted reporter. Its bounded JSON
-must have sorted unique schema names/dependencies, valid versions, and confined
-tracked source/inventory paths. A synthetic candidate adds a new typed table
-and path successfully; write/control forgery and malformed output reject.
+Generated-data ownership comes from a trusted per-schema typed probe of the
+exact candidate registry in a credential-free, networkless, read-only-tree
+process with only the Python runtime libraries, not host tools or
+`/usr/share`, and not an import of the base registry into the trusted
+reporter. A whole-tree supervisor read observer admits only the bound registry
+program set during list/metadata and requires exact equality among finite
+declared file/glob expansion, loader-reported sources, and every other regular
+tracked read during load; undeclared directory scans also reject. Its bounded
+strict UTF-8 JSON must have sorted unique schema
+names/dependencies, valid versions, and confined source/inventory paths. A
+synthetic candidate adds a new typed table and directory source successfully;
+omitted, extra, duplicate, dynamic, symlink, escaping, undeclared outside-set,
+write/control, and malformed-output fixtures reject.
 
 The namespace launcher uses unprivileged user/mount/network/PID namespaces
 when available. A mocked Ubuntu-24.04 control blocks that probe and admits only

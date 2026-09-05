@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import ctypes
 import hashlib
 import json
 import os
@@ -13,11 +14,12 @@ import shutil
 import stat
 import struct
 import subprocess
+import sys
 import tempfile
 import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from threading import Lock
+from threading import Event, Lock, Thread
 from typing import Any, Iterable
 
 
@@ -28,6 +30,11 @@ PYTHON = Path("/usr/bin/python3")
 CC = Path("/usr/bin/cc")
 LIBC = Path("/lib/x86_64-linux-gnu/libc.so.6")
 LOADER = Path("/lib64/ld-linux-x86-64.so.2")
+PYTHON_STDLIB = Path(
+    f"/usr/lib/python{sys.version_info.major}.{sys.version_info.minor}"
+)
+PLATFORM_LIB = Path("/usr/lib/x86_64-linux-gnu")
+LOADER_LIB = Path("/usr/lib64")
 SANDBOX_EXEC = Path("scripts/validation_ownership/sandbox_exec.py")
 INTERCEPTOR_SOURCE = Path(
     "scripts/validation_ownership/shell_interceptor.c"
@@ -45,8 +52,22 @@ MAX_DISCOVERED_DOMAINS = 512
 MAX_PROBE_SECONDS = 3600
 MAX_SANDBOX_OUTPUT_BYTES = 1024 * 1024
 MAX_MAKE_OUTPUT_BYTES = 16 * 1024 * 1024
+MAX_EVENT_BYTES = 16 * 1024 * 1024
+MAX_EVENT_RECORDS = 4096
+MAX_EVENT_ARGUMENTS = 4096
+MAX_DOMAIN_BYTES = 1024 * 1024
+MAX_DOMAIN_RECORDS = 1
+MAX_PENDING_COMMANDS = MAX_SANDBOX_RUNS
+MAX_MAPPING_COUNT = MAX_SANDBOX_RUNS
+MAX_MAPPING_BYTES = 16 * 1024 * 1024
+MAX_REGISTRY_READ_EVENTS = 16384
+MAX_REGISTRY_WATCHES = 8192
 REGISTERED_COMMAND_CACHE_LIMIT = 8192
 MAX_PARALLEL_REGISTERED_COMMANDS = 32
+IN_ACCESS = 0x00000001
+IN_OPEN = 0x00000020
+IN_Q_OVERFLOW = 0x00004000
+IN_ISDIR = 0x40000000
 TRACE_RE = re.compile(
     r"^(?P<source>.+?):[0-9]+: "
     r"(?:(?:(?:update )?target) '(?P<target>[^']+)'"
@@ -109,6 +130,13 @@ DEFINE_RE = re.compile(
 
 class MakeProbeError(RuntimeError):
     """Raised when GNU Make authority cannot be observed safely and exactly."""
+
+
+def _strict_utf8(data: bytes, label: str) -> str:
+    try:
+        return data.decode("utf-8")
+    except UnicodeDecodeError as error:
+        raise MakeProbeError(f"{label} is not valid UTF-8") from error
 
 
 _REGISTERED_COMMAND_CACHE: dict[tuple[Any, ...], bytes] = {}
@@ -247,6 +275,66 @@ def _sha256_file(path: Path) -> str:
         for chunk in iter(lambda: stream.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def _file_identities(path: Path) -> tuple[str, str]:
+    def signature(metadata: os.stat_result) -> tuple[int, ...]:
+        return (
+            metadata.st_dev,
+            metadata.st_ino,
+            metadata.st_mode,
+            metadata.st_size,
+            metadata.st_mtime_ns,
+            metadata.st_ctime_ns,
+        )
+
+    sha1 = hashlib.sha1(usedforsecurity=False)
+    sha256 = hashlib.sha256()
+    flags = (
+        os.O_RDONLY
+        | getattr(os, "O_CLOEXEC", 0)
+        | getattr(os, "O_NOFOLLOW", 0)
+    )
+    descriptor = None
+    try:
+        before = os.lstat(path)
+        descriptor = os.open(path, flags)
+        opened = os.fstat(descriptor)
+        if (
+            not stat.S_ISREG(opened.st_mode)
+            or signature(before) != signature(opened)
+        ):
+            raise MakeProbeError(
+                f"copied snapshot path {path} is not a stable regular file"
+            )
+        sha1.update(f"blob {opened.st_size}\0".encode("ascii"))
+        while True:
+            chunk = os.read(descriptor, 1024 * 1024)
+            if not chunk:
+                break
+            sha1.update(chunk)
+            sha256.update(chunk)
+        after_read = os.fstat(descriptor)
+    except OSError as error:
+        raise MakeProbeError(
+            f"cannot hash copied snapshot path {path} stably: {error}"
+        ) from error
+    finally:
+        if descriptor is not None:
+            os.close(descriptor)
+    try:
+        after_path = os.lstat(path)
+    except OSError as error:
+        raise MakeProbeError(
+            f"copied snapshot path {path} changed while hashing: {error}"
+        ) from error
+    if not (
+        signature(opened) == signature(after_read) == signature(after_path)
+    ):
+        raise MakeProbeError(
+            f"copied snapshot path {path} changed while hashing"
+        )
+    return sha1.hexdigest(), sha256.hexdigest()
 
 
 _NAMESPACE_LAUNCHER: dict[str, Any] | None = None
@@ -400,12 +488,383 @@ def _mkdir_target(root: Path, target: str, *, directory: bool = False) -> Path:
     return path
 
 
+class _EventStreamParser:
+    def __init__(self, expected_mapping_count: int):
+        self.expected_mapping_count = expected_mapping_count
+        self.buffer = bytearray()
+        self.total_bytes = 0
+        self.records: list[dict[str, Any]] = []
+
+    def feed(self, chunk: bytes) -> None:
+        self.total_bytes += len(chunk)
+        if self.total_bytes > MAX_EVENT_BYTES:
+            raise MakeProbeError("shell interceptor event stream exceeds byte bound")
+        self.buffer.extend(chunk)
+        self._parse()
+
+    def _parse(self) -> None:
+        offset = 0
+        while len(self.buffer) - offset >= 20:
+            start = offset
+            match, mapping_count, low_hash, high_hash, argc = struct.unpack_from(
+                "<IIIII",
+                self.buffer,
+                offset,
+            )
+            offset += 20
+            if argc > MAX_EVENT_ARGUMENTS:
+                raise MakeProbeError("shell interceptor emitted excessive arguments")
+            arguments = []
+            complete = True
+            for _ in range(argc):
+                if len(self.buffer) - offset < 4:
+                    complete = False
+                    break
+                size = struct.unpack_from("<I", self.buffer, offset)[0]
+                offset += 4
+                if size > MAX_EVENT_BYTES:
+                    raise MakeProbeError(
+                        "shell interceptor argument exceeds byte bound"
+                    )
+                if len(self.buffer) - offset < size:
+                    complete = False
+                    break
+                arguments.append(bytes(self.buffer[offset:offset + size]))
+                offset += size
+            if not complete:
+                offset = start
+                break
+            if len(self.records) >= MAX_EVENT_RECORDS:
+                raise MakeProbeError(
+                    "shell interceptor event stream exceeds record bound"
+                )
+            if mapping_count != self.expected_mapping_count:
+                raise MakeProbeError(
+                    "shell interceptor mapping count differs from supervisor state"
+                )
+            if match not in {0, 0xFFFFFFFF}:
+                raise MakeProbeError(
+                    "shell interceptor emitted an invalid match identity"
+                )
+            event = {
+                "arguments": [
+                    _strict_utf8(argument, "shell interceptor argument")
+                    for argument in arguments
+                ],
+                "command_hash": f"{low_hash | (high_hash << 32):016x}",
+                "match": -1 if match == 0xFFFFFFFF else match,
+                "mapping_count": mapping_count,
+            }
+            command = _event_command(event)
+            if command is None or event["command_hash"] != _command_hash(command):
+                raise MakeProbeError(
+                    "shell interceptor event command identity is invalid"
+                )
+            self.records.append(event)
+        if offset:
+            del self.buffer[:offset]
+
+    def finish(self) -> None:
+        self._parse()
+        if self.buffer:
+            raise MakeProbeError("shell interceptor emitted a truncated event")
+
+
+class _DomainStreamParser:
+    def __init__(self, names: list[str]):
+        self.names = names
+        self.buffer = bytearray()
+        self.total_bytes = 0
+        self.records: list[dict[str, str]] = []
+
+    def feed(self, chunk: bytes) -> None:
+        self.total_bytes += len(chunk)
+        if self.total_bytes > MAX_DOMAIN_BYTES:
+            raise MakeProbeError("GNU Make domain stream exceeds byte bound")
+        self.buffer.extend(chunk)
+        self._parse()
+
+    def _parse(self) -> None:
+        offset = 0
+        while len(self.buffer) - offset >= 4:
+            start = offset
+            count = struct.unpack_from("<I", self.buffer, offset)[0]
+            offset += 4
+            if count != len(self.names):
+                raise MakeProbeError(
+                    "GNU Make domain count differs from supervisor state"
+                )
+            values = []
+            complete = True
+            for _ in range(count):
+                if len(self.buffer) - offset < 4:
+                    complete = False
+                    break
+                size = struct.unpack_from("<I", self.buffer, offset)[0]
+                offset += 4
+                if size > MAX_DOMAIN_BYTES:
+                    raise MakeProbeError("GNU Make domain value exceeds byte bound")
+                if len(self.buffer) - offset < size:
+                    complete = False
+                    break
+                values.append(bytes(self.buffer[offset:offset + size]))
+                offset += size
+            if not complete:
+                offset = start
+                break
+            if len(self.records) >= MAX_DOMAIN_RECORDS:
+                raise MakeProbeError("GNU Make domain stream exceeds record bound")
+            self.records.append(
+                {
+                    name: _strict_utf8(value, f"GNU Make domain {name!r}")
+                    for name, value in zip(self.names, values)
+                }
+            )
+        if offset:
+            del self.buffer[:offset]
+
+    def finish(self, *, require_record: bool = True) -> None:
+        self._parse()
+        if self.buffer:
+            raise MakeProbeError("GNU Make emitted a truncated domain record")
+        if require_record and len(self.records) != 1:
+            raise MakeProbeError(
+                "GNU Make domain observer did not emit exactly one record"
+            )
+
+
+class _ReadObserver:
+    def __init__(
+        self,
+        root: Path,
+        watch_roots: Iterable[Path] | None = None,
+    ):
+        self.root = root.resolve(strict=True)
+        self.paths: set[str] = set()
+        self.directories: set[str] = set()
+        self.event_count = 0
+        self.error: MakeProbeError | None = None
+        self.stop_event = Event()
+        self.watches: dict[int, Path] = {}
+        libc = ctypes.CDLL(None, use_errno=True)
+        descriptor = libc.inotify_init1(
+            os.O_NONBLOCK | getattr(os, "O_CLOEXEC", 0)
+        )
+        if descriptor < 0:
+            error = ctypes.get_errno()
+            raise MakeProbeError(
+                f"cannot create generated-data read observer: {os.strerror(error)}"
+            )
+        self.descriptor = descriptor
+        selected_roots = (
+            [self.root]
+            if watch_roots is None
+            else sorted(
+                {
+                    path.resolve(strict=True)
+                    for path in watch_roots
+                }
+            )
+        )
+        directories = []
+        for selected in selected_roots:
+            if selected != self.root and self.root not in selected.parents:
+                os.close(self.descriptor)
+                raise MakeProbeError(
+                    "generated-data read observer root escapes the repository"
+                )
+            if selected.is_symlink() or not selected.is_dir():
+                os.close(self.descriptor)
+                raise MakeProbeError(
+                    "generated-data read observer root is not a regular directory"
+                )
+            directories.append(selected)
+            directories.extend(
+                path
+                for path in sorted(selected.rglob("*"))
+                if path.is_dir() and not path.is_symlink()
+            )
+        directories = sorted(set(directories))
+        if len(directories) > MAX_REGISTRY_WATCHES:
+            os.close(self.descriptor)
+            raise MakeProbeError(
+                "generated-data read observer exceeds watch bound"
+            )
+        for directory in directories:
+            watch = libc.inotify_add_watch(
+                self.descriptor,
+                os.fsencode(directory),
+                IN_ACCESS | IN_OPEN,
+            )
+            if watch < 0:
+                error = ctypes.get_errno()
+                os.close(self.descriptor)
+                raise MakeProbeError(
+                    "cannot watch generated-data source reads: "
+                    + os.strerror(error)
+                )
+            self.watches[watch] = directory
+        self.thread = Thread(target=self._run, daemon=True)
+
+    def __enter__(self) -> "_ReadObserver":
+        self.thread.start()
+        return self
+
+    def _run(self) -> None:
+        try:
+            while not self.stop_event.wait(0.01):
+                self._drain()
+            self._drain()
+        except MakeProbeError as error:
+            self.error = error
+        except OSError as error:
+            self.error = MakeProbeError(
+                f"generated-data read observer failed: {error}"
+            )
+
+    def _drain(self) -> None:
+        while True:
+            try:
+                data = os.read(self.descriptor, 64 * 1024)
+            except BlockingIOError:
+                return
+            if not data:
+                return
+            offset = 0
+            while offset < len(data):
+                if len(data) - offset < 16:
+                    raise MakeProbeError(
+                        "generated-data read observer emitted a truncated event"
+                    )
+                watch, mask, _, length = struct.unpack_from(
+                    "iIII",
+                    data,
+                    offset,
+                )
+                offset += 16
+                if len(data) - offset < length:
+                    raise MakeProbeError(
+                        "generated-data read observer emitted a truncated name"
+                    )
+                raw_name = data[offset:offset + length].split(b"\0", 1)[0]
+                offset += length
+                if mask & IN_Q_OVERFLOW:
+                    raise MakeProbeError(
+                        "generated-data read observer queue overflowed"
+                    )
+                self.event_count += 1
+                if self.event_count > MAX_REGISTRY_READ_EVENTS:
+                    raise MakeProbeError(
+                        "generated-data read observer exceeds event bound"
+                    )
+                directory = self.watches.get(watch)
+                if directory is None:
+                    raise MakeProbeError(
+                        "generated-data read observer used an unknown watch"
+                    )
+                try:
+                    name = raw_name.decode("utf-8")
+                    opened = directory if not name else directory / name
+                    relative = opened.relative_to(self.root)
+                except (UnicodeDecodeError, ValueError) as error:
+                    raise MakeProbeError(
+                        "generated-data read observer path is invalid"
+                    ) from error
+                relative_path = relative.as_posix()
+                if mask & IN_ISDIR and mask & (IN_ACCESS | IN_OPEN):
+                    self.directories.add(relative_path)
+                elif raw_name and mask & IN_ACCESS:
+                    self.paths.add(relative_path)
+
+    def __exit__(self, exc_type, exc, traceback) -> None:
+        self.stop_event.set()
+        self.thread.join(timeout=2)
+        if self.thread.is_alive():
+            os.close(self.descriptor)
+            self.thread.join(timeout=2)
+            if self.thread.is_alive():
+                raise MakeProbeError("generated-data read observer did not stop")
+        else:
+            os.close(self.descriptor)
+        if self.error is not None and exc is None:
+            raise self.error
+
+
+def _registry_program_path(path: str) -> bool:
+    return (
+        path in {
+            GENERATED_REGISTRY_PROBE.as_posix(),
+            SANDBOX_EXEC.as_posix(),
+            "scripts/__init__.py",
+            "scripts/assets/__init__.py",
+            "scripts/assets/tmx.py",
+        }
+        or (
+            path.startswith("scripts/generated_data/")
+            and path.endswith(".py")
+        )
+    )
+
+
+def _registry_observed_programs(
+    tree: Path,
+    observed: set[str],
+    *,
+    label: str,
+) -> set[str]:
+    unexpected = sorted(
+        path for path in observed if not _registry_program_path(path)
+    )
+    if unexpected:
+        raise MakeProbeError(
+            f"{label} read undeclared candidate paths: {unexpected}"
+        )
+    for path in observed:
+        candidate = tree / path
+        metadata = os.lstat(candidate)
+        if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISREG(metadata.st_mode):
+            raise MakeProbeError(
+                f"{label} program path {path!r} is not a regular file"
+            )
+    return set(observed)
+
+
+def _registry_program_directory(path: str) -> bool:
+    return (
+        path in {
+            ".",
+            "scripts",
+            "scripts/assets",
+            "scripts/generated_data",
+            "scripts/validation_ownership",
+        }
+        or path.startswith("scripts/generated_data/")
+    )
+
+
+def _registry_observed_program_directories(
+    observed: set[str],
+    *,
+    label: str,
+) -> set[str]:
+    unexpected = sorted(
+        path for path in observed if not _registry_program_directory(path)
+    )
+    if unexpected:
+        raise MakeProbeError(
+            f"{label} opened undeclared candidate directories: {unexpected}"
+        )
+    return set(observed)
+
+
 def _sandbox_run(
     root: Path,
     work: Path,
     *,
     argv: list[str],
     config_name: str | None = None,
+    domain_names: list[str] | None = None,
+    domain_path: Path | None = None,
     event_path: Path | None = None,
     environment: dict[str, str],
     mapping_path: Path | None = None,
@@ -413,7 +872,7 @@ def _sandbox_run(
     writable: list[tuple[Path, str]] | None = None,
     timeout: int = 120,
     max_output_bytes: int | None = None,
-) -> subprocess.CompletedProcess[str]:
+) -> subprocess.CompletedProcess[bytes]:
     writable_mounts = (
         [(work, "/work")]
         + ([] if writable is None else writable)
@@ -422,7 +881,7 @@ def _sandbox_run(
         source.resolve(strict=True)
         for source, _ in [*read_only, *writable_mounts]
     ]
-    for control_path in (event_path, mapping_path):
+    for control_path in (domain_path, event_path, mapping_path):
         if control_path is None:
             continue
         control = control_path.resolve(strict=True)
@@ -438,6 +897,11 @@ def _sandbox_run(
     config = {
         "argv": argv,
         "cwd": "/repo",
+        "domain_path": (
+            None
+            if domain_path is None
+            else str(domain_path.resolve(strict=True))
+        ),
         "environment": environment,
         "event_path": (
             None
@@ -476,23 +940,91 @@ def _sandbox_run(
         str((read_only[0][0] / SANDBOX_EXEC).resolve(strict=True)),
         str(config_path),
     ]
-    return _run_bounded_process(
-        command,
-        timeout=timeout,
-        max_output_bytes=(
-            MAX_SANDBOX_OUTPUT_BYTES
-            if max_output_bytes is None
-            else max_output_bytes
-        ),
-        env={
-            "HOME": "/nonexistent",
-            "LANG": "C",
-            "LC_ALL": "C",
-            "PATH": "/usr/bin:/bin",
-            "PYTHONDONTWRITEBYTECODE": "1",
-            "TZ": "UTC",
-        },
-    )
+    channels = {}
+    dummy_writers = []
+    opened_streams = []
+    try:
+        for name, path, parser in (
+            (
+                "domains",
+                domain_path,
+                _DomainStreamParser([] if domain_names is None else domain_names),
+            ),
+            (
+                "events",
+                event_path,
+                _EventStreamParser(int(environment.get("VO_COMMAND_COUNT", "0"))),
+            ),
+        ):
+            if path is None:
+                continue
+            metadata = os.lstat(path)
+            if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISFIFO(metadata.st_mode):
+                raise MakeProbeError(
+                    f"sandbox {name} control must be a supervisor FIFO"
+                )
+            reader_fd = os.open(
+                path,
+                os.O_RDONLY
+                | os.O_NONBLOCK
+                | getattr(os, "O_CLOEXEC", 0)
+                | getattr(os, "O_NOFOLLOW", 0),
+            )
+            dummy_fd = os.open(
+                path,
+                os.O_WRONLY
+                | os.O_NONBLOCK
+                | getattr(os, "O_CLOEXEC", 0)
+                | getattr(os, "O_NOFOLLOW", 0),
+            )
+            stream = os.fdopen(reader_fd, "rb", buffering=0)
+            channels[name] = (stream, parser)
+            opened_streams.append(stream)
+            dummy_writers.append(dummy_fd)
+        completed = _run_bounded_process(
+            command,
+            timeout=timeout,
+            max_output_bytes=(
+                MAX_SANDBOX_OUTPUT_BYTES
+                if max_output_bytes is None
+                else max_output_bytes
+            ),
+            channels=channels,
+            dummy_writers=dummy_writers,
+            env={
+                "HOME": "/nonexistent",
+                "LANG": "C",
+                "LC_ALL": "C",
+                "PATH": "/usr/bin:/bin",
+                "PYTHONDONTWRITEBYTECODE": "1",
+                "TZ": "UTC",
+            },
+        )
+        completed.events = (
+            channels["events"][1].records
+            if "events" in channels
+            else []
+        )
+        completed.domain_values = (
+            channels["domains"][1].records[0]
+            if (
+                "domains" in channels
+                and channels["domains"][1].records
+            )
+            else {}
+        )
+        return completed
+    finally:
+        for descriptor in dummy_writers:
+            try:
+                os.close(descriptor)
+            except OSError:
+                pass
+        for stream in opened_streams:
+            try:
+                stream.close()
+            except OSError:
+                pass
 
 
 def _terminate_process_group(process: subprocess.Popen[bytes]) -> None:
@@ -526,8 +1058,12 @@ def _run_bounded_process(
     *,
     timeout: int,
     max_output_bytes: int,
+    channels: dict[str, tuple[Any, Any]] | None = None,
+    dummy_writers: list[int] | None = None,
     env: dict[str, str],
-) -> subprocess.CompletedProcess[str]:
+) -> subprocess.CompletedProcess[bytes]:
+    channels = {} if channels is None else channels
+    dummy_writers = [] if dummy_writers is None else dummy_writers
     process = subprocess.Popen(
         command,
         stdout=subprocess.PIPE,
@@ -543,11 +1079,18 @@ def _run_bounded_process(
         process.stderr: bytearray(),
     }
     selector = selectors.DefaultSelector()
-    for stream in streams:
-        os.set_blocking(stream.fileno(), False)
-        selector.register(stream, selectors.EVENT_READ)
     deadline = time.monotonic() + timeout
+    closed_dummy_writers = False
     try:
+        for stream in streams:
+            os.set_blocking(stream.fileno(), False)
+            selector.register(stream, selectors.EVENT_READ, ("output", stream))
+        for name, (stream, parser) in channels.items():
+            selector.register(
+                stream,
+                selectors.EVENT_READ,
+                ("channel", name, parser),
+            )
         while selector.get_map():
             remaining = deadline - time.monotonic()
             if remaining <= 0:
@@ -564,24 +1107,29 @@ def _run_bounded_process(
                 if not chunk:
                     selector.unregister(stream)
                     continue
-                total = sum(len(buffer) for buffer in streams.values())
-                if total + len(chunk) > max_output_bytes:
-                    raise MakeProbeError(
-                        "sandbox command output exceeds "
-                        f"{max_output_bytes}-byte bound"
-                    )
-                streams[stream].extend(chunk)
-        remaining = deadline - time.monotonic()
+                if key.data[0] == "output":
+                    total = sum(len(buffer) for buffer in streams.values())
+                    if total + len(chunk) > max_output_bytes:
+                        raise MakeProbeError(
+                            "sandbox command output exceeds "
+                            f"{max_output_bytes}-byte bound"
+                        )
+                    streams[stream].extend(chunk)
+                else:
+                    key.data[2].feed(chunk)
+            if process.poll() is not None and not closed_dummy_writers:
+                for descriptor in dummy_writers:
+                    os.close(descriptor)
+                dummy_writers.clear()
+                closed_dummy_writers = True
         if process.poll() is None:
-            if remaining <= 0:
-                raise subprocess.TimeoutExpired(
-                    command,
-                    timeout,
-                    output=bytes(streams[process.stdout]),
-                    stderr=bytes(streams[process.stderr]),
-                )
-            process.wait(timeout=remaining)
-    except (MakeProbeError, subprocess.TimeoutExpired):
+            process.wait(timeout=max(0, deadline - time.monotonic()))
+        for _, parser in channels.values():
+            if isinstance(parser, _DomainStreamParser):
+                parser.finish(require_record=process.returncode == 0)
+            else:
+                parser.finish()
+    except BaseException:
         _terminate_process_group(process)
         raise
     finally:
@@ -591,8 +1139,8 @@ def _run_bounded_process(
     return subprocess.CompletedProcess(
         args=command,
         returncode=process.returncode,
-        stdout=bytes(streams[process.stdout]).decode("utf-8", errors="replace"),
-        stderr=bytes(streams[process.stderr]).decode("utf-8", errors="replace"),
+        stdout=bytes(streams[process.stdout]),
+        stderr=bytes(streams[process.stderr]),
     )
 
 
@@ -654,8 +1202,65 @@ def _copy_tree(loader: Any, destination: Path) -> None:
             continue
         target = destination / path
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_bytes(loader.read_blob(path, "Make probe input"))
-        target.chmod(0o755 if entry.mode == "100755" else 0o644)
+        snapshot_blob = getattr(loader, "snapshot_blob", None)
+        if callable(snapshot_blob):
+            content, mode = snapshot_blob(path, "Make probe input")
+        else:
+            content = loader.read_blob(path, "Make probe input")
+            mode = entry.mode
+        target.write_bytes(content)
+        target.chmod(0o755 if mode == "100755" else 0o644)
+
+
+def _snapshot_tree_state(
+    root: Path,
+    entries: dict[str, Any],
+    revision: str | None,
+    source_root: Path,
+) -> str:
+    digest = hashlib.sha256(b"validation-ownership-make-snapshot-v1\0")
+    for relative, entry in sorted(entries.items()):
+        path = root / relative
+        if entry.mode == "160000" and entry.object_type == "commit":
+            metadata = os.lstat(path)
+            if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISDIR(metadata.st_mode):
+                raise MakeProbeError(
+                    f"copied Make snapshot gitlink {relative!r} is invalid"
+                )
+            _verify_copied_gitlink(
+                source_root,
+                relative,
+                entry.object_id,
+                path,
+            )
+            values = (relative, "160000", f"gitlink:{entry.object_id}")
+        elif entry.object_type == "blob" and entry.mode in {"100644", "100755"}:
+            metadata = os.lstat(path)
+            if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISREG(metadata.st_mode):
+                raise MakeProbeError(
+                    f"copied Make snapshot path {relative!r} is not regular"
+                )
+            mode = "100755" if metadata.st_mode & 0o111 else "100644"
+            git_identity, content_identity = _file_identities(path)
+            if revision is not None and (
+                git_identity != entry.object_id or mode != entry.mode
+            ):
+                raise MakeProbeError(
+                    f"copied Make snapshot path {relative!r} "
+                    "differs from the selected revision"
+                )
+            values = (
+                relative,
+                mode,
+                content_identity,
+            )
+        else:
+            continue
+        for value in values:
+            encoded = value.encode("utf-8")
+            digest.update(len(encoded).to_bytes(8, "little"))
+            digest.update(encoded)
+    return digest.hexdigest()
 
 
 def _copy_gitlink(
@@ -734,6 +1339,86 @@ def _copy_gitlink(
         target.chmod(0o755 if mode == "100755" else 0o644)
 
 
+def _verify_copied_gitlink(
+    repository: Path,
+    gitlink_path: str,
+    commit: str,
+    destination: Path,
+) -> None:
+    environment = {
+        "HOME": "/nonexistent",
+        "LANG": "C",
+        "LC_ALL": "C",
+        "PATH": "/usr/bin:/bin",
+        "TZ": "UTC",
+    }
+    common = subprocess.run(
+        [
+            "/usr/bin/git",
+            "--no-replace-objects",
+            "-C",
+            str(repository),
+            "rev-parse",
+            "--path-format=absolute",
+            "--git-common-dir",
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+        env=environment,
+    ).stdout.strip()
+    git_dir = Path(common) / "modules" / gitlink_path
+    listing = subprocess.run(
+        [
+            "/usr/bin/git",
+            "--no-replace-objects",
+            f"--git-dir={git_dir}",
+            "ls-tree",
+            "-rz",
+            "--full-tree",
+            "-r",
+            commit,
+        ],
+        check=False,
+        capture_output=True,
+        env=environment,
+    )
+    if listing.returncode != 0:
+        raise MakeProbeError(
+            f"cannot verify exact gitlink {repository.name}@{commit}"
+        )
+    expected = {}
+    for record in listing.stdout.split(b"\0"):
+        if not record:
+            continue
+        header, raw_path = record.split(b"\t", 1)
+        mode, object_type, object_id = header.decode("ascii").split()
+        if object_type == "blob" and mode in {"100644", "100755"}:
+            expected[raw_path.decode("utf-8")] = (mode, object_id)
+    actual = {}
+    for path in sorted(destination.rglob("*")):
+        relative = path.relative_to(destination).as_posix()
+        metadata = os.lstat(path)
+        if stat.S_ISLNK(metadata.st_mode):
+            raise MakeProbeError(
+                f"copied Make snapshot gitlink path {relative!r} is a symlink"
+            )
+        if stat.S_ISDIR(metadata.st_mode):
+            continue
+        if not stat.S_ISREG(metadata.st_mode):
+            raise MakeProbeError(
+                f"copied Make snapshot gitlink path {relative!r} is not regular"
+            )
+        mode = "100755" if metadata.st_mode & 0o111 else "100644"
+        git_identity, _ = _file_identities(path)
+        actual[relative] = (mode, git_identity)
+    if actual != expected:
+        raise MakeProbeError(
+            f"copied Make snapshot gitlink {gitlink_path!r} differs "
+            "from the selected commit"
+        )
+
+
 def _read_events(
     path: Path,
     *,
@@ -741,62 +1426,15 @@ def _read_events(
 ) -> list[dict[str, Any]]:
     if not path.exists():
         return []
-    data = memoryview(path.read_bytes())
-    offset = 0
-    result = []
-
-    def take_u32() -> int:
-        nonlocal offset
-        if offset + 4 > len(data):
-            raise MakeProbeError("shell interceptor emitted a truncated event")
-        value = struct.unpack_from("<I", data, offset)[0]
-        offset += 4
-        return value
-
-    while offset < len(data):
-        match = take_u32()
-        mapping_count = take_u32()
-        command_hash = take_u32() | (take_u32() << 32)
-        argc = take_u32()
-        if argc > 4096:
-            raise MakeProbeError("shell interceptor emitted excessive arguments")
-        arguments = []
-        argument_bytes = 0
-        for _ in range(argc):
-            size = take_u32()
-            argument_bytes += size
-            if argument_bytes > 1024 * 1024:
-                raise MakeProbeError(
-                    "shell interceptor event exceeds byte bound"
-                )
-            if offset + size > len(data):
-                raise MakeProbeError(
-                    "shell interceptor emitted a truncated argument"
-                )
-            arguments.append(bytes(data[offset:offset + size]).decode("utf-8"))
-            offset += size
-        result.append(
-            {
-                "arguments": arguments,
-                "command_hash": f"{command_hash:016x}",
-                "match": -1 if match == 0xFFFFFFFF else match,
-                "mapping_count": mapping_count,
-            }
-        )
-        if mapping_count != expected_mapping_count:
-            raise MakeProbeError(
-                "shell interceptor mapping count differs from supervisor state"
-            )
-        if match not in {0, 0xFFFFFFFF}:
-            raise MakeProbeError(
-                "shell interceptor emitted an invalid match identity"
-            )
-        command = _event_command(result[-1])
-        if command is None or result[-1]["command_hash"] != _command_hash(command):
-            raise MakeProbeError(
-                "shell interceptor event command identity is invalid"
-            )
-    return result
+    parser = _EventStreamParser(expected_mapping_count)
+    with path.open("rb") as stream:
+        while True:
+            chunk = stream.read(64 * 1024)
+            if not chunk:
+                break
+            parser.feed(chunk)
+    parser.finish()
+    return parser.records
 
 
 def _event_command(event: dict[str, Any]) -> str | None:
@@ -856,20 +1494,29 @@ def _write_mapping(
     *,
     materialized_names: set[str] | None = None,
 ) -> set[str]:
+    if len(mappings) > MAX_MAPPING_COUNT:
+        raise MakeProbeError("Make command mapping exceeds count bound")
     payloads: list[tuple[str, bytes, bytes]] = []
     seen = set()
+    total_bytes = 0
     for mapping in mappings:
         name = _command_hash(mapping["command"])
         if name in seen:
             raise MakeProbeError("Make command mapping hash collision")
         seen.add(name)
-        payloads.append(
-            (
-                name,
-                mapping["command"].encode("utf-8"),
-                mapping["output"],
+        command_bytes = mapping["command"].encode("utf-8")
+        output_bytes = mapping["output"]
+        if (
+            len(command_bytes) > MAX_SANDBOX_OUTPUT_BYTES
+            or len(output_bytes) > MAX_SANDBOX_OUTPUT_BYTES
+        ):
+            raise MakeProbeError(
+                "Make command mapping entry exceeds individual byte bound"
             )
-        )
+        total_bytes += len(command_bytes) + len(output_bytes)
+        if total_bytes > MAX_MAPPING_BYTES:
+            raise MakeProbeError("Make command mapping exceeds byte bound")
+        payloads.append((name, command_bytes, output_bytes))
     if materialized_names is None:
         materialized_names = set()
         if directory.exists():
@@ -1342,6 +1989,7 @@ def _prepare_make_root(
         "dev",
         "lib/x86_64-linux-gnu",
         "lib64",
+        "probe",
         "repo",
         "usr/bin",
         "work",
@@ -1351,6 +1999,7 @@ def _prepare_make_root(
     shutil.copy2(interceptor, root / "bin/bash")
     shutil.copy2(interceptor, root / "bin/vo-make")
     shutil.copy2(interceptor, root / "bin/vo-shell")
+    shutil.copy2(interceptor, root / "usr/bin/vo-domain-observer")
     for name in (
         "arm-none-eabi-as",
         "arm-none-eabi-gcc",
@@ -1378,8 +2027,21 @@ def _prepare_make_root(
 def _prepare_command_root(base: Path) -> Path:
     root = base / "command-root"
     with _COMMAND_ROOT_LOCK:
-        for directory in ("dev", "repo", "usr", "work"):
+        for directory in (
+            "dev",
+            "probe",
+            "repo",
+            "usr/bin",
+            PYTHON_STDLIB.as_posix().lstrip("/"),
+            PLATFORM_LIB.as_posix().lstrip("/"),
+            LOADER_LIB.as_posix().lstrip("/"),
+            "work",
+        ):
             (root / directory).mkdir(parents=True, exist_ok=True)
+        for file_path in ("dev/null", "usr/bin/python3"):
+            path = root / file_path
+            if not path.exists():
+                path.touch()
         for name, target in (
             ("bin", "usr/bin"),
             ("lib", "usr/lib"),
@@ -1413,16 +2075,8 @@ def probe_generated_registry(
         _copy_tree(loader, tree)
         (tree / "build").mkdir()
         root = _prepare_command_root(base)
-        completed = _sandbox_run(
-            root,
-            work,
-            argv=[
-                "/usr/bin/python3",
-                "-I",
-                "-B",
-                f"/repo/{GENERATED_REGISTRY_PROBE.as_posix()}",
-            ],
-            environment={
+        common = {
+            "environment": {
                 "HOME": "/nonexistent",
                 "LANG": "C",
                 "LC_ALL": "C",
@@ -1430,25 +2084,335 @@ def probe_generated_registry(
                 "SOURCE_DATE_EPOCH": "0",
                 "TZ": "UTC",
             },
-            read_only=[
+            "read_only": [
                 (tree, "/repo"),
-                (Path("/usr"), "/usr"),
+                (PYTHON.resolve(strict=True), "/usr/bin/python3"),
+                (PYTHON_STDLIB.resolve(strict=True), PYTHON_STDLIB.as_posix()),
+                (PLATFORM_LIB.resolve(strict=True), PLATFORM_LIB.as_posix()),
+                (LOADER_LIB.resolve(strict=True), LOADER_LIB.as_posix()),
             ],
-            writable=[(Path("/dev/null"), "/dev/null")],
-            timeout=60,
+            "writable": [(Path("/dev/null"), "/dev/null")],
+            "timeout": 60,
+        }
+
+        def execute(
+            arguments: list[str],
+            name: str,
+        ) -> tuple[
+            subprocess.CompletedProcess[bytes],
+            set[str],
+            set[str],
+        ]:
+            with _ReadObserver(tree) as observer:
+                completed = _sandbox_run(
+                    root,
+                    work,
+                    argv=[
+                        "/usr/bin/python3",
+                        "-I",
+                        "-B",
+                        f"/repo/{GENERATED_REGISTRY_PROBE.as_posix()}",
+                        *arguments,
+                    ],
+                    config_name=name,
+                    **common,
+                )
+            if completed.returncode != 0:
+                raise MakeProbeError(
+                    "candidate generated-data registry probe failed: "
+                    + _normalize(
+                        _strict_utf8(
+                            completed.stderr,
+                            "candidate generated-data registry stderr",
+                        )
+                    )
+                )
+            return completed, observer.paths, observer.directories
+
+        (
+            names_completed,
+            names_observed,
+            names_directories,
+        ) = execute(["list"], "registry-list")
+        program_paths = _registry_observed_programs(
+            tree,
+            names_observed,
+            label="candidate generated-data registry list",
         )
-        if completed.returncode != 0:
-            raise MakeProbeError(
-                "candidate generated-data registry probe failed: "
-                + _normalize(completed.stderr)
+        program_directories = _registry_observed_program_directories(
+            names_directories,
+            label="candidate generated-data registry list",
+        )
+        names_output = names_completed.stdout
+        try:
+            names = json.loads(
+                _strict_utf8(
+                    names_output,
+                    "candidate generated-data registry list",
+                )
             )
-        output = completed.stdout.encode("utf-8")
+        except json.JSONDecodeError as error:
+            raise MakeProbeError(
+                "candidate generated-data registry list is invalid JSON"
+            ) from error
+        if (
+            not isinstance(names, list)
+            or not names
+            or names != sorted(set(names))
+            or not all(isinstance(name, str) and name for name in names)
+        ):
+            raise MakeProbeError(
+                "candidate generated-data registry list is invalid"
+            )
+
+        records = []
+        for index, name in enumerate(names):
+            (
+                record_completed,
+                record_observed,
+                record_directories,
+            ) = execute(
+                ["metadata", name],
+                f"registry-metadata-{index}",
+            )
+            program_paths.update(
+                _registry_observed_programs(
+                    tree,
+                    record_observed,
+                    label=(
+                        "candidate generated-data registry metadata "
+                        f"{name!r}"
+                    ),
+                )
+            )
+            program_directories.update(
+                _registry_observed_program_directories(
+                    record_directories,
+                    label=(
+                        "candidate generated-data registry metadata "
+                        f"{name!r}"
+                    ),
+                )
+            )
+            record_output = record_completed.stdout
+            try:
+                record = json.loads(
+                    _strict_utf8(
+                        record_output,
+                        f"candidate generated-data registry record {name!r}",
+                    )
+                )
+            except json.JSONDecodeError as error:
+                raise MakeProbeError(
+                    f"candidate generated-data registry record {name!r} "
+                    "is invalid JSON"
+                ) from error
+            if not isinstance(record, dict) or record.get("name") != name:
+                raise MakeProbeError(
+                    f"candidate generated-data registry record {name!r} "
+                    "has invalid identity"
+                )
+            authorized = _registry_authorized_sources(tree, record)
+            (
+                load_completed,
+                load_observed,
+                load_directories,
+            ) = execute(
+                ["load", name],
+                f"registry-load-{index}",
+            )
+            observed_programs = {
+                path
+                for path in load_observed
+                if _registry_program_path(path)
+            }
+            unknown_programs = observed_programs - program_paths
+            if unknown_programs:
+                raise MakeProbeError(
+                    f"candidate generated-data registry record {name!r} "
+                    "loaded undeclared program paths: "
+                    f"{sorted(unknown_programs)}"
+                )
+            source_directories = set()
+            source = record["default_source"]
+            if source is not None and (tree / source).is_dir():
+                source_directories.add(source)
+            unknown_directories = (
+                load_directories
+                - program_directories
+                - source_directories
+            )
+            if unknown_directories:
+                raise MakeProbeError(
+                    f"candidate generated-data registry record {name!r} "
+                    "opened undeclared candidate directories: "
+                    f"{sorted(unknown_directories)}"
+                )
+            reported_output = load_completed.stdout
+            try:
+                reported = json.loads(
+                    _strict_utf8(
+                        reported_output,
+                        f"candidate generated-data source report {name!r}",
+                    )
+                )
+            except json.JSONDecodeError as error:
+                raise MakeProbeError(
+                    f"candidate generated-data source report {name!r} "
+                    "is invalid JSON"
+                ) from error
+            if (
+                not isinstance(reported, list)
+                or reported != sorted(reported)
+                or len(reported) != len(set(reported))
+                or not all(isinstance(path, str) and path for path in reported)
+            ):
+                raise MakeProbeError(
+                    f"candidate generated-data registry record {name!r} "
+                    "reports invalid sources"
+                )
+            observed = _registry_observed_sources(
+                record,
+                authorized,
+                load_observed - observed_programs,
+            )
+            if set(reported) != authorized or observed != authorized:
+                raise MakeProbeError(
+                    f"candidate generated-data registry record {name!r} "
+                    "source authority differs "
+                    f"(authorized={sorted(authorized)}, "
+                    f"reported={reported}, observed={sorted(observed)})"
+                )
+            record["resolved_sources"] = sorted(authorized)
+            records.append(record)
+        output = json.dumps(
+            records,
+            ensure_ascii=True,
+            separators=(",", ":"),
+            sort_keys=True,
+        ).encode("ascii") + b"\n"
         return output, {
             "launcher": tools["namespace_launcher"],
+            "observed_program_directories": sorted(program_directories),
+            "observed_programs": [
+                {
+                    "mode": (
+                        "100755"
+                        if os.lstat(tree / path).st_mode & 0o111
+                        else "100644"
+                    ),
+                    "path": path,
+                    "sha256": _sha256_file(tree / path),
+                }
+                for path in sorted(program_paths)
+            ],
             "probe_path": GENERATED_REGISTRY_PROBE.as_posix(),
             "python": str(PYTHON),
             "python_version": _tool_version(PYTHON),
         }
+
+
+def _registry_relative_path(value: Any, label: str) -> str:
+    if not isinstance(value, str) or not value:
+        raise MakeProbeError(f"{label} is invalid")
+    path = Path(value)
+    if path.is_absolute() or path.as_posix() != value or ".." in path.parts:
+        raise MakeProbeError(f"{label} must be a canonical relative path")
+    return value
+
+
+def _registry_authorized_sources(
+    tree: Path,
+    record: dict[str, Any],
+) -> set[str]:
+    name = record.get("name", "<unknown>")
+    source = record.get("default_source")
+    pattern = record.get("default_source_pattern")
+    additional = record.get("default_additional_sources")
+    if (
+        not isinstance(additional, list)
+        or additional != sorted(set(additional))
+    ):
+        raise MakeProbeError(
+            f"generated-data registry {name!r} additional sources are invalid"
+        )
+    authorized = {
+        _registry_relative_path(
+            path,
+            f"generated-data registry {name!r} additional source",
+        )
+        for path in additional
+    }
+    if source is None:
+        if pattern is not None or authorized:
+            raise MakeProbeError(
+                f"generated-data registry {name!r} has sources without a default"
+            )
+    else:
+        source = _registry_relative_path(
+            source,
+            f"generated-data registry {name!r} default source",
+        )
+        source_path = tree / source
+        if source_path.is_symlink():
+            raise MakeProbeError(
+                f"generated-data registry {name!r} default source is a symlink"
+            )
+        if source_path.is_file():
+            if pattern is not None:
+                raise MakeProbeError(
+                    f"generated-data registry {name!r} file source has a pattern"
+                )
+            authorized.add(source)
+        elif source_path.is_dir():
+            if (
+                not isinstance(pattern, str)
+                or not pattern
+                or "/" in pattern
+                or "\\" in pattern
+                or "**" in pattern
+                or re.fullmatch(r"[A-Za-z0-9_.?*\-\[\]]+", pattern) is None
+                or not any(character in pattern for character in "*?[")
+            ):
+                raise MakeProbeError(
+                    f"generated-data registry {name!r} directory pattern is invalid"
+                )
+            matches = []
+            for path in sorted(source_path.glob(pattern)):
+                if path.is_symlink() or not path.is_file():
+                    raise MakeProbeError(
+                        f"generated-data registry {name!r} pattern matched "
+                        "a non-regular source"
+                    )
+                matches.append(path.relative_to(tree).as_posix())
+            if not matches:
+                raise MakeProbeError(
+                    f"generated-data registry {name!r} pattern has no sources"
+                )
+            authorized.update(matches)
+        else:
+            raise MakeProbeError(
+                f"generated-data registry {name!r} default source is stale"
+            )
+    for path in authorized:
+        target = tree / path
+        if target.is_symlink() or not target.is_file():
+            raise MakeProbeError(
+                f"generated-data registry {name!r} source {path!r} "
+                "is not a regular file"
+            )
+    return authorized
+
+
+def _registry_observed_sources(
+    record: dict[str, Any],
+    authorized: set[str],
+    observed: set[str],
+) -> set[str]:
+    del record, authorized
+    return set(observed)
+
+
 def _compile_scaninc(tree: Path, work: Path) -> Path:
     output = work / "scaninc"
     with _SCANINC_COMPILE_LOCK:
@@ -1684,9 +2648,14 @@ def _execute_registered_command(
     if completed.returncode != 0:
         raise MakeProbeError(
             f"registered Make command {contract['id']!r} failed in confinement: "
-            + _normalize(completed.stderr)
+            + _normalize(
+                _strict_utf8(
+                    completed.stderr,
+                    f"registered Make command {contract['id']!r} stderr",
+                )
+            )
         )
-    output = completed.stdout.encode("utf-8")
+    output = completed.stdout
     if cache_key is not None:
         with _REGISTERED_COMMAND_CACHE_LOCK:
             if len(_REGISTERED_COMMAND_CACHE) >= REGISTERED_COMMAND_CACHE_LIMIT:
@@ -1848,7 +2817,7 @@ def _validate_includes(
         optional = include["optional"]
         if not isinstance(raw_path, str) or not isinstance(optional, bool):
             raise MakeProbeError("GNU Make include record is malformed")
-        if raw_path in {"/work/probe.mk", "<WORK>/probe.mk"}:
+        if raw_path == "/probe/probe.mk":
             continue
         if (
             "\\" in raw_path
@@ -2024,40 +2993,40 @@ def run_probe(
         dir=scratch_root,
     ) as directory:
         base = Path(directory)
-        content_state = getattr(loader, "content_state", None)
-        cache_namespace = (
-            str(Path(loader.root).resolve(strict=True)),
-            loader.revision,
-            content_state() if callable(content_state) else tuple(
-                (
-                    path,
-                    entry.mode,
-                    entry.object_type,
-                    entry.object_id,
-                )
-                for path, entry in sorted(loader.entries.items())
-            ),
-        )
         tree = base / "tree"
         make_work = base / "make-work"
         command_work = base / "command-work"
         build_output = base / "build-output"
+        probe_control = base / "probe-control"
         control = base / "supervisor-control"
         mapping_path = control / "mapping"
-        event_path = control / "events.bin"
+        domain_path = control / "domains.pipe"
+        event_path = control / "events.pipe"
         tree.mkdir()
         make_work.mkdir()
         command_work.mkdir()
         build_output.mkdir()
+        probe_control.mkdir()
         control.mkdir(mode=0o700)
-        event_path.write_bytes(b"")
-        event_path.chmod(0o600)
+        os.mkfifo(domain_path, mode=0o600)
+        os.mkfifo(event_path, mode=0o600)
         _copy_tree(loader, tree)
+        cache_namespace = (
+            str(Path(loader.root).resolve(strict=True)),
+            loader.revision,
+            _snapshot_tree_state(
+                tree,
+                loader.entries,
+                loader.revision,
+                Path(loader.root),
+            ),
+        )
         (tree / "build").mkdir()
         interceptor = base / "shell-interceptor"
         interceptor_authority = _compile_interceptor(tree, interceptor)
         root, read_only = _prepare_make_root(base, interceptor)
         read_only.append((tree, "/repo"))
+        read_only.append((probe_control, "/probe"))
         if (tree / "tools/scaninc").is_dir():
             scaninc_target = tree / "tools/scaninc/scaninc"
             scaninc_target.touch()
@@ -2078,7 +3047,7 @@ def run_probe(
             gbagfx_target.touch()
             gbagfx_target.chmod(0o755)
             read_only.append((gbagfx, "/repo/tools/gbagfx/gbagfx"))
-        probe_file = make_work / "probe.mk"
+        probe_file = probe_control / "probe.mk"
         tracked_inputs = [
             path
             for path, entry in sorted(loader.entries.items())
@@ -2102,20 +3071,20 @@ def run_probe(
             for index in range(0, len(tracked_directories), 100)
         )
         probe_file.write_text(
-            "/work/probe.mk: ;\n"
+            "/probe/probe.mk: ;\n"
             + tracked_input_rules
             + "\n"
             + tracked_directory_rules
             + "\n"
-            + ".PHONY: __validation_ownership_domain_probe\n"
-            + "__validation_ownership_domain_probe: ;\n"
+            + f"override export VO_DOMAIN_COUNT := {len(prerequisite_domains)}\n"
             + "\n".join(
-                f"$(file >/work/domain-{index},$({name}))"
+                f"override export VO_DOMAIN_{index} := $({name})"
                 for index, name in enumerate(sorted(prerequisite_domains))
             )
-            + "\n",
+            + "\n$(shell /usr/bin/vo-domain-observer)\n",
             encoding="ascii",
         )
+        probe_file.chmod(0o400)
         mappings: list[dict[str, Any]] = []
         materialized_mapping_names = _write_mapping(mapping_path, mappings)
         normal_targets = sorted(
@@ -2195,7 +3164,7 @@ def run_probe(
                     "--debug=v",
                     "--warn-undefined-variables",
                     "--eval",
-                    "export VO_COMMAND_COUNT VO_EVENT_PATH VO_MAP_DIR",
+                    "export VO_COMMAND_COUNT",
                     *(
                         ["--print-data-base", "--question"]
                         if database_only
@@ -2204,7 +3173,7 @@ def run_probe(
                     "-f",
                     "Makefile",
                     "-f",
-                    "/work/probe.mk",
+                        "/probe/probe.mk",
                     "MAKE=/bin/vo-make",
                 ]
             argv.extend(
@@ -2220,12 +3189,20 @@ def run_probe(
                     mappings,
                     materialized_names=materialized_mapping_names,
                 )
-                event_path.write_bytes(b"")
-                event_path.chmod(0o600)
                 completed = _sandbox_run(
                     root,
                     make_work,
                     argv=argv,
+                    domain_names=(
+                        sorted(prerequisite_domains)
+                        if not public_gate
+                        else None
+                    ),
+                    domain_path=(
+                        domain_path
+                        if not public_gate
+                        else None
+                    ),
                     event_path=event_path,
                     environment=_make_environment(
                         len(mappings),
@@ -2236,10 +3213,7 @@ def run_probe(
                     read_only=read_only,
                     writable=[(build_output, "/repo/build")],
                 )
-                events = _read_events(
-                    event_path,
-                    expected_mapping_count=len(mappings),
-                )
+                events = completed.events
                 mapped_commands = {
                     mapping["command"]
                     for mapping in mappings
@@ -2317,6 +3291,10 @@ def run_probe(
                             _event_direct_arguments(event),
                         )
                     )
+                    if len(pending) > MAX_PENDING_COMMANDS:
+                        raise MakeProbeError(
+                            "GNU Make pending command fanout exceeds count bound"
+                        )
                 if any(
                     contract["id"] == "banim-scaninc-inputs"
                     for _, contract, _ in pending
@@ -2336,12 +3314,31 @@ def run_probe(
                     else:
                         sequential.append(item)
                 outputs: dict[str, bytes] = {}
-                if parallel:
-                    with ThreadPoolExecutor(
-                        max_workers=min(
-                            MAX_PARALLEL_REGISTERED_COMMANDS,
-                            len(parallel),
+                output_bytes = sum(
+                    len(mapping["command"].encode("utf-8"))
+                    + len(mapping["output"])
+                    for mapping in mappings
+                )
+
+                def retain_output(command: str, output: bytes) -> None:
+                    nonlocal output_bytes
+                    output_bytes += len(command.encode("utf-8")) + len(output)
+                    if output_bytes > MAX_MAPPING_BYTES:
+                        raise MakeProbeError(
+                            "GNU Make mapped command output exceeds byte bound"
                         )
+                    outputs[command] = output
+
+                for start in range(
+                    0,
+                    len(parallel),
+                    MAX_PARALLEL_REGISTERED_COMMANDS,
+                ):
+                    batch = parallel[
+                        start:start + MAX_PARALLEL_REGISTERED_COMMANDS
+                    ]
+                    with ThreadPoolExecutor(
+                        max_workers=len(batch),
                     ) as executor:
                         futures = [
                             executor.submit(
@@ -2356,21 +3353,24 @@ def run_probe(
                                 tree=tree,
                                 environment=extra_environment,
                             )
-                            for command, contract, direct_arguments in parallel
+                            for command, contract, direct_arguments in batch
                         ]
-                        for (command, _, _), future in zip(parallel, futures):
-                            outputs[command] = future.result()
+                        for (command, _, _), future in zip(batch, futures):
+                            retain_output(command, future.result())
                 for command, contract, direct_arguments in sequential:
-                    outputs[command] = _execute_registered_command(
+                    retain_output(
                         command,
-                        contract,
-                        base=base,
-                        build_output=build_output,
-                        cache_namespace=cache_namespace,
-                        command_work=command_work,
-                        direct_arguments=direct_arguments,
-                        tree=tree,
-                        environment=extra_environment,
+                        _execute_registered_command(
+                            command,
+                            contract,
+                            base=base,
+                            build_output=build_output,
+                            cache_namespace=cache_namespace,
+                            command_work=command_work,
+                            direct_arguments=direct_arguments,
+                            tree=tree,
+                            environment=extra_environment,
+                        ),
                     )
                 for command, contract, _ in pending:
                     output = outputs[command]
@@ -2382,6 +3382,10 @@ def run_probe(
                             "suppressed_recipe": False,
                         }
                     )
+                    if len(mappings) > MAX_MAPPING_COUNT:
+                        raise MakeProbeError(
+                            "Make command mapping exceeds count bound"
+                        )
                     replay |= (
                         contract["resolved_value"] is None
                         or bool(output)
@@ -2392,7 +3396,11 @@ def run_probe(
                 raise MakeProbeError(
                     "GNU Make dynamic command expansion exceeds pass bound"
                 )
-            combined = completed.stdout + "\n" + completed.stderr
+            combined = (
+                _strict_utf8(completed.stdout, "GNU Make stdout")
+                + "\n"
+                + _strict_utf8(completed.stderr, "GNU Make stderr")
+            )
             undefined_names = _undefined_variable_names(combined)
             unknown_undefined = undefined_names - (
                 sealed_external_names | trusted_reference_names
@@ -2446,14 +3454,11 @@ def run_probe(
                 "assignments": canonical_assignments,
                 "argv": argv,
                 "closures": closures,
-                "domain_values": {
-                    name: (make_work / f"domain-{index}")
-                    .read_text(encoding="utf-8")
-                    .removesuffix("\n")
-                    for index, name in enumerate(
-                        sorted(prerequisite_domains)
-                    )
-                } if not public_gate else {},
+                "domain_values": (
+                    completed.domain_values
+                    if not public_gate
+                    else {}
+                ),
                 "environment_assignment": environment_value,
                 "database_sha256": (
                     hashlib.sha256(
@@ -3022,6 +4027,7 @@ def run_probe(
                     ],
                     "make_inputs": make_inputs,
                     "probe_tools": tools,
+                    "snapshot_sha256": cache_namespace[2],
                     "sanitized_environment": _make_environment(
                         len(mappings),
                         {},

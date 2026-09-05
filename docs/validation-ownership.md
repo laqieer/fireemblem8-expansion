@@ -189,9 +189,12 @@ Every in-repository scratch component is created and reopened relative to a
 trusted directory descriptor with `O_NOFOLLOW`; an existing file or symlink at
 `build`, `test-artifacts`, or `validation-ownership` rejects before a probe,
 temporary directory, deletion, or external write.
-The superproject and gitlink trees are read-only mounts. Only separate ignored
-Make scratch, registered-command scratch, and generated `build` output mounts
-are writable. Supervisor control is outside all candidate-visible mounts.
+The superproject, gitlink trees, and final `/probe/probe.mk` program are
+read-only mounts. Only separate ignored Make scratch, registered-command
+scratch, and generated `build` output mounts are writable. Domain observations
+and supervisor control use bounded FIFOs outside all candidate-visible mounts;
+candidate parse-time `$(file ...)`, include, shell, symlink, and eager-command
+attempts cannot replace either the probe program or its results.
 Missing
 namespace support, the fixed absolute tools, the exact gitlink object, or the
 statically built command interceptor fails before Make starts.
@@ -218,14 +221,17 @@ changes remain stable when GNU Make's observed semantics remain stable. GNU
 Make database `Last modified` diagnostics from fresh copied trees are excluded
 as nonsemantic execution timestamps; rule, prerequisite, recipe, and status
 records remain bound.
-The in-process optimization cache keys Make authority by the complete selected
-tracked-entry set: path, object type, Git mode, and content identity for every
-blob or gitlink copied into the probe. Exact revisions use their Git object
-IDs; live-tree deviations use exact content and current mode rather than file
-size or timestamps. Wildcard-visible ordinary file addition/removal,
-regular-to-symlink or executable-mode changes, and same-size mutations with
-restored metadata therefore cannot reuse an earlier result. The same complete
-state decides whether prior Make authority can be reused for invalidation.
+The in-process optimization cache first keys the selected live tree by every
+tracked path, mode, Git/content identity, and stable device/inode/size/time
+descriptor. Each execution namespace then comes from the completed copied
+snapshot's raw bytes and current modes, not a pre-copy hash. Revision blobs are
+verified against their Git object IDs and copied gitlinks against their exact
+commit trees. Source descriptors must remain equal before and after probing,
+and every parallel target probe must report one identical completed-snapshot
+digest, or validation rejects. Wildcard-visible ordinary file
+addition/removal, regular-to-symlink or executable-mode changes, and same-size
+mutations therefore cannot reuse an earlier result. The same Git/content state
+decides whether prior Make authority can be reused for invalidation.
 Each probe uses a new random child and ignores incomplete scratch children left
 by an interrupted process.
 
@@ -315,12 +321,16 @@ sealed contract; the same text appearing in trace output, a recipe, or
 normalized multiline output grants no authority. Unknown direct recipe
 expansion, unregistered shell/eager assignment,
 ambiguous command registration, nonconvergence, or sandbox failure rejects.
-The interceptor receives a fixed append-only event descriptor and read-only
+The interceptor receives fixed event/domain FIFO descriptors and a read-only
 mapping-directory descriptor opened by the trusted launcher before chroot.
 Neither descriptor has a pathname through `/proc` or `/dev/fd`, and no event
-or mapping path appears in candidate environment or scratch. Event state is
-truncated by the supervisor for each pass, and every record's format, argument
-bound, mapping count, command hash, and match identity is revalidated.
+or mapping path appears in candidate environment or scratch. The supervisor
+stream-parses events while Make runs and terminates the process group on byte,
+record, argument, pending-command, mapping-count, mapping-byte, mapped-output,
+or future-batch overflow. Every record's format, mapping count, command hash,
+match identity, and strict UTF-8 text boundary is revalidated. Registered
+command output remains raw bytes through capture, cache, hashing, mapping, and
+replay; only consumers that require Make/parser text decode it, strictly.
 Registered commands run in a different scratch namespace with both control
 descriptors closed. Candidate `$(file ...)` writes and registered scripts can
 only create decoys in their own scratch; they cannot read, overwrite, or forge
@@ -328,14 +338,24 @@ supervisor events or mappings.
 
 Generated-data path classification likewise does not import the base
 `scripts.generated_data.registry` into the trusted reporter. A small trusted
-probe executes the exact candidate registry in a separate credential-free,
-networkless, read-only-tree process with only isolated command scratch. The
-reporter accepts only bounded UTF-8 JSON with the closed typed record schema,
-sorted unique names/dependencies, valid versions, and confined tracked paths.
-It binds the candidate registry AST/blob set, exact typed output, launcher, and
-Python identity. Newly declared candidate generated paths therefore classify
-from candidate authority, while candidate code cannot mutate or enter the
-trusted gate process.
+probe executes each exact candidate schema separately in a credential-free,
+networkless, read-only-tree process with only isolated command scratch and the
+Python executable, standard library, loader, and platform libraries mounted;
+other host tools and `/usr/share` are absent.
+Directory sources require a finite declarative basename glob. A whole-tree
+supervisor inotify observer independently records every opened candidate file
+and directory. List and metadata operations may open only the bounded registry
+implementation set; each loader must use that same observed program set, may
+list only its declared directory source, and must make its remaining regular
+tracked reads equal both the declared file/glob expansion and the
+loader-reported paths exactly. Omitted, extra, duplicate, dynamic, symlink,
+escaping, and undeclared outside-root-set reads or directory scans reject. The reporter accepts only bounded strict
+UTF-8 JSON with the closed typed record schema, sorted unique names and
+dependencies, valid versions, and confined tracked paths. It binds the
+candidate registry AST/blob set, exact typed output, supervisor-observed
+program path hashes, launcher, and Python identity. Newly declared candidate
+generated paths therefore classify from candidate authority, while candidate
+code cannot mutate or enter the trusted gate process.
 
 Every Make include observed by GNU Make must be the primary `Makefile`, a
 tracked regular `.mk`, an exact gitlink-contained file, the trusted probe

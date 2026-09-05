@@ -1241,6 +1241,7 @@ class ChapterBundleTableSchema(TableSchema):
     version = SCHEMA_VERSION
 
     default_source = "src/data"
+    default_source_pattern = "*_bundle.json"
     # Metadata-only: the bundle is a cross-table view, not itself a single
     # hand-written C file to round-trip against, and there is no C to
     # generate (each composed table already generates/round-trips its own

@@ -82,6 +82,11 @@ class TableSchema:
     default_hand_source = None
     default_output_name = None
     default_inventory_path = None
+    # Directory-valued defaults must declare one finite basename glob so
+    # validation ownership can independently resolve and observe every input.
+    default_source_pattern = None
+    # Exact auxiliary files consumed unconditionally with the default source.
+    default_additional_sources = ()
 
     # Optional record-budget diagnostic input. When a table maps onto a
     # fixed-size C array (a hard slot/memory bound), set ``record_budget``
