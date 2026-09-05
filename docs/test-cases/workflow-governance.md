@@ -8,8 +8,8 @@ workflow, using credentials, or changing ROM behavior.
 
 - **Feature / originating issue:** `workflow-governance` /
   [issue #206](https://github.com/laqieer/fireemblem8-expansion/issues/206).
-- **Supported configuration or artifact:** supported Linux source checkout
-  with GNU Make, Python 3, `build-essential`, and user namespaces or exact
+- **Supported configuration or artifact:** supported x86-64 Linux source
+  checkout with GNU Make, Python 3, `build-essential`, seccomp-BPF, and user namespaces or exact
   passwordless `sudo -n /usr/bin/unshare`; no ROM, emulator, token, or live
   GitHub object is required.
 - **Prerequisites and clean starting state:** start at the repository root
@@ -25,9 +25,10 @@ workflow, using credentials, or changing ROM behavior.
    semantics, registered command dispatch, unrelated-path semantic stability,
    real-input invalidation, admitted source access, and all negative controls.
 4. Confirm the aggregate tests reject 4,097 states before launch, terminate a
-   long process under one deadline, reject a theoretical 8 GiB cache entry and
-   event/mapping/output/future fanout, and leave no child, FIFO, socket, or
-   descriptor residue.
+   long subprocess and noncooperative blocking-I/O worker under one deadline,
+   bound 4,096 snapshot files, reject large snapshot bytes, a theoretical
+   8 GiB cache entry, and event/mapping/output/future fanout, and leave no
+   child, FIFO, socket, IPC object, or descriptor residue.
 
 ### Expected result
 
@@ -48,11 +49,22 @@ semantic owner fingerprint; a real declared owner input changes the semantic
 fingerprint.
 
 Generated registry code receives only admitted code and the trusted declared
-source set. Undeclared open, mmap, stat, lstat, scandir, glob, symlink, and
-dynamic paths reject, while a declared directory/glob using all those access
-forms passes. Candidate metadata, trusted permission, report, and behavioral
-consumption sets agree exactly. Invalid bytes reject at the named Make/JSON
-text boundary and remain distinct from valid raw output.
+source/import set. Post-bootstrap seccomp and IPC isolation reject memfd/native
+execution, exec/fork/clone, socket/network, ptrace, namespace, and persistent
+SysV shared-memory/semaphore/message routes. Exact admitted extension
+dependencies pass; missing or tampered ELF dependencies and unknown/ctypes
+imports reject. Undeclared open, mmap, stat, lstat, fstat, scandir, glob,
+symlink, and dynamic paths reject, while a declared directory/glob using those
+access forms passes.
+
+Snapshot type, exact permissions, size, `mtime_ns`, UID/GID, and bytes are
+fingerprinted and materialized; chmod, touch, and type changes alter identity.
+The metadata proxy exposes only those fields and rejects inode/device/ctime/
+link-count and raw syscall routes. Candidate metadata, trusted permission,
+report, and nonce-authenticated missing-source consumption sets agree exactly.
+Crash, timeout, or arbitrary nonzero omission replay is failure, not evidence.
+Invalid bytes reject at the named Make/JSON text boundary and remain distinct
+from valid raw output.
 
 ### Negative control
 
@@ -60,13 +72,16 @@ Removing candidate `noexec`, exposing an executable Make/compiler/Python
 path, inheriting a supervisor descriptor, accepting a reserved control or
 unknown command, putting the execution snapshot in the semantic fingerprint,
 mounting an undeclared source, trusting candidate-broadened metadata, omitting
-source-removal consumption replay, creating per-variant deadlines/caches, or
-submitting futures before aggregate preflight makes the focused suite fail.
+authenticated source-removal consumption replay, accepting crash/timeout as
+consumption, exposing unsupported metadata, omitting snapshot byte/operation
+accounting, creating per-variant deadlines/caches, or using unkillable thread
+futures makes the focused suite fail.
 
 ### Interactions and save compatibility
 
 The foundation depends on current Build `build-essential`, GNU Make, Python,
-`unshare`, and Linux mount controls. Issue #180 / PR #186 depends on its
+`unshare`, x86-64 seccomp-BPF, and Linux mount/PID/network/IPC controls.
+Issue #180 / PR #186 depends on its
 `ProbeBudget`, Make observation, and admitted-source APIs. It conflicts only
 with PR #186's inherited descriptor channels, private per-variant limits,
 whole-snapshot semantic identity, and best-effort source observation. It does

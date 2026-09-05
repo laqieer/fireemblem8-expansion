@@ -2177,17 +2177,17 @@
       "document": "docs/test-cases/workflow-governance.md",
       "anchor": "tc-workflow-ownership-probe-sandbox-001-confine-and-aggregate-bound-validation-ownership-probes",
       "profiles": [
-        "Supported Linux source checkout with GNU Make, Python 3, build-essential, and a supported namespace launcher"
+        "Supported x86-64 Linux source checkout with GNU Make, Python 3, build-essential, seccomp-BPF, and a supported namespace launcher"
       ],
       "purpose": "Prove authentic target-specific Make semantics and generated-source discovery cannot expose supervisor authority or multiply resource limits.",
       "prerequisites": "Start at the repository root with no process using the ignored ownership-probe scratch path; no ROM, emulator, token, or live GitHub object is required.",
-      "actions": "Run the focused probe-foundation unittest and public validation-ownership-check; exercise native/load/shell/file/include/fd/source/byte/resource adversarial controls plus semantic stability and real-input drift.",
-      "expected_result": "Only trusted registered dispatch executes, candidate code sees admitted noexec files and no supervisor descriptors, semantic identity is target-specific, declared/report/permitted/consumed source sets agree, and one aggregate deadline/budget owns all work.",
-      "negative_control": "Executable candidate mounts, inherited descriptors, unknown dispatch, whole-snapshot semantic identity, undeclared source mounts, candidate-broadened declarations, private per-state limits, unbounded cache/output/events/mappings/futures, and malformed bytes fail.",
-      "interactions": "Depends on current Build GNU Make, Python, build-essential, unshare, and Linux mount controls; issue #180/PR #186 depends on the APIs; conflicts with PR #186 inherited channels, whole-snapshot semantics, best-effort source observation, and per-variant bounds.",
+      "actions": "Run the isolated probe suite and public check; exercise native/load/shell/file/include/fd, memfd/exec/fork/socket/IPC, import/extension dependency, metadata, authenticated omission, snapshot byte/operation, worker-process, semantic stability, and real-input drift controls.",
+      "expected_result": "Only trusted registered dispatch executes; candidate code is noexec, seccomp-confined, IPC-isolated, import-closed, and descriptor-free; supported metadata is exact; semantic identity is target-specific; typed omission proves consumption; and one aggregate deadline/budget owns all work.",
+      "negative_control": "Executable candidate mounts, inherited descriptors, unknown dispatch/imports, missing/tampered extension libraries, native or persistent IPC escape, unsupported metadata, crash/timeout omission evidence, whole-snapshot semantic identity, undeclared sources, private per-state limits, unbounded snapshots/cache/output/events/mappings/workers, and malformed bytes fail.",
+      "interactions": "Depends on current Build GNU Make, Python, build-essential, unshare, x86-64 seccomp-BPF, and Linux mount/PID/network/IPC controls; issue #180/PR #186 depends on the APIs; conflicts with PR #186 inherited channels, whole-snapshot semantics, best-effort source observation, and per-variant bounds.",
       "save_compatibility": "Host-only framework capability; no validation narrowing, target/topology, gameplay, ROM/RAM, save, localization, generated game-data, modern debug/release, or archival impact.",
-      "cleanup": "Context managers remove ignored fixtures, sockets, mount roots, and processes on success, overflow, timeout, interruption, and parent failure.",
-      "limitations": "Supported Linux namespace launchers are required and fail closed when unavailable; no manual criterion applies.",
+      "cleanup": "Context managers remove ignored fixtures, sockets, IPC namespaces, mount roots, and process groups on success, overflow, timeout, interruption, and parent failure.",
+      "limitations": "The candidate Python seccomp boundary currently requires x86-64 Linux plus a supported namespace launcher and fails closed otherwise; no manual criterion applies.",
       "automation": [
         {
           "command": "/usr/bin/python3 -I scripts/validation_ownership/isolated_launcher.py tests",

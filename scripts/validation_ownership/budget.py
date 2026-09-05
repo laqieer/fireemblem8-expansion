@@ -4,7 +4,11 @@ from __future__ import annotations
 
 import threading
 import time
-from concurrent.futures import ThreadPoolExecutor
+import multiprocessing
+import os
+import pickle
+import selectors
+import signal
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from typing import Callable, Iterable, Iterator, TypeVar
@@ -29,6 +33,8 @@ class ProbeLimits:
             "events": 16 * 1024 * 1024,
             "mappings": 16 * 1024 * 1024,
             "outputs": 16 * 1024 * 1024,
+            "snapshot": 256 * 1024 * 1024,
+            "worker_results": 16 * 1024 * 1024,
         }
     )
     counts: dict[str, int] = field(
@@ -38,6 +44,8 @@ class ProbeLimits:
             "mappings": 4096,
             "pending": 4096,
             "futures": 4096,
+            "snapshot_files": 16384,
+            "snapshot_ops": 131072,
         }
     )
 
@@ -171,38 +179,134 @@ def run_bounded_futures(
     items: Iterable[T],
     worker: Callable[[T, float], R],
 ) -> list[R]:
-    """Submit one bounded batch and pass aggregate remaining time to each job."""
+    """Run a bounded batch in killable worker process groups."""
     pending = list(items)
     if not pending:
         return []
     with budget.lease("pending", len(pending)), budget.lease(
         "futures", len(pending)
     ):
-        workers = min(len(pending), budget.limits.workers)
-        executor = ThreadPoolExecutor(max_workers=workers)
-        futures = []
+        if len(pending) > budget.limits.workers:
+            raise ProbeBudgetError(
+                "probe worker batch exceeds bounded process fanout"
+            )
+        context = multiprocessing.get_context("fork")
+        processes: list[multiprocessing.Process] = []
+        readers: list[int] = []
+        selector = selectors.DefaultSelector()
+        results: dict[int, R] = {}
+
+        def child(index: int, item: T, descriptor: int, remaining: float) -> None:
+            try:
+                os.setsid()
+                payload = ("ok", worker(item, remaining))
+            except BaseException as error:
+                payload = ("error", type(error).__name__, str(error))
+            encoded = pickle.dumps(payload, protocol=5)
+            try:
+                framed = len(encoded).to_bytes(8, "little") + encoded
+                offset = 0
+                while offset < len(framed):
+                    offset += os.write(descriptor, framed[offset:])
+            finally:
+                os.close(descriptor)
+
+        def terminate_all() -> None:
+            for process in processes:
+                if not process.is_alive():
+                    continue
+                try:
+                    os.killpg(process.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    if process.is_alive():
+                        process.kill()
+            for process in processes:
+                process.join(timeout=2)
+                if process.is_alive():
+                    raise ProbeBudgetError("probe worker process did not terminate")
+
         try:
-            for item in pending:
-                futures.append(
-                    executor.submit(
-                        worker,
+            for index, item in enumerate(pending):
+                reader, writer = os.pipe2(os.O_CLOEXEC)
+                process = context.Process(
+                    target=child,
+                    args=(
+                        index,
                         item,
+                        writer,
                         budget.remaining("worker submission"),
+                    ),
+                )
+                process.start()
+                os.close(writer)
+                processes.append(process)
+                readers.append(reader)
+                selector.register(
+                    reader,
+                    selectors.EVENT_READ,
+                    {
+                        "buffer": bytearray(),
+                        "expected": None,
+                        "index": index,
+                    },
+                )
+            while selector.get_map():
+                events = selector.select(
+                    min(0.1, budget.remaining("worker result"))
+                )
+                for key, _ in events:
+                    chunk = os.read(key.fd, 64 * 1024)
+                    state = key.data
+                    if not chunk:
+                        selector.unregister(key.fd)
+                        if state["expected"] is None or (
+                            len(state["buffer"]) != state["expected"] + 8
+                        ):
+                            raise ProbeBudgetError(
+                                "probe worker result was truncated"
+                            )
+                        encoded = bytes(state["buffer"][8:])
+                        outcome = pickle.loads(encoded)
+                        if outcome[0] != "ok":
+                            raise ProbeBudgetError(
+                                "probe worker failed: "
+                                f"{outcome[1]}: {outcome[2]}"
+                            )
+                        results[state["index"]] = outcome[1]
+                        continue
+                    budget.charge_bytes("worker_results", len(chunk))
+                    state["buffer"].extend(chunk)
+                    if state["expected"] is None and len(state["buffer"]) >= 8:
+                        state["expected"] = int.from_bytes(
+                            state["buffer"][:8],
+                            "little",
+                        )
+                        if state["expected"] > budget.limits.bytes["worker_results"]:
+                            raise ProbeBudgetError(
+                                "probe worker result exceeds byte bound"
+                            )
+                    if (
+                        state["expected"] is not None
+                        and len(state["buffer"]) > state["expected"] + 8
+                    ):
+                        raise ProbeBudgetError("probe worker result exceeded frame")
+            for process in processes:
+                process.join(timeout=min(1, budget.remaining("worker reap")))
+                if process.is_alive() or process.exitcode != 0:
+                    raise ProbeBudgetError(
+                        "probe worker did not exit cleanly"
                     )
-                )
-            results = []
-            for future in futures:
-                results.append(
-                    future.result(timeout=budget.remaining("worker result"))
-                )
-            return results
+            return [results[index] for index in range(len(pending))]
         except BaseException:
-            for future in futures:
-                future.cancel()
-            executor.shutdown(wait=True, cancel_futures=True)
+            terminate_all()
             raise
         finally:
-            executor.shutdown(wait=True, cancel_futures=True)
+            selector.close()
+            for descriptor in readers:
+                try:
+                    os.close(descriptor)
+                except OSError:
+                    pass
 
 
 class ProbeCache:

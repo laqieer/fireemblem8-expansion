@@ -178,6 +178,7 @@ def _launcher_prefix(budget: ProbeBudget) -> tuple[list[str], dict[str, str]]:
         "--user",
         "--map-root-user",
         "--mount",
+        "--ipc",
         "--net",
         "--pid",
         "--fork",
@@ -198,6 +199,7 @@ def _launcher_prefix(budget: ProbeBudget) -> tuple[list[str], dict[str, str]]:
                 "--user",
                 "--map-root-user",
                 "--mount",
+                "--ipc",
                 "--net",
                 "--pid",
                 "--fork",
@@ -218,6 +220,7 @@ def _launcher_prefix(budget: ProbeBudget) -> tuple[list[str], dict[str, str]]:
         "-n",
         str(UNSHARE),
         "--mount",
+        "--ipc",
         "--net",
         "--pid",
         "--fork",
@@ -242,6 +245,7 @@ def _launcher_prefix(budget: ProbeBudget) -> tuple[list[str], dict[str, str]]:
             "-n",
             str(UNSHARE),
             "--mount",
+            "--ipc",
             "--net",
             "--pid",
             "--fork",
@@ -292,6 +296,25 @@ def _runtime_dependencies(
     ]
 
 
+def runtime_dependency_mounts(
+    executables: Iterable[Path],
+    budget: ProbeBudget,
+) -> tuple[list["Mount"], list[dict[str, str]]]:
+    """Resolve exact ELF dependency paths and identities for trusted modules."""
+    mounts = []
+    authority = []
+    for source, target in _runtime_dependencies(executables, budget):
+        mounts.append(Mount(source, target, noexec=False))
+        authority.append(
+            {
+                "path": target,
+                "resolved_path": str(source),
+                "sha256": sha256_file(source),
+            }
+        )
+    return mounts, authority
+
+
 def compile_interceptor(output: Path, budget: ProbeBudget) -> dict[str, str]:
     completed = run_bounded_process(
         [
@@ -326,7 +349,12 @@ def compile_interceptor(output: Path, budget: ProbeBudget) -> dict[str, str]:
 @dataclass(frozen=True)
 class SnapshotEntry:
     path: str
+    kind: str
     mode: int
+    size: int
+    mtime_ns: int
+    uid: int
+    gid: int
     data: bytes
 
 
@@ -343,8 +371,9 @@ class ExecutionSnapshot:
             encoded = entry.path.encode("utf-8")
             digest.update(struct.pack("<I", len(encoded)))
             digest.update(encoded)
+            digest.update(entry.kind.encode("ascii") + b"\0")
             digest.update(struct.pack("<I", entry.mode))
-            digest.update(struct.pack("<Q", len(entry.data)))
+            digest.update(struct.pack("<QqII", entry.size, entry.mtime_ns, entry.uid, entry.gid))
             digest.update(entry.data)
         self.digest = digest.hexdigest()
         self._by_path = {entry.path: entry for entry in self.entries}
@@ -353,6 +382,7 @@ class ExecutionSnapshot:
     def capture(
         cls,
         root: Path,
+        budget: ProbeBudget,
         paths: Iterable[str] | None = None,
     ) -> "ExecutionSnapshot":
         if root.is_symlink():
@@ -361,17 +391,79 @@ class ExecutionSnapshot:
         root_metadata = os.lstat(root)
         if not stat.S_ISDIR(root_metadata.st_mode):
             raise ProbeSandboxError("execution snapshot root is not a directory")
+        directory_paths: set[str] = set()
         if paths is None:
             candidates = []
             for candidate in sorted(root.rglob("*")):
+                budget.remaining("snapshot enumeration")
+                budget.charge_count("snapshot_ops")
                 metadata = os.lstat(candidate)
                 if stat.S_ISDIR(metadata.st_mode):
+                    directory_paths.add(candidate.relative_to(root).as_posix())
                     continue
                 candidates.append(candidate.relative_to(root).as_posix())
         else:
-            candidates = sorted(set(paths))
-        entries = []
+            selected_candidates = sorted(set(paths))
+            candidates = []
+            directory_paths = {
+                parent.as_posix()
+                for relative in selected_candidates
+                for parent in Path(relative).parents
+                if parent.as_posix() != "."
+            }
+            for relative in selected_candidates:
+                candidate = root / relative
+                metadata = os.lstat(candidate)
+                if stat.S_ISLNK(metadata.st_mode):
+                    raise ProbeSandboxError(
+                        f"snapshot path {relative!r} uses a symlink"
+                    )
+                if stat.S_ISDIR(metadata.st_mode):
+                    directory_paths.add(relative)
+                else:
+                    candidates.append(relative)
+        budget.charge_count("snapshot_files")
+        entries = [
+            SnapshotEntry(
+                ".",
+                "directory",
+                stat.S_IMODE(root_metadata.st_mode),
+                root_metadata.st_size,
+                root_metadata.st_mtime_ns,
+                root_metadata.st_uid,
+                root_metadata.st_gid,
+                b"",
+            )
+        ]
+        for relative in sorted(directory_paths, key=lambda item: (item.count("/"), item)):
+            budget.remaining("snapshot directory")
+            budget.charge_count("snapshot_files")
+            budget.charge_count("snapshot_ops")
+            path = root / relative
+            metadata = os.lstat(path)
+            if stat.S_ISLNK(metadata.st_mode):
+                raise ProbeSandboxError(
+                    f"snapshot directory {relative!r} is a symlink"
+                )
+            if not stat.S_ISDIR(metadata.st_mode):
+                raise ProbeSandboxError(
+                    f"snapshot directory {relative!r} is not a stable directory"
+                )
+            entries.append(
+                SnapshotEntry(
+                    relative,
+                    "directory",
+                    stat.S_IMODE(metadata.st_mode),
+                    metadata.st_size,
+                    metadata.st_mtime_ns,
+                    metadata.st_uid,
+                    metadata.st_gid,
+                    b"",
+                )
+            )
         for relative in candidates:
+            budget.remaining("snapshot file")
+            budget.charge_count("snapshot_files")
             path = Path(relative)
             if (
                 path.is_absolute()
@@ -385,6 +477,7 @@ class ExecutionSnapshot:
             current = root
             for index, part in enumerate(path.parts):
                 current /= part
+                budget.charge_count("snapshot_ops")
                 metadata = os.lstat(current)
                 if stat.S_ISLNK(metadata.st_mode):
                     raise ProbeSandboxError(
@@ -406,6 +499,7 @@ class ExecutionSnapshot:
                 metadata.st_mtime_ns,
                 metadata.st_ctime_ns,
             )
+            budget.charge_bytes("snapshot", metadata.st_size)
             descriptor = os.open(
                 source,
                 os.O_RDONLY
@@ -413,6 +507,7 @@ class ExecutionSnapshot:
                 | getattr(os, "O_NOFOLLOW", 0),
             )
             try:
+                budget.charge_count("snapshot_ops")
                 opened = os.fstat(descriptor)
                 opened_identity = (
                     opened.st_dev,
@@ -427,15 +522,19 @@ class ExecutionSnapshot:
                     )
                 chunks = []
                 while True:
+                    budget.remaining("snapshot read")
                     chunk = os.read(descriptor, 1024 * 1024)
                     if not chunk:
                         break
+                    budget.charge_count("snapshot_ops")
                     chunks.append(chunk)
                 data = b"".join(chunks)
+                budget.charge_count("snapshot_ops")
                 after_read = os.fstat(descriptor)
             finally:
                 os.close(descriptor)
             after = os.lstat(source)
+            budget.charge_count("snapshot_ops")
             if before != (
                 after_read.st_dev,
                 after_read.st_ino,
@@ -455,7 +554,12 @@ class ExecutionSnapshot:
             entries.append(
                 SnapshotEntry(
                     relative,
-                    0o755 if metadata.st_mode & 0o111 else 0o644,
+                    "file",
+                    stat.S_IMODE(metadata.st_mode),
+                    metadata.st_size,
+                    metadata.st_mtime_ns,
+                    metadata.st_uid,
+                    metadata.st_gid,
                     data,
                 )
             )
@@ -475,18 +579,63 @@ class ExecutionSnapshot:
     def materialize(
         self,
         destination: Path,
+        budget: ProbeBudget,
         *,
         omit: set[str] | None = None,
     ) -> None:
         omitted = set() if omit is None else omit
+        budget.charge_count("snapshot_ops")
         destination.mkdir(parents=True, exist_ok=False)
-        for entry in self.entries:
+        directories = [
+            entry for entry in self.entries if entry.kind == "directory"
+        ]
+        files = [entry for entry in self.entries if entry.kind == "file"]
+        budget.charge_bytes(
+            "snapshot",
+            sum(
+                entry.size
+                for entry in files
+                if entry.path not in omitted
+            ),
+        )
+        for entry in directories:
+            budget.remaining("snapshot materialization")
             if entry.path in omitted:
                 continue
             target = destination / entry.path
-            target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_bytes(entry.data)
+            budget.charge_count("snapshot_ops")
+            target.mkdir(parents=True, exist_ok=True)
             target.chmod(entry.mode)
+        for entry in files:
+            if entry.path in omitted:
+                continue
+            budget.remaining("snapshot materialization")
+            target = destination / entry.path
+            target.parent.mkdir(parents=True, exist_ok=True)
+            budget.charge_count("snapshot_ops", 2)
+            with target.open("wb") as stream:
+                for index in range(0, len(entry.data), 1024 * 1024):
+                    budget.remaining("snapshot write")
+                    chunk = entry.data[index:index + 1024 * 1024]
+                    budget.charge_count("snapshot_ops")
+                    stream.write(chunk)
+            target.chmod(entry.mode)
+            os.utime(target, ns=(entry.mtime_ns, entry.mtime_ns))
+            metadata = os.lstat(target)
+            if (
+                stat.S_IMODE(metadata.st_mode) != entry.mode
+                or metadata.st_size != entry.size
+                or metadata.st_mtime_ns != entry.mtime_ns
+                or metadata.st_uid != entry.uid
+                or metadata.st_gid != entry.gid
+            ):
+                raise ProbeSandboxError(
+                    f"materialized snapshot metadata differs for {entry.path!r}"
+                )
+        for entry in reversed(directories):
+            target = destination / entry.path
+            if target.exists():
+                os.utime(target, ns=(entry.mtime_ns, entry.mtime_ns))
 
 
 CommandHandler = Callable[[str, ProbeBudget], bytes]
@@ -905,6 +1054,7 @@ class SandboxRunner:
         cache: ProbeCache | None = None,
         cache_namespace: tuple[object, ...] = (),
         cwd: str = "/repo",
+        bootstrap_config: Path | None = None,
     ) -> tuple[subprocess.CompletedProcess[bytes], list[dict[str, object]]]:
         executable = executable.resolve(strict=True)
         selected_read_only = list(read_only)
@@ -993,6 +1143,11 @@ class SandboxRunner:
                 launcher.chmod(0o500)
                 config = {
                     "argv": argv,
+                    "bootstrap_config": (
+                        None
+                        if bootstrap_config is None
+                        else str(bootstrap_config.resolve(strict=True))
+                    ),
                     "cwd": cwd,
                     "environment": _clean_environment(environment),
                     "executable": executable_mount.target,

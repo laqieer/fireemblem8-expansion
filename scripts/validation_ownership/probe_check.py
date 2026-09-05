@@ -66,14 +66,15 @@ def main(argv: list[str] | None = None) -> int:
     )
     (fixture / "input").write_text("admitted\n", encoding="ascii")
     try:
+        budget = ProbeBudget(ProbeLimits(seconds=60))
         observations = run_make_probe(
-            ExecutionSnapshot.capture(fixture),
+            ExecutionSnapshot.capture(fixture, budget),
             targets={"check"},
             variants=[MakeVariant()],
             owner_inputs={"check": {"Makefile", "input"}},
             registered_commands=[],
             scratch_root=scratch,
-            budget=ProbeBudget(ProbeLimits(seconds=60)),
+            budget=budget,
         )
         if (
             len(observations) != 1

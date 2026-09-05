@@ -25,6 +25,7 @@ PR_SET_NO_NEW_PRIVS = 38
 PR_SET_KEEPCAPS = 8
 PR_CAPBSET_DROP = 24
 LINUX_CAPABILITY_VERSION_3 = 0x20080522
+BOOTSTRAP_FD = 6
 
 
 class _CapabilityHeader(ctypes.Structure):
@@ -143,6 +144,7 @@ def main() -> int:
     config = json.loads(config_path.read_text(encoding="utf-8"))
     expected = {
         "argv",
+        "bootstrap_config",
         "cwd",
         "environment",
         "executable",
@@ -169,6 +171,13 @@ def main() -> int:
 
     root = Path(config["root"]).resolve(strict=True)
     executable = root / config["executable"].lstrip("/")
+    bootstrap_descriptor = None
+    if config["bootstrap_config"] is not None:
+        bootstrap_path = Path(config["bootstrap_config"]).resolve(strict=True)
+        bootstrap_descriptor = os.open(
+            bootstrap_path,
+            os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | os.O_NOFOLLOW,
+        )
     _mount(str(root), str(root), MS_BIND | MS_REC)
     for item in config["read_only"]:
         if set(item) != {"noexec", "source", "target"}:
@@ -191,6 +200,16 @@ def main() -> int:
     if not stat.S_ISREG(metadata.st_mode) or not metadata.st_mode & 0o111:
         raise SystemExit("sandbox executable is not a regular executable")
     _unmount(executable)
+    if bootstrap_descriptor is None:
+        try:
+            os.close(BOOTSTRAP_FD)
+        except OSError:
+            pass
+    else:
+        os.dup2(bootstrap_descriptor, BOOTSTRAP_FD, inheritable=True)
+        os.set_inheritable(BOOTSTRAP_FD, True)
+        if bootstrap_descriptor != BOOTSTRAP_FD:
+            os.close(bootstrap_descriptor)
     _mount(
         None,
         str(root),

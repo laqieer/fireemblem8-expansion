@@ -216,14 +216,20 @@ def _semantic_output(stdout: bytes, stderr: bytes) -> dict[str, object]:
 def _owner_input_record(
     snapshot: ExecutionSnapshot,
     owner_inputs: Iterable[str],
-) -> list[dict[str, str]]:
+) -> list[dict[str, object]]:
     records = []
     for path in sorted(set(owner_inputs)):
         entry = snapshot.entry(path)
         records.append(
             {
+                "gid": entry.gid,
+                "kind": entry.kind,
+                "mode": entry.mode,
+                "mtime_ns": entry.mtime_ns,
                 "path": path,
                 "sha256": sha256_bytes(entry.data),
+                "size": entry.size,
+                "uid": entry.uid,
             }
         )
     if not records:
@@ -273,7 +279,7 @@ def run_make_probe(
     ) as temporary:
         base = Path(temporary)
         tree = base / "tree"
-        snapshot.materialize(tree)
+        snapshot.materialize(tree, budget)
         (tree / "build").mkdir(exist_ok=True)
         work = base / "work"
         build = base / "build"

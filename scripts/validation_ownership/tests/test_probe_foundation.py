@@ -1,15 +1,18 @@
 from __future__ import annotations
 
 import json
+import multiprocessing
 import os
 import shutil
 import socket
+import stat
 import struct
 import subprocess
 import sys
 import time
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from scripts.validation_ownership.budget import (
     MAX_PROBE_SECONDS,
@@ -26,11 +29,14 @@ from scripts.validation_ownership.make_probe import (
 )
 from scripts.validation_ownership.sandbox import (
     ExecutionSnapshot,
+    Mount,
     ProbeSandboxError,
     RegisteredCommand,
     REQUEST_MAGIC,
     RESPONSE_MAGIC,
     _DispatchServer,
+    _launcher_prefix,
+    SandboxRunner,
     run_bounded_process,
 )
 from scripts.validation_ownership.source_probe import (
@@ -38,6 +44,7 @@ from scripts.validation_ownership.source_probe import (
     SourceProbeError,
     probe_generated_sources,
 )
+from scripts.validation_ownership import source_probe
 
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -102,8 +109,9 @@ class ProbeTestCase(unittest.TestCase):
         budget: ProbeBudget | None = None,
     ):
         selected_targets = {"all"} if targets is None else targets
+        selected_budget = ProbeBudget(limits()) if budget is None else budget
         return run_make_probe(
-            ExecutionSnapshot.capture(root),
+            ExecutionSnapshot.capture(root, selected_budget),
             targets=selected_targets,
             variants=[MakeVariant()] if variants is None else variants,
             owner_inputs=(
@@ -113,11 +121,26 @@ class ProbeTestCase(unittest.TestCase):
             ),
             registered_commands=[] if commands is None else commands,
             scratch_root=SCRATCH,
-            budget=(
-                ProbeBudget(limits())
-                if budget is None
-                else budget
-            ),
+            budget=selected_budget,
+        )
+
+    def source_probe(
+        self,
+        root: Path,
+        contract: SourceContract,
+        *,
+        load_arguments: list[str],
+        budget: ProbeBudget | None = None,
+    ):
+        return probe_generated_sources(
+            root,
+            program_paths={"probe.py"},
+            entrypoint="probe.py",
+            metadata_arguments=["metadata"],
+            load_arguments=load_arguments,
+            contract=contract,
+            scratch_root=SCRATCH,
+            budget=ProbeBudget(limits()) if budget is None else budget,
         )
 
 
@@ -514,15 +537,19 @@ class MakeIsolationTests(ProbeTestCase):
         )
         (root / "alias.mk").symlink_to("real.mk")
         with self.assertRaisesRegex(ProbeSandboxError, "symlink"):
-            ExecutionSnapshot.capture(root)
+            ExecutionSnapshot.capture(root, ProbeBudget(limits()))
         (root / "alias.mk").unlink()
         (root / "outside").mkdir()
         (root / "outside/hidden.mk").write_text("X := 1\n", encoding="ascii")
         (root / "alias-dir").symlink_to("outside", target_is_directory=True)
         with self.assertRaisesRegex(ProbeSandboxError, "symlink"):
-            ExecutionSnapshot.capture(root)
+            ExecutionSnapshot.capture(root, ProbeBudget(limits()))
         with self.assertRaisesRegex(ProbeSandboxError, "symlink"):
-            ExecutionSnapshot.capture(root, {"Makefile", "alias-dir/hidden.mk"})
+            ExecutionSnapshot.capture(
+                root,
+                ProbeBudget(limits()),
+                {"Makefile", "alias-dir/hidden.mk"},
+            )
 
     def test_invalid_command_bytes_are_rejected_at_text_boundary(self):
         root = self.fixture(
@@ -602,26 +629,122 @@ class SemanticIdentityTests(ProbeTestCase):
         self.assertNotEqual(first.semantic_fingerprint, second.semantic_fingerprint)
 
 
-class GeneratedSourceConfinementTests(ProbeTestCase):
-    def source_probe(
-        self,
-        root: Path,
-        contract: SourceContract,
-        *,
-        load_arguments: list[str],
-        budget: ProbeBudget | None = None,
-    ):
-        return probe_generated_sources(
+class SnapshotMetadataTests(ProbeTestCase):
+    def test_mode_mtime_and_type_change_snapshot_identity(self):
+        root = self.fixture("snapshot-metadata", {"node": "value\n"})
+        os.chmod(root / "node", 0o640)
+        os.utime(root / "node", ns=(1_700_000_000_000_000_000,) * 2)
+        first = ExecutionSnapshot.capture(
             root,
-            program_paths={"probe.py"},
-            entrypoint="probe.py",
-            metadata_arguments=["metadata"],
-            load_arguments=load_arguments,
-            contract=contract,
-            scratch_root=SCRATCH,
-            budget=ProbeBudget(limits()) if budget is None else budget,
+            ProbeBudget(limits()),
+            {"node"},
         )
+        os.chmod(root / "node", 0o600)
+        second = ExecutionSnapshot.capture(
+            root,
+            ProbeBudget(limits()),
+            {"node"},
+        )
+        os.utime(root / "node", ns=(1_700_000_001_000_000_000,) * 2)
+        third = ExecutionSnapshot.capture(
+            root,
+            ProbeBudget(limits()),
+            {"node"},
+        )
+        (root / "node").unlink()
+        (root / "node").mkdir()
+        fourth = ExecutionSnapshot.capture(
+            root,
+            ProbeBudget(limits()),
+            {"node"},
+        )
+        self.assertEqual(len({item.digest for item in (first, second, third, fourth)}), 4)
 
+    def test_materialization_preserves_supported_metadata(self):
+        root = self.fixture("snapshot-materialize", {"data/value.txt": "value\n"})
+        source = root / "data/value.txt"
+        os.chmod(source, 0o640)
+        timestamp = 1_700_000_002_000_000_000
+        os.utime(source, ns=(timestamp, timestamp))
+        budget = ProbeBudget(limits())
+        snapshot = ExecutionSnapshot.capture(root, budget, {"data/value.txt"})
+        target = SCRATCH / "snapshot-materialized"
+        shutil.rmtree(target, ignore_errors=True)
+        snapshot.materialize(target, budget)
+        metadata = os.lstat(target / "data/value.txt")
+        self.assertEqual(stat.S_IMODE(metadata.st_mode), 0o640)
+        self.assertEqual(metadata.st_size, 6)
+        self.assertEqual(metadata.st_mtime_ns, timestamp)
+        self.assertEqual(metadata.st_uid, os.getuid())
+        self.assertEqual(metadata.st_gid, os.getgid())
+
+    def test_candidate_metadata_proxy_supports_only_declared_fields(self):
+        timestamp = 1_700_000_003_000_000_000
+        root = self.fixture(
+            "source-metadata-positive",
+            {
+                "data/a.txt": "alpha\n",
+                "probe.py": (
+                    "import json,os,stat,sys\n"
+                    "if sys.argv[1] == 'metadata': print('{}')\n"
+                    "else:\n"
+                    " value=os.stat('/repo/data/a.txt')\n"
+                    " assert stat.S_ISREG(value.st_mode)\n"
+                    " assert value.st_mode & 0o777 == 0o640\n"
+                    " assert value.st_size == 6\n"
+                    f" assert value.st_mtime_ns == {timestamp}\n"
+                    f" assert value.st_uid == {os.getuid()}\n"
+                    f" assert value.st_gid == {os.getgid()}\n"
+                    " with open('/repo/data/a.txt','rb') as stream:\n"
+                    "  assert os.fstat(stream.fileno()).st_size == 6\n"
+                    " print(json.dumps(['data/a.txt']))\n"
+                ),
+            },
+        )
+        os.chmod(root / "data/a.txt", 0o640)
+        os.utime(root / "data/a.txt", ns=(timestamp, timestamp))
+        observation = self.source_probe(
+            root,
+            SourceContract(
+                "data/a.txt",
+                None,
+                ("data/a.txt",),
+                {},
+                ("json", "os", "stat", "sys"),
+            ),
+            load_arguments=["load"],
+        )
+        self.assertEqual(observation.reported_sources, ("data/a.txt",))
+
+        for field in ("st_ino", "st_dev", "st_ctime_ns", "st_nlink"):
+            with self.subTest(field=field):
+                (root / "probe.py").write_text(
+                    "import json,os,sys\n"
+                    "if sys.argv[1] == 'metadata': print('{}')\n"
+                    "else:\n"
+                    " value=os.stat('/repo/data/a.txt')\n"
+                    f" print(value.{field})\n"
+                    " print(json.dumps(['data/a.txt']))\n",
+                    encoding="ascii",
+                )
+                with self.assertRaisesRegex(
+                    SourceProbeError,
+                    "admitted-source confinement",
+                ):
+                    self.source_probe(
+                        root,
+                        SourceContract(
+                            "data/a.txt",
+                            None,
+                            ("data/a.txt",),
+                            {},
+                            ("json", "os", "sys"),
+                        ),
+                        load_arguments=["load"],
+                    )
+
+
+class GeneratedSourceConfinementTests(ProbeTestCase):
     def test_declared_directory_glob_supports_all_access_forms(self):
         root = self.fixture(
             "source-positive",
@@ -659,6 +782,386 @@ class GeneratedSourceConfinementTests(ProbeTestCase):
             observation.permitted_sources,
             ("data/a.txt", "data/b.txt"),
         )
+        self.assertRegex(observation.runtime_sha256, r"^[0-9a-f]{64}$")
+
+    def test_unknown_and_ctypes_imports_fail_closed(self):
+        for label, imported in (("unknown", "socket"), ("ctypes", "ctypes")):
+            with self.subTest(label=label):
+                root = self.fixture(
+                    f"source-import-{label}",
+                    {
+                        "data/a.txt": "alpha\n",
+                        "probe.py": (
+                            "import json,sys\n"
+                            "if sys.argv[1] == 'metadata': print('{}')\n"
+                            f"else:\n import {imported}\n"
+                            " print(json.dumps(['data/a.txt']))\n"
+                        ),
+                    },
+                )
+                with self.assertRaisesRegex(
+                    SourceProbeError,
+                    "code-only confinement|admitted-source confinement",
+                ):
+                    self.source_probe(
+                        root,
+                        SourceContract(
+                            "data/a.txt",
+                            None,
+                            ("data/a.txt",),
+                            {},
+                        ),
+                        load_arguments=["load"],
+                    )
+
+    def test_bootstrap_authority_fd_and_nonce_file_are_gone_before_candidate(self):
+        root = self.fixture(
+            "source-bootstrap-hidden",
+            {
+                "data/a.txt": "alpha\n",
+                "probe.py": (
+                "import json,os,sys\n"
+                "from pathlib import Path\n"
+                "if sys.argv[1] == 'metadata': print('{}')\n"
+                "else:\n"
+                " try: os.read(6,1)\n"
+                " except OSError: pass\n"
+                " else: raise RuntimeError('bootstrap fd survived')\n"
+                " assert not Path('/trusted/runtime.json').exists()\n"
+                " Path('/repo/data/a.txt').read_bytes()\n"
+                " print(json.dumps(['data/a.txt']))\n"
+                ),
+            },
+        )
+        observation = self.source_probe(
+            root,
+            SourceContract(
+                "data/a.txt",
+                None,
+                ("data/a.txt",),
+                {},
+            ),
+            load_arguments=["load"],
+        )
+        self.assertEqual(observation.reported_sources, ("data/a.txt",))
+
+    def test_memfd_native_escape_is_blocked_after_interpreter_bootstrap(self):
+        root = self.fixture(
+            "source-memfd",
+            {
+                "data/a.txt": "alpha\n",
+                "probe.py": (
+                    "import json,os,sys\n"
+                    "if sys.argv[1] == 'metadata': print('{}')\n"
+                    "else:\n"
+                    " fd=os.memfd_create('dash')\n"
+                    " os.write(fd,b'forged')\n"
+                    " os.execve('/proc/self/fd/%d' % fd,['dash'],{})\n"
+                    " print(json.dumps(['data/a.txt']))\n"
+                ),
+            },
+        )
+        with self.assertRaisesRegex(
+            SourceProbeError,
+            "admitted-source confinement",
+        ):
+            self.source_probe(
+                root,
+                SourceContract(
+                "data/a.txt",
+                None,
+                ("data/a.txt",),
+                {},
+                ),
+                load_arguments=["load"],
+            )
+
+    def test_process_and_network_creation_are_blocked(self):
+        cases = {
+            "fork": (
+                "import json,os,sys\n",
+                " os.fork()\n",
+                ("json", "os", "sys"),
+            ),
+            "socket": (
+                "import json,socket,sys\n",
+                " socket.socket()\n",
+                ("json", "socket", "sys"),
+            ),
+        }
+        for label, (imports, operation, admitted_imports) in cases.items():
+            with self.subTest(label=label):
+                root = self.fixture(
+                    f"source-blocked-{label}",
+                    {
+                        "data/a.txt": "alpha\n",
+                        "probe.py": (
+                            imports
+                            + "if sys.argv[1] == 'metadata': print('{}')\n"
+                            + "else:\n"
+                            + operation
+                            + " print(json.dumps(['data/a.txt']))\n"
+                        ),
+                    },
+                )
+                with self.assertRaisesRegex(
+                    SourceProbeError,
+                    "admitted-source confinement",
+                ):
+                    self.source_probe(
+                        root,
+                        SourceContract(
+                            "data/a.txt",
+                            None,
+                            ("data/a.txt",),
+                            {},
+                            admitted_imports,
+                        ),
+                        load_arguments=["load"],
+                    )
+
+    def test_arbitrary_crash_is_not_omission_evidence(self):
+        root = self.fixture(
+            "source-crash-omission",
+            {
+                "data/a.txt": "alpha\n",
+                "probe.py": (
+                    "import json,os,sys\n"
+                    "from pathlib import Path\n"
+                    "if sys.argv[1] == 'metadata': print('{}')\n"
+                    "else:\n"
+                    " try: Path('/repo/data/a.txt').read_bytes()\n"
+                    " except FileNotFoundError: os.abort()\n"
+                    " print(json.dumps(['data/a.txt']))\n"
+                ),
+            },
+        )
+        with self.assertRaisesRegex(
+            SourceProbeError,
+            "authenticated missing-source outcome",
+        ):
+            self.source_probe(
+                root,
+                SourceContract(
+                "data/a.txt",
+                None,
+                ("data/a.txt",),
+                {},
+                ),
+                load_arguments=["load"],
+            )
+
+    def test_candidate_cannot_steal_nonce_from_traceback_frames(self):
+        root = self.fixture(
+            "source-traceback-forgery",
+            {
+                "data/a.txt": "alpha\n",
+                "probe.py": (
+                    "import json,os,sys\n"
+                    "from pathlib import Path\n"
+                    "if sys.argv[1] == 'metadata': print('{}')\n"
+                    "else:\n"
+                    " try: Path('/repo/data/a.txt').read_bytes()\n"
+                    " except FileNotFoundError as error:\n"
+                    "  frame=error.__traceback__.tb_frame\n"
+                    "  nonce=None\n"
+                    "  while frame is not None:\n"
+                    "   nonce=frame.f_locals.get('nonce',nonce)\n"
+                    "   frame=frame.f_back\n"
+                    "  if nonce:\n"
+                    "   os.write(2,('VO-OMITTED-SOURCE-v1 %s data/a.txt\\n' % nonce).encode())\n"
+                    "   os._exit(86)\n"
+                    " print(json.dumps(['data/a.txt']))\n"
+                ),
+            },
+        )
+        with self.assertRaisesRegex(
+            SourceProbeError,
+            "authenticated missing-source outcome",
+        ):
+            self.source_probe(
+                root,
+                SourceContract(
+                    "data/a.txt",
+                    None,
+                    ("data/a.txt",),
+                    {},
+                ),
+                load_arguments=["load"],
+            )
+
+    def test_arbitrary_timeout_is_not_omission_evidence_and_is_cleaned(self):
+        root = self.fixture(
+            "source-timeout-omission",
+            {
+                "data/a.txt": "alpha\n",
+                "probe.py": (
+                    "import json,sys,time\n"
+                    "from pathlib import Path\n"
+                    "if sys.argv[1] == 'metadata': print('{}')\n"
+                    "else:\n"
+                    " try: Path('/repo/data/a.txt').read_bytes()\n"
+                    " except FileNotFoundError:\n"
+                    "  while True: time.sleep(1)\n"
+                    " print(json.dumps(['data/a.txt']))\n"
+                ),
+            },
+        )
+        with self.assertRaisesRegex(
+            SourceProbeError,
+            "deadline|authenticated missing-source outcome",
+        ):
+            self.source_probe(
+                root,
+                SourceContract(
+                    "data/a.txt",
+                    None,
+                    ("data/a.txt",),
+                    {},
+                    ("json", "pathlib", "sys", "time"),
+                ),
+                load_arguments=["load"],
+                budget=ProbeBudget(limits(seconds=1.5)),
+            )
+        self.assertEqual(list(SCRATCH.glob(".v*")), [])
+
+    def test_ipc_namespace_does_not_persist_sysv_objects(self):
+        source = SCRATCH / "sysv-ipc.c"
+        executable = SCRATCH / "sysv-ipc"
+        source.write_text(
+            "#include <errno.h>\n"
+            "#include <sys/ipc.h>\n"
+            "#include <sys/msg.h>\n"
+            "#include <sys/sem.h>\n"
+            "#include <sys/shm.h>\n"
+            "int main(void) {\n"
+            " int shm=shmget((key_t)0x2065,4096,IPC_CREAT|IPC_EXCL|0600);\n"
+            " int sem=semget((key_t)0x2066,1,IPC_CREAT|IPC_EXCL|0600);\n"
+            " int msg=msgget((key_t)0x2067,IPC_CREAT|IPC_EXCL|0600);\n"
+            " if (shm < 0 || sem < 0 || msg < 0)\n"
+            "  return errno == EEXIST ? 3 : 2;\n"
+            " return 0;\n"
+            "}\n",
+            encoding="ascii",
+        )
+        subprocess.run(
+            ["/usr/bin/cc", str(source), "-o", str(executable)],
+            check=True,
+            capture_output=True,
+        )
+        budget = ProbeBudget(limits())
+        runner = SandboxRunner(SCRATCH, budget)
+        first, _ = runner.run(executable, ["sysv-ipc"])
+        second, _ = runner.run(executable, ["sysv-ipc"])
+        self.assertEqual(first.returncode, 0, first.stderr)
+        self.assertEqual(second.returncode, 0, second.stderr)
+        self.assertIn("--ipc", runner.launcher_prefix)
+
+    def test_sudo_fallback_also_requires_ipc_namespace(self):
+        completed = [
+            subprocess.CompletedProcess([], 1, b"", b"blocked"),
+            subprocess.CompletedProcess([], 0, b"", b""),
+        ]
+        with mock.patch(
+            "scripts.validation_ownership.sandbox.run_bounded_process",
+            side_effect=completed,
+        ):
+            prefix, authority = _launcher_prefix(ProbeBudget(limits()))
+        self.assertEqual(authority["mode"], "sudo-namespace")
+        self.assertIn("--ipc", prefix)
+        self.assertEqual(prefix[:3], ["/usr/bin/sudo", "-n", "/usr/bin/unshare"])
+
+    def test_extension_dependency_missing_and_tampered_reject(self):
+        root = self.fixture(
+            "source-extension-dependency",
+            {
+                "data/a.txt": "alpha\n",
+                "probe.py": (
+                    "import json,mmap,sys\n"
+                    "if sys.argv[1] == 'metadata': print('{}')\n"
+                    "else:\n"
+                    " with open('/repo/data/a.txt','rb') as stream:\n"
+                    "  with mmap.mmap(stream.fileno(),0,access=mmap.ACCESS_READ) as view:\n"
+                    "   assert view[:]\n"
+                    " print(json.dumps(['data/a.txt']))\n"
+                ),
+            },
+        )
+        real = source_probe._python_runtime_mounts
+
+        with self.assertRaisesRegex(
+            SourceProbeError,
+            "code-only confinement|admitted-source confinement",
+        ):
+            self.source_probe(
+                root,
+                SourceContract(
+                    "data/a.txt",
+                    None,
+                    ("data/a.txt",),
+                    {},
+                    ("json", "sys"),
+                ),
+                load_arguments=["load"],
+            )
+
+        def without_libffi(imports, budget, destination):
+            mounts, digest = real(imports, budget, destination)
+            return (
+                [
+                    mount
+                    for mount in mounts
+                    if "libffi.so" not in mount.target
+                ],
+                digest,
+            )
+
+        with mock.patch.object(
+            source_probe,
+            "_python_runtime_mounts",
+            side_effect=without_libffi,
+        ), self.assertRaisesRegex(SourceProbeError, "code-only confinement"):
+            self.source_probe(
+                root,
+                SourceContract(
+                    "data/a.txt",
+                    None,
+                    ("data/a.txt",),
+                    {},
+                ),
+                load_arguments=["load"],
+            )
+
+        def tampered_libffi(imports, budget, destination):
+            mounts, digest = real(imports, budget, destination)
+            replaced = []
+            for mount in mounts:
+                if "libffi.so" not in mount.target:
+                    replaced.append(mount)
+                    continue
+                tampered = SCRATCH / "tampered-libffi.so"
+                data = bytearray(mount.source.read_bytes())
+                data[0] ^= 0xFF
+                tampered.write_bytes(data)
+                tampered.chmod(0o555)
+                replaced.append(Mount(tampered, mount.target, noexec=False))
+            return replaced, digest
+
+        with mock.patch.object(
+            source_probe,
+            "_python_runtime_mounts",
+            side_effect=tampered_libffi,
+        ), self.assertRaisesRegex(SourceProbeError, "code-only confinement"):
+            self.source_probe(
+                root,
+                SourceContract(
+                    "data/a.txt",
+                    None,
+                    ("data/a.txt",),
+                    {},
+                ),
+                load_arguments=["load"],
+            )
 
     def test_undeclared_open_mmap_metadata_directory_glob_and_dynamic_paths_reject(self):
         operations = {
@@ -725,7 +1228,10 @@ class GeneratedSourceConfinementTests(ProbeTestCase):
                 ),
             },
         )
-        with self.assertRaisesRegex(SourceProbeError, "not consumed"):
+        with self.assertRaisesRegex(
+            SourceProbeError,
+            "authenticated missing-source outcome",
+        ):
             self.source_probe(
                 root,
                 SourceContract(
@@ -992,6 +1498,116 @@ class AggregateBudgetTests(ProbeTestCase):
                 lambda item, _remaining: invoked.append(item),
             )
         self.assertEqual(invoked, [])
+
+    def test_worker_processes_return_ordered_results(self):
+        budget = ProbeBudget(limits())
+        self.assertEqual(
+            run_bounded_futures(
+                budget,
+                [1, 2, 3],
+                lambda item, _remaining: item * 2,
+            ),
+            [2, 4, 6],
+        )
+        self.assertEqual(multiprocessing.active_children(), [])
+
+    def test_noncooperative_worker_is_killed_and_reaped_at_deadline(self):
+        budget = ProbeBudget(limits(seconds=0.2))
+        reader, writer = os.pipe()
+        try:
+            with self.assertRaisesRegex(ProbeBudgetError, "deadline"):
+                run_bounded_futures(
+                    budget,
+                    [1],
+                    lambda _item, _remaining: os.read(reader, 1),
+                )
+        finally:
+            os.close(reader)
+            os.close(writer)
+        self.assertEqual(multiprocessing.active_children(), [])
+
+    def test_snapshot_4096_files_is_bounded_and_linear(self):
+        root = SCRATCH / "snapshot-4096"
+        shutil.rmtree(root, ignore_errors=True)
+        root.mkdir()
+        for index in range(4096):
+            (root / f"{index:04d}.txt").write_bytes(b"x")
+        budget = ProbeBudget(limits())
+        snapshot = ExecutionSnapshot.capture(root, budget)
+        self.assertEqual(
+            sum(entry.kind == "file" for entry in snapshot.entries),
+            4096,
+        )
+        self.assertEqual(budget.snapshot()["bytes"]["snapshot"], 4096)
+
+    def test_snapshot_large_bytes_and_deadline_fail_before_growth(self):
+        root = self.fixture("snapshot-large", {"large.bin": b"x" * 4096})
+        byte_budget = ProbeBudget(
+            limits(byte_overrides={"snapshot": 1024})
+        )
+        with self.assertRaisesRegex(ProbeBudgetError, "snapshot bytes"):
+            ExecutionSnapshot.capture(root, byte_budget)
+
+        now = [0.0]
+
+        def clock() -> float:
+            now[0] += 0.06
+            return now[0]
+
+        deadline_budget = ProbeBudget(limits(seconds=0.1), clock=clock)
+        with self.assertRaisesRegex(ProbeBudgetError, "deadline"):
+            ExecutionSnapshot.capture(root, deadline_budget)
+
+    def test_source_omissions_reuse_one_materialized_snapshot(self):
+        files = {
+            "probe.py": (
+                "import json,sys\n"
+                "from pathlib import Path\n"
+                "if sys.argv[1] == 'metadata': print('{}')\n"
+                "else:\n"
+                " paths=['data/a.txt','data/b.txt','data/c.txt']\n"
+                " [Path('/repo/' + path).read_bytes() for path in paths]\n"
+                " print(json.dumps(paths))\n"
+            ),
+            "data/a.txt": "a",
+            "data/b.txt": "b",
+            "data/c.txt": "c",
+        }
+        root = self.fixture("source-single-materialization", files)
+        budget = ProbeBudget(limits())
+        original_materialize = ExecutionSnapshot.materialize
+        calls = []
+
+        def counted(snapshot, destination, selected_budget, **kwargs):
+            calls.append(destination)
+            return original_materialize(
+                snapshot,
+                destination,
+                selected_budget,
+                **kwargs,
+            )
+
+        with mock.patch.object(
+            ExecutionSnapshot,
+            "materialize",
+            new=counted,
+        ):
+            self.source_probe(
+                root,
+                SourceContract(
+                    "data",
+                    "*.txt",
+                    ("data/a.txt", "data/b.txt", "data/c.txt"),
+                    {},
+                ),
+                load_arguments=["load"],
+                budget=budget,
+            )
+        self.assertEqual(len(calls), 1)
+        self.assertLess(
+            budget.snapshot()["bytes"]["snapshot"],
+            budget.limits.bytes["snapshot"],
+        )
 
     def test_output_overflow_kills_child(self):
         budget = ProbeBudget(limits(byte_overrides={"outputs": 128}))
