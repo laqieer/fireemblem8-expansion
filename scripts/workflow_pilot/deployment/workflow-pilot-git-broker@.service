@@ -1,0 +1,46 @@
+[Unit]
+Description=Exact issue-scoped workflow-pilot Git broker (%i)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=fe8-git-broker
+Group=fe8-git-broker
+UMask=0077
+StateDirectory=workflow-pilot-broker-%i
+StateDirectoryMode=0700
+RuntimeDirectory=workflow-pilot-broker-%i
+RuntimeDirectoryMode=0755
+WorkingDirectory=/var/lib/workflow-pilot-broker-%i
+ExecStartPre=/usr/bin/python3 -I /opt/fe8-git-broker/scripts/workflow_pilot/git_broker.py preflight-server --installation /etc/fe8-git-broker/%i.json
+ExecStart=/usr/bin/python3 -I /opt/fe8-git-broker/scripts/workflow_pilot/git_broker.py serve --installation /etc/fe8-git-broker/%i.json
+Restart=no
+TimeoutStopSec=2
+KillMode=control-group
+SendSIGKILL=yes
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+ProtectSystem=strict
+ProtectHome=yes
+PrivateDevices=yes
+ProtectProc=invisible
+ProcSubset=pid
+RestrictNamespaces=yes
+RestrictSUIDSGID=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+ReadWritePaths=/var/lib/workflow-pilot-broker-%i /run/workflow-pilot-broker-%i
+InaccessiblePaths=/tmp /var/tmp
+TasksMax=16
+MemoryMax=512M
+LimitCORE=0
+LimitNOFILE=128
+LimitFSIZE=67108864
+StandardOutput=null
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

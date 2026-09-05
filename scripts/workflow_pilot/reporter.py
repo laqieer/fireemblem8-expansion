@@ -19,6 +19,8 @@ from decimal import Decimal, ROUND_HALF_UP
 from pathlib import Path
 from typing import Any, Iterable
 
+from scripts.workflow_pilot.signed_records import RecordError, parse_utc
+
 
 SCHEMA_VERSION = 1
 GIT = "/usr/bin/git"
@@ -51,6 +53,7 @@ DELETION_PROOF_SUPPORT_PATHS = (
     BASELINE_EXPECTED_PATH,
     ISOLATED_LAUNCHER_PATH,
     REPORTER_PACKAGE_PATH,
+    Path("scripts/workflow_pilot/signed_records.py"),
     REPORTER_TEST_PATH,
     REPORTER_TEST_PACKAGE_PATH,
 )
@@ -361,15 +364,12 @@ def expect_sha(value: Any, label: str, nullable: bool = False) -> str | None:
 def parse_time(value: Any, label: str, nullable: bool = False) -> datetime | None:
     if value is None and nullable:
         return None
-    if not isinstance(value, str) or not value.endswith("Z"):
-        raise PilotDataError(f"{label} must be an RFC 3339 UTC timestamp")
     try:
-        parsed = datetime.fromisoformat(value[:-1] + "+00:00")
-    except ValueError as error:
-        raise PilotDataError(f"{label} is not a valid timestamp") from error
-    if parsed.tzinfo != timezone.utc:
-        raise PilotDataError(f"{label} must use UTC")
-    return parsed
+        return parse_utc(value)
+    except RecordError as error:
+        raise PilotDataError(
+            f"{label} must be a canonical RFC 3339 UTC timestamp"
+        ) from error
 
 
 def expect_unique(values: Iterable[Any], label: str) -> None:

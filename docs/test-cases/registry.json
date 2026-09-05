@@ -481,7 +481,8 @@
         "https://github.com/laqieer/fireemblem8-expansion/issues/169",
         "https://github.com/laqieer/fireemblem8-expansion/issues/171",
         "https://github.com/laqieer/fireemblem8-expansion/issues/176",
-        "https://github.com/laqieer/fireemblem8-expansion/issues/177"
+        "https://github.com/laqieer/fireemblem8-expansion/issues/177",
+        "https://github.com/laqieer/fireemblem8-expansion/issues/205"
       ],
       "reference": ".github/skills/development-workflow/SKILL.md",
       "status": "current",
@@ -490,7 +491,8 @@
         "TC-WORKFLOW-MANUAL-HANDOFF-001",
         "TC-WORKFLOW-STACKED-CI-001",
         "TC-WORKFLOW-BODY-EDIT-001",
-        "TC-WORKFLOW-PILOT-BASELINE-001"
+        "TC-WORKFLOW-PILOT-BASELINE-001",
+        "TC-WORKFLOW-AUTHENTICATED-GIT-BROKER-001"
       ]
     },
     {
@@ -2334,6 +2336,39 @@
         {
           "command": "python3 scripts/check_docs.py --check",
           "evidence": "scripts/check_docs.py"
+        }
+      ]
+    },
+    {
+      "id": "TC-WORKFLOW-AUTHENTICATED-GIT-BROKER-001",
+      "title": "Publish only through authenticated external authority",
+      "feature_id": "workflow-governance",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/205"
+      ],
+      "document": "docs/test-cases/workflow-governance.md",
+      "anchor": "tc-workflow-authenticated-git-broker-001-publish-only-through-authenticated-external-authority",
+      "profiles": [
+        "Linux external root-installed broker, distinct coordinator and candidate UIDs, protected local bare remote",
+        "Externally credentialed disposable GitHub repository using broker-only HTTPS or pinned-host SSH"
+      ],
+      "purpose": "Prove authenticated issue-scoped exact atomic publication, independent signed-plan revalidation, immutable object closure, one-use nonce/sequence/ABA protection, signed live readback and canonical timestamp parity.",
+      "prerequisites": "Reviewed source, Python 3.10+, Git, OpenSSL 3 and jsonschema; actual protected acceptance additionally requires a disposable root-owned installation with three distinct real UIDs and externally provisioned endpoint credentials.",
+      "actions": "Run the real Git/TLS and timestamp unittest modules; run the explicit protected-principal fixture; use the installed client with a fresh externally signed exact plan and full pack at the disposable credentialed endpoint, read back both refs, and repeat adversarial, disconnect and termination cases.",
+      "expected_result": "Only one authenticated, fresh, exact issue authority plus anchor transition succeeds atomically. Peer identity and pinned signatures bind the complete request, live deadline and exact readback; protected server hooks remain authoritative and candidate processes cannot access credential or server state.",
+      "negative_control": "The reported unauthenticated abstract same-UID broker boundary accepts an expired plan without revalidation; production preflight and protocol reject it, all wrong identity/sequence/ref/OID/object/time/replay inputs, credential/config/endpoint substitutions, generic master/tag pushes and malformed timestamp values.",
+      "interactions": "Dependencies are existing exact-repository, signed-record and trusted external-installation contracts. Dependent #178/PR191 must replace its provisional broker/parser while retaining all semantic handoff/history/ruleset checks. No game/runtime interactions.",
+      "save_compatibility": "Host-only foundation; no save/config identity, generated data, localization, modern debug/release, archival, ROM/RAM or Build-topology change.",
+      "cleanup": "Fixtures remove only their own build/test-artifacts children and stop only the exact processes they started. External services use exact instance/cgroup cleanup and preserve the protected nonce journal; disposable GitHub repository cleanup remains owner-controlled.",
+      "limitations": "Same-UID unit exchanges are deterministic protocol evidence, not deployment acceptance. Missing protected principals or real GitHub credentials is an explicit failing/blocked acceptance criterion, never a simulated pass or manual-review requirement. Uncertain operations cannot be cleared through a generic recovery API.",
+      "automation": [
+        {
+          "command": "python3 -m unittest scripts.workflow_pilot.tests.test_git_broker scripts.workflow_pilot.tests.test_signed_records -v",
+          "evidence": "scripts/workflow_pilot/tests/test_git_broker.py"
+        },
+        {
+          "command": "/usr/bin/python3 -I scripts/workflow_pilot/tests/protected_broker_fixture.py --broker-uid 65534 --coordinator-uid 65532 --candidate-uid 65533",
+          "evidence": "scripts/workflow_pilot/tests/protected_broker_fixture.py"
         }
       ]
     },

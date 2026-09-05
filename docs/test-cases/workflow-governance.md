@@ -1456,3 +1456,161 @@ criterion applies.
 
 Rollback is a normal revert of issue #176's dedicated commit; no workflow or
 game behavior needs a compensating change.
+
+## TC-WORKFLOW-AUTHENTICATED-GIT-BROKER-001: Publish only through authenticated external authority
+
+### Purpose and profile
+
+Issue [#205](https://github.com/laqieer/fireemblem8-expansion/issues/205)
+provides the independent publication foundation for #178 / PR191.
+Prove that only an authenticated, one-use, issue-scoped signed plan can move
+both authority refs. The supported acceptance profile is an external
+root-installed Linux broker, a different coordinator UID, separate candidate
+UIDs, a protected local bare remote, and separately a credentialed disposable
+GitHub endpoint. No ROM, emulator or gameplay profile is involved.
+
+The complete deployment and public API contract is
+[`authenticated-git-broker.md`](../authenticated-git-broker.md).
+
+### Prerequisites and clean state
+
+- Reviewed source checkout; Python 3.10+, Git, OpenSSL 3 and the existing
+  `jsonschema` validator for the focused schema tests.
+- For protected acceptance, an already authorized disposable Linux
+  environment with a root-owned, publicly traversable installation. Three
+  actual distinct kernel UIDs are required. Do not change a shared user's
+  ownership, add users or relax host settings to satisfy this test.
+- The protected local fixture starts with its own two absent issue refs and
+  empty journal. It generates synthetic test keys inside its private
+  artifacts; these are not GitHub credentials.
+- For live HTTPS/SSH acceptance, an owner-provided disposable repository,
+  actual repository/ruleset/coordinator identities, both exact authority
+  branches protected against rewrite/deletion, and a trusted terminal signer.
+  Provision token/key/host trust only inside the broker. Candidate processes
+  must never receive them. The normal repository is not the test endpoint.
+
+### Exact actions
+
+1. Run the deterministic real Git/TLS/protocol regressions from source:
+
+   ```bash
+   /usr/bin/python3 -m unittest \
+     scripts.workflow_pilot.tests.test_git_broker \
+     scripts.workflow_pilot.tests.test_signed_records -v
+   ```
+
+   Observe atomic bootstrap, handoff advance, one-time PR binding and exact
+   authenticated readback. The adversaries cover incorrect signatures,
+   actor/key/client/deployment, repository/issue/endpoint, master/tag refs,
+   OIDs/sequences/objects, expiry/future issuance, nonce/ABA reuse, persistent
+   journal ownership, protected hooks, environment/config injection,
+   disconnects, output bounds and subprocess deadlines. The actual reporter
+   and JSON Schema must agree on all clock/date inputs, including hour 24,
+   invalid leap days, offsets, malformed dates and excessive precision.
+
+2. Run the protected acceptance command in the **already provisioned
+   disposable root-owned installation**, under its authorized root test
+   controller:
+
+   ```bash
+   /usr/bin/python3 -I scripts/workflow_pilot/tests/protected_broker_fixture.py \
+     --broker-uid 65534 --coordinator-uid 65532 --candidate-uid 65533
+   ```
+
+   Those numeric UIDs must be reserved for this fixture in that environment;
+   the command creates no accounts or global settings. It starts the real
+   production `serve` command under the broker UID and invokes the production
+   `BrokerClient` under the separate unprivileged coordinator UID. The root
+   test controller is not a protocol peer. It tests candidate denial for private
+   keys, remote config/hooks/refs/objects, process memory/environment and the
+   direct socket protocol, coordinator denial for broker credentials/state,
+   plus exact atomic publication/readback, trusted
+   server-hook rejection and independently rejected signed adversarial
+   requests. It tries same-UID, abstract, wrong-peer and substituted-server
+   installations, and a real broker SIGKILL/restart with a consumed reservation.
+
+   An unprivileged/shared checkout must report `BLOCKED/FAILED` and exit 2,
+   **not pass or skip**. Record this as missing protected deployment
+   acceptance. A one-UID user namespace does not count as three principals.
+
+3. In the external credentialed fixture, run the installed server/client
+   preflight commands from the deployment guide. They must authenticate both
+   actual OS principals and pinned keys before any publication. Have the
+   existing trusted #178 validator/terminal signer produce a fresh complete
+   signed publication and its exact full pack for the disposable endpoint.
+
+4. As that protected coordinator, run:
+
+   ```bash
+   /usr/bin/python3 -I /opt/fe8-git-broker/scripts/workflow_pilot/git_broker.py \
+     publish --installation /etc/fe8-coordinator/issue-205.json \
+     --plan ./signed-publication.json --pack ./exact-publication.pack
+   /usr/bin/python3 -I /opt/fe8-git-broker/scripts/workflow_pilot/git_broker.py \
+     readback --installation /etc/fe8-coordinator/issue-205.json \
+     --plan ./signed-publication.json
+   ```
+
+   Require `published` and the exact two new OIDs from both authenticated
+   responses. Replay the same publication: it must fail without another ref
+   change. Repeat with wrong/expired plans and server rejection using the
+   fixture's trusted signer, and confirm no master/tag movement. Repeat for
+   each claimed deployed transport, HTTPS and/or pinned-host SSH. Never use a
+   mock, public uncredentialed read, local bare remote, self-asserted result or
+   unchecked GitHub response as credentialed acceptance.
+
+5. Exercise disconnect/timeout/termination in the disposable deployment.
+   Confirm nonce persistence, cgroup/process teardown and no reusable
+   publication. A lost response can mean an uncertain atomic update, not
+   rollback: require exact fresh authenticated readback and preserved deadline
+   evidence, or retain the hold. No generic recovery/rollback push is exposed.
+
+### Expected and negative results
+
+Exactly one authorized issue authority+anchor transition succeeds atomically;
+all other capabilities reject before publication. The candidate cannot read
+or change broker/coordinator credentials, trusted code or protected server
+state. Server hooks remain authoritative between validation and receive-pack.
+Every accepted response has the pinned signature, exact plan/session digest,
+live deadline and exact read-back OIDs. No token, key, askpass/agent capability
+or arbitrary process output appears in candidate files/environment, argv,
+logs or responses.
+
+The negative control reproduces the reported pre-fix boundary: an
+unauthenticated same-UID abstract socket can accept an expired plan and move
+refs if the service trusts caller assertions instead of revalidating the
+capability. Such an endpoint can never satisfy production preflight. The
+historical PR191 head contains only the planning seam, not a deployable
+credential broker; do not describe a synthetic control as a credentialed run
+of that historical source.
+
+### Interactions, compatibility and automation
+
+Dependencies: the protected installation, external terminal signer and
+existing exact-repository/signed-record contracts. Dependent: #178 / PR191.
+Conflict: PR191's provisional broker and duplicate timestamp parser must use
+this foundation; its handoff/lifecycle/history/PR/ruleset checks remain
+required. There are no save/configuration, generated game data, localization,
+ROM/RAM, modern debug/release, archival or required-Build-context changes.
+
+The two focused unittest modules cover deterministic protocol behavior with
+actual Git and TLS. `protected_broker_fixture.py` covers the actual
+three-principal production consumer/server and protected local remote.
+Credentialed HTTPS/SSH behavior is deterministic but requires externally
+provisioned permissions and credentials; it is an explicit acceptance hold
+when unavailable, **not a manual-only or human-review criterion**.
+
+### Cleanup and limitations
+
+The automated fixtures remove only their own `build/test-artifacts/` children
+and stop only the exact PIDs they start. Do not delete another run's artifacts
+or kill a process by name/UID. For an external service, stop the exact owned
+systemd instance; verify its cgroup is empty and retain the protected journal.
+Owner-controlled disposal of the dedicated GitHub test repository is outside
+the broker's deliberately non-generic API.
+
+The implementation does not automatically adopt existing history into a new
+journal, clear uncertain operations, install users/services, accept same-UID
+authority or claim credentialed GitHub success from local tests. Record the
+candidate SHA, tool versions, commands, actual positive/negative results and
+the precise missing external criterion. Roll back by reverting the dedicated
+foundation; dependent publication stays blocked rather than falling back.

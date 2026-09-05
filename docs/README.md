@@ -37,6 +37,7 @@ the authoritative technical documentation and are checked by CI.
 | Generate or test localized full-game message catalogs | [`game_localization_catalog.md`](game_localization_catalog.md) |
 | Evaluate and deliver a feature request or bug fix with Copilot | [`development-workflow`](../.github/skills/development-workflow/SKILL.md) |
 | Reproduce the workflow-efficiency pilot baseline, event selection, and evidence contract | [`workflow-pilot.md`](workflow-pilot.md) |
+| Deploy authenticated issue-scoped Git publication outside candidate authority | [`authenticated-git-broker.md`](authenticated-git-broker.md) |
 | Contribute code/docs and know the review process | [`../CONTRIBUTING.md`](../CONTRIBUTING.md), [`project-governance.md`](project-governance.md) |
 | Come from the old decomp-base/agbcc workflow | [`migration-from-decomp.md`](migration-from-decomp.md) |
 | Do byte-for-byte decomp-matching work | [`archival-decomp.md`](archival-decomp.md) |

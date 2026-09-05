@@ -1,5 +1,10 @@
 # Workflow-efficiency pilot baseline
 
+For the independent authenticated external publication boundary used by
+issue #178's authority consumer, see
+[`authenticated-git-broker.md`](authenticated-git-broker.md). That service
+does not authorize generic pushes or replace this reporter's evidence.
+
 Issue [#176](https://github.com/laqieer/fireemblem8-expansion/issues/176)
 is an accepted **framework capability: workflow measurement and decision
 contract**. It freezes the pre-pilot evidence and supplies one fail-closed
