@@ -406,6 +406,7 @@ class BrokerFixture:
             "expected_capability_uid": os.geteuid(),
             "broker_key_id": "broker-v1",
             "broker_public_key": self.broker_public,
+            "deadline_exec": self.deadline_exec,
             "pack_max_bytes": self.installation["pack_max_bytes"],
             "operation_timeout_seconds": 10,
             "test_only": True,
@@ -1009,11 +1010,20 @@ class GitPublicationBrokerTests(unittest.TestCase):
             original_reconcile = broker._reconcile_remote
 
             def unresolved(*_arguments, **_keywords):
-                return "indeterminate", None
+                return broker.ReconciliationOutcome(
+                    "indeterminate",
+                    None,
+                    "protected-local",
+                    "unavailable",
+                )
 
             def uncertain(*_arguments, **_keywords):
                 raise broker.IndeterminatePublication(
-                    "indeterminate", "simulated transport loss"
+                    "indeterminate",
+                    "simulated transport loss",
+                    termination_proof=(
+                        "protected-receive-pack-terminated"
+                    ),
                 )
 
             broker._publish = uncertain
@@ -1114,7 +1124,12 @@ class GitPublicationBrokerTests(unittest.TestCase):
             )
 
         def unresolved(*_arguments, **_keywords):
-            return "indeterminate", None
+            return broker.ReconciliationOutcome(
+                "indeterminate",
+                None,
+                "protected-local",
+                "unavailable",
+            )
 
         broker._publish = uncertain
         broker._reconcile_remote = unresolved
@@ -1171,6 +1186,8 @@ class GitPublicationBrokerTests(unittest.TestCase):
                         broker._plan_ref(205, "authority"): self.fixture.commit,
                         broker._plan_ref(205, "anchor"): self.fixture.commit,
                     },
+                    "network",
+                    "not-required",
                 ),
                 0,
             ),
@@ -1181,6 +1198,8 @@ class GitPublicationBrokerTests(unittest.TestCase):
                         broker._plan_ref(205, "authority"): None,
                         broker._plan_ref(205, "anchor"): None,
                     },
+                    "protected-local",
+                    "protected-receive-pack-terminated",
                 ),
                 3,
             ),
@@ -1191,10 +1210,20 @@ class GitPublicationBrokerTests(unittest.TestCase):
                         broker._plan_ref(205, "authority"): self.fixture.commit,
                         broker._plan_ref(205, "anchor"): None,
                     },
+                    "network",
+                    "not-required",
                 ),
                 4,
             ),
-            (broker.ReconciliationOutcome("indeterminate", None), 5),
+            (
+                broker.ReconciliationOutcome(
+                    "indeterminate",
+                    None,
+                    "network",
+                    "unavailable",
+                ),
+                5,
+            ),
         )
 
         class Stdout:
@@ -1323,6 +1352,8 @@ class GitPublicationBrokerTests(unittest.TestCase):
                 "/proc/self/ns/user", follow_symlinks=True
             ).st_ino,
             "effective_deadline": request["request_deadline"],
+            "transport": "protected-local",
+            "termination_proof": "not-required",
             "status": "ready",
             "code": "ready",
             "refs": None,
@@ -1417,6 +1448,20 @@ class GitPublicationBrokerTests(unittest.TestCase):
         mutations.append(changed)
         changed = copy.deepcopy(base)
         changed["status"] = "ok"
+        mutations.append(changed)
+        changed = copy.deepcopy(base)
+        changed["transport"] = "network"
+        changed["code"] = "safe-failed"
+        changed["termination_proof"] = "unavailable"
+        changed["refs"] = {
+            broker._plan_ref(205, "authority"): None,
+            broker._plan_ref(205, "anchor"): None,
+        }
+        mutations.append(changed)
+        changed = copy.deepcopy(base)
+        changed["termination_proof"] = (
+            "protected-receive-pack-terminated"
+        )
         mutations.append(changed)
         for response in mutations:
             resign(response)
@@ -1571,6 +1616,11 @@ class GitPublicationBrokerTests(unittest.TestCase):
             self.fixture.broker_public,
             broker._signed_payload(broker.RESPONSE_DOMAIN, response),
             signature,
+            deadline=broker.OperationDeadline(
+                datetime.datetime.now(datetime.timezone.utc)
+                + datetime.timedelta(seconds=10)
+            ),
+            deadline_exec=self.fixture.deadline_exec,
         )
         staging = self.fixture.state / "staging"
         self.assertFalse(staging.exists() and any(staging.iterdir()))
@@ -1915,6 +1965,7 @@ class GitPublicationBrokerTests(unittest.TestCase):
             "expected_capability_uid": os.geteuid(),
             "broker_key_id": "broker-v1",
             "broker_public_key": os.fspath(public_copy),
+            "deadline_exec": os.fspath(self.fixture.deadline_exec),
             "pack_max_bytes": 1024,
             "operation_timeout_seconds": 10,
             "test_only": False,
@@ -2299,6 +2350,124 @@ class GitPublicationBrokerTests(unittest.TestCase):
         finally:
             server.close()
 
+    def test_network_old_refs_remain_indeterminate_until_late_commit(self):
+        server = AuthenticatedGitServer(self.fixture)
+        try:
+            self.fixture.configure_https_authentication(server)
+            ready = self.root / "network-hook-ready"
+            hook = self.fixture.remote / "hooks" / "pre-receive"
+            hook.write_text(
+                "#!/bin/sh\n"
+                "set -eu\n"
+                f"printf ready > {ready}\n"
+                "/bin/sleep 3\n"
+                "exit 0\n",
+                encoding="ascii",
+            )
+            hook.chmod(0o700)
+            self.fixture.installation["protected_remote"][
+                "hooks_sha256"
+            ] = broker._tree_digest(self.fixture.remote / "hooks")
+            self.fixture.rebind_protected_remote()
+            self.fixture.installation["operation_timeout_seconds"] = 2
+            self.fixture.client_installation["operation_timeout_seconds"] = 10
+            identity, plan = self.fixture.make_plan()
+            server.start()
+            automatic = self.fixture.publish(identity)
+            self.assertIsInstance(
+                automatic, broker.ReconciliationOutcome
+            )
+            self.assertEqual(automatic.kind, "indeterminate")
+            self.assertEqual(automatic.transport, "network")
+            self.assertEqual(
+                automatic.termination_proof, "unavailable"
+            )
+            self.assertEqual(
+                automatic.refs,
+                {
+                    plan["authority_ref"]: None,
+                    plan["anchor_ref"]: None,
+                },
+            )
+            journal = (
+                self.fixture.state / "journal.jsonl"
+            ).read_text(encoding="ascii")
+            self.assertIn('"transport":"network"', journal)
+            self.assertIn(
+                '"termination_proof":"unavailable"', journal
+            )
+            higher_identity, _ = self.fixture.make_plan(sequence=2)
+            with self.assertRaisesRegex(
+                broker.BrokerError, "indeterminate"
+            ):
+                self.fixture.publish(higher_identity)
+            self.assertTrue(ready.exists())
+            for _ in range(100):
+                refs = git(
+                    self.root,
+                    "--git-dir",
+                    self.fixture.remote,
+                    "show-ref",
+                    check=False,
+                ).stdout.decode("ascii")
+                if self.fixture.commit in refs:
+                    break
+                time.sleep(0.05)
+            self.assertIn(self.fixture.commit, refs)
+            pid, connection = self.fixture.spawn(
+                identity, operation="reconcile"
+            )
+            try:
+                explicit = broker.reconcile_via_connection(
+                    connection,
+                    self.fixture.client_installation,
+                    205,
+                    enforce_peer=False,
+                )
+            finally:
+                connection.close()
+                os.waitpid(pid, 0)
+            self.assertEqual(explicit.kind, "committed-late")
+            self.assertEqual(explicit.transport, "network")
+            self.assertEqual(
+                explicit.termination_proof, "not-required"
+            )
+            self.assertEqual(set(explicit.refs.values()), {self.fixture.commit})
+            git(
+                self.root,
+                "--git-dir",
+                self.fixture.remote,
+                "update-ref",
+                "-d",
+                plan["authority_ref"],
+            )
+            git(
+                self.root,
+                "--git-dir",
+                self.fixture.remote,
+                "update-ref",
+                "-d",
+                plan["anchor_ref"],
+            )
+            pid, connection = self.fixture.spawn(
+                identity, operation="reconcile"
+            )
+            try:
+                aba = broker.reconcile_via_connection(
+                    connection,
+                    self.fixture.client_installation,
+                    205,
+                    enforce_peer=False,
+                )
+            finally:
+                connection.close()
+                os.waitpid(pid, 0)
+            self.assertEqual(aba.kind, "indeterminate")
+            self.assertEqual(set(aba.refs.values()), {None})
+            self.assertEqual(aba.transport, "network")
+        finally:
+            server.close()
+
     def test_preflight_rejects_anonymous_read_only_and_expired_https_credentials(self):
         cases = (
             ("anonymous-public-read", False, True, True),
@@ -2463,6 +2632,11 @@ class GitPublicationBrokerTests(unittest.TestCase):
         outcome = self.fixture.publish(identity)
         self.assertIsInstance(outcome, broker.ReconciliationOutcome)
         self.assertEqual(outcome.kind, "safe-failed")
+        self.assertEqual(outcome.transport, "protected-local")
+        self.assertEqual(
+            outcome.termination_proof,
+            "protected-receive-pack-terminated",
+        )
         self.assertTrue(ready.exists())
         hook_pid = int(pid_file.read_text(encoding="ascii"))
         for _ in range(50):
@@ -2566,7 +2740,9 @@ class GitPublicationBrokerTests(unittest.TestCase):
             mock.patch.object(
                 broker.subprocess, "Popen", side_effect=delayed_popen
             ),
-            self.assertRaisesRegex(broker.BrokerError, "deadline expired"),
+            self.assertRaisesRegex(
+                broker.BrokerError, "confirmed closed before execve"
+            ),
         ):
             broker._run_bounded(
                 [
@@ -2583,6 +2759,125 @@ class GitPublicationBrokerTests(unittest.TestCase):
                 deadline_exec=self.fixture.deadline_exec,
             )
         self.assertFalse(marker.exists())
+
+    def test_post_popen_failures_use_exec_marker_classification(self):
+        original_popen = broker.subprocess.Popen
+        marker = self.root / "communicate-executed"
+
+        class CommunicateFailure:
+            def __init__(self, process):
+                self.process = process
+                self.failed = False
+
+            def __getattr__(self, name):
+                return getattr(self.process, name)
+
+            def communicate(self, *arguments, **keywords):
+                if not self.failed:
+                    self.failed = True
+                    for _ in range(500):
+                        if marker.exists():
+                            break
+                        time.sleep(0.002)
+                    raise OSError("injected communicate failure")
+                return self.process.communicate(*arguments, **keywords)
+
+        def fail_communicate(command, *arguments, **keywords):
+            process = original_popen(command, *arguments, **keywords)
+            if "--watch" in command:
+                return process
+            return CommunicateFailure(process)
+
+        with (
+            mock.patch.object(
+                broker.subprocess,
+                "Popen",
+                side_effect=fail_communicate,
+            ),
+            self.assertRaisesRegex(broker.BrokerError, "transmitted or unknown"),
+        ):
+            broker._run_bounded(
+                [
+                    sys.executable,
+                    "-c",
+                    (
+                        "from pathlib import Path;"
+                        f"Path({str(marker)!r}).touch();"
+                        "import time;time.sleep(30)"
+                    ),
+                ],
+                environment={"PATH": "/usr/bin:/bin"},
+                timeout=30,
+                deadline=broker.OperationDeadline(
+                    datetime.datetime.now(datetime.timezone.utc)
+                    + datetime.timedelta(seconds=30)
+                ),
+                deadline_exec=self.fixture.deadline_exec,
+            )
+        self.assertTrue(marker.exists())
+
+        target = self.root / "watchdog-not-executed"
+        calls = 0
+
+        def fail_watchdog(command, *arguments, **keywords):
+            nonlocal calls
+            calls += 1
+            if calls == 2:
+                raise OSError("injected watchdog failure")
+            return original_popen(command, *arguments, **keywords)
+
+        with (
+            mock.patch.object(
+                broker.subprocess, "Popen", side_effect=fail_watchdog
+            ),
+            self.assertRaisesRegex(
+                broker.BrokerError, "failed before execve"
+            ),
+        ):
+            broker._run_bounded(
+                [
+                    sys.executable,
+                    "-c",
+                    f"from pathlib import Path;Path({str(target)!r}).touch()",
+                ],
+                environment={
+                    "PATH": "/usr/bin:/bin",
+                    "WORKFLOW_PILOT_DEADLINE_EXEC_TEST_DELAY_NS": "3000000000",
+                },
+                timeout=30,
+                deadline=broker.OperationDeadline(
+                    datetime.datetime.now(datetime.timezone.utc)
+                    + datetime.timedelta(seconds=30)
+                ),
+                deadline_exec=self.fixture.deadline_exec,
+            )
+        self.assertFalse(target.exists())
+
+        calls = 0
+        with (
+            mock.patch.object(
+                broker.subprocess, "Popen", side_effect=fail_watchdog
+            ),
+            mock.patch.object(
+                broker, "_deadline_exec_state", return_value="unknown"
+            ),
+            self.assertRaisesRegex(
+                broker.BrokerError, "transmitted or unknown"
+            ),
+        ):
+            broker._run_bounded(
+                [sys.executable, "-c", "import time;time.sleep(30)"],
+                environment={
+                    "PATH": "/usr/bin:/bin",
+                    "WORKFLOW_PILOT_DEADLINE_EXEC_TEST_DELAY_NS": "3000000000",
+                },
+                timeout=30,
+                deadline=broker.OperationDeadline(
+                    datetime.datetime.now(datetime.timezone.utc)
+                    + datetime.timedelta(seconds=30)
+                ),
+                deadline_exec=self.fixture.deadline_exec,
+            )
 
     def test_killing_broker_kills_credential_bearing_git_child(self):
         ready, pid_file = self.fixture.install_stalling_hook()
@@ -2635,7 +2930,7 @@ class GitPublicationBrokerTests(unittest.TestCase):
         finally:
             reconcile_connection.close()
             os.waitpid(reconcile_pid, 0)
-        self.assertEqual(reconciliation.kind, "safe-failed")
+        self.assertEqual(reconciliation.kind, "indeterminate")
         self.assertEqual(set(reconciliation.refs.values()), {None})
 
     def test_git_child_parent_death_covers_pre_watchdog_window(self):
@@ -2685,6 +2980,87 @@ class GitPublicationBrokerTests(unittest.TestCase):
                 break
             time.sleep(0.01)
         self.assertFalse(process_is_running(git_child))
+
+    def test_secret_bearing_children_die_with_broker(self):
+        for mode in ("openssl-private-key", "askpass-credential"):
+            with self.subTest(mode=mode):
+                ready = self.root / f"{mode}-ready"
+                pid_file = self.root / f"{mode}-pid"
+                helper = self.root / f"{mode}-helper"
+                helper.write_text(
+                    "#!/bin/sh\n"
+                    f"printf '%s' \"$$\" > {pid_file}\n"
+                    f"printf ready > {ready}\n"
+                    "/bin/sleep 30\n",
+                    encoding="ascii",
+                )
+                helper.chmod(0o700)
+                broker_pid = os.fork()
+                if broker_pid == 0:
+                    try:
+                        deadline = broker.OperationDeadline(
+                            datetime.datetime.now(datetime.timezone.utc)
+                            + datetime.timedelta(seconds=30)
+                        )
+                        if mode == "openssl-private-key":
+                            broker.OPENSSL = os.fspath(helper)
+                            broker._sign_ed25519(
+                                self.fixture.broker_private,
+                                b"private response payload",
+                                deadline=deadline,
+                                deadline_exec=self.fixture.deadline_exec,
+                            )
+                        else:
+                            installation = dict(self.fixture.installation)
+                            installation["authentication"] = {
+                                "mode": "https-askpass",
+                                "askpass": helper,
+                                "credential_file": self.root / "credential",
+                            }
+                            installation["endpoint"] = (
+                                "https://github.com/laqieer/"
+                                "fireemblem8-expansion.git"
+                            )
+                            installation["authentication"][
+                                "credential_file"
+                            ].write_text(
+                                "private-test-credential",
+                                encoding="ascii",
+                            )
+                            installation["authentication"][
+                                "credential_file"
+                            ].chmod(0o600)
+                            _identity, plan = self.fixture.make_plan()
+                            broker._credential_readiness(
+                                installation, plan, deadline
+                            )
+                    except BaseException:
+                        pass
+                    os._exit(0)
+                for _ in range(500):
+                    if ready.exists():
+                        break
+                    time.sleep(0.01)
+                self.assertTrue(ready.exists())
+                secret_pid = int(pid_file.read_text(encoding="ascii"))
+                os.kill(broker_pid, signal.SIGKILL)
+                os.waitpid(broker_pid, 0)
+                for _ in range(100):
+                    if not process_is_running(secret_pid):
+                        break
+                    time.sleep(0.01)
+                self.assertFalse(process_is_running(secret_pid))
+                fd_path = Path(f"/proc/{secret_pid}/fd")
+                if fd_path.exists():
+                    try:
+                        descriptors = list(fd_path.iterdir())
+                    except PermissionError:
+                        descriptors = []
+                    self.assertEqual(descriptors, [])
+                self.assertEqual(
+                    stat.S_IMODE(self.fixture.broker_private.stat().st_mode),
+                    0o600,
+                )
 
     def test_invalid_plan_signature_and_pack_identity_reject(self):
         identity, plan = self.fixture.make_plan()
@@ -2769,6 +3145,11 @@ class GitPublicationBrokerTests(unittest.TestCase):
                 ],
                 environment={"PATH": "/usr/bin:/bin"},
                 timeout=10,
+                deadline=broker.OperationDeadline(
+                    datetime.datetime.now(datetime.timezone.utc)
+                    + datetime.timedelta(seconds=10)
+                ),
+                deadline_exec=self.fixture.deadline_exec,
             )
 
     def test_production_descriptor_scrub_keeps_only_allowlisted_fds(self):
@@ -2910,6 +3291,7 @@ def run_separate_principal_integration():
             "expected_capability_uid": 0,
             "broker_key_id": "broker-v1",
             "broker_public_key": os.fspath(public_key),
+            "deadline_exec": os.fspath(fixture.deadline_exec),
             "pack_max_bytes": 8 * 1024 * 1024,
             "operation_timeout_seconds": 20,
             "test_only": True,
@@ -3093,6 +3475,7 @@ class DeploymentContractTests(unittest.TestCase):
                 "expected_capability_uid",
                 "broker_key_id",
                 "broker_public_key",
+                "deadline_exec",
                 "pack_max_bytes",
                 "operation_timeout_seconds",
                 "test_only",
@@ -3315,6 +3698,21 @@ class DeploymentContractTests(unittest.TestCase):
             for keyword in node.keywords
         }
         self.assertNotIn("preexec_fn", popen_keywords)
+        unwrapped = []
+        for node in ast.walk(source):
+            if (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Name)
+                and node.func.id == "_run_bounded"
+            ):
+                keywords = {
+                    keyword.arg
+                    for keyword in node.keywords
+                    if keyword.arg is not None
+                }
+                if not {"deadline", "deadline_exec"}.issubset(keywords):
+                    unwrapped.append(node.lineno)
+        self.assertEqual(unwrapped, [])
         helper = (
             ROOT / "scripts" / "workflow_pilot" / "deadline_exec.c"
         ).read_text(encoding="ascii")

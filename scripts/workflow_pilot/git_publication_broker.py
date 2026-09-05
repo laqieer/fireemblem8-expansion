@@ -62,6 +62,30 @@ class BrokerError(ValueError):
 class IndeterminatePublication(BrokerError):
     """A transmitted push needs exact remote reconciliation."""
 
+    def __init__(
+        self,
+        code: str,
+        message: str,
+        *,
+        termination_proof: TerminationProof = "unavailable",
+    ):
+        super().__init__(code, message)
+        self.termination_proof = termination_proof
+
+
+class SubprocessFailure(BrokerError):
+    def __init__(
+        self,
+        code: str,
+        message: str,
+        *,
+        exec_state: str,
+        process_group_terminated: bool,
+    ):
+        super().__init__(code, message)
+        self.exec_state = exec_state
+        self.process_group_terminated = process_group_terminated
+
 
 ReconciliationKind = Literal[
     "committed-late",
@@ -69,11 +93,19 @@ ReconciliationKind = Literal[
     "security-hold",
     "indeterminate",
 ]
+TransportKind = Literal["network", "protected-local"]
+TerminationProof = Literal[
+    "not-required",
+    "protected-receive-pack-terminated",
+    "unavailable",
+]
 
 
 @dataclass(frozen=True)
 class PublishedOutcome:
     refs: dict[str, str]
+    transport: TransportKind
+    termination_proof: TerminationProof = "not-required"
 
     @property
     def kind(self) -> str:
@@ -92,6 +124,8 @@ class PublishedOutcome:
 class ReconciliationOutcome:
     kind: ReconciliationKind
     refs: dict[str, str | None] | None
+    transport: TransportKind
+    termination_proof: TerminationProof
 
     def __post_init__(self) -> None:
         if self.kind not in {
@@ -101,10 +135,20 @@ class ReconciliationOutcome:
             "indeterminate",
         }:
             raise ValueError("reconciliation outcome is not in the closed union")
-        if self.kind == "indeterminate" and self.refs is not None:
-            raise ValueError("indeterminate reconciliation must not claim refs")
         if self.kind != "indeterminate" and self.refs is None:
             raise ValueError("resolved reconciliation must preserve exact refs")
+        if self.kind == "safe-failed" and (
+            self.transport != "protected-local"
+            or self.termination_proof
+            != "protected-receive-pack-terminated"
+        ):
+            raise ValueError("safe-failed requires protected local termination proof")
+        if self.kind == "indeterminate" and self.termination_proof == "not-required":
+            raise ValueError("indeterminate requires unavailable termination proof")
+        if self.kind in {"committed-late", "security-hold"} and (
+            self.termination_proof != "not-required"
+        ):
+            raise ValueError("observed terminal refs do not require termination proof")
 
     @property
     def exit_code(self) -> int:
@@ -281,6 +325,7 @@ def _verify_ed25519(
     signature: bytes,
     *,
     deadline: OperationDeadline | None = None,
+    deadline_exec: Path | None = None,
 ) -> None:
     payload_fd = _memory_file("workflow-pilot-signature-payload", payload)
     signature_fd = _memory_file("workflow-pilot-signature", signature)
@@ -303,6 +348,7 @@ def _verify_ed25519(
             pass_fds=(payload_fd, signature_fd),
             environment={"PATH": "/usr/bin:/bin", "LANG": "C", "LC_ALL": "C"},
             deadline=deadline,
+            deadline_exec=deadline_exec,
         )
     finally:
         os.close(payload_fd)
@@ -311,7 +357,13 @@ def _verify_ed25519(
         _fail("invalid-signature", "Ed25519 signature verification failed")
 
 
-def _sign_ed25519(private_key: Path, payload: bytes) -> bytes:
+def _sign_ed25519(
+    private_key: Path,
+    payload: bytes,
+    *,
+    deadline: OperationDeadline,
+    deadline_exec: Path,
+) -> bytes:
     payload_fd = _memory_file("workflow-pilot-response-payload", payload)
     try:
         completed = _run_bounded(
@@ -328,6 +380,8 @@ def _sign_ed25519(private_key: Path, payload: bytes) -> bytes:
             timeout=10,
             pass_fds=(payload_fd,),
             environment={"PATH": "/usr/bin:/bin", "LANG": "C", "LC_ALL": "C"},
+            deadline=deadline,
+            deadline_exec=deadline_exec,
         )
     finally:
         os.close(payload_fd)
@@ -655,6 +709,7 @@ def _validate_capability(
         _signed_payload(CAPABILITY_DOMAIN, capability),
         signature,
         deadline=verification_deadline,
+        deadline_exec=installation["deadline_exec"],
     )
     verification_deadline.check("after capability signature validation")
     capability["_issue"] = issue
@@ -783,6 +838,7 @@ def _validate_plan(
         _signed_payload(PLAN_DOMAIN, plan),
         signature_bytes,
         deadline=verification_deadline,
+        deadline_exec=installation["deadline_exec"],
     )
     verification_deadline.check("after plan signature validation")
     plan["_issued_time"] = issued_at
@@ -1754,59 +1810,69 @@ def _run_bounded(
 ) -> subprocess.CompletedProcess[bytes]:
     if stdin is not None and input_bytes is not None:
         _fail("process-hardening-failed", "bounded process has two stdin sources")
-
-    command = arguments
-    exec_read: int | None = None
-    exec_write: int | None = None
-    if deadline_exec is not None:
-        if deadline is None:
-            _fail(
-                "process-hardening-failed",
-                "deadline exec helper requires an absolute deadline",
-            )
-        wall_seconds = int(deadline.absolute.timestamp())
-        wall_nanoseconds = deadline.absolute.microsecond * 1000
-        monotonic_seconds = int(deadline.monotonic_end)
-        monotonic_nanoseconds = int(
-            (deadline.monotonic_end - monotonic_seconds) * 1_000_000_000
+    if deadline is None or deadline_exec is None:
+        _fail(
+            "process-hardening-failed",
+            "every broker subprocess requires the native deadline boundary",
         )
-        exec_read, exec_write = os.pipe()
-        os.set_blocking(exec_read, False)
-        command = [
-            os.fspath(deadline_exec),
-            str(os.getpid()),
-            str(wall_seconds),
-            str(wall_nanoseconds),
-            str(monotonic_seconds),
-            str(monotonic_nanoseconds),
-            str(SUBPROCESS_OUTPUT_MAX_BYTES),
-            str(exec_write),
-            "--",
-            *arguments,
-        ]
 
+    deadline.remaining("before subprocess creation", timeout)
+    wall_seconds = int(deadline.absolute.timestamp())
+    wall_nanoseconds = deadline.absolute.microsecond * 1000
+    monotonic_seconds = int(deadline.monotonic_end)
+    monotonic_nanoseconds = int(
+        (deadline.monotonic_end - monotonic_seconds) * 1_000_000_000
+    )
+    exec_read, exec_write = os.pipe()
+    os.set_blocking(exec_read, False)
+    command = [
+        os.fspath(deadline_exec),
+        str(os.getpid()),
+        str(wall_seconds),
+        str(wall_nanoseconds),
+        str(monotonic_seconds),
+        str(monotonic_nanoseconds),
+        str(SUBPROCESS_OUTPUT_MAX_BYTES),
+        str(exec_write),
+        "--",
+        *arguments,
+    ]
     stdout_fd = _empty_memory_file("workflow-pilot-subprocess-stdout")
     stderr_fd = _empty_memory_file("workflow-pilot-subprocess-stderr")
     stop_read, stop_write = os.pipe()
+    process: subprocess.Popen[bytes] | None = None
+    watchdog: subprocess.Popen[bytes] | None = None
+    failure: BaseException | None = None
+    output_failure: BaseException | None = None
+    stdout = b""
+    stderr = b""
+    exec_state = "unknown"
     try:
         child_fds = pass_fds + (
             (exec_write,) if exec_write is not None else ()
         )
-        process = subprocess.Popen(
-            command,
-            cwd=cwd,
-            env=environment,
-            stdin=subprocess.PIPE if input_bytes is not None else stdin,
-            stdout=stdout_fd,
-            stderr=stderr_fd,
-            pass_fds=child_fds,
-            start_new_session=deadline_exec is None,
-        )
+        try:
+            process = subprocess.Popen(
+                command,
+                cwd=cwd,
+                env=environment,
+                stdin=subprocess.PIPE if input_bytes is not None else stdin,
+                stdout=stdout_fd,
+                stderr=stderr_fd,
+                pass_fds=child_fds,
+                start_new_session=False,
+            )
+        except OSError as error:
+            raise BrokerError(
+                "git-unavailable", "cannot create bounded subprocess"
+            ) from error
         if exec_write is not None:
-            os.close(exec_write)
+            try:
+                os.close(exec_write)
+            except OSError as error:
+                failure = error
             exec_write = None
-        watchdog = None
-        if deadline_exec is not None:
+        if failure is None:
             try:
                 watchdog = subprocess.Popen(
                     [
@@ -1820,57 +1886,82 @@ def _run_bounded(
                     stderr=subprocess.DEVNULL,
                     close_fds=True,
                 )
-            except OSError:
-                _kill_process_group(process)
-                process.communicate()
-                raise
-        os.close(stop_read)
-        stop_read = None
+            except BaseException as error:
+                failure = error
         try:
+            os.close(stop_read)
+        except OSError as error:
+            if failure is None:
+                failure = error
+        stop_read = None
+        if failure is None:
             try:
                 effective_timeout = (
                     deadline.remaining("after subprocess launch", timeout)
-                    if deadline is not None
-                    else timeout
                 )
                 effective_timeout = (
                     deadline.remaining(
                         "immediately before subprocess communication",
                         effective_timeout,
                     )
-                    if deadline is not None
-                    else effective_timeout
                 )
                 process.communicate(
                     input=input_bytes, timeout=effective_timeout
                 )
-            except BrokerError:
-                _kill_process_group(process)
-                process.communicate()
-                raise
-            except subprocess.TimeoutExpired as error:
-                exec_started = _deadline_exec_started(exec_read)
-                _kill_process_group(process)
-                process.communicate()
-                exec_started = (
-                    exec_started or _deadline_exec_started(exec_read)
-                )
-                if deadline is not None and not exec_started:
-                    deadline.check("during subprocess")
-                raise BrokerError(
-                    "git-timeout", "bounded Git operation timed out"
-                ) from error
-        finally:
+            except BaseException as error:
+                failure = error
+        if failure is None:
             try:
                 os.write(stop_write, b"X")
-            except OSError:
-                pass
-            os.close(stop_write)
+            except BaseException as error:
+                failure = error
+            try:
+                os.close(stop_write)
+            except OSError as error:
+                if failure is None:
+                    failure = error
             stop_write = None
-            if watchdog is not None:
+        if failure is None:
+            try:
                 watchdog.wait(timeout=10)
-    except OSError as error:
-        raise BrokerError("git-unavailable", "cannot execute bounded Git operation") from error
+            except BaseException as error:
+                failure = error
+        if failure is not None:
+            exec_state = _deadline_exec_state(exec_read)
+            _kill_process_group(process)
+            try:
+                process.communicate(timeout=10)
+            except BaseException:
+                pass
+            exec_state = _settle_deadline_exec_state(
+                exec_read,
+                exec_state,
+            )
+            group_terminated = _process_group_terminated(process.pid)
+            if stop_write is not None:
+                try:
+                    os.write(stop_write, b"X")
+                except OSError:
+                    pass
+                os.close(stop_write)
+                stop_write = None
+            if watchdog is not None:
+                try:
+                    watchdog.wait(timeout=10)
+                except BaseException:
+                    try:
+                        watchdog.kill()
+                    except ProcessLookupError:
+                        pass
+                    watchdog.wait()
+            raise _classify_post_popen_failure(
+                failure,
+                exec_state,
+                process.returncode,
+                deadline,
+                group_terminated,
+            ) from failure
+        exec_state = _deadline_exec_state(exec_read)
     finally:
         for descriptor in (stop_read, stop_write):
             if descriptor is None:
@@ -1879,60 +1970,165 @@ def _run_bounded(
                 os.close(descriptor)
             except OSError:
                 pass
-        exec_started = _deadline_exec_started(exec_read)
+        exec_state = _settle_deadline_exec_state(
+            exec_read,
+            exec_state,
+        )
         if exec_read is not None:
             os.close(exec_read)
         if exec_write is not None:
             os.close(exec_write)
-        os.lseek(stdout_fd, 0, os.SEEK_SET)
-        stdout = _read_bounded_fd(stdout_fd, SUBPROCESS_OUTPUT_MAX_BYTES)
-        os.lseek(stderr_fd, 0, os.SEEK_SET)
-        stderr = _read_bounded_fd(stderr_fd, SUBPROCESS_OUTPUT_MAX_BYTES)
-        os.close(stdout_fd)
-        os.close(stderr_fd)
+        try:
+            os.lseek(stdout_fd, 0, os.SEEK_SET)
+            stdout = _read_bounded_fd(
+                stdout_fd, SUBPROCESS_OUTPUT_MAX_BYTES
+            )
+            os.lseek(stderr_fd, 0, os.SEEK_SET)
+            stderr = _read_bounded_fd(
+                stderr_fd, SUBPROCESS_OUTPUT_MAX_BYTES
+            )
+        except BaseException as error:
+            output_failure = error
+        finally:
+            for descriptor in (stdout_fd, stderr_fd):
+                try:
+                    os.close(descriptor)
+                except OSError:
+                    pass
+    if output_failure is not None:
+        assert process is not None
+        raise _classify_post_popen_failure(
+            output_failure,
+            exec_state,
+            process.returncode,
+            deadline,
+            _process_group_terminated(process.pid),
+        ) from output_failure
     if (
         len(stdout) >= SUBPROCESS_OUTPUT_MAX_BYTES
         or len(stderr) >= SUBPROCESS_OUTPUT_MAX_BYTES
     ):
         _fail("oversized-process-output", "bounded subprocess output exceeds its size limit")
-    if deadline is not None:
-        try:
-            deadline.check("after subprocess")
-        except BrokerError:
-            if exec_started:
-                raise BrokerError(
-                    "git-timeout",
-                    "executed Git crossed its effective deadline",
-                )
-            raise
-    if deadline_exec is not None:
-        if process.returncode == 222:
-            _fail(
-                "operation-expired",
-                "deadline exec boundary rejected the subprocess before execve",
-            )
-        if process.returncode in {223, 224}:
-            _fail(
-                "process-hardening-failed",
-                "deadline exec boundary rejected process hardening",
-            )
+    try:
+        deadline.check("after subprocess")
+    except BrokerError as error:
+        raise _classify_post_popen_failure(
+            error,
+            exec_state,
+            process.returncode,
+            deadline,
+            _process_group_terminated(process.pid),
+        ) from error
+    if process.returncode == 222 and exec_state == "preexec-closed":
+        _fail(
+            "operation-expired",
+            "deadline exec boundary rejected the subprocess before execve",
+        )
+    if process.returncode in {223, 224} and exec_state == "preexec-closed":
+        _fail(
+            "process-hardening-failed",
+            "deadline exec boundary rejected process hardening",
+        )
     return subprocess.CompletedProcess(arguments, process.returncode, stdout, stderr)
 
 
-def _deadline_exec_started(exec_read: int | None) -> bool:
+def _deadline_exec_state(exec_read: int | None) -> str:
     if exec_read is None:
-        return False
+        return "unknown"
     try:
-        return os.read(exec_read, 1) == b"E"
+        value = os.read(exec_read, 1)
     except BlockingIOError:
-        return False
+        return "unknown"
+    except OSError:
+        return "unknown"
+    if value == b"E":
+        return "executed"
+    if value == b"":
+        return "preexec-closed"
+    return "unknown"
+
+
+def _merge_exec_state(first: str, second: str) -> str:
+    if "executed" in {first, second}:
+        return "executed"
+    if second == "preexec-closed":
+        return "preexec-closed"
+    return first
+
+
+def _settle_deadline_exec_state(
+    exec_read: int | None,
+    initial: str,
+) -> str:
+    state = initial
+    for _ in range(20):
+        state = _merge_exec_state(
+            state, _deadline_exec_state(exec_read)
+        )
+        if state in {"executed", "preexec-closed"}:
+            return state
+        time.sleep(0.005)
+    return state
+
+
+def _classify_post_popen_failure(
+    error: BaseException,
+    exec_state: str,
+    returncode: int | None,
+    deadline: OperationDeadline,
+    process_group_terminated: bool,
+) -> BrokerError:
+    if exec_state in {"executed", "unknown"}:
+        return SubprocessFailure(
+            "git-timeout",
+            "subprocess state after creation is transmitted or unknown",
+            exec_state=exec_state,
+            process_group_terminated=process_group_terminated,
+        )
+    deadline_elapsed = (
+        datetime_module.datetime.now(datetime_module.timezone.utc)
+        >= deadline.absolute
+        or time.monotonic() >= deadline.monotonic_end
+    )
+    if returncode == 222 or deadline_elapsed or (
+        isinstance(error, BrokerError)
+        and error.code == "operation-expired"
+    ):
+        return BrokerError(
+            "operation-expired",
+            "subprocess was confirmed closed before execve",
+        )
+    return BrokerError(
+        "process-hardening-failed",
+        "subprocess failed before execve",
+    )
+
+
+def _process_group_terminated(process_group: int) -> bool:
+    for entry in Path("/proc").iterdir():
+        if not entry.name.isdigit():
+            continue
+        try:
+            fields = (entry / "stat").read_text(encoding="ascii").split()
+        except OSError:
+            continue
+        if (
+            len(fields) > 4
+            and int(fields[4]) == process_group
+            and fields[2] != "Z"
+        ):
+            return False
+    return True
 
 
 def _kill_process_group(process: subprocess.Popen[bytes]) -> None:
     try:
         os.killpg(process.pid, signal.SIGKILL)
     except ProcessLookupError:
-        return
+        try:
+            process.kill()
+        except ProcessLookupError:
+            pass
     except OSError:
         try:
             process.kill()
@@ -2000,6 +2196,15 @@ def _runtime_endpoint(installation: dict[str, Any]) -> str:
     if parsed.scheme == "file" and remote is not None:
         return f"file:///proc/self/fd/{remote['git_dir_fd']}"
     return installation["endpoint"]
+
+
+def _transport_kind(installation: dict[str, Any]) -> TransportKind:
+    if (
+        urllib.parse.urlsplit(installation["endpoint"]).scheme == "file"
+        and installation["protected_remote"] is not None
+    ):
+        return "protected-local"
+    return "network"
 
 
 def _pack_object_ids(
@@ -2201,7 +2406,9 @@ class ReplayJournal:
                     "plan_identity",
                 }
                 if event == "completed":
-                    required.add("result")
+                    required.update(
+                        {"result", "transport", "termination_proof"}
+                    )
                 if event not in {"reserved", "completed"} or set(entry) != required:
                     _fail("journal-corrupt", "replay journal entry fields differ")
                 if event == "completed" and entry["result"] not in {
@@ -2212,6 +2419,63 @@ class ReplayJournal:
                     "security-hold",
                 }:
                     _fail("journal-corrupt", "replay journal outcome differs")
+                if event == "completed" and (
+                    entry["transport"] not in {"network", "protected-local"}
+                    or entry["termination_proof"]
+                    not in {
+                        "not-required",
+                        "protected-receive-pack-terminated",
+                        "unavailable",
+                    }
+                ):
+                    _fail("journal-corrupt", "replay journal proof differs")
+                if event == "completed":
+                    result = entry["result"]
+                    transport = entry["transport"]
+                    proof = entry["termination_proof"]
+                    if result == "safe-failed" and proof not in {
+                        "not-required",
+                        "protected-receive-pack-terminated",
+                    }:
+                        _fail(
+                            "journal-corrupt",
+                            "safe-failed replay proof differs",
+                        )
+                    if (
+                        result == "safe-failed"
+                        and proof == "protected-receive-pack-terminated"
+                        and transport != "protected-local"
+                    ):
+                        _fail(
+                            "journal-corrupt",
+                            "network replay claims local termination proof",
+                        )
+                    if result == "indeterminate" and proof not in {
+                        "unavailable",
+                        "protected-receive-pack-terminated",
+                    }:
+                        _fail(
+                            "journal-corrupt",
+                            "indeterminate replay proof differs",
+                        )
+                    if (
+                        result == "indeterminate"
+                        and proof == "protected-receive-pack-terminated"
+                        and transport != "protected-local"
+                    ):
+                        _fail(
+                            "journal-corrupt",
+                            "network indeterminate claims local termination proof",
+                        )
+                    if result in {
+                        "published",
+                        "committed-late",
+                        "security-hold",
+                    } and proof != "not-required":
+                        _fail(
+                            "journal-corrupt",
+                            "terminal replay proof differs",
+                        )
                 if (
                     entry.get("previous_hash") != previous
                     or entry.get("installation_id") != self.installation_id
@@ -2346,7 +2610,15 @@ class ReplayJournal:
         if relevant and plan["sequence"] <= max(entry["sequence"] for entry in relevant):
             _fail("replay", "publication plan sequence does not advance")
 
-    def complete(self, plan: dict[str, Any], plan_identity: str, result: str) -> None:
+    def complete(
+        self,
+        plan: dict[str, Any],
+        plan_identity: str,
+        result: str,
+        *,
+        transport: TransportKind,
+        termination_proof: TerminationProof,
+    ) -> None:
         if result not in {
             "published",
             "safe-failed",
@@ -2364,6 +2636,8 @@ class ReplayJournal:
                 "issue": plan["issue"],
                 "plan_identity": plan_identity,
                 "result": result,
+                "transport": transport,
+                "termination_proof": termination_proof,
             }
         )
 
@@ -2371,7 +2645,7 @@ class ReplayJournal:
         self,
         plan: dict[str, Any],
         plan_identity: str,
-    ) -> None:
+    ) -> tuple[TransportKind | None, TerminationProof]:
         reservations = [
             entry
             for entry in self.entries
@@ -2398,6 +2672,9 @@ class ReplayJournal:
                 "reconciliation-not-required",
                 "plan does not have an indeterminate publication to reconcile",
             )
+        if not outcomes:
+            return None, "unavailable"
+        return outcomes[-1]["transport"], outcomes[-1]["termination_proof"]
 
 
 def _publish(
@@ -2479,16 +2756,37 @@ def _publish(
             readback = _remote_refs(installation, home, *refs, deadline)
             deadline.check("after exact remote readback")
         except BrokerError as error:
-            if error.code == "operation-expired":
+            if error.code in {
+                "operation-expired",
+                "git-unavailable",
+                "process-hardening-failed",
+            }:
                 raise
+            local_terminated = (
+                _transport_kind(installation) == "protected-local"
+                and (
+                    not isinstance(error, SubprocessFailure)
+                    or error.process_group_terminated
+                )
+            )
             raise IndeterminatePublication(
                 "indeterminate",
                 "transmitted atomic push requires exact reconciliation",
+                termination_proof=(
+                    "protected-receive-pack-terminated"
+                    if local_terminated
+                    else "unavailable"
+                ),
             ) from error
         except OSError as error:
             raise IndeterminatePublication(
                 "indeterminate",
                 "transmitted atomic push requires exact reconciliation",
+                termination_proof=(
+                    "protected-receive-pack-terminated"
+                    if _transport_kind(installation) == "protected-local"
+                    else "unavailable"
+                ),
             ) from error
         wanted = {
             plan["authority_ref"]: plan["new_authority_oid"],
@@ -2498,6 +2796,11 @@ def _publish(
             raise IndeterminatePublication(
                 "indeterminate",
                 "post-push refs require exact reconciliation",
+                termination_proof=(
+                    "protected-receive-pack-terminated"
+                    if _transport_kind(installation) == "protected-local"
+                    else "unavailable"
+                ),
             )
         return {ref: value for ref, value in readback.items() if value is not None}
     finally:
@@ -2508,7 +2811,10 @@ def _reconcile_remote(
     installation: dict[str, Any],
     plan: dict[str, Any],
     deadline: OperationDeadline | None = None,
-) -> tuple[str, dict[str, str | None] | None]:
+    *,
+    termination_proof: TerminationProof = "unavailable",
+) -> ReconciliationOutcome:
+    transport = _transport_kind(installation)
     if deadline is None:
         deadline = OperationDeadline(
             datetime_module.datetime.now(datetime_module.timezone.utc)
@@ -2521,7 +2827,9 @@ def _reconcile_remote(
             installation["protected_remote"], deadline
         )
     except (BrokerError, OSError):
-        return "indeterminate", None
+        return ReconciliationOutcome(
+            "indeterminate", None, transport, "unavailable"
+        )
     try:
         home = installation["state_directory"] / "reconciliation-home"
         home.mkdir(mode=0o700, exist_ok=True)
@@ -2543,10 +2851,27 @@ def _reconcile_remote(
         plan["anchor_ref"]: plan["new_anchor_oid"],
     }
     if refs == planned:
-        return "committed-late", refs
+        return ReconciliationOutcome(
+            "committed-late", refs, transport, "not-required"
+        )
     if refs == expected:
-        return "safe-failed", refs
-    return "security-hold", refs
+        if (
+            transport == "protected-local"
+            and termination_proof
+            == "protected-receive-pack-terminated"
+        ):
+            return ReconciliationOutcome(
+                "safe-failed",
+                refs,
+                transport,
+                termination_proof,
+            )
+        return ReconciliationOutcome(
+            "indeterminate", refs, transport, "unavailable"
+        )
+    return ReconciliationOutcome(
+        "security-hold", refs, transport, "not-required"
+    )
 
 
 def _load_plan(
@@ -2605,7 +2930,9 @@ def _response(
     phase: str,
     status: str,
     code: str,
-    refs: dict[str, str] | None,
+    refs: dict[str, str | None] | None,
+    transport: TransportKind | None = None,
+    termination_proof: TerminationProof = "not-required",
 ) -> dict[str, Any]:
     broker_user_namespace = os.stat(
         "/proc/self/ns/user", follow_symlinks=True
@@ -2644,6 +2971,8 @@ def _response(
         "broker_namespace_uid": broker_namespace_uid,
         "broker_user_namespace": broker_user_namespace,
         "effective_deadline": deadline.text(),
+        "transport": transport or _transport_kind(installation),
+        "termination_proof": termination_proof,
         "status": status,
         "code": code,
         "refs": refs,
@@ -2651,8 +2980,15 @@ def _response(
             "%Y-%m-%dT%H:%M:%SZ"
         ),
     }
+    signing_deadline = OperationDeadline(
+        datetime_module.datetime.now(datetime_module.timezone.utc)
+        + datetime_module.timedelta(seconds=10)
+    )
     signature = _sign_ed25519(
-        installation["broker_private_key"], _signed_payload(RESPONSE_DOMAIN, response)
+        installation["broker_private_key"],
+        _signed_payload(RESPONSE_DOMAIN, response),
+        deadline=signing_deadline,
+        deadline_exec=installation["deadline_exec"],
     )
     response["signature"] = {
         "algorithm": "ed25519",
@@ -2702,6 +3038,7 @@ def _credential_readiness(
             ),
             timeout=installation["operation_timeout_seconds"],
             deadline=deadline,
+            deadline_exec=installation["deadline_exec"],
         )
         if (
             completed.returncode != 0
@@ -2720,6 +3057,7 @@ def _credential_readiness(
             ),
             timeout=installation["operation_timeout_seconds"],
             deadline=deadline,
+            deadline_exec=installation["deadline_exec"],
         )
         if completed.returncode != 0:
             _fail("credential-unavailable", "SSH agent readiness failed")
@@ -2909,7 +3247,7 @@ def serve_connection(
                 installation["installation_id"],
                 deadline,
             ) as journal:
-                journal.require_reconciliation(
+                _prior_transport, prior_proof = journal.require_reconciliation(
                     plan, capability["_plan_identity"]
                 )
         if request["operation"] != "reconcile":
@@ -2983,8 +3321,11 @@ def serve_connection(
             )
             return
         if request["operation"] == "reconcile":
-            outcome, reconciled_refs = _reconcile_remote(
-                installation, plan, deadline
+            outcome = _reconcile_remote(
+                installation,
+                plan,
+                deadline,
+                termination_proof=prior_proof,
             )
             with ReplayJournal(
                 installation["state_directory"],
@@ -2993,7 +3334,11 @@ def serve_connection(
             ) as journal:
                 journal.deadline = None
                 journal.complete(
-                    plan, capability["_plan_identity"], outcome
+                    plan,
+                    capability["_plan_identity"],
+                    outcome.kind,
+                    transport=outcome.transport,
+                    termination_proof=outcome.termination_proof,
                 )
             result = _response(
                 installation,
@@ -3003,11 +3348,13 @@ def serve_connection(
                 phase="result",
                 status=(
                     "ok"
-                    if outcome == "committed-late"
+                    if outcome.kind == "committed-late"
                     else "error"
                 ),
-                code=outcome,
-                refs=reconciled_refs,
+                code=outcome.kind,
+                refs=outcome.refs,
+                transport=outcome.transport,
+                termination_proof=outcome.termination_proof,
             )
             _send_frame(
                 connection,
@@ -3042,40 +3389,58 @@ def serve_connection(
                     pack_path,
                     deadline,
                 )
-            except IndeterminatePublication:
+            except IndeterminatePublication as error:
                 journal.deadline = None
                 journal.complete(
                     plan,
                     capability["_plan_identity"],
                     "indeterminate",
+                    transport=_transport_kind(installation),
+                    termination_proof=error.termination_proof,
                 )
-                outcome, reconciled_refs = _reconcile_remote(
-                    installation, plan
+                outcome = _reconcile_remote(
+                    installation,
+                    plan,
+                    termination_proof=error.termination_proof,
                 )
-                if outcome != "indeterminate":
+                if outcome.kind != "indeterminate":
                     journal.complete(
                         plan,
                         capability["_plan_identity"],
-                        outcome,
+                        outcome.kind,
+                        transport=outcome.transport,
+                        termination_proof=outcome.termination_proof,
                     )
-                response_code = outcome
-                response_refs = reconciled_refs
+                response_code = outcome.kind
+                response_refs = outcome.refs
                 response_status = (
-                    "ok" if outcome == "committed-late" else "error"
+                    "ok" if outcome.kind == "committed-late" else "error"
                 )
+                response_transport = outcome.transport
+                response_proof = outcome.termination_proof
             except BrokerError:
                 journal.deadline = None
                 journal.complete(
-                    plan, capability["_plan_identity"], "safe-failed"
+                    plan,
+                    capability["_plan_identity"],
+                    "safe-failed",
+                    transport=_transport_kind(installation),
+                    termination_proof="not-required",
                 )
                 raise
             else:
                 journal.complete(
-                    plan, capability["_plan_identity"], "published"
+                    plan,
+                    capability["_plan_identity"],
+                    "published",
+                    transport=_transport_kind(installation),
+                    termination_proof="not-required",
                 )
                 response_code = "published"
                 response_refs = refs
                 response_status = "ok"
+                response_transport = _transport_kind(installation)
+                response_proof = "not-required"
         response = _response(
             installation,
             request,
@@ -3085,6 +3450,8 @@ def serve_connection(
             status=response_status,
             code=response_code,
             refs=response_refs,
+            transport=response_transport,
+            termination_proof=response_proof,
         )
     except (BrokerError, OSError) as error:
         if request is None or capability is None:
@@ -3144,6 +3511,7 @@ def _load_client_installation(path: Path) -> dict[str, Any]:
             "expected_capability_uid",
             "broker_key_id",
             "broker_public_key",
+            "deadline_exec",
             "pack_max_bytes",
             "operation_timeout_seconds",
             "test_only",
@@ -3186,6 +3554,13 @@ def _load_client_installation(path: Path) -> dict[str, Any]:
         root,
         raw["broker_public_key"],
         label="broker public key",
+        owners=allowed,
+        regular=True,
+    )
+    result["deadline_exec"] = _resolve_secure_member(
+        root,
+        raw["deadline_exec"],
+        label="client deadline exec helper",
         owners=allowed,
         regular=True,
     )
@@ -3233,6 +3608,8 @@ def _verify_response(
             "broker_namespace_uid",
             "broker_user_namespace",
             "effective_deadline",
+            "transport",
+            "termination_proof",
             "status",
             "code",
             "refs",
@@ -3281,6 +3658,8 @@ def _verify_response(
         "response.broker_user_namespace",
         1,
     )
+    transport = response["transport"]
+    termination_proof = response["termination_proof"]
     signature_record = _object(response["signature"], "response.signature")
     key_id, signature = _load_signature_record(signature_record, "response.signature")
     if key_id != installation["broker_key_id"]:
@@ -3289,6 +3668,11 @@ def _verify_response(
         installation["broker_public_key"],
         _signed_payload(RESPONSE_DOMAIN, response),
         signature,
+        deadline=OperationDeadline(
+            datetime_module.datetime.now(datetime_module.timezone.utc)
+            + datetime_module.timedelta(seconds=10)
+        ),
+        deadline_exec=installation["deadline_exec"],
     )
     context = {
         "plan_identity": response["plan_identity"],
@@ -3298,6 +3682,7 @@ def _verify_response(
         "broker_uid": broker_uid,
         "broker_namespace_uid": broker_namespace_uid,
         "broker_user_namespace": broker_namespace,
+        "transport": transport,
     }
     if expected_context is not None and context != expected_context:
         _fail("invalid-response", "broker response context changed between phases")
@@ -3353,27 +3738,29 @@ def _verified_publication_outcome(
     request: dict[str, Any],
 ) -> PublicationOutcome:
     kind = response["code"]
+    transport = response["transport"]
+    termination_proof = response["termination_proof"]
     expected_names = {
         _plan_ref(request["issue"], "authority"),
         _plan_ref(request["issue"], "anchor"),
     }
     if kind == "indeterminate":
-        if response["status"] != "error" or response["refs"] is not None:
+        if response["status"] != "error":
             _fail(
                 "invalid-response",
-                "indeterminate result must be a non-success without refs",
+                "indeterminate result must be a non-success",
             )
-        return ReconciliationOutcome("indeterminate", None)
-    refs = _object(response["refs"], "response.refs")
-    if set(refs) != expected_names:
-        _fail(
-            "invalid-response",
-            "broker result ref names differ from the exact issue pair",
+        refs = response["refs"]
+        if refs is not None:
+            refs = _verified_exact_ref_pair(refs, expected_names)
+        return ReconciliationOutcome(
+            "indeterminate",
+            refs,
+            transport,
+            termination_proof,
         )
-    verified: dict[str, str | None] = {}
-    for name in sorted(expected_names):
-        oid = refs[name]
-        verified[name] = None if oid is None else _sha(oid, f"response ref {name}")
+    refs = _object(response["refs"], "response.refs")
+    verified = _verified_exact_ref_pair(refs, expected_names)
     if kind in {"published", "committed-late"}:
         if response["status"] != "ok" or any(
             oid is None for oid in verified.values()
@@ -3388,17 +3775,50 @@ def _verified_publication_outcome(
             if oid is not None
         }
         if kind == "published":
-            return PublishedOutcome(exact)
-        return ReconciliationOutcome("committed-late", exact)
+            return PublishedOutcome(exact, transport, termination_proof)
+        return ReconciliationOutcome(
+            "committed-late",
+            exact,
+            transport,
+            termination_proof,
+        )
     if kind == "safe-failed":
         if response["status"] != "error":
             _fail("invalid-response", "safe-failed must be a non-success result")
-        return ReconciliationOutcome("safe-failed", verified)
+        return ReconciliationOutcome(
+            "safe-failed",
+            verified,
+            transport,
+            termination_proof,
+        )
     if kind == "security-hold":
         if response["status"] != "error":
             _fail("invalid-response", "security-hold must be a non-success result")
-        return ReconciliationOutcome("security-hold", verified)
+        return ReconciliationOutcome(
+            "security-hold",
+            verified,
+            transport,
+            termination_proof,
+        )
     _fail("invalid-response", "broker result is not a closed publication outcome")
+
+
+def _verified_exact_ref_pair(
+    refs: dict[str, Any],
+    expected_names: set[str],
+) -> dict[str, str | None]:
+    if set(refs) != expected_names:
+        _fail(
+            "invalid-response",
+            "broker result ref names differ from the exact issue pair",
+        )
+    verified: dict[str, str | None] = {}
+    for name in sorted(expected_names):
+        oid = refs[name]
+        verified[name] = (
+            None if oid is None else _sha(oid, f"response ref {name}")
+        )
+    return verified
 
 
 def _observe_broker_process(
@@ -3812,6 +4232,8 @@ def _outcome_record(outcome: PublicationOutcome) -> dict[str, Any]:
         "outcome": outcome.kind,
         "refs": outcome.refs,
         "retry_disposition": outcome.retry_disposition,
+        "transport": outcome.transport,
+        "termination_proof": outcome.termination_proof,
     }
 
 

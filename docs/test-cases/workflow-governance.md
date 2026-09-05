@@ -1260,10 +1260,19 @@ the exact branch and head; timeout or ambiguity fails before `gh run watch`.
    JSON, and distinct exits: committed-late `0`, safe-failed `3`,
    security-hold `4`, and indeterminate `5`. Replay forged signed statuses,
    wrong ref names, malformed OIDs, and missing evidence.
+   For a slow HTTPS receive-pack, observe the old pair while its hook is still
+   active and require signed network `indeterminate`, not `safe-failed`; block
+   higher sequence, then observe its late commit and classify
+   `committed-late`. Roll the pair back to the old value and retain
+   `indeterminate` (ABA).
 9. Delay the reviewed native deadline helper across expiry before `execve`;
    verify receive-pack and its hook never start. Repeat just inside the
    deadline and require success, then cross the deadline after Git execution
    and require quarantine/reconciliation.
+   Inject exceptions immediately after `Popen`, during setup, communication,
+   and watchdog launch; classify only a confirmed closed pre-exec marker as
+   non-transmitted. Kill the broker while OpenSSL private-key signing and
+   askpass credential helpers block, and require every child/FD to disappear.
 10. Run the complete isolated workflow-pilot reporter suite and
    `python3 scripts/check_docs.py --check`.
 
@@ -1286,7 +1295,10 @@ clamps every validation and subprocess; no push starts after it. A transmitted
 push that crosses the deadline is durably `indeterminate`, consumes its nonce
 and sequence, and reconciles by exact readback to `committed-late`,
 `safe-failed`, `security-hold`, or still-`indeterminate`. Reconciliation never
-re-pushes. Config,
+re-pushes. Network old refs remain indeterminate because GitHub exposes no
+receive-pack transaction-termination proof. Only a broker-controlled local
+remote with durable exact process-group termination proof may return
+safe-failed. Config,
 hooks, refs, objects, packed refs, and alternates are recursively audited, and
 Git uses the already-open remote directory descriptor so a post-ACK pathname
 and malicious hook replacement cannot execute.
@@ -1295,6 +1307,9 @@ mixed-pair evidence for automatic and explicit paths. The native helper, not a
 thread-unsafe Python pre-exec callback, performs the final wall/monotonic
 deadline check, parent-death setup, resource limits, and Git `execve`; the
 parent recomputes remaining time after process creation and before waiting.
+All Git, OpenSSL, askpass, SSH-agent, and credential subprocesses use that
+boundary and watchdog. Results and journal records bind transport and
+termination proof.
 
 The actual HTTPS Git exchange invokes askpass after a TLS server challenge,
 but the credential is absent from candidate environment/files/arguments,

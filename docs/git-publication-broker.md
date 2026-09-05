@@ -132,7 +132,8 @@ new bounded exact two-ref readback:
 | Readback | Durable result |
 | --- | --- |
 | Exact planned authority and anchor | `committed-late` |
-| Exact signed old authority and anchor | `safe-failed` |
+| Exact signed old pair on broker-controlled local remote, plus durable proof that its exact receive-pack process group terminated | `safe-failed` |
+| Exact signed old pair on HTTPS/SSH/network transport | `indeterminate`; GitHub provides no authoritative transaction-termination proof |
 | Mixed or any other observed pair | `security-hold` |
 | Readback/protected authority unavailable | `indeterminate`; only a new trusted `reconcile` capability may retry readback |
 
@@ -141,15 +142,21 @@ exported deadline, but neither code nor documentation claims that a remote
 server cannot move refs after locally observed expiry.
 
 Every signed final publication response is parsed into a closed typed outcome.
-`committed-late` is successful. `safe-failed` is non-success and permits only a
-new higher-sequence plan. `security-hold` is a non-success incident and
-preserves the exact observed authority and anchor names plus nullable OIDs.
-`indeterminate` is non-success with no claimed refs and requires another
-trusted reconciliation capability. The client validates the response
+`committed-late` is successful. `safe-failed` is non-success, is available
+only for the protected-local transport with exact terminated-receive-pack
+proof, and permits only a new higher-sequence plan. `security-hold` is a
+non-success incident and preserves the exact observed authority and anchor
+names plus nullable OIDs. `indeterminate` is non-success, may preserve the
+currently observed exact old pair, and requires another trusted reconciliation
+capability. Network old refs never become `safe-failed` automatically. The
+client validates the response
 signature, request, plan, repository, issue-derived ref names, and each OID
-before returning any outcome. The reconciliation CLI emits canonical JSON
-containing `outcome`, `refs`, and `retry_disposition`; exit statuses are `0`,
-`3`, `4`, and `5` respectively.
+before returning any outcome. Results and the replay journal bind
+`transport` (`network` or `protected-local`) and `termination_proof`
+(`not-required`, `protected-receive-pack-terminated`, or `unavailable`).
+The reconciliation CLI emits canonical JSON containing `outcome`, `refs`,
+`transport`, `termination_proof`, and `retry_disposition`; exit statuses are
+`0`, `3`, `4`, and `5` respectively.
 
 `master`, other heads, other tags, deletions, wildcard refspecs, arbitrary Git
 commands, thin/missing closures, extra objects, and a third ref are not
@@ -217,13 +224,18 @@ is never returned. The reviewed native deadline helper installs
 rechecks immutable absolute wall and monotonic deadlines immediately before
 `execve`, and reports whether Git was executed. Python uses no `preexec_fn`,
 recomputes remaining time after `Popen` and immediately before `communicate`,
-and classifies timeout before Git exec as no-transmit while conservatively
-quarantining timeout after exec. A second native watchdog kills the full Git
-process group if the broker dies.
+and sends every post-`Popen` exception through one marker classifier. A closed
+pre-exec helper with no exec marker is non-transmitted; an observed or unknown
+marker is conservatively timeout/indeterminate. A second native watchdog kills
+the full process group if the broker dies. Git, OpenSSL signing/verification,
+askpass, SSH-agent probes, credential checks, and every other broker child use
+this same helper and watchdog—there is no direct secret-bearing
+`start_new_session` path.
 
 The client JSON contains only `schema_version`, `protocol`, `installation_id`,
 `repository`, `endpoint`, `expected_broker_uid`,
 `expected_capability_uid`, `broker_key_id`, `broker_public_key`,
+`deadline_exec`,
 `pack_max_bytes`, `operation_timeout_seconds`, and externally installed
 `test_only` (`false` in production).
 Validate deployment before launching candidate work:

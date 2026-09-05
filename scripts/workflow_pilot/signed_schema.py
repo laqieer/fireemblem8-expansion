@@ -154,6 +154,8 @@ def _validate_publication_outcome(value: dict[str, Any], label: str) -> None:
     status = value["status"]
     code = value["code"]
     refs = value["refs"]
+    transport = value["transport"]
+    proof = value["termination_proof"]
     if phase == "ack":
         if (status, code, refs) == ("ready", "ready", None):
             return
@@ -172,7 +174,17 @@ def _validate_publication_outcome(value: dict[str, Any], label: str) -> None:
         f"refs/tags/workflow-pilot/issue-{issue}/anchor",
     }
     if code == "indeterminate":
-        if status == "error" and refs is None:
+        valid_proof = proof == "unavailable" or (
+            transport == "protected-local"
+            and proof == "protected-receive-pack-terminated"
+        )
+        if status == "error" and valid_proof:
+            if refs is not None and (
+                not isinstance(refs, dict) or set(refs) != expected_refs
+            ):
+                raise SchemaError(
+                    f"{label} indeterminate refs differ from exact issue pair"
+                )
             return
         raise SchemaError(f"{label} indeterminate result is incoherent")
     if code in {
@@ -188,6 +200,19 @@ def _validate_publication_outcome(value: dict[str, Any], label: str) -> None:
                 raise SchemaError(f"{label} successful result is incoherent")
         elif status != "error":
             raise SchemaError(f"{label} non-success result is incoherent")
+        if code == "safe-failed" and (
+            transport != "protected-local"
+            or proof != "protected-receive-pack-terminated"
+        ):
+            raise SchemaError(
+                f"{label} safe-failed lacks local termination proof"
+            )
+        if code in {"published", "committed-late", "security-hold"} and (
+            proof != "not-required"
+        ):
+            raise SchemaError(
+                f"{label} terminal ref result has invalid termination proof"
+            )
         return
     if status != "error" or refs is not None:
         raise SchemaError(f"{label} broker error result is incoherent")
