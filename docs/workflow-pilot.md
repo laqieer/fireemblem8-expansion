@@ -444,8 +444,8 @@ is harmless only when a successful `metadata-classifier` and the observed
 known-job subset prove metadata-only mode. An active `event-classifier`, an
 unknown/partial graph, zero jobs, or any other unproven active shape is a
 blocking active candidate and makes the default edit defer rather than error
-or mutate. Materialization changes between the two pre-PATCH snapshots also
-defer.
+or mutate. Materialization changes across the initial, pre-intent, and
+post-intent run/job snapshots also defer.
 
 Each exact-head run has one typed PR-binding state after its repository,
 workflow, event, and head identity is validated: `explicit-same`,
@@ -487,9 +487,12 @@ base_sha="$(gh api "repos/$repo/pulls/$pr" --jq .base.sha)"
 
 An initially active same-head/same-base full or unproven Build takes one
 complete run/job snapshot and immediately returns `deferred` without changing
-metadata. A mutation-eligible default edit takes two complete exact-candidate
-run/job snapshots. It returns `deferred` when the second snapshot differs from
-the first or no longer proves the same successful full Build.
+metadata. A mutation-eligible default edit takes three complete exact-candidate
+run/job snapshots: initial, pre-intent, and post-intent immediately before
+PATCH. It returns `deferred` when a later snapshot differs from its predecessor
+or no longer proves the same successful full Build. If the pre-intent snapshot
+already requires deferral, the helper stops there without creating an intent
+or taking the third snapshot.
 Its structured guidance points to the canonical comment route:
 
 ```bash
@@ -619,6 +622,14 @@ group. Multiple unclosed active intents sharing a `createdAt` second remain
 ambiguous. Historical/latest-pair ordering uses `(createdAt, comment ID)` only
 after proving terminal comments do not predate their intent. Thus an
 equal-second aborted predecessor followed by a higher-ID successor is valid.
+Post-intent revalidation checks the selected intent's terminal state before
+classifying active-intent drift. An observed confirmation returns `deferred`
+with that exact confirmation's reconciliation command, never a conflicting
+abort or a second PATCH. An observed abort returns `deferred` without another
+terminal comment. A concurrently observed terminal is not continuity success:
+reconciliation must still validate the current metadata version and exact
+Build evidence. The `mutated` result records any intent created by this
+invocation, even when another invocation subsequently terminates it.
 Every confirmation/abort edge independently requires both
 `terminal.createdAt >= intent.createdAt` and
 `terminal.comment_id > intent.comment_id`; a later timestamp never excuses an

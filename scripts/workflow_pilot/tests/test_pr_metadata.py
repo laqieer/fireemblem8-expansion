@@ -2583,6 +2583,211 @@ class PullRequestMetadataTests(unittest.TestCase):
             transaction_posts[0][2]["body"],
         )
 
+    def test_post_intent_confirmation_defers_without_conflicting_abort(self):
+        pre_state = _pr()
+        pre_version = _metadata_version()
+        intent = _receipt(
+            provided_fields={"body": _sha256("new body")},
+            pre_body="Stable body",
+            pre_version=pre_version,
+            target_metadata_sha256=_metadata_sha256("Stable title", "new body"),
+        )
+        confirmation = _confirmation(intent)
+        original_comments = [
+            _intent_comment(intent),
+            _confirmation_comment(confirmation),
+        ]
+        successful_full = _run(101, 10, mode="full")
+        for run_drift, successor in ((False, False), (True, False), (False, True)):
+            with self.subTest(run_drift=run_drift, successor=successor):
+                client = ScriptedClient()
+                _add_pr_states(client, pre_state, pre_state)
+                _add_snapshot(client, [successful_full], copies=2)
+                _add_snapshot(
+                    client,
+                    (
+                        [_run(102, 11, mode="full", active=True), successful_full]
+                        if run_drift
+                        else [successful_full]
+                    ),
+                )
+                _add_metadata_versions(client, (pre_state, pre_version))
+                observed = copy.deepcopy(original_comments)
+                if successor:
+                    observed.append(
+                        _intent_comment(
+                            replace(intent, nonce="b" * 64),
+                            comment_id=404,
+                            created_at="2026-09-04T00:00:03Z",
+                        )
+                    )
+                client.add(
+                    "GET",
+                    _query(
+                        f"issues/{PR_NUMBER}/comments",
+                        [("per_page", "100"), ("page", "1")],
+                    ),
+                    [_intent_comment(intent)],
+                    observed,
+                )
+                client.add(
+                    "POST",
+                    _endpoint(f"issues/{PR_NUMBER}/comments"),
+                    lambda *, body, **_kwargs: _comment(
+                        405,
+                        body["body"],
+                        created_at="2026-09-04T00:00:04Z",
+                        updated_at="2026-09-04T00:00:04Z",
+                    ),
+                )
+                decision = pr_metadata.edit_metadata(
+                    client,
+                    repository=REPOSITORY,
+                    pr_number=PR_NUMBER,
+                    head_sha=HEAD,
+                    base_sha=BASE,
+                    title=None,
+                    body="new body",
+                    essential_reason=None,
+                )
+                self.assertEqual(decision.action, "deferred")
+                self.assertFalse(decision.mutated)
+                self.assertEqual(decision.confirmation_comment_id, 402)
+                self.assertIsNone(decision.abort_comment_id)
+                self.assertIn("--confirmation-comment-id", decision.guidance[0])
+                self.assertEqual(decision.guidance[0][-1], "402")
+                self.assertFalse(
+                    any(
+                        method == "PATCH"
+                        or endpoint == _endpoint(f"issues/{PR_NUMBER}/comments")
+                        for method, endpoint, _body in client.calls
+                    )
+                )
+
+        client = ScriptedClient()
+        target_state = _pr(body="new body")
+        _add_pr_states(client, target_state)
+        _add_snapshot(
+            client,
+            [_run(202, 11, mode="metadata-only", success=True), successful_full],
+        )
+        decision = _reconcile(
+            client,
+            receipt=intent,
+            confirmation=confirmation,
+            comments=original_comments,
+            version=confirmation.metadata_version,
+            state=target_state,
+        )
+        self.assertEqual(decision.action, "complete")
+        self.assertEqual(decision.run_id, 202)
+
+    def test_created_intent_reports_its_mutation_after_observed_terminal(self):
+        for terminal in ("confirmation", "abort"):
+            with self.subTest(terminal=terminal):
+                client = ScriptedClient()
+                _add_pr_states(client, _pr(), _pr())
+                _add_snapshot(client, [_run(101, 10, mode="full")], copies=3)
+                _add_metadata_versions(client, (_pr(), _metadata_version()))
+                observed = []
+
+                def intent_response(*, body, **_kwargs):
+                    intent = pr_metadata._parse_intent_comment_body(body["body"])
+                    comment = _intent_comment(intent)
+                    observed.append(comment)
+                    observed.append(
+                        _confirmation_comment(_confirmation(intent))
+                        if terminal == "confirmation"
+                        else _abort_comment(_abort(intent))
+                    )
+                    return comment
+
+                client.add(
+                    "POST",
+                    _endpoint(f"issues/{PR_NUMBER}/comments"),
+                    intent_response,
+                )
+                client.add(
+                    "GET",
+                    _query(
+                        f"issues/{PR_NUMBER}/comments",
+                        [("per_page", "100"), ("page", "1")],
+                    ),
+                    [],
+                    lambda **_kwargs: copy.deepcopy(observed),
+                )
+                decision = pr_metadata.edit_metadata(
+                    client,
+                    repository=REPOSITORY,
+                    pr_number=PR_NUMBER,
+                    head_sha=HEAD,
+                    base_sha=BASE,
+                    title=None,
+                    body="new body",
+                    essential_reason=None,
+                )
+                self.assertEqual(decision.action, "deferred")
+                self.assertTrue(decision.mutated)
+                self.assertEqual(decision.intent_comment_id, 401)
+                self.assertEqual(
+                    (decision.confirmation_comment_id, decision.abort_comment_id),
+                    (402, None) if terminal == "confirmation" else (None, 403),
+                )
+                self.assertFalse(any(call[0] == "PATCH" for call in client.calls))
+                transaction_posts = [
+                    call for call in client.calls
+                    if call[:2] == ("POST", _endpoint(f"issues/{PR_NUMBER}/comments"))
+                ]
+                self.assertEqual(len(transaction_posts), 1)
+                self.assertIn(
+                    pr_metadata.INTENT_MARKER,
+                    transaction_posts[0][2]["body"],
+                )
+
+    def test_post_intent_abort_defers_without_another_terminal(self):
+        pre_state = _pr()
+        pre_version = _metadata_version()
+        intent = _receipt(
+            provided_fields={"body": _sha256("new body")},
+            pre_body="Stable body",
+            pre_version=pre_version,
+            target_metadata_sha256=_metadata_sha256("Stable title", "new body"),
+        )
+        client = ScriptedClient()
+        _add_pr_states(client, pre_state, pre_state)
+        _add_snapshot(client, [_run(101, 10, mode="full")], copies=3)
+        _add_metadata_versions(client, (pre_state, pre_version))
+        client.add(
+            "GET",
+            _query(
+                f"issues/{PR_NUMBER}/comments",
+                [("per_page", "100"), ("page", "1")],
+            ),
+            [_intent_comment(intent)],
+            [_intent_comment(intent), _abort_comment(_abort(intent))],
+        )
+        decision = pr_metadata.edit_metadata(
+            client,
+            repository=REPOSITORY,
+            pr_number=PR_NUMBER,
+            head_sha=HEAD,
+            base_sha=BASE,
+            title=None,
+            body="new body",
+            essential_reason=None,
+        )
+        self.assertEqual(decision.action, "deferred")
+        self.assertFalse(decision.mutated)
+        self.assertEqual(decision.abort_comment_id, 403)
+        self.assertIsNone(decision.confirmation_comment_id)
+        self.assertFalse(
+            any(
+                method == "PATCH"
+                or endpoint == _endpoint(f"issues/{PR_NUMBER}/comments")
+                for method, endpoint, _body in client.calls
+            )
+        )
+
     def test_retry_unmatched_intent_rejects_third_state(self):
         intent = _receipt(
             provided_fields={"body": _sha256("new body")},

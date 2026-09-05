@@ -3238,6 +3238,7 @@ def edit_metadata(
         else None
     )
     patch_required = not initially_matches
+    intent_created = False
     if (
         intent is not None
         and latest_confirmation_comment is None
@@ -3297,6 +3298,7 @@ def edit_metadata(
             current,
             intent,
         )
+        intent_created = True
         if (
             latest_intent_comment.created_at < latest_abort_comment.created_at
             or latest_intent_comment.comment_id <= latest_abort_comment.comment_id
@@ -3409,6 +3411,7 @@ def edit_metadata(
             current,
             intent,
         )
+        intent_created = True
 
     if intent is None or latest_intent_comment is None:
         raise MetadataEditError("metadata edit intent state is incomplete")
@@ -3418,6 +3421,43 @@ def edit_metadata(
             client,
             current,
         )
+        existing_confirmation = fresh_confirmations.get(
+            latest_intent_comment.comment_id
+        )
+        if existing_confirmation is not None:
+            return Decision(
+                action="deferred",
+                base_sha=base_sha,
+                guidance=_reconcile_guidance(
+                    current,
+                    existing_confirmation.comment_id,
+                ),
+                head_sha=head_sha,
+                mutated=intent_created,
+                reason="metadata edit intent is already confirmed; reconcile its pair",
+                repository=repository,
+                pr_number=pr_number,
+                intent_comment_id=latest_intent_comment.comment_id,
+                intent_comment_url=latest_intent_comment.html_url,
+                confirmation_comment_id=existing_confirmation.comment_id,
+                confirmation_comment_url=existing_confirmation.html_url,
+            )
+        existing_abort = fresh_aborts.get(latest_intent_comment.comment_id)
+        if existing_abort is not None:
+            return Decision(
+                action="deferred",
+                base_sha=base_sha,
+                guidance=(),
+                head_sha=head_sha,
+                mutated=intent_created,
+                reason="metadata edit intent is already aborted",
+                repository=repository,
+                pr_number=pr_number,
+                intent_comment_id=latest_intent_comment.comment_id,
+                intent_comment_url=latest_intent_comment.html_url,
+                abort_comment_id=existing_abort.comment_id,
+                abort_comment_url=existing_abort.html_url,
+            )
         fresh_latest = _latest_intent(
             _active_intents(
                 _candidate_intents(
@@ -3429,29 +3469,12 @@ def edit_metadata(
                 fresh_aborts,
             )
         )
-        existing_abort = fresh_aborts.get(latest_intent_comment.comment_id)
-        if existing_abort is not None:
-            return Decision(
-                action="deferred",
-                base_sha=base_sha,
-                guidance=(),
-                head_sha=head_sha,
-                mutated=False,
-                reason="metadata edit intent is already aborted",
-                repository=repository,
-                pr_number=pr_number,
-                intent_comment_id=latest_intent_comment.comment_id,
-                intent_comment_url=latest_intent_comment.html_url,
-                abort_comment_id=existing_abort.comment_id,
-                abort_comment_url=existing_abort.html_url,
-            )
         reason = None
         if fresh_runs != current_runs:
             reason = "run-authority-drift"
         elif (
             fresh_latest is None
             or fresh_latest.comment_id != latest_intent_comment.comment_id
-            or fresh_latest.comment_id in fresh_confirmations
         ):
             reason = "transaction-drift"
         elif essential_reason is None and _blocking_active_runs(fresh_runs):

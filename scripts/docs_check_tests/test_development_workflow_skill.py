@@ -4605,7 +4605,7 @@ printf '%s\t%s\t%s\n' "$result" \
         for requirement in (
             "initially active same-head/same-base full or unproven Build takes "
             "one complete run/job snapshot",
-            "mutation-eligible default edit takes two complete exact-candidate "
+            "mutation-eligible default edit takes three complete exact-candidate "
             "run/job snapshots",
             "`run_id` exclusively for an Actions workflow run",
             "`comment_id` exclusively for the canonical issue comment",
@@ -4639,7 +4639,7 @@ printf '%s\t%s\t%s\n' "$result" \
             "pr-metadata reconcile",
             "performs no PR metadata mutation",
             "initially active Build takes one complete run/job snapshot",
-            "mutation-eligible default edit with two complete run/job snapshots",
+            "mutation-eligible default edit with three complete run/job snapshots",
             "completed failed metadata run",
             "repository-owner comment",
             "/repositories/<numeric-id>/",

@@ -1246,8 +1246,11 @@ the exact branch and head; timeout or ambiguity fails before `gh run watch`.
    shape is queued. Attempt a default body edit with exact repository, PR,
    head, and base arguments, and confirm the initially active Build takes one
    complete run/job snapshot before fast defer. Separately exercise a
-   mutation-eligible default edit with two complete run/job snapshots where
-   the first full Build succeeds and the second exposes an active rerun.
+   mutation-eligible default edit with three complete run/job snapshots:
+   initial, pre-intent, and post-intent immediately before PATCH. The first
+   full Build succeeds; an active rerun appearing in either later snapshot
+   defers the edit. A second-snapshot refusal stops before creating an intent
+   or taking the third snapshot.
    Exercise queued zero-job, one-job, current eight-job-without-summary,
    unknown partial, provable active metadata-only, empty/missing-binding active
    queued/in-progress, terminal unbound, explicit-other, and
@@ -1342,7 +1345,7 @@ the exact branch and head; timeout or ambiguity fails before `gh run watch`.
    trailing junk, duplicate names, unterminated quotes, and ambiguous spacing.
    Exercise an active run whose jobs complete after its stale `updated_at`, a
    refreshed terminal run whose updated bound precedes job completion, and
-   partial active graph materialization between the two snapshots.
+   partial active graph materialization across all three snapshots.
 6. Parse `docs/test-cases/registry.json` and run
    `python3 -m unittest scripts.docs_check_tests.test_development_workflow_skill -v`.
 
@@ -1524,11 +1527,21 @@ parses the contributor/workflow guidance and indexed tester contract.
 No cleanup is required because every GitHub response and mutation is
 synthetic. The API cannot make the identity check and PATCH atomic, so the
 helper fast-defers an initially active candidate after one complete snapshot;
-a mutation-eligible edit takes two snapshots, creates its intent before
-mutation, revalidates identity immediately before PATCH, requires the
+a mutation-eligible edit takes three snapshots (initial, pre-intent, and
+post-intent), creates its intent between the latter two, revalidates identity
+immediately before PATCH, requires the
 authoritative response and metadata-specific version authority, then creates
 the confirmation. The pair constrains reconciliation to a later numbered
 exact-bound metadata run without a mutable local ledger.
+Replay a confirmation arriving during post-intent revalidation, including
+simultaneous run drift and a new successor intent. The helper must return
+`deferred` with the observed confirmation ID and reconciliation command,
+without PATCHing metadata or appending an abort. Replay an observed abort and
+require no duplicate terminal comment. Confirm that the original valid pair
+still reconciles after its exact full and metadata runs succeed, while
+misbound or contradictory terminal records continue to fail closed. These
+observations do not provide a distributed writer lock: the supported delivery
+coordinator serializes helper invocations.
 There is no manual-only criterion. No ARM runtime test is needed because this
 is host-only delivery orchestration.
 
