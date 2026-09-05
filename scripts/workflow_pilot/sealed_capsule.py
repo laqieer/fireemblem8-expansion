@@ -51,6 +51,8 @@ MAX_DIAGNOSTIC_BYTES = 64 * 1024
 MAX_ENTRIES = 1024
 MAX_SECONDS = 120
 MAX_DEPTH = 4
+MAX_WORKER_FDS = 64
+MAX_WORKER_FILE_BYTES = 1024 * 1024
 SEALS = 0x01 | 0x02 | 0x04 | 0x08
 SHA1 = re.compile(r"[0-9a-f]{40}\Z")
 SHA256 = re.compile(r"[0-9a-f]{64}\Z")
@@ -383,6 +385,8 @@ class _GitSource(_ObjectSource):
 
     def get(self, kind, oid):
         if oid not in self.objects:
+            if len(self.objects) >= MAX_ENTRIES * 8:
+                raise CapsuleError("invalid bounded Git object closure")
             raw = _git(self.root, "cat-file", kind, oid)
             if _oid(kind, raw) != oid:
                 raise CapsuleError("Git object bytes do not match requested identity")
@@ -593,6 +597,7 @@ def _platform():
             or not hasattr(os, "memfd_create") or not hasattr(os, "fork")
             or not hasattr(os, "waitid") or not hasattr(os, "WNOWAIT")):
         raise CapsuleUnavailable("Linux sealed memfd and process supervision are required")
+    _inherited_fds()
     _prctl(4, 0)  # PR_SET_DUMPABLE: candidate peers cannot open live /proc FDs.
 
 
@@ -897,7 +902,11 @@ class CapsuleContext:
 
 def _inherited_fds():
     result = set()
-    for name in os.listdir("/proc/self/fd"):
+    try:
+        names = os.listdir("/proc/self/fd")
+    except OSError as error:
+        raise CapsuleUnavailable("readable /proc/self/fd is required for descriptor supervision") from error
+    for name in names:
         try:
             fd = int(name)
             os.fstat(fd)
@@ -1114,6 +1123,8 @@ def _supervise(arguments):
                 resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
                 resource.setrlimit(resource.RLIMIT_CPU, (math.ceil(timeout) + 1, math.ceil(timeout) + 1))
                 resource.setrlimit(resource.RLIMIT_AS, (512 * 1024 * 1024, 512 * 1024 * 1024))
+                resource.setrlimit(resource.RLIMIT_NOFILE, (MAX_WORKER_FDS, MAX_WORKER_FDS))
+                resource.setrlimit(resource.RLIMIT_FSIZE, (MAX_WORKER_FILE_BYTES, MAX_WORKER_FILE_BYTES))
                 os.dup2(stdout_w, 1)
                 os.dup2(stderr_w, 2)
                 keep = {0, 1, 2, reply_w, invoke_w, invoke_reply_r}

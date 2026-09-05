@@ -847,9 +847,18 @@ not an authenticated capsule receipt.
 Bundles are at most 16 MiB (aggregate decoded Git bytes are bounded while
 collecting); programs/modules at most 2 MiB; requests at most 4 MiB; output at
 most 1 MiB; each diagnostic stream at most 64 KiB. There are at most 1,024
-artifacts, eight tree slots, 32 programs and four nested invocation levels.
+artifacts, 8,192 distinct Git proof objects, eight tree slots, 32 programs and
+four nested invocation levels. The proof-object count is enforced before
+fetching an additional object, not only when parsing a serialized bundle;
+cached objects remain usable at the limit.
 Each invocation accepts a positive timeout up to 120 seconds. A worker also
-has a 512 MiB address-space ceiling and a CPU ceiling.
+has a 512 MiB address-space ceiling and a CPU ceiling. On both supported ABIs,
+hard `RLIMIT_NOFILE=64` bounds new descriptor allocation, and hard
+`RLIMIT_FSIZE=1 MiB` bounds kernel-backed file growth, including writable
+memfds. Pipes/memfds can exhaust only the worker's descriptor allowance;
+writes cannot extend a memfd past its file-size allowance. Fixed inherited
+protocol descriptors remain usable at the limit, so declared nested
+invocations still run through the separately supervised guardian.
 
 A separate guardian owns the worker group, retains the leader until group
 cleanup to avoid PID reuse, and reaps descendants. A private liveness pipe
@@ -860,7 +869,8 @@ malformed messages, nonempty diagnostics and interrupted execution produce
 no admitted result or signature. Owned descriptors close on every path,
 without closing an unrelated FD reused at the same integer.
 
-Supported execution requires Linux sealed memfd, `/proc/self/fd`, fork,
+Supported execution requires Linux sealed memfd, mounted/readable
+`/proc/self/fd`, fork,
 process groups, `waitid(WNOWAIT)`, and the non-dumpable/subreaper/parent-death
 prctl facilities plus unprivileged seccomp-BPF on the x86-64 or AArch64 syscall
 ABI. Other ABIs fail closed. Git SHA-1 repositories are supported; SHA-256
@@ -868,6 +878,9 @@ repositories are explicitly unsupported. Missing facilities raise `CapsuleUnavai
 with disposition `sealed-capsule-unavailable`; the production launcher exits
 nonzero and does **not** retry through a pathname, ordinary importer,
 temporary directory or post-execution rehash.
+Preparation probes descriptor enumeration before collecting Git objects or
+launching a process. An unavailable procfs during guardian admission retains
+the same explicit disposition.
 
 ### PR #189 adoption and completion boundary
 

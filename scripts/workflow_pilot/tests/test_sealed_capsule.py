@@ -403,6 +403,42 @@ class SealedCapsuleTests(unittest.TestCase):
                     with capsule.Capsule(capsule.canonical(value), self.spec):
                         self.fail("malformed capsule was accepted")
 
+    def test_git_proof_collection_stops_before_reading_over_limit(self):
+        paths = tuple("inputs/proof-" + str(index) + "/"
+                      + "/".join(f"level-{level}" for level in range(24)) + "/state.json"
+                      for index in range(3))
+        for index, path in enumerate(paths):
+            self.write(path, capsule.canonical({"value": index}))
+        self.write("checks/proof.py",
+                   b"import json\n"
+                   b"def capsule_main(request, context):\n"
+                   b"    return [json.loads(context.read('base', path))['value']\n"
+                   b"            for path in request['paths']]\n")
+        revision = self.commit()
+        spec = capsule.CapsuleSpec(trees={"base": revision},
+                                   programs={"proof": "checks/proof.py"}, data={"base": paths})
+        raw = capsule._make_bundle(self.root, spec.record())
+        with capsule.Capsule(raw, spec) as prepared:
+            self.assertEqual(prepared.execute("proof", {"paths": list(paths)}).value, [0, 1, 2])
+        source = capsule._GitSource(self.root)
+        with mock.patch.object(capsule, "MAX_ENTRIES", 8):
+            with self.assertRaisesRegex(capsule.CapsuleError, "bounded Git object closure"):
+                capsule._Bundle(raw, spec.record())
+            with (
+                mock.patch.object(capsule, "_GitSource", return_value=source),
+                mock.patch.object(capsule, "_git", wraps=capsule._git) as read,
+                mock.patch.object(capsule, "canonical", wraps=capsule.canonical) as serialize,
+            ):
+                with self.assertRaisesRegex(capsule.CapsuleError, "bounded Git object closure"):
+                    capsule._make_bundle(self.root, spec.record())
+                self.assertEqual(len(source.objects), capsule.MAX_ENTRIES * 8)
+                self.assertEqual(read.call_count, capsule.MAX_ENTRIES * 8)
+                serialize.assert_not_called()
+                oid, (kind, content) = next(iter(source.objects.items()))
+                read.reset_mock()
+                self.assertEqual(source.get(kind, oid), content)
+                read.assert_not_called()
+
     def test_undeclared_program_and_data_do_not_fall_back(self):
         with capsule.Capsule(self.bundle, self.spec) as prepared:
             with self.assertRaises(capsule.CapsuleError):
@@ -726,6 +762,85 @@ class SealedCapsuleTests(unittest.TestCase):
             self.assertLess(time.monotonic() - started, 3)
         self.assertEqual(before, self.descriptors())
 
+    def test_worker_descriptor_limits_preserve_nested_invocation_and_cleanup(self):
+        self.write("checks/descriptors.py", b"""import os, resource
+def capsule_main(request, context):
+    descriptors = []
+    failure = None
+    try:
+        for _ in range(request['attempts']):
+            try:
+                created = ([os.memfd_create('bounded-worker', os.MFD_CLOEXEC)]
+                           if request['kind'] == 'memfd' else os.pipe2(os.O_CLOEXEC))
+            except OSError as error:
+                failure = error.errno
+                break
+            descriptors.extend(created)
+        nested = context.invoke('assertion', {'state': 'descriptor-bound'})
+        result = {'allocated': len(descriptors), 'errno': failure,
+                  'limit': list(resource.getrlimit(resource.RLIMIT_NOFILE)),
+                  'nested_status': nested['value']['status'],
+                  'nested_program': nested['receipt']['program']}
+    finally:
+        for descriptor in descriptors:
+            os.close(descriptor)
+    descriptor = os.memfd_create('recovered-worker', os.MFD_CLOEXEC)
+    os.close(descriptor)
+    result['recovered'] = True
+    return result
+""")
+        revision = self.commit()
+        spec = capsule.CapsuleSpec(
+            trees={**self.spec.trees, "base": revision},
+            programs={"descriptors": "checks/descriptors.py", "assertion": "checks/assertion.py"},
+            data=self.spec.data,
+        )
+        before = {fd: identity[:2] for fd, identity in self.descriptors().items()}
+        with capsule.prepare(self.root, spec) as prepared:
+            for kind in ("memfd", "pipe"):
+                with self.subTest(kind=kind):
+                    result = prepared.execute("descriptors", {"kind": kind, "attempts": 65}).value
+                    self.assertEqual(result["errno"], errno.EMFILE)
+                    self.assertEqual(result["limit"], [64, 64])
+                    self.assertGreater(result["allocated"], 0)
+                    self.assertLessEqual(result["allocated"], 64)
+                    self.assertEqual(result["nested_status"], "pass")
+                    self.assertEqual(result["nested_program"], "assertion")
+                    self.assertTrue(result["recovered"])
+        self.assertEqual(before, {fd: identity[:2] for fd, identity in self.descriptors().items()})
+
+    def test_worker_memfd_growth_stops_at_file_size_limit(self):
+        before = {fd: identity[:2] for fd, identity in self.descriptors().items()}
+        with self.attack("""import os, resource
+def capsule_main(request, context):
+    descriptor = os.memfd_create('bounded-growth', os.MFD_CLOEXEC)
+    try:
+        initial = os.write(descriptor, b'x' * (request['limit'] - 1))
+        crossing = os.write(descriptor, b'yz')
+        errors = {}
+        for name in ('write', 'pwrite'):
+            try:
+                if name == 'write':
+                    os.write(descriptor, b'x')
+                else:
+                    os.pwrite(descriptor, b'x', request['limit'])
+            except OSError as error:
+                errors[name] = error.errno
+        return {'initial': initial, 'crossing': crossing, 'errors': errors,
+                'size': os.fstat(descriptor).st_size,
+                'limit': list(resource.getrlimit(resource.RLIMIT_FSIZE))}
+    finally:
+        os.close(descriptor)
+""") as prepared:
+            limit = 1024 * 1024
+            result = prepared.execute("attack", {"limit": limit}).value
+        self.assertEqual(result["initial"], limit - 1)
+        self.assertEqual(result["crossing"], 1)
+        self.assertEqual(result["errors"], {"write": errno.EFBIG, "pwrite": errno.EFBIG})
+        self.assertEqual(result["size"], limit)
+        self.assertEqual(result["limit"], [limit, limit])
+        self.assertEqual(before, {fd: identity[:2] for fd, identity in self.descriptors().items()})
+
     def test_mutating_sys_path_cannot_load_an_ambient_module(self):
         ambient = self.root / "unlisted_module.py"
         ambient.write_bytes(b"status = 'pass'\n")
@@ -821,6 +936,33 @@ class SealedCapsuleTests(unittest.TestCase):
         with mock.patch.object(os, "memfd_create", side_effect=OSError(errno.ENOSYS, "unavailable")):
             with self.assertRaises(capsule.CapsuleUnavailable):
                 capsule.SealedBytes(b"must-not-fall-back", "test", 100)
+
+    def test_missing_proc_descriptors_are_explicitly_unavailable_before_launch(self):
+        capsule._platform()
+        for number in (errno.ENOENT, errno.EACCES, errno.ENOTDIR):
+            with self.subTest(errno=number):
+                with (
+                    mock.patch.object(os, "listdir", side_effect=OSError(number, "proc unavailable")),
+                    mock.patch.object(subprocess, "Popen", side_effect=AssertionError(
+                        "process created before platform admission")) as launch,
+                    mock.patch.object(os, "memfd_create") as create,
+                ):
+                    with self.assertRaises(capsule.CapsuleUnavailable) as error:
+                        capsule.prepare(self.root, self.spec)
+                    self.assertEqual(error.exception.disposition, "sealed-capsule-unavailable")
+                    launch.assert_not_called()
+                    create.assert_not_called()
+                    with (
+                        mock.patch.object(os, "write") as diagnostic,
+                        mock.patch.object(os, "waitpid", side_effect=ChildProcessError),
+                        mock.patch.object(os, "fork") as fork,
+                    ):
+                        with self.assertRaises(SystemExit) as exit:
+                            capsule._supervise(["3", "4", "5", "6", "7", "", "", ""])
+                        self.assertEqual(exit.exception.code, 125)
+                        self.assertEqual(diagnostic.call_args.args[0], 2)
+                        self.assertTrue(diagnostic.call_args.args[1].startswith(b"CapsuleUnavailable:"))
+                        fork.assert_not_called()
 
     def test_parent_death_reaps_outer_and_nested_execution_groups(self):
         capsule._prctl(36, 1)

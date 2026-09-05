@@ -6,11 +6,13 @@ import copy
 import json
 import math
 import os
+import stat
 import subprocess
 import tempfile
 import unittest
 from dataclasses import asdict
 from pathlib import Path
+from unittest import mock
 
 from scripts.workflow_pilot import event_classifier
 
@@ -370,6 +372,56 @@ class EventClassifierFixtureTests(unittest.TestCase):
                 event_classifier._ensure_finite_numbers(
                     {"nested": [1.0, float("inf")]}
                 )
+
+    def test_event_snapshot_rejects_actual_symlink_without_output(self):
+        artifact_root = ROOT / "build" / "test-artifacts"
+        artifact_root.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(prefix="workflow-event-link-", dir=artifact_root) as temporary:
+            sandbox = Path(temporary)
+            target, link, output = (sandbox / name for name in ("event.json", "link.json", "event.out"))
+            case = _load_fixture()["cases"][0]
+            target.write_text(json.dumps(case["payload"]), encoding="ascii")
+            link.symlink_to(target.name)
+            self.assertEqual(event_classifier.load_event(target), case["payload"])
+            with self.assertRaises(event_classifier.EventClassificationError):
+                event_classifier.load_event(link)
+            completed = subprocess.run(
+                _launcher_command(case, link, output),
+                cwd=ROOT, capture_output=True, check=False,
+            )
+            self.assertEqual(completed.returncode, 2, completed.stderr)
+            self.assertEqual(completed.stdout, b"")
+            self.assertFalse(output.exists())
+            self.assertEqual(event_classifier.load_event(target), case["payload"])
+
+    def test_event_snapshot_rejects_mismatched_owner_before_read_and_closes_fd(self):
+        artifact_root = ROOT / "build" / "test-artifacts"
+        artifact_root.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(prefix="workflow-event-owner-", dir=artifact_root) as temporary:
+            path = Path(temporary) / "event.json"
+            payload = _load_fixture()["cases"][0]["payload"]
+            path.write_text(json.dumps(payload), encoding="ascii")
+            self.assertEqual(event_classifier.load_event(path), payload)
+            fstat = os.fstat
+            descriptors = []
+
+            def other_owner(fd):
+                descriptors.append(fd)
+                metadata = list(fstat(fd))
+                metadata[stat.ST_UID] = os.geteuid() + 1
+                return os.stat_result(metadata)
+
+            with (
+                mock.patch.object(os, "fstat", side_effect=other_owner),
+                mock.patch.object(os, "read", wraps=os.read) as read,
+            ):
+                with self.assertRaisesRegex(event_classifier.EventClassificationError, "same-owner"):
+                    event_classifier.load_event(path)
+                read.assert_not_called()
+            self.assertEqual(len(descriptors), 1)
+            with self.assertRaises(OSError):
+                fstat(descriptors[0])
+            self.assertEqual(event_classifier.load_event(path), payload)
 
     def test_metadata_records_require_real_schema_valid_transitions(self):
         case = next(

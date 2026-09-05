@@ -1498,6 +1498,10 @@ prevent native process-group/session escape. Unsupported ABIs fail closed.
    unsealed descriptor; reused/aliased descriptors; unexpected inherited FDs;
    omitted/extra/duplicate/wrong-mode/wrong-blob/wrong-role artifacts and
    module/proof closure attacks. Each is denied before an admitted result.
+   Load distinct deep Git data paths successfully, then lower the test's
+   closure allowance. Collection must stop at the proof-object limit before
+   fetching another object or serializing an over-limit bundle; cached
+   objects at that limit must remain readable.
 6. Attempt undeclared imports, `sys.path` injection, file specs, pathname data,
    subprocess/fork, signals and network access. Catching a denied operation
    and returning `{"status":"pass"}` must still fail.
@@ -1522,6 +1526,20 @@ prevent native process-group/session escape. Unsupported ABIs fail closed.
    observe real processes/descriptors and require bounded teardown with no
    admitted partial result. Remove platform support and require an explicit
    unavailable disposition rather than fallback execution.
+   Simulate missing, unreadable and non-directory `/proc/self/fd` facilities:
+   preparation must raise `CapsuleUnavailable` before any Git/process or
+   memfd creation, and guardian admission must preserve that error type.
+   Allocate memfds and pipes up to the worker's hard descriptor limit of 64.
+   Further allocation must fail with `EMFILE`, while an already declared
+   nested assertion still passes and closing descriptors permits reuse.
+   Write to a new memfd through the 1 MiB file-size boundary: an overlapping
+   write is shortened to the limit, and further `write`/`pwrite` attempts
+   report `EFBIG`. Descriptor sets must return to their starting identities.
+9. Read a real same-owner event file successfully. Pass a real symlink to
+   that file: direct admission and the production launcher must reject it,
+   without output. Inject only a mismatched `st_uid` into the opened file's
+   metadata: admission must reject before reading bytes and close that
+   descriptor. The unchanged same-owner file must still load afterward.
 
 ### Expected result
 
@@ -1549,6 +1567,14 @@ nonces and envelope digests were intentionally distinct. Before the static
 closure fix, `from xml.etree import ElementTree` failed in the closed importer
 unless redundantly declared as a dynamic module. Reverting either correction
 fails the corresponding focused regression.
+
+The bounded-resource correction adds pre-fix controls: collection accepted
+more proof objects than the final bundle parser; the worker allocated 65
+memfds or 65 pipes without `EMFILE` and grew a memfd beyond 1 MiB; unavailable
+procfs did not stop preparation before Git launch. The focused regressions
+must reject these behaviors while preserving valid deep closures, nested
+execution, within-limit writes and same-owner event admission. Removing the
+no-follow flag or ownership comparison must fail the event-admission tests.
 
 ### Automation
 
