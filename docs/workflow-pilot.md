@@ -139,12 +139,26 @@ It checks exact Git common-directory and metadata-backlink ownership, branch
 and HEAD, ordinary and hidden-index changes, all untracked files, private
 worktree refs, incomplete Git operations, and upstream divergence.
 Detached, unassociated/reused branches, missing registrations, nested Git
-repositories/submodules, mounts, special files, and unknown ignored local data
-remain held, not guessed disposable.
+repositories/submodules (including bare or separated Git metadata without a
+`.git` child), mounts, special files, and unknown ignored local data remain
+held, not guessed disposable.
+
+Every private reflog's old **and** new object identities and every private
+pseudoref are inspected, including all `FETCH_HEAD` entries, not only its
+first mergeable line. They must be durably reachable from shared refs that
+worktree removal leaves intact. Current HEAD ancestry and the main checkout's
+reflog do not substitute for that evidence. Detached recovery commits,
+non-commit objects, and missing, malformed, symlinked, or over-bound recovery
+metadata retain the workspace. Do not erase recovery records to qualify a
+tree for removal.
 
 Only known generated ignored output is disposable: `build/`, `.dep/`,
 `.deps/`, bytecode caches, standard root build products, the eight existing
 Make-built host tools, and source-backed compiler/graphics intermediates.
+The graphics formats include `.4bpp.fk` and
+`.feimg[1-4].bin`/`.fetsa[1-4].bin` (with `.fk`/`.lz` derivatives) only when
+their corresponding tracked image source exists. Unknown stems, other numeric
+variants, and arbitrary ignored binary/compression files are not allowlisted.
 Do not keep original user work in generated
 directories. Ignored saves, baseroms, local configuration, editor state, or
 other unrecognized files require preservation. Symlinks are not followed by
@@ -160,10 +174,22 @@ local objects require a coordinator-owned fetch, not implicit mutation by
 the planner. Deleted remote branches are acceptable only when the exact
 merged PR/head and master ancestry still prove the work was pushed.
 
+All Git commands disable optional locks, replacement objects, hooks,
+fsmonitor/untracked-cache updates, and lazy fetching where supported.
+Git 2.43 does **not** honor `GIT_NO_LAZY_FETCH`, so the helper does not rely
+on that variable alone: before every other Git invocation it reads effective
+configuration, including includes and per-worktree settings, and rejects any
+partial-clone/promisor setting. This conservative hold applies even to a
+false promisor setting or newer Git. Use a fully materialized, non-promisor
+repository for cleanup authority; the helper never fetches missing objects or
+rewrites configuration to make a target eligible.
+
 By default the proof SHA is the PR's merge commit. Use `--proof-sha FULL_SHA`
 to select a known later master descendant, for example after a CI fix-forward.
-It must pass the same checks; the option is not a success override. A valid
-historical proof is not invalidated by an unrelated newer failure.
+CLI input accepts uppercase hex by normalizing that argument alone. Git/GitHub
+identities and programmatic proof inputs must remain canonical lowercase full
+SHAs. The proof must pass the same checks; the option is not a success override.
+A valid historical proof is not invalidated by an unrelated newer failure.
 The mandatory Build follows the existing Make completion gate: exact proof
 commit, `master`, automatic `push`, `build.yml`, completed/success.
 Candidate or manual Build alone never suffices. The latest observed master
@@ -179,7 +205,8 @@ record IDs, and validated repository/commit identities. Missing, malformed,
 over-bound, stale, or changing evidence retains the target. The API cache is
 only an in-memory optimization for one pass. Apply clears it before each
 target and compares fresh Git/PR/CI proof with the plan, then repeats local
-identity/status/lock/process checks immediately before normal
+identity/status/lock/process/private-recovery checks and the nested-Git/size
+scan immediately before normal
 `git worktree remove`. There is no force, unlock, branch deletion, global
 prune, or recursive filesystem deletion fallback.
 
@@ -192,6 +219,8 @@ Dry-run exits zero after reporting holds; apply exits one if any explicit
 target remains, or two for invalid arguments or unavailable root authority.
 Record this output in the coordinator's existing completion evidence, outside
 the removal targets; do not commit a mutable worktree list.
+Command failures include their exit code even when the command emits no
+stderr, so a silent ancestry-test failure remains diagnosable.
 
 Supported live use is Linux with visible same-owner process CWDs and a
 coordinator-maintained complete preserved-path list. Other users' assignments
@@ -200,6 +229,8 @@ atomic GitHub/filesystem transaction. An uninspectable same-owner process
 blocks removal. Do not reassign targets while cleanup is running. API limits,
 unavailable history, ambiguous identities, and retained user data are precise
 operational holds, never reasons to broaden deletion.
+The real-worktree tests explicitly skip hosts without Linux `/proc`; the live
+helper fails closed there rather than bypassing process or mount checks.
 
 There are no game-feature dependencies or conflicts, feature flags, CI
 topology changes, ROM/RAM/save/config/generated-data/localization changes, or
@@ -207,7 +238,8 @@ modern/debug/release/archival build impacts. Workflow dependencies are the
 existing completion gate and sole coordinator; conflicts are premature or
 forceful cleanup and incomplete active-workspace ownership. Rollback is
 reverting this helper and guidance; eligible Git work remains reconstructible
-upstream. The automated and human procedure is
+upstream, and any additional recovery objects remain anchored by shared refs.
+The automated and human procedure is
 [TC-WORKFLOW-WORKTREE-CLEANUP-001](test-cases/workflow-governance.md#tc-workflow-worktree-cleanup-001-remove-only-proven-completed-worktrees).
 
 ## Build event classification and candidate evidence

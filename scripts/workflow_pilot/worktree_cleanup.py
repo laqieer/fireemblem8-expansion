@@ -15,6 +15,7 @@ from pathlib import Path
 import re
 import stat
 import subprocess
+import sys
 from urllib.parse import urlencode
 
 
@@ -24,6 +25,7 @@ MAX_RECORDS = 1000
 MAX_OUTPUT = 16 * 1024 * 1024
 SHA = re.compile(r"[0-9a-f]{40}")
 SOURCE_ROOT = Path(__file__).resolve().parents[2]
+PRIVATE_REFS = ("refs/worktree", "refs/bisect", "refs/rewritten")
 
 
 class Retain(ValueError):
@@ -52,26 +54,37 @@ def timestamp(value):
         raise Retain("invalid CI/PR timestamp") from error
 
 
-def execute(command, cwd):
+def execute(command, cwd, *, input=None, returncodes=(0,)):
     env = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
-    env.update(GIT_OPTIONAL_LOCKS="0", GIT_TERMINAL_PROMPT="0", GIT_NO_REPLACE_OBJECTS="1")
+    env.update(GIT_OPTIONAL_LOCKS="0", GIT_TERMINAL_PROMPT="0", GIT_NO_REPLACE_OBJECTS="1",
+               GIT_NO_LAZY_FETCH="1")
+    require(input is None or len(input) <= MAX_OUTPUT, "command input exceeds safety bound")
     try:
         result = subprocess.run(
-            command, cwd=cwd, env=env, capture_output=True, timeout=60, check=False
+            command, cwd=cwd, env=env, input=input, capture_output=True, timeout=60, check=False
         )
     except (OSError, subprocess.TimeoutExpired) as error:
         raise Retain(f"{command[0]} unavailable or timed out") from error
     require(len(result.stdout) <= MAX_OUTPUT, f"{command[0]} output exceeds safety bound")
-    require(result.returncode == 0, f"{command[0]} failed: {os.fsdecode(result.stderr[:1000]).strip()}")
+    detail = os.fsdecode(result.stderr[:1000]).strip() or "no stderr output"
+    require(result.returncode in returncodes,
+            f"{command[0]} failed (exit {result.returncode}): {detail}")
     return os.fsdecode(result.stdout)
 
 
-def git(root, *arguments):
-    return execute(
-        ["git", "-c", "core.fsmonitor=false", "-c", "core.untrackedCache=false",
-         "-c", "core.hooksPath=/dev/null", "-C", str(root), *arguments],
-        root,
+def git(root, *arguments, input=None):
+    command = ["git", "-c", "core.fsmonitor=false", "-c", "core.untrackedCache=false",
+               "-c", "core.hooksPath=" + os.devnull, "-C", str(root)]
+    # Git 2.43 ignores GIT_NO_LAZY_FETCH. Config reads do not access objects;
+    # reject partial/promisor configuration before *every* other Git command.
+    promisor = execute(
+        command + ["config", "--includes", "--null", "--name-only", "--get-regexp",
+                   r"^(extensions\.partialclone|remote\..*\.(promisor|partialclonefilter))$"],
+        root, returncodes=(0, 1),
     )
+    require(not promisor, "partial/promisor Git configuration requires preservation; "
+            "cleanup cannot guarantee an inert object lookup on all supported Git versions")
+    return execute(command + list(arguments), root, input=input)
 
 
 class GitHub:
@@ -153,10 +166,15 @@ def inside(path, directory):
     return path == directory or directory in path.parents
 
 
+def require_procfs():
+    require(sys.platform == "linux" and Path("/proc/self/mountinfo").is_file(),
+            "active-process and mount checks require Linux /proc")
+
+
 def process_cwds():
     """Same-owner agents must be inspectable; preserve assigned paths as well."""
+    require_procfs()
     proc = Path("/proc")
-    require(proc.is_dir(), "active-process checks require Linux /proc")
     result = []
     for entry in proc.iterdir():
         if not entry.name.isdigit():
@@ -175,6 +193,7 @@ def process_cwds():
 
 def mount_paths():
     # stat/is_mount cannot distinguish a same-device bind mount from an ordinary directory.
+    require_procfs()
     data = Path("/proc/self/mountinfo").read_text()
     require(len(data) <= MAX_OUTPUT, "mount inventory exceeds safety bound")
     result = []
@@ -204,9 +223,20 @@ def allocated_size(path):
         if stat.S_ISDIR(info.st_mode):
             require(item == path or not item.is_mount(), "nested mount requires preservation")
             with os.scandir(item) as entries:
+                entries = list(entries)
+                names = {entry.name for entry in entries}
+                require(".git" not in names or item == path,
+                        "nested Git repository/submodule requires preservation")
+                # Bare and separated Git directories need not contain a .git
+                # entry or have a .git suffix. Incomplete metadata is held too.
+                require(not (
+                    {"objects", "refs"} <= names
+                    or {"gitdir", "commondir"} <= names
+                    or ("HEAD" in names and names.intersection(
+                        {"objects", "refs", "packed-refs", "reftable", "config", "commondir", "gitdir"}
+                    ))
+                ), "nested Git repository/bare metadata requires preservation")
                 for entry in entries:
-                    require(entry.name != ".git" or item == path,
-                            "nested Git repository/submodule requires preservation")
                     pending.append(Path(entry.path))
     return size
 
@@ -231,11 +261,87 @@ def generated_ignored(name, tracked):
     source = name.removesuffix(".lz")
     if name.endswith(".lz") and source in tracked:
         return True
+    source = source.removesuffix(".fk")
+    image = re.fullmatch(r"(.+)\.(?:feimg|fetsa)[1-4]\.bin", source)
+    if image:
+        return image[1] + ".png" in tracked
     for suffix in (".4bpp", ".8bpp", ".gbapal", ".4bpp.h", ".8bpp.h"):
         if source.endswith(suffix):
             stem = source[:-len(suffix)]
             return any(stem + ext in tracked for ext in (".png", ".pal", ".agbpal"))
     return False
+
+
+def private_recovery(path, gitdir):
+    """Account for every object whose last recovery record removal could erase."""
+    objects, budget = set(), MAX_OUTPUT
+
+    def read_record(file):
+        nonlocal budget
+        require(stat.S_ISREG(file.lstat().st_mode), "private Git recovery metadata is not a regular file")
+        with os.fdopen(os.open(file, os.O_RDONLY | os.O_NOFOLLOW), "rb") as source:
+            data = source.read(budget + 1)
+        budget -= len(data)
+        require(budget >= 0, "private Git recovery metadata exceeds safety bound")
+        return os.fsdecode(data)
+
+    def add(value, *, null=False):
+        value = commit(value)
+        if not null or value != "0" * 40:
+            objects.add(value)
+
+    logs = gitdir / "logs"
+    pending = [logs] if os.path.lexists(logs) else []
+    visited = 0
+    while pending:
+        file = pending.pop()
+        visited += 1
+        require(visited <= MAX_RECORDS, "private Git recovery log inventory exceeds safety bound")
+        mode = file.lstat().st_mode
+        require(not stat.S_ISLNK(mode), "private Git recovery logs are symlinked")
+        if stat.S_ISDIR(mode):
+            pending.extend(file.iterdir())
+            continue
+        for line in read_record(file).splitlines():
+            fields = line.split(" ", 2)
+            require(len(fields) == 3, "malformed private Git recovery reflog")
+            # Both sides matter, including an old object absent from every
+            # other entry after a reflog expiration or rewrite.
+            add(fields[0], null=True)
+            add(fields[1], null=True)
+
+    messages = {"COMMIT_EDITMSG", "MERGE_MSG", "SQUASH_MSG", "TAG_EDITMSG", "NOTES_EDITMSG"}
+    for file in gitdir.iterdir():
+        if file.name in messages or not re.fullmatch(r"[A-Z_]+", file.name):
+            continue
+        lines = read_record(file).splitlines()
+        if file.name == "FETCH_HEAD":
+            for line in lines:
+                fields = line.split("\t", 2)
+                require(len(fields) == 3 and fields[1] in {"", "not-for-merge"},
+                        "malformed private Git recovery FETCH_HEAD")
+                add(fields[0])
+        else:
+            require(len(lines) == 1, "malformed private Git recovery pseudoref")
+            if lines[0].startswith("ref: "):
+                add(git(path, "rev-parse", "--verify", file.name).strip())
+            else:
+                add(lines[0])
+
+    shared = set()
+    for row in git(path, "for-each-ref", "--format=%(refname) %(objectname)").splitlines():
+        name, value = row.split(" ", 1)
+        if not any(name == prefix or name.startswith(prefix + "/") for prefix in PRIVATE_REFS):
+            shared.add(commit(value))
+    require(shared, "private Git recovery has no durable shared refs")
+    revisions = "\n".join(sorted(objects) + ["^" + value for value in sorted(shared)]) + "\n"
+    try:
+        unretained = git(path, "rev-list", "--objects", "--no-object-names", "--stdin",
+                         input=revisions.encode("ascii"))
+    except Retain as error:
+        raise Retain(f"private Git recovery history is incomplete: {error}") from error
+    require(not unretained, "private Git recovery objects are not durably reachable from shared refs")
+    return sorted(objects)
 
 
 class Repository:
@@ -283,7 +389,8 @@ class Repository:
                 "explicitly preserved active workspace")
         require("locked" not in record, "locked worktree")
         require("prunable" not in record and path.is_dir(), "missing/prunable registration retained")
-        require(not any(inside(mount, path) for mount in mount_paths()),
+        mounts = mount_paths()
+        require(not any(inside(mount, path) for mount in mounts),
                 "mounted workspace or nested bind mount requires preservation")
         require("bare" not in record and "branch" in record and "detached" not in record,
                 "bare/detached/ambiguous worktree")
@@ -297,6 +404,8 @@ class Repository:
         require(common == self.common, "foreign Git common directory")
         gitdir = Path(git(path, "rev-parse", "--absolute-git-dir").strip()).resolve(strict=True)
         require(gitdir.parent == self.common / "worktrees", "foreign Git worktree metadata")
+        require(not any(inside(mount, gitdir) for mount in mounts),
+                "mounted private Git metadata requires preservation")
         backlink = Path((gitdir / "gitdir").read_text().strip())
         require(backlink == path / ".git", "Git metadata backlink does not identify target")
         require(Path(git(path, "rev-parse", "--show-toplevel").strip()) == path,
@@ -310,11 +419,14 @@ class Repository:
                        "rebase-apply", "sequencer", "BISECT_LOG"):
             require(not (gitdir / marker).exists(), "unfinished Git operation")
         require(not (self.common / "info" / "grafts").exists(), "local Git grafts are ambiguous")
-        require(not git(path, "for-each-ref", "refs/worktree", "refs/bisect", "refs/rewritten"),
+        require(not git(path, "for-each-ref", *PRIVATE_REFS),
                 "private worktree references require preservation")
         flags = git(path, "ls-files", "-v", "-z").split("\0")
         require(all(not entry or (entry[0].isupper() and entry[0] != "S") for entry in flags),
                 "assume-unchanged or skip-worktree index entries hide local work")
+        require(not any(entry.startswith("160000 ") for entry in
+                        git(path, "ls-files", "--stage", "-z").split("\0")),
+                "submodule index entries require preservation")
         require(not git(path, "status", "--porcelain=v1", "-z", "--untracked-files=all",
                         "--ignore-submodules=none"), "dirty tracked or untracked work")
         tracked = set(git(path, "ls-files", "-z").split("\0"))
@@ -330,8 +442,10 @@ class Repository:
             require(not tips or tips == [head], "unpushed or divergent upstream work")
         for pid, cwd in process_cwds():
             require(not inside(cwd, path), f"active process {pid} has cwd in workspace")
+        recovery = private_recovery(path, gitdir)
         info = path.stat()
-        return {"head": head, "branch": branch, "device": info.st_dev, "inode": info.st_ino}
+        return {"head": head, "branch": branch, "device": info.st_dev, "inode": info.st_ino,
+                "private_objects": recovery}
 
     def ancestor(self, older, newer):
         # The live GitHub master ref anchors the proof; stale remote-tracking refs do not.
@@ -499,7 +613,7 @@ def remote_proof(repo, api, local, proof_sha=None):
         repo.ancestor(proof, master_sha)
     except Retain as error:
         raise Retain("unique/unmerged work or proof not on master; "
-                     "squash/rebase or missing local history requires preservation") from error
+                     f"squash/rebase or missing local history requires preservation: {error}") from error
     return {"pr": pr["number"], "merge": merge,
             "ci": ci_proof(api, prefix, repo.name, repo_id, proof, pr["merged_at"])}
 
@@ -539,6 +653,8 @@ def cleanup(repo, api, targets=(), *, apply=False, proof_sha=None):
                         "local/PR/CI evidence changed since planning; run a fresh plan")
                 require(repo.local_state(fresh["path"]) == fresh["local"],
                         "last-moment local identity drift")
+                require(allocated_size(Path(fresh["path"])) == fresh["allocated_bytes"],
+                        "workspace contents changed immediately before removal")
                 git(repo.root, "worktree", "remove", "--", fresh["path"])
                 fresh["decision"] = "removed"
             except (Retain, OSError) as error:
@@ -557,7 +673,8 @@ def main(argv=None):
     args = parser.parse_args(argv)
     try:
         repo = Repository(args.repository_root, args.preserve)
-        report = cleanup(repo, GitHub(repo.root), args.target, apply=args.apply, proof_sha=args.proof_sha)
+        proof = args.proof_sha.lower() if args.proof_sha is not None else None
+        report = cleanup(repo, GitHub(repo.root), args.target, apply=args.apply, proof_sha=proof)
         print(json.dumps(report, indent=2, sort_keys=True))
         return int(args.apply and any(row["decision"] != "removed" for row in report["results"]))
     except (Retain, OSError) as error:

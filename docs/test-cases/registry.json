@@ -2183,13 +2183,13 @@
       ],
       "purpose": "Remove completed worktree residue only after merged work has successful automatic master Build and relevant exact-proof-commit CI.",
       "prerequisites": "Run from the source root; fixtures use exclusively owned build/worktree-cleanup-* directories, no credentials, network, ROM or emulator.",
-      "actions": "Run the focused real-Git suite; plan inertly, apply an explicit eligible fixture, then exercise local ownership/work, active paths/processes, remote identity/pagination/CI and last-moment drift controls.",
+      "actions": "Run the focused real-Git suite; plan inertly, apply an explicit eligible fixture, then exercise local ownership/work, bare/nested repositories, every private recovery record, local promisor fetching, source-backed generated paths, active paths/processes, remote identity/pagination/CI and last-moment drift controls.",
       "expected_result": "Only the fresh eligible explicit target is removed normally; its branch and other work remain, and the report contains proof, observed allocated size and precise retention reasons.",
-      "negative_control": "The pre-fix workflow leaves completed fixtures; premature, implicit, dirty, active, foreign, unpushed, stale or missing-evidence deletion fails behavioral controls.",
+      "negative_control": "The pre-fix workflow leaves completed fixtures; the initial helper deletes bare/private-recovery fixtures and lazy-fetches missing promisor proof objects. Those regressions and premature, implicit, dirty, active, foreign, unpushed, stale or missing-evidence deletion fail behavioral controls.",
       "interactions": "Depends on the existing completion gate, Git, gh for live reads, Linux process visibility and one coordinator's preserved-path inventory; conflicts with force/prune, premature deletion or unreported active assignments. Cleanup never delays immediate commit publication.",
       "save_compatibility": "Source-only workflow tooling; no ROM/RAM, save/config, generated-data, localization, modern or archival changes.",
       "cleanup": "Tests remove only their UUID-owned fixture roots; the coordinator alone applies real historical cleanup after merge/master gates and records retained blockers.",
-      "limitations": "Allocated blocks are not exact physical freed bytes. Ambiguous squash/rebase history, missing API/local objects and unknown ignored data stay held; no manual-only visual criterion.",
+      "limitations": "Allocated blocks are not exact physical freed bytes. Ambiguous squash/rebase history, private-only recovery objects, any promisor configuration, missing API/local objects and unknown ignored data stay held. Real-worktree tests skip unsupported non-Linux/proc hosts; live use fails closed. No manual-only visual criterion.",
       "automation": [
         {
           "command": "python3 -m unittest scripts.workflow_pilot.tests.test_worktree_cleanup -v",

@@ -4,6 +4,7 @@ from contextlib import redirect_stdout
 import copy
 import io
 import json
+import os
 from pathlib import Path
 import shutil
 import subprocess
@@ -84,6 +85,10 @@ class Responses(cleanup.GitHub):
         return run
 
 
+@unittest.skipUnless(
+    sys.platform == "linux" and Path("/proc/self/mountinfo").is_file(),
+    "live cleanup requires Linux /proc process and mount visibility",
+)
 class CleanupTests(unittest.TestCase):
     def setUp(self):
         # Exclusively test-owned directories, underneath the source checkout, never /tmp.
@@ -119,9 +124,29 @@ class CleanupTests(unittest.TestCase):
         if self.sandbox.parent == ROOT / "build" and self.sandbox.name.startswith("worktree-cleanup-"):
             shutil.rmtree(self.sandbox)
 
+    def command(self, root, *args, input=None):
+        self.assertTrue(Path(root).resolve().is_relative_to(self.sandbox))
+        env = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
+        env.update(GIT_CONFIG_NOSYSTEM="1", GIT_CONFIG_GLOBAL=os.devnull,
+                   GIT_TERMINAL_PROMPT="0")
+        result = subprocess.run(
+            ["git", "-c", "core.hooksPath=" + os.devnull, "-C", str(root), *args],
+            input=input, env=env, capture_output=True, timeout=60, check=True,
+        )
+        return os.fsdecode(result.stdout)
+
+    def private_gitdir(self):
+        return Path(self.command(self.target, "rev-parse", "--absolute-git-dir").strip())
+
+    def dangling_commit(self):
+        tree = self.command(self.root, "rev-parse", "HEAD^{tree}").strip()
+        return self.command(self.root, "commit-tree", tree, "-p", self.base,
+                            "-m", "recoverable " + uuid.uuid4().hex).strip()
+
     @staticmethod
-    def command(root, *args):
-        return cleanup.git(root, *args)
+    def snapshot(path):
+        return {str(item.relative_to(path)): item.read_bytes()
+                for item in path.rglob("*") if item.is_file()}
 
     def result(self, apply=False, target=None, proof=None):
         return cleanup.cleanup(
@@ -268,11 +293,282 @@ class CleanupTests(unittest.TestCase):
         self.command(nested, "init", "-q")
         self.held("nested Git repository")
 
+    def test_nested_ignored_bare_repository_keeps_its_unique_commit(self):
+        nested = self.target / "build" / "archive"
+        nested.mkdir(parents=True)
+        self.command(nested, "init", "--bare", "-q")
+        self.command(nested, "config", "user.name", "Bare fixture")
+        self.command(nested, "config", "user.email", "bare@example.invalid")
+        tree = self.command(nested, "mktree", input=b"").strip()
+        unique = self.command(nested, "commit-tree", tree, "-m", "only in bare repo").strip()
+        self.command(nested, "update-ref", "refs/heads/recovery", unique)
+        self.assertFalse((nested / ".git").exists())
+        with self.assertRaises(subprocess.CalledProcessError):
+            self.command(self.root, "cat-file", "-e", unique)
+        before = self.snapshot(nested)
+        self.held("nested Git")
+        self.assertEqual(self.snapshot(nested), before)
+        self.assertEqual(self.command(nested, "cat-file", "-t", unique).strip(), "commit")
+
+    def test_detached_commit_in_private_head_reflog_is_preserved(self):
+        self.command(self.target, "checkout", "-q", "--detach")
+        (self.target / "tracked").write_text("only recoverable from this worktree\n")
+        self.command(self.target, "commit", "-qam", "detached recovery")
+        unique = self.command(self.target, "rev-parse", "HEAD").strip()
+        self.command(self.target, "checkout", "-q", "topic")
+        self.assertEqual(self.command(self.target, "status", "--porcelain"), "")
+        self.assertEqual(self.command(self.root, "branch", "--contains", unique).strip(), "")
+        self.assertNotIn(unique, self.command(self.root, "reflog", "show", "HEAD"))
+        before = self.snapshot(self.private_gitdir())
+        self.held("private Git recovery")
+        self.assertEqual(self.snapshot(self.private_gitdir()), before)
+        self.assertIn(unique, self.command(self.target, "reflog", "show", "--format=%H", "HEAD"))
+
+    def test_every_private_reflog_includes_old_and_new_objects(self):
+        unique = self.dangling_commit()
+        log = self.private_gitdir() / "logs" / "refs" / "worktree" / "recovery"
+        log.parent.mkdir(parents=True)
+        for old, new in ((unique, self.head), (self.head, unique)):
+            with self.subTest(old=old, new=new):
+                log.write_text(f"{old} {new} Fixture <fixture@example.invalid> 1 +0000\trecovery\n")
+                self.assertEqual(self.result()["decision"], "retained")
+                self.held("private Git recovery")
+                self.assertTrue(log.exists())
+
+    def test_orig_head_and_every_fetch_head_entry_are_preserved(self):
+        unique = self.dangling_commit()
+        for name, content in (
+            ("ORIG_HEAD", unique + "\n"),
+            ("FETCH_HEAD", f"{self.head}\t\tbranch 'topic'\n"
+                           f"{unique}\tnot-for-merge\tbranch 'recovery'\n"),
+            ("OTHER_RECOVERY", unique + "\n"),
+        ):
+            with self.subTest(name=name):
+                marker = self.private_gitdir() / name
+                marker.write_text(content)
+                try:
+                    self.assertEqual(self.result()["decision"], "retained")
+                    self.held("private Git recovery")
+                    self.assertEqual(marker.read_text(), content)
+                finally:
+                    marker.unlink(missing_ok=True)
+
+    def test_git_created_pseudorefs_preserve_unique_recovery(self):
+        unique = self.dangling_commit()
+        for name in ("ORIG_HEAD", "AUTO_MERGE"):
+            with self.subTest(name=name):
+                self.command(self.target, "update-ref", name, unique)
+                marker = self.private_gitdir() / name
+                self.assertEqual(marker.read_text().strip(), unique)
+                try:
+                    self.assertEqual(self.result()["decision"], "retained")
+                    self.held("private Git recovery")
+                finally:
+                    marker.unlink(missing_ok=True)
+
+    def test_shared_refs_not_common_reflogs_supply_durable_recovery(self):
+        unique = self.dangling_commit()
+        log = self.repo.common / "logs" / "HEAD"
+        with log.open("a") as output:
+            output.write(f"{unique} {self.merge} Fixture <fixture@example.invalid> 1 +0000\trecovery\n")
+        marker = self.private_gitdir() / "ORIG_HEAD"
+        marker.write_text(unique + "\n")
+        self.held("private Git recovery")
+        tree = self.command(self.root, "rev-parse", "HEAD^{tree}").strip()
+        descendant = self.command(self.root, "commit-tree", tree, "-p", unique,
+                                  "-m", "durable descendant").strip()
+        self.command(self.root, "update-ref", "refs/heads/saved-recovery", descendant)
+        self.assertEqual(self.result(apply=True)["decision"], "removed")
+        self.assertEqual(self.command(self.root, "rev-parse", "saved-recovery").strip(), descendant)
+        self.command(self.root, "merge-base", "--is-ancestor", unique, descendant)
+
+    def test_noncommit_recovery_objects_need_durable_shared_refs_too(self):
+        blob = self.command(self.root, "hash-object", "-w", "--stdin", input=b"recovery data").strip()
+        (self.private_gitdir() / "AUTO_MERGE").write_text(blob + "\n")
+        self.held("private Git recovery")
+        self.command(self.root, "update-ref", "refs/tags/saved-object", blob)
+        self.assertEqual(self.result(apply=True)["decision"], "removed")
+        self.assertEqual(self.command(self.root, "cat-file", "blob", blob), "recovery data")
+
+    def test_malformed_symlinked_or_missing_recovery_evidence_is_retained(self):
+        marker = self.private_gitdir() / "ORIG_HEAD"
+        for data in ("not a ref\n", "f" * 40 + "\n", self.head + "\n" + self.base + "\n"):
+            with self.subTest(data=data):
+                marker.write_text(data)
+                self.held()
+        marker.unlink()
+        outside = self.sandbox / "outside-recovery"
+        outside.write_text(self.head + "\n")
+        marker.symlink_to(outside)
+        self.held("not a regular file")
+        self.assertEqual(outside.read_text(), self.head + "\n")
+        marker.unlink()
+        marker.write_text("ref: refs/heads/topic\n")
+        self.assertEqual(self.result()["decision"], "eligible")
+        marker.unlink()
+        fetch = self.private_gitdir() / "FETCH_HEAD"
+        fetch.write_text(f"{self.head}\t\tvalid\nmalformed second entry\n")
+        self.held("malformed private Git recovery FETCH_HEAD")
+
+    def test_recovery_changes_are_checked_after_plan_and_immediately_before_remove(self):
+        unique = self.dangling_commit()
+        marker = self.private_gitdir() / "FETCH_HEAD"
+        for stage in (2, 3):
+            with self.subTest(stage=stage):
+                original = self.repo.local_state
+                calls = 0
+
+                def change(path):
+                    nonlocal calls
+                    calls += 1
+                    if calls == stage:
+                        marker.write_text(f"{self.head}\t\tcompleted\n"
+                                          f"{unique}\tnot-for-merge\trecoverable\n")
+                    return original(path)
+
+                with patch.object(self.repo, "local_state", side_effect=change):
+                    self.held("private Git recovery")
+                self.assertEqual(calls, stage)
+                self.assertIn(unique, marker.read_text())
+                marker.unlink()
+
+    def test_nested_git_metadata_arriving_after_fresh_assessment_is_retained(self):
+        original = self.repo.local_state
+        calls = 0
+        nested = self.target / "build" / "late-bare"
+
+        def change(path):
+            nonlocal calls
+            calls += 1
+            if calls == 3:
+                nested.mkdir(parents=True)
+                self.command(nested, "init", "--bare", "-q")
+            return original(path)
+
+        with patch.object(self.repo, "local_state", side_effect=change):
+            self.held("nested Git")
+        self.assertEqual(calls, 3)
+        self.assertTrue((nested / "HEAD").exists())
+
+    def test_promisor_dry_run_never_fetches_missing_proof_objects(self):
+        remote = self.sandbox / "promisor.git"
+        self.command(self.root, "clone", "--bare", "--no-local", "-q", str(self.root), str(remote))
+        self.command(remote, "config", "user.name", "Promisor fixture")
+        self.command(remote, "config", "user.email", "promisor@example.invalid")
+        self.command(remote, "config", "uploadpack.allowFilter", "true")
+        tree = self.command(remote, "rev-parse", "HEAD^{tree}").strip()
+        proof = self.command(remote, "commit-tree", tree, "-p", self.merge, "-m", "later proof").strip()
+        self.command(remote, "update-ref", "refs/heads/master", proof)
+        with self.assertRaises(subprocess.CalledProcessError):
+            self.command(self.root, "cat-file", "-e", proof)
+        self.command(self.root, "remote", "add", "local-promisor", remote.as_uri())
+        self.command(self.root, "config", "remote.local-promisor.promisor", "true")
+        self.command(self.root, "config", "remote.local-promisor.partialclonefilter", "blob:none")
+        self.api.data["/git/ref/heads/master"]["object"]["sha"] = proof
+        self.api.run["head_sha"] = self.api.check["head_sha"] = proof
+        for suffix in ("check-runs", "statuses"):
+            self.api.data[f"/commits/{proof}/{suffix}"] = self.api.data[f"/commits/{self.merge}/{suffix}"]
+        before = self.snapshot(self.repo.common)
+        row = self.result(proof=proof)
+        self.assertEqual(self.snapshot(self.repo.common), before,
+                         "dry-run changed shared objects, pack/index/promisor files, refs, or metadata")
+        self.assertEqual(row["decision"], "retained", row)
+        self.assertIn("promisor", " ".join(row["reasons"]))
+        self.assertTrue(self.target.exists())
+
+    def test_promisor_settings_are_rejected_before_initial_or_later_git_commands(self):
+        for key, value in (("remote.local.promisor", "true"),
+                           ("remote.local.promisor", "false"),
+                           ("remote.local.partialclonefilter", "blob:none"),
+                           ("extensions.partialClone", "local")):
+            with self.subTest(key=key, value=value):
+                self.command(self.root, "config", key, value)
+                before = self.snapshot(self.repo.common)
+                try:
+                    with self.assertRaisesRegex(cleanup.Retain, "promisor"):
+                        cleanup.Repository(self.root, [self.root])
+                    with self.assertRaisesRegex(cleanup.Retain, "promisor"):
+                        cleanup.git(self.root, "cat-file", "-t", self.head)
+                    self.held("promisor")
+                    self.assertEqual(self.snapshot(self.repo.common), before)
+                finally:
+                    self.command(self.root, "config", "--unset", key)
+
+        included = self.sandbox / "partial-config"
+        included.write_text('[remote "local"]\n\tpromisor = true\n')
+        self.command(self.root, "config", "include.path", str(included))
+        self.held("promisor")
+        self.command(self.root, "config", "--unset", "include.path")
+        self.command(self.root, "config", "extensions.worktreeConfig", "true")
+        self.command(self.target, "config", "--worktree", "remote.local.promisor", "true")
+        self.held("promisor")
+
+    def test_promisor_configuration_arriving_after_plan_is_retained(self):
+        original = self.repo.local_state
+        calls = 0
+
+        def change(path):
+            nonlocal calls
+            calls += 1
+            if calls == 2:
+                self.command(self.root, "config", "remote.local.promisor", "true")
+            return original(path)
+
+        with patch.object(self.repo, "local_state", side_effect=change):
+            self.held("promisor")
+        self.assertEqual(calls, 2)
+
+    def test_missing_nonpromisor_history_does_not_mutate_git_metadata(self):
+        self.api.data["/git/ref/heads/master"]["object"]["sha"] = "f" * 40
+        before = self.snapshot(self.repo.common)
+        self.held("exit 128")
+        self.assertEqual(self.snapshot(self.repo.common), before)
+        with self.assertRaisesRegex(cleanup.Retain, "exit 1.*no stderr output"):
+            cleanup.git(self.root, "merge-base", "--is-ancestor", self.merge, self.base)
+
+    def test_common_generated_graphics_are_source_backed_not_suffix_wildcards(self):
+        source = self.target / "graphics" / "fixture.png"
+        source.parent.mkdir()
+        source.write_bytes(b"tracked source for the generated-path contract")
+        with (self.target / ".gitignore").open("a") as output:
+            output.write("*.4bpp\n*.fk\n*.lz\n*.feimg*.bin\n*.fetsa*.bin\n")
+        self.command(self.target, "add", ".")
+        self.command(self.target, "commit", "-qm", "asset source")
+        self.head = self.command(self.target, "rev-parse", "HEAD").strip()
+        self.command(self.root, "merge", "-q", "--no-ff", "topic", "-m", "merge assets")
+        self.merge = self.command(self.root, "rev-parse", "HEAD").strip()
+        self.api = Responses(self.root, self.head, self.merge)
+        products = ["fixture.4bpp.fk", "fixture.4bpp.fk.lz"]
+        products += [f"fixture.{kind}{number}.bin{compression}"
+                     for kind in ("feimg", "fetsa") for number in range(1, 5)
+                     for compression in ("", ".lz", ".fk")]
+        for name in products:
+            (source.parent / name).write_bytes(b"disposable output")
+        row = self.result()
+        self.assertEqual(row["decision"], "eligible", row)
+        for name in ("unknown.4bpp.fk", "unknown.feimg1.bin", "fixture.feimg0.bin",
+                     "fixture.feimg5.bin", "fixture.fetsa01.bin", "notes.fk"):
+            with self.subTest(name=name):
+                unknown = source.parent / name
+                unknown.write_bytes(b"not a proven build output")
+                self.held("ignored non-build/local data")
+                self.assertTrue(unknown.exists())
+                unknown.unlink()
+        self.assertEqual(self.result(apply=True)["decision"], "removed")
+
     def test_mounts_and_uninspectable_processes_block_removal(self):
         with patch.object(cleanup, "mount_paths", return_value=[self.target / "build"]):
             self.held("mount")
         with patch.object(cleanup, "process_cwds", side_effect=cleanup.Retain("process visibility incomplete")):
             self.held("process visibility")
+        with patch.object(cleanup, "mount_paths", return_value=[self.private_gitdir() / "logs"]):
+            self.held("mounted private Git metadata")
+
+    def test_uninitialized_submodule_index_is_retained_without_running_its_git(self):
+        self.command(self.target, "update-index", "--add", "--cacheinfo",
+                     "160000," + self.base + ",uninitialized-submodule")
+        self.command(self.target, "commit", "-qm", "gitlink")
+        self.held("submodule index")
 
     def test_symlink_target_and_duplicate_targets_are_not_explicit_authority(self):
         alias = self.sandbox / "alias"
@@ -512,6 +808,45 @@ class CleanupTests(unittest.TestCase):
                                      "--preserve", str(self.root), "--apply"])
             self.assertEqual(code, 1)
             self.assertTrue(self.target.exists())
+
+    def test_cli_accepts_uppercase_proof_without_weakening_remote_identities(self):
+        with patch.object(cleanup, "GitHub", return_value=self.api):
+            output = io.StringIO()
+            with redirect_stdout(output):
+                code = cleanup.main(["--repository-root", str(self.root), "--target", str(self.target),
+                                     "--proof-sha", self.merge.upper()])
+        self.assertEqual(code, 0)
+        row = json.loads(output.getvalue())["results"][0]
+        self.assertEqual(row["decision"], "eligible", row)
+        self.assertEqual(row["proof"]["ci"]["sha"], self.merge)
+        self.api.data["/git/ref/heads/master"]["object"]["sha"] = self.merge.upper()
+        self.held("invalid commit identity")
+        with self.assertRaises(cleanup.Retain):
+            cleanup.cleanup(self.repo, self.api, [self.target], proof_sha=self.merge.upper())
+
+
+class CleanupCommandTests(unittest.TestCase):
+    def test_unsupported_platform_checks_fail_closed(self):
+        with patch.object(cleanup.sys, "platform", "darwin"):
+            for check in (cleanup.process_cwds, cleanup.mount_paths):
+                with self.subTest(check=check.__name__), self.assertRaisesRegex(cleanup.Retain, "Linux /proc"):
+                    check()
+
+    def test_command_failure_reports_exit_code_when_stderr_is_empty(self):
+        with self.assertRaisesRegex(cleanup.Retain, "exit 7.*no stderr output"):
+            cleanup.execute([sys.executable, "-c", "raise SystemExit(7)"], ROOT)
+
+    def test_git_environment_cannot_reenable_mutating_defaults(self):
+        with patch.dict(os.environ, {"GIT_DIR": "/not-the-repository", "GIT_NO_LAZY_FETCH": "0",
+                                    "GIT_OPTIONAL_LOCKS": "1", "GIT_NO_REPLACE_OBJECTS": "0"}):
+            result = cleanup.execute(
+                [sys.executable, "-c", "import json, os; print(json.dumps("
+                 "{k: v for k, v in os.environ.items() if k.startswith('GIT_')}))"], ROOT
+            )
+        self.assertEqual(json.loads(result), {
+            "GIT_NO_LAZY_FETCH": "1", "GIT_OPTIONAL_LOCKS": "0",
+            "GIT_NO_REPLACE_OBJECTS": "1", "GIT_TERMINAL_PROMPT": "0",
+        })
 
 
 class CleanupCatalogTests(unittest.TestCase):

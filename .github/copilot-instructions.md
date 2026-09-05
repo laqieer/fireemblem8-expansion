@@ -173,7 +173,11 @@ local work, merged PR association, and automatic master Build plus relevant
 exact-proof-commit CI; a candidate success or a merged PR alone is insufficient.
 Historical completed work may use its verified post-merge master proof rather
 than an unrelated newer run. Retain every ambiguous, active, locked, dirty,
-untracked, unpushed, or missing/failed/pending-evidence workspace. Use only normal
+untracked, unpushed, or missing/failed/pending-evidence workspace. Also retain
+nested/bare Git repositories, private reflog/pseudoref
+objects not durably reachable from shared refs, and partial/promisor repositories
+whose object lookups could fetch during a dry-run. Do not erase recovery records
+or bypass these holds. Use only normal
 `git worktree remove` through the helper, never force, unlock, delete branches,
 globally prune, or recursively delete broad directories.
 Record removed paths, observed allocated sizes, and precise retained reasons

@@ -763,7 +763,11 @@ alone never qualifies. A historical successful master proof containing the
 merge remains useful even if unrelated newer work has failing CI.
 
 Retain active, current/master, locked, dirty/untracked, unpushed/unique, foreign,
-ambiguous, and missing/failed/pending-evidence paths. Never force removal,
+ambiguous, and missing/failed/pending-evidence paths. Retain nested/bare Git
+repositories, private reflog/pseudoref objects not durably reachable from
+shared refs, and partial/promisor repositories whose object lookups could
+fetch during a dry-run. Do not erase recovery records or bypass these holds.
+Never force removal,
 unlock user worktrees, delete branches, globally prune registrations, or
 recursively remove repository/home/session roots. Normal `git worktree remove`
 is the only removal operation. Publish removed paths, their pre-removal

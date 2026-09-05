@@ -40,7 +40,24 @@ workflow, using credentials, or changing ROM behavior.
    record identities, missing totals, oversized and incomplete collections,
    wrong repository identity, changed workflow detail, old historical green
    proof, and an explicit later master proof containing the merge.
-6. For actual delivery, the coordinator first merges the task's PR, verifies
+6. In the owned fixtures, put a real bare repository with its own unique commit
+   under ignored `build/`. Create a detached commit and return to the completed
+   branch; also place unique objects in old/new entries of private reflogs,
+   `ORIG_HEAD`, and a non-first `FETCH_HEAD` entry. All remain retained unless
+   shared refs durably retain those objects. A common-directory reflog alone
+   is not a durable ref. Repeat with changes after planning.
+7. Configure an owned local promisor remote containing a proof commit absent
+   from the fixture's shared object database. Dry-run must retain without
+   adding or changing objects, packs, indexes, promisor markers, refs, or
+   private metadata. This uses local Git transport, never network access.
+   Unknown ignored graphics remain held, while tracked-source-backed
+   `.4bpp.fk` and `.feimg[1-4].bin`/`.fetsa[1-4].bin` derivatives are disposable.
+8. Pass an uppercase full `--proof-sha` through the CLI and require the same
+   canonical proof result; uppercase GitHub/programmatic identities still fail.
+   A command failing without stderr reports its exit code. Simulated
+   unsupported platforms fail closed; real-worktree tests explicitly skip a
+   non-Linux or missing-`/proc` host rather than pretending removal succeeded.
+9. For actual delivery, the coordinator first merges the task's PR, verifies
    all relevant exact-master CI and `make remote-completion-check`, then runs
    the [documented planner/apply commands](../workflow-pilot.md#completed-worktree-cleanup).
    Preserve all assigned workspaces throughout apply. Record removed paths,
@@ -54,6 +71,10 @@ an unrelated newer master failure does not invalidate a historical completed
 proof. Current failing/pending reruns supersede old green evidence.
 Apply refuses implicit targets or a missing preserved-workspace inventory.
 No branch is deleted and no global prune or forced cleanup occurs.
+Private recovery checks run during planning, fresh assessment, and the final
+local check. A shared ref may protect recovery ancestry or a non-commit
+object; a shared reflog alone may not. Every configured promisor/partial-clone
+repository is retained before object access, including on Git 2.43.
 
 ### Negative control
 
@@ -62,6 +83,10 @@ completed fixtures remain indefinitely. Within the regression, removing
 revalidation or accepting merge/candidate success alone causes destructive
 negative controls to fail; changing spelling or ordering without behavior
 changes does not supply or invalidate deletion evidence.
+The initial helper incorrectly accepted bare repositories and private-only
+recovery objects, and a missing proof object could trigger a promisor fetch
+during dry-run. These real-Git regressions must fail with those safeguards
+removed; keeping the current branch's ancestry is not equivalent evidence.
 
 ### Interactions and save compatibility
 
@@ -85,7 +110,8 @@ The registry entry binds this source-only procedure to its behavioral suite.
 The suite removes only its own UUID-named fixture roots. Live historical
 cleanup is coordinator-owned, never a test side effect. Allocated sizes are
 not exact physical freed bytes. Unknown ignored local data, squash/rebase
-ancestry, missing history/API evidence, or incomplete process visibility are
+ancestry, private-only recovery objects, promisor configuration, missing
+history/API evidence, or incomplete process visibility are
 retention blockers, not permission to force deletion. No visual/audio/manual
 judgment is required; actual service availability and active ownership remain
 live operational checks.
