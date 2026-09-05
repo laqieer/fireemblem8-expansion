@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import hashlib
 import json
 import os
 import subprocess
@@ -24,6 +25,10 @@ BASE = "2" * 40
 NEW_HEAD = "3" * 40
 HEAD_REF = "feature/issue-199"
 WORKFLOW_ID = 1234
+
+
+def _sha256(value: str) -> str:
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()
 
 
 def _endpoint(suffix: str) -> str:
@@ -57,12 +62,14 @@ def _pr(
     base: str = BASE,
     title: str = "Stable title",
     body: str | None = "Stable body",
+    updated_at: str = "2026-09-04T00:00:00Z",
 ) -> dict:
     return {
         "number": PR_NUMBER,
         "state": "open",
         "title": title,
         "body": body,
+        "updated_at": updated_at,
         "url": f"https://api.github.com/repos/{REPOSITORY}/pulls/{PR_NUMBER}",
         "head": {"sha": head, "ref": HEAD_REF},
         "base": {
@@ -541,6 +548,7 @@ def _canonical_decision(**changes: object) -> str:
         "pr_number": PR_NUMBER,
         "reason": "",
         "repository": REPOSITORY,
+        "receipt": None,
         "run_id": None,
     }
     payload.update(changes)
@@ -550,6 +558,50 @@ def _canonical_decision(**changes: object) -> str:
         separators=(",", ":"),
         sort_keys=True,
     ) + "\n"
+
+
+def _receipt_payload(
+    *,
+    repository: str = REPOSITORY,
+    repository_id: int = REPOSITORY_ID,
+    pr_number: int = PR_NUMBER,
+    head_sha: str = HEAD,
+    base_sha: str = BASE,
+    requested_fields: dict[str, str] | None = None,
+    edit_updated_at: str = "2026-09-04T00:00:00Z",
+    watermark_run_id: int = 101,
+    watermark_run_number: int = 10,
+    watermark_created_at: str = "2026-09-04T00:00:00Z",
+    workflow_id: int = WORKFLOW_ID,
+    workflow_path: str = pr_metadata.WORKFLOW_PATH,
+) -> dict:
+    return {
+        "base_sha": base_sha,
+        "edit_updated_at": edit_updated_at,
+        "head_sha": head_sha,
+        "pr_number": pr_number,
+        "repository": repository,
+        "repository_id": repository_id,
+        "requested_fields": (
+            requested_fields
+            if requested_fields is not None
+            else {"body": _sha256("Stable body")}
+        ),
+        "schema_version": 1,
+        "watermark": {
+            "created_at": watermark_created_at,
+            "run_id": watermark_run_id,
+            "run_number": watermark_run_number,
+        },
+        "workflow": {
+            "id": workflow_id,
+            "path": workflow_path,
+        },
+    }
+
+
+def _receipt(**changes: object) -> pr_metadata.EditReceipt:
+    return pr_metadata._parse_edit_receipt(_receipt_payload(**changes))
 
 
 FAKE_GH_DRIVER = r"""#!/usr/bin/python3
@@ -791,6 +843,143 @@ class PullRequestMetadataTests(unittest.TestCase):
                     any(method != "GET" for method, _endpoint, _body in client.calls)
                 )
 
+    def test_unbound_active_runs_block_with_empty_or_missing_bindings(self):
+        cases = []
+        queued_record, _queued_jobs = _run(
+            110,
+            14,
+            mode="full",
+            active=True,
+        )
+        queued_record.update(
+            {
+                "pull_requests": [],
+                "run_started_at": None,
+                "status": "queued",
+                "updated_at": "2026-09-04T00:00:00Z",
+            }
+        )
+        cases.append(("empty-queued-zero-jobs", queued_record, []))
+
+        active_record, active_jobs = _run(
+            111,
+            15,
+            mode="full",
+            active=True,
+        )
+        del active_record["pull_requests"]
+        active_jobs = [
+            job
+            for job in active_jobs
+            if job["name"] == "event-identity"
+        ]
+        cases.append(("missing-in-progress-partial-jobs", active_record, active_jobs))
+
+        for name, record, jobs in cases:
+            with self.subTest(case=name):
+                client = ScriptedClient()
+                _add_pr_states(client, _pr(), _pr())
+                _add_snapshot(
+                    client,
+                    [(record, jobs), _run(101, 10, mode="full")],
+                    copies=2,
+                )
+                client.add(
+                    "PATCH",
+                    _endpoint(f"pulls/{PR_NUMBER}"),
+                    _pr(body="new body"),
+                )
+                decision = pr_metadata.edit_metadata(
+                    client,
+                    repository=REPOSITORY,
+                    pr_number=PR_NUMBER,
+                    head_sha=HEAD,
+                    base_sha=BASE,
+                    title=None,
+                    body="new body",
+                    essential_reason=None,
+                )
+                self.assertEqual(decision.action, "deferred")
+                self.assertEqual(decision.run_id, record["id"])
+                self.assertFalse(decision.mutated)
+                self.assertEqual(
+                    sum(
+                        endpoint == _endpoint("actions/workflows/build.yml")
+                        for _method, endpoint, _body in client.calls
+                    ),
+                    1,
+                )
+                self.assertFalse(
+                    any(
+                        method != "GET"
+                        for method, _endpoint, _body in client.calls
+                    )
+                )
+
+    def test_unbound_terminal_run_cannot_authorize_an_edit(self):
+        client = ScriptedClient()
+        record, jobs = _run(101, 10, mode="full")
+        record["pull_requests"] = []
+        _add_pr_states(client, _pr())
+        _add_snapshot(client, [(record, jobs)])
+        decision = pr_metadata.edit_metadata(
+            client,
+            repository=REPOSITORY,
+            pr_number=PR_NUMBER,
+            head_sha=HEAD,
+            base_sha=BASE,
+            title=None,
+            body="new body",
+            essential_reason=None,
+        )
+        self.assertEqual(decision.action, "refused")
+        self.assertIsNone(decision.run_id)
+        self.assertFalse(decision.mutated)
+
+    def test_multiple_or_contradictory_run_bindings_fail_closed(self):
+        cases = {}
+        multiple_record, multiple_jobs = _run(101, 10, mode="full")
+        multiple_record["pull_requests"].append(
+            {
+                "number": PR_NUMBER + 1,
+                "head": {"sha": HEAD},
+                "base": {"sha": "4" * 40},
+            }
+        )
+        cases["multiple"] = (multiple_record, multiple_jobs, "ambiguous")
+        contradictory_record, contradictory_jobs = _run(102, 11, mode="full")
+        contradictory_record["pull_requests"][0]["head"]["sha"] = NEW_HEAD
+        cases["contradictory"] = (
+            contradictory_record,
+            contradictory_jobs,
+            "contradicts its head",
+        )
+        for name, (record, jobs, message) in cases.items():
+            with self.subTest(case=name):
+                client = ScriptedClient()
+                _add_pr_states(client, _pr())
+                _add_snapshot(client, [(record, jobs)])
+                with self.assertRaisesRegex(
+                    pr_metadata.MetadataEditError,
+                    message,
+                ):
+                    pr_metadata.edit_metadata(
+                        client,
+                        repository=REPOSITORY,
+                        pr_number=PR_NUMBER,
+                        head_sha=HEAD,
+                        base_sha=BASE,
+                        title=None,
+                        body="new body",
+                        essential_reason=None,
+                    )
+                self.assertFalse(
+                    any(
+                        method != "GET"
+                        for method, _endpoint, _body in client.calls
+                    )
+                )
+
     def test_proven_active_metadata_run_does_not_block_stable_edit(self):
         client = ScriptedClient()
         active_metadata = _run(
@@ -809,7 +998,10 @@ class PullRequestMetadataTests(unittest.TestCase):
         client.add(
             "PATCH",
             _endpoint(f"pulls/{PR_NUMBER}"),
-            _pr(body="new body"),
+            _pr(
+                body="new body",
+                updated_at="2026-09-04T00:00:05Z",
+            ),
         )
         decision = pr_metadata.edit_metadata(
             client,
@@ -978,6 +1170,49 @@ class PullRequestMetadataTests(unittest.TestCase):
         self.assertFalse(decision.mutated)
         self.assertFalse(any(method == "PATCH" for method, _endpoint, _body in client.calls))
 
+    def test_second_snapshot_unbound_active_run_blocks_mutation(self):
+        client = ScriptedClient()
+        successful_full = _run(101, 10, mode="full")
+        unbound_record, unbound_jobs = _run(
+            202,
+            11,
+            mode="full",
+            active=True,
+        )
+        unbound_record["pull_requests"] = []
+        unbound_jobs = [
+            job
+            for job in unbound_jobs
+            if job["name"] == "event-identity"
+        ]
+        _add_pr_states(client, _pr(), _pr())
+        _add_snapshot(client, [successful_full])
+        _add_snapshot(
+            client,
+            [(unbound_record, unbound_jobs), successful_full],
+        )
+        client.add(
+            "PATCH",
+            _endpoint(f"pulls/{PR_NUMBER}"),
+            _pr(body="new body"),
+        )
+        decision = pr_metadata.edit_metadata(
+            client,
+            repository=REPOSITORY,
+            pr_number=PR_NUMBER,
+            head_sha=HEAD,
+            base_sha=BASE,
+            title=None,
+            body="new body",
+            essential_reason=None,
+        )
+        self.assertEqual(decision.action, "deferred")
+        self.assertEqual(decision.run_id, 202)
+        self.assertFalse(decision.mutated)
+        self.assertFalse(
+            any(method != "GET" for method, _endpoint, _body in client.calls)
+        )
+
     def test_second_snapshot_active_metadata_graph_growth_defers(self):
         client = ScriptedClient()
         successful_full = _run(101, 10, mode="full")
@@ -1121,6 +1356,16 @@ class PullRequestMetadataTests(unittest.TestCase):
                 wrong_repository_id,
                 "repository/head-ref identity drifted",
             ),
+            (
+                "updated-at",
+                None,
+                "new body",
+                _pr(
+                    body="new body",
+                    updated_at="2026-09-03T23:59:59Z",
+                ),
+                "updated_at regressed",
+            ),
         )
         for name, title, body, response, message in cases:
             with self.subTest(mismatch=name):
@@ -1156,7 +1401,10 @@ class PullRequestMetadataTests(unittest.TestCase):
         client.add(
             "PATCH",
             _endpoint(f"pulls/{PR_NUMBER}"),
-            _pr(body="new body"),
+            _pr(
+                body="new body",
+                updated_at="2026-09-04T00:00:05Z",
+            ),
         )
 
         decision = pr_metadata.edit_metadata(
@@ -1170,6 +1418,16 @@ class PullRequestMetadataTests(unittest.TestCase):
             essential_reason=None,
         )
         self.assertEqual(decision.action, "updated")
+        self.assertIsNotNone(decision.receipt)
+        self.assertEqual(
+            decision.receipt.canonical_payload(),
+            _receipt_payload(
+                edit_updated_at="2026-09-04T00:00:05Z",
+                requested_fields={
+                    "body": _sha256("new body")
+                },
+            ),
+        )
         pr_gets = [
             call
             for call in client.calls
@@ -1223,6 +1481,7 @@ class PullRequestMetadataTests(unittest.TestCase):
             pr_number=PR_NUMBER,
             head_sha=HEAD,
             base_sha=BASE,
+            receipt=_receipt(),
         )
 
         self.assertEqual(decision.action, "rerun")
@@ -1269,6 +1528,7 @@ class PullRequestMetadataTests(unittest.TestCase):
                         pr_number=PR_NUMBER,
                         head_sha=HEAD,
                         base_sha=BASE,
+                        receipt=_receipt(),
                     )
                 self.assertFalse(
                     any(method != "GET" for method, _endpoint, _body in client.calls)
@@ -1322,6 +1582,7 @@ class PullRequestMetadataTests(unittest.TestCase):
                         pr_number=PR_NUMBER,
                         head_sha=HEAD,
                         base_sha=BASE,
+                        receipt=_receipt(),
                     )
                 self.assertFalse(
                     any(method != "GET" for method, _endpoint, _body in client.calls)
@@ -1350,6 +1611,7 @@ class PullRequestMetadataTests(unittest.TestCase):
             pr_number=PR_NUMBER,
             head_sha=HEAD,
             base_sha=BASE,
+            receipt=_receipt(),
         )
         self.assertEqual(decision.action, "deferred")
         self.assertFalse(decision.mutated)
@@ -1371,6 +1633,7 @@ class PullRequestMetadataTests(unittest.TestCase):
             pr_number=PR_NUMBER,
             head_sha=HEAD,
             base_sha=BASE,
+            receipt=_receipt(),
         )
         self.assertEqual(decision.action, "deferred")
         self.assertEqual(decision.run_id, 101)
@@ -1396,6 +1659,7 @@ class PullRequestMetadataTests(unittest.TestCase):
                 pr_number=PR_NUMBER,
                 head_sha=HEAD,
                 base_sha=BASE,
+                receipt=_receipt(),
             )
         self.assertFalse(any(method != "GET" for method, _endpoint, _body in client.calls))
 
@@ -1415,9 +1679,255 @@ class PullRequestMetadataTests(unittest.TestCase):
             pr_number=PR_NUMBER,
             head_sha=HEAD,
             base_sha=BASE,
+            receipt=_receipt(),
         )
         self.assertEqual(decision.action, "complete")
         self.assertFalse(decision.mutated)
+
+    def test_reconciliation_waits_past_receipt_watermark(self):
+        client = ScriptedClient()
+        old_success = _run(202, 11, mode="metadata-only", success=True)
+        successful_full = _run(101, 10, mode="full")
+        _add_pr_states(client, _pr())
+        _add_snapshot(client, [old_success, successful_full])
+        decision = pr_metadata.reconcile_metadata(
+            client,
+            repository=REPOSITORY,
+            pr_number=PR_NUMBER,
+            head_sha=HEAD,
+            base_sha=BASE,
+            receipt=_receipt(
+                watermark_run_id=202,
+                watermark_run_number=11,
+            ),
+        )
+        self.assertEqual(decision.action, "deferred")
+        self.assertEqual(decision.run_id, 101)
+        self.assertFalse(decision.mutated)
+        self.assertFalse(
+            any(method != "GET" for method, _endpoint, _body in client.calls)
+        )
+
+    def test_reconciliation_accepts_later_run_at_same_timestamp(self):
+        for success in (False, True):
+            with self.subTest(success=success):
+                client = ScriptedClient()
+                metadata = _run(
+                    203,
+                    12,
+                    mode="metadata-only",
+                    success=success,
+                )
+                watermark = _run(202, 11, mode="metadata-only", success=True)
+                successful_full = _run(101, 10, mode="full")
+                _add_pr_states(client, _pr(), *([_pr()] if not success else []))
+                _add_snapshot(
+                    client,
+                    [metadata, watermark, successful_full],
+                    copies=2 if not success else 1,
+                )
+                if not success:
+                    client.add(
+                        "POST",
+                        _endpoint("actions/runs/203/rerun"),
+                        None,
+                    )
+                decision = pr_metadata.reconcile_metadata(
+                    client,
+                    repository=REPOSITORY,
+                    pr_number=PR_NUMBER,
+                    head_sha=HEAD,
+                    base_sha=BASE,
+                    receipt=_receipt(
+                        watermark_run_id=202,
+                        watermark_run_number=11,
+                    ),
+                )
+                self.assertEqual(
+                    decision.action,
+                    "complete" if success else "rerun",
+                )
+                self.assertEqual(decision.run_id, 203)
+
+    def test_reconciliation_rejects_rerun_attempt_at_watermark(self):
+        client = ScriptedClient()
+        old_rerun = _run(
+            202,
+            11,
+            mode="metadata-only",
+            success=True,
+            attempt=2,
+        )
+        successful_full = _run(101, 10, mode="full")
+        _add_pr_states(client, _pr())
+        _add_snapshot(client, [old_rerun, successful_full])
+        decision = pr_metadata.reconcile_metadata(
+            client,
+            repository=REPOSITORY,
+            pr_number=PR_NUMBER,
+            head_sha=HEAD,
+            base_sha=BASE,
+            receipt=_receipt(
+                watermark_run_id=202,
+                watermark_run_number=11,
+            ),
+        )
+        self.assertEqual(decision.action, "deferred")
+        self.assertFalse(decision.mutated)
+
+    def test_unbound_runs_block_or_remain_ineligible_during_reconciliation(self):
+        active_record, active_jobs = _run(
+            202,
+            11,
+            mode="full",
+            active=True,
+        )
+        active_record["pull_requests"] = []
+        client = ScriptedClient()
+        _add_pr_states(client, _pr())
+        _add_snapshot(
+            client,
+            [
+                (active_record, active_jobs[:1]),
+                _run(101, 10, mode="full"),
+            ],
+        )
+        decision = pr_metadata.reconcile_metadata(
+            client,
+            repository=REPOSITORY,
+            pr_number=PR_NUMBER,
+            head_sha=HEAD,
+            base_sha=BASE,
+            receipt=_receipt(),
+        )
+        self.assertEqual(decision.action, "deferred")
+        self.assertEqual(decision.run_id, 202)
+
+        terminal_record, terminal_jobs = _run(
+            203,
+            12,
+            mode="metadata-only",
+            success=True,
+        )
+        terminal_record["pull_requests"] = []
+        client = ScriptedClient()
+        _add_pr_states(client, _pr())
+        _add_snapshot(
+            client,
+            [
+                (terminal_record, terminal_jobs),
+                _run(101, 10, mode="full"),
+            ],
+        )
+        decision = pr_metadata.reconcile_metadata(
+            client,
+            repository=REPOSITORY,
+            pr_number=PR_NUMBER,
+            head_sha=HEAD,
+            base_sha=BASE,
+            receipt=_receipt(),
+        )
+        self.assertEqual(decision.action, "deferred")
+        self.assertFalse(decision.mutated)
+
+    def test_receipt_schema_identity_digest_and_watermark_fail_closed(self):
+        invalid_payloads = []
+        extra = _receipt_payload()
+        extra["unexpected"] = True
+        invalid_payloads.append(("extra-field", extra))
+        boolean_version = _receipt_payload()
+        boolean_version["schema_version"] = True
+        invalid_payloads.append(("boolean-version", boolean_version))
+        float_version = _receipt_payload()
+        float_version["schema_version"] = 1.0
+        invalid_payloads.append(("float-version", float_version))
+        wrong_field = _receipt_payload(requested_fields={"labels": "a" * 64})
+        invalid_payloads.append(("wrong-field", wrong_field))
+        bad_digest = _receipt_payload(requested_fields={"body": "A" * 64})
+        invalid_payloads.append(("bad-digest", bad_digest))
+        bad_path = _receipt_payload(workflow_path=".github/workflows/other.yml")
+        invalid_payloads.append(("workflow-path", bad_path))
+        postdated = _receipt_payload(
+            edit_updated_at="2026-09-03T23:59:59Z",
+        )
+        invalid_payloads.append(("postdated-watermark", postdated))
+        for name, payload in invalid_payloads:
+            with self.subTest(schema=name):
+                with self.assertRaises(pr_metadata.MetadataEditError):
+                    pr_metadata._parse_edit_receipt(payload)
+
+        identity_receipts = (
+            _receipt(repository="other/repo"),
+            _receipt(repository_id=REPOSITORY_ID + 1),
+            _receipt(pr_number=PR_NUMBER + 1),
+            _receipt(head_sha=NEW_HEAD),
+            _receipt(base_sha="4" * 40),
+            _receipt(
+                requested_fields={
+                    "body": _sha256("stale body")
+                }
+            ),
+            _receipt(edit_updated_at="2026-09-04T00:00:01Z"),
+        )
+        for receipt in identity_receipts:
+            with self.subTest(receipt=receipt):
+                client = ScriptedClient()
+                _add_pr_states(client, _pr())
+                with self.assertRaises(pr_metadata.MetadataEditError):
+                    pr_metadata.reconcile_metadata(
+                        client,
+                        repository=REPOSITORY,
+                        pr_number=PR_NUMBER,
+                        head_sha=HEAD,
+                        base_sha=BASE,
+                        receipt=receipt,
+                    )
+
+        for receipt in (
+            _receipt(watermark_run_id=999),
+            _receipt(watermark_run_number=999),
+            _receipt(watermark_created_at="2026-09-03T23:59:59Z"),
+            _receipt(workflow_id=WORKFLOW_ID + 1),
+        ):
+            with self.subTest(watermark=receipt):
+                client = ScriptedClient()
+                _add_pr_states(client, _pr())
+                _add_snapshot(client, [_run(101, 10, mode="full")])
+                with self.assertRaisesRegex(
+                    pr_metadata.MetadataEditError,
+                    "watermark is stale or forged",
+                ):
+                    pr_metadata.reconcile_metadata(
+                        client,
+                        repository=REPOSITORY,
+                        pr_number=PR_NUMBER,
+                        head_sha=HEAD,
+                        base_sha=BASE,
+                        receipt=receipt,
+                    )
+
+        client = ScriptedClient()
+        _add_pr_states(
+            client,
+            _pr(updated_at="2026-09-04T00:00:01Z"),
+        )
+        older_observed = _run(101, 10, mode="full")
+        omitted_pre_edit = _run(202, 11, mode="metadata-only", success=True)
+        _add_snapshot(client, [omitted_pre_edit, older_observed])
+        with self.assertRaisesRegex(
+            pr_metadata.MetadataEditError,
+            "omits a pre-edit workflow run",
+        ):
+            pr_metadata.reconcile_metadata(
+                client,
+                repository=REPOSITORY,
+                pr_number=PR_NUMBER,
+                head_sha=HEAD,
+                base_sha=BASE,
+                receipt=_receipt(
+                    edit_updated_at="2026-09-04T00:00:01Z",
+                ),
+            )
 
     def test_incomplete_run_pagination_fails_closed(self):
         client = ScriptedClient()
@@ -2177,7 +2687,6 @@ class PullRequestMetadataTests(unittest.TestCase):
         mutations = {
             "pr": ("number", PR_NUMBER + 1),
             "base": ("base", {"sha": "4" * 40}),
-            "head": ("head", {"sha": NEW_HEAD}),
         }
         for name, (field, value) in mutations.items():
             with self.subTest(identity=name):
@@ -2200,6 +2709,26 @@ class PullRequestMetadataTests(unittest.TestCase):
                 self.assertFalse(
                     any(method != "GET" for method, _endpoint, _body in client.calls)
                 )
+
+        client = ScriptedClient()
+        record, jobs = _run(101, 10, mode="full")
+        record["pull_requests"][0]["head"] = {"sha": NEW_HEAD}
+        _add_pr_states(client, _pr())
+        _add_snapshot(client, [(record, jobs)])
+        with self.assertRaisesRegex(
+            pr_metadata.MetadataEditError,
+            "contradicts its head",
+        ):
+            pr_metadata.edit_metadata(
+                client,
+                repository=REPOSITORY,
+                pr_number=PR_NUMBER,
+                head_sha=HEAD,
+                base_sha=BASE,
+                title=None,
+                body="new body",
+                essential_reason=None,
+            )
 
     def test_unknown_or_mixed_run_shape_fails_closed(self):
         client = ScriptedClient()
@@ -2282,12 +2811,43 @@ class PullRequestMetadataTests(unittest.TestCase):
         )
         self.assertEqual(decision.action, "updated")
         self.assertIn("reconcile", decision.guidance[0])
+        self.assertEqual(decision.receipt.watermark_run_id, 202)
         other_jobs_endpoint = _query(
             "actions/runs/202/attempts/1/jobs",
             [("per_page", "100"), ("page", "1")],
         )
-        self.assertFalse(
+        self.assertTrue(
             any(endpoint == other_jobs_endpoint for _method, endpoint, _body in client.calls)
+        )
+
+    def test_explicit_other_run_is_ignored_only_after_full_validation(self):
+        client = ScriptedClient()
+        other_record, other_jobs = _run(202, 11, mode="full")
+        other_record["pull_requests"][0]["number"] = PR_NUMBER + 1
+        other_record["pull_requests"][0]["base"]["sha"] = "4" * 40
+        other_jobs = copy.deepcopy(other_jobs)
+        other_jobs[0]["run_id"] = 999
+        _add_pr_states(client, _pr())
+        _add_snapshot(
+            client,
+            [(other_record, other_jobs), _run(101, 10, mode="full")],
+        )
+        with self.assertRaisesRegex(
+            pr_metadata.MetadataEditError,
+            "run identity drifted",
+        ):
+            pr_metadata.edit_metadata(
+                client,
+                repository=REPOSITORY,
+                pr_number=PR_NUMBER,
+                head_sha=HEAD,
+                base_sha=BASE,
+                title=None,
+                body="new stable body",
+                essential_reason=None,
+            )
+        self.assertFalse(
+            any(method != "GET" for method, _endpoint, _body in client.calls)
         )
 
     def test_canonical_comment_update_uses_comment_api_only(self):
@@ -2409,6 +2969,8 @@ class PullRequestMetadataTests(unittest.TestCase):
             {"action": "deferred", "run_id": True},
             {"action": "deferred", "run_id": 0},
             {"action": "deferred", "run_id": 1000000000000000000},
+            {"action": "updated"},
+            {"action": "deferred", "receipt": _receipt()},
         ):
             with self.subTest(changes=changes):
                 with self.assertRaises(pr_metadata.MetadataEditError):
@@ -2970,13 +3532,17 @@ class PullRequestMetadataLauncherTests(unittest.TestCase):
             for job in active_jobs
             if job["name"] == "event-identity"
         ]
+        active_record["pull_requests"] = []
+        prior_full = _run(101, 10, mode="full")
         calls = [
             _cli_api_call(
                 "GET",
                 _endpoint(f"pulls/{PR_NUMBER}"),
                 payload=_pr(),
             ),
-            *_cli_snapshot_calls([(active_record, active_jobs)]),
+            *_cli_snapshot_calls(
+                [(active_record, active_jobs), prior_full]
+            ),
         ]
         completed, records = self.sandbox.run(
             "edit",
@@ -3013,8 +3579,8 @@ class PullRequestMetadataLauncherTests(unittest.TestCase):
                     ]
                 ],
                 reason=(
-                    "an exact-head full Build is active; update the canonical "
-                    "evidence comment instead"
+                    "an exact-head full or unproven Build is active; update "
+                    "the canonical evidence comment instead"
                 ),
                 run_id=202,
             ),
@@ -3044,7 +3610,11 @@ class PullRequestMetadataLauncherTests(unittest.TestCase):
             _cli_api_call(
                 "PATCH",
                 _endpoint(f"pulls/{PR_NUMBER}"),
-                payload=_pr(title="CLI title", body=body),
+                payload=_pr(
+                    title="CLI title",
+                    body=body,
+                    updated_at="2026-09-04T00:00:05Z",
+                ),
                 input_text=json.dumps(
                     {"body": body, "title": "CLI title"},
                     ensure_ascii=False,
@@ -3084,6 +3654,8 @@ class PullRequestMetadataLauncherTests(unittest.TestCase):
                         HEAD,
                         "--base-sha",
                         BASE,
+                        "--receipt-file",
+                        "<edit-receipt-file>",
                     ]
                 ],
                 mutated=True,
@@ -3092,6 +3664,13 @@ class PullRequestMetadataLauncherTests(unittest.TestCase):
                     "to close any non-atomic same-SHA Build race"
                 ),
                 run_id=101,
+                receipt=_receipt_payload(
+                    edit_updated_at="2026-09-04T00:00:05Z",
+                    requested_fields={
+                        "body": _sha256(body),
+                        "title": _sha256("CLI title"),
+                    },
+                ),
             ),
         )
         self.assert_isolated_calls(records, len(calls))
@@ -3103,14 +3682,86 @@ class PullRequestMetadataLauncherTests(unittest.TestCase):
         self.assertEqual(records[-1]["argv"][-2:], ["--input", "-"])
 
     def test_reconcile_and_evidence_comment_launcher_paths(self):
+        receipt_path = self.sandbox.root / "receipt.json"
+        receipt_path.write_text(
+            json.dumps(
+                _receipt_payload(
+                    watermark_run_id=202,
+                    watermark_run_number=11,
+                ),
+                ensure_ascii=True,
+                separators=(",", ":"),
+                sort_keys=True,
+            )
+            + "\n",
+            encoding="ascii",
+        )
+        old_success = _run(202, 11, mode="metadata-only", success=True)
+        successful_full = _run(101, 10, mode="full")
+        calls = [
+            _cli_api_call(
+                "GET",
+                _endpoint(f"pulls/{PR_NUMBER}"),
+                payload=_pr(),
+            ),
+            *_cli_snapshot_calls([old_success, successful_full]),
+        ]
+        completed, records = self.sandbox.run(
+            "reconcile",
+            [
+                *self.common_arguments(),
+                "--receipt-file",
+                str(receipt_path),
+            ],
+            calls,
+        )
+        self.assertEqual(completed.returncode, 3, completed.stderr)
+        self.assertEqual(
+            completed.stdout,
+            _canonical_decision(
+                action="deferred",
+                guidance=[
+                    [
+                        "/usr/bin/python3",
+                        "-I",
+                        "scripts/workflow_pilot/isolated_launcher.py",
+                        "pr-metadata",
+                        "reconcile",
+                        "--repository",
+                        REPOSITORY,
+                        "--pr",
+                        str(PR_NUMBER),
+                        "--head-sha",
+                        HEAD,
+                        "--base-sha",
+                        BASE,
+                        "--receipt-file",
+                        "<edit-receipt-file>",
+                    ]
+                ],
+                reason="the exact metadata-only run is not visible yet",
+                run_id=101,
+            ),
+        )
+        self.assert_isolated_calls(records, len(calls))
+
         failed_metadata = _run(
             202,
             11,
             mode="metadata-only",
             success=False,
         )
-        successful_full = _run(101, 10, mode="full")
         runs = [failed_metadata, successful_full]
+        receipt_path.write_text(
+            json.dumps(
+                _receipt_payload(),
+                ensure_ascii=True,
+                separators=(",", ":"),
+                sort_keys=True,
+            )
+            + "\n",
+            encoding="ascii",
+        )
         calls = [
             _cli_api_call(
                 "GET",
@@ -3132,7 +3783,11 @@ class PullRequestMetadataLauncherTests(unittest.TestCase):
         ]
         completed, records = self.sandbox.run(
             "reconcile",
-            self.common_arguments(),
+            [
+                *self.common_arguments(),
+                "--receipt-file",
+                str(receipt_path),
+            ],
             calls,
         )
         self.assertEqual(completed.returncode, 0, completed.stderr)
@@ -3221,6 +3876,11 @@ class PullRequestMetadataLauncherTests(unittest.TestCase):
         self.assertEqual(output["comment_id"], 301)
 
     def test_launcher_rejects_mode_file_and_identity_inputs(self):
+        malformed_receipt = self.sandbox.root / "malformed-receipt.json"
+        malformed_receipt.write_text(
+            '{"schema_version":1,"schema_version":1}\n',
+            encoding="ascii",
+        )
         cases = (
             (
                 "unknown-submode",
@@ -3239,6 +3899,22 @@ class PullRequestMetadataLauncherTests(unittest.TestCase):
                 "evidence-comment",
                 self.common_arguments(),
                 "required",
+            ),
+            (
+                "missing-receipt-file",
+                "reconcile",
+                self.common_arguments(),
+                "required",
+            ),
+            (
+                "malformed-receipt",
+                "reconcile",
+                [
+                    *self.common_arguments(),
+                    "--receipt-file",
+                    str(malformed_receipt),
+                ],
+                "repeats key",
             ),
             (
                 "missing-body-path",

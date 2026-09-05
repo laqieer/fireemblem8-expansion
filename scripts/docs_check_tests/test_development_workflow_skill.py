@@ -4595,6 +4595,8 @@ printf '%s\t%s\t%s\n' "$result" \
                 "pr-metadata edit",
                 "canonical evidence comment",
                 "same-SHA full Build",
+                "immutable edit receipt",
+                "receipt-bound `pr-metadata reconcile`",
             ):
                 with self.subTest(requirement=requirement):
                     self.assertIn(normalize_policy(requirement), normalized)
@@ -4606,6 +4608,10 @@ printf '%s\t%s\t%s\n' "$result" \
             "`run_id` exclusively for an Actions workflow run",
             "`comment_id` exclusively for the canonical issue comment",
             "mutually exclusive",
+            '"requested_fields": {"body": "<sha256>"}',
+            '"schema_version": 1',
+            '"watermark":',
+            "--receipt-file /path/to/edit-receipt.json",
         ):
             with self.subTest(pilot_requirement=requirement):
                 self.assertIn(
@@ -4643,6 +4649,13 @@ printf '%s\t%s\t%s\n' "$result" \
             "strictly mutually exclusive",
             "status `3` for deferred/refused",
             "status `2` with no decision JSON",
+            "typed `explicit-same`, `explicit-other`, and `unbound`",
+            "Active unbound runs block",
+            "terminal unbound runs cannot provide evidence",
+            "highest fully observed pre-PATCH run ID/number/creation timestamp",
+            "caller-carried",
+            "no split, new subsystem, or mutable ledger",
+            "not a secret, signature, or authentication token",
             "No ARM runtime test is needed",
             "There is no manual-only criterion",
         ):

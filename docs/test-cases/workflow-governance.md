@@ -1223,8 +1223,9 @@ the exact branch and head; timeout or ambiguity fails before `gh run watch`.
   Build event classifier/continuity contracts, this procedure, and the
   canonical tester registry unchanged.
 - **Architecture disposition:** after the third consecutive finding round,
-  accepted in place as one typed HTTP header/media policy plus one exact
-  job-status/timing state model; no split or new subsystem is required.
+  accepted in place as one typed candidate-run binding model plus one immutable
+  edit receipt/watermark consumed by reconciliation. The receipt is
+  caller-carried; no split, new subsystem, or mutable ledger is required.
 
 ### Actions
 
@@ -1240,10 +1241,18 @@ the exact branch and head; timeout or ambiguity fails before `gh run watch`.
    mutation-eligible default edit with two complete run/job snapshots where
    the first full Build succeeds and the second exposes an active rerun.
    Exercise queued zero-job, one-job, current eight-job-without-summary,
-   unknown partial, and provable active metadata-only shapes.
+   unknown partial, provable active metadata-only, empty/missing-binding active
+   queued/in-progress, terminal unbound, explicit-other, and
+   multiple/contradictory binding shapes.
 3. Repeat with a nonempty essential-contract reason, keep the same full run
-   active, then present a successful runner-backed full Build followed by its
-   failed metadata-only continuity run and invoke `pr-metadata reconcile`.
+   active, capture the returned immutable edit receipt, then present a
+   successful runner-backed full Build followed by its failed metadata-only
+   continuity run and invoke `pr-metadata reconcile --receipt-file
+   <edit-receipt-file>`.
+   Exercise an old successful metadata run at or below the receipt watermark
+   while the new run is not visible, later failed and successful runs, equal
+   edit/run timestamps ordered by run number, and a rerun attempt at the
+   watermark.
 4. Update a synthetic canonical marked evidence comment owned by the
    repository owner while the same full Build is active.
 5. Replay stale head/base before edit and reconciliation, post-edit identity
@@ -1286,9 +1295,15 @@ has an active full Build. A
 nonempty essential override revalidates exact current head/base immediately
 before PATCH, refreshes run authority, requires the PATCH response to attest
 the requested exact metadata, leaves every same-SHA full Build active, and
-returns the exact reconciliation command. After the newest exact full Build
-succeeds, reconciliation revalidates immutable head/base and complete run/job
-authority twice, then POSTs only
+returns the exact receipt-bound reconciliation command. Its immutable
+schema-versioned receipt binds repository/PR/head/base, requested-field
+SHA-256 digests, authoritative PATCH `updated_at`, workflow identity, and the
+highest fully observed pre-PATCH run ID/number/creation timestamp without a
+mutable ledger. It is not a secret, signature, or authentication token; live
+GitHub identity, field-digest, workflow, timestamp, and watermark checks supply
+the authority. After the newest exact full Build succeeds, reconciliation
+revalidates the receipt, immutable head/base, and complete run/job authority
+twice, then POSTs only
 `actions/runs/<metadata-run-id>/rerun`. The rerun is the existing lightweight
 `pull_request: edited` path, so code is not rebuilt. Only a completed failed
 metadata run with canonical successful setup/adapters, canonical skipped
@@ -1307,6 +1322,10 @@ can authorize mutation or reconciliation. Header parsing permits only
 consistent LF/CRLF framing and visible ASCII with SP-only value separation.
 The marked comment author must match the exact owner numeric user ID as well
 as owner login/type/site-admin/association.
+Exact-head runs use typed `explicit-same`, `explicit-other`, and `unbound`
+binding states. Active unbound runs block; terminal unbound runs cannot provide
+evidence; explicit-other runs are ignored only after full validation; multiple
+or contradictory bindings fail closed.
 Canonical JSON reserves `run_id` for Actions workflow runs and `comment_id`
 for the canonical issue comment; the optional fields are always serialized,
 strictly mutually exclusive, and `comment-updated` requires only `comment_id`.
@@ -1345,7 +1364,11 @@ timing, out-of-run chronology, repeated singleton/unsupported headers, JSONP,
 malformed media parameters, duplicate multiple-Link relations, skipped `+1`
 or `+28` durations, treating a partial active graph as terminal/error/harmless,
 using stale active `updated_at` as a completion bound, omitting terminal
-refresh, and repository/command injection all fail
+refresh, accepting an active unbound run, using terminal unbound evidence,
+accepting multiple/contradictory bindings, selecting old successful metadata
+at or below the receipt watermark, accepting a rerun attempt at the watermark,
+or accepting a malformed, forged, stale, wrong-head/base/field/digest/workflow/
+watermark receipt, and repository/command injection all fail
 closed. No tested path calls a
 cancellation endpoint or a full-workflow dispatch endpoint.
 
@@ -1365,8 +1388,8 @@ debug/release output, or archival behavior.
 
 `python3 -m unittest scripts.workflow_pilot.tests.test_pr_metadata -v`
 behaviorally executes refusal, override, revalidation, reconciliation,
-comment-only routing, pagination, schema, and injection controls through
-structured API calls.
+comment-only routing, pagination, schema, and injection controls through both
+direct helper calls and the isolated launcher with deterministic fake `gh`.
 
 `python3 -m unittest scripts.docs_check_tests.test_development_workflow_skill -v`
 parses the contributor/workflow guidance and indexed tester contract.
@@ -1375,9 +1398,11 @@ parses the contributor/workflow guidance and indexed tester contract.
 
 No cleanup is required because every GitHub response and mutation is
 synthetic. The API cannot make the identity check and PATCH atomic, so the
-helper takes two run snapshots, revalidates identity immediately before
-mutation, requires the authoritative PATCH response, and returns deterministic
-reconciliation only for a full rerun beginning after the final authority query.
+helper fast-defers an initially active candidate after one complete snapshot;
+a mutation-eligible edit takes two snapshots, revalidates identity immediately
+before mutation, and requires the authoritative PATCH response. Its non-secret
+immutable receipt constrains reconciliation to a later exact-bound metadata
+run without creating a mutable ledger.
 There is no manual-only criterion. No ARM runtime test is needed because this
 is host-only delivery orchestration.
 

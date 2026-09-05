@@ -90,9 +90,11 @@ Finalize stable PR title/body before pushing the candidate, then freeze both
 while its exact-head full Build is active. Update evolving evidence only in the
 canonical comment. Use the isolated `pr-metadata edit` helper for later
 title/body corrections; its default path defers active-full races. Essential
-corrections require a nonempty reason and `pr-metadata reconcile` after the
-same full Build succeeds. The helper never cancels or dispatches a full Build,
-and title/body edits never make a same-SHA full Build stale.
+corrections require a nonempty reason and receipt-bound `pr-metadata reconcile`
+after the same full Build succeeds. Preserve the immutable edit receipt
+returned by the helper; it is caller-carried state rather than a mutable
+ledger. The helper never cancels or dispatches a full Build, and title/body
+edits never make a same-SHA full Build stale.
 
 Local validation is change-focused by default. Run only the smallest tests
 that directly cover the changed behavior and the one necessary compile or

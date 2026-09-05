@@ -342,9 +342,10 @@ wherever generic review or closure guidance conflicts with it. In short:
   the canonical evidence comment. Use the repository's isolated
   `pr-metadata edit` helper for a later title/body correction; its default path
   defers rather than racing an active full Build. An essential correction
-  requires a nonempty reason and a later `pr-metadata reconcile` invocation
-  after that same-SHA full Build succeeds. The helper never cancels or
-  dispatches a full Build; see
+  requires a nonempty reason and a later receipt-bound `pr-metadata reconcile`
+  invocation after that same-SHA full Build succeeds. Preserve the immutable
+  edit receipt returned by the helper; it is caller-carried state rather than
+  a mutable ledger. The helper never cancels or dispatches a full Build; see
   [`docs/workflow-pilot.md`](docs/workflow-pilot.md#safe-pull-request-metadata-ordering).
 - `reports/baseline/`, `tools/gba-playtest/fingerprints/`, and
   `scripts/shiftcheck/tas/fingerprint.lua` are reviewed oracles. Keep only the

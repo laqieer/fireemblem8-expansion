@@ -447,6 +447,16 @@ blocking active candidate and makes the default edit defer rather than error
 or mutate. Materialization changes between the two pre-PATCH snapshots also
 defer.
 
+Each exact-head run has one typed PR-binding state after its repository,
+workflow, event, and head identity is validated: `explicit-same`,
+`explicit-other`, or `unbound`. Missing, null, or empty `pull_requests` is
+unbound. An active unbound run blocks because GitHub may not have materialized
+its PR binding yet. A terminal unbound run cannot authorize full-Build or
+metadata-continuity evidence. One explicit binding to another PR/base is
+ignored only after its complete run and job authority validates. Multiple
+bindings, a binding head that contradicts the run head, or malformed binding
+content fails closed.
+
 Run and job times use a manual canonical
 `YYYY-MM-DDTHH:MM:SSZ` GitHub-RFC3339 parser; timezone offsets, fractional or
 24:00 times, malformed dates, and missing required fields are rejected.
@@ -500,7 +510,34 @@ read-after-write GET is not accepted as mutation evidence. Record the essential
 reason in the canonical evidence comment. No tracked or local pending-state
 ledger is created: GitHub's run number, attempt, event, workflow, PR, head,
 base, mode, status, conclusion, and job identities derive whether
-reconciliation remains pending.
+reconciliation remains pending. Every successful edit also emits an immutable
+edit receipt with a versioned schema. It binds repository ID/name, PR, head/base,
+workflow ID/path, SHA-256 digests of the exact requested title/body fields,
+the authoritative PATCH-response PR `updated_at`, and the highest completely
+observed pre-PATCH run ID/number/creation-time watermark. The receipt is
+caller-carried and creates no mutable ledger. Preserve the exact `receipt`
+object from the edit command's canonical JSON output as
+`/path/to/edit-receipt.json`; do not reconstruct or hand-edit it.
+That file is consumed by receipt-bound `pr-metadata reconcile`.
+
+```json
+{
+  "base_sha": "<40-lowercase-hex>",
+  "edit_updated_at": "YYYY-MM-DDTHH:MM:SSZ",
+  "head_sha": "<40-lowercase-hex>",
+  "pr_number": 123,
+  "repository": "owner/name",
+  "repository_id": 123,
+  "requested_fields": {"body": "<sha256>"},
+  "schema_version": 1,
+  "watermark": {
+    "created_at": "YYYY-MM-DDTHH:MM:SSZ",
+    "run_id": 123,
+    "run_number": 45
+  },
+  "workflow": {"id": 678, "path": ".github/workflows/build.yml"}
+}
+```
 
 Every issue comment receives exact comment ID/body and API/HTML
 repository/PR/issue validation. Ordinary unmarked contributor, bot, and
@@ -519,6 +556,10 @@ The isolated CLI writes exactly one canonical JSON line for a decision: exit
 status `0` means successful, no-op, or already complete; `3` means deferred or
 refused; and `2` reports invalid arguments, unreadable files, or malformed API
 authority without decision JSON on stdout.
+The receipt is not a secret, signature, or authentication token. Reconciliation
+parses its closed schema, revalidates its identities and requested-field
+digests against live GitHub authority, requires the watermark run to remain
+present with the same identity, and rejects omitted pre-edit runs.
 
 After the newest exact full Build succeeds, run:
 
@@ -526,18 +567,24 @@ After the newest exact full Build succeeds, run:
 /usr/bin/python3 -I scripts/workflow_pilot/isolated_launcher.py \
   pr-metadata reconcile \
   --repository "$repo" --pr "$pr" \
-  --head-sha "$head_sha" --base-sha "$base_sha"
+  --head-sha "$head_sha" --base-sha "$base_sha" \
+  --receipt-file /path/to/edit-receipt.json
 ```
 
 Reconciliation revalidates head/base and all exact run authority twice, then
 reruns only the newest `completed`/`failure` lightweight metadata continuity
-run that follows the successful full Build. Its identity/router/classifier and
-adapter jobs must be canonical successes, expensive jobs and the publisher
-must be canonical skips, and summary must be the canonical failure. Cancelled,
-timed-out, action-required, startup-failure, skipped, neutral, stale, active,
-unknown, or malformed runs are never rerun. It dispatches no full Build and
-exposes no cancellation operation. An already-active metadata rerun is
-deferred, and an already-successful one is complete.
+run that is strictly newer than both the successful full Build and the
+receipt's pre-PATCH run-number watermark, and whose creation time is not
+earlier than the authoritative edit timestamp. If that run is not visible yet,
+reconciliation defers; an older successful metadata run never completes a
+newer edit. A rerun attempt of a watermarked run is not a new edit event. The
+eligible run's identity/router/classifier and adapter jobs must be canonical
+successes, expensive jobs and the publisher must be canonical skips, and
+summary must be the canonical failure. Cancelled, timed-out, action-required,
+startup-failure, skipped, neutral, stale, active, unknown, unbound, or malformed
+runs are never rerun. It dispatches no full Build and exposes no cancellation
+operation. An already-active eligible metadata run is deferred, and an
+already-successful eligible one is complete.
 
 Every successful title/body update returns this reconciliation command. The
 second run snapshot closes the deterministic pre-PATCH run-state race; only an

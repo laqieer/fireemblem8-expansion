@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import datetime
+import hashlib
 import json
 import math
 import os
@@ -15,7 +16,7 @@ import sys
 import urllib.parse
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Literal
 
 from . import candidate_evidence
 
@@ -38,6 +39,7 @@ GITHUB_TIMESTAMP_RE = re.compile(
     r"^([0-9]{4})-([0-9]{2})-([0-9]{2})T"
     r"([0-9]{2}):([0-9]{2}):([0-9]{2})Z$"
 )
+DIGEST_RE = re.compile(r"^[0-9a-f]{64}$")
 
 FULL_JOB_NAMES = frozenset(candidate_evidence.KNOWN_JOB_IDS)
 METADATA_JOB_NAMES = (
@@ -47,6 +49,7 @@ FULL_SUCCESS_JOB_NAMES = FULL_JOB_NAMES - {"patch-release"}
 ACTIVE_RUN_STATUSES = frozenset(
     {"pending", "queued", "requested", "in_progress", "waiting"}
 )
+RunBinding = Literal["explicit-same", "explicit-other", "unbound"]
 RUN_CONCLUSIONS = frozenset(
     {
         "action_required",
@@ -77,6 +80,7 @@ class PullRequestState:
     base_sha: str
     title: str
     body: str | None
+    updated_at: datetime.datetime
 
 
 @dataclass(frozen=True)
@@ -123,8 +127,64 @@ class RunState:
     updated_at: datetime.datetime
     status: str
     conclusion: str | None
+    binding: RunBinding
     mode: str
     jobs: tuple[JobState, ...]
+
+
+@dataclass(frozen=True)
+class EditFieldDigest:
+    field: str
+    sha256: str
+
+
+@dataclass(frozen=True)
+class EditReceipt:
+    schema_version: int
+    repository: str
+    repository_id: int
+    pr_number: int
+    head_sha: str
+    base_sha: str
+    workflow_id: int
+    workflow_path: str
+    requested_fields: tuple[EditFieldDigest, ...]
+    edit_updated_at: str
+    watermark_run_id: int
+    watermark_run_number: int
+    watermark_created_at: str
+
+    def canonical_payload(self) -> dict[str, object]:
+        return {
+            "base_sha": self.base_sha,
+            "edit_updated_at": self.edit_updated_at,
+            "head_sha": self.head_sha,
+            "pr_number": self.pr_number,
+            "repository": self.repository,
+            "repository_id": self.repository_id,
+            "requested_fields": {
+                field.field: field.sha256
+                for field in self.requested_fields
+            },
+            "schema_version": self.schema_version,
+            "watermark": {
+                "created_at": self.watermark_created_at,
+                "run_id": self.watermark_run_id,
+                "run_number": self.watermark_run_number,
+            },
+            "workflow": {
+                "id": self.workflow_id,
+                "path": self.workflow_path,
+            },
+        }
+
+    def canonical_json(self) -> str:
+        return json.dumps(
+            self.canonical_payload(),
+            ensure_ascii=True,
+            separators=(",", ":"),
+            sort_keys=True,
+        ) + "\n"
 
 
 @dataclass(frozen=True)
@@ -139,6 +199,7 @@ class Decision:
     pr_number: int
     run_id: int | None = None
     comment_id: int | None = None
+    receipt: EditReceipt | None = None
 
     def __post_init__(self) -> None:
         for field, value in (
@@ -167,10 +228,20 @@ class Decision:
             raise MetadataEditError(
                 "only comment-updated Decision may contain comment_id"
             )
+        if self.action == "updated":
+            if self.receipt is None:
+                raise MetadataEditError("updated Decision requires an edit receipt")
+        elif self.receipt is not None:
+            raise MetadataEditError("only updated Decision may contain an edit receipt")
 
     def canonical_json(self) -> str:
         payload = asdict(self)
         payload["guidance"] = [list(command) for command in self.guidance]
+        payload["receipt"] = (
+            self.receipt.canonical_payload()
+            if self.receipt is not None
+            else None
+        )
         return json.dumps(
             payload,
             ensure_ascii=True,
@@ -324,6 +395,122 @@ def _parse_json(raw: str, label: str) -> object:
 
     require_finite(value)
     return value
+
+
+def _timestamp_text(value: datetime.datetime) -> str:
+    return value.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _content_digest(value: str) -> str:
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+
+def _requested_field_digests(
+    *,
+    title: str | None,
+    body: str | None,
+) -> tuple[EditFieldDigest, ...]:
+    fields = []
+    if body is not None:
+        fields.append(EditFieldDigest("body", _content_digest(body)))
+    if title is not None:
+        fields.append(EditFieldDigest("title", _content_digest(title)))
+    if not fields:
+        raise MetadataEditError("edit receipt requires a requested field")
+    return tuple(fields)
+
+
+def _parse_edit_receipt(payload: object) -> EditReceipt:
+    if not isinstance(payload, dict) or set(payload) != {
+        "base_sha",
+        "edit_updated_at",
+        "head_sha",
+        "pr_number",
+        "repository",
+        "repository_id",
+        "requested_fields",
+        "schema_version",
+        "watermark",
+        "workflow",
+    }:
+        raise MetadataEditError("edit receipt shape is invalid")
+    if (
+        isinstance(payload["schema_version"], bool)
+        or not isinstance(payload["schema_version"], int)
+        or payload["schema_version"] != 1
+    ):
+        raise MetadataEditError("edit receipt schema_version is invalid")
+    repository = payload["repository"]
+    if not isinstance(repository, str):
+        raise MetadataEditError("edit receipt repository is invalid")
+    repository = _repository(repository)
+    requested = payload["requested_fields"]
+    if (
+        not isinstance(requested, dict)
+        or not requested
+        or not set(requested) <= {"body", "title"}
+    ):
+        raise MetadataEditError("edit receipt requested_fields are invalid")
+    requested_fields = []
+    for field in sorted(requested):
+        digest = requested[field]
+        if not isinstance(digest, str) or DIGEST_RE.fullmatch(digest) is None:
+            raise MetadataEditError(
+                f"edit receipt {field} digest is invalid"
+            )
+        requested_fields.append(EditFieldDigest(field, digest))
+    workflow = payload["workflow"]
+    if not isinstance(workflow, dict) or set(workflow) != {"id", "path"}:
+        raise MetadataEditError("edit receipt workflow shape is invalid")
+    if workflow["path"] != WORKFLOW_PATH:
+        raise MetadataEditError("edit receipt workflow path is invalid")
+    watermark = payload["watermark"]
+    if not isinstance(watermark, dict) or set(watermark) != {
+        "created_at",
+        "run_id",
+        "run_number",
+    }:
+        raise MetadataEditError("edit receipt watermark shape is invalid")
+    edit_updated_at = _github_timestamp(
+        payload["edit_updated_at"],
+        "edit receipt updated_at",
+    )
+    watermark_created_at = _github_timestamp(
+        watermark["created_at"],
+        "edit receipt watermark created_at",
+    )
+    if watermark_created_at > edit_updated_at:
+        raise MetadataEditError("edit receipt watermark postdates the edit")
+    return EditReceipt(
+        schema_version=1,
+        repository=repository,
+        repository_id=_positive_int(
+            payload["repository_id"],
+            "edit receipt repository_id",
+        ),
+        pr_number=_positive_int(
+            payload["pr_number"],
+            "edit receipt pr_number",
+        ),
+        head_sha=_sha(payload["head_sha"], "edit receipt head"),
+        base_sha=_sha(payload["base_sha"], "edit receipt base"),
+        workflow_id=_positive_int(
+            workflow["id"],
+            "edit receipt workflow id",
+        ),
+        workflow_path=WORKFLOW_PATH,
+        requested_fields=tuple(requested_fields),
+        edit_updated_at=_timestamp_text(edit_updated_at),
+        watermark_run_id=_positive_int(
+            watermark["run_id"],
+            "edit receipt watermark run_id",
+        ),
+        watermark_run_number=_positive_int(
+            watermark["run_number"],
+            "edit receipt watermark run_number",
+        ),
+        watermark_created_at=_timestamp_text(watermark_created_at),
+    )
 
 
 def _split_http_parameters(value: str, *, label: str) -> list[str]:
@@ -693,6 +880,10 @@ def _parse_pull_request_payload(
     body = payload.get("body")
     if body is not None and not isinstance(body, str):
         raise MetadataEditError("pull request body must be text or null")
+    updated_at = _github_timestamp(
+        payload.get("updated_at"),
+        "pull request updated_at",
+    )
     return PullRequestState(
         repository=repository,
         repository_id=repository_id,
@@ -703,6 +894,7 @@ def _parse_pull_request_payload(
         base_sha=_sha(base.get("sha"), "pull request base"),
         title=title,
         body=body,
+        updated_at=updated_at,
     )
 
 
@@ -1234,6 +1426,46 @@ def _run_mode(
     return "active-unknown"
 
 
+def _run_binding(
+    raw: dict[str, object],
+    *,
+    state: PullRequestState,
+    run_id: int,
+    head_sha: str,
+    head_branch: str,
+) -> RunBinding:
+    bindings = raw.get("pull_requests")
+    if bindings is None or bindings == []:
+        return "unbound"
+    if not isinstance(bindings, list):
+        raise MetadataEditError(f"Build run {run_id} PR bindings are invalid")
+    if len(bindings) != 1:
+        raise MetadataEditError(
+            f"Build run {run_id} PR bindings are ambiguous"
+        )
+    binding = bindings[0]
+    if not isinstance(binding, dict):
+        raise MetadataEditError(f"Build run {run_id} PR binding is invalid")
+    head = binding.get("head")
+    base = binding.get("base")
+    if not isinstance(head, dict) or not isinstance(base, dict):
+        raise MetadataEditError(f"Build run {run_id} PR binding is incomplete")
+    number = _positive_int(binding.get("number"), "Build run PR number")
+    binding_head = _sha(head.get("sha"), "Build run PR head")
+    binding_base = _sha(base.get("sha"), "Build run PR base")
+    if binding_head != head_sha:
+        raise MetadataEditError(
+            f"Build run {run_id} PR binding contradicts its head"
+        )
+    if number == state.number and binding_base == state.base_sha:
+        if head_branch != state.head_ref:
+            raise MetadataEditError(
+                f"Build run {run_id} branch identity drifted"
+            )
+        return "explicit-same"
+    return "explicit-other"
+
+
 def _parse_run(
     client: GitHubClient,
     state: PullRequestState,
@@ -1241,7 +1473,7 @@ def _parse_run(
     raw: object,
     *,
     refresh_terminal: bool = True,
-) -> tuple[int, int, RunState | None]:
+) -> tuple[int, int, RunState]:
     if not isinstance(raw, dict):
         raise MetadataEditError("Build workflow run must be an object")
     run_id = _positive_int(raw.get("id"), "Build run id")
@@ -1277,30 +1509,13 @@ def _parse_run(
         or split.fragment
     ):
         raise MetadataEditError(f"Build run {run_id} URL identity drifted")
-    bindings = raw.get("pull_requests")
-    if not isinstance(bindings, list):
-        raise MetadataEditError(f"Build run {run_id} PR bindings are invalid")
-    matches = 0
-    for binding in bindings:
-        if not isinstance(binding, dict):
-            raise MetadataEditError(f"Build run {run_id} PR binding is invalid")
-        head = binding.get("head")
-        base = binding.get("base")
-        if not isinstance(head, dict) or not isinstance(base, dict):
-            raise MetadataEditError(f"Build run {run_id} PR binding is incomplete")
-        number = _positive_int(binding.get("number"), "Build run PR number")
-        binding_head = _sha(head.get("sha"), "Build run PR head")
-        binding_base = _sha(base.get("sha"), "Build run PR base")
-        if (
-            number == state.number
-            and binding_head == state.head_sha
-            and binding_base == state.base_sha
-        ):
-            matches += 1
-    if matches > 1:
-        raise MetadataEditError(f"Build run {run_id} exact PR binding is ambiguous")
-    if matches == 1 and head_branch != state.head_ref:
-        raise MetadataEditError(f"Build run {run_id} branch identity drifted")
+    binding = _run_binding(
+        raw,
+        state=state,
+        run_id=run_id,
+        head_sha=state.head_sha,
+        head_branch=head_branch,
+    )
     status = _text(raw.get("status"), f"Build run {run_id} status")
     if status not in ACTIVE_RUN_STATUSES | {"completed"}:
         raise MetadataEditError(f"Build run {run_id} status is unknown")
@@ -1343,8 +1558,6 @@ def _parse_run(
             )
     elif run_started_at is not None or created_at > updated_at:
         raise MetadataEditError(f"Build run {run_id} queued chronology is invalid")
-    if matches == 0:
-        return run_id, run_number, None
     if status == "completed" and refresh_terminal:
         refreshed_response = client.request(
             "GET",
@@ -1359,11 +1572,11 @@ def _parse_run(
             refresh_terminal=False,
         )
         if (
-            refreshed is None
-            or refreshed_id != run_id
+            refreshed_id != run_id
             or refreshed_number != run_number
             or refreshed.run_attempt != run_attempt
             or refreshed.head_branch != head_branch
+            or refreshed.binding != binding
             or refreshed.status != status
             or refreshed.conclusion != conclusion
             or refreshed.created_at != created_at
@@ -1400,6 +1613,7 @@ def _parse_run(
             updated_at=updated_at,
             status=status,
             conclusion=conclusion,
+            binding=binding,
             mode=_run_mode(jobs, run_id=run_id, status=status),
             jobs=jobs,
         ),
@@ -1450,8 +1664,7 @@ def list_candidate_runs(
         seen_ids.add(run_id)
         seen_numbers.add(run_number)
         previous_number = run_number
-        if run is not None:
-            exact_runs.append(run)
+        exact_runs.append(run)
     return tuple(exact_runs)
 
 
@@ -1575,7 +1788,14 @@ def require_metadata_failure(run: RunState) -> None:
 
 
 def _latest_full(runs: tuple[RunState, ...]) -> RunState | None:
-    return next((run for run in runs if run.mode == "full"), None)
+    return next(
+        (
+            run
+            for run in runs
+            if run.binding == "explicit-same" and run.mode == "full"
+        ),
+        None,
+    )
 
 
 def _blocking_active_runs(runs: tuple[RunState, ...]) -> tuple[RunState, ...]:
@@ -1583,8 +1803,103 @@ def _blocking_active_runs(runs: tuple[RunState, ...]) -> tuple[RunState, ...]:
         run
         for run in runs
         if run.status in ACTIVE_RUN_STATUSES
-        and run.mode != "active-metadata-only"
+        and run.binding != "explicit-other"
+        and (
+            run.binding == "unbound"
+            or run.mode != "active-metadata-only"
+        )
     )
+
+
+def _edit_receipt(
+    state: PullRequestState,
+    runs: tuple[RunState, ...],
+    *,
+    title: str | None,
+    body: str | None,
+) -> EditReceipt:
+    if not runs:
+        raise MetadataEditError(
+            "edit receipt requires a complete pre-PATCH run watermark"
+        )
+    watermark = max(runs, key=lambda run: run.run_number)
+    return EditReceipt(
+        schema_version=1,
+        repository=state.repository,
+        repository_id=state.repository_id,
+        pr_number=state.number,
+        head_sha=state.head_sha,
+        base_sha=state.base_sha,
+        workflow_id=watermark.workflow_id,
+        workflow_path=WORKFLOW_PATH,
+        requested_fields=_requested_field_digests(title=title, body=body),
+        edit_updated_at=_timestamp_text(state.updated_at),
+        watermark_run_id=watermark.run_id,
+        watermark_run_number=watermark.run_number,
+        watermark_created_at=_timestamp_text(watermark.created_at),
+    )
+
+
+def _validate_receipt_identity(
+    receipt: EditReceipt,
+    state: PullRequestState,
+) -> datetime.datetime:
+    if _parse_edit_receipt(receipt.canonical_payload()) != receipt:
+        raise MetadataEditError("edit receipt is not canonical")
+    if (
+        receipt.schema_version != 1
+        or receipt.repository != state.repository
+        or receipt.repository_id != state.repository_id
+        or receipt.pr_number != state.number
+        or receipt.head_sha != state.head_sha
+        or receipt.base_sha != state.base_sha
+        or receipt.workflow_path != WORKFLOW_PATH
+    ):
+        raise MetadataEditError("edit receipt identity is stale or forged")
+    values = {
+        "body": state.body,
+        "title": state.title,
+    }
+    for field in receipt.requested_fields:
+        value = values[field.field]
+        if value is None or _content_digest(value) != field.sha256:
+            raise MetadataEditError(
+                f"edit receipt {field.field} digest does not match the pull request"
+            )
+    edit_updated_at = _github_timestamp(
+        receipt.edit_updated_at,
+        "edit receipt updated_at",
+    )
+    if state.updated_at < edit_updated_at:
+        raise MetadataEditError("edit receipt timestamp is newer than the pull request")
+    return edit_updated_at
+
+
+def _validate_receipt_watermark(
+    receipt: EditReceipt,
+    runs: tuple[RunState, ...],
+    *,
+    edit_updated_at: datetime.datetime,
+) -> None:
+    watermark = next(
+        (run for run in runs if run.run_id == receipt.watermark_run_id),
+        None,
+    )
+    if (
+        watermark is None
+        or watermark.run_number != receipt.watermark_run_number
+        or _timestamp_text(watermark.created_at) != receipt.watermark_created_at
+        or watermark.workflow_id != receipt.workflow_id
+    ):
+        raise MetadataEditError("edit receipt watermark is stale or forged")
+    if any(
+        run.run_number > receipt.watermark_run_number
+        and run.created_at < edit_updated_at
+        for run in runs
+    ):
+        raise MetadataEditError(
+            "edit receipt omits a pre-edit workflow run"
+        )
 
 
 def _helper_command(
@@ -1617,6 +1932,19 @@ def _comment_guidance(state: PullRequestState) -> tuple[tuple[str, ...], ...]:
             state,
             "--comment-file",
             "<canonical-evidence-file>",
+        ),
+    )
+
+
+def _reconcile_guidance(
+    state: PullRequestState,
+) -> tuple[tuple[str, ...], ...]:
+    return (
+        _helper_command(
+            "reconcile",
+            state,
+            "--receipt-file",
+            "<edit-receipt-file>",
         ),
     )
 
@@ -1664,8 +1992,8 @@ def edit_metadata(
                 head_sha=head_sha,
                 mutated=False,
                 reason=(
-                    "an exact-head full Build is active; update the canonical "
-                    "evidence comment instead"
+                    "an exact-head full or unproven Build is active; update "
+                    "the canonical evidence comment instead"
                 ),
                 repository=repository,
                 pr_number=pr_number,
@@ -1738,7 +2066,10 @@ def edit_metadata(
                 guidance=_comment_guidance(current),
                 head_sha=head_sha,
                 mutated=False,
-                reason="an exact-head full Build became active before mutation",
+                reason=(
+                    "an exact-head full or unproven Build became active before "
+                    "mutation"
+                ),
                 repository=repository,
                 pr_number=pr_number,
                 run_id=current_active_full[0].run_id,
@@ -1782,6 +2113,10 @@ def edit_metadata(
         raise MetadataEditError(
             "pull request mutation response repository/head-ref identity drifted"
         )
+    if after.updated_at < current.updated_at:
+        raise MetadataEditError(
+            "pull request mutation response updated_at regressed"
+        )
     if title is not None and after.title != title:
         raise MetadataEditError(
             "pull request mutation response did not attest the requested title"
@@ -1790,7 +2125,13 @@ def edit_metadata(
         raise MetadataEditError(
             "pull request mutation response did not attest the requested body"
         )
-    guidance = (_helper_command("reconcile", after),)
+    receipt = _edit_receipt(
+        after,
+        current_runs,
+        title=title,
+        body=body,
+    )
+    guidance = _reconcile_guidance(after)
     reason = (
         "metadata updated; reconcile the exact metadata-only run to close any "
         "non-atomic same-SHA Build race"
@@ -1810,11 +2151,15 @@ def edit_metadata(
         repository=repository,
         pr_number=pr_number,
         run_id=active_full[0].run_id if active_full else latest_full.run_id,
+        receipt=receipt,
     )
 
 
 def _pending_metadata(
     runs: tuple[RunState, ...],
+    receipt: EditReceipt,
+    *,
+    edit_updated_at: datetime.datetime,
 ) -> tuple[RunState, RunState | None]:
     latest_full = _latest_full(runs)
     if latest_full is None:
@@ -1824,8 +2169,11 @@ def _pending_metadata(
         (
             run
             for run in runs
-            if run.mode in {"metadata-only", "active-metadata-only"}
+            if run.binding == "explicit-same"
+            and run.mode in {"metadata-only", "active-metadata-only"}
             and run.run_number > latest_full.run_number
+            and run.run_number > receipt.watermark_run_number
+            and run.created_at >= edit_updated_at
         ),
         None,
     )
@@ -1839,29 +2187,40 @@ def reconcile_metadata(
     pr_number: int,
     head_sha: str,
     base_sha: str,
+    receipt: EditReceipt,
 ) -> Decision:
     initial = fetch_pull_request(client, repository, pr_number)
     require_identity(initial, head_sha=head_sha, base_sha=base_sha)
+    edit_updated_at = _validate_receipt_identity(receipt, initial)
     first_runs = list_candidate_runs(client, initial)
+    _validate_receipt_watermark(
+        receipt,
+        first_runs,
+        edit_updated_at=edit_updated_at,
+    )
     blocking_active = _blocking_active_runs(first_runs)
     if blocking_active:
         return Decision(
             action="deferred",
             base_sha=base_sha,
-            guidance=(_helper_command("reconcile", initial),),
+            guidance=_reconcile_guidance(initial),
             head_sha=head_sha,
             mutated=False,
-            reason="the newest exact full Build is still active",
+            reason="an exact-head full or unproven Build is still active",
             repository=repository,
             pr_number=pr_number,
             run_id=blocking_active[0].run_id,
         )
-    first_full, first_metadata = _pending_metadata(first_runs)
+    first_full, first_metadata = _pending_metadata(
+        first_runs,
+        receipt,
+        edit_updated_at=edit_updated_at,
+    )
     if first_metadata is None:
         return Decision(
             action="deferred",
             base_sha=base_sha,
-            guidance=(_helper_command("reconcile", initial),),
+            guidance=_reconcile_guidance(initial),
             head_sha=head_sha,
             mutated=False,
             reason="the exact metadata-only run is not visible yet",
@@ -1873,7 +2232,7 @@ def reconcile_metadata(
         return Decision(
             action="deferred",
             base_sha=base_sha,
-            guidance=(_helper_command("reconcile", initial),),
+            guidance=_reconcile_guidance(initial),
             head_sha=head_sha,
             mutated=False,
             reason="the exact metadata-only run is already active",
@@ -1898,11 +2257,12 @@ def reconcile_metadata(
 
     current = fetch_pull_request(client, repository, pr_number)
     require_identity(current, head_sha=head_sha, base_sha=base_sha)
+    _validate_receipt_identity(receipt, current)
     if current != initial:
         return Decision(
             action="deferred",
             base_sha=base_sha,
-            guidance=(_helper_command("reconcile", current),),
+            guidance=_reconcile_guidance(current),
             head_sha=head_sha,
             mutated=False,
             reason="pull request metadata changed during reconciliation",
@@ -1911,7 +2271,16 @@ def reconcile_metadata(
             run_id=first_metadata.run_id,
         )
     current_runs = list_candidate_runs(client, current)
-    current_full, current_metadata = _pending_metadata(current_runs)
+    _validate_receipt_watermark(
+        receipt,
+        current_runs,
+        edit_updated_at=edit_updated_at,
+    )
+    current_full, current_metadata = _pending_metadata(
+        current_runs,
+        receipt,
+        edit_updated_at=edit_updated_at,
+    )
     if (
         current_runs != first_runs
         or current_metadata is None
@@ -1925,7 +2294,7 @@ def reconcile_metadata(
         return Decision(
             action="deferred",
             base_sha=base_sha,
-            guidance=(_helper_command("reconcile", current),),
+            guidance=_reconcile_guidance(current),
             head_sha=head_sha,
             mutated=False,
             reason=(
@@ -2268,6 +2637,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             child.add_argument("--title-file", type=Path)
             child.add_argument("--body-file", type=Path)
             child.add_argument("--essential-reason")
+        elif mode == "reconcile":
+            child.add_argument("--receipt-file", type=Path, required=True)
         elif mode == "evidence-comment":
             child.add_argument("--comment-file", type=Path, required=True)
     arguments = parser.parse_args(argv)
@@ -2325,12 +2696,21 @@ def main(argv: list[str] | None = None) -> int:
                 essential_reason=args.essential_reason,
             )
         elif args.mode == "reconcile":
+            receipt_text = _read_text(
+                args.receipt_file,
+                label="edit receipt file",
+                maximum=MAX_BODY_BYTES,
+            )
+            receipt = _parse_edit_receipt(
+                _parse_json(receipt_text, "edit receipt file")
+            )
             decision = reconcile_metadata(
                 client,
                 repository=repository,
                 pr_number=pr_number,
                 head_sha=head_sha,
                 base_sha=base_sha,
+                receipt=receipt,
             )
         else:
             decision = update_evidence_comment(
