@@ -1247,6 +1247,9 @@ record = {
 with log_path.open("a", encoding="utf-8") as stream:
     stream.write(json.dumps(record, sort_keys=True) + "\n")
 state_path.write_text(str(index + 1), encoding="ascii")
+if "raw_response_hex" in expected:
+    sys.stdout.buffer.write(bytes.fromhex(expected["raw_response_hex"]))
+    raise SystemExit(0)
 status = expected["status"]
 reason = "Created" if status == 201 else "OK"
 sys.stdout.write(f"HTTP/2 {status} {reason}\n")
@@ -2681,6 +2684,37 @@ class PullRequestMetadataTests(unittest.TestCase):
         )
         self.assertEqual(decision.action, "complete")
         self.assertEqual(decision.run_id, 202)
+
+    def test_selected_confirmation_reconciles_with_unconfirmed_successors(self):
+        receipt = _receipt()
+        confirmation = _confirmation(receipt)
+        for created_at in ("2026-09-04T00:00:01Z", "2026-09-04T00:00:03Z"):
+            with self.subTest(successor_created_at=created_at):
+                client = ScriptedClient()
+                _add_pr_states(client, _pr())
+                _add_snapshot(
+                    client,
+                    [
+                        _run(202, 11, mode="metadata-only", success=True),
+                        _run(101, 10, mode="full"),
+                    ],
+                )
+                decision = _reconcile(
+                    client,
+                    receipt=receipt,
+                    confirmation=confirmation,
+                    comments=[
+                        _intent_comment(receipt),
+                        _confirmation_comment(confirmation),
+                        _intent_comment(
+                            replace(receipt, nonce="b" * 64),
+                            comment_id=403,
+                            created_at=created_at,
+                        ),
+                    ],
+                )
+                self.assertEqual(decision.action, "complete")
+                self.assertEqual(decision.run_id, 202)
 
     def test_created_intent_reports_its_mutation_after_observed_terminal(self):
         for terminal in ("confirmation", "abort"):
@@ -4163,23 +4197,6 @@ class PullRequestMetadataTests(unittest.TestCase):
             "wrong-id": [
                 _intent_comment(receipt, comment_id=403),
                 confirmation_comment,
-            ],
-            "older-than-latest": [
-                base_comment,
-                confirmation_comment,
-                _intent_comment(
-                    _receipt(nonce="b" * 64),
-                    comment_id=403,
-                    created_at="2026-09-04T00:00:03Z",
-                ),
-            ],
-            "latest-ambiguous": [
-                base_comment,
-                confirmation_comment,
-                _intent_comment(
-                    _receipt(nonce="b" * 64),
-                    comment_id=403,
-                ),
             ],
             "duplicate-nonce": [
                 base_comment,
@@ -6516,14 +6533,14 @@ class PullRequestMetadataTests(unittest.TestCase):
             return subprocess.CompletedProcess(
                 arguments,
                 0,
-                stdout='HTTP/2 200 OK\nContent-Type: application/json\n\n{"ok":true}\n',
-                stderr="",
+                stdout=b'HTTP/2 200 OK\nContent-Type: application/json\n\n{"ok":true}\n',
+                stderr=b"",
             )
 
         client = pr_metadata.GitHubClient("/usr/bin/true", runner=runner)
         payload = {
             "title": '$(touch /tmp/never)"; gh run cancel 1; #',
-            "body": "line\n--method DELETE",
+            "body": "line\n--method DELETE\ncaf\u00e9",
         }
         result = client.request(
             "PATCH",
@@ -6537,6 +6554,8 @@ class PullRequestMetadataTests(unittest.TestCase):
         self.assertEqual(arguments[0], client.gh_path)
         self.assertEqual(arguments[-2:], ["--input", "-"])
         self.assertIn("--include", arguments)
+        self.assertIs(kwargs["text"], False)
+        self.assertIsInstance(kwargs["input"], bytes)
         self.assertEqual(json.loads(kwargs["input"]), payload)
         self.assertNotIn("shell", kwargs)
         self.assertNotIn("/cancel", " ".join(arguments))
@@ -6574,8 +6593,8 @@ class PullRequestMetadataTests(unittest.TestCase):
                     return subprocess.CompletedProcess(
                         arguments,
                         0,
-                        stdout=stdout,
-                        stderr="",
+                        stdout=stdout.encode("utf-8"),
+                        stderr=b"",
                     )
 
                 client = pr_metadata.GitHubClient(
@@ -6941,6 +6960,70 @@ class PullRequestMetadataLauncherTests(unittest.TestCase):
             self.assertEqual(record["git_environment"], [])
             self.assertEqual(record["argv"][0], "api")
             self.assertIn("--include", record["argv"])
+
+    def test_gh_subprocess_preserves_http_framing_bytes(self):
+        body_path = self.sandbox.root / "body.md"
+        body_path.write_text("Deferred body\n", encoding="utf-8")
+        payload = json.dumps(_pr(), ensure_ascii=False).encode("utf-8")
+        cases = (
+            ("lf", b"HTTP/2 200 OK\nContent-Type: application/json\n\n", 3),
+            ("crlf", b"HTTP/2 200 OK\r\nContent-Type: application/json\r\n\r\n", 3),
+            (
+                "gh-rendered-status",
+                b"HTTP/2.0 200 OK\nContent-Type: application/json\r\n\r\n",
+                3,
+            ),
+            (
+                "bare-cr",
+                b"HTTP/2 200 OK\nContent-Type: application/json\rX-Extra: yes\n\n",
+                2,
+            ),
+            (
+                "mixed-lines",
+                b"HTTP/2 200 OK\r\nContent-Type: application/json\n\n",
+                2,
+            ),
+            (
+                "invalid-utf8",
+                b"HTTP/2 200 OK\nContent-Type: application/json\nX-Extra: \xff\n\n",
+                2,
+            ),
+            (
+                "gh-status-mixed-fields",
+                b"HTTP/2.0 200 OK\nContent-Type: application/json\r\n"
+                b"X-First: yes\nX-Second: yes\r\n\r\n",
+                2,
+            ),
+        )
+        for name, headers, status in cases:
+            with self.subTest(framing=name):
+                if name == "gh-rendered-status":
+                    with self.assertRaises(pr_metadata.MetadataEditError):
+                        pr_metadata._parse_http_response(
+                            (headers + payload).decode("utf-8"),
+                            label="plain HTTP",
+                            allow_empty_body=False,
+                        )
+                initial = _cli_api_call(
+                    "GET", _endpoint(f"pulls/{PR_NUMBER}"), payload=_pr()
+                )
+                initial["raw_response_hex"] = (headers + payload + b"\n").hex()
+                calls = [
+                    initial,
+                    *_cli_snapshot_calls([_run(101, 10, mode="full", active=True)]),
+                ]
+                completed, records = self.sandbox.run(
+                    "edit",
+                    [*self.common_arguments(), "--body-file", str(body_path)],
+                    calls,
+                )
+                self.assertEqual(completed.returncode, status, completed.stderr)
+                if status == 2:
+                    self.assertEqual(completed.stdout, "")
+                    self.assertEqual(len(records), 1)
+                else:
+                    self.assertEqual(json.loads(completed.stdout)["action"], "deferred")
+                    self.assert_isolated_calls(records, len(calls))
 
     def test_edit_launcher_fast_defer_and_mutation_paths(self):
         body_path = self.sandbox.root / "body.md"

@@ -1237,15 +1237,25 @@ def _parse_http_response(
     *,
     label: str,
     allow_empty_body: bool,
+    allow_gh_status_line: bool = False,
 ) -> ApiResponse:
     if len(raw.encode("utf-8")) > MAX_API_BYTES:
         raise MetadataEditError(f"{label} response exceeds 4 MiB")
     crlf_boundary = raw.find("\r\n\r\n")
     lf_boundary = raw.find("\n\n")
+    gh_status_line = None
     if crlf_boundary >= 0 and (lf_boundary < 0 or crlf_boundary <= lf_boundary):
         line_break = "\r\n"
         boundary = crlf_boundary
         header_text = raw[:boundary]
+        first_lf = header_text.find("\n")
+        if (
+            allow_gh_status_line
+            and first_lf > 0
+            and header_text[first_lf - 1] != "\r"
+        ):
+            gh_status_line = header_text[:first_lf]
+            header_text = header_text[first_lf + 1 :]
         for index, character in enumerate(header_text):
             if character == "\r" and (
                 index + 1 >= len(header_text)
@@ -1273,6 +1283,8 @@ def _parse_http_response(
     boundary_marker = line_break + line_break
     body_text = raw[boundary + len(boundary_marker) :]
     lines = header_text.split(line_break)
+    if gh_status_line is not None:
+        lines.insert(0, gh_status_line)
     for line in lines:
         for character in line:
             code = ord(character)
@@ -1298,7 +1310,7 @@ def _parse_http_response(
     return ApiResponse(status, headers, _parse_json(body_text, label))
 
 
-Runner = Callable[..., subprocess.CompletedProcess[str]]
+Runner = Callable[..., subprocess.CompletedProcess[bytes]]
 
 
 class GitHubClient:
@@ -1335,15 +1347,18 @@ class GitHubClient:
             "X-GitHub-Api-Version: 2022-11-28",
             endpoint,
         ]
-        input_text = None
+        input_bytes = None
         if body is not None:
             arguments.extend(["--input", "-"])
-            input_text = json.dumps(
-                body,
-                ensure_ascii=False,
-                separators=(",", ":"),
-                sort_keys=True,
-            )
+            try:
+                input_bytes = json.dumps(
+                    body,
+                    ensure_ascii=False,
+                    separators=(",", ":"),
+                    sort_keys=True,
+                ).encode("utf-8")
+            except UnicodeEncodeError as error:
+                raise MetadataEditError(f"{label} request body is not UTF-8") from error
         environment = dict(os.environ)
         environment["GH_HOST"] = "github.com"
         environment.pop("GH_REPO", None)
@@ -1352,8 +1367,8 @@ class GitHubClient:
                 arguments,
                 check=False,
                 capture_output=True,
-                text=True,
-                input=input_text,
+                text=False,
+                input=input_bytes,
                 env=environment,
                 timeout=30,
             )
@@ -1361,8 +1376,17 @@ class GitHubClient:
             raise MetadataEditError(f"{label} request timed out") from error
         except OSError as error:
             raise MetadataEditError(f"{label} request could not start: {error}") from error
+        if not isinstance(completed.stdout, bytes) or not isinstance(completed.stderr, bytes):
+            raise MetadataEditError(f"{label} subprocess must preserve output bytes")
+        if len(completed.stdout) > MAX_API_BYTES or len(completed.stderr) > MAX_API_BYTES:
+            raise MetadataEditError(f"{label} subprocess output exceeds 4 MiB")
+        try:
+            output = completed.stdout.decode("utf-8")
+            diagnostic = completed.stderr.decode("utf-8")
+        except UnicodeDecodeError as error:
+            raise MetadataEditError(f"{label} subprocess output is not UTF-8") from error
         if completed.returncode != 0:
-            detail = completed.stderr.strip()
+            detail = diagnostic.strip()
             if len(detail) > 512:
                 detail = detail[:512] + "..."
             raise MetadataEditError(
@@ -1370,9 +1394,10 @@ class GitHubClient:
                 + (f": {detail}" if detail else "")
             )
         response = _parse_http_response(
-            completed.stdout,
+            output,
             label=label,
             allow_empty_body=method == "POST",
+            allow_gh_status_line=True,
         )
         expected_status = (
             200 if endpoint == "graphql" else 201 if method == "POST" else 200
@@ -4465,28 +4490,31 @@ def _authoritative_edit_pair(
     confirmation_comment_id: int,
     workflow_id: int,
 ) -> tuple[EditReceipt, CommentState, EditConfirmation, CommentState]:
-    intents, confirmations, aborts = _transaction_comments(client, state)
-    latest = _latest_ordered_intent(
-        _candidate_intents(intents, state, workflow_id)
-    )
-    if latest is None or latest.intent is None:
+    intents, confirmations, _aborts = _transaction_comments(client, state)
+    candidates = _candidate_intents(intents, state, workflow_id)
+    if not candidates:
         raise MetadataEditError("metadata edit intent comment is missing")
-    if latest.comment_id in aborts:
-        raise MetadataEditError("latest metadata edit intent is aborted")
-    confirmation_comment = confirmations.get(latest.comment_id)
-    if (
-        confirmation_comment is None
-        or confirmation_comment.comment_id != confirmation_comment_id
-        or confirmation_comment.confirmation is None
-    ):
-        raise MetadataEditError(
-            "latest metadata edit intent lacks the selected confirmation"
-        )
+    selected = [
+        comment for comment in confirmations.values()
+        if comment.comment_id == confirmation_comment_id
+    ]
+    if len(selected) != 1 or selected[0].confirmation is None:
+        raise MetadataEditError("selected metadata edit confirmation is missing")
+    confirmation_comment = selected[0]
     confirmation = confirmation_comment.confirmation
-    if confirmation_comment.created_at < latest.created_at:
+    intent_comment = next(
+        (
+            comment for comment in candidates
+            if comment.comment_id == confirmation.intent_comment_id
+        ),
+        None,
+    )
+    if intent_comment is None or intent_comment.intent is None:
+        raise MetadataEditError("selected confirmation has no intent for this candidate")
+    if confirmation_comment.created_at < intent_comment.created_at:
         raise MetadataEditError("metadata edit confirmation nonce drifted")
-    _validate_receipt_identity(latest.intent, state)
-    return latest.intent, latest, confirmation, confirmation_comment
+    _validate_receipt_identity(intent_comment.intent, state)
+    return intent_comment.intent, intent_comment, confirmation, confirmation_comment
 
 
 def update_evidence_comment(

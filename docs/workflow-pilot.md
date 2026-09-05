@@ -405,6 +405,18 @@ SP separator. Bare CR/LF, NUL, tab, vertical tab, form feed, DEL, non-ASCII,
 folded/obs-fold lines, mixed line endings, and controls embedded in
 Content-Type, Link, Location, or any other value fail before interpretation.
 CRLF and LF header blocks are accepted only when internally consistent.
+The real `gh` subprocess is captured as bytes, bounded before decoding, and
+decoded explicitly as UTF-8 without universal-newline translation. Request
+JSON is likewise encoded explicitly as UTF-8. Invalid UTF-8 fails before
+authority parsing, and the isolated-launcher fake-`gh` controls exercise raw
+LF, CRLF, bare-CR, and mixed-line-ending responses through this production path.
+The `gh api --include` envelope has one explicitly recognized rendering form:
+an LF-terminated status line followed by uniformly CRLF-terminated header
+fields and separator. Only that first status separator is special; mixed
+endings or bare CR inside the header fields still reject. The plain HTTP
+parser remains strict unless its caller explicitly identifies the `gh`
+transport envelope. This matches the real GitHub CLI output without changing
+or normalizing any received bytes.
 Singleton headers, including Content-Type and security/identity fields, cannot
 repeat. The explicitly RFC-combinable `Vary`, `Cache-Control`, and `Link`
 fields may repeat and are SP/comma-normalized before typed interpretation;
@@ -643,7 +655,13 @@ Every confirmation/abort edge independently requires both
 `terminal.createdAt >= intent.createdAt` and
 `terminal.comment_id > intent.comment_id`; a later timestamp never excuses an
 equal or lower ID.
-The selected confirmation must reference the latest overall candidate intent.
+Explicit reconciliation resolves the requested confirmation comment to its
+referenced intent within the exact candidate and workflow. A later unconfirmed
+intent, even one in the same timestamp second, does not supersede a valid
+confirmed pair. The selected pair must still match current title/body,
+metadata-version, run, and watermark authority; a later actual edit or
+edit-and-revert remains invalidating. Automatic edit recovery retains its
+separate latest-active-intent rule.
 Intent and confirmation may share a second because exact comment ID and nonce
 provide linkage; confirmation may not predate intent. It refetches the metadata-specific version and complete current
 title/body state; later direct edits and edit-and-revert change

@@ -1330,6 +1330,10 @@ the exact branch and head; timeout or ambiguity fails before `gh run watch`.
    PATCH. Supply mixed-marker or malformed typed transaction bodies and
    require rejection before POST. Valid canonical replacements and all three
    valid transaction kinds remain accepted by the same body classifier.
+   Reconcile an explicitly selected valid confirmation after an unconfirmed
+   successor intent appears, both in the same second and later. Require the
+   original pair's exact metadata/version and run evidence to remain usable;
+   actual subsequent metadata/version changes must still reject the old pair.
 5. Replay stale head/base before edit and reconciliation, post-edit identity
    drift, mutation-response mismatch, incomplete run/job/comment pagination,
    redirects, contradictory/malformed/duplicate/looping Link relations,
@@ -1350,6 +1354,13 @@ the exact branch and head; timeout or ambiguity fails before `gh run watch`.
    singleton/unsupported repeats, exact JSON media type with valid parameters,
    `application/jsonp` and malformed media parameters, multiple-Link relation
    duplicates, and skipped timing deltas `-1`, `0`, `+1`, and `+28` seconds.
+   Send real fake-`gh` subprocess bytes through the isolated launcher: consistent
+   LF and CRLF succeed, while bare CR, mixed endings, and invalid UTF-8 reject
+   before authority parsing. Confirm the subprocess does not normalize line
+   endings and UTF-8 request JSON round-trips without shell interpretation.
+   Accept the real `gh --include` rendering with only the status line ending
+   in LF and all header fields/separator ending in CRLF; reject a mixed field
+   line even under that explicitly recognized envelope.
    Accept quoted parameter values containing literal `=` and `;`; reject
    escaped quotes, every backslash, extra unquoted equals, empty names/values,
    trailing junk, duplicate names, unterminated quotes, and ambiguous spacing.
@@ -1378,7 +1389,7 @@ run ID/number/creation timestamp watermark. The pair is not a secret,
 signature, or authentication token. After strict PATCH attestation, GitHub
 title-event and body-edit
 version authority is bound by a second immutable confirmation comment. The
-refetched unique latest pair and live identity, author, digest, version, and
+refetched explicitly selected pair and live identity, author, digest, version, and
 watermark checks supply authority without cross-subsystem timestamp causality
 or a mutable ledger. After the newest exact full Build succeeds, reconciliation
 revalidates the receipt, immutable head/base, and complete run/job authority
