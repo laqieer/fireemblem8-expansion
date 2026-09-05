@@ -998,6 +998,13 @@ class TesterCaseRegistryTests(unittest.TestCase):
                             "--coordinator-uid 65532 --candidate-uid 65533",
                         },
                     },
+                    "TC-WORKFLOW-WORKTREE-CLEANUP-001": {
+                        "document": "docs/test-cases/workflow-governance.md",
+                        "commands": {
+                            "python3 -m unittest scripts.workflow_pilot.tests."
+                            "test_worktree_cleanup -v",
+                        },
+                    },
                     "TC-WORKFLOW-IMMEDIATE-PUSH-001": {
                         "document": "docs/test-cases/workflow-governance.md",
                         "commands": {
