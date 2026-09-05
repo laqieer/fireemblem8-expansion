@@ -4054,6 +4054,29 @@ def _parse_abort_comment_body(body: str) -> EditAbort:
     return abort
 
 
+def _protected_comment_marker(body: str) -> str | None:
+    if not isinstance(body, str):
+        raise MetadataEditError("comment body must be text")
+    markers = [
+        marker
+        for marker in (
+            EVIDENCE_MARKER,
+            INTENT_MARKER,
+            CONFIRMATION_MARKER,
+            ABORT_MARKER,
+        )
+        if marker in body
+    ]
+    if len(markers) > 1:
+        raise MetadataEditError("pull request comment mixes protected markers")
+    if not markers:
+        return None
+    marker = markers[0]
+    if body.count(marker) != 1 or not _marker_is_standalone(body, marker):
+        raise MetadataEditError("protected comment marker is duplicated or embedded")
+    return marker
+
+
 def _parse_comment_payload(
     raw: object,
     repository: str,
@@ -4128,50 +4151,7 @@ def _parse_comment_payload(
         and user.get("site_admin") is False
         and association == "OWNER"
     )
-    evidence_marker_count = body.count(EVIDENCE_MARKER)
-    intent_marker_count = body.count(INTENT_MARKER)
-    confirmation_marker_count = body.count(CONFIRMATION_MARKER)
-    abort_marker_count = body.count(ABORT_MARKER)
-    if not is_owner:
-        evidence_marker_count = 0
-        intent_marker_count = 0
-        confirmation_marker_count = 0
-        abort_marker_count = 0
-    marker_kinds = sum(
-        bool(count)
-        for count in (
-            evidence_marker_count,
-            intent_marker_count,
-            confirmation_marker_count,
-            abort_marker_count,
-        )
-    )
-    if marker_kinds > 1:
-        raise MetadataEditError("pull request comment mixes protected markers")
-    protected = (
-        evidence_marker_count
-        or intent_marker_count
-        or confirmation_marker_count
-        or abort_marker_count
-    )
-    if protected:
-        marker = (
-            EVIDENCE_MARKER
-            if evidence_marker_count
-            else INTENT_MARKER
-            if intent_marker_count
-            else CONFIRMATION_MARKER
-            if confirmation_marker_count
-            else ABORT_MARKER
-        )
-        if protected != 1 or not _marker_is_standalone(body, marker):
-            raise MetadataEditError(
-                "protected comment marker is duplicated or embedded"
-            )
-        if not is_owner:
-            raise MetadataEditError(
-                f"pull request comment {comment_id} author is not the repository owner"
-            )
+    marker = _protected_comment_marker(body) if is_owner else None
     created_at = _github_timestamp(
         raw.get("created_at"),
         f"pull request comment {comment_id} created_at",
@@ -4188,14 +4168,14 @@ def _parse_comment_payload(
     intent = None
     confirmation = None
     abort = None
-    if intent_marker_count or confirmation_marker_count or abort_marker_count:
+    if marker in (INTENT_MARKER, CONFIRMATION_MARKER, ABORT_MARKER):
         if updated_at != created_at:
             raise MetadataEditError(
                 f"metadata edit transaction comment {comment_id} was edited"
             )
-        if intent_marker_count:
+        if marker == INTENT_MARKER:
             intent = _parse_intent_comment_body(body)
-        elif confirmation_marker_count:
+        elif marker == CONFIRMATION_MARKER:
             confirmation = _parse_confirmation_comment_body(body)
         else:
             abort = _parse_abort_comment_body(body)
@@ -4229,6 +4209,15 @@ def _create_transaction_comment(
     body: str,
     label: str,
 ) -> CommentState:
+    marker = _protected_comment_marker(body)
+    if marker == INTENT_MARKER:
+        _parse_intent_comment_body(body)
+    elif marker == CONFIRMATION_MARKER:
+        _parse_confirmation_comment_body(body)
+    elif marker == ABORT_MARKER:
+        _parse_abort_comment_body(body)
+    else:
+        raise MetadataEditError("transaction comment requires a transaction marker")
     response = client.request(
         "POST",
         _endpoint(state.repository, f"issues/{state.number}/comments"),
@@ -4509,9 +4498,7 @@ def update_evidence_comment(
     base_sha: str,
     comment_body: str,
 ) -> Decision:
-    if comment_body.count(EVIDENCE_MARKER) != 1 or not _marker_is_standalone(
-        comment_body
-    ):
+    if _protected_comment_marker(comment_body) != EVIDENCE_MARKER:
         raise MetadataEditError(
             "canonical evidence comment must contain one standalone marker"
         )

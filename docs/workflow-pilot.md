@@ -601,6 +601,12 @@ the same author/comment plus the requested body are rejected.
 Response author identity includes the numeric ID, login, user type,
 `site_admin: false`, and owner association; matching only a subset cannot
 authorize a canonical update.
+One shared protected-marker classifier validates both outbound bodies and
+owner-authenticated responses. A canonical evidence replacement must contain
+only its one standalone evidence marker and no intent, confirmation, or abort
+marker, even embedded in quoted text. Transaction creation also validates its
+single marker and complete canonical typed body before POST. Invalid bodies
+therefore fail before any write rather than poisoning future comment scans.
 Structured results reserve `run_id` exclusively for an Actions workflow run
 and `comment_id` exclusively for the canonical issue comment. Both fields are
 optional and serialized in every result, but they are mutually exclusive;
@@ -720,9 +726,11 @@ semantics apply.
 Immediately before PATCH, the helper refetches complete PR, run, metadata
 and transaction-comment authority, then makes one final complete
 repository/owner/PR/ref/title/body/editor/title-event/UserContentEdit GraphQL
-request as the last network operation before PATCH. Any candidate, pre-state,
-provided-field, version, run-snapshot, or active-intent drift creates an
-immutable owner-authored abort comment and performs zero PATCH. Abort comments
+request as the last network operation before PATCH. For a selected intent that
+is still active, candidate, pre-state, provided-field, version, run-snapshot,
+or active-intent drift creates an immutable owner-authored abort comment and
+performs zero PATCH. An already observed confirmation or abort instead defers
+without appending another terminal. Abort comments
 reference the exact intent ID/nonce and observed state/version, are never
 edited/deleted, and close that intent. Retry recognizes a maybe-created abort
 or safely attempts the same abort again; malformed, duplicate, forged, or
@@ -745,8 +753,8 @@ comment content and cannot poison transaction history. An owner-authored
 malformed protected marker remains fatal.
 
 Every successful title/body update returns this reconciliation command. The
-second run snapshot closes the deterministic pre-PATCH run-state race; only an
-external same-SHA full rerun that starts after that final authority query is an
+third (post-intent) run snapshot closes the deterministic pre-PATCH run-state
+race; only an external same-SHA full rerun that starts after that final authority query is an
 irreducible API race. The authoritative PATCH response detects identity or
 result drift at mutation time, and the returned reconciliation command handles
 the remaining external race without weakening continuity.

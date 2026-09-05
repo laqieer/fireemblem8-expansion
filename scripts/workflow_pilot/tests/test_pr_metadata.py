@@ -6291,6 +6291,91 @@ class PullRequestMetadataTests(unittest.TestCase):
                         ),
                     )
 
+    def test_replacement_evidence_rejects_transaction_markers_before_patch(self):
+        for marker in (
+            pr_metadata.INTENT_MARKER,
+            pr_metadata.CONFIRMATION_MARKER,
+            pr_metadata.ABORT_MARKER,
+        ):
+            for suffix in (marker, f"quoted `{marker}` text", marker + marker):
+                with self.subTest(marker=marker, suffix=suffix):
+                    desired = f"{pr_metadata.EVIDENCE_MARKER}\n{suffix}\n"
+                    client = ScriptedClient()
+                    _add_pr_states(client, _pr(), _pr())
+                    client.add(
+                        "GET",
+                        _query(
+                            f"issues/{PR_NUMBER}/comments",
+                            [("per_page", "100"), ("page", "1")],
+                        ),
+                        [_comment(301, f"{pr_metadata.EVIDENCE_MARKER}\nOld\n")],
+                    )
+                    client.add(
+                        "PATCH", _endpoint("issues/comments/301"), _comment(301, desired)
+                    )
+                    with self.assertRaises(pr_metadata.MetadataEditError):
+                        pr_metadata.update_evidence_comment(
+                            client,
+                            repository=REPOSITORY,
+                            pr_number=PR_NUMBER,
+                            head_sha=HEAD,
+                            base_sha=BASE,
+                            comment_body=desired,
+                        )
+                    self.assertFalse(
+                        any(method == "PATCH" for method, _endpoint, _body in client.calls)
+                    )
+                    self.assertEqual(client.calls, [])
+
+    def test_transaction_bodies_are_validated_before_creation(self):
+        receipt = _receipt()
+        state = pr_metadata._parse_pull_request_payload(_pr(), REPOSITORY, PR_NUMBER)
+        bodies = (
+            ("intent", receipt, pr_metadata._intent_comment_body(receipt)),
+            (
+                "confirmation",
+                _confirmation(receipt),
+                pr_metadata._confirmation_comment_body(_confirmation(receipt)),
+            ),
+            (
+                "abort",
+                _abort(receipt),
+                pr_metadata._abort_comment_body(_abort(receipt)),
+            ),
+        )
+        for kind, value, body in bodies:
+            with self.subTest(kind=kind):
+                client = ScriptedClient()
+                client.add(
+                    "POST",
+                    _endpoint(f"issues/{PR_NUMBER}/comments"),
+                    _comment(
+                        405,
+                        body,
+                        created_at="2026-09-04T00:00:04Z",
+                        updated_at="2026-09-04T00:00:04Z",
+                    ),
+                )
+                actual = pr_metadata._create_transaction_comment(
+                    client, state, body=body, label="transaction fixture"
+                )
+                self.assertEqual(getattr(actual, kind), value)
+                self.assertEqual(len(client.calls), 1)
+            for invalid in (
+                body + pr_metadata.EVIDENCE_MARKER,
+                body + body,
+                body.splitlines()[0] + "\n{}\n",
+                "unmarked content",
+                pr_metadata.EVIDENCE_MARKER + "\nevidence\n",
+            ):
+                with self.subTest(kind=kind, invalid=invalid):
+                    client = ScriptedClient()
+                    with self.assertRaises(pr_metadata.MetadataEditError):
+                        pr_metadata._create_transaction_comment(
+                            client, state, body=invalid, label="transaction fixture"
+                        )
+                    self.assertEqual(client.calls, [])
+
     def test_duplicate_and_embedded_markers_are_rejected(self):
         cases = {
             "across-comments": [

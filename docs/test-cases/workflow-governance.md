@@ -1300,8 +1300,10 @@ the exact branch and head; timeout or ambiguity fails before `gh run watch`.
    confirmation predating intent as invalid.
    After intent creation, inject candidate/head/base, pre-state, supplied
    unchanged-field, title/body version, run-snapshot, and transaction-comment
-   drift before PATCH. Require zero PATCH and one immutable owner-authored
-   abort comment. Replay maybe-created, duplicate, forged, edited, and
+   drift before PATCH while the selected intent remains active. Require zero
+   PATCH and one immutable owner-authored abort comment. If a confirmation or
+   abort is already observed, require deferral without a second terminal.
+   Replay maybe-created, duplicate, forged, edited, and
    contradictory abort comments; malformed historical abort markers remain
    fatal.
    Assert the production GraphQL call is the final network request immediately
@@ -1323,6 +1325,11 @@ the exact branch and head; timeout or ambiguity fails before `gh run watch`.
    remain fatal.
 4. Update a synthetic canonical marked evidence comment owned by the
    repository owner while the same full Build is active.
+   Add each intent, confirmation, and abort marker to its replacement body,
+   including quoted, embedded, and duplicate forms; require rejection before
+   PATCH. Supply mixed-marker or malformed typed transaction bodies and
+   require rejection before POST. Valid canonical replacements and all three
+   valid transaction kinds remain accepted by the same body classifier.
 5. Replay stale head/base before edit and reconciliation, post-edit identity
    drift, mutation-response mismatch, incomplete run/job/comment pagination,
    redirects, contradictory/malformed/duplicate/looping Link relations,
@@ -1357,9 +1364,9 @@ the exact branch and head; timeout or ambiguity fails before `gh run watch`.
 The default edit returns a structured `deferred` decision, performs no PR
 metadata mutation, and points to the canonical evidence-comment command. An
 initially active full or unproven Build fast-defers after one complete run/job
-snapshot. A mutation-eligible default edit queries two complete run/job
-snapshots and refuses mutation if the authority changes or the second snapshot
-has an active full Build. A
+snapshot. A mutation-eligible default edit queries three complete run/job
+snapshots (initial, pre-intent, and post-intent) and refuses mutation if the
+authority changes or either later snapshot has an active full Build. A
 nonempty essential override revalidates exact current head/base immediately
 before PATCH, refreshes run authority, requires the PATCH response to attest
 the requested exact metadata, leaves every same-SHA full Build active, and
