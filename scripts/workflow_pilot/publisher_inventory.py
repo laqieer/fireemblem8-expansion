@@ -21,7 +21,7 @@ import stat
 import subprocess
 import sys
 import sysconfig
-from types import CodeType, MappingProxyType
+from types import CodeType, MappingProxyType, ModuleType
 
 
 CASE_ID = "TC-WORKFLOW-PUBLISHER-COMMAND-INVENTORY-001"
@@ -1006,22 +1006,33 @@ def _source_only_authority(sources):
         sys.addaudithook(_audit_source_execution)
         _EXECUTION_AUDIT_INSTALLED = True
     previous_authority = _ACTIVE_SOURCE_AUTHORITY
+    cached_modules = sys.modules.copy()
     previous = {
-        name: module for name, module in sys.modules.copy().items()
+        name: module for name, module in cached_modules.items()
         if not loader.trusted_spec(name, getattr(module, "__spec__", None))
     }
     missing = object()
-    package_bindings = []
+    package_bindings = {}
     # From-import can use a parent's cached attribute without consulting sys.modules.
     for name, module in previous.items():
         parent_name, _, child = name.rpartition(".")
-        parent = sys.modules.get(parent_name)
+        parent = cached_modules.get(parent_name)
         if parent is not None and parent_name not in previous:
             namespace = vars(parent)
             value = namespace.get(child, missing)
-            package_bindings.append((namespace, child, value))
-            if value is module:
-                del namespace[child]
+            package_bindings[id(parent), child] = (namespace, child, value, value is module)
+    for name, module in cached_modules.items():
+        if name in previous:
+            continue
+        namespace = vars(module)
+        for child, value in namespace.copy().items():
+            if isinstance(value, ModuleType) and not loader.trusted_spec(
+                value.__name__, getattr(value, "__spec__", None),
+            ):
+                package_bindings[id(module), child] = (namespace, child, value, True)
+    for namespace, child, value, remove in package_bindings.values():
+        if remove:
+            namespace.pop(child, None)
     for name in previous:
         del sys.modules[name]
     sys.meta_path.insert(0, loader)
@@ -1063,7 +1074,7 @@ def _source_only_authority(sources):
             if name in previous or name == "scripts" or name.startswith("scripts."):
                 del sys.modules[name]
         sys.modules.update(previous)
-        for namespace, child, value in package_bindings:
+        for namespace, child, value, remove in package_bindings.values():
             if value is missing:
                 namespace.pop(child, None)
             else:

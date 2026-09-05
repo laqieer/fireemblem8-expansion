@@ -93,9 +93,11 @@ workflow, using credentials, or changing ROM behavior.
     cannot import an ambient package, including an already cached one.
     The exact-tree API must reject a committed initializer trying the cached
     external-module route. Cached child-module attributes on a trusted
-    package must not bypass this through a from-import. Genuine system
+    package must not bypass this through a from-import, including orphaned
+    bindings with no module-table entry and exports under another alias.
+    Genuine system
     standard-library modules may load instead of quarantined shadows, and
-    caller caches and package bindings return unchanged after success or
+    quarantined caller modules and package bindings return unchanged after success or
     failure. Trusted system loading also succeeds despite an ambient finder
     or repository shadow. The ordinary-loader negative control executes only an
     inert package that raises a deliberate error. A 1 MiB authority source

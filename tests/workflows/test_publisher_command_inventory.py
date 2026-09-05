@@ -681,32 +681,44 @@ class PublisherExactTreeTests(unittest.TestCase):
     def test_prebound_from_import_cannot_reuse_a_quarantined_package_attribute(self):
         sources = authority._bind_exact_sources(self.directory, self.commit)
         package = importlib.import_module("email")
-        fake = ModuleType("email.parser")
-        fake.__spec__ = importlib.util.spec_from_file_location(
-            fake.__name__, self.directory / "ambient-email-parser.py",
-        )
         original_import = builtins.__import__
-        with mock.patch.dict(sys.modules, {"email.parser": fake}), \
-             mock.patch.object(package, "parser", fake, create=True):
-            for importer in (original_import, importlib.__import__):
-                for fail in (False, True):
-                    with self.subTest(importer=importer.__module__, failure=fail):
-                        def exercise():
-                            with authority._source_only_authority(sources):
-                                actual = importer("email", fromlist=("parser",)).parser
-                                self.assertIsNot(actual, fake)
-                                message = actual.Parser().parsestr("Subject: captured\n\n")
-                                self.assertEqual(message["Subject"], "captured")
-                                if fail:
-                                    raise authority.InventoryError("fixture failure")
+        for name, cached in (("email.parser", True), ("email.parser", False),
+                             ("ambient_parser", True)):
+            fake = ModuleType(name)
+            fake.__spec__ = importlib.util.spec_from_file_location(
+                name, self.directory / "ambient-email-parser.py",
+            )
+            with mock.patch.dict(sys.modules), \
+                 mock.patch.object(package, "parser", fake, create=True):
+                for importer in (original_import, importlib.__import__):
+                    for fail in (False, True):
+                        with self.subTest(name=name, cached=cached,
+                                          importer=importer.__module__, failure=fail):
+                            sys.modules.pop("email.parser", None)
+                            if cached:
+                                sys.modules[name] = fake
+                            else:
+                                sys.modules.pop(name, None)
 
-                        if fail:
-                            with self.assertRaisesRegex(authority.InventoryError, "fixture failure"):
+                            def exercise():
+                                with authority._source_only_authority(sources):
+                                    actual = importer("email", fromlist=("parser",)).parser
+                                    self.assertIsNot(actual, fake)
+                                    message = actual.Parser().parsestr("Subject: captured\n\n")
+                                    self.assertEqual(message["Subject"], "captured")
+                                    if fail:
+                                        raise authority.InventoryError("fixture failure")
+
+                            if fail:
+                                with self.assertRaisesRegex(authority.InventoryError, "fixture failure"):
+                                    exercise()
+                            else:
                                 exercise()
-                        else:
-                            exercise()
-                        self.assertIs(sys.modules["email.parser"], fake)
-                        self.assertIs(package.parser, fake)
+                            if cached:
+                                self.assertIs(sys.modules[name], fake)
+                            else:
+                                self.assertIsNot(sys.modules.get(name), fake)
+                            self.assertIs(package.parser, fake)
 
     def test_exact_tree_api_cannot_import_cached_external_module_via_importlib(self):
         package = self.directory / "scripts/workflow_pilot/__init__.py"
