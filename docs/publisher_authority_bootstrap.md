@@ -1,9 +1,18 @@
 # Publisher authority bootstrap commands
 
-These copy/paste commands are the canonical local entry protocol for the patch
-publisher authority. They authenticate `HEAD`, the Git object format and object
-chain, then execute only captured snapshot bytes. Run them from the repository
-root. Do not replace them with `python -m` or a live script pathname.
+These commands serialize the canonical child argv for the patch publisher
+authority. They are **diagnostic conveniences only** when copied into a known
+clean shell. A command cannot sanitize `LD_PRELOAD`, an exported function, or
+other code that its parent shell already loaded.
+
+Authoritative execution starts in a trusted parent process (the GitHub Actions
+runner or a base-owned orchestrator) that has already authenticated the
+captured `scripts/upstream_port/verify.py` bytes. That parent calls
+`publisher_authority_invocation`, supplies its returned closed environment,
+and launches the absolute argv with `shell=False` and `close_fds=True`.
+`run_gates()` follows that protocol for every gate. The commands below remain
+useful for reproducing the same child behavior from a trusted clean shell, but
+they are not themselves a trust root.
 
 ## Registry check
 

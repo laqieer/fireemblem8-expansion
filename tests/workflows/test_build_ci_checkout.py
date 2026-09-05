@@ -5,6 +5,7 @@ import unittest
 from pathlib import Path
 
 from scripts.workflow_pilot import publisher_command_signatures
+from scripts.upstream_port import verify as upstream_verify
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -71,6 +72,8 @@ def _contract_errors(text):
                 "        AUTHORITY_SUITE: check\n"
                 "        BASH_ENV: ''\n"
                 "        ENV: ''\n"
+                "        DYLD_LIBRARY_PATH: ''\n"
+                "        DYLD_INSERT_LIBRARIES: ''\n"
                 f"        EXPECTED_AUTHORITY_SHA: {EXPECTED_SHA}\n"
                 "        GIT_CONFIG_COUNT: '0'\n"
                 "        GIT_CONFIG_GLOBAL: /dev/null\n"
@@ -84,23 +87,22 @@ def _contract_errors(text):
                 "        PATH: /usr/bin:/bin\n"
                 "        PYTHONHOME: ''\n"
                 "        PYTHONPATH: ''\n"
+                "      shell: /usr/bin/python3 -I -S {0}\n"
+                "      run: |\n"
             )
-        expected_variable = (
-            "EXPECTED_AUTHORITY_SHA"
-            if name == "host-tests"
-            else "EXPECTED_BUILD_SHA"
-        )
-        actual_sha_command = (
-            '/usr/bin/git rev-parse HEAD'
-            if name == "host-tests"
-            else "git rev-parse HEAD"
-        )
-        verification += (
-            '      run: |\n'
-            f'        ACTUAL_SHA="$({actual_sha_command})"\n'
-            "        printf 'checkout.sha=%s\\n' \"$ACTUAL_SHA\"\n"
-            f'        test "$ACTUAL_SHA" = "${expected_variable}"'
-        )
+            verification += "".join(
+                f"        {line}\n" if line else "\n"
+                for line in upstream_verify
+                .publisher_authority_ci_launcher_script()
+                .splitlines()
+            ).rstrip("\n")
+        else:
+            verification += (
+                '      run: |\n'
+                '        ACTUAL_SHA="$(git rev-parse HEAD)"\n'
+                "        printf 'checkout.sha=%s\\n' \"$ACTUAL_SHA\"\n"
+                '        test "$ACTUAL_SHA" = "$EXPECTED_BUILD_SHA"'
+            )
         if verification not in job:
             errors.append(f"{name} must immediately verify the checkout")
             continue

@@ -179,13 +179,16 @@ commit, every traversed tree, and every blob against the object ID before using
 it, so a misnamed or shadowing loose object cannot redefine the selected tree.
 The loader obtains the parser, registry, workflow, both consuming validators,
 their tests, required Python packages, and package initializers from that
-authenticated tree. CI, local verifier gates, tests, and the copy/paste
-[local commands](publisher_authority_bootstrap.md) use one byte-identical
+authenticated tree. CI, local verifier gates, and tests use one byte-identical
 `/usr/bin/python3 -I -S -c` protocol. Its compact inline payload authenticates
 and executes the shared bootstrap and loader blobs; no live repository module
 is opened or imported first, and the workflow has no duplicated authority
 heredoc. No ordinary discovery process imports these consumers from the mutable
-checkout. The bootstrap
+checkout. Local verifier execution uses `subprocess.run` with `shell=False`,
+`close_fds=True`, an absolute interpreter, and a closed environment. CI uses
+the same serialized child argv/environment from a Python shell template
+launched directly by the trusted Actions runner. A malicious current shell is
+explicitly outside this authority boundary. The bootstrap
 detects the repository's declared `sha1` or `sha256` storage format and uses
 the corresponding object-ID and raw tree-entry widths; unknown or mixed
 formats fail. It then walks

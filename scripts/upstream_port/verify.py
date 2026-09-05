@@ -114,6 +114,107 @@ def publisher_authority_command(
         mode,
         *arguments,
     ]
+
+
+_CLOSED_ENVIRONMENT = {
+    "BASH_ENV": "",
+    "DYLD_INSERT_LIBRARIES": "",
+    "DYLD_LIBRARY_PATH": "",
+    "ENV": "",
+    "GIT_CONFIG_COUNT": "0",
+    "GIT_CONFIG_GLOBAL": "/dev/null",
+    "GIT_CONFIG_NOSYSTEM": "1",
+    "GIT_NO_LAZY_FETCH": "1",
+    "GIT_NO_REPLACE_OBJECTS": "1",
+    "LANG": "C.UTF-8",
+    "LC_ALL": "C.UTF-8",
+    "LD_AUDIT": "",
+    "LD_LIBRARY_PATH": "",
+    "LD_PRELOAD": "",
+    "PATH": "/usr/local/bin:/usr/bin:/bin",
+    "PYTHONHOME": "",
+    "PYTHONPATH": "",
+}
+
+
+def closed_gate_environment(
+    repository_root: str,
+    overrides: dict[str, str] | None = None,
+) -> dict[str, str]:
+    environment = {
+        **_CLOSED_ENVIRONMENT,
+        "HOME": os.path.abspath(repository_root),
+    }
+    for name, value in (overrides or {}).items():
+        if (
+            name.startswith(("BASH_FUNC_", "DYLD_", "GIT_", "LD_", "PYTHON"))
+            or name in {"BASH_ENV", "ENV", "HOME", "IFS", "PATH"}
+            or _ENV_ASSIGN_RE.fullmatch(f"{name}=") is None
+        ):
+            raise ValueError(f"unsafe gate environment override: {name}")
+        environment[name] = value
+    return environment
+
+
+def publisher_authority_invocation(
+    repository_root: str,
+    revision: str,
+    mode: str,
+    *arguments: str,
+) -> tuple[List[str], dict[str, str]]:
+    return (
+        publisher_authority_command(
+            repository_root,
+            revision,
+            mode,
+            *arguments,
+        ),
+        closed_gate_environment(repository_root),
+    )
+
+
+def publisher_authority_ci_launcher_script() -> str:
+    prefix = publisher_authority_command("", "", "$AUTHORITY_SUITE")[:6]
+    return (
+        "import os\n"
+        "import resource\n\n"
+        f"argv = {prefix!r} + [\n"
+        '    os.environ["GITHUB_WORKSPACE"],\n'
+        '    os.environ["EXPECTED_AUTHORITY_SHA"],\n'
+        '    os.environ["AUTHORITY_SUITE"],\n'
+        "]\n"
+        f"environment = {_CLOSED_ENVIRONMENT!r}\n"
+        'environment["HOME"] = os.environ["GITHUB_WORKSPACE"]\n'
+        "descriptor_limit = min(\n"
+        "    resource.getrlimit(resource.RLIMIT_NOFILE)[0],\n"
+        "    1048576,\n"
+        ")\n"
+        "os.closerange(3, descriptor_limit)\n"
+        "os.execve(argv[0], argv, environment)\n"
+    )
+
+
+def run_publisher_authority(
+    repository_root: str,
+    revision: str,
+    mode: str,
+    *arguments: str,
+) -> subprocess.CompletedProcess:
+    argv, environment = publisher_authority_invocation(
+        repository_root,
+        revision,
+        mode,
+        *arguments,
+    )
+    return subprocess.run(
+        argv,
+        cwd=repository_root,
+        env=environment,
+        shell=False,
+        close_fds=True,
+        capture_output=True,
+        text=True,
+    )
 _SOURCE_ROOT = os.path.realpath(
     os.path.join(os.path.dirname(__file__), "..", "..")
 )
@@ -946,6 +1047,8 @@ _PUBLISHER_AUTHORITY_SUITES = {
 }
 _PUBLISHER_AUTHORITY_ENV = {
     "BASH_ENV": "''",
+    "DYLD_INSERT_LIBRARIES": "''",
+    "DYLD_LIBRARY_PATH": "''",
     "ENV": "''",
     "EXPECTED_AUTHORITY_SHA": (
         "${{ (needs.event-classifier.result == 'success' && "
@@ -1700,6 +1803,14 @@ def _parse_step(block, job_name, index):
 
     values = {}
     literal_run_script = None
+    preparsed_name = next(
+        (
+            raw_value.strip()
+            for name, raw_value, _line_index in direct
+            if name == "name"
+        ),
+        None,
+    )
     for field_index, (name, raw_value, line_index) in enumerate(direct):
         end = (
             direct[field_index + 1][2]
@@ -1720,14 +1831,11 @@ def _parse_step(block, job_name, index):
                 step_label,
             )
         elif name == "run":
-            values[name] = _parse_run_value(
-                lines,
-                line_index + 1,
-                end,
-                value,
-                step_label,
-            )
-            if value == "|":
+            if (
+                job_name == "host-tests"
+                and preparsed_name in _PUBLISHER_AUTHORITY_SUITES
+                and value == "|"
+            ):
                 literal_run_script = _literal_run_script(
                     lines,
                     line_index + 1,
@@ -1735,6 +1843,23 @@ def _parse_step(block, job_name, index):
                     value,
                     step_label,
                 )
+                values[name] = ()
+            else:
+                values[name] = _parse_run_value(
+                    lines,
+                    line_index + 1,
+                    end,
+                    value,
+                    step_label,
+                )
+                if value == "|":
+                    literal_run_script = _literal_run_script(
+                        lines,
+                        line_index + 1,
+                        end,
+                        value,
+                        step_label,
+                    )
         else:
             scalar = value.strip()
             if name == "uses":
@@ -1757,23 +1882,10 @@ def _parse_step(block, job_name, index):
         else None
     )
     if authority_suite is not None:
-        workflow_command = tuple(
-            publisher_authority_command(
-                "$GITHUB_WORKSPACE",
-                "$EXPECTED_AUTHORITY_SHA",
-                "$AUTHORITY_SUITE",
-            )
-        )
-        expected_commands = (
-            (
-                'ACTUAL_SHA=$(/usr/bin/git rev-parse HEAD)',
-            ),
-            ("printf", "checkout.sha=%s\\n", "$ACTUAL_SHA"),
-            ("test", "$ACTUAL_SHA", "=", "$EXPECTED_AUTHORITY_SHA"),
-            workflow_command,
-        ) if authority_suite == "check" else (workflow_command,)
         if (
-            values.get("run") != expected_commands
+            (literal_run_script or "").rstrip() + "\n"
+            != publisher_authority_ci_launcher_script()
+            or values.get("shell") != "/usr/bin/python3 -I -S {0}"
             or values.get("env")
             != tuple(
                 sorted(
@@ -2271,16 +2383,16 @@ def _parse_step(block, job_name, index):
             except ValueError as error:
                 raise ValueError(f"{step_label} summary script differs") from error
         else:
-            expected_fields = (
-                {"name", "env", "run"}
-                if authority_suite is not None
-                or name in {
+            if authority_suite is not None:
+                expected_fields = {"name", "env", "run", "shell"}
+            elif name in {
                     _WORKFLOW_PILOT_TEST_STEP_NAME,
                     _WORKFLOW_PILOT_BASELINE_STEP_NAME,
                     "Hydrate workflow-pilot Git authority",
-                }
-                else {"name", "run"}
-            )
+            }:
+                expected_fields = {"name", "env", "run"}
+            else:
+                expected_fields = {"name", "run"}
             if (job_name, name) in _FULL_MODE_ONLY_JOB_STEPS:
                 expected_fields.add("if")
             if set(values) != expected_fields:
@@ -2926,10 +3038,10 @@ def run_gates(
         env_overrides, argv = _split_env_prefix(gate.command)
         argv, stdout = _split_stdout_redirect(argv)
         argv = _expand_workspace(argv, repository_root)
-        child_env = None
-        if env_overrides:
-            child_env = dict(os.environ)
-            child_env.update(env_overrides)
+        child_env = closed_gate_environment(
+            repository_root,
+            env_overrides,
+        )
         proc = subprocess.run(
             argv,
             cwd=repository_root,
@@ -2937,6 +3049,8 @@ def run_gates(
             stdout=stdout,
             stderr=subprocess.PIPE,
             text=True,
+            shell=False,
+            close_fds=True,
         )
         result = GateResult(
             gate=gate,

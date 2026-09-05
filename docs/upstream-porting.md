@@ -174,11 +174,11 @@ without `--force`) are rejected.
 
 ### 6. Verify the manually-applied batch
 
-Run the copy/paste
-[authenticated full verifier command](publisher_authority_bootstrap.md#full-upstream-verifier),
-or its
-[dry-run form](publisher_authority_bootstrap.md#full-upstream-verifier-dry-run)
-to list the gate commands without executing them.
+Authoritative execution requires a trusted parent to invoke the direct-exec
+contract described in
+[`publisher_authority_bootstrap.md`](publisher_authority_bootstrap.md).
+The full and dry-run shell strings there are diagnostics for a known-clean
+shell only; they cannot establish trust when their parent shell is compromised.
 
 **⚠️ This builds and checks the CURRENT TRUSTED WORKTREE (your repo, after
 you manually applied whatever you accepted) — it never builds, checks out,

@@ -119,7 +119,6 @@ class PublisherCommandSignatureTests(unittest.TestCase):
             "Run upstream-port tooling test suite": "upstream-port",
             "Run workflow contract test suite": "workflows",
         }
-        commands = []
         for step_name, suite in suites.items():
             with self.subTest(step=step_name):
                 position = self.workflow.index(f"- name: {step_name}")
@@ -134,29 +133,31 @@ class PublisherCommandSignatureTests(unittest.TestCase):
                     position : block_end if block_end >= 0 else len(self.workflow)
                 ]
                 self.assertNotIn("<<'PY'", block)
-                command_line = next(
-                    line.strip()
-                    for line in block.splitlines()
-                    if "/usr/bin/python3 -I -S -c " in line
+                self.assertIn(
+                    "shell: /usr/bin/python3 -I -S {0}",
+                    block,
                 )
-                command = command_line.split(
-                    "/usr/bin/python3",
-                    1,
-                )[1]
-                command = "/usr/bin/python3" + command
-                argv = shlex.split(command)
+                run_marker = "      run: |\n"
+                script_lines = []
+                for line in block.split(run_marker, 1)[1].splitlines():
+                    if line.startswith("        "):
+                        script_lines.append(line[8:])
+                    elif not line:
+                        script_lines.append("")
+                    else:
+                        break
+                script = "\n".join(script_lines).rstrip() + "\n"
                 self.assertEqual(
-                    argv,
-                    upstream_verify.publisher_authority_command(
-                        "$GITHUB_WORKSPACE",
-                        "$EXPECTED_AUTHORITY_SHA",
-                        "$AUTHORITY_SUITE",
-                    ),
+                    script,
+                    upstream_verify.publisher_authority_ci_launcher_script(),
+                )
+                argv = upstream_verify.publisher_authority_command(
+                    "$GITHUB_WORKSPACE",
+                    "$EXPECTED_AUTHORITY_SHA",
+                    "$AUTHORITY_SUITE",
                 )
                 self.assertEqual(argv[:4], ["/usr/bin/python3", "-I", "-S", "-c"])
                 self.assertNotIn("-m", argv[:5])
-                commands.append(tuple(argv))
-        self.assertEqual(len(set(commands)), 1)
 
     def test_shared_bootstrap_payload_matches_authenticated_source_blob(self):
         payload = zlib.decompress(
@@ -179,6 +180,9 @@ class PublisherCommandSignatureTests(unittest.TestCase):
         document = (
             ROOT / "docs" / "publisher_authority_bootstrap.md"
         ).read_text(encoding="utf-8")
+        self.assertIn("diagnostic conveniences only", document)
+        self.assertIn("trusted parent process", document)
+        self.assertIn("shell=False", document)
         commands = re.findall(r"```bash\n([^\n]+)\n```", document)
         expected = [
             upstream_verify.publisher_authority_command(".", "HEAD", "check"),
@@ -259,17 +263,11 @@ class PublisherCommandSignatureTests(unittest.TestCase):
                 ("upstream-verify", ("--dry-run",)),
             ):
                 with self.subTest(mode=mode):
-                    completed = subprocess.run(
-                        upstream_verify.publisher_authority_command(
-                            str(checkout),
-                            "HEAD",
-                            mode,
-                            *arguments,
-                        ),
-                        cwd=checkout,
-                        check=False,
-                        capture_output=True,
-                        text=True,
+                    completed = upstream_verify.run_publisher_authority(
+                        str(checkout),
+                        "HEAD",
+                        mode,
+                        *arguments,
                     )
                     self.assertEqual(
                         completed.returncode,
@@ -282,16 +280,10 @@ class PublisherCommandSignatureTests(unittest.TestCase):
             initializer.write_text(
                 "raise AssertionError('live package imported')\n"
             )
-            completed = subprocess.run(
-                upstream_verify.publisher_authority_command(
-                    str(checkout),
-                    "HEAD",
-                    "check",
-                ),
-                cwd=checkout,
-                check=False,
-                capture_output=True,
-                text=True,
+            completed = upstream_verify.run_publisher_authority(
+                str(checkout),
+                "HEAD",
+                "check",
             )
             self.assertNotEqual(completed.returncode, 0)
 

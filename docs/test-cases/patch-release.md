@@ -324,18 +324,18 @@ case does not test an unpublished base through CI.
 
 ### Actions
 
-1. Run the copy/paste
+1. From a trusted parent, run the direct-exec
    [registry-check command](../publisher_authority_bootstrap.md#registry-check).
 
 2. Run the table-driven positive, adversarial, helper, drift, deletion, and
    mirrored-validator suite through the authenticated snapshot bootstrap:
 
-   Use the copy/paste
+   From a trusted parent, use the direct-exec
    [workflow-consumer command](../publisher_authority_bootstrap.md#authenticated-workflow-consumers).
 
 3. Run the upstream workflow mirror through the same bootstrap:
 
-   Use the copy/paste
+   From a trusted parent, use the direct-exec
    [upstream-port command](../publisher_authority_bootstrap.md#authenticated-upstream-port-consumers).
 
 ### Expected result

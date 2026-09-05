@@ -10,7 +10,6 @@ import io
 import json
 import os
 import re
-import shlex
 import shutil
 import stat
 import subprocess
@@ -1433,7 +1432,13 @@ def _publisher_authority_bootstrap_is_reviewed(
 ) -> bool:
     if _step_name(step) != name:
         return False
-    if _direct_step_mapping_fields(step) != ["name", "if", "env", "run"]:
+    if _direct_step_mapping_fields(step) != [
+        "name",
+        "if",
+        "env",
+        "shell",
+        "run",
+    ]:
         return False
     if f"      if: {FULL_WORKER_STEP_CONDITION}" not in step:
         return False
@@ -1441,6 +1446,8 @@ def _publisher_authority_bootstrap_is_reviewed(
         f"        AUTHORITY_SUITE: {suite}",
         "        BASH_ENV: ''",
         "        ENV: ''",
+        "        DYLD_LIBRARY_PATH: ''",
+        "        DYLD_INSERT_LIBRARIES: ''",
         "        EXPECTED_AUTHORITY_SHA: "
         f"{EXPECTED_BUILD_SHA_EXPRESSION}",
         "        GIT_CONFIG_COUNT: '0'",
@@ -1457,23 +1464,11 @@ def _publisher_authority_bootstrap_is_reviewed(
         "        PYTHONPATH: ''",
     ):
         return False
-    protocol = upstream_verify.publisher_authority_command(
-        "$GITHUB_WORKSPACE",
-        "$EXPECTED_AUTHORITY_SHA",
-        "$AUTHORITY_SUITE",
+    if "      shell: /usr/bin/python3 -I -S {0}\n" not in step:
+        return False
+    return _literal_run_script(step).rstrip() + "\n" == (
+        upstream_verify.publisher_authority_ci_launcher_script()
     )
-    commands = [tuple(shlex.split(command)) for command in _run_block_commands(step)]
-    expected_commands = (
-        [
-            ("ACTUAL_SHA=$(/usr/bin/git rev-parse HEAD)",),
-            ("printf", "checkout.sha=%s\\n", "$ACTUAL_SHA"),
-            ("test", "$ACTUAL_SHA", "=", "$EXPECTED_AUTHORITY_SHA"),
-            tuple(protocol),
-        ]
-        if suite == "check"
-        else [tuple(protocol)]
-    )
-    return commands == expected_commands
 
 
 def _protected_host_prefix_errors(host: str) -> list[str]:
@@ -2523,9 +2518,8 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                 1,
             ),
             self.text.replace(
-                '        test "$ACTUAL_SHA" = "$EXPECTED_AUTHORITY_SHA"\n',
-                '        test "$ACTUAL_SHA" = "$EXPECTED_AUTHORITY_SHA"\n'
-                '        echo "BASH_ENV=build/mask" >> "$GITHUB_ENV"\n',
+                "        os.execve(argv[0], argv, environment)\n",
+                "        raise SystemExit(0)\n",
                 1,
             ),
             self.text.replace(

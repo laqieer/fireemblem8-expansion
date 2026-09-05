@@ -2,6 +2,7 @@ import ast
 import contextlib
 import inspect
 import io
+import json
 import os
 import re
 import subprocess
@@ -104,6 +105,24 @@ class VerifyGatesMirrorWorkflowTests(unittest.TestCase):
                 "upstream-port",
             )
             self.assertEqual(command[:4], ["/usr/bin/python3", "-I", "-S", "-c"])
+            argv, environment = verify_mod.publisher_authority_invocation(
+                ".",
+                "HEAD",
+                "upstream-port",
+            )
+            self.assertEqual(argv, command)
+            self.assertEqual(
+                set(environment),
+                set(verify_mod._CLOSED_ENVIRONMENT) | {"HOME"},
+            )
+            launcher = verify_mod.publisher_authority_ci_launcher_script()
+            self.assertIn(repr(command[:6]), launcher)
+            self.assertIn(repr(verify_mod._CLOSED_ENVIRONMENT), launcher)
+            run_gates_source = inspect.getsource(verify_mod.run_gates)
+            self.assertIn("env=child_env", run_gates_source)
+            self.assertIn("shell=False", run_gates_source)
+            self.assertIn("close_fds=True", run_gates_source)
+            self.assertNotIn("child_env = None", run_gates_source)
 
     def test_all_locales_gate_mirrors_required_presentation_target(self):
         gate = next(
@@ -703,6 +722,52 @@ class HostOnlyEnvGateMirrorTests(unittest.TestCase):
                     f"switch: the ROM/runtime gates own live coverage",
                 )
 
+    def test_authority_direct_exec_drops_native_loader_and_shell_injection(self):
+        artifact_root = os.path.join(REPO_ROOT, "build", "test-artifacts")
+        os.makedirs(artifact_root, exist_ok=True)
+        with tempfile.TemporaryDirectory(
+            prefix="publisher-direct-exec-",
+            dir=artifact_root,
+        ) as temporary:
+            marker = os.path.join(temporary, "native-loader-ran")
+            source = os.path.join(temporary, "preload.c")
+            library = os.path.join(temporary, "preload.so")
+            with open(source, "w", encoding="utf-8") as handle:
+                handle.write(
+                    "#include <stdio.h>\n"
+                    "__attribute__((constructor)) static void loaded(void) {\n"
+                    f"  FILE *stream = fopen({json.dumps(marker)}, \"w\");\n"
+                    "  if (stream) { fputs(\"loaded\", stream); fclose(stream); }\n"
+                    "}\n"
+                )
+            subprocess.run(
+                ["/usr/bin/cc", "-shared", "-fPIC", source, "-o", library],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            hostile = {
+                "BASH_ENV": os.path.join(temporary, "bash-env"),
+                "BASH_FUNC_/usr/bin/python3%%": "() { return 0; }",
+                "DYLD_INSERT_LIBRARIES": library,
+                "LD_AUDIT": library,
+                "LD_LIBRARY_PATH": temporary,
+                "LD_PRELOAD": library,
+                "PATH": temporary,
+                "PYTHONHOME": temporary,
+                "PYTHONPATH": temporary,
+            }
+            with mock.patch.dict(os.environ, hostile, clear=False):
+                result = verify_mod.run_publisher_authority(
+                    REPO_ROOT,
+                    publisher_command_signatures
+                    ._authority_snapshot()
+                    .revision,
+                    "check",
+                )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertFalse(os.path.exists(marker))
+
     def test_workflow_sets_host_only_in_the_host_job_only(self):
         workflow = _build_workflow_text()
         host_job_start = workflow.index("\n  host-tests:\n")
@@ -730,7 +795,10 @@ class HostOnlyEnvGateMirrorTests(unittest.TestCase):
         seen = []
 
         def fake_run(argv, cwd=None, env=None, **kwargs):
-            seen.append((tuple(argv), None if env is None else dict(env)))
+            self.assertIsNotNone(env)
+            self.assertIs(kwargs.get("shell"), False)
+            self.assertIs(kwargs.get("close_fds"), True)
+            seen.append((tuple(argv), dict(env)))
             return subprocess.CompletedProcess(argv, 0, stdout="", stderr="")
 
         parent_env = {key: value for key, value in os.environ.items()}
@@ -772,14 +840,27 @@ class HostOnlyEnvGateMirrorTests(unittest.TestCase):
         for index, (gate, (argv, env)) in enumerate(
             zip(verify_mod.gates(jobs=2), seen)
         ):
+            overrides, _gate_argv = verify_mod._split_env_prefix(gate.command)
+            allowed = (
+                set(verify_mod._CLOSED_ENVIRONMENT)
+                | {"HOME"}
+                | set(overrides)
+            )
+            self.assertEqual(set(env), allowed)
             if index == host_index:
                 continue
             with self.subTest(gate=gate.name):
                 self.assertNotIn(
                     self.HOST_ONLY_ENV,
-                    {} if env is None else env,
+                    env,
                     f"host-only mode leaked into {gate.name}",
                 )
+                for name in env:
+                    self.assertFalse(
+                        name.startswith(("BASH_FUNC_", "DYLD_", "LD_"))
+                        and env[name],
+                        f"unsafe loader or shell environment reached {gate.name}",
+                    )
 
     def test_run_gates_preserves_argv_order_at_target_repository_root(self):
         seen = []
