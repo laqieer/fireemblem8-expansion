@@ -169,7 +169,11 @@ def _metadata_directory(raw: bytes | None, prefix: bytes, base: Path) -> Path:
 
 def reject_git_metadata(repository_root: Path, paths: tuple[tuple[str, str], ...]) -> None:
     entry = repository_root / ".git"
-    private = entry if stat.S_ISDIR(entry.lstat().st_mode) else _metadata_directory(
+    try:
+        mode = entry.lstat().st_mode
+    except FileNotFoundError as error:
+        raise ValueError("repository .git entry is missing") from error
+    private = entry if stat.S_ISDIR(mode) else _metadata_directory(
         _metadata_file(entry, ".git entry", read=True), b"gitdir: ", repository_root
     )
     common = _metadata_file(private / "commondir", "commondir", read=True)
