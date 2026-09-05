@@ -325,6 +325,16 @@ must record before closure:
 feature requests and bug fixes, `/development-workflow` is authoritative
 wherever generic review or closure guidance conflicts with it. In short:
 
+- Immediately owner-push every new task commit, including WIP/checkpoints;
+  never retain it locally for review, extra validation, CI, or batching.
+  Implementation agents immediately hand off the exact commit without pushing.
+  Open/update the dedicated PR (draft when incomplete) and canonical evidence
+  comment with issue, branch/head, owner, scope, state, remaining work, and
+  blockers so other contributors/agents do not duplicate it. Persistence is
+  not acceptance or completion; retain every final quality gate and report
+  failed pushes explicitly. Follow the canonical
+  [publication protocol](.github/skills/development-workflow/SKILL.md#immediate-publication-and-visible-work)
+  and [tester case](docs/test-cases/workflow-governance.md#tc-workflow-immediate-push-001-publish-new-commits-immediately-and-expose-wip-ownership).
 - Issue closure is an evidence-based decision recorded in the PR/issue thread
   (frozen scope, every command run and its result, runtime/playtest evidence
   when relevant), not a machine-readable schema. For features and bug fixes,
