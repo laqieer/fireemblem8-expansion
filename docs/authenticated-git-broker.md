@@ -158,11 +158,14 @@ dependent handoff remains ineligible, rather than guessing success.
 
 ## Deployment and fail-closed preflight
 
-Dependencies: Linux Unix sockets/`SO_PEERCRED`, Python 3.10+, Git with atomic
-push support, OpenSSL 3 and systemd cgroup supervision. The focused schema
-tests also use the existing `jsonschema` validator. No new tool is installed
-by broker startup or tests. The production modules use the Python standard
-library only.
+Dependencies: Linux Unix sockets/`SO_PEERCRED`, sealed `memfd`/procfs handles,
+Python 3.10+, Git with atomic push support, OpenSSL 3 and systemd cgroup
+supervision. SSH additionally uses the existing OpenSSH `ssh` and `ssh-keygen`
+executables. Network deployments require the root-owned system CA bundle at
+`/etc/ssl/certs/ca-certificates.crt`. The focused tests use OpenSSH for
+synthetic keys/configuration and the existing `jsonschema` validator. No new
+tool is installed by broker startup or tests. The production modules use the
+Python standard library only.
 
 An external administrator must provision the dedicated principals and
 root-owned code installation. **Do not create users, alter permissions on
@@ -221,7 +224,8 @@ the protected PR191 installation. A User bypass includes matching `actor_id`
 and `database_id`; non-user types are explicit, not guessed from numeric IDs.
 The policy and journal are frozen together.
 
-Supported transports:
+Supported transports (closed root-installed **transport policy**, not request
+fields):
 
 - `{"kind":"local"}`: endpoint `file:///absolute/protected/remote.git`, below
   the broker's private state. Native bare Git `receive.denyNonFastForwards`,
@@ -229,16 +233,76 @@ Supported transports:
   bare/receive config is allowed; includes, alternate object stores, external
   hook paths, special files and links reject. The complete config, hooks,
   refs and objects must be inaccessible to candidates.
-- `{"kind":"https","token_file":"...","helper":"..."}`: endpoint is exactly
-  `https://github.com/OWNER/REPOSITORY.git`. `helper` is this exact installed
-  `git_broker.py`. The helper answers only an exact HTTPS host/repository
-  credential request. The broker-only token never appears in argv, client
-  files/environment, logs or responses. Redirects and ambient Git credentials
-  or configuration are disabled.
-- `{"kind":"ssh","key":"...","known_hosts":"..."}`: endpoint is exactly
-  `ssh://git@github.com/OWNER/REPOSITORY.git`. `known_hosts` is root-provisioned;
-  strict host checking is mandatory. No SSH agent, ambient SSH config, proxy
-  command, forwarding, interactive prompt or password fallback is allowed.
+- `{"kind":"https","credential_kind":"github-fine-grained-user-pat","token_file":"...","helper":"..."}`:
+  endpoint is exactly `https://github.com/OWNER/REPOSITORY.git`. `helper` is
+  this exact installed `git_broker.py`. Only a GitHub fine-grained personal
+  access token with the `github_pat_` prefix is supported. A prefix or
+  protected file **does not prove identity**: the exact token must
+  authenticate `GET https://api.github.com/user`, returning `type: "User"`
+  and the integer `id` equal to `policy.actor_id`, which must also be the
+  installed always-bypass User/database ID. Git receives that same verified
+  token through the exact-host/repository helper, never through argv or an
+  environment value. Redirects and ambient credentials/configuration are
+  disabled. The token needs the disposable repository's required Git write
+  permission; identity verification does not grant repository permissions.
+- `{"kind":"ssh","credential_kind":"github-user-ed25519","key":"...","known_hosts":"...","public_key_fingerprint":"SHA256:..."}`:
+  endpoint is exactly `ssh://git@github.com/OWNER/REPOSITORY.git`. The key
+  must be an unencrypted plain Ed25519 **User** authentication key. Its public
+  SHA-256 fingerprint (OpenSSH's canonical unpadded `SHA256:` Base64 form)
+  is pinned out of band in this protected transport policy. The broker
+  derives the actual public key with `ssh-keygen -y`, checks the fingerprint,
+  and authenticates `ssh -T git@github.com` with the very same private key
+  and root-pinned `known_hosts`. Only exit 1 and GitHub's exact documented
+  `Hi USERNAME! You've successfully authenticated, but GitHub does not provide shell access.`
+  greeting are accepted. A TLS-verified `GET
+  https://api.github.com/users/USERNAME` must then return that exact login,
+  `type: "User"` and the integer `id` equal to the installed actor/bypass ID.
+  The public API lookup alone is **not** key proof: it follows the
+  authenticated, host-verified SSH greeting and pinned key derivation.
+  No agent, SSH certificate, alternate identity/configuration, global
+  known-host file, DNS host-key trust, host-key update, proxy, forwarding,
+  prompt or password fallback is allowed.
+
+Network identity verification runs at server preflight and **before every
+remote Git invocation**, including readback. The production broker captures
+the protected token/private-key bytes once, checks the opened file's owner,
+mode, link count and size, and copies them into a private Linux memfd sealed
+against writes, growth, shrinkage and seal changes. SSH host-key trust is
+captured into another sealed memfd. The broker keeps those exact handles open
+through identity verification and the subsequent Git command; helper/SSH
+children access the broker's procfs handles rather than reopening the original
+files. Replacing an original file after verification cannot substitute the
+credential or host trust used by Git. Handles close on every exit, and no
+credential snapshot is written to a filesystem or sent to the coordinator.
+
+The installed `credential-check` subprocess is an internal closed worker,
+not a new daemon or caller-facing credential API. It can query only
+`api.github.com:443`, uses the fixed protected system CA bundle and hostname
+verification, and ignores proxy/CA environment overrides. It never follows
+redirects or retries, and rejects malformed, duplicate-field, oversized,
+non-200 or compressed identity responses. The existing independent
+eight-second subprocess watchdog bounds the whole identity check, including
+DNS, TLS, the SSH probe and body reading; remaining session/plan lifetime
+shortens it. Its only successful output is `verified`, not credential
+material, remote messages or user profile data.
+
+**Explicit limits:** classic PATs, OAuth tokens, App user/installation tokens,
+deploy keys, SSH certificates, encrypted keys, other key algorithms and GitHub
+Enterprise are unsupported and fail closed. Non-User bypass entries do not
+authorize any of those credential types. Old network manifests lacking the
+explicit credential kind/key fingerprint must be reprovisioned; local
+transport and the signed plan schema are unchanged. A changed GitHub greeting,
+unavailable/rate-limited API, stale key registration, missing host trust or
+ambiguous principal rejects, not a success-shaped fallback. These are fresh
+observations of GitHub's current identity binding, not a promise that a remote
+administrator can never revoke/reassign a key. Keep key ownership and account
+registration under the external deployment's control.
+
+Identity contracts use GitHub's
+[authenticated-user endpoint](https://docs.github.com/en/rest/users/users#get-the-authenticated-user)
+and [documented SSH test](https://docs.github.com/en/authentication/connecting-to-github-with-ssh/testing-your-ssh-connection).
+Do not derive a trust root, bypass principal or key pin from a submitted plan,
+an unauthenticated banner, or an API response.
 
 Preflight and client usage, run under the **already provisioned appropriate
 principal**, not from candidate code:
@@ -277,6 +341,9 @@ persistent journal or send UID/name-wide signals.
 | Expanded objects | 2 MiB each; 64 MiB total |
 | Plan/session lifetime | 30 seconds |
 | Git/OpenSSL subprocess | 8 seconds; independent timeout cleanup |
+| Complete network credential identity worker | 8 seconds; shortened to remaining plan/session time |
+| Token / SSH private key / host-key snapshot | 1 KiB / 16 KiB / 64 KiB |
+| GitHub identity body / SSH identity output | 16 KiB / 4 KiB |
 | Subprocess output | 4 MiB, never replayed into responses/logs |
 | Active request / queued connections | One / four |
 | Nonce journal | 100,000 consumed entries; no replay-enabling eviction |
@@ -318,6 +385,11 @@ The full tester procedure is
 There is no visual/audio/UX or human-review criterion.
 
 Noncredentialed real Git/TLS unit tests are deterministic protocol evidence.
+The credential regressions use synthetic GitHub responses with the actual
+identity validators, real Ed25519 derivation, parsed OpenSSH configuration,
+sealed-handle/file-substitution controls and a real TLS rejection of an
+untrusted fixture CA. They prove wrong-user/wrong-key rejection before remote
+Git, not live GitHub authentication.
 They are **not evidence of protected three-principal installation or GitHub
 authentication**. The required protected fixture fails (does not skip or
 pretend success) when the OS boundary is unavailable. GitHub HTTPS/SSH
@@ -334,10 +406,13 @@ root-owned installation and three reserved nonroot UIDs. That fixture is not
 currently invoked by unittest discovery. This would use synthetic keys and a
 local remote only, not real credentials, and would not discharge credentialed
 HTTPS/SSH or deployed-service cgroup acceptance. No such deployment or workflow
-change is part of this size-accounting fix; all external holds remain.
+change is part of this credential-principal correction; all external holds
+remain. The new credential tests are discovered by the existing host-test
+owner without a workflow change.
 
-Dependencies: existing signed-record, exact-repository and trusted external
-installation contracts. Dependent: PR191/#178. Conflict: its provisional
+Dependencies: existing signed-record, exact-repository, protected User bypass
+and trusted external installation contracts, plus the narrow GitHub credential
+contracts above. Dependent: PR191/#178. Conflict: its provisional
 unauthenticated broker/duplicate parser must be replaced; all other #178
 safeguards remain. No gameplay/profile/save/resource interactions.
 

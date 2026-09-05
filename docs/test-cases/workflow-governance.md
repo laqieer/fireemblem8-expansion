@@ -1474,8 +1474,8 @@ The complete deployment and public API contract is
 
 ### Prerequisites and clean state
 
-- Reviewed source checkout; Python 3.10+, Git, OpenSSL 3 and the existing
-  `jsonschema` validator for the focused schema tests.
+- Reviewed source checkout; Python 3.10+, Git, OpenSSL 3, OpenSSH and the
+  existing `jsonschema` validator for the focused schema tests.
 - For protected acceptance, an already authorized disposable Linux
   environment with a root-owned, publicly traversable installation. Three
   actual distinct kernel UIDs are required. Do not change a shared user's
@@ -1486,8 +1486,13 @@ The complete deployment and public API contract is
 - For live HTTPS/SSH acceptance, an owner-provided disposable repository,
   actual repository/ruleset/coordinator identities, both exact authority
   branches protected against rewrite/deletion, and a trusted terminal signer.
-  Provision token/key/host trust only inside the broker. Candidate processes
-  must never receive them. The normal repository is not the test endpoint.
+  Provision token/key/host trust only inside the broker. HTTPS supports only
+  an explicitly configured fine-grained User PAT. SSH supports only an
+  explicitly configured unencrypted Ed25519 User key with its public
+  fingerprint pinned in the protected transport policy. Both must
+  authenticate the installed numeric User/bypass principal. Candidate
+  processes must never receive credentials. The normal repository is not the
+  test endpoint; App tokens, OAuth/classic PATs and deploy keys are unsupported.
 
 ### Exact actions
 
@@ -1496,6 +1501,7 @@ The complete deployment and public API contract is
    ```bash
    /usr/bin/python3 -m unittest \
      scripts.workflow_pilot.tests.test_git_broker \
+     scripts.workflow_pilot.tests.test_git_broker_credentials \
      scripts.workflow_pilot.tests.test_signed_records -v
    ```
 
@@ -1516,6 +1522,19 @@ The complete deployment and public API contract is
    per-object cap and, separately, a 256 KiB aggregate cap must reject this
    pack without remote access. All fixture artifacts are isolated and removed
    by the tests; installed production limits remain unchanged.
+
+   The credential cases use synthetic, noncredentialed GitHub identity
+   responses with the production worker/parser and validator. A matching
+   User ID reaches remote Git; a wrong User ID, bot, boolean/missing identity,
+   unsupported credential kind, redirected/oversized/malformed response,
+   wrong Ed25519 key fingerprint or deploy-key SSH greeting must reject
+   **before** remote Git. Real key derivation and parsed OpenSSH configuration
+   check the supported key and disabled identity/host/password fallbacks.
+   Real TLS must reject the fixture CA even with poisoned CA/proxy environment.
+   Replace the original token/key/known-host files after verification:
+   helper/Git must still consume the original sealed snapshots. Attempts to
+   mutate those snapshots must fail, and handles must close afterward.
+   These observations do not prove protected deployment or live GitHub access.
 
 2. Run the protected acceptance command in the **already provisioned
    disposable root-owned installation**, under its authorized root test
@@ -1544,7 +1563,8 @@ The complete deployment and public API contract is
 
 3. In the external credentialed fixture, run the installed server/client
    preflight commands from the deployment guide. They must authenticate both
-   actual OS principals and pinned keys before any publication. Have the
+   actual OS principals, pinned keys and live credential User identity before
+   any publication. Have the
    existing trusted #178 validator/terminal signer produce a fresh complete
    signed publication and its exact full pack for the disposable endpoint.
 
@@ -1563,7 +1583,15 @@ The complete deployment and public API contract is
    responses. Replay the same publication: it must fail without another ref
    change. Repeat with wrong/expired plans and server rejection using the
    fixture's trusted signer, and confirm no master/tag movement. Repeat for
-   each claimed deployed transport, HTTPS and/or pinned-host SSH. Never use a
+   each claimed deployed transport, HTTPS and/or pinned-host SSH. Under the
+   disposable deployment administrator's control, substitute a different
+   repository-authorized User's PAT: preflight and publication must reject
+   the numeric-principal mismatch. For SSH, first substitute a different
+   key without changing the pin (fingerprint rejection); then explicitly
+   provision that different User's key pin while preserving the installed
+   actor ID (authenticated-principal rejection). Reprovision the original
+   policy/key before further positives; never change a production
+   principal/pin for a test. No rejected case may move either ref. Never use a
    mock, public uncredentialed read, local bare remote, self-asserted result or
    unchecked GitHub response as credentialed acceptance.
 
@@ -1599,6 +1627,13 @@ in total, while the reconstructed maximum is 131,073 bytes and total is
 accounting is removed; the exact-boundary load and ordinary deltified
 publication must continue to pass.
 
+The credential correction's pre-fix control passes any protected token/key
+straight to remote Git without checking its GitHub principal. Restoring that
+path must fail the wrong-User and wrong-key regressions. Restoring the old
+HTTPS helper's file reopening must fail the post-verification token
+replacement regression. A token prefix, protected filename, public user
+lookup or caller-supplied fingerprint is never sufficient evidence by itself.
+
 ### Interactions, compatibility and automation
 
 Dependencies: the protected installation, external terminal signer and
@@ -1608,8 +1643,9 @@ this foundation; its handoff/lifecycle/history/PR/ruleset checks remain
 required. There are no save/configuration, generated game data, localization,
 ROM/RAM, modern debug/release, archival or required-Build-context changes.
 
-The two focused unittest modules cover deterministic protocol behavior with
-actual Git and TLS. `protected_broker_fixture.py` covers the actual
+The three focused unittest modules cover deterministic protocol behavior,
+credential identity controls, actual Git and TLS.
+`protected_broker_fixture.py` covers the actual
 three-principal production consumer/server and protected local remote.
 Credentialed HTTPS/SSH behavior is deterministic but requires externally
 provisioned permissions and credentials; it is an explicit acceptance hold

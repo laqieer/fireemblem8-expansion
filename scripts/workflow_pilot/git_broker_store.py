@@ -16,7 +16,7 @@ import struct
 import subprocess
 import time
 import uuid
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -46,6 +46,7 @@ def run_bounded(
     arguments: list[str], *, cwd: Path, environment: dict[str, str],
     deadline: datetime, input_bytes: bytes = b"", allowed_codes: tuple[int, ...] = (0,),
     maximum_output: int = MAX_PROCESS_OUTPUT, pass_fds: tuple[int, ...] = (),
+    capture_stderr: bool = False,
 ) -> bytes:
     seconds = min(PROCESS_SECONDS, (deadline - utc_now()).total_seconds())
     if seconds <= 0:
@@ -96,7 +97,7 @@ def run_bounded(
                         count += len(chunk)
                         if count > maximum_output:
                             raise ProcessError("process output bound")
-                        if stream is process.stdout:
+                        if stream is process.stdout or capture_stderr:
                             output.extend(chunk)
             left = min(end - time.monotonic(), (deadline - utc_now()).total_seconds())
             if left <= 0:
@@ -254,40 +255,40 @@ class PublicationStore:
         ]
         if repository is not None:
             command.append(f"--git-dir={repository}")
-        if remote:
-            kind = self.transport["kind"]
-            if kind == "local":
-                command.extend(["-c", "protocol.file.allow=always"])
-            elif kind == "https":
-                helper = self.transport["helper"]
-                command.extend([
-                    "-c", "protocol.https.allow=always", "-c", "http.followRedirects=false",
-                    "-c", "http.sslVerify=true", "-c", "credential.helper=",
-                    "-c", f"credential.helper=!/usr/bin/python3 -I {shlex.quote(helper)} credential",
-                    "-c", "credential.useHttpPath=true",
-                ])
-                environment["FE8_BROKER_INSTALLATION"] = str(self.installation)
-            elif kind == "ssh":
-                command.extend(["-c", "protocol.ssh.allow=always"])
-                environment["GIT_SSH_VARIANT"] = "ssh"
-                environment["GIT_SSH_COMMAND"] = shlex.join([
-                    "/usr/bin/ssh", "-F", "/dev/null", "-i", self.transport["key"],
-                    "-o", f"UserKnownHostsFile={self.transport['known_hosts']}",
-                    "-o", "IdentityAgent=none", "-o", "IdentitiesOnly=yes",
-                    "-o", "StrictHostKeyChecking=yes", "-o", "BatchMode=yes",
-                    "-o", "ForwardAgent=no", "-o", "ClearAllForwardings=yes",
-                    "-o", "ProxyCommand=none", "-o", "PermitLocalCommand=no",
-                    "-o", "ControlMaster=no", "-o", "ControlPath=none",
-                    "-o", "PreferredAuthentications=publickey",
-                    "-o", "PasswordAuthentication=no", "-o", "KbdInteractiveAuthentication=no",
-                    "-o", "ConnectTimeout=5",
-                ])
-            else:
-                raise RecordError("unknown installed transport")
-        return run_bounded(
-            [*command, *arguments], cwd=self.state, environment=environment,
-            deadline=deadline, input_bytes=input_bytes,
-        )
+        with ExitStack() as credentials:
+            if remote:
+                kind = self.transport["kind"]
+                if kind == "local":
+                    command.extend(["-c", "protocol.file.allow=always"])
+                elif kind in {"https", "ssh"}:
+                    from scripts.workflow_pilot import git_broker as broker
+
+                    environment.update(credentials.enter_context(broker.verified_credentials(
+                        self.installation, self.policy, self.transport, self.state, deadline,
+                    )))
+                    if kind == "https":
+                        helper = self.transport["helper"]
+                        command.extend([
+                            "-c", "protocol.https.allow=always", "-c", "http.followRedirects=false",
+                            "-c", "http.sslVerify=true", "-c", f"http.sslCAInfo={broker.GITHUB_CA}",
+                            "-c", "credential.helper=",
+                            "-c", f"credential.helper=!/usr/bin/python3 -I {shlex.quote(helper)} credential",
+                            "-c", "credential.useHttpPath=true",
+                        ])
+                    else:
+                        command.extend(["-c", "protocol.ssh.allow=always"])
+                        environment["GIT_SSH_VARIANT"] = "ssh"
+                        environment["GIT_SSH_COMMAND"] = shlex.join(broker.ssh_arguments(
+                            environment["FE8_BROKER_CREDENTIAL"], environment["FE8_BROKER_KNOWN_HOSTS"],
+                        ))
+                else:
+                    raise RecordError("unknown installed transport")
+            if self._request_end is not None:
+                deadline = min(deadline, utc_now() + timedelta(seconds=self._request_end - time.monotonic()))
+            return run_bounded(
+                [*command, *arguments], cwd=self.state, environment=environment,
+                deadline=deadline, input_bytes=input_bytes,
+            )
 
     def remote_refs(self, deadline: datetime) -> dict[str, str | None]:
         raw = self._git(

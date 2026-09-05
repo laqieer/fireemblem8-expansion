@@ -62,6 +62,8 @@ repo) instead of one registry line per pinned link.
 - prefix:https://github.com/TwitchPlaysPokemon/pret3 | laqieer | third-party-reference | External datadump & funchash tool reference.
 - prefix:https://github.com/bminor/binutils-gdb | laqieer | third-party-reference | Pinned binutils changelog reference for a specific troubleshooting note.
 - host:github.com | laqieer | third-party-reference | Bare github.com references (e.g. 'register a GitHub account') not covered by a more specific rule above.
+- host:api.github.com | laqieer | third-party-reference | Fixed GitHub REST identity endpoints used by the authenticated Git broker.
+- host:docs.github.com | laqieer | third-party-reference | GitHub's REST identity and authenticated SSH connection contracts.
 - host:help.github.com | laqieer | third-party-reference | GitHub Help.
 - host:cexplore.karathan.at | laqieer | third-party-reference | Compiler Explorer instance used for archival decomp work.
 - host:developer.arm.com | laqieer | third-party-reference | ARM GNU Embedded Toolchain download page.

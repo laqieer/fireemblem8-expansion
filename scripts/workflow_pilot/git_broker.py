@@ -5,8 +5,12 @@ from __future__ import annotations
 
 import argparse
 import base64
+import fcntl
 import hashlib
+import http.client
+import json
 import os
+import re
 import signal
 import socket
 import sqlite3
@@ -15,7 +19,8 @@ import stat
 import struct
 import sys
 import time
-from datetime import timedelta
+from contextlib import ExitStack, contextmanager
+from datetime import datetime, timedelta
 from pathlib import Path
 
 
@@ -37,6 +42,13 @@ from scripts.workflow_pilot.signed_records import (
 
 
 INSTALLATION_MAX = 64 * 1024
+GITHUB_CA = Path("/etc/ssl/certs/ca-certificates.crt")
+IDENTITY_MAX = 16 * 1024
+TOKEN_MAX = 1024
+KEY_MAX = 16 * 1024
+HOSTS_MAX = 64 * 1024
+SNAPSHOT_SEALS = fcntl.F_SEAL_WRITE | fcntl.F_SEAL_GROW | fcntl.F_SEAL_SHRINK | fcntl.F_SEAL_SEAL
+GITHUB_LOGIN = r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?"
 SERVER_FIELDS = {
     "schema_version", "role", "policy", "broker_uid", "coordinator_uid", "candidate_uids",
     "socket", "state", "certificate", "private_key", "ca_certificate",
@@ -80,12 +92,19 @@ def protected_path(path: str | Path, owners: set[int], *, directory: bool = Fals
     return path
 
 
-def read_regular(path: Path, maximum: int) -> bytes:
+def read_regular(
+    path: Path, maximum: int, *, owners: set[int] | None = None, secret: bool = False,
+) -> bytes:
     descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC)
     try:
         metadata = os.fstat(descriptor)
         if not stat.S_ISREG(metadata.st_mode) or metadata.st_size > maximum:
             raise RecordError("regular input size bound")
+        if owners is not None and (
+            metadata.st_uid not in owners or metadata.st_nlink != 1
+            or metadata.st_mode & (0o077 if secret else 0o022)
+        ):
+            raise RecordError("opened protected input was substituted")
         raw = bytearray()
         while len(raw) <= maximum:
             chunk = os.read(descriptor, min(65536, maximum + 1 - len(raw)))
@@ -100,6 +119,37 @@ def read_regular(path: Path, maximum: int) -> bytes:
 def certificate_fingerprint(path: Path) -> str:
     raw = read_regular(path, 32768).decode("ascii")
     return hashlib.sha256(ssl.PEM_cert_to_DER_cert(raw)).hexdigest()
+
+
+def network_credential_contract(transport: dict, policy: Policy) -> None:
+    kind = transport.get("kind")
+    if kind == "https":
+        fields(transport, {"kind", "credential_kind", "token_file", "helper"})
+        if (
+            transport["credential_kind"] != "github-fine-grained-user-pat"
+            or policy.endpoint != f"https://github.com/{policy.repository}.git"
+        ):
+            raise RecordError("unsupported HTTPS credential authority")
+    elif kind == "ssh":
+        fields(transport, {"kind", "credential_kind", "key", "known_hosts", "public_key_fingerprint"})
+        fingerprint = transport["public_key_fingerprint"]
+        if (
+            transport["credential_kind"] != "github-user-ed25519"
+            or policy.endpoint != f"ssh://git@github.com/{policy.repository}.git"
+            or not isinstance(fingerprint, str)
+            or re.fullmatch(r"SHA256:[A-Za-z0-9+/]{42}[AEIMQUYcgkosw048]", fingerprint) is None
+        ):
+            raise RecordError("unsupported SSH credential authority")
+    else:
+        raise RecordError("network credential authority required")
+    if not any(
+        actor == {
+            "actor_type": "User", "actor_id": policy.actor_id,
+            "database_id": policy.actor_id, "bypass_mode": "always",
+        }
+        for actor in policy.authorized_bypass_actors
+    ):
+        raise RecordError("network credentials require the exact installed User bypass")
 
 
 def load_installation(path: Path, role: str) -> tuple[dict, Policy]:
@@ -140,7 +190,7 @@ def load_installation(path: Path, role: str) -> tuple[dict, Policy]:
         if certificate_fingerprint(Path(manifest["certificate"])) != policy.client_certificate_sha256:
             raise RecordError("client certificate is not authorized by installed policy")
     else:
-        for executable in ("/usr/bin/git", "/usr/bin/openssl", "/usr/bin/timeout"):
+        for executable in ("/usr/bin/git", "/usr/bin/openssl", "/usr/bin/timeout", "/usr/bin/python3"):
             resolved = protected_path(Path(executable).resolve(strict=True), {0})
             if not os.access(resolved, os.X_OK):
                 raise RecordError("protected executable dependency is unavailable")
@@ -172,24 +222,254 @@ def load_installation(path: Path, role: str) -> tuple[dict, Policy]:
                 if os.path.lexists(remote / relative):
                     raise RecordError("alternate/incomplete local authority store")
         elif kind == "https":
-            fields(transport, {"kind", "token_file", "helper"})
-            if policy.endpoint != f"https://github.com/{policy.repository}.git":
-                raise RecordError("HTTPS endpoint mismatch")
+            network_credential_contract(transport, policy)
+            protected_path(GITHUB_CA, {0})
             protected_path(transport["token_file"], {0, broker}, secret=True)
             if Path(transport["helper"]) != Path(__file__).resolve():
                 raise RecordError("credential helper must be this exact trusted installed entry point")
             protected_path(transport["helper"], {0})
             protected_path(Path("/usr/lib/git-core/git-remote-https").resolve(strict=True), {0})
         elif kind == "ssh":
-            fields(transport, {"kind", "key", "known_hosts"})
-            if policy.endpoint != f"ssh://git@github.com/{policy.repository}.git":
-                raise RecordError("SSH endpoint mismatch")
+            network_credential_contract(transport, policy)
+            protected_path(GITHUB_CA, {0})
             protected_path(transport["key"], {0, broker}, secret=True)
             protected_path(transport["known_hosts"], {0})
             protected_path(Path("/usr/bin/ssh").resolve(strict=True), {0})
+            protected_path(Path("/usr/bin/ssh-keygen").resolve(strict=True), {0})
         else:
             raise RecordError("unknown transport")
     return manifest, policy
+
+
+@contextmanager
+def sealed_snapshot(raw: bytes):
+    descriptor = os.memfd_create("fe8-broker-credential", os.MFD_CLOEXEC | os.MFD_ALLOW_SEALING)
+    try:
+        os.fchmod(descriptor, 0o600)
+        offset = 0
+        while offset < len(raw):
+            offset += os.write(descriptor, raw[offset:])
+        fcntl.fcntl(descriptor, fcntl.F_ADD_SEALS, SNAPSHOT_SEALS)
+        # ssh closes inherited descriptors. Keep the sealed object open in its
+        # broker parent and use that same procfs handle throughout validation/Git.
+        yield f"/proc/{os.getpid()}/fd/{descriptor}"
+    finally:
+        os.close(descriptor)
+
+
+def read_snapshot(path: str, maximum: int) -> bytes:
+    if not isinstance(path, str) or re.fullmatch(r"/proc/[1-9][0-9]*/fd/[0-9]+", path) is None:
+        raise RecordError("broker-held sealed credential handle required")
+    descriptor = os.open(path, os.O_RDONLY | os.O_NONBLOCK | os.O_CLOEXEC)
+    try:
+        metadata = os.fstat(descriptor)
+        if (
+            not stat.S_ISREG(metadata.st_mode) or metadata.st_nlink != 0
+            or metadata.st_uid != os.geteuid() or stat.S_IMODE(metadata.st_mode) != 0o600
+            or not 0 < metadata.st_size <= maximum
+            or fcntl.fcntl(descriptor, fcntl.F_GET_SEALS) & SNAPSHOT_SEALS != SNAPSHOT_SEALS
+        ):
+            raise RecordError("credential handle is not an immutable private snapshot")
+        raw = os.pread(descriptor, maximum + 1, 0)
+        if len(raw) != metadata.st_size:
+            raise RecordError("credential snapshot size mismatch")
+        return raw
+    finally:
+        os.close(descriptor)
+
+
+def fine_grained_token(raw: bytes) -> bytes:
+    token = raw.removesuffix(b"\n")
+    if re.fullmatch(rb"github_pat_[A-Za-z0-9_]{1,1013}", token) is None:
+        raise RecordError("only a fine-grained GitHub User PAT is supported")
+    return token
+
+
+def ssh_arguments(credential: str, known_hosts: str) -> list[str]:
+    return [
+        "/usr/bin/ssh", "-F", "/dev/null", "-i", credential,
+        "-o", f"UserKnownHostsFile={known_hosts}", "-o", "GlobalKnownHostsFile=/dev/null",
+        "-o", "HostName=github.com", "-o", "HostKeyAlias=github.com", "-o", "Port=22",
+        "-o", "IdentityAgent=none", "-o", "IdentitiesOnly=yes",
+        "-o", "CertificateFile=none", "-o", "PubkeyAcceptedAlgorithms=ssh-ed25519",
+        "-o", "StrictHostKeyChecking=yes", "-o", "BatchMode=yes",
+        "-o", "VerifyHostKeyDNS=no", "-o", "UpdateHostKeys=no",
+        "-o", "ForwardAgent=no", "-o", "ClearAllForwardings=yes",
+        "-o", "ProxyCommand=none", "-o", "PermitLocalCommand=no",
+        "-o", "ControlMaster=no", "-o", "ControlPath=none",
+        "-o", "PreferredAuthentications=publickey",
+        "-o", "PasswordAuthentication=no", "-o", "KbdInteractiveAuthentication=no",
+        "-o", "ConnectTimeout=5", "-o", "LogLevel=ERROR",
+    ]
+
+
+def github_user(*, token: bytes | None, login: str | None, deadline) -> dict:
+    """Fixed GitHub API only; the caller runs this inside the hard-kill worker."""
+    if (token is None) == (login is None) or (
+        login is not None and re.fullmatch(GITHUB_LOGIN, login) is None
+    ):
+        raise RecordError("unsupported GitHub identity query")
+    seconds = min(5, (deadline - utc_now()).total_seconds())
+    if seconds <= 0:
+        raise RecordError("credential identity deadline expired")
+    context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    context.minimum_version = ssl.TLSVersion.TLSv1_2
+    # Do not use create_default_context(), environment-selected roots or proxies.
+    context.load_verify_locations(cafile=str(protected_path(GITHUB_CA, {0})))
+    headers = {
+        "Accept": "application/vnd.github+json", "Accept-Encoding": "identity",
+        "X-GitHub-Api-Version": "2022-11-28", "User-Agent": "fe8-issue-git-broker",
+        "Connection": "close",
+    }
+    if token is not None:
+        headers["Authorization"] = "Bearer " + fine_grained_token(token).decode("ascii")
+    connection = http.client.HTTPSConnection("api.github.com", 443, timeout=seconds, context=context)
+    try:
+        connection.request("GET", "/user" if login is None else "/users/" + login, headers=headers)
+        response = connection.getresponse()
+        if (
+            response.status != 200
+            or response.getheader("Content-Encoding", "identity") != "identity"
+            or response.getheader("Content-Type", "").split(";", 1)[0] != "application/json"
+        ):
+            raise RecordError("GitHub identity response rejected")
+        length = response.getheader("Content-Length")
+        if length is not None and (
+            re.fullmatch(r"[0-9]{1,8}", length) is None or int(length) > IDENTITY_MAX
+        ):
+            raise RecordError("GitHub identity response bound")
+        raw = bytearray()
+        while len(raw) <= IDENTITY_MAX:
+            seconds = min(5, (deadline - utc_now()).total_seconds())
+            if seconds <= 0:
+                raise RecordError("credential identity deadline expired")
+            if connection.sock is not None:
+                connection.sock.settimeout(seconds)
+            chunk = response.read(min(4096, IDENTITY_MAX + 1 - len(raw)))
+            if not chunk:
+                break
+            raw.extend(chunk)
+        if not raw or len(raw) > IDENTITY_MAX:
+            raise RecordError("GitHub identity response bound")
+
+        def pairs(items):
+            result = {}
+            for key, value in items:
+                if key in result:
+                    raise RecordError("duplicate GitHub identity field")
+                result[key] = value
+            return result
+
+        def reject_constant(_value):
+            raise RecordError("non-finite GitHub identity field")
+
+        value = json.loads(raw.decode("utf-8"), object_pairs_hook=pairs, parse_constant=reject_constant)
+        if not isinstance(value, dict):
+            raise RecordError("GitHub identity object required")
+        return {key: value.get(key) for key in ("id", "type", "login")}
+    except (http.client.HTTPException, OSError, UnicodeError, ValueError, RecursionError):
+        raise RecordError("GitHub credential identity verification failed") from None
+    finally:
+        connection.close()
+
+
+def validate_credential_identity(manifest: dict, policy: Policy, environment: dict, deadline) -> None:
+    transport = manifest["transport"]
+    network_credential_contract(transport, policy)
+    credential = environment["FE8_BROKER_CREDENTIAL"]
+    raw = read_snapshot(credential, TOKEN_MAX if transport["kind"] == "https" else KEY_MAX)
+    if transport["kind"] == "https":
+        user = github_user(token=fine_grained_token(raw), login=None, deadline=deadline)
+        login = user["login"]
+    else:
+        known_hosts = environment["FE8_BROKER_KNOWN_HOSTS"]
+        read_snapshot(known_hosts, HOSTS_MAX)
+        options = {
+            "cwd": Path(manifest["state"]), "environment": clean_environment(Path(manifest["state"]) / "home"),
+            "deadline": deadline, "maximum_output": 4096,
+        }
+        public = run_bounded([
+            "/usr/bin/ssh-keygen", "-y", "-P", "", "-f", credential,
+        ], **options).split()
+        if len(public) < 2 or public[0] != b"ssh-ed25519":
+            raise RecordError("only a plain unencrypted Ed25519 User key is supported")
+        decoded = base64.b64decode(public[1], validate=True)
+        if (
+            len(decoded) != 51 or not decoded.startswith(b"\0\0\0\x0bssh-ed25519\0\0\0\x20")
+            or base64.b64encode(decoded) != public[1]
+        ):
+            raise RecordError("invalid Ed25519 public key")
+        fingerprint = "SHA256:" + base64.b64encode(hashlib.sha256(decoded).digest()).decode("ascii").rstrip("=")
+        if fingerprint != transport["public_key_fingerprint"]:
+            raise RecordError("SSH key differs from the protected public fingerprint")
+        greeting = run_bounded(
+            [*ssh_arguments(credential, known_hosts), "-T", "-n", "git@github.com"],
+            **options, allowed_codes=(1,), capture_stderr=True,
+        )
+        match = re.fullmatch(
+            rf"Hi ({GITHUB_LOGIN})! You've successfully authenticated, but GitHub does not provide shell access\.\r?\n",
+            greeting.decode("ascii"),
+        )
+        if match is None:
+            raise RecordError("GitHub did not authenticate a supported SSH User principal")
+        login = match[1]
+        user = github_user(token=None, login=login, deadline=deadline)
+    if (
+        user["type"] != "User" or type(user["id"]) is not int or user["id"] != policy.actor_id
+        or not isinstance(login, str) or re.fullmatch(GITHUB_LOGIN, login) is None
+        or user["login"] != login
+    ):
+        raise RecordError("credential does not authenticate the installed GitHub User")
+
+
+def credential_worker_context() -> tuple[dict, Policy, datetime]:
+    manifest, policy = load_installation(Path(os.environ.get("FE8_BROKER_INSTALLATION", "")), "server")
+    network_credential_contract(manifest["transport"], policy)
+    deadline = parse_utc(os.environ.get("FE8_BROKER_CREDENTIAL_DEADLINE"))
+    if not 0 < (deadline - utc_now()).total_seconds() <= MAX_LIFETIME:
+        raise RecordError("credential identity deadline expired or overlong")
+    return manifest, policy, deadline
+
+
+@contextmanager
+def verified_credentials(installation: Path | None, policy: Policy, transport: dict, state: Path, deadline):
+    if installation is None:
+        raise RecordError("protected network credential installation required")
+    manifest, installed = load_installation(installation, "server")
+    if installed != policy or manifest["transport"] != transport or Path(manifest["state"]) != state:
+        raise RecordError("network credential installation changed")
+    network_credential_contract(transport, policy)
+    with ExitStack() as snapshots:
+        key = "token_file" if transport["kind"] == "https" else "key"
+        maximum = TOKEN_MAX if transport["kind"] == "https" else KEY_MAX
+        raw = read_regular(
+            Path(transport[key]), maximum, owners={0, manifest["broker_uid"]}, secret=True,
+        )
+        environment = {
+            "FE8_BROKER_INSTALLATION": str(installation),
+            "FE8_BROKER_CREDENTIAL_DEADLINE": format_utc(deadline),
+            "FE8_BROKER_CREDENTIAL": snapshots.enter_context(sealed_snapshot(raw)),
+        }
+        if transport["kind"] == "ssh":
+            hosts = read_regular(Path(transport["known_hosts"]), HOSTS_MAX, owners={0})
+            environment["FE8_BROKER_KNOWN_HOSTS"] = snapshots.enter_context(sealed_snapshot(hosts))
+        result = run_bounded(
+            ["/usr/bin/python3", "-I", str(Path(__file__).resolve()), "credential-check"],
+            cwd=state, environment={**clean_environment(state / "home"), **environment},
+            deadline=deadline, maximum_output=128,
+        )
+        if result != b"verified\n":
+            raise RecordError("network credential identity was not verified")
+        yield environment
+
+
+def preflight_credentials(manifest: dict, policy: Policy, installation: Path) -> None:
+    if manifest["transport"]["kind"] != "local":
+        with verified_credentials(
+            installation, policy, manifest["transport"], Path(manifest["state"]),
+            utc_now() + timedelta(seconds=MAX_LIFETIME),
+        ):
+            pass
 
 
 def peer_uid(connection: socket.socket, expected: int) -> None:
@@ -331,6 +611,7 @@ def serve(installation: Path, *, once: bool = False) -> None:
     bound = None
     try:
         store.local_protection(utc_now() + timedelta(seconds=MAX_LIFETIME))
+        preflight_credentials(manifest, policy, installation)
         # Verify the response key before exposing any ready endpoint.
         sign_response(manifest, b"workflow-pilot-broker-preflight\0", utc_now() + timedelta(seconds=5))
         # Never unlink an existing socket: it may belong to a live service.
@@ -412,8 +693,7 @@ class BrokerClient:
 def credential_helper(action: str) -> None:
     if action not in {"get", "store", "erase"}:
         raise RecordError("unsupported credential operation")
-    installation = Path(os.environ.get("FE8_BROKER_INSTALLATION", ""))
-    manifest, policy = load_installation(installation, "server")
+    manifest, policy, _deadline = credential_worker_context()
     if manifest["transport"]["kind"] != "https":
         raise RecordError("HTTPS helper used for another transport")
     raw = sys.stdin.buffer.read(4097)
@@ -435,9 +715,7 @@ def credential_helper(action: str) -> None:
         or values.get("username", "x-access-token") != "x-access-token"
     ):
         raise RecordError("credential request is outside exact installed endpoint")
-    token = read_regular(Path(manifest["transport"]["token_file"]), 1024).rstrip(b"\n")
-    if not token or any(byte <= 32 or byte >= 127 for byte in token):
-        raise RecordError("invalid protected token")
+    token = fine_grained_token(read_snapshot(os.environ["FE8_BROKER_CREDENTIAL"], TOKEN_MAX))
     sys.stdout.buffer.write(b"username=x-access-token\npassword=" + token + b"\n\n")
 
 
@@ -455,11 +733,17 @@ def main(argv: list[str] | None = None) -> int:
             command.add_argument("--pack", type=Path, required=True)
     credential = commands.add_parser("credential")
     credential.add_argument("action", choices=("get", "store", "erase"))
+    commands.add_parser("credential-check")
     arguments = parser.parse_args(argv)
     try:
         os.umask(0o077)
         if arguments.command == "credential":
             credential_helper(arguments.action)
+            return 0
+        if arguments.command == "credential-check":
+            manifest, policy, deadline = credential_worker_context()
+            validate_credential_identity(manifest, policy, os.environ, deadline)
+            sys.stdout.buffer.write(b"verified\n")
             return 0
         if arguments.command == "serve":
             def stop(_signum, _frame):
@@ -475,6 +759,7 @@ def main(argv: list[str] | None = None) -> int:
             )
             try:
                 store.local_protection(utc_now() + timedelta(seconds=MAX_LIFETIME))
+                preflight_credentials(manifest, policy, arguments.installation)
             finally:
                 store.close()
             sign_response(manifest, b"workflow-pilot-broker-preflight\0", utc_now() + timedelta(seconds=5))
