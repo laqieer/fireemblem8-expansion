@@ -1349,13 +1349,10 @@ def publish_bound_authority(
     return observation, publication
 def handoff_lifecycle_as_of(*bundles):
     latest = max(
-        datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
+        datetime.fromisoformat(handoff["assigned_at"].replace("Z", "+00:00"))
+        + timedelta(seconds=handoff["lifetime_seconds"])
         for bundle in bundles
         for handoff in bundle["result"]["handoffs"]
-        for timestamp in (
-            handoff["assigned_at"],
-            handoff["closed_at"] or handoff["assigned_at"],
-        )
     )
     return iso_utc(latest + timedelta(seconds=1))
 def reporter_fixture_with_handoffs(*bundles):
@@ -3426,6 +3423,17 @@ class ExactHandoffTests(unittest.TestCase):
                         report["summary"]["trusted_push_eligible"]
                     )
                     self.assertFalse(report["summary"]["delivery_eligible"])
+                    record = reporter_record(root, document, report)
+                    fixture = reporter_fixture_with_handoffs(record)
+                    later = datetime.fromisoformat(fixture["lifecycle_as_of"].replace("Z", "+00:00")) + timedelta(hours=2)
+                    fixture["lifecycle_as_of"] = iso_utc(later)
+                    fixture["review_thread_event_source"]["coverage_end"] = iso_utc(later)
+                    verified = validate_reporter_fixture(fixture)
+                    metrics = reporter.report_implementation_handoffs(verified)
+                    self.assertEqual(
+                        metrics["max_lifetime_seconds"],
+                        report["handoffs"][0]["lifetime_seconds"],
+                    )
     def test_conflicting_worktree_rejects(self):
         with handoff_repository() as (root, _base, _parent, result):
             change = root / "scripts" / "workflow_pilot" / "change.py"

@@ -4001,32 +4001,6 @@ def report_implementation_handoffs(
     data: dict[str, Any]
 ) -> dict[str, int | list[str]]:
     handoffs = list(data["implementation_handoffs"].values())
-    lifecycle_as_of = parse_time(
-        data["fixture"]["lifecycle_as_of"],
-        "fixture.lifecycle_as_of",
-    )
-    lifetimes = []
-    for item in handoffs:
-        assigned_at = parse_time(
-            item["assigned_at"],
-            f"implementation handoff {item['id']}.assigned_at",
-        )
-        closed_at = parse_time(
-            item["closed_at"],
-            f"implementation handoff {item['id']}.closed_at",
-            nullable=True,
-        )
-        elapsed = duration_seconds(
-            assigned_at,
-            closed_at or lifecycle_as_of,
-            f"implementation handoff {item['id']} lifetime",
-        )
-        if elapsed != elapsed.to_integral_value():
-            raise PilotDataError(
-                f"implementation handoff {item['id']!r} lifetime "
-                "must resolve to whole seconds"
-            )
-        lifetimes.append(int(elapsed))
     rejection_codes = sorted(
         {
             code
@@ -4058,7 +4032,10 @@ def report_implementation_handoffs(
         "stale_responses": sum(
             "stale-result" in item["rejection_codes"] for item in handoffs
         ),
-        "max_lifetime_seconds": max(lifetimes, default=0),
+        "max_lifetime_seconds": max(
+            (item["lifetime_seconds"] for item in handoffs),
+            default=0,
+        ),
         "max_peak_rss_bytes": max(
             (item["peak_rss_bytes"] for item in handoffs),
             default=0,
