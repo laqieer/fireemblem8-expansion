@@ -4619,6 +4619,9 @@ printf '%s\t%s\t%s\n' "$result" \
             "literal `=` and `;`",
             "every backslash",
             "`-1` or `0` seconds",
+            "eight-job-without-summary",
+            "active `updated_at` is not a live completion bound",
+            "Completed runs refresh exact run authority",
             "No ARM runtime test is needed",
             "There is no manual-only criterion",
         ):

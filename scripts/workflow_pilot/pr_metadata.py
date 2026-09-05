@@ -945,14 +945,14 @@ def _validate_job_timing(
     completed_at: datetime.datetime | None,
     run_created_at: datetime.datetime,
     run_started_at: datetime.datetime | None,
-    run_updated_at: datetime.datetime,
+    run_updated_at: datetime.datetime | None,
 ) -> None:
     policy = JOB_TIMING_POLICIES.get(status)
     if policy is None:
         raise MetadataEditError(f"Build job {job_id} timing status is unknown")
     if created_at < run_created_at:
         raise MetadataEditError(f"Build job {job_id} predates its workflow run")
-    if created_at > run_updated_at:
+    if run_updated_at is not None and created_at > run_updated_at:
         raise MetadataEditError(f"Build job {job_id} is newer than its workflow run")
     if policy.started == "required" and started_at is None:
         raise MetadataEditError(f"Build job {job_id} started_at is required")
@@ -965,13 +965,13 @@ def _validate_job_timing(
     if started_at is not None:
         if created_at > started_at:
             raise MetadataEditError(f"Build job {job_id} starts before creation")
-        if started_at > run_updated_at:
+        if run_updated_at is not None and started_at > run_updated_at:
             raise MetadataEditError(f"Build job {job_id} starts after its workflow run")
         if run_started_at is not None and started_at < run_started_at:
             raise MetadataEditError(f"Build job {job_id} starts before its workflow run")
     if completed_at is None:
         return
-    if completed_at > run_updated_at:
+    if run_updated_at is not None and completed_at > run_updated_at:
         raise MetadataEditError(f"Build job {job_id} completes after its workflow run")
     if not assigned and conclusion == "skipped":
         if (
@@ -1001,7 +1001,7 @@ def _parse_job(
     workflow: WorkflowAuthority,
     run_created_at: datetime.datetime,
     run_started_at: datetime.datetime | None,
-    run_updated_at: datetime.datetime,
+    run_updated_at: datetime.datetime | None,
 ) -> JobState:
     if not isinstance(raw, dict):
         raise MetadataEditError(f"Build run {run_id} job must be an object")
@@ -1128,7 +1128,7 @@ def _list_jobs(
     workflow: WorkflowAuthority,
     run_created_at: datetime.datetime,
     run_started_at: datetime.datetime | None,
-    run_updated_at: datetime.datetime,
+    run_updated_at: datetime.datetime | None,
 ) -> tuple[JobState, ...]:
     raw_jobs = _list_counted_pages(
         client,
@@ -1167,13 +1167,42 @@ def _list_jobs(
     return jobs
 
 
-def _run_mode(jobs: tuple[JobState, ...], *, run_id: int) -> str:
+def _run_mode(
+    jobs: tuple[JobState, ...],
+    *,
+    run_id: int,
+    status: str,
+) -> str:
     names = frozenset(job.name for job in jobs)
-    if names == FULL_JOB_NAMES:
-        return "full"
-    if names == METADATA_JOB_NAMES:
-        return "metadata-only"
-    raise MetadataEditError(f"Build run {run_id} has an unknown or mixed job shape")
+    if status == "completed":
+        if names == FULL_JOB_NAMES:
+            return "full"
+        if names == METADATA_JOB_NAMES:
+            return "metadata-only"
+        raise MetadataEditError(
+            f"completed Build run {run_id} has an unknown or mixed job shape"
+        )
+
+    classifier_names = names & {
+        candidate_evidence.FULL_CLASSIFIER,
+        candidate_evidence.METADATA_CLASSIFIER,
+    }
+    if classifier_names == {candidate_evidence.FULL_CLASSIFIER}:
+        return "active-full"
+    if classifier_names == {candidate_evidence.METADATA_CLASSIFIER}:
+        classifier = next(
+            job
+            for job in jobs
+            if job.name == candidate_evidence.METADATA_CLASSIFIER
+        )
+        if (
+            names <= METADATA_JOB_NAMES
+            and classifier.status == "completed"
+            and classifier.conclusion == "success"
+            and classifier.runner_name
+        ):
+            return "active-metadata-only"
+    return "active-unknown"
 
 
 def _parse_run(
@@ -1181,6 +1210,8 @@ def _parse_run(
     state: PullRequestState,
     workflow: WorkflowAuthority,
     raw: object,
+    *,
+    refresh_terminal: bool = True,
 ) -> tuple[int, int, RunState | None]:
     if not isinstance(raw, dict):
         raise MetadataEditError("Build workflow run must be an object")
@@ -1285,6 +1316,35 @@ def _parse_run(
         raise MetadataEditError(f"Build run {run_id} queued chronology is invalid")
     if matches == 0:
         return run_id, run_number, None
+    if status == "completed" and refresh_terminal:
+        refreshed_response = client.request(
+            "GET",
+            _endpoint(state.repository, f"actions/runs/{run_id}"),
+            label=f"Build run {run_id} terminal refresh",
+        )
+        refreshed_id, refreshed_number, refreshed = _parse_run(
+            client,
+            state,
+            workflow,
+            refreshed_response.payload,
+            refresh_terminal=False,
+        )
+        if (
+            refreshed is None
+            or refreshed_id != run_id
+            or refreshed_number != run_number
+            or refreshed.run_attempt != run_attempt
+            or refreshed.head_branch != head_branch
+            or refreshed.status != status
+            or refreshed.conclusion != conclusion
+            or refreshed.created_at != created_at
+            or refreshed.run_started_at != run_started_at
+            or refreshed.updated_at < updated_at
+        ):
+            raise MetadataEditError(
+                f"Build run {run_id} terminal authority changed during refresh"
+            )
+        return refreshed_id, refreshed_number, refreshed
     jobs = _list_jobs(
         client,
         state,
@@ -1295,7 +1355,7 @@ def _parse_run(
         workflow=workflow,
         run_created_at=created_at,
         run_started_at=run_started_at,
-        run_updated_at=updated_at,
+        run_updated_at=updated_at if status == "completed" else None,
     )
     return (
         run_id,
@@ -1311,7 +1371,7 @@ def _parse_run(
             updated_at=updated_at,
             status=status,
             conclusion=conclusion,
-            mode=_run_mode(jobs, run_id=run_id),
+            mode=_run_mode(jobs, run_id=run_id, status=status),
             jobs=jobs,
         ),
     )
@@ -1489,9 +1549,12 @@ def _latest_full(runs: tuple[RunState, ...]) -> RunState | None:
     return next((run for run in runs if run.mode == "full"), None)
 
 
-def _active_full_runs(runs: tuple[RunState, ...]) -> tuple[RunState, ...]:
+def _blocking_active_runs(runs: tuple[RunState, ...]) -> tuple[RunState, ...]:
     return tuple(
-        run for run in runs if run.mode == "full" and run.status in ACTIVE_RUN_STATUSES
+        run
+        for run in runs
+        if run.status in ACTIVE_RUN_STATUSES
+        and run.mode != "active-metadata-only"
     )
 
 
@@ -1561,7 +1624,7 @@ def edit_metadata(
         )
 
     initial_runs = list_candidate_runs(client, initial)
-    active_full = _active_full_runs(initial_runs)
+    active_full = _blocking_active_runs(initial_runs)
     latest_full = _latest_full(initial_runs)
     if essential_reason is None:
         if active_full:
@@ -1617,7 +1680,7 @@ def edit_metadata(
             "pull request metadata changed before essential mutation"
         )
     current_runs = list_candidate_runs(client, current)
-    current_active_full = _active_full_runs(current_runs)
+    current_active_full = _blocking_active_runs(current_runs)
     current_latest_full = _latest_full(current_runs)
     if essential_reason is None:
         if current_runs != initial_runs:
@@ -1725,7 +1788,7 @@ def _pending_metadata(
         (
             run
             for run in runs
-            if run.mode == "metadata-only"
+            if run.mode in {"metadata-only", "active-metadata-only"}
             and run.run_number > latest_full.run_number
         ),
         None,
@@ -1744,8 +1807,8 @@ def reconcile_metadata(
     initial = fetch_pull_request(client, repository, pr_number)
     require_identity(initial, head_sha=head_sha, base_sha=base_sha)
     first_runs = list_candidate_runs(client, initial)
-    latest_full = _latest_full(first_runs)
-    if latest_full is not None and latest_full.status in ACTIVE_RUN_STATUSES:
+    blocking_active = _blocking_active_runs(first_runs)
+    if blocking_active:
         return Decision(
             "deferred",
             base_sha,
@@ -1755,7 +1818,7 @@ def reconcile_metadata(
             "the newest exact full Build is still active",
             repository,
             pr_number,
-            latest_full.run_id,
+            blocking_active[0].run_id,
         )
     first_full, first_metadata = _pending_metadata(first_runs)
     if first_metadata is None:

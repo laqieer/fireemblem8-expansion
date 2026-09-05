@@ -430,6 +430,12 @@ def _add_snapshot(
         ),
     )
     for record, jobs in runs_and_jobs:
+        if record["status"] == "completed":
+            client.add(
+                "GET",
+                _endpoint(f"actions/runs/{record['id']}"),
+                *(copy.deepcopy(record) for _ in range(copies)),
+            )
         jobs_endpoint = _query(
             f"actions/runs/{record['id']}/attempts/{record['run_attempt']}/jobs",
             [("per_page", "100"), ("page", "1")],
@@ -468,6 +474,97 @@ class PullRequestMetadataTests(unittest.TestCase):
         self.assertIn("evidence-comment", decision.guidance[0])
         self.assertFalse(any(method != "GET" for method, _endpoint, _body in client.calls))
         self.assertFalse(any("/cancel" in endpoint for _method, endpoint, _body in client.calls))
+
+    def test_partial_active_full_graphs_defer_without_exact_set_errors(self):
+        cases = {}
+        queued_record, _ = _run(110, 14, mode="full", active=True)
+        queued_record.update(
+            {
+                "status": "queued",
+                "run_started_at": None,
+                "updated_at": "2026-09-04T00:00:00Z",
+            }
+        )
+        cases["queued-zero-job"] = (queued_record, [])
+
+        one_record, one_jobs = _run(111, 15, mode="full", active=True)
+        cases["one-job"] = (
+            one_record,
+            [
+                job
+                for job in one_jobs
+                if job["name"] == "event-identity"
+            ],
+        )
+
+        eight_record, eight_jobs = _run(112, 16, mode="full", active=True)
+        cases["eight-job-current-shape"] = (
+            eight_record,
+            [job for job in eight_jobs if job["name"] != "summary"],
+        )
+
+        unknown_record, unknown_jobs = _run(
+            113,
+            17,
+            mode="full",
+            active=True,
+        )
+        unknown_jobs = unknown_jobs[:1]
+        unknown_jobs[0]["name"] = "future-job"
+        cases["unknown-partial"] = (unknown_record, unknown_jobs)
+
+        for name, run_and_jobs in cases.items():
+            with self.subTest(shape=name):
+                client = ScriptedClient()
+                _add_pr_states(client, _pr())
+                _add_snapshot(client, [run_and_jobs])
+                decision = pr_metadata.edit_metadata(
+                    client,
+                    repository=REPOSITORY,
+                    pr_number=PR_NUMBER,
+                    head_sha=HEAD,
+                    base_sha=BASE,
+                    title=None,
+                    body="new body",
+                    essential_reason=None,
+                )
+                self.assertEqual(decision.action, "deferred")
+                self.assertFalse(decision.mutated)
+                self.assertFalse(
+                    any(method != "GET" for method, _endpoint, _body in client.calls)
+                )
+
+    def test_proven_active_metadata_run_does_not_block_stable_edit(self):
+        client = ScriptedClient()
+        active_metadata = _run(
+            202,
+            11,
+            mode="metadata-only",
+            active=True,
+        )
+        successful_full = _run(101, 10, mode="full")
+        _add_pr_states(client, _pr(), _pr())
+        _add_snapshot(
+            client,
+            [active_metadata, successful_full],
+            copies=2,
+        )
+        client.add(
+            "PATCH",
+            _endpoint(f"pulls/{PR_NUMBER}"),
+            _pr(body="new body"),
+        )
+        decision = pr_metadata.edit_metadata(
+            client,
+            repository=REPOSITORY,
+            pr_number=PR_NUMBER,
+            head_sha=HEAD,
+            base_sha=BASE,
+            title=None,
+            body="new body",
+            essential_reason=None,
+        )
+        self.assertEqual(decision.action, "updated")
 
     def test_essential_override_updates_metadata_and_derives_reconciliation(self):
         client = ScriptedClient()
@@ -588,6 +685,87 @@ class PullRequestMetadataTests(unittest.TestCase):
         self.assertEqual(decision.action, "deferred")
         self.assertFalse(decision.mutated)
         self.assertEqual(decision.run_id, 101)
+        self.assertFalse(any(method == "PATCH" for method, _endpoint, _body in client.calls))
+
+    def test_second_snapshot_partial_materialization_defers_not_errors(self):
+        client = ScriptedClient()
+        successful_full = _run(101, 10, mode="full")
+        partial_record, partial_jobs = _run(
+            202,
+            11,
+            mode="full",
+            active=True,
+        )
+        partial_jobs = [
+            job
+            for job in partial_jobs
+            if job["name"] == "event-identity"
+        ]
+        _add_pr_states(client, _pr(), _pr())
+        _add_snapshot(client, [successful_full])
+        _add_snapshot(
+            client,
+            [(partial_record, partial_jobs), successful_full],
+        )
+        decision = pr_metadata.edit_metadata(
+            client,
+            repository=REPOSITORY,
+            pr_number=PR_NUMBER,
+            head_sha=HEAD,
+            base_sha=BASE,
+            title=None,
+            body="new body",
+            essential_reason=None,
+        )
+        self.assertEqual(decision.action, "deferred")
+        self.assertFalse(decision.mutated)
+        self.assertFalse(any(method == "PATCH" for method, _endpoint, _body in client.calls))
+
+    def test_second_snapshot_active_metadata_graph_growth_defers(self):
+        client = ScriptedClient()
+        successful_full = _run(101, 10, mode="full")
+        active_record, active_jobs = _run(
+            202,
+            11,
+            mode="metadata-only",
+            active=True,
+        )
+        classifier_only = [
+            job
+            for job in active_jobs
+            if job["name"] == candidate_evidence.METADATA_CLASSIFIER
+        ]
+        grown_jobs = [
+            job
+            for job in active_jobs
+            if job["name"]
+            in {
+                "event-identity",
+                "event-router",
+                candidate_evidence.METADATA_CLASSIFIER,
+            }
+        ]
+        _add_pr_states(client, _pr(), _pr())
+        _add_snapshot(
+            client,
+            [(active_record, classifier_only), successful_full],
+        )
+        _add_snapshot(
+            client,
+            [(active_record, grown_jobs), successful_full],
+        )
+        decision = pr_metadata.edit_metadata(
+            client,
+            repository=REPOSITORY,
+            pr_number=PR_NUMBER,
+            head_sha=HEAD,
+            base_sha=BASE,
+            title=None,
+            body="new body",
+            essential_reason=None,
+        )
+        self.assertEqual(decision.action, "deferred")
+        self.assertFalse(decision.mutated)
         self.assertFalse(any(method == "PATCH" for method, _endpoint, _body in client.calls))
 
     def test_default_edit_defers_when_pr_metadata_changes_before_patch(self):
@@ -1522,6 +1700,98 @@ class PullRequestMetadataTests(unittest.TestCase):
                 with self.assertRaises(pr_metadata.MetadataEditError):
                     pr_metadata.list_candidate_runs(client, state)
 
+    def test_active_run_updated_at_is_not_a_job_completion_upper_bound(self):
+        client = ScriptedClient()
+        record, jobs = _run(
+            202,
+            11,
+            mode="metadata-only",
+            active=True,
+        )
+        record["updated_at"] = "2026-09-04T00:00:01Z"
+        _add_pr_states(client, _pr())
+        _add_snapshot(client, [(record, jobs)])
+        state = pr_metadata.fetch_pull_request(
+            client,
+            REPOSITORY,
+            PR_NUMBER,
+        )
+        runs = pr_metadata.list_candidate_runs(client, state)
+        self.assertEqual(runs[0].mode, "active-metadata-only")
+        self.assertTrue(
+            any(
+                job.completed_at
+                and job.completed_at > runs[0].updated_at
+                for job in runs[0].jobs
+            )
+        )
+
+    def test_active_run_still_enforces_intrinsic_job_chronology(self):
+        client = ScriptedClient()
+        record, jobs = _run(
+            202,
+            11,
+            mode="metadata-only",
+            active=True,
+        )
+        record["updated_at"] = "2026-09-04T00:00:01Z"
+        target = next(job for job in jobs if job["name"] == "build")
+        target["started_at"] = "2026-09-04T00:00:03Z"
+        target["completed_at"] = "2026-09-04T00:00:02Z"
+        _add_pr_states(client, _pr())
+        _add_snapshot(client, [(record, jobs)])
+        state = pr_metadata.fetch_pull_request(
+            client,
+            REPOSITORY,
+            PR_NUMBER,
+        )
+        with self.assertRaisesRegex(
+            pr_metadata.MetadataEditError,
+            "completion chronology is invalid",
+        ):
+            pr_metadata.list_candidate_runs(client, state)
+
+    def test_terminal_refresh_supplies_job_completion_upper_bound(self):
+        client = ScriptedClient()
+        record, jobs = _run(101, 10, mode="full")
+        record["updated_at"] = "2026-09-04T00:00:01Z"
+        _add_pr_states(client, _pr())
+        _add_snapshot(client, [(record, jobs)])
+        refreshed = copy.deepcopy(record)
+        refreshed["updated_at"] = "2026-09-04T00:00:03Z"
+        route = ("GET", _endpoint("actions/runs/101"))
+        client.routes[route][0] = refreshed
+        state = pr_metadata.fetch_pull_request(
+            client,
+            REPOSITORY,
+            PR_NUMBER,
+        )
+        runs = pr_metadata.list_candidate_runs(client, state)
+        self.assertEqual(
+            runs[0].updated_at.isoformat(),
+            "2026-09-04T00:00:03+00:00",
+        )
+
+    def test_terminal_refresh_enforces_job_completion_upper_bound(self):
+        client = ScriptedClient()
+        record, jobs = _run(101, 10, mode="full")
+        _add_pr_states(client, _pr())
+        _add_snapshot(client, [(record, jobs)])
+        refreshed = copy.deepcopy(record)
+        refreshed["updated_at"] = "2026-09-04T00:00:01Z"
+        route = ("GET", _endpoint("actions/runs/101"))
+        client.routes[route][0] = refreshed
+        state = pr_metadata.fetch_pull_request(
+            client,
+            REPOSITORY,
+            PR_NUMBER,
+        )
+        with self.assertRaisesRegex(
+            pr_metadata.MetadataEditError,
+            "completes after its workflow run",
+        ):
+            pr_metadata.list_candidate_runs(client, state)
+
     def test_queued_and_in_progress_job_timing_matches_live_shapes(self):
         client = ScriptedClient()
         record, jobs = _run(101, 10, mode="full", active=True)
@@ -1569,38 +1839,6 @@ class PullRequestMetadataTests(unittest.TestCase):
             "started_at must be null",
         ):
             pr_metadata.list_candidate_runs(invalid_client, invalid_state)
-
-        future_client = ScriptedClient()
-        future_record, future_jobs = _run(
-            103,
-            12,
-            mode="full",
-            active=True,
-        )
-        future_jobs = copy.deepcopy(future_jobs)
-        future = next(job for job in future_jobs if job["name"] == "build")
-        future.update(
-            {
-                "status": "in_progress",
-                "runner_id": 1,
-                "runner_name": "GitHub Actions 1",
-                "runner_group_id": 0,
-                "runner_group_name": "GitHub Actions",
-                "started_at": "2026-09-04T00:00:04Z",
-            }
-        )
-        _add_pr_states(future_client, _pr())
-        _add_snapshot(future_client, [(future_record, future_jobs)])
-        future_state = pr_metadata.fetch_pull_request(
-            future_client,
-            REPOSITORY,
-            PR_NUMBER,
-        )
-        with self.assertRaisesRegex(
-            pr_metadata.MetadataEditError,
-            "starts after its workflow run",
-        ):
-            pr_metadata.list_candidate_runs(future_client, future_state)
 
     def test_live_skipped_one_second_timing_quirk_is_bounded(self):
         cases = {
@@ -1708,7 +1946,7 @@ class PullRequestMetadataTests(unittest.TestCase):
 
     def test_unknown_or_mixed_run_shape_fails_closed(self):
         client = ScriptedClient()
-        record, jobs = _run(101, 10, mode="full", active=True)
+        record, jobs = _run(101, 10, mode="full")
         jobs = [
             job
             for job in jobs

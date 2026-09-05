@@ -1234,6 +1234,8 @@ the exact branch and head; timeout or ambiguity fails before `gh run watch`.
    shape is queued. Attempt a default body edit with exact repository, PR,
    head, and base arguments. Then exercise two snapshots where the first full
    Build succeeds and the second exposes an active rerun.
+   Exercise queued zero-job, one-job, current eight-job-without-summary,
+   unknown partial, and provable active metadata-only shapes.
 3. Repeat with a nonempty essential-contract reason, keep the same full run
    active, then present a successful runner-backed full Build followed by its
    failed metadata-only continuity run and invoke `pr-metadata reconcile`.
@@ -1262,6 +1264,9 @@ the exact branch and head; timeout or ambiguity fails before `gh run watch`.
    Accept quoted parameter values containing literal `=` and `;`; reject
    escaped quotes, every backslash, extra unquoted equals, empty names/values,
    trailing junk, duplicate names, unterminated quotes, and ambiguous spacing.
+   Exercise an active run whose jobs complete after its stale `updated_at`, a
+   refreshed terminal run whose updated bound precedes job completion, and
+   partial active graph materialization between the two snapshots.
 6. Parse `docs/test-cases/registry.json` and run
    `python3 -m unittest scripts.docs_check_tests.test_development_workflow_skill -v`.
 
@@ -1302,6 +1307,11 @@ The centralized header policy combines only explicitly permitted RFC fields,
 requires exact parameterized `application/json`, and rejects unsupported
 repeats. The centralized job state model admits skipped completion deltas only
 at `-1` or `0` seconds; positive duration cannot become runner-backed success.
+Active zero/partial/unknown graphs conservatively defer before terminal
+exact-set classification. A successful metadata classifier may prove an active
+metadata-only run harmless. Completed runs refresh exact run authority and
+retain exact job sets plus terminal upper bounds; active `updated_at` is not a
+live completion bound.
 
 ### Negative control
 
@@ -1320,7 +1330,9 @@ same-login/wrong-owner IDs, header control/DEL or obs-fold smuggling,
 malformed/24:00/offset/missing/reversed timestamps, invalid queued/in-progress
 timing, out-of-run chronology, repeated singleton/unsupported headers, JSONP,
 malformed media parameters, duplicate multiple-Link relations, skipped `+1`
-or `+28` durations, and repository/command injection all fail
+or `+28` durations, treating a partial active graph as terminal/error/harmless,
+using stale active `updated_at` as a completion bound, omitting terminal
+refresh, and repository/command injection all fail
 closed. No tested path calls a
 cancellation endpoint or a full-workflow dispatch endpoint.
 

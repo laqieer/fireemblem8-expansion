@@ -1028,6 +1028,17 @@ class TesterCaseRegistryTests(unittest.TestCase):
                             "test_development_workflow_skill -v",
                         },
                     },
+                    "TC-WORKFLOW-METADATA-EDIT-RACE-001": {
+                        "document": "docs/test-cases/workflow-governance.md",
+                        "commands": {
+                            "python3 -m unittest "
+                            "scripts.workflow_pilot.tests."
+                            "test_pr_metadata -v",
+                            "python3 -m unittest "
+                            "scripts.docs_check_tests."
+                            "test_development_workflow_skill -v",
+                        },
+                    },
                     "TC-WORKFLOW-PILOT-BASELINE-001": {
                         "document": "docs/test-cases/workflow-governance.md",
                         "commands": {

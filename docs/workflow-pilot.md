@@ -436,13 +436,27 @@ URL, check-run URL, runner identity, and completion state must agree with the
 parent exact-candidate run and repository. Mixed run/attempt/repository/head
 pages and identityless jobs fail closed.
 
+Completed runs are refreshed through their exact run API identity before job
+classification and retain the exact full/metadata job-set requirement.
+Queued and in-progress runs may expose no jobs or only a partial graph.
+After repository/workflow/event/head/base/run/attempt validation, an active run
+is harmless only when a successful `metadata-classifier` and the observed
+known-job subset prove metadata-only mode. An active `event-classifier`, an
+unknown/partial graph, zero jobs, or any other unproven active shape is a
+blocking active candidate and makes the default edit defer rather than error
+or mutate. Materialization changes between the two pre-PATCH snapshots also
+defer.
+
 Run and job times use a manual canonical
 `YYYY-MM-DDTHH:MM:SSZ` GitHub-RFC3339 parser; timezone offsets, fractional or
 24:00 times, malformed dates, and missing required fields are rejected.
 Runner-backed completed jobs require
-`run-created <= job-created <= job-started <= job-completed <= run-updated`.
+`run-created <= job-created <= job-started <= job-completed <= run-updated`
+after the exact terminal refresh.
 Queued jobs have null start/completion, and in-progress jobs have a valid start
-but null completion. Canonical unassigned skipped jobs preserve GitHub's live
+but null completion. An active run's `updated_at` is not a live job-completion
+upper bound; active jobs retain strict intrinsic chronology, while the upper
+bound is applied only after terminal run refresh. Canonical unassigned skipped jobs preserve GitHub's live
 timestamp quirk: created and started must be equal, while completion may equal
 them or precede them by exactly one second. Positive skipped duration,
 including one or 28 seconds, is rejected. These unassigned skipped jobs never
