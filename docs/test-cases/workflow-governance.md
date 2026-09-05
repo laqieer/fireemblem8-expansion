@@ -4,6 +4,90 @@ These source-only procedures cover the repository's agent delivery policy.
 They exercise documented orchestration contracts without dispatching a
 workflow, using credentials, or changing ROM behavior.
 
+## TC-WORKFLOW-OWNERSHIP-PROBE-SANDBOX-001: Confine and aggregate-bound validation-ownership probes
+
+- **Feature / originating issue:** `workflow-governance` /
+  [issue #206](https://github.com/laqieer/fireemblem8-expansion/issues/206).
+- **Supported configuration or artifact:** supported Linux source checkout
+  with GNU Make, Python 3, `build-essential`, and user namespaces or exact
+  passwordless `sudo -n /usr/bin/unshare`; no ROM, emulator, token, or live
+  GitHub object is required.
+- **Prerequisites and clean starting state:** start at the repository root
+  with no process using the ownership-probe scratch path. The suite creates
+  and removes only ignored `build/test-artifacts` fixtures.
+
+### Actions
+
+1. Run
+   `/usr/bin/python3 -I scripts/validation_ownership/isolated_launcher.py tests`.
+2. Run `make validation-ownership-check`.
+3. Inspect the test results for authentic GNU Make `eval`/pattern/variant
+   semantics, registered command dispatch, unrelated-path semantic stability,
+   real-input invalidation, admitted source access, and all negative controls.
+4. Confirm the aggregate tests reject 4,097 states before launch, terminate a
+   long process under one deadline, reject a theoretical 8 GiB cache entry and
+   event/mapping/output/future fanout, and leave no child, FIFO, socket, or
+   descriptor residue.
+
+### Expected result
+
+Candidate Make mounts are read-only and `noexec`. GNU Make sees no supervisor
+event/mapping/domain descriptors or result files; its executable path is
+detached after `fexecve`. `load`, native candidate tools, `SHELL`/
+`.SHELLFLAGS`, Make execution controls, `$(file)`, parse-time shell/eval/
+include, `/proc/self/fd`, and symlink aliases cannot forge an observation.
+Normal/exported shell assignments are disabled by the trusted prelude;
+override/eval forms reject before candidate parsing.
+Only the supervisor-compiled interceptor and exactly one registered command
+contract execute. A supervisor-built registered native handler receives no
+dispatch descriptors.
+
+Execution snapshot drift remains cache/integrity evidence. An unrelated
+documentation path changes that snapshot without changing another target's
+semantic owner fingerprint; a real declared owner input changes the semantic
+fingerprint.
+
+Generated registry code receives only admitted code and the trusted declared
+source set. Undeclared open, mmap, stat, lstat, scandir, glob, symlink, and
+dynamic paths reject, while a declared directory/glob using all those access
+forms passes. Candidate metadata, trusted permission, report, and behavioral
+consumption sets agree exactly. Invalid bytes reject at the named Make/JSON
+text boundary and remain distinct from valid raw output.
+
+### Negative control
+
+Removing candidate `noexec`, exposing an executable Make/compiler/Python
+path, inheriting a supervisor descriptor, accepting a reserved control or
+unknown command, putting the execution snapshot in the semantic fingerprint,
+mounting an undeclared source, trusting candidate-broadened metadata, omitting
+source-removal consumption replay, creating per-variant deadlines/caches, or
+submitting futures before aggregate preflight makes the focused suite fail.
+
+### Interactions and save compatibility
+
+The foundation depends on current Build `build-essential`, GNU Make, Python,
+`unshare`, and Linux mount controls. Issue #180 / PR #186 depends on its
+`ProbeBudget`, Make observation, and admitted-source APIs. It conflicts only
+with PR #186's inherited descriptor channels, private per-variant limits,
+whole-snapshot semantic identity, and best-effort source observation. It does
+not narrow validation, change a validation target, alter Build topology, or
+affect gameplay, ROM/RAM, saves, localization, generated game-data output,
+modern debug/release behavior, or the archival lane.
+
+### Automation
+
+`/usr/bin/python3 -I scripts/validation_ownership/isolated_launcher.py tests`
+executes the positive behavior and adversarial security/resource fixtures.
+`make validation-ownership-check` exercises the public sole-goal launcher and
+an authentic target observation under the same boundary.
+
+### Cleanup and limitations
+
+The suite removes its ignored scratch fixtures and context-owned sockets,
+mount roots, and processes. There is no manual criterion. The implementation
+supports Linux hosts with the current Build packages; a host without either
+supported namespace launcher fails closed.
+
 ## TC-WORKFLOW-CI-WAIT-001: Keep CI waiting centralized and trusted pushes owner-scoped
 
 - **Feature / originating issue:** `workflow-governance` /
@@ -533,7 +617,7 @@ while candidate eligibility remains bound to that prior full run.
 workflow and asserts exact trigger, job, head, worker-condition, summary, setup,
 pin, and environment semantics, including the pre-fix negative selection.
 
-`python3 -m unittest tests.upstream_port.test_verify -v` preserves the 28 local
+`python3 -m unittest tests.upstream_port.test_verify -v` preserves the 30 local
 gates while requiring complete nine-job source/target equivalence: the six
 issue #176 jobs remain closed and the identity/router/classifier are closed
 setup-only jobs, never 29th/30th/31st local gates.

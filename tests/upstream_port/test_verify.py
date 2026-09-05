@@ -20,7 +20,7 @@ BROKEN_PUBLISHER_INDENTATION_SHA = "77aae9df769aa87f2fd9bed13b767ff8e7dd171a"
 # Issues #7/#17 remediation: the documentation step is a genuine required
 # workflow gate, but it is the sole correctness step deliberately excluded
 # from verify.gates(). Its exact commands and position are asserted separately
-# below; localization remains part of the current 28-gate candidate mirror.
+# below; localization remains part of the current 30-gate candidate mirror.
 _DOCS_GOVERNANCE_STEP_NAME = "Check documentation (issues #7/#17)"
 _CODEQL_ALERTS_STEP_NAME = "Run CodeQL alert regression suite (issue #84)"
 _LOCALIZATION_HOST_STEP_NAME = "Run localization host test suite (issue #18)"
@@ -29,6 +29,12 @@ _WORKFLOW_CONTRACT_STEP_NAME = "Run workflow contract test suite"
 _WORKFLOW_PILOT_TEST_STEP_NAME = verify_mod._WORKFLOW_PILOT_TEST_STEP_NAME
 _WORKFLOW_PILOT_BASELINE_STEP_NAME = (
     verify_mod._WORKFLOW_PILOT_BASELINE_STEP_NAME
+)
+_VALIDATION_OWNERSHIP_TEST_STEP_NAME = (
+    verify_mod._VALIDATION_OWNERSHIP_TEST_STEP_NAME
+)
+_VALIDATION_OWNERSHIP_CHECK_STEP_NAME = (
+    verify_mod._VALIDATION_OWNERSHIP_CHECK_STEP_NAME
 )
 
 
@@ -154,7 +160,7 @@ class VerifyGatesMirrorWorkflowTests(unittest.TestCase):
         )
 
     def test_issue_7_17_docs_governance_is_a_standalone_workflow_step_not_a_verify_gate(self):
-        """Docs governance stays outside the current 28-gate candidate mirror
+        """Docs governance stays outside the current 30-gate candidate mirror
         while remaining required, argv-identical, and immediately after the
         artifact guard in build.yml."""
         names = [g.name for g in verify_mod.gates()]
@@ -234,6 +240,14 @@ class VerifyGatesMirrorWorkflowTests(unittest.TestCase):
         localization_index = ordered_unique_steps.index(_LOCALIZATION_HOST_STEP_NAME)
         self.assertEqual(
             ordered_unique_steps[localization_index - 1],
+            _VALIDATION_OWNERSHIP_CHECK_STEP_NAME,
+        )
+        self.assertEqual(
+            ordered_unique_steps[localization_index - 2],
+            _VALIDATION_OWNERSHIP_TEST_STEP_NAME,
+        )
+        self.assertEqual(
+            ordered_unique_steps[localization_index - 3],
             _WORKFLOW_PILOT_BASELINE_STEP_NAME,
         )
 
@@ -441,7 +455,7 @@ class VerifyGatesMirrorWorkflowTests(unittest.TestCase):
         )
 
     def test_gate_list_full_ordered_names(self):
-        # All 28 current candidate Build gates remain; docs governance is
+        # All 30 current candidate Build gates remain; docs governance is
         # deliberately absent and asserted as a standalone workflow step.
         names = [g.name for g in verify_mod.gates()]
         self.assertEqual(
@@ -452,6 +466,8 @@ class VerifyGatesMirrorWorkflowTests(unittest.TestCase):
                 "workflow-contract-tests",
                 "workflow-pilot-reporter-tests",
                 "workflow-pilot-baseline",
+                "validation-ownership-probe-tests",
+                "validation-ownership-check",
                 "localization-host-suite",
                 "game-localization-width-contract",
                 "game-localization-catalog-check",
@@ -479,8 +495,9 @@ class VerifyGatesMirrorWorkflowTests(unittest.TestCase):
         )
         # The merged CI runs the fast `host-tests` lane textually before the
         # ROM `build` job, so the host-only gates are first. The first six
-        # remain pure Python/native checks; the seventh runs the full-game
-        # localization Make target but still never builds a ROM.
+        # remain pure Python/native checks; the seventh runs the source-only
+        # ownership Make target and the ninth runs the full-game localization
+        # Make target. Neither builds a ROM.
         # stay host-only -- never a ROM/linker `make` build (that belongs
         # solely to the modern-linker gates) -- so the fast host job and the
         # ROM build job never duplicate work.
@@ -507,7 +524,7 @@ class VerifyGatesMirrorWorkflowTests(unittest.TestCase):
     def test_artifact_guard_command(self):
         # Full-game closure and artifact-guard unit checks precede the
         # immutable-tree check in the mirrored Build gate order.
-        g = verify_mod.gates()[11]
+        g = verify_mod.gates()[13]
         self.assertEqual(g.name, "artifact-guard")
         self.assertEqual(g.command, ["python3", "scripts/artifact_guard.py", "--revision", "HEAD"])
 
@@ -520,7 +537,7 @@ class VerifyGatesMirrorWorkflowTests(unittest.TestCase):
 
     def test_dry_run_never_executes_subprocess(self):
         results = verify_mod.run_gates(REPO_ROOT, dry_run=True)
-        self.assertEqual(len(results), 28)
+        self.assertEqual(len(results), 30)
         self.assertTrue(all(r.ran is False for r in results))
         self.assertTrue(all(r.passed is False for r in results))  # not-ran != passed
 
@@ -531,7 +548,7 @@ class VerifyGatesMirrorWorkflowTests(unittest.TestCase):
         dry = [r.gate.name for r in verify_mod.run_gates(REPO_ROOT, dry_run=True)]
         real_names = [g.name for g in verify_mod.gates()]
         self.assertEqual(dry, real_names)
-        self.assertEqual(len(dry), 28)
+        self.assertEqual(len(dry), 30)
 
 
 class VerifyGateSelectionRemovedTests(unittest.TestCase):
@@ -596,7 +613,7 @@ class VerifyGateSelectionRemovedTests(unittest.TestCase):
             self.assertIn(name, printed)
         # Every line for a dry-run gate is explicitly marked SKIPPED(dry-run)
         # -- never silently omitted, never marked PASS/FAIL without running.
-        self.assertEqual(printed.count("[SKIPPED(dry-run)]"), 28)
+        self.assertEqual(printed.count("[SKIPPED(dry-run)]"), 30)
 
 
 class HostOnlyEnvGateMirrorTests(unittest.TestCase):
@@ -718,9 +735,9 @@ class HostOnlyEnvGateMirrorTests(unittest.TestCase):
                 "run_gates must not mutate the parent environment",
             )
 
-        self.assertEqual(len(results), 28)
+        self.assertEqual(len(results), 30)
         self.assertTrue(all(result.passed for result in results))
-        self.assertEqual(len(seen), 28)
+        self.assertEqual(len(seen), 30)
 
         host_argv, host_env = seen[0]
         self.assertEqual(host_argv[0], "python3")
@@ -764,7 +781,7 @@ class HostOnlyEnvGateMirrorTests(unittest.TestCase):
         self.assertEqual([argv for argv, _ in seen], expected_argv)
         self.assertEqual(
             [kwargs["cwd"] for _, kwargs in seen],
-            [REPO_ROOT] * 28,
+            [REPO_ROOT] * 30,
         )
         baseline_argv = seen[
             [gate.name for gate in verify_mod.gates()].index(
@@ -965,10 +982,10 @@ class VerifyCliCwdTests(unittest.TestCase):
                     ):
                         self.assertEqual(cli.main(arguments), 0)
 
-                    self.assertEqual(len(seen), 28)
+                    self.assertEqual(len(seen), 30)
                     self.assertEqual(
                         [kwargs["cwd"] for _, kwargs in seen],
-                        [expected_root] * 28,
+                        [expected_root] * 30,
                     )
                     baseline = seen[
                         [gate.name for gate in verify_mod.gates()].index(
@@ -998,7 +1015,7 @@ class VerifyCliCwdTests(unittest.TestCase):
                 original = handle.read()
             self.assertEqual(
                 len(verify_mod.run_gates(target_root, dry_run=True)),
-                28,
+                30,
             )
 
             upstream_step = (
@@ -1107,7 +1124,7 @@ class VerifyCliCwdTests(unittest.TestCase):
                 "summary",
             ),
         )
-        self.assertEqual(len(verify_mod.gates()), 28)
+        self.assertEqual(len(verify_mod.gates()), 30)
         gate_jobs = {
             job_name
             for job_name, _, _ in verify_mod._workflow_gate_contract(
@@ -1238,6 +1255,17 @@ class VerifyCliCwdTests(unittest.TestCase):
             ],
             cwd=REPO_ROOT,
             text=True,
+        )
+        ownership_start = original.index(
+            "    - name: Run validation ownership probe security suite "
+            "(issue #206)\n"
+        )
+        issue_18_marker = "    # Issue #18 host-lane closure fix:"
+        ownership_end = original.index(issue_18_marker, ownership_start)
+        broken = broken.replace(
+            issue_18_marker,
+            original[ownership_start:ownership_end] + issue_18_marker,
+            1,
         )
         with self.assertRaisesRegex(
             ValueError,
@@ -1547,7 +1575,7 @@ class VerifyCliCwdTests(unittest.TestCase):
                 original = handle.read()
             self.assertEqual(
                 len(verify_mod.run_gates(target_root, dry_run=True)),
-                28,
+                30,
             )
 
             for job_name in verify_mod._COMBINED_JOBS:
@@ -1884,7 +1912,7 @@ class VerifyCliCwdTests(unittest.TestCase):
     def test_source_root_gate_equivalence_remains_supported(self):
         self.assertEqual(
             len(verify_mod.run_gates(REPO_ROOT, dry_run=True)),
-            28,
+            30,
         )
 
     def test_dry_run_and_normal_cli_select_the_same_target_root(self):
@@ -1930,7 +1958,7 @@ class VerifyCliCwdTests(unittest.TestCase):
             text=True,
         )
         self.assertEqual(completed.returncode, 0, completed.stderr)
-        self.assertEqual(completed.stdout.count("[SKIPPED(dry-run)]"), 28)
+        self.assertEqual(completed.stdout.count("[SKIPPED(dry-run)]"), 30)
 
     def test_invalid_explicit_repo_is_a_normal_cli_error(self):
         cases = (

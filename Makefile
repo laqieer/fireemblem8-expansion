@@ -1,3 +1,33 @@
+ifneq (,$(filter-out default undefined,$(origin MAKECMDGOALS)))
+$(error MAKECMDGOALS must remain owned by GNU Make)
+endif
+
+ifneq (,$(filter validation-ownership-check,$(MAKECMDGOALS)))
+ifneq ($(strip $(MAKECMDGOALS)),validation-ownership-check)
+$(error validation-ownership-check must be invoked as the sole Make goal)
+endif
+  override _VALIDATION_OWNERSHIP_FLAGS := \
+	$(strip $(MAKEFLAGS) $(MFLAGS) $(GNUMAKEFLAGS))
+  override _VALIDATION_OWNERSHIP_UNSAFE_FLAGS := \
+	$(filter-out j% -j% --jobserver-auth=% --jobserver-fds=% \
+		--no-print-directory,$(_VALIDATION_OWNERSHIP_FLAGS))
+ifneq ($(_VALIDATION_OWNERSHIP_UNSAFE_FLAGS),)
+$(error validation-ownership-check rejects Make execution controls: $(_VALIDATION_OWNERSHIP_UNSAFE_FLAGS))
+endif
+ifneq ($(strip $(MAKEOVERRIDES)),)
+$(error validation-ownership-check rejects Make variable overrides: $(MAKEOVERRIDES))
+endif
+ifeq ($(origin MAKEOVERRIDES),command line)
+$(error validation-ownership-check rejects command-line MAKEOVERRIDES)
+endif
+
+validation-ownership-check:
+	@/usr/bin/python3 -I scripts/validation_ownership/isolated_launcher.py \
+		check --repository-root "$(CURDIR)"
+
+.PHONY: validation-ownership-check
+else
+
 #### Tools ####
 
 ifeq ($(OS),Windows_NT)
@@ -881,3 +911,5 @@ endif
 
 # debug print, to use, call "make print-(your label here)"
 print-% : ; $(info $* is a $(flavor $*) variable set to [$($*)]) @true
+
+endif # validation-ownership-check early gate

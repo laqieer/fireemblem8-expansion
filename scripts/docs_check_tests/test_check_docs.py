@@ -1038,6 +1038,15 @@ class TesterCaseRegistryTests(unittest.TestCase):
                             "python3 scripts/check_docs.py --check",
                         },
                     },
+                    "TC-WORKFLOW-OWNERSHIP-PROBE-SANDBOX-001": {
+                        "document": "docs/test-cases/workflow-governance.md",
+                        "commands": {
+                            "/usr/bin/python3 -I "
+                            "scripts/validation_ownership/"
+                            "isolated_launcher.py tests",
+                            "make validation-ownership-check",
+                        },
+                    },
                 },
             },
         }
@@ -1957,11 +1966,12 @@ class StaleIssue5StatusAndGateNumberRegressionTests(unittest.TestCase):
         self.assertNotIn("is still **OPEN**", generated_data_text)
         self.assertNotIn("OPEN at time of writing", closure_report_text)
 
-    def test_framework_support_states_item_expansion_gates_20_21(self):
+    def test_framework_support_states_item_expansion_gates_22_23(self):
         framework_support_text = check_docs.read_text(
             os.path.join(REAL_REPO_ROOT, "docs", "framework-support.md")
         )
-        self.assertIn("gates 20-21 of", framework_support_text)
+        self.assertIn("gates 22-23 of", framework_support_text)
+        self.assertNotIn("gates 20-21 of", framework_support_text)
         self.assertNotIn("gates 18-19 of", framework_support_text)
         self.assertNotIn("gates 17-18 of", framework_support_text)
         self.assertNotIn("gates 12-13 of", framework_support_text)
@@ -1970,7 +1980,7 @@ class StaleIssue5StatusAndGateNumberRegressionTests(unittest.TestCase):
 
     def test_verify_gates_item_expansion_entries_precede_patch_profile(self):
         # Safe, standalone, no-network import of the live verify module
-        # straight off disk -- proves gates 20-21 against the real,
+        # straight off disk -- proves gates 22-23 against the real,
         # current scripts/upstream_port/verify.py gates() ordering rather
         # than a hardcoded fake substitute.
         verify_path = os.path.join(
@@ -1987,14 +1997,14 @@ class StaleIssue5StatusAndGateNumberRegressionTests(unittest.TestCase):
         finally:
             sys.modules.pop(spec.name, None)
 
-        self.assertEqual(len(all_gates), 28)
-        self.assertIn("itemexpansion", all_gates[19].name)
-        self.assertIn("itemexpansion", all_gates[20].name)
+        self.assertEqual(len(all_gates), 30)
+        self.assertIn("itemexpansion", all_gates[21].name)
+        self.assertIn("itemexpansion", all_gates[22].name)
         for index, gate in enumerate(all_gates):
-            if index not in (19, 20):
+            if index not in (21, 22):
                 self.assertNotIn("itemexpansion", gate.name)
         self.assertEqual(
-            all_gates[21].name,
+            all_gates[23].name,
             "modern-all-locales-all-features-profile",
         )
 

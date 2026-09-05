@@ -234,25 +234,32 @@ STALE_PHRASE_RULES = [
     # verify gate set. The actual, current scripts/upstream_port/verify.py
     # gates() ordering (mirrored by docs/upstream-porting.md) puts the two
     # item-expansion gates (modern-itemexpansion-check-debug/-release) at
-    # indexes 20-21 of exactly 28 gates, not 10-11. This exact stale gate
+    # indexes 22-23 of exactly 30 gates, not 10-11. This exact stale gate
     # numbering must never reappear verbatim.
     (
         re.compile(re.escape("gates 10-11 of the current-master")),
-        "stale claim: the item-ID-expansion checks are gates 20-21 of the "
-        "exact 28-gate scripts/upstream_port/verify.py gates() set, not "
+        "stale claim: the item-ID-expansion checks are gates 22-23 of the "
+        "exact 30-gate scripts/upstream_port/verify.py gates() set, not "
         "gates 10-11 -- see docs/upstream-porting.md",
     ),
     (
         re.compile(re.escape("gates 18-19 of the current")),
         "stale claim: the two workflow-pilot host gates moved the "
-        "item-ID-expansion checks to gates 20-21 of the exact 28-gate "
+        "item-ID-expansion checks to gates 22-23 of the exact 30-gate "
         "scripts/upstream_port/verify.py gates() set -- see "
         "docs/upstream-porting.md",
     ),
     (
-        re.compile(re.escape("26-gate upstream-port verifier")),
-        "stale claim: scripts/upstream_port/verify.py now mirrors 28 gates, "
-        "including both workflow-pilot host commands",
+        re.compile(re.escape("gates 20-21 of the current")),
+        "stale claim: the ownership-probe host gates moved the "
+        "item-ID-expansion checks to gates 22-23 of the exact 30-gate "
+        "scripts/upstream_port/verify.py gates() set -- see "
+        "docs/upstream-porting.md",
+    ),
+    (
+        re.compile(r"(?:26|28)-gate upstream-port verifier"),
+        "stale claim: scripts/upstream_port/verify.py now mirrors 30 gates, "
+        "including workflow-pilot and ownership-probe host commands",
     ),
 ]
 

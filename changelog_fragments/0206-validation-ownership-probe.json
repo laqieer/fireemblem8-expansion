@@ -1,0 +1,6 @@
+{
+  "issue": 206,
+  "category": "security",
+  "summary": "Confine validation-ownership probes behind supervisor-only dispatch, admitted sources, target-specific semantics, and one aggregate resource budget.",
+  "semver_impact": "none"
+}

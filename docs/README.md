@@ -37,6 +37,7 @@ the authoritative technical documentation and are checked by CI.
 | Generate or test localized full-game message catalogs | [`game_localization_catalog.md`](game_localization_catalog.md) |
 | Evaluate and deliver a feature request or bug fix with Copilot | [`development-workflow`](../.github/skills/development-workflow/SKILL.md) |
 | Reproduce the workflow-efficiency pilot baseline, event selection, and evidence contract | [`workflow-pilot.md`](workflow-pilot.md) |
+| Validate or integrate the confined ownership-probe execution boundary | [`validation-ownership-probe.md`](validation-ownership-probe.md) |
 | Contribute code/docs and know the review process | [`../CONTRIBUTING.md`](../CONTRIBUTING.md), [`project-governance.md`](project-governance.md) |
 | Come from the old decomp-base/agbcc workflow | [`migration-from-decomp.md`](migration-from-decomp.md) |
 | Do byte-for-byte decomp-matching work | [`archival-decomp.md`](archival-decomp.md) |
@@ -137,6 +138,7 @@ and
 | [`release-migration-template.md`](release-migration-template.md) | Template | Fill in for a real future version migration |
 | [`archival-decomp.md`](archival-decomp.md) | Current, archival scope | Unsupported-for-releases decomp-matching workflow |
 | [`workflow-pilot.md`](workflow-pilot.md) | Current | Frozen workflow-efficiency baseline, event classifier/evidence protocol, formulas, decision schema, and artifact lifecycle (issues #176/#177) |
+| [`validation-ownership-probe.md`](validation-ownership-probe.md) | Current | Confined GNU Make/generated-source observation and aggregate resource authority (issue #206) |
 | [`config_identity.md`](config_identity.md) | Current | Config surface + ROM identity fingerprint (issue #8) |
 | [`save_format.md`](save_format.md) | Current | Save format + compatibility gate (issue #2) |
 | [`id_space.md`](id_space.md) | Current | Typed-ID DEFAULT vs ACTIVE contract, cap switching (issue #10) |
@@ -163,7 +165,7 @@ and
 | [`test-cases/optional-gameplay.md`](test-cases/optional-gameplay.md) | Current | Optional gameplay procedures, profiles, controls, and automation (issue #55) |
 | [`test-cases/presentation-audio-utility.md`](test-cases/presentation-audio-utility.md) | Current | Presentation, audio, and utility procedures, profiles, controls, and automation (issue #58) |
 | [`test-cases/asset-authoring.md`](test-cases/asset-authoring.md) | Current | Source-asset adapter procedures, controls, runtime evidence, and cleanup (issue #62) |
-| [`test-cases/workflow-governance.md`](test-cases/workflow-governance.md) | Current | Trusted-push, CI-wait, manual-handoff, stacked-CI, workflow-pilot, and metadata-edit procedures (issues #93/#169/#171/#176/#177) |
+| [`test-cases/workflow-governance.md`](test-cases/workflow-governance.md) | Current | Trusted-push, CI-wait, manual-handoff, stacked-CI, workflow-pilot, metadata-edit, and ownership-probe procedures (issues #93/#169/#171/#176/#177/#206) |
 | [`test-cases/debugtools.md`](test-cases/debugtools.md) | Current | Cursor-unit editor and bounded music-preview procedures, teardown negatives, and save-neutral evidence (issues #125 and #126) |
 | [`test-cases/localization.md`](test-cases/localization.md) | Current | Localization and locale-persistence procedures, semantic runtime mappings, and negative controls (issue #56) |
 | [`test-cases/patch-release.md`](test-cases/patch-release.md) | Current | Trusted BPS artifact validation/application and malformed-input procedures (issue #49) |
