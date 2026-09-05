@@ -29,7 +29,7 @@ VARIABLE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\Z")
 TARGET = re.compile(r"[A-Za-z0-9_./+%-]+\Z")
 MAX_DYNAMIC_PASSES = 64
 ALIASES = (
-    "/bin/sh", "/bin/bash", "/bin/vo-shell", "/bin/vo-make",
+    "/bin/sh", "/bin/bash",
     *("/usr/bin/" + name for name in (
         "arm-none-eabi-as", "arm-none-eabi-gcc", "cc", "find", "g++", "gcc",
         "iconv", "mkdir", "mv", "printf", "python3", "rm", "sed", "uname",
@@ -125,15 +125,13 @@ def _command_hash(command: str) -> str:
 
 def _event_command(event: dict) -> str:
     arguments = event["arguments"]
-    if arguments[0] in {"/bin/sh", "/bin/bash", "/bin/vo-shell"}:
-        if len(arguments) != 3 or arguments[1] != "-c":
+    if arguments[0] in {"/bin/sh", "/bin/bash"}:
+        if len(arguments) != 3 or arguments[1] not in {"-c", "-ec"}:
             raise MakeProbeError("SHELL/.SHELLFLAGS escaped the interceptor protocol")
         return arguments[2]
     program = arguments[0]
-    if program.startswith("/usr/bin/"):
+    if program.startswith("/usr/bin/") and program != "/usr/bin/make":
         program = program.removeprefix("/usr/bin/")
-    if program == "/bin/vo-make":
-        program = "/usr/bin/make"
     def quote(value):
         if not value:
             return '""'
@@ -192,7 +190,7 @@ def _read_observation(raw: bytes, target: str, variables: tuple[str, ...]):
         recipe = reader.string("Make recipe")
         shell = reader.string("Make SHELL")
         flags = reader.string("Make .SHELLFLAGS")
-        if shell not in {"/bin/sh", "/bin/bash", "/bin/vo-shell"} or flags != "-c":
+        if shell not in {"/bin/sh", "/bin/bash"} or flags not in {"-c", "-ec"}:
             raise MakeProbeError("SHELL/.SHELLFLAGS escaped the trusted execution contract")
         prerequisites = []
         number = reader.integer()
@@ -316,7 +314,10 @@ def _scratch_directory(loader, requested):
         base = root
         parts = ()
     descriptor = os.open(base, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    descriptors = [descriptor]
     created = []
+    owned = []
+    failure = None
     cursor = base
     try:
         for part in parts:
@@ -326,20 +327,40 @@ def _scratch_directory(loader, requested):
             try:
                 os.mkdir(part, 0o700, dir_fd=descriptor)
                 created.append(cursor)
+                owned.append((descriptor, part))
             except FileExistsError:
                 pass
             following = os.open(
                 part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=descriptor,
             )
-            os.close(descriptor)
+            descriptors.append(following)
             descriptor = following
         name = "probe-" + secrets.token_hex(16)
         os.mkdir(name, 0o700, dir_fd=descriptor)
+        owned.append((descriptor, name))
         return root / name, created
-    except OSError as error:
-        raise MakeProbeError("unsafe scratch directory component") from error
+    except BaseException as error:
+        failure = error
+        for parent, name in reversed(owned):
+            try:
+                os.rmdir(name, dir_fd=parent)
+            except FileNotFoundError:
+                pass
+            except OSError as cleanup:
+                if hasattr(error, "add_note"):
+                    error.add_note(f"owned scratch cleanup failed for {name!r}: {cleanup}")
+        if isinstance(error, OSError):
+            raise MakeProbeError("unsafe scratch directory component") from error
+        raise
     finally:
-        os.close(descriptor)
+        for descriptor in reversed(descriptors):
+            try:
+                os.close(descriptor)
+            except OSError as cleanup:
+                if failure is None:
+                    raise
+                if hasattr(failure, "add_note"):
+                    failure.add_note(f"scratch descriptor cleanup failed: {cleanup}")
 
 
 class ProbeSession:
@@ -373,10 +394,15 @@ class ProbeSession:
             self.budget.remaining()
             if platform.system() != "Linux" or platform.machine() != "x86_64":
                 raise MakeProbeError("ownership probe requires Linux x86-64")
-            self.base, self.created = _scratch_directory(self.loader, self.scratch_root)
             for sig in (signal.SIGINT, signal.SIGTERM):
                 self.handlers[sig] = signal.getsignal(sig)
                 signal.signal(sig, self._interrupt)
+            # Deliver interruption only after the allocated paths have an owner.
+            mask = signal.pthread_sigmask(signal.SIG_BLOCK, self.handlers)
+            try:
+                self.base, self.created = _scratch_directory(self.loader, self.scratch_root)
+            finally:
+                signal.pthread_sigmask(signal.SIG_SETMASK, mask)
             self._tools()
             self.snapshot = Snapshot(self.loader, self.budget)
             self.tree = self.base / "tree"
@@ -454,6 +480,7 @@ class ProbeSession:
             command = [
                 "/usr/bin/cc", "-std=c11", "-O2", "-Wall", "-Wextra", "-Werror",
                 *flags, str(TRUSTED_ROOT / source), "-o", str(destination),
+                *(["-ldl"] if source == "make_observer.c" else []),
             ]
             completed = self.budget.run(
                 command, env={**ENVIRONMENT, "TMPDIR": str(self.base)}, cwd=self.base,
@@ -512,7 +539,7 @@ class ProbeSession:
         self.serial += 1
         report = self.base / f"report-{self.serial}.json"
         config_path = self.base / f"launch-{self.serial}.json"
-        executable = ["/usr/bin/make", *ALIASES] if mode == "make" else (
+        executable = ["/usr/bin/make", "/control/interceptor", *ALIASES] if mode == "make" else (
             [argv[0]] if executables is None else list(executables)
         )
         file_remaining = min(
@@ -782,7 +809,7 @@ class ProbeSession:
         self.budget.plan(1)
         cli = []
         environment = {
-            **ENVIRONMENT, "SOURCE_DATE_EPOCH": "0",
+            **ENVIRONMENT,
             "LD_PRELOAD": "/lib/vo-observer.so",
             "VO_OBSERVE_TARGET": target,
             "VO_OBSERVE_NAMES": " ".join(variables),
@@ -793,7 +820,7 @@ class ProbeSession:
             if (
                 origin not in {"environment", "command-line"} or not VARIABLE.fullmatch(name)
                 or name in names or name.startswith(("VO_", "LD_", "GIT_"))
-                or name in {"SHELL", "MAKEFLAGS", "MFLAGS", "MAKEFILES", "MAKELEVEL", "PATH"}
+                or name in {"SHELL", "MAKEFLAGS", "GNUMAKEFLAGS", "MFLAGS", "MAKEFILES", "MAKELEVEL", "PATH"}
                 or not isinstance(value, str) or "\0" in value or len(value) > 65536
             ):
                 raise MakeProbeError("invalid or execution-authority Make assignment")
@@ -810,6 +837,7 @@ class ProbeSession:
         events_path, result_path = control / "events", control / "result"
         events_path.touch()
         result_path.touch()
+        (control / "interceptor").touch()
         mappings = {}
         command_results = {}
         commands = {} if commands is None else commands
@@ -822,13 +850,13 @@ class ProbeSession:
                 completed, observed = self._sandbox_run(
                     root, mode="make",
                     argv=[
-                        "/usr/bin/make", "--no-print-directory", "-n", "-B", "-j1", "-f", makefile,
-                        "MAKE=/bin/vo-make", "SHELL=/bin/vo-shell", ".SHELLFLAGS=-c", *cli, target,
+                        "/usr/bin/make", "-f", makefile, *cli, target,
                     ],
                     environment=environment,
                     mounts=[
                         self._mount(self.tree, "/repo"),
                         self._mount(control, "/control", writable=True),
+                        self._mount(self.base / "interceptor", "/control/interceptor", executable=True),
                         self._mount(Path("/dev/null"), "/dev/null", writable=True),
                     ],
                 )

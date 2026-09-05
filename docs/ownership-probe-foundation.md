@@ -124,11 +124,38 @@ consumers exercise this policy without a compiler exception or untraced worker.
 
 ### Make, observer and interceptor
 
-Only the trusted Make binary and static interceptor aliases can execute in the
-Make capsule. A native guard rejects **every** Make `load` before a module entry
+Only the initial trusted Make and its privately mounted static interceptor can
+execute in the Make capsule. A native guard rejects **every** Make `load` before a module entry
 point, including attempts to load an already-mapped host object. Candidate
 executables, alternate loaders/interpreters, nested native Make through
 `SHELL`, and noncontract `.SHELLFLAGS` are not execution authority.
+
+The observation uses ordinary `/usr/bin/make -f FILE [declared assignments]
+TARGET` context. It does not inject `-n`, `-B`, `-j1`, print-directory options,
+or command-line `MAKE`/`SHELL`/`.SHELLFLAGS` overrides. Their normal values,
+origins and flavors remain visible, including file-defined `/bin/bash` and
+POSIX mode's `-ec` shell flags. Observer bootstrap variables and `LD_PRELOAD`
+are removed before Make imports the environment. `GNUMAKEFLAGS`, like
+`MAKEFLAGS`/`MFLAGS`/`MAKEFILES`, is an execution-authority channel and cannot
+be supplied through either assignment origin.
+
+The native `posix_spawn` boundary redirects execution without rewriting those
+variables. Its dispatch notification is authenticated at the observer's
+instruction pointer; an unnotified exec or candidate syscall cannot acquire
+interceptor authority. The supervisor uses the child's actual stdout FD to
+distinguish value-bearing `$(shell ...)` from ordinary recipe dispatch, even
+when both commands have identical argv. The interceptor queries that
+kernel-owned classification; no candidate environment marker decides it.
+Unsupported native spawn paths fail closed.
+
+Ordinary recipes are metadata-only: Make resolves its normal graph and
+expands the recipes, but the interceptor does not run them or fabricate
+registered output. This is not evidence of production recipe exit status,
+artifacts or validation success. Expansions still require actual registered
+command results. Makefile remakes, direct recursive Make and graphs containing
+GNU Make's native recursive-command flags conservatively require registered
+results for their dispatches, rather than silently suppressing recursion.
+The fixed process/resource bounds still include interceptor children.
 
 Make's runtime is captured once per session from its actual ELF interpreter
 and that trusted interpreter's bounded `--list` dependency closure. Canonical
@@ -148,6 +175,9 @@ descriptor. Only syscall instructions in that trusted observer's executable
 mapping may open/write the result channel. GNU Make `file`/include/eval cannot.
 Candidate stdout/stderr is retained as bytes for diagnostics, never parsed as
 authoritative Make structure.
+After observer initialization, candidate reads of its image and enumeration of
+runtime directories reject; the private interceptor is below the already
+protected control namespace. There are no probe-only public shell/Make aliases.
 
 The static interceptor alone opens the event and read-only mapping channels.
 Neither Make nor a registered command receives those descriptors. The original
@@ -268,6 +298,13 @@ SIGINT/SIGTERM kill/reap the recorded process groups and traced descendants,
 clear caches, close channels and remove only the owned scratch tree. Scratch
 components and input leaves reject symlinks/FIFOs. No cleanup uses process
 names, other worktrees, global caches or system temporary directories.
+Scratch allocation retains directory FDs and local ownership of every new
+parent until the session takes over. A tracked component, inaccessible leaf,
+open/mkdir failure or interruption cleans partial allocation too, without
+removing pre-existing directories or traversing an unsafe ancestor. Setup
+signals are delivered only after ownership is assigned. If the operating
+system also rejects cleanup, the primary setup failure remains the cause and
+cleanup diagnostics are attached rather than replacing it.
 
 In the sudo route, both the namespace availability probe and every capsule
 launch use the same privileged watchdog. The outer caller owns the sole write
@@ -319,6 +356,9 @@ Required downstream #180/PR186 integration:
    exercise its entire current domain matrix, generated ownership, oracle and
    lifecycle under the unchanged bound. No such matrix/graph proof is claimed
    by this foundation's small, real consumer.
+
+In particular, the downstream 112-domain adoption is not established by the
+normal-context, interception or cleanup regressions here.
 
 Dependencies are the existing generated-registry schema and host tools above.
 Conflicts: PR186's probe/interceptor/reporter surfaces must be reconciled.

@@ -7,13 +7,17 @@
  * No candidate-loadable functions are registered with GNU Make.
  */
 #define _GNU_SOURCE
+#include <dlfcn.h>
 #include <fcntl.h>
+#include <spawn.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/syscall.h>
 #include <unistd.h>
+
+#include "dispatch.h"
 
 struct FileView;
 struct DependencyView
@@ -31,6 +35,11 @@ struct CommandsView
     unsigned long line;
     unsigned long offset;
     const char *text;
+    char **lines;
+    unsigned char *line_flags;
+    unsigned short line_count;
+    char recipe_prefix;
+    unsigned int any_recurse:1;
 };
 
 struct FileView
@@ -50,6 +59,8 @@ extern char *gmk_expand(const char *);
 extern char *allocated_variable_expand_for_file(const char *, struct FileView *);
 extern void initialize_file_variables(struct FileView *, int);
 extern void set_file_variables(struct FileView *);
+extern void chop_commands(struct CommandsView *);
+extern int rebuilding_makefiles;
 
 #define MAX_NODES 4096
 #define MAX_NAMES 512
@@ -114,6 +125,77 @@ __attribute__((constructor)) static void setup(void)
     unsetenv("VO_OBSERVE_TARGET");
     unsetenv("VO_OBSERVE_NAMES");
     unsetenv("VO_OBSERVE_BYTES");
+    unsetenv("LD_PRELOAD");
+    raw_call(SYS_getpid, VO_READY, 0, 0);
+}
+
+static int recursive_graph(void)
+{
+    struct FileView *nodes[MAX_NODES];
+    size_t count = 1;
+    size_t index;
+
+    nodes[0] = lookup_file(target);
+    if (!nodes[0] || rebuilding_makefiles)
+        return 1;
+    for (index = 0; index < count; ++index)
+    {
+        struct FileView *file = nodes[index];
+        struct DependencyView *dependency;
+        size_t links = 0;
+        if (file->commands)
+        {
+            chop_commands(file->commands);
+            if (file->commands->any_recurse)
+                return 1;
+        }
+        for (dependency = file->dependencies; dependency; dependency = dependency->next)
+        {
+            size_t found;
+            if (++links > MAX_NODES)
+                fail();
+            if (!dependency->file)
+                continue;
+            for (found = 0; found < count && nodes[found] != dependency->file; ++found) {}
+            if (found == count)
+            {
+                if (count == MAX_NODES)
+                    fail();
+                nodes[count++] = dependency->file;
+            }
+        }
+        if (file->previous)
+        {
+            size_t found;
+            for (found = 0; found < count && nodes[found] != file->previous; ++found) {}
+            if (found == count)
+            {
+                if (count == MAX_NODES)
+                    fail();
+                nodes[count++] = file->previous;
+            }
+        }
+    }
+    return 0;
+}
+
+int posix_spawn(pid_t *pid, const char *path, const posix_spawn_file_actions_t *actions,
+                const posix_spawnattr_t *attributes, char *const argv[], char *const envp[])
+{
+    int status;
+    static int (*spawn)(pid_t *, const char *, const posix_spawn_file_actions_t *,
+                        const posix_spawnattr_t *, char *const [], char *const []);
+    if (!spawn)
+        spawn = dlsym(RTLD_NEXT, "posix_spawn");
+    if (!spawn)
+        fail();
+    /* Redirect execution, never Make's visible variables, origins or flags.
+     * The kernel supervisor authenticates this notification and the child's
+     * stdout FD. Recursive/remake contexts conservatively require mappings. */
+    raw_call(SYS_getpid, VO_DISPATCH, (long)path, recursive_graph());
+    status = spawn(pid, VO_INTERCEPTOR, actions, attributes, argv, envp);
+    raw_call(SYS_getpid, VO_DISPATCH, 0, 0);
+    return status;
 }
 
 /* A noexec mount also rejects executable mappings of candidate files. This

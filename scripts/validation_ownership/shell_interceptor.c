@@ -6,7 +6,10 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <sys/syscall.h>
 #include <unistd.h>
+
+#include "dispatch.h"
 
 /* PR186's length-framed event and exact FNV-keyed mapping protocol is retained.
  * Channels are opened by this authenticated static executable only, never
@@ -71,10 +74,10 @@ static unsigned char *read_file_at(int directory, const char *name, size_t *size
 
 static const char *canonical_program(const char *program)
 {
+    if (!strcmp(program, "/usr/bin/make"))
+        return program;
     if (!strncmp(program, "/usr/bin/", 9))
         return program + 9;
-    if (!strcmp(program, "/bin/vo-make"))
-        return "/usr/bin/make";
     return program;
 }
 
@@ -140,15 +143,20 @@ int main(int argc, char **argv)
     int match = -1;
     int mapping;
     int events;
+    long kind = syscall(SYS_getpid, VO_QUERY_KIND);
     const char *program = argv[0];
-    int shell = !strcmp(program, "/bin/sh") || !strcmp(program, "/bin/bash")
-        || !strcmp(program, "/bin/vo-shell");
+    int shell = !strcmp(program, "/bin/sh") || !strcmp(program, "/bin/bash");
 
+    if (kind == VO_RECIPE)
+        return 0;
+    if (kind != VO_VALUE)
+        return 125;
     if (argc < 1 || argc > 1024)
         return 125;
     if (shell)
     {
-        if (argc != 3 || strcmp(argv[1], "-c") || strlen(argv[2]) >= sizeof(command))
+        if (argc != 3 || (strcmp(argv[1], "-c") && strcmp(argv[1], "-ec"))
+            || strlen(argv[2]) >= sizeof(command))
             return 125;
         strcpy(command, argv[2]);
     }

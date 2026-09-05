@@ -1608,6 +1608,26 @@ Start from a clean checkout; fixtures use only ignored `build/test-artifacts`.
     directory permissions, regular-file `fchmod`, and real C/C++ compiler output
     remain supported. Fixtures retain only their own directory FDs to safely
     restore permissions if a regression re-admits the old behavior.
+12. Run the same suite's ordinary-Make context comparisons. Conditional
+    prerequisites must match real `/usr/bin/make` for `SHELL`/`MAKE` values and
+    origins, `.SHELLFLAGS` origin, and dry-run/always-make/job/print flags.
+    Compare complete value/origin/flavor records in default, file-shell,
+    requested-domain and POSIX contexts. Identical recipe and `$(shell)` argv
+    must remain metadata-only and value-bearing respectively; recursive and
+    Makefile-remake commands still require actual registered mappings.
+13. Reproduce the benign `GNUMAKEFLAGS=--eval=INJECTED=yes` control in the owned
+    fixture with ordinary Make; its graph changes. Passing that option channel
+    through either probe assignment origin must reject before a Make launch.
+    Private dispatch queries, observer-image reads and control-path reads must
+    not become a candidate-controlled context or evidence channel.
+14. Fail scratch construction after new parents exist: use a tracked leaf,
+    overlong component, injected open/mkdir failures, an inaccessible owned
+    directory for an unprivileged runner, and interruption. All new parents and
+    FDs must be released, while an existing parent/sentinel survives.
+    SIGTERM delivered during allocation must wait until ownership is recorded.
+    A modeled cleanup failure must preserve the primary setup exception; the
+    fixture teardown, not production code, removes that deliberately retained
+    test residue.
 
 ### Expected result
 
@@ -1642,6 +1662,13 @@ on a non-multiarch layout. A real confined `chmod('/work', 0)` followed by a
 failing command formerly masked the original error with cleanup
 `PermissionError` and left an inaccessible owned directory. The new regressions
 preserve these negative controls while limiting all effects to owned fixtures.
+
+Before the normal-context correction, benign ordinary Make selected `genuine`
+while the probe selected `hidden` for seven independent flag/value/origin
+conditions. `GNUMAKEFLAGS --eval` also injected an unrequested definition.
+Partial setup rejected a tracked leaf but left newly created parents behind
+because ownership had not reached the session. These are behavioral negative
+controls, not source-spelling checks.
 
 ### Interactions and save compatibility
 

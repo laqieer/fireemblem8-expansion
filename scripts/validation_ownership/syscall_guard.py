@@ -27,7 +27,7 @@ from pathlib import Path
 LIBC = ctypes.CDLL(None, use_errno=True)
 LIBC.ptrace.restype = ctypes.c_long
 WALL = 0x40000000
-TRACEME, PEEKDATA, SYSCALL, GETREGS, SETOPTIONS = 0, 2, 24, 12, 0x4200
+TRACEME, PEEKDATA, SYSCALL, GETREGS, SETREGS, SETOPTIONS = 0, 2, 24, 12, 13, 0x4200
 OPTIONS = 1 | 2 | 4 | 8 | 16 | 0x100000  # syscall/fork/vfork/clone/exec/exitkill
 PROT_READ, PROT_WRITE, PROT_EXEC = 1, 2, 4
 MAP_SHARED, MAP_PRIVATE, MAP_SHARED_VALIDATE = 1, 2, 3
@@ -35,6 +35,10 @@ MAP_ANONYMOUS = 0x20
 # Fixed placement, loader hints and stacks do not alias pages or change their
 # size. Growing/huge-page and unknown flags cannot bypass 4 KiB reservations.
 MMAP_FLAGS = 3 | 0x10 | MAP_ANONYMOUS | 0x800 | 0x1000 | 0x20000 | 0x100000
+VO_READY, VO_DISPATCH, VO_QUERY_KIND = (
+    0x564F4D4B00000001, 0x564F4D4B00000002, 0x564F4D4B00000003,
+)
+VO_RECIPE, VO_VALUE = 0x564F4D4B00000011, 0x564F4D4B00000012
 
 
 class Violation(RuntimeError):
@@ -120,11 +124,15 @@ class Process:
     bootstrap: bool = True
     memory_reservation: int = 0
     break_end: int = 0
+    dispatch: tuple | None = None
+    helper_kind: int = 0
+    observer_ready: bool = False
 
     def clone(self):
         return Process(
             self.role, self.cwd, dict(self.fds), False, None,
             self.observer_ranges, self.bootstrap, 0, self.break_end,
+            self.dispatch, 0, self.observer_ready,
         )
 
 
@@ -275,6 +283,11 @@ class Policy:
     def check(self, state, path, operation, *, observer=False):
         if path.startswith("<"):
             return
+        if state.role == "make" and state.observer_ready:
+            if path == "/lib/vo-observer.so" and not observer:
+                raise Violation("supervisor observer image access denied")
+            if operation == "directory" and not (path == "/repo" or path.startswith("/repo/")):
+                raise Violation("Make runtime directory enumeration denied")
         if path == "/control" or path.startswith("/control/"):
             if state.role == "helper":
                 if path == "/control/events" and operation == "write":
@@ -410,7 +423,28 @@ class Policy:
         a, b, c, d, e = r.rdi, r.rsi, r.rdx, r.r10, r.r8
         state.pending = None
         trusted = self.observer(state, r)
-        if n in {2, 85, 257}:  # open, creat, openat
+        if n == 39 and a in {VO_READY, VO_DISPATCH, VO_QUERY_KIND}:
+            if a == VO_QUERY_KIND:
+                if state.role != "helper" or state.helper_kind not in {VO_RECIPE, VO_VALUE}:
+                    raise Violation("unauthenticated interceptor kind query")
+                state.pending = ("helper_kind", state.helper_kind)
+            else:
+                if not trusted:
+                    raise Violation("unauthenticated Make dispatch notification")
+                if a == VO_READY:
+                    if b or c or state.observer_ready:
+                        raise Violation("invalid observer bootstrap notification")
+                    state.observer_ready = True
+                elif b:
+                    path = self.path(pid, state, b)
+                    if path not in self.executable or path == "/control/interceptor" or c not in {0, 1}:
+                        raise Violation(f"untrusted executable dispatch: {path}")
+                    state.dispatch = (path, c)
+                else:
+                    if c:
+                        raise Violation("invalid Make dispatch completion")
+                    state.dispatch = None
+        elif n in {2, 85, 257}:  # open, creat, openat
             flags = c if n == 257 else b
             follow = n == 85 or not (
                 flags & os.O_NOFOLLOW or flags & os.O_CREAT and flags & os.O_EXCL
@@ -496,9 +530,17 @@ class Policy:
             if path not in self.executable:
                 raise Violation(f"untrusted executable dispatch: {path}")
             if self.mode == "make":
-                role = "make" if state.bootstrap and path == "/usr/bin/make" else "helper"
-                if path == "/usr/bin/make" and not state.bootstrap:
-                    raise Violation("recursive native Make/SHELL dispatch denied")
+                if state.bootstrap and path == "/usr/bin/make":
+                    role = "make"
+                elif path == "/control/interceptor" and state.dispatch:
+                    role = "helper"
+                    source, required = state.dispatch
+                    state.helper_kind = VO_VALUE if (
+                        required or source == "/usr/bin/make" or self.fd(state, 1) == "<pipe>"
+                    ) else VO_RECIPE
+                    state.dispatch = None
+                else:
+                    raise Violation("Make execution escaped authenticated native dispatch")
             else:
                 role = "compiler" if self.mode == "compile" else "command"
             state.pending = ("exec", role)
@@ -653,6 +695,9 @@ class Policy:
                 state.fds[int.from_bytes(data[offset:offset + 4], "little")] = "<pipe>"
         elif operation == "cwd":
             state.cwd = value
+        elif operation == "helper_kind":
+            r.rax = value
+            ptrace(SETREGS, pid, 0, ctypes.byref(r))
 
 
 def observer_ranges(pid):

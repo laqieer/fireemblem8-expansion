@@ -64,6 +64,328 @@ class FoundationTests(unittest.TestCase):
         self.assertIsNone(session.base)
         self.assertFalse(self.scratch.exists())
 
+    def test_make_option_channels_cannot_inject_unrequested_evaluation(self):
+        self.add("Makefile", (
+            "ifeq ($(INJECTED),yes)\nDEP = injected\nelse\nDEP = ordinary\nendif\n"
+            "all: $(DEP)\n\t@printf '%s' '$^'\ninjected ordinary: ;\n"
+        ))
+        self.add("other.mk", "INJECTED := yes\n")
+        before = subprocess.run(
+            ["/usr/bin/make", "-f", "Makefile", "all"], cwd=self.root,
+            env={**ENVIRONMENT, "GNUMAKEFLAGS": "--eval=INJECTED=yes"},
+            capture_output=True, check=True, timeout=10,
+        )
+        self.assertEqual(before.stdout, b"injected")
+        for name in ("GNUMAKEFLAGS", "MAKEFLAGS"):
+            for origin in ("environment", "command-line"):
+                for value in ("--eval=INJECTED=yes", "-f other.mk"):
+                    with self.subTest(name=name, origin=origin, value=value):
+                        session = self.session()
+                        with session:
+                            runs = session.budget.runs
+                            with self.assertRaisesRegex(MakeProbeError, "execution-authority Make assignment"):
+                                session.make("all", assignments=((origin, name, value),))
+                            self.assertEqual(session.budget.runs, runs)
+                        self.assert_clean(session)
+
+    def test_conditional_graphs_match_ordinary_make_not_probe_markers(self):
+        controls = (
+            "ifeq ($(SHELL),/bin/vo-shell)",
+            "ifeq ($(origin SHELL),command line)",
+            "ifeq ($(MAKE),/bin/vo-make)",
+            "ifeq ($(origin MAKE),command line)",
+            "ifeq ($(origin .SHELLFLAGS),command line)",
+            "ifneq ($(findstring n,$(firstword $(MAKEFLAGS))),)",
+            "ifneq ($(findstring B,$(firstword $(MAKEFLAGS))),)",
+            "ifneq ($(findstring j1,$(MAKEFLAGS)),)",
+            "ifneq ($(findstring --no-print-directory,$(MAKEFLAGS)),)",
+            "ifneq ($(origin LD_PRELOAD),undefined)",
+            "ifneq ($(origin VO_OBSERVE_TARGET),undefined)",
+            "ifneq ($(origin SOURCE_DATE_EPOCH),undefined)",
+        )
+        for condition in controls:
+            with self.subTest(condition=condition):
+                self.add("Makefile", (
+                    condition + "\nDEP = hidden\nelse\nDEP = genuine\nendif\n"
+                    "all: $(DEP)\n\t@printf '%s' '$^'\nhidden genuine: ;\n"
+                ))
+                normal = subprocess.run(
+                    ["/usr/bin/make", "-f", "Makefile", "all"],
+                    cwd=self.root, env=ENVIRONMENT, capture_output=True, check=True, timeout=10,
+                )
+                self.assertEqual(normal.stdout, b"genuine")
+                with self.session() as session:
+                    observed = session.make("all")
+                    self.assertEqual(observed.semantics["files"][0]["prerequisites"], [
+                        {"name": normal.stdout.decode("ascii"), "order_only": False},
+                    ])
+                    self.assertEqual(observed.events, ())
+                self.assert_clean(session)
+
+    def test_default_file_and_requested_domains_preserve_production_make_context(self):
+        names = (
+            "SHELL", "MAKE", "MAKE_COMMAND", "MAKEFLAGS", "MFLAGS", "MAKELEVEL",
+            "LD_PRELOAD", "GNUMAKEFLAGS", "MODE", "FLAGS", "FLAGS_ORIGIN", "FLAGS_FLAVOR",
+        )
+        aliases = "".join(
+            f"CTX_{index}_{field} = $({form}{name})\n"
+            for index, name in enumerate(names)
+            for field, form in (("value", ""), ("origin", "origin "), ("flavor", "flavor "))
+        )
+        arguments = " ".join(
+            f"'$(CTX_{index}_{field})'"
+            for index in range(len(names)) for field in ("value", "origin", "flavor")
+        )
+        for prefix, assignments in (
+            ("MODE ?= file\n", ()),
+            ("SHELL := /bin/bash\nMODE ?= file\n", (("environment", "MODE", "environment"),)),
+            (".POSIX:\nMODE ?= file\n", (("command-line", "MODE", "command"),)),
+        ):
+            with self.subTest(prefix=prefix, assignments=assignments):
+                self.add("Makefile", (
+                    prefix + "FLAGS = $(.SHELLFLAGS)\nFLAGS_ORIGIN = $(origin .SHELLFLAGS)\n"
+                    "FLAGS_FLAVOR = $(flavor .SHELLFLAGS)\n" + aliases
+                    + "ifeq ($(MODE),command)\nDEP = command\nelse\nDEP = ordinary\nendif\n"
+                    + f"all: $(DEP)\n\t@printf '%s\\n' '$^' {arguments}\n"
+                    + "command ordinary: ;\n"
+                ))
+                environment = dict(ENVIRONMENT)
+                cli = []
+                for origin, name, value in assignments:
+                    if origin == "environment":
+                        environment[name] = value
+                    else:
+                        cli.append(name + "=" + value)
+                normal = subprocess.run(
+                    ["/usr/bin/make", "-f", "Makefile", *cli, "all"],
+                    cwd=self.root, env=environment, capture_output=True, check=True, timeout=10,
+                )
+                lines = normal.stdout.decode("ascii").splitlines()
+                self.assertEqual(len(lines), 1 + 3 * len(names), normal.stdout)
+                expected = {
+                    name: dict(zip(("value", "origin", "flavor"), lines[1 + index * 3:4 + index * 3]))
+                    for index, name in enumerate(names)
+                }
+                with self.session() as session:
+                    observed = session.make("all", variables=names, assignments=assignments)
+                    self.assertEqual(observed.semantics["domains"], expected)
+                    self.assertEqual(observed.semantics["files"][0]["prerequisites"], [
+                        {"name": lines[0], "order_only": False},
+                    ])
+                    self.assertEqual(observed.events, ())
+                self.assert_clean(session)
+
+    def test_secondary_expansion_keeps_target_specific_shell_context(self):
+        self.add("Makefile", (
+            ".SECONDEXPANSION:\nall: SHELL := /bin/bash\n"
+            "all: $$(if $$(filter /bin/bash,$$(SHELL)),file-shell,wrong-context)\n"
+            "\t@printf '%s' '$^'\nfile-shell wrong-context: ;\n"
+        ))
+        normal = subprocess.run(
+            ["/usr/bin/make", "-f", "Makefile", "all"], cwd=self.root,
+            env=ENVIRONMENT, capture_output=True, check=True, timeout=10,
+        )
+        self.assertEqual(normal.stdout, b"file-shell")
+        with self.session() as session:
+            observed = session.make("all", variables=("SHELL",))
+            self.assertEqual(observed.semantics["files"][0]["prerequisites"], [
+                {"name": "file-shell", "order_only": False},
+            ])
+            self.assertEqual(observed.semantics["files"][0]["variables"]["SHELL"], {
+                "value": "/bin/bash", "origin": "file", "flavor": "simple",
+            })
+            self.assertEqual(observed.semantics["domains"]["SHELL"]["value"], "/bin/sh")
+        self.assert_clean(session)
+
+    def test_recipe_commands_are_metadata_but_make_expansion_effects_still_reject(self):
+        self.add("Makefile", "all:\n\t@printf '%s' recipe > recipe-effect\n")
+        subprocess.run(
+            ["/usr/bin/make", "-f", "Makefile", "all"], cwd=self.root,
+            env=ENVIRONMENT, capture_output=True, check=True, timeout=10,
+        )
+        effect = self.root / "recipe-effect"
+        self.assertEqual(effect.read_bytes(), b"recipe")
+        effect.unlink()
+        with self.session() as session:
+            observed = session.make("all")
+            self.assertFalse(effect.exists())
+            self.assertFalse((session.tree / "recipe-effect").exists())
+            self.assertEqual(observed.events, ())
+            self.assertIn("recipe-effect", observed.semantics["files"][0]["recipe"])
+        self.assert_clean(session)
+        self.add("Makefile", "all:\n\t$(file >recipe-effect,forged)\n")
+        session = self.session()
+        with self.assertRaisesRegex(MakeProbeError, "write outside"):
+            with session:
+                session.make("all")
+        self.assertFalse(effect.exists())
+        self.assert_clean(session)
+
+    def test_dispatch_classifies_identical_recipe_and_expansion_by_native_context(self):
+        for prefix in ("", ".POSIX:\n"):
+            for command in ("printf %s dynamic", "printf '%s' dynamic; printf ''"):
+                with self.subTest(prefix=prefix, command=command):
+                    self.add("Makefile", (
+                        prefix + f"VALUE := $(shell {command})\nall: $(VALUE)\n"
+                        f"\t@{command}\ndynamic: ;\n"
+                    ))
+                    with self.session() as session:
+                        observed = session.make(
+                            "all", variables=("VALUE",),
+                            commands={command: Command(("/usr/bin/printf", "%s", "dynamic"))},
+                        )
+                        self.assertEqual(observed.semantics["domains"]["VALUE"]["value"], "dynamic")
+                        self.assertEqual(len(observed.events), 1)
+                        self.assertEqual(observed.events[0]["match"], 0)
+                        self.assertEqual(observed.stdout, b"")
+                    self.assert_clean(session)
+
+    def test_recursive_and_makefile_remake_dispatch_still_requires_real_mappings(self):
+        self.add("Makefile", "all:\n\t+@printf %s recursive\n")
+        for registered in (False, True):
+            with self.subTest(registered=registered):
+                session = self.session()
+                with session:
+                    if registered:
+                        observed = session.make("all", commands={
+                            "printf %s recursive": Command(("/usr/bin/printf", "%s", "recursive")),
+                        })
+                        self.assertEqual(observed.stdout, b"recursive")
+                        self.assertEqual(len(observed.events), 1)
+                    else:
+                        with self.assertRaisesRegex(MakeProbeError, "unregistered eager/recursive"):
+                            session.make("all")
+                self.assert_clean(session)
+        self.add("Makefile", "include missing.mk\nmissing.mk:\n\t@printf missing\nall: ;\n")
+        session = self.session()
+        with self.assertRaisesRegex(MakeProbeError, "unregistered eager/recursive"):
+            with session:
+                session.make("all")
+        self.assert_clean(session)
+
+    def test_private_dispatch_and_observer_inputs_cannot_be_candidate_authority(self):
+        for operation in (
+            "$(file </control/interceptor)",
+            "$(file </lib/vo-observer.so)",
+            "$(wildcard /lib/*)",
+        ):
+            with self.subTest(operation=operation):
+                self.add("Makefile", f"VALUE := {operation}\nall: ;\n")
+                session = self.session()
+                with self.assertRaisesRegex(MakeProbeError, "channel denied|observer image|directory enumeration"):
+                    with session:
+                        session.make("all")
+                self.assert_clean(session)
+        from scripts.validation_ownership.syscall_guard import VO_READY, VO_DISPATCH, VO_QUERY_KIND
+        for marker in (VO_READY, VO_DISPATCH, VO_QUERY_KIND):
+            with self.subTest(marker=marker):
+                session = self.session()
+                with self.assertRaisesRegex(MakeProbeError, "unauthenticated"):
+                    with session:
+                        session.command(Command((
+                            "/usr/bin/python3", "-I", "-c",
+                            "import ctypes; ctypes.CDLL(None).syscall(39, ctypes.c_ulong("
+                            + str(marker) + "), 0, 0)",
+                        )))
+                self.assert_clean(session)
+
+    def test_partial_scratch_setup_releases_created_parents_and_descriptors(self):
+        self.add("Makefile", "all: ;\n")
+        original_open, original_mkdir = os.open, os.mkdir
+        failures = ["tracked", "open", "mkdir", "long-name", "interrupt"]
+        if os.geteuid() != 0:
+            failures.append("inaccessible")
+        for failure in failures:
+            with self.subTest(failure=failure):
+                self.scratch = self.root / "partial" / "parents" / ("x" * 300 if failure == "long-name" else "leaf")
+                entries = dict(self.entries)
+                if failure == "tracked":
+                    entries["partial/parents/leaf"] = GitTreeEntry(
+                        "partial/parents/leaf", "100644", "blob", "0" * 40,
+                    )
+                primary = OSError(errno.EIO, "owned scratch setup failure")
+                def opening(path, flags, *args, **kwargs):
+                    if path == "leaf" and kwargs.get("dir_fd") is not None:
+                        if failure == "open":
+                            raise primary
+                        if failure == "interrupt":
+                            raise KeyboardInterrupt("owned scratch interruption")
+                    return original_open(path, flags, *args, **kwargs)
+                def making(path, mode=0o777, *, dir_fd=None):
+                    if path == "leaf" and failure == "mkdir":
+                        raise primary
+                    result = original_mkdir(path, mode, dir_fd=dir_fd)
+                    if path == "leaf" and failure == "inaccessible":
+                        os.chmod(path, 0, dir_fd=dir_fd)
+                    return result
+                descriptors = set(os.listdir("/proc/self/fd"))
+                session = ProbeSession(AuthorityLoader(self.root, entries), scratch_root=self.scratch)
+                with patch("os.open", opening), patch("os.mkdir", making):
+                    with self.assertRaises(KeyboardInterrupt if failure == "interrupt" else MakeProbeError) as caught:
+                        with session:
+                            self.fail("unsafe scratch setup was admitted")
+                if failure in {"open", "mkdir"}:
+                    self.assertIs(caught.exception.__cause__, primary)
+                self.assertEqual(set(os.listdir("/proc/self/fd")), descriptors)
+                self.assertFalse((self.root / "partial").exists())
+                self.assert_clean(session)
+
+    def test_scratch_setup_interruption_waits_for_resource_ownership(self):
+        self.add("Makefile", "all: ;\n")
+        original = os.mkdir
+        sent = False
+        def creating(path, mode=0o777, *, dir_fd=None):
+            nonlocal sent
+            result = original(path, mode, dir_fd=dir_fd)
+            if dir_fd is not None and str(path).startswith("probe-"):
+                os.kill(os.getpid(), signal.SIGTERM)
+                sent = True
+            return result
+        session = self.session()
+        with patch("os.mkdir", creating):
+            with self.assertRaises(KeyboardInterrupt):
+                with session:
+                    self.fail("setup interruption was lost")
+        self.assertTrue(sent)
+        self.assert_clean(session)
+
+    def test_scratch_cleanup_preserves_existing_parents_and_primary_failure(self):
+        self.add("Makefile", "all: ;\n")
+        existing = self.root / "existing"
+        existing.mkdir()
+        (existing / "keep").write_bytes(b"not allocator-owned")
+        self.scratch = existing / "created" / "leaf"
+        original_open, original_remove = os.open, os.rmdir
+        primary = OSError(errno.EIO, "primary setup failure")
+        def opening(path, flags, *args, **kwargs):
+            if path == "leaf":
+                raise primary
+            return original_open(path, flags, *args, **kwargs)
+        session = self.session()
+        with patch("os.open", opening):
+            with self.assertRaises(MakeProbeError) as caught:
+                with session:
+                    self.fail("setup failure disappeared")
+        self.assertIs(caught.exception.__cause__, primary)
+        self.assertEqual((existing / "keep").read_bytes(), b"not allocator-owned")
+        self.assertFalse((existing / "created").exists())
+        self.assert_clean(session)
+
+        def removing(path, *args, **kwargs):
+            if path == "leaf":
+                raise PermissionError("modeled owned cleanup failure")
+            return original_remove(path, *args, **kwargs)
+        primary = OSError(errno.EIO, "primary setup failure")
+        session = self.session()
+        with patch("os.open", opening), patch("os.rmdir", removing):
+            with self.assertRaises(MakeProbeError) as caught:
+                with session:
+                    self.fail("setup failure disappeared")
+        self.assertIs(caught.exception.__cause__, primary)
+        if hasattr(primary, "__notes__"):
+            self.assertTrue(any("owned scratch cleanup failed" in note for note in primary.__notes__))
+        self.assertEqual((existing / "keep").read_bytes(), b"not allocator-owned")
+
     def test_privileged_cleanup_delegates_before_wait_and_never_hides_permission_errors(self):
         child = SimpleNamespace(pid=999999999, stdin=Mock(), wait=Mock())
         with patch("os.killpg", side_effect=PermissionError("modeled root-owned group")) as kill:
