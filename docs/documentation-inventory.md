@@ -61,6 +61,7 @@ Markdown library, so it stays stdlib-parseable and diff-friendly.
 - docs/migration-from-decomp.md | laqieer | current | Bridge guide: old decomp-base/agbcc workflow -> modern framework
 - docs/archival-decomp.md | laqieer | current | Archival-lane decomp-matching workflow, setup, and asset-extraction references
 - docs/workflow-pilot.md | laqieer | current | Frozen workflow-efficiency baseline, parsed event selection, canonical evidence protocol, formulas, and lifecycle (issues #176/#177)
+- docs/git-publication-broker.md | laqieer | current | Authenticated external one-shot Git authority and anchor publication broker deployment contract (issue #205)
 - docs/release-migration-template.md | laqieer | template | Unfilled scaffolding for a future version-to-version migration guide
 - docs/config_identity.md | laqieer | current | Config surface + ROM identity fingerprint reference (issue #8)
 - docs/save_format.md | laqieer | current | Save format + compatibility gate reference (issue #2)

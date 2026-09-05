@@ -37,6 +37,7 @@ the authoritative technical documentation and are checked by CI.
 | Generate or test localized full-game message catalogs | [`game_localization_catalog.md`](game_localization_catalog.md) |
 | Evaluate and deliver a feature request or bug fix with Copilot | [`development-workflow`](../.github/skills/development-workflow/SKILL.md) |
 | Reproduce the workflow-efficiency pilot baseline, event selection, and evidence contract | [`workflow-pilot.md`](workflow-pilot.md) |
+| Deploy the authenticated one-shot Git authority publication broker | [`git-publication-broker.md`](git-publication-broker.md) |
 | Contribute code/docs and know the review process | [`../CONTRIBUTING.md`](../CONTRIBUTING.md), [`project-governance.md`](project-governance.md) |
 | Come from the old decomp-base/agbcc workflow | [`migration-from-decomp.md`](migration-from-decomp.md) |
 | Do byte-for-byte decomp-matching work | [`archival-decomp.md`](archival-decomp.md) |
@@ -100,6 +101,7 @@ numbers mark merged (closed) contracts only:
 | Localization (issue #18) | `ExpansionLocaleId`/`ExpansionMsgId`, `texts/expansion/`, prefs + selector/settings APIs | [`localization.md`](localization.md), [`save_format.md`](save_format.md) |
 | Runtime test harness (issue #13) | JSON scenario format + fingerprints, `GBA_PLAYTEST_HOST_ONLY` | [`../tools/gba-playtest/README.md`](../tools/gba-playtest/README.md) |
 | Upstream-port review tooling | `python3 -m scripts.upstream_port {scan,drift,verify,update-state}` | [`upstream-porting.md`](upstream-porting.md) |
+| Authenticated Git publication broker (issue #205) | Signed exact two-ref plan, inherited unnamed connection FD, separate principal, response signature, replay journal, HTTPS askpass/SSH agent | [`git-publication-broker.md`](git-publication-broker.md) |
 | Proc/runtime core | `include/proc.h` (`struct Proc`, `struct ProcCmd[]`) | [`architecture.md`](architecture.md) |
 
 Not a public API today: issue #9's future versioned-release/downstream-
@@ -137,6 +139,7 @@ and
 | [`release-migration-template.md`](release-migration-template.md) | Template | Fill in for a real future version migration |
 | [`archival-decomp.md`](archival-decomp.md) | Current, archival scope | Unsupported-for-releases decomp-matching workflow |
 | [`workflow-pilot.md`](workflow-pilot.md) | Current | Frozen workflow-efficiency baseline, event classifier/evidence protocol, formulas, decision schema, and artifact lifecycle (issues #176/#177) |
+| [`git-publication-broker.md`](git-publication-broker.md) | Current | Authenticated external one-shot Git authority/anchor publication and deployment contract (issue #205) |
 | [`config_identity.md`](config_identity.md) | Current | Config surface + ROM identity fingerprint (issue #8) |
 | [`save_format.md`](save_format.md) | Current | Save format + compatibility gate (issue #2) |
 | [`id_space.md`](id_space.md) | Current | Typed-ID DEFAULT vs ACTIVE contract, cap switching (issue #10) |

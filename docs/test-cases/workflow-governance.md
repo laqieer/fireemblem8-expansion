@@ -1211,6 +1211,104 @@ the exact branch and head; timeout or ambiguity fails before `gh run watch`.
    Architecture/review comments remain unmarked; only the canonical evolving
    evidence comment carries the one marker.
 
+## TC-WORKFLOW-AUTHENTICATED-GIT-BROKER-001: Publish only one authenticated signed authority pair
+
+- **Feature / originating issue:** `authenticated-git-publication-broker` /
+  [issue #205](https://github.com/laqieer/fireemblem8-expansion/issues/205).
+- **Supported configuration or artifact:** host-only Python 3, Git, OpenSSL,
+  protected disposable bare remote, signed exact publication plan, one-shot
+  broker process, and local TLS smart-HTTP credential fixture.
+- **Prerequisites and clean starting state:** start at the repository root;
+  remove `build/test-artifacts/git-publication-broker`; require `/usr/bin/git`,
+  `/usr/bin/openssl`, Unix socket pairs, `SO_PEERCRED`, `fork`, and Linux
+  process/proc support. No GitHub token, ROM, emulator, target build, or live
+  remote is required.
+
+### Actions
+
+1. Run
+   `python3 -m unittest scripts.workflow_pilot.tests.test_git_publication_broker -v`.
+2. Inspect the positive fixture's protected bare remote and exact signed plan.
+   Confirm one inherited unnamed connection publishes the issue-205 authority
+   head and anchor tag atomically, invokes the protected server hook, verifies
+   exact readback, and returns a request-bound Ed25519-signed response.
+3. Replay the same plan after broker restart and concurrently through two
+   one-shot broker processes. Restore an older journal without its durable
+   anchor and copy/mutate destination, signer, actor, operation, ref, expected
+   OID, pack, or object closure fields.
+4. Exercise abstract/named and same-UID peers, candidate-owned production
+   preflight, missing/wrong response identity, expired/future/malformed times,
+   master/tag updates, protected hook/config/directory/object changes,
+   disconnect, bounded hook timeout, and broker kill.
+5. Exercise the TLS smart-HTTP server's Basic challenge through the protected
+   askpass credential file. Inspect candidate environment, response, server
+   log, replay journal, and fixture root for credential text or core files.
+6. Run the complete isolated workflow-pilot reporter suite and
+   `python3 scripts/check_docs.py --check`.
+
+### Expected result
+
+Only the complete current signed plan moves refs. The authority and anchor
+read back at their exact new commit, no third ref exists, and the server hook
+is authoritative. The broker independently verifies canonical destination,
+two issue-derived refs, old/new objects, exact self-contained reachable pack,
+signer/actor/key, installation, nonce, increasing sequence, issue, operation,
+issuance, expiry, and deadline. Journal reservation is durable and exclusive;
+restart, replay, concurrency, stale state, and journal rollback reject.
+The client accepts only an unnamed inherited socket created by the installed
+separate capability-issuer UID and an externally installed broker response
+signature.
+
+The actual HTTPS Git exchange invokes askpass after a TLS server challenge,
+but the credential is absent from candidate environment/files/arguments,
+response, logs, journal, and core output. Timeout or broker death kills the Git
+process group and leaves both refs unchanged. Production preflight fails
+closed without an external non-candidate-owned installation. The shared time
+parser accepts exactly UTC whole seconds with hour `00` through `23`.
+
+### Negative control
+
+PR #191's provisional abstract same-UID Python test broker can be addressed
+directly and does not independently own the complete signed plan, replay
+journal, protected server, credential path, or response identity. This case
+rejects that endpoint before publication. It also rejects direct generic
+`master`/tag pushes at the protected receive hook.
+
+### Interactions and save compatibility
+
+Dependencies are the existing workflow-pilot signed-record, exact repository/
+Git object, and external-installation authority conventions. Issue #178 and PR
+#191 depend on this capability. The provisional PR #191 broker conflicts and
+must be replaced; all other feature/profile conflicts are none. This is
+host-only framework infrastructure with no feature flag, save, migration,
+configuration identity, generated data, localization, ROM/RAM, gameplay,
+modern debug/release, or archival impact.
+
+### Automation
+
+`python3 -m unittest scripts.workflow_pilot.tests.test_git_publication_broker -v`
+provides behavioral publication/readback, adversarial protocol, actual Git
+pack/ref/hook, TLS askpass, replay durability, peer/signature, process cleanup,
+schema-time parity, and no-secret evidence. The isolated reporter command
+proves integration with the existing signed-record consumer, and
+`python3 scripts/check_docs.py --check` parses the indexed procedure and
+deployment documentation.
+
+### Cleanup and limitations
+
+The suite removes its unique children below
+`build/test-artifacts/git-publication-broker`; the empty ignored parent may
+remain. The local fixture intentionally disables peer enforcement only inside
+the library test so it can prove broker behavior and response signatures
+without root/sudo; the production CLI has no such flag, and the same-UID
+production preflight/peer paths reject. Deployment must supply a real separate
+principal or stronger boundary, external descriptor coordinator, protected
+paths and rollback-resistant storage, GitHub permissions/rules, and trusted
+TLS/SSH host identity. No manual-only criterion applies.
+
+Rollback is a normal revert of issue #205; dependent publication remains
+blocked instead of using the negative-control broker.
+
 ## TC-WORKFLOW-PILOT-BASELINE-001: Freeze reproducible pilot baseline and decisions
 
 - **Feature / originating issue:** `workflow-governance` /

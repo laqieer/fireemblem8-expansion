@@ -15,6 +15,9 @@ MODES = frozenset(
         "anchor-refs",
         "baseline",
         "classify-event",
+        "git-broker-publish",
+        "git-broker-preflight",
+        "git-broker-serve",
         "hydrate",
         "lifecycle-check",
         "reporter-tests",
@@ -112,6 +115,19 @@ def dispatch(mode: str, arguments: list[str]) -> int:
         from scripts.workflow_pilot import event_classifier
 
         return event_classifier.main(arguments)
+    if mode in {
+        "git-broker-preflight",
+        "git-broker-publish",
+        "git-broker-serve",
+    }:
+        from scripts.workflow_pilot import git_publication_broker
+
+        broker_mode = {
+            "git-broker-preflight": "preflight",
+            "git-broker-publish": "publish",
+            "git-broker-serve": "serve",
+        }[mode]
+        return git_publication_broker.main([broker_mode, *arguments])
 
     controlled_repository_root(arguments)
     if mode == "anchor-refs":

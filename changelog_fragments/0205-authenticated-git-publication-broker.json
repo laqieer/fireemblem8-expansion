@@ -1,0 +1,6 @@
+{
+  "issue": 205,
+  "category": "security",
+  "summary": "Add an authenticated one-shot Git authority publication broker with external credentials, signed exact plans, and durable replay protection.",
+  "semver_impact": "minor"
+}

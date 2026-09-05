@@ -45,6 +45,7 @@
       "upstream-port-tooling",
       "build-ci-default-release-reproduction",
       "typed-authoring-conveniences",
+      "authenticated-git-publication-broker",
       "workflow-governance",
       "expansion-locale-selection",
       "full-game-localization",
@@ -471,6 +472,18 @@
       "status": "current",
       "required_cases": [
         "TC-CORE-010"
+      ]
+    },
+    {
+      "id": "authenticated-git-publication-broker",
+      "title": "Authenticated external Git authority publication broker",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/205"
+      ],
+      "reference": "docs/git-publication-broker.md",
+      "status": "current",
+      "required_cases": [
+        "TC-WORKFLOW-AUTHENTICATED-GIT-BROKER-001"
       ]
     },
     {
@@ -2298,6 +2311,42 @@
       ]
     },
     {
+      "id": "TC-WORKFLOW-AUTHENTICATED-GIT-BROKER-001",
+      "title": "Publish only one authenticated signed authority pair",
+      "feature_id": "authenticated-git-publication-broker",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/205"
+      ],
+      "document": "docs/test-cases/workflow-governance.md",
+      "anchor": "tc-workflow-authenticated-git-broker-001-publish-only-one-authenticated-signed-authority-pair",
+      "profiles": [
+        "Host-only Python 3, Git, OpenSSL, signed plan, one-shot broker process, protected bare remote, and TLS askpass fixture"
+      ],
+      "purpose": "Prove a separately deployed one-shot broker publishes only the exact signed issue authority and anchor pair while authenticating peers/responses, protecting credentials and server state, and durably rejecting replay.",
+      "prerequisites": "Start at the repository root with /usr/bin/git, /usr/bin/openssl, Unix socket pairs, SO_PEERCRED, fork, and Linux process/proc support; remove build/test-artifacts/git-publication-broker; no token, ROM, emulator, target build, or live GitHub remote is required.",
+      "actions": "Run the focused broker suite; publish one exact signed plan; replay it after restart and concurrently; mutate lifetime, sequence, installation, repo, issue, endpoint, operation, refs, OIDs, objects, pack, nonce, signer, actor, peer and response identity; swap protected remote state; disconnect, timeout, and kill the broker; exercise real TLS smart-HTTP askpass; run isolated workflow-pilot and docs checks.",
+      "expected_result": "Only the authenticated current one-use plan atomically moves exactly the issue-derived authority head and anchor tag, protected hooks run, exact readback matches, the Ed25519 response binds the request/deadline/installation, credentials do not cross the boundary, replay state survives restart, and process cleanup is complete.",
+      "negative_control": "The provisional PR #191 abstract same-UID broker is directly addressable and lacks independent complete-plan, replay, protected-remote, credential, and response authority; production preflight and peer validation reject that shape, while the protected hook rejects generic master/tag updates.",
+      "interactions": "Depends on existing workflow-pilot signed-record, exact-repository/Git-object, and external-installation authority conventions; issue #178 and PR #191 depend on it; conflicts only with PR #191 provisional broker; all game/build feature-profile conflicts are none.",
+      "save_compatibility": "Host-only framework infrastructure; no feature flag, save/migration/configuration identity, generated data, localization, ROM/RAM, gameplay, modern debug/release, or archival impact.",
+      "cleanup": "The suite removes unique children below build/test-artifacts/git-publication-broker; no live remote is mutated and no credential is committed.",
+      "limitations": "The local behavioral fixture disables peer enforcement only in a private library call because sudo/root is unavailable; the production CLI exposes no bypass and rejects same-UID/candidate-owned installations. Deployment supplies the real separate principal, trusted FD coordinator, protected rollback-resistant storage, repository rules, and TLS/SSH host identity. No manual-only criterion applies.",
+      "automation": [
+        {
+          "command": "python3 -m unittest scripts.workflow_pilot.tests.test_git_publication_broker -v",
+          "evidence": "scripts/workflow_pilot/tests/test_git_publication_broker.py"
+        },
+        {
+          "command": "/usr/bin/python3 -I scripts/workflow_pilot/isolated_launcher.py reporter-tests",
+          "evidence": "scripts/workflow_pilot/isolated_launcher.py"
+        },
+        {
+          "command": "python3 scripts/check_docs.py --check",
+          "evidence": "scripts/check_docs.py"
+        }
+      ]
+    },
+    {
       "id": "TC-WORKFLOW-PILOT-BASELINE-001",
       "title": "Freeze reproducible pilot baseline and decisions",
       "feature_id": "workflow-governance",
@@ -2515,7 +2564,11 @@
       "cleanup": "The host fixture is temporary under build/. Use make clean_fast only for ignored artifacts.",
       "limitations": "No project strategy, route, balance claim, player-visible text, natural-language goal, or general event language.",
       "compatibility": {
-        "dependent_issues": [90, 91, 92],
+        "dependent_issues": [
+          90,
+          91,
+          92
+        ],
         "generated_data": {
           "bundle_capacity": 32,
           "objective_capacity": 8,

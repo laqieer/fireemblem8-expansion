@@ -24,6 +24,10 @@ SCHEMA_VERSION = 1
 GIT = "/usr/bin/git"
 SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+RFC3339_UTC_RE = re.compile(
+    r"^(?P<year>[0-9]{4})-(?P<month>[0-9]{2})-(?P<day>[0-9]{2})"
+    r"T(?P<hour>[0-9]{2}):(?P<minute>[0-9]{2}):(?P<second>[0-9]{2})Z$"
+)
 EXPECTED_PATH_RE = re.compile(
     r"^[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)*$"
 )
@@ -361,14 +365,25 @@ def expect_sha(value: Any, label: str, nullable: bool = False) -> str | None:
 def parse_time(value: Any, label: str, nullable: bool = False) -> datetime | None:
     if value is None and nullable:
         return None
-    if not isinstance(value, str) or not value.endswith("Z"):
+    if not isinstance(value, str):
         raise PilotDataError(f"{label} must be an RFC 3339 UTC timestamp")
+    match = RFC3339_UTC_RE.fullmatch(value)
+    if match is None:
+        raise PilotDataError(
+            f"{label} must use exact RFC 3339 UTC second precision"
+        )
     try:
-        parsed = datetime.fromisoformat(value[:-1] + "+00:00")
+        parsed = datetime(
+            int(match.group("year")),
+            int(match.group("month")),
+            int(match.group("day")),
+            int(match.group("hour")),
+            int(match.group("minute")),
+            int(match.group("second")),
+            tzinfo=timezone.utc,
+        )
     except ValueError as error:
         raise PilotDataError(f"{label} is not a valid timestamp") from error
-    if parsed.tzinfo != timezone.utc:
-        raise PilotDataError(f"{label} must use UTC")
     return parsed
 
 

@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "protocol": "workflow-pilot-authenticated-git-broker-v1",
+  "installation_id": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+  "repository": "owner/repository",
+  "endpoint": "https://github.com/owner/repository.git",
+  "expected_capability_uid": 0,
+  "broker_key_id": "broker-2026-09",
+  "broker_private_key": "/var/lib/workflow-pilot-broker/keys/broker-2026-09.private.pem",
+  "plan_signers": {
+    "installation-authority-2026-09": {
+      "public_key": "/var/lib/workflow-pilot-broker/keys/installation-authority-2026-09.public.pem",
+      "signer": "external-installation",
+      "actor": "trusted-workflow-coordinator"
+    }
+  },
+  "plan_store": "/var/lib/workflow-pilot-broker/plans",
+  "state_directory": "/var/lib/workflow-pilot-broker/state",
+  "authentication": {
+    "mode": "https-askpass",
+    "askpass": "/var/lib/workflow-pilot-broker/bin/github-askpass",
+    "credential_file": "/var/lib/workflow-pilot-broker/credentials/github-token",
+    "ca_file": null
+  },
+  "protected_remote": null,
+  "pack_max_bytes": 67108864,
+  "operation_timeout_seconds": 120,
+  "plan_lifetime_seconds": 300,
+  "test_only": false
+}

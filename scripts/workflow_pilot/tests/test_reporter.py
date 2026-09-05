@@ -1310,7 +1310,7 @@ class RepositoryAuthorityTests(unittest.TestCase):
 
         fixture = minimal_fixture()
         run = fixture["workflow_runs"][2]
-        run["created_at"] = "2026-01-01T05:59:59.999999Z"
+        run["created_at"] = "2026-01-01T05:59:59Z"
         run["started_at"] = run["created_at"]
         with self.assertRaisesRegex(
             reporter.PilotDataError,
@@ -2540,7 +2540,7 @@ class FormulaAndClassificationTests(unittest.TestCase):
         authoritative_report(fixture, minimal_decisions())
 
         mutations = (
-            ("submitted_at", "2026-01-01T10:00:00.000001Z", "analysis window"),
+            ("submitted_at", "2026-01-01T10:00:01Z", "analysis window"),
             ("submitted_at", "2026-01-01T00:59:59Z", "precedes PR"),
         )
         for field, value, pattern in mutations:
@@ -2579,7 +2579,7 @@ class FormulaAndClassificationTests(unittest.TestCase):
         authoritative_report(fixture, minimal_decisions())
 
         for value, pattern in (
-            ("2026-01-01T10:00:00.000001Z", "analysis window"),
+            ("2026-01-01T10:00:01Z", "analysis window"),
             ("2026-01-01T00:59:59Z", "PR 1 creation"),
         ):
             with self.subTest(value=value):
@@ -2609,7 +2609,7 @@ class FormulaAndClassificationTests(unittest.TestCase):
 
         fixture = minimal_fixture()
         fixture["review_thread_events"][0]["delivered_at"] = (
-            "2026-01-01T10:00:00.000001Z"
+            "2026-01-01T10:00:01Z"
         )
         self.assert_rejected(fixture=fixture, pattern="analysis window")
 
