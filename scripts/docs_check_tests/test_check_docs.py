@@ -993,6 +993,15 @@ class TesterCaseRegistryTests(unittest.TestCase):
                             "test_worktree_cleanup -v",
                         },
                     },
+                    "TC-WORKFLOW-IMMEDIATE-PUSH-001": {
+                        "document": "docs/test-cases/workflow-governance.md",
+                        "commands": {
+                            "python3 -m unittest scripts.docs_check_tests."
+                            "test_development_workflow_skill."
+                            "DevelopmentWorkflowSkillTests."
+                            "test_immediate_publication_protocol -v",
+                        },
+                    },
                     "TC-WORKFLOW-CI-WAIT-001": {
                         "document": "docs/test-cases/workflow-governance.md",
                         "commands": {
