@@ -613,8 +613,16 @@ same-second edit/revert invalidates confirmation even when body text and
 
 Every issue comment receives exact comment ID/body and API/HTML
 repository/PR/issue validation. Ordinary unmarked contributor, bot, and
-deleted-author comments remain permitted and cannot disable the helper. The
-one marked canonical evidence comment must be the repository owner's
+deleted-author comments remain permitted and cannot disable the helper.
+A successful authority read performs two complete bounded page walks and
+requires the same ordered parsed comment records in both, including ordinary
+comments whose deletion can shift protected records across page boundaries.
+Each pass retains canonical Link and page/cardinality/identity checks; an
+invalid or differing pass raises before its result is used. There is no retry
+loop or fallback to the first incomplete observation. Transaction selection
+and canonical evidence updates share this stabilized reader. This does not
+make a later GitHub mutation atomic or replace the single-writer contract.
+The one marked canonical evidence comment must be the repository owner's
 owner-associated `User` comment with the exact owner numeric user ID from the
 validated PR repository payload and exactly one standalone marker.
 Marked missing/deleted authors, bots, non-owner associations, cross-repository
@@ -691,9 +699,8 @@ history rather than mutation authority. Every edit, reconciliation, and
 evidence-comment mode still requires an open PR; unknown PR states fail closed
 even in the history probe.
 
-After the newest exact full Build succeeds, run:
-
-Use confirmation-comment-bound `pr-metadata reconcile`:
+After the newest exact full Build succeeds, use confirmation-comment-bound
+`pr-metadata reconcile`:
 
 ```bash
 /usr/bin/python3 -I scripts/workflow_pilot/isolated_launcher.py \

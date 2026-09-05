@@ -587,6 +587,17 @@ class ScriptedClient:
             copy.deepcopy(list(responses))
         )
 
+    def add_stable_comment_pages(
+        self, method: str, endpoint: str, *responses: object
+    ) -> None:
+        """Supply each logical page state for both complete authority walks."""
+        if method != "GET" or "/comments?" not in endpoint:
+            raise AssertionError("stable comment pages require a comment-list GET")
+        self.add(
+            method, endpoint,
+            *(copy.deepcopy(response) for response in responses for _ in range(2)),
+        )
+
     def request(
         self,
         method: str,
@@ -683,7 +694,7 @@ def _add_edit_transaction(
         ):
             responses.append(copy.deepcopy(responses[-1]))
     intent_payload: dict[str, object] = {}
-    client.add(
+    client.add_stable_comment_pages(
         "GET",
         _query(
             f"issues/{PR_NUMBER}/comments",
@@ -809,6 +820,11 @@ def _cli_api_call(
     if payload is not _MISSING:
         call["payload"] = payload
     return call
+
+
+def _cli_stable_comment_walk(*pages: dict) -> list[dict]:
+    """Expand one stable complete walk into its two explicit HTTP observations."""
+    return [copy.deepcopy(page) for _ in range(2) for page in pages]
 
 
 def _cli_snapshot_calls(
@@ -1131,7 +1147,7 @@ def _add_transaction_comments(
             ),
         ]
     )
-    client.add(
+    client.add_stable_comment_pages(
         "GET",
         endpoint,
         *(copy.deepcopy(payload) for _ in range(copies)),
@@ -1901,7 +1917,7 @@ class PullRequestMetadataTests(unittest.TestCase):
             client,
             (_pr(), _metadata_version()),
         )
-        client.add(
+        client.add_stable_comment_pages(
             "GET",
             _query(
                 f"issues/{PR_NUMBER}/comments",
@@ -2462,7 +2478,7 @@ class PullRequestMetadataTests(unittest.TestCase):
             (target_state, target_version),
             (target_state, target_version),
         )
-        client.add(
+        client.add_stable_comment_pages(
             "GET",
             _query(
                 f"issues/{PR_NUMBER}/comments",
@@ -2540,7 +2556,7 @@ class PullRequestMetadataTests(unittest.TestCase):
             (pre_state, pre_version),
             (target_state, target_version),
         )
-        client.add(
+        client.add_stable_comment_pages(
             "GET",
             _query(
                 f"issues/{PR_NUMBER}/comments",
@@ -2637,7 +2653,7 @@ class PullRequestMetadataTests(unittest.TestCase):
                             created_at="2026-09-04T00:00:03Z",
                         )
                     )
-                client.add(
+                client.add_stable_comment_pages(
                     "GET",
                     _query(
                         f"issues/{PR_NUMBER}/comments",
@@ -2754,7 +2770,7 @@ class PullRequestMetadataTests(unittest.TestCase):
                     _endpoint(f"issues/{PR_NUMBER}/comments"),
                     intent_response,
                 )
-                client.add(
+                client.add_stable_comment_pages(
                     "GET",
                     _query(
                         f"issues/{PR_NUMBER}/comments",
@@ -2804,7 +2820,7 @@ class PullRequestMetadataTests(unittest.TestCase):
         _add_pr_states(client, pre_state, pre_state)
         _add_snapshot(client, [_run(101, 10, mode="full")], copies=3)
         _add_metadata_versions(client, (pre_state, pre_version))
-        client.add(
+        client.add_stable_comment_pages(
             "GET",
             _query(
                 f"issues/{PR_NUMBER}/comments",
@@ -2857,7 +2873,7 @@ class PullRequestMetadataTests(unittest.TestCase):
             client,
             (third_state, _metadata_version()),
         )
-        client.add(
+        client.add_stable_comment_pages(
             "GET",
             _query(
                 f"issues/{PR_NUMBER}/comments",
@@ -2919,7 +2935,7 @@ class PullRequestMetadataTests(unittest.TestCase):
             (target_state, target_version),
             (target_state, target_version),
         )
-        client.add(
+        client.add_stable_comment_pages(
             "GET",
             _query(
                 f"issues/{PR_NUMBER}/comments",
@@ -2995,7 +3011,7 @@ class PullRequestMetadataTests(unittest.TestCase):
             (drifted, drifted_version),
         )
         intent_payload = {}
-        client.add(
+        client.add_stable_comment_pages(
             "GET",
             _query(
                 f"issues/{PR_NUMBER}/comments",
@@ -3164,7 +3180,7 @@ class PullRequestMetadataTests(unittest.TestCase):
             client,
             (_pr(), confirmation.metadata_version),
         )
-        client.add(
+        client.add_stable_comment_pages(
             "GET",
             _query(
                 f"issues/{PR_NUMBER}/comments",
@@ -3200,7 +3216,7 @@ class PullRequestMetadataTests(unittest.TestCase):
             client,
             (_pr(), confirmation.metadata_version),
         )
-        client.add(
+        client.add_stable_comment_pages(
             "GET",
             _query(
                 f"issues/{PR_NUMBER}/comments",
@@ -3330,7 +3346,7 @@ class PullRequestMetadataTests(unittest.TestCase):
                     client,
                     (_pr(), confirmation.metadata_version),
                 )
-                client.add(
+                client.add_stable_comment_pages(
                     "GET",
                     _query(
                         f"issues/{PR_NUMBER}/comments",
@@ -3386,7 +3402,7 @@ class PullRequestMetadataTests(unittest.TestCase):
             copies=2,
         )
         _add_metadata_versions(client, (_pr(), _metadata_version()))
-        client.add(
+        client.add_stable_comment_pages(
             "GET",
             _query(
                 f"issues/{PR_NUMBER}/comments",
@@ -3435,7 +3451,7 @@ class PullRequestMetadataTests(unittest.TestCase):
             (target_state, target_version),
             (target_state, target_version),
         )
-        client.add(
+        client.add_stable_comment_pages(
             "GET",
             _query(
                 f"issues/{PR_NUMBER}/comments",
@@ -3492,7 +3508,7 @@ class PullRequestMetadataTests(unittest.TestCase):
         _add_pr_states(client, _pr(), _pr())
         _add_snapshot(client, [_run(101, 10, mode="full")], copies=2)
         _add_metadata_versions(client, (_pr(), _metadata_version()))
-        client.add(
+        client.add_stable_comment_pages(
             "GET",
             _query(
                 f"issues/{PR_NUMBER}/comments",
@@ -4434,7 +4450,7 @@ class PullRequestMetadataTests(unittest.TestCase):
                     f"issues/{PR_NUMBER}/comments",
                     [("per_page", "100"), ("page", "1")],
                 )
-                client.add("GET", _add_receipt_comments, comments)
+                client.add_stable_comment_pages("GET", _add_receipt_comments, comments)
                 intents, confirmations, aborts = pr_metadata._transaction_comments(
                     client,
                     pr_metadata._parse_pull_request_payload(
@@ -4500,7 +4516,7 @@ class PullRequestMetadataTests(unittest.TestCase):
         for name, comments in negative_cases:
             with self.subTest(case=name):
                 client = ScriptedClient()
-                client.add(
+                client.add_stable_comment_pages(
                     "GET",
                     _query(
                         f"issues/{PR_NUMBER}/comments",
@@ -4577,7 +4593,7 @@ class PullRequestMetadataTests(unittest.TestCase):
         _add_pr_states(client, _pr(), _pr())
         _add_snapshot(client, [_run(101, 10, mode="full")], copies=2)
         _add_metadata_versions(client, (_pr(), _metadata_version()))
-        client.add(
+        client.add_stable_comment_pages(
             "GET",
             _query(
                 f"issues/{PR_NUMBER}/comments",
@@ -4646,7 +4662,7 @@ class PullRequestMetadataTests(unittest.TestCase):
             client,
             (target_state, _confirmation(receipt).metadata_version),
         )
-        client.add(
+        client.add_stable_comment_pages(
             "GET",
             _query(
                 f"issues/{PR_NUMBER}/comments",
@@ -4697,7 +4713,7 @@ class PullRequestMetadataTests(unittest.TestCase):
                     copies=2,
                 )
                 _add_metadata_versions(client, (_pr(), _metadata_version()))
-                client.add(
+                client.add_stable_comment_pages(
                     "GET",
                     _query(
                         f"issues/{PR_NUMBER}/comments",
@@ -6230,7 +6246,7 @@ class PullRequestMetadataTests(unittest.TestCase):
             "No ARM runtime test is required for this host-only orchestration change.\n"
         )
         _add_pr_states(client, _pr(), _pr())
-        client.add(
+        client.add_stable_comment_pages(
             "GET",
             _query(
                 f"issues/{PR_NUMBER}/comments",
@@ -6420,7 +6436,7 @@ class PullRequestMetadataTests(unittest.TestCase):
             with self.subTest(mismatch=name):
                 client = ScriptedClient()
                 _add_pr_states(client, _pr(), _pr())
-                client.add(
+                client.add_stable_comment_pages(
                     "GET",
                     _query(
                         f"issues/{PR_NUMBER}/comments",
@@ -6483,7 +6499,7 @@ class PullRequestMetadataTests(unittest.TestCase):
                 )
                 raw.update(changes)
                 _add_pr_states(client, _pr())
-                client.add(
+                client.add_stable_comment_pages(
                     "GET",
                     _query(
                         f"issues/{PR_NUMBER}/comments",
@@ -6514,7 +6530,7 @@ class PullRequestMetadataTests(unittest.TestCase):
                     desired = f"{pr_metadata.EVIDENCE_MARKER}\n{suffix}\n"
                     client = ScriptedClient()
                     _add_pr_states(client, _pr(), _pr())
-                    client.add(
+                    client.add_stable_comment_pages(
                         "GET",
                         _query(
                             f"issues/{PR_NUMBER}/comments",
@@ -6612,7 +6628,7 @@ class PullRequestMetadataTests(unittest.TestCase):
             with self.subTest(marker=name):
                 client = ScriptedClient()
                 _add_pr_states(client, _pr())
-                client.add(
+                client.add_stable_comment_pages(
                     "GET",
                     _query(
                         f"issues/{PR_NUMBER}/comments",
@@ -6656,7 +6672,7 @@ class PullRequestMetadataTests(unittest.TestCase):
         for name, link in cases.items():
             with self.subTest(pagination=name):
                 client = ScriptedClient()
-                client.add(
+                client.add_stable_comment_pages(
                     "GET",
                     page_one,
                     _response(
@@ -6673,6 +6689,134 @@ class PullRequestMetadataTests(unittest.TestCase):
                         OWNER_ID,
                     )
 
+    def test_comment_authority_rejects_deletion_shifting_protected_page_boundary(self):
+        page_one = _query(
+            f"issues/{PR_NUMBER}/comments",
+            [("per_page", "100"), ("page", "1")],
+        )
+        page_two = _query(
+            f"issues/{PR_NUMBER}/comments",
+            [("per_page", "100"), ("page", "2")],
+        )
+        first_headers = {
+            "link": _link(
+                ("next", pr_metadata._api_url(page_two)),
+                ("last", pr_metadata._api_url(page_two)),
+            )
+        }
+        last_headers = {
+            "link": _link(
+                ("first", pr_metadata._api_url(page_one)),
+                ("prev", pr_metadata._api_url(page_one)),
+            )
+        }
+        receipt = _receipt()
+        for kind in ("intent", "confirmation", "abort", "evidence"):
+            with self.subTest(kind=kind):
+                prefix = [
+                    _comment(
+                        number, f"ordinary {number}",
+                        created_at="2026-09-04T00:00:01Z",
+                        updated_at="2026-09-04T00:00:01Z",
+                    )
+                    for number in range(1, 101)
+                ]
+                prefix[0] = _comment(
+                    1, "deleted contributor comment",
+                    author_id=88, author_login="contributor",
+                    author_association="CONTRIBUTOR",
+                    created_at="2026-09-04T00:00:01Z",
+                    updated_at="2026-09-04T00:00:01Z",
+                )
+                if kind == "intent":
+                    boundary = _intent_comment(receipt, comment_id=401)
+                elif kind == "confirmation":
+                    prefix[49] = _intent_comment(receipt, comment_id=50)
+                    boundary = _confirmation_comment(
+                        _confirmation(receipt, intent_comment_id=50),
+                        comment_id=401,
+                    )
+                elif kind == "abort":
+                    prefix[49] = _intent_comment(receipt, comment_id=50)
+                    boundary = _abort_comment(
+                        _abort(receipt, intent_comment_id=50), comment_id=401
+                    )
+                else:
+                    prefix[49] = _comment(
+                        50, pr_metadata.EVIDENCE_MARKER + "\nfirst",
+                        created_at="2026-09-04T00:00:01Z",
+                        updated_at="2026-09-04T00:00:01Z",
+                    )
+                    boundary = _comment(
+                        401, pr_metadata.EVIDENCE_MARKER + "\nsecond",
+                        created_at="2026-09-04T00:00:02Z",
+                        updated_at="2026-09-04T00:00:02Z",
+                    )
+                suffix = [
+                    _comment(
+                        number, f"tail {number}",
+                        created_at="2026-09-04T00:00:03Z",
+                        updated_at="2026-09-04T00:00:03Z",
+                    )
+                    for number in range(402, 451)
+                ]
+                client = ScriptedClient()
+                client.add(
+                    "GET", page_one,
+                    _response(prefix, headers=first_headers),
+                    _response(prefix[1:] + [boundary], headers=first_headers),
+                )
+                client.add(
+                    "GET", page_two,
+                    _response(suffix, headers=last_headers),
+                    _response(suffix, headers=last_headers),
+                )
+                if kind == "evidence":
+                    desired = pr_metadata.EVIDENCE_MARKER + "\nreplacement"
+                    _add_pr_states(client, _pr(), _pr())
+                    client.add(
+                        "PATCH", _endpoint("issues/comments/50"),
+                        _comment(
+                            50, desired,
+                            created_at="2026-09-04T00:00:01Z",
+                            updated_at="2026-09-04T00:00:04Z",
+                        ),
+                    )
+                    operation = lambda: pr_metadata.update_evidence_comment(
+                        client, repository=REPOSITORY, pr_number=PR_NUMBER,
+                        head_sha=HEAD, base_sha=BASE, comment_body=desired,
+                    )
+                else:
+                    state = pr_metadata._parse_pull_request_payload(
+                        _pr(), REPOSITORY, PR_NUMBER
+                    )
+                    operation = lambda: pr_metadata._transaction_comments(client, state)
+                with self.assertRaises(pr_metadata.MetadataEditError):
+                    operation()
+                self.assertFalse(any(call[0] == "PATCH" for call in client.calls))
+
+    def test_comment_authority_requires_two_equal_complete_ordered_observations(self):
+        endpoint = _query(
+            f"issues/{PR_NUMBER}/comments",
+            [("per_page", "100"), ("page", "1")],
+        )
+        first = [_comment(1, "one"), _comment(2, "two")]
+        for changed in (False, True):
+            with self.subTest(changed=changed):
+                client = ScriptedClient()
+                client.add("GET", endpoint, first, list(reversed(first)) if changed else first)
+                if changed:
+                    with self.assertRaises(pr_metadata.MetadataEditError):
+                        pr_metadata._list_comments(
+                            client, REPOSITORY, PR_NUMBER, REPOSITORY_ID, OWNER_ID
+                        )
+                else:
+                    actual = pr_metadata._list_comments(
+                        client, REPOSITORY, PR_NUMBER, REPOSITORY_ID, OWNER_ID
+                    )
+                    self.assertEqual([comment.comment_id for comment in actual], [1, 2])
+                self.assertEqual(len(client.calls), 2)
+
     def test_comment_pagination_consumes_canonical_linked_pages(self):
         client = ScriptedClient()
         page_one_endpoint = _query(
@@ -6685,7 +6829,7 @@ class PullRequestMetadataTests(unittest.TestCase):
         )
         page_one_url = _numeric_api_url(page_one_endpoint)
         page_two_url = _numeric_api_url(page_two_endpoint)
-        client.add(
+        client.add_stable_comment_pages(
             "GET",
             page_one_endpoint,
             _response(
@@ -6698,7 +6842,7 @@ class PullRequestMetadataTests(unittest.TestCase):
                 },
             ),
         )
-        client.add(
+        client.add_stable_comment_pages(
             "GET",
             page_two_endpoint,
             _response(
@@ -7325,14 +7469,14 @@ class PullRequestMetadataLauncherTests(unittest.TestCase):
                 _pr(),
                 _metadata_version(),
             ),
-            _cli_api_call(
+            *_cli_stable_comment_walk(_cli_api_call(
                 "GET",
                 _query(
                     f"issues/{PR_NUMBER}/comments",
                     [("per_page", "100"), ("page", "1")],
                 ),
                 payload=[],
-            ),
+            )),
             _cli_api_call(
                 "POST",
                 _endpoint(f"issues/{PR_NUMBER}/comments"),
@@ -7347,7 +7491,7 @@ class PullRequestMetadataLauncherTests(unittest.TestCase):
                 echo_body=True,
             ),
             *_cli_snapshot_calls([successful_full]),
-            _cli_api_call(
+            *_cli_stable_comment_walk(_cli_api_call(
                 "GET",
                 _query(
                     f"issues/{PR_NUMBER}/comments",
@@ -7362,7 +7506,7 @@ class PullRequestMetadataLauncherTests(unittest.TestCase):
                     )
                 ],
                 echo_last_comment=True,
-            ),
+            )),
             _cli_metadata_version_call(_pr(), _metadata_version()),
             _cli_api_call(
                 "PATCH",
@@ -7504,7 +7648,7 @@ class PullRequestMetadataLauncherTests(unittest.TestCase):
                 payload=_pr(),
             ),
             *_cli_snapshot_calls([old_success, successful_full]),
-            _cli_api_call(
+            *_cli_stable_comment_walk(_cli_api_call(
                 "GET",
                 _query(
                     f"issues/{PR_NUMBER}/comments",
@@ -7514,7 +7658,7 @@ class PullRequestMetadataLauncherTests(unittest.TestCase):
                     _intent_comment(old_receipt),
                     _confirmation_comment(old_confirmation),
                 ],
-            ),
+            )),
             _cli_metadata_version_call(
                 _pr(),
                 old_confirmation.metadata_version,
@@ -7575,7 +7719,7 @@ class PullRequestMetadataLauncherTests(unittest.TestCase):
                 payload=_pr(),
             ),
             *_cli_snapshot_calls(runs),
-            _cli_api_call(
+            *_cli_stable_comment_walk(_cli_api_call(
                 "GET",
                 _query(
                     f"issues/{PR_NUMBER}/comments",
@@ -7585,7 +7729,7 @@ class PullRequestMetadataLauncherTests(unittest.TestCase):
                     _intent_comment(receipt),
                     _confirmation_comment(confirmation),
                 ],
-            ),
+            )),
             _cli_metadata_version_call(
                 _pr(),
                 confirmation.metadata_version,
@@ -7595,7 +7739,7 @@ class PullRequestMetadataLauncherTests(unittest.TestCase):
                 _endpoint(f"pulls/{PR_NUMBER}"),
                 payload=_pr(),
             ),
-            _cli_api_call(
+            *_cli_stable_comment_walk(_cli_api_call(
                 "GET",
                 _query(
                     f"issues/{PR_NUMBER}/comments",
@@ -7605,7 +7749,7 @@ class PullRequestMetadataLauncherTests(unittest.TestCase):
                     _intent_comment(receipt),
                     _confirmation_comment(confirmation),
                 ],
-            ),
+            )),
             _cli_metadata_version_call(
                 _pr(),
                 confirmation.metadata_version,
@@ -7653,7 +7797,7 @@ class PullRequestMetadataLauncherTests(unittest.TestCase):
                 _endpoint(f"pulls/{PR_NUMBER}"),
                 payload=_pr(),
             ),
-            _cli_api_call(
+            *_cli_stable_comment_walk(_cli_api_call(
                 "GET",
                 _query(
                     f"issues/{PR_NUMBER}/comments",
@@ -7665,7 +7809,7 @@ class PullRequestMetadataLauncherTests(unittest.TestCase):
                         f"{pr_metadata.EVIDENCE_MARKER}\nOld evidence\n",
                     )
                 ],
-            ),
+            )),
             _cli_api_call(
                 "GET",
                 _endpoint(f"pulls/{PR_NUMBER}"),

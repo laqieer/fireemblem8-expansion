@@ -3923,6 +3923,26 @@ def _list_comments(
     repository_id: int,
     repository_owner_id: int,
 ) -> list[CommentState]:
+    first = _read_comment_pass(
+        client, repository, pr_number, repository_id, repository_owner_id
+    )
+    confirmed = _read_comment_pass(
+        client, repository, pr_number, repository_id, repository_owner_id
+    )
+    if first != confirmed:
+        raise MetadataEditError(
+            "pull request comments changed during enumeration; retry complete snapshots"
+        )
+    return confirmed
+
+
+def _read_comment_pass(
+    client: GitHubClient,
+    repository: str,
+    pr_number: int,
+    repository_id: int,
+    repository_owner_id: int,
+) -> list[CommentState]:
     comments = []
     seen_ids = set()
     expected_last_page = None

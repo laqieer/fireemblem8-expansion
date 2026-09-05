@@ -1341,6 +1341,11 @@ the exact branch and head; timeout or ambiguity fails before `gh run watch`.
    PATCH. Supply mixed-marker or malformed typed transaction bodies and
    require rejection before POST. Valid canonical replacements and all three
    valid transaction kinds remain accepted by the same body classifier.
+   Delete an already fetched ordinary comment between canonical page-one and
+   page-two responses so an intent, confirmation, abort, or second canonical
+   evidence marker shifts onto the previous page. Require two complete ordered
+   observations to disagree and reject before transaction use or PATCH.
+   Unchanged complete walks succeed; reordered or changed records reject.
    Reconcile an explicitly selected valid confirmation after an unconfirmed
    successor intent appears, both in the same second and later. Require the
    original pair's exact metadata/version and run evidence to remain usable;
