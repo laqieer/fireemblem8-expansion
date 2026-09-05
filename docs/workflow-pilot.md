@@ -571,12 +571,32 @@ exact numeric ID and login; bots and deleted/null actors cannot authorize the
 requested edit.
 
 `userContentEdits(first: 2)` is newest-first. The helper requires exact
-0/1/2-node cardinality from `totalCount`, canonical page flags and cursors, a
+0/2-node cardinality from `totalCount`, canonical page flags and cursors, a
 unique newest node, strict timestamp chronology, distinct IDs, null
 `deletedAt`, and newest-node `diff` equal to the current body. No-edit state
-requires zero count plus empty nodes, cursors, `lastEditedAt`, and editor. A
-body PATCH must increase the count by exactly one and introduce a new latest
-node. Reconciliation binds the exact count/node identity, so a later
+requires zero count plus empty nodes, cursors, `lastEditedAt`, and editor.
+The first body PATCH must advance `totalCount` from **0 to 2**: GitHub
+materializes both the original snapshot and the first edited revision.
+This is not permission for two intervening edits. The older node's `editedAt`
+must equal the same PR's `createdAt` and strictly precede the latest edit; its
+editor must match the PR's original `User` author by numeric ID and login.
+Both nodes must have distinct IDs and share their immutable `createdAt` /
+`updatedAt` materialization time. The original `diff` must have the same
+canonical body digest as the intent's `pre_fields.body`, including an empty
+original body. The latest revision still requires the repository-owner editor
+and exact current body. A subsequent body PATCH must increase the count by
+exactly one and introduce a new latest node.
+
+The metadata version's required `body_original` field preserves that proof
+when `totalCount` is 2: `edit_id`, `body_sha256`, `author_id`, `author_login`,
+`authored_at`, and `materialized_at`. It is explicitly null for no-edit state
+and for later histories whose bounded newest-two query no longer includes
+the original. Confirmation, recovery, and reconciliation bind the complete
+proof, not only the count. A single-revision history, two real intervening
+edits, forged original content/identity/timing, deleted or malformed nodes,
+and creation/first-edit timestamps in the same ambiguous second fail closed.
+Missing proof is never synthesized from a cached body or silently upgraded.
+Reconciliation binds the exact count/node/original identity, so a later
 same-second edit/revert invalidates confirmation even when body text and
 `lastEditedAt` return to prior values.
 
@@ -590,7 +610,13 @@ same-second edit/revert invalidates confirmation even when body text and
   "pre_version": {
     "body_editor_id": 123,
     "body_editor_login": "owner",
+    "body_edit_total_count": 3,
+    "body_edit_id": "UCE_node",
+    "body_edit_created_at": "YYYY-MM-DDTHH:MM:SSZ",
+    "body_edit_edited_at": "YYYY-MM-DDTHH:MM:SSZ",
+    "body_edit_updated_at": "YYYY-MM-DDTHH:MM:SSZ",
     "body_last_edited_at": "YYYY-MM-DDTHH:MM:SSZ",
+    "body_original": null,
     "title_actor_id": 123,
     "title_actor_login": "owner",
     "title_current": "Current title",

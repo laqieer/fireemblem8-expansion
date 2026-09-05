@@ -26,6 +26,7 @@ BASE = "2" * 40
 NEW_HEAD = "3" * 40
 HEAD_REF = "feature/issue-199"
 WORKFLOW_ID = 1234
+PR_CREATED_AT = "2026-09-02T00:00:00Z"
 INTENT_DRIFTS = (
     "deleted", "unmarked", "nonce", "pre-version", "timestamp",
     "author-id", "author-login", "author-type", "site-admin", "association",
@@ -48,6 +49,17 @@ def _metadata_sha256(title: str, body: str | None) -> str:
     )
 
 
+def _body_original(body: str, materialized_at: str) -> pr_metadata.BodyOriginal:
+    return pr_metadata.BodyOriginal(
+        "UCE_original",
+        _sha256(json.dumps(body, ensure_ascii=False, separators=(",", ":"))),
+        OWNER_ID,
+        "owner",
+        PR_CREATED_AT,
+        materialized_at,
+    )
+
+
 def _metadata_version(
     *,
     title_event_id: str | None = "RTE_1",
@@ -64,6 +76,7 @@ def _metadata_version(
     body_edit_created_at: str | None = None,
     body_edit_edited_at: str | None = None,
     body_edit_updated_at: str | None = None,
+    original_body: str = "prior body",
 ) -> pr_metadata.MetadataVersion:
     if body_last_edited_at is None:
         body_edit_total_count = 0
@@ -76,13 +89,13 @@ def _metadata_version(
     else:
         if body_edit_total_count is None:
             body_edit_total_count = (
-                1
+                2
                 if body_last_edited_at
                 in {
                     "2026-09-03T00:00:00Z",
                     "2026-09-04T00:00:00Z",
                 }
-                else 2
+                else 3
             )
         if body_edit_id is None:
             body_edit_id = f"UCE_{body_edit_total_count}"
@@ -104,12 +117,19 @@ def _metadata_version(
         body_edit_created_at,
         body_edit_edited_at,
         body_edit_updated_at,
+        (
+            _body_original(original_body, body_edit_edited_at)
+            if body_edit_total_count == 2
+            else None
+        ),
     )
 
 
 def _graphql_payload(
     state: dict,
     version: pr_metadata.MetadataVersion,
+    *,
+    original_body: str = "prior body",
 ) -> dict:
     owner = state["base"]["repo"]["owner"]["login"]
     actor = (
@@ -173,6 +193,20 @@ def _graphql_payload(
                     "updatedAt": "2026-09-03T00:00:00Z",
                 }
             )
+        if version.body_edit_total_count == 2:
+            original = version.body_original
+            edit_nodes[1].update(
+                createdAt=original.materialized_at,
+                updatedAt=original.materialized_at,
+                editedAt=original.authored_at,
+                id=original.edit_id,
+                diff=original_body,
+                editor={
+                    "__typename": "User",
+                    "databaseId": original.author_id,
+                    "login": original.author_login,
+                },
+            )
     total_count = version.body_edit_total_count
     return {
         "data": {
@@ -187,6 +221,12 @@ def _graphql_payload(
                 "pullRequest": {
                     "id": state["node_id"],
                     "databaseId": state["id"],
+                    "createdAt": PR_CREATED_AT,
+                    "author": {
+                        "__typename": "User",
+                        "databaseId": OWNER_ID,
+                        "login": owner,
+                    },
                     "baseRefOid": state["base"]["sha"],
                     "baseRefName": state["base"]["ref"],
                     "body": "" if state["body"] is None else state["body"],
@@ -221,15 +261,84 @@ def _graphql_payload(
     }
 
 
+def _first_body_history_controls(payload: dict) -> dict[str, dict]:
+    cases = {}
+    for name, field, value in (
+        ("forged-initial-body", "diff", "not the pre-edit body"),
+        ("forged-initial-id", "id", payload["data"]["repository"]["pullRequest"][
+            "userContentEdits"
+        ]["nodes"][0]["id"]),
+        ("forged-authorship-time", "editedAt", "2026-09-02T00:00:01Z"),
+        ("same-second-authorship", "editedAt", "2026-09-04T00:00:05Z"),
+        ("earlier-materialization", "createdAt", PR_CREATED_AT),
+        ("altered-original", "updatedAt", "2026-09-04T00:00:06Z"),
+        ("deleted-original", "deletedAt", "2026-09-04T00:00:06Z"),
+        ("null-original-diff", "diff", None),
+        ("missing-original-author", "editor", None),
+        ("bot-original-author", "editor", {"__typename": "Bot", "login": "bot"}),
+        ("unknown-original-field", "extra", True),
+    ):
+        changed = copy.deepcopy(payload)
+        changed["data"]["repository"]["pullRequest"]["userContentEdits"][
+            "nodes"
+        ][1][field] = value
+        cases[name] = changed
+    for subject in ("author", "editor"):
+        changed = copy.deepcopy(payload)
+        pull = changed["data"]["repository"]["pullRequest"]
+        actor = (
+            pull["author"] if subject == "author"
+            else pull["userContentEdits"]["nodes"][1]["editor"]
+        )
+        actor["databaseId"] += 1
+        cases[f"wrong-{subject}-id"] = changed
+        changed = copy.deepcopy(payload)
+        pull = changed["data"]["repository"]["pullRequest"]
+        actor = (
+            pull["author"] if subject == "author"
+            else pull["userContentEdits"]["nodes"][1]["editor"]
+        )
+        actor["login"] = "another-user"
+        cases[f"wrong-{subject}-login"] = changed
+    changed = copy.deepcopy(payload)
+    changed["data"]["repository"]["pullRequest"]["createdAt"] = "2026-09-01T00:00:00Z"
+    cases["wrong-pr-creation"] = changed
+    changed = copy.deepcopy(payload)
+    history = changed["data"]["repository"]["pullRequest"]["userContentEdits"]
+    history["totalCount"] = 1
+    history["nodes"] = history["nodes"][:1]
+    history["pageInfo"]["endCursor"] = history["pageInfo"]["startCursor"]
+    cases["impossible-single-revision"] = changed
+    for total in (2, 3):
+        changed = copy.deepcopy(payload)
+        history = changed["data"]["repository"]["pullRequest"]["userContentEdits"]
+        history["totalCount"] = total
+        history["pageInfo"]["hasNextPage"] = total > 2
+        history["nodes"][1].update(
+            createdAt="2026-09-04T00:00:04Z",
+            editedAt="2026-09-04T00:00:04Z",
+            updatedAt="2026-09-04T00:00:04Z",
+            id="UCE_intervening", diff="intervening body",
+        )
+        cases[f"two-real-edits-count-{total}"] = changed
+    changed = copy.deepcopy(payload)
+    changed["data"]["repository"]["pullRequest"]["userContentEdits"][
+        "pageInfo"
+    ]["hasNextPage"] = True
+    cases["incomplete-first-history"] = changed
+    return cases
+
+
 def _add_metadata_versions(
     client: ScriptedClient,
     *states_and_versions: tuple[dict, pr_metadata.MetadataVersion],
+    original_body: str = "prior body",
 ) -> None:
     client.add(
         "POST",
         "graphql",
         *(
-            _response(_graphql_payload(state, version))
+            _response(_graphql_payload(state, version, original_body=original_body))
             for state, version in states_and_versions
         ),
     )
@@ -676,12 +785,15 @@ def _mutation_client(
     title: str | None = None,
     body: str = "new body",
     pre_state: dict | None = None,
+    pre_version: pr_metadata.MetadataVersion | None = None,
 ) -> tuple[ScriptedClient, list[dict]]:
     state = _pr() if pre_state is None else pre_state
     client = ScriptedClient()
     _add_pr_states(client, state, state)
     _add_snapshot(client, [_run(101, 10, mode="full")], copies=2)
-    _add_edit_transaction(client, title=title, body=body, pre_state=state)
+    _add_edit_transaction(
+        client, title=title, body=body, pre_state=state, pre_version=pre_version
+    )
     comments = copy.deepcopy(list(history))
     posts = []
 
@@ -718,7 +830,7 @@ def _mutation_client(
     if failure is not None:
         _add_snapshot(client, [_run(101, 10, mode="full")])
         client.routes[("POST", "graphql")][2] = _response(
-            _graphql_payload(state, _metadata_version())
+            _graphql_payload(state, pre_version or _metadata_version())
         )
     return client, posts
 
@@ -754,7 +866,7 @@ def _add_edit_transaction(
             title_actor_login="owner",
         )
     if body_changed:
-        count = pre_version.body_edit_total_count + 1
+        count = 2 if pre_version.body_edit_total_count == 0 else pre_version.body_edit_total_count + 1
         post_version = replace(
             post_version,
             body_last_edited_at="2026-09-04T00:00:05Z",
@@ -765,12 +877,21 @@ def _add_edit_transaction(
             body_edit_created_at="2026-09-04T00:00:05Z",
             body_edit_edited_at="2026-09-04T00:00:05Z",
             body_edit_updated_at="2026-09-04T00:00:05Z",
+            body_original=(
+                _body_original(pre_body, "2026-09-04T00:00:05Z")
+                if count == 2 else None
+            ),
         )
     _add_metadata_versions(
         client,
         (pre_state, pre_version),
         (pre_state, pre_version),
-        (post_state, post_version),
+    )
+    client.add(
+        "POST", "graphql", _response(_graphql_payload(
+            post_state, post_version,
+            original_body=pre_body if pre_version.body_edit_total_count == 0 else "prior body",
+        )),
     )
     client.add("GET", _endpoint(f"pulls/{PR_NUMBER}"), pre_state)
     for (method, endpoint), responses in list(client.routes.items()):
@@ -971,11 +1092,13 @@ def _cli_snapshot_calls(
 def _cli_metadata_version_call(
     state: dict,
     version: pr_metadata.MetadataVersion,
+    *,
+    original_body: str = "prior body",
 ) -> dict:
     return _cli_api_call(
         "POST",
         "graphql",
-        payload=_graphql_payload(state, version),
+        payload=_graphql_payload(state, version, original_body=original_body),
         input_text=json.dumps(
             {
                 "query": pr_metadata.METADATA_VERSION_QUERY,
@@ -999,10 +1122,20 @@ def _cli_rejection_calls(
     failure: dict | None = None,
     held: bool = False,
     recovery: bool = False,
+    pre_state: dict | None = None,
+    pre_version: pr_metadata.MetadataVersion | None = None,
 ) -> list[dict]:
+    pre_state = pre_state if pre_state is not None else _pr()
+    pre_version = pre_version if pre_version is not None else _metadata_version()
+    first_edit = pre_version.body_edit_total_count == 0
+    original_body = (pre_state["body"] or "") if first_edit else "prior body"
     target = _pr(body=body, updated_at="2026-09-04T00:00:05Z")
-    target_version = _metadata_version(body_last_edited_at="2026-09-04T00:00:05Z")
-    state, version = (target, target_version) if recovery else (_pr(), _metadata_version())
+    target_version = _metadata_version(
+        body_last_edited_at="2026-09-04T00:00:05Z",
+        body_edit_total_count=2 if first_edit else pre_version.body_edit_total_count + 1,
+        original_body=original_body,
+    )
+    state, version = (target, target_version) if recovery else (pre_state, pre_version)
     comments_endpoint = _endpoint(f"issues/{PR_NUMBER}/comments")
     list_endpoint = _query(f"issues/{PR_NUMBER}/comments", [("per_page", "100"), ("page", "1")])
     calls = []
@@ -1012,7 +1145,7 @@ def _cli_rejection_calls(
             *_cli_snapshot_calls([_run(101, 10, mode="full")]),
         ])
     calls.extend([
-        _cli_metadata_version_call(state, version),
+        _cli_metadata_version_call(state, version, original_body=original_body),
         *_cli_stable_comment_walk(_cli_api_call("GET", list_endpoint, payload=list(history))),
     ])
     creating = not held and not recovery
@@ -1032,7 +1165,8 @@ def _cli_rejection_calls(
     if not recovery:
         calls.extend([
             *_cli_snapshot_calls([_run(101, 10, mode="full")]),
-            *copy.deepcopy(walk), _cli_metadata_version_call(state, version),
+            *copy.deepcopy(walk),
+            _cli_metadata_version_call(state, version, original_body=original_body),
         ])
         if held:
             return calls
@@ -1048,11 +1182,15 @@ def _cli_rejection_calls(
             return calls
         calls.extend([
             *_cli_snapshot_calls([_run(101, 10, mode="full")]),
-            *copy.deepcopy(walk), _cli_metadata_version_call(state, version),
+            *copy.deepcopy(walk),
+            _cli_metadata_version_call(state, version, original_body=original_body),
         ])
         second = len(history) + 2
     else:
-        calls.extend([*copy.deepcopy(walk), _cli_metadata_version_call(target, target_version)])
+        calls.extend([
+            *copy.deepcopy(walk),
+            _cli_metadata_version_call(target, target_version, original_body=original_body),
+        ])
         second = 6 + len(history)
     terminal_time = f"2026-09-04T00:00:{second:02d}Z"
     calls.append(_cli_api_call(
@@ -1183,6 +1321,7 @@ def _confirmation(
                 body_edit_created_at="2026-09-04T00:00:00Z",
                 body_edit_edited_at="2026-09-04T00:00:00Z",
                 body_edit_updated_at="2026-09-04T00:00:00Z",
+                body_original=None,
             )
         else:
             version = receipt.pre_version
@@ -1356,6 +1495,7 @@ def _reconcile(
     comments: list[dict] | None = None,
     version: pr_metadata.MetadataVersion | None = None,
     state: dict | None = None,
+    original_body: str = "prior body",
 ) -> pr_metadata.Decision:
     receipt = receipt or _receipt()
     workflow_route = ("GET", _endpoint("actions/workflows/build.yml"))
@@ -1373,6 +1513,7 @@ def _reconcile(
                 body_edit_created_at="2026-09-04T00:00:00Z",
                 body_edit_edited_at="2026-09-04T00:00:00Z",
                 body_edit_updated_at="2026-09-04T00:00:00Z",
+                body_original=None,
             )
         else:
             version = receipt.pre_version
@@ -1390,6 +1531,7 @@ def _reconcile(
             (state or _pr(), version)
             for _ in range(2)
         ),
+        original_body=original_body,
     )
     return pr_metadata.reconcile_metadata(
         client,
@@ -5537,8 +5679,8 @@ class PullRequestMetadataTests(unittest.TestCase):
         cases = (
             ("title-only", None, "New title", None, None, {"title": "New title"}, 0),
             ("unchanged-empty", None, "New title", "", None, {"title": "New title"}, 0),
-            ("first-body", None, None, "New body", "New body", {"body": "New body"}, 1),
-            ("clear-body", "Stable body", None, "", None, {"body": ""}, 2),
+            ("first-body", None, None, "New body", "New body", {"body": "New body"}, 2),
+            ("clear-body", "Stable body", None, "", None, {"body": ""}, 3),
         )
         for name, initial_body, title, body, returned_body, mutation, edit_count in cases:
             with self.subTest(case=name):
@@ -5629,13 +5771,14 @@ class PullRequestMetadataTests(unittest.TestCase):
         pre = _metadata_version(body_last_edited_at=None)
         post = _metadata_version(
             body_last_edited_at="2026-09-04T00:00:01Z",
-            body_edit_total_count=1,
+            body_edit_total_count=2,
             body_edit_id="UCE_first",
+            original_body="",
         )
         receipt = _receipt(
             pre_version=pre,
-            pre_body=None,
-            pre_metadata_sha256=_metadata_sha256("Stable title", None),
+            pre_body="",
+            pre_metadata_sha256=_metadata_sha256("Stable title", ""),
             target_metadata_sha256=_metadata_sha256(
                 "Stable title",
                 "Stable body",
@@ -5652,8 +5795,126 @@ class PullRequestMetadataTests(unittest.TestCase):
             state=state,
             version=post,
         )
-        self.assertEqual(confirmation.metadata_version.body_edit_total_count, 1)
+        self.assertEqual(confirmation.metadata_version.body_edit_total_count, 2)
         self.assertEqual(confirmation.metadata_version.body_edit_id, "UCE_first")
+
+    def test_real_first_and_subsequent_body_edits_confirm_and_reconcile(self):
+        cases = (
+            (None, True, False), ("", True, False),
+            ("Original body 雪\n", True, True), ("Stable body", False, False),
+        )
+        for initial_body, first, delayed in cases:
+            with self.subTest(body=initial_body, first=first, delayed=delayed):
+                pre = _metadata_version(
+                    body_last_edited_at=None if first else "2026-09-04T00:00:00Z"
+                )
+                client, posts = _mutation_client(
+                    pre_state=_pr(body=initial_body), pre_version=pre
+                )
+                if delayed:
+                    pull = client.routes[("POST", "graphql")][-1].payload[
+                        "data"
+                    ]["repository"]["pullRequest"]
+                    for node in pull["userContentEdits"]["nodes"]:
+                        node["createdAt"] = node["updatedAt"] = "2026-09-04T00:00:06Z"
+                decision = pr_metadata.edit_metadata(
+                    client, repository=REPOSITORY, pr_number=PR_NUMBER,
+                    head_sha=HEAD, base_sha=BASE, title=None, body="new body",
+                    essential_reason=None,
+                )
+                self.assertEqual(decision.action, "updated")
+                self.assertEqual([c[2] for c in client.calls if c[0] == "PATCH"], [{"body": "new body"}])
+                self.assertEqual(len(posts), 2)
+                receipt = pr_metadata._parse_intent_comment_body(posts[0]["body"])
+                confirmation = pr_metadata._parse_confirmation_comment_body(posts[1]["body"])
+                version = confirmation.metadata_version
+                self.assertEqual(version.body_edit_total_count, 2 if first else 3)
+                self.assertEqual(receipt.pre_version, pre)
+                if first:
+                    self.assertEqual(
+                        version.body_original.body_sha256,
+                        dict((f.field, f.sha256) for f in receipt.pre_fields)["body"],
+                    )
+                    self.assertNotEqual(version.body_original.edit_id, version.body_edit_id)
+                    self.assertEqual(version.body_original.authored_at, PR_CREATED_AT)
+                else:
+                    self.assertIsNone(version.body_original)
+                target = _pr(body="new body", updated_at="2026-09-04T00:00:06Z")
+                reconcile = ScriptedClient()
+                _add_pr_states(reconcile, target, target)
+                _add_snapshot(reconcile, [
+                    _run(202, 11, mode="metadata-only", success=True),
+                    _run(101, 10, mode="full"),
+                ], copies=2)
+                result = _reconcile(
+                    reconcile, receipt=receipt, confirmation=confirmation,
+                    comments=posts, version=version, state=target,
+                    original_body=(initial_body or "") if first else "prior body",
+                )
+                self.assertEqual(result.action, "complete")
+                self.assertEqual(result.run_id, 202)
+                self.assertFalse(any(m != "GET" and e != "graphql" for m, e, _ in reconcile.calls))
+
+    def test_first_body_edit_rejects_forged_original_and_multiple_edits(self):
+        pre = _metadata_version(body_last_edited_at=None)
+        client, _posts = _mutation_client(pre_state=_pr(body=None), pre_version=pre)
+        payload = client.routes[("POST", "graphql")][-1].payload
+        for name, changed in _first_body_history_controls(payload).items():
+            with self.subTest(history=name):
+                client, posts = _mutation_client(pre_state=_pr(body=None), pre_version=pre)
+                client.routes[("POST", "graphql")][-1] = _response(changed)
+                with self.assertRaises(pr_metadata.MetadataEditError):
+                    pr_metadata.edit_metadata(
+                        client, repository=REPOSITORY, pr_number=PR_NUMBER,
+                        head_sha=HEAD, base_sha=BASE, title=None, body="new body",
+                        essential_reason=None,
+                    )
+                self.assertEqual([c[2] for c in client.calls if c[0] == "PATCH"], [{"body": "new body"}])
+                self.assertEqual(len(posts), 1)
+                self.assertTrue(posts[0]["body"].startswith(pr_metadata.INTENT_MARKER))
+
+    def test_original_body_version_schema_and_confirmation_identity_are_bound(self):
+        version = _metadata_version(original_body="")
+        payload = version.canonical_payload()
+        self.assertEqual(
+            pr_metadata._parse_metadata_version_payload(payload, label="test"), version
+        )
+        for field, value in (
+            ("body_sha256", []), ("author_id", True), ("author_login", ""),
+            ("authored_at", version.body_edit_edited_at),
+            ("materialized_at", "2026-09-04T00:00:01Z"),
+            ("edit_id", version.body_edit_id), ("extra", "unexpected"),
+        ):
+            with self.subTest(field=field):
+                changed = copy.deepcopy(payload)
+                changed["body_original"][field] = value
+                with self.assertRaises(pr_metadata.MetadataEditError):
+                    pr_metadata._parse_metadata_version_payload(changed, label="test")
+        for original in (None, {}, []):
+            with self.subTest(original=original):
+                with self.assertRaises(pr_metadata.MetadataEditError):
+                    pr_metadata._parse_metadata_version_payload(
+                        {**payload, "body_original": original}, label="test"
+                    )
+        receipt = _receipt(
+            pre_version=_metadata_version(body_last_edited_at=None), pre_body=""
+        )
+        confirmation = _confirmation(receipt, version=version)
+        for field, value in (
+            ("edit_id", "UCE_different_original"), ("author_id", OWNER_ID + 1),
+            ("author_login", "another-user"), ("authored_at", "2026-09-01T00:00:00Z"),
+        ):
+            with self.subTest(forged_confirmation=field):
+                forged = replace(
+                    version, body_original=replace(version.body_original, **{field: value})
+                )
+                with self.assertRaises(pr_metadata.MetadataEditError):
+                    pr_metadata._validate_confirmation(
+                        replace(confirmation, metadata_version=forged), receipt,
+                        intent_comment_id=401,
+                        state=pr_metadata._parse_pull_request_payload(_pr(), REPOSITORY, PR_NUMBER),
+                        version=version,
+                    )
 
     def test_same_second_post_confirmation_body_revert_invalidates_pair(self):
         receipt = _receipt()
@@ -7739,7 +8000,7 @@ class PullRequestMetadataTests(unittest.TestCase):
     def test_graphql_actor_interfaces_use_user_inline_fragments(self):
         query = "".join(pr_metadata.METADATA_VERSION_QUERY.split())
         self.assertIn(
-            "editor{__typenamelogin...onUser{databaseId}}",
+            "author{__typenamelogin...onUser{databaseId}}",
             query,
         )
         self.assertIn(
@@ -7757,6 +8018,7 @@ class PullRequestMetadataTests(unittest.TestCase):
         )
         self.assertNotIn("editor{__typenamedatabaseId", query)
         self.assertNotIn("actor{__typenamedatabaseId", query)
+        self.assertNotIn("author{__typenamedatabaseId", query)
 
 
 class PullRequestRejectedMutationTests(unittest.TestCase):
@@ -8089,6 +8351,108 @@ class PullRequestMetadataLauncherTests(unittest.TestCase):
             for index, record in enumerate(records)
             if record["method"] == "POST" and "/comments" in record["endpoint"]
         )
+
+    def test_first_and_subsequent_body_edit_cli_confirm_and_recover(self):
+        body_path = self.sandbox.root / "body.txt"
+        body_path.write_text("new body", encoding="utf-8")
+        arguments = [*self.common_arguments(), "--body-file", str(body_path)]
+        for initial_body, first in ((None, True), ("Original body 雪\n", True), ("Stable body", False)):
+            with self.subTest(body=initial_body, first=first):
+                state = _pr(body=initial_body)
+                pre = _metadata_version(
+                    body_last_edited_at=None if first else "2026-09-04T00:00:00Z"
+                )
+                calls = _cli_rejection_calls("new body", pre_state=state, pre_version=pre)
+                completed, records = self.sandbox.run("edit", arguments, calls)
+                self.assertEqual(completed.returncode, 0, completed.stderr)
+                self.assertEqual(json.loads(completed.stdout)["action"], "updated")
+                self.assert_isolated_calls(records, len(calls))
+                history = self.recorded_comments(calls, records)
+                self.assertEqual(len(history), 2)
+                confirmation = pr_metadata._parse_confirmation_comment_body(history[1]["body"])
+                self.assertEqual(confirmation.metadata_version.body_edit_total_count, 2 if first else 3)
+                self.assertEqual(
+                    [json.loads(r["input"]) for r in records if r["method"] == "PATCH"],
+                    [{"body": "new body"}],
+                )
+                calls = _cli_rejection_calls(
+                    "new body", pre_state=state, pre_version=pre,
+                    history=history[:1], recovery=True,
+                )
+                completed, records = self.sandbox.run("edit", arguments, calls)
+                self.assertEqual(completed.returncode, 0, completed.stderr)
+                self.assertEqual(json.loads(completed.stdout)["action"], "recovered")
+                self.assert_isolated_calls(records, len(calls))
+                self.assertFalse(any(r["method"] == "PATCH" for r in records))
+                recovered = self.recorded_comments(calls, records)
+                self.assertEqual(len(recovered), 1)
+                self.assertEqual(
+                    pr_metadata._parse_confirmation_comment_body(recovered[0]["body"]),
+                    confirmation,
+                )
+                target = _pr(body="new body", updated_at="2026-09-04T00:00:05Z")
+                calls = [
+                    _cli_api_call("GET", _endpoint(f"pulls/{PR_NUMBER}"), payload=target),
+                    *_cli_snapshot_calls([
+                        _run(202, 11, mode="metadata-only", success=True),
+                        _run(101, 10, mode="full"),
+                    ]),
+                    *_cli_stable_comment_walk(_cli_api_call(
+                        "GET",
+                        _query(
+                            f"issues/{PR_NUMBER}/comments",
+                            [("per_page", "100"), ("page", "1")],
+                        ),
+                        payload=list(history),
+                    )),
+                    _cli_metadata_version_call(
+                        target, confirmation.metadata_version,
+                        original_body=(initial_body or "") if first else "prior body",
+                    ),
+                ]
+                completed, records = self.sandbox.run(
+                    "reconcile",
+                    [*self.common_arguments(), "--confirmation-comment-id", "402"],
+                    calls,
+                )
+                self.assertEqual(completed.returncode, 0, completed.stderr)
+                self.assertEqual(completed.stdout, _canonical_decision(
+                    action="complete", run_id=202,
+                    reason="metadata continuity already succeeds",
+                ))
+                self.assert_isolated_calls(records, len(calls))
+                self.assertFalse(any(
+                    r["method"] != "GET" and r["endpoint"] != "graphql" for r in records
+                ))
+
+    def test_first_body_edit_cli_rejects_forged_original_and_multiple_edits(self):
+        body_path = self.sandbox.root / "body.txt"
+        body_path.write_text("new body", encoding="utf-8")
+        arguments = [*self.common_arguments(), "--body-file", str(body_path)]
+        calls = _cli_rejection_calls(
+            "new body", pre_state=_pr(body=None),
+            pre_version=_metadata_version(body_last_edited_at=None),
+        )
+        final_query = max(i for i, call in enumerate(calls) if call["endpoint"] == "graphql")
+        controls = [
+            (name, calls, payload)
+            for name, payload in _first_body_history_controls(calls[final_query]["payload"]).items()
+        ]
+        subsequent = _cli_rejection_calls("new body")
+        double_edit = copy.deepcopy(subsequent[final_query]["payload"])
+        double_edit["data"]["repository"]["pullRequest"]["userContentEdits"]["totalCount"] += 1
+        controls.append(("subsequent-double-edit", subsequent, double_edit))
+        for name, transcript, payload in controls:
+            with self.subTest(history=name):
+                changed = copy.deepcopy(transcript)
+                changed[final_query]["payload"] = payload
+                completed, records = self.sandbox.run("edit", arguments, changed)
+                self.assertEqual(completed.returncode, 2, completed.stderr)
+                self.assertEqual(completed.stdout, "")
+                self.assertNotIn("Traceback", completed.stderr)
+                self.assert_isolated_calls(records, final_query + 1)
+                self.assertEqual(sum(r["method"] == "PATCH" for r in records), 1)
+                self.assertEqual(len(self.recorded_comments(changed, records)), 1)
 
     def test_rejected_patch_cli_aborts_and_accepts_corrected_successor(self):
         body_path = self.sandbox.root / "body.txt"

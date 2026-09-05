@@ -76,6 +76,8 @@ METADATA_VERSION_QUERY = """query($owner:String!,$name:String!,$number:Int!){
     pullRequest(number:$number){
       id
       databaseId
+      createdAt
+      author{__typename login ... on User{databaseId}}
       baseRefOid
       baseRefName
       body
@@ -190,6 +192,16 @@ class EditFieldDigest:
 
 
 @dataclass(frozen=True)
+class BodyOriginal:
+    edit_id: str
+    body_sha256: str
+    author_id: int
+    author_login: str
+    authored_at: str
+    materialized_at: str
+
+
+@dataclass(frozen=True)
 class MetadataVersion:
     title_event_id: str | None
     title_event_created_at: str | None
@@ -205,6 +217,7 @@ class MetadataVersion:
     body_edit_created_at: str | None
     body_edit_edited_at: str | None
     body_edit_updated_at: str | None
+    body_original: BodyOriginal | None
 
     def canonical_payload(self) -> dict[str, object]:
         return asdict(self)
@@ -699,6 +712,35 @@ def _changed_field_digests(
     return tuple(fields)
 
 
+def _parse_body_original(payload: object, *, label: str) -> BodyOriginal:
+    if not isinstance(payload, dict) or set(payload) != {
+        "edit_id", "body_sha256", "author_id", "author_login",
+        "authored_at", "materialized_at",
+    }:
+        raise MetadataEditError(f"{label} original body shape is invalid")
+    digest = payload["body_sha256"]
+    if not isinstance(digest, str) or DIGEST_RE.fullmatch(digest) is None:
+        raise MetadataEditError(f"{label} original body digest is invalid")
+    authored_at = _timestamp_text(
+        _github_timestamp(payload["authored_at"], f"{label} original authored_at")
+    )
+    materialized_at = _timestamp_text(
+        _github_timestamp(
+            payload["materialized_at"], f"{label} original materialized_at"
+        )
+    )
+    if authored_at >= materialized_at:
+        raise MetadataEditError(f"{label} original body chronology is ambiguous")
+    return BodyOriginal(
+        _text(payload["edit_id"], f"{label} original edit id"),
+        digest,
+        _positive_int(payload["author_id"], f"{label} original author id"),
+        _text(payload["author_login"], f"{label} original author login"),
+        authored_at,
+        materialized_at,
+    )
+
+
 def _parse_metadata_version_payload(
     payload: object,
     *,
@@ -713,6 +755,7 @@ def _parse_metadata_version_payload(
         "body_edit_total_count",
         "body_edit_updated_at",
         "body_last_edited_at",
+        "body_original",
         "title_actor_id",
         "title_actor_login",
         "title_current",
@@ -770,6 +813,7 @@ def _parse_metadata_version_payload(
         isinstance(body_edit_total_count, bool)
         or not isinstance(body_edit_total_count, int)
         or body_edit_total_count < 0
+        or body_edit_total_count == 1
         or body_edit_total_count > 999999999
     ):
         raise MetadataEditError(f"{label} body edit count is invalid")
@@ -836,6 +880,21 @@ def _parse_metadata_version_payload(
         body_edit_created_at = None
         body_edit_edited_at = None
         body_edit_updated_at = None
+    body_original = None
+    if body_edit_total_count == 2:
+        body_original = _parse_body_original(payload["body_original"], label=label)
+        if (
+            body_original.edit_id == body_edit_id
+            or body_original.authored_at >= body_edit_edited_at
+            or not (
+                body_original.materialized_at
+                == body_edit_created_at
+                == body_edit_updated_at
+            )
+        ):
+            raise MetadataEditError(f"{label} original body materialization is invalid")
+    elif payload["body_original"] is not None:
+        raise MetadataEditError(f"{label} original body has no complete history")
     return MetadataVersion(
         title_event_id,
         title_event_created_at,
@@ -851,6 +910,7 @@ def _parse_metadata_version_payload(
         body_edit_created_at,
         body_edit_edited_at,
         body_edit_updated_at,
+        body_original,
     )
 
 
@@ -1675,7 +1735,10 @@ def _parse_body_edit_node(
 def _body_edit_version(
     pull: dict[str, object],
     state: PullRequestState,
-) -> tuple[int, str | None, str | None, str | None, str | None, int | None, str | None]:
+) -> tuple[
+    int, str | None, str | None, str | None, str | None,
+    int | None, str | None, BodyOriginal | None,
+]:
     connection = pull.get("userContentEdits")
     if not isinstance(connection, dict) or set(connection) != {
         "nodes",
@@ -1688,6 +1751,7 @@ def _body_edit_version(
         isinstance(total_count, bool)
         or not isinstance(total_count, int)
         or total_count < 0
+        or total_count == 1
         or total_count > 999999999
     ):
         raise MetadataEditError("body edit history totalCount is invalid")
@@ -1720,7 +1784,7 @@ def _body_edit_version(
             or end_cursor is not None
         ):
             raise MetadataEditError("body no-edit authority is inconsistent")
-        return 0, None, None, None, None, None, None
+        return 0, None, None, None, None, None, None, None
     if (
         not isinstance(start_cursor, str)
         or not start_cursor
@@ -1761,6 +1825,32 @@ def _body_edit_version(
         raise MetadataEditError(
             "latest body edit is inconsistent with the pull request"
         )
+    body_original = None
+    if total_count == 2:
+        original = parsed[1]
+        authored_at = _timestamp_text(
+            _github_timestamp(pull.get("createdAt"), "pull request createdAt")
+        )
+        author_id, author_login = _graphql_user(
+            pull.get("author"), label="pull request author", required=True
+        )
+        # GitHub materializes the original snapshot with the first real edit.
+        if (
+            original[2] != authored_at
+            or (original[4], original[5]) != (author_id, author_login)
+            or not (
+                original[1] == original[3] == latest[1] == latest[3]
+            )
+        ):
+            raise MetadataEditError("original body snapshot authority is inconsistent")
+        body_original = BodyOriginal(
+            original[0],
+            _field_state_digest(original[6]),
+            original[4],
+            original[5],
+            original[2],
+            original[1],
+        )
     return (
         total_count,
         latest[0],
@@ -1769,6 +1859,7 @@ def _body_edit_version(
         latest[3],
         latest[4],
         latest[5],
+        body_original,
     )
 
 
@@ -1840,6 +1931,7 @@ def _fetch_metadata_observation(
         body_edit_updated_at,
         body_editor_id,
         body_editor_login,
+        body_original,
     ) = _body_edit_version(pull, observed)
     timeline = pull.get("timelineItems")
     nodes = timeline.get("nodes") if isinstance(timeline, dict) else None
@@ -1890,6 +1982,7 @@ def _fetch_metadata_observation(
             body_edit_created_at,
             body_last_edited_at,
             body_edit_updated_at,
+            body_original,
         )
     newest_time = max(event[0] for event in events)
     newest = [event for event in events if event[0] == newest_time]
@@ -1920,6 +2013,7 @@ def _fetch_metadata_observation(
         body_edit_created_at,
         body_last_edited_at,
         body_edit_updated_at,
+        body_original,
     )
 
 
@@ -2927,6 +3021,7 @@ def _body_version_identity(version: MetadataVersion) -> tuple[object, ...]:
         version.body_last_edited_at,
         version.body_editor_id,
         version.body_editor_login,
+        version.body_original,
     )
 
 
@@ -2994,13 +3089,22 @@ def _confirmation_for_target(
     ):
         raise MetadataEditError("unrequested title metadata version changed")
     if "body" in changed:
+        first_edit = receipt.pre_version.body_edit_total_count == 0
+        expected_count = 2 if first_edit else receipt.pre_version.body_edit_total_count + 1
         if (
-            version.body_edit_total_count
-            != receipt.pre_version.body_edit_total_count + 1
+            version.body_edit_total_count != expected_count
             or version.body_edit_id is None
             or version.body_edit_id == receipt.pre_version.body_edit_id
             or version.body_editor_id != state.repository_owner_id
             or version.body_editor_login != state.repository.split("/", 1)[0]
+            or (
+                first_edit
+                and (
+                    version.body_original is None
+                    or version.body_original.body_sha256
+                    != _receipt_pre_fields(receipt)["body"]
+                )
+            )
         ):
             raise MetadataEditError(
                 "body metadata version does not uniquely attest the edit"

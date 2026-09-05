@@ -1251,6 +1251,19 @@ the exact branch and head; timeout or ambiguity fails before `gh run watch`.
    empty-body identity, only the actually changed PATCH fields, and body-version
    advancement only for real body changes. Missing REST body and missing,
    null, malformed, or differing GraphQL body fields remain invalid.
+   Start first-edit fixtures with zero history and either empty or nonempty
+   original content. Return exactly two newest-first revisions after PATCH:
+   the new body plus the original, whose `editedAt` equals PR creation and
+   whose author matches the PR author. Bind their distinct IDs, shared
+   materialization time, and the original's canonical pre-body digest.
+   Confirm and reconcile this 0-to-2 transition through the real helper and
+   isolated CLI, including applied-target recovery without a second PATCH.
+   Repeat a subsequent 2-to-3 edit. Return a real second intervening edit
+   (0-to-3 or 2-to-4), or disguise two actual edits as two rows; neither may
+   confirm. Forge original content, ID, author, creation/authorship/update
+   times, or serialized proof; delete a revision, omit an author, corrupt
+   pagination, and put PR creation and first edit in the same ambiguous
+   second. Require failure without a confirmation or cached-data abort.
 2. Exercise a same-head/same-base full Build whose complete exact Build job
    shape is queued. Attempt a default body edit with exact repository, PR,
    head, and base arguments, and confirm the initially active Build takes one
@@ -1474,11 +1487,19 @@ interface, and request `databaseId` only through `... on User` inline
 fragments. User actors retain exact numeric-ID/login binding; bot, deleted,
 null, and wrong-ID actors fail wherever owner edit authority is required.
 Body authority requires a canonical newest-first `UserContentEdit` connection.
-No-edit state is explicit. A body edit increases `totalCount` by exactly one
-and introduces a new latest node. Missing/permission-omitted connections,
-count rollback, count jump, reused/duplicate nodes, deleted nodes, malformed
-pageInfo, wrong editor, diff/body mismatch, and multiple same-second nodes fail
-closed.
+No-edit state is explicit. The first body edit changes `totalCount` from 0 to
+2 by materializing the original snapshot with the first real edit; every
+subsequent edit increases it by exactly one. The original node must bind the
+same PR's creation time and author, the intent's canonical pre-body digest,
+and a distinct ID. Original and latest `createdAt` / `updatedAt` share the
+materialization time, while original authorship strictly precedes latest
+`editedAt`. The latest editor and body remain owner/target-bound.
+`body_original` retains the typed original proof in the count-2 metadata
+version, so changing it invalidates a stored confirmation. A lone revision,
+missing/permission-omitted connections, count rollback/jump, two real edits,
+forged original snapshots, reused/duplicate nodes, deleted nodes, malformed
+pageInfo, wrong editor, diff/body mismatch, and same-second ambiguous
+authorship or multiple same-second edits fail closed.
 Exact-head runs use typed `explicit-same`, `explicit-other`, and `unbound`
 binding states. Active unbound runs block; terminal unbound runs cannot provide
 evidence; explicit-other runs are ignored only after full validation; multiple
