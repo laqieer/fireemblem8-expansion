@@ -28,9 +28,10 @@ from typing import List
 from scripts.workflow_pilot import (
     metadata_adapter_contract,
     publisher_command_signatures,
-    publisher_shell_contract,
     summary_continuity_contract,
 )
+
+publisher_shell_contract = publisher_command_signatures.publisher_shell_contract
 
 # A leading NAME=VALUE token in a gate command is an inline environment
 # assignment (POSIX shell semantics), mirrored verbatim from build.yml so
@@ -2279,6 +2280,11 @@ def _parse_workflow_gate_contract_text(text):
 
 
 def _read_workflow_gate_contract(repository_root):
+    if os.path.abspath(repository_root) == os.path.abspath(_SOURCE_ROOT):
+        text = publisher_command_signatures.authority_file_bytes(
+            _BUILD_WORKFLOW_RELATIVE
+        ).decode("utf-8")
+        return _parse_workflow_structure_text(text)
     path = os.path.join(repository_root, _BUILD_WORKFLOW_RELATIVE)
     try:
         if os.path.islink(path) or not os.path.isfile(path):

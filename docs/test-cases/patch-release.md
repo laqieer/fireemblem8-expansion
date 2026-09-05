@@ -369,6 +369,14 @@ digest drift, and malformed JSON fail. Adding, removing, changing, or
 redirecting a production command fails until the base-owned registry and
 behavioral evidence are reviewed together.
 
+Every canonical workflow, loader, parser, registry, consumer, package
+initializer, and parent path is also checked against the selected immutable Git
+tree. Symlinked files or parents, path escapes, nonregular files, hardlinks,
+owner/mode drift, altered same-path content, validate-then-swap replacement,
+misnamed commit/tree/blob objects, and import-cache, standard-library shadow,
+or `sys.path` poisoning fail. The parser executes from the captured Git blob
+and the registry is parsed from its captured blob.
+
 The semantic inventory treats a pure cross-command reorder as the same set and
 emits events without imposing their phase order. The pre-existing exact-run
 tree seal still reports unreviewed workflow-byte drift; issue #201, not this
@@ -404,8 +412,10 @@ are unchanged.
   — proves the real positive, parent composed-reader negative, adversarial
   signature families, recursive helper closure, both mirrored validator
   decisions, exact checker mutations, production-command drift, and registry
-  path/digest/schema/deletion/mutation controls, while proving the semantic
-  inventory does not enforce future phase-event order.
+  path/digest/schema/deletion/mutation controls; parameterized authority-file,
+  parent, symlink, nonregular, mode, hardlink, content, path-swap, and import
+  substitution cases; and proof that the semantic inventory does not enforce
+  future phase-event order.
 - `python3 -m unittest tests.workflows.test_patch_release_workflow -v` —
   preserves the complete upstream publisher boundary and executes the exact
   checker behavior.

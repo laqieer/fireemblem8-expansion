@@ -5,27 +5,31 @@ from __future__ import annotations
 import ast
 import copy
 import json
+import os
 import re
-import subprocess
+import sys
 import tempfile
+import types
 import unittest
 from pathlib import Path
 from unittest import mock
 
 from scripts.workflow_pilot import publisher_command_signatures
-from scripts.workflow_pilot import publisher_shell_contract
 from tests.workflows import test_patch_release_workflow
 
 
 ROOT = Path(__file__).resolve().parents[3]
+publisher_shell_contract = publisher_command_signatures.publisher_shell_contract
+ARTIFACT_ROOT = ROOT / "build" / "test-artifacts"
 
 
 class PublisherCommandSignatureTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.workflow = publisher_command_signatures.WORKFLOW_PATH.read_text(
-            encoding="utf-8"
-        )
+        snapshot = publisher_command_signatures._authority_snapshot()
+        cls.workflow = snapshot.files[
+            publisher_command_signatures._WORKFLOW_AUTHORITY_PATH
+        ].data.decode("utf-8")
         cls.run_script = publisher_command_signatures.publisher_builder_run_script(
             cls.workflow
         )
@@ -102,29 +106,22 @@ class PublisherCommandSignatureTests(unittest.TestCase):
             ),
         )
 
-    def test_exact_tree_cli_runs_before_candidate_controlled_host_tests(self):
-        command = (
-            "/usr/bin/python3 -I "
-            "scripts/workflow_pilot/publisher_command_signatures.py --check"
-        )
+    def test_exact_tree_bootstrap_runs_before_candidate_controlled_host_tests(self):
+        command = '/usr/bin/python3 -I - "$EXPECTED_BUILD_SHA" <<\'PY\''
         self.assertIn(command, self.workflow)
         self.assertLess(
             self.workflow.index(command),
             self.workflow.index("- name: Run gba-playtest host test suite"),
         )
-        completed = subprocess.run(
-            [
-                "/usr/bin/python3",
-                "-I",
-                str(publisher_command_signatures.__file__),
-                "--check",
-            ],
-            cwd=ROOT,
-            check=False,
-            capture_output=True,
-            text=True,
+        self.assertIn(
+            'commit = object_bytes(expected, "commit")',
+            self.workflow,
         )
-        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertIn('source = object_bytes(object_id, "blob")', self.workflow)
+        self.assertIn(
+            'exec(compile(source, path, "exec"), namespace)',
+            self.workflow,
+        )
 
     def test_mirrored_publisher_validators_share_the_same_decision(self):
         self.assertEqual(
@@ -591,10 +588,12 @@ class PublisherCommandSignatureTests(unittest.TestCase):
             / "workflow_pilot"
             / "publisher_command_signatures.py",
         )
+        snapshot = publisher_command_signatures._authority_snapshot()
         self.assertEqual(
-            Path(publisher_shell_contract.__file__).resolve(),
-            ROOT / "scripts" / "workflow_pilot" / "publisher_shell_contract.py",
+            publisher_shell_contract.__file__,
+            publisher_command_signatures._PARSER_AUTHORITY_PATH,
         )
+        self.assertEqual(set(snapshot.files), set(publisher_command_signatures._AUTHORITY_PATHS))
         authority = publisher_command_signatures.registry_document(())[
             "authority"
         ]
@@ -627,23 +626,312 @@ class PublisherCommandSignatureTests(unittest.TestCase):
                 "collections",
                 "dataclasses",
                 "hashlib",
-                "importlib",
                 "json",
+                "os",
                 "pathlib",
                 "posixpath",
                 "re",
-                "scripts",
+                "shlex",
+                "stat",
+                "subprocess",
                 "sys",
+                "types",
                 "typing",
             },
         )
-        with mock.patch.object(
-            publisher_shell_contract,
-            "__file__",
-            str(ROOT / "candidate" / "publisher_shell_contract.py"),
+
+    def authority_fixture(self, relative_path, data=b"trusted\n"):
+        ARTIFACT_ROOT.mkdir(parents=True, exist_ok=True)
+        temporary = tempfile.TemporaryDirectory(
+            prefix="publisher-authority-",
+            dir=ARTIFACT_ROOT,
+        )
+        root = Path(temporary.name)
+        path = root / relative_path
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(data)
+        return temporary, root, path
+
+    def assert_authority_path_rejected(self, root, relative_path, data=b"trusted\n"):
+        with self.assertRaisesRegex(ValueError, "publisher authority"):
+            publisher_command_signatures._secure_read_authority_file(
+                root,
+                relative_path,
+                expected_data=data,
+                expected_mode="100644",
+            )
+
+    def test_every_authority_file_rejects_symlink_nonregular_and_content_drift(self):
+        for relative_path in publisher_command_signatures._AUTHORITY_PATHS:
+            with self.subTest(path=relative_path, mutation="symlink"):
+                temporary, root, path = self.authority_fixture(relative_path)
+                try:
+                    target = root / "attacker"
+                    target.write_bytes(b"trusted\n")
+                    path.unlink()
+                    path.symlink_to(target)
+                    self.assert_authority_path_rejected(root, relative_path)
+                finally:
+                    temporary.cleanup()
+
+            with self.subTest(path=relative_path, mutation="directory"):
+                temporary, root, path = self.authority_fixture(relative_path)
+                try:
+                    path.unlink()
+                    path.mkdir()
+                    self.assert_authority_path_rejected(root, relative_path)
+                finally:
+                    temporary.cleanup()
+
+            with self.subTest(path=relative_path, mutation="fifo"):
+                temporary, root, path = self.authority_fixture(relative_path)
+                try:
+                    path.unlink()
+                    os.mkfifo(path)
+                    self.assert_authority_path_rejected(root, relative_path)
+                finally:
+                    temporary.cleanup()
+
+            with self.subTest(path=relative_path, mutation="content"):
+                temporary, root, _path = self.authority_fixture(
+                    relative_path,
+                    data=b"altered\n",
+                )
+                try:
+                    self.assert_authority_path_rejected(root, relative_path)
+                finally:
+                    temporary.cleanup()
+
+    def test_every_authority_parent_rejects_symlink_substitution(self):
+        for relative_path in publisher_command_signatures._AUTHORITY_PATHS:
+            parts = relative_path.split("/")
+            for depth in range(1, len(parts)):
+                with self.subTest(path=relative_path, parent_depth=depth):
+                    ARTIFACT_ROOT.mkdir(parents=True, exist_ok=True)
+                    with tempfile.TemporaryDirectory(
+                        prefix="publisher-parent-",
+                        dir=ARTIFACT_ROOT,
+                    ) as temporary:
+                        root = Path(temporary)
+                        link = root.joinpath(*parts[:depth])
+                        link.parent.mkdir(parents=True, exist_ok=True)
+                        target = root / "redirected-parent"
+                        target.mkdir()
+                        destination = target.joinpath(*parts[depth:])
+                        destination.parent.mkdir(parents=True, exist_ok=True)
+                        destination.write_bytes(b"trusted\n")
+                        link.symlink_to(target, target_is_directory=True)
+                        self.assert_authority_path_rejected(root, relative_path)
+
+    def test_every_authority_file_rejects_path_swap_after_open(self):
+        original_reader = publisher_command_signatures._read_all_from_fd
+        for relative_path in publisher_command_signatures._AUTHORITY_PATHS:
+            with self.subTest(path=relative_path):
+                temporary, root, path = self.authority_fixture(relative_path)
+                try:
+                    old_path = path.with_name(path.name + ".opened")
+
+                    def swap(descriptor, *, expected_size):
+                        path.rename(old_path)
+                        path.write_bytes(b"substitute\n")
+                        return original_reader(
+                            descriptor,
+                            expected_size=expected_size,
+                        )
+
+                    with mock.patch.object(
+                        publisher_command_signatures,
+                        "_read_all_from_fd",
+                        side_effect=swap,
+                    ):
+                        self.assert_authority_path_rejected(root, relative_path)
+                finally:
+                    temporary.cleanup()
+
+    def test_every_authority_parent_rejects_path_swap_after_open(self):
+        original_reader = publisher_command_signatures._read_all_from_fd
+        for relative_path in publisher_command_signatures._AUTHORITY_PATHS:
+            parts = relative_path.split("/")
+            for depth in range(1, len(parts)):
+                with self.subTest(path=relative_path, parent_depth=depth):
+                    temporary, root, _path = self.authority_fixture(relative_path)
+                    try:
+                        parent = root.joinpath(*parts[:depth])
+                        old_parent = parent.with_name(parent.name + ".opened")
+
+                        def swap(descriptor, *, expected_size):
+                            parent.rename(old_parent)
+                            parent.mkdir()
+                            replacement = parent.joinpath(*parts[depth:])
+                            replacement.parent.mkdir(parents=True, exist_ok=True)
+                            replacement.write_bytes(b"substitute\n")
+                            return original_reader(
+                                descriptor,
+                                expected_size=expected_size,
+                            )
+
+                        with mock.patch.object(
+                            publisher_command_signatures,
+                            "_read_all_from_fd",
+                            side_effect=swap,
+                        ):
+                            self.assert_authority_path_rejected(
+                                root,
+                                relative_path,
+                            )
+                    finally:
+                        temporary.cleanup()
+
+    def test_authority_rejects_root_symlink_modes_links_and_path_escape(self):
+        temporary, root, path = self.authority_fixture("authority/file.py")
+        try:
+            linked_root = root.with_name(root.name + "-link")
+            linked_root.symlink_to(root, target_is_directory=True)
+            self.assert_authority_path_rejected(linked_root, "authority/file.py")
+            linked_root.unlink()
+
+            path.chmod(0o600)
+            self.assert_authority_path_rejected(root, "authority/file.py")
+            path.chmod(0o644)
+
+            original_fstat = os.fstat
+
+            def foreign_owner(descriptor):
+                metadata = original_fstat(descriptor)
+                if publisher_command_signatures.stat.S_ISREG(metadata.st_mode):
+                    values = {
+                        name: getattr(metadata, name)
+                        for name in (
+                            "st_dev",
+                            "st_ino",
+                            "st_mode",
+                            "st_gid",
+                            "st_nlink",
+                            "st_size",
+                            "st_mtime_ns",
+                            "st_ctime_ns",
+                        )
+                    }
+                    values["st_uid"] = metadata.st_uid + 1
+                    return types.SimpleNamespace(**values)
+                return metadata
+
+            with mock.patch.object(os, "fstat", side_effect=foreign_owner):
+                self.assert_authority_path_rejected(root, "authority/file.py")
+
+            hardlink = path.with_name("hardlink.py")
+            os.link(path, hardlink)
+            self.assert_authority_path_rejected(root, "authority/file.py")
+            hardlink.unlink()
+
+            path.parent.chmod(0o777)
+            self.assert_authority_path_rejected(root, "authority/file.py")
+
+            with self.assertRaisesRegex(ValueError, "escapes"):
+                publisher_command_signatures._secure_read_authority_file(
+                    root,
+                    "../outside",
+                    expected_data=b"trusted\n",
+                    expected_mode="100644",
+                )
+        finally:
+            temporary.cleanup()
+
+    def test_authority_rejects_repository_root_path_swap_after_open(self):
+        original_reader = publisher_command_signatures._read_all_from_fd
+        ARTIFACT_ROOT.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(
+            prefix="publisher-root-swap-",
+            dir=ARTIFACT_ROOT,
+        ) as temporary:
+            container = Path(temporary)
+            root = container / "root"
+            path = root / "authority" / "file.py"
+            path.parent.mkdir(parents=True)
+            path.write_bytes(b"trusted\n")
+            old_root = container / "opened-root"
+
+            def swap(descriptor, *, expected_size):
+                root.rename(old_root)
+                replacement = root / "authority" / "file.py"
+                replacement.parent.mkdir(parents=True)
+                replacement.write_bytes(b"substitute\n")
+                return original_reader(
+                    descriptor,
+                    expected_size=expected_size,
+                )
+
+            with mock.patch.object(
+                publisher_command_signatures,
+                "_read_all_from_fd",
+                side_effect=swap,
+            ):
+                self.assert_authority_path_rejected(root, "authority/file.py")
+
+    def test_authority_parser_ignores_import_cache_and_sys_path_substitution(self):
+        poisoned = types.ModuleType(
+            "scripts.workflow_pilot.publisher_shell_contract"
+        )
+        poisoned.split_bash_command_records = lambda *_args, **_kwargs: ()
+        poisoned_shlex = types.ModuleType("shlex")
+        with (
+            mock.patch.dict(
+                sys.modules,
+                {
+                    "scripts.workflow_pilot.publisher_shell_contract": poisoned,
+                    "shlex": poisoned_shlex,
+                },
+            ),
+            mock.patch.object(sys, "path", [str(ARTIFACT_ROOT), *sys.path]),
         ):
-            with self.assertRaisesRegex(ValueError, "module path differs"):
-                publisher_command_signatures.load_registry()
+            snapshot = publisher_command_signatures._load_authority_snapshot()
+        self.assertIsNot(snapshot.parser, poisoned)
+        self.assertIsNot(snapshot.parser.shlex, poisoned_shlex)
+        parser_file = snapshot.files[
+            publisher_command_signatures._PARSER_AUTHORITY_PATH
+        ]
+        self.assertEqual(
+            snapshot.parser.__authority_object_id__,
+            parser_file.object_id,
+        )
+
+    def test_git_commit_tree_and_blob_objects_are_rehashed(self):
+        root_descriptor = os.open(
+            ROOT,
+            os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC,
+        )
+        try:
+            for object_type, data in (
+                ("commit", b"tree " + b"1" * 40 + b"\n"),
+                ("tree", b"100644 file.py\0" + b"\x11" * 20),
+                ("blob", b"print('forged')\n"),
+            ):
+                with self.subTest(object_type=object_type):
+                    object_id = "a" * 40
+
+                    def forged_git(_descriptor, arguments):
+                        if arguments[:2] == ["cat-file", "-s"]:
+                            return str(len(data)).encode("ascii") + b"\n"
+                        if arguments[:2] == ["cat-file", object_type]:
+                            return data
+                        raise AssertionError(arguments)
+
+                    with mock.patch.object(
+                        publisher_command_signatures,
+                        "_run_git",
+                        side_effect=forged_git,
+                    ):
+                        with self.assertRaisesRegex(
+                            ValueError,
+                            "object identity differs",
+                        ):
+                            publisher_command_signatures._verified_git_object(
+                                root_descriptor,
+                                object_id=object_id,
+                                object_type=object_type,
+                            )
+        finally:
+            os.close(root_descriptor)
 
 
 if __name__ == "__main__":

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import copy
 import fnmatch
+import hashlib
 import http.server
 import io
 import json
@@ -1421,6 +1422,28 @@ def _summary_step_is_reviewed(step: str) -> bool:
     return True
 
 
+def _host_checkout_verification_is_reviewed(step: str) -> bool:
+    if _step_name(step) != "Verify checked-out revision":
+        return False
+    if _direct_step_mapping_fields(step) != ["name", "if", "run"]:
+        return False
+    if f"      if: {FULL_WORKER_STEP_CONDITION}" not in step:
+        return False
+    script = _literal_run_script(step)
+    prefix = (
+        'ACTUAL_SHA="$(git rev-parse HEAD)"\n'
+        "printf 'checkout.sha=%s\\n' \"$ACTUAL_SHA\"\n"
+        'test "$ACTUAL_SHA" = "$EXPECTED_BUILD_SHA"\n'
+        '/usr/bin/python3 -I - "$EXPECTED_BUILD_SHA" <<\'PY\'\n'
+    )
+    if not script.startswith(prefix) or not script.endswith("PY\n\n"):
+        return False
+    source = script[len(prefix) : -len("PY\n\n")]
+    return hashlib.sha256(source.encode("utf-8")).hexdigest() == (
+        "3223c0101420c3cca60732841da6107d80d268a1fe638c627b5981e2836dc4c3"
+    )
+
+
 def _protected_host_prefix_errors(host: str) -> list[str]:
     steps = _step_blocks(host)
     if len(steps) < 10:
@@ -1431,18 +1454,7 @@ def _protected_host_prefix_errors(host: str) -> list[str]:
             steps[1],
             if_expression=FULL_WORKER_STEP_CONDITION,
         ),
-        _run_step_is_exact(
-            steps[2],
-            "Verify checked-out revision",
-            (
-                'ACTUAL_SHA="$(git rev-parse HEAD)"',
-                "printf 'checkout.sha=%s\\n' \"$ACTUAL_SHA\"",
-                'test "$ACTUAL_SHA" = "$EXPECTED_BUILD_SHA"',
-                "/usr/bin/python3 -I "
-                "scripts/workflow_pilot/publisher_command_signatures.py --check",
-            ),
-            if_expression=FULL_WORKER_STEP_CONDITION,
-        ),
+        _host_checkout_verification_is_reviewed(steps[2]),
         _run_step_is_exact(
             steps[3],
             "Hydrate workflow-pilot Git authority",

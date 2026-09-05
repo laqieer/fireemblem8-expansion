@@ -172,11 +172,22 @@ on this authority and is a prerequisite for issue #201 and the final issue
 machine are explicit non-goals here; this registry emits typed events for that
 future consumer but does not enforce their ordering.
 
-The host lane runs the registry check from its verified checkout with Python
-isolated mode before any candidate test suite can mutate the worktree. The
-validator also rejects noncanonical parser, validator, or registry paths, so a
-`PYTHONPATH`, import, symlink, or alternate-registry substitution cannot become
-the reviewed authority.
+The host lane bootstraps the validator from its blob in the verified immutable
+Git tree with Python isolated mode before any candidate test suite can mutate
+the worktree. The bootstrap and loader independently rehash the serialized Git
+commit, every traversed tree, and every blob against the object ID before using
+it, so a misnamed or shadowing loose object cannot redefine the selected tree.
+The loader obtains the parser, registry, workflow, both consuming validators,
+and their package initializers from that authenticated tree. It then walks
+every live parent and file with no-follow descriptor-relative opens, requires
+secure owner/mode and regular single-link files, compares the descriptor bytes
+to the Git blobs, and rechecks the path/inode chain after each read. Parsing and
+registry decisions use the captured Git bytes, not a later path lookup or
+Python import cache. The registry names this closure but does not self-attest
+its parser digest; the selected Git tree is the authority. Consequently a
+`PYTHONPATH`, import-cache, shadowed standard-library module, symlink, hardlink,
+nonregular-file, same-path content, parent-directory, path-swap, or
+alternate-registry substitution cannot become the reviewed authority.
 
 Before candidate code starts, its PID-1 wrapper redirects inherited standard
 input/output/error permanently to private `/dev/null`. A trusted isolated

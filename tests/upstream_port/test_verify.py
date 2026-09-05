@@ -9,9 +9,11 @@ import unittest
 from unittest import mock
 
 from scripts.upstream_port import cli, verify as verify_mod
-from scripts.workflow_pilot import publisher_shell_contract
+from scripts.workflow_pilot import publisher_command_signatures
 from tests.workflows import test_build_ci_topology as topology_tests
 from tests.workflows import test_patch_release_workflow as patch_workflow_tests
+
+publisher_shell_contract = publisher_command_signatures.publisher_shell_contract
 
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 BUILD_WORKFLOW_PATH = os.path.join(REPO_ROOT, ".github", "workflows", "build.yml")

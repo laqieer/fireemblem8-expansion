@@ -8,32 +8,19 @@ import ast
 from collections import Counter
 from dataclasses import asdict, dataclass
 import hashlib
-import importlib.util
 import json
+import os
 import posixpath
 import re
+import shlex
+import stat
+import subprocess
 import sys
+import types
 from pathlib import Path
 from typing import Any, Iterable
 
-if __package__:
-    from . import publisher_shell_contract
-else:
-    _PARSER_PATH = (
-        Path(__file__).resolve().parent / "publisher_shell_contract.py"
-    )
-    _PARSER_SPEC = importlib.util.spec_from_file_location(
-        "_publisher_shell_contract_authority",
-        _PARSER_PATH,
-    )
-    if _PARSER_SPEC is None or _PARSER_SPEC.loader is None:
-        raise ImportError("publisher shell parser authority is unavailable")
-    publisher_shell_contract = importlib.util.module_from_spec(_PARSER_SPEC)
-    sys.modules[_PARSER_SPEC.name] = publisher_shell_contract
-    _PARSER_SPEC.loader.exec_module(publisher_shell_contract)
-
-
-ROOT = Path(__file__).resolve().parents[2]
+ROOT = Path(os.path.abspath(__file__)).parents[2]
 WORKFLOW_PATH = ROOT / ".github" / "workflows" / "build.yml"
 REGISTRY_PATH = (
     ROOT
@@ -43,7 +30,7 @@ REGISTRY_PATH = (
 )
 REGISTRY_SCHEMA_VERSION = 1
 REVIEWED_SIGNATURE_REGISTRY_SHA256 = (
-    "385a3c2c2e62fdf01813e07fdcd81038f57307785c280910e279c36c266f167f"
+    "0ec719cc59214af79ab8a27497c441ed3507b9c4f4ff46fcd6bfce16bb295dc1"
 )
 BUILDER_STEP_NAME = "Build candidate in isolated namespace and stage public inputs"
 _TOP_LEVEL_HEREDOC_LANGUAGES = {
@@ -114,12 +101,565 @@ _SHELL_STRUCTURE_WORDS = frozenset(
 _REVIEWED_EXECUTABLE_ALIASES = {
     "$HOME/venv/bin/python3": "/mnt/home/venv/bin/python3",
 }
-_AUTHORITY_MODULE_PATHS = {
-    "parser": ROOT / "scripts" / "workflow_pilot" / "publisher_shell_contract.py",
-    "validator": (
-        ROOT / "scripts" / "workflow_pilot" / "publisher_command_signatures.py"
-    ),
+_AUTHORITY_PATHS = (
+    ".github/workflows/build.yml",
+    "scripts/workflow_pilot/__init__.py",
+    "scripts/workflow_pilot/publisher_command_signatures.py",
+    "scripts/workflow_pilot/publisher_command_signatures.json",
+    "scripts/workflow_pilot/publisher_shell_contract.py",
+    "scripts/upstream_port/__init__.py",
+    "scripts/upstream_port/verify.py",
+    "tests/workflows/__init__.py",
+    "tests/workflows/test_patch_release_workflow.py",
+)
+_PARSER_AUTHORITY_PATH = (
+    "scripts/workflow_pilot/publisher_shell_contract.py"
+)
+_REGISTRY_AUTHORITY_PATH = (
+    "scripts/workflow_pilot/publisher_command_signatures.json"
+)
+_WORKFLOW_AUTHORITY_PATH = ".github/workflows/build.yml"
+_MAX_AUTHORITY_FILE_BYTES = 8 * 1024 * 1024
+_AUTHORITY_SNAPSHOT = None
+if not hasattr(os, "O_NOFOLLOW"):
+    raise RuntimeError("publisher authority requires O_NOFOLLOW")
+_O_NOFOLLOW = os.O_NOFOLLOW
+_TRUSTED_PARSER_IMPORTS = {
+    name: sys.modules[name]
+    for name in (
+        "__future__",
+        "ast",
+        "dataclasses",
+        "hashlib",
+        "posixpath",
+        "re",
+        "shlex",
+        "typing",
+    )
 }
+
+
+@dataclass(frozen=True)
+class _AuthorityFile:
+    path: str
+    mode: str
+    object_id: str
+    data: bytes
+
+
+@dataclass(frozen=True)
+class _AuthoritySnapshot:
+    root: Path
+    revision: str
+    tree_id: str
+    files: dict[str, _AuthorityFile]
+    parser: types.ModuleType
+
+
+def _file_signature(metadata: os.stat_result) -> tuple[int, ...]:
+    return (
+        metadata.st_dev,
+        metadata.st_ino,
+        metadata.st_mode,
+        metadata.st_uid,
+        metadata.st_gid,
+        metadata.st_nlink,
+        metadata.st_size,
+        metadata.st_mtime_ns,
+        metadata.st_ctime_ns,
+    )
+
+
+def _open_absolute_directory_nofollow(path: Path) -> int:
+    absolute = Path(os.path.abspath(path))
+    if not absolute.is_absolute():
+        raise ValueError("publisher authority root must be absolute")
+    descriptor = os.open(
+        "/",
+        os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC,
+    )
+    try:
+        for component in absolute.parts[1:]:
+            if component in {"", ".", ".."}:
+                raise ValueError("publisher authority root path differs")
+            next_descriptor = os.open(
+                component,
+                os.O_RDONLY
+                | os.O_DIRECTORY
+                | os.O_CLOEXEC
+                | _O_NOFOLLOW,
+                dir_fd=descriptor,
+            )
+            os.close(descriptor)
+            descriptor = next_descriptor
+        return descriptor
+    except Exception:
+        os.close(descriptor)
+        raise
+
+
+def _relative_parts(path: str) -> tuple[str, ...]:
+    if not path or path.startswith("/"):
+        raise ValueError("publisher authority path must be relative")
+    parts = tuple(path.split("/"))
+    if any(part in {"", ".", ".."} for part in parts):
+        raise ValueError("publisher authority path escapes its root")
+    return parts
+
+
+def _secure_directory_metadata(
+    descriptor: int,
+    *,
+    root_metadata: os.stat_result,
+    label: str,
+) -> os.stat_result:
+    metadata = os.fstat(descriptor)
+    if not stat.S_ISDIR(metadata.st_mode):
+        raise ValueError(f"publisher authority {label} must be a directory")
+    if (metadata.st_uid, metadata.st_gid) != (
+        root_metadata.st_uid,
+        root_metadata.st_gid,
+    ):
+        raise ValueError(f"publisher authority {label} owner differs")
+    if stat.S_IMODE(metadata.st_mode) & 0o022:
+        raise ValueError(
+            f"publisher authority {label} mode is writable by group or other"
+        )
+    return metadata
+
+
+def _open_authority_path(
+    root_descriptor: int,
+    relative_path: str,
+    *,
+    root_metadata: os.stat_result,
+) -> tuple[int, tuple[tuple[int, ...], ...]]:
+    parts = _relative_parts(relative_path)
+    descriptor = os.dup(root_descriptor)
+    signatures = [_file_signature(root_metadata)]
+    try:
+        for index, component in enumerate(parts[:-1]):
+            next_descriptor = os.open(
+                component,
+                os.O_RDONLY
+                | os.O_DIRECTORY
+                | os.O_CLOEXEC
+                | _O_NOFOLLOW,
+                dir_fd=descriptor,
+            )
+            os.close(descriptor)
+            descriptor = next_descriptor
+            metadata = _secure_directory_metadata(
+                descriptor,
+                root_metadata=root_metadata,
+                label="/".join(parts[: index + 1]),
+            )
+            signatures.append(_file_signature(metadata))
+        file_descriptor = os.open(
+            parts[-1],
+            os.O_RDONLY
+            | os.O_NONBLOCK
+            | os.O_CLOEXEC
+            | _O_NOFOLLOW,
+            dir_fd=descriptor,
+        )
+        return file_descriptor, tuple(signatures)
+    finally:
+        os.close(descriptor)
+
+
+def _read_all_from_fd(descriptor: int, *, expected_size: int) -> bytes:
+    if expected_size > _MAX_AUTHORITY_FILE_BYTES:
+        raise ValueError("publisher authority file exceeds size limit")
+    chunks: list[bytes] = []
+    remaining = expected_size + 1
+    while remaining:
+        chunk = os.read(descriptor, min(65536, remaining))
+        if not chunk:
+            break
+        chunks.append(chunk)
+        remaining -= len(chunk)
+    return b"".join(chunks)
+
+
+def _secure_read_authority_file(
+    root: Path,
+    relative_path: str,
+    *,
+    expected_data: bytes | None,
+    expected_mode: str,
+) -> bytes:
+    try:
+        root_descriptor = _open_absolute_directory_nofollow(root)
+    except OSError as error:
+        raise ValueError("publisher authority root path differs") from error
+    try:
+        root_metadata = _secure_directory_metadata(
+            root_descriptor,
+            root_metadata=os.fstat(root_descriptor),
+            label="root",
+        )
+        file_descriptor, parent_signatures = _open_authority_path(
+            root_descriptor,
+            relative_path,
+            root_metadata=root_metadata,
+        )
+        try:
+            before = os.fstat(file_descriptor)
+            if not stat.S_ISREG(before.st_mode):
+                raise ValueError(
+                    f"publisher authority {relative_path} must be a regular file"
+                )
+            expected_permissions = {
+                "100644": 0o644,
+                "100755": 0o755,
+            }.get(expected_mode)
+            if expected_permissions is None:
+                raise ValueError(
+                    f"publisher authority {relative_path} Git mode differs"
+                )
+            if (before.st_uid, before.st_gid) != (
+                root_metadata.st_uid,
+                root_metadata.st_gid,
+            ):
+                raise ValueError(
+                    f"publisher authority {relative_path} owner differs"
+                )
+            if stat.S_IMODE(before.st_mode) != expected_permissions:
+                raise ValueError(
+                    f"publisher authority {relative_path} mode differs"
+                )
+            if before.st_nlink != 1:
+                raise ValueError(
+                    f"publisher authority {relative_path} link count differs"
+                )
+            data = _read_all_from_fd(
+                file_descriptor,
+                expected_size=before.st_size,
+            )
+            after = os.fstat(file_descriptor)
+            if _file_signature(after) != _file_signature(before):
+                raise ValueError(
+                    f"publisher authority {relative_path} changed while read"
+                )
+            if len(data) != before.st_size or (
+                expected_data is not None and data != expected_data
+            ):
+                raise ValueError(
+                    f"publisher authority {relative_path} content differs"
+                )
+        finally:
+            os.close(file_descriptor)
+
+        current_root_descriptor = _open_absolute_directory_nofollow(root)
+        try:
+            current_root = os.fstat(current_root_descriptor)
+            current_file_descriptor, current_parent_signatures = (
+                _open_authority_path(
+                    current_root_descriptor,
+                    relative_path,
+                    root_metadata=current_root,
+                )
+            )
+            try:
+                current_file = os.fstat(current_file_descriptor)
+            finally:
+                os.close(current_file_descriptor)
+        finally:
+            os.close(current_root_descriptor)
+        if (
+            current_parent_signatures != parent_signatures
+            or _file_signature(current_file) != _file_signature(before)
+        ):
+            raise ValueError(
+                f"publisher authority {relative_path} path changed while read"
+            )
+        return data
+    except OSError as error:
+        raise ValueError(
+            f"publisher authority {relative_path} path differs"
+        ) from error
+    finally:
+        os.close(root_descriptor)
+
+
+def _git_environment() -> dict[str, str]:
+    return {
+        "GIT_CONFIG_COUNT": "0",
+        "GIT_CONFIG_GLOBAL": "/dev/null",
+        "GIT_CONFIG_NOSYSTEM": "1",
+        "GIT_NO_LAZY_FETCH": "1",
+        "GIT_NO_REPLACE_OBJECTS": "1",
+        "HOME": "/",
+        "LC_ALL": "C",
+        "PATH": "/usr/bin:/bin",
+    }
+
+
+def _run_git(
+    root_descriptor: int,
+    arguments: list[str],
+) -> bytes:
+    completed = subprocess.run(
+        ["/usr/bin/git", *arguments],
+        cwd=f"/proc/self/fd/{root_descriptor}",
+        env=_git_environment(),
+        pass_fds=(root_descriptor,),
+        check=False,
+        capture_output=True,
+    )
+    if completed.returncode != 0:
+        detail = completed.stderr.decode("utf-8", "replace").strip()
+        raise ValueError(f"publisher authority Git query failed: {detail}")
+    return completed.stdout
+
+
+def _authority_revision(
+    root_descriptor: int,
+    *,
+    revision: str | None,
+) -> tuple[str, str]:
+    expected = globals().get("_BOOTSTRAP_REVISION")
+    if expected is None:
+        expected = os.environ.get("EXPECTED_BUILD_SHA")
+    if revision is None:
+        revision = expected or "HEAD"
+    resolved = _run_git(
+        root_descriptor,
+        ["rev-parse", "--verify", f"{revision}^{{commit}}"],
+    ).decode("ascii").strip()
+    if re.fullmatch(r"[0-9a-f]{40}", resolved) is None:
+        raise ValueError("publisher authority revision differs")
+    head = _run_git(
+        root_descriptor,
+        ["rev-parse", "--verify", "HEAD^{commit}"],
+    ).decode("ascii").strip()
+    if expected is not None and (resolved != expected or head != expected):
+        raise ValueError("publisher authority checkout revision differs")
+    commit = _verified_git_object(
+        root_descriptor,
+        object_id=resolved,
+        object_type="commit",
+    )
+    first_line = commit.split(b"\n", 1)[0]
+    if not first_line.startswith(b"tree "):
+        raise ValueError("publisher authority tree identity differs")
+    tree_id = first_line.removeprefix(b"tree ").decode("ascii")
+    if re.fullmatch(r"[0-9a-f]{40}", tree_id) is None:
+        raise ValueError("publisher authority tree identity differs")
+    return resolved, tree_id
+
+
+def _git_object_id(object_type: str, data: bytes) -> str:
+    return hashlib.sha1(
+        f"{object_type} {len(data)}\0".encode("ascii") + data
+    ).hexdigest()
+
+
+def _verified_git_object(
+    root_descriptor: int,
+    *,
+    object_id: str,
+    object_type: str,
+) -> bytes:
+    if (
+        re.fullmatch(r"[0-9a-f]{40}", object_id) is None
+        or object_type not in {"blob", "commit", "tree"}
+    ):
+        raise ValueError("publisher authority Git object request differs")
+    size = _run_git(
+        root_descriptor,
+        ["cat-file", "-s", object_id],
+    ).decode("ascii").strip()
+    if not size.isdigit() or int(size) > _MAX_AUTHORITY_FILE_BYTES:
+        raise ValueError("publisher authority Git object size differs")
+    data = _run_git(
+        root_descriptor,
+        ["cat-file", object_type, object_id],
+    )
+    if len(data) != int(size) or _git_object_id(object_type, data) != object_id:
+        raise ValueError("publisher authority Git object identity differs")
+    return data
+
+
+def _tree_entries(data: bytes) -> dict[str, tuple[str, str]]:
+    entries: dict[str, tuple[str, str]] = {}
+    offset = 0
+    while offset < len(data):
+        separator = data.find(b" ", offset)
+        terminator = data.find(b"\0", separator + 1)
+        if separator <= offset or terminator < 0 or terminator + 21 > len(data):
+            raise ValueError("publisher authority Git tree is malformed")
+        mode = data[offset:separator].decode("ascii")
+        name = data[separator + 1 : terminator].decode("utf-8", "strict")
+        object_id = data[terminator + 1 : terminator + 21].hex()
+        if (
+            name in {"", ".", ".."}
+            or "/" in name
+            or name in entries
+            or re.fullmatch(r"[0-9a-f]{40}", object_id) is None
+        ):
+            raise ValueError("publisher authority Git tree entry differs")
+        entries[name] = (mode, object_id)
+        offset = terminator + 21
+    return entries
+
+
+def _git_authority_file(
+    root_descriptor: int,
+    *,
+    tree_id: str,
+    path: str,
+) -> _AuthorityFile:
+    parts = _relative_parts(path)
+    object_id = tree_id
+    mode = ""
+    for index, part in enumerate(parts):
+        tree = _verified_git_object(
+            root_descriptor,
+            object_id=object_id,
+            object_type="tree",
+        )
+        entry = _tree_entries(tree).get(part)
+        if entry is None:
+            raise ValueError(f"publisher authority {path} tree entry differs")
+        mode, object_id = entry
+        if index + 1 < len(parts):
+            if mode not in {"40000", "040000"}:
+                raise ValueError(
+                    f"publisher authority {path} parent tree mode differs"
+                )
+        elif mode not in {"100644", "100755"}:
+            raise ValueError(f"publisher authority {path} Git mode differs")
+    blob = _verified_git_object(
+        root_descriptor,
+        object_id=object_id,
+        object_type="blob",
+    )
+    return _AuthorityFile(
+        path=path,
+        mode=mode,
+        object_id=object_id,
+        data=blob,
+    )
+
+
+def _parser_from_authority(
+    authority_file: _AuthorityFile,
+) -> types.ModuleType:
+    module_name = (
+        "_publisher_shell_contract_authority_"
+        + authority_file.object_id
+    )
+    module = types.ModuleType(module_name)
+    module.__file__ = authority_file.path
+    module.__package__ = ""
+    module.__authority_object_id__ = authority_file.object_id
+    module.__authority_sha256__ = hashlib.sha256(authority_file.data).hexdigest()
+    sys.modules[module_name] = module
+    previous_modules = {
+        name: sys.modules.get(name)
+        for name in _TRUSTED_PARSER_IMPORTS
+    }
+    previous_path = sys.path[:]
+    try:
+        sys.modules.update(_TRUSTED_PARSER_IMPORTS)
+        sys.path[:] = []
+        exec(
+            compile(
+                authority_file.data,
+                authority_file.path,
+                "exec",
+            ),
+            module.__dict__,
+        )
+    except Exception:
+        sys.modules.pop(module_name, None)
+        raise
+    finally:
+        sys.path[:] = previous_path
+        for name, previous in previous_modules.items():
+            if previous is None:
+                sys.modules.pop(name, None)
+            else:
+                sys.modules[name] = previous
+    return module
+
+
+def _load_authority_snapshot(
+    *,
+    root: Path = ROOT,
+    revision: str | None = None,
+) -> _AuthoritySnapshot:
+    root_descriptor = _open_absolute_directory_nofollow(root)
+    try:
+        resolved_revision, tree_id = _authority_revision(
+            root_descriptor,
+            revision=revision,
+        )
+        files = {
+            path: _git_authority_file(
+                root_descriptor,
+                tree_id=tree_id,
+                path=path,
+            )
+            for path in _AUTHORITY_PATHS
+        }
+    finally:
+        os.close(root_descriptor)
+    for path, authority_file in files.items():
+        _secure_read_authority_file(
+            root,
+            path,
+            expected_data=authority_file.data,
+            expected_mode=authority_file.mode,
+        )
+    parser = _parser_from_authority(files[_PARSER_AUTHORITY_PATH])
+    return _AuthoritySnapshot(
+        root=Path(os.path.abspath(root)),
+        revision=resolved_revision,
+        tree_id=tree_id,
+        files=files,
+        parser=parser,
+    )
+
+
+def _authority_snapshot() -> _AuthoritySnapshot:
+    global _AUTHORITY_SNAPSHOT
+    if _AUTHORITY_SNAPSHOT is None:
+        _AUTHORITY_SNAPSHOT = _load_authority_snapshot()
+    return _AUTHORITY_SNAPSHOT
+
+
+def authority_file_bytes(path: str) -> bytes:
+    try:
+        return _authority_snapshot().files[path].data
+    except KeyError as error:
+        raise ValueError(
+            f"publisher authority path is not in the closed inventory: {path}"
+        ) from error
+
+
+_WRITING_REGISTRY = (
+    __name__ == "__main__" and sys.argv[1:] == ["--write-registry"]
+)
+if _WRITING_REGISTRY:
+    _live_parser_data = _secure_read_authority_file(
+        ROOT,
+        _PARSER_AUTHORITY_PATH,
+        expected_data=None,
+        expected_mode="100644",
+    )
+    publisher_shell_contract = _parser_from_authority(
+        _AuthorityFile(
+            path=_PARSER_AUTHORITY_PATH,
+            mode="100644",
+            object_id=hashlib.sha256(_live_parser_data).hexdigest(),
+            data=_live_parser_data,
+        )
+    )
+else:
+    publisher_shell_contract = _authority_snapshot().parser
 
 
 @dataclass(frozen=True)
@@ -905,6 +1445,8 @@ def registry_document(signatures: Iterable[CommandSignature]) -> dict[str, Any]:
             "membership_checker_sha256": _sha256_text(
                 publisher_shell_contract._PATCH_RELEASE_MEMBERSHIP_CHECKER_SOURCE
             ),
+            "authority_source": "immutable-git-tree",
+            "closure": list(_AUTHORITY_PATHS),
             "parser_api": [
                 "literal_run_script_from_step_block",
                 "split_bash_command_records",
@@ -965,20 +1507,15 @@ def load_registry(
     require_authority_path: bool = True,
     require_reviewed_digest: bool = True,
 ) -> tuple[CommandSignature, ...]:
-    try:
-        actual_module_paths = {
-            "parser": Path(publisher_shell_contract.__file__).resolve(strict=True),
-            "validator": Path(__file__).resolve(strict=True),
-        }
-    except OSError as error:
-        raise ValueError("publisher signature authority module path differs") from error
-    for label, expected in _AUTHORITY_MODULE_PATHS.items():
-        if actual_module_paths[label] != expected.resolve(strict=True):
-            raise ValueError(f"publisher signature {label} module path differs")
-    resolved = path.resolve(strict=True)
-    if require_authority_path and resolved != REGISTRY_PATH.resolve(strict=True):
+    snapshot = _authority_snapshot()
+    requested = Path(os.path.abspath(path))
+    canonical = Path(os.path.abspath(REGISTRY_PATH))
+    if require_authority_path and requested != canonical:
         raise ValueError("publisher signature registry path differs")
-    data = resolved.read_bytes()
+    if requested == canonical:
+        data = snapshot.files[_REGISTRY_AUTHORITY_PATH].data
+    else:
+        data = requested.read_bytes()
     if require_reviewed_digest and _registry_sha256(data) != (
         REVIEWED_SIGNATURE_REGISTRY_SHA256
     ):
@@ -1125,12 +1662,40 @@ def assert_command_inventory(
 
 
 def _write_registry(path: Path) -> None:
-    if path.resolve() != REGISTRY_PATH.resolve():
+    if Path(os.path.abspath(path)) != Path(os.path.abspath(REGISTRY_PATH)):
         raise ValueError(f"registry output must identify {REGISTRY_PATH}")
-    workflow = WORKFLOW_PATH.read_text(encoding="utf-8")
+    workflow = _secure_read_authority_file(
+        ROOT,
+        _WORKFLOW_AUTHORITY_PATH,
+        expected_data=None,
+        expected_mode="100644",
+    ).decode("utf-8")
+    _secure_read_authority_file(
+        ROOT,
+        _REGISTRY_AUTHORITY_PATH,
+        expected_data=None,
+        expected_mode="100644",
+    )
     run_script = publisher_builder_run_script(workflow)
     signatures = build_command_signatures(run_script)
-    path.write_bytes(render_registry(registry_document(signatures)))
+    descriptor = os.open(
+        path,
+        os.O_WRONLY
+        | os.O_TRUNC
+        | os.O_CLOEXEC
+        | _O_NOFOLLOW,
+    )
+    try:
+        data = render_registry(registry_document(signatures))
+        view = memoryview(data)
+        while view:
+            written = os.write(descriptor, view)
+            if written <= 0:
+                raise OSError("short publisher registry write")
+            view = view[written:]
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -1144,7 +1709,9 @@ def main(argv: list[str] | None = None) -> int:
         if arguments.write_registry:
             _write_registry(REGISTRY_PATH)
         else:
-            workflow = WORKFLOW_PATH.read_text(encoding="utf-8")
+            workflow = _authority_snapshot().files[
+                _WORKFLOW_AUTHORITY_PATH
+            ].data.decode("utf-8")
             assert_command_inventory(publisher_builder_run_script(workflow))
     except (OSError, ValueError) as error:
         print(f"publisher-command-signatures: {error}", file=sys.stderr)

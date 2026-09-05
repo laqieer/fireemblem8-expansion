@@ -24,8 +24,10 @@ from contextlib import redirect_stderr
 from pathlib import Path
 from unittest import mock
 
-from scripts.workflow_pilot import publisher_command_signatures, publisher_shell_contract
+from scripts.workflow_pilot import publisher_command_signatures
 from scripts.modernize import patch_release
+
+publisher_shell_contract = publisher_command_signatures.publisher_shell_contract
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -2366,7 +2368,9 @@ def assert_patch_release_python_c_snippets_compile(testcase: unittest.TestCase, 
 class PatchReleaseWorkflowTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.text = WORKFLOW.read_text(encoding="utf-8")
+        cls.text = publisher_command_signatures.authority_file_bytes(
+            ".github/workflows/build.yml"
+        ).decode("utf-8")
         job = re.search(
             r"(?ms)^  patch-release:\n(?P<body>.*?)(?=^  [A-Za-z0-9_-]+:\n|\Z)",
             cls.text,
