@@ -883,11 +883,11 @@ class CapsuleContext:
         record = self._bundle.artifacts.get((tree, path))
         if record is None:
             self._guard.reject("data entry is outside sealed closure")
+        self._guard.loaded.add((tree, path))
         return dict(record)
 
     def read(self, tree: str, path: str) -> bytes | None:
         self.entry(tree, path)
-        self._guard.loaded.add((tree, path))
         return self._bundle.content(tree, path)
 
     def load_module(self, name: str):

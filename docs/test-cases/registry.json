@@ -2177,12 +2177,12 @@
       "document": "docs/test-cases/workflow-governance.md",
       "anchor": "tc-workflow-sealed-assertion-capsule-001-execute-exact-tree-sealed-capsules",
       "profiles": [
-        "Committed source checkout on Linux with Python 3, Git SHA-1, sealed memfd, process groups and prctl"
+        "Committed source checkout on Linux x86-64 or AArch64 with Python 3, Git SHA-1, sealed memfd, readable /proc/self/fd, process groups, prctl and unprivileged seccomp-BPF"
       ],
       "purpose": "Bind trusted execution, complete module/data loading and receipts to identical immutable descriptor bytes.",
       "prerequisites": "Start at the exact candidate commit with the supported Linux facilities; no ROM, emulator, token, remote mutation or additional package is required.",
       "actions": "Run the focused capsule and event-classifier suites; execute the real isolated classifier and nested checker/assertion; swap every former pathname, mutate descriptor/closure/import/receipt authority, then force crash, partial/oversized output, timeout, interruption and parent death.",
-      "expected_result": "Only exact sealed program/request/artifact bytes produce an admitted result; actual argv and consumed byte digests bind each receipt; every denial or process failure leaves no admitted partial receipt or owned process/descriptor leak.",
+      "expected_result": "Only exact sealed program/request/artifact bytes produce an admitted result; actual argv and all consumed artifacts, including metadata-only present/absent entries, bind each receipt; every denial or process failure leaves no admitted partial receipt or owned process/descriptor leak.",
       "negative_control": "The abandoned validate-then-reopen protocol runs a substituted assertion, restores the pathname and HMAC-signs a forged pass; the sealed counterpart rejects substitution. Missing seals, closure entries, identity bindings, closed imports or guardian controls fail behavioral checks.",
       "interactions": "Depends on the existing isolated launcher, exact Git objects and Linux descriptor/process facilities. PR189 must separately adopt the API in every checker/behavior/member/remote/local path and rerun all five #179 families/dispositions; its old pathname interfaces conflict. No gameplay or profile interactions.",
       "save_compatibility": "Host-only execution boundary; save/config identity, generated game data, localization, ROM/RAM, modern debug/release, archival behavior and Build topology are unchanged.",

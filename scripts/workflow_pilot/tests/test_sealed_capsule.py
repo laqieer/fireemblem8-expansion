@@ -573,6 +573,8 @@ class SealedCapsuleTests(unittest.TestCase):
             self.assertEqual(after.value, before.value)
             key = b"test-only-capsule-signing-key-1234"
             for result in (before, after):
+                loaded = {(entry["tree"], entry["path"]) for entry in result.receipt["loaded"]}
+                self.assertTrue({("head", path) for path in paths} <= loaded)
                 self.assertEqual(
                     capsule.verify_receipt(capsule.sign_receipt(result, key), key, result),
                     result.receipt,
