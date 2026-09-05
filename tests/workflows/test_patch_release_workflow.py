@@ -1459,12 +1459,13 @@ def publisher_boundary_errors(workflow: str) -> list[str]:
     ):
         errors.append("complete ROM artifact transfer is possible")
     try:
-        publisher_shell_contract.publisher_inventory.reviewed_inventory().validate_preflight(
-            named_step_run_script(workflow, "Verify exact candidate and stage trusted producer")
-        )
         run_script = named_step_run_script(
             workflow,
             "Build candidate in isolated namespace and stage public inputs",
+        )
+        publisher_shell_contract.publisher_inventory.reviewed_inventory().validate_producer(
+            named_step_run_script(workflow, "Verify exact candidate and stage trusted producer"),
+            run_script,
         )
         publisher_shell_contract.assert_reviewed_patch_release_run_script_identity(
             run_script,
@@ -5592,7 +5593,10 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
                 ],
                 check=True,
             )
-            for relative in AUDITED_PATCH_TOOL_FILES:
+            for relative in (
+                *AUDITED_PATCH_TOOL_FILES,
+                *publisher_shell_contract.publisher_inventory.authority_paths(),
+            ):
                 target = origin / relative
                 target.parent.mkdir(parents=True, exist_ok=True)
                 target.write_bytes((ROOT / relative).read_bytes())

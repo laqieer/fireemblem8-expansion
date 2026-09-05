@@ -1677,6 +1677,11 @@ jobs:
         PYTHONPATH: ''
         SHELLOPTS: ''
       run: |
+        unset GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_CEILING_DIRECTORIES \
+          GIT_COMMON_DIR GIT_DIR GIT_EXEC_PATH GIT_INDEX_FILE GIT_NAMESPACE \
+          GIT_OBJECT_DIRECTORY GIT_REPLACE_REF_BASE GIT_WORK_TREE
+        /usr/bin/git show "$PATCH_COMMIT:scripts/workflow_pilot/publisher_programs.py" \
+          > "$PATCH_RUNTIME_ROOT/publisher-programs.py"
         builder_user=ci-patch-builder
         builder_uid=""
         builder_gid=""
@@ -2031,8 +2036,6 @@ jobs:
         test "$(/usr/bin/id -u "$builder_user")" = "$builder_uid"
         builder_gid="$(/usr/bin/id -g "$builder_user")"
         builder_uid_is_empty "$builder_uid"
-        /usr/bin/git show "$PATCH_COMMIT:scripts/workflow_pilot/publisher_programs.py" \
-          > "$BUILDER_ROOT/control/publisher-programs.py"
         /usr/bin/tee "$BUILDER_ROOT/control/builder-isolation.sh" \
           > /dev/null <<'BUILDER_ISOLATION'
         #!/bin/bash
@@ -2104,7 +2107,7 @@ jobs:
           /mnt/control/candidate-build.sh
         /usr/bin/install -m 0444 "$candidate_launcher" \
           /mnt/control/candidate-launcher.py
-        /usr/bin/install -m 0444 "$builder_root/control/publisher-programs.py" \
+        /usr/bin/install -m 0444 "$host_runner_temp/patch-runtime/publisher-programs.py" \
           /mnt/control/publisher-programs.py
         /usr/bin/chown -R "$builder_uid:$builder_gid" \
           /mnt/handoff /mnt/home /mnt/source /mnt/tmp

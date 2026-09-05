@@ -1,14 +1,17 @@
 """TC-WORKFLOW-PUBLISHER-COMMAND-INVENTORY-001, real production consumers."""
 
 from dataclasses import replace
+import importlib.util
 import io
 import json
 import os
 from pathlib import Path
+import py_compile
 import shlex
 import shutil
 import stat
 import subprocess
+import sys
 import unittest
 from unittest import mock
 import uuid
@@ -117,12 +120,13 @@ class PublisherCommandInventoryTests(unittest.TestCase):
 
     def test_each_registry_deletion_and_form_drift_fails_closed(self):
         preflight = contract.publisher_run_script(self.workflow, "Verify exact candidate and stage trusted producer")
+        staging = contract.publisher_run_script(self.workflow)
         for index, signature in enumerate(self.inventory.signatures):
             without = replace(self.inventory, signatures=self.inventory.signatures[:index] + self.inventory.signatures[index + 1:])
             with self.subTest(signature=signature.name, mutation="delete"):
                 if signature.scope == "producer":
                     with self.assertRaises(ValueError):
-                        without.validate_preflight(preflight)
+                        without.validate_producer(preflight, staging)
                 elif signature.occurrences == 0:
                     with self.assertRaises(ValueError):
                         without.authorize(signature.form, signature.scope)
@@ -134,7 +138,7 @@ class PublisherCommandInventoryTests(unittest.TestCase):
             with self.subTest(signature=signature.name, mutation="cardinality"):
                 with self.assertRaises(ValueError):
                     if signature.scope == "producer":
-                        mutated.validate_preflight(preflight)
+                        mutated.validate_producer(preflight, staging)
                     else:
                         mutated.validate(self.source)
         with self.assertRaises(ValueError):
@@ -152,6 +156,30 @@ class PublisherCommandInventoryTests(unittest.TestCase):
                 replace(self.inventory, signatures=tuple(
                     changed if signature == original else signature for signature in self.inventory.signatures
                 ))
+
+    def test_program_signatures_and_events_include_every_declared_access(self):
+        for signature in self.inventory.signatures:
+            if signature.program is None:
+                continue
+            for required in signature.program.inputs + signature.program.outputs:
+                with self.subTest(signature=signature.name, access=required):
+                    self.assertIn(required, signature.accesses)
+                    changed = replace(
+                        signature,
+                        accesses=tuple(access for access in signature.accesses if access != required),
+                    )
+                    with self.assertRaises(ValueError):
+                        replace(self.inventory, signatures=tuple(
+                            changed if row == signature else row for row in self.inventory.signatures
+                        ))
+        launch = next(
+            event for event in self.inventory.validate(self.source).events
+            if event.kind == authority.EventKind.CANDIDATE_LAUNCH
+        )
+        self.assertIn(
+            authority.ResourceAccess(authority.Resource.CONTROL, authority.Access.READ),
+            launch.accesses,
+        )
 
     def test_each_production_family_rejects_addition_deletion_and_comment_spoof(self):
         analysis = self.inventory.validate(self.source)
@@ -293,6 +321,37 @@ class PublisherCommandInventoryTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     verify._parse_workflow_structure_text(changed)
 
+    def test_staging_prologue_is_typed_in_both_production_consumers(self):
+        run = contract.publisher_run_script(self.workflow)
+        lines = contract.bash_logical_lines(run, label="program staging")
+        environment, stage = lines[:2]
+        original = environment + "\n" + stage
+        for name, changed in (
+            ("missing-sanitization", stage),
+            ("missing-git-variable", original.replace("GIT_DIR ", "", 1)),
+            ("reordered", stage + "\n" + environment),
+            ("conditional", environment + "\nif false; then\n" + stage + "\nfi"),
+            ("source", original.replace("publisher_programs.py", "publisher_shell.py")),
+            ("commit", original.replace("$PATCH_COMMIT:", "HEAD:")),
+            ("output", original.replace("$PATCH_RUNTIME_ROOT/", "$BUILDER_ROOT/")),
+            ("command", original.replace("/usr/bin/git show", "/usr/bin/git cat-file -p")),
+            ("extra-argument", original + " --"),
+            ("redirect", original + " 2>/dev/null"),
+            ("missing-stage", environment),
+        ):
+            with self.subTest(mutation=name):
+                changed_run = changed + "\n" + "\n".join(lines[2:]) + "\n"
+                changed_workflow = self.workflow.replace(
+                    "".join("        " + line if line.strip() else line for line in run.splitlines(keepends=True)),
+                    "".join("        " + line if line.strip() else line for line in changed_run.splitlines(keepends=True)),
+                    1,
+                )
+                self.assertNotEqual(changed_workflow, self.workflow)
+                with fixtures.refreshed_boundary_identities(changed_workflow):
+                    self.assertTrue(publisher.publisher_boundary_errors(changed_workflow))
+                    with self.assertRaises(ValueError):
+                        verify._parse_workflow_structure_text(changed_workflow)
+
     def test_parser_bounds_and_unknown_grammar_are_fail_closed(self):
         for source in (
             "x" * (128 * 1024 + 1), "echo \0", "echo \r",
@@ -430,10 +489,40 @@ class PublisherExactTreeTests(unittest.TestCase):
             check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
         ).stdout
 
+    def cli(self, *flags):
+        return subprocess.run(
+            [
+                "/usr/bin/python3", "-I", "-S", *flags,
+                str(self.directory / "scripts/workflow_pilot/publisher_inventory.py"),
+                "--repository-root", str(self.directory), "--commit", self.commit,
+            ],
+            cwd=self.directory, capture_output=True, check=False,
+        )
+
+    def inert_cache(self, path):
+        alternative = self.directory / "inert-cache.py"
+        alternative.write_text("raise RuntimeError('inert unchecked-hash cache executed')\n")
+        source = self.directory / path
+        cache = Path(importlib.util.cache_from_source(str(source)))
+        cache.parent.mkdir(parents=True, exist_ok=True)
+        py_compile.compile(
+            str(alternative), cfile=str(cache), dfile=str(source), doraise=True,
+            invalidation_mode=py_compile.PycInvalidationMode.UNCHECKED_HASH,
+        )
+
     def test_exact_tree_real_cli_and_import_closure_positive(self):
         self.assertEqual(authority.bind_exact_tree(self.directory, self.commit), self.paths)
         result = authority.validate_exact_tree(self.directory, self.commit)
         self.assertTrue(result.events)
+        expected = authority.validate_workflow(WORKFLOW.read_text())
+        self.assertIsInstance(result, authority.Analysis)
+        self.assertEqual(result, expected)
+        self.assertTrue(all(isinstance(event, authority.Event) for event in result.events))
+        self.assertTrue(all(isinstance(command.command, shell.Command) for command in result.commands))
+        self.assertTrue(
+            {id(event.command) for event in result.events}
+            <= {id(command.command) for command in result.commands}
+        )
         for path in (
             authority.PROGRAM_PATH, "scripts/workflow_pilot/publisher_signatures.py",
             "scripts/workflow_pilot/publisher_shell.py",
@@ -447,6 +536,134 @@ class PublisherExactTreeTests(unittest.TestCase):
             capture_output=True, check=False,
         )
         self.assertEqual(completed.returncode, 0, completed.stderr)
+
+    def test_fresh_staging_uses_complete_workflow_environment(self):
+        import yaml
+
+        workflow = yaml.safe_load(WORKFLOW.read_text())
+        job = workflow["jobs"]["patch-release"]
+        step = next(
+            step for step in job["steps"]
+            if step.get("name") == "Build candidate in isolated namespace and stage public inputs"
+        )
+        environment = {**workflow.get("env", {}), **job["env"], **step["env"]}
+        replacements = {
+            "${{ needs.event-identity.outputs.fallback_sha }}": self.commit,
+            "${{ runner.temp }}": str(self.directory / "runner"),
+            "${{ github.workspace }}": str(self.directory),
+        }
+        for key, value in environment.items():
+            for expression, replacement in replacements.items():
+                value = value.replace(expression, replacement)
+            self.assertNotIn("${{", value)
+            environment[key] = value
+        runtime = Path(environment["PATCH_RUNTIME_ROOT"])
+        runtime.mkdir(parents=True)
+        commands = contract.bash_logical_lines(step["run"], label="fresh staging")
+        shell_argv = shlex.split(step["shell"])[:-1]
+        environment_line, git_line = commands[:2]
+        for source, expected in ((git_line, 128), (environment_line + "\n" + git_line, 0)):
+            completed = subprocess.run(
+                [*shell_argv, "-c", source],
+                cwd=self.directory, env=environment, capture_output=True, check=False,
+            )
+            self.assertEqual(completed.returncode, expected, completed.stderr)
+            staged = runtime / "publisher-programs.py"
+            if expected:
+                self.assertEqual(staged.read_bytes(), b"")
+            else:
+                self.assertEqual(staged.read_bytes(), self.git("show", self.commit + ":" + authority.PROGRAM_PATH))
+                installs = [
+                    signature for signature in authority.reviewed_inventory().signatures
+                    if signature.form.argv
+                    and signature.form.argv[0].literal == "/usr/bin/install"
+                    and signature.form.argv[-1].literal == authority.PROGRAM_RUNTIME_PATH
+                ]
+                self.assertEqual(len(installs), 1)
+                parameters = {"host_runner_temp": str(self.directory / "runner")}
+                installed_source = "".join(
+                    parameters[part.value] if part.kind == "parameter" else part.value
+                    for part in installs[0].form.argv[-2].parts
+                )
+                self.assertEqual(Path(installed_source), staged)
+
+    def test_real_cli_ignores_unchecked_hash_caches_for_entire_authority_closure(self):
+        for path in self.paths:
+            if path.endswith(".py"):
+                self.inert_cache(path)
+        source = self.directory / "scripts/workflow_pilot/publisher_shell.py"
+        control = subprocess.run(
+            [
+                "/usr/bin/python3", "-I", "-S", "-B", "-c",
+                "import importlib.util,sys; "
+                "spec=importlib.util.spec_from_file_location('inert_control',sys.argv[1]); "
+                "spec.loader.exec_module(importlib.util.module_from_spec(spec))",
+                str(source),
+            ],
+            capture_output=True, check=False,
+        )
+        self.assertNotEqual(control.returncode, 0)
+        self.assertIn(b"inert unchecked-hash cache executed", control.stderr)
+        self.assertEqual(authority.bind_exact_tree(self.directory, self.commit), self.paths)
+        for flags in ((), ("-B",)):
+            with self.subTest(flags=flags):
+                completed = self.cli(*flags)
+                self.assertEqual(completed.returncode, 0, completed.stderr)
+                self.assertEqual(completed.stderr, b"")
+                expected = len(authority.validate_workflow(WORKFLOW.read_text()).signatures)
+                self.assertEqual(
+                    completed.stdout,
+                    f"publisher command authority: {expected} reviewed commands\n".encode(),
+                )
+
+    def test_real_cli_rejects_changed_authority_before_any_local_import(self):
+        path = self.directory / "scripts/workflow_pilot/__init__.py"
+        path.write_text("raise RuntimeError('unverified package executed')\n")
+        completed = self.cli()
+        self.assertEqual(completed.returncode, 1)
+        self.assertIn(b"authority differs from exact tree", completed.stderr)
+        self.assertNotIn(b"unverified package executed", completed.stderr)
+
+    def test_both_consumers_execute_captured_sources_without_reopening_paths(self):
+        sources = authority._bind_exact_sources(self.directory, self.commit)
+        for path in self.paths:
+            if path.endswith(".py"):
+                self.inert_cache(path)
+            (self.directory / path).write_bytes(b"raise RuntimeError('reopened authority source')\n")
+        previous_modules = {
+            name: value for name, value in sys.modules.items()
+            if name == "scripts" or name.startswith("scripts.")
+        }
+        with mock.patch.object(authority, "SOURCE_ROOT", self.directory):
+            with authority._source_only_authority(sources):
+                from scripts.workflow_pilot import publisher_inventory as checked
+                from scripts.workflow_pilot import publisher_shell_contract as checked_contract
+                from scripts.upstream_port import verify as checked_verify
+
+                workflow = sources[authority.WORKFLOW_PATH].decode("utf-8")
+                result = checked.validate_workflow(workflow)
+                self.assertTrue(result.events)
+                with mock.patch.object(publisher, "publisher_shell_contract", checked_contract):
+                    self.assertEqual(publisher.publisher_boundary_errors(workflow), [])
+                    checked_verify._parse_workflow_structure_text(workflow)
+                    changed = workflow.replace(
+                        "$PATCH_COMMIT:scripts/workflow_pilot/publisher_programs.py",
+                        "HEAD:scripts/workflow_pilot/publisher_programs.py",
+                    )
+                    run = checked_contract.publisher_run_script(changed)
+                    with mock.patch.object(
+                        checked_contract, "REVIEWED_PATCH_RELEASE_RUN_SHA256",
+                        checked_contract.reviewed_patch_release_run_sha256(run),
+                    ):
+                        self.assertTrue(publisher.publisher_boundary_errors(changed))
+                        with self.assertRaises(ValueError):
+                            checked_verify._parse_workflow_structure_text(changed)
+                with self.assertRaisesRegex(ValueError, "outside publisher authority"):
+                    __import__("scripts.unregistered_authority")
+        self.assertEqual(previous_modules, {
+            name: value for name, value in sys.modules.items()
+            if name == "scripts" or name.startswith("scripts.")
+        })
 
     def test_every_consumed_module_rejects_dirty_missing_mode_and_symlink_drift(self):
         for path in self.paths:

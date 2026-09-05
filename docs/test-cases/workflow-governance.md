@@ -58,6 +58,21 @@ workflow, using credentials, or changing ROM behavior.
    mode drift. Added package imports must also belong to the selected tree;
    unknown/dynamic imports and Git-environment redirection fail. A hostile
    target program is inspected as data and never executes.
+7. Confirm the fresh staging regression uses the complete parsed workflow
+   environment and the actual Bash/Git prologue. Removing only its Git-variable
+   unset produces exit 128; the real prologue succeeds and stages exactly the
+   selected commit's program bytes. Source/ref/redirect and conditional
+   staging mutations fail both semantic consumers even with refreshed outer
+   shell identities.
+8. Confirm inert unchecked-hash caches for the entire authority closure do
+   not alter the real isolated CLI, with or without `-B`. The control loader
+   executes the inert cache and raises its deliberate error while all tracked
+   sources still match Git. The corrected CLI succeeds; changed package
+   source rejects before import. A second fixture changes source files after
+   verification and proves both consumers still execute only the captured
+   verified bytes, without reopening paths or importing outside the closure.
+   Each program's declared inputs/outputs also survive into its signature and
+   event accesses; deleting a required access rejects the inventory.
 
 ### Expected result and negative control
 
@@ -72,6 +87,9 @@ The new executable regression also removes only the shared authority call:
 with legitimately refreshed outer shell identities both consumers then accept
 that same reader, while the real authority rejects it. This demonstrates the
 behavioral negative control independently of raw hashes or source wording.
+The fresh-shell exit-128 control and inert-cache exception independently
+reproduce PR #209's staging and source-loading regressions. No hostile shell
+command is executed; the controlled cache only raises an exception.
 
 ### Interactions, cleanup and limitations
 

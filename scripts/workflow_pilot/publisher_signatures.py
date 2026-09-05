@@ -36,7 +36,7 @@ def inventory() -> Inventory:
     helper_names = {scope.name for scope in scopes}
     signatures: list[Signature] = []
     controls: list[Control] = []
-    builtins = {"[", "cd", "echo", "exec", "exit", "local", "mapfile", "printf", "return", "set", "test", "ulimit"}
+    builtins = {"[", "cd", "echo", "exec", "exit", "local", "mapfile", "printf", "return", "set", "test", "ulimit", "unset"}
 
     def add(
         scope: str, name: str, source: str,
@@ -84,6 +84,19 @@ def inventory() -> Inventory:
         "producer", "authority-preflight",
         '/usr/bin/python3 -I -S scripts/workflow_pilot/publisher_inventory.py --repository-root . --commit "$PATCH_COMMIT"',
         Resource.CONTROL, Access.READ, program=preflight,
+    )
+    add(
+        "producer", "git-environment",
+        "unset GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_CEILING_DIRECTORIES "
+        "GIT_COMMON_DIR GIT_DIR GIT_EXEC_PATH GIT_INDEX_FILE GIT_NAMESPACE "
+        "GIT_OBJECT_DIRECTORY GIT_REPLACE_REF_BASE GIT_WORK_TREE",
+        Resource.SHELL, Access.WRITE, count=2, event=EventKind.STATE_WRITE,
+    )
+    add(
+        "producer", "program-source",
+        '/usr/bin/git show "$PATCH_COMMIT:scripts/workflow_pilot/publisher_programs.py" > "$PATCH_RUNTIME_ROOT/publisher-programs.py"',
+        Resource.CONTROL, Access.WRITE,
+        extra=(ResourceAccess(Resource.CONTROL, Access.READ),),
     )
     add("entry", "invoke", 'builder_main "$@"', Resource.CONTROL, Access.EXECUTE, event=EventKind.HELPER_CALL)
     main("strict-shell", "set -euo pipefail", access=Access.WRITE)
@@ -183,7 +196,7 @@ def inventory() -> Inventory:
     for name, mode, source, target in (
         ("candidate-script", "0555", '"$candidate_script"', "/mnt/control/candidate-build.sh"),
         ("candidate-launcher", "0444", '"$candidate_launcher"', "/mnt/control/candidate-launcher.py"),
-        ("publisher-programs", "0444", '"$builder_root/control/publisher-programs.py"', PROGRAM_RUNTIME_PATH),
+        ("publisher-programs", "0444", '"$host_runner_temp/patch-runtime/publisher-programs.py"', PROGRAM_RUNTIME_PATH),
     ):
         main(f"install-{name}", f"/usr/bin/install -m {mode} {source} {target}", Resource.CONTROL, Access.CREATE)
     main(
@@ -308,7 +321,8 @@ def inventory() -> Inventory:
     main(
         "candidate-launch",
         '/usr/bin/python3 -I -S /mnt/control/candidate-launcher.py "$builder_uid" "$builder_gid" /mnt/control/candidate-build.sh "$host_runner_temp"',
-        Resource.CANDIDATE, Access.EXECUTE, event=EventKind.CANDIDATE_LAUNCH, program=launcher,
+        Resource.CANDIDATE, Access.EXECUTE, event=EventKind.CANDIDATE_LAUNCH,
+        program=launcher, extra=launcher.inputs,
     )
     main("candidate-status", 'candidate_status="$?"', Resource.PROCESS, Access.READ, event=EventKind.CANDIDATE_STATUS)
     main("capture-end", "set -e", access=Access.WRITE)

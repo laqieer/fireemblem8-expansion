@@ -6,19 +6,18 @@ import ast
 from dataclasses import dataclass
 import hashlib
 import posixpath
-from pathlib import Path
 import re
 import shlex
 from typing import Iterable
 
-from . import publisher_inventory, publisher_programs, publisher_shell
+from . import publisher_inventory, publisher_shell
 
 
 REVIEWED_PATCH_RELEASE_RUN_SHA256 = (
-    "810e05c54493218984366d6028f49488e558b915cdb133888e88ff6c1d3c1756"
+    "17326d15dacb8a7b3e96ebd56bb150f764b86639c6033adbf0d17c2debf353dd"
 )
 REVIEWED_BUILDER_ISOLATION_SHA256 = (
-    "db6385645a7d3e417f7b639a2a8a1c0e590334ea5e42ed2495ebbc08e568e76f"
+    "6556c3899303d0f1d926911bc6fcb2e68a97a22ae8ac7f719cc76862f36c40a4"
 )
 REVIEWED_HIDDEN_MASK_LOOP_SHA256 = (
     "77e81e3a773e78b4c58132c553ea3a3ef0719f802fe1164b59f60aef948235f5"
@@ -437,7 +436,7 @@ def raw_patch_release_parser_sources(script: str) -> tuple[tuple[str, str], ...]
                             if child.name in definitions:
                                 raise ValueError("duplicate publisher parser helper")
                             definitions[child.name] = child
-    program_tree = ast.parse(Path(publisher_programs.__file__).read_text(encoding="utf-8"))
+    program_tree = ast.parse(publisher_inventory.authority_source_bytes(publisher_inventory.PROGRAM_PATH))
     entry_guard = ast.parse('if __name__ == "__main__":\n    raise SystemExit(main())').body[0]
     if ast.dump(program_tree.body[-1]) != ast.dump(entry_guard):
         raise ValueError("publisher program entry point differs")
