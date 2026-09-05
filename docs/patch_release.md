@@ -29,6 +29,99 @@ This command is the authoritative source-build procedure. The artifact is
 optional and is byte-equivalent only when it is applied to the exact approved
 base and the manifest's commit/profile metadata matches the source checkout.
 
+## Closed publisher command authority (issue #200)
+
+The publisher has one **typed, default-deny command inventory** in
+`scripts/workflow_pilot/publisher_signatures.py`. It is a framework capability,
+not a gameplay option or a blacklist of sensitive filenames.
+
+- `publisher_shell.py` parses the supported Bash subset without executing it.
+  Words retain literal/parameter/substitution/arithmetical provenance and
+  quoting. Redirects, environment prefixes, control branches, pipelines,
+  backgrounds, and function declarations remain distinct.
+- `publisher_inventory.py` matches complete signatures, scope and exact
+  occurrence counts. Main commands, nested data producers, and recursive
+  helper expansion use the same inventory. Unknown commands, aliases,
+  dynamic executable paths, unmatched arguments or redirects, callbacks,
+  traps, and unregistered interpreter programs fail closed. A wrapper never
+  hides its underlying command or loses its own arguments during normalization.
+- `publisher_shell_contract.validate_builder_command_inventory` is the shared
+  consumer entry point used by the publisher and upstream semantic validators.
+  Historical narrow mount probes remain regression utilities; they cannot
+  authorize a command or override an inventory rejection.
+- `publisher_programs.py` is the single production source of the reviewed
+  Python programs. The two mount readers retain their decoded JSON/NUL-record
+  protocol. The workflow stages this file directly from the validated commit,
+  installs it into `/mnt/control`, and makes that mount read-only before use.
+  No arbitrary Python code string or heredoc is an approved substitute.
+
+Before staging candidate inputs, the producer runs the isolated authority CLI
+immediately after enabling strict shell options. Its exact-tree check derives
+the complete parser/registry/program/consumer import closure, package
+initializers, file modes and blob identities from Git. Missing, dirty,
+symlinked, hardlinked, executable-mode-changed, or redirected inputs reject.
+It also compares the loaded trusted source checkout to the selected tree;
+target Python is never imported. No committed content-hash ledger or source
+snapshot is maintained. Git tracks source/review/history; raw Git text is not
+behavioral evidence.
+
+From a clean source checkout at the exact candidate:
+
+```bash
+python3 -I -S scripts/workflow_pilot/publisher_inventory.py \
+  --repository-root . --commit "$(git rev-parse HEAD)"
+```
+
+### Foundation boundary and downstream API
+
+Issue #200 deliberately does **not** implement the #177/#195 membership
+fix-forward or the #201 phase machine. The current production `grep`/`sort`
+membership observations have explicit, exact **legacy observation** signatures;
+their presence is not evidence that the known self-observation failure is
+fixed. An added reader, even one built from fragments without the literal
+membership filename, is unregistered and rejects.
+
+The fixed checker is available only as:
+
+```text
+/usr/bin/python3 -I -S /mnt/control/publisher-programs.py membership "$$"
+```
+
+It reads only `/mnt/supervisor/cgroup/cgroup.procs`, reads at most 1,025 bytes
+and permits at most 1,024, and accepts exactly two distinct canonical positive
+PID records: the wrapper argument and its own PID, in either order. It emits
+no success output. Additional arguments, paths, redirects, code, or a different
+executable are not authorized. The signature has zero production occurrences
+in this foundation; adding even the exact checker to the current builder
+requires the downstream inventory update rather than a permissive optional
+reader.
+
+`validate_builder_script(source)` returns immutable `Analysis` records.
+`Analysis.commands` covers every authorized statement and nested producer;
+`Analysis.events` expands helper calls and retains `scope`, `call_stack`,
+`context`, the parsed command, typed resource accesses, and `EventKind`.
+`CANDIDATE_LAUNCH`, `CANDIDATE_STATUS`, `LEGACY_MEMBERSHIP`,
+`MEMBERSHIP_VERIFIED`, `EXPORT_OPEN`, `EXPORT_FILE`, and `EXPORT_CLOSE` are
+the integration seam for #201. These are **syntactic operation events**, not
+proof that a conditional command ran or succeeded. The phase consumer must
+check control/operator/substitution context and completion before advancing
+its state. Inventory authorization ignores harmless source spelling and
+independent command order. The pre-existing raw host-shell boundary checks
+remain separate; their hashes are not the behavioral oracle for this case.
+
+Dependencies are the existing workflow parser, Git exact-tree verification,
+and Linux/Python standard-library tools. #201 depends on this API; #195 must be
+rebuilt on both foundations rather than restoring its alternate analyzer.
+There are no gameplay-profile, save, generated-data, localization, ROM/RAM,
+modern debug/release, or archival conflicts or changes. No feature flag or new
+runtime package is introduced.
+
+The complete human procedure and automated positive, adversarial, mutation,
+deletion, and drift evidence are indexed as
+[TC-WORKFLOW-PUBLISHER-COMMAND-INVENTORY-001](test-cases/workflow-governance.md#tc-workflow-publisher-command-inventory-001-authorize-only-reviewed-publisher-commands).
+Reverting this foundation blocks its dependents; it does not enable a
+substring-based fallback.
+
 ## Legal base contract
 
 The BPS patch accepts exactly a legally obtained clean **Fire Emblem: The

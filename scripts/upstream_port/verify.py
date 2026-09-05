@@ -1772,6 +1772,12 @@ def _parse_step(block, job_name, index):
             in " ".join(token for command in values["run"] for token in command)
         ):
             raise ValueError(f"{step_label} trusted producer verification differs")
+        if index == 1:
+            if literal_run_script is None:
+                raise ValueError(f"{step_label} publisher authority preflight differs")
+            publisher_shell_contract.publisher_inventory.reviewed_inventory().validate_preflight(
+                publisher_shell_contract.literal_run_script_from_step_block(block, label=step_label)
+            )
         if index == 2 and (
             values["shell"]
             != "/bin/bash --noprofile --norc -euo pipefail {0}"
@@ -1947,6 +1953,7 @@ def _parse_step(block, job_name, index):
                     publisher_run_script,
                     label=step_label,
                 )
+                publisher_shell_contract.validate_builder_command_inventory(builder_shell)
                 publisher_shell_contract.assert_reviewed_builder_isolation_shell_identity(
                     builder_shell,
                     label=step_label,
@@ -1957,11 +1964,6 @@ def _parse_step(block, job_name, index):
                 )
             except ValueError as error:
                 raise ValueError(f"{step_label} patch-release parser script differs") from error
-            if publisher_shell_contract.has_forbidden_supervisor_parent_readonly_mount(
-                builder_shell,
-                label=step_label,
-            ):
-                raise ValueError(f"{step_label} isolated candidate build differs")
         if index == 4 and (
             values["id"] != "private-base"
             or values["shell"]

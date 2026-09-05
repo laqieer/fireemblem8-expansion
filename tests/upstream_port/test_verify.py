@@ -11,6 +11,7 @@ from unittest import mock
 from scripts.upstream_port import cli, verify as verify_mod
 from tests.workflows import test_build_ci_topology as topology_tests
 from tests.workflows import test_patch_release_workflow as patch_workflow_tests
+from tests.workflows import publisher_inventory_fixtures
 
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 BUILD_WORKFLOW_PATH = os.path.join(REPO_ROOT, ".github", "workflows", "build.yml")
@@ -52,6 +53,21 @@ class VerifyGatesMirrorWorkflowTests(unittest.TestCase):
     mirror of the gate steps in .github/workflows/build.yml -- parsed from
     the live workflow file, not a hardcoded copy -- excluding only the
     separately tested standalone documentation-governance step."""
+
+    def test_publisher_command_inventory_uses_shared_closed_authority(self):
+        with open(BUILD_WORKFLOW_PATH, "r", encoding="utf-8") as handle:
+            original = handle.read()
+        contract = patch_workflow_tests.publisher_shell_contract
+        with mock.patch.object(
+            contract, "validate_builder_command_inventory",
+            wraps=contract.validate_builder_command_inventory,
+        ) as validate:
+            verify_mod._parse_workflow_structure_text(original)
+            validate.assert_called_once()
+        for name, changed in publisher_inventory_fixtures.adversarial_workflows(original):
+            with self.subTest(case=name), publisher_inventory_fixtures.refreshed_boundary_identities(changed):
+                with self.assertRaises(ValueError):
+                    verify_mod._parse_workflow_structure_text(changed)
 
     def test_gate_argv_matches_workflow_commands_in_order(self):
         workflow_commands = [
@@ -1243,7 +1259,12 @@ class VerifyCliCwdTests(unittest.TestCase):
             ValueError,
             "patch-release parser script differs|isolated candidate build differs",
         ):
-            verify_mod._parse_workflow_structure_text(broken)
+            verify_mod._parse_step(
+                patch_workflow_tests.named_patch_release_step_block(
+                    broken, "Build candidate in isolated namespace and stage public inputs"
+                ),
+                "patch-release", 3,
+            )
 
     def test_every_combined_worker_requires_the_fail_closed_classifier_edge(self):
         with open(BUILD_WORKFLOW_PATH, "r", encoding="utf-8") as handle:

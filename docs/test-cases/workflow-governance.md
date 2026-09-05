@@ -4,6 +4,101 @@ These source-only procedures cover the repository's agent delivery policy.
 They exercise documented orchestration contracts without dispatching a
 workflow, using credentials, or changing ROM behavior.
 
+## TC-WORKFLOW-PUBLISHER-COMMAND-INVENTORY-001: Authorize only reviewed publisher commands
+
+- **Feature / originating issue:** `workflow-governance` /
+  [issue #200](https://github.com/laqieer/fireemblem8-expansion/issues/200);
+  prerequisite initiative [#177](https://github.com/laqieer/fireemblem8-expansion/issues/177).
+- **Configuration:** supported Linux source checkout, Python 3.10+, Git,
+  Bash, `/usr/bin/python3`, and `findmnt`. No ROM, secret, GitHub token,
+  privileged namespace, live workflow, or download is required.
+- **Clean start:** use a disposable clean checkout of the exact candidate.
+  The authority CLI requires its source/module modes and bytes to match that
+  commit. The unit tests can also run before committing: they create their own
+  repository-local exact-tree fixtures under ignored `build/test-artifacts`.
+
+### Actions
+
+1. From the repository root, run:
+
+   ```bash
+   python3 -I -S scripts/workflow_pilot/publisher_inventory.py \
+     --repository-root . --commit "$(git rev-parse HEAD)"
+   python3 -m unittest -v \
+     tests.workflows.test_publisher_command_inventory \
+     tests.upstream_port.test_verify.VerifyGatesMirrorWorkflowTests.test_publisher_command_inventory_uses_shared_closed_authority \
+     tests.workflows.test_patch_release_workflow.PatchReleaseWorkflowTests.test_dev_mount_target_parser_supports_decoded_paths_and_rejects_bad_json \
+     tests.workflows.test_patch_release_workflow.PatchReleaseWorkflowTests.test_writable_mount_record_parser_supports_decoded_targets_and_rejects_bad_json \
+     tests.workflows.test_patch_release_workflow.PatchReleaseWorkflowTests.test_embedded_publisher_shell_and_python_are_syntactically_valid
+   ```
+
+2. Confirm the actual production builder and every command/signature family
+   pass. The CLI reports the reviewed command count; the tests check the
+   complete inventory, typed accesses, nested/helper events and exact
+   preflight integration. The isolated runtime probe emits decoded `/dev`
+   mount targets as unique NUL-terminated records.
+3. Confirm every composed Python/awk/Perl/shell reader and helper recomposition
+   is rejected by both semantic consumers. The representative input is the
+   **unevaluated test string**
+   `/usr/bin/python3 -c 'open("/mnt/supervisor/cgroup/"+"cgroup."+"procs","rb").read()'`.
+   There is no literal `cgroup.procs` token in that input. Other fixtures
+   exercise dynamic paths, unknown wrappers, assignment prefixes, aliases,
+   code heredocs, nested substitutions, split function declarations,
+   redirections, traps, callbacks, positional/arithmetic writers and recursion.
+4. Confirm each signature deletion and cardinality mutation fails, and each
+   command's executable, argument, environment and output mutation fails.
+   Comments, equivalent quote/parameter spelling and independent assignment
+   reorder remain accepted by the semantic inventory.
+5. Confirm the fixed checker accepts the exact signature and runtime snapshots
+   `41\n42\n` and `42\n41\n` with wrapper 41/checker 42. Empty, single, extra,
+   duplicate, zero, signed, leading-zero, non-ASCII, whitespace, oversized and
+   unterminated snapshots reject. The real function is checked for the exact
+   literal input path, bounded read and absence of success output.
+6. Confirm every consumed module rejects dirty content, deletion, symlink and
+   mode drift. Added package imports must also belong to the selected tree;
+   unknown/dynamic imports and Git-environment redirection fail. A hostile
+   target program is inspected as data and never executes.
+
+### Expected result and negative control
+
+All commands above succeed in the supported configuration; every adversarial
+fixture fails before publication. Both semantic suites consume the same
+authority and agree. The exact membership-checker command is registered for
+downstream use but cannot be added to the current production builder while its
+required production count remains zero.
+
+The pre-fix PR #195 substring analyzer accepts the composed Python reader.
+The new executable regression also removes only the shared authority call:
+with legitimately refreshed outer shell identities both consumers then accept
+that same reader, while the real authority rejects it. This demonstrates the
+behavioral negative control independently of raw hashes or source wording.
+
+### Interactions, cleanup and limitations
+
+#201 owns candidate-completion/checker/export ordering; #195 owns the final
+#177 runtime integration. The current exact legacy membership observation is
+still represented and its known self-observation failure is not claimed fixed
+by this case. Updating a production operation requires updating its typed
+signature and behavioral evidence together. Arbitrary Bash syntax,
+unregistered executables and caller-provided Python are unsupported, not
+silently analyzed as safe.
+
+The case has no save, configuration, generated-data, localization, target
+ROM/RAM, modern profile or archival impact. No manual criterion applies.
+Fixtures clean up their own ignored directories; do not change a live
+publisher cgroup or run the adversarial strings. Revert the dedicated
+foundation if needed, and keep #201/#195 blocked instead of weakening
+authorization.
+
+### Automation mapping
+
+The commands in step 1 are the complete focused mapping. The first suite
+executes the production inventory, parser, program, mutation and exact-tree
+checks plus publisher/upstream decision parity. The upstream-specific method
+independently verifies its production call site against the shared corpus.
+The two existing mount-reader methods and syntax method retain the canonical
+programs' decoded-output and compile contracts.
+
 ## TC-WORKFLOW-CI-WAIT-001: Keep CI waiting centralized and trusted pushes owner-scoped
 
 - **Feature / originating issue:** `workflow-governance` /

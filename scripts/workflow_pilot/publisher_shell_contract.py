@@ -6,16 +6,19 @@ import ast
 from dataclasses import dataclass
 import hashlib
 import posixpath
+from pathlib import Path
 import re
 import shlex
 from typing import Iterable
 
+from . import publisher_inventory, publisher_programs, publisher_shell
+
 
 REVIEWED_PATCH_RELEASE_RUN_SHA256 = (
-    "2a35c3184d7bdd84f99398ccb481cb5d74f939ece93bd5ea1d2ca507b399e67c"
+    "810e05c54493218984366d6028f49488e558b915cdb133888e88ff6c1d3c1756"
 )
 REVIEWED_BUILDER_ISOLATION_SHA256 = (
-    "3a06d37d0ec73c868cc614dc3d1cf4366684a1d542f6a9a79b0114fac6478353"
+    "db6385645a7d3e417f7b639a2a8a1c0e590334ea5e42ed2495ebbc08e568e76f"
 )
 REVIEWED_HIDDEN_MASK_LOOP_SHA256 = (
     "77e81e3a773e78b4c58132c553ea3a3ef0719f802fe1164b59f60aef948235f5"
@@ -73,18 +76,6 @@ APPROVED_SUPERVISOR_COMMAND_TOKENS = {
     ("test", "$(/usr/bin/stat -c %a /mnt/supervisor)", "=", "700"),
     ("supervisor_cgroup=/mnt/supervisor/cgroup",),
 }
-PATCH_RELEASE_PARSER_HEREDOC_NAMES = (
-    "list_dev_mount_targets",
-    "list_writable_mount_records",
-)
-PATCH_RELEASE_PARSER_HEREDOC_INTRODUCER = "  /usr/bin/python3 -I -S - <<'PY'"
-_PATCH_RELEASE_PARSER_HEREDOC_RE = re.compile(
-    r"(?ms)^(?P<name>list_dev_mount_targets|list_writable_mount_records)\(\) \{\n"
-    r"  /usr/bin/python3 -I -S - <<'PY'\n"
-    r"(?P<body>.*?)\n"
-    r"PY\n"
-    r"\}"
-)
 _SIMPLE_COMMAND_PREFIXES = frozenset(
     {"if", "then", "do", "elif", "while", "until", "!", "else", "{"}
 )
@@ -274,6 +265,31 @@ def builder_isolation_shell_source(run_script: str, *, label: str) -> str:
     return run_script[start:end] + "\n"
 
 
+def publisher_run_script(
+    workflow: str,
+    step_name: str = "Build candidate in isolated namespace and stage public inputs",
+) -> str:
+    job = re.search(
+        r"(?ms)^  patch-release:\n(?P<body>.*?)(?=^  [A-Za-z0-9_-]+:\n|\Z)",
+        workflow,
+    )
+    if job is None:
+        raise ValueError("missing publisher job")
+    steps = re.split(r"(?m)(?=^    - )", job.group("body"))
+    matches = [
+        step for step in steps
+        if step.startswith(f"    - name: {step_name}\n")
+    ]
+    if len(matches) != 1:
+        raise ValueError("publisher builder step inventory differs")
+    return literal_run_script_from_step_block(matches[0], label="publisher")
+
+
+def validate_builder_command_inventory(script: str) -> publisher_inventory.Analysis:
+    """The shared authorization entry point; unrelated probes cannot grant access."""
+    return publisher_inventory.validate_builder_script(script)
+
+
 def _bash_line_state(line: str, state: str) -> tuple[str, bool]:
     index = 0
     word_start = state == "normal"
@@ -405,17 +421,41 @@ def split_bash_simple_command_strings(script: str, *, label: str) -> tuple[str, 
 
 
 def raw_patch_release_parser_sources(script: str) -> tuple[tuple[str, str], ...]:
-    matches = list(_PATCH_RELEASE_PARSER_HEREDOC_RE.finditer(script))
-    if script.count(PATCH_RELEASE_PARSER_HEREDOC_INTRODUCER) != len(
-        PATCH_RELEASE_PARSER_HEREDOC_NAMES
-    ):
-        raise ValueError("patch-release parser heredoc count differs")
-    if len(matches) != len(PATCH_RELEASE_PARSER_HEREDOC_NAMES):
-        raise ValueError("patch-release parser heredoc structure differs")
-    names = tuple(match.group("name") for match in matches)
-    if names != PATCH_RELEASE_PARSER_HEREDOC_NAMES:
-        raise ValueError("patch-release parser function association differs")
-    return tuple((match.group("name"), match.group("body") + "\n") for match in matches)
+    """Expose executable probes of the canonical production programs.
+
+    Kept for existing mount-transport tests; no embedded Python is authorized.
+    The runtime source is stored once and staged from the immutable Git tree.
+    """
+    parsed = publisher_shell.parse(script)
+    definitions = {}
+    for chain in parsed.items:
+        for node in chain.nodes:
+            if isinstance(node, publisher_shell.Function):
+                for item in node.body.items:
+                    for child in item.nodes:
+                        if isinstance(child, publisher_shell.Function):
+                            if child.name in definitions:
+                                raise ValueError("duplicate publisher parser helper")
+                            definitions[child.name] = child
+    program_tree = ast.parse(Path(publisher_programs.__file__).read_text(encoding="utf-8"))
+    entry_guard = ast.parse('if __name__ == "__main__":\n    raise SystemExit(main())').body[0]
+    if ast.dump(program_tree.body[-1]) != ast.dump(entry_guard):
+        raise ValueError("publisher program entry point differs")
+    program_tree.body.pop()
+    source = ast.unparse(program_tree) + "\n"
+    result = []
+    for signature in publisher_inventory.reviewed_inventory().signatures:
+        if signature.events != (publisher_inventory.EventKind.MOUNT_AUDIT,):
+            continue
+        if signature.program is None:
+            raise ValueError("publisher mount program metadata differs")
+        name = signature.scope
+        mode = signature.program.mode
+        expected = publisher_shell.Block((publisher_shell.Chain((signature.form,)),))
+        if name not in definitions or definitions[name].body != expected:
+            raise ValueError("publisher parser program signature differs")
+        result.append((name, source + f"raise SystemExit(main([{mode!r}]))\n"))
+    return tuple(result)
 
 
 def validate_patch_release_parser_heredocs(script: str, *, label: str) -> None:
@@ -429,15 +469,7 @@ def validate_patch_release_parser_heredocs(script: str, *, label: str) -> None:
 
 
 def _strip_patch_release_parser_heredoc_bodies(script: str) -> str:
-    return _PATCH_RELEASE_PARSER_HEREDOC_RE.sub(
-        lambda match: (
-            f"{match.group('name')}() {{\n"
-            f"{PATCH_RELEASE_PARSER_HEREDOC_INTRODUCER}\n"
-            "PY\n"
-            "}\n"
-        ),
-        script,
-    )
+    return script
 
 
 def _raw_token_has_glob_bracket(text: str, *, start_index: int) -> bool:

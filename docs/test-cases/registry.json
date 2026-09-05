@@ -481,7 +481,8 @@
         "https://github.com/laqieer/fireemblem8-expansion/issues/169",
         "https://github.com/laqieer/fireemblem8-expansion/issues/171",
         "https://github.com/laqieer/fireemblem8-expansion/issues/176",
-        "https://github.com/laqieer/fireemblem8-expansion/issues/177"
+        "https://github.com/laqieer/fireemblem8-expansion/issues/177",
+        "https://github.com/laqieer/fireemblem8-expansion/issues/200"
       ],
       "reference": ".github/skills/development-workflow/SKILL.md",
       "status": "current",
@@ -490,7 +491,8 @@
         "TC-WORKFLOW-MANUAL-HANDOFF-001",
         "TC-WORKFLOW-STACKED-CI-001",
         "TC-WORKFLOW-BODY-EDIT-001",
-        "TC-WORKFLOW-PILOT-BASELINE-001"
+        "TC-WORKFLOW-PILOT-BASELINE-001",
+        "TC-WORKFLOW-PUBLISHER-COMMAND-INVENTORY-001"
       ]
     },
     {
@@ -2162,6 +2164,43 @@
         {
           "command": "python3 -m unittest scripts.generated_data.tests.test_classes_schema scripts.generated_data.tests.test_units_schema scripts.generated_data.tests.test_eventlists_schema scripts.generated_data.tests.test_eventlists_roundtrip -v",
           "evidence": "scripts/generated_data/tests/test_eventlists_roundtrip.py"
+        }
+      ]
+    },
+    {
+      "id": "TC-WORKFLOW-PUBLISHER-COMMAND-INVENTORY-001",
+      "title": "Authorize only reviewed publisher commands",
+      "feature_id": "workflow-governance",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/200",
+        "https://github.com/laqieer/fireemblem8-expansion/issues/177"
+      ],
+      "document": "docs/test-cases/workflow-governance.md",
+      "anchor": "tc-workflow-publisher-command-inventory-001-authorize-only-reviewed-publisher-commands",
+      "profiles": [
+        "Supported Linux host source checkout at the exact candidate commit"
+      ],
+      "purpose": "Prove one typed default-deny publisher command, helper and program inventory with immutable exact-tree binding.",
+      "prerequisites": "Repository root, Python 3.10+, Git, Bash, /usr/bin/python3 and findmnt; clean candidate checkout for the CLI, no ROM, secret, token or privileged namespace.",
+      "actions": "Run the exact-tree CLI and focused inventory, upstream-consumer, existing mount-reader and syntax commands in the human procedure. Exercise real production positives, composed interpreter/helper reads, dynamic commands and wrappers, argument/redirect/callback/trap mutations, every signature deletion/cardinality drift, recursive helpers, fixed-checker snapshots and all consumed module drift.",
+      "expected_result": "Production commands and exact reviewed programs pass. Every unregistered or mismatched operation fails in both semantic consumers. Helper events retain control and execution context. The fixed checker requires the exact executable, literal cgroup input, wrapper/checker PID pair, bounded read and no output; its zero production count prevents silently adding it before downstream integration. Exact-tree module drift rejects without executing target Python.",
+      "negative_control": "The abandoned PR195 substring analyzer accepts the composed Python reader. Removing only the new shared authority reproduces acceptance in both consumers after outer identities are refreshed; reinstating it rejects. Missing/changed commands, signatures, helper graphs, program modes, module bytes/modes or imports also fail while semantic spelling and independent-order controls pass.",
+      "interactions": "Depends on the existing workflow parser and exact Git tree. Issue 201 consumes the event API; issue 195 must integrate on both foundations. Current legacy grep/sort membership observations remain explicit and the issue 177 runtime failure is not claimed fixed.",
+      "save_compatibility": "Host-only; no save, configuration, generated-data, localization, ROM/RAM, modern debug/release or archival impact.",
+      "cleanup": "Tests remove their own repository-local ignored build/test-artifacts fixtures. Do not modify a live cgroup or execute adversarial strings.",
+      "limitations": "No manual criterion. This case proves command authority, not issue 201 phase ordering or issue 195 master-only publisher recovery. Arbitrary Bash or Python programs are unsupported.",
+      "automation": [
+        {
+          "command": "python3 -m unittest -v tests.workflows.test_publisher_command_inventory",
+          "evidence": "tests/workflows/test_publisher_command_inventory.py"
+        },
+        {
+          "command": "python3 -m unittest -v tests.upstream_port.test_verify.VerifyGatesMirrorWorkflowTests.test_publisher_command_inventory_uses_shared_closed_authority",
+          "evidence": "tests/upstream_port/test_verify.py"
+        },
+        {
+          "command": "python3 -m unittest -v tests.workflows.test_patch_release_workflow.PatchReleaseWorkflowTests.test_dev_mount_target_parser_supports_decoded_paths_and_rejects_bad_json tests.workflows.test_patch_release_workflow.PatchReleaseWorkflowTests.test_writable_mount_record_parser_supports_decoded_targets_and_rejects_bad_json tests.workflows.test_patch_release_workflow.PatchReleaseWorkflowTests.test_embedded_publisher_shell_and_python_are_syntactically_valid",
+          "evidence": "tests/workflows/test_patch_release_workflow.py"
         }
       ]
     },

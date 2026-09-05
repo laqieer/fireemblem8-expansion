@@ -1236,18 +1236,18 @@ def generate_publisher_raw_identity_mutations(workflow: str):
             ),
         ),
         (
-            "remove-blank-in-parser-heredoc",
+            "extra-blank-in-parser-helper",
             lambda step: step.replace(
-                "        MAX_BYTES = 1048576\n\n\n        def fail(message):\n",
-                "        MAX_BYTES = 1048576\n\n        def fail(message):\n",
+                "        list_dev_mount_targets() {\n",
+                "        list_dev_mount_targets() {\n\n",
                 1,
             ),
         ),
         (
             "blank-line-extra-indentation",
             lambda step: step.replace(
-                "        MAX_BYTES = 1048576\n\n\n        def fail(message):\n",
-                "        MAX_BYTES = 1048576\n          \n\n        def fail(message):\n",
+                "        list_writable_mount_records() {\n",
+                "        list_writable_mount_records() {\n          \n",
                 1,
             ),
         ),
@@ -1459,6 +1459,9 @@ def publisher_boundary_errors(workflow: str) -> list[str]:
     ):
         errors.append("complete ROM artifact transfer is possible")
     try:
+        publisher_shell_contract.publisher_inventory.reviewed_inventory().validate_preflight(
+            named_step_run_script(workflow, "Verify exact candidate and stage trusted producer")
+        )
         run_script = named_step_run_script(
             workflow,
             "Build candidate in isolated namespace and stage public inputs",
@@ -1471,6 +1474,7 @@ def publisher_boundary_errors(workflow: str) -> list[str]:
             run_script,
             label="publisher builder isolation shell",
         )
+        publisher_shell_contract.validate_builder_command_inventory(builder_shell)
         publisher_shell_contract.assert_reviewed_builder_isolation_shell_identity(
             builder_shell,
             label="publisher builder isolation shell",
@@ -1481,8 +1485,6 @@ def publisher_boundary_errors(workflow: str) -> list[str]:
         )
     except (AssertionError, ValueError):
         errors.append("publisher builder isolation shell differs")
-    if workflow_has_supervisor_parent_readonly_remount(workflow):
-        errors.append("supervisor parent remount differs")
     required = (
         "Verify exact candidate and stage trusted producer",
         "Install trusted isolated-build dependencies",
@@ -1578,13 +1580,6 @@ def publisher_boundary_errors(workflow: str) -> list[str]:
         or "candidate_sink" in isolated_step
         or "sink_size" in isolated_step
         or "list_dev_mount_targets() {" not in isolated_step
-        or (
-            '["/usr/bin/findmnt", "--json", "--submounts", "--output", "TARGET", "/dev"]'
-            not in isolated_step
-        )
-        or "object_pairs_hook=reject_duplicates" not in isolated_step
-        or "findmnt target escapes /dev" not in isolated_step
-        or "findmnt target contains NUL" not in isolated_step
         or "builder-supervisor /mnt/supervisor" not in isolated_step
         or 'path="$(/usr/bin/mktemp "/mnt/supervisor/$1.XXXXXXXXXX")"'
         not in isolated_step
@@ -1595,15 +1590,6 @@ def publisher_boundary_errors(workflow: str) -> list[str]:
         or "read_checked_supervisor_transport_file() {" not in isolated_step
         or "remove_supervisor_transport_file() {" not in isolated_step
         or "list_writable_mount_records() {" not in isolated_step
-        or (
-            '["/usr/bin/findmnt", "--json", "--list", "--uniq", "--output", "TARGET,OPTIONS", "-R", "/"]'
-            not in isolated_step
-        )
-        or "duplicate writable mount JSON key" not in isolated_step
-        or "findmnt target is not absolute" not in isolated_step
-        or 'options = validate_options(filesystem.get("options"))' not in isolated_step
-        or "findmnt option tokens are invalid" not in isolated_step
-        or "unexpected writable mount audit row keys" not in isolated_step
         or "create_runtime_transport_file() {" not in isolated_step
         or "checked_runtime_transport_signature() {" not in isolated_step
         or "read_checked_runtime_transport_file() {" not in isolated_step
@@ -3768,13 +3754,13 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
             1,
         )
         structured_writable_mount_targets = self.text.replace(
-            '["/usr/bin/findmnt", "--json", "--list", "--uniq", "--output", "TARGET,OPTIONS", "-R", "/"]',
-            '["/usr/bin/findmnt", "-Rrno", "TARGET,OPTIONS", "/"]',
+            "publisher-programs.py writable-mount-records",
+            "publisher-programs.py writable-mount-records --raw",
             1,
         )
         nonuniq_writable_mount_targets = self.text.replace(
-            '["/usr/bin/findmnt", "--json", "--list", "--uniq", "--output", "TARGET,OPTIONS", "-R", "/"]',
-            '["/usr/bin/findmnt", "--json", "--list", "--output", "TARGET,OPTIONS", "-R", "/"]',
+            "publisher-programs.py writable-mount-records",
+            "publisher-programs.py writable-mount-records --no-uniq",
             1,
         )
         retained_dev_descendants = self.text.replace(
@@ -3783,8 +3769,8 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
             1,
         )
         escaped_dev_targets = self.text.replace(
-            '["/usr/bin/findmnt", "--json", "--submounts", "--output", "TARGET", "/dev"]',
-            '["/usr/bin/findmnt", "-Rrno", "TARGET", "/dev"]',
+            "publisher-programs.py dev-mount-targets",
+            "publisher-programs.py dev-mount-targets --raw",
             1,
         )
         unchecked_dev_process_substitution = self.text.replace(

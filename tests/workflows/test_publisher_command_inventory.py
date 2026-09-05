@@ -1,0 +1,521 @@
+"""TC-WORKFLOW-PUBLISHER-COMMAND-INVENTORY-001, real production consumers."""
+
+from dataclasses import replace
+import io
+import json
+import os
+from pathlib import Path
+import shlex
+import shutil
+import stat
+import subprocess
+import unittest
+from unittest import mock
+import uuid
+
+from scripts.upstream_port import verify
+from scripts.workflow_pilot import publisher_inventory as authority
+from scripts.workflow_pilot import publisher_programs as programs
+from scripts.workflow_pilot import publisher_shell as shell
+from scripts.workflow_pilot import publisher_shell_contract as contract
+from tests.workflows import publisher_inventory_fixtures as fixtures
+from tests.workflows import test_patch_release_workflow as publisher
+
+
+ROOT = Path(__file__).resolve().parents[2]
+WORKFLOW = ROOT / ".github/workflows/build.yml"
+
+
+class PublisherCommandInventoryTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.workflow = WORKFLOW.read_text()
+        cls.source = fixtures.builder(cls.workflow)
+        cls.inventory = authority.reviewed_inventory()
+
+    def test_actual_production_inventory_is_complete_and_typed(self):
+        result = authority.validate_workflow(self.workflow)
+        self.assertTrue(result.commands)
+        self.assertTrue(result.events)
+        self.assertEqual(
+            {s.family for s in self.inventory.signatures}, set(authority.Family),
+        )
+        actual = {item.signature.name for item in result.commands}
+        expected = {
+            signature.name for signature in self.inventory.signatures
+            if signature.occurrences and signature.scope != "producer"
+        }
+        self.assertEqual(actual, expected)
+        self.assertEqual(
+            {event.kind for event in result.events} & {
+                authority.EventKind.CANDIDATE_LAUNCH,
+                authority.EventKind.LEGACY_MEMBERSHIP,
+                authority.EventKind.EXPORT_OPEN,
+                authority.EventKind.EXPORT_FILE,
+                authority.EventKind.EXPORT_CLOSE,
+            },
+            {
+                authority.EventKind.CANDIDATE_LAUNCH,
+                authority.EventKind.LEGACY_MEMBERSHIP,
+                authority.EventKind.EXPORT_OPEN,
+                authority.EventKind.EXPORT_FILE,
+                authority.EventKind.EXPORT_CLOSE,
+            },
+        )
+        self.assertNotIn(authority.EventKind.MEMBERSHIP_VERIFIED, {event.kind for event in result.events})
+        self.assertTrue(any(len(event.call_stack) > 2 for event in result.events))
+        self.assertTrue(any(context.kind == "substitution" for event in result.events for context in event.context))
+        self.assertTrue(any(context.kind == "loop" for event in result.events for context in event.context))
+        for signature in self.inventory.signatures:
+            with self.subTest(signature=signature.name):
+                self.assertEqual(self.inventory.authorize(signature.form, signature.scope), signature)
+                self.assertTrue(all(isinstance(a.resource, authority.Resource) and isinstance(a.access, authority.Access) for a in signature.accesses))
+                self.assertEqual(signature.evidence, authority.CASE_ID)
+                if signature.program is not None:
+                    self.assertIn(signature.program.source_path, authority.authority_paths())
+
+    def test_both_production_consumers_reject_the_complete_adversarial_corpus(self):
+        self.assertEqual(publisher.publisher_boundary_errors(self.workflow), [])
+        verify._parse_workflow_structure_text(self.workflow)
+        for name, changed in fixtures.adversarial_workflows(self.workflow):
+            with self.subTest(case=name), fixtures.refreshed_boundary_identities(changed):
+                self.assertTrue(publisher.publisher_boundary_errors(changed))
+                with self.assertRaises(ValueError):
+                    verify._parse_workflow_structure_text(changed)
+
+    def test_composed_reader_regression_fails_if_shared_authority_is_removed(self):
+        command = fixtures.COMPOSED_PYTHON_READER
+        self.assertNotIn("cgroup.procs", command)
+        changed = fixtures.replace_builder(
+            self.workflow, self.source.replace("cd /\n", "cd /\n" + command + "\n", 1),
+        )
+        with fixtures.refreshed_boundary_identities(changed):
+            self.assertTrue(publisher.publisher_boundary_errors(changed))
+            with self.assertRaises(ValueError):
+                verify._parse_workflow_structure_text(changed)
+            with mock.patch.object(contract, "validate_builder_command_inventory"):
+                self.assertEqual(publisher.publisher_boundary_errors(changed), [])
+                verify._parse_workflow_structure_text(changed)
+
+    def test_all_command_families_deny_argument_environment_redirect_and_executable_mutations(self):
+        for signature in self.inventory.signatures:
+            form = signature.form
+            mutations = {
+                "argument": replace(form, argv=form.argv + (shell.command("unregistered").argv[0],)),
+                "environment": replace(form, environment=form.environment + shell.command("UNREGISTERED=yes").environment),
+                "redirect": replace(form, redirects=form.redirects + shell.command("true > /unregistered").redirects),
+            }
+            if form.argv:
+                mutations["executable"] = replace(
+                    form, argv=(shell.command("/unregistered/executable").argv[0],) + form.argv[1:],
+                )
+                mutations["deletion"] = replace(form, argv=form.argv[:-1])
+            for name, changed in mutations.items():
+                with self.subTest(signature=signature.name, mutation=name):
+                    with self.assertRaises(ValueError):
+                        self.inventory.authorize(changed, signature.scope)
+
+    def test_each_registry_deletion_and_form_drift_fails_closed(self):
+        preflight = contract.publisher_run_script(self.workflow, "Verify exact candidate and stage trusted producer")
+        for index, signature in enumerate(self.inventory.signatures):
+            without = replace(self.inventory, signatures=self.inventory.signatures[:index] + self.inventory.signatures[index + 1:])
+            with self.subTest(signature=signature.name, mutation="delete"):
+                if signature.scope == "producer":
+                    with self.assertRaises(ValueError):
+                        without.validate_preflight(preflight)
+                elif signature.occurrences == 0:
+                    with self.assertRaises(ValueError):
+                        without.authorize(signature.form, signature.scope)
+                else:
+                    with self.assertRaises(ValueError):
+                        without.validate(self.source)
+            changed = replace(signature, occurrences=signature.occurrences + 1)
+            mutated = replace(self.inventory, signatures=self.inventory.signatures[:index] + (changed,) + self.inventory.signatures[index + 1:])
+            with self.subTest(signature=signature.name, mutation="cardinality"):
+                with self.assertRaises(ValueError):
+                    if signature.scope == "producer":
+                        mutated.validate_preflight(preflight)
+                    else:
+                        mutated.validate(self.source)
+        with self.assertRaises(ValueError):
+            replace(self.inventory, signatures=self.inventory.signatures + (self.inventory.signatures[0],))
+
+    def test_inventory_rejects_untyped_or_incomplete_signature_metadata(self):
+        original = next(s for s in self.inventory.signatures if s.program and s.program.name == "membership")
+        for changed in (
+            replace(original, family="python"),
+            replace(original, events=("membership-verified",)),
+            replace(original, accesses=("cgroup",)),
+            replace(original, form=replace(original.form, argv=original.form.argv[:4])),
+        ):
+            with self.subTest(signature=changed), self.assertRaises(ValueError):
+                replace(self.inventory, signatures=tuple(
+                    changed if signature == original else signature for signature in self.inventory.signatures
+                ))
+
+    def test_each_production_family_rejects_addition_deletion_and_comment_spoof(self):
+        analysis = self.inventory.validate(self.source)
+        selected = {}
+        for item in analysis.commands:
+            if item.scope == "builder_main" and not item.context and not item.nested:
+                selected.setdefault(item.signature.family, item.command)
+        self.assertEqual(set(selected), set(authority.Family))
+        for family, command in selected.items():
+            text = self.source[command.offset:command.end]
+            self.assertEqual(shell.command(text), command)
+            commented = "\n".join("# " + line for line in text.splitlines())
+            mutations = {
+                "delete": "",
+                "comment-spoof": commented,
+                "add": text + "; " + text,
+            }
+            for kind, replacement in mutations.items():
+                with self.subTest(family=family, mutation=kind):
+                    changed = self.source[:command.offset] + replacement + self.source[command.end:]
+                    syntax = subprocess.run(
+                        ["/bin/bash", "-n"], input=changed, text=True,
+                        capture_output=True, check=False,
+                    )
+                    self.assertEqual(syntax.returncode, 0, syntax.stderr)
+                    with self.assertRaises(ValueError):
+                        self.inventory.validate(changed)
+
+    def test_controls_and_helper_declarations_have_complete_inventory(self):
+        for index, control in enumerate(self.inventory.controls):
+            with self.subTest(control=control.name):
+                changed = replace(self.inventory, controls=self.inventory.controls[:index] + self.inventory.controls[index + 1:])
+                with self.assertRaises(ValueError):
+                    changed.validate(self.source)
+        for index, scope in enumerate(self.inventory.scopes):
+            with self.subTest(scope=scope.name):
+                with self.assertRaises(ValueError):
+                    replace(self.inventory, scopes=self.inventory.scopes[:index] + self.inventory.scopes[index + 1:])
+        old = "unmount_if_mounted /home/runner\n"
+        changed = self.source.replace(old, "", 1).replace("unmount_if_mounted() {", old + "unmount_if_mounted() {", 1)
+        with self.assertRaisesRegex(ValueError, "before its definition"):
+            self.inventory.validate(changed)
+        changed = self.source.replace("unmount_if_mounted() {", "if true; then\nunmount_if_mounted() {", 1)
+        changed = changed.replace("unmount_if_mounted /home/runner", "fi\nunmount_if_mounted /home/runner", 1)
+        with self.assertRaises(ValueError):
+            self.inventory.validate(changed)
+
+    def test_parser_preserves_expansion_and_normalizes_safe_spelling(self):
+        original = self.inventory.validate(self.source)
+        changed = self.source.replace('cgroup_path="$1"', 'cgroup_path="${1}"').replace("cd /", """'cd' '/' # harmless <<'NOT_A_HEREDOC'""", 1)
+        changed = changed.replace(
+            'builder_uid="$2"\nbuilder_gid="$3"',
+            'builder_gid="${3}"\n# safe independent initialization reorder\nbuilder_uid="${2}"',
+        )
+        result = self.inventory.validate(changed)
+        self.assertEqual(result.signatures, original.signatures)
+        self.assertNotEqual(shell.command("test '$x' = x"), shell.command('test "$x" = x'))
+        self.assertEqual(shell.command('test "$x" = x'), shell.command('test "${x}" = "x"'))
+        self.assertNotEqual(shell.command("test '*' = x"), shell.command('test * = x'))
+        self.assertEqual(shell.command("exec 2>&1"), shell.command("exec 2>& 1"))
+        self.assertNotEqual(shell.command("exec 2>&1"), shell.command("exec 2>1"))
+        for command in (
+            'cgroup_path="/untrusted"', 'cgroup_path=\'$1\'',
+            'test "$cgroup_members" = \'$$\'',
+        ):
+            with self.subTest(command=command):
+                with self.assertRaises(ValueError):
+                    self.inventory.authorize(shell.command(command), "builder_main")
+
+    def test_even_registered_recursive_helper_graphs_are_rejected(self):
+        access = (authority.ResourceAccess(authority.Resource.CONTROL, authority.Access.EXECUTE),)
+        signatures = tuple(
+            authority.Signature(
+                name, scope, shell.command("helper"), authority.Family.HELPER,
+                1, access, (authority.EventKind.HELPER_CALL,),
+            )
+            for name, scope in (("entry.call", "entry"), ("helper.call", "helper"))
+        )
+        inventory = authority.Inventory(
+            signatures, (authority.Scope("helper", "entry", ()),), (),
+        )
+        with self.assertRaisesRegex(ValueError, "recursive"):
+            inventory.validate("helper() { helper; }\nhelper\n")
+
+    def test_normalized_wrappers_never_erase_execution_or_option_identity(self):
+        for source, kind in (
+            ("builtin test -f /mnt/handoff/target.gba", authority.WrapperKind.BUILTIN),
+            ("command -- /usr/bin/stat -c %u /mnt/supervisor", authority.WrapperKind.COMMAND),
+            ("/usr/bin/env -i LC_ALL=C /usr/bin/stat -c %u /mnt/supervisor", authority.WrapperKind.ENVIRONMENT),
+            ("time -p /usr/bin/stat -c %u /mnt/supervisor", authority.WrapperKind.TIME),
+        ):
+            with self.subTest(source=source):
+                command = shell.command(source)
+                self.assertEqual(authority.normalize_invocation(command).wrappers[0].kind, kind)
+                with self.assertRaises(ValueError):
+                    self.inventory.authorize(command, "builder_main")
+
+    def test_checker_is_one_exact_available_signature_not_an_extra_production_reader(self):
+        signature = next(s for s in self.inventory.signatures if s.program and s.program.name == "membership")
+        self.assertEqual(signature.occurrences, 0)
+        self.assertEqual(signature.events, (authority.EventKind.MEMBERSHIP_VERIFIED,))
+        self.assertEqual(signature.program.outputs, ())
+        self.assertEqual(signature.program.runtime_path, authority.PROGRAM_RUNTIME_PATH)
+        for command in (
+            '/usr/bin/python3 -I -S /mnt/control/publisher-programs.py membership "$$"',
+        ):
+            self.assertEqual(self.inventory.authorize(shell.command(command), "builder_main"), signature)
+            with self.assertRaisesRegex(ValueError, "multiplicity"):
+                self.inventory.validate(self.source.replace("cd /\n", "cd /\n" + command + "\n", 1))
+        for source in (
+            '/usr/bin/python -I -S /mnt/control/publisher-programs.py membership "$$"',
+            '/usr/bin/python3 -S /mnt/control/publisher-programs.py membership "$$"',
+            '/usr/bin/python3 -I -S /candidate/publisher-programs.py membership "$$"',
+            '/usr/bin/python3 -I -S /mnt/control/publisher-programs.py membership "$1"',
+            '/usr/bin/python3 -I -S /mnt/control/publisher-programs.py membership "$$" /another',
+            '/usr/bin/python3 -I -S /mnt/control/publisher-programs.py membership "$$" > /dev/null',
+            '/usr/bin/python3 -I -S /mnt/control/publisher-programs.py membership "$$" 2>&1',
+            '/usr/bin/python3 -I -S /mnt/control/publisher-programs.py membership "$$" < /unregistered',
+        ):
+            with self.subTest(source=source), self.assertRaises(ValueError):
+                self.inventory.authorize(shell.command(source), "builder_main")
+        for replacement in (replace(signature, program=None), replace(signature, accesses=())):
+            with self.assertRaises(ValueError):
+                replace(self.inventory, signatures=tuple(replacement if s == signature else s for s in self.inventory.signatures))
+
+    def test_missing_or_conditional_preflight_rejects_both_consumers(self):
+        command = (
+            "        /usr/bin/python3 -I -S scripts/workflow_pilot/publisher_inventory.py \\\n"
+            '          --repository-root . --commit "$PATCH_COMMIT"\n'
+        )
+        self.assertIn(command, self.workflow)
+        for changed in (
+            self.workflow.replace(command, "", 1),
+            self.workflow.replace(command, "        if false; then\n" + command + "        fi\n", 1),
+            self.workflow.replace(command, command.replace("-I -S", "-S"), 1),
+        ):
+            with self.subTest(workflow=changed[:30]):
+                self.assertTrue(publisher.publisher_boundary_errors(changed))
+                with self.assertRaises(ValueError):
+                    verify._parse_workflow_structure_text(changed)
+
+    def test_parser_bounds_and_unknown_grammar_are_fail_closed(self):
+        for source in (
+            "x" * (128 * 1024 + 1), "echo \0", "echo \r",
+            "echo " + "$(" * 60 + "true" + ")" * 60,
+            "cat <<'EOF'\nignored\nEOF\n",
+            "echo > ;", "echo >&", "echo <& | true",
+            "echo $'\\x41'", 'echo "${x:-${y}}"', "echo >(true)",
+            "echo 'unfinished", "echo \\", "(echo true)",
+            "function helper { true; }",
+        ):
+            with self.subTest(source=source[:50]), self.assertRaises(ValueError):
+                parsed = shell.parse(source)
+                if parsed:
+                    self.inventory.validate(source)
+
+    def test_tester_case_is_indexed_and_maps_to_executable_automation(self):
+        catalog = json.loads((ROOT / "docs/test-cases/registry.json").read_text())
+        cases = [case for case in catalog["cases"] if case["id"] == authority.CASE_ID]
+        self.assertEqual(len(cases), 1)
+        case = cases[0]
+        feature = next(item for item in catalog["features"] if item["id"] == case["feature_id"])
+        self.assertIn(authority.CASE_ID, feature["required_cases"])
+        self.assertIn("https://github.com/laqieer/fireemblem8-expansion/issues/200", case["issue_urls"])
+        self.assertTrue((ROOT / case["document"]).is_file())
+        selectors = set()
+        for mapping in case["automation"]:
+            argv = shlex.split(mapping["command"])
+            self.assertEqual(argv[:3], ["python3", "-m", "unittest"])
+            self.assertTrue((ROOT / mapping["evidence"]).is_file())
+            for selector in (item for item in argv[3:] if not item.startswith("-")):
+                loader = unittest.TestLoader()
+                self.assertGreater(loader.loadTestsFromName(selector).countTestCases(), 0)
+                self.assertEqual(loader.errors, [])
+                selectors.add(selector)
+        self.assertIn("tests.workflows.test_publisher_command_inventory", selectors)
+        self.assertIn(
+            "tests.upstream_port.test_verify.VerifyGatesMirrorWorkflowTests.test_publisher_command_inventory_uses_shared_closed_authority",
+            selectors,
+        )
+
+
+class PublisherProgramTests(unittest.TestCase):
+    def test_fixed_membership_function_runs_complete_snapshot_matrix(self):
+        for data in (b"41\n42\n", b"42\n41\n"):
+            programs.validate_membership_snapshot(data, 41, 42)
+            handle = mock.MagicMock()
+            handle.__enter__.return_value = handle
+            handle.read.return_value = data
+            with mock.patch("builtins.open", return_value=handle) as opened, mock.patch.object(programs.os, "getpid", return_value=42):
+                output = io.StringIO()
+                with mock.patch("sys.stdout", output):
+                    self.assertEqual(programs.main(["membership", "41"]), 0)
+                self.assertEqual(output.getvalue(), "")
+                opened.assert_called_once_with("/mnt/supervisor/cgroup/cgroup.procs", "rb")
+                handle.read.assert_called_once_with(1025)
+        for data in (
+            b"", b"\n", b"41\n", b"41\n41\n", b"42\n42\n",
+            b"41\n43\n", b"41\n42\n43\n", b"41\n42", b"041\n42\n",
+            b"+41\n42\n", b"-41\n42\n", b"0\n42\n", b"41 \n42\n",
+            b"41\n 42\n", b"41\n42\n\n", b"\xff\n42\n",
+            b"1" * 1025 + b"\n42\n",
+        ):
+            with self.subTest(data=data[:24]), self.assertRaises(programs.ProgramError):
+                programs.validate_membership_snapshot(data, 41, 42)
+        for wrapper, checker in ((0, 42), (41, 0), (41, 41), (True, 42), ("41", 42)):
+            with self.subTest(wrapper=wrapper, checker=checker), self.assertRaises(programs.ProgramError):
+                programs.validate_membership_snapshot(b"41\n42\n", wrapper, checker)
+
+    def test_canonical_mount_programs_execute_only_the_reviewed_findmnt_signatures(self):
+        for function, stdout, argv in (
+            (
+                programs.dev_mount_targets,
+                b'{"filesystems":[{"target":"/dev"}]}',
+                ["/usr/bin/findmnt", "--json", "--submounts", "--output", "TARGET", "/dev"],
+            ),
+            (
+                programs.writable_mount_records,
+                b'{"filesystems":[{"target":"/","options":"ro"}]}',
+                ["/usr/bin/findmnt", "--json", "--list", "--uniq", "--output", "TARGET,OPTIONS", "-R", "/"],
+            ),
+        ):
+            with self.subTest(program=function.__name__):
+                completed = subprocess.CompletedProcess(argv, 0, stdout, b"")
+                with mock.patch.object(programs.subprocess, "run", return_value=completed) as run:
+                    self.assertTrue(function().endswith(b"\0"))
+                    run.assert_called_once_with(argv, check=False, capture_output=True)
+        with mock.patch("builtins.open", return_value=io.BytesIO(b"41\n42\n")), mock.patch.object(programs.os, "getpid", return_value=42):
+            with self.assertRaises(programs.ProgramError):
+                programs.membership("43")
+
+    def test_fixed_program_rejects_wrong_modes_arguments_and_path_parameters(self):
+        for arguments in (
+            [], ["--help"], ["membership"], ["membership", "41", "/alternate"],
+            ["membership", "0"], ["membership", "041"], ["membership", "+41"],
+            ["membership", "41 "], ["membership", "４１"],
+            ["dev-mount-targets", "/alternate"], ["writable-mount-records", "-c", "pass"],
+        ):
+            with self.subTest(arguments=arguments), mock.patch("sys.stderr", io.StringIO()), mock.patch("builtins.open") as opened:
+                self.assertEqual(programs.main(arguments), 125)
+                opened.assert_not_called()
+
+    def test_real_isolated_canonical_program_emits_decoded_mount_records(self):
+        completed = subprocess.run(
+            ["/usr/bin/python3", "-I", "-S", str(ROOT / authority.PROGRAM_PATH), "dev-mount-targets"],
+            env={"PATH": "/usr/bin:/bin", "PYTHONPATH": "/unregistered", "PYTHONSTARTUP": "/unregistered"},
+            capture_output=True, check=False,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertEqual(completed.stderr, b"")
+        self.assertTrue(completed.stdout.endswith(b"\0"))
+        records = completed.stdout.split(b"\0")[:-1]
+        self.assertEqual(records[0], b"/dev")
+        self.assertEqual(len(records), len(set(records)))
+        self.assertTrue(all(record == b"/dev" or record.startswith(b"/dev/") for record in records))
+
+
+class PublisherExactTreeTests(unittest.TestCase):
+    def setUp(self):
+        self.directory = ROOT / "build/test-artifacts" / ("publisher-inventory-" + uuid.uuid4().hex)
+        self.directory.mkdir(parents=True)
+        self.addCleanup(shutil.rmtree, self.directory)
+        self.paths = authority.authority_paths()
+        for path in self.paths:
+            target = self.directory / path
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(ROOT / path, target)
+        self.git("init", "-q")
+        self.git("add", "--", *self.paths)
+        self.git("-c", "user.name=Publisher test", "-c", "user.email=publisher-test@example.invalid", "-c", "commit.gpgsign=false", "-c", "core.hooksPath=/dev/null", "commit", "-qm", "Exact authority fixture")
+        self.commit = self.git("rev-parse", "HEAD").decode().strip()
+
+    def git(self, *arguments):
+        return subprocess.run(
+            ["/usr/bin/git", "-C", str(self.directory), *arguments],
+            check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        ).stdout
+
+    def test_exact_tree_real_cli_and_import_closure_positive(self):
+        self.assertEqual(authority.bind_exact_tree(self.directory, self.commit), self.paths)
+        result = authority.validate_exact_tree(self.directory, self.commit)
+        self.assertTrue(result.events)
+        for path in (
+            authority.PROGRAM_PATH, "scripts/workflow_pilot/publisher_signatures.py",
+            "scripts/workflow_pilot/publisher_shell.py",
+            "scripts/workflow_pilot/publisher_shell_contract.py", "scripts/upstream_port/verify.py",
+            "scripts/workflow_pilot/__init__.py",
+        ):
+            self.assertIn(path, self.paths)
+        completed = subprocess.run(
+            ["/usr/bin/python3", "-I", "-S", str(ROOT / "scripts/workflow_pilot/publisher_inventory.py"),
+             "--repository-root", str(self.directory), "--commit", self.commit],
+            capture_output=True, check=False,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+
+    def test_every_consumed_module_rejects_dirty_missing_mode_and_symlink_drift(self):
+        for path in self.paths:
+            target = self.directory / path
+            source = ROOT / path
+            for kind in ("dirty", "missing", "mode", "symlink"):
+                with self.subTest(path=path, mutation=kind):
+                    if kind == "dirty":
+                        target.write_bytes(target.read_bytes() + b"\n# changed authority\n")
+                    elif kind == "missing":
+                        target.unlink()
+                    elif kind == "mode":
+                        target.chmod(target.stat().st_mode ^ stat.S_IXUSR)
+                    else:
+                        target.unlink()
+                        target.symlink_to(source)
+                    with self.assertRaises(ValueError):
+                        authority.bind_exact_tree(self.directory, self.commit)
+                    if target.is_symlink() or target.exists():
+                        target.unlink()
+                    shutil.copy2(source, target)
+
+    def test_target_program_mutation_is_data_only_and_never_executed(self):
+        marker = self.directory / "executed"
+        target = self.directory / authority.PROGRAM_PATH
+        target.write_text(f"from pathlib import Path\nPath({str(marker)!r}).write_text('bad')\n")
+        with self.assertRaises(ValueError):
+            authority.validate_exact_tree(self.directory, self.commit)
+        self.assertFalse(marker.exists())
+
+    def test_isolated_cli_does_not_enable_repository_stdlib_shadows(self):
+        marker = self.directory / "shadow-executed"
+        for name in ("json", "hashlib", "shlex", "typing"):
+            (self.directory / (name + ".py")).write_text(
+                f"from pathlib import Path\nPath({str(marker)!r}).write_text('bad')\n"
+            )
+        completed = subprocess.run(
+            [
+                "/usr/bin/python3", "-I", "-S",
+                str(self.directory / "scripts/workflow_pilot/publisher_inventory.py"),
+                "--repository-root", str(self.directory), "--commit", self.commit,
+            ],
+            cwd=self.directory, capture_output=True, check=False,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertFalse(marker.exists())
+
+    def test_added_import_and_package_helper_must_belong_to_exact_tree(self):
+        package = self.directory / "scripts/workflow_pilot/__init__.py"
+        package.write_text(package.read_text() + "\nfrom . import added_authority\n")
+        added = self.directory / "scripts/workflow_pilot/added_authority.py"
+        added.write_text("VALUE = 1\n")
+        with mock.patch.object(authority, "SOURCE_ROOT", self.directory):
+            self.assertIn("scripts/workflow_pilot/added_authority.py", authority.authority_paths())
+            with self.assertRaises(ValueError):
+                authority.bind_exact_tree(self.directory, self.commit)
+        for statement in ("import unregistered_package", "__import__('unregistered_package')"):
+            with self.subTest(statement=statement):
+                package.write_text(statement + "\n")
+                with mock.patch.object(authority, "SOURCE_ROOT", self.directory), self.assertRaises(ValueError):
+                    authority.authority_paths()
+
+    def test_git_environment_and_commit_inputs_cannot_redirect_binding(self):
+        with mock.patch.dict(os.environ, {
+            "GIT_DIR": "/unregistered", "GIT_WORK_TREE": "/unregistered",
+            "GIT_OBJECT_DIRECTORY": "/unregistered", "GIT_CONFIG_COUNT": "1",
+            "GIT_CONFIG_KEY_0": "alias.rev-parse", "GIT_CONFIG_VALUE_0": "!false",
+        }):
+            self.assertEqual(authority.bind_exact_tree(self.directory, self.commit), self.paths)
+        for commit in (self.commit[:12], "HEAD", self.commit.upper(), "0" * 40, "--help", self.commit + ":file"):
+            with self.subTest(commit=commit), self.assertRaises(ValueError):
+                authority.bind_exact_tree(self.directory, commit)
