@@ -4,6 +4,71 @@ These source-only procedures cover the repository's agent delivery policy.
 They exercise documented orchestration contracts without dispatching a
 workflow, using credentials, or changing ROM behavior.
 
+## TC-WORKFLOW-IMMEDIATE-PUSH-001: Publish new commits immediately and expose WIP ownership
+
+- **Feature / originating issue:** `workflow-governance` /
+  [issue #207](https://github.com/laqieer/fireemblem8-expansion/issues/207).
+- **Supported configuration or artifact:** clean source checkout with Python
+  3 and the existing CLI workflow instructions; no token, live PR, ROM, or
+  emulator is needed for the source-only protocol checks.
+- **Prerequisites and clean starting state:** retain the committed publication
+  protocol, mirrored contributor instructions, and case registry.
+
+### Actions
+
+1. Parse the labeled "Immediate publication and visible work" protocol in
+   `.github/skills/development-workflow/SKILL.md`.
+2. Run
+   `python3 -m unittest scripts.docs_check_tests.test_development_workflow_skill.DevelopmentWorkflowSkillTests.test_immediate_publication_protocol -v`.
+3. Exercise missing/duplicate/unknown fields, delayed publication, delegated
+   implementation-agent push, omitted WIP ownership/scope/blockers, and weakened
+   final-gate controls. Reorder fields and visibility members without changing
+   their meanings and require acceptance.
+4. For real delivery, create a task commit and immediately owner-push its exact
+   SHA even while review, CI, or remaining work is pending. Open/update its
+   dedicated PR and canonical evidence comment with branch/head, owner, scope,
+   state, remaining work and blockers. Keep incomplete work draft and retain
+   all merge/closure holds. Synthetic temporary-repository test commits are
+   not task publication events.
+
+### Expected result
+
+Commit persistence is not delayed by validation/review/CI or batch timing.
+Implementation agents immediately hand off the commit without pushing.
+Contributors can identify the active owner and scope from the issue/PR instead
+of starting duplicate work. Exact-head review/security/Build, semantic handoff,
+terminal authority, and exact-master completion remain independent gates.
+A failed publication is reported as a blocker, not as remotely saved work.
+
+### Negative control
+
+The pre-fix workflow retained completed commits locally during independent
+review. Delayed/softened publication, missing visibility, implementation-owned
+pushes, or treating persistence as acceptance fails the parsed protocol.
+
+### Interactions and save compatibility
+
+Depends on existing owner-context push, the single coordinator, and canonical
+evidence comments. It conflicts with post-commit pre-review holds and deferred
+batches; pending #178/#179/#181 integration must preserve persistence versus
+acceptance. No game, ROM/RAM, save/config identity, localization, generated-data,
+modern/archival, or feature-gate impact. Worktree cleanup belongs to #208.
+
+### Automation
+
+The focused existing workflow-governance unittest parses the named external
+CLI instruction format, including mutation and order-independent controls.
+This is instruction data consumed by the CLI, not a claim that matching source
+text proves runtime behavior; a ROM/compile check cannot establish this
+instruction contract. Real owner-context pushes and visible GitHub refs/PR
+state supply operational evidence during delivery.
+
+### Cleanup and limitations
+
+The source-only checks create no remote state and need no cleanup. They do not
+grant credentials or make remote publication atomic; preserve failed-push
+evidence and all final quality gates. No manual-only criterion applies.
+
 ## TC-WORKFLOW-CI-WAIT-001: Keep CI waiting centralized and trusted pushes owner-scoped
 
 - **Feature / originating issue:** `workflow-governance` /
