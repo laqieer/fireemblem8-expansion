@@ -24,9 +24,9 @@ import subprocess
 import sys
 import time
 import urllib.parse
-import warnings
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, BinaryIO
+from typing import Any, BinaryIO, Literal
 
 from . import reporter, signed_schema
 
@@ -61,6 +61,71 @@ class BrokerError(ValueError):
 
 class IndeterminatePublication(BrokerError):
     """A transmitted push needs exact remote reconciliation."""
+
+
+ReconciliationKind = Literal[
+    "committed-late",
+    "safe-failed",
+    "security-hold",
+    "indeterminate",
+]
+
+
+@dataclass(frozen=True)
+class PublishedOutcome:
+    refs: dict[str, str]
+
+    @property
+    def kind(self) -> str:
+        return "published"
+
+    @property
+    def exit_code(self) -> int:
+        return 0
+
+    @property
+    def retry_disposition(self) -> str:
+        return "complete"
+
+
+@dataclass(frozen=True)
+class ReconciliationOutcome:
+    kind: ReconciliationKind
+    refs: dict[str, str | None] | None
+
+    def __post_init__(self) -> None:
+        if self.kind not in {
+            "committed-late",
+            "safe-failed",
+            "security-hold",
+            "indeterminate",
+        }:
+            raise ValueError("reconciliation outcome is not in the closed union")
+        if self.kind == "indeterminate" and self.refs is not None:
+            raise ValueError("indeterminate reconciliation must not claim refs")
+        if self.kind != "indeterminate" and self.refs is None:
+            raise ValueError("resolved reconciliation must preserve exact refs")
+
+    @property
+    def exit_code(self) -> int:
+        return {
+            "committed-late": 0,
+            "safe-failed": 3,
+            "security-hold": 4,
+            "indeterminate": 5,
+        }[self.kind]
+
+    @property
+    def retry_disposition(self) -> str:
+        return {
+            "committed-late": "complete",
+            "safe-failed": "new-higher-sequence-plan-allowed",
+            "security-hold": "security-incident-hold",
+            "indeterminate": "reconciliation-required",
+        }[self.kind]
+
+
+PublicationOutcome = PublishedOutcome | ReconciliationOutcome
 
 
 def _fail(code: str, message: str) -> None:
@@ -748,6 +813,7 @@ def _load_broker_installation(path: Path) -> dict[str, Any]:
             "candidate_uid",
             "broker_key_id",
             "broker_private_key",
+            "deadline_exec",
             "plan_signers",
             "plan_store",
             "state_directory",
@@ -820,6 +886,21 @@ def _load_broker_installation(path: Path) -> dict[str, Any]:
     )
     if os.stat(installation["broker_private_key"], follow_symlinks=False).st_mode & 0o077:
         _fail("insecure-installation", "broker private key must not be accessible by group/other")
+    installation["deadline_exec"] = _resolve_secure_member(
+        root,
+        raw["deadline_exec"],
+        label="deadline exec helper",
+        owners=owners,
+        regular=True,
+    )
+    helper_mode = os.stat(
+        installation["deadline_exec"], follow_symlinks=False
+    ).st_mode
+    if helper_mode & 0o022 or not helper_mode & 0o100:
+        _fail(
+            "insecure-installation",
+            "deadline exec helper must be owner-executable and immutable to others",
+        )
     installation["plan_store"] = _resolve_secure_member(
         root, raw["plan_store"], label="publication plan store", owners=owners, regular=False
     )
@@ -1669,112 +1750,140 @@ def _run_bounded(
     input_bytes: bytes | None = None,
     pass_fds: tuple[int, ...] = (),
     deadline: OperationDeadline | None = None,
+    deadline_exec: Path | None = None,
 ) -> subprocess.CompletedProcess[bytes]:
     if stdin is not None and input_bytes is not None:
         _fail("process-hardening-failed", "bounded process has two stdin sources")
 
-    parent_pid = os.getpid()
-    effective_timeout = (
-        deadline.remaining("before subprocess", timeout)
-        if deadline is not None
-        else timeout
-    )
-
-    def child_hardening() -> None:
-        if sys.platform.startswith("linux"):
-            libc = ctypes.CDLL(None, use_errno=True)
-            if libc.prctl(1, signal.SIGKILL, 0, 0, 0) != 0:
-                os._exit(126)
-            if os.getppid() != parent_pid:
-                os._exit(125)
-        os.setsid()
-        resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
-        resource.setrlimit(
-            resource.RLIMIT_FSIZE,
-            (SUBPROCESS_OUTPUT_MAX_BYTES, SUBPROCESS_OUTPUT_MAX_BYTES),
+    command = arguments
+    exec_read: int | None = None
+    exec_write: int | None = None
+    if deadline_exec is not None:
+        if deadline is None:
+            _fail(
+                "process-hardening-failed",
+                "deadline exec helper requires an absolute deadline",
+            )
+        wall_seconds = int(deadline.absolute.timestamp())
+        wall_nanoseconds = deadline.absolute.microsecond * 1000
+        monotonic_seconds = int(deadline.monotonic_end)
+        monotonic_nanoseconds = int(
+            (deadline.monotonic_end - monotonic_seconds) * 1_000_000_000
         )
+        exec_read, exec_write = os.pipe()
+        os.set_blocking(exec_read, False)
+        command = [
+            os.fspath(deadline_exec),
+            str(os.getpid()),
+            str(wall_seconds),
+            str(wall_nanoseconds),
+            str(monotonic_seconds),
+            str(monotonic_nanoseconds),
+            str(SUBPROCESS_OUTPUT_MAX_BYTES),
+            str(exec_write),
+            "--",
+            *arguments,
+        ]
 
     stdout_fd = _empty_memory_file("workflow-pilot-subprocess-stdout")
     stderr_fd = _empty_memory_file("workflow-pilot-subprocess-stderr")
+    stop_read, stop_write = os.pipe()
     try:
+        child_fds = pass_fds + (
+            (exec_write,) if exec_write is not None else ()
+        )
         process = subprocess.Popen(
-            arguments,
+            command,
             cwd=cwd,
             env=environment,
             stdin=subprocess.PIPE if input_bytes is not None else stdin,
             stdout=stdout_fd,
             stderr=stderr_fd,
-            preexec_fn=child_hardening,
-            pass_fds=pass_fds,
+            pass_fds=child_fds,
+            start_new_session=deadline_exec is None,
         )
-        stop_read, stop_write = os.pipe()
-        broker_pid = os.getpid()
-        try:
-            with warnings.catch_warnings():
-                warnings.filterwarnings(
-                    "ignore",
-                    message=r"This process .* is multi-threaded, use of fork.*",
-                    category=DeprecationWarning,
+        if exec_write is not None:
+            os.close(exec_write)
+            exec_write = None
+        watchdog = None
+        if deadline_exec is not None:
+            try:
+                watchdog = subprocess.Popen(
+                    [
+                        os.fspath(deadline_exec),
+                        "--watch",
+                        str(os.getpid()),
+                        str(process.pid),
+                    ],
+                    stdin=stop_read,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    close_fds=True,
                 )
-                watchdog_pid = os.fork()
-        except OSError:
-            os.killpg(process.pid, signal.SIGKILL)
-            process.communicate()
-            raise
-        if watchdog_pid == 0:
-            os.close(stop_write)
-            os.close(stdout_fd)
-            os.close(stderr_fd)
-            for inherited_fd in pass_fds:
-                os.close(inherited_fd)
-            for stream in (process.stdin,):
-                if stream is not None:
-                    os.close(stream.fileno())
-
-            def terminate_group() -> None:
-                try:
-                    os.killpg(process.pid, signal.SIGKILL)
-                except ProcessLookupError:
-                    pass
-                os._exit(0)
-
-            try:
-                os.set_blocking(stop_read, False)
-                while True:
-                    if os.getppid() != broker_pid:
-                        terminate_group()
-                    try:
-                        stopped = os.read(stop_read, 1)
-                    except BlockingIOError:
-                        stopped = None
-                    if stopped is not None:
-                        break
-                    time.sleep(0.01)
-            finally:
-                os.close(stop_read)
-            os._exit(0)
+            except OSError:
+                _kill_process_group(process)
+                process.communicate()
+                raise
         os.close(stop_read)
+        stop_read = None
         try:
             try:
-                process.communicate(input=input_bytes, timeout=effective_timeout)
-            except subprocess.TimeoutExpired as error:
-                os.killpg(process.pid, signal.SIGKILL)
+                effective_timeout = (
+                    deadline.remaining("after subprocess launch", timeout)
+                    if deadline is not None
+                    else timeout
+                )
+                effective_timeout = (
+                    deadline.remaining(
+                        "immediately before subprocess communication",
+                        effective_timeout,
+                    )
+                    if deadline is not None
+                    else effective_timeout
+                )
+                process.communicate(
+                    input=input_bytes, timeout=effective_timeout
+                )
+            except BrokerError:
+                _kill_process_group(process)
                 process.communicate()
-                if deadline is not None:
+                raise
+            except subprocess.TimeoutExpired as error:
+                exec_started = _deadline_exec_started(exec_read)
+                _kill_process_group(process)
+                process.communicate()
+                exec_started = (
+                    exec_started or _deadline_exec_started(exec_read)
+                )
+                if deadline is not None and not exec_started:
                     deadline.check("during subprocess")
                 raise BrokerError(
                     "git-timeout", "bounded Git operation timed out"
                 ) from error
         finally:
             try:
-                os.write(stop_write, b"x")
+                os.write(stop_write, b"X")
             except OSError:
                 pass
             os.close(stop_write)
-            os.waitpid(watchdog_pid, 0)
+            stop_write = None
+            if watchdog is not None:
+                watchdog.wait(timeout=10)
     except OSError as error:
         raise BrokerError("git-unavailable", "cannot execute bounded Git operation") from error
     finally:
+        for descriptor in (stop_read, stop_write):
+            if descriptor is None:
+                continue
+            try:
+                os.close(descriptor)
+            except OSError:
+                pass
+        exec_started = _deadline_exec_started(exec_read)
+        if exec_read is not None:
+            os.close(exec_read)
+        if exec_write is not None:
+            os.close(exec_write)
         os.lseek(stdout_fd, 0, os.SEEK_SET)
         stdout = _read_bounded_fd(stdout_fd, SUBPROCESS_OUTPUT_MAX_BYTES)
         os.lseek(stderr_fd, 0, os.SEEK_SET)
@@ -1787,8 +1896,48 @@ def _run_bounded(
     ):
         _fail("oversized-process-output", "bounded subprocess output exceeds its size limit")
     if deadline is not None:
-        deadline.check("after subprocess")
+        try:
+            deadline.check("after subprocess")
+        except BrokerError:
+            if exec_started:
+                raise BrokerError(
+                    "git-timeout",
+                    "executed Git crossed its effective deadline",
+                )
+            raise
+    if deadline_exec is not None:
+        if process.returncode == 222:
+            _fail(
+                "operation-expired",
+                "deadline exec boundary rejected the subprocess before execve",
+            )
+        if process.returncode in {223, 224}:
+            _fail(
+                "process-hardening-failed",
+                "deadline exec boundary rejected process hardening",
+            )
     return subprocess.CompletedProcess(arguments, process.returncode, stdout, stderr)
+
+
+def _deadline_exec_started(exec_read: int | None) -> bool:
+    if exec_read is None:
+        return False
+    try:
+        return os.read(exec_read, 1) == b"E"
+    except BlockingIOError:
+        return False
+
+
+def _kill_process_group(process: subprocess.Popen[bytes]) -> None:
+    try:
+        os.killpg(process.pid, signal.SIGKILL)
+    except ProcessLookupError:
+        return
+    except OSError:
+        try:
+            process.kill()
+        except ProcessLookupError:
+            pass
 
 
 def _git(
@@ -1818,15 +1967,27 @@ def _git(
                 "config_fd",
             )
         )
+    environment = _git_environment(installation, home, deadline)
+    delay_ns = installation.get("_deadline_exec_test_delay_ns")
+    if delay_ns is not None and "push" in arguments and "--dry-run" not in arguments:
+        if not installation["test_only"]:
+            _fail(
+                "process-hardening-failed",
+                "deadline exec test delay is forbidden in production",
+            )
+        environment["WORKFLOW_PILOT_DEADLINE_EXEC_TEST_DELAY_NS"] = str(
+            _integer(delay_ns, "deadline exec test delay", 0)
+        )
     completed = _run_bounded(
         command,
-        environment=_git_environment(installation, home, deadline),
+        environment=environment,
         timeout=installation["operation_timeout_seconds"],
         cwd=cwd,
         stdin=stdin,
         input_bytes=input_bytes,
         deadline=deadline,
         pass_fds=pass_fds,
+        deadline_exec=installation["deadline_exec"],
     )
     if completed.returncode != 0:
         _fail("git-failed", "protected Git operation failed")
@@ -2317,7 +2478,14 @@ def _publish(
             )
             readback = _remote_refs(installation, home, *refs, deadline)
             deadline.check("after exact remote readback")
-        except (BrokerError, OSError) as error:
+        except BrokerError as error:
+            if error.code == "operation-expired":
+                raise
+            raise IndeterminatePublication(
+                "indeterminate",
+                "transmitted atomic push requires exact reconciliation",
+            ) from error
+        except OSError as error:
             raise IndeterminatePublication(
                 "indeterminate",
                 "transmitted atomic push requires exact reconciliation",
@@ -2339,19 +2507,21 @@ def _publish(
 def _reconcile_remote(
     installation: dict[str, Any],
     plan: dict[str, Any],
+    deadline: OperationDeadline | None = None,
 ) -> tuple[str, dict[str, str | None] | None]:
-    deadline = OperationDeadline(
-        datetime_module.datetime.now(datetime_module.timezone.utc)
-        + datetime_module.timedelta(
-            seconds=installation["reconciliation_timeout_seconds"]
+    if deadline is None:
+        deadline = OperationDeadline(
+            datetime_module.datetime.now(datetime_module.timezone.utc)
+            + datetime_module.timedelta(
+                seconds=installation["reconciliation_timeout_seconds"]
+            )
         )
-    )
     try:
         _check_protected_remote(
             installation["protected_remote"], deadline
         )
     except (BrokerError, OSError):
-        return "security-hold", None
+        return "indeterminate", None
     try:
         home = installation["state_directory"] / "reconciliation-home"
         home.mkdir(mode=0o700, exist_ok=True)
@@ -2814,13 +2984,14 @@ def serve_connection(
             return
         if request["operation"] == "reconcile":
             outcome, reconciled_refs = _reconcile_remote(
-                installation, plan
+                installation, plan, deadline
             )
             with ReplayJournal(
                 installation["state_directory"],
                 installation["installation_id"],
                 deadline,
             ) as journal:
+                journal.deadline = None
                 journal.complete(
                     plan, capability["_plan_identity"], outcome
                 )
@@ -2832,7 +3003,7 @@ def serve_connection(
                 phase="result",
                 status=(
                     "ok"
-                    if outcome in {"committed-late", "safe-failed"}
+                    if outcome == "committed-late"
                     else "error"
                 ),
                 code=outcome,
@@ -2887,19 +3058,13 @@ def serve_connection(
                         capability["_plan_identity"],
                         outcome,
                     )
-                if outcome == "committed-late":
-                    refs = {
-                        ref: oid
-                        for ref, oid in (reconciled_refs or {}).items()
-                        if oid is not None
-                    }
-                    response_code = "committed-late"
-                else:
-                    raise BrokerError(
-                        outcome,
-                        "indeterminate push reconciliation did not confirm commit",
-                    )
+                response_code = outcome
+                response_refs = reconciled_refs
+                response_status = (
+                    "ok" if outcome == "committed-late" else "error"
+                )
             except BrokerError:
+                journal.deadline = None
                 journal.complete(
                     plan, capability["_plan_identity"], "safe-failed"
                 )
@@ -2909,15 +3074,17 @@ def serve_connection(
                     plan, capability["_plan_identity"], "published"
                 )
                 response_code = "published"
+                response_refs = refs
+                response_status = "ok"
         response = _response(
             installation,
             request,
             capability,
             deadline,
             phase="result",
-            status="ok",
+            status=response_status,
             code=response_code,
-            refs=refs,
+            refs=response_refs,
         )
     except (BrokerError, OSError) as error:
         if request is None or capability is None:
@@ -3037,9 +3204,15 @@ def _verify_response(
     enforce_broker_process: bool = True,
 ) -> tuple[
     dict[str, Any],
-    dict[str, str | None] | None,
+    PublicationOutcome | None,
     int | None,
 ]:
+    try:
+        signed_schema.validate_record(
+            response, "result", "broker response"
+        )
+    except signed_schema.SchemaError as error:
+        raise BrokerError("invalid-response", str(error)) from error
     _exact_keys(
         response,
         "broker response",
@@ -3138,12 +3311,17 @@ def _verify_response(
     elif request["operation"] == "reconcile":
         allowed_statuses = {
             ("ok", "committed-late"),
-            ("ok", "safe-failed"),
+            ("error", "safe-failed"),
+            ("error", "security-hold"),
+            ("error", "indeterminate"),
         }
     else:
         allowed_statuses = {
             ("ok", "published"),
             ("ok", "committed-late"),
+            ("error", "safe-failed"),
+            ("error", "security-hold"),
+            ("error", "indeterminate"),
         }
     if (response["status"], response["code"]) not in allowed_statuses:
         if pidfd is not None:
@@ -3166,14 +3344,61 @@ def _verify_response(
         if response["refs"] is not None:
             _fail("invalid-response", "preflight result must not contain refs")
         return context, None, pidfd
+    outcome = _verified_publication_outcome(response, request)
+    return context, outcome, pidfd
+
+
+def _verified_publication_outcome(
+    response: dict[str, Any],
+    request: dict[str, Any],
+) -> PublicationOutcome:
+    kind = response["code"]
+    expected_names = {
+        _plan_ref(request["issue"], "authority"),
+        _plan_ref(request["issue"], "anchor"),
+    }
+    if kind == "indeterminate":
+        if response["status"] != "error" or response["refs"] is not None:
+            _fail(
+                "invalid-response",
+                "indeterminate result must be a non-success without refs",
+            )
+        return ReconciliationOutcome("indeterminate", None)
     refs = _object(response["refs"], "response.refs")
-    for name, oid in refs.items():
-        _string(name, "response ref")
-        if oid is not None:
-            _sha(oid, f"response ref {name}")
-    if len(refs) != 2:
-        _fail("invalid-response", "broker response must contain exactly two refs")
-    return context, refs, pidfd
+    if set(refs) != expected_names:
+        _fail(
+            "invalid-response",
+            "broker result ref names differ from the exact issue pair",
+        )
+    verified: dict[str, str | None] = {}
+    for name in sorted(expected_names):
+        oid = refs[name]
+        verified[name] = None if oid is None else _sha(oid, f"response ref {name}")
+    if kind in {"published", "committed-late"}:
+        if response["status"] != "ok" or any(
+            oid is None for oid in verified.values()
+        ):
+            _fail(
+                "invalid-response",
+                "successful publication result lacks two exact object IDs",
+            )
+        exact = {
+            name: oid
+            for name, oid in verified.items()
+            if oid is not None
+        }
+        if kind == "published":
+            return PublishedOutcome(exact)
+        return ReconciliationOutcome("committed-late", exact)
+    if kind == "safe-failed":
+        if response["status"] != "error":
+            _fail("invalid-response", "safe-failed must be a non-success result")
+        return ReconciliationOutcome("safe-failed", verified)
+    if kind == "security-hold":
+        if response["status"] != "error":
+            _fail("invalid-response", "security-hold must be a non-success result")
+        return ReconciliationOutcome("security-hold", verified)
+    _fail("invalid-response", "broker result is not a closed publication outcome")
 
 
 def _observe_broker_process(
@@ -3284,8 +3509,8 @@ def publish_via_connection(
     pack_path: Path,
     *,
     enforce_peer: bool = True,
-) -> dict[str, str]:
-    _code, refs = _client_operation(
+) -> PublicationOutcome:
+    outcome = _client_operation(
         connection,
         installation,
         issue,
@@ -3293,9 +3518,9 @@ def publish_via_connection(
         pack_path=pack_path,
         enforce_peer=enforce_peer,
     )
-    if refs is None or any(value is None for value in refs.values()):
-        _fail("invalid-response", "published result lacks exact ref objects")
-    return {name: value for name, value in refs.items() if value is not None}
+    if outcome is None:
+        _fail("invalid-response", "publication lacks a typed outcome")
+    return outcome
 
 
 def preflight_via_connection(
@@ -3321,8 +3546,8 @@ def reconcile_via_connection(
     issue: int,
     *,
     enforce_peer: bool = True,
-) -> tuple[str, dict[str, str | None]]:
-    code, refs = _client_operation(
+) -> ReconciliationOutcome:
+    outcome = _client_operation(
         connection,
         installation,
         issue,
@@ -3330,9 +3555,9 @@ def reconcile_via_connection(
         pack_path=None,
         enforce_peer=enforce_peer,
     )
-    if refs is None:
-        _fail("invalid-response", "reconciliation result lacks exact refs")
-    return code, refs
+    if not isinstance(outcome, ReconciliationOutcome):
+        _fail("invalid-response", "reconciliation lacks its typed outcome")
+    return outcome
 
 
 def _client_operation(
@@ -3343,7 +3568,7 @@ def _client_operation(
     operation: str,
     pack_path: Path | None,
     enforce_peer: bool,
-) -> tuple[str, dict[str, str | None] | None]:
+) -> PublicationOutcome | None:
     _require_unnamed_socket(connection)
     if enforce_peer:
         _pid, uid, _gid = _peer_credentials(connection)
@@ -3452,7 +3677,7 @@ def _finish_client_operation(
     operation: str,
     pack_path: Path | None,
     pidfd: int | None,
-) -> tuple[str, dict[str, str | None] | None]:
+) -> PublicationOutcome | None:
     effective_deadline = OperationDeadline(
         _time(context["effective_deadline"], "ack.effective_deadline")
     )
@@ -3503,7 +3728,7 @@ def _finish_client_operation(
         label="broker result",
         deadline=None,
     )
-    _final_context, refs, _unused_pidfd = _verify_response(
+    _final_context, outcome, _unused_pidfd = _verify_response(
         final,
         request,
         installation,
@@ -3517,7 +3742,7 @@ def _finish_client_operation(
             "invalid-response",
             "broker reported success after client pack write failure",
         )
-    return final["code"], refs
+    return outcome
 
 
 def _set_parent_death_signal() -> None:
@@ -3582,6 +3807,14 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _outcome_record(outcome: PublicationOutcome) -> dict[str, Any]:
+    return {
+        "outcome": outcome.kind,
+        "refs": outcome.refs,
+        "retry_disposition": outcome.retry_disposition,
+    }
+
+
 def main(argv: list[str] | None = None) -> int:
     arguments = build_parser().parse_args(argv)
     try:
@@ -3612,25 +3845,19 @@ def main(argv: list[str] | None = None) -> int:
                     )
                     result = {"repository": installation["repository"], "ready": True}
                 else:
-                    outcome, refs = reconcile_via_connection(
+                    outcome = reconcile_via_connection(
                         connection, installation, arguments.issue
                     )
-                    result = {"outcome": outcome, "refs": refs}
-            print(
-                json.dumps(
-                    result,
-                    sort_keys=True,
-                    separators=(",", ":"),
-                )
-            )
-            return 0
+                    result = _outcome_record(outcome)
+            sys.stdout.buffer.write(_normalized_json(result))
+            return outcome.exit_code if arguments.mode == "reconcile" else 0
         _close_unrelated_fds({0, 1, 2, arguments.connection_fd})
         with _socket_from_fd(arguments.connection_fd) as connection:
-            refs = publish_via_connection(
+            outcome = publish_via_connection(
                 connection, installation, arguments.issue, arguments.pack
             )
-        print(json.dumps(refs, sort_keys=True, separators=(",", ":")))
-        return 0
+        sys.stdout.buffer.write(_normalized_json(_outcome_record(outcome)))
+        return outcome.exit_code
     except (BrokerError, OSError) as error:
         code = error.code if isinstance(error, BrokerError) else "broker-io-failed"
         print(f"git-publication-broker: {code}", file=sys.stderr)

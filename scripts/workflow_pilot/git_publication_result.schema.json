@@ -2,6 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/laqieer/fireemblem8-expansion/schemas/workflow-pilot-git-publication-result-v1.json",
   "title": "Workflow-pilot Git publication broker response",
+  "x-workflow-pilot-outcome-union": "git-publication-result-v1",
   "type": "object",
   "additionalProperties": false,
   "required": [

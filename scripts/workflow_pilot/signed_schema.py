@@ -142,6 +142,55 @@ def validate(value: Any, schema: dict[str, Any], label: str = "record") -> None:
                     schema["additionalProperties"],
                     f"{label}.{key}",
                 )
+        if (
+            schema.get("x-workflow-pilot-outcome-union")
+            == "git-publication-result-v1"
+        ):
+            _validate_publication_outcome(value, label)
+
+
+def _validate_publication_outcome(value: dict[str, Any], label: str) -> None:
+    phase = value["phase"]
+    status = value["status"]
+    code = value["code"]
+    refs = value["refs"]
+    if phase == "ack":
+        if (status, code, refs) == ("ready", "ready", None):
+            return
+        if status == "error" and refs is None:
+            return
+        raise SchemaError(f"{label} acknowledgement state is incoherent")
+    if code == "ready":
+        if status == "ok" and refs is None:
+            return
+        raise SchemaError(f"{label} readiness result is incoherent")
+    issue = value["issue"]
+    if isinstance(issue, bool) or not isinstance(issue, int) or issue < 1:
+        raise SchemaError(f"{label} result issue is invalid")
+    expected_refs = {
+        f"refs/heads/workflow-pilot/issue-{issue}/authority",
+        f"refs/tags/workflow-pilot/issue-{issue}/anchor",
+    }
+    if code == "indeterminate":
+        if status == "error" and refs is None:
+            return
+        raise SchemaError(f"{label} indeterminate result is incoherent")
+    if code in {
+        "published",
+        "committed-late",
+        "safe-failed",
+        "security-hold",
+    }:
+        if not isinstance(refs, dict) or set(refs) != expected_refs:
+            raise SchemaError(f"{label} result refs differ from the exact issue pair")
+        if code in {"published", "committed-late"}:
+            if status != "ok" or any(oid is None for oid in refs.values()):
+                raise SchemaError(f"{label} successful result is incoherent")
+        elif status != "error":
+            raise SchemaError(f"{label} non-success result is incoherent")
+        return
+    if status != "error" or refs is not None:
+        raise SchemaError(f"{label} broker error result is incoherent")
 
 
 def validate_record(record: Any, schema_name: str, label: str) -> None:

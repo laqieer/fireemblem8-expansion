@@ -1255,7 +1255,16 @@ the exact branch and head; timeout or ambiguity fails before `gh run watch`.
 7. Send malformed headers and pack write failures. Verify a signed rejection
    arrives before pack transfer or is drained as the final bounded result;
    raw pipe errors never become evidence.
-8. Run the complete isolated workflow-pilot reporter suite and
+8. Reconcile both automatic and explicit mixed pairs. Verify the typed result
+   preserves exact authority/anchor names and observed OIDs, canonical CLI
+   JSON, and distinct exits: committed-late `0`, safe-failed `3`,
+   security-hold `4`, and indeterminate `5`. Replay forged signed statuses,
+   wrong ref names, malformed OIDs, and missing evidence.
+9. Delay the reviewed native deadline helper across expiry before `execve`;
+   verify receive-pack and its hook never start. Repeat just inside the
+   deadline and require success, then cross the deadline after Git execution
+   and require quarantine/reconciliation.
+10. Run the complete isolated workflow-pilot reporter suite and
    `python3 scripts/check_docs.py --check`.
 
 ### Expected result
@@ -1281,6 +1290,11 @@ re-pushes. Config,
 hooks, refs, objects, packed refs, and alternates are recursively audited, and
 Git uses the already-open remote directory descriptor so a post-ACK pathname
 and malicious hook replacement cannot execute.
+Signed reconciliation results form one closed typed union and retain exact
+mixed-pair evidence for automatic and explicit paths. The native helper, not a
+thread-unsafe Python pre-exec callback, performs the final wall/monotonic
+deadline check, parent-death setup, resource limits, and Git `execve`; the
+parent recomputes remaining time after process creation and before waiting.
 
 The actual HTTPS Git exchange invokes askpass after a TLS server challenge,
 but the credential is absent from candidate environment/files/arguments,
@@ -1319,7 +1333,7 @@ provides behavioral publication/readback, adversarial protocol, actual Git
 pack/ref/hook, TLS askpass, sealed capabilities, staged signed framing,
 absolute deadlines and reconciliation, recursive descriptor authority,
 replay durability, sudo-backed separate-principal CLI coverage,
-pre-exec parent death, semantic
+native pre-exec deadline/parent-death behavior, typed outcome/CLI evidence, semantic
 schema-time parity, and no-secret evidence. The isolated reporter command
 proves integration with the existing signed-record consumer, and
 `python3 scripts/check_docs.py --check` parses the indexed procedure and

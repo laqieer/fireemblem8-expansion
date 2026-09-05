@@ -64,6 +64,16 @@ an immutable root-owned installation of the reviewed repository code, never
 the candidate checkout. The client may run from the candidate tree because it
 holds no credential or server authority.
 
+Build and install the reviewed native boundary under the same protected tree:
+
+```text
+/usr/bin/cc -std=c11 -O2 -Wall -Wextra -Werror \
+  scripts/workflow_pilot/deadline_exec.c \
+  -o /opt/workflow-pilot-broker/bin/workflow-pilot-deadline-exec
+chown root:root /opt/workflow-pilot-broker/bin/workflow-pilot-deadline-exec
+chmod 0755 /opt/workflow-pilot-broker/bin/workflow-pilot-deadline-exec
+```
+
 The candidate names no plan. Supplying another issue or operation produces a
 signed rejection before the object pack is read. Another otherwise valid plan
 in the broker's protected store is unusable through that connection.
@@ -123,12 +133,23 @@ new bounded exact two-ref readback:
 | --- | --- |
 | Exact planned authority and anchor | `committed-late` |
 | Exact signed old authority and anchor | `safe-failed` |
-| Mixed or any other pair, or protected authority failure | `security-hold` |
-| Readback unavailable | `indeterminate`; only a new trusted `reconcile` capability may retry readback |
+| Mixed or any other observed pair | `security-hold` |
+| Readback/protected authority unavailable | `indeterminate`; only a new trusted `reconcile` capability may retry readback |
 
 Reconciliation never retransmits a push. Local protected hooks may enforce the
 exported deadline, but neither code nor documentation claims that a remote
 server cannot move refs after locally observed expiry.
+
+Every signed final publication response is parsed into a closed typed outcome.
+`committed-late` is successful. `safe-failed` is non-success and permits only a
+new higher-sequence plan. `security-hold` is a non-success incident and
+preserves the exact observed authority and anchor names plus nullable OIDs.
+`indeterminate` is non-success with no claimed refs and requires another
+trusted reconciliation capability. The client validates the response
+signature, request, plan, repository, issue-derived ref names, and each OID
+before returning any outcome. The reconciliation CLI emits canonical JSON
+containing `outcome`, `refs`, and `retry_disposition`; exit statuses are `0`,
+`3`, `4`, and `5` respectively.
 
 `master`, other heads, other tags, deletions, wildcard refspecs, arbitrary Git
 commands, thin/missing closures, extra objects, and a third ref are not
@@ -172,6 +193,7 @@ The broker JSON is a closed object with these fields:
 | `expected_capability_uid` | Trusted socket-pair creator UID, different from the broker effective UID. |
 | `candidate_uid` | Candidate principal, different from both broker and capability issuer and forbidden throughout protected authority trees. |
 | `broker_key_id`, `broker_private_key` | External response identity and protected Ed25519 private-key path. |
+| `deadline_exec` | Root/broker-owned compiled helper from `deadline_exec.c`; checks immutable wall and monotonic deadlines immediately before `execve`. |
 | `plan_signers` | Nonempty key-ID map to protected Ed25519 public key plus exact signer and actor strings. |
 | `plan_store`, `state_directory` | Protected signed plans and replay/process state. |
 | `authentication` | One of `https-askpass`, `ssh-agent`, or test-only `local-test`. |
@@ -189,10 +211,15 @@ For HTTPS, `authentication` contains `mode`, executable `askpass`,
 `credential_file`, and nullable `ca_file`. The askpass executable reads the
 credential only inside the broker process tree. For SSH it contains `mode`,
 `agent_socket`, and a pinned `ssh_config`; the agent and host-key policy remain
-outside the candidate. Git receives a minimal scrubbed environment, core dumps
-are disabled, output is never returned, and every Git child installs
-`PR_SET_PDEATHSIG` plus a parent-race check before `exec`. A separate watchdog
-kills the full Git process group, including the Popen-before-watchdog window.
+outside the candidate. Git receives a minimal scrubbed environment and output
+is never returned. The reviewed native deadline helper installs
+`PR_SET_PDEATHSIG`, checks the expected parent, applies core/file limits,
+rechecks immutable absolute wall and monotonic deadlines immediately before
+`execve`, and reports whether Git was executed. Python uses no `preexec_fn`,
+recomputes remaining time after `Popen` and immediately before `communicate`,
+and classifies timeout before Git exec as no-transmit while conservatively
+quarantining timeout after exec. A second native watchdog kills the full Git
+process group if the broker dies.
 
 The client JSON contains only `schema_version`, `protocol`, `installation_id`,
 `repository`, `endpoint`, `expected_broker_uid`,

@@ -8,6 +8,7 @@
   "candidate_uid": 1000,
   "broker_key_id": "broker-2026-09",
   "broker_private_key": "/var/lib/workflow-pilot-broker/keys/broker-2026-09.private.pem",
+  "deadline_exec": "/opt/workflow-pilot-broker/bin/workflow-pilot-deadline-exec",
   "plan_signers": {
     "installation-authority-2026-09": {
       "public_key": "/var/lib/workflow-pilot-broker/keys/installation-authority-2026-09.public.pem",
