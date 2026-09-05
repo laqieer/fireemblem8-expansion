@@ -69,6 +69,21 @@ class VerifyGatesMirrorWorkflowTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     verify_mod._parse_workflow_structure_text(changed)
 
+    def test_publisher_phase_uses_shared_execution_authority(self):
+        from scripts.workflow_pilot import publisher_phase
+        from tests.workflows import publisher_phase_fixtures
+        with open(BUILD_WORKFLOW_PATH, "r", encoding="utf-8") as handle:
+            original = handle.read()
+        with mock.patch.object(
+            publisher_phase, "validate", wraps=publisher_phase.validate,
+        ) as validate:
+            verify_mod._parse_workflow_structure_text(original)
+            validate.assert_called_once()
+        for name, changed in publisher_phase_fixtures.adversarial_workflows(original):
+            with self.subTest(case=name), publisher_inventory_fixtures.refreshed_boundary_identities(changed):
+                with self.assertRaises(ValueError):
+                    verify_mod._parse_workflow_structure_text(changed)
+
     def test_gate_argv_matches_workflow_commands_in_order(self):
         workflow_commands = [
             (step_name, argv)

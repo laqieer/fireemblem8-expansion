@@ -2033,11 +2033,25 @@ jobs:
         builder_uid_is_empty "$builder_uid"
         /usr/bin/git show "$PATCH_COMMIT:scripts/workflow_pilot/publisher_programs.py" \
           > "$BUILDER_ROOT/control/publisher-programs.py"
+        /usr/bin/git show "$PATCH_COMMIT:scripts/workflow_pilot/publisher_candidate.py" \
+          > "$BUILDER_ROOT/control/candidate-launcher.py"
         /usr/bin/tee "$BUILDER_ROOT/control/builder-isolation.sh" \
           > /dev/null <<'BUILDER_ISOLATION'
         #!/bin/bash
         builder_main() {
-        set -euo pipefail
+        set -Eeuo pipefail
+        isolated_stage=namespace
+        isolated_stage_failure() {
+          case "$isolated_stage" in
+            namespace) exit 81 ;;
+            mount-audit) exit 82 ;;
+            output-validate) exit 83 ;;
+            export) exit 84 ;;
+            post-check) exit 85 ;;
+            *) exit 125 ;;
+          esac
+        }
+        trap isolated_stage_failure ERR
         cgroup_path="$1"
         builder_uid="$2"
         builder_gid="$3"
@@ -2049,14 +2063,13 @@ jobs:
         host_gid="$9"
         exec < /dev/null > /dev/null 2>&1
         printf '%s\n' "$$" > "$cgroup_path/cgroup.procs"
-        /usr/bin/grep -Fqx "$$" "$cgroup_path/cgroup.procs"
         cd /
         /usr/bin/mount --make-rprivate /
         /usr/bin/mount --bind / /
         /usr/bin/mount -o remount,bind,ro /
         case "$host_runner_temp" in
           /home/runner/*) ;;
-          *) echo "runner temp is outside the masked host tree" >&2; exit 1 ;;
+          *) echo "runner temp is outside the masked host tree" >&2; isolated_stage_failure ;;
         esac
         /usr/bin/mount -t tmpfs \
           -o nosuid,nodev,noexec,mode=0755,size=16m \
@@ -2082,7 +2095,7 @@ jobs:
         for option in ro nosuid nodev noexec; do
           case ",$supervisor_options," in
             *,"$option",*) ;;
-            *) exit 125 ;;
+            *) isolated_stage_failure ;;
           esac
         done
         /usr/bin/mount -t tmpfs \
@@ -2196,7 +2209,7 @@ jobs:
           case "$dev_mount" in
             /dev) ;;
             /dev/*) /usr/bin/umount -- "$dev_mount" ;;
-            *) exit 125 ;;
+            *) isolated_stage_failure ;;
           esac
         done
         remaining_dev_mounts_file="$(create_supervisor_transport_file remaining-dev-mount-targets)"
@@ -2278,6 +2291,7 @@ jobs:
           test ! -e "$path" || return 125
         }
         writable_mount_records_max_bytes=1048576
+        isolated_stage=mount-audit
         writable_mount_records_file="$(create_runtime_transport_file writable-mount-records)"
         list_writable_mount_records > "$writable_mount_records_file"
         read_checked_runtime_transport_file \
@@ -2293,7 +2307,7 @@ jobs:
             *,rw,*)
               case "$mount_target" in
                 /dev/shm|/mnt/handoff|/mnt/home|/mnt/source|/mnt/supervisor|/mnt/tmp|/tmp) ;;
-                *) echo "unexpected writable mount: $mount_target" >&2; exit 1 ;;
+                *) echo "unexpected writable mount: $mount_target" >&2; isolated_stage_failure ;;
               esac
               ;;
           esac
@@ -2304,18 +2318,24 @@ jobs:
         ulimit -n 128
         ulimit -u 512
         ulimit -v 8388608
-        set +e
-        /usr/bin/python3 -I -S /mnt/control/candidate-launcher.py \
+        isolated_stage=candidate-preflight
+        if /usr/bin/python3 -I -S /mnt/control/candidate-launcher.py \
           "$builder_uid" "$builder_gid" \
           /mnt/control/candidate-build.sh "$host_runner_temp"
-        candidate_status="$?"
-        set -e
-        if [ "$candidate_status" -ne 0 ]; then
-          exit "$candidate_status"
+        then
+          candidate_status=0
+        else
+          candidate_status="$?"
         fi
-        cgroup_members="$(LC_ALL=C /usr/bin/sort -n \
-          "$supervisor_cgroup/cgroup.procs")"
-        test "$cgroup_members" = "$$"
+        if [ "$candidate_status" -ne 0 ]; then
+          case "$candidate_status" in
+            71|72|73|74|75|76) exit "$candidate_status" ;;
+            125|126) exit "$candidate_status" ;;
+            *) exit 77 ;;
+          esac
+        fi
+        isolated_stage=output-validate
+        /usr/bin/python3 -I -S /mnt/control/publisher-programs.py membership "$$"
         handoff_names="$(/usr/bin/find /mnt/handoff -mindepth 1 \
           -maxdepth 1 -printf '%f\n' | LC_ALL=C /usr/bin/sort)"
         test "$handoff_names" = "$(printf 'metadata.json\ntarget.gba')"
@@ -2330,6 +2350,7 @@ jobs:
         metadata_size="$(/usr/bin/stat -c %s /mnt/handoff/metadata.json)"
         test "$metadata_size" -gt 0
         test "$metadata_size" -le 1048576
+        isolated_stage=export
         /usr/bin/mount -o remount,bind,rw,nosuid,nodev,noexec /mnt/export
         /usr/bin/install -m 0400 /mnt/handoff/target.gba \
           /mnt/export/target.gba
@@ -2337,7 +2358,10 @@ jobs:
           /mnt/export/metadata.json
         /usr/bin/chown "$host_uid:$host_gid" /mnt/export/target.gba \
           /mnt/export/metadata.json
+        isolated_stage=post-check
         /usr/bin/mount -o remount,bind,ro,nosuid,nodev,noexec /mnt/export
+        /usr/bin/python3 -I -S /mnt/control/publisher-programs.py post-check \
+          "$$" "$host_uid" "$host_gid"
         exit 0
         }
         builder_main "$@"
@@ -2345,8 +2369,22 @@ jobs:
         /usr/bin/tee "$BUILDER_ROOT/control/candidate-build.sh" \
           > /dev/null <<'CANDIDATE_BUILD'
         #!/bin/bash
-        set -euo pipefail
+        set -Eeuo pipefail
         umask 077
+        candidate_stage=preflight
+        candidate_stage_failure() {
+          trap - ERR
+          case "$candidate_stage" in
+            preflight) exit 71 ;;
+            venv) exit 72 ;;
+            pip) exit 73 ;;
+            build-tools) exit 74 ;;
+            make) exit 75 ;;
+            handoff) exit 76 ;;
+            *) exit 77 ;;
+          esac
+        }
+        trap candidate_stage_failure ERR
         /usr/bin/python3 -I -S -c 'import errno,fcntl; bad=[]; exec("for fd in range(3, 1024):\n try: fcntl.fcntl(fd, fcntl.F_GETFD)\n except OSError as error:\n  if error.errno != errno.EBADF: raise\n else: bad.append(fd)"); raise SystemExit(125 if bad else 0)'
         test -z "${BASH_ENV-}"
         test -z "${BASH_XTRACEFD-}"
@@ -2390,11 +2428,16 @@ jobs:
         test ! -e /sys/fs/cgroup/cgroup.procs
         test -z "$(/usr/bin/find / -xdev -type s \
           -print -quit 2>/dev/null)"
+        candidate_stage=venv
         /usr/bin/python3 -m venv "$HOME/venv"
+        candidate_stage=pip
         "$HOME/venv/bin/python3" -m pip install --no-index --find-links="$WHEELHOUSE" --require-hashes --only-binary=:all: --no-deps -r "$GITHUB_WORKSPACE/.github/requirements/build.txt"
         cd "$GITHUB_WORKSPACE"
+        candidate_stage=build-tools
         ./build_tools.sh
+        candidate_stage=make
         make expansion-modern-map-menu-presentation-check -j1
+        candidate_stage=handoff
         /usr/bin/install -m 0400 \
           build/expansion-modern-all-locales-all-features/release/aapcs/fireemblem8.gba \
           "$HANDOFF/target.gba"
@@ -2402,87 +2445,6 @@ jobs:
           build/expansion-modern-all-locales-all-features/release/aapcs/generated/expansion_build_metadata.json \
           "$HANDOFF/metadata.json"
         CANDIDATE_BUILD
-        /usr/bin/tee "$BUILDER_ROOT/control/candidate-launcher.py" \
-          > /dev/null <<'CANDIDATE_LAUNCHER'
-        import os
-        import stat
-        import sys
-
-        MAX_FD = 1_048_576
-
-        if len(sys.argv) != 5:
-            raise SystemExit(125)
-        uid, gid, script_path, host_runner_temp = sys.argv[1:]
-        if not uid.isascii() or not uid.isdecimal():
-            raise SystemExit(125)
-        if not gid.isascii() or not gid.isdecimal():
-            raise SystemExit(125)
-        if not host_runner_temp.startswith("/home/runner/"):
-            raise SystemExit(125)
-
-        script_stat = os.lstat(script_path)
-        if not stat.S_ISREG(script_stat.st_mode):
-            raise SystemExit(125)
-        if script_stat.st_uid != 0 or script_stat.st_nlink != 1:
-            raise SystemExit(125)
-        if stat.S_IMODE(script_stat.st_mode) != 0o555:
-            raise SystemExit(125)
-        with open(script_path, "rb") as script_file:
-            script_bytes = script_file.read(65537)
-        if not script_bytes or len(script_bytes) > 65536:
-            raise SystemExit(125)
-        try:
-            script = script_bytes.decode("ascii")
-        except UnicodeDecodeError:
-            raise SystemExit(125)
-
-        candidate_argv = [
-            "/usr/bin/setpriv",
-            f"--reuid={uid}",
-            f"--regid={gid}",
-            "--clear-groups",
-            "--no-new-privs",
-            "--bounding-set=-all",
-            "--inh-caps=-all",
-            "--ambient-caps=-all",
-            "/bin/bash",
-            "--noprofile",
-            "--norc",
-            "-euo",
-            "pipefail",
-            "-c",
-            script,
-            "candidate-build",
-        ]
-        candidate_env = {
-            "GITHUB_WORKSPACE": "/mnt/source",
-            "HANDOFF": "/mnt/handoff",
-            "HOME": "/mnt/home",
-            "HOST_RUNNER_TEMP": host_runner_temp,
-            "LC_ALL": "C",
-            "PATH": "/usr/bin:/bin",
-            "PIP_CONFIG_FILE": "/dev/null",
-            "RUNNER_TEMP": "/mnt/tmp",
-            "TMPDIR": "/mnt/tmp",
-            "WHEELHOUSE": "/mnt/wheelhouse",
-        }
-
-        close_range = getattr(os, "close_range", None)
-        try:
-            if close_range is not None:
-                close_range(3, MAX_FD - 1)
-            elif hasattr(os, "closerange"):
-                os.closerange(3, MAX_FD)
-            else:
-                raise OSError("no safe descriptor closer")
-        except OSError:
-            raise SystemExit(125)
-
-        try:
-            os.execve(candidate_argv[0], candidate_argv, candidate_env)
-        except OSError:
-            raise SystemExit(126)
-        CANDIDATE_LAUNCHER
         /usr/bin/tee "$BUILDER_ROOT/control/supervisor-launcher.py" \
           > /dev/null <<'SUPERVISOR_LAUNCHER'
         import ctypes
@@ -2661,8 +2623,26 @@ jobs:
         builder_supervisor_pid=""
         builder_supervisor_wait_pid=""
         if [ "$builder_status" -ne 0 ]; then
-          printf 'candidate build failed: stage=isolated exit=%d\n' \
-            "$builder_status" >&2
+          case "$builder_status" in
+            71) builder_isolated_detail=candidate-preflight ;;
+            72) builder_isolated_detail=candidate-venv ;;
+            73) builder_isolated_detail=candidate-pip ;;
+            74) builder_isolated_detail=candidate-build-tools ;;
+            75) builder_isolated_detail=candidate-make ;;
+            76) builder_isolated_detail=candidate-handoff ;;
+            77) builder_isolated_detail=candidate-unknown ;;
+            81) builder_isolated_detail=namespace ;;
+            82) builder_isolated_detail=mount-audit ;;
+            83) builder_isolated_detail=output-validate ;;
+            84) builder_isolated_detail=export ;;
+            85) builder_isolated_detail=post-check ;;
+            *)
+              builder_isolated_detail=transport
+              builder_status=125
+              ;;
+          esac
+          printf 'candidate build failed: stage=isolated detail=%s exit=%d\n' \
+            "$builder_isolated_detail" "$builder_status" >&2
           exit "$builder_status"
         fi
         printf 'candidate build status: success\n'

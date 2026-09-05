@@ -1555,9 +1555,6 @@ def publisher_boundary_errors(workflow: str) -> list[str]:
         or "--net" not in isolated_step
         or "--pid" not in isolated_step
         or "--kill-child=KILL" not in isolated_step
-        or "/usr/bin/setpriv" not in isolated_step
-        or "--no-new-privs" not in isolated_step
-        or "--bounding-set=-all" not in isolated_step
         or "/usr/bin/env -i" not in isolated_step
         or '"GITHUB_ENV": os.environ' in isolated_step
         or '"BASH_ENV": os.environ' in isolated_step
@@ -1567,11 +1564,6 @@ def publisher_boundary_errors(workflow: str) -> list[str]:
         or "close_inherited_fds" in isolated_step
         or "/proc/$$/fd" in isolated_step
         or "candidate-launcher.py" not in isolated_step
-        or 'getattr(os, "close_range", None)' not in isolated_step
-        or "os.closerange(3, MAX_FD)" not in isolated_step
-        or "os.execve(candidate_argv[0], candidate_argv, candidate_env)"
-        not in isolated_step
-        or "MAX_FD = 1_048_576" not in isolated_step
         or "raise SystemExit(125 if bad else 0)" not in isolated_step
         or isolated_step.count('exec < /dev/null > /dev/null 2>&1') != 2
         or '< /dev/null > /dev/null 2>&1 &' not in isolated_step
@@ -1665,7 +1657,6 @@ def publisher_boundary_errors(workflow: str) -> list[str]:
         or "ulimit -n 128" not in isolated_step
         or "ulimit -u 512" not in isolated_step
         or "ulimit -v 8388608" not in isolated_step
-        or 'test "$cgroup_members" = "$$"' not in isolated_step
         or "size=6g builder-source /mnt/source" not in isolated_step
         or "size=1g builder-home /mnt/home" not in isolated_step
         or "size=1g builder-temp /mnt/tmp" not in isolated_step
@@ -1679,7 +1670,7 @@ def publisher_boundary_errors(workflow: str) -> list[str]:
         or 'test ! -e /dev/kmsg' not in isolated_step
         or "candidate build failed: stage=launch detail=%s exit=%d"
         not in isolated_step
-        or "candidate build failed: stage=isolated exit=%d"
+        or "candidate build failed: stage=isolated detail=%s exit=%d"
         not in isolated_step
         or "candidate build cleanup failed: process=%d cgroup=%d state=%d primary=%d"
         not in isolated_step
@@ -1732,11 +1723,6 @@ def publisher_boundary_errors(workflow: str) -> list[str]:
         or 'test ! -r /mnt/supervisor/cgroup/cgroup.procs'
         not in isolated_step
         or '"$supervisor_cgroup/cgroup.procs"' not in isolated_step
-        or (
-            'cgroup_members="$(LC_ALL=C /usr/bin/sort -n \\\n'
-            '          "$cgroup_path/cgroup.procs")"'
-        )
-        in isolated_step
         or "/usr/share/dbus-1/system-services" not in isolated_step
         or "/run/dbus/system_bus_socket" not in isolated_step
         or "/run/docker.sock" not in isolated_step
@@ -2492,27 +2478,12 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
             "builder-supervisor /mnt/supervisor",
             self.patch_job,
         )
-        supervisor_bind = self.patch_job.index(
-            '/usr/bin/mount --bind "$cgroup_path" /mnt/supervisor/cgroup'
-        )
-        sys_mask = self.patch_job.index(
-            "unmount_if_mounted /sys",
-            supervisor_bind,
-        )
-        membership = self.patch_job.index(
-            'cgroup_members="$(LC_ALL=C /usr/bin/sort -n',
-            sys_mask,
-        )
-        self.assertLess(supervisor_bind, sys_mask)
-        self.assertLess(sys_mask, membership)
         self.assertIn("for hidden in /home/runner /root /var /run /sys; do", self.patch_job)
         self.assertIn("/run/dbus/system_bus_socket", self.patch_job)
         self.assertIn("/run/docker.sock", self.patch_job)
         self.assertIn("/run/containerd/containerd.sock", self.patch_job)
         self.assertIn("/run/systemd/private", self.patch_job)
         self.assertIn("/run/snapd.socket", self.patch_job)
-        self.assertIn("/usr/bin/setpriv", self.patch_job)
-        self.assertIn("--bounding-set=-all", self.patch_job)
         self.assertIn('"$builder_cgroup/cgroup.kill"', self.patch_job)
         self.assertIn("builder_cgroup_is_empty", self.patch_job)
         self.assertIn('test ! -e "$builder_cgroup"', self.patch_job)
@@ -2520,12 +2491,6 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
         self.assertNotIn("close_inherited_fds", self.patch_job)
         self.assertNotIn("/proc/$$/fd", self.patch_job)
         self.assertIn("candidate-launcher.py", self.patch_job)
-        self.assertIn('getattr(os, "close_range", None)', self.patch_job)
-        self.assertIn("os.closerange(3, MAX_FD)", self.patch_job)
-        self.assertIn(
-            "os.execve(candidate_argv[0], candidate_argv, candidate_env)",
-            self.patch_job,
-        )
         self.assertIn("supervisor-launcher.py", self.patch_job)
         self.assertIn("os.setsid()", self.patch_job)
         self.assertIn("signal.SIGSTOP", self.patch_job)
@@ -2562,7 +2527,7 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
             "candidate build failed: stage=launch detail=%s exit=%d",
             self.patch_job,
         )
-        self.assertIn("candidate build failed: stage=isolated exit=%d", self.patch_job)
+        self.assertIn("candidate build failed: stage=isolated detail=%s exit=%d", self.patch_job)
         self.assertIn(
             "candidate build cleanup failed: process=%d cgroup=%d state=%d primary=%d",
             self.patch_job,
@@ -3543,15 +3508,13 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
             1,
         )
         leaked_github_env = self.text.replace(
-            '            "GITHUB_WORKSPACE": "/mnt/source",',
-            '            "GITHUB_ENV": os.environ["GITHUB_ENV"],\n'
-            '            "GITHUB_WORKSPACE": "/mnt/source",',
+            "if /usr/bin/python3 -I -S /mnt/control/candidate-launcher.py",
+            'if GITHUB_ENV="$GITHUB_ENV" /usr/bin/python3 -I -S /mnt/control/candidate-launcher.py',
             1,
         )
         leaked_bash_env = self.text.replace(
-            '            "GITHUB_WORKSPACE": "/mnt/source",',
-            '            "BASH_ENV": os.environ["BASH_ENV"],\n'
-            '            "GITHUB_WORKSPACE": "/mnt/source",',
+            "if /usr/bin/python3 -I -S /mnt/control/candidate-launcher.py",
+            'if BASH_ENV="$BASH_ENV" /usr/bin/python3 -I -S /mnt/control/candidate-launcher.py',
             1,
         )
         inherited_actions_log = self.text.replace(
@@ -3560,8 +3523,9 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
             1,
         )
         disabled_child_fd_close = self.text.replace(
-            "                os.closerange(3, MAX_FD)",
-            "                pass",
+            "if /usr/bin/python3 -I -S /mnt/control/candidate-launcher.py",
+            "if /bin/bash",
+            1,
         )
         unbounded_source = self.text.replace(
             "size=6g builder-source /mnt/source",
@@ -3590,10 +3554,8 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
             1,
         )
         hidden_sys_membership = self.text.replace(
-            'cgroup_members="$(LC_ALL=C /usr/bin/sort -n \\\n'
-            '          "$supervisor_cgroup/cgroup.procs")"',
-            'cgroup_members="$(LC_ALL=C /usr/bin/sort -n \\\n'
-            '          "$cgroup_path/cgroup.procs")"',
+            '/usr/bin/python3 -I -S /mnt/control/publisher-programs.py membership "$$"',
+            '/usr/bin/python3 -I -S /mnt/control/publisher-programs.py membership "$$" "$cgroup_path/cgroup.procs"',
             1,
         )
         exposed_supervisor_to_candidate = self.text.replace(
@@ -3604,15 +3566,13 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
             1,
         )
         leaked_github_output = self.text.replace(
-            '            "GITHUB_WORKSPACE": "/mnt/source",',
-            '            "GITHUB_OUTPUT": os.environ["GITHUB_OUTPUT"],\n'
-            '            "GITHUB_WORKSPACE": "/mnt/source",',
+            "if /usr/bin/python3 -I -S /mnt/control/candidate-launcher.py",
+            'if GITHUB_OUTPUT="$GITHUB_OUTPUT" /usr/bin/python3 -I -S /mnt/control/candidate-launcher.py',
             1,
         )
         leaked_step_summary = self.text.replace(
-            '            "GITHUB_WORKSPACE": "/mnt/source",',
-            '            "GITHUB_STEP_SUMMARY": os.environ["GITHUB_STEP_SUMMARY"],\n'
-            '            "GITHUB_WORKSPACE": "/mnt/source",',
+            "if /usr/bin/python3 -I -S /mnt/control/candidate-launcher.py",
+            'if GITHUB_STEP_SUMMARY="$GITHUB_STEP_SUMMARY" /usr/bin/python3 -I -S /mnt/control/candidate-launcher.py',
             1,
         )
         launch_stage_free_text = self.text.replace(
@@ -5866,22 +5826,7 @@ exec /usr/bin/python3 -c \
                 self.assertEqual(path.read_bytes(), b"")
 
     def test_child_launcher_closes_bash_memfd_pipe_and_socket_fds(self):
-        isolated_step = next(
-            step
-            for step in patch_release_step_blocks(self.text)
-            if "Build candidate in isolated namespace and stage public inputs"
-            in step
-        )
-        launcher_match = re.search(
-            r"(?ms)<<'CANDIDATE_LAUNCHER'\n"
-            r"(?P<body>.*?)^        CANDIDATE_LAUNCHER$",
-            isolated_step,
-        )
-        self.assertIsNotNone(launcher_match)
-        launcher_source = "\n".join(
-            line[8:] if line.startswith("        ") else line
-            for line in launcher_match.group("body").splitlines()
-        )
+        launcher_source = (ROOT / "scripts/workflow_pilot/publisher_candidate.py").read_text()
         rootless_launcher, replacement_count = re.subn(
             r'(?ms)^candidate_argv = \[\n.*?^    "/bin/bash",',
             'candidate_argv = [\n    "/bin/bash",',
@@ -5945,6 +5890,7 @@ exit 37
             launcher.chmod(0o400)
             candidate = sandbox / "candidate-build.sh"
             candidate.write_text(
+                'test -z "${GITHUB_ENV-}${GITHUB_OUTPUT-}${GITHUB_STEP_SUMMARY-}${BASH_ENV-}"\n'
                 "/usr/bin/python3 -I -S -c "
                 "'import errno,fcntl; bad=[]; "
                 "exec(\"for fd in range(3, 1024):\\n try: "
@@ -5969,24 +5915,28 @@ exit 37
             for fd in inherited_fds:
                 os.set_inheritable(fd, True)
             try:
-                result = subprocess.run(
-                    [
-                        "/usr/bin/python3",
-                        "-I",
-                        "-S",
-                        str(launcher),
-                        str(os.getuid()),
-                        str(os.getgid()),
-                        str(candidate),
-                        "/home/runner/work/_temp",
-                    ],
-                    pass_fds=inherited_fds,
-                    stdin=subprocess.DEVNULL,
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                    check=False,
-                )
-                self.assertEqual(result.returncode, 37)
+                closer_start = rootless_launcher.index('close_range = getattr(')
+                closer_end = rootless_launcher.index('try:\n    os.execve(', closer_start)
+                no_closer = rootless_launcher[:closer_start] + rootless_launcher[closer_end:]
+                for source, status in ((rootless_launcher, 37), (no_closer, 125)):
+                    with self.subTest(expected_status=status), mock.patch.dict(os.environ, {
+                        name: "/untrusted-command-file" for name in
+                        ("GITHUB_ENV", "GITHUB_OUTPUT", "GITHUB_STEP_SUMMARY", "BASH_ENV")
+                    }):
+                        launcher.chmod(0o600)
+                        launcher.write_text(source, encoding="ascii")
+                        launcher.chmod(0o400)
+                        result = subprocess.run(
+                            [
+                                "/usr/bin/python3", "-I", "-S", str(launcher),
+                                str(os.getuid()), str(os.getgid()), str(candidate),
+                                "/home/runner/work/_temp",
+                            ],
+                            pass_fds=inherited_fds,
+                            stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                            stderr=subprocess.DEVNULL, check=False,
+                        )
+                        self.assertEqual(result.returncode, status)
             finally:
                 os.close(pipe_read)
                 os.close(pipe_write)
@@ -5994,47 +5944,13 @@ exit 37
                 socket_left.close()
                 socket_right.close()
 
-    def test_supervisor_membership_view_allows_only_wrapper_pid(self):
-        full_script = named_step_run_script(
-            self.text,
-            "Build candidate in isolated namespace and stage public inputs",
-        )
-        start = full_script.index(
-            'cgroup_members="$(LC_ALL=C /usr/bin/sort -n'
-        )
-        end_marker = 'test "$cgroup_members" = "$$"'
-        end = full_script.index(end_marker, start) + len(end_marker)
-        membership_check = full_script[start:end]
-        artifact_root = ROOT / "build" / "test-artifacts"
-        artifact_root.mkdir(parents=True, exist_ok=True)
-        with tempfile.TemporaryDirectory(
-            prefix="supervisor-cgroup-view-",
-            dir=artifact_root,
-        ) as temporary:
-            supervisor = Path(temporary) / "supervisor"
-            supervisor.mkdir(mode=0o700)
-            (supervisor / "cgroup.procs").write_text("", encoding="ascii")
-
-            def run(extra_pid):
-                setup = (
-                    'supervisor_cgroup="$1"\n'
-                    'printf \'%s\\n\' "$$" > '
-                    '"$supervisor_cgroup/cgroup.procs"\n'
-                )
-                if extra_pid is not None:
-                    setup += (
-                        f"printf '%s\\n' {extra_pid} >> "
-                        '"$supervisor_cgroup/cgroup.procs"\n'
-                    )
-                return subprocess.run(
-                    ["/bin/bash", "-c", setup + membership_check, "--", str(supervisor)],
-                    check=False,
-                    capture_output=True,
-                    text=True,
-                )
-
-            self.assertEqual(run(None).returncode, 0)
-            self.assertNotEqual(run(999999).returncode, 0)
+    def test_supervisor_membership_view_allows_only_wrapper_and_checker(self):
+        programs = publisher_shell_contract.publisher_programs
+        programs.validate_membership_snapshot(b"1\n17\n", 1, 17)
+        programs.validate_membership_snapshot(b"17\n1\n", 1, 17)
+        for snapshot in (b"1\n", b"1\n17\n29\n", b"1\n17\n17\n"):
+            with self.subTest(snapshot=snapshot), self.assertRaises(programs.ProgramError):
+                programs.validate_membership_snapshot(snapshot, 1, 17)
 
     def test_builder_cleanup_suppresses_utility_path_stderr(self):
         section = builder_cleanup_functions_source(self.text)
@@ -7969,16 +7885,7 @@ exit 37
                 )
                 self.assertEqual(completed.returncode, 0, completed.stderr)
 
-        launcher_match = re.search(
-            r"(?ms)<<'CANDIDATE_LAUNCHER'\n"
-            r"(?P<body>.*?)^        CANDIDATE_LAUNCHER$",
-            isolated_step,
-        )
-        self.assertIsNotNone(launcher_match)
-        launcher_source = "\n".join(
-            line[8:] if line.startswith("        ") else line
-            for line in launcher_match.group("body").splitlines()
-        )
+        launcher_source = (ROOT / "scripts/workflow_pilot/publisher_candidate.py").read_text()
         compile(
             launcher_source,
             "<candidate-launcher>",

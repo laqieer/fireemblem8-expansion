@@ -1,8 +1,118 @@
 # Workflow-governance cases
 
-These source-only procedures cover the repository's agent delivery policy.
-They exercise documented orchestration contracts without dispatching a
-workflow, using credentials, or changing ROM behavior.
+These source-build procedures cover agent delivery policy and trusted host
+publication. They do not dispatch workflows, use credentials, or change ROM
+behavior. Publisher runtime cases use disposable Linux namespaces.
+
+## TC-WORKFLOW-PUBLISHER-PHASE-001: Bind verification to completed candidate execution
+
+- **Feature / issue:** `workflow-governance` /
+  [#201](https://github.com/laqieer/fireemblem8-expansion/issues/201).
+  Immediate dependency: [#200](https://github.com/laqieer/fireemblem8-expansion/issues/200).
+  Recovery initiative: [#177](https://github.com/laqieer/fireemblem8-expansion/issues/177).
+- **Configuration:** the exact candidate source checkout on the supported Linux
+  publisher host profile, Python 3.10+, Bash, Git, util-linux (`unshare`,
+  `mount`, `setpriv`, `setsid`) and coreutils. Unprivileged user/PID/mount
+  namespaces must work for the live scenario. No ROM, secret, download or token
+  is required.
+- **Clean start/reset:** use a disposable checkout and run from its root.
+  Tests own unique directories under ignored `build/test-artifacts`, create
+  synthetic sparse target data (not ROM content), and remove those directories.
+  Every namespace has a bounded lifetime and `--kill-child=KILL`. Do not modify
+  a live publisher cgroup or another user's processes.
+
+### Actions
+
+1. From the repository root run the focused source-build procedure:
+
+   ```bash
+   python3 -m unittest -v \
+     tests.workflows.test_publisher_phase \
+     tests.upstream_port.test_verify.VerifyGatesMirrorWorkflowTests.test_publisher_phase_uses_shared_execution_authority \
+     tests.workflows.test_patch_release_workflow.PatchReleaseWorkflowTests.test_child_launcher_closes_bash_memfd_pipe_and_socket_fds \
+     tests.workflows.test_patch_release_workflow.PatchReleaseWorkflowTests.test_supervisor_launcher_authenticates_session_before_namespace_and_leaves_no_orphan \
+     tests.workflows.test_patch_release_workflow.PatchReleaseWorkflowTests.test_stopped_supervisor_dies_with_parent_before_resume_without_orphan \
+     tests.workflows.test_patch_release_workflow.PatchReleaseWorkflowTests.test_cleanup_reauthenticates_and_terminates_owned_supervisor
+   ```
+
+2. In a clean committed checkout, run the actual producer preflight:
+
+   ```bash
+   python3 -I -S scripts/workflow_pilot/publisher_inventory.py \
+     --repository-root . --commit "$(git rev-parse HEAD)"
+   ```
+
+3. Confirm the production parser emits one active fixed membership invocation,
+   no legacy membership observations, and exactly the modeled success
+   transitions: launch started, completed/reaped, membership verified, export
+   started, export committed, final post-check completed. The executable phase
+   validator must actually run through both production consumers and the CLI.
+4. Replay the shared mutations through the tests: move the unchanged checker
+   before launch or after export; remove/duplicate it; put it in a skipped
+   result branch, helper, callback, trap, background, pipeline, subshell,
+   substitution or different entry frame; change result capture edges, setup
+   context, export ownership/close order, final post-check, success position
+   and fixed failure mapping. Every mutation rejects even after refreshing
+   the separate outer raw identities. Equivalent quoting, independent
+   initializer reorder and the two independent file-install orderings pass.
+5. Observe the live namespace scenario. The exact foreground candidate PID is
+   absent from `/proc` before the checker; only wrapper/checker remain, and the
+   actual sealed export contains `target.gba` (32 MiB) and `metadata.json`
+   (valid synthetic JSON), with `0400` mode. A failed candidate returns its
+   fixed candidate detail or 77, never isolated 81–85. Live/detached descendants
+   and missing outputs fail at 83 before export. A real file-limit failure
+   returns 84; omitting the final read-only seal returns 85 from the actual
+   post-check. Candidate stdout/stderr stay empty in every result.
+6. Confirm the separate real host supervisor tests authenticate the stopped
+   session, prove parent-death containment and no orphan, and reauthenticate
+   cleanup. The inherited-FD test preserves exit 37 with closure, then fails
+   at 125 if closure alone is removed; ambient GitHub/Bash command-file
+   variables never reach the candidate.
+
+### Expected result and negative controls
+
+All commands pass in the supported configuration. The inventory alone accepts
+the phase-only early/late/wrong-frame variants; removing **only** the phase
+authority reproduces that acceptance in both real consumers. Restoring the
+phase machine rejects them. This negative control proves more than a command
+count, name, comment, source-order assertion, or raw identity.
+
+The live early-checker control intentionally sees a valid two-PID snapshot
+before any candidate PID exists and can otherwise export successfully. That
+snapshot cannot establish candidate completion: the production phase
+validator rejects the identical placement. Live descendants instead make the
+canonical checker itself fail. No test manufactures a `MEMBERSHIP_VERIFIED`
+event as evidence of execution.
+
+The canonical post-check also rejects real file deletions, extra names,
+symlinks/hardlinks/directories, changed ownership/modes, short targets and
+empty/oversized metadata. Real namespace mount-state failure is tested
+separately from these direct function inputs.
+
+### Dependencies, compatibility, and limits
+
+This is a true child of #200's registry/event API, not an independent root or a
+second parser. #177 recovery depends on it; #195 overlaps the workflow and
+validators and remains separately held for reconciliation. Parent changes
+require normal synchronization and bottom-up delivery. No other feature
+conflicts, optional modes, artifact-format/Build-topology changes, ROM/RAM,
+save/config identity, generated game-data, localization, modern debug/release,
+or archival changes apply.
+
+The rootless runtime fixture has two explicit adapters: `--keep-groups` in a
+single-ID user namespace, and a same-PID exec adapter that mirrors **live**
+private `/proc` membership into the canonical checker's literal read-only
+cgroup-view file before execing the unchanged checker. It does not determine
+the result or emit a phase event. Real kernel cgroup delegation/join/kill,
+dedicated-UID isolation, and the complete production publisher still require
+the supported privileged runner and exact-master Build. Do not equate a local
+pass with #177 recovery. Hosts without namespace support cannot run the live
+case; no success-shaped fallback is provided.
+
+All deterministic assertions map to the commands above; no visual, audio,
+subjective, or manual-only criterion exists. Roll back this child on a
+regression while retaining the recovery hold rather than disabling its phase
+authority.
 
 ## TC-WORKFLOW-PUBLISHER-COMMAND-INVENTORY-001: Authorize only reviewed publisher commands
 
@@ -63,9 +173,9 @@ workflow, using credentials, or changing ROM behavior.
 
 All commands above succeed in the supported configuration; every adversarial
 fixture fails before publication. Both semantic suites consume the same
-authority and agree. The exact membership-checker command is registered for
-downstream use but cannot be added to the current production builder while its
-required production count remains zero.
+authority and agree. The exact membership-checker command is mandatory with
+one production occurrence after #201 integration; removing or adding one
+fails the closed inventory.
 
 The pre-fix PR #195 substring analyzer accepts the composed Python reader.
 The new executable regression also removes only the shared authority call:
@@ -75,10 +185,10 @@ behavioral negative control independently of raw hashes or source wording.
 
 ### Interactions, cleanup and limitations
 
-#201 owns candidate-completion/checker/export ordering; #195 owns the final
-#177 runtime integration. The current exact legacy membership observation is
-still represented and its known self-observation failure is not claimed fixed
-by this case. Updating a production operation requires updating its typed
+#201 owns candidate-completion/checker/export ordering and activates the fixed
+producer, removing legacy observations. #195's remaining purpose is reconciled
+against the two merged contracts; final #177 recovery still requires a real
+successful publisher Build. Updating a production operation requires updating its typed
 signature and behavioral evidence together. Arbitrary Bash syntax,
 unregistered executables and caller-provided Python are unsupported, not
 silently analyzed as safe.

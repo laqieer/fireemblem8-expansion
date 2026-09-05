@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import stat
 import subprocess
 import sys
 
@@ -17,6 +18,7 @@ MAX_MOUNT_BYTES = 1048576
 MAX_FILESYSTEMS = 512
 MAX_MEMBERSHIP_BYTES = 1024
 MEMBERSHIP_PATH = "/mnt/supervisor/cgroup/cgroup.procs"
+EXPORT_PATH = "/mnt/export"
 DEV_MOUNTS_ARGV = (
     "/usr/bin/findmnt", "--json", "--submounts", "--output", "TARGET", "/dev",
 )
@@ -168,16 +170,52 @@ def validate_membership_snapshot(data: bytes, wrapper: int, checker: int) -> Non
         raise ProgramError("membership differs from wrapper and checker")
 
 
-def membership(wrapper: str) -> None:
+def wrapper_frame(wrapper: str) -> int:
     try:
         encoded = wrapper.encode("ascii")
     except UnicodeEncodeError as error:
         raise ProgramError("invalid wrapper PID") from error
     if len(encoded) > 20 or _PID.fullmatch(encoded) is None:
         raise ProgramError("invalid wrapper PID")
+    pid = int(wrapper)
+    if (
+        os.getppid() != pid
+        or os.getpid() == pid
+        or os.getsid(0) != os.getsid(pid)
+        or os.getpgrp() != os.getpgid(pid)
+    ):
+        raise ProgramError("publisher program is outside the wrapper frame")
+    return pid
+
+
+def membership(wrapper: str) -> None:
+    pid = wrapper_frame(wrapper)
     with open(MEMBERSHIP_PATH, "rb") as handle:
         data = handle.read(MAX_MEMBERSHIP_BYTES + 1)
-    validate_membership_snapshot(data, int(wrapper), os.getpid())
+    validate_membership_snapshot(data, pid, os.getpid())
+
+
+def post_check(wrapper: str, owner: str, group: str) -> None:
+    wrapper_frame(wrapper)
+    for identity in (owner, group):
+        if len(identity) > 20 or re.fullmatch(r"0|[1-9][0-9]*", identity) is None:
+            raise ProgramError("invalid export owner")
+    if not os.statvfs(EXPORT_PATH).f_flag & os.ST_RDONLY:
+        raise ProgramError("export is not read-only")
+    if set(os.listdir(EXPORT_PATH)) != {"target.gba", "metadata.json"}:
+        raise ProgramError("export inventory differs")
+    for name in ("target.gba", "metadata.json"):
+        status = os.lstat(EXPORT_PATH + "/" + name)
+        if (
+            not stat.S_ISREG(status.st_mode)
+            or stat.S_IMODE(status.st_mode) != 0o400
+            or status.st_nlink != 1
+            or status.st_uid != int(owner)
+            or status.st_gid != int(group)
+            or (name == "target.gba" and status.st_size != 33554432)
+            or (name == "metadata.json" and not 0 < status.st_size <= 1048576)
+        ):
+            raise ProgramError("export file contract differs")
 
 
 def main(arguments: list[str] | None = None) -> int:
@@ -189,6 +227,8 @@ def main(arguments: list[str] | None = None) -> int:
             sys.stdout.buffer.write(writable_mount_records())
         elif len(arguments) == 2 and arguments[0] == "membership":
             membership(arguments[1])
+        elif len(arguments) == 4 and arguments[0] == "post-check":
+            post_check(*arguments[1:])
         else:
             raise ProgramError("unregistered publisher program invocation")
     except (ProgramError, OSError, ValueError) as error:

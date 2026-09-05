@@ -11,7 +11,7 @@ from . import publisher_shell as shell
 from .publisher_inventory import (
     Access, Control, EventKind, Family, Inventory, Program, Resource,
     ResourceAccess, Scope, Signature, PROGRAM_PATH, PROGRAM_RUNTIME_PATH,
-    WORKFLOW_PATH, control_header,
+    control_header,
 )
 
 
@@ -25,6 +25,7 @@ def inventory() -> Inventory:
         Scope("unmount_if_mounted", "builder_main", (Resource.HOST,)),
         Scope("list_dev_mount_targets", "builder_main", ()),
         Scope("list_writable_mount_records", "builder_main", ()),
+        Scope("isolated_stage_failure", "builder_main", ()),
     ]
     for kind, resource in (("supervisor", Resource.SUPERVISOR), ("runtime", Resource.RUNTIME)):
         scopes.extend((
@@ -36,7 +37,7 @@ def inventory() -> Inventory:
     helper_names = {scope.name for scope in scopes}
     signatures: list[Signature] = []
     controls: list[Control] = []
-    builtins = {"[", "cd", "echo", "exec", "exit", "local", "mapfile", "printf", "return", "set", "test", "ulimit"}
+    builtins = {"[", "cd", "echo", "exec", "exit", "local", "mapfile", "printf", "return", "set", "test", "trap", "ulimit"}
 
     def add(
         scope: str, name: str, source: str,
@@ -86,7 +87,17 @@ def inventory() -> Inventory:
         Resource.CONTROL, Access.READ, program=preflight,
     )
     add("entry", "invoke", 'builder_main "$@"', Resource.CONTROL, Access.EXECUTE, event=EventKind.HELPER_CALL)
-    main("strict-shell", "set -euo pipefail", access=Access.WRITE)
+    main("strict-shell", "set -Eeuo pipefail", access=Access.WRITE)
+    for stage in ("namespace", "mount-audit", "candidate-preflight", "output-validate", "export", "post-check"):
+        main(f"stage-{stage}", f"isolated_stage={stage}", access=Access.WRITE, event=EventKind.STATE_WRITE)
+    main("stage-trap", "trap isolated_stage_failure ERR", Resource.PROCESS, Access.WRITE)
+    main("stage-failure", "isolated_stage_failure", Resource.PROCESS, Access.WRITE, count=4, event=EventKind.HELPER_CALL)
+    control(
+        "isolated_stage_failure", "result",
+        'case "$isolated_stage" in namespace) ;; mount-audit) ;; output-validate) ;; export) ;; post-check) ;; *) ;; esac',
+    )
+    for status in (81, 82, 83, 84, 85, 125):
+        add("isolated_stage_failure", f"exit-{status}", f"exit {status}", Resource.PROCESS, Access.WRITE)
     for position, name, resource in (
         (1, "cgroup_path", Resource.CGROUP_RAW),
         (2, "builder_uid", Resource.PROCESS),
@@ -107,10 +118,6 @@ def inventory() -> Inventory:
         "join-cgroup", r'''printf '%s\n' "$$" > "$cgroup_path/cgroup.procs"''',
         Resource.CGROUP_RAW, Access.WRITE, event=EventKind.CGROUP_JOIN,
     )
-    main(
-        "legacy-join-observation", '/usr/bin/grep -Fqx "$$" "$cgroup_path/cgroup.procs"',
-        Resource.CGROUP_RAW, Access.READ, event=EventKind.LEGACY_MEMBERSHIP,
-    )
     main("root-directory", "cd /", Resource.HOST, Access.INSPECT)
     for name, source in (
         ("private-propagation", "/usr/bin/mount --make-rprivate /"),
@@ -119,8 +126,6 @@ def inventory() -> Inventory:
     ):
         main(name, source, Resource.HOST, Access.MOUNT)
     main("invalid-host-root", 'echo "runner temp is outside the masked host tree" >&2', Resource.NULL, Access.WRITE)
-    main("fail", "exit 1", Resource.PROCESS, Access.WRITE, count=2)
-    main("transport-fail", "exit 125", Resource.PROCESS, Access.WRITE, count=2)
     control("builder_main", "host-temp-boundary", 'case "$host_runner_temp" in /home/runner/*) ;; *) ;; esac')
 
     for name, options, device, target in (
@@ -299,28 +304,25 @@ def inventory() -> Inventory:
     main("runtime-rejection", 'echo "unexpected writable mount: $mount_target" >&2', Resource.NULL, Access.WRITE)
     for option, limit in (("c", 0), ("f", 131072), ("n", 128), ("u", 512), ("v", 8388608)):
         main(f"limit-{option}", f"ulimit -{option} {limit}", Resource.PROCESS, Access.WRITE)
-    main("capture-start", "set +e", access=Access.WRITE)
     launcher = Program(
-        "candidate-launcher", WORKFLOW_PATH, "/mnt/control/candidate-launcher.py", None,
+        "candidate-launcher", "scripts/workflow_pilot/publisher_candidate.py",
+        "/mnt/control/candidate-launcher.py", None,
         (ResourceAccess(Resource.CONTROL, Access.READ),),
         (ResourceAccess(Resource.CANDIDATE, Access.EXECUTE),),
     )
+    launch = '/usr/bin/python3 -I -S /mnt/control/candidate-launcher.py "$builder_uid" "$builder_gid" /mnt/control/candidate-build.sh "$host_runner_temp"'
     main(
-        "candidate-launch",
-        '/usr/bin/python3 -I -S /mnt/control/candidate-launcher.py "$builder_uid" "$builder_gid" /mnt/control/candidate-build.sh "$host_runner_temp"',
+        "candidate-launch", launch,
         Resource.CANDIDATE, Access.EXECUTE, event=EventKind.CANDIDATE_LAUNCH, program=launcher,
     )
+    control("builder_main", "candidate-launch", f"if {launch}; then :; else :; fi")
+    main("candidate-success", "candidate_status=0", Resource.PROCESS, Access.READ, event=EventKind.CANDIDATE_STATUS)
     main("candidate-status", 'candidate_status="$?"', Resource.PROCESS, Access.READ, event=EventKind.CANDIDATE_STATUS)
-    main("capture-end", "set -e", access=Access.WRITE)
     control("builder_main", "candidate-result", 'if [ "$candidate_status" -ne 0 ]; then :; fi')
     main("candidate-failed", '[ "$candidate_status" -ne 0 ]', Resource.PROCESS)
-    main("candidate-exit", 'exit "$candidate_status"', Resource.PROCESS, Access.WRITE)
-    main(
-        "legacy-membership",
-        'cgroup_members="$(LC_ALL=C /usr/bin/sort -n "$supervisor_cgroup/cgroup.procs")"',
-        Resource.CGROUP_VIEW, Access.READ, event=EventKind.LEGACY_MEMBERSHIP,
-    )
-    main("legacy-membership-result", 'test "$cgroup_members" = "$$"', Resource.CGROUP_VIEW)
+    control("builder_main", "candidate-failure", 'case "$candidate_status" in 71|72|73|74|75|76) ;; 125|126) ;; *) ;; esac')
+    main("candidate-exit", 'exit "$candidate_status"', Resource.PROCESS, Access.WRITE, count=2)
+    main("candidate-unknown", "exit 77", Resource.PROCESS, Access.WRITE)
     membership = Program(
         "membership", PROGRAM_PATH, PROGRAM_RUNTIME_PATH, "membership",
         (ResourceAccess(Resource.CGROUP_VIEW, Access.READ), ResourceAccess(Resource.PROCESS, Access.INSPECT)),
@@ -329,7 +331,7 @@ def inventory() -> Inventory:
     main(
         "membership-check",
         f'/usr/bin/python3 -I -S {PROGRAM_RUNTIME_PATH} membership "$$"',
-        Resource.CGROUP_VIEW, Access.READ, count=0,
+        Resource.CGROUP_VIEW, Access.READ,
         event=EventKind.MEMBERSHIP_VERIFIED, program=membership,
         extra=(ResourceAccess(Resource.PROCESS, Access.INSPECT),),
     )
@@ -364,5 +366,20 @@ def inventory() -> Inventory:
             extra=(ResourceAccess(Resource.HANDOFF, Access.READ),),
         )
     main("export-owner", '/usr/bin/chown "$host_uid:$host_gid" /mnt/export/target.gba /mnt/export/metadata.json', Resource.EXPORT, Access.WRITE)
+    post_check = Program(
+        "post-check", PROGRAM_PATH, PROGRAM_RUNTIME_PATH, "post-check",
+        (
+            ResourceAccess(Resource.EXPORT, Access.READ),
+            ResourceAccess(Resource.MOUNT_GRAPH, Access.INSPECT),
+            ResourceAccess(Resource.PROCESS, Access.INSPECT),
+        ),
+        (),
+    )
+    main(
+        "post-check",
+        f'/usr/bin/python3 -I -S {PROGRAM_RUNTIME_PATH} post-check "$$" "$host_uid" "$host_gid"',
+        Resource.EXPORT, Access.READ, event=EventKind.POST_CHECK, program=post_check,
+        extra=post_check.inputs[1:],
+    )
     main("success", "exit 0", Resource.PROCESS, Access.WRITE)
     return Inventory(tuple(signatures), tuple(scopes), tuple(controls))

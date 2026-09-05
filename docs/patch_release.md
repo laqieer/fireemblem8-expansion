@@ -72,14 +72,13 @@ python3 -I -S scripts/workflow_pilot/publisher_inventory.py \
   --repository-root . --commit "$(git rev-parse HEAD)"
 ```
 
-### Foundation boundary and downstream API
+### Production program and event API
 
-Issue #200 deliberately does **not** implement the #177/#195 membership
-fix-forward or the #201 phase machine. The current production `grep`/`sort`
-membership observations have explicit, exact **legacy observation** signatures;
-their presence is not evidence that the known self-observation failure is
-fixed. An added reader, even one built from fragments without the literal
-membership filename, is unregistered and rejects.
+Issue #201 consumes the #200 foundation and activates the fixed membership
+producer. The legacy `grep`/`sort` membership statements and their inventory
+rows are removed, not left as an optional fallback. An added reader, even one
+built from fragments without the literal membership filename, is unregistered
+and rejects.
 
 The fixed checker is available only as:
 
@@ -90,23 +89,31 @@ The fixed checker is available only as:
 It reads only `/mnt/supervisor/cgroup/cgroup.procs`, reads at most 1,025 bytes
 and permits at most 1,024, and accepts exactly two distinct canonical positive
 PID records: the wrapper argument and its own PID, in either order. It emits
-no success output. Additional arguments, paths, redirects, code, or a different
-executable are not authorized. The signature has zero production occurrences
-in this foundation; adding even the exact checker to the current builder
-requires the downstream inventory update rather than a permissive optional
-reader.
+no success output. It also requires the wrapper argument to be its actual
+parent, in the same session and process group. Additional arguments, paths,
+redirects, code, or a different executable are not authorized. The production
+signature has exactly **one** occurrence; a missing or additional checker
+fails. The separate canonical `publisher_candidate.py` retains the reviewed
+no-fork exec and inherited-FD closure. Its installed
+`/mnt/control/candidate-launcher.py` identity is unchanged; its source is now
+included in the same Git-derived exact-tree program closure.
 
 `validate_builder_script(source)` returns immutable `Analysis` records.
 `Analysis.commands` covers every authorized statement and nested producer;
 `Analysis.events` expands helper calls and retains `scope`, `call_stack`,
 `context`, the parsed command, typed resource accesses, and `EventKind`.
-`CANDIDATE_LAUNCH`, `CANDIDATE_STATUS`, `LEGACY_MEMBERSHIP`,
-`MEMBERSHIP_VERIFIED`, `EXPORT_OPEN`, `EXPORT_FILE`, and `EXPORT_CLOSE` are
-the integration seam for #201. These are **syntactic operation events**, not
+`CANDIDATE_LAUNCH`, `CANDIDATE_STATUS`, `MEMBERSHIP_VERIFIED`, `EXPORT_OPEN`,
+`EXPORT_FILE`, `EXPORT_CLOSE`, and `POST_CHECK` are the integration seam for
+#201. A legacy observation event cannot advance the machine. These are
+**syntactic operation events**, not
 proof that a conditional command ran or succeeded. The phase consumer must
 check control/operator/substitution context and completion before advancing
-its state. Inventory authorization ignores harmless source spelling and
-independent command order. The pre-existing raw host-shell boundary checks
+its state. Production `validate_builder_script`, `validate_workflow`, and the
+exact-tree CLI all apply that phase consumer after inventory authorization.
+The inventory alone remains a parser/authorization API, not a production
+completion bypass. Authorization ignores harmless source spelling; the phase
+policy permits independent initializer/file-install reorderings but rejects
+changes to runtime prerequisites. The pre-existing raw host-shell boundary checks
 remain separate; their hashes are not the behavioral oracle for this case.
 
 Dependencies are the existing workflow parser, Git exact-tree verification,
@@ -121,6 +128,91 @@ deletion, and drift evidence are indexed as
 [TC-WORKFLOW-PUBLISHER-COMMAND-INVENTORY-001](test-cases/workflow-governance.md#tc-workflow-publisher-command-inventory-001-authorize-only-reviewed-publisher-commands).
 Reverting this foundation blocks its dependents; it does not enable a
 substring-based fallback.
+
+## Mandatory publisher phases (issue #201)
+
+`scripts/workflow_pilot/publisher_phase.py` is one bounded explicit state
+machine shared by both semantic validators and the exact-tree CLI. It uses
+only #200's authorized AST nodes, events, registry identities, scopes, control
+frames, and expanded call stacks. It does not parse another command language
+or maintain another command allowlist.
+
+The accepted success path is:
+
+| State | Required runtime operation and binding |
+| --- | --- |
+| Preparing | Unconditional strict `errexit`/`errtrace`, fixed ERR handler, cgroup join, inode-bound read-only supervisor view, complete isolation setup, and initial read-only export seal. |
+| Launch started | The fixed exec-only launcher is the sole **foreground condition** of the top-level candidate-launch `if` in `builder_main`. The `if` itself cannot be skipped, backgrounded, or evaluated from another helper. |
+| Launch completed and reaped | Bash synchronously waits for that exact foreground process. The success edge records zero; the failure edge immediately captures `$?`. The adjacent closed result guard exits on every nonzero result. An assignment/event is not itself a reap receipt. |
+| Membership verified | The exact isolated checker runs once, unconditionally, after the result guard and before any handoff read or export. Its nonzero exit reaches the fixed output-validation failure handler. |
+| Export started | Every exact handoff validation has succeeded; only then may the export bind mount become writable. Both allowlisted files must be installed before ownership changes. |
+| Export committed | The completed two-file export has the exact host ownership and is successfully remounted read-only. The initial setup seal cannot be mistaken for this final close. |
+| Post-check completed | The fixed `publisher-programs.py post-check "$$" "$host_uid" "$host_gid"` authenticates its real parent/session/group, verifies the kernel read-only mount flag, and checks the actual two-file regular/single-link/`0400` inventory, ownership, 32 MiB target, and bounded nonempty metadata. Only then can the builder exit zero. |
+
+All mandatory operations are bound to their real control frames. The exact
+launch condition and its two result edges are deliberately modeled rather
+than treating every conditional event as executed. A checker or export
+operation in any branch, helper, callback, trap, background, pipeline,
+subshell, command/process substitution, or wrong entry frame is rejected.
+Missing/duplicate/early/late operations, status-edge swaps, premature success,
+and remapping the failure handler also reject. The ERR callback is the one
+registered failure-only exception: it can exit with a fixed code, never
+establish a successful phase.
+
+The machine proves the required **success-path structure**, not that a build
+has run. Actual completion evidence comes from executing the foreground
+launcher, checker, exporter, and post-check. A live checker invoked before
+launch can legitimately see only itself and the wrapper; that passing snapshot
+does **not** prove a future candidate completed. The regression reproduces
+this and shows why the phase authority is mandatory.
+
+Failure output remains suppressed inside the namespace. Only the trusted
+host translates child status to a fixed `stage=isolated detail=... exit=...`
+diagnostic:
+
+| Exit | Detail |
+| --- | --- |
+| 71–76 | `candidate-preflight`, `candidate-venv`, `candidate-pip`, `candidate-build-tools`, `candidate-make`, `candidate-handoff` respectively |
+| 77 | `candidate-unknown` |
+| 81–85 | `namespace`, `mount-audit`, `output-validate`, `export`, `post-check` respectively |
+| Other | `transport`, normalized to exit 125 |
+
+The trusted candidate script assigns 71–76 through its fixed failure handler.
+A candidate result outside those codes or 125/126 becomes 77 before returning
+to the host; in particular a candidate cannot impersonate an isolated 81–85
+substage. Authenticated supervisor launch, immediate signal reauthentication,
+owned-cgroup cleanup, output suppression, and pre-secret host post-checks are
+retained. No candidate-controlled output, PID, path, or free text is added to
+these diagnostics.
+
+### Dependencies, compatibility, and evidence boundary
+
+This is a genuine depth-one child of #200. While the parent PR is open the
+child stays on its immediate implementation branch; parent updates are merged
+normally, and delivery is bottom-up. #177 recovery depends on both contracts.
+#195 overlaps the publisher/validators and must be reconciled on their merged
+base; this change neither closes nor supersedes it. There are no other feature
+or profile conflicts. There is no feature flag, artifact-format change, Build
+topology/required-check change, new host package, or target ROM/RAM, save,
+configuration identity, generated game data, localization, modern debug/release,
+or archival impact.
+
+[TC-WORKFLOW-PUBLISHER-PHASE-001](test-cases/workflow-governance.md#tc-workflow-publisher-phase-001-bind-verification-to-completed-candidate-execution)
+provides the human procedure and focused automation. Its live rootless
+user/PID/mount-namespace fixture executes real wait/reap, no-fork exec,
+capability drop, the canonical checker, install/chown, read-only remount, and
+post-check, including live and detached descendants. A same-PID exec adapter
+mirrors the live private `/proc` process set into the read-only literal
+cgroup-view path; it does not decide success or emit phase events. The
+single-ID user namespace uses `--keep-groups` instead of unavailable
+`setgroups`. This fixture is **not** evidence of privileged cgroup join/kill
+or dedicated-UID isolation. Those unchanged boundaries, and the complete
+publisher, require the real supported runner and exact-master Build; a local
+fixture cannot release #177's recovery hold.
+
+No subjective/manual-only criterion applies. Revert this dedicated child on a
+regression and retain the recovery hold; do not introduce a phase bypass or
+claim the unchanged failing publisher is healthy.
 
 ## Legal base contract
 
@@ -205,14 +297,15 @@ Before hiding `/sys`, the wrapper bind-mounts only the exact owned cgroup
 read-only under the exact root-owned mode-`0700` `/mnt/supervisor` parent.
 The candidate cannot read, write, execute, or traverse that parent and cannot
 receive an FD for it. After candidate exit, the wrapper reads the exact
-read-only cgroup child there and exports the ROM only when the wrapper PID is
-the sole member; the host continues to use the actual cgroup path for kill and
-removal. After the isolated builder is spawned, trusted wrapper failures emit
+read-only cgroup child there and exports the ROM only when its fixed checker
+observes exactly the wrapper and itself, with no candidate descendant. The
+checker is then synchronously reaped; the wrapper is the sole member. The host
+continues to use the actual cgroup path for kill and removal. After the isolated builder is spawned, trusted wrapper failures emit
 only fixed `launch`, `isolated`, or `cleanup` stage codes with numeric exits,
 never candidate-controlled output. `launch` covers only the bounded,
 kernel-derived stopped-session identity and exact resume operation; its detail
 is one fixed enum value, never a PID or process text. `isolated` reports the
-child exit, and `cleanup` reports teardown summary status whenever teardown
+fixed substage detail and mapped child exit listed above, and `cleanup` reports teardown summary status whenever teardown
 fails. Earlier trusted pre-spawn setup and later post-child handoff validation
 still use normal shell failure output and are outside this diagnostic enum;
 cleanup may therefore be the only stage text even when the failure began

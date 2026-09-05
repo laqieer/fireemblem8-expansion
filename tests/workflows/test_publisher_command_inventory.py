@@ -49,20 +49,20 @@ class PublisherCommandInventoryTests(unittest.TestCase):
         self.assertEqual(
             {event.kind for event in result.events} & {
                 authority.EventKind.CANDIDATE_LAUNCH,
-                authority.EventKind.LEGACY_MEMBERSHIP,
+                authority.EventKind.MEMBERSHIP_VERIFIED,
                 authority.EventKind.EXPORT_OPEN,
                 authority.EventKind.EXPORT_FILE,
                 authority.EventKind.EXPORT_CLOSE,
             },
             {
                 authority.EventKind.CANDIDATE_LAUNCH,
-                authority.EventKind.LEGACY_MEMBERSHIP,
+                authority.EventKind.MEMBERSHIP_VERIFIED,
                 authority.EventKind.EXPORT_OPEN,
                 authority.EventKind.EXPORT_FILE,
                 authority.EventKind.EXPORT_CLOSE,
             },
         )
-        self.assertNotIn(authority.EventKind.MEMBERSHIP_VERIFIED, {event.kind for event in result.events})
+        self.assertNotIn(authority.EventKind.LEGACY_MEMBERSHIP, {event.kind for event in result.events})
         self.assertTrue(any(len(event.call_stack) > 2 for event in result.events))
         self.assertTrue(any(context.kind == "substitution" for event in result.events for context in event.context))
         self.assertTrue(any(context.kind == "loop" for event in result.events for context in event.context))
@@ -249,9 +249,9 @@ class PublisherCommandInventoryTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     self.inventory.authorize(command, "builder_main")
 
-    def test_checker_is_one_exact_available_signature_not_an_extra_production_reader(self):
+    def test_checker_is_one_exact_mandatory_production_signature(self):
         signature = next(s for s in self.inventory.signatures if s.program and s.program.name == "membership")
-        self.assertEqual(signature.occurrences, 0)
+        self.assertEqual(signature.occurrences, 1)
         self.assertEqual(signature.events, (authority.EventKind.MEMBERSHIP_VERIFIED,))
         self.assertEqual(signature.program.outputs, ())
         self.assertEqual(signature.program.runtime_path, authority.PROGRAM_RUNTIME_PATH)
@@ -341,7 +341,14 @@ class PublisherProgramTests(unittest.TestCase):
             handle = mock.MagicMock()
             handle.__enter__.return_value = handle
             handle.read.return_value = data
-            with mock.patch("builtins.open", return_value=handle) as opened, mock.patch.object(programs.os, "getpid", return_value=42):
+            with (
+                mock.patch("builtins.open", return_value=handle) as opened,
+                mock.patch.object(programs.os, "getpid", return_value=42),
+                mock.patch.object(programs.os, "getppid", return_value=41),
+                mock.patch.object(programs.os, "getsid", return_value=1),
+                mock.patch.object(programs.os, "getpgid", return_value=1),
+                mock.patch.object(programs.os, "getpgrp", return_value=1),
+            ):
                 output = io.StringIO()
                 with mock.patch("sys.stdout", output):
                     self.assertEqual(programs.main(["membership", "41"]), 0)
@@ -437,6 +444,8 @@ class PublisherExactTreeTests(unittest.TestCase):
         for path in (
             authority.PROGRAM_PATH, "scripts/workflow_pilot/publisher_signatures.py",
             "scripts/workflow_pilot/publisher_shell.py",
+            "scripts/workflow_pilot/publisher_phase.py",
+            "scripts/workflow_pilot/publisher_candidate.py",
             "scripts/workflow_pilot/publisher_shell_contract.py", "scripts/upstream_port/verify.py",
             "scripts/workflow_pilot/__init__.py",
         ):

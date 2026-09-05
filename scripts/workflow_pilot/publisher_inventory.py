@@ -91,6 +91,7 @@ class EventKind(str, Enum):
     EXPORT_OPEN = "export-open"
     EXPORT_FILE = "export-file"
     EXPORT_CLOSE = "export-close"
+    POST_CHECK = "post-check"
 
 
 class WrapperKind(str, Enum):
@@ -496,7 +497,10 @@ def reviewed_inventory() -> Inventory:
 
 
 def validate_builder_script(source: str) -> Analysis:
-    return reviewed_inventory().validate(source)
+    from . import publisher_phase
+    analysis = reviewed_inventory().validate(source)
+    publisher_phase.validate(analysis)
+    return analysis
 
 
 def validate_workflow(workflow: str) -> Analysis:
@@ -536,6 +540,12 @@ def authority_paths() -> tuple[str, ...]:
         "scripts.workflow_pilot.publisher_shell_contract",
         "scripts.upstream_port.verify",
     ]
+    pending.extend(
+        signature.program.source_path[:-3].replace("/", ".")
+        for signature in reviewed_inventory().signatures
+        if signature.program is not None
+        and signature.program.source_path.endswith(".py")
+    )
     paths: set[str] = {WORKFLOW_PATH}
     modules: set[str] = set()
     while pending:

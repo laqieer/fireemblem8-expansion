@@ -207,7 +207,7 @@ Fixed trusted text and a numeric exit classification preserve post-spawn build
 failure without exposing candidate bytes. After the isolated builder is
 spawned, `launch` covers only bounded stopped-session identity and exact resume
 validation and emits one fixed detail enum, never process text or an ID.
-`isolated` reports the child exit, and `cleanup` reports teardown summary
+`isolated` reports a fixed substage detail and mapped child exit, and `cleanup` reports teardown summary
 status whenever teardown fails. Earlier trusted pre-spawn setup and later
 post-child handoff validation still use normal shell failure output and are
 outside this stage enum; cleanup may therefore be the only stage text even
@@ -215,8 +215,12 @@ when the failure began before spawn.
 The wrapper binds the exact owned cgroup read-only under root-only mode-`0700`
 `/mnt/supervisor` before masking `/sys`. The candidate cannot read, write,
 execute, or traverse that parent, while the exact cgroup child remains
-read-only; the post-build check remains readable and rejects any member beyond
-the wrapper PID before ROM handoff. Decoded recursive `/dev` mount targets are
+read-only; the fixed post-build checker accepts exactly the wrapper and its
+own transient PID, rejecting every candidate descendant before ROM handoff.
+The checker is synchronously reaped before export. The full phase, actual
+completion/reap, export sealing, final post-check and fixed substage procedure
+is [TC-WORKFLOW-PUBLISHER-PHASE-001](workflow-governance.md#tc-workflow-publisher-phase-001-bind-verification-to-completed-candidate-execution).
+Decoded recursive `/dev` mount targets are
 emitted through NUL-delimited trusted JSON parsing, staged through checked
 root-owned regular temp files under `/mnt/supervisor`, unmounted deepest-first,
 and rechecked so only `/dev` remains before the private device tree is
