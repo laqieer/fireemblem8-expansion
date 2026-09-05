@@ -33,7 +33,8 @@ SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 REPOSITORY_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 WORKFLOW_PATH = ".github/workflows/build.yml"
 EVIDENCE_MARKER = "<!-- workflow-pilot-candidate-evidence -->"
-RECEIPT_MARKER = "<!-- workflow-pilot-metadata-edit-receipt:v1 -->"
+INTENT_MARKER = "<!-- workflow-pilot-metadata-edit-intent:v1 -->"
+CONFIRMATION_MARKER = "<!-- workflow-pilot-metadata-edit-confirmation:v1 -->"
 HTTP_STATUS_RE = re.compile(r"^HTTP/(?:1(?:\.[01])?|2(?:\.0)?) ([1-5][0-9]{2})(?: .*)?$")
 HEADER_NAME_RE = re.compile(r"^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$")
 LINK_PART_RE = re.compile(r'\s*<([^>]+)>\s*;\s*rel="([^"]+)"\s*(?:,\s*|$)')
@@ -65,6 +66,28 @@ RUN_CONCLUSIONS = frozenset(
         "timed_out",
     }
 )
+METADATA_VERSION_QUERY = """query($owner:String!,$name:String!,$number:Int!){
+  repository(owner:$owner,name:$name){
+    databaseId
+    nameWithOwner
+    pullRequest(number:$number){
+      baseRefOid
+      body
+      headRefOid
+      lastEditedAt
+      number
+      title
+      url
+      editor{__typename databaseId login}
+      timelineItems(last:100,itemTypes:[RENAMED_TITLE_EVENT]){
+        nodes{__typename ... on RenamedTitleEvent{
+          id createdAt previousTitle currentTitle
+          actor{__typename databaseId login}
+        }}
+      }
+    }
+  }
+}"""
 
 
 class MetadataEditError(ValueError):
@@ -98,7 +121,8 @@ class CommentState:
     author_association: str | None
     created_at: datetime.datetime
     updated_at: datetime.datetime
-    receipt: EditReceipt | None
+    intent: EditReceipt | None
+    confirmation: EditConfirmation | None
 
 
 @dataclass(frozen=True)
@@ -145,6 +169,22 @@ class EditFieldDigest:
 
 
 @dataclass(frozen=True)
+class MetadataVersion:
+    title_event_id: str | None
+    title_event_created_at: str | None
+    title_previous: str | None
+    title_current: str | None
+    title_actor_id: int | None
+    title_actor_login: str | None
+    body_last_edited_at: str | None
+    body_editor_id: int | None
+    body_editor_login: str | None
+
+    def canonical_payload(self) -> dict[str, object]:
+        return asdict(self)
+
+
+@dataclass(frozen=True)
 class EditReceipt:
     schema_version: int
     repository: str
@@ -155,9 +195,11 @@ class EditReceipt:
     workflow_id: int
     workflow_path: str
     nonce: str
-    metadata_sha256: str
+    pre_metadata_sha256: str
+    pre_fields: tuple[EditFieldDigest, ...]
+    target_metadata_sha256: str
+    pre_version: MetadataVersion
     requested_fields: tuple[EditFieldDigest, ...]
-    edit_updated_at: str
     watermark_run_id: int
     watermark_run_number: int
     watermark_created_at: str
@@ -165,10 +207,14 @@ class EditReceipt:
     def canonical_payload(self) -> dict[str, object]:
         return {
             "base_sha": self.base_sha,
-            "edit_updated_at": self.edit_updated_at,
             "head_sha": self.head_sha,
-            "metadata_sha256": self.metadata_sha256,
             "nonce": self.nonce,
+            "pre_metadata_sha256": self.pre_metadata_sha256,
+            "pre_fields": {
+                field.field: field.sha256
+                for field in self.pre_fields
+            },
+            "pre_version": self.pre_version.canonical_payload(),
             "pr_number": self.pr_number,
             "repository": self.repository,
             "repository_id": self.repository_id,
@@ -177,6 +223,7 @@ class EditReceipt:
                 for field in self.requested_fields
             },
             "schema_version": self.schema_version,
+            "target_metadata_sha256": self.target_metadata_sha256,
             "watermark": {
                 "created_at": self.watermark_created_at,
                 "run_id": self.watermark_run_id,
@@ -186,6 +233,42 @@ class EditReceipt:
                 "id": self.workflow_id,
                 "path": self.workflow_path,
             },
+        }
+
+    def canonical_json(self) -> str:
+        return json.dumps(
+            self.canonical_payload(),
+            ensure_ascii=True,
+            separators=(",", ":"),
+            sort_keys=True,
+        ) + "\n"
+
+
+@dataclass(frozen=True)
+class EditConfirmation:
+    schema_version: int
+    repository: str
+    repository_id: int
+    pr_number: int
+    head_sha: str
+    base_sha: str
+    intent_comment_id: int
+    intent_nonce: str
+    metadata_sha256: str
+    metadata_version: MetadataVersion
+
+    def canonical_payload(self) -> dict[str, object]:
+        return {
+            "base_sha": self.base_sha,
+            "head_sha": self.head_sha,
+            "intent_comment_id": self.intent_comment_id,
+            "intent_nonce": self.intent_nonce,
+            "metadata_sha256": self.metadata_sha256,
+            "metadata_version": self.metadata_version.canonical_payload(),
+            "pr_number": self.pr_number,
+            "repository": self.repository,
+            "repository_id": self.repository_id,
+            "schema_version": self.schema_version,
         }
 
     def canonical_json(self) -> str:
@@ -209,14 +292,17 @@ class Decision:
     pr_number: int
     run_id: int | None = None
     comment_id: int | None = None
-    receipt_comment_id: int | None = None
-    receipt_comment_url: str | None = None
+    intent_comment_id: int | None = None
+    intent_comment_url: str | None = None
+    confirmation_comment_id: int | None = None
+    confirmation_comment_url: str | None = None
 
     def __post_init__(self) -> None:
         for field, value in (
             ("run_id", self.run_id),
             ("comment_id", self.comment_id),
-            ("receipt_comment_id", self.receipt_comment_id),
+            ("intent_comment_id", self.intent_comment_id),
+            ("confirmation_comment_id", self.confirmation_comment_id),
         ):
             if value is not None and (
                 isinstance(value, bool)
@@ -231,21 +317,27 @@ class Decision:
             raise MetadataEditError(
                 "Decision run_id and comment_id are mutually exclusive"
             )
-        if (self.receipt_comment_id is None) != (
-            self.receipt_comment_url is None
+        for label, comment_id, url in (
+            ("intent", self.intent_comment_id, self.intent_comment_url),
+            (
+                "confirmation",
+                self.confirmation_comment_id,
+                self.confirmation_comment_url,
+            ),
         ):
-            raise MetadataEditError(
-                "Decision receipt comment ID and URL must appear together"
-            )
-        if self.receipt_comment_id is not None:
-            expected_url = (
-                f"https://github.com/{self.repository}/pull/{self.pr_number}"
-                f"#issuecomment-{self.receipt_comment_id}"
-            )
-            if self.receipt_comment_url != expected_url:
+            if (comment_id is None) != (url is None):
                 raise MetadataEditError(
-                    "Decision receipt comment URL identity drifted"
+                    f"Decision {label} comment ID and URL must appear together"
                 )
+            if comment_id is not None:
+                expected_url = (
+                    f"https://github.com/{self.repository}/pull/{self.pr_number}"
+                    f"#issuecomment-{comment_id}"
+                )
+                if url != expected_url:
+                    raise MetadataEditError(
+                        f"Decision {label} comment URL identity drifted"
+                    )
         if self.action == "comment-updated":
             if self.comment_id is None or self.run_id is not None:
                 raise MetadataEditError(
@@ -255,20 +347,31 @@ class Decision:
             raise MetadataEditError(
                 "only comment-updated Decision may contain comment_id"
             )
-        if self.action == "updated":
+        if self.action in {"recovered", "updated"}:
             if (
-                self.receipt_comment_id is None
-                or self.receipt_comment_url is None
+                self.intent_comment_id is None
+                or self.intent_comment_url is None
+                or self.confirmation_comment_id is None
+                or self.confirmation_comment_url is None
             ):
                 raise MetadataEditError(
-                    "updated Decision requires a receipt comment identity"
+                    "updated Decision requires intent and confirmation comments"
                 )
         elif (
-            self.receipt_comment_id is not None
-            or self.receipt_comment_url is not None
+            self.action in {"deferred", "no-op"}
+            and self.intent_comment_id is not None
+            and self.confirmation_comment_id is not None
+        ):
+            pass
+        elif (
+            self.intent_comment_id is not None
+            or self.intent_comment_url is not None
+            or self.confirmation_comment_id is not None
+            or self.confirmation_comment_url is not None
         ):
             raise MetadataEditError(
-                "only updated Decision may contain a receipt comment identity"
+                "only updated, recovered, or authoritative no-op/deferred "
+                "Decisions may contain intent and confirmation comments"
             )
 
     def canonical_json(self) -> str:
@@ -447,6 +550,12 @@ def _metadata_digest(title: str, body: str | None) -> str:
     return _content_digest(canonical)
 
 
+def _field_state_digest(value: str | None) -> str:
+    return _content_digest(
+        json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+    )
+
+
 def _requested_field_digests(
     *,
     title: str | None,
@@ -462,18 +571,109 @@ def _requested_field_digests(
     return tuple(fields)
 
 
+def _parse_metadata_version_payload(
+    payload: object,
+    *,
+    label: str,
+) -> MetadataVersion:
+    if not isinstance(payload, dict) or set(payload) != {
+        "body_editor_id",
+        "body_editor_login",
+        "body_last_edited_at",
+        "title_actor_id",
+        "title_actor_login",
+        "title_current",
+        "title_event_created_at",
+        "title_event_id",
+        "title_previous",
+    }:
+        raise MetadataEditError(f"{label} metadata version shape is invalid")
+    title_event_id = payload["title_event_id"]
+    title_event_created_at = payload["title_event_created_at"]
+    title_previous = payload["title_previous"]
+    title_current = payload["title_current"]
+    title_actor_id = payload["title_actor_id"]
+    title_actor_login = payload["title_actor_login"]
+    title_values = (
+        title_event_id,
+        title_event_created_at,
+        title_previous,
+        title_current,
+        title_actor_id,
+        title_actor_login,
+    )
+    if all(value is None for value in title_values):
+        pass
+    elif (
+        not isinstance(title_event_id, str)
+        or not title_event_id
+        or not isinstance(title_previous, str)
+        or not isinstance(title_current, str)
+    ):
+        raise MetadataEditError(f"{label} title version is invalid")
+    else:
+        title_event_created_at = _timestamp_text(
+            _github_timestamp(
+                title_event_created_at,
+                f"{label} title event created_at",
+            )
+        )
+        title_actor_id = _positive_int(
+            title_actor_id,
+            f"{label} title actor id",
+        )
+        title_actor_login = _text(
+            title_actor_login,
+            f"{label} title actor login",
+        )
+    body_last_edited_at = payload["body_last_edited_at"]
+    body_editor_id = payload["body_editor_id"]
+    body_editor_login = payload["body_editor_login"]
+    if body_last_edited_at is None:
+        if body_editor_id is not None or body_editor_login is not None:
+            raise MetadataEditError(f"{label} body version is invalid")
+    else:
+        body_last_edited_at = _timestamp_text(
+            _github_timestamp(
+                body_last_edited_at,
+                f"{label} body lastEditedAt",
+            )
+        )
+        body_editor_id = _positive_int(
+            body_editor_id,
+            f"{label} body editor id",
+        )
+        body_editor_login = _text(
+            body_editor_login,
+            f"{label} body editor login",
+        )
+    return MetadataVersion(
+        title_event_id,
+        title_event_created_at,
+        title_previous,
+        title_current,
+        title_actor_id,
+        title_actor_login,
+        body_last_edited_at,
+        body_editor_id,
+        body_editor_login,
+    )
+
+
 def _parse_edit_receipt(payload: object) -> EditReceipt:
     if not isinstance(payload, dict) or set(payload) != {
         "base_sha",
-        "edit_updated_at",
         "head_sha",
-        "metadata_sha256",
         "nonce",
+        "pre_fields",
+        "pre_metadata_sha256",
+        "pre_version",
         "pr_number",
         "repository",
         "repository_id",
         "requested_fields",
         "schema_version",
+        "target_metadata_sha256",
         "watermark",
         "workflow",
     }:
@@ -503,15 +703,24 @@ def _parse_edit_receipt(payload: object) -> EditReceipt:
                 f"edit receipt {field} digest is invalid"
             )
         requested_fields.append(EditFieldDigest(field, digest))
+    pre_fields = payload["pre_fields"]
+    if not isinstance(pre_fields, dict) or set(pre_fields) != {"body", "title"}:
+        raise MetadataEditError("edit receipt pre_fields are invalid")
+    parsed_pre_fields = []
+    for field in ("body", "title"):
+        digest = pre_fields[field]
+        if not isinstance(digest, str) or DIGEST_RE.fullmatch(digest) is None:
+            raise MetadataEditError(
+                f"edit receipt pre-{field} digest is invalid"
+            )
+        parsed_pre_fields.append(EditFieldDigest(field, digest))
     nonce = payload["nonce"]
     if not isinstance(nonce, str) or DIGEST_RE.fullmatch(nonce) is None:
         raise MetadataEditError("edit receipt nonce is invalid")
-    metadata_sha256 = payload["metadata_sha256"]
-    if (
-        not isinstance(metadata_sha256, str)
-        or DIGEST_RE.fullmatch(metadata_sha256) is None
-    ):
-        raise MetadataEditError("edit receipt metadata digest is invalid")
+    for field in ("pre_metadata_sha256", "target_metadata_sha256"):
+        digest = payload[field]
+        if not isinstance(digest, str) or DIGEST_RE.fullmatch(digest) is None:
+            raise MetadataEditError(f"edit receipt {field} is invalid")
     workflow = payload["workflow"]
     if not isinstance(workflow, dict) or set(workflow) != {"id", "path"}:
         raise MetadataEditError("edit receipt workflow shape is invalid")
@@ -524,16 +733,10 @@ def _parse_edit_receipt(payload: object) -> EditReceipt:
         "run_number",
     }:
         raise MetadataEditError("edit receipt watermark shape is invalid")
-    edit_updated_at = _github_timestamp(
-        payload["edit_updated_at"],
-        "edit receipt updated_at",
-    )
     watermark_created_at = _github_timestamp(
         watermark["created_at"],
         "edit receipt watermark created_at",
     )
-    if watermark_created_at > edit_updated_at:
-        raise MetadataEditError("edit receipt watermark postdates the edit")
     return EditReceipt(
         schema_version=1,
         repository=repository,
@@ -553,9 +756,14 @@ def _parse_edit_receipt(payload: object) -> EditReceipt:
         ),
         workflow_path=WORKFLOW_PATH,
         nonce=nonce,
-        metadata_sha256=metadata_sha256,
+        pre_metadata_sha256=payload["pre_metadata_sha256"],
+        pre_fields=tuple(parsed_pre_fields),
+        target_metadata_sha256=payload["target_metadata_sha256"],
+        pre_version=_parse_metadata_version_payload(
+            payload["pre_version"],
+            label="edit receipt pre_version",
+        ),
         requested_fields=tuple(requested_fields),
-        edit_updated_at=_timestamp_text(edit_updated_at),
         watermark_run_id=_positive_int(
             watermark["run_id"],
             "edit receipt watermark run_id",
@@ -565,6 +773,62 @@ def _parse_edit_receipt(payload: object) -> EditReceipt:
             "edit receipt watermark run_number",
         ),
         watermark_created_at=_timestamp_text(watermark_created_at),
+    )
+
+
+def _parse_edit_confirmation(payload: object) -> EditConfirmation:
+    if not isinstance(payload, dict) or set(payload) != {
+        "base_sha",
+        "head_sha",
+        "intent_comment_id",
+        "intent_nonce",
+        "metadata_sha256",
+        "metadata_version",
+        "pr_number",
+        "repository",
+        "repository_id",
+        "schema_version",
+    }:
+        raise MetadataEditError("edit confirmation shape is invalid")
+    if (
+        isinstance(payload["schema_version"], bool)
+        or not isinstance(payload["schema_version"], int)
+        or payload["schema_version"] != 1
+    ):
+        raise MetadataEditError("edit confirmation schema_version is invalid")
+    repository = payload["repository"]
+    if not isinstance(repository, str):
+        raise MetadataEditError("edit confirmation repository is invalid")
+    repository = _repository(repository)
+    nonce = payload["intent_nonce"]
+    digest = payload["metadata_sha256"]
+    if not isinstance(nonce, str) or DIGEST_RE.fullmatch(nonce) is None:
+        raise MetadataEditError("edit confirmation intent nonce is invalid")
+    if not isinstance(digest, str) or DIGEST_RE.fullmatch(digest) is None:
+        raise MetadataEditError("edit confirmation metadata digest is invalid")
+    return EditConfirmation(
+        schema_version=1,
+        repository=repository,
+        repository_id=_positive_int(
+            payload["repository_id"],
+            "edit confirmation repository_id",
+        ),
+        pr_number=_positive_int(
+            payload["pr_number"],
+            "edit confirmation pr_number",
+        ),
+        head_sha=_sha(payload["head_sha"], "edit confirmation head"),
+        base_sha=_sha(payload["base_sha"], "edit confirmation base"),
+        intent_comment_id=_positive_int(
+            payload["intent_comment_id"],
+            "edit confirmation intent_comment_id",
+        ),
+        intent_nonce=nonce,
+        metadata_sha256=digest,
+        metadata_version=_parse_metadata_version_payload(
+            payload["metadata_version"],
+            label="edit confirmation",
+        ),
     )
 
 
@@ -849,7 +1113,9 @@ class GitHubClient:
             label=label,
             allow_empty_body=method == "POST",
         )
-        expected_status = 201 if method == "POST" else 200
+        expected_status = (
+            200 if endpoint == "graphql" else 201 if method == "POST" else 200
+        )
         if response.status != expected_status:
             raise MetadataEditError(
                 f"{label} returned HTTP {response.status}, expected {expected_status}"
@@ -976,6 +1242,155 @@ def require_identity(
         raise MetadataEditError(
             "pull request identity changed; rerun with the current exact head/base"
         )
+
+
+def _graphql_user(
+    raw: object,
+    *,
+    label: str,
+    required: bool,
+) -> tuple[int | None, str | None]:
+    if raw is None and not required:
+        return None, None
+    if (
+        not isinstance(raw, dict)
+        or raw.get("__typename") != "User"
+        or not isinstance(raw.get("login"), str)
+        or not raw["login"]
+    ):
+        raise MetadataEditError(f"{label} actor is not the repository owner")
+    return (
+        _positive_int(raw.get("databaseId"), f"{label} actor id"),
+        raw["login"],
+    )
+
+
+def fetch_metadata_version(
+    client: GitHubClient,
+    state: PullRequestState,
+) -> MetadataVersion:
+    owner, name = state.repository.split("/", 1)
+    response = client.request(
+        "POST",
+        "graphql",
+        body={
+            "query": METADATA_VERSION_QUERY,
+            "variables": {
+                "name": name,
+                "number": state.number,
+                "owner": owner,
+            },
+        },
+        label="pull request metadata version",
+    )
+    payload = response.payload
+    if not isinstance(payload, dict) or set(payload) != {"data"}:
+        raise MetadataEditError("metadata version response shape is invalid")
+    data = payload["data"]
+    repository = data.get("repository") if isinstance(data, dict) else None
+    if (
+        not isinstance(repository, dict)
+        or repository.get("databaseId") != state.repository_id
+        or repository.get("nameWithOwner") != state.repository
+    ):
+        raise MetadataEditError("metadata version repository identity drifted")
+    pull = repository.get("pullRequest")
+    if (
+        not isinstance(pull, dict)
+        or pull.get("number") != state.number
+        or pull.get("url")
+        != f"https://github.com/{state.repository}/pull/{state.number}"
+        or pull.get("headRefOid") != state.head_sha
+        or pull.get("baseRefOid") != state.base_sha
+        or pull.get("title") != state.title
+        or pull.get("body") != state.body
+    ):
+        raise MetadataEditError("metadata version pull request identity drifted")
+    body_last_edited_at = pull.get("lastEditedAt")
+    body_editor_id = None
+    body_editor_login = None
+    if body_last_edited_at is not None:
+        body_last_edited_at = _timestamp_text(
+            _github_timestamp(
+                body_last_edited_at,
+                "pull request body lastEditedAt",
+            )
+        )
+        body_editor_id, body_editor_login = _graphql_user(
+            pull.get("editor"),
+            label="pull request body",
+            required=True,
+        )
+    timeline = pull.get("timelineItems")
+    nodes = timeline.get("nodes") if isinstance(timeline, dict) else None
+    if not isinstance(nodes, list) or len(nodes) > 100:
+        raise MetadataEditError("title event history is invalid")
+    events = []
+    seen_ids = set()
+    for raw in nodes:
+        if not isinstance(raw, dict) or raw.get("__typename") != "RenamedTitleEvent":
+            raise MetadataEditError("title event history contains an invalid node")
+        event_id = _text(raw.get("id"), "title event id")
+        if event_id in seen_ids:
+            raise MetadataEditError("title event history repeats an identity")
+        seen_ids.add(event_id)
+        created_at = _timestamp_text(
+            _github_timestamp(raw.get("createdAt"), "title event createdAt")
+        )
+        previous_title = _text(raw.get("previousTitle"), "previous title")
+        current_title = _text(raw.get("currentTitle"), "current title")
+        actor_id, actor_login = _graphql_user(
+            raw.get("actor"),
+            label="title event",
+            required=False,
+        )
+        events.append(
+            (
+                created_at,
+                event_id,
+                previous_title,
+                current_title,
+                actor_id,
+                actor_login,
+            )
+        )
+    if not events:
+        return MetadataVersion(
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            body_last_edited_at,
+            body_editor_id,
+            body_editor_login,
+        )
+    newest_time = max(event[0] for event in events)
+    newest = [event for event in events if event[0] == newest_time]
+    if len(newest) != 1:
+        raise MetadataEditError("latest title event is ambiguous")
+    (
+        created_at,
+        event_id,
+        previous_title,
+        current_title,
+        actor_id,
+        actor_login,
+    ) = newest[0]
+    if current_title != state.title:
+        raise MetadataEditError("latest title event does not attest current title")
+    return MetadataVersion(
+        event_id,
+        created_at,
+        previous_title,
+        current_title,
+        actor_id,
+        actor_login,
+        body_last_edited_at,
+        body_editor_id,
+        body_editor_login,
+    )
 
 
 def _page_count(total_count: int) -> int:
@@ -1872,12 +2287,15 @@ def _edit_receipt(
     *,
     title: str | None,
     body: str | None,
+    pre_version: MetadataVersion,
 ) -> EditReceipt:
     if not runs:
         raise MetadataEditError(
             "edit receipt requires a complete pre-PATCH run watermark"
         )
     watermark = max(runs, key=lambda run: run.run_number)
+    target_title = title if title is not None else state.title
+    target_body = body if body is not None else state.body
     return EditReceipt(
         schema_version=1,
         repository=state.repository,
@@ -1888,9 +2306,14 @@ def _edit_receipt(
         workflow_id=watermark.workflow_id,
         workflow_path=WORKFLOW_PATH,
         nonce=secrets.token_hex(32),
-        metadata_sha256=_metadata_digest(state.title, state.body),
+        pre_metadata_sha256=_metadata_digest(state.title, state.body),
+        pre_fields=(
+            EditFieldDigest("body", _field_state_digest(state.body)),
+            EditFieldDigest("title", _field_state_digest(state.title)),
+        ),
+        target_metadata_sha256=_metadata_digest(target_title, target_body),
+        pre_version=pre_version,
         requested_fields=_requested_field_digests(title=title, body=body),
-        edit_updated_at=_timestamp_text(state.updated_at),
         watermark_run_id=watermark.run_id,
         watermark_run_number=watermark.run_number,
         watermark_created_at=_timestamp_text(watermark.created_at),
@@ -1900,7 +2323,7 @@ def _edit_receipt(
 def _validate_receipt_identity(
     receipt: EditReceipt,
     state: PullRequestState,
-) -> datetime.datetime:
+) -> None:
     if _parse_edit_receipt(receipt.canonical_payload()) != receipt:
         raise MetadataEditError("edit receipt is not canonical")
     if (
@@ -1913,9 +2336,23 @@ def _validate_receipt_identity(
         or receipt.workflow_path != WORKFLOW_PATH
     ):
         raise MetadataEditError("edit receipt identity is stale or forged")
-    if _metadata_digest(state.title, state.body) != receipt.metadata_sha256:
+
+
+def _receipt_fields(receipt: EditReceipt) -> dict[str, str]:
+    return {field.field: field.sha256 for field in receipt.requested_fields}
+
+
+def _receipt_pre_fields(receipt: EditReceipt) -> dict[str, str]:
+    return {field.field: field.sha256 for field in receipt.pre_fields}
+
+
+def _validate_receipt_target(
+    receipt: EditReceipt,
+    state: PullRequestState,
+) -> None:
+    if _metadata_digest(state.title, state.body) != receipt.target_metadata_sha256:
         raise MetadataEditError(
-            "edit receipt complete metadata digest does not match the pull request"
+            "edit receipt target metadata digest does not match the pull request"
         )
     values = {
         "body": state.body,
@@ -1927,20 +2364,116 @@ def _validate_receipt_identity(
             raise MetadataEditError(
                 f"edit receipt {field.field} digest does not match the pull request"
             )
-    edit_updated_at = _github_timestamp(
-        receipt.edit_updated_at,
-        "edit receipt updated_at",
+
+
+def _receipt_matches_pre_state(
+    receipt: EditReceipt,
+    state: PullRequestState,
+    version: MetadataVersion,
+) -> bool:
+    pre_fields = _receipt_pre_fields(receipt)
+    return (
+        _metadata_digest(state.title, state.body) == receipt.pre_metadata_sha256
+        and _field_state_digest(state.title) == pre_fields["title"]
+        and _field_state_digest(state.body) == pre_fields["body"]
+        and version == receipt.pre_version
     )
-    if state.updated_at < edit_updated_at:
-        raise MetadataEditError("edit receipt timestamp is newer than the pull request")
-    return edit_updated_at
+
+
+def _confirmation_for_target(
+    receipt: EditReceipt,
+    *,
+    intent_comment_id: int,
+    state: PullRequestState,
+    version: MetadataVersion,
+) -> EditConfirmation:
+    _validate_receipt_target(receipt, state)
+    requested = set(_receipt_fields(receipt))
+    if "title" in requested:
+        if (
+            version.title_event_id is None
+            or version.title_event_id == receipt.pre_version.title_event_id
+            or version.title_previous is None
+            or _field_state_digest(version.title_previous)
+            != _receipt_pre_fields(receipt)["title"]
+            or version.title_current != state.title
+            or version.title_actor_id != state.repository_owner_id
+            or version.title_actor_login != state.repository.split("/", 1)[0]
+        ):
+            raise MetadataEditError(
+                "title metadata version does not uniquely attest the edit"
+            )
+    elif (
+        version.title_event_id != receipt.pre_version.title_event_id
+        or version.title_event_created_at
+        != receipt.pre_version.title_event_created_at
+    ):
+        raise MetadataEditError("unrequested title metadata version changed")
+    if "body" in requested:
+        if (
+            version.body_last_edited_at is None
+            or version.body_last_edited_at
+            == receipt.pre_version.body_last_edited_at
+            or version.body_editor_id != state.repository_owner_id
+            or version.body_editor_login != state.repository.split("/", 1)[0]
+        ):
+            raise MetadataEditError(
+                "body metadata version does not uniquely attest the edit"
+            )
+    elif (
+        version.body_last_edited_at
+        != receipt.pre_version.body_last_edited_at
+        or version.body_editor_id != receipt.pre_version.body_editor_id
+    ):
+        raise MetadataEditError("unrequested body metadata version changed")
+    return EditConfirmation(
+        schema_version=1,
+        repository=receipt.repository,
+        repository_id=receipt.repository_id,
+        pr_number=receipt.pr_number,
+        head_sha=receipt.head_sha,
+        base_sha=receipt.base_sha,
+        intent_comment_id=intent_comment_id,
+        intent_nonce=receipt.nonce,
+        metadata_sha256=receipt.target_metadata_sha256,
+        metadata_version=version,
+    )
+
+
+def _validate_confirmation(
+    confirmation: EditConfirmation,
+    receipt: EditReceipt,
+    *,
+    intent_comment_id: int,
+    state: PullRequestState,
+    version: MetadataVersion,
+) -> None:
+    if _parse_edit_confirmation(confirmation.canonical_payload()) != confirmation:
+        raise MetadataEditError("edit confirmation is not canonical")
+    expected = _confirmation_for_target(
+        receipt,
+        intent_comment_id=intent_comment_id,
+        state=state,
+        version=version,
+    )
+    if (
+        confirmation.repository != state.repository
+        or confirmation.repository_id != state.repository_id
+        or confirmation.pr_number != state.number
+        or confirmation.head_sha != state.head_sha
+        or confirmation.base_sha != state.base_sha
+        or confirmation.intent_comment_id != intent_comment_id
+        or confirmation.intent_nonce != receipt.nonce
+        or confirmation.metadata_sha256 != receipt.target_metadata_sha256
+        or confirmation.metadata_version != version
+        or confirmation != expected
+    ):
+        raise MetadataEditError("edit confirmation authority is stale or forged")
 
 
 def _validate_receipt_watermark(
     receipt: EditReceipt,
     runs: tuple[RunState, ...],
-    *,
-    edit_updated_at: datetime.datetime,
 ) -> None:
     watermark = next(
         (run for run in runs if run.run_id == receipt.watermark_run_id),
@@ -1953,28 +2486,6 @@ def _validate_receipt_watermark(
         or watermark.workflow_id != receipt.workflow_id
     ):
         raise MetadataEditError("edit receipt watermark is stale or forged")
-    if any(
-        run.run_number > receipt.watermark_run_number
-        and run.created_at < edit_updated_at
-        for run in runs
-    ):
-        raise MetadataEditError(
-            "edit receipt omits a pre-edit workflow run"
-        )
-
-
-def _post_receipt_runs(
-    receipt: EditReceipt,
-    receipt_comment: CommentState,
-    runs: tuple[RunState, ...],
-) -> tuple[RunState, ...]:
-    return tuple(
-        run
-        for run in runs
-        if run.binding != "explicit-other"
-        and run.run_number > receipt.watermark_run_number
-        and run.created_at >= receipt_comment.created_at
-    )
 
 
 def _helper_command(
@@ -2013,14 +2524,14 @@ def _comment_guidance(state: PullRequestState) -> tuple[tuple[str, ...], ...]:
 
 def _reconcile_guidance(
     state: PullRequestState,
-    receipt_comment_id: int,
+    confirmation_comment_id: int,
 ) -> tuple[tuple[str, ...], ...]:
     return (
         _helper_command(
             "reconcile",
             state,
-            "--receipt-comment-id",
-            str(receipt_comment_id),
+            "--confirmation-comment-id",
+            str(confirmation_comment_id),
         ),
     )
 
@@ -2042,24 +2553,17 @@ def edit_metadata(
         raise MetadataEditError("edit requires --title-file, --body-file, or both")
     if title is not None and not title.strip():
         raise MetadataEditError("pull request title must not be empty")
-    if (title is None or title == initial.title) and (
-        body is None or body == initial.body
-    ):
-        return Decision(
-            action="no-op",
-            base_sha=base_sha,
-            guidance=(),
-            head_sha=head_sha,
-            mutated=False,
-            reason="requested metadata already matches",
-            repository=repository,
-            pr_number=pr_number,
-        )
-
+    target_title = title if title is not None else initial.title
+    target_body = body if body is not None else initial.body
+    target_digest = _metadata_digest(target_title, target_body)
+    requested_fields = _requested_field_digests(title=title, body=body)
+    initially_matches = (
+        target_title == initial.title and target_body == initial.body
+    )
     initial_runs = list_candidate_runs(client, initial)
     active_full = _blocking_active_runs(initial_runs)
     latest_full = _latest_full(initial_runs)
-    if essential_reason is None:
+    if not initially_matches and essential_reason is None:
         if active_full:
             return Decision(
                 action="deferred",
@@ -2087,11 +2591,14 @@ def edit_metadata(
                 pr_number=pr_number,
             )
         require_full_success(latest_full)
-    elif not essential_reason.strip():
+    elif essential_reason is not None and not essential_reason.strip():
         raise MetadataEditError("--essential-reason must contain non-whitespace text")
-    elif len(essential_reason.encode("utf-8")) > MAX_REASON_BYTES:
+    elif (
+        essential_reason is not None
+        and len(essential_reason.encode("utf-8")) > MAX_REASON_BYTES
+    ):
         raise MetadataEditError("--essential-reason exceeds 4096 bytes")
-    elif not active_full:
+    elif not initially_matches and not active_full:
         if latest_full is None:
             raise MetadataEditError(
                 "essential edit has no exact-head full Build to reconcile"
@@ -2118,7 +2625,7 @@ def edit_metadata(
     current_runs = list_candidate_runs(client, current)
     current_active_full = _blocking_active_runs(current_runs)
     current_latest_full = _latest_full(current_runs)
-    if essential_reason is None:
+    if not initially_matches and essential_reason is None:
         if current_runs != initial_runs:
             return Decision(
                 action="deferred",
@@ -2155,7 +2662,7 @@ def edit_metadata(
                 "exact full Build authority disappeared before mutation"
             )
         require_full_success(current_latest_full)
-    else:
+    elif not initially_matches:
         active_full = current_active_full
         latest_full = current_latest_full
         if not active_full:
@@ -2164,51 +2671,173 @@ def edit_metadata(
                     "essential edit has no exact-head full Build to reconcile"
                 )
             require_full_success(latest_full)
+
+    current_version = fetch_metadata_version(client, current)
+    intents, confirmations = _transaction_comments(client, current)
+    latest_intent_comment = _latest_intent(intents)
+    latest_confirmation_comment = (
+        confirmations.get(latest_intent_comment.comment_id)
+        if latest_intent_comment is not None
+        else None
+    )
+    intent = (
+        latest_intent_comment.intent
+        if latest_intent_comment is not None
+        else None
+    )
+    patch_required = not initially_matches
+    if intent is not None and latest_confirmation_comment is None:
+        _validate_receipt_identity(intent, current)
+        _validate_receipt_watermark(intent, current_runs)
+        if (
+            _receipt_fields(intent)
+            != {field.field: field.sha256 for field in requested_fields}
+            or intent.target_metadata_sha256 != target_digest
+        ):
+            raise MetadataEditError(
+                "another metadata edit intent is still active"
+            )
+        if _receipt_matches_pre_state(intent, current, current_version):
+            patch_required = True
+        elif _metadata_digest(current.title, current.body) == target_digest:
+            _validate_receipt_target(intent, current)
+            patch_required = False
+        else:
+            raise MetadataEditError(
+                "active metadata edit intent matches neither pre-state nor target"
+            )
+    elif initially_matches:
+        if (
+            intent is None
+            or latest_intent_comment is None
+            or latest_confirmation_comment is None
+            or latest_confirmation_comment.confirmation is None
+        ):
+            return Decision(
+                action="refused",
+                base_sha=base_sha,
+                guidance=(),
+                head_sha=head_sha,
+                mutated=False,
+                reason="matching metadata has no authoritative edit pair",
+                repository=repository,
+                pr_number=pr_number,
+            )
+        _validate_receipt_identity(intent, current)
+        _validate_receipt_watermark(intent, current_runs)
+        _validate_confirmation(
+            latest_confirmation_comment.confirmation,
+            intent,
+            intent_comment_id=latest_intent_comment.comment_id,
+            state=current,
+            version=current_version,
+        )
+        decision = Decision(
+            action="no-op",
+            base_sha=base_sha,
+            guidance=(),
+            head_sha=head_sha,
+            mutated=False,
+            reason="requested metadata already has an authoritative edit pair",
+            repository=repository,
+            pr_number=pr_number,
+            intent_comment_id=latest_intent_comment.comment_id,
+            intent_comment_url=latest_intent_comment.html_url,
+            confirmation_comment_id=latest_confirmation_comment.comment_id,
+            confirmation_comment_url=latest_confirmation_comment.html_url,
+        )
+        if any(
+            run.binding == "explicit-same"
+            and run.mode in {"metadata-only", "active-metadata-only"}
+            and run.run_number > intent.watermark_run_number
+            for run in current_runs
+        ):
+            return decision
+        return Decision(
+            action="deferred",
+            base_sha=base_sha,
+            guidance=_reconcile_guidance(
+                current,
+                latest_confirmation_comment.comment_id,
+            ),
+            head_sha=head_sha,
+            mutated=False,
+            reason=(
+                "matching metadata has an authoritative pair but its "
+                "continuity run is not visible yet"
+            ),
+            repository=repository,
+            pr_number=pr_number,
+            intent_comment_id=latest_intent_comment.comment_id,
+            intent_comment_url=latest_intent_comment.html_url,
+            confirmation_comment_id=latest_confirmation_comment.comment_id,
+            confirmation_comment_url=latest_confirmation_comment.html_url,
+        )
+    else:
+        intent = _edit_receipt(
+            current,
+            current_runs,
+            title=title,
+            body=body,
+            pre_version=current_version,
+        )
+        latest_intent_comment = _create_intent_comment(
+            client,
+            current,
+            intent,
+        )
+
+    if intent is None or latest_intent_comment is None:
+        raise MetadataEditError("metadata edit intent state is incomplete")
     mutation: dict[str, object] = {}
     if title is not None:
         mutation["title"] = title
     if body is not None:
         mutation["body"] = body
-    mutation_response = client.request(
-        "PATCH",
-        _endpoint(repository, f"pulls/{pr_number}"),
-        body=mutation,
-        label="pull request metadata update",
+    if patch_required:
+        mutation_response = client.request(
+            "PATCH",
+            _endpoint(repository, f"pulls/{pr_number}"),
+            body=mutation,
+            label="pull request metadata update",
+        )
+        after = _parse_pull_request_payload(
+            mutation_response.payload,
+            repository,
+            pr_number,
+        )
+        require_identity(after, head_sha=head_sha, base_sha=base_sha)
+        if (
+            after.repository_id != current.repository_id
+            or after.repository_owner_id != current.repository_owner_id
+            or after.head_ref != current.head_ref
+        ):
+            raise MetadataEditError(
+                "pull request mutation response repository/head-ref identity drifted"
+            )
+        if after.updated_at < current.updated_at:
+            raise MetadataEditError(
+                "pull request mutation response updated_at regressed"
+            )
+        if after.title != target_title or after.body != target_body:
+            raise MetadataEditError(
+                "pull request mutation response did not attest complete target metadata"
+            )
+    else:
+        after = current
+    after_version = fetch_metadata_version(client, after)
+    confirmation = _confirmation_for_target(
+        intent,
+        intent_comment_id=latest_intent_comment.comment_id,
+        state=after,
+        version=after_version,
     )
-    after = _parse_pull_request_payload(
-        mutation_response.payload,
-        repository,
-        pr_number,
-    )
-    require_identity(after, head_sha=head_sha, base_sha=base_sha)
-    if (
-        after.repository_id != current.repository_id
-        or after.repository_owner_id != current.repository_owner_id
-        or after.head_ref != current.head_ref
-    ):
-        raise MetadataEditError(
-            "pull request mutation response repository/head-ref identity drifted"
-        )
-    if after.updated_at < current.updated_at:
-        raise MetadataEditError(
-            "pull request mutation response updated_at regressed"
-        )
-    if title is not None and after.title != title:
-        raise MetadataEditError(
-            "pull request mutation response did not attest the requested title"
-        )
-    if body is not None and after.body != body:
-        raise MetadataEditError(
-            "pull request mutation response did not attest the requested body"
-        )
-    receipt = _edit_receipt(
+    confirmation_comment = _create_confirmation_comment(
+        client,
         after,
-        current_runs,
-        title=title,
-        body=body,
+        confirmation,
     )
-    receipt_comment = _create_edit_receipt_comment(client, after, receipt)
-    guidance = _reconcile_guidance(after, receipt_comment.comment_id)
+    guidance = _reconcile_guidance(after, confirmation_comment.comment_id)
     reason = (
         "metadata updated; reconcile the exact metadata-only run to close any "
         "non-atomic same-SHA Build race"
@@ -2219,7 +2848,7 @@ def edit_metadata(
             "the newest exact-head full Build succeeds"
         )
     return Decision(
-        action="updated",
+        action="updated" if patch_required else "recovered",
         base_sha=base_sha,
         guidance=guidance,
         head_sha=head_sha,
@@ -2227,18 +2856,21 @@ def edit_metadata(
         reason=reason,
         repository=repository,
         pr_number=pr_number,
-        run_id=active_full[0].run_id if active_full else latest_full.run_id,
-        receipt_comment_id=receipt_comment.comment_id,
-        receipt_comment_url=receipt_comment.html_url,
+        run_id=(
+            active_full[0].run_id
+            if active_full
+            else latest_full.run_id if latest_full is not None else None
+        ),
+        intent_comment_id=latest_intent_comment.comment_id,
+        intent_comment_url=latest_intent_comment.html_url,
+        confirmation_comment_id=confirmation_comment.comment_id,
+        confirmation_comment_url=confirmation_comment.html_url,
     )
 
 
 def _pending_metadata(
     runs: tuple[RunState, ...],
     receipt: EditReceipt,
-    *,
-    edit_updated_at: datetime.datetime,
-    receipt_created_at: datetime.datetime,
 ) -> tuple[RunState, RunState | None]:
     latest_full = _latest_full(runs)
     if latest_full is None:
@@ -2252,8 +2884,6 @@ def _pending_metadata(
             and run.mode in {"metadata-only", "active-metadata-only"}
             and run.run_number > latest_full.run_number
             and run.run_number > receipt.watermark_run_number
-            and run.created_at >= edit_updated_at
-            and run.created_at < receipt_created_at
         ),
         None,
     )
@@ -2267,50 +2897,33 @@ def reconcile_metadata(
     pr_number: int,
     head_sha: str,
     base_sha: str,
-    receipt_comment_id: int,
+    confirmation_comment_id: int,
 ) -> Decision:
     initial = fetch_pull_request(client, repository, pr_number)
     require_identity(initial, head_sha=head_sha, base_sha=base_sha)
-    receipt, receipt_comment = _authoritative_edit_receipt(
-        client,
-        initial,
-        receipt_comment_id,
+    receipt, intent_comment, confirmation, confirmation_comment = (
+        _authoritative_edit_pair(
+            client,
+            initial,
+            confirmation_comment_id,
+        )
     )
-    edit_updated_at = _github_timestamp(
-        receipt.edit_updated_at,
-        "edit receipt updated_at",
+    initial_version = fetch_metadata_version(client, initial)
+    _validate_confirmation(
+        confirmation,
+        receipt,
+        intent_comment_id=intent_comment.comment_id,
+        state=initial,
+        version=initial_version,
     )
     first_runs = list_candidate_runs(client, initial)
-    _validate_receipt_watermark(
-        receipt,
-        first_runs,
-        edit_updated_at=edit_updated_at,
-    )
-    post_receipt = _post_receipt_runs(
-        receipt,
-        receipt_comment,
-        first_runs,
-    )
-    if post_receipt:
-        return Decision(
-            action="deferred",
-            base_sha=base_sha,
-            guidance=_reconcile_guidance(initial, receipt_comment_id),
-            head_sha=head_sha,
-            mutated=False,
-            reason=(
-                "exact Build ordering does not prove the receipt is current"
-            ),
-            repository=repository,
-            pr_number=pr_number,
-            run_id=post_receipt[0].run_id,
-        )
+    _validate_receipt_watermark(receipt, first_runs)
     blocking_active = _blocking_active_runs(first_runs)
     if blocking_active:
         return Decision(
             action="deferred",
             base_sha=base_sha,
-            guidance=_reconcile_guidance(initial, receipt_comment_id),
+            guidance=_reconcile_guidance(initial, confirmation_comment_id),
             head_sha=head_sha,
             mutated=False,
             reason="an exact-head full or unproven Build is still active",
@@ -2318,17 +2931,12 @@ def reconcile_metadata(
             pr_number=pr_number,
             run_id=blocking_active[0].run_id,
         )
-    first_full, first_metadata = _pending_metadata(
-        first_runs,
-        receipt,
-        edit_updated_at=edit_updated_at,
-        receipt_created_at=receipt_comment.created_at,
-    )
+    first_full, first_metadata = _pending_metadata(first_runs, receipt)
     if first_metadata is None:
         return Decision(
             action="deferred",
             base_sha=base_sha,
-            guidance=_reconcile_guidance(initial, receipt_comment_id),
+            guidance=_reconcile_guidance(initial, confirmation_comment_id),
             head_sha=head_sha,
             mutated=False,
             reason="the exact metadata-only run is not visible yet",
@@ -2340,7 +2948,7 @@ def reconcile_metadata(
         return Decision(
             action="deferred",
             base_sha=base_sha,
-            guidance=_reconcile_guidance(initial, receipt_comment_id),
+            guidance=_reconcile_guidance(initial, confirmation_comment_id),
             head_sha=head_sha,
             mutated=False,
             reason="the exact metadata-only run is already active",
@@ -2365,70 +2973,47 @@ def reconcile_metadata(
 
     current = fetch_pull_request(client, repository, pr_number)
     require_identity(current, head_sha=head_sha, base_sha=base_sha)
-    current_receipt, current_receipt_comment = _authoritative_edit_receipt(
+    (
+        current_receipt,
+        current_intent_comment,
+        current_confirmation,
+        current_confirmation_comment,
+    ) = _authoritative_edit_pair(
         client,
         current,
-        receipt_comment_id,
+        confirmation_comment_id,
+    )
+    current_version = fetch_metadata_version(client, current)
+    _validate_confirmation(
+        current_confirmation,
+        current_receipt,
+        intent_comment_id=current_intent_comment.comment_id,
+        state=current,
+        version=current_version,
     )
     if (
-        current_receipt != receipt
-        or current_receipt_comment.comment_id != receipt_comment.comment_id
-        or current_receipt_comment.created_at != receipt_comment.created_at
+        current != initial
+        or current_receipt != receipt
+        or current_intent_comment.comment_id != intent_comment.comment_id
+        or current_confirmation != confirmation
+        or current_confirmation_comment.comment_id
+        != confirmation_comment.comment_id
+        or current_version != initial_version
     ):
         return Decision(
             action="deferred",
             base_sha=base_sha,
-            guidance=_reconcile_guidance(current, receipt_comment_id),
+            guidance=_reconcile_guidance(current, confirmation_comment_id),
             head_sha=head_sha,
             mutated=False,
-            reason="metadata edit receipt authority changed during reconciliation",
-            repository=repository,
-            pr_number=pr_number,
-            run_id=first_metadata.run_id,
-        )
-    if current != initial:
-        return Decision(
-            action="deferred",
-            base_sha=base_sha,
-            guidance=_reconcile_guidance(current, receipt_comment_id),
-            head_sha=head_sha,
-            mutated=False,
-            reason="pull request metadata changed during reconciliation",
+            reason="metadata edit authority changed during reconciliation",
             repository=repository,
             pr_number=pr_number,
             run_id=first_metadata.run_id,
         )
     current_runs = list_candidate_runs(client, current)
-    _validate_receipt_watermark(
-        receipt,
-        current_runs,
-        edit_updated_at=edit_updated_at,
-    )
-    current_post_receipt = _post_receipt_runs(
-        receipt,
-        current_receipt_comment,
-        current_runs,
-    )
-    if current_post_receipt:
-        return Decision(
-            action="deferred",
-            base_sha=base_sha,
-            guidance=_reconcile_guidance(current, receipt_comment_id),
-            head_sha=head_sha,
-            mutated=False,
-            reason=(
-                "exact Build ordering no longer proves the receipt is current"
-            ),
-            repository=repository,
-            pr_number=pr_number,
-            run_id=current_post_receipt[0].run_id,
-        )
-    current_full, current_metadata = _pending_metadata(
-        current_runs,
-        receipt,
-        edit_updated_at=edit_updated_at,
-        receipt_created_at=receipt_comment.created_at,
-    )
+    _validate_receipt_watermark(receipt, current_runs)
+    current_full, current_metadata = _pending_metadata(current_runs, receipt)
     if (
         current_runs != first_runs
         or current_metadata is None
@@ -2442,7 +3027,7 @@ def reconcile_metadata(
         return Decision(
             action="deferred",
             base_sha=base_sha,
-            guidance=_reconcile_guidance(current, receipt_comment_id),
+            guidance=_reconcile_guidance(current, confirmation_comment_id),
             head_sha=head_sha,
             mutated=False,
             reason=(
@@ -2573,32 +3158,60 @@ def _list_comments(
     raise MetadataEditError("pull request comments exceed the pagination bound")
 
 
-def _receipt_comment_body(receipt: EditReceipt) -> str:
-    return RECEIPT_MARKER + "\n" + receipt.canonical_json()
+def _intent_comment_body(intent: EditReceipt) -> str:
+    return INTENT_MARKER + "\n" + intent.canonical_json()
 
 
-def _parse_receipt_comment_body(body: str) -> EditReceipt:
-    if body.count(RECEIPT_MARKER) != 1 or not _marker_is_standalone(
+def _confirmation_comment_body(confirmation: EditConfirmation) -> str:
+    return CONFIRMATION_MARKER + "\n" + confirmation.canonical_json()
+
+
+def _parse_intent_comment_body(body: str) -> EditReceipt:
+    if body.count(INTENT_MARKER) != 1 or not _marker_is_standalone(
         body,
-        RECEIPT_MARKER,
+        INTENT_MARKER,
     ):
         raise MetadataEditError(
-            "metadata edit receipt marker is duplicated or embedded"
+            "metadata edit intent marker is duplicated or embedded"
         )
-    prefix = RECEIPT_MARKER + "\n"
+    prefix = INTENT_MARKER + "\n"
     if not body.startswith(prefix):
         raise MetadataEditError(
-            "metadata edit receipt marker must be the first line"
+            "metadata edit intent marker must be the first line"
         )
-    raw_receipt = body[len(prefix) :]
-    receipt = _parse_edit_receipt(
-        _parse_json(raw_receipt, "metadata edit receipt comment")
+    raw_intent = body[len(prefix) :]
+    intent = _parse_edit_receipt(
+        _parse_json(raw_intent, "metadata edit intent comment")
     )
-    if raw_receipt != receipt.canonical_json():
+    if raw_intent != intent.canonical_json():
         raise MetadataEditError(
-            "metadata edit receipt comment JSON is not canonical"
+            "metadata edit intent comment JSON is not canonical"
         )
-    return receipt
+    return intent
+
+
+def _parse_confirmation_comment_body(body: str) -> EditConfirmation:
+    if body.count(CONFIRMATION_MARKER) != 1 or not _marker_is_standalone(
+        body,
+        CONFIRMATION_MARKER,
+    ):
+        raise MetadataEditError(
+            "metadata edit confirmation marker is duplicated or embedded"
+        )
+    prefix = CONFIRMATION_MARKER + "\n"
+    if not body.startswith(prefix):
+        raise MetadataEditError(
+            "metadata edit confirmation marker must be the first line"
+        )
+    raw_confirmation = body[len(prefix) :]
+    confirmation = _parse_edit_confirmation(
+        _parse_json(raw_confirmation, "metadata edit confirmation comment")
+    )
+    if raw_confirmation != confirmation.canonical_json():
+        raise MetadataEditError(
+            "metadata edit confirmation comment JSON is not canonical"
+        )
+    return confirmation
 
 
 def _parse_comment_payload(
@@ -2666,12 +3279,31 @@ def _parse_comment_payload(
             f"pull request comment {comment_id} author association",
         )
     evidence_marker_count = body.count(EVIDENCE_MARKER)
-    receipt_marker_count = body.count(RECEIPT_MARKER)
-    if evidence_marker_count and receipt_marker_count:
+    intent_marker_count = body.count(INTENT_MARKER)
+    confirmation_marker_count = body.count(CONFIRMATION_MARKER)
+    marker_kinds = sum(
+        bool(count)
+        for count in (
+            evidence_marker_count,
+            intent_marker_count,
+            confirmation_marker_count,
+        )
+    )
+    if marker_kinds > 1:
         raise MetadataEditError("pull request comment mixes protected markers")
-    protected = evidence_marker_count or receipt_marker_count
+    protected = (
+        evidence_marker_count
+        or intent_marker_count
+        or confirmation_marker_count
+    )
     if protected:
-        marker = EVIDENCE_MARKER if evidence_marker_count else RECEIPT_MARKER
+        marker = (
+            EVIDENCE_MARKER
+            if evidence_marker_count
+            else INTENT_MARKER
+            if intent_marker_count
+            else CONFIRMATION_MARKER
+        )
         if protected != 1 or not _marker_is_standalone(body, marker):
             raise MetadataEditError(
                 "protected comment marker is duplicated or embedded"
@@ -2700,13 +3332,17 @@ def _parse_comment_payload(
             f"pull request comment {comment_id} chronology is invalid"
         )
     _text(raw.get("node_id"), f"pull request comment {comment_id} node_id")
-    receipt = None
-    if receipt_marker_count:
+    intent = None
+    confirmation = None
+    if intent_marker_count or confirmation_marker_count:
         if updated_at != created_at:
             raise MetadataEditError(
-                f"metadata edit receipt comment {comment_id} was edited"
+                f"metadata edit transaction comment {comment_id} was edited"
             )
-        receipt = _parse_receipt_comment_body(body)
+        if intent_marker_count:
+            intent = _parse_intent_comment_body(body)
+        else:
+            confirmation = _parse_confirmation_comment_body(body)
     return CommentState(
         comment_id=comment_id,
         repository=repository,
@@ -2719,7 +3355,8 @@ def _parse_comment_payload(
         author_association=association,
         created_at=created_at,
         updated_at=updated_at,
-        receipt=receipt,
+        intent=intent,
+        confirmation=confirmation,
     )
 
 
@@ -2727,17 +3364,18 @@ def _marker_is_standalone(body: str, marker: str = EVIDENCE_MARKER) -> bool:
     return sum(line.strip() == marker for line in body.splitlines()) == 1
 
 
-def _create_edit_receipt_comment(
+def _create_transaction_comment(
     client: GitHubClient,
     state: PullRequestState,
-    receipt: EditReceipt,
+    *,
+    body: str,
+    label: str,
 ) -> CommentState:
-    body = _receipt_comment_body(receipt)
     response = client.request(
         "POST",
         _endpoint(state.repository, f"issues/{state.number}/comments"),
         body={"body": body},
-        label="metadata edit receipt comment creation",
+        label=label,
     )
     comment = _parse_comment_payload(
         response.payload,
@@ -2746,21 +3384,18 @@ def _create_edit_receipt_comment(
         state.repository_owner_id,
     )
     if (
-        comment.receipt != receipt
-        or comment.body != body
-        or comment.created_at < state.updated_at
+        comment.body != body
     ):
         raise MetadataEditError(
-            "receipt comment creation response did not attest the edit receipt"
+            f"{label} response did not attest the transaction comment"
         )
     return comment
 
 
-def _authoritative_edit_receipt(
+def _transaction_comments(
     client: GitHubClient,
     state: PullRequestState,
-    receipt_comment_id: int,
-) -> tuple[EditReceipt, CommentState]:
+) -> tuple[list[CommentState], dict[int, CommentState]]:
     comments = _list_comments(
         client,
         state.repository,
@@ -2768,52 +3403,115 @@ def _authoritative_edit_receipt(
         state.repository_id,
         state.repository_owner_id,
     )
-    receipt_comments = [
-        comment for comment in comments if comment.receipt is not None
+    intents = [
+        comment for comment in comments if comment.intent is not None
     ]
     nonces = [
-        comment.receipt.nonce
-        for comment in receipt_comments
-        if comment.receipt is not None
+        comment.intent.nonce
+        for comment in intents
+        if comment.intent is not None
     ]
     if len(nonces) != len(set(nonces)):
-        raise MetadataEditError("metadata edit receipt nonce is duplicated")
-    target = next(
-        (
-            comment
-            for comment in receipt_comments
-            if comment.comment_id == receipt_comment_id
-        ),
-        None,
-    )
-    if target is None:
-        raise MetadataEditError(
-            "metadata edit receipt comment is missing or deleted"
-        )
-    newest_created_at = max(
-        comment.created_at for comment in receipt_comments
-    )
+        raise MetadataEditError("metadata edit intent nonce is duplicated")
+    confirmations = [
+        comment for comment in comments if comment.confirmation is not None
+    ]
+    by_intent = {}
+    for comment in confirmations:
+        confirmation = comment.confirmation
+        if confirmation is None:
+            raise MetadataEditError("metadata edit confirmation is invalid")
+        if confirmation.intent_comment_id in by_intent:
+            raise MetadataEditError(
+                "metadata edit intent has duplicate confirmations"
+            )
+        if not any(
+            intent.comment_id == confirmation.intent_comment_id
+            for intent in intents
+        ):
+            raise MetadataEditError(
+                "metadata edit confirmation references an unknown intent"
+            )
+        by_intent[confirmation.intent_comment_id] = comment
+    return intents, by_intent
+
+
+def _latest_intent(
+    intents: list[CommentState],
+) -> CommentState | None:
+    if not intents:
+        return None
+    newest_created_at = max(comment.created_at for comment in intents)
     newest = [
-        comment
-        for comment in receipt_comments
-        if comment.created_at == newest_created_at
+        comment for comment in intents if comment.created_at == newest_created_at
     ]
     if len(newest) != 1:
+        raise MetadataEditError("latest metadata edit intent is ambiguous")
+    return newest[0]
+
+
+def _create_intent_comment(
+    client: GitHubClient,
+    state: PullRequestState,
+    intent: EditReceipt,
+) -> CommentState:
+    comment = _create_transaction_comment(
+        client,
+        state,
+        body=_intent_comment_body(intent),
+        label="metadata edit intent comment creation",
+    )
+    if comment.intent != intent or comment.confirmation is not None:
         raise MetadataEditError(
-            "latest metadata edit receipt comment is ambiguous"
+            "intent comment creation response did not attest the edit intent"
         )
-    if newest[0].comment_id != target.comment_id:
+    return comment
+
+
+def _create_confirmation_comment(
+    client: GitHubClient,
+    state: PullRequestState,
+    confirmation: EditConfirmation,
+) -> CommentState:
+    comment = _create_transaction_comment(
+        client,
+        state,
+        body=_confirmation_comment_body(confirmation),
+        label="metadata edit confirmation comment creation",
+    )
+    if comment.confirmation != confirmation or comment.intent is not None:
         raise MetadataEditError(
-            "metadata edit receipt comment is stale"
+            "confirmation comment creation response did not attest the edit"
         )
-    if target.receipt is None:
-        raise MetadataEditError("metadata edit receipt comment is invalid")
-    edit_updated_at = _validate_receipt_identity(target.receipt, state)
-    if edit_updated_at > target.created_at:
+    return comment
+
+
+def _authoritative_edit_pair(
+    client: GitHubClient,
+    state: PullRequestState,
+    confirmation_comment_id: int,
+) -> tuple[EditReceipt, CommentState, EditConfirmation, CommentState]:
+    intents, confirmations = _transaction_comments(client, state)
+    latest = _latest_intent(intents)
+    if latest is None or latest.intent is None:
+        raise MetadataEditError("metadata edit intent comment is missing")
+    confirmation_comment = confirmations.get(latest.comment_id)
+    if (
+        confirmation_comment is None
+        or confirmation_comment.comment_id != confirmation_comment_id
+        or confirmation_comment.confirmation is None
+    ):
         raise MetadataEditError(
-            "metadata edit receipt comment predates the PATCH response"
+            "latest metadata edit intent lacks the selected confirmation"
         )
-    return target.receipt, target
+    confirmation = confirmation_comment.confirmation
+    if (
+        confirmation.intent_nonce != latest.intent.nonce
+        or confirmation_comment.created_at <= latest.created_at
+    ):
+        raise MetadataEditError("metadata edit confirmation nonce drifted")
+    _validate_receipt_identity(latest.intent, state)
+    return latest.intent, latest, confirmation, confirmation_comment
 
 
 def update_evidence_comment(
@@ -2930,7 +3628,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             child.add_argument("--body-file", type=Path)
             child.add_argument("--essential-reason")
         elif mode == "reconcile":
-            child.add_argument("--receipt-comment-id", type=int, required=True)
+            child.add_argument(
+                "--confirmation-comment-id",
+                type=int,
+                required=True,
+            )
         elif mode == "evidence-comment":
             child.add_argument("--comment-file", type=Path, required=True)
     arguments = parser.parse_args(argv)
@@ -2994,9 +3696,9 @@ def main(argv: list[str] | None = None) -> int:
                 pr_number=pr_number,
                 head_sha=head_sha,
                 base_sha=base_sha,
-                receipt_comment_id=_positive_int(
-                    args.receipt_comment_id,
-                    "--receipt-comment-id",
+                confirmation_comment_id=_positive_int(
+                    args.confirmation_comment_id,
+                    "--confirmation-comment-id",
                 ),
             )
         else:

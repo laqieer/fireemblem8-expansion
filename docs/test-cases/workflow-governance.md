@@ -1223,9 +1223,10 @@ the exact branch and head; timeout or ambiguity fails before `gh run watch`.
   Build event classifier/continuity contracts, this procedure, and the
   canonical tester registry unchanged.
 - **Architecture disposition:** after the third consecutive finding round,
-  accepted in place as one typed candidate-run binding model plus one immutable
-  GitHub-authoritative receipt-comment/watermark model consumed by
-  reconciliation. No split, new subsystem, or mutable local ledger is required.
+  accepted in place as one typed candidate-run binding model plus a two-phase
+  immutable GitHub-authoritative intent/confirmation protocol. No split, new
+  subsystem, cross-subsystem timestamp ordering, or mutable local ledger is
+  required.
 
 ### Actions
 
@@ -1245,14 +1246,19 @@ the exact branch and head; timeout or ambiguity fails before `gh run watch`.
    queued/in-progress, terminal unbound, explicit-other, and
    multiple/contradictory binding shapes.
 3. Repeat with a nonempty essential-contract reason, keep the same full run
-   active, capture the returned immutable receipt comment ID, then present a
+   active, validate the pre-PATCH immutable intent comment, PATCH response,
+   title `RenamedTitleEvent` and body `lastEditedAt`/editor authority, and
+   immutable confirmation comment. Then present a
    successful runner-backed full Build followed by its failed metadata-only
-   continuity run and invoke `pr-metadata reconcile --receipt-comment-id
-   <receipt-comment-id>`.
+   continuity run and invoke `pr-metadata reconcile
+   --confirmation-comment-id <confirmation-comment-id>`.
    Exercise an old successful metadata run at or below the receipt watermark
    while the new run is not visible, later failed and successful runs, equal
    edit/run timestamps ordered by run number, and a rerun attempt at the
    watermark.
+   Exercise PATCH success followed by failed/indeterminate confirmation
+   creation, then retry against the unmatched intent with pre-state, target
+   state, and invalid third-state outcomes.
 4. Update a synthetic canonical marked evidence comment owned by the
    repository owner while the same full Build is active.
 5. Replay stale head/base before edit and reconciliation, post-edit identity
@@ -1295,15 +1301,17 @@ has an active full Build. A
 nonempty essential override revalidates exact current head/base immediately
 before PATCH, refreshes run authority, requires the PATCH response to attest
 the requested exact metadata, leaves every same-SHA full Build active, and
-returns the exact receipt-comment-bound reconciliation command. After PATCH it
-creates a dedicated immutable owner-authored issue comment whose canonical
-receipt binds repository/PR/head/base, complete post-PATCH title/body digest,
-requested-field SHA-256 digests, authoritative PATCH `updated_at`, unique
-nonce, workflow identity, and the highest fully observed pre-PATCH run
-ID/number/creation timestamp without a mutable ledger. It is not a secret,
-signature, or authentication token; the refetched GitHub comment and live
-identity, author, digest, workflow, timestamp, and watermark checks supply the
-authority. After the newest exact full Build succeeds, reconciliation
+returns the exact confirmation-comment-bound reconciliation command. Before
+PATCH it creates a dedicated immutable owner-authored intent comment binding
+repository/PR/head/base/workflow, pre-state/target/request digests,
+metadata-specific pre-version, nonce, and the highest fully observed pre-PATCH
+run ID/number/creation timestamp watermark. The pair is not a secret,
+signature, or authentication token. After strict PATCH attestation, GitHub
+title-event and body-edit
+version authority is bound by a second immutable confirmation comment. The
+refetched unique latest pair and live identity, author, digest, version, and
+watermark checks supply authority without cross-subsystem timestamp causality
+or a mutable ledger. After the newest exact full Build succeeds, reconciliation
 revalidates the receipt, immutable head/base, and complete run/job authority
 twice, then POSTs only
 `actions/runs/<metadata-run-id>/rerun`. The rerun is the existing lightweight
@@ -1331,8 +1339,8 @@ or contradictory bindings fail closed.
 Canonical JSON reserves `run_id` for Actions workflow runs and `comment_id`
 for the canonical issue comment; the optional fields are always serialized,
 strictly mutually exclusive, and `comment-updated` requires only `comment_id`.
-An `updated` decision returns only `receipt_comment_id` and its validated
-same-PR `receipt_comment_url`, never caller-trusted receipt fields.
+An `updated` decision returns only validated intent and confirmation comment
+IDs/URLs, never caller-trusted transaction fields.
 The isolated launcher emits one exact canonical JSON line with status `0` for
 success/no-op/complete, status `3` for deferred/refused, and status `2` with no
 decision JSON for invalid arguments, files, or API authority.
@@ -1371,11 +1379,12 @@ using stale active `updated_at` as a completion bound, omitting terminal
 refresh, accepting an active unbound run, using terminal unbound evidence,
 accepting multiple/contradictory bindings, selecting old successful metadata
 at or below the receipt watermark, accepting a rerun attempt at the watermark,
-accepting a same-second run whose ordering against the receipt comment is
-unprovable, accepting an old receipt after a newer helper edit, or accepting a
-deleted/edited/non-owner/bot/wrong-ID/cross-repository/duplicate/ambiguous
-receipt comment, later direct metadata edit, edit-and-revert, or malformed
-receipt schema/identity/field/digest/timestamp/workflow/watermark, and
+comparing Actions and comment timestamps causally, accepting an old pair after
+a newer intent, or accepting deleted/edited/non-owner/bot/wrong-ID/
+cross-repository/duplicate/ambiguous intent or confirmation comments, later
+direct metadata edit, title/body edit-and-revert, same-second body version
+ambiguity, malformed transaction schema/identity/field/digest/version/
+workflow/watermark, or unreconciled unmatched intent, and
 repository/command injection all fail
 closed. No tested path calls a
 cancellation endpoint or a full-workflow dispatch endpoint.
@@ -1407,11 +1416,11 @@ parses the contributor/workflow guidance and indexed tester contract.
 No cleanup is required because every GitHub response and mutation is
 synthetic. The API cannot make the identity check and PATCH atomic, so the
 helper fast-defers an initially active candidate after one complete snapshot;
-a mutation-eligible edit takes two snapshots, revalidates identity immediately
-before mutation, requires the authoritative PATCH response, and creates an
-append-only owner-authored receipt comment. The non-secret receipt constrains
-reconciliation to a later exact-bound metadata run without creating a mutable
-local ledger.
+a mutation-eligible edit takes two snapshots, creates its intent before
+mutation, revalidates identity immediately before PATCH, requires the
+authoritative response and metadata-specific version authority, then creates
+the confirmation. The pair constrains reconciliation to a later numbered
+exact-bound metadata run without a mutable local ledger.
 There is no manual-only criterion. No ARM runtime test is needed because this
 is host-only delivery orchestration.
 

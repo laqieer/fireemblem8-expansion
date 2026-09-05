@@ -4595,8 +4595,8 @@ printf '%s\t%s\t%s\n' "$result" \
                 "pr-metadata edit",
                 "canonical evidence comment",
                 "same-SHA full Build",
-                "receipt comment ID",
-                "receipt-comment-bound `pr-metadata reconcile`",
+                "intent and confirmation comment IDs",
+                "confirmation-comment-bound `pr-metadata reconcile`",
                 "owner-authored",
                 "mutable local ledger",
             ):
@@ -4611,14 +4611,18 @@ printf '%s\t%s\t%s\n' "$result" \
             "`comment_id` exclusively for the canonical issue comment",
             "mutually exclusive",
             '"requested_fields": {"body": "<sha256>"}',
-            '"metadata_sha256": "<sha256>"',
+            '"pre_metadata_sha256": "<sha256>"',
+            '"target_metadata_sha256": "<sha256>"',
             '"nonce": "<64-lowercase-hex>"',
             '"schema_version": 1',
             '"watermark":',
-            "--receipt-comment-id <receipt-comment-id>",
-            "complete post-PATCH title/body digest",
-            "unique latest valid receipt",
-            "same-second ordering",
+            "--confirmation-comment-id <confirmation-comment-id>",
+            "RenamedTitleEvent",
+            "lastEditedAt",
+            '"body_editor_login": "owner"',
+            '"title_actor_login": "owner"',
+            "two append-only",
+            "same-second body authority",
         ):
             with self.subTest(pilot_requirement=requirement):
                 self.assertIn(
@@ -4660,13 +4664,14 @@ printf '%s\t%s\t%s\n' "$result" \
             "Active unbound runs block",
             "terminal unbound runs cannot provide evidence",
             "highest fully observed pre-PATCH run ID/number/creation timestamp",
-            "dedicated immutable owner-authored issue comment",
-            "no split, new subsystem, or mutable local ledger",
+            "immutable owner-authored intent comment",
+            "immutable confirmation comment",
+            "no split, new subsystem, cross-subsystem timestamp ordering, or mutable local ledger",
             "not a secret, signature, or authentication token",
-            "`receipt_comment_id`",
-            "`receipt_comment_url`",
+            "intent and confirmation comment IDs/URLs",
             "later direct metadata edit",
             "edit-and-revert",
+            "PATCH success followed by failed/indeterminate confirmation",
             "No ARM runtime test is needed",
             "There is no manual-only criterion",
         ):
@@ -4706,10 +4711,11 @@ printf '%s\t%s\t%s\n' "$result" \
             )
         )
         for requirement in (
-            "isolated launcher and deterministic fake gh",
-            "GitHub-authenticated receipt creation and latest-marker selection",
-            "caller-authored receipt authority",
-            "same-second ambiguity",
+            "isolated launcher with deterministic fake gh",
+            "pre-PATCH owner-authored intent creation",
+            "title RenamedTitleEvent",
+            "body GraphQL lastEditedAt/editor authority",
+            "cross-subsystem timestamp assumptions",
         ):
             with self.subTest(registry_requirement=requirement):
                 self.assertIn(normalize_policy(requirement), indexed_contract)

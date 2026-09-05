@@ -510,28 +510,50 @@ read-after-write GET is not accepted as mutation evidence. Record the essential
 reason in the canonical evidence comment. No tracked or local pending-state
 ledger is created: GitHub's run number, attempt, event, workflow, PR, head,
 base, mode, status, conclusion, and job identities derive whether
-reconciliation remains pending. After a successful PATCH, the helper creates
-one dedicated append-only owner-authored issue comment containing an immutable
-edit receipt with a versioned schema and unique nonce. It binds repository
-ID/name, PR, head/base, the complete post-PATCH title/body digest, SHA-256
-digests of the exact requested fields, the authoritative PATCH-response PR
-`updated_at`, workflow ID/path, and the highest completely observed pre-PATCH
-run ID/number/creation-time watermark. The command returns only the validated
-receipt comment ID and URL; the GitHub comment is authoritative and no mutable
-local ledger or caller-authored receipt file exists.
+reconciliation remains pending. The helper uses two append-only,
+owner-authored GitHub comments rather than a local receipt:
+
+1. Before PATCH, an immutable **intent** comment records a unique nonce,
+   repository/PR/head/base/workflow identity, complete pre-state and target
+   title/body digests, requested-field digests, the exact pre-edit
+   metadata-version authority, and the highest fully observed pre-PATCH run
+   ID/number/creation-time watermark.
+2. The helper PATCHes and strictly validates the complete title/body response.
+   It then queries metadata-specific GitHub authority: the latest exact
+   `RenamedTitleEvent` for title changes and GraphQL `lastEditedAt` plus editor
+   for body changes. Same-second body authority that cannot distinguish the
+   edit from the pre-intent state fails closed.
+3. An immutable **confirmation** comment references the exact intent comment
+   ID/nonce and binds the complete target state plus that metadata-version
+   authority.
+
+The command returns only validated intent and confirmation comment IDs/URLs.
+No caller-authored receipt file or mutable local ledger exists.
 
 ```json
 {
   "base_sha": "<40-lowercase-hex>",
-  "edit_updated_at": "YYYY-MM-DDTHH:MM:SSZ",
   "head_sha": "<40-lowercase-hex>",
-  "metadata_sha256": "<sha256>",
   "nonce": "<64-lowercase-hex>",
+  "pre_fields": {"body": "<sha256>", "title": "<sha256>"},
+  "pre_metadata_sha256": "<sha256>",
+  "pre_version": {
+    "body_editor_id": 123,
+    "body_editor_login": "owner",
+    "body_last_edited_at": "YYYY-MM-DDTHH:MM:SSZ",
+    "title_actor_id": 123,
+    "title_actor_login": "owner",
+    "title_current": "Current title",
+    "title_event_created_at": "YYYY-MM-DDTHH:MM:SSZ",
+    "title_event_id": "RTE_node",
+    "title_previous": "Previous title"
+  },
   "pr_number": 123,
   "repository": "owner/name",
   "repository_id": 123,
   "requested_fields": {"body": "<sha256>"},
   "schema_version": 1,
+  "target_metadata_sha256": "<sha256>",
   "watermark": {
     "created_at": "YYYY-MM-DDTHH:MM:SSZ",
     "run_id": 123,
@@ -558,47 +580,56 @@ The isolated CLI writes exactly one canonical JSON line for a decision: exit
 status `0` means successful, no-op, or already complete; `3` means deferred or
 refused; and `2` reports invalid arguments, unreadable files, or malformed API
 authority without decision JSON on stdout.
-The receipt is not a secret, signature, or authentication token.
-Receipt-comment-bound `pr-metadata reconcile` refetches the comment, parses its
-closed canonical schema,
-requires exact repository/PR/comment URLs and repository-owner numeric
-ID/login/`User`/`OWNER` authority, rejects edited or duplicate-nonce receipts,
-requires the selected comment to be the unique latest valid receipt for the
-PR, revalidates complete current title/body plus requested-field digests, and
-requires the watermark run to remain present with the same identity. A later
-direct metadata edit, including edit-and-revert to the same content, invalidates
-the receipt through the complete metadata digest or post-receipt run
-chronology. Receipt comments are never edited or deleted by reconciliation and
-their `issue_comment` creation does not trigger Build CI.
+The intent/confirmation pair is not a secret, signature, or authentication
+token. Reconciliation refetches every transaction comment, parses both closed
+canonical schemas, requires exact repository/PR/comment URLs and
+repository-owner numeric ID/login/`User`/`OWNER` authority, rejects edited
+comments, duplicate nonces, duplicate confirmations, and ambiguous latest
+intents, and requires the selected confirmation to reference the unique latest
+intent. It refetches the metadata-specific version and complete current
+title/body state; later direct edits and edit-and-revert change
+`RenamedTitleEvent` or body `lastEditedAt` authority and invalidate the pair.
+Transaction comments are never edited or deleted by reconciliation and their
+`issue_comment` creation does not trigger Build CI.
 The separately marked canonical evidence comment may continue to be updated;
 it never becomes a receipt and does not supersede the latest receipt marker.
 
 After the newest exact full Build succeeds, run:
+
+Use confirmation-comment-bound `pr-metadata reconcile`:
 
 ```bash
 /usr/bin/python3 -I scripts/workflow_pilot/isolated_launcher.py \
   pr-metadata reconcile \
   --repository "$repo" --pr "$pr" \
   --head-sha "$head_sha" --base-sha "$base_sha" \
-  --receipt-comment-id <receipt-comment-id>
+  --confirmation-comment-id <confirmation-comment-id>
 ```
 
 Reconciliation revalidates head/base and all exact run authority twice, then
 reruns only the newest `completed`/`failure` lightweight metadata continuity
-run that is strictly newer than both the successful full Build and the
-receipt's pre-PATCH run-number watermark, and whose creation time is not
-earlier than the authoritative edit timestamp and strictly earlier than the
-receipt comment creation timestamp. If the run is not visible yet, or if
-same-second ordering against the receipt comment cannot be proven,
-reconciliation defers; an older successful metadata run never completes a
-newer edit. A rerun attempt of a watermarked run is not a new edit event. The
+run whose run number is strictly newer than both the successful full Build and
+the intent's pre-PATCH run-number watermark. Actions and issue-comment
+timestamps are never compared for causality: the matching run may materialize
+before or after confirmation. If it is not visible yet, reconciliation defers;
+an older successful metadata run never completes a newer edit. A rerun attempt
+of a watermarked run is not a new edit event. The
 eligible run's identity/router/classifier and adapter jobs must be canonical
 successes, expensive jobs and the publisher must be canonical skips, and
 summary must be the canonical failure. Cancelled, timed-out, action-required,
 startup-failure, skipped, neutral, stale, active, unknown, unbound, or malformed
-runs are never rerun. It dispatches no full Build, edits or deletes no receipt
-comment, and exposes no cancellation operation. An already-active eligible
+runs are never rerun. It dispatches no full Build, edits or deletes no
+transaction comment, and exposes no cancellation operation. An already-active eligible
 metadata run is deferred, and an already-successful eligible one is complete.
+
+If PATCH succeeds but confirmation creation fails or its response is
+indeterminate, retry the same edit command. The helper refetches the latest
+unmatched immutable intent. If the exact pre-state and pre-version remain it
+retries PATCH; if the exact target state and metadata-version authority match
+it creates the missing confirmation; any third state fails closed. A no-op
+without an authoritative intent/confirmation pair is refused. With a pair, it
+returns no-op only when a post-watermark run is already visible; otherwise it
+defers recovery.
 
 Every successful title/body update returns this reconciliation command. The
 second run snapshot closes the deterministic pre-PATCH run-state race; only an

@@ -42,6 +42,105 @@ def _metadata_sha256(title: str, body: str | None) -> str:
     )
 
 
+def _metadata_version(
+    *,
+    title_event_id: str | None = "RTE_1",
+    title_event_created_at: str | None = "2026-09-03T00:00:00Z",
+    title_previous: str | None = "Older title",
+    title_current: str | None = "Stable title",
+    title_actor_id: int | None = OWNER_ID,
+    title_actor_login: str | None = "owner",
+    body_last_edited_at: str | None = "2026-09-04T00:00:00Z",
+    body_editor_id: int | None = OWNER_ID,
+    body_editor_login: str | None = "owner",
+) -> pr_metadata.MetadataVersion:
+    return pr_metadata.MetadataVersion(
+        title_event_id,
+        title_event_created_at,
+        title_previous,
+        title_current,
+        title_actor_id,
+        title_actor_login,
+        body_last_edited_at,
+        body_editor_id,
+        body_editor_login,
+    )
+
+
+def _graphql_payload(
+    state: dict,
+    version: pr_metadata.MetadataVersion,
+) -> dict:
+    owner = state["base"]["repo"]["owner"]["login"]
+    actor = (
+        {
+            "__typename": "User",
+            "databaseId": version.title_actor_id,
+            "login": version.title_actor_login,
+        }
+        if version.title_event_id is not None
+        else None
+    )
+    nodes = (
+        [
+            {
+                "__typename": "RenamedTitleEvent",
+                "actor": actor,
+                "createdAt": version.title_event_created_at,
+                "currentTitle": version.title_current,
+                "id": version.title_event_id,
+                "previousTitle": version.title_previous,
+            }
+        ]
+        if version.title_event_id is not None
+        else []
+    )
+    editor = (
+        {
+            "__typename": "User",
+            "databaseId": version.body_editor_id,
+            "login": version.body_editor_login,
+        }
+        if version.body_last_edited_at is not None
+        else None
+    )
+    return {
+        "data": {
+            "repository": {
+                "databaseId": state["base"]["repo"]["id"],
+                "nameWithOwner": state["base"]["repo"]["full_name"],
+                "pullRequest": {
+                    "baseRefOid": state["base"]["sha"],
+                    "body": state["body"],
+                    "editor": editor,
+                    "headRefOid": state["head"]["sha"],
+                    "lastEditedAt": version.body_last_edited_at,
+                    "number": state["number"],
+                    "timelineItems": {"nodes": nodes},
+                    "title": state["title"],
+                    "url": (
+                        f"https://github.com/{REPOSITORY}/pull/{PR_NUMBER}"
+                    ),
+                },
+            }
+        }
+    }
+
+
+def _add_metadata_versions(
+    client: ScriptedClient,
+    *states_and_versions: tuple[dict, pr_metadata.MetadataVersion],
+) -> None:
+    client.add(
+        "POST",
+        "graphql",
+        *(
+            _response(_graphql_payload(state, version))
+            for state, version in states_and_versions
+        ),
+    )
+
+
 def _endpoint(suffix: str) -> str:
     return pr_metadata._endpoint(REPOSITORY, suffix)
 
@@ -423,7 +522,11 @@ class ScriptedClient:
             return copy.deepcopy(response)
         return _response(
             copy.deepcopy(response),
-            status=201 if method == "POST" else 200,
+            status=(
+                200
+                if endpoint == "graphql"
+                else 201 if method == "POST" else 200
+            ),
         )
 
 
@@ -431,13 +534,49 @@ def _add_pr_states(client: ScriptedClient, *states: dict) -> None:
     client.add("GET", _endpoint(f"pulls/{PR_NUMBER}"), *states)
 
 
-def _add_receipt_creation(
+def _add_edit_transaction(
     client: ScriptedClient,
     *,
-    comment_id: int = 401,
-    created_at: str = "2026-09-04T00:00:06Z",
+    title: str | None = None,
+    body: str | None = None,
     response_changes: dict[str, object] | None = None,
 ) -> None:
+    pre_state = _pr()
+    post_state = _pr(
+        title=title if title is not None else pre_state["title"],
+        body=body if body is not None else pre_state["body"],
+        updated_at="2026-09-04T00:00:05Z",
+    )
+    pre_version = _metadata_version()
+    post_version = _metadata_version(
+        title_event_id="RTE_2" if title is not None else "RTE_1",
+        title_event_created_at=(
+            "2026-09-04T00:00:05Z"
+            if title is not None
+            else "2026-09-03T00:00:00Z"
+        ),
+        title_previous="Stable title" if title is not None else "Older title",
+        title_current=title if title is not None else "Stable title",
+        body_last_edited_at=(
+            "2026-09-04T00:00:05Z"
+            if body is not None
+            else "2026-09-04T00:00:00Z"
+        ),
+    )
+    _add_metadata_versions(
+        client,
+        (pre_state, pre_version),
+        (post_state, post_version),
+    )
+    client.add(
+        "GET",
+        _query(
+            f"issues/{PR_NUMBER}/comments",
+            [("per_page", "100"), ("page", "1")],
+        ),
+        [],
+    )
+
     def response(
         *,
         method: str,
@@ -447,6 +586,17 @@ def _add_receipt_creation(
         del method, endpoint
         if not isinstance(body, dict) or not isinstance(body.get("body"), str):
             raise AssertionError("receipt creation requires a comment body")
+        method_name = (
+            "intent"
+            if pr_metadata.INTENT_MARKER in body["body"]
+            else "confirmation"
+        )
+        comment_id = 401 if method_name == "intent" else 402
+        created_at = (
+            "2026-09-04T00:00:01Z"
+            if method_name == "intent"
+            else "2026-09-04T00:00:06Z"
+        )
         payload = _comment(
             comment_id,
             body["body"],
@@ -459,6 +609,7 @@ def _add_receipt_creation(
     client.add(
         "POST",
         _endpoint(f"issues/{PR_NUMBER}/comments"),
+        response,
         response,
     )
 
@@ -591,6 +742,30 @@ def _cli_snapshot_calls(
     return calls
 
 
+def _cli_metadata_version_call(
+    state: dict,
+    version: pr_metadata.MetadataVersion,
+) -> dict:
+    return _cli_api_call(
+        "POST",
+        "graphql",
+        payload=_graphql_payload(state, version),
+        input_text=json.dumps(
+            {
+                "query": pr_metadata.METADATA_VERSION_QUERY,
+                "variables": {
+                    "name": "repo",
+                    "number": PR_NUMBER,
+                    "owner": "owner",
+                },
+            },
+            ensure_ascii=False,
+            separators=(",", ":"),
+            sort_keys=True,
+        ),
+    )
+
+
 def _canonical_decision(**changes: object) -> str:
     payload = {
         "action": "updated",
@@ -601,8 +776,10 @@ def _canonical_decision(**changes: object) -> str:
         "mutated": False,
         "pr_number": PR_NUMBER,
         "reason": "",
-        "receipt_comment_id": None,
-        "receipt_comment_url": None,
+        "confirmation_comment_id": None,
+        "confirmation_comment_url": None,
+        "intent_comment_id": None,
+        "intent_comment_url": None,
         "repository": REPOSITORY,
         "run_id": None,
     }
@@ -623,25 +800,35 @@ def _receipt_payload(
     head_sha: str = HEAD,
     base_sha: str = BASE,
     requested_fields: dict[str, str] | None = None,
-    edit_updated_at: str = "2026-09-04T00:00:00Z",
     watermark_run_id: int = 101,
     watermark_run_number: int = 10,
     watermark_created_at: str = "2026-09-04T00:00:00Z",
     workflow_id: int = WORKFLOW_ID,
     workflow_path: str = pr_metadata.WORKFLOW_PATH,
     nonce: str = "a" * 64,
-    metadata_sha256: str | None = None,
+    pre_metadata_sha256: str | None = None,
+    target_metadata_sha256: str | None = None,
+    pre_version: pr_metadata.MetadataVersion | None = None,
+    pre_title: str = "Stable title",
+    pre_body: str | None = "Old body",
 ) -> dict:
+    pre_version = pre_version or _metadata_version(
+        body_last_edited_at="2026-09-03T00:00:00Z",
+    )
     return {
         "base_sha": base_sha,
-        "edit_updated_at": edit_updated_at,
         "head_sha": head_sha,
-        "metadata_sha256": (
-            metadata_sha256
-            if metadata_sha256 is not None
-            else _metadata_sha256("Stable title", "Stable body")
-        ),
         "nonce": nonce,
+        "pre_fields": {
+            "body": _sha256(json.dumps(pre_body, separators=(",", ":"))),
+            "title": _sha256(json.dumps(pre_title, separators=(",", ":"))),
+        },
+        "pre_metadata_sha256": (
+            pre_metadata_sha256
+            if pre_metadata_sha256 is not None
+            else _metadata_sha256(pre_title, pre_body)
+        ),
+        "pre_version": pre_version.canonical_payload(),
         "pr_number": pr_number,
         "repository": repository,
         "repository_id": repository_id,
@@ -651,6 +838,11 @@ def _receipt_payload(
             else {"body": _sha256("Stable body")}
         ),
         "schema_version": 1,
+        "target_metadata_sha256": (
+            target_metadata_sha256
+            if target_metadata_sha256 is not None
+            else _metadata_sha256("Stable title", "Stable body")
+        ),
         "watermark": {
             "created_at": watermark_created_at,
             "run_id": watermark_run_id,
@@ -667,7 +859,27 @@ def _receipt(**changes: object) -> pr_metadata.EditReceipt:
     return pr_metadata._parse_edit_receipt(_receipt_payload(**changes))
 
 
-def _receipt_comment(
+def _confirmation(
+    receipt: pr_metadata.EditReceipt,
+    *,
+    intent_comment_id: int = 401,
+    version: pr_metadata.MetadataVersion | None = None,
+) -> pr_metadata.EditConfirmation:
+    return pr_metadata.EditConfirmation(
+        schema_version=1,
+        repository=receipt.repository,
+        repository_id=receipt.repository_id,
+        pr_number=receipt.pr_number,
+        head_sha=receipt.head_sha,
+        base_sha=receipt.base_sha,
+        intent_comment_id=intent_comment_id,
+        intent_nonce=receipt.nonce,
+        metadata_sha256=receipt.target_metadata_sha256,
+        metadata_version=version or _metadata_version(),
+    )
+
+
+def _intent_comment(
     receipt: pr_metadata.EditReceipt,
     *,
     comment_id: int = 401,
@@ -677,7 +889,7 @@ def _receipt_comment(
 ) -> dict:
     payload = _comment(
         comment_id,
-        pr_metadata._receipt_comment_body(receipt),
+        pr_metadata._intent_comment_body(receipt),
         created_at=created_at,
         updated_at=updated_at if updated_at is not None else created_at,
     )
@@ -685,12 +897,30 @@ def _receipt_comment(
     return payload
 
 
-def _add_receipt_comments(
+def _confirmation_comment(
+    confirmation: pr_metadata.EditConfirmation,
+    *,
+    comment_id: int = 402,
+    created_at: str = "2026-09-04T00:00:02Z",
+    updated_at: str | None = None,
+    **changes: object,
+) -> dict:
+    payload = _comment(
+        comment_id,
+        pr_metadata._confirmation_comment_body(confirmation),
+        created_at=created_at,
+        updated_at=updated_at if updated_at is not None else created_at,
+    )
+    payload.update(changes)
+    return payload
+
+
+def _add_transaction_comments(
     client: ScriptedClient,
     receipt: pr_metadata.EditReceipt,
     *,
-    comment_id: int = 401,
-    created_at: str = "2026-09-04T00:00:01Z",
+    confirmation: pr_metadata.EditConfirmation | None = None,
+    confirmation_comment_id: int = 402,
     comments: list[dict] | None = None,
     copies: int = 2,
 ) -> None:
@@ -702,11 +932,11 @@ def _add_receipt_comments(
         comments
         if comments is not None
         else [
-            _receipt_comment(
-                receipt,
-                comment_id=comment_id,
-                created_at=created_at,
-            )
+            _intent_comment(receipt),
+            _confirmation_comment(
+                confirmation or _confirmation(receipt),
+                comment_id=confirmation_comment_id,
+            ),
         ]
     )
     client.add(
@@ -720,15 +950,28 @@ def _reconcile(
     client: ScriptedClient,
     *,
     receipt: pr_metadata.EditReceipt | None = None,
-    receipt_comment_id: int = 401,
+    confirmation: pr_metadata.EditConfirmation | None = None,
+    confirmation_comment_id: int = 402,
     comments: list[dict] | None = None,
+    version: pr_metadata.MetadataVersion | None = None,
+    state: dict | None = None,
 ) -> pr_metadata.Decision:
     receipt = receipt or _receipt()
-    _add_receipt_comments(
+    version = version or _metadata_version()
+    confirmation = confirmation or _confirmation(receipt, version=version)
+    _add_transaction_comments(
         client,
         receipt,
-        comment_id=receipt_comment_id,
+        confirmation=confirmation,
+        confirmation_comment_id=confirmation_comment_id,
         comments=comments,
+    )
+    _add_metadata_versions(
+        client,
+        *(
+            (state or _pr(), version)
+            for _ in range(2)
+        ),
     )
     return pr_metadata.reconcile_metadata(
         client,
@@ -736,7 +979,7 @@ def _reconcile(
         pr_number=PR_NUMBER,
         head_sha=HEAD,
         base_sha=BASE,
-        receipt_comment_id=receipt_comment_id,
+        confirmation_comment_id=confirmation_comment_id,
     )
 
 
@@ -761,7 +1004,11 @@ if not arguments or arguments[0] != "api":
     raise SystemExit(97)
 try:
     method = arguments[arguments.index("--method") + 1]
-    endpoint = next(item for item in arguments if item.startswith("repos/"))
+    endpoint = next(
+        item
+        for item in arguments
+        if item == "graphql" or item.startswith("repos/")
+    )
 except (StopIteration, ValueError, IndexError):
     print("fake-gh: malformed argv", file=sys.stderr)
     raise SystemExit(97)
@@ -906,7 +1153,7 @@ class PullRequestMetadataTests(unittest.TestCase):
     def test_active_full_build_refuses_default_edit_without_mutation_or_cancel(self):
         client = ScriptedClient()
         active_full = _run(101, 10, mode="full", active=True)
-        _add_pr_states(client, _pr())
+        _add_pr_states(client, _pr(), _pr())
         _add_snapshot(client, [active_full])
 
         decision = pr_metadata.edit_metadata(
@@ -983,7 +1230,10 @@ class PullRequestMetadataTests(unittest.TestCase):
                 self.assertEqual(decision.action, "deferred")
                 self.assertFalse(decision.mutated)
                 self.assertFalse(
-                    any(method != "GET" for method, _endpoint, _body in client.calls)
+                    any(
+                        method not in {"GET", "POST"}
+                        for method, _endpoint, _body in client.calls
+                    )
                 )
 
     def test_unbound_active_runs_block_with_empty_or_missing_bindings(self):
@@ -1146,7 +1396,7 @@ class PullRequestMetadataTests(unittest.TestCase):
                 updated_at="2026-09-04T00:00:05Z",
             ),
         )
-        _add_receipt_creation(client)
+        _add_edit_transaction(client, body="new body")
         decision = pr_metadata.edit_metadata(
             client,
             repository=REPOSITORY,
@@ -1169,7 +1419,7 @@ class PullRequestMetadataTests(unittest.TestCase):
             _endpoint(f"pulls/{PR_NUMBER}"),
             _pr(title="Essential correction"),
         )
-        _add_receipt_creation(client)
+        _add_edit_transaction(client, title="Essential correction")
 
         decision = pr_metadata.edit_metadata(
             client,
@@ -1186,21 +1436,24 @@ class PullRequestMetadataTests(unittest.TestCase):
         self.assertTrue(decision.mutated)
         self.assertIn("reconcile", decision.guidance[0])
         mutations = [
-            call for call in client.calls if call[0] != "GET"
+            call
+            for call in client.calls
+            if call[0] != "GET" and call[1] != "graphql"
         ]
         self.assertEqual(
             [(method, endpoint) for method, endpoint, _body in mutations],
             [
+                ("POST", _endpoint(f"issues/{PR_NUMBER}/comments")),
                 ("PATCH", _endpoint(f"pulls/{PR_NUMBER}")),
                 ("POST", _endpoint(f"issues/{PR_NUMBER}/comments")),
             ],
         )
         self.assertEqual(
-            mutations[0][2],
+            mutations[1][2],
             {"title": "Essential correction"},
         )
         self.assertEqual(
-            pr_metadata._parse_receipt_comment_body(mutations[1][2]["body"])
+            pr_metadata._parse_intent_comment_body(mutations[0][2]["body"])
             .requested_fields,
             (
                 pr_metadata.EditFieldDigest(
@@ -1230,9 +1483,26 @@ class PullRequestMetadataTests(unittest.TestCase):
             )
         self.assertFalse(any(method != "GET" for method, _endpoint, _body in client.calls))
 
-    def test_body_only_no_op_performs_no_run_query_or_mutation(self):
+    def test_body_only_no_op_without_pair_is_refused(self):
         client = ScriptedClient()
-        _add_pr_states(client, _pr())
+        _add_pr_states(client, _pr(), _pr())
+        _add_snapshot(
+            client,
+            [
+                _run(202, 11, mode="metadata-only", success=True),
+                _run(101, 10, mode="full"),
+            ],
+            copies=2,
+        )
+        _add_metadata_versions(client, (_pr(), _metadata_version()))
+        client.add(
+            "GET",
+            _query(
+                f"issues/{PR_NUMBER}/comments",
+                [("per_page", "100"), ("page", "1")],
+            ),
+            [],
+        )
         decision = pr_metadata.edit_metadata(
             client,
             repository=REPOSITORY,
@@ -1243,8 +1513,15 @@ class PullRequestMetadataTests(unittest.TestCase):
             body="Stable body",
             essential_reason=None,
         )
-        self.assertEqual(decision.action, "no-op")
-        self.assertEqual(len(client.calls), 1)
+        self.assertEqual(decision.action, "refused")
+        self.assertFalse(decision.mutated)
+        self.assertFalse(
+            any(
+                method == "PATCH"
+                or "/comments" in endpoint and method == "POST"
+                for method, endpoint, _body in client.calls
+            )
+        )
 
     def test_identity_is_revalidated_immediately_before_edit(self):
         client = ScriptedClient()
@@ -1366,7 +1643,10 @@ class PullRequestMetadataTests(unittest.TestCase):
         self.assertEqual(decision.run_id, 202)
         self.assertFalse(decision.mutated)
         self.assertFalse(
-            any(method != "GET" for method, _endpoint, _body in client.calls)
+            any(
+                method not in {"GET", "POST"}
+                for method, _endpoint, _body in client.calls
+            )
         )
 
     def test_second_snapshot_active_metadata_graph_growth_defers(self):
@@ -1443,6 +1723,10 @@ class PullRequestMetadataTests(unittest.TestCase):
         successful_full = _run(101, 10, mode="full")
         _add_pr_states(client, _pr(), _pr())
         _add_snapshot(client, [successful_full], copies=2)
+        _add_edit_transaction(
+            client,
+            body="essential correction",
+        )
         client.add(
             "PATCH",
             _endpoint(f"pulls/{PR_NUMBER}"),
@@ -1466,15 +1750,14 @@ class PullRequestMetadataTests(unittest.TestCase):
                 body="essential correction",
                 essential_reason="Correct the frozen delivery contract",
             )
-        self.assertEqual(
-            [call for call in client.calls if call[0] != "GET"],
-            [
-                (
-                    "PATCH",
-                    _endpoint(f"pulls/{PR_NUMBER}"),
-                    {"body": "essential correction"},
-                )
-            ],
+        mutations = [call for call in client.calls if call[0] != "GET"]
+        self.assertIn(
+            (
+                "PATCH",
+                _endpoint(f"pulls/{PR_NUMBER}"),
+                {"body": "essential correction"},
+            ),
+            mutations,
         )
 
     def test_pull_request_mutation_response_must_attest_requested_result(self):
@@ -1486,14 +1769,14 @@ class PullRequestMetadataTests(unittest.TestCase):
                 None,
                 "new body",
                 _pr(body="Stable body"),
-                "requested body",
+                "complete target metadata",
             ),
             (
                 "title",
                 "New title",
                 None,
                 _pr(title="Stable title"),
-                "requested title",
+                "complete target metadata",
             ),
             (
                 "repository",
@@ -1529,6 +1812,11 @@ class PullRequestMetadataTests(unittest.TestCase):
                 successful_full = _run(101, 10, mode="full")
                 _add_pr_states(client, _pr(), _pr())
                 _add_snapshot(client, [successful_full], copies=2)
+                _add_edit_transaction(
+                    client,
+                    title=title,
+                    body=body,
+                )
                 client.add(
                     "PATCH",
                     _endpoint(f"pulls/{PR_NUMBER}"),
@@ -1562,7 +1850,7 @@ class PullRequestMetadataTests(unittest.TestCase):
                 updated_at="2026-09-04T00:00:05Z",
             ),
         )
-        _add_receipt_creation(client)
+        _add_edit_transaction(client, body="new body")
 
         decision = pr_metadata.edit_metadata(
             client,
@@ -1575,31 +1863,45 @@ class PullRequestMetadataTests(unittest.TestCase):
             essential_reason=None,
         )
         self.assertEqual(decision.action, "updated")
-        self.assertEqual(decision.receipt_comment_id, 401)
+        self.assertEqual(decision.intent_comment_id, 401)
+        self.assertEqual(decision.confirmation_comment_id, 402)
         self.assertEqual(
-            decision.receipt_comment_url,
+            decision.intent_comment_url,
             f"https://github.com/{REPOSITORY}/pull/{PR_NUMBER}"
             "#issuecomment-401",
         )
-        receipt_call = next(
+        self.assertEqual(
+            decision.confirmation_comment_url,
+            f"https://github.com/{REPOSITORY}/pull/{PR_NUMBER}"
+            "#issuecomment-402",
+        )
+        transaction_calls = [
             call
             for call in client.calls
             if call[:2]
             == ("POST", _endpoint(f"issues/{PR_NUMBER}/comments"))
+        ]
+        intent = pr_metadata._parse_intent_comment_body(
+            transaction_calls[0][2]["body"]
         )
-        receipt = pr_metadata._parse_receipt_comment_body(
-            receipt_call[2]["body"]
-        )
-        self.assertEqual(receipt.edit_updated_at, "2026-09-04T00:00:05Z")
         self.assertEqual(
-            receipt.requested_fields,
+            intent.requested_fields,
             (pr_metadata.EditFieldDigest("body", _sha256("new body")),),
         )
         self.assertEqual(
-            receipt.metadata_sha256,
+            intent.target_metadata_sha256,
             _metadata_sha256("Stable title", "new body"),
         )
-        self.assertRegex(receipt.nonce, r"^[0-9a-f]{64}$")
+        self.assertRegex(intent.nonce, r"^[0-9a-f]{64}$")
+        confirmation = pr_metadata._parse_confirmation_comment_body(
+            transaction_calls[1][2]["body"]
+        )
+        self.assertEqual(confirmation.intent_comment_id, 401)
+        self.assertEqual(confirmation.intent_nonce, intent.nonce)
+        self.assertEqual(
+            confirmation.metadata_sha256,
+            intent.target_metadata_sha256,
+        )
         pr_gets = [
             call
             for call in client.calls
@@ -1607,11 +1909,11 @@ class PullRequestMetadataTests(unittest.TestCase):
         ]
         self.assertEqual(len(pr_gets), 2)
 
-    def test_receipt_comment_creation_response_must_attest_authority(self):
+    def test_transaction_comment_creation_responses_must_attest_authority(self):
         cases = (
             (
                 "body",
-                {"body": f"{pr_metadata.RECEIPT_MARKER}\n{{}}\n"},
+                {"body": f"{pr_metadata.INTENT_MARKER}\n{{}}\n"},
             ),
             (
                 "identity",
@@ -1633,13 +1935,6 @@ class PullRequestMetadataTests(unittest.TestCase):
                 "edited",
                 {"updated_at": "2026-09-04T00:00:07Z"},
             ),
-            (
-                "predates-patch",
-                {
-                    "created_at": "2026-09-04T00:00:04Z",
-                    "updated_at": "2026-09-04T00:00:04Z",
-                },
-            ),
         )
         for name, changes in cases:
             with self.subTest(case=name):
@@ -1655,8 +1950,9 @@ class PullRequestMetadataTests(unittest.TestCase):
                         updated_at="2026-09-04T00:00:05Z",
                     ),
                 )
-                _add_receipt_creation(
+                _add_edit_transaction(
                     client,
+                    body="new body",
                     response_changes=changes,
                 )
                 with self.assertRaises(pr_metadata.MetadataEditError):
@@ -1676,6 +1972,340 @@ class PullRequestMetadataTests(unittest.TestCase):
                         for _method, endpoint, _body in client.calls
                     )
                 )
+
+    def test_retry_recovers_unmatched_intent_after_patch(self):
+        failed = ScriptedClient()
+        successful_full = _run(101, 10, mode="full")
+        _add_pr_states(failed, _pr(), _pr())
+        _add_snapshot(failed, [successful_full], copies=2)
+        failed.add(
+            "PATCH",
+            _endpoint(f"pulls/{PR_NUMBER}"),
+            _pr(
+                body="new body",
+                updated_at="2026-09-04T00:00:05Z",
+            ),
+        )
+        _add_edit_transaction(failed, body="new body")
+        confirmation_route = (
+            "POST",
+            _endpoint(f"issues/{PR_NUMBER}/comments"),
+        )
+        failed.routes[confirmation_route][1] = pr_metadata.MetadataEditError(
+            "metadata edit confirmation comment creation request timed out"
+        )
+        with self.assertRaisesRegex(
+            pr_metadata.MetadataEditError,
+            "timed out",
+        ):
+            pr_metadata.edit_metadata(
+                failed,
+                repository=REPOSITORY,
+                pr_number=PR_NUMBER,
+                head_sha=HEAD,
+                base_sha=BASE,
+                title=None,
+                body="new body",
+                essential_reason=None,
+            )
+        self.assertTrue(
+            any(method == "PATCH" for method, _endpoint, _body in failed.calls)
+        )
+        intent_call = next(
+            call
+            for call in failed.calls
+            if call[:2] == confirmation_route
+            and pr_metadata.INTENT_MARKER in call[2]["body"]
+        )
+        intent = pr_metadata._parse_intent_comment_body(
+            intent_call[2]["body"]
+        )
+
+        target_state = _pr(
+            body="new body",
+            updated_at="2026-09-04T00:00:05Z",
+        )
+        pre_version = _metadata_version()
+        target_version = _metadata_version(
+            body_last_edited_at="2026-09-04T00:00:05Z",
+        )
+        client = ScriptedClient()
+        _add_pr_states(client, target_state, target_state)
+        _add_snapshot(
+            client,
+            [
+                _run(202, 11, mode="metadata-only", success=True),
+                _run(101, 10, mode="full"),
+            ],
+            copies=2,
+        )
+        _add_metadata_versions(
+            client,
+            (target_state, target_version),
+            (target_state, target_version),
+        )
+        client.add(
+            "GET",
+            _query(
+                f"issues/{PR_NUMBER}/comments",
+                [("per_page", "100"), ("page", "1")],
+            ),
+            [_intent_comment(intent)],
+        )
+
+        def confirmation_response(
+            *,
+            method: str,
+            endpoint: str,
+            body: dict[str, object] | None,
+        ) -> dict:
+            del method, endpoint
+            return _comment(
+                402,
+                body["body"],
+                created_at="2026-09-04T00:00:06Z",
+                updated_at="2026-09-04T00:00:06Z",
+            )
+
+        client.add(
+            "POST",
+            _endpoint(f"issues/{PR_NUMBER}/comments"),
+            confirmation_response,
+        )
+        decision = pr_metadata.edit_metadata(
+            client,
+            repository=REPOSITORY,
+            pr_number=PR_NUMBER,
+            head_sha=HEAD,
+            base_sha=BASE,
+            title=None,
+            body="new body",
+            essential_reason=None,
+        )
+        self.assertEqual(decision.action, "recovered")
+        self.assertFalse(
+            any(method == "PATCH" for method, _endpoint, _body in client.calls)
+        )
+        self.assertEqual(decision.intent_comment_id, 401)
+        self.assertEqual(decision.confirmation_comment_id, 402)
+
+    def test_retry_unmatched_intent_reapplies_patch_from_pre_state(self):
+        pre_state = _pr()
+        target_state = _pr(
+            body="new body",
+            updated_at="2026-09-04T00:00:05Z",
+        )
+        pre_version = _metadata_version()
+        target_version = _metadata_version(
+            body_last_edited_at="2026-09-04T00:00:05Z",
+        )
+        intent = _receipt(
+            requested_fields={"body": _sha256("new body")},
+            pre_title="Stable title",
+            pre_body="Stable body",
+            pre_metadata_sha256=_metadata_sha256(
+                "Stable title",
+                "Stable body",
+            ),
+            target_metadata_sha256=_metadata_sha256(
+                "Stable title",
+                "new body",
+            ),
+            pre_version=pre_version,
+        )
+        client = ScriptedClient()
+        _add_pr_states(client, pre_state, pre_state)
+        _add_snapshot(client, [_run(101, 10, mode="full")], copies=2)
+        _add_metadata_versions(
+            client,
+            (pre_state, pre_version),
+            (target_state, target_version),
+        )
+        client.add(
+            "GET",
+            _query(
+                f"issues/{PR_NUMBER}/comments",
+                [("per_page", "100"), ("page", "1")],
+            ),
+            [_intent_comment(intent)],
+        )
+        client.add(
+            "PATCH",
+            _endpoint(f"pulls/{PR_NUMBER}"),
+            target_state,
+        )
+
+        def confirmation_response(
+            *,
+            method: str,
+            endpoint: str,
+            body: dict[str, object] | None,
+        ) -> dict:
+            del method, endpoint
+            return _comment(
+                402,
+                body["body"],
+                created_at="2026-09-04T00:00:06Z",
+                updated_at="2026-09-04T00:00:06Z",
+            )
+
+        client.add(
+            "POST",
+            _endpoint(f"issues/{PR_NUMBER}/comments"),
+            confirmation_response,
+        )
+        decision = pr_metadata.edit_metadata(
+            client,
+            repository=REPOSITORY,
+            pr_number=PR_NUMBER,
+            head_sha=HEAD,
+            base_sha=BASE,
+            title=None,
+            body="new body",
+            essential_reason=None,
+        )
+        self.assertEqual(decision.action, "updated")
+        self.assertEqual(decision.intent_comment_id, 401)
+        self.assertEqual(decision.confirmation_comment_id, 402)
+        transaction_posts = [
+            call
+            for call in client.calls
+            if call[:2]
+            == ("POST", _endpoint(f"issues/{PR_NUMBER}/comments"))
+        ]
+        self.assertEqual(len(transaction_posts), 1)
+        self.assertIn(
+            pr_metadata.CONFIRMATION_MARKER,
+            transaction_posts[0][2]["body"],
+        )
+
+    def test_retry_unmatched_intent_rejects_third_state(self):
+        intent = _receipt(
+            requested_fields={"body": _sha256("new body")},
+            pre_title="Stable title",
+            pre_body="Stable body",
+            pre_metadata_sha256=_metadata_sha256(
+                "Stable title",
+                "Stable body",
+            ),
+            target_metadata_sha256=_metadata_sha256(
+                "Stable title",
+                "new body",
+            ),
+        )
+        third_state = _pr(body="unrelated body")
+        client = ScriptedClient()
+        _add_pr_states(client, third_state, third_state)
+        _add_snapshot(client, [_run(101, 10, mode="full")], copies=2)
+        _add_metadata_versions(
+            client,
+            (third_state, _metadata_version()),
+        )
+        client.add(
+            "GET",
+            _query(
+                f"issues/{PR_NUMBER}/comments",
+                [("per_page", "100"), ("page", "1")],
+            ),
+            [_intent_comment(intent)],
+        )
+        with self.assertRaisesRegex(
+            pr_metadata.MetadataEditError,
+            "neither pre-state nor target",
+        ):
+            pr_metadata.edit_metadata(
+                client,
+                repository=REPOSITORY,
+                pr_number=PR_NUMBER,
+                head_sha=HEAD,
+                base_sha=BASE,
+                title=None,
+                body="new body",
+                essential_reason=None,
+            )
+        self.assertFalse(
+            any(method == "PATCH" for method, _endpoint, _body in client.calls)
+        )
+
+    def test_no_op_requires_and_returns_authoritative_pair(self):
+        receipt = _receipt()
+        confirmation = _confirmation(receipt)
+        client = ScriptedClient()
+        _add_pr_states(client, _pr(), _pr())
+        _add_snapshot(
+            client,
+            [
+                _run(202, 11, mode="metadata-only", success=True),
+                _run(101, 10, mode="full"),
+            ],
+            copies=2,
+        )
+        _add_metadata_versions(client, (_pr(), _metadata_version()))
+        client.add(
+            "GET",
+            _query(
+                f"issues/{PR_NUMBER}/comments",
+                [("per_page", "100"), ("page", "1")],
+            ),
+            [
+                _intent_comment(receipt),
+                _confirmation_comment(confirmation),
+            ],
+        )
+        decision = pr_metadata.edit_metadata(
+            client,
+            repository=REPOSITORY,
+            pr_number=PR_NUMBER,
+            head_sha=HEAD,
+            base_sha=BASE,
+            title=None,
+            body="Stable body",
+            essential_reason=None,
+        )
+        self.assertEqual(decision.action, "no-op")
+        self.assertEqual(decision.intent_comment_id, 401)
+        self.assertEqual(decision.confirmation_comment_id, 402)
+        self.assertFalse(decision.mutated)
+
+    def test_retry_after_confirmation_timeout_finds_maybe_created_pair(self):
+        receipt = _receipt()
+        confirmation = _confirmation(receipt)
+        client = ScriptedClient()
+        _add_pr_states(client, _pr(), _pr())
+        _add_snapshot(client, [_run(101, 10, mode="full")], copies=2)
+        _add_metadata_versions(client, (_pr(), _metadata_version()))
+        client.add(
+            "GET",
+            _query(
+                f"issues/{PR_NUMBER}/comments",
+                [("per_page", "100"), ("page", "1")],
+            ),
+            [
+                _intent_comment(receipt),
+                _confirmation_comment(confirmation),
+            ],
+        )
+        decision = pr_metadata.edit_metadata(
+            client,
+            repository=REPOSITORY,
+            pr_number=PR_NUMBER,
+            head_sha=HEAD,
+            base_sha=BASE,
+            title=None,
+            body="Stable body",
+            essential_reason=None,
+        )
+        self.assertEqual(decision.action, "deferred")
+        self.assertEqual(decision.intent_comment_id, 401)
+        self.assertEqual(decision.confirmation_comment_id, 402)
+        self.assertFalse(decision.mutated)
+        self.assertFalse(
+            any(
+                method == "PATCH"
+                or method == "POST" and endpoint != "graphql"
+                for method, endpoint, _body in client.calls
+            )
+        )
 
     def test_stale_new_candidate_is_rejected_before_run_queries(self):
         client = ScriptedClient()
@@ -1722,10 +2352,13 @@ class PullRequestMetadataTests(unittest.TestCase):
         self.assertEqual(decision.action, "rerun")
         self.assertEqual(decision.run_id, 202)
         mutations = [call for call in client.calls if call[0] != "GET"]
-        self.assertEqual(
-            mutations,
-            [("POST", _endpoint("actions/runs/202/rerun"), None)],
-        )
+        reruns = [
+            call
+            for call in mutations
+            if call[:2]
+            == ("POST", _endpoint("actions/runs/202/rerun"))
+        ]
+        self.assertEqual(reruns, [("POST", _endpoint("actions/runs/202/rerun"), None)])
         self.assertFalse(any("/cancel" in endpoint for _method, endpoint, _body in client.calls))
         self.assertFalse(any("/dispatches" in endpoint for _method, endpoint, _body in client.calls))
 
@@ -1759,7 +2392,10 @@ class PullRequestMetadataTests(unittest.TestCase):
                 ):
                     _reconcile(client)
                 self.assertFalse(
-                    any(method != "GET" for method, _endpoint, _body in client.calls)
+                    any(
+                        method not in {"GET", "POST"}
+                        for method, _endpoint, _body in client.calls
+                    )
                 )
 
     def test_reconciliation_rejects_noncanonical_failed_metadata_jobs(self):
@@ -1806,7 +2442,10 @@ class PullRequestMetadataTests(unittest.TestCase):
                 with self.assertRaises(pr_metadata.MetadataEditError):
                     _reconcile(client)
                 self.assertFalse(
-                    any(method != "GET" for method, _endpoint, _body in client.calls)
+                    any(
+                        method not in {"GET", "POST"}
+                        for method, _endpoint, _body in client.calls
+                    )
                 )
 
     def test_reconciliation_defers_while_metadata_run_is_active(self):
@@ -1829,7 +2468,12 @@ class PullRequestMetadataTests(unittest.TestCase):
         decision = _reconcile(client)
         self.assertEqual(decision.action, "deferred")
         self.assertFalse(decision.mutated)
-        self.assertFalse(any(method != "GET" for method, _endpoint, _body in client.calls))
+        self.assertFalse(
+            any(
+                method not in {"GET", "POST"}
+                for method, _endpoint, _body in client.calls
+            )
+        )
 
     def test_reconciliation_defers_until_full_build_succeeds(self):
         client = ScriptedClient()
@@ -1844,7 +2488,12 @@ class PullRequestMetadataTests(unittest.TestCase):
         decision = _reconcile(client)
         self.assertEqual(decision.action, "deferred")
         self.assertEqual(decision.run_id, 101)
-        self.assertFalse(any(method != "GET" for method, _endpoint, _body in client.calls))
+        self.assertFalse(
+            any(
+                method not in {"GET", "POST"}
+                for method, _endpoint, _body in client.calls
+            )
+        )
 
     def test_reconciliation_rejects_identity_change_before_rerun(self):
         client = ScriptedClient()
@@ -1861,7 +2510,12 @@ class PullRequestMetadataTests(unittest.TestCase):
             "identity changed",
         ):
             _reconcile(client)
-        self.assertFalse(any(method != "GET" for method, _endpoint, _body in client.calls))
+        self.assertFalse(
+            any(
+                method not in {"GET", "POST"}
+                for method, _endpoint, _body in client.calls
+            )
+        )
 
     def test_successful_metadata_run_is_already_reconciled(self):
         client = ScriptedClient()
@@ -1894,7 +2548,10 @@ class PullRequestMetadataTests(unittest.TestCase):
         self.assertEqual(decision.run_id, 101)
         self.assertFalse(decision.mutated)
         self.assertFalse(
-            any(method != "GET" for method, _endpoint, _body in client.calls)
+            any(
+                method not in {"GET", "POST"}
+                for method, _endpoint, _body in client.calls
+            )
         )
 
     def test_reconciliation_accepts_later_run_at_same_timestamp(self):
@@ -1933,6 +2590,31 @@ class PullRequestMetadataTests(unittest.TestCase):
                     "complete" if success else "rerun",
                 )
                 self.assertEqual(decision.run_id, 203)
+
+    def test_reconciliation_accepts_run_materialized_after_confirmation(self):
+        client = ScriptedClient()
+        record, jobs = _run(202, 11, mode="metadata-only", success=True)
+        record.update(
+            {
+                "created_at": "2026-09-04T00:00:03Z",
+                "run_started_at": "2026-09-04T00:00:03Z",
+                "updated_at": "2026-09-04T00:00:06Z",
+            }
+        )
+        for job in jobs:
+            job["created_at"] = "2026-09-04T00:00:04Z"
+            job["started_at"] = "2026-09-04T00:00:04Z"
+            job["completed_at"] = "2026-09-04T00:00:05Z"
+            if job["conclusion"] == "skipped":
+                job["completed_at"] = "2026-09-04T00:00:04Z"
+        _add_pr_states(client, _pr())
+        _add_snapshot(
+            client,
+            [(record, jobs), _run(101, 10, mode="full")],
+        )
+        decision = _reconcile(client)
+        self.assertEqual(decision.action, "complete")
+        self.assertEqual(decision.run_id, 202)
 
     def test_reconciliation_rejects_rerun_attempt_at_watermark(self):
         client = ScriptedClient()
@@ -2014,10 +2696,6 @@ class PullRequestMetadataTests(unittest.TestCase):
         invalid_payloads.append(("bad-digest", bad_digest))
         bad_path = _receipt_payload(workflow_path=".github/workflows/other.yml")
         invalid_payloads.append(("workflow-path", bad_path))
-        postdated = _receipt_payload(
-            edit_updated_at="2026-09-03T23:59:59Z",
-        )
-        invalid_payloads.append(("postdated-watermark", postdated))
         for name, payload in invalid_payloads:
             with self.subTest(schema=name):
                 with self.assertRaises(pr_metadata.MetadataEditError):
@@ -2034,7 +2712,6 @@ class PullRequestMetadataTests(unittest.TestCase):
                     "body": _sha256("stale body")
                 }
             ),
-            _receipt(edit_updated_at="2026-09-04T00:00:01Z"),
         )
         for receipt in identity_receipts:
             with self.subTest(receipt=receipt):
@@ -2058,36 +2735,19 @@ class PullRequestMetadataTests(unittest.TestCase):
                     "watermark is stale or forged",
                 ):
                     _reconcile(client, receipt=receipt)
-
-        client = ScriptedClient()
-        _add_pr_states(
-            client,
-            _pr(updated_at="2026-09-04T00:00:01Z"),
-        )
-        older_observed = _run(101, 10, mode="full")
-        omitted_pre_edit = _run(202, 11, mode="metadata-only", success=True)
-        _add_snapshot(client, [omitted_pre_edit, older_observed])
-        with self.assertRaisesRegex(
-            pr_metadata.MetadataEditError,
-            "omits a pre-edit workflow run",
-        ):
-            _reconcile(
-                client,
-                receipt=_receipt(
-                    edit_updated_at="2026-09-04T00:00:01Z",
-                ),
-            )
-
-    def test_receipt_comment_authority_and_latest_selection_fail_closed(self):
+    def test_transaction_comment_authority_and_latest_selection_fail_closed(self):
         receipt = _receipt()
-        base_comment = _receipt_comment(receipt)
+        confirmation = _confirmation(receipt)
+        base_comment = _intent_comment(receipt)
+        confirmation_comment = _confirmation_comment(confirmation)
         cases = {
             "deleted": [],
             "edited": [
-                _receipt_comment(
+                _intent_comment(
                     receipt,
                     updated_at="2026-09-04T00:00:02Z",
-                )
+                ),
+                confirmation_comment,
             ],
             "non-owner": [
                 {
@@ -2099,7 +2759,8 @@ class PullRequestMetadataTests(unittest.TestCase):
                         "site_admin": False,
                     },
                     "author_association": "NONE",
-                }
+                },
+                confirmation_comment,
             ],
             "bot": [
                 {
@@ -2110,7 +2771,8 @@ class PullRequestMetadataTests(unittest.TestCase):
                         "type": "Bot",
                         "site_admin": False,
                     },
-                }
+                },
+                confirmation_comment,
             ],
             "cross-repository": [
                 {
@@ -2119,40 +2781,68 @@ class PullRequestMetadataTests(unittest.TestCase):
                         "https://api.github.com/repos/other/repo/"
                         "issues/comments/401"
                     ),
-                }
+                },
+                confirmation_comment,
             ],
             "duplicate-marker": [
                 {
                     **base_comment,
                     "body": (
-                        f"{pr_metadata.RECEIPT_MARKER}\n"
-                        f"{pr_metadata.RECEIPT_MARKER}\n"
+                        f"{pr_metadata.INTENT_MARKER}\n"
+                        f"{pr_metadata.INTENT_MARKER}\n"
                     ),
-                }
+                },
+                confirmation_comment,
             ],
-            "wrong-id": [_receipt_comment(receipt, comment_id=402)],
+            "wrong-id": [
+                _intent_comment(receipt, comment_id=403),
+                confirmation_comment,
+            ],
             "older-than-latest": [
                 base_comment,
-                _receipt_comment(
+                confirmation_comment,
+                _intent_comment(
                     _receipt(nonce="b" * 64),
-                    comment_id=402,
-                    created_at="2026-09-04T00:00:02Z",
+                    comment_id=403,
+                    created_at="2026-09-04T00:00:03Z",
                 ),
             ],
             "latest-ambiguous": [
                 base_comment,
-                _receipt_comment(
+                confirmation_comment,
+                _intent_comment(
                     _receipt(nonce="b" * 64),
-                    comment_id=402,
+                    comment_id=403,
                 ),
             ],
             "duplicate-nonce": [
                 base_comment,
-                _receipt_comment(
+                confirmation_comment,
+                _intent_comment(
                     receipt,
-                    comment_id=402,
-                    created_at="2026-09-04T00:00:02Z",
+                    comment_id=403,
+                    created_at="2026-09-04T00:00:03Z",
                 ),
+            ],
+            "edited-confirmation": [
+                base_comment,
+                _confirmation_comment(
+                    confirmation,
+                    updated_at="2026-09-04T00:00:03Z",
+                ),
+            ],
+            "non-owner-confirmation": [
+                base_comment,
+                {
+                    **confirmation_comment,
+                    "user": {
+                        "id": OWNER_ID + 1,
+                        "login": "attacker",
+                        "type": "User",
+                        "site_admin": False,
+                    },
+                    "author_association": "NONE",
+                },
             ],
         }
         for name, comments in cases.items():
@@ -2166,7 +2856,10 @@ class PullRequestMetadataTests(unittest.TestCase):
                         comments=comments,
                     )
                 self.assertFalse(
-                    any(method != "GET" for method, _endpoint, _body in client.calls)
+                    any(
+                        method not in {"GET", "POST"}
+                        for method, _endpoint, _body in client.calls
+                    )
                 )
 
     def test_later_direct_metadata_changes_invalidate_receipt(self):
@@ -2195,10 +2888,26 @@ class PullRequestMetadataTests(unittest.TestCase):
             with self.subTest(case=name):
                 client = ScriptedClient()
                 _add_pr_states(client, state)
+                changed_version = _metadata_version(
+                    title_event_id="RTE_3",
+                    title_event_created_at="2026-09-04T00:00:03Z",
+                    title_previous="Stable title",
+                    title_current=state["title"],
+                    body_last_edited_at="2026-09-04T00:00:03Z",
+                )
                 with self.assertRaises(pr_metadata.MetadataEditError):
-                    _reconcile(client, receipt=receipt)
+                    _reconcile(
+                        client,
+                        receipt=receipt,
+                        confirmation=_confirmation(receipt),
+                        version=changed_version,
+                        state=state,
+                    )
                 self.assertFalse(
-                    any(method != "GET" for method, _endpoint, _body in client.calls)
+                    any(
+                        method not in {"GET", "POST"}
+                        for method, _endpoint, _body in client.calls
+                    )
                 )
 
         client = ScriptedClient()
@@ -2229,25 +2938,93 @@ class PullRequestMetadataTests(unittest.TestCase):
         self.assertEqual(decision.run_id, 203)
         self.assertFalse(decision.mutated)
 
-    def test_same_second_receipt_and_metadata_run_defers(self):
-        client = ScriptedClient()
-        metadata = _run(202, 11, mode="metadata-only", success=True)
-        successful_full = _run(101, 10, mode="full")
-        _add_pr_states(client, _pr())
-        _add_snapshot(client, [metadata, successful_full])
-        receipt = _receipt()
-        decision = _reconcile(
-            client,
-            receipt=receipt,
-            comments=[
-                _receipt_comment(
-                    receipt,
-                    created_at="2026-09-04T00:00:00Z",
-                )
-            ],
+    def test_title_and_body_edit_revert_versions_invalidate_pair(self):
+        cases = (
+            (
+                "title-revert",
+                _receipt(
+                    requested_fields={"title": _sha256("Stable title")},
+                ),
+                _metadata_version(
+                    title_event_id="RTE_3",
+                    title_event_created_at="2026-09-04T00:00:03Z",
+                    title_previous="Temporary title",
+                    title_current="Stable title",
+                ),
+            ),
+            (
+                "body-revert",
+                _receipt(),
+                _metadata_version(
+                    body_last_edited_at="2026-09-04T00:00:03Z",
+                ),
+            ),
         )
-        self.assertEqual(decision.action, "deferred")
-        self.assertFalse(decision.mutated)
+        for name, receipt, current_version in cases:
+            with self.subTest(case=name):
+                client = ScriptedClient()
+                _add_pr_states(client, _pr())
+                with self.assertRaises(pr_metadata.MetadataEditError):
+                    _reconcile(
+                        client,
+                        receipt=receipt,
+                        confirmation=_confirmation(receipt),
+                        version=current_version,
+                    )
+
+    def test_metadata_version_actor_login_and_id_are_owner_bound(self):
+        cases = (
+            (
+                "title-login",
+                _receipt(
+                    requested_fields={"title": _sha256("Stable title")},
+                ),
+                _metadata_version(title_actor_login="attacker"),
+            ),
+            (
+                "body-login",
+                _receipt(),
+                _metadata_version(body_editor_login="attacker"),
+            ),
+            (
+                "body-id",
+                _receipt(),
+                _metadata_version(body_editor_id=OWNER_ID + 1),
+            ),
+        )
+        for name, receipt, version in cases:
+            with self.subTest(case=name):
+                client = ScriptedClient()
+                _add_pr_states(client, _pr())
+                with self.assertRaises(pr_metadata.MetadataEditError):
+                    _reconcile(
+                        client,
+                        receipt=receipt,
+                        confirmation=_confirmation(
+                            receipt,
+                            version=version,
+                        ),
+                        version=version,
+                    )
+
+    def test_same_second_body_version_ambiguity_fails_closed(self):
+        client = ScriptedClient()
+        _add_pr_states(client, _pr())
+        receipt = _receipt()
+        ambiguous_version = receipt.pre_version
+        with self.assertRaisesRegex(
+            pr_metadata.MetadataEditError,
+            "body metadata version does not uniquely attest",
+        ):
+            _reconcile(
+                client,
+                receipt=receipt,
+                confirmation=_confirmation(
+                    receipt,
+                    version=ambiguous_version,
+                ),
+                version=ambiguous_version,
+            )
 
     def test_later_evidence_comment_does_not_invalidate_receipt(self):
         client = ScriptedClient()
@@ -2267,7 +3044,8 @@ class PullRequestMetadataTests(unittest.TestCase):
             client,
             receipt=receipt,
             comments=[
-                _receipt_comment(receipt),
+                _intent_comment(receipt),
+                _confirmation_comment(_confirmation(receipt)),
                 _comment(
                     500,
                     f"{pr_metadata.EVIDENCE_MARKER}\nUpdated evidence\n",
@@ -3148,7 +3926,7 @@ class PullRequestMetadataTests(unittest.TestCase):
             _endpoint(f"pulls/{PR_NUMBER}"),
             _pr(body="new stable body"),
         )
-        _add_receipt_creation(client)
+        _add_edit_transaction(client, body="new stable body")
 
         decision = pr_metadata.edit_metadata(
             client,
@@ -3169,7 +3947,7 @@ class PullRequestMetadataTests(unittest.TestCase):
             == ("POST", _endpoint(f"issues/{PR_NUMBER}/comments"))
         )
         self.assertEqual(
-            pr_metadata._parse_receipt_comment_body(
+            pr_metadata._parse_intent_comment_body(
                 receipt_call[2]["body"]
             ).watermark_run_id,
             202,
@@ -3326,15 +4104,21 @@ class PullRequestMetadataTests(unittest.TestCase):
         updated = pr_metadata.Decision(
             action="updated",
             run_id=101,
-            receipt_comment_id=401,
-            receipt_comment_url=(
+            intent_comment_id=401,
+            intent_comment_url=(
                 f"https://github.com/{REPOSITORY}/pull/{PR_NUMBER}"
                 "#issuecomment-401"
+            ),
+            confirmation_comment_id=402,
+            confirmation_comment_url=(
+                f"https://github.com/{REPOSITORY}/pull/{PR_NUMBER}"
+                "#issuecomment-402"
             ),
             **common,
         )
         self.assertEqual(updated.run_id, 101)
-        self.assertEqual(updated.receipt_comment_id, 401)
+        self.assertEqual(updated.intent_comment_id, 401)
+        self.assertEqual(updated.confirmation_comment_id, 402)
         for changes in (
             {"action": "comment-updated"},
             {"action": "comment-updated", "run_id": 101},
@@ -3344,16 +4128,16 @@ class PullRequestMetadataTests(unittest.TestCase):
             {"action": "deferred", "run_id": 0},
             {"action": "deferred", "run_id": 1000000000000000000},
             {"action": "updated"},
-            {"action": "updated", "receipt_comment_id": 401},
+            {"action": "updated", "intent_comment_id": 401},
             {
                 "action": "updated",
-                "receipt_comment_id": 401,
-                "receipt_comment_url": "https://example.test/forged",
+                "intent_comment_id": 401,
+                "intent_comment_url": "https://example.test/forged",
             },
             {
                 "action": "deferred",
-                "receipt_comment_id": 401,
-                "receipt_comment_url": (
+                "intent_comment_id": 401,
+                "intent_comment_url": (
                     f"https://github.com/{REPOSITORY}/pull/{PR_NUMBER}"
                     "#issuecomment-401"
                 ),
@@ -3981,6 +4765,18 @@ class PullRequestMetadataLauncherTests(unittest.TestCase):
         body_path.write_text(body, encoding="utf-8")
         title_path.write_text("CLI title\n", encoding="utf-8")
         successful_full = _run(101, 10, mode="full")
+        post_state = _pr(
+            title="CLI title",
+            body=body,
+            updated_at="2026-09-04T00:00:05Z",
+        )
+        post_version = _metadata_version(
+            title_event_id="RTE_2",
+            title_event_created_at="2026-09-04T00:00:05Z",
+            title_previous="Stable title",
+            title_current="CLI title",
+            body_last_edited_at="2026-09-04T00:00:05Z",
+        )
         calls = [
             _cli_api_call(
                 "GET",
@@ -3994,14 +4790,32 @@ class PullRequestMetadataLauncherTests(unittest.TestCase):
                 payload=_pr(),
             ),
             *_cli_snapshot_calls([successful_full]),
+            _cli_metadata_version_call(_pr(), _metadata_version()),
+            _cli_api_call(
+                "GET",
+                _query(
+                    f"issues/{PR_NUMBER}/comments",
+                    [("per_page", "100"), ("page", "1")],
+                ),
+                payload=[],
+            ),
+            _cli_api_call(
+                "POST",
+                _endpoint(f"issues/{PR_NUMBER}/comments"),
+                payload=_comment(
+                    401,
+                    "",
+                    created_at="2026-09-04T00:00:01Z",
+                    updated_at="2026-09-04T00:00:01Z",
+                ),
+                status=201,
+                input_text=None,
+                echo_body=True,
+            ),
             _cli_api_call(
                 "PATCH",
                 _endpoint(f"pulls/{PR_NUMBER}"),
-                payload=_pr(
-                    title="CLI title",
-                    body=body,
-                    updated_at="2026-09-04T00:00:05Z",
-                ),
+                payload=post_state,
                 input_text=json.dumps(
                     {"body": body, "title": "CLI title"},
                     ensure_ascii=False,
@@ -4009,11 +4823,12 @@ class PullRequestMetadataLauncherTests(unittest.TestCase):
                     sort_keys=True,
                 ),
             ),
+            _cli_metadata_version_call(post_state, post_version),
             _cli_api_call(
                 "POST",
                 _endpoint(f"issues/{PR_NUMBER}/comments"),
                 payload=_comment(
-                    401,
+                    402,
                     "",
                     created_at="2026-09-04T00:00:06Z",
                     updated_at="2026-09-04T00:00:06Z",
@@ -4054,8 +4869,8 @@ class PullRequestMetadataLauncherTests(unittest.TestCase):
                         HEAD,
                         "--base-sha",
                         BASE,
-                        "--receipt-comment-id",
-                        "401",
+                        "--confirmation-comment-id",
+                        "402",
                     ]
                 ],
                 mutated=True,
@@ -4064,43 +4879,67 @@ class PullRequestMetadataLauncherTests(unittest.TestCase):
                     "to close any non-atomic same-SHA Build race"
                 ),
                 run_id=101,
-                receipt_comment_id=401,
-                receipt_comment_url=(
+                intent_comment_id=401,
+                intent_comment_url=(
                     f"https://github.com/{REPOSITORY}/pull/{PR_NUMBER}"
                     "#issuecomment-401"
+                ),
+                confirmation_comment_id=402,
+                confirmation_comment_url=(
+                    f"https://github.com/{REPOSITORY}/pull/{PR_NUMBER}"
+                    "#issuecomment-402"
                 ),
             ),
         )
         self.assert_isolated_calls(records, len(calls))
         self.assertFalse(marker.exists())
-        patch_record = records[-2]
+        patch_record = next(
+            record
+            for record in records
+            if record["method"] == "PATCH"
+        )
         self.assertEqual(
             json.loads(patch_record["input"]),
             {"body": body, "title": "CLI title"},
         )
         self.assertEqual(patch_record["argv"][-2:], ["--input", "-"])
-        receipt = pr_metadata._parse_receipt_comment_body(
-            json.loads(records[-1]["input"])["body"]
+        intent_record = next(
+            record
+            for record in records
+            if pr_metadata.INTENT_MARKER in record["input"]
         )
-        self.assertEqual(receipt.edit_updated_at, "2026-09-04T00:00:05Z")
+        intent = pr_metadata._parse_intent_comment_body(
+            json.loads(intent_record["input"])["body"]
+        )
         self.assertEqual(
-            receipt.metadata_sha256,
+            intent.target_metadata_sha256,
             _metadata_sha256("CLI title", body),
         )
         self.assertEqual(
-            receipt.requested_fields,
+            intent.requested_fields,
             (
                 pr_metadata.EditFieldDigest("body", _sha256(body)),
                 pr_metadata.EditFieldDigest("title", _sha256("CLI title")),
             ),
         )
-        self.assertRegex(receipt.nonce, r"^[0-9a-f]{64}$")
+        self.assertRegex(intent.nonce, r"^[0-9a-f]{64}$")
+        confirmation_record = next(
+            record
+            for record in records
+            if pr_metadata.CONFIRMATION_MARKER in record["input"]
+        )
+        confirmation = pr_metadata._parse_confirmation_comment_body(
+            json.loads(confirmation_record["input"])["body"]
+        )
+        self.assertEqual(confirmation.intent_comment_id, 401)
+        self.assertEqual(confirmation.intent_nonce, intent.nonce)
 
     def test_reconcile_and_evidence_comment_launcher_paths(self):
         old_receipt = _receipt(
             watermark_run_id=202,
             watermark_run_number=11,
         )
+        old_confirmation = _confirmation(old_receipt)
         old_success = _run(202, 11, mode="metadata-only", success=True)
         successful_full = _run(101, 10, mode="full")
         calls = [
@@ -4115,16 +4954,20 @@ class PullRequestMetadataLauncherTests(unittest.TestCase):
                     f"issues/{PR_NUMBER}/comments",
                     [("per_page", "100"), ("page", "1")],
                 ),
-                payload=[_receipt_comment(old_receipt)],
+                payload=[
+                    _intent_comment(old_receipt),
+                    _confirmation_comment(old_confirmation),
+                ],
             ),
+            _cli_metadata_version_call(_pr(), _metadata_version()),
             *_cli_snapshot_calls([old_success, successful_full]),
         ]
         completed, records = self.sandbox.run(
             "reconcile",
             [
                 *self.common_arguments(),
-                "--receipt-comment-id",
-                "401",
+                "--confirmation-comment-id",
+                "402",
             ],
             calls,
         )
@@ -4148,8 +4991,8 @@ class PullRequestMetadataLauncherTests(unittest.TestCase):
                         HEAD,
                         "--base-sha",
                         BASE,
-                        "--receipt-comment-id",
-                        "401",
+                        "--confirmation-comment-id",
+                        "402",
                     ]
                 ],
                 reason="the exact metadata-only run is not visible yet",
@@ -4166,6 +5009,7 @@ class PullRequestMetadataLauncherTests(unittest.TestCase):
         )
         runs = [failed_metadata, successful_full]
         receipt = _receipt()
+        confirmation = _confirmation(receipt)
         calls = [
             _cli_api_call(
                 "GET",
@@ -4178,8 +5022,12 @@ class PullRequestMetadataLauncherTests(unittest.TestCase):
                     f"issues/{PR_NUMBER}/comments",
                     [("per_page", "100"), ("page", "1")],
                 ),
-                payload=[_receipt_comment(receipt)],
+                payload=[
+                    _intent_comment(receipt),
+                    _confirmation_comment(confirmation),
+                ],
             ),
+            _cli_metadata_version_call(_pr(), _metadata_version()),
             *_cli_snapshot_calls(runs),
             _cli_api_call(
                 "GET",
@@ -4192,8 +5040,12 @@ class PullRequestMetadataLauncherTests(unittest.TestCase):
                     f"issues/{PR_NUMBER}/comments",
                     [("per_page", "100"), ("page", "1")],
                 ),
-                payload=[_receipt_comment(receipt)],
+                payload=[
+                    _intent_comment(receipt),
+                    _confirmation_comment(confirmation),
+                ],
             ),
+            _cli_metadata_version_call(_pr(), _metadata_version()),
             *_cli_snapshot_calls(runs),
             _cli_api_call(
                 "POST",
@@ -4205,8 +5057,8 @@ class PullRequestMetadataLauncherTests(unittest.TestCase):
             "reconcile",
             [
                 *self.common_arguments(),
-                "--receipt-comment-id",
-                "401",
+                "--confirmation-comment-id",
+                "402",
             ],
             calls,
         )
@@ -4316,7 +5168,7 @@ class PullRequestMetadataLauncherTests(unittest.TestCase):
                 "required",
             ),
             (
-                "missing-receipt-comment-id",
+                "missing-confirmation-comment-id",
                 "reconcile",
                 self.common_arguments(),
                 "required",
@@ -4326,22 +5178,22 @@ class PullRequestMetadataLauncherTests(unittest.TestCase):
                 "reconcile",
                 [
                     *self.common_arguments(),
-                    "--receipt-comment-id",
-                    "401",
+                    "--confirmation-comment-id",
+                    "402",
                     "--receipt-file",
                     str(self.sandbox.root / "forged.json"),
                 ],
                 "unrecognized arguments",
             ),
             (
-                "invalid-receipt-comment-id",
+                "invalid-confirmation-comment-id",
                 "reconcile",
                 [
                     *self.common_arguments(),
-                    "--receipt-comment-id",
+                    "--confirmation-comment-id",
                     "0",
                 ],
-                "--receipt-comment-id must be a positive integer",
+                "--confirmation-comment-id must be a positive integer",
             ),
             (
                 "missing-body-path",
