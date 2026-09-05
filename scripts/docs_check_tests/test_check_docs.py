@@ -1136,7 +1136,11 @@ class TesterCaseRegistryTests(unittest.TestCase):
         feature = next(
             entry for entry in registry["features"] if entry["id"] == "patch-release-artifact"
         )
-        case_ids = ["TC-CI-PATCH-049-001", "TC-CI-PATCH-049-002"]
+        case_ids = [
+            "TC-CI-PATCH-049-001",
+            "TC-CI-PATCH-049-002",
+            "TC-WORKFLOW-PUBLISHER-COMMAND-INVENTORY-001",
+        ]
         self.assertEqual(feature["required_cases"], case_ids)
         cases = {entry["id"]: entry for entry in registry["cases"]}
 

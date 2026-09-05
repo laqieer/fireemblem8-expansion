@@ -125,6 +125,59 @@ still use normal shell failure output and are outside this diagnostic enum;
 cleanup may therefore be the only stage text even when the failure began
 before spawn.
 
+### Closed builder command authority
+
+The trusted builder is also governed by one typed, default-deny command
+authority:
+[`publisher_command_signatures.py`](../scripts/workflow_pilot/publisher_command_signatures.py)
+loads
+[`publisher_command_signatures.json`](../scripts/workflow_pilot/publisher_command_signatures.json)
+and uses the existing workflow-pilot shell lexer, command/control normalization,
+and recursive helper traversal. Each reviewed signature fixes its canonical
+executable, wrappers, exact argument grammar, control/helper context,
+stdin/stdout/stderr and redirections, path/resource accesses, writes, Python
+program identity, and emitted semantic events. The outer host setup, every
+helper body, the isolated wrapper, candidate build script, and all nine Python
+invocations, including Python reached through the reviewed `/usr/bin/env`
+wrapper, must resolve to the same counted inventory. Signature identity includes
+command-local operators and control/helper context. Nested command, process,
+and backtick substitutions use content-derived scopes rather than traversal
+ordinals, so cross-command event ordering remains issue #201's contract.
+
+Unknown, duplicated, ambiguous, stale, missing, redirected, dynamically named,
+or structurally changed commands fail. This includes arbitrary absolute tools,
+aliases, command/eval strings, callbacks, traps, process substitution, alternate
+interpreter flags or program sources, and helpers that combine path or argument
+fragments. The previous supervisor-path substring detector remains only a
+diagnostic for its older mount contract; it is not command or access authority.
+The cgroup membership read is the single fixed `/usr/bin/python3 -I -S - "$$"`
+heredoc program recorded by executable, source digest, argv, stdin, output,
+read-only `/mnt/supervisor/cgroup/cgroup.procs` access, and
+`cgroup-membership-check` event.
+
+To add or change a production builder command, update the workflow and its
+behavioral tests, run
+`python3 -m scripts.workflow_pilot.publisher_command_signatures --write-registry`,
+review the exact signature/resource/event change, update the reviewed registry
+digest in the validator, and run the checks below. The existing full-run and
+builder-shell identity seals plus canonical module/registry paths bind the
+inventory, parser, helpers, and Python programs to the same exact validation
+tree. Editing only the workflow, only the registry, or only a signature fails
+completeness.
+
+This capability depends on the existing workflow-pilot parser and exact-tree
+publisher validators. It conflicts with PR #195 until that branch is rebuilt
+on this authority and is a prerequisite for issue #201 and the final issue
+#177 fix. Issue #201's candidate-launch/checker/export ordering and phase
+machine are explicit non-goals here; this registry emits typed events for that
+future consumer but does not enforce their ordering.
+
+The host lane runs the registry check from its verified checkout with Python
+isolated mode before any candidate test suite can mutate the worktree. The
+validator also rejects noncanonical parser, validator, or registry paths, so a
+`PYTHONPATH`, import, symlink, or alternate-registry substitution cannot become
+the reviewed authority.
+
 Before candidate code starts, its PID-1 wrapper redirects inherited standard
 input/output/error permanently to private `/dev/null`. A trusted isolated
 Python child launcher closes every inherited descriptor above 2, loads the
@@ -216,7 +269,9 @@ restricted bytes.
 ## Tester cases
 
 The canonical human procedures and machine-indexed definitions are
-[`TC-CI-PATCH-049-001` and `TC-CI-PATCH-049-002`](test-cases/patch-release.md).
+[`TC-CI-PATCH-049-001`, `TC-CI-PATCH-049-002`, and
+`TC-WORKFLOW-PUBLISHER-COMMAND-INVENTORY-001`](test-cases/patch-release.md).
 They cover trusted local validation/application and fail-closed malformed or
-untrusted inputs. Their dependency, conflict, save, cleanup, and automation
-contracts are authoritative over this summary.
+untrusted inputs, including the closed command authority. Their dependency,
+conflict, save, cleanup, and automation contracts are authoritative over this
+summary.

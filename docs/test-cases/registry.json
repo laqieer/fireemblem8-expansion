@@ -194,13 +194,15 @@
       "id": "patch-release-artifact",
       "title": "Trusted BPS-only all-locales/all-features release artifact",
       "issue_urls": [
-        "https://github.com/laqieer/fireemblem8-expansion/issues/49"
+        "https://github.com/laqieer/fireemblem8-expansion/issues/49",
+        "https://github.com/laqieer/fireemblem8-expansion/issues/200"
       ],
       "reference": "docs/patch_release.md",
       "status": "current",
       "required_cases": [
         "TC-CI-PATCH-049-001",
-        "TC-CI-PATCH-049-002"
+        "TC-CI-PATCH-049-002",
+        "TC-WORKFLOW-PUBLISHER-COMMAND-INVENTORY-001"
       ]
     },
     {
@@ -1237,6 +1239,46 @@
         {
           "command": "python3 -m unittest tests.workflows.test_patch_release_workflow -v",
           "evidence": "tests/workflows/test_patch_release_workflow.py"
+        }
+      ]
+    },
+    {
+      "id": "TC-WORKFLOW-PUBLISHER-COMMAND-INVENTORY-001",
+      "title": "Enforce the closed publisher command inventory",
+      "feature_id": "patch-release-artifact",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/200"
+      ],
+      "document": "docs/test-cases/patch-release.md",
+      "anchor": "tc-workflow-publisher-command-inventory-001-enforce-the-closed-publisher-command-inventory",
+      "profiles": [
+        "Supported Linux host workflow profile at the exact candidate commit; no ROM, base image, secret, save, emulator, or network"
+      ],
+      "purpose": "Prove every production builder command, recursive helper command, and reviewed Python invocation resolves to one typed default-deny signature, including the exact cgroup membership checker.",
+      "prerequisites": "Repository root with Python 3 and the committed workflow-pilot parser, command-signature validator, signature JSON, and patch-release workflow unchanged; mutation fixtures use temporary copies.",
+      "actions": "Run the command-inventory check, table-driven adversarial suite, complete publisher workflow validator, and stdlib-only upstream workflow import mirror.",
+      "expected_result": "The real builder and exact `/usr/bin/python3 -I -S - \"$$\"` membership checker pass. Unknown, dynamic, redirected, structurally changed, duplicated, ambiguous, stale, or missing commands/signatures and every composed interpreter/helper/access family fail; both publisher validators return the same decision from the same authority.",
+      "negative_control": "The prior substring detector accepts a Python program that composes `/mnt/supervisor/cgroup/` plus `cgroup.` plus `procs`; the typed authority rejects it while accepting the exact production checker.",
+      "interactions": "Depends on the existing workflow-pilot lexer/parser/control and helper-normalization seams and exact-tree publisher identity checks; independent root on master, prerequisite for #201 and final #177, and conflicts with PR #195 until that work consumes this registry; no other feature conflicts.",
+      "save_compatibility": "No save, configuration identity, generated-data, localization, ROM/RAM, gameplay, modern profile, or archival behavior change.",
+      "cleanup": "The tests remove temporary registry and command mutations; no ROM, base image, save, or emulator state is created.",
+      "limitations": "Host-only identity contract with no ARM runtime scenario; #201 owns candidate-launch/checker/export ordering and a future phase machine.",
+      "automation": [
+        {
+          "command": "python3 -m scripts.workflow_pilot.publisher_command_signatures --check",
+          "evidence": "scripts/workflow_pilot/publisher_command_signatures.py"
+        },
+        {
+          "command": "python3 -m unittest scripts.workflow_pilot.tests.test_publisher_command_signatures -v",
+          "evidence": "scripts/workflow_pilot/tests/test_publisher_command_signatures.py"
+        },
+        {
+          "command": "python3 -m unittest tests.workflows.test_patch_release_workflow -v",
+          "evidence": "tests/workflows/test_patch_release_workflow.py"
+        },
+        {
+          "command": "python3 -m unittest tests.upstream_port.test_verify.VerifyGatesMirrorWorkflowTests.test_patch_release_workflow_imports_without_yaml_dependency tests.upstream_port.test_verify.VerifyCliCwdTests.test_patch_release_command_inventory_decisions_are_mirrored -v",
+          "evidence": "tests/upstream_port/test_verify.py"
         }
       ]
     },

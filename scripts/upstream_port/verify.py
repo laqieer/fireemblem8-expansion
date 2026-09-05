@@ -27,6 +27,7 @@ from typing import List
 
 from scripts.workflow_pilot import (
     metadata_adapter_contract,
+    publisher_command_signatures,
     publisher_shell_contract,
     summary_continuity_contract,
 )
@@ -1839,12 +1840,8 @@ def _parse_step(block, job_name, index):
             or "supervisor_cgroup=/mnt/supervisor/cgroup"
             not in {token for command in values["run"] for token in command}
             or ("test", "!", "-r", "/mnt/supervisor") not in values["run"]
-            or not any(
-                command
-                and command[0].startswith("cgroup_members=")
-                and "$supervisor_cgroup/cgroup.procs" in command[0]
-                for command in values["run"]
-            )
+            or publisher_shell_contract.PATCH_RELEASE_MEMBERSHIP_CHECKER_INTRODUCER
+            not in block
             or any(
                 command
                 and command[0].startswith("cgroup_members=")
@@ -1878,7 +1875,10 @@ def _parse_step(block, job_name, index):
             or "candidate-output.log"
             in " ".join(token for command in values["run"] for token in command)
             or ("ulimit", "-f", "131072") not in values["run"]
-            or ("test", "$cgroup_members", "=", "$$") not in values["run"]
+            or publisher_shell_contract.PATCH_RELEASE_MEMBERSHIP_CHECKER_INTRODUCER
+            not in block
+            or 'MEMBERSHIP_PATH = "/mnt/supervisor/cgroup/cgroup.procs"'
+            not in block
             or "candidate build failed: stage=launch detail=%s exit=%d"
             not in " ".join(token for command in values["run"] for token in command)
             or "candidate build failed: stage=isolated exit=%d"
@@ -1954,6 +1954,9 @@ def _parse_step(block, job_name, index):
                 publisher_shell_contract.validate_patch_release_parser_heredocs(
                     builder_shell,
                     label=step_label,
+                )
+                publisher_command_signatures.assert_command_inventory(
+                    publisher_run_script
                 )
             except ValueError as error:
                 raise ValueError(f"{step_label} patch-release parser script differs") from error

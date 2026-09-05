@@ -9,6 +9,7 @@ import unittest
 from unittest import mock
 
 from scripts.upstream_port import cli, verify as verify_mod
+from scripts.workflow_pilot import publisher_shell_contract
 from tests.workflows import test_build_ci_topology as topology_tests
 from tests.workflows import test_patch_release_workflow as patch_workflow_tests
 
@@ -1219,6 +1220,32 @@ class VerifyCliCwdTests(unittest.TestCase):
             original
         ):
             with self.subTest(variant=label):
+                self.assertTrue(
+                    patch_workflow_tests.publisher_boundary_errors(changed)
+                )
+                with self.assertRaises(ValueError):
+                    verify_mod._parse_workflow_structure_text(changed)
+
+    def test_patch_release_command_inventory_decisions_are_mirrored(self):
+        with open(BUILD_WORKFLOW_PATH, "r", encoding="utf-8") as handle:
+            original = handle.read()
+        verify_mod._parse_workflow_structure_text(original)
+        mutations = (
+            original.replace(
+                publisher_shell_contract.PATCH_RELEASE_MEMBERSHIP_CHECKER_INTRODUCER,
+                "/usr/bin/python3 -I -S -c "
+                "'open(\"/mnt/supervisor/cgroup/\"+\"cgroup.\"+\"procs\").read()'",
+                1,
+            ),
+            original.replace(
+                "/usr/bin/mknod -m 0666 /dev/null c 1 3",
+                "/usr/bin/touch /dev/null",
+                1,
+            ),
+        )
+        for changed in mutations:
+            with self.subTest(mutation=changed[:180]):
+                self.assertNotEqual(changed, original)
                 self.assertTrue(
                     patch_workflow_tests.publisher_boundary_errors(changed)
                 )

@@ -12,10 +12,10 @@ from typing import Iterable
 
 
 REVIEWED_PATCH_RELEASE_RUN_SHA256 = (
-    "2a35c3184d7bdd84f99398ccb481cb5d74f939ece93bd5ea1d2ca507b399e67c"
+    "c69eb119f86865a228d1fee3d0ad4f3fa6064a43e49a070d75d136b5bd1739ba"
 )
 REVIEWED_BUILDER_ISOLATION_SHA256 = (
-    "3a06d37d0ec73c868cc614dc3d1cf4366684a1d542f6a9a79b0114fac6478353"
+    "aee941df3e593f104b5d524b88fee040cd0842afdfb4ac90b7b399c97f142672"
 )
 REVIEWED_HIDDEN_MASK_LOOP_SHA256 = (
     "77e81e3a773e78b4c58132c553ea3a3ef0719f802fe1164b59f60aef948235f5"
@@ -88,7 +88,47 @@ _PATCH_RELEASE_PARSER_HEREDOC_RE = re.compile(
 _SIMPLE_COMMAND_PREFIXES = frozenset(
     {"if", "then", "do", "elif", "while", "until", "!", "else", "{"}
 )
-_CONTROL_OPERATORS = frozenset({";", "&&", "||", "|", "&"})
+PATCH_RELEASE_MEMBERSHIP_CHECKER_NAME = "check_supervisor_cgroup_membership"
+PATCH_RELEASE_MEMBERSHIP_CHECKER_INTRODUCER = (
+    "/usr/bin/python3 -I -S - \"$$\" <<'PY'"
+)
+_PATCH_RELEASE_MEMBERSHIP_CHECKER_RE = re.compile(
+    r"(?ms)^/usr/bin/python3 -I -S - \"\$\$\" <<'PY'\n"
+    r"(?P<body>.*?)\n"
+    r"PY$"
+)
+_PATCH_RELEASE_MEMBERSHIP_CHECKER_SOURCE = """\
+import os
+import re
+import sys
+
+MEMBERSHIP_PATH = "/mnt/supervisor/cgroup/cgroup.procs"
+MAX_MEMBERSHIP_BYTES = 4096
+
+if len(sys.argv) != 2 or re.fullmatch(r"[1-9][0-9]*", sys.argv[1]) is None:
+    raise SystemExit(125)
+expected_pid = int(sys.argv[1], 10)
+checker_pid = os.getpid()
+if expected_pid == checker_pid:
+    raise SystemExit(125)
+try:
+    with open(MEMBERSHIP_PATH, "rb", buffering=0) as stream:
+        payload = stream.read(MAX_MEMBERSHIP_BYTES + 1)
+except OSError:
+    raise SystemExit(125)
+if len(payload) > MAX_MEMBERSHIP_BYTES or not payload.endswith(b"\\n"):
+    raise SystemExit(125)
+records = payload[:-1].split(b"\\n")
+if len(records) != 2 or any(
+    re.fullmatch(rb"[1-9][0-9]*", record) is None
+    for record in records
+):
+    raise SystemExit(125)
+members = {int(record, 10) for record in records}
+if len(members) != 2 or members != {expected_pid, checker_pid}:
+    raise SystemExit(125)
+"""
+_CONTROL_OPERATORS = frozenset({";", "&&", "||", "|", "|&", "&"})
 _DISALLOWED_MOUNT_WRAPPERS = frozenset({"env", "command", "eval"})
 _ASSIGNMENT_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*=.*")
 _BUSYBOX_BASENAME = "busybox"
@@ -123,6 +163,14 @@ _SUBSTITUTION_SCAN_MAX_COUNT = 128
 class _ShellToken:
     text: str
     has_shell_syntax: bool
+
+
+@dataclass(frozen=True)
+class _ShellCommandRecord:
+    text: str
+    preceding_operator: str | None
+    following_operator: str | None
+    execution_scopes: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -342,16 +390,147 @@ def bash_logical_lines(script: str, *, label: str) -> tuple[str, ...]:
     return tuple(logical_lines)
 
 
-def split_bash_simple_command_strings(script: str, *, label: str) -> tuple[str, ...]:
-    commands: list[str] = []
+def split_bash_command_records(
+    script: str,
+    *,
+    label: str,
+    _execution_scopes: tuple[str, ...] = (),
+) -> tuple[_ShellCommandRecord, ...]:
+    records: list[_ShellCommandRecord] = []
+    pending_operator: str | None = None
     for logical in bash_logical_lines(script, label=label):
         current: list[str] = []
         quote: str | None = None
         word_start = True
+        double_bracket_depth = 0
+        arithmetic_depth = 0
         index = 0
+
+        def emit(following_operator: str | None) -> None:
+            nonlocal current, pending_operator, word_start
+            command = "".join(current).strip()
+            if command:
+                records.append(
+                    _ShellCommandRecord(
+                        text=command,
+                        preceding_operator=pending_operator,
+                        following_operator=following_operator,
+                        execution_scopes=_execution_scopes,
+                    )
+                )
+                pending_operator = following_operator
+            elif following_operator is not None:
+                pending_operator = following_operator
+            current = []
+            word_start = True
+
         while index < len(logical):
             character = logical[index]
+            substitution_allowed = quote in {None, '"'}
+            if substitution_allowed and logical.startswith("$((", index):
+                body, end = _consume_parenthesized_substitution_body(
+                    logical,
+                    start_index=index + 3,
+                    initial_depth=2,
+                    label=label,
+                )
+                current.append(logical[index:end])
+                index = end
+                word_start = False
+                continue
+            if substitution_allowed and logical.startswith("$(", index):
+                body, end = _consume_parenthesized_substitution_body(
+                    logical,
+                    start_index=index + 2,
+                    initial_depth=1,
+                    label=label,
+                )
+                scope = (
+                    "command-substitution:"
+                    + hashlib.sha256(body.encode("utf-8")).hexdigest()[:16]
+                )
+                records.extend(
+                    split_bash_command_records(
+                        body,
+                        label=label,
+                        _execution_scopes=(*_execution_scopes, scope),
+                    )
+                )
+                current.append(logical[index:end])
+                index = end
+                word_start = False
+                continue
+            if quote is None and (
+                logical.startswith("<(", index)
+                or logical.startswith(">(", index)
+            ):
+                body, end = _consume_parenthesized_substitution_body(
+                    logical,
+                    start_index=index + 2,
+                    initial_depth=1,
+                    label=label,
+                )
+                scope = (
+                    "process-substitution:"
+                    + hashlib.sha256(body.encode("utf-8")).hexdigest()[:16]
+                )
+                records.extend(
+                    split_bash_command_records(
+                        body,
+                        label=label,
+                        _execution_scopes=(*_execution_scopes, scope),
+                    )
+                )
+                current.append(logical[index:end])
+                index = end
+                word_start = False
+                continue
+            if substitution_allowed and character == "`":
+                body, end = _consume_backtick_substitution(
+                    logical,
+                    start_index=index,
+                    label=label,
+                )
+                scope = (
+                    "backtick-substitution:"
+                    + hashlib.sha256(body.encode("utf-8")).hexdigest()[:16]
+                )
+                records.extend(
+                    split_bash_command_records(
+                        body,
+                        label=label,
+                        _execution_scopes=(*_execution_scopes, scope),
+                    )
+                )
+                current.append(logical[index:end])
+                index = end
+                word_start = False
+                continue
             if quote is None:
+                if logical.startswith("[[", index):
+                    double_bracket_depth += 1
+                    current.append("[[")
+                    index += 2
+                    word_start = False
+                    continue
+                if double_bracket_depth and logical.startswith("]]", index):
+                    double_bracket_depth -= 1
+                    current.append("]]")
+                    index += 2
+                    word_start = False
+                    continue
+                if logical.startswith("((", index):
+                    arithmetic_depth += 1
+                    current.append("((")
+                    index += 2
+                    word_start = False
+                    continue
+                if arithmetic_depth and logical.startswith("))", index):
+                    arithmetic_depth -= 1
+                    current.append("))")
+                    index += 2
+                    word_start = False
+                    continue
                 if character in " \t":
                     current.append(character)
                     word_start = True
@@ -365,21 +544,35 @@ def split_bash_simple_command_strings(script: str, *, label: str) -> tuple[str, 
                     current.append(character)
                     quote = '"'
                     word_start = False
+                elif double_bracket_depth or arithmetic_depth:
+                    current.append(character)
+                    word_start = False
+                elif (
+                    character == "&"
+                    and (
+                        (current and current[-1] in "<>")
+                        or (
+                            index + 1 < len(logical)
+                            and logical[index + 1] == ">"
+                        )
+                    )
+                ):
+                    current.append(character)
+                    word_start = False
                 elif character in "&|;":
                     operator = character
                     if (
                         character in "&|"
                         and index + 1 < len(logical)
-                        and logical[index + 1] == character
+                        and (
+                            logical[index + 1] == character
+                            or (character == "|" and logical[index + 1] == "&")
+                        )
                     ):
-                        operator += character
+                        operator += logical[index + 1]
                         index += 1
                     if operator in _CONTROL_OPERATORS:
-                        command = "".join(current).strip()
-                        if command:
-                            commands.append(command)
-                        current = []
-                        word_start = True
+                        emit(operator)
                     else:
                         current.append(operator)
                         word_start = False
@@ -398,10 +591,18 @@ def split_bash_simple_command_strings(script: str, *, label: str) -> tuple[str, 
                 elif character == '"':
                     quote = None
             index += 1
-        command = "".join(current).strip()
-        if command:
-            commands.append(command)
-    return tuple(commands)
+        emit(None)
+        if quote is not None or double_bracket_depth or arithmetic_depth:
+            raise ValueError(f"{label} has unterminated command syntax")
+    return tuple(records)
+
+
+def split_bash_simple_command_strings(script: str, *, label: str) -> tuple[str, ...]:
+    return tuple(
+        record.text
+        for record in split_bash_command_records(script, label=label)
+        if not record.execution_scopes
+    )
 
 
 def raw_patch_release_parser_sources(script: str) -> tuple[tuple[str, str], ...]:
@@ -426,17 +627,45 @@ def validate_patch_release_parser_heredocs(script: str, *, label: str) -> None:
             raise ValueError(
                 f"{label} patch-release parser Python body is invalid"
             ) from error
+    name, body = raw_patch_release_membership_checker_source(script)
+    try:
+        ast.parse(body)
+    except SyntaxError as error:
+        raise ValueError(
+            f"{label} patch-release membership checker Python body is invalid"
+        ) from error
+    if name != PATCH_RELEASE_MEMBERSHIP_CHECKER_NAME:
+        raise ValueError(f"{label} patch-release membership checker name differs")
+    if body != _PATCH_RELEASE_MEMBERSHIP_CHECKER_SOURCE:
+        raise ValueError(f"{label} patch-release membership checker source differs")
+
+
+def raw_patch_release_membership_checker_source(
+    script: str,
+) -> tuple[str, str]:
+    matches = list(_PATCH_RELEASE_MEMBERSHIP_CHECKER_RE.finditer(script))
+    if script.count(PATCH_RELEASE_MEMBERSHIP_CHECKER_INTRODUCER) != 1:
+        raise ValueError("patch-release membership checker count differs")
+    if len(matches) != 1:
+        raise ValueError("patch-release membership checker structure differs")
+    return (
+        PATCH_RELEASE_MEMBERSHIP_CHECKER_NAME,
+        matches[0].group("body") + "\n",
+    )
 
 
 def _strip_patch_release_parser_heredoc_bodies(script: str) -> str:
-    return _PATCH_RELEASE_PARSER_HEREDOC_RE.sub(
+    stripped = _PATCH_RELEASE_PARSER_HEREDOC_RE.sub(
         lambda match: (
             f"{match.group('name')}() {{\n"
             f"{PATCH_RELEASE_PARSER_HEREDOC_INTRODUCER}\n"
-            "PY\n"
             "}\n"
         ),
         script,
+    )
+    return _PATCH_RELEASE_MEMBERSHIP_CHECKER_RE.sub(
+        PATCH_RELEASE_MEMBERSHIP_CHECKER_INTRODUCER,
+        stripped,
     )
 
 

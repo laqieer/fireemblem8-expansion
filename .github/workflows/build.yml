@@ -731,6 +731,7 @@ jobs:
         ACTUAL_SHA="$(git rev-parse HEAD)"
         printf 'checkout.sha=%s\n' "$ACTUAL_SHA"
         test "$ACTUAL_SHA" = "$EXPECTED_BUILD_SHA"
+        /usr/bin/python3 -I scripts/workflow_pilot/publisher_command_signatures.py --check
 
     # Exact-ref checkout can omit force-pushed historical fixture commits.
     # The CI-only helper derives exact object IDs from the committed fixture,
@@ -2484,9 +2485,37 @@ jobs:
         if [ "$candidate_status" -ne 0 ]; then
           exit "$candidate_status"
         fi
-        cgroup_members="$(LC_ALL=C /usr/bin/sort -n \
-          "$supervisor_cgroup/cgroup.procs")"
-        test "$cgroup_members" = "$$"
+        /usr/bin/python3 -I -S - "$$" <<'PY'
+        import os
+        import re
+        import sys
+
+        MEMBERSHIP_PATH = "/mnt/supervisor/cgroup/cgroup.procs"
+        MAX_MEMBERSHIP_BYTES = 4096
+
+        if len(sys.argv) != 2 or re.fullmatch(r"[1-9][0-9]*", sys.argv[1]) is None:
+            raise SystemExit(125)
+        expected_pid = int(sys.argv[1], 10)
+        checker_pid = os.getpid()
+        if expected_pid == checker_pid:
+            raise SystemExit(125)
+        try:
+            with open(MEMBERSHIP_PATH, "rb", buffering=0) as stream:
+                payload = stream.read(MAX_MEMBERSHIP_BYTES + 1)
+        except OSError:
+            raise SystemExit(125)
+        if len(payload) > MAX_MEMBERSHIP_BYTES or not payload.endswith(b"\n"):
+            raise SystemExit(125)
+        records = payload[:-1].split(b"\n")
+        if len(records) != 2 or any(
+            re.fullmatch(rb"[1-9][0-9]*", record) is None
+            for record in records
+        ):
+            raise SystemExit(125)
+        members = {int(record, 10) for record in records}
+        if len(members) != 2 or members != {expected_pid, checker_pid}:
+            raise SystemExit(125)
+        PY
         handoff_names="$(/usr/bin/find /mnt/handoff -mindepth 1 \
           -maxdepth 1 -printf '%f\n' | LC_ALL=C /usr/bin/sort)"
         test "$handoff_names" = "$(printf 'metadata.json\ntarget.gba')"

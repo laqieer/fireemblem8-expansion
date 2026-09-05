@@ -1438,6 +1438,8 @@ def _protected_host_prefix_errors(host: str) -> list[str]:
                 'ACTUAL_SHA="$(git rev-parse HEAD)"',
                 "printf 'checkout.sha=%s\\n' \"$ACTUAL_SHA\"",
                 'test "$ACTUAL_SHA" = "$EXPECTED_BUILD_SHA"',
+                "/usr/bin/python3 -I "
+                "scripts/workflow_pilot/publisher_command_signatures.py --check",
             ),
             if_expression=FULL_WORKER_STEP_CONDITION,
         ),

@@ -309,3 +309,113 @@ Remove only disposable local copies and outputs created for the negative
 control. The legal-acquisition decision remains manual and private because no
 ROM can be published; every deterministic validation is automated, and the
 case does not test an unpublished base through CI.
+
+## TC-WORKFLOW-PUBLISHER-COMMAND-INVENTORY-001: Enforce the closed publisher command inventory
+
+- **Feature / originating issue:** `patch-release-artifact` /
+  [issue #200](https://github.com/laqieer/fireemblem8-expansion/issues/200).
+- **Supported configuration or artifact:** supported Linux host workflow
+  profile at the exact candidate commit; no ROM, base image, save, emulator,
+  secret, or network access is required.
+- **Prerequisites and clean starting state:** start at the repository root with
+  Python 3 and the committed workflow-pilot parser, typed signature validator,
+  signature JSON, and patch-release workflow unchanged. Remove no production
+  files; mutation fixtures use temporary copies.
+
+### Actions
+
+1. Validate the real production builder and exact membership checker:
+
+   ```bash
+   python3 -m scripts.workflow_pilot.publisher_command_signatures --check
+   ```
+
+2. Run the table-driven positive, adversarial, helper, drift, deletion, and
+   mirrored-validator suite:
+
+   ```bash
+   python3 -m unittest \
+     scripts.workflow_pilot.tests.test_publisher_command_signatures -v
+   ```
+
+3. Run the existing publisher workflow validator and upstream workflow mirror:
+
+   ```bash
+   python3 -m unittest tests.workflows.test_patch_release_workflow -v
+   python3 -m unittest \
+     tests.upstream_port.test_verify.VerifyGatesMirrorWorkflowTests.test_patch_release_workflow_imports_without_yaml_dependency \
+     tests.upstream_port.test_verify.VerifyCliCwdTests.test_patch_release_command_inventory_decisions_are_mirrored \
+     -v
+   ```
+
+### Expected result
+
+The complete production builder resolves every outer command, recursive helper
+command, isolated-wrapper command, candidate-build command, and reviewed Python
+invocation to the same counted set of typed signatures. The one membership
+checker passes only as absolute `/usr/bin/python3` with exact `-I -S - "$$"`
+argv, exact heredoc program digest and stdin, no output or write, one read-only
+`/mnt/supervisor/cgroup/cgroup.procs` access, and its typed semantic event.
+Both publisher validator suites return the same decision from the same
+authority.
+
+Composed Python, shell, awk, Perl, helper, split-string, encoded/escaped,
+indirect/dynamic executable, alternate interpreter flag, stdin/file/`-c`
+program, callback, trap, process-substitution, redirection, raw path fragment,
+arbitrary absolute tool, shadowed builtin, and helper outer-state/array/alias
+fixtures fail. Registry deletion, duplication, ambiguity, stale entries,
+unreviewed byte reordering, signature mutation, authority-path substitution,
+digest drift, and malformed JSON fail. Adding, removing, changing, or
+redirecting a production command fails until the base-owned registry and
+behavioral evidence are reviewed together.
+
+The semantic inventory treats a pure cross-command reorder as the same set and
+emits events without imposing their phase order. The pre-existing exact-run
+tree seal still reports unreviewed workflow-byte drift; issue #201, not this
+case, owns the candidate-launch/checker/export ordering policy.
+
+### Negative control
+
+The pre-fix substring detector reports no forbidden supervisor-parent mount for
+`/usr/bin/python3 -c
+'open("/mnt/supervisor/cgroup/"+"cgroup."+"procs","rb").read()'`; the typed
+authority rejects that executable/program/argv/access because it has no exact
+signature. A valid unmodified production builder and exact checker pass, so the
+negative matrix is not success-shaped.
+
+### Interactions and save compatibility
+
+This depends on the existing workflow-pilot shell lexer/parser/control and
+helper-normalization seams and exact-tree publisher identity checks. It is an
+independent root on `master`, a prerequisite for issue #201 and the final issue
+#177 publisher fix, and conflicts with PR #195 until that work consumes this
+registry. There are no other feature conflicts. Modern debug/release and
+archival behavior, Build triggers/jobs/contexts/artifacts, patch output format,
+public C APIs, configuration identity, generated data, localization, ROM/RAM,
+save fields/layout/migration/compatibility epoch, gameplay, and emulator state
+are unchanged.
+
+### Automation
+
+- `python3 -m scripts.workflow_pilot.publisher_command_signatures --check` —
+  parses the real workflow, validates the exact fixed Python programs, and
+  checks complete counted equality with the closed JSON registry.
+- `python3 -m unittest scripts.workflow_pilot.tests.test_publisher_command_signatures -v`
+  — proves the real positive, parent composed-reader negative, adversarial
+  signature families, recursive helper closure, both mirrored validator
+  decisions, exact checker mutations, production-command drift, and registry
+  path/digest/schema/deletion/mutation controls, while proving the semantic
+  inventory does not enforce future phase-event order.
+- `python3 -m unittest tests.workflows.test_patch_release_workflow -v` —
+  preserves the complete upstream publisher boundary and executes the exact
+  checker behavior.
+- `python3 -m unittest tests.upstream_port.test_verify.VerifyGatesMirrorWorkflowTests.test_patch_release_workflow_imports_without_yaml_dependency tests.upstream_port.test_verify.VerifyCliCwdTests.test_patch_release_command_inventory_decisions_are_mirrored -v`
+  — preserves the stdlib-only upstream import contract and proves its workflow
+  parser denies the same command mutations as the primary publisher validator.
+
+### Cleanup and limitations
+
+Temporary registry and command mutations are removed by the tests. This is a
+host-only command/access identity contract, so no ARM runtime scenario is
+applicable. Issue #201 owns candidate-launch/checker/export phase ordering; this
+case intentionally emits but does not order those future semantic events.

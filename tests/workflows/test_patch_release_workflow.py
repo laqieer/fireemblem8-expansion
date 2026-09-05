@@ -14,6 +14,7 @@ import shlex
 import signal
 import socket
 import subprocess
+import sys
 import tempfile
 import textwrap
 import time
@@ -23,7 +24,7 @@ from contextlib import redirect_stderr
 from pathlib import Path
 from unittest import mock
 
-from scripts.workflow_pilot import publisher_shell_contract
+from scripts.workflow_pilot import publisher_command_signatures, publisher_shell_contract
 from scripts.modernize import patch_release
 
 
@@ -1479,6 +1480,7 @@ def publisher_boundary_errors(workflow: str) -> list[str]:
             builder_shell,
             label="publisher builder isolation shell",
         )
+        publisher_command_signatures.assert_command_inventory(run_script)
     except (AssertionError, ValueError):
         errors.append("publisher builder isolation shell differs")
     if workflow_has_supervisor_parent_readonly_remount(workflow):
@@ -1679,7 +1681,10 @@ def publisher_boundary_errors(workflow: str) -> list[str]:
         or "ulimit -n 128" not in isolated_step
         or "ulimit -u 512" not in isolated_step
         or "ulimit -v 8388608" not in isolated_step
-        or 'test "$cgroup_members" = "$$"' not in isolated_step
+        or publisher_shell_contract.PATCH_RELEASE_MEMBERSHIP_CHECKER_INTRODUCER
+        not in isolated_step
+        or 'MEMBERSHIP_PATH = "/mnt/supervisor/cgroup/cgroup.procs"'
+        not in isolated_step
         or "size=6g builder-source /mnt/source" not in isolated_step
         or "size=1g builder-home /mnt/home" not in isolated_step
         or "size=1g builder-temp /mnt/tmp" not in isolated_step
@@ -2514,7 +2519,7 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
             supervisor_bind,
         )
         membership = self.patch_job.index(
-            'cgroup_members="$(LC_ALL=C /usr/bin/sort -n',
+            publisher_shell_contract.PATCH_RELEASE_MEMBERSHIP_CHECKER_INTRODUCER,
             sys_mask,
         )
         self.assertLess(supervisor_bind, sys_mask)
@@ -3604,10 +3609,8 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
             1,
         )
         hidden_sys_membership = self.text.replace(
-            'cgroup_members="$(LC_ALL=C /usr/bin/sort -n \\\n'
-            '          "$supervisor_cgroup/cgroup.procs")"',
-            'cgroup_members="$(LC_ALL=C /usr/bin/sort -n \\\n'
-            '          "$cgroup_path/cgroup.procs")"',
+            'MEMBERSHIP_PATH = "/mnt/supervisor/cgroup/cgroup.procs"',
+            'MEMBERSHIP_PATH = "/sys/fs/cgroup/cgroup.procs"',
             1,
         )
         exposed_supervisor_to_candidate = self.text.replace(
@@ -4158,6 +4161,26 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
         publisher_shell_contract.assert_reviewed_builder_isolation_shell_identity(
             actual_shell,
             label="publisher builder isolation shell",
+        )
+        publisher_command_signatures.assert_command_inventory(actual_run)
+
+    def test_publisher_command_inventory_rejects_composed_membership_reader(self):
+        run_script = named_step_run_script(
+            self.text,
+            "Build candidate in isolated namespace and stage public inputs",
+        )
+        composed_reader = (
+            "/usr/bin/python3 -I -S -c "
+            "'open(\"/mnt/supervisor/cgroup/\"+\"cgroup.\"+\"procs\",\"rb\").read()'"
+        )
+        mutated = run_script.replace(
+            publisher_shell_contract.PATCH_RELEASE_MEMBERSHIP_CHECKER_INTRODUCER,
+            composed_reader,
+            1,
+        )
+        self.assertNotEqual(mutated, run_script)
+        self.assertTrue(
+            publisher_command_signatures.command_inventory_errors(mutated)
         )
 
     def test_reference_literal_run_parser_rejects_complex_yaml_styles(self):
@@ -6008,47 +6031,40 @@ exit 37
                 socket_left.close()
                 socket_right.close()
 
-    def test_supervisor_membership_view_allows_only_wrapper_pid(self):
-        full_script = named_step_run_script(
-            self.text,
-            "Build candidate in isolated namespace and stage public inputs",
+    def test_supervisor_membership_checker_allows_only_wrapper_and_checker_pids(self):
+        builder_shell = builder_isolation_shell_source(self.text)
+        _name, source = (
+            publisher_shell_contract.raw_patch_release_membership_checker_source(
+                builder_shell
+            )
         )
-        start = full_script.index(
-            'cgroup_members="$(LC_ALL=C /usr/bin/sort -n'
-        )
-        end_marker = 'test "$cgroup_members" = "$$"'
-        end = full_script.index(end_marker, start) + len(end_marker)
-        membership_check = full_script[start:end]
-        artifact_root = ROOT / "build" / "test-artifacts"
-        artifact_root.mkdir(parents=True, exist_ok=True)
-        with tempfile.TemporaryDirectory(
-            prefix="supervisor-cgroup-view-",
-            dir=artifact_root,
-        ) as temporary:
-            supervisor = Path(temporary) / "supervisor"
-            supervisor.mkdir(mode=0o700)
-            (supervisor / "cgroup.procs").write_text("", encoding="ascii")
 
-            def run(extra_pid):
-                setup = (
-                    'supervisor_cgroup="$1"\n'
-                    'printf \'%s\\n\' "$$" > '
-                    '"$supervisor_cgroup/cgroup.procs"\n'
-                )
-                if extra_pid is not None:
-                    setup += (
-                        f"printf '%s\\n' {extra_pid} >> "
-                        '"$supervisor_cgroup/cgroup.procs"\n'
-                    )
-                return subprocess.run(
-                    ["/bin/bash", "-c", setup + membership_check, "--", str(supervisor)],
-                    check=False,
-                    capture_output=True,
-                    text=True,
-                )
+        def run(payload, *, expected_pid=1234, checker_pid=5678):
+            stream = mock.mock_open(read_data=payload)
+            with (
+                mock.patch.object(sys, "argv", ["checker", str(expected_pid)]),
+                mock.patch("os.getpid", return_value=checker_pid),
+                mock.patch("builtins.open", stream),
+            ):
+                try:
+                    exec(compile(source, "<membership-checker>", "exec"), {})
+                except SystemExit as error:
+                    return error.code
+            return 0
 
-            self.assertEqual(run(None).returncode, 0)
-            self.assertNotEqual(run(999999).returncode, 0)
+        self.assertEqual(run(b"1234\n5678\n"), 0)
+        self.assertEqual(run(b"5678\n1234\n"), 0)
+        for payload in (
+            b"",
+            b"1234\n",
+            b"1234\n5678",
+            b"1234\n5678\n9999\n",
+            b"1234\n1234\n",
+            b"not-a-pid\n5678\n",
+            b"1\n" * 2049,
+        ):
+            with self.subTest(payload=payload[:40]):
+                self.assertEqual(run(payload), 125)
 
     def test_builder_cleanup_suppresses_utility_path_stderr(self):
         section = builder_cleanup_functions_source(self.text)
