@@ -22,6 +22,7 @@ import stat
 import struct
 import subprocess
 import sys
+import time
 import urllib.parse
 import warnings
 from pathlib import Path
@@ -32,12 +33,16 @@ from . import reporter
 
 PROTOCOL = "workflow-pilot-authenticated-git-broker-v1"
 PLAN_DOMAIN = b"workflow-pilot-git-publication-plan-v1\0"
+CAPABILITY_DOMAIN = b"workflow-pilot-git-publication-capability-v1\0"
 RESPONSE_DOMAIN = b"workflow-pilot-git-publication-response-v1\0"
 REQUEST_MAX_BYTES = 16 * 1024
 RESPONSE_MAX_BYTES = 64 * 1024
 DEFAULT_PACK_MAX_BYTES = 64 * 1024 * 1024
 SUBPROCESS_OUTPUT_MAX_BYTES = 1024 * 1024
+CONFIG_MAX_BYTES = 1024 * 1024
 JOURNAL_MAX_BYTES = 16 * 1024 * 1024
+CAPABILITY_MEMFD_NAME = "/memfd:workflow-pilot-git-capability"
+REMOTE_MUTATION_GUARD_SECONDS = 2
 OPENSSL = "/usr/bin/openssl"
 GIT = reporter.GIT
 HEX_64_RE = re.compile(r"^[0-9a-f]{64}$")
@@ -57,6 +62,36 @@ class BrokerError(ValueError):
 
 def _fail(code: str, message: str) -> None:
     raise BrokerError(code, message)
+
+
+class OperationDeadline:
+    def __init__(self, absolute: datetime_module.datetime):
+        now = datetime_module.datetime.now(datetime_module.timezone.utc)
+        remaining = (absolute - now).total_seconds()
+        if remaining <= 0:
+            _fail("operation-expired", "effective operation deadline expired")
+        self.absolute = absolute
+        self.monotonic_end = time.monotonic() + remaining
+
+    def check(self, phase: str) -> None:
+        now = datetime_module.datetime.now(datetime_module.timezone.utc)
+        if now >= self.absolute or time.monotonic() >= self.monotonic_end:
+            _fail("operation-expired", f"effective deadline expired {phase}")
+
+    def remaining(self, phase: str, maximum: float) -> float:
+        self.check(phase)
+        wall = (
+            self.absolute
+            - datetime_module.datetime.now(datetime_module.timezone.utc)
+        ).total_seconds()
+        monotonic = self.monotonic_end - time.monotonic()
+        remaining = min(wall, monotonic, maximum)
+        if remaining <= 0:
+            _fail("operation-expired", f"effective deadline expired {phase}")
+        return remaining
+
+    def text(self) -> str:
+        return self.absolute.strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def _object(value: Any, label: str) -> dict[str, Any]:
@@ -158,7 +193,27 @@ def _read_bounded_fd(fd: int, maximum: int) -> bytes:
     return bytes(chunks)
 
 
-def _verify_ed25519(public_key: Path, payload: bytes, signature: bytes) -> None:
+def _validate_private_state_fd(fd: int, label: str) -> os.stat_result:
+    metadata = os.fstat(fd)
+    if (
+        not stat.S_ISREG(metadata.st_mode)
+        or metadata.st_uid != os.geteuid()
+        or metadata.st_mode & 0o077
+    ):
+        _fail(
+            "journal-corrupt",
+            f"{label} is not a broker-owned private regular file",
+        )
+    return metadata
+
+
+def _verify_ed25519(
+    public_key: Path,
+    payload: bytes,
+    signature: bytes,
+    *,
+    deadline: OperationDeadline | None = None,
+) -> None:
     payload_fd = _memory_file("workflow-pilot-signature-payload", payload)
     signature_fd = _memory_file("workflow-pilot-signature", signature)
     try:
@@ -179,6 +234,7 @@ def _verify_ed25519(public_key: Path, payload: bytes, signature: bytes) -> None:
             timeout=10,
             pass_fds=(payload_fd, signature_fd),
             environment={"PATH": "/usr/bin:/bin", "LANG": "C", "LC_ALL": "C"},
+            deadline=deadline,
         )
     finally:
         os.close(payload_fd)
@@ -253,6 +309,21 @@ def _read_canonical_json_file(
         raise BrokerError("authority-unavailable", f"cannot read {label}") from error
     if len(raw) > maximum:
         _fail("oversized-record", f"{label} exceeds its size limit")
+    value = _object(_parse_json(raw, label), label)
+    if raw != _normalized_json(value):
+        _fail("invalid-json", f"{label} must use canonical JSON")
+    return value
+
+
+def _read_canonical_json_fd(
+    fd: int,
+    label: str,
+    maximum: int = REQUEST_MAX_BYTES,
+) -> dict[str, Any]:
+    metadata = os.fstat(fd)
+    if not stat.S_ISREG(metadata.st_mode) or metadata.st_size > maximum:
+        _fail("oversized-record", f"{label} is not a bounded regular file")
+    raw = os.pread(fd, metadata.st_size, 0)
     value = _object(_parse_json(raw, label), label)
     if raw != _normalized_json(value):
         _fail("invalid-json", f"{label} must use canonical JSON")
@@ -374,6 +445,150 @@ def _load_signature_record(record: dict[str, Any], label: str) -> tuple[str, byt
     return key_id, _decode_signature(record["value"], f"{label}.value")
 
 
+def _read_sealed_capability(fd: int) -> dict[str, Any]:
+    try:
+        metadata = os.fstat(fd)
+        link = os.readlink(f"/proc/self/fd/{fd}")
+        seals = fcntl.fcntl(fd, fcntl.F_GET_SEALS)
+    except OSError as error:
+        raise BrokerError(
+            "invalid-capability", "cannot inspect protected launch capability"
+        ) from error
+    required_seals = (
+        fcntl.F_SEAL_SEAL
+        | fcntl.F_SEAL_SHRINK
+        | fcntl.F_SEAL_GROW
+        | fcntl.F_SEAL_WRITE
+    )
+    if (
+        not stat.S_ISREG(metadata.st_mode)
+        or metadata.st_size <= 0
+        or metadata.st_size > REQUEST_MAX_BYTES
+        or not link.startswith(CAPABILITY_MEMFD_NAME)
+        or seals & required_seals != required_seals
+    ):
+        _fail(
+            "invalid-capability",
+            "launch capability must be an exact sealed anonymous record",
+        )
+    try:
+        raw = os.pread(fd, metadata.st_size, 0)
+    except OSError as error:
+        raise BrokerError(
+            "invalid-capability", "cannot read protected launch capability"
+        ) from error
+    capability = _object(_parse_json(raw, "launch capability"), "launch capability")
+    if raw != _normalized_json(capability):
+        _fail("invalid-capability", "launch capability must use canonical JSON")
+    return capability
+
+
+def _validate_capability(
+    capability: dict[str, Any],
+    installation: dict[str, Any],
+    *,
+    now: datetime_module.datetime,
+    deadline: OperationDeadline | None = None,
+) -> dict[str, Any]:
+    _exact_keys(
+        capability,
+        "launch capability",
+        (
+            "schema_version",
+            "protocol",
+            "installation_id",
+            "repository",
+            "issue",
+            "plan_identity",
+            "operation",
+            "capability_nonce",
+            "issued_at",
+            "expires_at",
+            "signer",
+            "actor",
+            "signature",
+        ),
+    )
+    if (
+        _integer(
+            capability["schema_version"], "capability.schema_version", 1
+        )
+        != 1
+        or capability["protocol"] != PROTOCOL
+    ):
+        _fail("invalid-capability", "launch capability protocol/version mismatch")
+    installation_id = _string(
+        capability["installation_id"],
+        "capability.installation_id",
+        HEX_64_RE,
+    )
+    repository = _string(
+        capability["repository"], "capability.repository", REPOSITORY_RE
+    )
+    issue = _integer(capability["issue"], "capability.issue", 1)
+    plan_identity = _string(
+        capability["plan_identity"], "capability.plan_identity", HEX_64_RE
+    )
+    if capability["operation"] not in {"preflight", "publish"}:
+        _fail("invalid-capability", "launch capability operation is not allowlisted")
+    _string(
+        capability["capability_nonce"],
+        "capability.capability_nonce",
+        HEX_64_RE,
+    )
+    issued_at = _time(capability["issued_at"], "capability.issued_at")
+    expires_at = _time(capability["expires_at"], "capability.expires_at")
+    if issued_at > now or expires_at <= now or expires_at <= issued_at:
+        _fail("invalid-capability", "launch capability is not currently valid")
+    if (
+        expires_at - issued_at
+    ).total_seconds() > installation["plan_lifetime_seconds"]:
+        _fail(
+            "invalid-capability",
+            "launch capability lifetime exceeds the bounded contract",
+        )
+    if (
+        installation_id != installation["installation_id"]
+        or repository != installation["repository"]
+    ):
+        _fail(
+            "invalid-capability",
+            "launch capability does not bind this installation",
+        )
+    signer = _string(capability["signer"], "capability.signer", ACTOR_RE)
+    actor = _string(capability["actor"], "capability.actor", ACTOR_RE)
+    signature_record = _object(
+        capability["signature"], "capability.signature"
+    )
+    key_id, signature = _load_signature_record(
+        signature_record, "capability.signature"
+    )
+    authority = installation["plan_signers"].get(key_id)
+    if (
+        authority is None
+        or authority["signer"] != signer
+        or authority["actor"] != actor
+    ):
+        _fail(
+            "invalid-capability",
+            "launch capability signer/actor is not installed",
+        )
+    verification_deadline = OperationDeadline(
+        min(expires_at, deadline.absolute) if deadline is not None else expires_at
+    )
+    _verify_ed25519(
+        authority["public_key"],
+        _signed_payload(CAPABILITY_DOMAIN, capability),
+        signature,
+        deadline=verification_deadline,
+    )
+    verification_deadline.check("after capability signature validation")
+    capability["_issue"] = issue
+    capability["_plan_identity"] = plan_identity
+    capability["_expires_time"] = expires_at
+    return capability
+
+
 def _plan_ref(issue: int, kind: str) -> str:
     if kind == "authority":
         return f"refs/heads/workflow-pilot/issue-{issue}/authority"
@@ -385,6 +600,7 @@ def _validate_plan(
     installation: dict[str, Any],
     *,
     now: datetime_module.datetime,
+    deadline: OperationDeadline | None = None,
 ) -> dict[str, Any]:
     _exact_keys(
         plan,
@@ -468,7 +684,16 @@ def _validate_plan(
     authority = installation["plan_signers"].get(key_id)
     if authority is None or authority["signer"] != signer or authority["actor"] != actor:
         _fail("unauthorized-signer", "publication plan signer/actor is not installed")
-    _verify_ed25519(authority["public_key"], _signed_payload(PLAN_DOMAIN, plan), signature_bytes)
+    verification_deadline = OperationDeadline(
+        min(expires_at, deadline.absolute) if deadline is not None else expires_at
+    )
+    _verify_ed25519(
+        authority["public_key"],
+        _signed_payload(PLAN_DOMAIN, plan),
+        signature_bytes,
+        deadline=verification_deadline,
+    )
+    verification_deadline.check("after plan signature validation")
     plan["_issued_time"] = issued_at
     plan["_expires_time"] = expires_at
     plan["_sequence"] = sequence
@@ -494,6 +719,7 @@ def _load_broker_installation(path: Path) -> dict[str, Any]:
             "repository",
             "endpoint",
             "expected_capability_uid",
+            "candidate_uid",
             "broker_key_id",
             "broker_private_key",
             "plan_signers",
@@ -522,6 +748,9 @@ def _load_broker_installation(path: Path) -> dict[str, Any]:
         "expected_capability_uid": _integer(
             raw["expected_capability_uid"], "installation.expected_capability_uid"
         ),
+        "candidate_uid": _integer(
+            raw["candidate_uid"], "installation.candidate_uid"
+        ),
         "broker_key_id": _string(raw["broker_key_id"], "installation.broker_key_id", KEY_ID_RE),
         "pack_max_bytes": _integer(raw["pack_max_bytes"], "installation.pack_max_bytes", 1),
         "operation_timeout_seconds": _integer(
@@ -538,6 +767,14 @@ def _load_broker_installation(path: Path) -> dict[str, Any]:
         _fail("invalid-installation", "installation.test_only must be boolean")
     if installation["expected_capability_uid"] == uid:
         _fail("insecure-installation", "broker and capability-issuer principals must differ")
+    if installation["candidate_uid"] in {
+        uid,
+        installation["expected_capability_uid"],
+    }:
+        _fail(
+            "insecure-installation",
+            "candidate, broker, and capability issuer principals must differ",
+        )
     if installation["pack_max_bytes"] > DEFAULT_PACK_MAX_BYTES * 16:
         _fail("invalid-installation", "installation pack limit is unreasonably large")
     installation["endpoint"] = _canonical_endpoint(
@@ -553,6 +790,10 @@ def _load_broker_installation(path: Path) -> dict[str, Any]:
         _fail("insecure-installation", "broker private key must not be accessible by group/other")
     installation["plan_store"] = _resolve_secure_member(
         root, raw["plan_store"], label="publication plan store", owners=owners, regular=False
+    )
+    installation["plan_store_fd"] = os.open(
+        installation["plan_store"],
+        os.O_RDONLY | os.O_DIRECTORY | getattr(os, "O_NOFOLLOW", 0),
     )
     installation["state_directory"] = _resolve_secure_member(
         root, raw["state_directory"], label="broker state directory", owners=owners, regular=False
@@ -588,6 +829,7 @@ def _load_broker_installation(path: Path) -> dict[str, Any]:
     installation["protected_remote"] = _load_protected_remote(
         raw["protected_remote"], root, owners, installation
     )
+    installation["_authority_owners"] = owners
     return installation
 
 
@@ -649,22 +891,322 @@ def _load_authentication(
 
 
 def _tree_digest(path: Path) -> str:
-    digest = hashlib.sha256()
     if not path.exists():
-        return digest.hexdigest()
-    for child in sorted(path.rglob("*")):
-        relative = child.relative_to(path).as_posix()
-        metadata = os.lstat(child)
-        if stat.S_ISLNK(metadata.st_mode):
-            _fail("remote-state-changed", "protected remote contains a symlink")
-        digest.update(relative.encode("utf-8") + b"\0")
-        digest.update(f"{stat.S_IMODE(metadata.st_mode):o}\0".encode("ascii"))
-        if stat.S_ISREG(metadata.st_mode):
-            digest.update(child.read_bytes())
-        elif not stat.S_ISDIR(metadata.st_mode):
-            _fail("remote-state-changed", "protected remote hook tree has unsupported entries")
-        digest.update(b"\0")
+        return hashlib.sha256().hexdigest()
+    directory_fd = os.open(
+        path,
+        os.O_RDONLY | os.O_DIRECTORY | getattr(os, "O_NOFOLLOW", 0),
+    )
+    try:
+        return _digest_directory_fd(directory_fd)
+    finally:
+        os.close(directory_fd)
+
+
+def _validate_tree_entry(
+    metadata: os.stat_result,
+    *,
+    label: str,
+    owners: set[int],
+    candidate_uid: int,
+    mutable: bool,
+) -> None:
+    if metadata.st_uid == candidate_uid or metadata.st_uid not in owners:
+        _fail("insecure-installation", f"{label} owner is not broker authority")
+    if metadata.st_mode & 0o022:
+        _fail("insecure-installation", f"{label} is group/world writable")
+    if mutable and metadata.st_uid != os.geteuid():
+        _fail(
+            "insecure-installation",
+            f"{label} mutable storage is not owned by the broker principal",
+        )
+    if not (stat.S_ISREG(metadata.st_mode) or stat.S_ISDIR(metadata.st_mode)):
+        _fail("insecure-installation", f"{label} has an unsupported file type")
+
+
+def _reopen_directory_fd(directory_fd: int) -> int:
+    return os.open(
+        f"/proc/self/fd/{directory_fd}",
+        os.O_RDONLY | os.O_DIRECTORY,
+    )
+
+
+def _audit_directory_fd(
+    directory_fd: int,
+    *,
+    label: str,
+    owners: set[int],
+    candidate_uid: int,
+    mutable: bool,
+    deadline: OperationDeadline | None = None,
+) -> None:
+    pending = [(_reopen_directory_fd(directory_fd), label)]
+    visited = 0
+    try:
+        while pending:
+            if deadline is not None:
+                deadline.check(f"while auditing {label}")
+            current_fd, current_label = pending.pop()
+            try:
+                current_metadata = os.fstat(current_fd)
+                _validate_tree_entry(
+                    current_metadata,
+                    label=current_label,
+                    owners=owners,
+                    candidate_uid=candidate_uid,
+                    mutable=mutable,
+                )
+                for name in sorted(os.listdir(current_fd)):
+                    visited += 1
+                    if deadline is not None and visited % 256 == 0:
+                        deadline.check(f"while auditing {label}")
+                    if visited > 100000:
+                        _fail(
+                            "insecure-installation",
+                            f"{label} exceeds its bounded entry count",
+                        )
+                    metadata = os.stat(
+                        name, dir_fd=current_fd, follow_symlinks=False
+                    )
+                    entry_label = f"{current_label}/{name}"
+                    _validate_tree_entry(
+                        metadata,
+                        label=entry_label,
+                        owners=owners,
+                        candidate_uid=candidate_uid,
+                        mutable=mutable,
+                    )
+                    if stat.S_ISDIR(metadata.st_mode):
+                        child_fd = os.open(
+                            name,
+                            os.O_RDONLY
+                            | os.O_DIRECTORY
+                            | getattr(os, "O_NOFOLLOW", 0),
+                            dir_fd=current_fd,
+                        )
+                        pending.append((child_fd, entry_label))
+            finally:
+                os.close(current_fd)
+    except BaseException:
+        for pending_fd, _pending_label in pending:
+            os.close(pending_fd)
+        raise
+
+
+def _digest_directory_fd(
+    directory_fd: int,
+    deadline: OperationDeadline | None = None,
+) -> str:
+    digest = hashlib.sha256()
+    pending = [(_reopen_directory_fd(directory_fd), "")]
+    try:
+        while pending:
+            if deadline is not None:
+                deadline.check("while hashing protected hooks")
+            current_fd, prefix = pending.pop()
+            try:
+                for name in sorted(os.listdir(current_fd)):
+                    relative = f"{prefix}/{name}" if prefix else name
+                    metadata = os.stat(
+                        name, dir_fd=current_fd, follow_symlinks=False
+                    )
+                    digest.update(relative.encode("utf-8") + b"\0")
+                    digest.update(
+                        f"{stat.S_IMODE(metadata.st_mode):o}\0".encode("ascii")
+                    )
+                    if stat.S_ISDIR(metadata.st_mode):
+                        child_fd = os.open(
+                            name,
+                            os.O_RDONLY
+                            | os.O_DIRECTORY
+                            | getattr(os, "O_NOFOLLOW", 0),
+                            dir_fd=current_fd,
+                        )
+                        pending.append((child_fd, relative))
+                    elif stat.S_ISREG(metadata.st_mode):
+                        file_fd = os.open(
+                            name,
+                            os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0),
+                            dir_fd=current_fd,
+                        )
+                        try:
+                            while True:
+                                if deadline is not None:
+                                    deadline.check(
+                                        "while hashing protected hooks"
+                                    )
+                                chunk = os.read(file_fd, 65536)
+                                if not chunk:
+                                    break
+                                digest.update(chunk)
+                        finally:
+                            os.close(file_fd)
+                    else:
+                        _fail(
+                            "remote-state-changed",
+                            "protected hook tree contains an unsupported entry",
+                        )
+                    digest.update(b"\0")
+            finally:
+                os.close(current_fd)
+    except BaseException:
+        for pending_fd, _prefix in pending:
+            os.close(pending_fd)
+        raise
     return digest.hexdigest()
+
+
+def _bind_protected_remote_descriptors(
+    remote: dict[str, Any],
+    *,
+    owners: set[int],
+    candidate_uid: int,
+) -> dict[str, Any]:
+    git_dir = remote["git_dir"]
+    git_dir_fd = os.open(
+        git_dir,
+        os.O_RDONLY | os.O_DIRECTORY | getattr(os, "O_NOFOLLOW", 0),
+    )
+    descriptors = {"git_dir_fd": git_dir_fd}
+    try:
+        _validate_tree_entry(
+            os.fstat(git_dir_fd),
+            label="protected remote Git directory",
+            owners=owners,
+            candidate_uid=candidate_uid,
+            mutable=True,
+        )
+        for name, directory in (
+            ("objects_fd", True),
+            ("refs_fd", True),
+            ("hooks_fd", True),
+            ("config_fd", False),
+        ):
+            component = name.removesuffix("_fd")
+            flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+            if directory:
+                flags |= os.O_DIRECTORY
+            descriptors[name] = os.open(
+                component, flags, dir_fd=git_dir_fd
+            )
+        _audit_directory_fd(
+            descriptors["objects_fd"],
+            label="protected remote objects",
+            owners=owners,
+            candidate_uid=candidate_uid,
+            mutable=True,
+        )
+        _audit_directory_fd(
+            descriptors["refs_fd"],
+            label="protected remote refs",
+            owners=owners,
+            candidate_uid=candidate_uid,
+            mutable=True,
+        )
+        _audit_directory_fd(
+            descriptors["hooks_fd"],
+            label="protected remote hooks",
+            owners=owners,
+            candidate_uid=candidate_uid,
+            mutable=False,
+        )
+        _validate_tree_entry(
+            os.fstat(descriptors["config_fd"]),
+            label="protected remote config",
+            owners=owners,
+            candidate_uid=candidate_uid,
+            mutable=False,
+        )
+        _reject_object_alternates(descriptors["objects_fd"])
+        for redirect_name in ("commondir", "gitdir", "config.worktree"):
+            try:
+                os.stat(
+                    redirect_name,
+                    dir_fd=git_dir_fd,
+                    follow_symlinks=False,
+                )
+            except FileNotFoundError:
+                continue
+            _fail(
+                "insecure-installation",
+                "protected remote repository redirection is forbidden",
+            )
+        try:
+            packed_refs_fd = os.open(
+                "packed-refs",
+                os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0),
+                dir_fd=git_dir_fd,
+            )
+        except FileNotFoundError:
+            packed_refs_fd = None
+        if packed_refs_fd is not None:
+            descriptors["packed_refs_fd"] = packed_refs_fd
+            _validate_tree_entry(
+                os.fstat(packed_refs_fd),
+                label="protected remote packed refs",
+                owners=owners,
+                candidate_uid=candidate_uid,
+                mutable=True,
+            )
+        config_size = os.fstat(descriptors["config_fd"]).st_size
+        if config_size > CONFIG_MAX_BYTES:
+            _fail(
+                "insecure-installation",
+                "protected remote config exceeds its size limit",
+            )
+        config = os.pread(
+            descriptors["config_fd"],
+            config_size,
+            0,
+        )
+        lowered = config.lower()
+        for forbidden in (
+            b"[include",
+            b"hookspath",
+            b"alternaterefscommand",
+            b"fsmonitor",
+            b"refstorage",
+            b"worktree",
+        ):
+            if forbidden in lowered:
+                _fail(
+                    "insecure-installation",
+                    "protected remote config contains an external execution seam",
+                )
+    except BaseException:
+        for descriptor in descriptors.values():
+            os.close(descriptor)
+        raise
+    return {
+        **remote,
+        **descriptors,
+        "_owners": owners,
+        "_candidate_uid": candidate_uid,
+        "_packed_refs_present": "packed_refs_fd" in descriptors,
+    }
+
+
+def _reject_object_alternates(objects_fd: int) -> None:
+    try:
+        info_fd = os.open(
+            "info",
+            os.O_RDONLY | os.O_DIRECTORY | getattr(os, "O_NOFOLLOW", 0),
+            dir_fd=objects_fd,
+        )
+    except FileNotFoundError:
+        return
+    try:
+        for name in ("alternates", "http-alternates"):
+            try:
+                os.stat(name, dir_fd=info_fd, follow_symlinks=False)
+            except FileNotFoundError:
+                continue
+            _fail(
+                "insecure-installation",
+                "protected remote object alternates are forbidden",
+            )
+    finally:
+        os.close(info_fd)
 
 
 def _load_protected_remote(
@@ -740,22 +1282,92 @@ def _load_protected_remote(
     endpoint_path = Path(urllib.parse.urlsplit(installation["endpoint"]).path)
     if installation["test_only"] and endpoint_path != git_dir:
         _fail("invalid-installation", "local endpoint does not name the protected remote")
-    return expected
+    return _bind_protected_remote_descriptors(
+        expected,
+        owners=owners,
+        candidate_uid=installation["candidate_uid"],
+    )
 
 
-def _check_protected_remote(remote: dict[str, Any] | None) -> None:
+def _check_protected_remote(
+    remote: dict[str, Any] | None,
+    deadline: OperationDeadline | None = None,
+) -> None:
     if remote is None:
         return
-    git_dir = remote["git_dir"]
-    git_metadata = os.stat(git_dir, follow_symlinks=False)
-    objects_metadata = os.stat(git_dir / "objects", follow_symlinks=False)
+    git_metadata = os.fstat(remote["git_dir_fd"])
+    objects_metadata = os.fstat(remote["objects_fd"])
+    config_metadata = os.fstat(remote["config_fd"])
+    if config_metadata.st_size > CONFIG_MAX_BYTES:
+        _fail(
+            "remote-state-changed",
+            "protected remote config exceeds its size limit",
+        )
+    config = os.pread(remote["config_fd"], config_metadata.st_size, 0)
+    _audit_directory_fd(
+        remote["objects_fd"],
+        label="protected remote objects",
+        owners=remote["_owners"],
+        candidate_uid=remote["_candidate_uid"],
+        mutable=True,
+        deadline=deadline,
+    )
+    _reject_object_alternates(remote["objects_fd"])
+    for redirect_name in ("commondir", "gitdir", "config.worktree"):
+        try:
+            os.stat(
+                redirect_name,
+                dir_fd=remote["git_dir_fd"],
+                follow_symlinks=False,
+            )
+        except FileNotFoundError:
+            continue
+        _fail(
+            "remote-state-changed",
+            "protected remote repository redirection appeared",
+        )
+    try:
+        packed_refs_metadata = os.stat(
+            "packed-refs",
+            dir_fd=remote["git_dir_fd"],
+            follow_symlinks=False,
+        )
+    except FileNotFoundError:
+        packed_refs_metadata = None
+    if (packed_refs_metadata is not None) != remote["_packed_refs_present"]:
+        _fail("remote-state-changed", "protected remote packed refs presence changed")
+    if packed_refs_metadata is not None:
+        _validate_tree_entry(
+            packed_refs_metadata,
+            label="protected remote packed refs",
+            owners=remote["_owners"],
+            candidate_uid=remote["_candidate_uid"],
+            mutable=True,
+            deadline=deadline,
+        )
+    _audit_directory_fd(
+        remote["refs_fd"],
+        label="protected remote refs",
+        owners=remote["_owners"],
+        candidate_uid=remote["_candidate_uid"],
+        mutable=True,
+    )
+    _audit_directory_fd(
+        remote["hooks_fd"],
+        label="protected remote hooks",
+        owners=remote["_owners"],
+        candidate_uid=remote["_candidate_uid"],
+        mutable=False,
+        deadline=deadline,
+    )
     if (
         git_metadata.st_dev != remote["git_dir_device"]
         or git_metadata.st_ino != remote["git_dir_inode"]
         or objects_metadata.st_dev != remote["objects_device"]
         or objects_metadata.st_ino != remote["objects_inode"]
-        or hashlib.sha256((git_dir / "config").read_bytes()).hexdigest() != remote["config_sha256"]
-        or _tree_digest(git_dir / "hooks") != remote["hooks_sha256"]
+        or hashlib.sha256(config).hexdigest() != remote["config_sha256"]
+        or _digest_directory_fd(remote["hooks_fd"], deadline)
+        != remote["hooks_sha256"]
     ):
         _fail("remote-state-changed", "protected remote config/hooks/directory identity changed")
 
@@ -788,32 +1400,93 @@ def _connection_disconnected(connection: socket.socket) -> bool:
     return bool(poller.poll(0))
 
 
-def _read_request(
-    connection: socket.socket, state_directory: Path, pack_limit: int
-) -> tuple[dict[str, Any], Path]:
-    header = bytearray()
-    while b"\n" not in header:
-        chunk = connection.recv(min(4096, REQUEST_MAX_BYTES + 1 - len(header)))
+def _socket_timeout(
+    connection: socket.socket,
+    deadline: OperationDeadline | None,
+    phase: str,
+    maximum: float,
+) -> None:
+    timeout = deadline.remaining(phase, maximum) if deadline is not None else maximum
+    connection.settimeout(timeout)
+
+
+def _recv_exact(
+    connection: socket.socket,
+    size: int,
+    *,
+    deadline: OperationDeadline | None,
+    phase: str,
+) -> bytes:
+    result = bytearray()
+    while len(result) < size:
+        _socket_timeout(connection, deadline, phase, 30)
+        try:
+            chunk = connection.recv(size - len(result))
+        except (OSError, TimeoutError) as error:
+            raise BrokerError(
+                "client-disconnected", f"connection failed {phase}"
+            ) from error
         if not chunk:
-            _fail("client-disconnected", "client disconnected before request header")
-        header.extend(chunk)
-        if len(header) > REQUEST_MAX_BYTES:
-            _fail("oversized-request", "broker request header exceeds its size limit")
-    raw_header, initial_pack = bytes(header).split(b"\n", 1)
-    request = _object(_parse_json(raw_header, "broker request"), "broker request")
-    if raw_header + b"\n" != _normalized_json(request):
-        _fail("invalid-json", "broker request must use canonical JSON")
+            _fail("client-disconnected", f"connection closed {phase}")
+        result.extend(chunk)
+    return bytes(result)
+
+
+def _recv_frame(
+    connection: socket.socket,
+    *,
+    maximum: int,
+    label: str,
+    deadline: OperationDeadline | None,
+) -> tuple[dict[str, Any], bytes]:
+    prefix = _recv_exact(
+        connection, 4, deadline=deadline, phase=f"before {label} length"
+    )
+    size = struct.unpack(">I", prefix)[0]
+    if size <= 0 or size > maximum:
+        _fail("oversized-request", f"{label} exceeds its size limit")
+    raw = _recv_exact(
+        connection, size, deadline=deadline, phase=f"while reading {label}"
+    )
+    value = _object(_parse_json(raw, label), label)
+    if raw != _normalized_json(value):
+        _fail("invalid-json", f"{label} must use canonical JSON")
+    return value, raw
+
+
+def _send_frame(
+    connection: socket.socket,
+    value: dict[str, Any],
+    *,
+    maximum: int,
+    deadline: OperationDeadline | None,
+) -> None:
+    raw = _normalized_json(value)
+    if len(raw) > maximum:
+        _fail("oversized-response", "protocol frame exceeds its size limit")
+    _socket_timeout(connection, deadline, "while sending protocol frame", 30)
+    connection.sendall(struct.pack(">I", len(raw)) + raw)
+
+
+def _validate_request_header(
+    request: dict[str, Any],
+    installation: dict[str, Any],
+    capability: dict[str, Any],
+) -> None:
     _exact_keys(
         request,
         "broker request",
         (
             "schema_version",
             "protocol",
+            "phase",
             "request_nonce",
-            "plan_identity",
+            "repository",
+            "issue",
+            "operation",
             "pack_sha256",
             "pack_size",
-            "deadline",
+            "request_deadline",
         ),
     )
     if (
@@ -821,14 +1494,50 @@ def _read_request(
         or request["protocol"] != PROTOCOL
     ):
         _fail("invalid-request", "broker request protocol/version mismatch")
-    for field in ("request_nonce", "plan_identity", "pack_sha256"):
+    if request["phase"] != "request":
+        _fail("invalid-request", "broker request phase differs")
+    for field in ("request_nonce", "pack_sha256"):
         _string(request[field], f"request.{field}", HEX_64_RE)
-    pack_size = _integer(request["pack_size"], "request.pack_size", 1)
-    if pack_size > pack_limit:
+    repository = _string(
+        request["repository"], "request.repository", REPOSITORY_RE
+    )
+    issue = _integer(request["issue"], "request.issue", 1)
+    if request["operation"] not in {"preflight", "publish"}:
+        _fail("invalid-request", "broker request operation is not allowlisted")
+    pack_size = _integer(request["pack_size"], "request.pack_size")
+    if pack_size > installation["pack_max_bytes"]:
         _fail("oversized-pack", "broker request pack exceeds its size limit")
-    deadline = _time(request["deadline"], "request.deadline")
-    if deadline <= datetime_module.datetime.now(datetime_module.timezone.utc):
+    if request["operation"] == "preflight":
+        if pack_size != 0 or request["pack_sha256"] != hashlib.sha256(b"").hexdigest():
+            _fail("invalid-request", "preflight request must not carry an object pack")
+    elif pack_size <= 0:
+        _fail("invalid-request", "publish request requires an object pack")
+    request_deadline = _time(
+        request["request_deadline"], "request.request_deadline"
+    )
+    if request_deadline <= datetime_module.datetime.now(
+        datetime_module.timezone.utc
+    ):
         _fail("request-expired", "broker request deadline expired")
+    if (
+        repository != installation["repository"]
+        or repository != capability["repository"]
+        or issue != capability["_issue"]
+        or request["operation"] != capability["operation"]
+    ):
+        _fail(
+            "capability-mismatch",
+            "request does not match its issued repository/issue/operation capability",
+        )
+
+
+def _read_pack(
+    connection: socket.socket,
+    request: dict[str, Any],
+    state_directory: Path,
+    deadline: OperationDeadline,
+) -> Path:
+    pack_size = request["pack_size"]
     staging_root = state_directory / "staging"
     staging_root.mkdir(mode=0o700, exist_ok=True)
     token = request["request_nonce"]
@@ -839,15 +1548,22 @@ def _read_request(
     try:
         fd = os.open(pack_path, flags, 0o600)
         with os.fdopen(fd, "wb") as stream:
-            if len(initial_pack) > remaining:
-                _fail("invalid-request", "broker request contains trailing bytes")
-            stream.write(initial_pack)
-            digest.update(initial_pack)
-            remaining -= len(initial_pack)
             while remaining:
-                chunk = connection.recv(min(65536, remaining))
+                _socket_timeout(
+                    connection, deadline, "while receiving object pack", 30
+                )
+                try:
+                    chunk = connection.recv(min(65536, remaining))
+                except (OSError, TimeoutError) as error:
+                    raise BrokerError(
+                        "client-disconnected",
+                        "connection failed while receiving object pack",
+                    ) from error
                 if not chunk:
-                    _fail("client-disconnected", "client disconnected while sending object pack")
+                    _fail(
+                        "client-disconnected",
+                        "client disconnected while sending object pack",
+                    )
                 stream.write(chunk)
                 digest.update(chunk)
                 remaining -= len(chunk)
@@ -859,10 +1575,15 @@ def _read_request(
     if digest.hexdigest() != request["pack_sha256"]:
         pack_path.unlink(missing_ok=True)
         _fail("wrong-pack", "broker request object-pack digest differs")
-    return request, pack_path
+    deadline.check("after object-pack receipt")
+    return pack_path
 
 
-def _git_environment(installation: dict[str, Any], home: Path) -> dict[str, str]:
+def _git_environment(
+    installation: dict[str, Any],
+    home: Path,
+    deadline: OperationDeadline | None = None,
+) -> dict[str, str]:
     environment = {
         "PATH": "/usr/bin:/bin",
         "LANG": "C",
@@ -895,6 +1616,8 @@ def _git_environment(installation: dict[str, Any], home: Path) -> dict[str, str]
                 ),
             }
         )
+    if deadline is not None:
+        environment["WORKFLOW_PILOT_EFFECTIVE_DEADLINE"] = deadline.text()
     return environment
 
 
@@ -907,11 +1630,25 @@ def _run_bounded(
     stdin: BinaryIO | None = None,
     input_bytes: bytes | None = None,
     pass_fds: tuple[int, ...] = (),
+    deadline: OperationDeadline | None = None,
 ) -> subprocess.CompletedProcess[bytes]:
     if stdin is not None and input_bytes is not None:
         _fail("process-hardening-failed", "bounded process has two stdin sources")
 
+    parent_pid = os.getpid()
+    effective_timeout = (
+        deadline.remaining("before subprocess", timeout)
+        if deadline is not None
+        else timeout
+    )
+
     def child_hardening() -> None:
+        if sys.platform.startswith("linux"):
+            libc = ctypes.CDLL(None, use_errno=True)
+            if libc.prctl(1, signal.SIGKILL, 0, 0, 0) != 0:
+                os._exit(126)
+            if os.getppid() != parent_pid:
+                os._exit(125)
         os.setsid()
         resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
         resource.setrlimit(
@@ -956,33 +1693,40 @@ def _run_bounded(
                 if stream is not None:
                     os.close(stream.fileno())
 
-            def terminate_group(_signum: int, _frame: object) -> None:
+            def terminate_group() -> None:
                 try:
                     os.killpg(process.pid, signal.SIGKILL)
                 except ProcessLookupError:
                     pass
                 os._exit(0)
 
-            signal.signal(signal.SIGTERM, terminate_group)
-            if sys.platform.startswith("linux"):
-                libc = ctypes.CDLL(None, use_errno=True)
-                if libc.prctl(1, signal.SIGTERM, 0, 0, 0) != 0:
-                    terminate_group(signal.SIGTERM, None)
-            if os.getppid() != broker_pid:
-                terminate_group(signal.SIGTERM, None)
             try:
-                os.read(stop_read, 1)
+                os.set_blocking(stop_read, False)
+                while True:
+                    if os.getppid() != broker_pid:
+                        terminate_group()
+                    try:
+                        stopped = os.read(stop_read, 1)
+                    except BlockingIOError:
+                        stopped = None
+                    if stopped is not None:
+                        break
+                    time.sleep(0.01)
             finally:
                 os.close(stop_read)
             os._exit(0)
         os.close(stop_read)
         try:
             try:
-                process.communicate(input=input_bytes, timeout=timeout)
+                process.communicate(input=input_bytes, timeout=effective_timeout)
             except subprocess.TimeoutExpired as error:
                 os.killpg(process.pid, signal.SIGKILL)
                 process.communicate()
-                raise BrokerError("git-timeout", "bounded Git operation timed out") from error
+                if deadline is not None:
+                    deadline.check("during subprocess")
+                raise BrokerError(
+                    "git-timeout", "bounded Git operation timed out"
+                ) from error
         finally:
             try:
                 os.write(stop_write, b"x")
@@ -1004,6 +1748,8 @@ def _run_bounded(
         or len(stderr) >= SUBPROCESS_OUTPUT_MAX_BYTES
     ):
         _fail("oversized-process-output", "bounded subprocess output exceeds its size limit")
+    if deadline is not None:
+        deadline.check("after subprocess")
     return subprocess.CompletedProcess(arguments, process.returncode, stdout, stderr)
 
 
@@ -1012,6 +1758,7 @@ def _git(
     home: Path,
     arguments: list[str],
     *,
+    deadline: OperationDeadline,
     cwd: Path | None = None,
     stdin: BinaryIO | None = None,
 ) -> bytes:
@@ -1019,16 +1766,39 @@ def _git(
     if installation["test_only"]:
         command.extend(["-c", "protocol.file.allow=always"])
     command.extend(arguments)
+    protected_remote = installation["protected_remote"]
+    pass_fds: tuple[int, ...] = ()
+    if protected_remote is not None:
+        pass_fds = tuple(
+            protected_remote[name]
+            for name in (
+                "git_dir_fd",
+                "objects_fd",
+                "refs_fd",
+                "hooks_fd",
+                "config_fd",
+            )
+        )
     completed = _run_bounded(
         command,
-        environment=_git_environment(installation, home),
+        environment=_git_environment(installation, home, deadline),
         timeout=installation["operation_timeout_seconds"],
         cwd=cwd,
         stdin=stdin,
+        deadline=deadline,
+        pass_fds=pass_fds,
     )
     if completed.returncode != 0:
         _fail("git-failed", "protected Git operation failed")
     return completed.stdout
+
+
+def _runtime_endpoint(installation: dict[str, Any]) -> str:
+    parsed = urllib.parse.urlsplit(installation["endpoint"])
+    remote = installation["protected_remote"]
+    if parsed.scheme == "file" and remote is not None:
+        return f"file:///proc/self/fd/{remote['git_dir_fd']}"
+    return installation["endpoint"]
 
 
 def _pack_object_ids(
@@ -1036,18 +1806,25 @@ def _pack_object_ids(
     installation: dict[str, Any],
     home: Path,
     pack_path: Path,
+    deadline: OperationDeadline,
 ) -> set[str]:
     with pack_path.open("rb") as stream:
         _git(
             installation,
             home,
             ["-C", os.fspath(staging), "index-pack", "--stdin", "--strict"],
+            deadline=deadline,
             stdin=stream,
         )
     indexes = list((staging / "objects" / "pack").glob("*.idx"))
     if len(indexes) != 1:
         _fail("wrong-pack", "object pack did not produce one protected index")
-    output = _git(installation, home, ["verify-pack", "-v", os.fspath(indexes[0])])
+    output = _git(
+        installation,
+        home,
+        ["verify-pack", "-v", os.fspath(indexes[0])],
+        deadline=deadline,
+    )
     object_ids = set()
     for raw_line in output.decode("ascii", errors="strict").splitlines():
         fields = raw_line.split()
@@ -1061,9 +1838,16 @@ def _pack_object_ids(
 
 
 def _validate_object_closure(
-    staging: Path, installation: dict[str, Any], home: Path, plan: dict[str, Any], pack_path: Path
+    staging: Path,
+    installation: dict[str, Any],
+    home: Path,
+    plan: dict[str, Any],
+    pack_path: Path,
+    deadline: OperationDeadline,
 ) -> None:
-    packed = _pack_object_ids(staging, installation, home, pack_path)
+    packed = _pack_object_ids(
+        staging, installation, home, pack_path, deadline
+    )
     planned = set(plan["object_ids"])
     if packed != planned:
         _fail("wrong-objects", "object pack differs from the signed exact object set")
@@ -1072,6 +1856,7 @@ def _validate_object_closure(
             installation,
             home,
             ["-C", os.fspath(staging), "cat-file", "-t", plan[field]],
+            deadline=deadline,
         ).decode("ascii").strip()
         if object_type != "commit":
             _fail("wrong-objects", "published authority targets must be commit objects")
@@ -1087,6 +1872,7 @@ def _validate_object_closure(
             plan["new_authority_oid"],
             plan["new_anchor_oid"],
         ],
+        deadline=deadline,
     )
     closure = set(closure_output.decode("ascii").splitlines())
     if closure != planned:
@@ -1105,29 +1891,54 @@ def _parse_remote_refs(raw: bytes, refs: tuple[str, str]) -> dict[str, str | Non
 
 
 def _remote_refs(
-    installation: dict[str, Any], home: Path, authority_ref: str, anchor_ref: str
+    installation: dict[str, Any],
+    home: Path,
+    authority_ref: str,
+    anchor_ref: str,
+    deadline: OperationDeadline,
 ) -> dict[str, str | None]:
     raw = _git(
         installation,
         home,
-        ["ls-remote", "--refs", installation["endpoint"], authority_ref, anchor_ref],
+        [
+            "ls-remote",
+            "--refs",
+            _runtime_endpoint(installation),
+            authority_ref,
+            anchor_ref,
+        ],
+        deadline=deadline,
     )
     return _parse_remote_refs(raw, (authority_ref, anchor_ref))
 
 
 class ReplayJournal:
-    def __init__(self, state_directory: Path, installation_id: str):
+    def __init__(
+        self,
+        state_directory: Path,
+        installation_id: str,
+        deadline: OperationDeadline | None = None,
+    ):
         self.state_directory = state_directory
         self.installation_id = installation_id
         self.lock_stream: BinaryIO | None = None
         self.entries: list[dict[str, Any]] = []
         self.last_hash = "0" * 64
+        self.deadline = deadline
 
     def __enter__(self) -> "ReplayJournal":
         self.state_directory.mkdir(mode=0o700, exist_ok=True)
         lock_path = self.state_directory / "journal.lock"
-        self.lock_stream = lock_path.open("a+b")
-        os.chmod(lock_path, 0o600)
+        lock_fd = os.open(
+            lock_path,
+            os.O_RDWR
+            | os.O_APPEND
+            | os.O_CREAT
+            | getattr(os, "O_NOFOLLOW", 0),
+            0o600,
+        )
+        _validate_private_state_fd(lock_fd, "replay journal lock")
+        self.lock_stream = os.fdopen(lock_fd, "a+b")
         fcntl.flock(self.lock_stream.fileno(), fcntl.LOCK_EX)
         try:
             self._load()
@@ -1144,16 +1955,34 @@ class ReplayJournal:
         self.lock_stream.close()
 
     def _load(self) -> None:
+        if self.deadline is not None:
+            self.deadline.check("before replay journal validation")
         journal_path = self.state_directory / "journal.jsonl"
         anchor_path = self.state_directory / "journal.anchor"
         previous = "0" * 64
         entries: list[dict[str, Any]] = []
         if journal_path.exists():
-            if journal_path.stat().st_size > JOURNAL_MAX_BYTES:
-                _fail("journal-full", "replay journal exceeds its bounded size")
+            journal_fd = os.open(
+                journal_path,
+                os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0),
+            )
+            metadata = _validate_private_state_fd(
+                journal_fd, "replay journal"
+            )
+            if metadata.st_size > JOURNAL_MAX_BYTES:
+                os.close(journal_fd)
+                _fail(
+                    "journal-full", "replay journal exceeds its bounded size"
+                )
+            raw_journal = _read_bounded_fd(journal_fd, JOURNAL_MAX_BYTES)
+            os.close(journal_fd)
             for line_number, raw_line in enumerate(
-                journal_path.read_bytes().splitlines(), 1
+                raw_journal.splitlines(), 1
             ):
+                if self.deadline is not None and line_number % 256 == 0:
+                    self.deadline.check(
+                        "while validating replay journal"
+                    )
                 entry = _object(
                     _parse_json(raw_line, f"journal line {line_number}"),
                     "journal entry",
@@ -1189,7 +2018,25 @@ class ReplayJournal:
                 previous = calculated
                 entries.append(entry)
         if anchor_path.exists():
-            anchor = _read_json_file(anchor_path, "replay journal anchor")
+            anchor_fd = os.open(
+                anchor_path,
+                os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0),
+            )
+            metadata = _validate_private_state_fd(
+                anchor_fd, "replay journal anchor"
+            )
+            if metadata.st_size > REQUEST_MAX_BYTES:
+                os.close(anchor_fd)
+                _fail(
+                    "journal-corrupt",
+                    "replay journal anchor exceeds its size limit",
+                )
+            raw_anchor = _read_bounded_fd(anchor_fd, REQUEST_MAX_BYTES)
+            os.close(anchor_fd)
+            anchor = _object(
+                _parse_json(raw_anchor, "replay journal anchor"),
+                "replay journal anchor",
+            )
             _exact_keys(anchor, "replay journal anchor", ("installation_id", "last_hash"))
             if anchor["installation_id"] != self.installation_id or anchor["last_hash"] != previous:
                 _fail("journal-rollback", "replay journal and durable anchor differ")
@@ -1199,6 +2046,8 @@ class ReplayJournal:
         self.last_hash = previous
 
     def _append(self, event: dict[str, Any]) -> None:
+        if self.deadline is not None:
+            self.deadline.check("before replay journal update")
         entry = {
             "installation_id": self.installation_id,
             "previous_hash": self.last_hash,
@@ -1242,18 +2091,11 @@ class ReplayJournal:
             os.close(directory_fd)
         self.last_hash = entry_hash
         self.entries.append({**entry, "entry_hash": entry_hash})
+        if self.deadline is not None:
+            self.deadline.check("after replay journal update")
 
     def reserve(self, plan: dict[str, Any], plan_identity: str) -> None:
-        reservations = [entry for entry in self.entries if entry["event"] == "reserved"]
-        if any(entry["nonce"] == plan["nonce"] for entry in reservations):
-            _fail("replay", "publication plan nonce was already consumed")
-        relevant = [
-            entry
-            for entry in reservations
-            if entry["repository"] == plan["repository"] and entry["issue"] == plan["issue"]
-        ]
-        if relevant and plan["sequence"] <= max(entry["sequence"] for entry in relevant):
-            _fail("replay", "publication plan sequence does not advance")
+        self.check_available(plan)
         self._append(
             {
                 "event": "reserved",
@@ -1264,6 +2106,18 @@ class ReplayJournal:
                 "plan_identity": plan_identity,
             }
         )
+
+    def check_available(self, plan: dict[str, Any]) -> None:
+        reservations = [entry for entry in self.entries if entry["event"] == "reserved"]
+        if any(entry["nonce"] == plan["nonce"] for entry in reservations):
+            _fail("replay", "publication plan nonce was already consumed")
+        relevant = [
+            entry
+            for entry in reservations
+            if entry["repository"] == plan["repository"] and entry["issue"] == plan["issue"]
+        ]
+        if relevant and plan["sequence"] <= max(entry["sequence"] for entry in relevant):
+            _fail("replay", "publication plan sequence does not advance")
 
     def complete(self, plan: dict[str, Any], plan_identity: str, result: str) -> None:
         self._append(
@@ -1280,7 +2134,11 @@ class ReplayJournal:
 
 
 def _publish(
-    installation: dict[str, Any], plan: dict[str, Any], plan_identity: str, pack_path: Path
+    installation: dict[str, Any],
+    plan: dict[str, Any],
+    plan_identity: str,
+    pack_path: Path,
+    deadline: OperationDeadline,
 ) -> dict[str, str]:
     state = installation["state_directory"]
     operation_root = state / "operations" / plan["nonce"]
@@ -1290,22 +2148,37 @@ def _publish(
     staging = operation_root / "staging.git"
     home.mkdir(mode=0o700)
     try:
-        _git(installation, home, ["init", "--bare", "--quiet", os.fspath(staging)])
-        _validate_object_closure(staging, installation, home, plan, pack_path)
+        _git(
+            installation,
+            home,
+            ["init", "--bare", "--quiet", os.fspath(staging)],
+            deadline=deadline,
+        )
+        _validate_object_closure(
+            staging, installation, home, plan, pack_path, deadline
+        )
         refs = (plan["authority_ref"], plan["anchor_ref"])
-        current = _remote_refs(installation, home, *refs)
+        current = _remote_refs(installation, home, *refs, deadline)
         expected = {
             plan["authority_ref"]: plan["expected_authority_oid"],
             plan["anchor_ref"]: plan["expected_anchor_oid"],
         }
         if current != expected:
             _fail("stale-remote", "remote refs differ from the signed expected state")
-        _check_protected_remote(installation["protected_remote"])
+        _check_protected_remote(
+            installation["protected_remote"], deadline
+        )
+        deadline.check("before preparing publication refs")
         for oid, ref in (
             (plan["new_authority_oid"], plan["authority_ref"]),
             (plan["new_anchor_oid"], plan["anchor_ref"]),
         ):
-            _git(installation, home, ["-C", os.fspath(staging), "update-ref", ref, oid])
+            _git(
+                installation,
+                home,
+                ["-C", os.fspath(staging), "update-ref", ref, oid],
+                deadline=deadline,
+            )
         leases = [
             f"--force-with-lease={ref}:{expected[ref] or ''}"
             for ref in refs
@@ -1314,6 +2187,13 @@ def _publish(
             f"{plan['new_authority_oid']}:{plan['authority_ref']}",
             f"{plan['new_anchor_oid']}:{plan['anchor_ref']}",
         ]
+        deadline.check("immediately before remote mutation")
+        mutation_deadline = OperationDeadline(
+            deadline.absolute
+            - datetime_module.timedelta(
+                seconds=REMOTE_MUTATION_GUARD_SECONDS
+            )
+        )
         _git(
             installation,
             home,
@@ -1325,12 +2205,17 @@ def _publish(
                 "--porcelain",
                 "--no-verify",
                 *leases,
-                installation["endpoint"],
+                _runtime_endpoint(installation),
                 *refspecs,
             ],
+            deadline=mutation_deadline,
         )
-        _check_protected_remote(installation["protected_remote"])
-        readback = _remote_refs(installation, home, *refs)
+        deadline.check("immediately after remote mutation")
+        _check_protected_remote(
+            installation["protected_remote"], deadline
+        )
+        readback = _remote_refs(installation, home, *refs, deadline)
+        deadline.check("after exact remote readback")
         wanted = {
             plan["authority_ref"]: plan["new_authority_oid"],
             plan["anchor_ref"]: plan["new_anchor_oid"],
@@ -1343,38 +2228,78 @@ def _publish(
 
 
 def _load_plan(
-    installation: dict[str, Any], plan_identity: str, now: datetime_module.datetime
+    installation: dict[str, Any],
+    plan_identity: str,
+    now: datetime_module.datetime,
+    *,
+    deadline: OperationDeadline | None = None,
 ) -> dict[str, Any]:
     _string(plan_identity, "request.plan_identity", HEX_64_RE)
-    plan_path = installation["plan_store"] / f"{plan_identity}.json"
-    _require_secure_path(
-        plan_path,
-        label="signed publication plan",
-        allowed_owners={0, os.geteuid()},
-        regular=True,
-    )
-    plan = _read_canonical_json_file(plan_path, "signed publication plan")
+    try:
+        plan_fd = os.open(
+            f"{plan_identity}.json",
+            os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0),
+            dir_fd=installation["plan_store_fd"],
+        )
+    except OSError as error:
+        raise BrokerError(
+            "authority-unavailable", "cannot open signed publication plan"
+        ) from error
+    try:
+        metadata = os.fstat(plan_fd)
+        owners = installation.get("_authority_owners", {0, os.geteuid()})
+        if (
+            not stat.S_ISREG(metadata.st_mode)
+            or metadata.st_uid not in owners
+            or metadata.st_mode & 0o022
+        ):
+            _fail(
+                "insecure-installation",
+                "signed publication plan authority differs",
+            )
+        plan = _read_canonical_json_fd(
+            plan_fd, "signed publication plan"
+        )
+    finally:
+        os.close(plan_fd)
     if hashlib.sha256(_normalized_json(plan)).hexdigest() != plan_identity:
         _fail("invalid-plan", "signed publication plan identity differs")
-    return _validate_plan(plan, installation, now=now)
+    return _validate_plan(plan, installation, now=now, deadline=deadline)
 
 
 def _response(
     installation: dict[str, Any],
     request: dict[str, Any],
+    capability: dict[str, Any],
+    deadline: OperationDeadline,
     *,
+    phase: str,
     status: str,
     code: str,
     refs: dict[str, str] | None,
 ) -> dict[str, Any]:
+    broker_user_namespace = os.stat(
+        "/proc/self/ns/user", follow_symlinks=True
+    ).st_ino
+    broker_namespace_uid = os.geteuid()
+    broker_uid = _outer_uid(broker_namespace_uid)
     response = {
         "schema_version": 1,
         "protocol": PROTOCOL,
+        "phase": phase,
         "request_digest": _digest(request),
-        "request_nonce": request["request_nonce"],
-        "plan_identity": request["plan_identity"],
+        "request_nonce": request.get("request_nonce"),
+        "repository": request.get("repository"),
+        "issue": request.get("issue"),
+        "plan_identity": capability["_plan_identity"],
+        "capability_nonce": capability["capability_nonce"],
         "installation_id": installation["installation_id"],
         "broker_key_id": installation["broker_key_id"],
+        "broker_pid": os.getpid(),
+        "broker_uid": broker_uid,
+        "broker_namespace_uid": broker_namespace_uid,
+        "broker_user_namespace": broker_user_namespace,
+        "effective_deadline": deadline.text(),
         "status": status,
         "code": code,
         "refs": refs,
@@ -1393,9 +2318,83 @@ def _response(
     return response
 
 
+def _outer_uid(namespace_uid: int) -> int:
+    try:
+        mappings = Path("/proc/self/uid_map").read_text(
+            encoding="ascii"
+        ).splitlines()
+    except OSError as error:
+        raise BrokerError(
+            "process-hardening-failed", "cannot inspect broker UID mapping"
+        ) from error
+    for line in mappings:
+        fields = line.split()
+        if len(fields) != 3:
+            _fail("process-hardening-failed", "broker UID mapping is malformed")
+        inside, outside, length = (int(value) for value in fields)
+        if inside <= namespace_uid < inside + length:
+            return outside + namespace_uid - inside
+    _fail("process-hardening-failed", "broker effective UID is not mapped")
+
+
+def _credential_readiness(
+    installation: dict[str, Any],
+    plan: dict[str, Any],
+    deadline: OperationDeadline,
+) -> None:
+    _check_protected_remote(installation["protected_remote"], deadline)
+    auth = installation["authentication"]
+    if auth["mode"] == "https-askpass":
+        completed = _run_bounded(
+            [os.fspath(auth["askpass"]), "Password for readiness"],
+            environment=_git_environment(
+                installation, installation["state_directory"], deadline
+            ),
+            timeout=installation["operation_timeout_seconds"],
+            deadline=deadline,
+        )
+        if (
+            completed.returncode != 0
+            or not completed.stdout
+            or b"\n" in completed.stdout.rstrip(b"\n")
+        ):
+            _fail(
+                "credential-unavailable",
+                "HTTPS askpass credential readiness failed",
+            )
+    elif auth["mode"] == "ssh-agent":
+        completed = _run_bounded(
+            ["/usr/bin/ssh-add", "-l"],
+            environment=_git_environment(
+                installation, installation["state_directory"], deadline
+            ),
+            timeout=installation["operation_timeout_seconds"],
+            deadline=deadline,
+        )
+        if completed.returncode != 0:
+            _fail("credential-unavailable", "SSH agent readiness failed")
+    home = installation["state_directory"] / "preflight-home"
+    home.mkdir(mode=0o700, exist_ok=True)
+    current = _remote_refs(
+        installation,
+        home,
+        plan["authority_ref"],
+        plan["anchor_ref"],
+        deadline,
+    )
+    expected = {
+        plan["authority_ref"]: plan["expected_authority_oid"],
+        plan["anchor_ref"]: plan["expected_anchor_oid"],
+    }
+    if current != expected:
+        _fail("stale-remote", "remote refs differ from the signed expected state")
+    deadline.check("after authenticated readiness")
+
+
 def serve_connection(
     connection: socket.socket,
     installation: dict[str, Any],
+    capability_record: dict[str, Any],
     *,
     enforce_peer: bool = True,
 ) -> None:
@@ -1403,53 +2402,216 @@ def serve_connection(
     _require_unnamed_socket(connection)
     if enforce_peer:
         _pid, uid, _gid = _peer_credentials(connection)
-        if uid != installation["expected_capability_uid"] or uid == os.geteuid():
+        if uid != installation["expected_capability_uid"]:
             _fail("peer-authentication-failed", "capability issuer principal is not authorized")
-    connection.settimeout(installation["operation_timeout_seconds"])
-    request: dict[str, Any] | None = None
-    pack_path: Path | None = None
-    try:
-        request, pack_path = _read_request(
-            connection, installation["state_directory"], installation["pack_max_bytes"]
+    raw_capability_expiry = _time(
+        capability_record.get("expires_at"), "capability.expires_at"
+    )
+    launch_deadline = OperationDeadline(
+        min(
+            raw_capability_expiry,
+            datetime_module.datetime.now(datetime_module.timezone.utc)
+            + datetime_module.timedelta(
+                seconds=installation["operation_timeout_seconds"]
+            ),
         )
-        now = datetime_module.datetime.now(datetime_module.timezone.utc)
-        plan = _load_plan(installation, request["plan_identity"], now)
+    )
+    request: dict[str, Any] | None = None
+    capability: dict[str, Any] | None = None
+    pack_path: Path | None = None
+    deadline = launch_deadline
+    ack_sent = False
+    try:
+        request, _raw_request = _recv_frame(
+            connection,
+            maximum=REQUEST_MAX_BYTES,
+            label="broker request",
+            deadline=launch_deadline,
+        )
+        if isinstance(request.get("request_deadline"), str):
+            try:
+                request_deadline = _time(
+                    request["request_deadline"], "request.request_deadline"
+                )
+                deadline = OperationDeadline(
+                    min(request_deadline, raw_capability_expiry)
+                )
+            except BrokerError:
+                pass
+        capability = _validate_capability(
+            capability_record,
+            installation,
+            now=datetime_module.datetime.now(datetime_module.timezone.utc),
+            deadline=deadline,
+        )
+        _validate_request_header(request, installation, capability)
+        request_deadline = _time(
+            request["request_deadline"], "request.request_deadline"
+        )
+        plan = _load_plan(
+            installation,
+            capability["_plan_identity"],
+            datetime_module.datetime.now(datetime_module.timezone.utc),
+            deadline=deadline,
+        )
+        if (
+            plan["repository"] != capability["repository"]
+            or plan["issue"] != capability["_issue"]
+        ):
+            _fail(
+                "capability-mismatch",
+                "issued capability does not bind its signed plan repository/issue",
+            )
+        deadline = OperationDeadline(
+            min(
+                request_deadline,
+                capability["_expires_time"],
+                plan["_expires_time"],
+            )
+        )
         if (
             request["pack_sha256"] != plan["pack_sha256"]
             or request["pack_size"] != plan["pack_size"]
-        ):
+        ) and request["operation"] == "publish":
             _fail("wrong-pack", "request pack does not match the signed plan")
-        deadline = _time(request["deadline"], "request.deadline")
-        if deadline > plan["_expires_time"]:
-            _fail("request-expired", "request deadline exceeds the signed plan")
+        if request["operation"] == "publish":
+            with ReplayJournal(
+                installation["state_directory"],
+                installation["installation_id"],
+                deadline,
+            ) as journal:
+                journal.check_available(plan)
+        _credential_readiness(installation, plan, deadline)
+        ack = _response(
+            installation,
+            request,
+            capability,
+            deadline,
+            phase="ack",
+            status="ready",
+            code="ready",
+            refs=None,
+        )
+        _send_frame(
+            connection,
+            ack,
+            maximum=RESPONSE_MAX_BYTES,
+            deadline=deadline,
+        )
+        ack_sent = True
+        continuation, _raw_continuation = _recv_frame(
+            connection,
+            maximum=REQUEST_MAX_BYTES,
+            label="broker continuation",
+            deadline=deadline,
+        )
+        _exact_keys(
+            continuation,
+            "broker continuation",
+            (
+                "schema_version",
+                "protocol",
+                "phase",
+                "request_nonce",
+                "plan_identity",
+            ),
+        )
+        if (
+            _integer(
+                continuation["schema_version"],
+                "continuation.schema_version",
+                1,
+            )
+            != 1
+            or continuation["protocol"] != PROTOCOL
+            or continuation["phase"] != "continue"
+            or continuation["request_nonce"] != request["request_nonce"]
+            or continuation["plan_identity"] != capability["_plan_identity"]
+        ):
+            _fail(
+                "invalid-request",
+                "broker continuation does not bind its acknowledgement",
+            )
+        if request["operation"] == "preflight":
+            result = _response(
+                installation,
+                request,
+                capability,
+                deadline,
+                phase="result",
+                status="ok",
+                code="ready",
+                refs=None,
+            )
+            _send_frame(
+                connection,
+                result,
+                maximum=RESPONSE_MAX_BYTES,
+                deadline=deadline,
+            )
+            return
+        pack_path = _read_pack(
+            connection,
+            request,
+            installation["state_directory"],
+            deadline,
+        )
         if _connection_disconnected(connection):
             _fail("client-disconnected", "client disconnected before publication")
         with ReplayJournal(
-            installation["state_directory"], installation["installation_id"]
+            installation["state_directory"],
+            installation["installation_id"],
+            deadline,
         ) as journal:
-            journal.reserve(plan, request["plan_identity"])
+            journal.reserve(plan, capability["_plan_identity"])
             try:
-                refs = _publish(installation, plan, request["plan_identity"], pack_path)
+                refs = _publish(
+                    installation,
+                    plan,
+                    capability["_plan_identity"],
+                    pack_path,
+                    deadline,
+                )
             except BrokerError:
-                journal.complete(plan, request["plan_identity"], "failed")
+                journal.complete(plan, capability["_plan_identity"], "failed")
                 raise
-            journal.complete(plan, request["plan_identity"], "published")
-        response = _response(installation, request, status="ok", code="published", refs=refs)
+            journal.complete(
+                plan, capability["_plan_identity"], "published"
+            )
+        response = _response(
+            installation,
+            request,
+            capability,
+            deadline,
+            phase="result",
+            status="ok",
+            code="published",
+            refs=refs,
+        )
     except (BrokerError, OSError) as error:
-        if request is None:
+        if request is None or capability is None:
             raise
         code = error.code if isinstance(error, BrokerError) else "broker-io-failed"
         response = _response(
-            installation, request, status="error", code=code, refs=None
+            installation,
+            request,
+            capability,
+            deadline,
+            phase="result" if ack_sent else "ack",
+            status="error",
+            code=code,
+            refs=None,
         )
     finally:
         if pack_path is not None:
             pack_path.unlink(missing_ok=True)
-    encoded = _normalized_json(response)
-    if len(encoded) > RESPONSE_MAX_BYTES:
-        _fail("oversized-response", "broker response exceeds its size limit")
     try:
-        connection.sendall(encoded)
+        _send_frame(
+            connection,
+            response,
+            maximum=RESPONSE_MAX_BYTES,
+            deadline=deadline if response["status"] == "ok" else None,
+        )
     except OSError:
         pass
 
@@ -1527,19 +2689,31 @@ def _verify_response(
     request: dict[str, Any],
     installation: dict[str, Any],
     *,
+    expected_phase: str,
     now: datetime_module.datetime,
-) -> dict[str, str]:
+    expected_context: dict[str, Any] | None = None,
+    enforce_broker_process: bool = True,
+) -> tuple[dict[str, Any], dict[str, str] | None, int | None]:
     _exact_keys(
         response,
         "broker response",
         (
             "schema_version",
             "protocol",
+            "phase",
             "request_digest",
             "request_nonce",
+            "repository",
+            "issue",
             "plan_identity",
+            "capability_nonce",
             "installation_id",
             "broker_key_id",
+            "broker_pid",
+            "broker_uid",
+            "broker_namespace_uid",
+            "broker_user_namespace",
+            "effective_deadline",
             "status",
             "code",
             "refs",
@@ -1553,17 +2727,41 @@ def _verify_response(
     ):
         _fail("invalid-response", "broker response protocol/version mismatch")
     if (
+        response["phase"] != expected_phase
+        or
         response["request_digest"] != _digest(request)
         or response["request_nonce"] != request["request_nonce"]
-        or response["plan_identity"] != request["plan_identity"]
+        or response["repository"] != request["repository"]
+        or response["issue"] != request["issue"]
         or response["installation_id"] != installation["installation_id"]
         or response["broker_key_id"] != installation["broker_key_id"]
     ):
         _fail("invalid-response", "broker response does not bind the request/installation")
     completed = _time(response["completed_at"], "response.completed_at")
-    deadline = _time(request["deadline"], "request.deadline")
-    if completed > deadline or completed > now + datetime_module.timedelta(seconds=5):
+    request_deadline = _time(
+        request["request_deadline"], "request.request_deadline"
+    )
+    effective_deadline = _time(
+        response["effective_deadline"], "response.effective_deadline"
+    )
+    if (
+        effective_deadline > request_deadline
+        or completed > now + datetime_module.timedelta(seconds=5)
+    ):
         _fail("invalid-response", "broker response exceeds its request deadline")
+    for field in ("plan_identity", "capability_nonce"):
+        _string(response[field], f"response.{field}", HEX_64_RE)
+    broker_pid = _integer(response["broker_pid"], "response.broker_pid", 1)
+    broker_uid = _integer(response["broker_uid"], "response.broker_uid")
+    broker_namespace_uid = _integer(
+        response["broker_namespace_uid"],
+        "response.broker_namespace_uid",
+    )
+    broker_namespace = _integer(
+        response["broker_user_namespace"],
+        "response.broker_user_namespace",
+        1,
+    )
     signature_record = _object(response["signature"], "response.signature")
     key_id, signature = _load_signature_record(signature_record, "response.signature")
     if key_id != installation["broker_key_id"]:
@@ -1573,40 +2771,207 @@ def _verify_response(
         _signed_payload(RESPONSE_DOMAIN, response),
         signature,
     )
-    if response["status"] != "ok" or response["code"] != "published":
+    context = {
+        "plan_identity": response["plan_identity"],
+        "capability_nonce": response["capability_nonce"],
+        "effective_deadline": response["effective_deadline"],
+        "broker_pid": broker_pid,
+        "broker_uid": broker_uid,
+        "broker_namespace_uid": broker_namespace_uid,
+        "broker_user_namespace": broker_namespace,
+    }
+    if expected_context is not None and context != expected_context:
+        _fail("invalid-response", "broker response context changed between phases")
+    pidfd = None
+    if enforce_broker_process and expected_context is None:
+        pidfd = _observe_broker_process(context, installation)
+    expected_status = (
+        ("ready", "ready")
+        if expected_phase == "ack"
+        else (
+            ("ok", "ready")
+            if request["operation"] == "preflight"
+            else ("ok", "published")
+        )
+    )
+    if (response["status"], response["code"]) != expected_status:
+        if pidfd is not None:
+            os.close(pidfd)
         _fail("broker-rejected", f"broker rejected publication: {response['code']}")
+    if completed > effective_deadline:
+        if pidfd is not None:
+            os.close(pidfd)
+        _fail("invalid-response", "successful broker response exceeded its effective deadline")
+    if expected_phase == "ack":
+        if response["refs"] is not None:
+            if pidfd is not None:
+                os.close(pidfd)
+            _fail("invalid-response", "broker acknowledgement must not contain refs")
+        return context, None, pidfd
+    if request["operation"] == "preflight":
+        if response["refs"] is not None:
+            _fail("invalid-response", "preflight result must not contain refs")
+        return context, None, pidfd
     refs = _object(response["refs"], "response.refs")
     for name, oid in refs.items():
         _string(name, "response ref")
         _sha(oid, f"response ref {name}")
     if len(refs) != 2:
         _fail("invalid-response", "broker response must contain exactly two refs")
-    return refs
+    return context, refs, pidfd
+
+
+def _observe_broker_process(
+    context: dict[str, Any],
+    installation: dict[str, Any],
+) -> int:
+    pid = context["broker_pid"]
+    if context["broker_uid"] != installation["expected_broker_uid"]:
+        _fail("peer-authentication-failed", "signed broker UID differs")
+    try:
+        pidfd = os.pidfd_open(pid)
+        status = Path(f"/proc/{pid}/status").read_text(encoding="ascii")
+        uid_map = Path(f"/proc/{pid}/uid_map").read_text(
+            encoding="ascii"
+        ).splitlines()
+        namespace = os.stat(
+            f"/proc/{pid}/ns/user", follow_symlinks=True
+        ).st_ino
+    except OSError as error:
+        raise BrokerError(
+            "peer-authentication-failed", "cannot observe signed broker process"
+        ) from error
+    uid_line = next(
+        (line for line in status.splitlines() if line.startswith("Uid:")),
+        "",
+    )
+    try:
+        observed_uids = {int(value) for value in uid_line.split()[1:]}
+    except ValueError as error:
+        os.close(pidfd)
+        raise BrokerError(
+            "peer-authentication-failed", "broker UID status is malformed"
+        ) from error
+    if (
+        observed_uids != {installation["expected_broker_uid"]}
+        or namespace != context["broker_user_namespace"]
+    ):
+        os.close(pidfd)
+        _fail(
+            "peer-authentication-failed",
+            "observed broker principal differs from signed readiness",
+        )
+    own_namespace = os.stat(
+        "/proc/self/ns/user", follow_symlinks=True
+    ).st_ino
+    if (
+        installation["expected_broker_uid"] == os.geteuid()
+        and namespace == own_namespace
+    ):
+        os.close(pidfd)
+        _fail(
+            "peer-authentication-failed",
+            "broker lacks a distinct UID or user namespace",
+        )
+    namespace_uid = context["broker_namespace_uid"]
+    mapped_uid = None
+    for line in uid_map:
+        fields = line.split()
+        if len(fields) != 3:
+            continue
+        inside, outside, length = (int(value) for value in fields)
+        if inside <= namespace_uid < inside + length:
+            mapped_uid = outside + namespace_uid - inside
+            break
+    if mapped_uid != installation["expected_broker_uid"]:
+        os.close(pidfd)
+        _fail(
+            "peer-authentication-failed",
+            "broker namespace UID does not map to its observed UID",
+        )
+    return pidfd
+
+
+def _require_live_pidfd(pidfd: int) -> None:
+    poller = select.poll()
+    poller.register(pidfd, select.POLLIN | select.POLLHUP | select.POLLERR)
+    if poller.poll(0):
+        _fail(
+            "peer-authentication-failed",
+            "signed broker process exited before operation continuation",
+        )
 
 
 def publish_via_connection(
     connection: socket.socket,
     installation: dict[str, Any],
-    plan_identity: str,
+    issue: int,
     pack_path: Path,
     *,
     enforce_peer: bool = True,
 ) -> dict[str, str]:
+    refs = _client_operation(
+        connection,
+        installation,
+        issue,
+        operation="publish",
+        pack_path=pack_path,
+        enforce_peer=enforce_peer,
+    )
+    assert refs is not None
+    return refs
+
+
+def preflight_via_connection(
+    connection: socket.socket,
+    installation: dict[str, Any],
+    issue: int,
+    *,
+    enforce_peer: bool = True,
+) -> None:
+    _client_operation(
+        connection,
+        installation,
+        issue,
+        operation="preflight",
+        pack_path=None,
+        enforce_peer=enforce_peer,
+    )
+
+
+def _client_operation(
+    connection: socket.socket,
+    installation: dict[str, Any],
+    issue: int,
+    *,
+    operation: str,
+    pack_path: Path | None,
+    enforce_peer: bool,
+) -> dict[str, str] | None:
     _require_unnamed_socket(connection)
     if enforce_peer:
         _pid, uid, _gid = _peer_credentials(connection)
-        if uid != installation["expected_capability_uid"] or uid == os.geteuid():
+        if uid != installation["expected_capability_uid"]:
             _fail("peer-authentication-failed", "capability issuer principal is not authorized")
-    try:
-        pack_size = pack_path.stat().st_size
-    except OSError as error:
-        raise BrokerError("pack-unavailable", "cannot inspect object pack") from error
-    if pack_size <= 0 or pack_size > installation["pack_max_bytes"]:
-        _fail("oversized-pack", "object pack size is outside the installation contract")
     digest = hashlib.sha256()
-    with pack_path.open("rb") as stream:
-        for chunk in iter(lambda: stream.read(65536), b""):
-            digest.update(chunk)
+    if operation == "publish":
+        assert pack_path is not None
+        try:
+            pack_size = pack_path.stat().st_size
+        except OSError as error:
+            raise BrokerError(
+                "pack-unavailable", "cannot inspect object pack"
+            ) from error
+        if pack_size <= 0 or pack_size > installation["pack_max_bytes"]:
+            _fail(
+                "oversized-pack",
+                "object pack size is outside the installation contract",
+            )
+        with pack_path.open("rb") as stream:
+            for chunk in iter(lambda: stream.read(65536), b""):
+                digest.update(chunk)
+    else:
+        pack_size = 0
     now = datetime_module.datetime.now(datetime_module.timezone.utc)
     deadline_time = now + datetime_module.timedelta(
         seconds=installation["operation_timeout_seconds"]
@@ -1614,34 +2979,149 @@ def publish_via_connection(
     request = {
         "schema_version": 1,
         "protocol": PROTOCOL,
+        "phase": "request",
         "request_nonce": os.urandom(32).hex(),
-        "plan_identity": _string(plan_identity, "plan identity", HEX_64_RE),
+        "repository": installation["repository"],
+        "issue": _integer(issue, "issue", 1),
+        "operation": operation,
         "pack_sha256": digest.hexdigest(),
         "pack_size": pack_size,
-        "deadline": deadline_time.strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "request_deadline": deadline_time.strftime("%Y-%m-%dT%H:%M:%SZ"),
     }
-    connection.settimeout(installation["operation_timeout_seconds"])
-    connection.sendall(_normalized_json(request))
-    with pack_path.open("rb") as stream:
-        for chunk in iter(lambda: stream.read(65536), b""):
-            connection.sendall(chunk)
-    raw = bytearray()
-    while True:
-        chunk = connection.recv(min(65536, RESPONSE_MAX_BYTES + 1 - len(raw)))
-        if not chunk:
-            break
-        raw.extend(chunk)
-        if len(raw) > RESPONSE_MAX_BYTES:
-            _fail("oversized-response", "broker response exceeds its size limit")
-    response = _object(_parse_json(bytes(raw), "broker response"), "broker response")
-    if bytes(raw) != _normalized_json(response):
-        _fail("invalid-json", "broker response must use canonical JSON")
-    return _verify_response(
-        response,
+    request_deadline = OperationDeadline(deadline_time)
+    request_write_error = None
+    try:
+        _send_frame(
+            connection,
+            request,
+            maximum=REQUEST_MAX_BYTES,
+            deadline=request_deadline,
+        )
+    except OSError as error:
+        request_write_error = error
+        try:
+            connection.shutdown(socket.SHUT_WR)
+        except OSError:
+            pass
+    try:
+        ack, _raw_ack = _recv_frame(
+            connection,
+            maximum=RESPONSE_MAX_BYTES,
+            label="broker acknowledgement",
+            deadline=None if request_write_error is not None else request_deadline,
+        )
+    except BrokerError as error:
+        if request_write_error is not None:
+            raise BrokerError(
+                "authenticated-response-unavailable",
+                "request write failed without a signed broker rejection",
+            ) from error
+        raise
+    context, _refs, pidfd = _verify_response(
+        ack,
         request,
         installation,
+        expected_phase="ack",
         now=datetime_module.datetime.now(datetime_module.timezone.utc),
+        enforce_broker_process=enforce_peer,
     )
+    if request_write_error is not None and ack["status"] == "ready":
+        if pidfd is not None:
+            os.close(pidfd)
+        _fail(
+            "invalid-response",
+            "broker reported readiness after request write failure",
+        )
+    try:
+        return _finish_client_operation(
+            connection,
+            request,
+            context,
+            installation,
+            operation=operation,
+            pack_path=pack_path,
+            pidfd=pidfd,
+        )
+    finally:
+        if pidfd is not None:
+            os.close(pidfd)
+
+
+def _finish_client_operation(
+    connection: socket.socket,
+    request: dict[str, Any],
+    context: dict[str, Any],
+    installation: dict[str, Any],
+    *,
+    operation: str,
+    pack_path: Path | None,
+    pidfd: int | None,
+) -> dict[str, str] | None:
+    effective_deadline = OperationDeadline(
+        _time(context["effective_deadline"], "ack.effective_deadline")
+    )
+    if pidfd is not None:
+        _require_live_pidfd(pidfd)
+    write_error: OSError | None = None
+    continuation = {
+        "schema_version": 1,
+        "protocol": PROTOCOL,
+        "phase": "continue",
+        "request_nonce": request["request_nonce"],
+        "plan_identity": context["plan_identity"],
+    }
+    try:
+        _send_frame(
+            connection,
+            continuation,
+            maximum=REQUEST_MAX_BYTES,
+            deadline=effective_deadline,
+        )
+    except OSError as error:
+        write_error = error
+        try:
+            connection.shutdown(socket.SHUT_WR)
+        except OSError:
+            pass
+    if operation == "publish" and write_error is None:
+        assert pack_path is not None
+        try:
+            with pack_path.open("rb") as stream:
+                for chunk in iter(lambda: stream.read(65536), b""):
+                    _socket_timeout(
+                        connection,
+                        effective_deadline,
+                        "while sending object pack",
+                        30,
+                    )
+                    connection.sendall(chunk)
+        except OSError as error:
+            write_error = error
+            try:
+                connection.shutdown(socket.SHUT_WR)
+            except OSError:
+                pass
+    final, _raw_final = _recv_frame(
+        connection,
+        maximum=RESPONSE_MAX_BYTES,
+        label="broker result",
+        deadline=None,
+    )
+    _final_context, refs, _unused_pidfd = _verify_response(
+        final,
+        request,
+        installation,
+        expected_phase="result",
+        now=datetime_module.datetime.now(datetime_module.timezone.utc),
+        expected_context=context,
+        enforce_broker_process=False,
+    )
+    if write_error is not None and final["status"] == "ok":
+        _fail(
+            "invalid-response",
+            "broker reported success after client pack write failure",
+        )
+    return refs
 
 
 def _set_parent_death_signal() -> None:
@@ -1689,13 +3169,16 @@ def build_parser() -> argparse.ArgumentParser:
     service = subparsers.add_parser("serve")
     service.add_argument("--installation", required=True, type=Path)
     service.add_argument("--connection-fd", required=True, type=int)
+    service.add_argument("--capability-fd", required=True, type=int)
     client = subparsers.add_parser("publish")
     client.add_argument("--installation", required=True, type=Path)
     client.add_argument("--connection-fd", required=True, type=int)
-    client.add_argument("--plan-identity", required=True)
+    client.add_argument("--issue", required=True, type=int)
     client.add_argument("--pack", required=True, type=Path)
     preflight = subparsers.add_parser("preflight")
     preflight.add_argument("--installation", required=True, type=Path)
+    preflight.add_argument("--connection-fd", required=True, type=int)
+    preflight.add_argument("--issue", required=True, type=int)
     return parser
 
 
@@ -1703,24 +3186,32 @@ def main(argv: list[str] | None = None) -> int:
     arguments = build_parser().parse_args(argv)
     try:
         if arguments.mode == "serve":
-            _close_unrelated_fds({0, 1, 2, arguments.connection_fd})
+            _close_unrelated_fds(
+                {
+                    0,
+                    1,
+                    2,
+                    arguments.connection_fd,
+                    arguments.capability_fd,
+                }
+            )
             _set_parent_death_signal()
+            capability = _read_sealed_capability(arguments.capability_fd)
+            os.close(arguments.capability_fd)
             installation = _load_broker_installation(arguments.installation.resolve(strict=True))
             with _socket_from_fd(arguments.connection_fd) as connection:
-                serve_connection(connection, installation)
+                serve_connection(connection, installation, capability)
             return 0
         installation = _load_client_installation(arguments.installation.resolve(strict=True))
         if arguments.mode == "preflight":
+            _close_unrelated_fds({0, 1, 2, arguments.connection_fd})
+            with _socket_from_fd(arguments.connection_fd) as connection:
+                preflight_via_connection(
+                    connection, installation, arguments.issue
+                )
             print(
                 json.dumps(
-                    {
-                        "protocol": PROTOCOL,
-                        "installation_id": installation["installation_id"],
-                        "repository": installation["repository"],
-                        "endpoint": installation["endpoint"],
-                        "expected_broker_uid": installation["expected_broker_uid"],
-                        "expected_capability_uid": installation["expected_capability_uid"],
-                    },
+                    {"repository": installation["repository"], "ready": True},
                     sort_keys=True,
                     separators=(",", ":"),
                 )
@@ -1729,7 +3220,7 @@ def main(argv: list[str] | None = None) -> int:
         _close_unrelated_fds({0, 1, 2, arguments.connection_fd})
         with _socket_from_fd(arguments.connection_fd) as connection:
             refs = publish_via_connection(
-                connection, installation, arguments.plan_identity, arguments.pack
+                connection, installation, arguments.issue, arguments.pack
             )
         print(json.dumps(refs, sort_keys=True, separators=(",", ":")))
         return 0

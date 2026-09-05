@@ -18,6 +18,10 @@ They are two roles, not one trust domain:
 - an external trusted capability issuer creates a fresh unnamed `AF_UNIX`
   `SOCK_STREAM` socket pair, launches exactly one broker operation with one end,
   and gives the other inherited descriptor to exactly one candidate client;
+- the same issuer passes the broker a canonical, authority-signed, fully
+  write/grow/shrink/seal-locked memfd that binds that connection to one
+  installation, repository, issue, operation, plan identity, nonce, and
+  lifetime;
 - the candidate cannot name, reconnect to, or replace that capability;
 - Linux `SO_PEERCRED` must report the installed capability-issuer UID at both
   ends. That issuer is distinct from both broker and candidate principals;
@@ -35,11 +39,11 @@ The production entry points require isolated Python startup:
 ```text
 /usr/bin/python3 -I scripts/workflow_pilot/isolated_launcher.py \
   git-broker-serve --installation /etc/workflow-pilot/broker.json \
-  --connection-fd 3
+  --connection-fd 3 --capability-fd 4
 
 /usr/bin/python3 -I scripts/workflow_pilot/isolated_launcher.py \
   git-broker-publish --installation /etc/workflow-pilot/client.json \
-  --connection-fd 3 --plan-identity <64-lowercase-hex> \
+  --connection-fd 3 --issue 205 \
   --pack build/test-artifacts/authority.pack
 ```
 
@@ -52,6 +56,10 @@ It must close both descriptors after the one operation. Do not put a broker
 socket path, private key, token, askpass output, or SSH-agent descriptor in the
 candidate environment.
 
+The candidate names no plan. Supplying another issue or operation produces a
+signed rejection before the object pack is read. Another otherwise valid plan
+in the broker's protected store is unusable through that connection.
+
 ## Closed publication contract
 
 The external installation authority writes a signed plan conforming to
@@ -59,6 +67,10 @@ The external installation authority writes a signed plan conforming to
 The plan identity is the SHA-256 of its canonical JSON including its signature.
 The signature covers canonical JSON without the `signature` member under the
 `workflow-pilot-git-publication-plan-v1` domain.
+The connection capability conforms to
+[`git_publication_capability.schema.json`](../scripts/workflow_pilot/git_publication_capability.schema.json)
+and is independently signed under the
+`workflow-pilot-git-publication-capability-v1` domain.
 
 The broker independently verifies all of the following:
 
@@ -75,16 +87,41 @@ The broker independently verifies all of the following:
 - exact remote old-ref state before an atomic two-ref force-with-lease push and
   exact remote readback afterward.
 
+The wire protocol uses bounded length-prefixed canonical JSON. The client sends
+only a request header, then drains and verifies a signed `ack`. It returns a
+small request/plan-bound `continue` frame and sends pack bytes only after
+`status=ready`. A signed final result repeats the request,
+capability, plan, deadline, broker process, and installation binding. On a
+write failure the client still drains and authenticates the bounded final
+rejection; raw `BrokenPipe` is never success evidence.
+
+The effective deadline is the minimum of the request, capability, and plan
+expiries. One absolute wall/monotonic deadline is carried through signature
+validation, credential readiness, remote reads, replay validation, pack
+index/closure checks, hook execution, push, and exact readback. Every child
+timeout is clamped to its remaining duration. Remote mutation uses an earlier
+guard deadline exported to protected hooks, with checks immediately before
+push, immediately afterward, and after readback.
+
 `master`, other heads, other tags, deletions, wildcard refspecs, arbitrary Git
 commands, thin/missing closures, extra objects, and a third ref are not
-representable. The server remains authoritative: protected receive hooks run,
-and the broker fingerprints the local test remote's directory/object
-identities plus config and hooks before and after publication.
+representable. The server remains authoritative. A local protected remote is
+opened through no-follow directory/file descriptors; Git uses the descriptor
+path rather than a replaceable pathname. Config and the complete hook tree are
+descriptor-hashed, external hook/config execution seams and object alternates
+are forbidden, and every nested hooks/config/refs/objects entry is recursively
+owner/type/mode checked. Mutable refs/objects storage must be broker-owned;
+candidate ownership, writable modes, symlinks, special files, or path swaps
+fail or remain outside the descriptor-bound server.
 
 The shared signed-record parser accepts only
 `YYYY-MM-DDTHH:MM:SSZ`. It constructs the UTC calendar fields directly, so
-invalid dates, hour `24`, offsets, lowercase separators, and fractional seconds
-are rejected identically on every supported Python version.
+invalid dates, year `0000`, non-leap February 29, April 31, hour `24`, offsets,
+lowercase separators, and fractional seconds are rejected identically on every
+supported Python version. The schemas carry both `format: date-time` and the
+named `rfc3339-utc-second` extension; the repository's semantic schema
+consumer calls the same calendar constructor as the record parser instead of
+treating a regex as date validation.
 
 ## Broker installation
 
@@ -103,6 +140,7 @@ The broker JSON is a closed object with these fields:
 | `installation_id` | Unique 64-lowercase-hex identity. Copying a plan to another installation fails. |
 | `repository`, `endpoint` | Exact `owner/repository` and canonical HTTPS, `ssh://git@...`, or test-only absolute `file://` destination. URL credentials are forbidden. |
 | `expected_capability_uid` | Trusted socket-pair creator UID, different from the broker effective UID. |
+| `candidate_uid` | Candidate principal, different from both broker and capability issuer and forbidden throughout protected authority trees. |
 | `broker_key_id`, `broker_private_key` | External response identity and protected Ed25519 private-key path. |
 | `plan_signers` | Nonempty key-ID map to protected Ed25519 public key plus exact signer and actor strings. |
 | `plan_store`, `state_directory` | Protected signed plans and replay/process state. |
@@ -122,8 +160,9 @@ For HTTPS, `authentication` contains `mode`, executable `askpass`,
 credential only inside the broker process tree. For SSH it contains `mode`,
 `agent_socket`, and a pinned `ssh_config`; the agent and host-key policy remain
 outside the candidate. Git receives a minimal scrubbed environment, core dumps
-are disabled, output is never returned, and a broker-death watchdog kills the
-entire Git process group.
+are disabled, output is never returned, and every Git child installs
+`PR_SET_PDEATHSIG` plus a parent-race check before `exec`. A separate watchdog
+kills the full Git process group, including the Popen-before-watchdog window.
 
 The client JSON contains only `schema_version`, `protocol`, `installation_id`,
 `repository`, `endpoint`, `expected_broker_uid`,
@@ -132,17 +171,24 @@ The client JSON contains only `schema_version`, `protocol`, `installation_id`,
 Validate deployment before launching candidate work:
 
 ```text
+# The trusted issuer first launches a preflight-bound broker with its sealed
+# capability FD, separate service UID/namespace, and unnamed connection FD.
 /usr/bin/python3 -I scripts/workflow_pilot/isolated_launcher.py \
-  git-broker-preflight --installation /etc/workflow-pilot/client.json
+  git-broker-preflight --installation /etc/workflow-pilot/client.json \
+  --connection-fd 3 --issue 205
 ```
 
 `expected_broker_uid` records the separately deployed service principal. The
 externally installed signing key authenticates the broker response because
 transferred socket-pair credentials authenticate the capability issuer, not
-the eventual descriptor holder. Preflight fails when the installation is candidate-owned, under a
-candidate-owned path, writable by group/other, malformed, same-UID, symlinked,
-or not canonical. Absence of an externally installed broker is a hard failure;
-there is no local fallback.
+the eventual descriptor holder. Preflight is a real signed non-publication
+exchange: it verifies the sealed plan binding, service response key, observed
+broker PID/UID/user-namespace through a live pidfd and `/proc`, configuration,
+credential/agent readiness, protected remote, and exact current refs. It
+returns only `ready`, never an expected UID copied from a manifest. Missing
+service, wrong UID/namespace/key, candidate-owned installation, writable or
+symlinked authority, stale refs, or unavailable credentials fail closed.
+There is no local fallback.
 
 ## Replay state, lifecycle, and recovery
 
@@ -189,8 +235,10 @@ python3 scripts/check_docs.py --check
 The focused suite creates all files beneath
 `build/test-artifacts/git-publication-broker`, starts a signed one-shot broker
 process, exercises an actual TLS smart-HTTP Git server and askpass challenge,
-and removes the fixture. It also proves that production preflight rejects the
-same-UID test layout. Operators must still provide the real separate principal,
+and removes the fixture. A trusted test issuer also launches a broker in a
+distinct mapped user namespace and verifies its signed PID/UID/namespace
+readiness without publication. Same-principal, wrong-UID, absent-service, and
+candidate-owned preflight controls reject. Operators must still provide the real separate principal,
 trusted coordinator, protected installation paths, GitHub repository
 permissions/rules, TLS/SSH host identity, and rollback-resistant service
 storage.

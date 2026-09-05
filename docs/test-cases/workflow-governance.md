@@ -1230,25 +1230,36 @@ the exact branch and head; timeout or ambiguity fails before `gh run watch`.
    `python3 -m unittest scripts.workflow_pilot.tests.test_git_publication_broker -v`.
 2. Inspect the positive fixture's protected bare remote and exact signed plan.
    Confirm one inherited unnamed connection publishes the issue-205 authority
-   head and anchor tag atomically, invokes the protected server hook, verifies
-   exact readback, and returns a request-bound Ed25519-signed response.
+   head and anchor tag atomically, invokes the descriptor-bound protected
+   server hook, verifies exact readback, and returns signed ACK/final frames.
 3. Replay the same plan after broker restart and concurrently through two
    one-shot broker processes. Restore an older journal without its durable
-   anchor and copy/mutate destination, signer, actor, operation, ref, expected
-   OID, pack, or object closure fields.
+   anchor and copy/mutate the sealed connection capability, destination,
+   repository, issue, plan identity, signer, actor, operation, ref, expected
+   OID, pack, or object closure fields. Keep a second valid plan in the store
+   and prove the candidate cannot select it.
 4. Exercise abstract/named and same-UID peers, candidate-owned production
    preflight, missing/wrong response identity, expired/future/malformed times,
-   master/tag updates, protected hook/config/directory/object changes,
-   disconnect, bounded hook timeout, and broker kill.
+   master/tag updates, nested writable/symlink/alternate authority, post-ACK
+   protected path/hook swaps, disconnect, bounded effective-deadline hook
+   timeout, broker kill, and the Popen-before-watchdog death window.
 5. Exercise the TLS smart-HTTP server's Basic challenge through the protected
    askpass credential file. Inspect candidate environment, response, server
    log, replay journal, and fixture root for credential text or core files.
-6. Run the complete isolated workflow-pilot reporter suite and
+6. Launch the readiness capability through a trusted issuer into a broker
+   process with mapped namespace UID 991. Verify the signed broker PID, outer
+   UID, namespace UID/inode, response key, credential/config/remote readiness,
+   exact refs, and zero publication. Repeat absent, wrong-UID, same-namespace,
+   and candidate-owned controls.
+7. Send malformed headers and pack write failures. Verify a signed rejection
+   arrives before pack transfer or is drained as the final bounded result;
+   raw pipe errors never become evidence.
+8. Run the complete isolated workflow-pilot reporter suite and
    `python3 scripts/check_docs.py --check`.
 
 ### Expected result
 
-Only the complete current signed plan moves refs. The authority and anchor
+Only the capability-bound complete current signed plan moves refs. The authority and anchor
 read back at their exact new commit, no third ref exists, and the server hook
 is authoritative. The broker independently verifies canonical destination,
 two issue-derived refs, old/new objects, exact self-contained reachable pack,
@@ -1257,14 +1268,24 @@ issuance, expiry, and deadline. Journal reservation is durable and exclusive;
 restart, replay, concurrency, stale state, and journal rollback reject.
 The client accepts only an unnamed inherited socket created by the installed
 separate capability-issuer UID and an externally installed broker response
-signature.
+signature. A sealed authority-signed launch record binds one connection to one
+repository/issue/operation/plan; the candidate sends no plan identity.
+
+The effective deadline is the minimum request/capability/plan expiry and
+clamps every validation and subprocess. An earlier mutation cutoff reaches the
+server hook; expiry before completion leaves both refs unchanged. Config,
+hooks, refs, objects, packed refs, and alternates are recursively audited, and
+Git uses the already-open remote directory descriptor so a post-ACK pathname
+and malicious hook replacement cannot execute.
 
 The actual HTTPS Git exchange invokes askpass after a TLS server challenge,
 but the credential is absent from candidate environment/files/arguments,
 response, logs, journal, and core output. Timeout or broker death kills the Git
-process group and leaves both refs unchanged. Production preflight fails
-closed without an external non-candidate-owned installation. The shared time
-parser accepts exactly UTC whole seconds with hour `00` through `23`.
+process group and leaves both refs unchanged, including broker death before
+watchdog creation. Production preflight fails closed without a live signed
+distinct-principal broker. The shared semantic schema consumer and parser
+accept exactly real UTC calendar times at whole-second precision and reject
+year zero, invalid leap/month days, hour `24`, offsets, and fractions.
 
 ### Negative control
 
@@ -1288,7 +1309,9 @@ modern debug/release, or archival impact.
 
 `python3 -m unittest scripts.workflow_pilot.tests.test_git_publication_broker -v`
 provides behavioral publication/readback, adversarial protocol, actual Git
-pack/ref/hook, TLS askpass, replay durability, peer/signature, process cleanup,
+pack/ref/hook, TLS askpass, sealed capabilities, staged signed framing,
+absolute deadlines, recursive descriptor authority, replay durability,
+distinct namespace principal observation, pre-exec parent death, semantic
 schema-time parity, and no-secret evidence. The isolated reporter command
 proves integration with the existing signed-record consumer, and
 `python3 scripts/check_docs.py --check` parses the indexed procedure and
@@ -1298,10 +1321,11 @@ deployment documentation.
 
 The suite removes its unique children below
 `build/test-artifacts/git-publication-broker`; the empty ignored parent may
-remain. The local fixture intentionally disables peer enforcement only inside
-the library test so it can prove broker behavior and response signatures
-without root/sudo; the production CLI has no such flag, and the same-UID
-production preflight/peer paths reject. Deployment must supply a real separate
+remain. Most local behavior fixtures disable peer observation only inside the
+library test; the readiness case uses a real mapped distinct user namespace
+and signed live process observation without sudo. The production CLI has no
+peer/process bypass, and same-principal production preflight rejects.
+Deployment must supply a real separate
 principal or stronger boundary, external descriptor coordinator, protected
 paths and rollback-resistant storage, GitHub permissions/rules, and trusted
 TLS/SSH host identity. No manual-only criterion applies.

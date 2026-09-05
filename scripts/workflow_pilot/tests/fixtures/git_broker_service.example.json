@@ -5,6 +5,7 @@
   "repository": "owner/repository",
   "endpoint": "https://github.com/owner/repository.git",
   "expected_capability_uid": 0,
+  "candidate_uid": 1000,
   "broker_key_id": "broker-2026-09",
   "broker_private_key": "/var/lib/workflow-pilot-broker/keys/broker-2026-09.private.pem",
   "plan_signers": {

@@ -28,6 +28,10 @@ RFC3339_UTC_RE = re.compile(
     r"^(?P<year>[0-9]{4})-(?P<month>[0-9]{2})-(?P<day>[0-9]{2})"
     r"T(?P<hour>[0-9]{2}):(?P<minute>[0-9]{2}):(?P<second>[0-9]{2})Z$"
 )
+RFC3339_UTC_SCHEMA_PATTERN = (
+    "^[0-9]{4}-[0-9]{2}-[0-9]{2}"
+    "T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
+)
 EXPECTED_PATH_RE = re.compile(
     r"^[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)*$"
 )
@@ -384,6 +388,33 @@ def parse_time(value: Any, label: str, nullable: bool = False) -> datetime | Non
         )
     except ValueError as error:
         raise PilotDataError(f"{label} is not a valid timestamp") from error
+    return parsed
+
+
+def parse_schema_time(
+    value: Any,
+    label: str,
+    schema: Any,
+) -> datetime:
+    definition = expect_object(schema, f"{label} schema")
+    expect_keys(
+        definition,
+        f"{label} schema",
+        ("type", "format", "x-workflow-pilot-format", "pattern"),
+    )
+    if (
+        definition["type"] != "string"
+        or definition["format"] != "date-time"
+        or definition["x-workflow-pilot-format"] != "rfc3339-utc-second"
+        or definition["pattern"] != RFC3339_UTC_SCHEMA_PATTERN
+    ):
+        raise PilotDataError(
+            f"{label} schema must use the exact signed UTC-second format"
+        )
+    if not isinstance(value, str) or re.fullmatch(definition["pattern"], value) is None:
+        raise PilotDataError(f"{label} does not match its timestamp schema")
+    parsed = parse_time(value, label)
+    assert parsed is not None
     return parsed
 
 
