@@ -434,10 +434,10 @@ class FoundationTests(unittest.TestCase):
             self.assertEqual(kwargs["stdin"], subprocess.PIPE)
             self.assertTrue(kwargs["close_fds"])
             invocations.append(argv)
-            # Exercise the identical watchdog and PID lifecycle at our own
-            # credentials. This is not evidence of a real sudo transition.
+            # Keep the real watchdog/payload, but not the privilege or namespace
+            # launcher. These fixtures must work where user namespaces reject.
             owned = [
-                *argv[3:11], "--user", "--map-root-user", *argv[11:],
+                *argv[3:10], *argv[10 + len(NAMESPACE_LAUNCHER):],
             ]
             return original(owned, **kwargs)
         with patch("subprocess.Popen", same_uid_fixture), patch(
@@ -445,11 +445,11 @@ class FoundationTests(unittest.TestCase):
             side_effect=PermissionError("outer caller cannot signal privileged groups"),
         ) as kill:
             result = budget.run(
-                [*NAMESPACE_LAUNCHER, "/usr/bin/printf", "%s", "guarded namespace"],
+                [*NAMESPACE_LAUNCHER, "/usr/bin/printf", "%s", "guarded payload"],
                 env=ENVIRONMENT, privileged=True,
             )
             self.assertEqual(result.returncode, 0, result.stderr)
-            self.assertEqual(result.stdout, b"guarded namespace")
+            self.assertEqual(result.stdout, b"guarded payload")
             kill.assert_not_called()
         self.assertEqual(len(invocations), 1)
         self.assertFalse(budget.children)
@@ -495,7 +495,8 @@ class FoundationTests(unittest.TestCase):
         original = subprocess.Popen
         def same_uid_fixture(argv, **kwargs):
             self.assertEqual(argv[:3], ["/usr/bin/sudo", "-n", "--"])
-            return original([*argv[3:11], "--user", "--map-root-user", *argv[11:]], **kwargs)
+            self.assertEqual(tuple(argv[10:10 + len(NAMESPACE_LAUNCHER)]), NAMESPACE_LAUNCHER)
+            return original([*argv[3:10], *argv[10 + len(NAMESPACE_LAUNCHER):]], **kwargs)
         for action in ("deadline", "output", "interrupt"):
             with self.subTest(action=action):
                 budget = ProbeBudget(Limits(
@@ -507,19 +508,32 @@ class FoundationTests(unittest.TestCase):
                     if action == "interrupt" and category == "output":
                         raise KeyboardInterrupt("modeled caller interruption")
                     charge(category, size)
-                program = "import os,time\nos.fork()\n"
+                ready = self.directory / ("watchdog-ready-" + action)
+                program = (
+                    "import os,time\n"
+                    f"with open({str(ready)!r}, 'wb') as marker: marker.write(b'payload started')\n"
+                    "os.fork()\n"
+                )
                 if action != "deadline":
                     program += "os.write(1, b'x'*100)\n"
                 program += "time.sleep(20)\n"
                 with patch("subprocess.Popen", same_uid_fixture), patch.object(
                     budget, "charge", interrupt_output,
                 ), patch("os.killpg", side_effect=PermissionError("outer caller lacks permission")) as kill:
-                    with self.assertRaises(KeyboardInterrupt if action == "interrupt" else MakeProbeError):
+                    expected = {
+                        "deadline": "aggregate probe deadline",
+                        "output": "process output exceeds streaming byte bound",
+                        "interrupt": "modeled caller interruption",
+                    }
+                    with self.assertRaisesRegex(
+                        KeyboardInterrupt if action == "interrupt" else MakeProbeError, expected[action],
+                    ):
                         budget.run(
                             [*NAMESPACE_LAUNCHER, "/usr/bin/python3", "-I", "-c", program],
                             env=ENVIRONMENT, privileged=True,
                         )
                     kill.assert_not_called()
+                self.assertEqual(ready.read_bytes(), b"payload started")
                 self.assertFalse(budget.children)
                 self.assertLess(time.monotonic() - budget.started, 5)
 

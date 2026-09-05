@@ -1595,6 +1595,11 @@ Start from a clean checkout; fixtures use only ignored `build/test-artifacts`.
    before launch. These fixtures use same-UID processes, never real sudo; hold
    any claim of full sudo-route validation until separate exact-candidate
    evidence actually exercises that credential transition.
+   The same-UID adapter validates the production launcher contract but runs the
+   actual watchdog/payload without `unshare`, including on hosts that deny user
+   namespaces. Budget/interruption controls require a payload-start marker and
+   the intended error, not an early launcher failure. Real capsule namespace
+   execution remains a separate production-path check.
 10. Capture Make's parsed ELF interpreter and runtime closure, then run the real
     Make observation with only an Arch-shaped, non-multiarch `/usr/lib` library
     layout. Require the authentic prerequisite/value and read-only captured

@@ -321,8 +321,13 @@ the parent-death signal. The unprivileged caller closes the pipe and waits for t
 cleanup; it never attempts to kill a root-owned group or ignores a
 `PermissionError`.
 
-The process suite tests this lifecycle with same-UID owned process trees and
-a user-namespace substitution for sudo. These deterministic controls do not
+The process suite tests this lifecycle with the real watchdog and same-UID
+owned payloads, substituting only the privileged namespace launcher. These
+fixtures intentionally do not invoke `unshare`: they must also pass where
+unprivileged user namespaces are unavailable. The production capsule tests
+exercise the selected namespace route separately. Budget/interruption controls
+require an owned payload-start marker and the intended exception, so a failed
+launcher cannot masquerade as deadline or output evidence. These controls do not
 claim a real sudo credential-transition positive. That route requires separate
 exact-candidate evidence on a host where the documented noninteractive sudo
 permission is available; never use a shared development host's credentials or
