@@ -280,8 +280,10 @@ def publisher_run_script(
         if step.startswith(f"    - name: {step_name}\n")
     ]
     if len(matches) != 1:
-        raise ValueError("publisher builder step inventory differs")
-    return literal_run_script_from_step_block(matches[0], label="publisher")
+        raise ValueError(
+            f"publisher step {step_name!r} inventory differs: expected 1, found {len(matches)}"
+        )
+    return literal_run_script_from_step_block(matches[0], label=f"publisher step {step_name!r}")
 
 
 def validate_builder_command_inventory(script: str) -> publisher_inventory.Analysis:

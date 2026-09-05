@@ -57,7 +57,10 @@ behavior. Publisher runtime cases use disposable Linux namespaces.
    `readonly-control`, move namespace setup after that boundary, or move limits
    into the wrong preparation substage: each must reject. Equivalent quoting,
    independent initializer and resource-limit reorder within the same substage,
-   and the two independent file-install orderings pass.
+   and the two independent file-install orderings pass. The complete producer
+   fixtures also delay or tail-duplicate launcher staging, change its Git ref,
+   chmod or transport path, swap a reserved reported substage, and remove the
+   failure detail. Both consumers and the exact-tree CLI reject those changes.
 5. Observe the live namespace scenario. The exact foreground candidate PID is
    absent from `/proc` before the checker; only wrapper/checker remain, and the
    actual sealed export contains `target.gba` (32 MiB) and `metadata.json`
@@ -82,11 +85,14 @@ branches cannot move to a different diagnostic substage.
 
 ### Negative control
 
-The inventory alone accepts
-the phase-only early/late/wrong-frame variants; removing **only** the phase
-authority reproduces that acceptance in both real consumers. Restoring the
-phase machine rejects them. This negative control proves more than a command
-count, name, comment, source-order assertion, or raw identity.
+The inventory alone accepts the phase-only early/late and preparation-substage
+variants; removing **only** the phase authority reproduces that acceptance in
+both real consumers. Restoring the phase machine rejects them. The shared
+context authority now rejects the conditional/background/pipeline, swapped
+result-edge and swapped isolated-error-arm cases even with phase validation
+removed. Both groups retain their original mutations; earlier rejection is not
+an exemption or a weakened phase check. These negative controls prove more than
+a command count, name, comment, source-order assertion, or raw identity.
 
 The live early-checker control intentionally sees a valid two-PID snapshot
 before any candidate PID exists and can otherwise export successfully. That
@@ -124,6 +130,8 @@ consumers, the exact-tree CLI, candidate FD closure and authenticated supervisor
 lifecycle. The prerequisite command-inventory case additionally executes both
 fresh-step Git staging commands under the complete workflow environment and
 checks launcher source/import binding without eager execution or cache loading.
+It also runs the child producer mutations through isolated fixture-commit CLIs,
+with the new producer registration module in the captured import closure.
 All deterministic assertions are automated; no visual, audio, subjective, or
 manual-only criterion exists.
 
@@ -208,7 +216,10 @@ authority.
    `PATCH_RUNTIME_ROOT`. The launcher transport still installs the canonical
    `/mnt/control` identity. Source/ref/redirect and conditional
    staging mutations fail both semantic consumers even with refreshed outer
-   shell identities.
+   shell identities. The same inventory covers every command and helper in
+   the verification and staging steps, not just these prologues. Inserting an
+   unknown executable, substitution or helper after the unset or at either
+   step's end fails both consumers and the real exact-tree CLI.
 8. Confirm inert unchecked-hash caches for the entire authority closure do
    not alter the real isolated CLI, with or without `-B`. The control loader
    executes the inert cache and raises its deliberate error while all tracked
@@ -219,6 +230,22 @@ authority.
    verified bytes, without reopening paths or importing outside the closure.
    Each program's declared inputs/outputs also survive into its signature and
    event accesses; deleting a required access rejects the inventory.
+9. Confirm adding background execution, `&&`, `||`, `|` or `|&`, reversing
+   a registered guard/recovery chain, or moving a command into an existing
+   branch or loop fails without relying on command-count changes. Removing
+   the producer's required supervisor background also fails. The registered
+   production contexts and harmless assignment/quote/comment refactors pass.
+   The parser distinguishes quoted regex metacharacters and a quoted `[[`
+   executable from Bash's actual conditional keyword. A safe Bash-only regex
+   probe supplies independent positive/negative execution evidence.
+10. Confirm dynamic `builtins.__import__`, aliases and indirect
+    `importlib.import_module` calls cannot import an ambient package, including
+    an already cached one. Trusted system standard-library loading succeeds
+    despite an ambient finder or repository shadow; cached standard-library
+    shadows reject. The ordinary-loader negative control executes only an
+    inert package that raises a deliberate error. A 1 MiB authority source
+    passes; a 1 MiB-plus-one Git blob is rejected after its size query and
+    before any content read. Every authorized blob read is explicitly bounded.
 
 ### Expected result
 
@@ -238,6 +265,11 @@ behavioral negative control independently of raw hashes or source wording.
 The fresh-shell exit-128 control and inert-cache exception independently
 reproduce PR #209's staging and source-loading regressions. No hostile shell
 command is executed; the controlled cache only raises an exception.
+The pre-correction PR #209 inventory accepts the operator/branch and
+verification-tail fixtures while preserving command counts. The regression
+changes only the relevant typed placement to demonstrate that the context
+authority, not a raw hash mismatch, accounts for rejection. The old loader's
+ambient-import fallback executes the inert external-package control.
 
 ### Interactions and save compatibility
 

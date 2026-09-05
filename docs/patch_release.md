@@ -39,8 +39,11 @@ not a gameplay option or a blacklist of sensitive filenames.
   Words retain literal/parameter/substitution/arithmetical provenance and
   quoting. Redirects, environment prefixes, control branches, pipelines,
   backgrounds, and function declarations remain distinct.
-- `publisher_inventory.py` matches complete signatures, scope and exact
-  occurrence counts. Main commands, nested data producers, and recursive
+- `publisher_inventory.py` matches complete signatures, scope, registered
+  control/operator/background placements and exact per-placement occurrence
+  counts. Operator position is part of the context: adding `&`, changing a
+  pipeline/short-circuit, or moving a command into an existing branch does not
+  preserve authorization. Main commands, nested data producers, and recursive
   helper expansion use the same inventory. Unknown commands, aliases,
   dynamic executable paths, unmatched arguments or redirects, callbacks,
   traps, and unregistered interpreter programs fail closed. A wrapper never
@@ -75,8 +78,15 @@ maintained. Git tracks source/review/history; raw Git text is not behavioral
 evidence.
 
 Each workflow step starts a fresh shell. `Inventory.validate_producer`
-therefore checks both the verification prologue and the fresh build step's
-staging prologue. Both explicitly unset the established Git repository-path
+therefore checks the **entire** verification and candidate-staging steps,
+including their helpers, final commands, control placements, and canonical
+program payloads. `publisher_producer_signatures.py` contributes these rows
+to the same typed inventory; it is not another parser. The existing Bash
+parser also represents the producer's bounded conditionals, while loops and
+quoted literal heredocs. The builder heredoc is authorized recursively by the
+same builder inventory; the other payloads select their exact canonical
+workflow programs rather than granting an arbitrary interpreter exemption.
+Both prologues explicitly unset the established Git repository-path
 variables; empty `GIT_DIR`/`GIT_WORK_TREE` values are not equivalent to absent
 variables. The two staging signatures bind the Git executable, exact commit
 and source paths, and output redirects to
@@ -85,8 +95,16 @@ and source paths, and output redirects to
 builder's registered installs read those same trusted runtime files before
 masking the host tree; their `/mnt/control` destinations are unchanged. Changing
 the source/ref/output or making sanitization/staging conditional fails both
-semantic consumers independently of the outer raw-shell identity. An adjacent
-duplicate producer command also exceeds the prologue's reviewed multiplicity.
+semantic consumers independently of the outer raw-shell identity.
+Both source captures must immediately follow sanitization, in either order.
+An extra registered command exceeds its reviewed multiplicity; appending an
+unknown command anywhere in either trusted step also rejects.
+Import-time policy permits only the captured repository module set and
+standard-library modules from trusted interpreter directories, built-ins or
+frozen modules. It checks cached imports too; dynamic `builtins.__import__`
+and `importlib.import_module` cannot fall back to ambient packages, custom
+finders, or repository/site-package standard-library shadows. Git blob sizes
+are queried and capped at 1 MiB **before** a bounded content read.
 
 From a clean source checkout at the exact candidate:
 
@@ -126,6 +144,15 @@ program closure, without executing the launcher or registry during discovery.
 `Analysis.commands` covers every authorized statement and nested producer;
 `Analysis.events` expands helper calls and retains `scope`, `call_stack`,
 `context`, the parsed command, typed resource accesses, and `EventKind`.
+`Signature.placements` contains typed `Placement(context, occurrences)`
+records; `authorize(command, scope, context)` requires a registered placement.
+`Control.context` fixes its own nesting, and `Context.branch` identifies the
+operand position for operator chains. `validate(source, entry_scope=...)`
+selects the builder (`entry`), verification (`producer`), or staging domain;
+`Inventory.entry_scope(scope)` resolves helper domains. Program metadata
+includes exact wrapper and redirection forms for the producer's fixed programs.
+`Command.conditional` and `Invocation.conditional` distinguish Bash conditional
+keywords from literal command names without erasing quoting provenance.
 `CANDIDATE_LAUNCH`, `CANDIDATE_STATUS`, `MEMBERSHIP_VERIFIED`, `EXPORT_OPEN`,
 `EXPORT_FILE`, `EXPORT_CLOSE`, and `POST_CHECK` are the integration seam for
 #201. A legacy observation event cannot advance the machine. These are

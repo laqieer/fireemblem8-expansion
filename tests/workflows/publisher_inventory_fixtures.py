@@ -26,6 +26,72 @@ def replace_builder(workflow: str, source: str) -> str:
     return workflow[:start] + indented + workflow[end:]
 
 
+def replace_step(workflow: str, name: str, source: str) -> str:
+    original = contract.publisher_run_script(workflow, name)
+
+    def indent(text):
+        return "".join("        " + line if line.strip() else line for line in text.splitlines(keepends=True))
+
+    assert indent(original) in workflow
+    return workflow.replace(indent(original), indent(source), 1)
+
+
+def context_and_producer_workflows(workflow: str):
+    source = builder(workflow)
+    for operator in ("&", "&&", "||", "|", "|&"):
+        yield "builder-operator-" + operator, replace_builder(
+            workflow, source.replace("cd /\n", f"cd / {operator}\n", 1),
+        )
+    for name, target in (
+        ("branch", 'exit "$candidate_status"'),
+        ("loop", 'test -d "$hidden"'),
+    ):
+        yield "builder-relocated-" + name, replace_builder(
+            workflow, source.replace("cd /\n", "", 1).replace(target, "cd /; " + target, 1),
+        )
+    yield "registered-failure-operator", replace_builder(
+        workflow, source.replace("|| return 125", "&& return 125", 1),
+    )
+    old = 'path="$(/usr/bin/mktemp "/mnt/supervisor/$1.XXXXXXXXXX")" || return 125'
+    yield "registered-operator-operand", replace_builder(
+        workflow, source.replace(old, 'return 125 || ' + old.split(" || ")[0], 1),
+    )
+    for name in (
+        "Verify exact candidate and stage trusted producer",
+        "Build candidate in isolated namespace and stage public inputs",
+    ):
+        run = contract.publisher_run_script(workflow, name)
+        unset_end = "GIT_OBJECT_DIRECTORY GIT_REPLACE_REF_BASE GIT_WORK_TREE\n"
+        for mutation, changed in (
+            ("after-unset", run.replace(unset_end, unset_end + "/unregistered/producer-command\n", 1)),
+            ("tail", run + "/unregistered/producer-command\n"),
+            ("substitution-tail", run + "extra=$(/unregistered/producer-command)\n"),
+            ("helper-tail", run + "extra() { /unregistered/producer-command; }\nextra\n"),
+        ):
+            assert changed != run
+            yield name + "-" + mutation, replace_step(workflow, name, changed)
+        if name.startswith("Verify"):
+            changed = run.replace('test "$ACTUAL_SHA" = "$PATCH_COMMIT"\n', "", 1).replace(
+                'test -f "$source"', 'test "$ACTUAL_SHA" = "$PATCH_COMMIT"; test -f "$source"', 1,
+            )
+            yield "producer-registered-branch", replace_step(workflow, name, changed)
+            yield "producer-quoted-regex-anchor", replace_step(
+                workflow, name, run.replace('=~ ^[0-9a-f]', '=~ "^"[0-9a-f]', 1),
+            )
+            yield "producer-quoted-keyword", replace_step(
+                workflow, name, run.replace('[[ "$PATCH_COMMIT"', '\'[[\' "$PATCH_COMMIT"', 1),
+            )
+        else:
+            changed = run.replace(" < /dev/null > /dev/null 2>&1 &\n", " < /dev/null > /dev/null 2>&1\n", 1)
+            assert changed != run
+            yield "producer-required-background", replace_step(workflow, name, changed)
+            changed = run.replace('builder_gid=""\n', "", 1).replace(
+                "builder_launch_detail=session-query",
+                'builder_gid=""; builder_launch_detail=session-query', 1,
+            )
+            yield "producer-registered-existing-branch", replace_step(workflow, name, changed)
+
+
 def adversarial_commands():
     return (
         ("composed-python", COMPOSED_PYTHON_READER),

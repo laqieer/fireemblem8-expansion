@@ -9,10 +9,11 @@ from __future__ import annotations
 
 from . import publisher_shell as shell
 from .publisher_inventory import (
-    Access, Control, EventKind, Family, Inventory, Program, Resource,
+    Access, Context, Control, EventKind, Family, Inventory, Placement, Program, Resource,
     ResourceAccess, Scope, Signature, PROGRAM_PATH, PROGRAM_RUNTIME_PATH,
-    control_header,
+    control_header, normalize_invocation,
 )
+from .publisher_producer_signatures import register as register_producer
 
 
 def inventory() -> Inventory:
@@ -34,22 +35,24 @@ def inventory() -> Inventory:
             Scope(f"read_checked_{kind}_transport_file", "builder_main", (resource, Resource.SHELL, Resource.SHELL)),
             Scope(f"remove_{kind}_transport_file", "builder_main", (resource,)),
         ))
-    helper_names = {scope.name for scope in scopes}
     signatures: list[Signature] = []
     controls: list[Control] = []
-    builtins = {"[", "cd", "echo", "exec", "exit", "local", "mapfile", "printf", "return", "set", "test", "trap", "ulimit", "unset"}
+    builtins = {":", "[", "[[", "break", "cd", "echo", "exec", "exit", "local", "mapfile", "printf", "return", "set", "test", "trap", "true", "ulimit", "unset", "wait"}
 
     def add(
         scope: str, name: str, source: str,
         resource: Resource = Resource.SHELL, access: Access = Access.INSPECT,
         *, count: int = 1, event: EventKind = EventKind.COMMAND,
         program: Program | None = None, extra: tuple[ResourceAccess, ...] = (),
+        context: tuple[Context, ...] = (), placements: tuple[Placement, ...] | None = None,
+        payloads: tuple = (),
     ) -> None:
         form = shell.command(source)
-        executable = form.argv[0].literal if form.argv else None
+        invocation = normalize_invocation(form)
+        executable = invocation.executable.literal if invocation.executable else None
         if not form.argv:
             family = Family.ASSIGNMENT
-        elif executable in helper_names:
+        elif executable in {scope.name for scope in scopes}:
             family = Family.HELPER
         elif executable in builtins:
             family = Family.BUILTIN
@@ -62,61 +65,58 @@ def inventory() -> Inventory:
         signatures.append(Signature(
             f"{scope}.{name}", scope, form, family, count,
             (ResourceAccess(resource, access),) + extra, (event,), program,
+            placements=placements if placements is not None else (Placement(context, count),),
+            payloads=payloads,
         ))
 
-    def control(scope: str, name: str, source: str) -> None:
+    def control(scope: str, name: str, source: str, context: tuple[Context, ...] = (), count: int = 1) -> None:
         parsed = shell.parse(source)
         if len(parsed.items) != 1 or len(parsed.items[0].nodes) != 1:
             raise ValueError("control signature must have one header")
         controls.append(Control(
             f"{scope}.{name}", scope, control_header(parsed.items[0].nodes[0]),
+            context=context, occurrences=count,
         ))
 
     def main(name: str, source: str, resource=Resource.SHELL, access=Access.INSPECT, **options):
         add("builder_main", name, source, resource, access, **options)
 
-    preflight = Program(
-        "authority-preflight", "scripts/workflow_pilot/publisher_inventory.py",
-        "scripts/workflow_pilot/publisher_inventory.py", None,
-        (ResourceAccess(Resource.CONTROL, Access.READ),), (),
-    )
-    add("producer", "strict-shell", "set -euo pipefail", Resource.SHELL, Access.WRITE, event=EventKind.STATE_WRITE)
-    add(
-        "producer", "authority-preflight",
-        '/usr/bin/python3 -I -S scripts/workflow_pilot/publisher_inventory.py --repository-root . --commit "$PATCH_COMMIT"',
-        Resource.CONTROL, Access.READ, program=preflight,
-    )
-    add(
-        "producer", "git-environment",
-        "unset GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_CEILING_DIRECTORIES "
-        "GIT_COMMON_DIR GIT_DIR GIT_EXEC_PATH GIT_INDEX_FILE GIT_NAMESPACE "
-        "GIT_OBJECT_DIRECTORY GIT_REPLACE_REF_BASE GIT_WORK_TREE",
-        Resource.SHELL, Access.WRITE, count=2, event=EventKind.STATE_WRITE,
-    )
-    add(
-        "producer", "program-source",
-        '/usr/bin/git show "$PATCH_COMMIT:scripts/workflow_pilot/publisher_programs.py" > "$PATCH_RUNTIME_ROOT/publisher-programs.py"',
-        Resource.CONTROL, Access.WRITE,
-        extra=(ResourceAccess(Resource.CONTROL, Access.READ),),
-    )
-    add(
-        "producer", "candidate-source",
-        '/usr/bin/git show "$PATCH_COMMIT:scripts/workflow_pilot/publisher_candidate.py" > "$PATCH_RUNTIME_ROOT/candidate-launcher.py"',
-        Resource.CONTROL, Access.WRITE,
-        extra=(ResourceAccess(Resource.CONTROL, Access.READ),),
-    )
+    def loop(name: str) -> tuple[Context, ...]:
+        return (Context("loop", "builder_main." + name),)
+
+    def case(name: str, arm: int, scope: str = "builder_main") -> tuple[Context, ...]:
+        return (Context("case", scope + "." + name, str(arm)),)
+
+    checked = (Context("operators", "||", "0"),)
+    rejected = (Context("operators", "||", "1"),)
+    runtime_records = loop("runtime-records")
+    runtime_writable = runtime_records + case("runtime-writable", 0)
+    runtime_rejection = runtime_writable + case("runtime-write-boundary", 1)
+
+    register_producer(add, control, scopes)
     add("entry", "invoke", 'builder_main "$@"', Resource.CONTROL, Access.EXECUTE, event=EventKind.HELPER_CALL)
     main("strict-shell", "set -Eeuo pipefail", access=Access.WRITE)
     for stage in ("namespace", "mount-audit", "candidate-preflight", "output-validate", "export", "post-check"):
         main(f"stage-{stage}", f"isolated_stage={stage}", access=Access.WRITE, event=EventKind.STATE_WRITE)
     main("stage-trap", "trap isolated_stage_failure ERR", Resource.PROCESS, Access.WRITE)
-    main("stage-failure", "isolated_stage_failure", Resource.PROCESS, Access.WRITE, count=4, event=EventKind.HELPER_CALL)
+    main(
+        "stage-failure", "isolated_stage_failure", Resource.PROCESS, Access.WRITE,
+        count=4, event=EventKind.HELPER_CALL, placements=(
+            Placement(case("host-temp-boundary", 1)),
+            Placement(loop("required-cgroup-options") + case("cgroup-option", 1)),
+            Placement(loop("dev-descendants") + case("dev-target-boundary", 2)),
+            Placement(runtime_rejection),
+        ),
+    )
     control(
         "isolated_stage_failure", "result",
         'case "$isolated_stage" in namespace) ;; mount-audit) ;; output-validate) ;; export) ;; post-check) ;; *) ;; esac',
     )
-    for status in (81, 82, 83, 84, 85, 125):
-        add("isolated_stage_failure", f"exit-{status}", f"exit {status}", Resource.PROCESS, Access.WRITE)
+    for arm, status in enumerate((81, 82, 83, 84, 85, 125)):
+        add(
+            "isolated_stage_failure", f"exit-{status}", f"exit {status}",
+            Resource.PROCESS, Access.WRITE, context=case("result", arm, "isolated_stage_failure"),
+        )
     for position, name, resource in (
         (1, "cgroup_path", Resource.CGROUP_RAW),
         (2, "builder_uid", Resource.PROCESS),
@@ -144,7 +144,7 @@ def inventory() -> Inventory:
         ("readonly-host-root", "/usr/bin/mount -o remount,bind,ro /"),
     ):
         main(name, source, Resource.HOST, Access.MOUNT)
-    main("invalid-host-root", 'echo "runner temp is outside the masked host tree" >&2', Resource.NULL, Access.WRITE)
+    main("invalid-host-root", 'echo "runner temp is outside the masked host tree" >&2', Resource.NULL, Access.WRITE, context=case("host-temp-boundary", 1))
     control("builder_main", "host-temp-boundary", 'case "$host_runner_temp" in /home/runner/*) ;; *) ;; esac')
 
     for name, options, device, target in (
@@ -159,7 +159,11 @@ def inventory() -> Inventory:
         ("dev", "nosuid,mode=0755,size=4m", "builder-dev", "/dev"),
         ("shm", "nosuid,nodev,noexec,mode=1777,size=64m", "builder-shm", "/dev/shm"),
     ):
-        main(f"mount-{name}", f"/usr/bin/mount -t tmpfs -o {options} {device} {target}", Resource.MOUNT_GRAPH, Access.MOUNT)
+        main(
+            f"mount-{name}", f"/usr/bin/mount -t tmpfs -o {options} {device} {target}",
+            Resource.MOUNT_GRAPH, Access.MOUNT,
+            context=loop("hidden-host-paths") if name == "masked-host" else (),
+        )
     main(
         "private-directories",
         "/usr/bin/mkdir -m 0755 /mnt/control /mnt/export /mnt/handoff /mnt/home /mnt/source /mnt/tmp /mnt/wheelhouse",
@@ -190,7 +194,7 @@ def inventory() -> Inventory:
         Resource.CGROUP_VIEW,
     )
     control("builder_main", "required-cgroup-options", "for option in ro nosuid nodev noexec; do :; done")
-    control("builder_main", "cgroup-option", 'case ",$supervisor_options," in *,"$option",*) ;; *) ;; esac')
+    control("builder_main", "cgroup-option", 'case ",$supervisor_options," in *,"$option",*) ;; *) ;; esac', loop("required-cgroup-options"))
     main("copy-candidate", '/bin/cp -a -- "$builder_root/source/." /mnt/source/', Resource.CANDIDATE, Access.WRITE)
     for name, source, target in (
         ("export", '"$builder_root/handoff"', "/mnt/export"),
@@ -216,8 +220,10 @@ def inventory() -> Inventory:
         Resource.CANDIDATE, Access.WRITE,
     )
     main("readonly-mnt", "/usr/bin/mount -o remount,ro,nosuid,nodev,noexec /mnt", Resource.MOUNT_GRAPH, Access.MOUNT)
-    add("unmount_if_mounted", "probe", '/usr/bin/mountpoint -q "$1"', Resource.HOST)
-    add("unmount_if_mounted", "unmount", '/usr/bin/umount --recursive "$1"', Resource.HOST, Access.MOUNT)
+    add("unmount_if_mounted", "probe", '/usr/bin/mountpoint -q "$1"', Resource.HOST,
+        context=(Context("if", "unmount_if_mounted.mounted", "condition"),))
+    add("unmount_if_mounted", "unmount", '/usr/bin/umount --recursive "$1"', Resource.HOST, Access.MOUNT,
+        context=(Context("if", "unmount_if_mounted.mounted", "success"),))
     control("unmount_if_mounted", "mounted", 'if /usr/bin/mountpoint -q "$1"; then :; fi')
     for name, target in (
         ("runner", "/home/runner"), ("root", "/root"), ("var", "/var"),
@@ -225,8 +231,8 @@ def inventory() -> Inventory:
     ):
         main(f"unmount-{name}", f"unmount_if_mounted {target}", Resource.HOST, Access.MOUNT, event=EventKind.HELPER_CALL)
     control("builder_main", "hidden-host-paths", "for hidden in /home/runner /root /var /run /sys; do :; done")
-    main("hidden-directory", 'test -d "$hidden"', Resource.HOST)
-    main("readonly-hidden", '/usr/bin/mount -o remount,ro,nosuid,nodev,noexec "$hidden"', Resource.HOST, Access.MOUNT)
+    main("hidden-directory", 'test -d "$hidden"', Resource.HOST, context=loop("hidden-host-paths"))
+    main("readonly-hidden", '/usr/bin/mount -o remount,ro,nosuid,nodev,noexec "$hidden"', Resource.HOST, Access.MOUNT, context=loop("hidden-host-paths"))
 
     mount_program_input = (ResourceAccess(Resource.MOUNT_GRAPH, Access.READ),)
     for helper, mode, resource in (
@@ -253,35 +259,39 @@ def inventory() -> Inventory:
         for scope in (creator, checker):
             if scope == creator:
                 add(scope, "local-path", "local path", Resource.SHELL, Access.WRITE)
-                add(scope, "create", f'path="$(/usr/bin/mktemp "{directory}/$1.XXXXXXXXXX")"', resource, Access.CREATE)
+                add(scope, "create", f'path="$(/usr/bin/mktemp "{directory}/$1.XXXXXXXXXX")"', resource, Access.CREATE, context=checked)
                 add(scope, "emit-path", r'''printf '%s\n' "$path"''', resource, Access.READ)
             else:
                 add(scope, "local-path", 'local path="$1"', Resource.SHELL, Access.WRITE)
                 add(scope, "local-limit", 'local size_limit="$2"', Resource.SHELL, Access.WRITE)
                 add(scope, "local-size", "local size", Resource.SHELL, Access.WRITE)
-                add(scope, "size", 'size="$(/usr/bin/stat -c %s "$path")"', resource)
-                add(scope, "size-limit", 'test "$size" -le "$size_limit"', resource)
+                add(scope, "size", 'size="$(/usr/bin/stat -c %s "$path")"', resource, context=checked)
+                add(scope, "size-limit", 'test "$size" -le "$size_limit"', resource, context=checked)
                 add(scope, "signature", r'''/usr/bin/stat -Lc '%d:%i:%f:%u:%g:%s:%h:%a' "$path"''', resource)
             add(scope, "local-type", "local file_type", Resource.SHELL, Access.WRITE)
-            add(scope, "regular", 'test -f "$path"', resource)
-            add(scope, "not-symlink", 'test ! -L "$path"', resource)
-            add(scope, "file-type", 'file_type="$(/usr/bin/stat -c %F "$path")"', resource)
+            add(scope, "regular", 'test -f "$path"', resource, context=checked)
+            add(scope, "not-symlink", 'test ! -L "$path"', resource, context=checked)
+            add(scope, "file-type", 'file_type="$(/usr/bin/stat -c %F "$path")"', resource, context=checked)
             control(scope, "regular-type", 'case "$file_type" in "regular file"|"regular empty file") ;; *) ;; esac')
             for name, fmt, value in (("owner", "%u", "0"), ("mode", "%a", "600"), ("links", "%h", "1")):
-                add(scope, name, f'test "$(/usr/bin/stat -c {fmt} "$path")" = {value}', resource)
-            add(scope, "reject", "return 125", Resource.PROCESS, Access.WRITE, count=8 if scope == creator else 9)
+                add(scope, name, f'test "$(/usr/bin/stat -c {fmt} "$path")" = {value}', resource, context=checked)
+            add(scope, "reject", "return 125", Resource.PROCESS, Access.WRITE,
+                count=8 if scope == creator else 9, placements=(
+                    Placement(rejected, 7 if scope == creator else 8),
+                    Placement(case("regular-type", 1, scope)),
+                ))
         add(reader, "local-path", 'local path="$1"', Resource.SHELL, Access.WRITE)
         add(reader, "local-limit", 'local size_limit="$2"', Resource.SHELL, Access.WRITE)
         add(reader, "local-output", 'local -n output_ref="$3"', Resource.SHELL, Access.WRITE)
         add(reader, "local-signature", "local signature", Resource.SHELL, Access.WRITE)
-        add(reader, "before", f'signature="$({checker} "$path" "$size_limit")"', resource)
-        add(reader, "read", '''mapfile -d '' -t output_ref < "$path"''', resource, Access.READ, event=EventKind.TRANSPORT_READ)
-        add(reader, "after", f'test "$({checker} "$path" "$size_limit")" = "$signature"', resource)
-        add(reader, "reject", "return 125", Resource.PROCESS, Access.WRITE, count=3)
+        add(reader, "before", f'signature="$({checker} "$path" "$size_limit")"', resource, context=checked)
+        add(reader, "read", '''mapfile -d '' -t output_ref < "$path"''', resource, Access.READ, event=EventKind.TRANSPORT_READ, context=checked)
+        add(reader, "after", f'test "$({checker} "$path" "$size_limit")" = "$signature"', resource, context=checked)
+        add(reader, "reject", "return 125", Resource.PROCESS, Access.WRITE, count=3, context=rejected)
         add(remover, "local-path", 'local path="$1"', Resource.SHELL, Access.WRITE)
-        add(remover, "remove", '/bin/rm -f -- "$path"', resource, Access.REMOVE)
-        add(remover, "absent", 'test ! -e "$path"', resource)
-        add(remover, "reject", "return 125", Resource.PROCESS, Access.WRITE, count=2)
+        add(remover, "remove", '/bin/rm -f -- "$path"', resource, Access.REMOVE, context=checked)
+        add(remover, "absent", 'test ! -e "$path"', resource, context=checked)
+        add(remover, "reject", "return 125", Resource.PROCESS, Access.WRITE, count=2, context=rejected)
 
     main("dev-limit", "dev_mount_targets_max_bytes=1048576", access=Access.WRITE)
     for name, variable, prefix, output in (
@@ -297,9 +307,9 @@ def inventory() -> Inventory:
         )
         main(f"{name}-remove", f'remove_supervisor_transport_file "${variable}"', Resource.SUPERVISOR, Access.REMOVE, event=EventKind.HELPER_CALL)
     control("builder_main", "dev-descendants", "for ((index=${#dev_mounts[@]} - 1; index >= 0; index--)); do :; done")
-    main("dev-target", 'dev_mount="${dev_mounts[index]}"', Resource.SUPERVISOR, Access.READ)
-    control("builder_main", "dev-target-boundary", 'case "$dev_mount" in /dev) ;; /dev/*) ;; *) ;; esac')
-    main("dev-unmount", '/usr/bin/umount -- "$dev_mount"', Resource.MOUNT_GRAPH, Access.MOUNT)
+    main("dev-target", 'dev_mount="${dev_mounts[index]}"', Resource.SUPERVISOR, Access.READ, context=loop("dev-descendants"))
+    control("builder_main", "dev-target-boundary", 'case "$dev_mount" in /dev) ;; /dev/*) ;; *) ;; esac', loop("dev-descendants"))
+    main("dev-unmount", '/usr/bin/umount -- "$dev_mount"', Resource.MOUNT_GRAPH, Access.MOUNT, context=loop("dev-descendants") + case("dev-target-boundary", 1))
     main("dev-remaining-count", 'test "${#remaining_dev_mounts[@]}" -eq 1', Resource.SUPERVISOR)
     main("dev-remaining-root", 'test "${remaining_dev_mounts[0]}" = /dev', Resource.SUPERVISOR)
     for name, minor in (("null", 3), ("zero", 5), ("random", 8), ("urandom", 9)):
@@ -316,11 +326,11 @@ def inventory() -> Inventory:
     main("runtime-remove", 'remove_runtime_transport_file "$writable_mount_records_file"', Resource.RUNTIME, Access.REMOVE, event=EventKind.HELPER_CALL)
     main("runtime-count", 'test "$(( ${#writable_mount_records[@]} % 2 ))" -eq 0', Resource.RUNTIME)
     control("builder_main", "runtime-records", "for ((index=0; index < ${#writable_mount_records[@]}; index+=2)); do :; done")
-    main("runtime-target", 'mount_target="${writable_mount_records[index]}"', Resource.RUNTIME, Access.READ)
-    main("runtime-options", 'mount_options="${writable_mount_records[index + 1]}"', Resource.RUNTIME, Access.READ)
-    control("builder_main", "runtime-writable", 'case ",$mount_options," in *,rw,*) ;; esac')
-    control("builder_main", "runtime-write-boundary", 'case "$mount_target" in /dev/shm|/mnt/handoff|/mnt/home|/mnt/source|/mnt/supervisor|/mnt/tmp|/tmp) ;; *) ;; esac')
-    main("runtime-rejection", 'echo "unexpected writable mount: $mount_target" >&2', Resource.NULL, Access.WRITE)
+    main("runtime-target", 'mount_target="${writable_mount_records[index]}"', Resource.RUNTIME, Access.READ, context=runtime_records)
+    main("runtime-options", 'mount_options="${writable_mount_records[index + 1]}"', Resource.RUNTIME, Access.READ, context=runtime_records)
+    control("builder_main", "runtime-writable", 'case ",$mount_options," in *,rw,*) ;; esac', runtime_records)
+    control("builder_main", "runtime-write-boundary", 'case "$mount_target" in /dev/shm|/mnt/handoff|/mnt/home|/mnt/source|/mnt/supervisor|/mnt/tmp|/tmp) ;; *) ;; esac', runtime_writable)
+    main("runtime-rejection", 'echo "unexpected writable mount: $mount_target" >&2', Resource.NULL, Access.WRITE, context=runtime_rejection)
     for option, limit in (("c", 0), ("f", 131072), ("n", 128), ("u", 512), ("v", 8388608)):
         main(f"limit-{option}", f"ulimit -{option} {limit}", Resource.PROCESS, Access.WRITE)
     launcher = Program(
@@ -334,15 +344,37 @@ def inventory() -> Inventory:
         "candidate-launch", launch,
         Resource.CANDIDATE, Access.EXECUTE, event=EventKind.CANDIDATE_LAUNCH,
         program=launcher, extra=launcher.inputs,
+        context=(Context("if", "builder_main.candidate-launch", "condition"),),
     )
     control("builder_main", "candidate-launch", f"if {launch}; then :; else :; fi")
-    main("candidate-success", "candidate_status=0", Resource.PROCESS, Access.READ, event=EventKind.CANDIDATE_STATUS)
-    main("candidate-status", 'candidate_status="$?"', Resource.PROCESS, Access.READ, event=EventKind.CANDIDATE_STATUS)
+    main(
+        "candidate-success", "candidate_status=0", Resource.PROCESS, Access.READ,
+        event=EventKind.CANDIDATE_STATUS,
+        context=(Context("if", "builder_main.candidate-launch", "success"),),
+    )
+    main(
+        "candidate-status", 'candidate_status="$?"', Resource.PROCESS, Access.READ,
+        event=EventKind.CANDIDATE_STATUS,
+        context=(Context("if", "builder_main.candidate-launch", "failure"),),
+    )
     control("builder_main", "candidate-result", 'if [ "$candidate_status" -ne 0 ]; then :; fi')
-    main("candidate-failed", '[ "$candidate_status" -ne 0 ]', Resource.PROCESS)
-    control("builder_main", "candidate-failure", 'case "$candidate_status" in 71|72|73|74|75|76) ;; 125|126) ;; *) ;; esac')
-    main("candidate-exit", 'exit "$candidate_status"', Resource.PROCESS, Access.WRITE, count=2)
-    main("candidate-unknown", "exit 77", Resource.PROCESS, Access.WRITE)
+    main("candidate-failed", '[ "$candidate_status" -ne 0 ]', Resource.PROCESS, context=(Context("if", "builder_main.candidate-result", "condition"),))
+    candidate_failure = (Context("if", "builder_main.candidate-result", "success"),)
+    control(
+        "builder_main", "candidate-failure",
+        'case "$candidate_status" in 71|72|73|74|75|76) ;; 125|126) ;; *) ;; esac',
+        candidate_failure,
+    )
+    main(
+        "candidate-exit", 'exit "$candidate_status"', Resource.PROCESS, Access.WRITE,
+        count=2, placements=tuple(
+            Placement(candidate_failure + case("candidate-failure", arm)) for arm in (0, 1)
+        ),
+    )
+    main(
+        "candidate-unknown", "exit 77", Resource.PROCESS, Access.WRITE,
+        context=candidate_failure + case("candidate-failure", 2),
+    )
     membership = Program(
         "membership", PROGRAM_PATH, PROGRAM_RUNTIME_PATH, "membership",
         (ResourceAccess(Resource.CGROUP_VIEW, Access.READ), ResourceAccess(Resource.PROCESS, Access.INSPECT)),
@@ -373,7 +405,8 @@ def inventory() -> Inventory:
         ("metadata-nonempty", 'test "$metadata_size" -gt 0'),
         ("metadata-bound", 'test "$metadata_size" -le 1048576'),
     ):
-        main(f"handoff-{name}", source, Resource.HANDOFF)
+        main(f"handoff-{name}", source, Resource.HANDOFF,
+            context=loop("handoff-files") if name in {"regular", "not-symlink", "type", "links", "owner"} else ())
     main(
         "export-open", "/usr/bin/mount -o remount,bind,rw,nosuid,nodev,noexec /mnt/export",
         Resource.EXPORT, Access.MOUNT, event=EventKind.EXPORT_OPEN,

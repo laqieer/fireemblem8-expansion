@@ -1,6 +1,7 @@
 """Shared phase mutations; edits select already-authorized parsed command spans."""
 
 from scripts.workflow_pilot import publisher_inventory as authority
+from scripts.workflow_pilot import publisher_shell_contract as contract
 from tests.workflows import publisher_inventory_fixtures as inventory
 
 
@@ -103,13 +104,57 @@ def adversarial_workflows(workflow):
         yield name, inventory.replace_builder(workflow, source)
 
 
+def producer_workflows(workflow):
+    name = "Build candidate in isolated namespace and stage public inputs"
+    source = contract.publisher_run_script(workflow, name)
+    analysis = authority.reviewed_inventory().validate(source, entry_scope="staging")
+    commands = {
+        item.signature.name: item.command for item in analysis.commands
+        if not item.nested and item.scope == "staging"
+    }
+
+    def statement(key):
+        node = commands["staging." + key]
+        return source[node.offset:node.end]
+
+    def replace_statement(key, replacement):
+        node = commands["staging." + key]
+        return source[:node.offset] + replacement + source[node.end:]
+
+    launcher = statement("candidate-source")
+    delayed = replace_statement("candidate-source", "")
+    initialized = statement("command-3")
+    yield "late-launcher-staging", inventory.replace_step(
+        workflow, name, delayed.replace(initialized, initialized + "\n" + launcher, 1),
+    )
+    yield "tail-duplicate-launcher-staging", inventory.replace_step(
+        workflow, name, source + "\n" + launcher + "\n",
+    )
+    for case, key, replacement in (
+        ("launcher-source-ref", "candidate-source", launcher.replace("$PATCH_COMMIT:", "HEAD:")),
+        ("launcher-chmod-path", "command-54",
+         statement("command-54").replace("$PATCH_RUNTIME_ROOT/", "$BUILDER_ROOT/control/")),
+        ("launcher-transport-path", "command-80",
+         statement("command-80").replace("$PATCH_RUNTIME_ROOT/candidate-launcher.py", "$BUILDER_ROOT/control/candidate-launcher.py")),
+        ("wrong-report-substage", "isolated-namespace", "builder_isolated_detail=post-check"),
+        ("missing-report-detail", "command-125",
+         r"""printf 'candidate build failed: stage=isolated exit=%d\n' "$builder_status" >&2"""),
+    ):
+        yield case, inventory.replace_step(workflow, name, replace_statement(key, replacement))
+
+
+INVENTORY_CONTEXT_CASES = frozenset({
+    "skipped-failure-arm", "conditional-launch-arm", "background-checker", "pipeline-checker",
+    "background-builder-frame", "conditional-initialization", "conditional-post-check",
+    "wrong-result-edges", "wrong-isolated-substage",
+})
+
+
 PHASE_ONLY_CASES = frozenset({
     "early-before-launch", "late-after-export", "late-after-post-check",
-    "skipped-failure-arm", "conditional-launch-arm", "background-checker", "pipeline-checker",
-    "background-builder-frame", "conditional-initialization", "early-export-open",
-    "early-export-file", "early-owner", "early-post-check", "conditional-post-check",
+    "early-export-open", "early-export-file", "early-owner", "early-post-check",
     "late-initial-seal", "early-final-seal", "early-success",
-    "wrong-failure-frame", "wrong-result-edges", "wrong-isolated-substage", "late-error-handler",
+    "wrong-failure-frame", "late-error-handler",
     "early-mount-audit", "namespace-after-mount-audit",
     "audit-limit-in-namespace", "namespace-limit-in-audit",
     "audit-output-in-namespace",

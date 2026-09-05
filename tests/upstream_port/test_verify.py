@@ -63,22 +63,35 @@ class VerifyGatesMirrorWorkflowTests(unittest.TestCase):
             wraps=contract.validate_builder_command_inventory,
         ) as validate:
             verify_mod._parse_workflow_structure_text(original)
-            validate.assert_called_once()
+            self.assertEqual(
+                {call.args[0] for call in validate.call_args_list},
+                {publisher_inventory_fixtures.builder(original)},
+            )
         for name, changed in publisher_inventory_fixtures.adversarial_workflows(original):
+            with self.subTest(case=name), publisher_inventory_fixtures.refreshed_boundary_identities(changed):
+                with self.assertRaises(ValueError):
+                    verify_mod._parse_workflow_structure_text(changed)
+        for name, changed in publisher_inventory_fixtures.context_and_producer_workflows(original):
             with self.subTest(case=name), publisher_inventory_fixtures.refreshed_boundary_identities(changed):
                 with self.assertRaises(ValueError):
                     verify_mod._parse_workflow_structure_text(changed)
 
     def test_publisher_phase_uses_shared_execution_authority(self):
-        from scripts.workflow_pilot import publisher_phase
+        from scripts.workflow_pilot import publisher_inventory, publisher_phase
         from tests.workflows import publisher_phase_fixtures
         with open(BUILD_WORKFLOW_PATH, "r", encoding="utf-8") as handle:
             original = handle.read()
+        expected = publisher_inventory.reviewed_inventory().validate(
+            publisher_inventory_fixtures.builder(original),
+        )
         with mock.patch.object(
             publisher_phase, "validate", wraps=publisher_phase.validate,
         ) as validate:
             verify_mod._parse_workflow_structure_text(original)
-            validate.assert_called_once()
+            self.assertTrue(validate.call_args_list)
+            for call in validate.call_args_list:
+                self.assertEqual(call.args, (expected,))
+                self.assertEqual(call.kwargs, {})
         for name, changed in publisher_phase_fixtures.adversarial_workflows(original):
             with self.subTest(case=name), publisher_inventory_fixtures.refreshed_boundary_identities(changed):
                 with self.assertRaises(ValueError):

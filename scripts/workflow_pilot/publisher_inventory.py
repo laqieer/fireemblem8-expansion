@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import argparse
 import ast
+import builtins
 from collections import Counter
 from contextlib import contextmanager
 from dataclasses import dataclass, fields, is_dataclass
 from enum import Enum
 from functools import lru_cache
 import importlib.abc
+import importlib.machinery
 import importlib.util
 import os
 from pathlib import Path
@@ -17,6 +19,7 @@ import re
 import stat
 import subprocess
 import sys
+import sysconfig
 from types import MappingProxyType
 
 
@@ -25,6 +28,14 @@ WORKFLOW_PATH = ".github/workflows/build.yml"
 PROGRAM_PATH = "scripts/workflow_pilot/publisher_programs.py"
 PROGRAM_RUNTIME_PATH = "/mnt/control/publisher-programs.py"
 SOURCE_ROOT = Path(__file__).resolve().parents[2]
+MAX_AUTHORITY_BYTES = 1024 * 1024
+ENTRY_SCOPES = frozenset({"entry", "producer", "staging"})
+STDLIB_ROOTS = tuple({
+    Path(path).resolve() for path in (
+        sysconfig.get_path("stdlib"), sysconfig.get_path("platstdlib"),
+        sysconfig.get_config_var("DESTSHARED"),
+    ) if path
+})
 
 
 class InventoryError(ValueError):
@@ -89,6 +100,7 @@ class WrapperKind(str, Enum):
     COMMAND = "command"
     ENVIRONMENT = "environment"
     TIME = "time"
+    NEGATION = "negation"
 
 
 @dataclass(frozen=True)
@@ -104,6 +116,7 @@ class Invocation:
     environment: tuple[shell.Word, ...]
     wrappers: tuple[Wrapper, ...]
     redirects: tuple[shell.Redirect, ...]
+    conditional: bool = False
 
 
 def normalize_invocation(command: shell.Command) -> Invocation:
@@ -114,6 +127,8 @@ def normalize_invocation(command: shell.Command) -> Invocation:
         name = argv[0].literal
         if name == "builtin":
             wrappers.append(Wrapper(WrapperKind.BUILTIN, (argv.pop(0),)))
+        elif argv[0].keyword("!"):
+            wrappers.append(Wrapper(WrapperKind.NEGATION, (argv.pop(0),)))
         elif name == "command":
             prefix = [argv.pop(0)]
             while argv and argv[0].literal in {"-p", "--"}:
@@ -143,6 +158,7 @@ def normalize_invocation(command: shell.Command) -> Invocation:
     return Invocation(
         argv[0] if argv else None, tuple(argv[1:]), command.environment,
         tuple(wrappers), command.redirects,
+        command.conditional,
     )
 
 
@@ -160,6 +176,27 @@ class Program:
     mode: str | None
     inputs: tuple[ResourceAccess, ...]
     outputs: tuple[ResourceAccess, ...]
+    redirects: tuple[shell.Redirect, ...] = ()
+    wrappers: tuple[Wrapper, ...] = ()
+
+
+@dataclass(frozen=True)
+class Payload:
+    delimiter: str
+    language: str
+
+
+@dataclass(frozen=True)
+class Context:
+    kind: str
+    identity: str
+    branch: str = ""
+
+
+@dataclass(frozen=True)
+class Placement:
+    context: tuple[Context, ...] = ()
+    occurrences: int = 1
 
 
 @dataclass(frozen=True)
@@ -173,6 +210,8 @@ class Signature:
     events: tuple[EventKind, ...] = (EventKind.COMMAND,)
     program: Program | None = None
     evidence: str = CASE_ID
+    placements: tuple[Placement, ...] = (Placement(),)
+    payloads: tuple[Payload, ...] = ()
 
     @property
     def invocation(self) -> Invocation:
@@ -192,13 +231,7 @@ class Control:
     scope: str
     header: tuple
     occurrences: int = 1
-
-
-@dataclass(frozen=True)
-class Context:
-    kind: str
-    identity: str
-    branch: str = ""
+    context: tuple[Context, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -236,6 +269,8 @@ def control_header(node: object) -> tuple:
         return ("for", node.variable, node.values, node.arithmetic)
     if isinstance(node, shell.Case):
         return ("case", node.subject, tuple(arm.patterns for arm in node.arms))
+    if isinstance(node, shell.While):
+        return ("while", node.condition)
     raise InventoryError("unregistered publisher control node")
 
 
@@ -266,15 +301,29 @@ class Inventory:
             or len(scope_names) != len(set(scope_names))
             or len(control_names) != len(set(control_names))
             or len({(s.scope, s.invocation) for s in self.signatures}) != len(names)
-            or len({(c.scope, c.header) for c in self.controls}) != len(control_names)
+            or len({(c.scope, c.header, c.context) for c in self.controls}) != len(control_names)
         ):
             raise InventoryError("duplicate command, helper or control signature")
-        scope_set = set(scope_names) | {"entry", "producer"}
+        scope_set = set(scope_names) | ENTRY_SCOPES
         for signature in self.signatures:
             if (
                 signature.scope not in scope_set
                 or type(signature.occurrences) is not int
                 or signature.occurrences < 0
+                or not signature.placements
+                or any(
+                    not isinstance(p, Placement)
+                    or type(p.occurrences) is not int or p.occurrences < 0
+                    or not isinstance(p.context, tuple)
+                    or any(not isinstance(c, Context) for c in p.context)
+                    for p in signature.placements
+                )
+                or len({p.context for p in signature.placements}) != len(signature.placements)
+                or any(
+                    not isinstance(p, Payload)
+                    or p.language not in {"builder", "shell", "python"}
+                    for p in signature.payloads
+                )
                 or not signature.accesses
                 or not signature.events
                 or signature.evidence != CASE_ID
@@ -289,16 +338,20 @@ class Inventory:
             ):
                 raise InventoryError("incomplete command signature")
             if signature.family == Family.PYTHON:
-                argv = signature.form.argv
+                invocation = signature.invocation
+                argv = invocation.arguments
                 program = signature.program
                 if (
                     not isinstance(program, Program)
                     or not program.inputs
-                    or tuple(word.literal for word in argv[:4])
-                    != ("/usr/bin/python3", "-I", "-S", program.runtime_path)
-                    or signature.form.environment
-                    or signature.form.redirects
-                    or (program.mode is not None and (len(argv) <= 4 or argv[4].literal != program.mode))
+                    or invocation.executable.literal != "/usr/bin/python3"
+                    or tuple(word.literal for word in argv[:2]) != ("-I", "-S")
+                    or len(argv) < 3
+                    or argv[2] != shell.command("program " + program.runtime_path).argv[1]
+                    or invocation.environment
+                    or invocation.redirects != program.redirects
+                    or invocation.wrappers != program.wrappers
+                    or (program.mode is not None and (len(argv) <= 3 or argv[3].literal != program.mode))
                     or not set(program.inputs + program.outputs) <= set(signature.accesses)
                 ):
                     raise InventoryError("Python signature must select an exact isolated program")
@@ -310,91 +363,140 @@ class Inventory:
             for scope in self.scopes
         ):
             raise InventoryError("unknown helper parent")
-        if any(c.scope not in scope_set or c.occurrences < 1 for c in self.controls):
+        if any(
+            c.scope not in scope_set or type(c.occurrences) is not int or c.occurrences < 1
+            or not isinstance(c.context, tuple)
+            or any(not isinstance(context, Context) for context in c.context)
+            for c in self.controls
+        ):
             raise InventoryError("incomplete control signature")
 
-    def authorize(self, command: shell.Command, scope: str) -> Signature:
+    def authorize(
+        self, command: shell.Command, scope: str, context: tuple[Context, ...] = (),
+    ) -> Signature:
         invocation = normalize_invocation(command)
-        matches = [s for s in self.signatures if s.scope == scope and s.invocation == invocation]
+        matches = [
+            s for s in self.signatures
+            if s.scope == scope and s.invocation == invocation
+            and any(p.context == context for p in s.placements)
+        ]
         if len(matches) != 1:
             executable = command.argv[0].literal if command.argv else "(assignment)"
-            raise InventoryError(f"unregistered publisher command in {scope}: {executable!r}")
+            raise InventoryError(
+                f"unregistered publisher command/context in {scope}: {executable!r}, {context!r}"
+            )
         return matches[0]
 
-    def _producer_prefix(self, source: str, count: int) -> tuple[Signature, ...]:
-        from .publisher_shell_contract import bash_logical_lines
-        lines = bash_logical_lines(source, label="publisher authority preflight")
-        commands = [line for line in lines if line.strip() and not line.lstrip().startswith("#")]
-        if len(commands) < count:
-            raise InventoryError("missing publisher producer command")
-        prefix = tuple(
-            self.authorize(shell.command(line), "producer") for line in commands[:count]
-        )
-        if len(commands) > count:
-            try:
-                self.authorize(shell.command(commands[count]), "producer")
-            except ValueError:
-                pass
-            else:
-                raise InventoryError("publisher producer prologue exceeds reviewed multiplicity")
-        return prefix
+    def entry_scope(self, scope: str) -> str:
+        parents = {item.name: item.parent for item in self.scopes}
+        seen = set()
+        while scope in parents:
+            if scope in seen:
+                raise InventoryError("recursive publisher scope")
+            seen.add(scope)
+            scope = parents[scope]
+        return scope
 
     def validate_preflight(self, source: str) -> Signature:
-        setup, signature, environment = self._producer_prefix(source, 3)
-        if (
-            setup.form.argv[0].literal != "set"
-            or setup.events != (EventKind.STATE_WRITE,)
-            or signature.program is None
-            or signature.program.name != "authority-preflight"
-            or signature.occurrences != 1
-            or setup.occurrences != 1
-            or environment.form.argv[0].literal != "unset"
-            or environment.occurrences != 2
-        ):
-            raise InventoryError("publisher authority preflight multiplicity differs")
-        return signature
+        analysis = self.validate(source, entry_scope="producer")
+        commands = [item for item in analysis.commands if not item.nested]
+        if [item.signature.name for item in commands[:3]] != [
+            "producer.strict-shell", "producer.authority-preflight", "producer.git-environment",
+        ]:
+            raise InventoryError("publisher authority preflight order differs")
+        return commands[1].signature
 
     def validate_producer(self, preflight: str, staging: str) -> None:
-        """Bind both fresh-step prologues to the same typed producer inventory."""
+        """Authorize both complete trusted steps, not just their required prologues."""
         self.validate_preflight(preflight)
-        first = self._producer_prefix(preflight, 3)
-        second = self._producer_prefix(staging, 3)
-        expected = Counter({
-            s.name: s.occurrences for s in self.signatures if s.scope == "producer"
-        })
-        if second[0] != first[2] or Counter(s.name for s in first + second) != expected:
-            raise InventoryError("publisher program staging inventory differs")
+        analysis = self.validate(staging, entry_scope="staging")
+        commands = [item for item in analysis.commands if not item.nested]
+        if (
+            not commands or commands[0].signature.name != "staging.git-environment"
+            or {item.signature.name for item in commands[1:3]} != {
+                "staging.program-source", "staging.candidate-source",
+            }
+        ):
+            raise InventoryError("publisher program staging order differs")
 
-    def validate(self, source: str) -> Analysis:
+    def validate(self, source: str, *, entry_scope: str = "entry") -> Analysis:
+        if entry_scope not in ENTRY_SCOPES:
+            raise InventoryError(f"unknown publisher entry scope: {entry_scope!r}")
         tree = shell.parse(source)
-        command_index = {(s.scope, s.invocation): s for s in self.signatures}
-        control_index = {(c.scope, c.header): c for c in self.controls}
-        scope_index = {s.name: s for s in self.scopes}
+        active = {entry_scope}
+        while True:
+            added = {s.name for s in self.scopes if s.parent in active} - active
+            if not added:
+                break
+            active.update(added)
+        command_index = {
+            (s.scope, s.invocation, p.context): s
+            for s in self.signatures for p in s.placements
+        }
+        control_index = {(c.scope, c.header, c.context): c for c in self.controls}
+        scope_index = {s.name: s for s in self.scopes if s.name in active}
         counts: Counter[str] = Counter()
+        placements: Counter[tuple[str, tuple[Context, ...]]] = Counter()
         control_counts: Counter[str] = Counter()
         definitions: dict[str, shell.Function] = {}
         authorized: list[AuthorizedCommand] = []
         by_node: dict[int, AuthorizedCommand] = {}
         call_graph: dict[str, set[str]] = {name: set() for name in scope_index}
-        call_graph["entry"] = set()
+        call_graph[entry_scope] = set()
+        payloads = None
+
+        def check_payloads(command: shell.Command, signature: Signature):
+            nonlocal payloads
+            actual = tuple(r for r in command.redirects if r.operator == "<<")
+            if tuple(r.target.literal for r in actual) != tuple(p.delimiter for p in signature.payloads):
+                raise InventoryError("unregistered publisher program payload")
+            if not actual:
+                return
+            from . import publisher_shell_contract as contract
+            if payloads is None:
+                canonical = shell.parse(contract.publisher_run_script(
+                    authority_source_bytes(WORKFLOW_PATH).decode("utf-8"),
+                ))
+                payloads = {
+                    r.target.literal: r.body
+                    for chain in canonical.items for node in chain.nodes
+                    if isinstance(node, shell.Command)
+                    for r in node.redirects if r.operator == "<<"
+                }
+            for redirect, payload in zip(actual, signature.payloads):
+                if payload.language == "builder":
+                    contract.validate_builder_command_inventory(redirect.body)
+                else:
+                    expected = payloads.get(payload.delimiter)
+                    if expected is None:
+                        raise InventoryError(f"missing canonical publisher program: {payload.delimiter}")
+                    normalize = ast.parse if payload.language == "python" else shell.parse
+                    left, right = normalize(redirect.body), normalize(expected)
+                    if payload.language == "python":
+                        left, right = ast.dump(left), ast.dump(right)
+                    if left != right:
+                        raise InventoryError(f"publisher canonical program differs: {payload.delimiter}")
 
         def record(command: shell.Command, scope: str, context: tuple[Context, ...], visible: set[str]):
-            signature = command_index.get((scope, normalize_invocation(command)))
+            signature = command_index.get((scope, normalize_invocation(command), context))
             if signature is None:
-                return self.authorize(command, scope)
+                return self.authorize(command, scope, context)
+            check_payloads(command, signature)
             counts[signature.name] += 1
+            placements[signature.name, context] += 1
             item = AuthorizedCommand(signature, command, scope, context)
             authorized.append(item)
             by_node[id(command)] = item
             all_commands = [(command, False, ())]
             all_commands += [
                 (nested, True, (Context("substitution", signature.name),
-                    *chain_context(chain)))
+                    *chain_context(chain, next(i for i, node in enumerate(chain.nodes) if node is nested))))
                 for nested, chain in nested_commands(command)
             ]
             for current, nested, extra in all_commands:
-                if current.argv and current.argv[0].literal in scope_index:
-                    callee = current.argv[0].literal
+                executable = normalize_invocation(current).executable
+                if executable and executable.literal in scope_index:
+                    callee = executable.literal
                     if callee not in visible:
                         raise InventoryError(f"helper {callee} used before its definition")
                     call_graph[scope].add(callee)
@@ -403,10 +505,10 @@ class Inventory:
                     authorized.append(nested_item)
                     by_node[id(current)] = nested_item
 
-        def chain_context(chain: shell.Chain) -> tuple[Context, ...]:
+        def chain_context(chain: shell.Chain, index: int) -> tuple[Context, ...]:
             result: tuple[Context, ...] = ()
             if chain.operators:
-                result += (Context("operators", " ".join(chain.operators)),)
+                result += (Context("operators", " ".join(chain.operators), str(index)),)
             if chain.background:
                 result += (Context("background", "&"),)
             return result
@@ -414,8 +516,8 @@ class Inventory:
         def walk(block: shell.Block, scope: str, context: tuple[Context, ...], visible: set[str]):
             visible = set(visible)
             for chain in block.items:
-                execution = context + chain_context(chain)
-                for node in chain.nodes:
+                for index, node in enumerate(chain.nodes):
+                    execution = context + chain_context(chain, index)
                     if isinstance(node, shell.Command):
                         record(node, scope, execution, visible)
                     elif isinstance(node, shell.Function):
@@ -431,7 +533,7 @@ class Inventory:
                         visible.add(node.name)
                         walk(node.body, node.name, (), visible)
                     else:
-                        rule = control_index.get((scope, control_header(node)))
+                        rule = control_index.get((scope, control_header(node), execution))
                         if rule is None:
                             raise InventoryError(f"unregistered publisher control in {scope}")
                         control_counts[rule.name] += 1
@@ -442,20 +544,29 @@ class Inventory:
                                 walk(node.failure, scope, execution + (Context("if", rule.name, "failure"),), visible)
                         elif isinstance(node, shell.For):
                             walk(node.body, scope, execution + (Context("loop", rule.name),), visible)
+                        elif isinstance(node, shell.While):
+                            walk(node.condition, scope, execution + (Context("while", rule.name, "condition"),), visible)
+                            walk(node.body, scope, execution + (Context("while", rule.name, "body"),), visible)
                         else:
                             for index, arm in enumerate(node.arms):
                                 walk(arm.body, scope, execution + (Context("case", rule.name, str(index)),), visible)
 
-        walk(tree, "entry", (), set())
+        walk(tree, entry_scope, (), set())
         if set(definitions) != set(scope_index):
             raise InventoryError("publisher helper inventory is incomplete")
         expected_counts = Counter({
             s.name: s.occurrences for s in self.signatures
-            if s.occurrences and s.scope != "producer"
+            if s.occurrences and s.scope in active
         })
         if counts != expected_counts:
             raise InventoryError("publisher command inventory multiplicity differs")
-        if control_counts != Counter({c.name: c.occurrences for c in self.controls}):
+        if placements != Counter({
+            (s.name, p.context): p.occurrences
+            for s in self.signatures if s.scope in active
+            for p in s.placements if p.occurrences
+        }):
+            raise InventoryError("publisher command context multiplicity differs")
+        if control_counts != Counter({c.name: c.occurrences for c in self.controls if c.scope in active}):
             raise InventoryError("publisher control inventory multiplicity differs")
 
         def acyclic(name: str, ancestors: tuple[str, ...]):
@@ -464,7 +575,7 @@ class Inventory:
             for callee in call_graph[name]:
                 acyclic(callee, ancestors + (name,))
 
-        acyclic("entry", ())
+        acyclic(entry_scope, ())
         events: list[Event] = []
 
         def emit(block: shell.Block, stack: tuple[str, ...], inherited: tuple[Context, ...]):
@@ -483,6 +594,9 @@ class Inventory:
                             emit(node.failure, stack, inherited)
                     elif isinstance(node, shell.For):
                         emit(node.body, stack, inherited)
+                    elif isinstance(node, shell.While):
+                        emit(node.condition, stack, inherited)
+                        emit(node.body, stack, inherited)
                     else:
                         for arm in node.arms:
                             emit(arm.body, stack, inherited)
@@ -498,8 +612,9 @@ class Inventory:
                     kind, item.signature.name, item.scope, context, stack,
                     item.signature.accesses, node,
                 ))
-            if node.argv and node.argv[0].literal in definitions:
-                callee = node.argv[0].literal
+            executable = normalize_invocation(node).executable
+            if executable and executable.literal in definitions:
+                callee = executable.literal
                 emit(definitions[callee].body, stack + (callee,), context)
 
         emit(tree, (), ())
@@ -532,7 +647,7 @@ def validate_workflow(workflow: str) -> Analysis:
     ))
 
 
-def _git(root: Path, *arguments: str) -> bytes:
+def _git(root: Path, *arguments: str, max_bytes: int | None = None) -> bytes:
     environment = {
         "PATH": "/usr/bin:/bin", "LC_ALL": "C",
         "GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": "/dev/null",
@@ -540,6 +655,18 @@ def _git(root: Path, *arguments: str) -> bytes:
         "GIT_NO_LAZY_FETCH": "1", "GIT_TERMINAL_PROMPT": "0",
     }
     try:
+        if max_bytes is not None:
+            with subprocess.Popen(
+                ["/usr/bin/git", "--no-replace-objects", "-C", str(root), *arguments],
+                env=environment, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+            ) as process:
+                data = process.stdout.read(max_bytes + 1)
+                if len(data) > max_bytes:
+                    process.kill()
+                    raise InventoryError("publisher authority blob exceeds bounds")
+                if process.wait() != 0 or len(data) != max_bytes:
+                    raise InventoryError("cannot read complete publisher authority blob")
+                return data
         return subprocess.run(
             ["/usr/bin/git", "--no-replace-objects", "-C", str(root), *arguments],
             env=environment, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
@@ -558,8 +685,8 @@ def _read_authority_file(base: Path, path: str) -> tuple[bytes, bool]:
             status = os.fstat(handle.fileno())
             if not stat.S_ISREG(status.st_mode) or status.st_nlink != 1:
                 raise InventoryError(f"publisher module is not a regular file: {path}")
-            source = handle.read(1024 * 1024 + 1)
-            if len(source) > 1024 * 1024:
+            source = handle.read(MAX_AUTHORITY_BYTES + 1)
+            if len(source) > MAX_AUTHORITY_BYTES:
                 raise InventoryError(f"publisher authority source exceeds bounds: {path}")
             return source, bool(status.st_mode & 0o111)
     except OSError as error:
@@ -665,7 +792,13 @@ def _bind_exact_sources(repository_root: Path | str, commit: str):
         mode, kind, oid = metadata.split()
         if actual_path.decode() != path or kind != b"blob" or mode not in {b"100644", b"100755"}:
             raise InventoryError(f"publisher exact-tree module redirected: {path}")
-        expected = _git(root, "cat-file", "blob", oid.decode())
+        size_text = _git(root, "cat-file", "-s", oid.decode()).strip()
+        if not size_text.isdigit() or len(size_text) > 10:
+            raise InventoryError(f"invalid publisher authority blob size: {path}")
+        size = int(size_text)
+        if size > MAX_AUTHORITY_BYTES:
+            raise InventoryError(f"publisher authority blob exceeds bounds: {path}")
+        expected = _git(root, "cat-file", "blob", oid.decode(), max_bytes=size)
         for base in {root, SOURCE_ROOT}:
             actual, executable = _read_authority_file(base, path)
             if executable != (mode == b"100755") or actual != expected:
@@ -698,15 +831,71 @@ class _SourceOnlyAuthority(importlib.abc.MetaPathFinder, importlib.abc.Loader):
                 self.modules.setdefault(".".join(components[:index]), (None, True))
 
     def find_spec(self, fullname, path=None, target=None):
-        if fullname != "scripts" and not fullname.startswith("scripts."):
-            return None
-        if fullname not in self.modules:
-            raise InventoryError(f"import outside publisher authority: {fullname}")
-        source_path, package = self.modules[fullname]
-        return importlib.util.spec_from_loader(
-            fullname, self, origin="publisher-exact:" + (source_path or fullname),
-            is_package=package,
+        self.check_name(fullname)
+        if fullname in self.modules:
+            source_path, package = self.modules[fullname]
+            return importlib.util.spec_from_loader(
+                fullname, self, origin="publisher-exact:" + (source_path or fullname),
+                is_package=package,
+            )
+        for finder in (importlib.machinery.BuiltinImporter, importlib.machinery.FrozenImporter):
+            spec = finder.find_spec(fullname)
+            if spec is not None:
+                return spec
+        search = STDLIB_ROOTS if path is None else tuple(Path(item) for item in path)
+        for directory in search:
+            if not self.trusted_path(directory):
+                raise InventoryError(f"untrusted publisher stdlib search path: {fullname}")
+            finder = importlib.machinery.FileFinder(
+                str(directory),
+                (importlib.machinery.ExtensionFileLoader, importlib.machinery.EXTENSION_SUFFIXES),
+                (importlib.machinery.SourceFileLoader, importlib.machinery.SOURCE_SUFFIXES),
+            )
+            spec = finder.find_spec(fullname)
+            if spec is not None and self.trusted_spec(fullname, spec):
+                return spec
+        raise InventoryError(f"no trusted publisher stdlib source: {fullname}")
+
+    @staticmethod
+    def trusted_path(path):
+        path = Path(path).resolve()
+        return (
+            any(path.is_relative_to(root) for root in STDLIB_ROOTS)
+            and not {"site-packages", "dist-packages"} & set(path.parts)
         )
+
+    def trusted_spec(self, name, spec):
+        if spec is None:
+            return False
+        if name in self.modules:
+            return spec.loader is self
+        if name.split(".", 1)[0] not in sys.stdlib_module_names | {"__future__"}:
+            return False
+        if spec.origin in {"built-in", "frozen"}:
+            finder = (
+                importlib.machinery.BuiltinImporter if spec.origin == "built-in"
+                else importlib.machinery.FrozenImporter
+            )
+            return spec.loader is finder and finder.find_spec(spec.name) is not None
+        return (
+            type(spec.loader) in {
+                importlib.machinery.SourceFileLoader, importlib.machinery.ExtensionFileLoader,
+            }
+            and spec.origin is not None and self.trusted_path(spec.origin)
+        )
+
+    def check_name(self, name):
+        if (
+            name not in self.modules
+            and name.split(".", 1)[0] not in sys.stdlib_module_names | {"__future__"}
+        ):
+            raise InventoryError(f"import outside publisher authority: {name}")
+        components = name.split(".")
+        for index in range(1, len(components) + 1):
+            prefix = ".".join(components[:index])
+            module = sys.modules.get(prefix)
+            if module is not None and not self.trusted_spec(prefix, getattr(module, "__spec__", None)):
+                raise InventoryError(f"untrusted publisher import origin: {prefix}")
 
     def create_module(self, spec):
         return None
@@ -732,9 +921,35 @@ def _source_only_authority(sources):
     for name in previous:
         del sys.modules[name]
     sys.meta_path.insert(0, loader)
+    original_import = builtins.__import__
+    original_import_module = importlib.import_module
+
+    def checked_import(name, globals=None, locals=None, fromlist=(), level=0):
+        absolute = name
+        if level:
+            absolute = importlib.util.resolve_name(
+                "." * level + name, (globals or {}).get("__package__"),
+            )
+        loader.check_name(absolute)
+        result = original_import(name, globals, locals, fromlist, level)
+        for child in fromlist or ():
+            fullname = absolute + "." + child
+            if fullname in sys.modules:
+                loader.check_name(fullname)
+        return result
+
+    def checked_import_module(name, package=None):
+        absolute = importlib.util.resolve_name(name, package) if name.startswith(".") else name
+        loader.check_name(absolute)
+        return original_import_module(name, package)
+
+    builtins.__import__ = checked_import
+    importlib.import_module = checked_import_module
     try:
         yield
     finally:
+        builtins.__import__ = original_import
+        importlib.import_module = original_import_module
         sys.meta_path.remove(loader)
         for name in tuple(sys.modules):
             if name == "scripts" or name.startswith("scripts."):

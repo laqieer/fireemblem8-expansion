@@ -44,6 +44,7 @@ class Redirect:
     descriptor: str
     operator: str
     target: Word
+    body: str | None = field(default=None, compare=False)
 
 
 @dataclass(frozen=True)
@@ -53,6 +54,7 @@ class Command:
     redirects: tuple[Redirect, ...]
     offset: int = field(default=0, compare=False)
     end: int = field(default=0, compare=False)
+    conditional: bool = False
 
 
 @dataclass(frozen=True)
@@ -78,6 +80,12 @@ class If:
     condition: Block
     success: Block
     failure: Block | None = None
+
+
+@dataclass(frozen=True)
+class While:
+    condition: Block
+    body: Block
 
 
 @dataclass(frozen=True)
@@ -110,8 +118,9 @@ class Token:
 _NAME = re.compile(r"[A-Za-z_][A-Za-z_0-9]*")
 _ASSIGNMENT = re.compile(r"([A-Za-z_][A-Za-z_0-9]*)=")
 _PARAMETER = re.compile(
-    r"(?:[0-9]+|[@?$#]|#?[A-Za-z_][A-Za-z_0-9]*(?:\[[A-Za-z_0-9 @*+#-]+\])?)"
+    r"(?:[0-9]+|[!@?$#]|#?[A-Za-z_][A-Za-z_0-9]*(?:\[[A-Za-z_0-9 @*+#-]+\])?)"
 )
+_PARAMETER_SUFFIX = re.compile(r"[A-Za-z_][A-Za-z_0-9]*(?::[0-9]+:[0-9]+|##[^$`{}]+|-[^$`{}]*)")
 _ARITHMETIC = re.compile(
     r"\$\{#[A-Za-z_][A-Za-z_0-9]*\[@\]\}|[A-Za-z_][A-Za-z_0-9]*|[0-9]+"
     r"|\+\+|--|\+=|-=|<=|>=|==|!=|[;+\-*/%<>=()]"
@@ -121,7 +130,7 @@ _OPERATORS = (
     "<<", ">>", "<>", ">|", "<&", ">&", "&>", ";", "|", "&",
     "(", ")", "<", ">",
 )
-_REDIRECTS = frozenset({"<", ">", ">>", "<>", ">|", "<&", ">&", "&>", "&>>"})
+_REDIRECTS = frozenset({"<", ">", ">>", "<>", ">|", "<&", ">&", "&>", "&>>", "<<"})
 
 
 def arithmetic_tokens(text: str) -> tuple[str, ...]:
@@ -154,6 +163,7 @@ class _Lexer:
         self.position = 0
         self.tokens = 0
         self.depth = 0
+        self.heredoc_skip: tuple[int, int] | None = None
 
     def _arithmetic(self, prefix: int) -> tuple[str, ...]:
         self.position += prefix
@@ -179,6 +189,9 @@ class _Lexer:
         if self.tokens > 16384:
             raise ShellSyntaxError("publisher shell token limit exceeded")
         source = self.source
+        if self.heredoc_skip is not None and self.position == self.heredoc_skip[0]:
+            self.position = self.heredoc_skip[1]
+            self.heredoc_skip = None
         while self.position < len(source):
             char = source[self.position]
             if char in " \t":
@@ -201,7 +214,7 @@ class _Lexer:
         for operator in _OPERATORS:
             if source.startswith(operator, start):
                 self.position += len(operator)
-                if operator in {"<<<", "<<-", "<<", ";&", ";;&"}:
+                if operator in {"<<<", "<<-", ";&", ";;&"}:
                     raise ShellSyntaxError("unregistered heredoc or case fallthrough")
                 return Token("operator", operator, start)
         if source[start].isdigit():
@@ -211,7 +224,21 @@ class _Lexer:
                 return Token("descriptor", match.group(), start)
         return Token("word", self._word(), start)
 
-    def _word(self) -> Word:
+    def heredoc(self, target: Word) -> str:
+        if target.plain or target.literal is None or _NAME.fullmatch(target.literal) is None:
+            raise ShellSyntaxError("publisher heredoc must have a quoted fixed delimiter")
+        if self.heredoc_skip is not None:
+            raise ShellSyntaxError("multiple publisher heredocs on one command")
+        start = self.source.find("\n", self.position)
+        if start < 0 or self.source[self.position:start].strip():
+            raise ShellSyntaxError("publisher heredoc must finish its command")
+        end = self.source.find("\n" + target.literal + "\n", start)
+        if end < 0:
+            raise ShellSyntaxError("unterminated publisher heredoc")
+        self.heredoc_skip = (start + 1, end + len(target.literal) + 2)
+        return self.source[start + 1:end + 1]
+
+    def _word(self, *, regex: bool = False) -> Word:
         source = self.source
         start = self.position
         assignment = _ASSIGNMENT.match(source, start)
@@ -220,7 +247,10 @@ class _Lexer:
         quote: str | None = None
 
         def literal(value: str, *, active: bool = False) -> None:
-            kind = "pattern" if active and any(c in value for c in "*?[~{") else "literal"
+            if regex and active and any(c in value for c in ".^$*+?[]{}\\|()"):
+                kind = "regex"
+            else:
+                kind = "pattern" if active and any(c in value for c in "*?[~{") else "literal"
             if parts and parts[-1].kind == kind:
                 parts[-1] = Part(kind, str(parts[-1].value) + value)
             else:
@@ -256,7 +286,7 @@ class _Lexer:
                 quote = None
                 continue
             if quote is None:
-                if char in " \t\n;&|<>()":
+                if char in (" \t\n" if regex else " \t\n;&|<>()"):
                     break
                 if char in "\"'":
                     plain = False
@@ -284,14 +314,15 @@ class _Lexer:
                     if end < 0:
                         raise ShellSyntaxError("unterminated parameter")
                     parameter = source[self.position + 2:end]
-                    if _PARAMETER.fullmatch(parameter) is None:
+                    if _PARAMETER.fullmatch(parameter) is not None:
+                        parameter = re.sub(r"\s+", "", parameter)
+                    elif _PARAMETER_SUFFIX.fullmatch(parameter) is None:
                         raise ShellSyntaxError("unregistered parameter expansion")
-                    parameter = re.sub(r"\s+", "", parameter)
                     self.position = end + 1
                 else:
-                    match = re.match(r"[A-Za-z_][A-Za-z_0-9]*|[0-9@?$#]", source[self.position + 1:])
+                    match = re.match(r"[A-Za-z_][A-Za-z_0-9]*|[0-9!@?$#]", source[self.position + 1:])
                     if match is None:
-                        literal("$")
+                        literal("$", active=regex and quote is None)
                         self.position += 1
                         continue
                     parameter = match.group()
@@ -304,14 +335,16 @@ class _Lexer:
             raise ShellSyntaxError("unterminated quoted word")
         if not parts:
             raise ShellSyntaxError("empty publisher shell token")
-        if any(part.kind == "pattern" and "{" in str(part.value) for part in parts):
+        if not regex and any(part.kind == "pattern" and "{" in str(part.value) for part in parts):
             if len(parts) != 1 or parts[0].value != "{":
                 raise ShellSyntaxError("brace expansion is not registered")
             parts = [Part("literal", "{")]
         if len(parts) > 1:
             parts = [part for part in parts if part != Part("literal", "")]
-        if parts == [Part("pattern", "[")]:
-            parts = [Part("literal", "[")]
+        if parts in ([Part("pattern", "[")], [Part("pattern", "[[")]):
+            parts = [Part("literal", parts[0].value)]
+        if plain and parts == [Part("literal", "="), Part("pattern", "~")]:
+            parts = [Part("literal", "=~")]
         return Word(tuple(parts), assignment.group(1) if assignment else None, plain)
 
 
@@ -387,16 +420,46 @@ class _Parser:
             self.lexer.depth -= 1
 
     def atom(self) -> object:
-        if self.at("if"):
+        if self.at("!"):
+            start = self.peek().offset
+            prefix = self.word()
+            node = self.atom()
+            if not isinstance(node, Command):
+                raise ShellSyntaxError("unregistered compound negation")
+            return Command(node.environment, (prefix,) + node.argv, node.redirects, start, node.end, node.conditional)
+        if self.at("[["):
+            start = self.peek().offset
+            words = [self.word()]
+            while not self.at("]]"):
+                token = self.pop()
+                if token.kind == "word":
+                    words.append(token.value)
+                    if token.value.keyword("=~"):
+                        while self.lexer.source[self.lexer.position:self.lexer.position + 1] in {" ", "\t"}:
+                            self.lexer.position += 1
+                        words.append(self.lexer._word(regex=True))
+                elif token.kind == "operator" and token.value in {"&&", "||", "<", ">"}:
+                    words.append(Word((Part("literal", token.value),)))
+                else:
+                    raise ShellSyntaxError("unregistered publisher conditional expression")
+            words.append(self.word())
+            return Command((), tuple(words), (), start, self.lexer.position, True)
+        if self.at("if") or self.at("elif"):
             self.pop()
             condition = self.block({"then"})
-            success = self.block({"else", "fi"}, consume_stop=False)
+            success = self.block({"else", "elif", "fi"}, consume_stop=False)
             failure = None
+            if self.at("elif"):
+                return If(condition, success, Block((Chain((self.atom(),)),)))
             if self.at("else"):
                 self.pop()
                 failure = self.block({"fi"}, consume_stop=False)
             self.require("fi")
             return If(condition, success, failure)
+        if self.at("while"):
+            self.pop()
+            condition = self.block({"do"})
+            return While(condition, self.block({"done"}))
         if self.at("for"):
             self.pop()
             variable = None
@@ -466,7 +529,8 @@ class _Parser:
                 target = self.word()
                 if target.keyword("}") or target.keyword("{"):
                     raise ShellSyntaxError("missing redirection operand")
-                redirects.append(Redirect(descriptor, operator, target))
+                body = self.lexer.heredoc(target) if operator == "<<" else None
+                redirects.append(Redirect(descriptor, operator, target, body))
                 continue
             if descriptor:
                 raise ShellSyntaxError("descriptor without redirection")
@@ -478,7 +542,7 @@ class _Parser:
             count += 1
         return Command(
             tuple(words[:count]), tuple(words[count:]), tuple(redirects),
-            start, self.peek().offset,
+            start, self.lexer.heredoc_skip[1] if self.lexer.heredoc_skip else self.peek().offset,
         )
 
 

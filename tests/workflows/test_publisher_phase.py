@@ -80,6 +80,34 @@ class PublisherPhaseTests(unittest.TestCase):
                 witnessed.add(name)
         self.assertEqual(witnessed, fixtures.PHASE_ONLY_CASES)
 
+    def test_shared_context_authority_rejects_former_phase_only_bypasses(self):
+        witnessed = set()
+        for name, changed in fixtures.adversarial_workflows(self.workflow):
+            if name not in fixtures.INVENTORY_CONTEXT_CASES:
+                continue
+            with (
+                self.subTest(case=name), inventory.refreshed_boundary_identities(changed),
+                mock.patch.object(phase, "validate"),
+            ):
+                with self.assertRaises(authority.InventoryError):
+                    authority.reviewed_inventory().validate(inventory.builder(changed))
+                self.assertTrue(publisher.publisher_boundary_errors(changed))
+                with self.assertRaises(ValueError):
+                    verify._parse_workflow_structure_text(changed)
+                witnessed.add(name)
+        self.assertEqual(witnessed, fixtures.INVENTORY_CONTEXT_CASES)
+        self.assertFalse(fixtures.INVENTORY_CONTEXT_CASES & fixtures.PHASE_ONLY_CASES)
+
+    def test_complete_producer_authorizes_child_staging_transport_and_diagnostics(self):
+        self.assertEqual(publisher.publisher_boundary_errors(self.workflow), [])
+        verify._parse_workflow_structure_text(self.workflow)
+        for name, changed in fixtures.producer_workflows(self.workflow):
+            with self.subTest(case=name), inventory.refreshed_boundary_identities(changed):
+                self.assertNotEqual(changed, self.workflow)
+                self.assertTrue(publisher.publisher_boundary_errors(changed))
+                with self.assertRaises(ValueError):
+                    verify._parse_workflow_structure_text(changed)
+
     def test_spelling_and_independent_work_preserve_semantic_phase_result(self):
         changed = self.source.replace(
             'builder_uid="$2"\nbuilder_gid="$3"',
