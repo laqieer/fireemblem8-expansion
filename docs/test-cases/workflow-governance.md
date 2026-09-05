@@ -88,11 +88,16 @@ workflow, using credentials, or changing ROM behavior.
    The parser distinguishes quoted regex metacharacters and a quoted `[[`
    executable from Bash's actual conditional keyword. A safe Bash-only regex
    probe supplies independent positive/negative execution evidence.
-10. Confirm dynamic `builtins.__import__`, aliases and indirect
-    `importlib.import_module` calls cannot import an ambient package, including
-    an already cached one. Trusted system standard-library loading succeeds
-    despite an ambient finder or repository shadow; cached standard-library
-    shadows reject. The ordinary-loader negative control executes only an
+10. Confirm dynamic `builtins.__import__`, aliases, `importlib.__import__`,
+    prebound import functions and indirect `importlib.import_module` calls
+    cannot import an ambient package, including an already cached one.
+    The exact-tree API must reject a committed initializer trying the cached
+    external-module route. Cached child-module attributes on a trusted
+    package must not bypass this through a from-import. Genuine system
+    standard-library modules may load instead of quarantined shadows, and
+    caller caches and package bindings return unchanged after success or
+    failure. Trusted system loading also succeeds despite an ambient finder
+    or repository shadow. The ordinary-loader negative control executes only an
     inert package that raises a deliberate error. A 1 MiB authority source
     passes; a 1 MiB-plus-one Git blob is rejected after its size query and
     before any content read. Every authorized blob read is explicitly bounded.
@@ -139,6 +144,10 @@ At pre-correction `8342faed`, both the committed program import and aliased
 external loader succeed and write their inert markers. A filename-only or
 stdlib-caller-only execution check is also insufficient: the cached-code and
 source-loaded `runpy` controls preserve those independent negative cases.
+The earlier cache guard lets `importlib.__import__` accept a cached external
+module in the exact-tree API and lets prebound from-imports return a cached
+package shadow. These executable controls fail independently of source
+binding; quarantine closes both routes without disabling genuine stdlib use.
 
 ### Interactions and save compatibility
 

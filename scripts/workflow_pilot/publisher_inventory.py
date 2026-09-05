@@ -1008,8 +1008,20 @@ def _source_only_authority(sources):
     previous_authority = _ACTIVE_SOURCE_AUTHORITY
     previous = {
         name: module for name, module in sys.modules.copy().items()
-        if name == "scripts" or name.startswith("scripts.")
+        if not loader.trusted_spec(name, getattr(module, "__spec__", None))
     }
+    missing = object()
+    package_bindings = []
+    # From-import can use a parent's cached attribute without consulting sys.modules.
+    for name, module in previous.items():
+        parent_name, _, child = name.rpartition(".")
+        parent = sys.modules.get(parent_name)
+        if parent is not None and parent_name not in previous:
+            namespace = vars(parent)
+            value = namespace.get(child, missing)
+            package_bindings.append((namespace, child, value))
+            if value is module:
+                del namespace[child]
     for name in previous:
         del sys.modules[name]
     sys.meta_path.insert(0, loader)
@@ -1048,9 +1060,14 @@ def _source_only_authority(sources):
         importlib.import_module = original_import_module
         sys.meta_path.remove(loader)
         for name in tuple(sys.modules):
-            if name == "scripts" or name.startswith("scripts."):
+            if name in previous or name == "scripts" or name.startswith("scripts."):
                 del sys.modules[name]
         sys.modules.update(previous)
+        for namespace, child, value in package_bindings:
+            if value is missing:
+                namespace.pop(child, None)
+            else:
+                namespace[child] = value
 
 
 def validate_exact_tree(repository_root: Path | str, commit: str) -> Analysis:
