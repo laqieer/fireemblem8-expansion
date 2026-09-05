@@ -112,6 +112,9 @@ class CleanupTests(unittest.TestCase):
         self.command(self.root, "commit", "-qm", "base")
         self.base = self.command(self.root, "rev-parse", "HEAD").strip()
         self.command(self.root, "worktree", "add", "-qb", "topic", str(self.target))
+        # Cover newer Git's ref-directory layout even on an older fixture host.
+        for namespace in ("heads", "tags"):
+            (self.private_gitdir() / "refs" / namespace).mkdir(parents=True, exist_ok=True)
         (self.target / "tracked").write_text("completed feature\n")
         self.command(self.target, "commit", "-qam", "feature")
         self.head = self.command(self.target, "rev-parse", "HEAD").strip()
@@ -582,6 +585,81 @@ class CleanupTests(unittest.TestCase):
                 shutil.rmtree(gitdir / name.split("/")[0])
             else:
                 file.unlink()
+
+    def test_empty_private_ref_containers_are_reconstructible(self):
+        gitdir = self.private_gitdir()
+        (gitdir / "refs" / "worktree" / "empty").mkdir(parents=True)
+        before = self.snapshot(gitdir)
+        shared = self.command(self.root, "show-ref")
+        row = self.result()
+        self.assertEqual(row["decision"], "eligible", row)
+        self.assertEqual(self.snapshot(gitdir), before)
+        self.assertTrue((gitdir / "refs" / "heads").is_dir())
+        self.assertTrue((gitdir / "refs" / "tags").is_dir())
+        self.assertEqual(self.result(apply=True)["decision"], "removed")
+        self.assertEqual(self.command(self.root, "show-ref"), shared)
+
+    def test_private_ref_files_are_preserved_even_when_shared_refs_retain_objects(self):
+        gitdir = self.private_gitdir()
+        for name in ("heads/local", "tags/local", "worktree/local", "unknown/local"):
+            with self.subTest(name=name):
+                file = gitdir / "refs" / name
+                file.parent.mkdir(parents=True, exist_ok=True)
+                file.write_text(self.head + "\n")
+                before = self.snapshot(gitdir)
+                self.held("private")
+                self.assertEqual(self.snapshot(gitdir), before)
+                file.unlink()
+        self.assertEqual(self.result()["decision"], "eligible")
+
+    def test_symlinked_private_ref_containers_are_not_followed(self):
+        refs = self.private_gitdir() / "refs"
+        outside = self.sandbox / "external-refs"
+        outside.mkdir()
+        (outside / "private-data").write_text("unique data\n")
+        before = self.snapshot(outside)
+        for name in ("", "heads", "unknown"):
+            with self.subTest(name=name):
+                path = refs / name if name else refs
+                backup = self.sandbox / "fixture-refs-backup"
+                existed = path.exists()
+                if existed:
+                    path.rename(backup)
+                path.symlink_to(outside, target_is_directory=True)
+                self.held()
+                self.assertTrue(path.is_symlink())
+                self.assertEqual(self.snapshot(outside), before)
+                path.unlink()
+                if existed:
+                    backup.rename(path)
+
+    def test_private_ref_data_arriving_after_plan_or_before_remove_is_preserved(self):
+        file = self.private_gitdir() / "refs" / "heads" / "late"
+        for stage in (2, 3):
+            with self.subTest(stage=stage):
+                original = self.repo.local_state
+                calls = 0
+
+                def change(path):
+                    nonlocal calls
+                    calls += 1
+                    if calls == stage:
+                        file.write_text(self.head + "\n")
+                    return original(path)
+
+                with patch.object(self.repo, "local_state", side_effect=change):
+                    self.held("private")
+                self.assertEqual(calls, stage)
+                self.assertEqual(file.read_text(), self.head + "\n")
+                file.unlink()
+
+    def test_overbound_private_ref_container_inventory_is_preserved(self):
+        refs = self.private_gitdir() / "refs"
+        for number in range(cleanup.MAX_RECORDS):
+            (refs / str(number)).mkdir()
+        before = set(refs.iterdir())
+        self.held("private Git reference inventory exceeds safety bound")
+        self.assertEqual(set(refs.iterdir()), before)
 
     def test_symlinked_private_configuration_and_index_keep_external_data(self):
         gitdir = self.private_gitdir()

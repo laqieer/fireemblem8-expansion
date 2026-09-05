@@ -161,6 +161,10 @@ rerere records, other edit buffers and unrecognized private files/directories
 remain held. A `COMMIT_EDITMSG` is disposable only when its bytes exactly
 match the committed HEAD message. The ordinary registration files, inspected
 refs/reflogs, and a validated index are the only other accepted metadata.
+Empty private `refs/` directory trees, including the `heads/` and `tags/`
+containers initialized by newer Git versions, are reconstructible. Every
+entry is inspected within a bound; any file, symlink, or special entry keeps
+the worktree, even when a shared ref already retains its object.
 The index audit supports DIRC versions 2–4, verifies the format checksum and
 bounds, and accepts only resolve-undo plus reconstructible tree, untracked,
 fsmonitor and entry-offset caches. Sparse/split indexes and unfamiliar

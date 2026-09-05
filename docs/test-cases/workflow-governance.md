@@ -71,6 +71,10 @@ workflow, using credentials, or changing ROM behavior.
     can report clean status; malformed/checksum-invalid/truncated index and
     REUC data are held too. Ordinary DIRC v2–v4 indexes, including compressed
     long/non-UTF-8 paths and reconstructible caches, remain eligible.
+    Empty private `refs/heads/`, `refs/tags/`, and nested ref containers remain
+    eligible on both older Git and Git versions that initialize them.
+    Any contained file or symlink retains the tree without changing shared
+    refs or external data; repeat insertion on both apply passes.
     Repeat metadata/configuration/extension changes on both apply passes.
 11. Move an owned Git worktree to a non-UTF-8 path; its real backlink and JSON
     path must round-trip to the original filesystem bytes, and eligible

@@ -400,10 +400,23 @@ def private_recovery(path, gitdir):
     extensions = {}
     for file in files:
         require(file.name not in messages
-                and (file.name in structural | {"logs", "COMMIT_EDITMSG"}
+                and (file.name in structural | {"logs", "refs", "COMMIT_EDITMSG"}
                      or re.fullmatch(r"[A-Z_]+", file.name)),
                 f"private Git metadata {file.name!r} requires preservation")
         if file.name == "logs":
+            continue
+        if file.name == "refs":
+            # Newer Git versions initialize empty ref namespaces in linked worktrees.
+            pending, visited = [file], 0
+            while pending:
+                directory = pending.pop()
+                visited += 1
+                require(stat.S_ISDIR(directory.lstat().st_mode),
+                        "private Git reference data or symlink requires preservation")
+                for entry in directory.iterdir():
+                    pending.append(entry)
+                    require(visited + len(pending) <= MAX_RECORDS,
+                            "private Git reference inventory exceeds safety bound")
             continue
         data = read_record(file)
         if file.name in structural:
