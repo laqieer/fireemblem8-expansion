@@ -90,9 +90,14 @@ def _contract_errors(text):
             if name == "host-tests"
             else "EXPECTED_BUILD_SHA"
         )
+        actual_sha_command = (
+            '/usr/bin/git rev-parse HEAD'
+            if name == "host-tests"
+            else "git rev-parse HEAD"
+        )
         verification += (
             '      run: |\n'
-            '        ACTUAL_SHA="$(git rev-parse HEAD)"\n'
+            f'        ACTUAL_SHA="$({actual_sha_command})"\n'
             "        printf 'checkout.sha=%s\\n' \"$ACTUAL_SHA\"\n"
             f'        test "$ACTUAL_SHA" = "${expected_variable}"'
         )

@@ -4,6 +4,7 @@ import io
 import json
 import os
 import re
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -970,6 +971,18 @@ class TesterCaseRegistryTests(unittest.TestCase):
 
         features = {entry["id"]: entry for entry in registry["features"]}
         cases = {entry["id"]: entry for entry in registry["cases"]}
+        publisher_authority_commands = {}
+        for case in cases.values():
+            for record in case.get("automation", []):
+                argv = shlex.split(record["command"])
+                if (
+                    argv[:4] == ["/usr/bin/python3", "-I", "-S", "-c"]
+                    and len(argv) >= 9
+                ):
+                    publisher_authority_commands.setdefault(
+                        argv[8],
+                        record["command"],
+                    )
         contracts = {
             "battle-animation-package": {
                 "reference": "docs/battle_animation_packages.md",
@@ -1005,7 +1018,7 @@ class TesterCaseRegistryTests(unittest.TestCase):
                     "TC-WORKFLOW-STACKED-CI-001": {
                         "document": "docs/test-cases/workflow-governance.md",
                         "commands": {
-                            'python3 -m scripts.workflow_pilot.publisher_command_signatures --check --consumer-suite workflows',
+                            publisher_authority_commands["workflows"],
                             "python3 -m unittest "
                             "scripts.docs_check_tests."
                             "test_development_workflow_skill -v",
@@ -1020,9 +1033,7 @@ class TesterCaseRegistryTests(unittest.TestCase):
                             "python3 -m unittest "
                             "scripts.workflow_pilot.tests."
                             "test_candidate_evidence -v",
-                            "python3 -m scripts.workflow_pilot."
-                            "publisher_command_signatures --check "
-                            "--consumer-suite workflows",
+                            publisher_authority_commands["workflows"],
                             "python3 -m unittest tests.upstream_port.test_verify -v",
                             "python3 -m unittest "
                             "scripts.docs_check_tests."
@@ -1034,9 +1045,7 @@ class TesterCaseRegistryTests(unittest.TestCase):
                         "commands": {
                             "python3 -m unittest discover -s "
                             "scripts/workflow_pilot/tests -p 'test_*.py' -v",
-                            "python3 -m scripts.workflow_pilot."
-                            "publisher_command_signatures --check "
-                            "--consumer-suite workflows",
+                            publisher_authority_commands["workflows"],
                             "python3 scripts/check_docs.py --check",
                         },
                     },

@@ -174,10 +174,11 @@ without `--force`) are rejected.
 
 ### 6. Verify the manually-applied batch
 
-```sh
-python3 -m scripts.upstream_port verify
-python3 -m scripts.upstream_port verify --dry-run   # list the gate commands without running them
-```
+Run the copy/paste
+[authenticated full verifier command](publisher_authority_bootstrap.md#full-upstream-verifier),
+or its
+[dry-run form](publisher_authority_bootstrap.md#full-upstream-verifier-dry-run)
+to list the gate commands without executing them.
 
 **⚠️ This builds and checks the CURRENT TRUSTED WORKTREE (your repo, after
 you manually applied whatever you accepted) — it never builds, checks out,
@@ -337,10 +338,10 @@ subset switch and fails closed if the legacy toolchain is absent. Use
 `verify --dry-run` to inspect the complete 28-gate sequence without those
 local prerequisites.
 
-1. `python3 -m scripts.workflow_pilot.publisher_command_signatures --check --consumer-suite upstream-port`
+1. the [authenticated upstream-port command](publisher_authority_bootstrap.md#authenticated-upstream-port-consumers)
    (pure-stdlib upstream-port tests, including the workflow mirror contract;
    rerun it for the current test count rather than trusting a written count)
-2. `python3 -m scripts.workflow_pilot.publisher_command_signatures --check --consumer-suite workflows`
+2. the [authenticated workflow command](publisher_authority_bootstrap.md#authenticated-workflow-consumers)
    (pure-stdlib consolidated Build CI topology and checkout contracts)
 3. `GBA_PLAYTEST_HOST_ONLY=1 python3 -m unittest discover -s tools/gba-playtest/tests -v`
    (issue #13 host-only suite; the inline environment assignment applies only

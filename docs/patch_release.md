@@ -179,9 +179,13 @@ commit, every traversed tree, and every blob against the object ID before using
 it, so a misnamed or shadowing loose object cannot redefine the selected tree.
 The loader obtains the parser, registry, workflow, both consuming validators,
 their tests, required Python packages, and package initializers from that
-authenticated tree. The three workflow authority steps use the same reviewed
-isolated bootstrap bytes with a fixed suite selector; no ordinary discovery
-process imports these consumers from the mutable checkout. The bootstrap
+authenticated tree. CI, local verifier gates, tests, and the copy/paste
+[local commands](publisher_authority_bootstrap.md) use one byte-identical
+`/usr/bin/python3 -I -S -c` protocol. Its compact inline payload authenticates
+and executes the shared bootstrap and loader blobs; no live repository module
+is opened or imported first, and the workflow has no duplicated authority
+heredoc. No ordinary discovery process imports these consumers from the mutable
+checkout. The bootstrap
 detects the repository's declared `sha1` or `sha256` storage format and uses
 the corresponding object-ID and raw tree-entry widths; unknown or mixed
 formats fail. It then walks

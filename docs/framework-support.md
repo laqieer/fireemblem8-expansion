@@ -185,7 +185,7 @@ name.
 | `make expansion-modern-aoe-check MODERN_CONFIG=... MODERN_ABI=aapcs` | Issue #42 typed AoE enabled reference + default-disabled semantic runtime matrix | Yes | Yes |
 | `make expansion-modern-hq-mixer-check MODERN_CONFIG=... MODERN_ABI=aapcs` | Issue #83 enabled/disabled HQ PCM mixer, linker budget, and libmGBA PCM/interrupt-buffer matrix | Yes | Yes |
 | `make expansion-modern-localization-budget-check MODERN_CONFIG=... MODERN_ABI=aapcs` | Issue #18 catalog/resolver/UI source+linker budget and real region headroom | No new ROM beyond its linked prerequisite | No |
-| `python3 -m scripts.upstream_port {scan,drift,report,verify,...}` | Upstream-drift tracking (see [`docs/upstream-porting.md`](upstream-porting.md)) | No for `scan`/`drift`/`report`; `verify` builds the full gate set | No for `scan`/`drift`/`report`; depends on the gate set for `verify` |
+| `python3 -m scripts.upstream_port {scan,drift,report,...}` plus the authenticated `verify` protocol | Upstream-drift tracking (see [`docs/upstream-porting.md`](upstream-porting.md) and [`docs/publisher_authority_bootstrap.md`](publisher_authority_bootstrap.md)) | No for `scan`/`drift`/`report`; authenticated `verify` builds the full gate set | No for `scan`/`drift`/`report`; depends on the gate set for authenticated `verify` |
 
 **ABI contract:** `MODERN_ABI=aapcs` is the only supported choice for every
 linked, ROM-producing, or runtime-gate target above (`expansion-modern-elf`,

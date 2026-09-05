@@ -18,7 +18,6 @@ directly to reproduce it locally; see docs/upstream-porting.md.
 
 from __future__ import annotations
 
-import hashlib
 import os
 import re
 import shlex
@@ -40,6 +39,81 @@ publisher_shell_contract = publisher_command_signatures.publisher_shell_contract
 # to the child environment, never exec-ed as a program.
 _ENV_ASSIGN_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
 _TRUSTED_GIT = "/usr/bin/git"
+_PUBLISHER_AUTHORITY_DECODER = (
+    "import base64,sys,zlib;"
+    "exec(compile(zlib.decompress(base64.urlsafe_b64decode(sys.argv.pop(1))),"
+    "'<publisher-authority-bootstrap>','exec'))"
+)
+_PUBLISHER_AUTHORITY_PAYLOAD = (
+    'eNqVV21z2jgQ_u5fodMn-'
+    'wqGpGkmx4TOpJS2uaG4k3AvPY7zGCwHtcb2SDaE4_jvtyvZsklommYmibVaPfu-W'
+    'lFKP_KEr4KYcJnGQc5CwpJcbEkm0jxdpDGJUkHyJSNZMY-'
+    '5XDJBgiJfpoLnW5dSall8laUiJ8tALmM-'
+    'r5aprL4Eq75kMQfYBZNmT26lBQgRSVKFEOS5sFPZItTzx947bzTy_qAOARViltjA'
+    '7Qbibu2QS3LWswj8iIBLRm63Mmer4T3P7ZPTV45liRTw-qCEmwX50g3mEv8bgOnJ'
+    'zLHYfcYWaHCfGPrpzFqlIWuSXmqSD4tiBb6Rzc2z3kzJ8qNQi0sz0JN2aAsXnn_z'
+    '1huPPpP_9Ort9c1wMPFuDGEw8oZ_DgeOhU5epOCTBCQQnhAEdWUWg0XAKVnmTE96'
+    'M21zwu4fCFRk_DEYLUP6AT2qZeX5GiTkAiT2S1M13bFK-'
+    'EWcSmaXe5pa-6RU1rJYsuYiTdCFQN4pNvr-euIPvPG76_fw77fxhPYI7dLWo833I'
+    '-_N1Qh3OyFbd5Iijo9wjb3bz7eT4UfkO2nujz1_dPXXZ__dcDL4cGz3ZvhpdDUY-'
+    't6bX8EztwcsH7yPQyW5IowG_tVIKTOoSJ-uJgq3U0jRmfOkh39gcw_ZHbKI3EEcf'
+    'zYZ5Og4YrBiVmagKQ1XFI2ATg1kBzAgrWqUWR2exSbsR7SDCB3J4qgThZ1dGYM9r'
+    'fkgBv1GHOqNLJASeGW_CmPLaaAv2eJr_10QS9YgBlleCOanRZ4VeX8iCtZMCyhpY'
+    '54rGLAmCyysn_qk2zMgx6tX7agjDQyZhyAK3AmlsgpyPwlWWKboWCrYup0FQjLwD'
+    '2235TLdtNP5F6jutubuyzwVwR2jjhsy1MN2AFDwzHZKPKzqHZXL4ATCaJ91W-'
+    'S06wAaUE5fnSPt_KxFXp46e-'
+    'xWTR2wc0HBljBPdaUlu_ehjd3lyxZwbMpvEFyenTZgZ2XicOlrS3we2usgLliZPK'
+    'WDBHMjKAY4tljaIqLTbvuXoB3NdrtdLW6_hyQg-jQgKpXH0CZKGaWA-TZn0jbSWh'
+    'U932aV0LJRHyhlvlSbbpypPLOj8zidY2ggmiuVxDQXjNH9cxJB8n9NnBcBBJTHOs'
+    'ySGg1B9uO4NvRFDJfLkCOKUpMnuY1Uh7wmFy8vLs67F89RJgzy4IgyDaObOmkVQi'
+    'g0uCvhWHlDugnb1AXeiHldXBHdNTD3ZIe3Hwp39n93qcsSbSt5oTQq686FgIOJTO'
+    'a19eYcFl5tNHqg0gs2jMo_UJmIWuYPBtPHqYFD_ihpVYrKIlbNfq-viiiSDNddtd'
+    'wswXsV8bJWtVYCrr1ABFC6cAa33IgnoT2nBH2uzjmGN2dixZMjzOCwVgPpBTlxGv'
+    '0QRh1QHTtwAwB44LcuUcMPHq2RLvuV8jgh1acvSRcpNfbrY7Y97eRauXIcwdNTLa'
+    '5nVJiZrDeHyrao2A-'
+    'MJr2GjkcOmhyoTj_wR682aIaZ1jiKVYZiVa1jbbrqj0v36Ae4N3FHccCy4tTJ8SP'
+    '-0CemqjuCknbtn0dFd5BtRu_DvolgkMDwkcZrdQdjWevrvHGhaEK7vWaCR9tyDfV'
+    'ZTY_7f3Y73dewyVpHGtGSBeE3bqoKFIaM4dXbfyqgY9cUOFkr96gBVxaU85ggSiC'
+    'UdbVR0W0z8cKmkkhJAPnZJNdgzlNXWWN2NlK08qR_eJ9UnHX7hyuXC5n7MU8wVTW'
+    '1nHWhXGFsghKddmfVs6DmBmcEIpcbDqP8XN0hhD6pZjOpGzCCrdI1ywSL-'
+    'H0NVNcEvhXgBJUL8H0uO5tUfI3idONnPE7zjnkJ-ag7eNCX_A4qBcYheG9sKZwXa'
+    'qBQbw9tGFSBnvKhKbH7FkEWLAOWwDAHRcpsdai0Rj_B-oed9VvXtL5MHce9Y7lCM'
+    'd1fw8CFj5f9c3r70ZKqSqhCVRaonqCbdlPxpmDduswQcNaFH0z1rv7aP7f2WXyIi'
+    'Ml70u2en53R79lkybQQC_YwJ5vOU7OJY8VpEEJAm4-'
+    '8KYZPlakagKlKSKWBsqfIoDRZsGrjQxbtqrJEQt_DskLLD1-'
+    'OWt2Holx4IUF3sqcoKU0kJkRbFjzHJoEA-FaNK9l9sN6ILvvH93EfnoB3xKFqBzL'
+    'Qw9pmbBvHbDju7upZDM57qIyFbRse4SoY5ePPV1OP7-'
+    'PDyfdXAU_gu1Xt4Wyl9qpH_JeUJ-p50lKF5RhOQP0Kw70GMgBvPG9yO7m5-'
+    'gSPu9-vb6-9MWybbgQvM3bPFjY-MECQrRNFI0MscY_C_G-0dqz_ARTlVeY='
+)
+
+
+def publisher_authority_command(
+    repository_root: str,
+    revision: str,
+    mode: str,
+    *arguments: str,
+) -> List[str]:
+    if mode not in {
+        "$AUTHORITY_SUITE",
+        "check",
+        "upstream-port",
+        "workflows",
+        "upstream-verify",
+    }:
+        raise ValueError(f"unsupported publisher authority mode: {mode}")
+    return [
+        "/usr/bin/python3",
+        "-I",
+        "-S",
+        "-c",
+        _PUBLISHER_AUTHORITY_DECODER,
+        _PUBLISHER_AUTHORITY_PAYLOAD,
+        repository_root,
+        revision,
+        mode,
+        *arguments,
+    ]
 _SOURCE_ROOT = os.path.realpath(
     os.path.join(os.path.dirname(__file__), "..", "..")
 )
@@ -865,9 +939,6 @@ _WORKFLOW_PILOT_TEST_STEP_NAME = (
 _WORKFLOW_PILOT_BASELINE_STEP_NAME = (
     "Validate workflow-pilot baseline against checked-out Git history"
 )
-_PUBLISHER_AUTHORITY_BOOTSTRAP_SHA256 = (
-    "7cab8cda5567d6677783d95b46e5f7832e2b5f82a5def01090c5a2a6b9e9ef48"
-)
 _PUBLISHER_AUTHORITY_SUITES = {
     "Verify checked-out revision": "check",
     "Run upstream-port tooling test suite": "upstream-port",
@@ -1686,12 +1757,23 @@ def _parse_step(block, job_name, index):
         else None
     )
     if authority_suite is not None:
+        workflow_command = tuple(
+            publisher_authority_command(
+                "$GITHUB_WORKSPACE",
+                "$EXPECTED_AUTHORITY_SHA",
+                "$AUTHORITY_SUITE",
+            )
+        )
+        expected_commands = (
+            (
+                'ACTUAL_SHA=$(/usr/bin/git rev-parse HEAD)',
+            ),
+            ("printf", "checkout.sha=%s\\n", "$ACTUAL_SHA"),
+            ("test", "$ACTUAL_SHA", "=", "$EXPECTED_AUTHORITY_SHA"),
+            workflow_command,
+        ) if authority_suite == "check" else (workflow_command,)
         if (
-            literal_run_script is None
-            or hashlib.sha256(
-                (literal_run_script.rstrip() + "\n").encode("utf-8")
-            ).hexdigest()
-            != _PUBLISHER_AUTHORITY_BOOTSTRAP_SHA256
+            values.get("run") != expected_commands
             or values.get("env")
             != tuple(
                 sorted(
@@ -1707,14 +1789,7 @@ def _parse_step(block, job_name, index):
             )
         if authority_suite != "check":
             values["run"] = (
-                (
-                    "python3",
-                    "-m",
-                    "scripts.workflow_pilot.publisher_command_signatures",
-                    "--check",
-                    "--consumer-suite",
-                    authority_suite,
-                ),
+                tuple(publisher_authority_command(".", "HEAD", authority_suite)),
             )
     if job_name == "event-identity":
         if (
@@ -2422,14 +2497,7 @@ def gates(jobs: int = 2) -> List[Gate]:
     return [
         Gate(
             name="upstream-port-tests",
-            command=[
-                "python3",
-                "-m",
-                "scripts.workflow_pilot.publisher_command_signatures",
-                "--check",
-                "--consumer-suite",
-                "upstream-port",
-            ],
+            command=publisher_authority_command(".", "HEAD", "upstream-port"),
             applicable_note=(
                 "issue #12/#15 host lane (same `host-tests` job): pure-stdlib "
                 "upstream-port review tooling tests; re-run this suite for "
@@ -2442,14 +2510,7 @@ def gates(jobs: int = 2) -> List[Gate]:
         ),
         Gate(
             name="workflow-contract-tests",
-            command=[
-                "python3",
-                "-m",
-                "scripts.workflow_pilot.publisher_command_signatures",
-                "--check",
-                "--consumer-suite",
-                "workflows",
-            ],
+            command=publisher_authority_command(".", "HEAD", "workflows"),
             applicable_note=(
                 "fast host lane (same `host-tests` job): stdlib-only static "
                 "contracts for the consolidated Build CI job graph. No "

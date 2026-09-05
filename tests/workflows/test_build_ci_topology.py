@@ -10,6 +10,7 @@ import io
 import json
 import os
 import re
+import shlex
 import shutil
 import stat
 import subprocess
@@ -30,6 +31,7 @@ from scripts.workflow_pilot import (
     reporter,
     summary_continuity_contract,
 )
+from scripts.upstream_port import verify as upstream_verify
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -1455,10 +1457,23 @@ def _publisher_authority_bootstrap_is_reviewed(
         "        PYTHONPATH: ''",
     ):
         return False
-    script = _literal_run_script(step).rstrip() + "\n"
-    return hashlib.sha256(script.encode("utf-8")).hexdigest() == (
-        "7cab8cda5567d6677783d95b46e5f7832e2b5f82a5def01090c5a2a6b9e9ef48"
+    protocol = upstream_verify.publisher_authority_command(
+        "$GITHUB_WORKSPACE",
+        "$EXPECTED_AUTHORITY_SHA",
+        "$AUTHORITY_SUITE",
     )
+    commands = [tuple(shlex.split(command)) for command in _run_block_commands(step)]
+    expected_commands = (
+        [
+            ("ACTUAL_SHA=$(/usr/bin/git rev-parse HEAD)",),
+            ("printf", "checkout.sha=%s\\n", "$ACTUAL_SHA"),
+            ("test", "$ACTUAL_SHA", "=", "$EXPECTED_AUTHORITY_SHA"),
+            tuple(protocol),
+        ]
+        if suite == "check"
+        else [tuple(protocol)]
+    )
+    return commands == expected_commands
 
 
 def _protected_host_prefix_errors(host: str) -> list[str]:

@@ -471,7 +471,7 @@ pointer/timing/source-text coincidences, are the behavioral oracle.
 3. Review the report and manually record each port/skip/supersede/conflict
    decision with rationale and validation evidence, then run `verify`.
 4. From the source repository root, invoke the documented
-   `python3 -m scripts.upstream_port verify --dry-run`. Exercise implicit
+   the [authenticated upstream verifier dry-run command](../publisher_authority_bootstrap.md#full-upstream-verifier-dry-run). Exercise implicit
    source-checkout selection and explicit `--repo <target-root>` selection.
 
 ### Expected result
@@ -500,9 +500,9 @@ compatibility impact.
 
 ### Automation
 
-- `python3 -m scripts.workflow_pilot.publisher_command_signatures --check --consumer-suite upstream-port`
+- the [authenticated upstream-port command](../publisher_authority_bootstrap.md#authenticated-upstream-port-consumers)
   — `tests/upstream_port/test_cli_readonly.py`.
-- `python3 -m scripts.upstream_port verify --dry-run`
+- the [authenticated upstream verifier dry-run command](../publisher_authority_bootstrap.md#full-upstream-verifier-dry-run)
   — `scripts/upstream_port/verify.py`.
 
 ### Cleanup and limitations
@@ -559,7 +559,7 @@ separate BPS artifact contract remains the only published artifact path.
 
 ### Automation
 
-- `python3 -m scripts.workflow_pilot.publisher_command_signatures --check --consumer-suite workflows`
+- the [authenticated workflow command](../publisher_authority_bootstrap.md#authenticated-workflow-consumers)
   — `.github/workflows/build.yml`.
 - `make assets-clean && make assets-generate && make expansion-modern-rom MODERN_CONFIG=release MODERN_ABI=aapcs && python3 scripts/modernize/verify_rom_header.py build/expansion-modern/release/aapcs/fireemblem8.gba`
   — `scripts/modernize/verify_rom_header.py`.

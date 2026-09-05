@@ -1,3 +1,4 @@
+import ast
 import contextlib
 import inspect
 import io
@@ -89,6 +90,21 @@ class VerifyGatesMirrorWorkflowTests(unittest.TestCase):
                 f"build.yml step {step_name!r} command {workflow_argv!r}",
             )
 
+    def test_safe_gate_command_construction_does_not_import_publisher_authority(self):
+            tree = ast.parse(inspect.getsource(verify_mod.publisher_authority_command))
+            names = {
+                node.id
+                for node in ast.walk(tree)
+                if isinstance(node, ast.Name)
+            }
+            self.assertNotIn("publisher_command_signatures", names)
+            command = verify_mod.publisher_authority_command(
+                ".",
+                "HEAD",
+                "upstream-port",
+            )
+            self.assertEqual(command[:4], ["/usr/bin/python3", "-I", "-S", "-c"])
+
     def test_all_locales_gate_mirrors_required_presentation_target(self):
         gate = next(
             gate
@@ -124,10 +140,11 @@ class VerifyGatesMirrorWorkflowTests(unittest.TestCase):
                     )
                     continue
                 relative = os.path.relpath(module.__file__, REPO_ROOT)
-                self.assertEqual(
-                    open(module.__file__, "rb").read(),
-                    snapshot.files[relative].data,
-                )
+                with open(module.__file__, "rb") as source:
+                    self.assertEqual(
+                        source.read(),
+                        snapshot.files[relative].data,
+                    )
 
     def test_checkout_verification_is_not_counted_as_a_mirrored_gate(self):
         parsed = _parse_workflow_gate_commands()
@@ -272,18 +289,28 @@ class VerifyGatesMirrorWorkflowTests(unittest.TestCase):
         ]
         self.assertEqual(
             commands,
-            [[
-                "python3",
-                "-m",
-                "scripts.workflow_pilot.publisher_command_signatures",
-                "--check",
-                "--consumer-suite",
-                "workflows",
-            ]],
+            [
+                verify_mod.publisher_authority_command(
+                    ".",
+                    "HEAD",
+                    "workflows",
+                )
+            ],
         )
         gate = {g.name: g for g in verify_mod.gates()}["workflow-contract-tests"]
         self.assertEqual(gate.command, commands[0])
         self.assertNotIn("make", gate.command)
+        for gate_name in ("upstream-port-tests", "workflow-contract-tests"):
+            authority_gate = next(
+                gate
+                for gate in verify_mod.gates()
+                if gate.name == gate_name
+            )
+            self.assertEqual(
+                authority_gate.command[:4],
+                ["/usr/bin/python3", "-I", "-S", "-c"],
+            )
+            self.assertNotIn("-m", authority_gate.command[:5])
 
     def test_workflow_pilot_commands_are_mirrored_exactly_in_order(self):
         workflow_commands = _parse_workflow_gate_commands()
@@ -1949,16 +1976,21 @@ class VerifyCliCwdTests(unittest.TestCase):
                 )
 
     def test_documented_source_root_module_dry_run_is_real(self):
-        stdout = io.StringIO()
-        stderr = io.StringIO()
-        with (
-            contextlib.chdir(REPO_ROOT),
-            contextlib.redirect_stdout(stdout),
-            contextlib.redirect_stderr(stderr),
-        ):
-            result = cli.main(["verify", "--dry-run"])
-        self.assertEqual(result, 0, stderr.getvalue())
-        self.assertEqual(stdout.getvalue().count("[SKIPPED(dry-run)]"), 28)
+        snapshot = publisher_command_signatures._authority_snapshot()
+        completed = subprocess.run(
+            verify_mod.publisher_authority_command(
+                REPO_ROOT,
+                snapshot.revision,
+                "upstream-verify",
+                "--dry-run",
+            ),
+            cwd=REPO_ROOT,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertEqual(completed.stdout.count("[SKIPPED(dry-run)]"), 28)
 
     def test_invalid_explicit_repo_is_a_normal_cli_error(self):
         cases = (

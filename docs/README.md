@@ -99,7 +99,7 @@ numbers mark merged (closed) contracts only:
 | Safe TMX chapter maps (issue #64) | Fail-closed Tiled 1.10 map-layout subset and source workflow | [`tmx_map_layouts.md`](tmx_map_layouts.md) |
 | Localization (issue #18) | `ExpansionLocaleId`/`ExpansionMsgId`, `texts/expansion/`, prefs + selector/settings APIs | [`localization.md`](localization.md), [`save_format.md`](save_format.md) |
 | Runtime test harness (issue #13) | JSON scenario format + fingerprints, `GBA_PLAYTEST_HOST_ONLY` | [`../tools/gba-playtest/README.md`](../tools/gba-playtest/README.md) |
-| Upstream-port review tooling | `python3 -m scripts.upstream_port {scan,drift,verify,update-state}` | [`upstream-porting.md`](upstream-porting.md) |
+| Upstream-port review tooling | `python3 -m scripts.upstream_port {scan,drift,update-state}`; authenticated `verify` entry | [`upstream-porting.md`](upstream-porting.md), [`publisher_authority_bootstrap.md`](publisher_authority_bootstrap.md) |
 | Proc/runtime core | `include/proc.h` (`struct Proc`, `struct ProcCmd[]`) | [`architecture.md`](architecture.md) |
 
 Not a public API today: issue #9's future versioned-release/downstream-

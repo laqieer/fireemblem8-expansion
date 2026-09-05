@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import ast
 from collections import Counter
+from contextlib import contextmanager
 from dataclasses import asdict, dataclass
 import hashlib
 import importlib.abc
@@ -33,7 +34,7 @@ REGISTRY_PATH = (
 )
 REGISTRY_SCHEMA_VERSION = 1
 REVIEWED_SIGNATURE_REGISTRY_SHA256 = (
-    "08f212c6d7785d1b09cc945e9645c19f99f58970aae0cb76f615bd9b054d785e"
+    "8642e157bec9ba644875639ebc1d8bf02318af85119c3f6de058c2ee93b1578d"
 )
 BUILDER_STEP_NAME = "Build candidate in isolated namespace and stage public inputs"
 _TOP_LEVEL_HEREDOC_LANGUAGES = {
@@ -107,6 +108,7 @@ _REVIEWED_EXECUTABLE_ALIASES = {
 _AUTHORITY_PATHS = (
     ".github/workflows/build.yml",
     "scripts/workflow_pilot/__init__.py",
+    "scripts/workflow_pilot/publisher_authority_bootstrap.py",
     "scripts/workflow_pilot/publisher_command_signatures.py",
     "scripts/workflow_pilot/publisher_command_signatures.json",
     "scripts/workflow_pilot/publisher_shell_contract.py",
@@ -504,9 +506,11 @@ def _authority_revision(
     object_format = _GIT_OBJECT_FORMATS.get(format_name)
     if object_format is None:
         raise ValueError("publisher authority Git object format differs")
-    expected = globals().get("_BOOTSTRAP_REVISION")
-    if expected is None:
-        expected = os.environ.get("EXPECTED_BUILD_SHA")
+    expected = None
+    if revision is None:
+        expected = globals().get("_BOOTSTRAP_REVISION")
+        if expected is None:
+            expected = os.environ.get("EXPECTED_BUILD_SHA")
     if revision is None:
         revision = expected or "HEAD"
     resolved = _run_git(
@@ -921,6 +925,14 @@ def _run_consumer_suite(name: str) -> int:
     modules = _CONSUMER_SUITES.get(name)
     if modules is None:
         raise ValueError(f"unknown publisher authority consumer suite {name!r}")
+    with _snapshot_import_environment() as _snapshot:
+        suite = unittest.defaultTestLoader.loadTestsFromNames(modules)
+        result = unittest.TextTestRunner(verbosity=2).run(suite)
+        return 0 if result.wasSuccessful() else 1
+
+
+@contextmanager
+def _snapshot_import_environment():
     snapshot = _authority_snapshot()
     finder = _SnapshotModuleFinder(snapshot)
     previous_path = sys.path[:]
@@ -955,9 +967,7 @@ def _run_consumer_suite(name: str) -> int:
             finder,
             *previous_meta_path,
         ]
-        suite = unittest.defaultTestLoader.loadTestsFromNames(modules)
-        result = unittest.TextTestRunner(verbosity=2).run(suite)
-        return 0 if result.wasSuccessful() else 1
+        yield snapshot
     finally:
         for module_name in tuple(sys.modules):
             if (
@@ -969,6 +979,13 @@ def _run_consumer_suite(name: str) -> int:
         sys.modules.update(repository_modules)
         sys.path[:] = previous_path
         sys.meta_path[:] = previous_meta_path
+
+
+def _run_upstream_verify(arguments: list[str]) -> int:
+    with _snapshot_import_environment():
+        from scripts.upstream_port import cli
+
+        return cli.main(["verify", *arguments])
 
 
 _WRITING_REGISTRY = (
@@ -2038,11 +2055,24 @@ def main(argv: list[str] | None = None) -> int:
         "--consumer-suite",
         choices=tuple(_CONSUMER_SUITES),
     )
+    parser.add_argument(
+        "--upstream-verify",
+        nargs=argparse.REMAINDER,
+    )
     arguments = parser.parse_args(argv)
+    secondary_actions = sum(
+        action is not None
+        for action in (
+            arguments.consumer_suite,
+            arguments.upstream_verify,
+        )
+    )
     if arguments.write_registry and (
-        arguments.check or arguments.consumer_suite is not None
+        arguments.check or secondary_actions
     ):
         parser.error("--write-registry cannot run another authority action")
+    if secondary_actions > 1:
+        parser.error("select at most one authenticated authority action")
     if not arguments.write_registry and not arguments.check:
         parser.error("select --write-registry or --check")
     try:
@@ -2055,6 +2085,8 @@ def main(argv: list[str] | None = None) -> int:
             assert_command_inventory(publisher_builder_run_script(workflow))
             if arguments.consumer_suite is not None:
                 return _run_consumer_suite(arguments.consumer_suite)
+            if arguments.upstream_verify is not None:
+                return _run_upstream_verify(arguments.upstream_verify)
     except (OSError, ValueError) as error:
         print(f"publisher-command-signatures: {error}", file=sys.stderr)
         return 1

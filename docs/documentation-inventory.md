@@ -99,6 +99,7 @@ Markdown library, so it stays stdlib-parseable and diff-friendly.
 - docs/test-cases/debug-save-fixtures.md | laqieer | current | Byte-level volatile save-fixture isolation and recovery procedure (issue #128)
 - docs/localization.md | laqieer | current | Stable locale/message IDs, catalog authoring, prefs/UI, budgets, and runtime matrices (issue #18)
 - docs/patch_release.md | laqieer | current | Trusted BPS-only maximal-profile artifact and local verification contract (issue #49)
+- docs/publisher_authority_bootstrap.md | laqieer | current | Copy/paste isolated authenticated entry protocol for publisher authority checks, consumers, and upstream verification (issue #200)
 - docs/game_localization_catalog.md | laqieer | current | Full-game FE8U-indexed CJK catalog generation, bounded runtime, and synthetic link gate
 - docs/game_locale_sources.md | laqieer | current | Maintainer reference for pinned FE8J/FE8CN imports, verified FE8U mappings, fallbacks, and regeneration gates
 - docs/game_locale_text_edits.md | laqieer | current | Generated ledger for reviewed original FE8J/FE8CN text edits and direct-import coverage

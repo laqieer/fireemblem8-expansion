@@ -3,21 +3,25 @@
 from __future__ import annotations
 
 import ast
+import base64
 from contextlib import redirect_stderr
 import copy
 import io
 import json
 import os
 import re
+import shlex
 import subprocess
 import sys
 import tempfile
 import types
 import unittest
+import zlib
 from pathlib import Path
 from unittest import mock
 
 from scripts.workflow_pilot import publisher_command_signatures
+from scripts.upstream_port import verify as upstream_verify
 from tests.workflows import test_patch_release_workflow
 
 
@@ -110,33 +114,186 @@ class PublisherCommandSignatureTests(unittest.TestCase):
         )
 
     def test_exact_tree_bootstrap_runs_before_candidate_controlled_host_tests(self):
-        command = '/usr/bin/python3 -I - "$EXPECTED_AUTHORITY_SHA" <<\'PY\''
-        self.assertIn(command, self.workflow)
-        for suite in (
-            "Run upstream-port tooling test suite",
-            "Run workflow contract test suite",
-        ):
-            with self.subTest(suite=suite):
-                position = self.workflow.index(f"- name: {suite}")
+        suites = {
+            "Verify checked-out revision": "check",
+            "Run upstream-port tooling test suite": "upstream-port",
+            "Run workflow contract test suite": "workflows",
+        }
+        commands = []
+        for step_name, suite in suites.items():
+            with self.subTest(step=step_name):
+                position = self.workflow.index(f"- name: {step_name}")
                 self.assertLess(
                     position,
                     self.workflow.index(
                         "- name: Hydrate workflow-pilot Git authority"
                     ),
                 )
-                self.assertLess(
-                    position,
-                    self.workflow.index("- name: Run gba-playtest host test suite"),
+                block_end = self.workflow.find("\n    - name:", position + 1)
+                block = self.workflow[
+                    position : block_end if block_end >= 0 else len(self.workflow)
+                ]
+                self.assertNotIn("<<'PY'", block)
+                command_line = next(
+                    line.strip()
+                    for line in block.splitlines()
+                    if "/usr/bin/python3 -I -S -c " in line
                 )
-        self.assertIn(
-            'commit = object_bytes(expected, "commit")',
+                command = command_line.split(
+                    "/usr/bin/python3",
+                    1,
+                )[1]
+                command = "/usr/bin/python3" + command
+                argv = shlex.split(command)
+                self.assertEqual(
+                    argv,
+                    upstream_verify.publisher_authority_command(
+                        "$GITHUB_WORKSPACE",
+                        "$EXPECTED_AUTHORITY_SHA",
+                        "$AUTHORITY_SUITE",
+                    ),
+                )
+                self.assertEqual(argv[:4], ["/usr/bin/python3", "-I", "-S", "-c"])
+                self.assertNotIn("-m", argv[:5])
+                commands.append(tuple(argv))
+        self.assertEqual(len(set(commands)), 1)
+
+    def test_shared_bootstrap_payload_matches_authenticated_source_blob(self):
+        payload = zlib.decompress(
+            base64.urlsafe_b64decode(
+                upstream_verify._PUBLISHER_AUTHORITY_PAYLOAD
+            )
+        )
+        self.assertEqual(
+            payload,
+            publisher_command_signatures.authority_file_bytes(
+                "scripts/workflow_pilot/publisher_authority_bootstrap.py"
+            ),
+        )
+        self.assertNotIn(
+            "python3 -m scripts.workflow_pilot.publisher_command_signatures",
             self.workflow,
         )
-        self.assertIn('source = object_bytes(object_id, "blob")', self.workflow)
-        self.assertIn(
-            'exec(compile(source, path, "exec"), namespace)',
-            self.workflow,
+
+    def test_documented_local_commands_use_the_same_isolated_protocol(self):
+        document = (
+            ROOT / "docs" / "publisher_authority_bootstrap.md"
+        ).read_text(encoding="utf-8")
+        commands = re.findall(r"```bash\n([^\n]+)\n```", document)
+        expected = [
+            upstream_verify.publisher_authority_command(".", "HEAD", "check"),
+            upstream_verify.publisher_authority_command(
+                ".",
+                "HEAD",
+                "upstream-port",
+            ),
+            upstream_verify.publisher_authority_command(
+                ".",
+                "HEAD",
+                "workflows",
+            ),
+            upstream_verify.publisher_authority_command(
+                ".",
+                "HEAD",
+                "upstream-verify",
+            ),
+            upstream_verify.publisher_authority_command(
+                ".",
+                "HEAD",
+                "upstream-verify",
+                "--dry-run",
+            ),
+        ]
+        self.assertEqual(
+            [shlex.split(command) for command in commands],
+            expected,
         )
+        for path in (
+            ROOT / ".github" / "workflows" / "build.yml",
+            ROOT / "docs" / "README.md",
+            ROOT / "docs" / "framework-support.md",
+            ROOT / "docs" / "patch_release.md",
+            ROOT / "docs" / "publisher_authority_bootstrap.md",
+            ROOT / "docs" / "upstream-porting.md",
+            ROOT / "docs" / "test-cases" / "patch-release.md",
+        ):
+            with self.subTest(path=path):
+                text = path.read_text(encoding="utf-8")
+                self.assertNotIn(
+                    "python3 -m scripts.workflow_pilot."
+                    "publisher_command_signatures --check",
+                    text,
+                )
+                self.assertNotIn(
+                    "python3 -m scripts.upstream_port verify",
+                    text,
+                )
+
+    def test_documented_protocol_ignores_root_shadows_and_rejects_live_replacement(self):
+        ARTIFACT_ROOT.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(
+            prefix="publisher-local-protocol-",
+            dir=ARTIFACT_ROOT,
+        ) as temporary:
+            checkout = Path(temporary) / "checkout"
+            subprocess.run(
+                [
+                    "/usr/bin/git",
+                    "clone",
+                    "--quiet",
+                    "--no-hardlinks",
+                    str(ROOT),
+                    str(checkout),
+                ],
+                check=True,
+            )
+            for name in ("shlex.py", "json.py", "pathlib.py"):
+                (checkout / name).write_text(
+                    "raise AssertionError('root shadow imported')\n"
+                )
+            (checkout / "scripts" / "__init__.py").write_text(
+                "raise AssertionError('package shadow imported')\n"
+            )
+            for mode, arguments in (
+                ("check", ()),
+                ("upstream-verify", ("--dry-run",)),
+            ):
+                with self.subTest(mode=mode):
+                    completed = subprocess.run(
+                        upstream_verify.publisher_authority_command(
+                            str(checkout),
+                            "HEAD",
+                            mode,
+                            *arguments,
+                        ),
+                        cwd=checkout,
+                        check=False,
+                        capture_output=True,
+                        text=True,
+                    )
+                    self.assertEqual(
+                        completed.returncode,
+                        0,
+                        completed.stderr,
+                    )
+            initializer = (
+                checkout / "scripts" / "workflow_pilot" / "__init__.py"
+            )
+            initializer.write_text(
+                "raise AssertionError('live package imported')\n"
+            )
+            completed = subprocess.run(
+                upstream_verify.publisher_authority_command(
+                    str(checkout),
+                    "HEAD",
+                    "check",
+                ),
+                cwd=checkout,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            self.assertNotEqual(completed.returncode, 0)
 
     def test_mirrored_publisher_validators_share_the_same_decision(self):
         self.assertEqual(
@@ -650,6 +807,7 @@ class PublisherCommandSignatureTests(unittest.TestCase):
                 "argparse",
                 "ast",
                 "collections",
+                "contextlib",
                 "dataclasses",
                 "hashlib",
                 "importlib",
@@ -658,6 +816,7 @@ class PublisherCommandSignatureTests(unittest.TestCase):
                 "pathlib",
                 "posixpath",
                 "re",
+                "scripts",
                 "shlex",
                 "stat",
                 "subprocess",

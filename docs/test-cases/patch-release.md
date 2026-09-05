@@ -324,26 +324,19 @@ case does not test an unpublished base through CI.
 
 ### Actions
 
-1. Validate the real production builder and exact membership checker:
-
-   ```bash
-   python3 -m scripts.workflow_pilot.publisher_command_signatures --check
-   ```
+1. Run the copy/paste
+   [registry-check command](../publisher_authority_bootstrap.md#registry-check).
 
 2. Run the table-driven positive, adversarial, helper, drift, deletion, and
    mirrored-validator suite through the authenticated snapshot bootstrap:
 
-   ```bash
-   python3 -m scripts.workflow_pilot.publisher_command_signatures \
-     --check --consumer-suite workflows
-   ```
+   Use the copy/paste
+   [workflow-consumer command](../publisher_authority_bootstrap.md#authenticated-workflow-consumers).
 
 3. Run the upstream workflow mirror through the same bootstrap:
 
-   ```bash
-   python3 -m scripts.workflow_pilot.publisher_command_signatures \
-     --check --consumer-suite upstream-port
-   ```
+   Use the copy/paste
+   [upstream-port command](../publisher_authority_bootstrap.md#authenticated-upstream-port-consumers).
 
 ### Expected result
 
@@ -373,6 +366,9 @@ owner/mode drift, altered same-path content, validate-then-swap replacement,
 misnamed commit/tree/blob objects, and import-cache, standard-library shadow,
 or `sys.path` poisoning fail. The parser executes from the captured Git blob
 and the registry is parsed from its captured blob.
+CI and local commands use the same absolute `/usr/bin/python3 -I -S -c`
+protocol and compressed, byte-checked bootstrap payload. Ordinary `python -m`
+publisher-authority or upstream-verifier entrypoints are not accepted evidence.
 
 The semantic inventory treats a pure cross-command reorder as the same set and
 emits events without imposing their phase order. The pre-existing exact-run
@@ -402,24 +398,27 @@ are unchanged.
 
 ### Automation
 
-- `python3 -m scripts.workflow_pilot.publisher_command_signatures --check` —
+- The
+  [registry-check command](../publisher_authority_bootstrap.md#registry-check)
   parses the real workflow, validates the exact fixed Python programs, and
   checks complete counted equality with the closed JSON registry.
-- `python3 -m scripts.workflow_pilot.publisher_command_signatures --check
-  --consumer-suite workflows` — loads the workflow-pilot, modernize, and
-  workflow-test Python closure from authenticated Git bytes and proves the real
-  positive, parent composed-reader negative, adversarial
+- The
+  [workflow-consumer command](../publisher_authority_bootstrap.md#authenticated-workflow-consumers)
+  loads the workflow-pilot, modernize, and workflow-test Python closure from
+  authenticated Git bytes and proves the real positive, parent composed-reader
+  negative, adversarial
   signature families, recursive helper closure, both mirrored validator
   decisions, exact checker mutations, production-command drift, and registry
   path/digest/schema/deletion/mutation controls; parameterized authority-file,
   parent, symlink, nonregular, mode, hardlink, content, path-swap, and import
   substitution cases; and proof that the semantic inventory does not enforce
   future phase-event order.
-- `python3 -m scripts.workflow_pilot.publisher_command_signatures --check
-  --consumer-suite upstream-port` — loads the upstream-port implementation and
-  test closure from the same authenticated snapshot, preserves its stdlib-only
-  contract, and proves its workflow parser denies the same command mutations as
-  the primary publisher validator.
+- The
+  [upstream-port command](../publisher_authority_bootstrap.md#authenticated-upstream-port-consumers)
+  loads the upstream-port implementation and test closure from the same
+  authenticated snapshot, preserves its stdlib-only contract, and proves its
+  workflow parser denies the same command mutations as the primary publisher
+  validator.
 
 ### Cleanup and limitations
 
