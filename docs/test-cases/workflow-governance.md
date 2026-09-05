@@ -1461,9 +1461,11 @@ game behavior needs a compensating change.
 
 - **Feature / originating issue:** `workflow-governance` /
   [issue #204](https://github.com/laqieer/fireemblem8-expansion/issues/204).
-- **Supported configuration or artifact:** Linux host with Python 3, Git,
-  `memfd_create`, `/proc/self/fd`, and write/grow/shrink/seal kernel file
-  seals. No GitHub token, ROM, emulator, ARM toolchain, or network is required.
+- **Supported configuration or artifact:** Linux x86-64 host with Python 3,
+  Git, `/usr/bin/cc`, `/usr/bin/bwrap`, unprivileged user/mount/PID/network
+  namespaces, `memfd_create`, `/proc/self/fd` for trusted launcher compilation,
+  pidfds, seccomp, and write/grow/shrink/seal kernel file seals. No GitHub
+  token, ROM, emulator, ARM toolchain, or network is required.
 - **Prerequisites and clean starting state:** exact issue #204 source checkout;
   no prior `build/test-artifacts/sealed-execution-capsule` directory or running
   test child.
@@ -1475,32 +1477,41 @@ game behavior needs a compensating change.
 2. Observe the preserved negative control: validate a trusted pathname, swap
    it at the subprocess boundary, receive a forged pass/authority binding, and
    restore it.
-3. Build one exact Git bundle containing two programs, their package/module
-   closure, and base/origin/head data. Swap every materialized program,
-   module, and data pathname after bundle construction.
+3. Build one exact Git bundle and authority policy containing two programs,
+   their closed package/module and standard-library imports, and
+   base/origin/head data. Swap every materialized program, module, and data
+   pathname after bundle construction.
 4. Execute table-driven outer-checker, inner-assertion, five sibling-member,
    remote-round, local-remediation, and artifact-read requests through the
    same capsule.
 5. Exercise missing, extra, duplicate, wrong-mode, wrong-blob, wrong-role,
    unknown-role, changed-content, symlink, unexpected import, and pathname
    fallback controls.
-6. Exercise mutable/unsealed, reused, wrong, and unexpected inherited
-   descriptors; duplicate/non-finite JSON; unsupported-platform handling;
-   child crash, timeout/fork, oversized, malformed, and partial output; and
-   parent interruption.
-7. Run `python3 scripts/check_docs.py --check`.
+6. Exercise self-authenticated/fake bundles, all-zero IDs, mixed revisions,
+   wrong tree/blob/mode/content/object format/role, a candidate program labeled
+   as base, mutable/unsealed/reused/wrong/unexpected inherited descriptors,
+   duplicate/non-finite JSON, and unsupported-platform handling.
+7. From program code attempt `/bin/cat /etc/hostname`, subprocess, socket,
+   `ctypes`, executable mapping, fork/exec, `setsid`/double-fork, import-hook
+   replacement, file writes, `/proc`, environment, and credential reads.
+8. Force child crash, timeout, closed stdio, oversized/malformed/partial
+   output, parent interruption, and abrupt parent `SIGKILL`.
+9. Run `python3 scripts/check_docs.py --check`.
 
 ### Expected result
 
-Only bytes read from the sealed program, request, and canonical artifact
-bundle descriptors execute or load. Path swaps cannot change the exact
-program, module, or base/origin/head data result, and forged checker/assertion
-replacements cannot produce a pass. SHA-1 and supported SHA-256 Git object
-formats preserve exact mode/blob/content metadata. The deterministic receipt
-binds program, request, bundle, raw output, and its own canonical body.
-Every malformed closure or descriptor case fails before a trusted result.
-Timeout, crash, oversized/malformed/partial output, and interruption return no
-receipt, kill the process group, and leave no descriptor.
+Public execution revalidates the caller's exact authority policy and complete
+bundle directly against Git immediately before sealing; bundle-authored
+digests are never authority. Only bytes read from sealed program, request, and
+bundle descriptors execute or load. The minimal `python3 -I -S` process runs
+inside capability-free mount/PID/network/user namespaces with a read-only
+minimal filesystem, empty environment, no `/proc`, `no_new_privs`, seccomp,
+rlimits, parent-death signaling, and a closed descriptor set. Path swaps cannot
+change exact code/data, and forged checker/assertion replacements cannot pass.
+Forbidden process, network, native-code, import, filesystem, environment, and
+namespace operations fail. Receipt construction occurs only after pidfd proof
+that containment is empty. Every malformed or interrupted case leaves no live
+descendant, open descriptor, or receipt.
 
 ### Negative control
 
@@ -1513,8 +1524,10 @@ bytes instead.
 ### Interactions and save compatibility
 
 Dependencies are the existing exact-tree Git authority and isolated-launcher
-patterns. Issue #179 and PR #189 are dependents. PR #189 conflicts at its
-pathname launch surfaces and remains blocked until it adopts this seam.
+patterns plus Linux x86-64 kernel namespaces/seccomp/pidfds and the existing
+host `/usr/bin/cc` and `/usr/bin/bwrap`. Issue #179 and PR #189 are dependents.
+PR #189 conflicts at its pathname launch surfaces and remains blocked until it
+adopts this seam.
 There is no feature flag or gameplay, ROM, RAM, save, configuration identity,
 localization, generated game-data, modern release/debug, archival, Build
 topology, or required-context impact.
@@ -1532,6 +1545,7 @@ its registry contract.
 
 The suite removes its bounded ignored test repository. Manual cleanup and
 manual-only evidence are none. Linux sealed descriptors are mandatory;
-unsupported kernels and non-Linux hosts fail closed with no temporary-file or
-pathname fallback. The capsule provides execution integrity only; issue #179
-continues to own review-family policy and authenticated receipt semantics.
+unsupported kernels, architectures, namespace policy, or missing host tools
+fail closed with no temporary-file, pathname, or audit-only fallback. The
+capsule provides execution integrity only; issue #179 continues to own
+review-family policy and authenticated receipt semantics.

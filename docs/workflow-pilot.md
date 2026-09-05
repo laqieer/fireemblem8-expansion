@@ -727,47 +727,71 @@ dispositions, sibling policy, or receipt signing.
 [`sealed_execution_capsule.py`](../scripts/workflow_pilot/sealed_execution_capsule.py)
 provides the narrow integration seam:
 
-1. Declare the complete closed input set with `ArtifactSpec`. Each entry names
-   `base`, `origin`, or `head` authority; an exact commit; canonical path;
-   `program`, `module`, `package`, or `data` role; and optional expected Git
-   mode/blob identity.
-2. Call `build_artifact_bundle(repository_root, specs)`. It reads modes, blob
-   IDs, and bytes from the exact Git trees, supports SHA-1 and SHA-256 object
-   formats, rejects symlinks and non-regular modes, validates Python source,
-   and returns canonical JSON with content SHA-256 and role metadata.
-3. Call `execute_capsule(bundle, program_artifact_id=..., request=...)`. The
-   request and every authority input must be represented in that bundle; an
-   omitted imported module or data item fails rather than falling back to the
-   checkout.
+1. Declare the complete closed input set with `ArtifactSpec` and an explicit,
+   sorted standard-library allowlist. Each entry names `base`, `origin`, or
+   `head` authority; an exact commit; canonical path; `program`, `module`,
+   `package`, or `data` role; and optional expected Git mode/blob identity.
+2. Call `build_artifact_bundle(repository_root, specs, stdlib_modules=...)`.
+   It requires one exact revision/tree/object format per authority, reads every
+   mode, blob ID, and byte from Git, rejects symlinks and non-regular modes,
+   validates the complete static Python import closure, and returns canonical
+   schema-v2 JSON plus an `AuthorityPolicy` map of allowed paths and roles.
+3. Call
+   `execute_capsule(repository_root, bundle, authority_map=..., stdlib_modules=..., program_artifact_id=..., request=...)`.
+   Raw bundle bytes are not executable. Immediately before sealing, execution
+   holds a no-follow descriptor for the repository root, rebuilds every
+   authority/path/mode/blob/content relationship directly from Git, and
+   requires byte-identical bundle, policy, and allowlist results. An omitted,
+   extra, mixed-revision, fake-ID, candidate-under-base, or changed imported
+   module/data item fails before launch.
+   The caller must freeze `authority_map` from its trusted orchestration
+   contract (for example, the independently established PR base/origin/head
+   SHAs); the authority copy inside a supplied bundle is evidence to compare,
+   never the source of that trust decision.
 4. Consume `CapsuleResult.output`, `receipt`, and `receipt_sha256`. The receipt
    binds the exact program, request, artifact-bundle, and raw output bytes read
    by the execution boundary. A later authenticated review receipt may include
    this complete capsule receipt; it must not rehash a materialized pathname.
 
-The launcher creates anonymous program, request, bundle, and bootstrap
-descriptors with `MFD_ALLOW_SEALING`, then applies and verifies
-`F_SEAL_WRITE`, `F_SEAL_GROW`, `F_SEAL_SHRINK`, and `F_SEAL_SEAL` before
-adding credentials or starting `/usr/bin/python3 -I`. The child verifies the
-same seals and descriptor envelopes, rejects reused or unexpected inherited
-FDs, loads declared modules and data only from bundle bytes, and executes the
-program source read from its sealed FD. Ambient FDs are closed at launch, and
-the four authority FDs are closed after verification and before program code.
-Non-standard imports and materialized filesystem reads fail closed. Output,
-stderr, artifact count/size, request size, and runtime are bounded; timeout or
-interruption kills the complete child process group and closes every parent
-descriptor without returning a receipt.
+The parent creates anonymous program, request, and bundle memfds with
+`MFD_ALLOW_SEALING`, then applies and verifies `F_SEAL_WRITE`, `F_SEAL_GROW`,
+`F_SEAL_SHRINK`, and `F_SEAL_SEAL`. It compiles the fixed C supervisor source
+directly into a fourth sealed memfd. No credential is accepted or inherited.
 
-Optional credential names are canonical uppercase identifiers. The parent adds
-them only after every authority descriptor is sealed, prefixes them so they
-cannot become `PYTHON*`, `LD_*`, path, locale, or other interpreter/runtime
-control variables, and exposes the recovered mapping as
-`sealed_capsule.credentials`.
+`/usr/bin/bwrap` creates fresh user, mount, PID, network, IPC, UTS, and cgroup
+namespaces, drops capabilities, clears the environment, exposes only
+read-only interpreter/runtime trees and `/dev`, omits `/proc`, `/etc`, `/bin`,
+the repository, and the host home, then remounts the sandbox root read-only.
+The sealed C supervisor verifies the inherited-FD set, installs
+`PR_SET_PDEATHSIG` with a parent-race check, `no_new_privs`, strict resource
+limits, and an x86-64 seccomp filter before a one-time descriptor-based
+`execveat` of `/usr/bin/python3 -I -S`. The filter denies process/thread
+creation, later execution, sockets/network, namespace/mount changes, ptrace,
+native-code helper facilities, and privilege/security-control changes.
 
-This capability requires Linux `memfd_create`, `/proc/self/fd`, and kernel file
-seals. There is deliberately no pathname, temporary-file, mutable-FD, or
-unsealed portability fallback. Unsupported hosts fail before execution or
-credential exposure. Issue #179 can use one bundle for its exact-base outer
-checker, assertion program and imported module closure, plus base/origin/head
-data; it can select the applicable program artifact for outer, behavior,
-member, remote-round, or local-remediation requests while preserving its own
-family/disposition policy above this seam.
+The minimal Python bootstrap verifies all descriptor seals and envelopes,
+closes authority FDs before program code, preloads only the declared safe
+standard-library modules, installs the descriptor-backed module/data loader,
+empties `sys.path` and the environment, and denies later pathname opens and
+undeclared imports. These Python guards are defense in depth; the filesystem,
+network, process, and lifetime boundary is enforced by namespaces, seccomp,
+`no_new_privs`, resource limits, and parent-death signaling rather than by an
+audit hook.
+
+Output, stderr, artifact count/size, request size, and runtime are bounded;
+successful execution additionally requires empty stderr.
+Timeout or interruption kills the supervisor process group; PID-namespace
+teardown covers `setsid` or double-fork attempts even if process creation is
+later relaxed. A pidfd must prove the namespace supervisor terminated before a
+receipt is created.
+
+This capability intentionally supports only Linux x86-64 hosts with
+`memfd_create`, `/proc/self/fd` for the trusted pre-sandbox compiler handoff,
+kernel file seals, PID/user/mount/network namespaces, `/usr/bin/bwrap`, and
+`/usr/bin/cc`. There is no pathname, temporary-file, mutable-FD, unsealed,
+audit-only, or portable fallback. Unsupported hosts fail before execution.
+Issue #179 can use one trusted authority policy and bundle for its exact-base
+outer checker, assertion program/import closure, and base/origin/head data,
+then select the applicable program artifact for outer, behavior, member,
+remote-round, or local-remediation requests while preserving its own
+family/disposition and authenticated-signing policy above this seam.

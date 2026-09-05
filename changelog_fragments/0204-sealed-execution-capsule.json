@@ -1,6 +1,6 @@
 {
   "issue": 204,
   "category": "security",
-  "summary": "Add a reusable Linux sealed-descriptor capsule that executes exact-Git Python programs and loads their closed module/data bundle without reopening materialized authority paths.",
+  "summary": "Add a reusable Linux x86-64 sealed-descriptor capsule that revalidates exact-Git authority and executes a closed Python module/data bundle inside mount, PID, user, and network namespaces with seccomp containment.",
   "semver_impact": "none"
 }

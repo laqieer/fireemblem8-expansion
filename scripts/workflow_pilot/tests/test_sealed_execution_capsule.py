@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import copy
+import dataclasses
 import fcntl
 import hashlib
 import json
@@ -24,7 +25,7 @@ import os
 import sys
 import time
 
-from sealed_capsule import credentials, read_artifact, request
+from sealed_capsule import read_artifact, request
 from trustedpkg.helper import trusted_value
 
 mode = request.get("mode", "positive")
@@ -39,56 +40,86 @@ if mode == "positive":
     print(json.dumps(result, sort_keys=True, separators=(",", ":")))
 elif mode == "authority":
     print(json.dumps({"authority_binding": "exact", "pass": False}, sort_keys=True))
-elif mode == "credentials":
-    print(json.dumps({"credentials": credentials}, sort_keys=True))
 elif mode == "fds":
     inherited = []
-    for name in os.listdir("/proc/self/fd"):
+    for fd in range(3, 32):
         try:
-            fd = int(name)
             os.fstat(fd)
-        except (ValueError, OSError):
+        except OSError:
             continue
         inherited.append(fd)
     print(json.dumps({"fds": sorted(inherited)}))
 elif mode == "unexpected-import":
-    import candidate_only
+    __import__("candidate_only")
 elif mode == "unexpected-data":
     print(read_artifact("inputs/not-declared.json", authority="head"))
 elif mode == "path-read":
-    from pathlib import Path
-    print(Path(request["path"]).read_text())
+    print(open(request["path"], "r", encoding="utf-8").read())
 elif mode == "spec-fallback":
-    import importlib.util
+    importlib = __import__("importlib")
     spec = importlib.util.spec_from_file_location("candidate_only", request["path"])
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     print(json.dumps({"value": module.value}))
+elif mode == "subprocess":
+    __import__("subprocess").run(["/bin/cat", "/etc/hostname"], check=True)
+elif mode == "socket":
+    __import__("socket").socket()
+elif mode == "ctypes":
+    __import__("ctypes")
+elif mode == "mmap":
+    __import__("mmap")
+elif mode == "native-loader":
+    importlib = __import__("importlib")
+    machinery = __import__("importlib.machinery").machinery
+    specification = machinery.ModuleSpec(
+        "_ctypes",
+        machinery.ExtensionFileLoader("_ctypes", request["path"]),
+        origin=request["path"],
+    )
+    __import__("_imp").create_dynamic(specification)
+elif mode == "fork":
+    os.fork()
+elif mode == "exec":
+    os.execve("/usr/bin/python3", ["/usr/bin/python3", "-c", "print('forged')"], {})
+elif mode == "setsid-double-fork":
+    os.setsid()
+    os.fork()
+elif mode == "double-fork":
+    os.fork()
+    os.fork()
+elif mode == "filesystem":
+    write_blocked = False
+    try:
+        os.mkdir("/capsule-write")
+    except OSError:
+        write_blocked = True
+    print(json.dumps({
+        "environment": dict(os.environ),
+        "etc_hostname": os.path.exists("/etc/hostname"),
+        "proc": os.path.exists("/proc/self/environ"),
+        "write_blocked": write_blocked,
+    }, sort_keys=True))
+elif mode == "import-hook":
+    sys.meta_path[:] = []
+    __import__("ctypes")
 elif mode == "crash":
     os._exit(17)
 elif mode == "timeout":
     time.sleep(30)
-elif mode == "fork-timeout":
-    child = os.fork()
-    if child == 0:
-        time.sleep(30)
-        os._exit(0)
-    os.write(1, ('{"child_pid":%d' % child).encode("ascii"))
+elif mode == "closed-stdio-timeout":
+    os.close(1)
+    os.close(2)
     time.sleep(30)
-elif mode == "fork-success":
-    child = os.fork()
-    if child == 0:
-        os.close(1)
-        os.close(2)
-        time.sleep(30)
-        os._exit(0)
-    print(json.dumps({"child_pid": child}))
 elif mode == "oversized":
     os.write(1, b'{"value":"' + b"x" * (2 * 1024 * 1024) + b'"}')
 elif mode == "malformed":
     os.write(1, b'{"pass":NaN}')
 elif mode == "partial":
     os.write(1, b'{"pass":')
+elif mode == "stderr-success":
+    os.write(2, b"unexpected diagnostic")
+    print('{"pass":true}')
 else:
     raise RuntimeError("unknown test mode")
 """
@@ -180,6 +211,14 @@ class SealedExecutionCapsuleTests(unittest.TestCase):
         run_git(cls.repository, "add", "inputs/head.json")
         run_git(cls.repository, "commit", "-q", "-m", "head")
         cls.head_sha = run_git(cls.repository, "rev-parse", "HEAD").decode().strip()
+        (cls.repository / "candidate_program.py").write_text(
+            FORGED_PROGRAM, encoding="utf-8"
+        )
+        run_git(cls.repository, "add", "candidate_program.py")
+        run_git(cls.repository, "commit", "-q", "-m", "candidate program")
+        cls.candidate_sha = run_git(
+            cls.repository, "rev-parse", "HEAD"
+        ).decode().strip()
         cls.specs = (
             capsule.ArtifactSpec(
                 "base", cls.base_sha, "trusted_program.py", "program"
@@ -211,7 +250,19 @@ class SealedExecutionCapsuleTests(unittest.TestCase):
                 "head", cls.head_sha, "inputs/head.json", "data"
             ),
         )
-        cls.bundle = capsule.build_artifact_bundle(cls.repository, cls.specs)
+        cls.stdlib_modules = (
+            "json",
+            "os",
+            "socket",
+            "subprocess",
+            "sys",
+            "time",
+        )
+        cls.bundle = capsule.build_artifact_bundle(
+            cls.repository,
+            cls.specs,
+            stdlib_modules=cls.stdlib_modules,
+        )
         parsed = capsule.validate_artifact_bundle(
             cls.bundle.payload, expected_artifact_ids=cls.bundle.artifact_ids
         )
@@ -227,7 +278,10 @@ class SealedExecutionCapsuleTests(unittest.TestCase):
 
     def execute(self, mode: str = "positive", context: str = "outer", **kwargs):
         return capsule.execute_capsule(
+            self.repository,
             self.bundle,
+            authority_map=self.bundle.authorities,
+            stdlib_modules=self.stdlib_modules,
             program_artifact_id=self.program_ids["trusted_program.py"],
             request={"mode": mode, "context": context, **kwargs},
             timeout=0.8 if "timeout" in mode else 10,
@@ -258,7 +312,11 @@ class SealedExecutionCapsuleTests(unittest.TestCase):
         self.assertEqual(path.read_bytes(), trusted)
 
     def test_exact_bundle_is_deterministic_and_bound_to_executed_bytes(self):
-        rebuilt = capsule.build_artifact_bundle(self.repository, self.specs)
+        rebuilt = capsule.build_artifact_bundle(
+            self.repository,
+            self.specs,
+            stdlib_modules=self.stdlib_modules,
+        )
         self.assertEqual(rebuilt, self.bundle)
         first = self.execute(context="outer")
         second = self.execute(context="outer")
@@ -285,6 +343,11 @@ class SealedExecutionCapsuleTests(unittest.TestCase):
             first.receipt_sha256,
             hashlib.sha256(capsule.normalized_json(first.receipt)).hexdigest(),
         )
+        self.assertEqual(
+            first.receipt["sandbox_profile"],
+            "linux-x86_64-bwrap-pid-net-mount-seccomp-v1",
+        )
+        self.assertRegex(first.receipt["sandbox_launcher_sha256"], r"^[0-9a-f]{64}$")
 
     def test_all_former_path_roles_are_immutable_after_construction(self):
         paths = [
@@ -305,7 +368,10 @@ class SealedExecutionCapsuleTests(unittest.TestCase):
 
         try:
             result = capsule.execute_capsule(
+                self.repository,
                 self.bundle,
+                authority_map=self.bundle.authorities,
+                stdlib_modules=self.stdlib_modules,
                 program_artifact_id=self.program_ids["trusted_program.py"],
                 request={"mode": "positive", "context": "artifact"},
                 _before_spawn=swap_paths,
@@ -349,7 +415,10 @@ class SealedExecutionCapsuleTests(unittest.TestCase):
 
                 try:
                     result = capsule.execute_capsule(
+                        self.repository,
                         self.bundle,
+                        authority_map=self.bundle.authorities,
+                        stdlib_modules=self.stdlib_modules,
                         program_artifact_id=self.program_ids[program_path],
                         request={"mode": "authority"},
                         _before_spawn=swap,
@@ -367,6 +436,8 @@ class SealedExecutionCapsuleTests(unittest.TestCase):
         return capsule.ArtifactBundle(
             capsule.normalized_json(data),
             self.bundle.artifact_ids,
+            self.bundle.authorities,
+            self.bundle.stdlib_modules,
         )
 
     def test_closed_bundle_rejects_membership_and_metadata_mutations(self):
@@ -396,10 +467,156 @@ class SealedExecutionCapsuleTests(unittest.TestCase):
             with self.subTest(name=name):
                 with self.assertRaises(capsule.CapsuleError):
                     capsule.execute_capsule(
+                        self.repository,
                         self.mutated_bundle(mutate),
+                        authority_map=self.bundle.authorities,
+                        stdlib_modules=self.stdlib_modules,
                         program_artifact_id=self.program_ids["trusted_program.py"],
                         request={"mode": "positive", "context": name},
                     )
+
+    def test_public_execution_rejects_self_authenticated_and_fake_authority(self):
+        data = json.loads(self.bundle.payload)
+        target = next(
+            record for record in data["artifacts"] if record["role"] == "program"
+        )
+        forged = FORGED_PROGRAM.encode("utf-8")
+        target["content_b64"] = base64.b64encode(forged).decode("ascii")
+        target["sha256"] = hashlib.sha256(forged).hexdigest()
+        target["blob_oid"] = "0" * len(target["blob_oid"])
+        target["artifact_id"] = capsule._artifact_id(target)
+        policies = capsule._authority_policies(data["artifacts"])
+        data["authorities"] = [
+            capsule._policy_json(policy) for policy in policies
+        ]
+        forged_bundle = capsule.ArtifactBundle(
+            capsule.normalized_json(data),
+            tuple(record["artifact_id"] for record in data["artifacts"]),
+            policies,
+            self.stdlib_modules,
+        )
+        with self.assertRaises(capsule.CapsuleError):
+            capsule.execute_capsule(
+                self.repository,
+                forged_bundle,
+                authority_map=forged_bundle.authorities,
+                stdlib_modules=self.stdlib_modules,
+                program_artifact_id=target["artifact_id"],
+                request={"mode": "authority"},
+            )
+
+        wrong_tree = dataclasses.replace(
+            self.bundle.authorities[0],
+            tree="0" * len(self.bundle.authorities[0].tree),
+        )
+        zero_revision = dataclasses.replace(
+            self.bundle.authorities[0],
+            revision="0" * len(self.bundle.authorities[0].revision),
+        )
+        wrong_format = dataclasses.replace(
+            self.bundle.authorities[0],
+            object_format="sha256",
+            revision="0" * 64,
+            tree="0" * 64,
+        )
+        for changed in (wrong_tree, zero_revision, wrong_format):
+            authority_map = (changed, *self.bundle.authorities[1:])
+            with self.subTest(policy=changed):
+                with self.assertRaises(capsule.CapsuleError):
+                    capsule.execute_capsule(
+                        self.repository,
+                        self.bundle,
+                        authority_map=authority_map,
+                        stdlib_modules=self.stdlib_modules,
+                        program_artifact_id=self.program_ids["trusted_program.py"],
+                        request={"mode": "authority"},
+                    )
+
+    def test_mixed_revision_and_candidate_under_base_authority_reject(self):
+        mixed_specs = list(self.specs)
+        mixed_specs.append(
+            capsule.ArtifactSpec(
+                "base", self.origin_sha, "inputs/origin.json", "data"
+            )
+        )
+        with self.assertRaisesRegex(capsule.CapsuleError, "one revision"):
+            capsule.build_artifact_bundle(
+                self.repository,
+                mixed_specs,
+                stdlib_modules=self.stdlib_modules,
+            )
+
+        candidate_bundle = capsule.build_artifact_bundle(
+            self.repository,
+            [
+                capsule.ArtifactSpec(
+                    "base",
+                    self.candidate_sha,
+                    "candidate_program.py",
+                    "program",
+                )
+            ],
+            stdlib_modules=("json",),
+        )
+        with self.assertRaises(capsule.CapsuleError):
+            capsule.execute_capsule(
+                self.repository,
+                candidate_bundle,
+                authority_map=self.bundle.authorities,
+                stdlib_modules=self.stdlib_modules,
+                program_artifact_id=candidate_bundle.artifact_ids[0],
+                request={},
+            )
+
+    def test_import_closure_and_stdlib_policy_are_closed(self):
+        without_helper = tuple(
+            spec
+            for spec in self.specs
+            if spec.module_name != "trustedpkg.helper"
+        )
+        with self.assertRaisesRegex(capsule.CapsuleError, "closed bundle"):
+            capsule.build_artifact_bundle(
+                self.repository,
+                without_helper,
+                stdlib_modules=self.stdlib_modules,
+            )
+        with self.assertRaisesRegex(capsule.CapsuleError, "closed bundle"):
+            capsule.build_artifact_bundle(
+                self.repository,
+                self.specs,
+                stdlib_modules=(),
+            )
+        with self.assertRaisesRegex(capsule.CapsuleError, "unsafe"):
+            capsule.build_artifact_bundle(
+                self.repository,
+                self.specs,
+                stdlib_modules=("ctypes",),
+            )
+
+    def test_execution_reloads_every_blob_from_git_before_sealing(self):
+        program_record = next(
+            record
+            for record in capsule.validate_artifact_bundle(self.bundle.payload)[
+                "artifacts"
+            ]
+            if record["path"] == "trusted_program.py"
+        )
+        object_path = (
+            self.repository
+            / ".git"
+            / "objects"
+            / program_record["blob_oid"][:2]
+            / program_record["blob_oid"][2:]
+        )
+        self.assertTrue(object_path.is_file())
+        content = object_path.read_bytes()
+        object_path.unlink()
+        try:
+            with self.assertRaises(capsule.CapsuleError):
+                self.execute(mode="authority")
+        finally:
+            object_path.parent.mkdir(parents=True, exist_ok=True)
+            object_path.write_bytes(content)
 
     def test_missing_wrong_mode_blob_and_symlink_tree_entries_reject(self):
         blob = run_git(
@@ -448,7 +665,11 @@ class SealedExecutionCapsuleTests(unittest.TestCase):
             "GIT_CONFIG_VALUE_0": "999",
         }
         with mock.patch.dict(os.environ, hostile, clear=False):
-            rebuilt = capsule.build_artifact_bundle(self.repository, self.specs)
+            rebuilt = capsule.build_artifact_bundle(
+                self.repository,
+                self.specs,
+                stdlib_modules=self.stdlib_modules,
+            )
         self.assertEqual(rebuilt, self.bundle)
 
         alternates = self.repository / ".git" / "objects" / "info" / "alternates"
@@ -463,10 +684,7 @@ class SealedExecutionCapsuleTests(unittest.TestCase):
     def test_unexpected_import_and_materialized_path_fallback_reject(self):
         with self.assertRaises(capsule.CapsuleExecutionError) as import_error:
             self.execute(mode="unexpected-import")
-        self.assertIn(
-            b"not present in sealed artifact closure",
-            import_error.exception.stderr,
-        )
+        self.assertIn(b"sealed import policy", import_error.exception.stderr)
         with self.assertRaises(capsule.CapsuleExecutionError) as data_error:
             self.execute(mode="unexpected-data")
         self.assertIn(
@@ -494,11 +712,9 @@ class SealedExecutionCapsuleTests(unittest.TestCase):
         request = capsule.normalized_json({"mode": "authority"})
         nonce = "a" * 64
         fds: list[int] = []
+        ready_read_fd = -1
+        ready_write_fd = -1
         try:
-            bootstrap_fd, bootstrap_digest = capsule._create_sealed_raw_descriptor(
-                "bootstrap", capsule._BOOTSTRAP_SOURCE.encode("utf-8")
-            )
-            fds.append(bootstrap_fd)
             program_fd, program_digest = capsule._create_sealed_descriptor(
                 "program", nonce, program
             )
@@ -511,7 +727,17 @@ class SealedExecutionCapsuleTests(unittest.TestCase):
                 "bundle", nonce, self.bundle.payload
             )
             fds.append(bundle_fd)
-            pass_fds = list(fds)
+            launcher_fd, _launcher_digest = capsule._compile_sandbox_launcher()
+            fds.append(launcher_fd)
+            ready_read_fd, ready_write_fd = os.pipe2(os.O_CLOEXEC)
+            fds.extend((ready_read_fd, ready_write_fd))
+            pass_fds = [
+                program_fd,
+                request_fd,
+                bundle_fd,
+                launcher_fd,
+                ready_write_fd,
+            ]
             if variant == "unsealed":
                 os.close(request_fd)
                 fds.remove(request_fd)
@@ -535,9 +761,7 @@ class SealedExecutionCapsuleTests(unittest.TestCase):
                 extra = os.open("/dev/null", os.O_RDONLY)
                 fds.append(extra)
                 pass_fds.append(extra)
-            command = capsule._bootstrap_command(
-                bootstrap_fd=bootstrap_fd,
-                bootstrap_digest=bootstrap_digest,
+            bootstrap_arguments = capsule._bootstrap_arguments(
                 program_fd=program_fd,
                 program_digest=program_digest,
                 request_fd=request_fd,
@@ -546,6 +770,14 @@ class SealedExecutionCapsuleTests(unittest.TestCase):
                 bundle_digest=bundle_digest,
                 nonce=nonce,
                 program_artifact_id=self.program_ids["trusted_program.py"],
+            )
+            command = capsule._sandbox_command(
+                launcher_fd=launcher_fd,
+                program_fd=program_fd,
+                request_fd=request_fd,
+                bundle_fd=bundle_fd,
+                ready_fd=ready_write_fd,
+                bootstrap_arguments=bootstrap_arguments,
             )
             return subprocess.run(
                 command,
@@ -582,36 +814,76 @@ class SealedExecutionCapsuleTests(unittest.TestCase):
         finally:
             os.close(fd)
 
+    def test_c_launcher_compiles_directly_to_a_sealed_memfd(self):
+        fd, digest = capsule._compile_sandbox_launcher()
+        try:
+            self.assertRegex(digest, r"^[0-9a-f]{64}$")
+            self.assertEqual(
+                fcntl.fcntl(fd, fcntl.F_GET_SEALS) & capsule.REQUIRED_SEALS,
+                capsule.REQUIRED_SEALS,
+            )
+            os.lseek(fd, 0, os.SEEK_SET)
+            self.assertEqual(os.read(fd, 4), b"\x7fELF")
+        finally:
+            os.close(fd)
+
     def test_timeout_crash_oversized_malformed_and_partial_leave_no_receipt(self):
-        for mode in ("timeout", "crash", "oversized", "malformed", "partial"):
+        for mode in (
+            "timeout",
+            "crash",
+            "oversized",
+            "malformed",
+            "partial",
+            "stderr-success",
+        ):
             with self.subTest(mode=mode):
                 with self.assertRaises(
                     (capsule.CapsuleExecutionError, capsule.CapsuleError)
                 ):
                     self.execute(mode=mode)
 
-    def test_timeout_kills_process_group_and_closes_descriptors(self):
+    def test_timeout_and_closed_stdio_leave_no_process_or_descriptor(self):
         before = len(os.listdir("/proc/self/fd"))
-        with self.assertRaises(capsule.CapsuleExecutionError) as caught:
-            self.execute(mode="fork-timeout")
-        match = __import__("re").search(rb'"child_pid":(\d+)', caught.exception.stdout)
-        self.assertIsNotNone(match)
-        child_pid = int(match.group(1))
-        for _ in range(50):
-            if not pid_exists(child_pid):
-                break
-            time.sleep(0.02)
-        self.assertFalse(pid_exists(child_pid))
+        for mode in ("timeout", "closed-stdio-timeout"):
+            with self.subTest(mode=mode):
+                with self.assertRaises(capsule.CapsuleExecutionError):
+                    self.execute(mode=mode)
         self.assertEqual(len(os.listdir("/proc/self/fd")), before)
 
-    def test_success_kills_closed_pipe_descendants(self):
-        result = self.execute(mode="fork-success")
-        child_pid = result.output["child_pid"]
-        for _ in range(50):
-            if not pid_exists(child_pid):
-                break
-            time.sleep(0.02)
-        self.assertFalse(pid_exists(child_pid))
+    def test_kernel_sandbox_denies_process_network_native_and_escape_paths(self):
+        for mode in (
+            "subprocess",
+            "socket",
+            "fork",
+            "exec",
+            "setsid-double-fork",
+            "double-fork",
+        ):
+            with self.subTest(mode=mode):
+                with self.assertRaises(capsule.CapsuleExecutionError) as caught:
+                    self.execute(mode=mode)
+                self.assertIn(b"Operation not permitted", caught.exception.stderr)
+                if mode == "subprocess":
+                    self.assertIn(b"/bin/cat", caught.exception.stderr)
+        for mode in (
+            "ctypes",
+            "mmap",
+            "native-loader",
+            "import-hook",
+        ):
+            with self.subTest(mode=mode):
+                with self.assertRaises(capsule.CapsuleExecutionError) as caught:
+                    if mode == "native-loader":
+                        spec = __import__("importlib.util").util.find_spec("_ctypes")
+                        self.assertIsNotNone(spec)
+                        self.execute(mode=mode, path=spec.origin)
+                    else:
+                        self.execute(mode=mode)
+                self.assertTrue(
+                    b"sealed import policy" in caught.exception.stderr
+                    or b"cannot open shared object file" in caught.exception.stderr
+                    or b"file too short" in caught.exception.stderr
+                )
 
     def test_parent_interruption_kills_child_and_closes_descriptors(self):
         before = len(os.listdir("/proc/self/fd"))
@@ -626,7 +898,10 @@ class SealedExecutionCapsuleTests(unittest.TestCase):
             capsule.CapsuleExecutionError, "launch was interrupted"
         ):
             capsule.execute_capsule(
+                self.repository,
                 self.bundle,
+                authority_map=self.bundle.authorities,
+                stdlib_modules=self.stdlib_modules,
                 program_artifact_id=self.program_ids["trusted_program.py"],
                 request={"mode": "timeout"},
                 _after_spawn=interrupt,
@@ -635,10 +910,36 @@ class SealedExecutionCapsuleTests(unittest.TestCase):
         self.assertFalse(pid_exists(child_pid))
         self.assertEqual(len(os.listdir("/proc/self/fd")), before)
 
+    def test_receipt_is_withheld_until_containment_is_empty(self):
+        with mock.patch.object(
+            capsule,
+            "_verify_containment_empty",
+            side_effect=capsule.CapsuleExecutionError(
+                "sandbox PID namespace did not terminate"
+            ),
+        ):
+            with self.assertRaisesRegex(
+                capsule.CapsuleExecutionError,
+                "PID namespace did not terminate",
+            ):
+                self.execute(mode="positive")
+
     def test_bounds_strict_json_and_fail_closed_platform(self):
         with self.assertRaises(capsule.CapsuleError):
             capsule.execute_capsule(
+                self.repository,
+                self.bundle.payload,
+                authority_map=self.bundle.authorities,
+                stdlib_modules=self.stdlib_modules,
+                program_artifact_id=self.program_ids["trusted_program.py"],
+                request={},
+            )
+        with self.assertRaises(capsule.CapsuleError):
+            capsule.execute_capsule(
+                self.repository,
                 self.bundle,
+                authority_map=self.bundle.authorities,
+                stdlib_modules=self.stdlib_modules,
                 program_artifact_id=self.program_ids["trusted_program.py"],
                 request=b'{"x":1,"x":2}',
             )
@@ -650,37 +951,81 @@ class SealedExecutionCapsuleTests(unittest.TestCase):
         with mock.patch.object(capsule.sys, "platform", "darwin"):
             with self.assertRaisesRegex(capsule.CapsuleError, "require Linux"):
                 capsule._require_platform()
+        with mock.patch.object(capsule, "BWRAP", "/missing/bwrap"):
+            with self.assertRaisesRegex(capsule.CapsuleError, "bwrap"):
+                capsule._require_platform()
 
-    def test_credentials_are_added_only_as_non_runtime_control_names(self):
-        result = capsule.execute_capsule(
-            self.bundle,
-            program_artifact_id=self.program_ids["trusted_program.py"],
-            request={"mode": "credentials"},
-            credentials={
-                "GH_TOKEN": "secret-token",
-                "PYTHONPATH": "/candidate/control",
-            },
-        )
+    def test_environment_credentials_proc_and_writes_are_absent(self):
+        with mock.patch.dict(
+            os.environ,
+            {"GH_TOKEN": "secret-token", "PYTHONPATH": "/candidate/control"},
+            clear=False,
+        ):
+            result = self.execute(mode="filesystem")
         self.assertEqual(
             result.output,
             {
-                "credentials": {
-                    "GH_TOKEN": "secret-token",
-                    "PYTHONPATH": "/candidate/control",
-                }
+                "environment": {},
+                "etc_hostname": False,
+                "proc": False,
+                "write_blocked": True,
             },
         )
-        with self.assertRaises(capsule.CapsuleError):
-            capsule.execute_capsule(
-                self.bundle,
-                program_artifact_id=self.program_ids["trusted_program.py"],
-                request={"mode": "credentials"},
-                credentials={"lowercase": "invalid"},
-            )
 
     def test_program_runs_after_authority_descriptors_are_closed(self):
         result = self.execute(mode="fds")
-        self.assertEqual(result.output, {"fds": [0, 1, 2]})
+        self.assertEqual(result.output, {"fds": []})
+
+    def test_abrupt_parent_sigkill_terminates_pid_namespace(self):
+        read_fd, write_fd = os.pipe()
+        helper_pid = os.fork()
+        if helper_pid == 0:
+            os.close(read_fd)
+            try:
+                capsule.execute_capsule(
+                    self.repository,
+                    self.bundle,
+                    authority_map=self.bundle.authorities,
+                    stdlib_modules=self.stdlib_modules,
+                    program_artifact_id=self.program_ids["trusted_program.py"],
+                    request={"mode": "timeout"},
+                    timeout=60,
+                    _after_spawn=lambda pid: os.write(
+                        write_fd, f"{pid}\n".encode("ascii")
+                    ),
+                )
+            finally:
+                os._exit(99)
+        os.close(write_fd)
+        try:
+            raw = os.read(read_fd, 64)
+            self.assertTrue(raw.endswith(b"\n"))
+            supervisor_pid = int(raw)
+            self.assertTrue(pid_exists(supervisor_pid))
+            os.kill(helper_pid, __import__("signal").SIGKILL)
+            os.waitpid(helper_pid, 0)
+            for _ in range(200):
+                if not pid_exists(supervisor_pid):
+                    break
+                status_path = Path(f"/proc/{supervisor_pid}/status")
+                try:
+                    state = next(
+                        line
+                        for line in status_path.read_text(encoding="utf-8").splitlines()
+                        if line.startswith("State:")
+                    )
+                except (FileNotFoundError, ProcessLookupError, StopIteration):
+                    break
+                if "\tZ " in state:
+                    break
+                time.sleep(0.05)
+            else:
+                self.fail("sandbox supervisor remained live after abrupt parent death")
+        finally:
+            os.close(read_fd)
+            if pid_exists(helper_pid):
+                os.kill(helper_pid, __import__("signal").SIGKILL)
+                os.waitpid(helper_pid, 0)
 
     def test_sha256_git_object_format_when_supported(self):
         repository = TEST_ROOT / "sha256-authority"
@@ -714,7 +1059,10 @@ class SealedExecutionCapsuleTests(unittest.TestCase):
         self.assertEqual(record["object_format"], "sha256")
         self.assertEqual(len(record["blob_oid"]), 64)
         result = capsule.execute_capsule(
+            repository,
             bundle,
+            authority_map=bundle.authorities,
+            stdlib_modules=(),
             program_artifact_id=record["artifact_id"],
             request={},
         )
