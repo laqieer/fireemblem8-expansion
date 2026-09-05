@@ -5959,6 +5959,27 @@ class PullRequestMetadataTests(unittest.TestCase):
         self.assertEqual(runs[0].run_attempt, 2)
         self.assertEqual(runs[0].conclusion, "success")
 
+    def test_enum_values_reject_unhashable_and_nonstring_json(self):
+        for value in ([], {}, ["success"], {"reason": "candidate-drift"}, True, 1):
+            with self.subTest(field="abort.reason", value=value):
+                abort = _abort(_receipt()).canonical_payload()
+                abort["reason"] = value
+                with self.assertRaises(pr_metadata.MetadataEditError):
+                    pr_metadata._parse_edit_abort(abort)
+            for field in ("run", "job"):
+                with self.subTest(field=field, value=value):
+                    client = ScriptedClient()
+                    record, jobs = _run(101, 10, mode="full")
+                    if field == "run":
+                        record["conclusion"] = value
+                    else:
+                        jobs[0]["conclusion"] = value
+                    _add_pr_states(client, _pr())
+                    _add_snapshot(client, [(record, jobs)])
+                    state = pr_metadata.fetch_pull_request(client, REPOSITORY, PR_NUMBER)
+                    with self.assertRaises(pr_metadata.MetadataEditError):
+                        pr_metadata.list_candidate_runs(client, state)
+
     def test_run_authority_rejects_wrong_workflow_repo_head_event_and_path(self):
         mutations = {
             "workflow": ("workflow_id", WORKFLOW_ID + 1),
@@ -7646,6 +7667,24 @@ class PullRequestMetadataLauncherTests(unittest.TestCase):
             self.assertEqual(record["git_environment"], [])
             self.assertEqual(record["argv"][0], "api")
             self.assertIn("--include", record["argv"])
+
+    def test_unhashable_run_conclusion_is_a_fail_closed_cli_error(self):
+        body_path = self.sandbox.root / "body.md"
+        body_path.write_text("New body\n", encoding="utf-8")
+        record, jobs = _run(101, 10, mode="full")
+        record["conclusion"] = []
+        calls = [
+            _cli_api_call("GET", _endpoint(f"pulls/{PR_NUMBER}"), payload=_pr()),
+            *_cli_snapshot_calls([(record, jobs)]),
+        ]
+        completed, records = self.sandbox.run(
+            "edit", [*self.common_arguments(), "--body-file", str(body_path)], calls
+        )
+        self.assertEqual(completed.returncode, 2, completed.stderr)
+        self.assertEqual(completed.stdout, "")
+        self.assertNotIn("Traceback", completed.stderr)
+        self.assertIn("conclusion", completed.stderr)
+        self.assertTrue(all(record["method"] == "GET" for record in records))
 
     def test_gh_subprocess_preserves_http_framing_bytes(self):
         body_path = self.sandbox.root / "body.md"

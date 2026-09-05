@@ -1039,7 +1039,7 @@ def _parse_edit_abort(payload: object) -> EditAbort:
     if payload["schema_version"] != 1:
         raise MetadataEditError("edit abort schema_version is invalid")
     reason = payload["reason"]
-    if reason not in {
+    if not isinstance(reason, str) or reason not in {
         "candidate-drift",
         "metadata-version-drift",
         "pre-state-drift",
@@ -2249,7 +2249,9 @@ def _parse_job(
     if status not in ACTIVE_RUN_STATUSES | {"completed"}:
         raise MetadataEditError(f"Build run {run_id} job status is unknown")
     conclusion = raw.get("conclusion")
-    if conclusion is not None and conclusion not in RUN_CONCLUSIONS:
+    if conclusion is not None and (
+        not isinstance(conclusion, str) or conclusion not in RUN_CONCLUSIONS
+    ):
         raise MetadataEditError(f"Build run {run_id} job conclusion is unknown")
     if status == "completed" and conclusion is None:
         raise MetadataEditError(f"Build run {run_id} completed job lacks a conclusion")
@@ -2501,7 +2503,9 @@ def _parse_run(
     if status not in ACTIVE_RUN_STATUSES | {"completed"}:
         raise MetadataEditError(f"Build run {run_id} status is unknown")
     conclusion = raw.get("conclusion")
-    if conclusion is not None and conclusion not in RUN_CONCLUSIONS:
+    if conclusion is not None and (
+        not isinstance(conclusion, str) or conclusion not in RUN_CONCLUSIONS
+    ):
         raise MetadataEditError(f"Build run {run_id} conclusion is unknown")
     if status == "completed" and conclusion is None:
         raise MetadataEditError(f"Build run {run_id} completed without conclusion")
