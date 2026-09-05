@@ -4526,6 +4526,7 @@ printf '%s\t%s\t%s\n' "$result" \
             if item["id"] == "workflow-governance"
         )
         expected_cases = [
+            "TC-WORKFLOW-PUBLISHER-COMMAND-INVENTORY-001",
             "TC-WORKFLOW-CI-WAIT-001",
             "TC-WORKFLOW-MANUAL-HANDOFF-001",
             "TC-WORKFLOW-STACKED-CI-001",

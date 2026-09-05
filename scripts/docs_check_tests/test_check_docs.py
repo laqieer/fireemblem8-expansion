@@ -986,6 +986,27 @@ class TesterCaseRegistryTests(unittest.TestCase):
             "workflow-governance": {
                 "reference": ".github/skills/development-workflow/SKILL.md",
                 "cases": {
+                    "TC-WORKFLOW-PUBLISHER-COMMAND-INVENTORY-001": {
+                        "document": "docs/test-cases/workflow-governance.md",
+                        "commands": {
+                            "python3 -m unittest -v "
+                            "tests.workflows.test_publisher_command_inventory",
+                            "python3 -m unittest -v "
+                            "tests.upstream_port.test_verify."
+                            "VerifyGatesMirrorWorkflowTests."
+                            "test_publisher_command_inventory_uses_shared_closed_authority",
+                            "python3 -m unittest -v "
+                            "tests.workflows.test_patch_release_workflow."
+                            "PatchReleaseWorkflowTests."
+                            "test_dev_mount_target_parser_supports_decoded_paths_and_rejects_bad_json "
+                            "tests.workflows.test_patch_release_workflow."
+                            "PatchReleaseWorkflowTests."
+                            "test_writable_mount_record_parser_supports_decoded_targets_and_rejects_bad_json "
+                            "tests.workflows.test_patch_release_workflow."
+                            "PatchReleaseWorkflowTests."
+                            "test_embedded_publisher_shell_and_python_are_syntactically_valid",
+                        },
+                    },
                     "TC-WORKFLOW-CI-WAIT-001": {
                         "document": "docs/test-cases/workflow-governance.md",
                         "commands": {

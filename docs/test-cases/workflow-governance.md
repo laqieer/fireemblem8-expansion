@@ -74,13 +74,15 @@ workflow, using credentials, or changing ROM behavior.
    Each program's declared inputs/outputs also survive into its signature and
    event accesses; deleting a required access rejects the inventory.
 
-### Expected result and negative control
+### Expected result
 
 All commands above succeed in the supported configuration; every adversarial
 fixture fails before publication. Both semantic suites consume the same
 authority and agree. The exact membership-checker command is registered for
 downstream use but cannot be added to the current production builder while its
 required production count remains zero.
+
+### Negative control
 
 The pre-fix PR #195 substring analyzer accepts the composed Python reader.
 The new executable regression also removes only the shared authority call:
@@ -91,7 +93,7 @@ The fresh-shell exit-128 control and inert-cache exception independently
 reproduce PR #209's staging and source-loading regressions. No hostile shell
 command is executed; the controlled cache only raises an exception.
 
-### Interactions, cleanup and limitations
+### Interactions and save compatibility
 
 #201 owns candidate-completion/checker/export ordering; #195 owns the final
 #177 runtime integration. The current exact legacy membership observation is
@@ -103,12 +105,15 @@ silently analyzed as safe.
 
 The case has no save, configuration, generated-data, localization, target
 ROM/RAM, modern profile or archival impact. No manual criterion applies.
+
+### Cleanup and limitations
+
 Fixtures clean up their own ignored directories; do not change a live
 publisher cgroup or run the adversarial strings. Revert the dedicated
 foundation if needed, and keep #201/#195 blocked instead of weakening
 authorization.
 
-### Automation mapping
+### Automation
 
 The commands in step 1 are the complete focused mapping. The first suite
 executes the production inventory, parser, program, mutation and exact-tree
