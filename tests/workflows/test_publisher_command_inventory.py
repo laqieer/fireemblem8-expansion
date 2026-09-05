@@ -928,6 +928,23 @@ class PublisherExactTreeTests(unittest.TestCase):
         self.assertEqual(control.returncode, 0, control.stderr)
         self.assertEqual(marker.read_text(), "inert program")
 
+    def test_committed_authority_exit_cannot_satisfy_validation(self):
+        package = self.directory / "scripts/workflow_pilot/__init__.py"
+        original = package.read_text()
+        for code in (0, None, 17):
+            with self.subTest(code=code):
+                package.write_text(original + f"\nraise SystemExit({code!r})\n")
+                self.snapshot()
+                completed = self.cli()
+                self.assertEqual(completed.returncode, 1, completed.stderr)
+                self.assertIn(b"authority terminated before validation completed", completed.stderr)
+                self.assertNotIn(b"reviewed commands", completed.stdout)
+                with mock.patch.object(authority, "SOURCE_ROOT", self.directory):
+                    with self.assertRaisesRegex(authority.InventoryError, "terminated") as rejected:
+                        authority.validate_exact_tree(self.directory, self.commit)
+                self.assertIsInstance(rejected.exception.__cause__, SystemExit)
+                self.assertEqual(rejected.exception.__cause__.code, code)
+
     def test_all_program_data_sources_are_captured_but_not_importable(self):
         sources = authority._bind_exact_sources(self.directory, self.commit)
         loader = authority._SourceOnlyAuthority(sources)

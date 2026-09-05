@@ -1040,6 +1040,8 @@ def _source_only_authority(sources):
     _ACTIVE_SOURCE_AUTHORITY = loader
     try:
         yield
+    except SystemExit as error:
+        raise InventoryError("publisher authority terminated before validation completed") from error
     finally:
         _ACTIVE_SOURCE_AUTHORITY = previous_authority
         builtins.__import__ = original_import
