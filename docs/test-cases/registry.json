@@ -481,7 +481,8 @@
         "https://github.com/laqieer/fireemblem8-expansion/issues/169",
         "https://github.com/laqieer/fireemblem8-expansion/issues/171",
         "https://github.com/laqieer/fireemblem8-expansion/issues/176",
-        "https://github.com/laqieer/fireemblem8-expansion/issues/177"
+        "https://github.com/laqieer/fireemblem8-expansion/issues/177",
+        "https://github.com/laqieer/fireemblem8-expansion/issues/204"
       ],
       "reference": ".github/skills/development-workflow/SKILL.md",
       "status": "current",
@@ -490,7 +491,8 @@
         "TC-WORKFLOW-MANUAL-HANDOFF-001",
         "TC-WORKFLOW-STACKED-CI-001",
         "TC-WORKFLOW-BODY-EDIT-001",
-        "TC-WORKFLOW-PILOT-BASELINE-001"
+        "TC-WORKFLOW-PILOT-BASELINE-001",
+        "TC-WORKFLOW-SEALED-ASSERTION-CAPSULE-001"
       ]
     },
     {
@@ -2330,6 +2332,38 @@
         {
           "command": "python3 -m unittest discover -s tests/workflows -p 'test_*.py' -v",
           "evidence": "tests/workflows/test_build_ci_topology.py"
+        },
+        {
+          "command": "python3 scripts/check_docs.py --check",
+          "evidence": "scripts/check_docs.py"
+        }
+      ]
+    },
+    {
+      "id": "TC-WORKFLOW-SEALED-ASSERTION-CAPSULE-001",
+      "title": "Execute exact authority only from sealed descriptors",
+      "feature_id": "workflow-governance",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/204"
+      ],
+      "document": "docs/test-cases/workflow-governance.md",
+      "anchor": "tc-workflow-sealed-assertion-capsule-001-execute-exact-authority-only-from-sealed-descriptors",
+      "profiles": [
+        "Linux host with Python 3, Git, memfd_create, /proc/self/fd, and kernel file seals"
+      ],
+      "purpose": "Prove exact Git program, request, imported-module closure, and base/origin/head data bytes are sealed before execution and remain the only authority through deterministic result and receipt production.",
+      "prerequisites": "Start at the exact issue #204 checkout on a supported Linux host with no prior bounded capsule test repository or running child.",
+      "actions": "Run the focused capsule suite; preserve the vulnerable pathname negative control; swap all materialized paths after bundle construction; exercise outer, inner, five member families, remote, local-remediation, and artifact roles; mutate closure metadata, descriptors, imports, paths, output, runtime, and process lifecycle.",
+      "expected_result": "Only the exact sealed program/request/bundle bytes execute or load; all path swaps and forgery attempts are inert; malformed closures and descriptors reject; deterministic receipts bind exact program, request, bundle, and raw output bytes; every failure leaves no receipt, process, or descriptor.",
+      "negative_control": "The old validate-then-reopen pathname harness executes a swapped forged pass/authority binding and accepts restoration, while the descriptor capsule continues to execute the exact Git-derived source.",
+      "interactions": "Depends on existing exact-tree Git authority and isolated-launcher patterns; issue #179 and PR #189 depend on this seam; PR #189 conflicts only at the launch surfaces it must replace; no feature flag or runtime/build-profile interaction.",
+      "save_compatibility": "Host-only workflow security capability with no save, configuration identity, gameplay, ROM/RAM, localization, generated game-data, modern debug/release, or archival impact.",
+      "cleanup": "The focused suite removes build/test-artifacts/sealed-execution-capsule and kills bounded process groups automatically; no remote state is mutated.",
+      "limitations": "Linux memfd sealing and /proc/self/fd are mandatory and unsupported platforms fail closed; review-family policy and authenticated signing remain issue #179 responsibilities; no manual criterion.",
+      "automation": [
+        {
+          "command": "python3 -m unittest scripts.workflow_pilot.tests.test_sealed_execution_capsule -v",
+          "evidence": "scripts/workflow_pilot/tests/test_sealed_execution_capsule.py"
         },
         {
           "command": "python3 scripts/check_docs.py --check",

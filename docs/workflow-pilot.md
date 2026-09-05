@@ -715,3 +715,59 @@ Rollback is a normal revert of the dedicated issue #176 commit. Because no
 delivery behavior or final gate changes here, existing CI, review, merge,
 runtime, save, localization, generated-data, and archival behavior remains in
 place throughout rollback.
+
+## Sealed exact-tree execution capsules
+
+Issue [#204](https://github.com/laqieer/fireemblem8-expansion/issues/204)
+adds a host-only framework boundary for executing trusted Python from exact Git
+objects without reopening a checkout path. It is an independent foundation for
+issue #179; it does not implement review-family classifications,
+dispositions, sibling policy, or receipt signing.
+
+[`sealed_execution_capsule.py`](../scripts/workflow_pilot/sealed_execution_capsule.py)
+provides the narrow integration seam:
+
+1. Declare the complete closed input set with `ArtifactSpec`. Each entry names
+   `base`, `origin`, or `head` authority; an exact commit; canonical path;
+   `program`, `module`, `package`, or `data` role; and optional expected Git
+   mode/blob identity.
+2. Call `build_artifact_bundle(repository_root, specs)`. It reads modes, blob
+   IDs, and bytes from the exact Git trees, supports SHA-1 and SHA-256 object
+   formats, rejects symlinks and non-regular modes, validates Python source,
+   and returns canonical JSON with content SHA-256 and role metadata.
+3. Call `execute_capsule(bundle, program_artifact_id=..., request=...)`. The
+   request and every authority input must be represented in that bundle; an
+   omitted imported module or data item fails rather than falling back to the
+   checkout.
+4. Consume `CapsuleResult.output`, `receipt`, and `receipt_sha256`. The receipt
+   binds the exact program, request, artifact-bundle, and raw output bytes read
+   by the execution boundary. A later authenticated review receipt may include
+   this complete capsule receipt; it must not rehash a materialized pathname.
+
+The launcher creates anonymous program, request, bundle, and bootstrap
+descriptors with `MFD_ALLOW_SEALING`, then applies and verifies
+`F_SEAL_WRITE`, `F_SEAL_GROW`, `F_SEAL_SHRINK`, and `F_SEAL_SEAL` before
+adding credentials or starting `/usr/bin/python3 -I`. The child verifies the
+same seals and descriptor envelopes, rejects reused or unexpected inherited
+FDs, loads declared modules and data only from bundle bytes, and executes the
+program source read from its sealed FD. Ambient FDs are closed at launch, and
+the four authority FDs are closed after verification and before program code.
+Non-standard imports and materialized filesystem reads fail closed. Output,
+stderr, artifact count/size, request size, and runtime are bounded; timeout or
+interruption kills the complete child process group and closes every parent
+descriptor without returning a receipt.
+
+Optional credential names are canonical uppercase identifiers. The parent adds
+them only after every authority descriptor is sealed, prefixes them so they
+cannot become `PYTHON*`, `LD_*`, path, locale, or other interpreter/runtime
+control variables, and exposes the recovered mapping as
+`sealed_capsule.credentials`.
+
+This capability requires Linux `memfd_create`, `/proc/self/fd`, and kernel file
+seals. There is deliberately no pathname, temporary-file, mutable-FD, or
+unsealed portability fallback. Unsupported hosts fail before execution or
+credential exposure. Issue #179 can use one bundle for its exact-base outer
+checker, assertion program and imported module closure, plus base/origin/head
+data; it can select the applicable program artifact for outer, behavior,
+member, remote-round, or local-remediation requests while preserving its own
+family/disposition policy above this seam.

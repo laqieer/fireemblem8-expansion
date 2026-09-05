@@ -1038,6 +1038,15 @@ class TesterCaseRegistryTests(unittest.TestCase):
                             "python3 scripts/check_docs.py --check",
                         },
                     },
+                    "TC-WORKFLOW-SEALED-ASSERTION-CAPSULE-001": {
+                        "document": "docs/test-cases/workflow-governance.md",
+                        "commands": {
+                            "python3 -m unittest "
+                            "scripts.workflow_pilot.tests."
+                            "test_sealed_execution_capsule -v",
+                            "python3 scripts/check_docs.py --check",
+                        },
+                    },
                 },
             },
         }

@@ -1,0 +1,6 @@
+{
+  "issue": 204,
+  "category": "security",
+  "summary": "Add a reusable Linux sealed-descriptor capsule that executes exact-Git Python programs and loads their closed module/data bundle without reopening materialized authority paths.",
+  "semver_impact": "none"
+}

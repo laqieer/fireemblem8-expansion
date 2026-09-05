@@ -1456,3 +1456,82 @@ criterion applies.
 
 Rollback is a normal revert of issue #176's dedicated commit; no workflow or
 game behavior needs a compensating change.
+
+## TC-WORKFLOW-SEALED-ASSERTION-CAPSULE-001: Execute exact authority only from sealed descriptors
+
+- **Feature / originating issue:** `workflow-governance` /
+  [issue #204](https://github.com/laqieer/fireemblem8-expansion/issues/204).
+- **Supported configuration or artifact:** Linux host with Python 3, Git,
+  `memfd_create`, `/proc/self/fd`, and write/grow/shrink/seal kernel file
+  seals. No GitHub token, ROM, emulator, ARM toolchain, or network is required.
+- **Prerequisites and clean starting state:** exact issue #204 source checkout;
+  no prior `build/test-artifacts/sealed-execution-capsule` directory or running
+  test child.
+
+### Actions
+
+1. Run
+   `python3 -m unittest scripts.workflow_pilot.tests.test_sealed_execution_capsule -v`.
+2. Observe the preserved negative control: validate a trusted pathname, swap
+   it at the subprocess boundary, receive a forged pass/authority binding, and
+   restore it.
+3. Build one exact Git bundle containing two programs, their package/module
+   closure, and base/origin/head data. Swap every materialized program,
+   module, and data pathname after bundle construction.
+4. Execute table-driven outer-checker, inner-assertion, five sibling-member,
+   remote-round, local-remediation, and artifact-read requests through the
+   same capsule.
+5. Exercise missing, extra, duplicate, wrong-mode, wrong-blob, wrong-role,
+   unknown-role, changed-content, symlink, unexpected import, and pathname
+   fallback controls.
+6. Exercise mutable/unsealed, reused, wrong, and unexpected inherited
+   descriptors; duplicate/non-finite JSON; unsupported-platform handling;
+   child crash, timeout/fork, oversized, malformed, and partial output; and
+   parent interruption.
+7. Run `python3 scripts/check_docs.py --check`.
+
+### Expected result
+
+Only bytes read from the sealed program, request, and canonical artifact
+bundle descriptors execute or load. Path swaps cannot change the exact
+program, module, or base/origin/head data result, and forged checker/assertion
+replacements cannot produce a pass. SHA-1 and supported SHA-256 Git object
+formats preserve exact mode/blob/content metadata. The deterministic receipt
+binds program, request, bundle, raw output, and its own canonical body.
+Every malformed closure or descriptor case fails before a trusted result.
+Timeout, crash, oversized/malformed/partial output, and interruption return no
+receipt, kill the process group, and leave no descriptor.
+
+### Negative control
+
+The test's old pathname launcher reproduces PR #189's validate-then-reopen
+boundary: a same-UID replacement executes, returns
+`{"authority_binding":"forged","pass":true}`, is restored, and would be
+eligible for parent signing. The sealed capsule runs the exact Git-derived
+bytes instead.
+
+### Interactions and save compatibility
+
+Dependencies are the existing exact-tree Git authority and isolated-launcher
+patterns. Issue #179 and PR #189 are dependents. PR #189 conflicts at its
+pathname launch surfaces and remains blocked until it adopts this seam.
+There is no feature flag or gameplay, ROM, RAM, save, configuration identity,
+localization, generated game-data, modern release/debug, archival, Build
+topology, or required-context impact.
+
+### Automation
+
+`python3 -m unittest scripts.workflow_pilot.tests.test_sealed_execution_capsule -v`
+reproduces the old subprocess swap and covers exact Git bundle construction,
+sealed launch, descriptor-backed module/data loading, digest-bound receipts,
+all shared future call roles, mutation rejection, and process/FD cleanup.
+`python3 scripts/check_docs.py --check` validates this indexed procedure and
+its registry contract.
+
+### Cleanup and limitations
+
+The suite removes its bounded ignored test repository. Manual cleanup and
+manual-only evidence are none. Linux sealed descriptors are mandatory;
+unsupported kernels and non-Linux hosts fail closed with no temporary-file or
+pathname fallback. The capsule provides execution integrity only; issue #179
+continues to own review-family policy and authenticated receipt semantics.
