@@ -786,8 +786,10 @@ is latched and cannot be converted into a successful receipt. This is an
 execution-authority boundary for trusted programs, not a claim that Python
 audit hooks can confine arbitrary malicious Python or native code. A
 worker-only seccomp-BPF filter uses a **closed capability allowlist**, with
-explicit x86-64/AArch64 syscall mappings and process termination for every
+explicit x86-64 syscall mappings and process termination for every
 unlisted, future or alternate-ABI call. It is not a growing pathname blacklist.
+Prospective AArch64 mappings remain available for parsed filter tests only;
+neither platform admission nor the native installer enables that runtime.
 The allowed capabilities are private descriptor I/O/duplication/readiness,
 anonymous memfds/pipes, interpreter memory allocation/synchronization,
 self/runtime observations, clocks/entropy, signal handling and exit.
@@ -894,8 +896,8 @@ A near-limit loaded-artifact list can therefore produce a usable top-level
 receipt even when the added metadata crosses 1 MiB; a nested value-plus-receipt
 that exceeds its existing 1 MiB transport still rejects.
 Each invocation accepts a positive timeout up to 120 seconds. A worker also
-has a 512 MiB address-space ceiling and a CPU ceiling. On both supported ABIs,
-hard `RLIMIT_NOFILE=64` bounds new descriptor allocation, and hard
+has a 512 MiB address-space ceiling and a CPU ceiling. On the supported x86-64
+runtime, hard `RLIMIT_NOFILE=64` bounds new descriptor allocation, and hard
 `RLIMIT_FSIZE=1 MiB` bounds kernel-backed file growth, including writable
 memfds. Pipes/memfds can exhaust only the worker's descriptor allowance;
 writes cannot extend a memfd past its file-size allowance. Fixed inherited
@@ -911,18 +913,25 @@ malformed messages, nonempty diagnostics and interrupted execution produce
 no admitted result or signature. Owned descriptors close on every path,
 without closing an unrelated FD reused at the same integer.
 
-Supported execution requires Linux sealed memfd, mounted/readable
-`/proc/self/fd`, fork,
-process groups, `waitid(WNOWAIT)`, and the non-dumpable/subreaper/parent-death
-prctl facilities plus unprivileged seccomp-BPF on the x86-64 or AArch64 syscall
-ABI. Other ABIs fail closed. Git SHA-1 repositories are supported; SHA-256
+Supported execution is currently **Linux x86-64 with 64-bit Python 3 only**.
+It requires sealed memfd, mounted/readable `/proc/self/fd`, fork, process
+groups, `waitid(WNOWAIT)`, and the non-dumpable/subreaper/parent-death prctl
+facilities plus unprivileged seccomp-BPF. Neither execution nor the real
+parent-death regression requires pidfds. The regression observes saved
+process generations and reaps adopted children; cleanup signals only
+generation-matching children whose PIDs remain reserved until reaped.
+AArch64 and other unvalidated ABIs fail closed before Git collection,
+descriptor creation or process launch, and cannot install a native filter.
+Parsed AArch64 mapping tests are not end-to-end runtime evidence; support
+must remain disabled until real AArch64 execution has been validated.
+Git SHA-1 repositories are supported; SHA-256
 repositories are explicitly unsupported. Missing facilities raise `CapsuleUnavailable`
 with disposition `sealed-capsule-unavailable`; the production launcher exits
 nonzero and does **not** retry through a pathname, ordinary importer,
 temporary directory or post-execution rehash.
-Preparation probes descriptor enumeration before collecting Git objects or
-launching a process. An unavailable procfs during guardian admission retains
-the same explicit disposition.
+Preparation probes runtime ABI and descriptor enumeration before collecting
+Git objects or launching a process. An unavailable procfs during guardian
+admission retains the same explicit disposition.
 
 ### PR #189 adoption and completion boundary
 

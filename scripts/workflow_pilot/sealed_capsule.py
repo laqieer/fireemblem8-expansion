@@ -610,8 +610,18 @@ def _prctl(option, value):
         raise CapsuleUnavailable(f"required Linux prctl({option}) failed")
 
 
+def _runtime_machine():
+    if sys.platform != "linux":
+        raise CapsuleUnavailable("sealed capsule runtime requires Linux x86-64")
+    machine = os.uname().machine
+    if machine != "x86_64" or ctypes.sizeof(ctypes.c_void_p) != 8:
+        raise CapsuleUnavailable(f"sealed capsule runtime requires Linux x86-64: {machine}")
+    return machine
+
+
 def _platform():
-    if (sys.platform != "linux" or fcntl is None or resource is None
+    _runtime_machine()
+    if (fcntl is None or resource is None
             or not hasattr(os, "memfd_create") or not hasattr(os, "fork")
             or not hasattr(os, "waitid") or not hasattr(os, "WNOWAIT")):
         raise CapsuleUnavailable("Linux sealed memfd and process supervision are required")
@@ -965,15 +975,14 @@ def _inherited_fds():
     return result
 
 
-def _lock_worker_kernel():
-    """Allow only private-FD/memory/runtime capabilities; unknown calls kill."""
-    machine = os.uname().machine
+def _worker_kernel_filter(machine):
+    """Build native/prospective mappings without admitting a runtime ABI."""
     abis = {"x86_64": (0xC000003E, 0), "aarch64": (0xC00000B7, 1)}
     if machine not in abis:
         raise CapsuleUnavailable(f"sealed worker syscall ABI is unsupported: {machine}")
     architecture, column = abis[machine]
-    # x86-64 / AArch64 Linux syscall numbers. Only anonymous memfds and pipes
-    # can be created, and only protocol pipes survive worker FD admission.
+    # x86-64 / prospective AArch64 Linux syscall numbers. Only anonymous memfds
+    # and pipes can be created; only protocol pipes survive worker FD admission.
     calls = {
         "read": (0, 63), "write": (1, 64), "close": (3, 57), "fstat": (5, 80),
         "lseek": (8, 62), "pread64": (17, 67), "pwrite64": (18, 68),
@@ -1044,7 +1053,12 @@ def _lock_worker_kernel():
         instructions.extend(rule)
     instructions.append((0x06, 0, 0, kill_process))
     filters = (Filter * len(instructions))(*(Filter(*entry) for entry in instructions))
-    program = Program(len(instructions), filters)
+    return Program(len(instructions), filters)
+
+
+def _lock_worker_kernel():
+    """Install the closed capability policy only for an admitted runtime ABI."""
+    program = _worker_kernel_filter(_runtime_machine())
     libc = ctypes.CDLL(None, use_errno=True)
     if (libc.prctl(38, 1, 0, 0, 0) != 0     # PR_SET_NO_NEW_PRIVS
             or libc.prctl(22, 2, ctypes.byref(program), 0, 0) != 0):

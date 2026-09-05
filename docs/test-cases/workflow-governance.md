@@ -1526,13 +1526,16 @@ game behavior needs a compensating change.
 
 **Issue:** [#204](https://github.com/laqieer/fireemblem8-expansion/issues/204).
 **Contract:** [sealed execution API](../workflow-pilot.md#sealed-exact-tree-execution-capsules).
-**Profile:** committed source checkout on Linux with Python 3, Git SHA-1,
-sealed memfd, `/proc`, process groups and prctl; no ROM, emulator, token or
+**Profile:** committed source checkout on Linux x86-64 with 64-bit Python 3,
+Git SHA-1, sealed memfd, `/proc`, fork, process groups, `waitid(WNOWAIT)` and
+prctl; no ROM, emulator, token or
 remote mutation. The existing source build is sufficient; there is no
 downloadable game artifact for this host-only case.
 
-The worker also requires unprivileged seccomp-BPF on x86-64 or AArch64 to
-prevent native process-group/session escape. Unsupported ABIs fail closed.
+The worker also requires unprivileged seccomp-BPF on x86-64 to prevent native
+process-group/session escape. AArch64 is not a supported runtime: prospective
+filter-mapping tests do not supply real AArch64 end-to-end evidence.
+Unvalidated ABIs fail closed before launch. Pidfds are not a prerequisite.
 
 ### Actions
 
@@ -1619,8 +1622,20 @@ prevent native process-group/session escape. Unsupported ABIs fail closed.
 8. Force a crash, empty/partial/malformed or oversized output, timeout,
    interruption and abrupt parent death during nested execution. The tests
    observe real processes/descriptors and require bounded teardown with no
-   admitted partial result. Remove platform support and require an explicit
-   unavailable disposition rather than fallback execution.
+   admitted partial result. Disable both pidfd APIs, observe four live outer
+   and nested guardian/worker generations, then kill the owned parent.
+   `waitid(WNOWAIT)` must acknowledge adopted-child exits before reaping;
+   descendants already reaped by their guardians must lose their saved
+   process generations. Cleanup may signal only an owned, generation-matching
+   child retained unreaped, never an unrelated or reused PID. Exercise those
+   non-child/reused-generation counterexamples explicitly; do not use a raw
+   `kill(pid, 0)` existence oracle.
+   Remove platform support and require an explicit unavailable disposition
+   rather than fallback execution. Simulate AArch64 and other unvalidated
+   ABIs: public preparation/descriptor admission and the native filter
+   installer must raise `CapsuleUnavailable` before Git collection, memfd
+   creation, fork, process launch or native filter installation. The same
+   rejection applies to a 32-bit interpreter on an x86-64 host.
    Simulate missing, unreadable and non-directory `/proc/self/fd` facilities:
    preparation must raise `CapsuleUnavailable` before any Git/process or
    memfd creation, and guardian admission must preserve that error type.
@@ -1693,6 +1708,14 @@ both preparation and bundle validation, instead of one parse per unique
 tree. Reverting either correction fails these behavioral controls; declared
 imports and the same immutable data remain positive controls.
 
+The platform correction preserves an AArch64 pre-fix counterexample: the
+platform probe returned successfully and the native installer accepted its
+mapping despite the absence of AArch64 runtime evidence. Reverting admission
+must fail the before-launch regressions, while real Linux x86-64 nested
+execution still passes. The former parent-death regression unconditionally
+called `os.pidfd_open`/`signal.pidfd_send_signal`, adding an undeclared facility
+requirement; the real nested test now passes with both APIs disabled.
+
 ### Automation
 
 The named unittest modules automate every assertion using real memfd,
@@ -1701,8 +1724,10 @@ observations. No raw tracked-source text assertion is the behavioral oracle.
 Parsed seccomp-BPF instruction evaluation covers the closed allowed sets and
 every other syscall number through 511 plus unknown/future numbers,
 the complete pathname metadata/mutation/probe families, argument-restricted
-fcntl/prlimit, and alternate-ABI rejection for both supported ABIs;
-native execution covers the current host only, not an emulated AArch64 claim.
+fcntl/prlimit, and alternate-ABI rejection for the supported x86-64 and
+prospective AArch64 mappings. Separate admission tests reject AArch64 before
+any launch or filter installation. Native execution covers Linux x86-64 only;
+there is no native or emulated AArch64 end-to-end claim.
 Git supplies immutable source authority and review/history; changed strings
 alone are not proof. No subjective/manual criterion applies.
 
@@ -1717,7 +1742,9 @@ Unsupported platforms/object formats fail closed.
 
 Tests create disposable Git fixtures only under `build/test-artifacts` and
 clean their owned files/processes/descriptors on exit. They do not touch
-other worktrees or GitHub. After an interrupted test invocation, inspect only
+other worktrees or GitHub. Parent-death observation/cleanup is bounded,
+requires child ownership before signaling, and restores the prior subreaper
+setting. After an interrupted test invocation, inspect only
 the owned `sealed-capsule-*` fixture directory before removing it; never
 delete unrelated artifacts by a broad path or process-name match.
 

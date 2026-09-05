@@ -40,7 +40,151 @@ def capsule_main(request, context):
 """
 
 
-@unittest.skipUnless(sys.platform == "linux", "Linux sealed descriptor contract")
+def _process_state(pid):
+    try:
+        fields = Path(f"/proc/{pid}/stat").read_text().rsplit(")", 1)[1].split()
+    except (FileNotFoundError, ProcessLookupError):
+        return None
+    return int(fields[19]), fields[0], int(fields[1])
+
+
+def _observe_descendants(observed):
+    for pid, generation in tuple(observed.items()):
+        state = _process_state(pid)
+        if state is None or state[0] != generation:
+            continue
+        try:
+            children = Path(f"/proc/{pid}/task/{pid}/children").read_text().split()
+        except (FileNotFoundError, ProcessLookupError):
+            continue
+        for child in map(int, children):
+            state = _process_state(child)
+            if state is not None and state[2] == pid:
+                observed.setdefault(child, state[0])
+
+
+def _finish_owned_process(pid, generation, *, terminate=False):
+    try:
+        exited = os.waitid(os.P_PID, pid, os.WEXITED | os.WNOHANG | os.WNOWAIT)
+    except ChildProcessError:
+        state = _process_state(pid)
+        return state is None or state[0] != generation
+    state = _process_state(pid)
+    if state is None:
+        return False
+    if state[0] != generation:
+        return True
+    if exited is not None:
+        os.waitpid(pid, 0)
+        return True
+    if terminate:
+        # This single waiter owns the child; its PID stays reserved until reaped.
+        try:
+            os.kill(pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+    return False
+
+
+class CapsulePlatformTests(unittest.TestCase):
+    def test_unvalidated_abis_fail_before_resources_or_process_creation(self):
+        spec = capsule.CapsuleSpec(
+            trees={"base": "a" * 40}, programs={"checker": "checks/checker.py"})
+        admissions = {
+            "platform": capsule._platform,
+            "prepare": lambda: capsule.prepare(ROOT, spec),
+            "capsule": lambda: capsule.Capsule(b"{}", spec),
+            "descriptor": lambda: capsule.SealedBytes(b"unavailable", "test", 100),
+            "kernel": capsule._lock_worker_kernel,
+        }
+        for machine in ("aarch64", "arm64", "i686", "riscv64"):
+            for name, admit in admissions.items():
+                with (
+                    self.subTest(machine=machine, admission=name),
+                    mock.patch.object(sys, "platform", "linux"),
+                    mock.patch.object(os, "uname", create=True,
+                                      return_value=types.SimpleNamespace(machine=machine)),
+                    mock.patch.object(capsule, "_make_bundle", side_effect=AssertionError) as collect,
+                    mock.patch.object(capsule, "_inherited_fds", side_effect=AssertionError) as descriptors,
+                    mock.patch.object(capsule, "_prctl", side_effect=AssertionError) as prctl,
+                    mock.patch.object(capsule.ctypes, "CDLL", side_effect=AssertionError) as native,
+                    mock.patch.object(os, "memfd_create", create=True, side_effect=AssertionError) as create,
+                    mock.patch.object(os, "fork", create=True, side_effect=AssertionError) as fork,
+                    mock.patch.object(subprocess, "Popen", side_effect=AssertionError) as launch,
+                ):
+                    with self.assertRaises(capsule.CapsuleUnavailable) as error:
+                        admit()
+                    self.assertEqual(error.exception.disposition, "sealed-capsule-unavailable")
+                    for operation in (collect, descriptors, prctl, native, create, fork, launch):
+                        operation.assert_not_called()
+
+    def test_32_bit_interpreter_cannot_install_the_x86_64_runtime_filter(self):
+        with (
+            mock.patch.object(sys, "platform", "linux"),
+            mock.patch.object(os, "uname", create=True,
+                              return_value=types.SimpleNamespace(machine="x86_64")),
+            mock.patch.object(capsule.ctypes, "sizeof", return_value=4),
+            mock.patch.object(capsule.ctypes, "CDLL", side_effect=AssertionError) as native,
+            mock.patch.object(capsule, "_inherited_fds", side_effect=AssertionError) as descriptors,
+        ):
+            for admit in (capsule._platform, capsule._lock_worker_kernel):
+                with self.subTest(admission=admit.__name__):
+                    with self.assertRaises(capsule.CapsuleUnavailable):
+                        admit()
+            native.assert_not_called()
+            descriptors.assert_not_called()
+
+
+@unittest.skipUnless(sys.platform == "linux", "Linux child supervision")
+class CapsuleProcessObservationTests(unittest.TestCase):
+    def test_cleanup_never_signals_or_reaps_unowned_or_reused_pids(self):
+        pid, generation = 12345, 100
+        for owned, current, complete in (
+            (False, (generation, "S", 1), False),
+            (False, None, True),
+            (False, (generation + 1, "S", 1), True),
+            (True, None, False),
+            (True, (generation + 1, "S", os.getpid()), True),
+        ):
+            with (
+                self.subTest(owned=owned, current=current),
+                mock.patch.object(os, "waitid", return_value=None,
+                                  side_effect=None if owned else ChildProcessError),
+                mock.patch(f"{__name__}._process_state", return_value=current),
+                mock.patch.object(os, "kill", side_effect=AssertionError) as kill,
+                mock.patch.object(os, "waitpid", side_effect=AssertionError) as reap,
+            ):
+                self.assertEqual(
+                    _finish_owned_process(pid, generation, terminate=True), complete)
+                kill.assert_not_called()
+                reap.assert_not_called()
+
+    def test_cleanup_signals_only_reserved_children_and_reaps_observed_exits(self):
+        pid, generation = 12345, 100
+        with (
+            mock.patch.object(os, "waitid", return_value=None) as observe,
+            mock.patch(f"{__name__}._process_state", return_value=(generation, "S", os.getpid())),
+            mock.patch.object(os, "kill") as kill,
+            mock.patch.object(os, "waitpid") as reap,
+        ):
+            self.assertFalse(_finish_owned_process(pid, generation))
+            kill.assert_not_called()
+            reap.assert_not_called()
+            self.assertFalse(_finish_owned_process(pid, generation, terminate=True))
+            observe.assert_called_with(os.P_PID, pid, os.WEXITED | os.WNOHANG | os.WNOWAIT)
+            kill.assert_called_once_with(pid, signal.SIGKILL)
+            reap.assert_not_called()
+            kill.reset_mock()
+            observe.return_value = types.SimpleNamespace(si_pid=pid)
+            self.assertTrue(_finish_owned_process(pid, generation, terminate=True))
+            kill.assert_not_called()
+            reap.assert_called_once_with(pid, 0)
+
+
+@unittest.skipUnless(
+    sys.platform == "linux" and os.uname().machine == "x86_64"
+    and capsule.ctypes.sizeof(capsule.ctypes.c_void_p) == 8,
+    "Linux x86-64 sealed capsule runtime contract")
 class SealedCapsuleTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -982,7 +1126,7 @@ def capsule_main(request, context):
                     with self.assertRaises(capsule.CapsuleError):
                         prepared.execute("attack", {"path": str(self.root / "inputs/state.json")})
 
-    def test_metadata_syscall_filters_cover_both_supported_abis(self):
+    def test_metadata_syscall_filters_cover_native_and_prospective_abis(self):
         policies = {
             "x86_64": (0xC000003E, {
                 0, 1, 3, 5, 7, 8, 9, 10, 11, 12, 13, 14, 15, 17, 18, 19, 20,
@@ -1056,20 +1200,9 @@ def capsule_main(request, context):
 
         for machine, (architecture, allowed, denied) in policies.items():
             with self.subTest(machine=machine):
-                instructions = []
-
-                def prctl(option, *args):
-                    if option == 22:
-                        program = args[1]._obj
-                        instructions.extend((entry.code, entry.jt, entry.jf, entry.k)
-                                            for entry in program.filters[:program.length])
-                    return 0
-
-                kernel = mock.Mock()
-                kernel.prctl.side_effect = prctl
-                with mock.patch.object(os, "uname", return_value=types.SimpleNamespace(machine=machine)):
-                    with mock.patch.object(capsule.ctypes, "CDLL", return_value=kernel):
-                        capsule._lock_worker_kernel()
+                program = capsule._worker_kernel_filter(machine)
+                instructions = [(entry.code, entry.jt, entry.jf, entry.k)
+                                for entry in program.filters[:program.length]]
                 for name, number in denied.items():
                     with self.subTest(syscall=name):
                         self.assertEqual(verdict(instructions, architecture, number), 0x80000000)
@@ -1090,9 +1223,8 @@ def capsule_main(request, context):
                 for pid, new_limit in ((1, 0), (0, 1), (1 << 32, 0), (0, 1 << 32)):
                     self.assertEqual(verdict(instructions, architecture, prlimit_number,
                                              (pid, 7, new_limit, 0, 0, 0)), 0x80000000)
-        with mock.patch.object(os, "uname", return_value=types.SimpleNamespace(machine="riscv64")):
-            with self.assertRaises(capsule.CapsuleUnavailable):
-                capsule._lock_worker_kernel()
+        with self.assertRaises(capsule.CapsuleUnavailable):
+            capsule._worker_kernel_filter("riscv64")
 
     def test_absence_and_symlink_data_are_exact_inert_artifacts(self):
         link = self.root / "inputs/link.json"
@@ -1396,8 +1528,14 @@ def capsule_main(request, context):
                         self.assertTrue(diagnostic.call_args.args[1].startswith(b"CapsuleUnavailable:"))
                         fork.assert_not_called()
 
+    @mock.patch.object(os, "pidfd_open", new=None, create=True)
+    @mock.patch.object(signal, "pidfd_send_signal", new=None, create=True)
     def test_parent_death_reaps_outer_and_nested_execution_groups(self):
+        previous = capsule.ctypes.c_int()
+        libc = capsule.ctypes.CDLL(None, use_errno=True)
+        self.assertEqual(libc.prctl(37, capsule.ctypes.byref(previous), 0, 0, 0), 0)
         capsule._prctl(36, 1)
+        self.addCleanup(capsule._prctl, 36, previous.value)
         self.write("checks/hang.py", b"import time\ndef capsule_main(request, context):\n    time.sleep(20)\n")
         self.write("checks/hang_checker.py",
                    b"def capsule_main(request, context):\n    return context.invoke('hang', request)\n")
@@ -1421,67 +1559,69 @@ def traced(*args,**kwargs):
     return child
 c.subprocess.Popen=traced
 with c.Capsule(raw,spec) as prepared:
-    prepared.execute('hang-checker',{},timeout=10)
+    prepared.execute('hang-checker',{},timeout=30)
 """
         process = subprocess.Popen(
             [capsule.PYTHON, "-I", "-S", "-c", helper, str(ROOT), str(bundle_path)],
             stdout=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=True,
         )
-        observed, handles = set(), {}
+        observed = {}
         try:
+            observed[process.pid] = _process_state(process.pid)[0]
             with selectors.DefaultSelector() as selector:
                 selector.register(process.stdout, selectors.EVENT_READ)
                 self.assertTrue(selector.select(5), "parent helper did not launch")
                 line = process.stdout.readline()
                 self.assertTrue(line.strip().isdigit(), f"helper failed: {line!r}")
                 guardian = int(line)
-            observed.add(guardian)
+            state = _process_state(guardian)
+            self.assertIsNotNone(state, "outer guardian exited before observation")
+            observed[guardian] = state[0]
             deadline = time.monotonic() + 5
+            live = set()
             while time.monotonic() < deadline:
-                for pid in tuple(observed):
-                    path = Path(f"/proc/{pid}/task/{pid}/children")
-                    try:
-                        observed.update(map(int, path.read_text().split()))
-                    except FileNotFoundError:
-                        pass
-                if len(observed) >= 4:
+                _observe_descendants(observed)
+                live = {
+                    pid for pid, generation in observed.items()
+                    if pid != process.pid and (state := _process_state(pid)) is not None
+                    and state[0] == generation and state[1] not in {"Z", "X"}
+                }
+                if len(live) >= 4:
                     break
                 time.sleep(0.02)
-            self.assertGreaterEqual(len(observed), 4, "nested guardian and worker were not live")
-            for pid in observed:
-                handles[pid] = os.pidfd_open(pid)
+            self.assertGreaterEqual(len(live), 4, "nested guardian and worker were not live")
             process.kill()
             process.wait(timeout=3)
+            observed.pop(process.pid)
             deadline = time.monotonic() + 3
-            pending = set(handles)
+            pending = dict(observed)
             while pending and time.monotonic() < deadline:
-                for pid in tuple(pending):
-                    try:
-                        os.waitpid(pid, os.WNOHANG)
-                    except ChildProcessError:
-                        pass
-                    if not Path(f"/proc/{pid}").exists():
-                        pending.remove(pid)
+                for pid, generation in tuple(pending.items()):
+                    if _finish_owned_process(pid, generation):
+                        pending.pop(pid)
                 if pending:
                     time.sleep(0.02)
             self.assertFalse(pending, f"parent death left live processes: {pending}")
         finally:
-            if process.poll() is None:
-                process.kill()
+            try:
+                _observe_descendants(observed)
+                if process.poll() is None:
+                    process.kill()
                 process.wait(timeout=3)
-            for pid, handle in handles.items():
-                try:
-                    signal.pidfd_send_signal(handle, signal.SIGKILL)
-                except ProcessLookupError:
-                    pass
-                os.close(handle)
-                try:
-                    os.waitpid(pid, os.WNOHANG)
-                except ChildProcessError:
-                    pass
-            process.stdout.close()
-            process.stderr.close()
-            bundle_path.unlink()
+                observed.pop(process.pid, None)
+                deadline = time.monotonic() + 3
+                while observed and time.monotonic() < deadline:
+                    _observe_descendants(observed)
+                    for pid, generation in tuple(observed.items()):
+                        if _finish_owned_process(pid, generation, terminate=True):
+                            observed.pop(pid)
+                    if observed:
+                        time.sleep(0.02)
+                self.assertFalse(observed, f"test cleanup left owned processes: {observed}")
+            finally:
+                process.stdout.close()
+                process.stderr.close()
+                bundle_path.unlink()
 
     def test_noncanonical_and_duplicate_wire_json_rejected(self):
         for raw in (b'{"x":1,"x":1}\n', b'{"x":NaN}\n', b'{"x":1e999}\n',
