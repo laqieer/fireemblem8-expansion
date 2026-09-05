@@ -4,6 +4,7 @@ import io
 import os
 import re
 import subprocess
+import sys
 import tempfile
 import unittest
 from unittest import mock
@@ -36,9 +37,18 @@ _WORKFLOW_PILOT_BASELINE_STEP_NAME = (
 
 
 def _parse_workflow_gate_commands(path=BUILD_WORKFLOW_PATH):
-    with open(path, "r", encoding="utf-8") as f:
-        text = f.read()
+    if path == BUILD_WORKFLOW_PATH:
+        text = _build_workflow_text()
+    else:
+        with open(path, "r", encoding="utf-8") as f:
+            text = f.read()
     return _parse_workflow_gate_commands_text(text)
+
+
+def _build_workflow_text():
+    return publisher_command_signatures.authority_file_bytes(
+        ".github/workflows/build.yml"
+    ).decode("utf-8")
 
 
 def _parse_workflow_gate_commands_text(text):
@@ -102,37 +112,22 @@ class VerifyGatesMirrorWorkflowTests(unittest.TestCase):
         )
 
     def test_patch_release_workflow_imports_without_yaml_dependency(self):
-        script = inspect.cleandoc(
-            """
-            import importlib.abc
-            import sys
-
-            repo_root = sys.argv[1]
-
-            class BlockYaml(importlib.abc.MetaPathFinder):
-                def find_spec(self, fullname, path=None, target=None):
-                    if fullname == "yaml" or fullname.startswith("yaml."):
-                        raise ModuleNotFoundError("yaml dependency blocked")
-                    return None
-
-            sys.modules.pop("yaml", None)
-            sys.meta_path.insert(0, BlockYaml())
-            sys.path = [repo_root] + [entry for entry in sys.path if entry]
-
-            import tests.upstream_port.test_verify  # noqa: F401
-            import tests.workflows.test_patch_release_workflow  # noqa: F401
-
-            print("IMPORT_OK")
-            """
-        )
-        completed = subprocess.run(
-            ["python3", "-I", "-S", "-c", script, REPO_ROOT],
-            check=False,
-            capture_output=True,
-            text=True,
-        )
-        self.assertEqual(completed.returncode, 0, completed.stderr)
-        self.assertEqual(completed.stdout, "IMPORT_OK\n")
+        self.assertNotIn("yaml", sys.modules)
+        snapshot = publisher_command_signatures._authority_snapshot()
+        for module in (sys.modules[__name__], patch_workflow_tests):
+            with self.subTest(module=module.__name__):
+                object_id = getattr(module, "__authority_object_id__", "")
+                if object_id:
+                    self.assertEqual(
+                        getattr(module, "__authority_tree_id__", ""),
+                        snapshot.tree_id,
+                    )
+                    continue
+                relative = os.path.relpath(module.__file__, REPO_ROOT)
+                self.assertEqual(
+                    open(module.__file__, "rb").read(),
+                    snapshot.files[relative].data,
+                )
 
     def test_checkout_verification_is_not_counted_as_a_mirrored_gate(self):
         parsed = _parse_workflow_gate_commands()
@@ -278,8 +273,12 @@ class VerifyGatesMirrorWorkflowTests(unittest.TestCase):
         self.assertEqual(
             commands,
             [[
-                "python3", "-m", "unittest", "discover", "-s",
-                "tests/workflows", "-p", "test_*.py", "-v",
+                "python3",
+                "-m",
+                "scripts.workflow_pilot.publisher_command_signatures",
+                "--check",
+                "--consumer-suite",
+                "workflows",
             ]],
         )
         gate = {g.name: g for g in verify_mod.gates()}["workflow-contract-tests"]
@@ -344,8 +343,7 @@ class VerifyGatesMirrorWorkflowTests(unittest.TestCase):
         )
 
     def test_workflow_parser_is_linear_on_long_environment_adversary(self):
-        with open(BUILD_WORKFLOW_PATH, "r", encoding="utf-8") as handle:
-            workflow = handle.read()
+        workflow = _build_workflow_text()
         self.assertTrue(_parse_workflow_gate_commands_text(workflow))
         adversarial = workflow.replace(
             "    - name: Run workflow-pilot reporter regression suite (issue #176)\n"
@@ -368,8 +366,7 @@ class VerifyGatesMirrorWorkflowTests(unittest.TestCase):
             _parse_workflow_gate_commands_text(adversarial)
 
     def test_every_mirrored_gate_rejects_unmodeled_execution_fields(self):
-        with open(BUILD_WORKFLOW_PATH, "r", encoding="utf-8") as handle:
-            workflow = handle.read()
+        workflow = _build_workflow_text()
         mirrored_steps = []
         for step_name, _ in _parse_workflow_gate_commands():
             if (
@@ -450,9 +447,9 @@ class VerifyGatesMirrorWorkflowTests(unittest.TestCase):
         self.assertEqual(
             names,
             [
-                "gba-playtest-host-suite",
                 "upstream-port-tests",
                 "workflow-contract-tests",
+                "gba-playtest-host-suite",
                 "workflow-pilot-reporter-tests",
                 "workflow-pilot-baseline",
                 "localization-host-suite",
@@ -636,7 +633,11 @@ class HostOnlyEnvGateMirrorTests(unittest.TestCase):
     HOST_ONLY_ENV = "GBA_PLAYTEST_HOST_ONLY"
 
     def test_host_suite_gate_carries_the_literal_env_assignment(self):
-        gate = verify_mod.gates()[0]
+        gate = next(
+            gate
+            for gate in verify_mod.gates()
+            if gate.name == "gba-playtest-host-suite"
+        )
         self.assertEqual(gate.name, "gba-playtest-host-suite")
         self.assertEqual(
             gate.command,
@@ -653,13 +654,20 @@ class HostOnlyEnvGateMirrorTests(unittest.TestCase):
         )
 
     def test_env_prefix_splits_into_child_env_and_unchanged_argv(self):
-        env_overrides, argv = verify_mod._split_env_prefix(verify_mod.gates()[0].command)
+        gate = next(
+            gate
+            for gate in verify_mod.gates()
+            if gate.name == "gba-playtest-host-suite"
+        )
+        env_overrides, argv = verify_mod._split_env_prefix(gate.command)
         self.assertEqual(env_overrides, {self.HOST_ONLY_ENV: "1"})
         self.assertEqual(argv[0], "python3")
         self.assertNotIn(self.HOST_ONLY_ENV, " ".join(argv))
 
     def test_no_other_gate_requests_host_only_mode(self):
-        for gate in verify_mod.gates()[1:]:
+        for gate in verify_mod.gates():
+            if gate.name == "gba-playtest-host-suite":
+                continue
             with self.subTest(gate=gate.name):
                 self.assertNotIn(
                     self.HOST_ONLY_ENV,
@@ -669,8 +677,7 @@ class HostOnlyEnvGateMirrorTests(unittest.TestCase):
                 )
 
     def test_workflow_sets_host_only_in_the_host_job_only(self):
-        with open(BUILD_WORKFLOW_PATH, "r", encoding="utf-8") as handle:
-            workflow = handle.read()
+        workflow = _build_workflow_text()
         host_job_start = workflow.index("\n  host-tests:\n")
         build_job_start = workflow.index("\n  build:\n")
         self.assertLess(host_job_start, build_job_start)
@@ -725,12 +732,21 @@ class HostOnlyEnvGateMirrorTests(unittest.TestCase):
         self.assertTrue(all(result.passed for result in results))
         self.assertEqual(len(seen), 28)
 
-        host_argv, host_env = seen[0]
+        host_index = next(
+            index
+            for index, gate in enumerate(verify_mod.gates(jobs=2))
+            if gate.name == "gba-playtest-host-suite"
+        )
+        host_argv, host_env = seen[host_index]
         self.assertEqual(host_argv[0], "python3")
         self.assertIsNotNone(host_env)
         self.assertEqual(host_env[self.HOST_ONLY_ENV], "1")
 
-        for gate, (argv, env) in zip(verify_mod.gates(jobs=2)[1:], seen[1:]):
+        for index, (gate, (argv, env)) in enumerate(
+            zip(verify_mod.gates(jobs=2), seen)
+        ):
+            if index == host_index:
+                continue
             with self.subTest(gate=gate.name):
                 self.assertNotIn(
                     self.HOST_ONLY_ENV,
@@ -882,8 +898,9 @@ class VerifyCliCwdTests(unittest.TestCase):
             "workflows",
             "build.yml",
         )
-        with open(BUILD_WORKFLOW_PATH, "rb") as source:
-            workflow_bytes = source.read()
+        workflow_bytes = publisher_command_signatures.authority_file_bytes(
+            ".github/workflows/build.yml"
+        )
         with open(target_workflow, "wb") as destination:
             destination.write(workflow_bytes)
         return target
@@ -1004,45 +1021,35 @@ class VerifyCliCwdTests(unittest.TestCase):
                 28,
             )
 
-            upstream_step = (
-                "    - name: Run upstream-port tooling test suite\n"
-                "      if: ${{ needs.event-classifier.result == 'failure' || "
-                "needs.event-classifier.outputs.classification == 'full' }}\n"
-                "      run: python3 -m unittest discover "
-                "-s tests/upstream_port -v\n"
-            )
-            workflow_step = (
-                "    - name: Run workflow contract test suite\n"
-                "      if: ${{ needs.event-classifier.result == 'failure' || "
-                "needs.event-classifier.outputs.classification == 'full' }}\n"
-                '      run: python3 -m unittest discover -s tests/workflows '
-                '-p "test_*.py" -v\n'
-            )
             mutations = {
                 "newer-added": original.replace(
-                    upstream_step,
+                    "    - name: Run upstream-port tooling test suite\n",
                     "    - name: Run target-only newer gate\n"
                     "      run: python3 -c pass\n\n"
-                    + upstream_step,
+                    "    - name: Run upstream-port tooling test suite\n",
                     1,
                 ),
-                "older-removed": original.replace(upstream_step, "", 1),
+                "older-removed": original.replace(
+                    "    - name: Run upstream-port tooling test suite\n",
+                    "    - name: Removed upstream-port tooling test suite\n",
+                    1,
+                ),
                 "mutated-argv": original.replace(
-                    "tests/upstream_port -v",
-                    "tests/upstream_port-new -v",
+                    "        AUTHORITY_SUITE: upstream-port",
+                    "        AUTHORITY_SUITE: check",
                     1,
                 ),
                 "reordered": original.replace(
-                    upstream_step,
+                    "    - name: Run upstream-port tooling test suite\n",
                     "__UPSTREAM_STEP__",
                     1,
                 ).replace(
-                    workflow_step,
-                    upstream_step,
+                    "    - name: Run workflow contract test suite\n",
+                    "    - name: Run upstream-port tooling test suite\n",
                     1,
                 ).replace(
                     "__UPSTREAM_STEP__",
-                    workflow_step,
+                    "    - name: Run workflow contract test suite\n",
                     1,
                 ),
                 "altered-action": original.replace(
@@ -1081,7 +1088,9 @@ class VerifyCliCwdTests(unittest.TestCase):
                         "authority checkout differs|"
                         "classifier mapping differs|"
                         "unreviewed unnamed step|reviewed scrubbed environment|"
-                        "workflow job order|step roles and order",
+                        "workflow job order|step roles and order|"
+                        "publisher authority bootstrap differs|"
+                        "must contain exactly",
                     ):
                         verify_mod.run_gates(target_root, dry_run=True)
 
@@ -1093,8 +1102,7 @@ class VerifyCliCwdTests(unittest.TestCase):
                 verify_mod.run_gates(target_root, dry_run=True)
 
     def test_event_setup_router_and_mode_are_closed_but_not_local_gates(self):
-        with open(BUILD_WORKFLOW_PATH, "r", encoding="utf-8") as handle:
-            original = handle.read()
+        original = _build_workflow_text()
         structure = verify_mod._parse_workflow_structure_text(original)
         self.assertEqual(
             structure[1],
@@ -1199,8 +1207,7 @@ class VerifyCliCwdTests(unittest.TestCase):
                 self.assertNotEqual(changed_structure, structure)
 
     def test_patch_release_supervisor_parent_remount_variants_reject_structure_parse(self):
-        with open(BUILD_WORKFLOW_PATH, "r", encoding="utf-8") as handle:
-            original = handle.read()
+        original = _build_workflow_text()
         verify_mod._parse_workflow_structure_text(original)
         for label, changed in patch_workflow_tests.generate_supervisor_parent_remount_mutations(
             original
@@ -1215,8 +1222,7 @@ class VerifyCliCwdTests(unittest.TestCase):
                     verify_mod._parse_workflow_structure_text(changed)
 
     def test_patch_release_raw_identity_variants_reject_structure_parse(self):
-        with open(BUILD_WORKFLOW_PATH, "r", encoding="utf-8") as handle:
-            original = handle.read()
+        original = _build_workflow_text()
         verify_mod._parse_workflow_structure_text(original)
         for label, changed in patch_workflow_tests.generate_publisher_raw_identity_mutations(
             original
@@ -1229,8 +1235,7 @@ class VerifyCliCwdTests(unittest.TestCase):
                     verify_mod._parse_workflow_structure_text(changed)
 
     def test_patch_release_command_inventory_decisions_are_mirrored(self):
-        with open(BUILD_WORKFLOW_PATH, "r", encoding="utf-8") as handle:
-            original = handle.read()
+        original = _build_workflow_text()
         verify_mod._parse_workflow_structure_text(original)
         mutations = (
             original.replace(
@@ -1255,8 +1260,7 @@ class VerifyCliCwdTests(unittest.TestCase):
                     verify_mod._parse_workflow_structure_text(changed)
 
     def test_historical_patch_release_parser_indentation_is_rejected(self):
-        with open(BUILD_WORKFLOW_PATH, "r", encoding="utf-8") as handle:
-            original = handle.read()
+        original = _build_workflow_text()
         verify_mod._parse_workflow_structure_text(original)
         broken = subprocess.check_output(
             [
@@ -1270,13 +1274,13 @@ class VerifyCliCwdTests(unittest.TestCase):
         )
         with self.assertRaisesRegex(
             ValueError,
-            "patch-release parser script differs|isolated candidate build differs",
+            "patch-release parser script differs|isolated candidate build differs|"
+            "publisher authority bootstrap differs",
         ):
             verify_mod._parse_workflow_structure_text(broken)
 
     def test_every_combined_worker_requires_the_fail_closed_classifier_edge(self):
-        with open(BUILD_WORKFLOW_PATH, "r", encoding="utf-8") as handle:
-            original = handle.read()
+        original = _build_workflow_text()
         for job_name in verify_mod._COMBINED_JOBS:
             expected_if = (
                 verify_mod._HOST_BUILD_CONDITION
@@ -1945,21 +1949,16 @@ class VerifyCliCwdTests(unittest.TestCase):
                 )
 
     def test_documented_source_root_module_dry_run_is_real(self):
-        completed = subprocess.run(
-            [
-                "python3",
-                "-m",
-                "scripts.upstream_port",
-                "verify",
-                "--dry-run",
-            ],
-            cwd=REPO_ROOT,
-            check=False,
-            capture_output=True,
-            text=True,
-        )
-        self.assertEqual(completed.returncode, 0, completed.stderr)
-        self.assertEqual(completed.stdout.count("[SKIPPED(dry-run)]"), 28)
+        stdout = io.StringIO()
+        stderr = io.StringIO()
+        with (
+            contextlib.chdir(REPO_ROOT),
+            contextlib.redirect_stdout(stdout),
+            contextlib.redirect_stderr(stderr),
+        ):
+            result = cli.main(["verify", "--dry-run"])
+        self.assertEqual(result, 0, stderr.getvalue())
+        self.assertEqual(stdout.getvalue().count("[SKIPPED(dry-run)]"), 28)
 
     def test_invalid_explicit_repo_is_a_normal_cli_error(self):
         cases = (

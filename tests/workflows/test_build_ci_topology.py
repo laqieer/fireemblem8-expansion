@@ -26,6 +26,7 @@ from scripts.workflow_pilot import (
     event_classifier,
     hydrate_authority,
     metadata_adapter_contract,
+    publisher_command_signatures,
     reporter,
     summary_continuity_contract,
 )
@@ -1422,25 +1423,41 @@ def _summary_step_is_reviewed(step: str) -> bool:
     return True
 
 
-def _host_checkout_verification_is_reviewed(step: str) -> bool:
-    if _step_name(step) != "Verify checked-out revision":
+def _publisher_authority_bootstrap_is_reviewed(
+    step: str,
+    *,
+    name: str,
+    suite: str,
+) -> bool:
+    if _step_name(step) != name:
         return False
-    if _direct_step_mapping_fields(step) != ["name", "if", "run"]:
+    if _direct_step_mapping_fields(step) != ["name", "if", "env", "run"]:
         return False
     if f"      if: {FULL_WORKER_STEP_CONDITION}" not in step:
         return False
-    script = _literal_run_script(step)
-    prefix = (
-        'ACTUAL_SHA="$(git rev-parse HEAD)"\n'
-        "printf 'checkout.sha=%s\\n' \"$ACTUAL_SHA\"\n"
-        'test "$ACTUAL_SHA" = "$EXPECTED_BUILD_SHA"\n'
-        '/usr/bin/python3 -I - "$EXPECTED_BUILD_SHA" <<\'PY\'\n'
-    )
-    if not script.startswith(prefix) or not script.endswith("PY\n\n"):
+    if _step_env_entries(step) != (
+        f"        AUTHORITY_SUITE: {suite}",
+        "        BASH_ENV: ''",
+        "        ENV: ''",
+        "        EXPECTED_AUTHORITY_SHA: "
+        f"{EXPECTED_BUILD_SHA_EXPRESSION}",
+        "        GIT_CONFIG_COUNT: '0'",
+        "        GIT_CONFIG_GLOBAL: /dev/null",
+        "        GIT_CONFIG_NOSYSTEM: '1'",
+        "        GIT_NO_LAZY_FETCH: '1'",
+        "        GIT_NO_REPLACE_OBJECTS: '1'",
+        "        HOME: /",
+        "        LD_AUDIT: ''",
+        "        LD_LIBRARY_PATH: ''",
+        "        LD_PRELOAD: ''",
+        "        PATH: /usr/bin:/bin",
+        "        PYTHONHOME: ''",
+        "        PYTHONPATH: ''",
+    ):
         return False
-    source = script[len(prefix) : -len("PY\n\n")]
-    return hashlib.sha256(source.encode("utf-8")).hexdigest() == (
-        "3223c0101420c3cca60732841da6107d80d268a1fe638c627b5981e2836dc4c3"
+    script = _literal_run_script(step).rstrip() + "\n"
+    return hashlib.sha256(script.encode("utf-8")).hexdigest() == (
+        "7cab8cda5567d6677783d95b46e5f7832e2b5f82a5def01090c5a2a6b9e9ef48"
     )
 
 
@@ -1454,16 +1471,30 @@ def _protected_host_prefix_errors(host: str) -> list[str]:
             steps[1],
             if_expression=FULL_WORKER_STEP_CONDITION,
         ),
-        _host_checkout_verification_is_reviewed(steps[2]),
-        _run_step_is_exact(
+        _publisher_authority_bootstrap_is_reviewed(
+            steps[2],
+            name="Verify checked-out revision",
+            suite="check",
+        ),
+        _publisher_authority_bootstrap_is_reviewed(
             steps[3],
+            name="Run upstream-port tooling test suite",
+            suite="upstream-port",
+        ),
+        _publisher_authority_bootstrap_is_reviewed(
+            steps[4],
+            name="Run workflow contract test suite",
+            suite="workflows",
+        ),
+        _run_step_is_exact(
+            steps[5],
             "Hydrate workflow-pilot Git authority",
             (WORKFLOW_PILOT_AUTHORITY_HYDRATION,),
             if_expression=FULL_WORKER_STEP_CONDITION,
             env_lines=SCRUBBED_STEP_ENV,
         ),
         _run_step_is_exact(
-            steps[4],
+            steps[6],
             "Install host-only dependencies (no arm-none-eabi toolchain)",
             (
                 "sudo apt-get update && sudo apt-get install -y "
@@ -1472,26 +1503,11 @@ def _protected_host_prefix_errors(host: str) -> list[str]:
             if_expression=FULL_WORKER_STEP_CONDITION,
         ),
         _run_step_is_exact(
-            steps[5],
+            steps[7],
             "Run gba-playtest host test suite",
             (
                 "GBA_PLAYTEST_HOST_ONLY=1 python3 -m unittest discover "
                 "-s tools/gba-playtest/tests -v",
-            ),
-            if_expression=FULL_WORKER_STEP_CONDITION,
-        ),
-        _run_step_is_exact(
-            steps[6],
-            "Run upstream-port tooling test suite",
-            ("python3 -m unittest discover -s tests/upstream_port -v",),
-            if_expression=FULL_WORKER_STEP_CONDITION,
-        ),
-        _run_step_is_exact(
-            steps[7],
-            "Run workflow contract test suite",
-            (
-                "python3 -m unittest discover -s tests/workflows "
-                '-p "test_*.py" -v',
             ),
             if_expression=FULL_WORKER_STEP_CONDITION,
         ),
@@ -2387,7 +2403,9 @@ def _remote_completion_errors(makefile_text: str) -> list[str]:
 
 class ConsolidatedBuildTopologyTests(unittest.TestCase):
     def setUp(self):
-        self.text = WORKFLOW.read_text(encoding="utf-8")
+        self.text = publisher_command_signatures.authority_file_bytes(
+            ".github/workflows/build.yml"
+        ).decode("utf-8")
 
     def test_real_workflow_consolidates_candidate_and_master_evidence(self):
         self.assertEqual(_errors(self.text, RETIRED_WORKFLOW.exists()), [])
@@ -2490,8 +2508,8 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                 1,
             ),
             self.text.replace(
-                '        test "$ACTUAL_SHA" = "$EXPECTED_BUILD_SHA"\n',
-                '        test "$ACTUAL_SHA" = "$EXPECTED_BUILD_SHA"\n'
+                '        test "$ACTUAL_SHA" = "$EXPECTED_AUTHORITY_SHA"\n',
+                '        test "$ACTUAL_SHA" = "$EXPECTED_AUTHORITY_SHA"\n'
                 '        echo "BASH_ENV=build/mask" >> "$GITHUB_ENV"\n',
                 1,
             ),
@@ -2510,14 +2528,13 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                 1,
             ),
             self.text.replace(
-                "python3 -m unittest discover -s tests/upstream_port -v",
-                "python3 -m unittest discover -s tests/upstream_port -v || true",
+                "        AUTHORITY_SUITE: upstream-port",
+                "        AUTHORITY_SUITE: check",
                 1,
             ),
             self.text.replace(
-                'python3 -m unittest discover -s tests/workflows -p "test_*.py" -v',
-                'python3 -m unittest discover -s tests/workflows -p "test_*.py" '
-                '-v && echo "PYTHONPATH=build/mask" >> "$GITHUB_ENV"',
+                "        AUTHORITY_SUITE: workflows",
+                "        AUTHORITY_SUITE: publisher",
                 1,
             ),
             self.text.replace(

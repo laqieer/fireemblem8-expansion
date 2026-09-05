@@ -1,12 +1,12 @@
 """Build CI must execute the exact event-derived revision it reports."""
 
 import re
-import sys
 import unittest
 from pathlib import Path
 
+from scripts.workflow_pilot import publisher_command_signatures
+
 ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(ROOT))
 
 WORKFLOW = ROOT / ".github" / "workflows" / "build.yml"
 CHECKOUT_PIN = "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"
@@ -24,6 +24,12 @@ MERGE_SHA_FALLBACK = (
     "github.event_name == 'pull_request' && "
     "github.event.pull_request.head.sha || github.sha"
 )
+
+
+def _workflow_text():
+    return publisher_command_signatures.authority_file_bytes(
+        ".github/workflows/build.yml"
+    ).decode("utf-8")
 
 
 def _job_block(text, name):
@@ -56,17 +62,39 @@ def _contract_errors(text):
         if checkout not in job or not all(field in job for field in checkout_fields):
             errors.append(f"{name} checkout must pin ref, fetch-depth, submodules, and credentials")
             continue
-        verification = (
-            '    - name: Verify checked-out revision\n'
-            + (
-                f"      if: {FULL_MODE_STEP_IF}\n"
-                if name in {"host-tests", "build"}
-                else ""
+        verification = '    - name: Verify checked-out revision\n'
+        if name in {"host-tests", "build"}:
+            verification += f"      if: {FULL_MODE_STEP_IF}\n"
+        if name == "host-tests":
+            verification += (
+                "      env:\n"
+                "        AUTHORITY_SUITE: check\n"
+                "        BASH_ENV: ''\n"
+                "        ENV: ''\n"
+                f"        EXPECTED_AUTHORITY_SHA: {EXPECTED_SHA}\n"
+                "        GIT_CONFIG_COUNT: '0'\n"
+                "        GIT_CONFIG_GLOBAL: /dev/null\n"
+                "        GIT_CONFIG_NOSYSTEM: '1'\n"
+                "        GIT_NO_LAZY_FETCH: '1'\n"
+                "        GIT_NO_REPLACE_OBJECTS: '1'\n"
+                "        HOME: /\n"
+                "        LD_AUDIT: ''\n"
+                "        LD_LIBRARY_PATH: ''\n"
+                "        LD_PRELOAD: ''\n"
+                "        PATH: /usr/bin:/bin\n"
+                "        PYTHONHOME: ''\n"
+                "        PYTHONPATH: ''\n"
             )
-            + '      run: |\n'
+        expected_variable = (
+            "EXPECTED_AUTHORITY_SHA"
+            if name == "host-tests"
+            else "EXPECTED_BUILD_SHA"
+        )
+        verification += (
+            '      run: |\n'
             '        ACTUAL_SHA="$(git rev-parse HEAD)"\n'
             "        printf 'checkout.sha=%s\\n' \"$ACTUAL_SHA\"\n"
-            '        test "$ACTUAL_SHA" = "$EXPECTED_BUILD_SHA"'
+            f'        test "$ACTUAL_SHA" = "${expected_variable}"'
         )
         if verification not in job:
             errors.append(f"{name} must immediately verify the checkout")
@@ -78,14 +106,14 @@ def _contract_errors(text):
 
 class BuildCiCheckoutContractTests(unittest.TestCase):
     def test_real_workflow_binds_all_combined_workers_to_the_event_head(self):
-        self.assertEqual(_contract_errors(WORKFLOW.read_text(encoding="utf-8")), [])
+        self.assertEqual(_contract_errors(_workflow_text()), [])
 
     def test_missing_fetch_depth_is_rejected(self):
-        text = WORKFLOW.read_text(encoding="utf-8").replace("        fetch-depth: 0\n", "", 1)
+        text = _workflow_text().replace("        fetch-depth: 0\n", "", 1)
         self.assertTrue(any("fetch-depth" in error for error in _contract_errors(text)))
 
     def test_merge_ref_fallback_is_rejected(self):
-        text = WORKFLOW.read_text(encoding="utf-8")
+        text = _workflow_text()
         self.assertNotIn(MERGE_SHA_FALLBACK, text)
         self.assertNotIn(
             "needs.event-classifier.result == 'failure' && "
@@ -104,7 +132,7 @@ class BuildCiCheckoutContractTests(unittest.TestCase):
         )
 
     def test_checkout_ref_must_use_event_head(self):
-        text = WORKFLOW.read_text(encoding="utf-8").replace(
+        text = _workflow_text().replace(
             f"        ref: {EXPECTED_SHA}\n",
             "        ref: ${{ github.sha }}\n",
             1,
@@ -112,7 +140,7 @@ class BuildCiCheckoutContractTests(unittest.TestCase):
         self.assertTrue(any("checkout must pin" in error for error in _contract_errors(text)))
 
     def test_fallback_checkouts_never_consume_raw_event_refs(self):
-        text = WORKFLOW.read_text(encoding="utf-8")
+        text = _workflow_text()
         self.assertIn(
             "ref: ${{ needs.event-identity.outputs.classifier_ref }}",
             text,
@@ -138,7 +166,7 @@ class BuildCiCheckoutContractTests(unittest.TestCase):
             "        printf 'checkout.sha=%s\\n' \"$ACTUAL_SHA\"\n"
             '        test "$ACTUAL_SHA" = "$EXPECTED_BUILD_SHA"\n\n'
         )
-        text = WORKFLOW.read_text(encoding="utf-8").replace(verification, "", 1)
+        text = _workflow_text().replace(verification, "", 1)
         self.assertTrue(
             any("must immediately verify" in error for error in _contract_errors(text))
         )

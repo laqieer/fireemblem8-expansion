@@ -178,7 +178,13 @@ the worktree. The bootstrap and loader independently rehash the serialized Git
 commit, every traversed tree, and every blob against the object ID before using
 it, so a misnamed or shadowing loose object cannot redefine the selected tree.
 The loader obtains the parser, registry, workflow, both consuming validators,
-and their package initializers from that authenticated tree. It then walks
+their tests, required Python packages, and package initializers from that
+authenticated tree. The three workflow authority steps use the same reviewed
+isolated bootstrap bytes with a fixed suite selector; no ordinary discovery
+process imports these consumers from the mutable checkout. The bootstrap
+detects the repository's declared `sha1` or `sha256` storage format and uses
+the corresponding object-ID and raw tree-entry widths; unknown or mixed
+formats fail. It then walks
 every live parent and file with no-follow descriptor-relative opens, requires
 secure owner/mode and regular single-link files, compares the descriptor bytes
 to the Git blobs, and rechecks the path/inode chain after each read. Parsing and

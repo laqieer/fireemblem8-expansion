@@ -331,21 +331,18 @@ case does not test an unpublished base through CI.
    ```
 
 2. Run the table-driven positive, adversarial, helper, drift, deletion, and
-   mirrored-validator suite:
+   mirrored-validator suite through the authenticated snapshot bootstrap:
 
    ```bash
-   python3 -m unittest \
-     scripts.workflow_pilot.tests.test_publisher_command_signatures -v
+   python3 -m scripts.workflow_pilot.publisher_command_signatures \
+     --check --consumer-suite workflows
    ```
 
-3. Run the existing publisher workflow validator and upstream workflow mirror:
+3. Run the upstream workflow mirror through the same bootstrap:
 
    ```bash
-   python3 -m unittest tests.workflows.test_patch_release_workflow -v
-   python3 -m unittest \
-     tests.upstream_port.test_verify.VerifyGatesMirrorWorkflowTests.test_patch_release_workflow_imports_without_yaml_dependency \
-     tests.upstream_port.test_verify.VerifyCliCwdTests.test_patch_release_command_inventory_decisions_are_mirrored \
-     -v
+   python3 -m scripts.workflow_pilot.publisher_command_signatures \
+     --check --consumer-suite upstream-port
    ```
 
 ### Expected result
@@ -408,20 +405,21 @@ are unchanged.
 - `python3 -m scripts.workflow_pilot.publisher_command_signatures --check` —
   parses the real workflow, validates the exact fixed Python programs, and
   checks complete counted equality with the closed JSON registry.
-- `python3 -m unittest scripts.workflow_pilot.tests.test_publisher_command_signatures -v`
-  — proves the real positive, parent composed-reader negative, adversarial
+- `python3 -m scripts.workflow_pilot.publisher_command_signatures --check
+  --consumer-suite workflows` — loads the workflow-pilot, modernize, and
+  workflow-test Python closure from authenticated Git bytes and proves the real
+  positive, parent composed-reader negative, adversarial
   signature families, recursive helper closure, both mirrored validator
   decisions, exact checker mutations, production-command drift, and registry
   path/digest/schema/deletion/mutation controls; parameterized authority-file,
   parent, symlink, nonregular, mode, hardlink, content, path-swap, and import
   substitution cases; and proof that the semantic inventory does not enforce
   future phase-event order.
-- `python3 -m unittest tests.workflows.test_patch_release_workflow -v` —
-  preserves the complete upstream publisher boundary and executes the exact
-  checker behavior.
-- `python3 -m unittest tests.upstream_port.test_verify.VerifyGatesMirrorWorkflowTests.test_patch_release_workflow_imports_without_yaml_dependency tests.upstream_port.test_verify.VerifyCliCwdTests.test_patch_release_command_inventory_decisions_are_mirrored -v`
-  — preserves the stdlib-only upstream import contract and proves its workflow
-  parser denies the same command mutations as the primary publisher validator.
+- `python3 -m scripts.workflow_pilot.publisher_command_signatures --check
+  --consumer-suite upstream-port` — loads the upstream-port implementation and
+  test closure from the same authenticated snapshot, preserves its stdlib-only
+  contract, and proves its workflow parser denies the same command mutations as
+  the primary publisher validator.
 
 ### Cleanup and limitations
 

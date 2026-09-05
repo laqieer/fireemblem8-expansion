@@ -1257,7 +1257,7 @@
       "purpose": "Prove every production builder command, recursive helper command, and reviewed Python invocation resolves to one typed default-deny signature, including the exact cgroup membership checker.",
       "prerequisites": "Repository root with Python 3 and the committed workflow-pilot parser, command-signature validator, signature JSON, and patch-release workflow unchanged; mutation fixtures use temporary copies.",
       "actions": "Run the command-inventory check, table-driven adversarial suite, complete publisher workflow validator, and stdlib-only upstream workflow import mirror.",
-      "expected_result": "The real builder and exact `/usr/bin/python3 -I -S - \"$$\"` membership checker pass. Unknown, dynamic, redirected, structurally changed, duplicated, ambiguous, stale, or missing commands/signatures and every composed interpreter/helper/access family fail; forged Git objects, symlink, path-swap, nonregular, owner/mode, altered-content, import-cache, standard-library shadow, and alternate-registry substitutions fail against the immutable Git-tree closure; both publisher validators return the same decision from the same authority.",
+      "expected_result": "The real builder and exact `/usr/bin/python3 -I -S - \"$$\"` membership checker pass. Unknown, dynamic, redirected, structurally changed, duplicated, ambiguous, stale, or missing commands/signatures and every composed interpreter/helper/access family fail; authenticated consumer suites remain bound after worktree and module-cache mutation; SHA-1 and SHA-256 objects pass while forged, mixed, or unknown formats, symlink, path-swap, nonregular, owner/mode, altered-content, standard-library shadow, and alternate-registry substitutions fail; both publisher validators return the same authority decision.",
       "negative_control": "The prior substring detector accepts a Python program that composes `/mnt/supervisor/cgroup/` plus `cgroup.` plus `procs`; the typed authority rejects it while accepting the exact production checker.",
       "interactions": "Depends on the existing workflow-pilot lexer/parser/control and helper-normalization seams and exact-tree publisher identity checks; independent root on master, prerequisite for #201 and final #177, and conflicts with PR #195 until that work consumes this registry; no other feature conflicts.",
       "save_compatibility": "No save, configuration identity, generated-data, localization, ROM/RAM, gameplay, modern profile, or archival behavior change.",
@@ -1269,15 +1269,11 @@
           "evidence": "scripts/workflow_pilot/publisher_command_signatures.py"
         },
         {
-          "command": "python3 -m unittest scripts.workflow_pilot.tests.test_publisher_command_signatures -v",
+          "command": "python3 -m scripts.workflow_pilot.publisher_command_signatures --check --consumer-suite workflows",
           "evidence": "scripts/workflow_pilot/tests/test_publisher_command_signatures.py"
         },
         {
-          "command": "python3 -m unittest tests.workflows.test_patch_release_workflow -v",
-          "evidence": "tests/workflows/test_patch_release_workflow.py"
-        },
-        {
-          "command": "python3 -m unittest tests.upstream_port.test_verify.VerifyGatesMirrorWorkflowTests.test_patch_release_workflow_imports_without_yaml_dependency tests.upstream_port.test_verify.VerifyCliCwdTests.test_patch_release_command_inventory_decisions_are_mirrored -v",
+          "command": "python3 -m scripts.workflow_pilot.publisher_command_signatures --check --consumer-suite upstream-port",
           "evidence": "tests/upstream_port/test_verify.py"
         }
       ]
@@ -2129,7 +2125,7 @@
       "limitations": "Whether a reviewed upstream commit belongs here is a precise human decision, never an automated approval.",
       "automation": [
         {
-          "command": "python3 -m unittest discover -s tests/upstream_port -v",
+          "command": "python3 -m scripts.workflow_pilot.publisher_command_signatures --check --consumer-suite upstream-port",
           "evidence": "tests/upstream_port/test_cli_readonly.py"
         },
         {
@@ -2163,7 +2159,7 @@
       "limitations": "Build CI does not publish a default modern ROM/map artifact; local source reproduction is required.",
       "automation": [
         {
-          "command": "python3 -m unittest discover -s tests/workflows -p \"test_*.py\" -v",
+          "command": "python3 -m scripts.workflow_pilot.publisher_command_signatures --check --consumer-suite workflows",
           "evidence": ".github/workflows/build.yml"
         },
         {
@@ -2286,7 +2282,7 @@
       "limitations": "The tests evaluate workflow and policy contracts locally; they do not exercise GitHub service availability or grant credentials.",
       "automation": [
         {
-          "command": "python3 -m unittest discover -s tests/workflows -p \"test_*.py\" -v",
+          "command": "python3 -m scripts.workflow_pilot.publisher_command_signatures --check --consumer-suite workflows",
           "evidence": "tests/workflows/test_build_ci_topology.py"
         },
         {
@@ -2326,7 +2322,7 @@
           "evidence": "scripts/workflow_pilot/tests/test_candidate_evidence.py"
         },
         {
-          "command": "python3 -m unittest discover -s tests/workflows -p 'test_*.py' -v",
+          "command": "python3 -m scripts.workflow_pilot.publisher_command_signatures --check --consumer-suite workflows",
           "evidence": "tests/workflows/test_build_ci_topology.py"
         },
         {
@@ -2370,7 +2366,7 @@
           "evidence": "scripts/workflow_pilot/reporter.py"
         },
         {
-          "command": "python3 -m unittest discover -s tests/workflows -p 'test_*.py' -v",
+          "command": "python3 -m scripts.workflow_pilot.publisher_command_signatures --check --consumer-suite workflows",
           "evidence": "tests/workflows/test_build_ci_topology.py"
         },
         {

@@ -500,7 +500,7 @@ compatibility impact.
 
 ### Automation
 
-- `python3 -m unittest discover -s tests/upstream_port -v`
+- `python3 -m scripts.workflow_pilot.publisher_command_signatures --check --consumer-suite upstream-port`
   — `tests/upstream_port/test_cli_readonly.py`.
 - `python3 -m scripts.upstream_port verify --dry-run`
   — `scripts/upstream_port/verify.py`.
@@ -559,7 +559,7 @@ separate BPS artifact contract remains the only published artifact path.
 
 ### Automation
 
-- `python3 -m unittest discover -s tests/workflows -p "test_*.py" -v`
+- `python3 -m scripts.workflow_pilot.publisher_command_signatures --check --consumer-suite workflows`
   — `.github/workflows/build.yml`.
 - `make assets-clean && make assets-generate && make expansion-modern-rom MODERN_CONFIG=release MODERN_ABI=aapcs && python3 scripts/modernize/verify_rom_header.py build/expansion-modern/release/aapcs/fireemblem8.gba`
   — `scripts/modernize/verify_rom_header.py`.

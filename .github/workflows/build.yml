@@ -727,11 +727,28 @@ jobs:
 
     - name: Verify checked-out revision
       if: ${{ needs.event-classifier.result == 'failure' || needs.event-classifier.outputs.classification == 'full' }}
+      env:
+        AUTHORITY_SUITE: check
+        BASH_ENV: ''
+        ENV: ''
+        EXPECTED_AUTHORITY_SHA: ${{ (needs.event-classifier.result == 'success' && needs.event-classifier.outputs.expected_head) || (needs.event-classifier.result == 'failure' && needs.event-identity.outputs.fallback_sha) || '' }}
+        GIT_CONFIG_COUNT: '0'
+        GIT_CONFIG_GLOBAL: /dev/null
+        GIT_CONFIG_NOSYSTEM: '1'
+        GIT_NO_LAZY_FETCH: '1'
+        GIT_NO_REPLACE_OBJECTS: '1'
+        HOME: /
+        LD_AUDIT: ''
+        LD_LIBRARY_PATH: ''
+        LD_PRELOAD: ''
+        PATH: /usr/bin:/bin
+        PYTHONHOME: ''
+        PYTHONPATH: ''
       run: |
         ACTUAL_SHA="$(git rev-parse HEAD)"
         printf 'checkout.sha=%s\n' "$ACTUAL_SHA"
-        test "$ACTUAL_SHA" = "$EXPECTED_BUILD_SHA"
-        /usr/bin/python3 -I - "$EXPECTED_BUILD_SHA" <<'PY'
+        test "$ACTUAL_SHA" = "$EXPECTED_AUTHORITY_SHA"
+        /usr/bin/python3 -I - "$EXPECTED_AUTHORITY_SHA" <<'PY'
         import hashlib
         import os
         import re
@@ -777,9 +794,24 @@ jobs:
                 raise SystemExit(125)
             return completed.stdout
 
+        format_name = git(
+            "rev-parse",
+            "--show-object-format=storage",
+        ).decode().strip()
+        formats = {"sha1": (40, 20), "sha256": (64, 32)}
+        if format_name not in formats:
+            raise SystemExit(125)
+        hex_length, raw_length = formats[format_name]
+
+        def is_object_id(value):
+            return re.fullmatch(
+                rf"[0-9a-f]{{{hex_length}}}",
+                value,
+            ) is not None
+
         def object_bytes(object_id, object_type):
             if (
-                re.fullmatch(r"[0-9a-f]{40}", object_id) is None
+                not is_object_id(object_id)
                 or object_type not in {"blob", "commit", "tree"}
             ):
                 raise SystemExit(125)
@@ -787,7 +819,8 @@ jobs:
             if not size.isdigit() or int(size) > 8388608:
                 raise SystemExit(125)
             data = git("cat-file", object_type, object_id)
-            identity = hashlib.sha1(
+            identity = hashlib.new(
+                format_name,
                 f"{object_type} {len(data)}\0".encode() + data
             ).hexdigest()
             if len(data) != int(size) or identity != object_id:
@@ -800,15 +833,16 @@ jobs:
             while offset < len(data):
                 separator = data.find(b" ", offset)
                 terminator = data.find(b"\0", separator + 1)
+                entry_end = terminator + 1 + raw_length
                 if (
                     separator <= offset
                     or terminator < 0
-                    or terminator + 21 > len(data)
+                    or entry_end > len(data)
                 ):
                     raise SystemExit(125)
                 mode = data[offset:separator].decode()
                 name = data[separator + 1 : terminator].decode()
-                object_id = data[terminator + 1 : terminator + 21].hex()
+                object_id = data[terminator + 1 : entry_end].hex()
                 if (
                     name in {"", ".", ".."}
                     or "/" in name
@@ -816,13 +850,13 @@ jobs:
                 ):
                     raise SystemExit(125)
                 result[name] = (mode, object_id)
-                offset = terminator + 21
+                offset = entry_end
             return result
 
         expected = sys.argv[1]
         head = git("rev-parse", "--verify", "HEAD^{commit}").decode().strip()
         if (
-            re.fullmatch(r"[0-9a-f]{40}", expected) is None
+            not is_object_id(expected)
             or head != expected
         ):
             raise SystemExit(125)
@@ -844,7 +878,345 @@ jobs:
             elif mode != "100644":
                 raise SystemExit(125)
         source = object_bytes(object_id, "blob")
+        suite = os.environ["AUTHORITY_SUITE"]
         sys.argv = [path, "--check"]
+        if suite != "check":
+            sys.argv.extend(["--consumer-suite", suite])
+        namespace = {
+            "__name__": "__main__",
+            "__file__": os.path.join(root, path),
+            "__package__": "",
+            "_BOOTSTRAP_REVISION": expected,
+        }
+        exec(compile(source, path, "exec"), namespace)
+        PY
+
+    - name: Run upstream-port tooling test suite
+      if: ${{ needs.event-classifier.result == 'failure' || needs.event-classifier.outputs.classification == 'full' }}
+      env:
+        AUTHORITY_SUITE: upstream-port
+        BASH_ENV: ''
+        ENV: ''
+        EXPECTED_AUTHORITY_SHA: ${{ (needs.event-classifier.result == 'success' && needs.event-classifier.outputs.expected_head) || (needs.event-classifier.result == 'failure' && needs.event-identity.outputs.fallback_sha) || '' }}
+        GIT_CONFIG_COUNT: '0'
+        GIT_CONFIG_GLOBAL: /dev/null
+        GIT_CONFIG_NOSYSTEM: '1'
+        GIT_NO_LAZY_FETCH: '1'
+        GIT_NO_REPLACE_OBJECTS: '1'
+        HOME: /
+        LD_AUDIT: ''
+        LD_LIBRARY_PATH: ''
+        LD_PRELOAD: ''
+        PATH: /usr/bin:/bin
+        PYTHONHOME: ''
+        PYTHONPATH: ''
+      run: |
+        ACTUAL_SHA="$(git rev-parse HEAD)"
+        printf 'checkout.sha=%s\n' "$ACTUAL_SHA"
+        test "$ACTUAL_SHA" = "$EXPECTED_AUTHORITY_SHA"
+        /usr/bin/python3 -I - "$EXPECTED_AUTHORITY_SHA" <<'PY'
+        import hashlib
+        import os
+        import re
+        import subprocess
+        import sys
+
+        if not hasattr(os, "O_NOFOLLOW"):
+            raise SystemExit(125)
+        root = os.path.abspath(os.environ["GITHUB_WORKSPACE"])
+        root_fd = os.open("/", os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC)
+        for component in root.split(os.sep)[1:]:
+            next_fd = os.open(
+                component,
+                os.O_RDONLY
+                | os.O_DIRECTORY
+                | os.O_CLOEXEC
+                | os.O_NOFOLLOW,
+                dir_fd=root_fd,
+            )
+            os.close(root_fd)
+            root_fd = next_fd
+        environment = {
+            "GIT_CONFIG_COUNT": "0",
+            "GIT_CONFIG_GLOBAL": "/dev/null",
+            "GIT_CONFIG_NOSYSTEM": "1",
+            "GIT_NO_LAZY_FETCH": "1",
+            "GIT_NO_REPLACE_OBJECTS": "1",
+            "HOME": "/",
+            "LC_ALL": "C",
+            "PATH": "/usr/bin:/bin",
+        }
+
+        def git(*arguments):
+            completed = subprocess.run(
+                ["/usr/bin/git", *arguments],
+                cwd=f"/proc/self/fd/{root_fd}",
+                env=environment,
+                pass_fds=(root_fd,),
+                check=False,
+                capture_output=True,
+            )
+            if completed.returncode != 0:
+                raise SystemExit(125)
+            return completed.stdout
+
+        format_name = git(
+            "rev-parse",
+            "--show-object-format=storage",
+        ).decode().strip()
+        formats = {"sha1": (40, 20), "sha256": (64, 32)}
+        if format_name not in formats:
+            raise SystemExit(125)
+        hex_length, raw_length = formats[format_name]
+
+        def is_object_id(value):
+            return re.fullmatch(
+                rf"[0-9a-f]{{{hex_length}}}",
+                value,
+            ) is not None
+
+        def object_bytes(object_id, object_type):
+            if (
+                not is_object_id(object_id)
+                or object_type not in {"blob", "commit", "tree"}
+            ):
+                raise SystemExit(125)
+            size = git("cat-file", "-s", object_id).decode().strip()
+            if not size.isdigit() or int(size) > 8388608:
+                raise SystemExit(125)
+            data = git("cat-file", object_type, object_id)
+            identity = hashlib.new(
+                format_name,
+                f"{object_type} {len(data)}\0".encode() + data
+            ).hexdigest()
+            if len(data) != int(size) or identity != object_id:
+                raise SystemExit(125)
+            return data
+
+        def tree_entries(data):
+            result = {}
+            offset = 0
+            while offset < len(data):
+                separator = data.find(b" ", offset)
+                terminator = data.find(b"\0", separator + 1)
+                entry_end = terminator + 1 + raw_length
+                if (
+                    separator <= offset
+                    or terminator < 0
+                    or entry_end > len(data)
+                ):
+                    raise SystemExit(125)
+                mode = data[offset:separator].decode()
+                name = data[separator + 1 : terminator].decode()
+                object_id = data[terminator + 1 : entry_end].hex()
+                if (
+                    name in {"", ".", ".."}
+                    or "/" in name
+                    or name in result
+                ):
+                    raise SystemExit(125)
+                result[name] = (mode, object_id)
+                offset = entry_end
+            return result
+
+        expected = sys.argv[1]
+        head = git("rev-parse", "--verify", "HEAD^{commit}").decode().strip()
+        if (
+            not is_object_id(expected)
+            or head != expected
+        ):
+            raise SystemExit(125)
+        commit = object_bytes(expected, "commit")
+        first_line = commit.split(b"\n", 1)[0]
+        if not first_line.startswith(b"tree "):
+            raise SystemExit(125)
+        object_id = first_line.removeprefix(b"tree ").decode()
+        path = "scripts/workflow_pilot/publisher_command_signatures.py"
+        parts = path.split("/")
+        for index, part in enumerate(parts):
+            entry = tree_entries(object_bytes(object_id, "tree")).get(part)
+            if entry is None:
+                raise SystemExit(125)
+            mode, object_id = entry
+            if index + 1 < len(parts):
+                if mode not in {"40000", "040000"}:
+                    raise SystemExit(125)
+            elif mode != "100644":
+                raise SystemExit(125)
+        source = object_bytes(object_id, "blob")
+        suite = os.environ["AUTHORITY_SUITE"]
+        sys.argv = [path, "--check"]
+        if suite != "check":
+            sys.argv.extend(["--consumer-suite", suite])
+        namespace = {
+            "__name__": "__main__",
+            "__file__": os.path.join(root, path),
+            "__package__": "",
+            "_BOOTSTRAP_REVISION": expected,
+        }
+        exec(compile(source, path, "exec"), namespace)
+        PY
+
+    # Consolidated Build CI topology contract: candidate/master triggers,
+    # combined workers, evidence ownership, and fail-closed summary. Pure
+    # stdlib/YAML-text parsing; no ROM/toolchain.
+    - name: Run workflow contract test suite
+      if: ${{ needs.event-classifier.result == 'failure' || needs.event-classifier.outputs.classification == 'full' }}
+      env:
+        AUTHORITY_SUITE: workflows
+        BASH_ENV: ''
+        ENV: ''
+        EXPECTED_AUTHORITY_SHA: ${{ (needs.event-classifier.result == 'success' && needs.event-classifier.outputs.expected_head) || (needs.event-classifier.result == 'failure' && needs.event-identity.outputs.fallback_sha) || '' }}
+        GIT_CONFIG_COUNT: '0'
+        GIT_CONFIG_GLOBAL: /dev/null
+        GIT_CONFIG_NOSYSTEM: '1'
+        GIT_NO_LAZY_FETCH: '1'
+        GIT_NO_REPLACE_OBJECTS: '1'
+        HOME: /
+        LD_AUDIT: ''
+        LD_LIBRARY_PATH: ''
+        LD_PRELOAD: ''
+        PATH: /usr/bin:/bin
+        PYTHONHOME: ''
+        PYTHONPATH: ''
+      run: |
+        ACTUAL_SHA="$(git rev-parse HEAD)"
+        printf 'checkout.sha=%s\n' "$ACTUAL_SHA"
+        test "$ACTUAL_SHA" = "$EXPECTED_AUTHORITY_SHA"
+        /usr/bin/python3 -I - "$EXPECTED_AUTHORITY_SHA" <<'PY'
+        import hashlib
+        import os
+        import re
+        import subprocess
+        import sys
+
+        if not hasattr(os, "O_NOFOLLOW"):
+            raise SystemExit(125)
+        root = os.path.abspath(os.environ["GITHUB_WORKSPACE"])
+        root_fd = os.open("/", os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC)
+        for component in root.split(os.sep)[1:]:
+            next_fd = os.open(
+                component,
+                os.O_RDONLY
+                | os.O_DIRECTORY
+                | os.O_CLOEXEC
+                | os.O_NOFOLLOW,
+                dir_fd=root_fd,
+            )
+            os.close(root_fd)
+            root_fd = next_fd
+        environment = {
+            "GIT_CONFIG_COUNT": "0",
+            "GIT_CONFIG_GLOBAL": "/dev/null",
+            "GIT_CONFIG_NOSYSTEM": "1",
+            "GIT_NO_LAZY_FETCH": "1",
+            "GIT_NO_REPLACE_OBJECTS": "1",
+            "HOME": "/",
+            "LC_ALL": "C",
+            "PATH": "/usr/bin:/bin",
+        }
+
+        def git(*arguments):
+            completed = subprocess.run(
+                ["/usr/bin/git", *arguments],
+                cwd=f"/proc/self/fd/{root_fd}",
+                env=environment,
+                pass_fds=(root_fd,),
+                check=False,
+                capture_output=True,
+            )
+            if completed.returncode != 0:
+                raise SystemExit(125)
+            return completed.stdout
+
+        format_name = git(
+            "rev-parse",
+            "--show-object-format=storage",
+        ).decode().strip()
+        formats = {"sha1": (40, 20), "sha256": (64, 32)}
+        if format_name not in formats:
+            raise SystemExit(125)
+        hex_length, raw_length = formats[format_name]
+
+        def is_object_id(value):
+            return re.fullmatch(
+                rf"[0-9a-f]{{{hex_length}}}",
+                value,
+            ) is not None
+
+        def object_bytes(object_id, object_type):
+            if (
+                not is_object_id(object_id)
+                or object_type not in {"blob", "commit", "tree"}
+            ):
+                raise SystemExit(125)
+            size = git("cat-file", "-s", object_id).decode().strip()
+            if not size.isdigit() or int(size) > 8388608:
+                raise SystemExit(125)
+            data = git("cat-file", object_type, object_id)
+            identity = hashlib.new(
+                format_name,
+                f"{object_type} {len(data)}\0".encode() + data
+            ).hexdigest()
+            if len(data) != int(size) or identity != object_id:
+                raise SystemExit(125)
+            return data
+
+        def tree_entries(data):
+            result = {}
+            offset = 0
+            while offset < len(data):
+                separator = data.find(b" ", offset)
+                terminator = data.find(b"\0", separator + 1)
+                entry_end = terminator + 1 + raw_length
+                if (
+                    separator <= offset
+                    or terminator < 0
+                    or entry_end > len(data)
+                ):
+                    raise SystemExit(125)
+                mode = data[offset:separator].decode()
+                name = data[separator + 1 : terminator].decode()
+                object_id = data[terminator + 1 : entry_end].hex()
+                if (
+                    name in {"", ".", ".."}
+                    or "/" in name
+                    or name in result
+                ):
+                    raise SystemExit(125)
+                result[name] = (mode, object_id)
+                offset = entry_end
+            return result
+
+        expected = sys.argv[1]
+        head = git("rev-parse", "--verify", "HEAD^{commit}").decode().strip()
+        if (
+            not is_object_id(expected)
+            or head != expected
+        ):
+            raise SystemExit(125)
+        commit = object_bytes(expected, "commit")
+        first_line = commit.split(b"\n", 1)[0]
+        if not first_line.startswith(b"tree "):
+            raise SystemExit(125)
+        object_id = first_line.removeprefix(b"tree ").decode()
+        path = "scripts/workflow_pilot/publisher_command_signatures.py"
+        parts = path.split("/")
+        for index, part in enumerate(parts):
+            entry = tree_entries(object_bytes(object_id, "tree")).get(part)
+            if entry is None:
+                raise SystemExit(125)
+            mode, object_id = entry
+            if index + 1 < len(parts):
+                if mode not in {"40000", "040000"}:
+                    raise SystemExit(125)
+            elif mode != "100644":
+                raise SystemExit(125)
+        source = object_bytes(object_id, "blob")
+        suite = os.environ["AUTHORITY_SUITE"]
+        sys.argv = [path, "--check"]
+        if suite != "check":
+            sys.argv.extend(["--consumer-suite", suite])
         namespace = {
             "__name__": "__main__",
             "__file__": os.path.join(root, path),
@@ -915,17 +1287,6 @@ jobs:
     # explicit required gate; scripts/upstream_port/verify.py re-states these
     # same gate commands, argv-identical and in order, so `verify` reproduces
     # this CI locally without a runner.
-    - name: Run upstream-port tooling test suite
-      if: ${{ needs.event-classifier.result == 'failure' || needs.event-classifier.outputs.classification == 'full' }}
-      run: python3 -m unittest discover -s tests/upstream_port -v
-
-    # Consolidated Build CI topology contract: candidate/master triggers,
-    # combined workers, evidence ownership, and fail-closed summary. Pure
-    # stdlib/YAML-text parsing; no ROM/toolchain.
-    - name: Run workflow contract test suite
-      if: ${{ needs.event-classifier.result == 'failure' || needs.event-classifier.outputs.classification == 'full' }}
-      run: python3 -m unittest discover -s tests/workflows -p "test_*.py" -v
-
     - name: Run workflow-pilot reporter regression suite (issue #176)
       if: ${{ needs.event-classifier.result == 'failure' || needs.event-classifier.outputs.classification == 'full' }}
       env:

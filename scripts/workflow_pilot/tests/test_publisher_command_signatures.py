@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import ast
+from contextlib import redirect_stderr
 import copy
+import io
 import json
 import os
 import re
+import subprocess
 import sys
 import tempfile
 import types
@@ -107,12 +110,24 @@ class PublisherCommandSignatureTests(unittest.TestCase):
         )
 
     def test_exact_tree_bootstrap_runs_before_candidate_controlled_host_tests(self):
-        command = '/usr/bin/python3 -I - "$EXPECTED_BUILD_SHA" <<\'PY\''
+        command = '/usr/bin/python3 -I - "$EXPECTED_AUTHORITY_SHA" <<\'PY\''
         self.assertIn(command, self.workflow)
-        self.assertLess(
-            self.workflow.index(command),
-            self.workflow.index("- name: Run gba-playtest host test suite"),
-        )
+        for suite in (
+            "Run upstream-port tooling test suite",
+            "Run workflow contract test suite",
+        ):
+            with self.subTest(suite=suite):
+                position = self.workflow.index(f"- name: {suite}")
+                self.assertLess(
+                    position,
+                    self.workflow.index(
+                        "- name: Hydrate workflow-pilot Git authority"
+                    ),
+                )
+                self.assertLess(
+                    position,
+                    self.workflow.index("- name: Run gba-playtest host test suite"),
+                )
         self.assertIn(
             'commit = object_bytes(expected, "commit")',
             self.workflow,
@@ -536,9 +551,9 @@ class PublisherCommandSignatureTests(unittest.TestCase):
         self.assertEqual(
             json.loads(rendered.decode("ascii")),
             json.loads(
-                publisher_command_signatures.REGISTRY_PATH.read_text(
-                    encoding="ascii"
-                )
+                publisher_command_signatures.authority_file_bytes(
+                    publisher_command_signatures._REGISTRY_AUTHORITY_PATH
+                ).decode("ascii")
             ),
         )
         with tempfile.TemporaryDirectory() as temporary:
@@ -593,7 +608,18 @@ class PublisherCommandSignatureTests(unittest.TestCase):
             publisher_shell_contract.__file__,
             publisher_command_signatures._PARSER_AUTHORITY_PATH,
         )
-        self.assertEqual(set(snapshot.files), set(publisher_command_signatures._AUTHORITY_PATHS))
+        self.assertLessEqual(
+            set(publisher_command_signatures._AUTHORITY_PATHS),
+            set(snapshot.files),
+        )
+        for prefix in publisher_command_signatures._AUTHORITY_PYTHON_PREFIXES:
+            with self.subTest(prefix=prefix):
+                self.assertTrue(
+                    any(
+                        path.startswith(prefix + "/") and path.endswith(".py")
+                        for path in snapshot.files
+                    )
+                )
         authority = publisher_command_signatures.registry_document(())[
             "authority"
         ]
@@ -602,9 +628,9 @@ class PublisherCommandSignatureTests(unittest.TestCase):
                 self.assertTrue(callable(getattr(publisher_shell_contract, name)))
 
         tree = ast.parse(
-            Path(publisher_command_signatures.__file__).read_text(
-                encoding="utf-8"
-            )
+            snapshot.files[
+                "scripts/workflow_pilot/publisher_command_signatures.py"
+            ].data.decode("utf-8")
         )
         imports = {
             alias.name.split(".", 1)[0]
@@ -626,6 +652,7 @@ class PublisherCommandSignatureTests(unittest.TestCase):
                 "collections",
                 "dataclasses",
                 "hashlib",
+                "importlib",
                 "json",
                 "os",
                 "pathlib",
@@ -637,6 +664,7 @@ class PublisherCommandSignatureTests(unittest.TestCase):
                 "sys",
                 "types",
                 "typing",
+                "unittest",
             },
         )
 
@@ -895,6 +923,104 @@ class PublisherCommandSignatureTests(unittest.TestCase):
             parser_file.object_id,
         )
 
+    def test_every_consumer_entrypoint_is_loaded_from_snapshot_bytes(self):
+        snapshot = publisher_command_signatures._authority_snapshot()
+        finder = publisher_command_signatures._SnapshotModuleFinder(snapshot)
+        for suite_name, modules in (
+            publisher_command_signatures._CONSUMER_SUITES.items()
+        ):
+            for module_name in modules:
+                with self.subTest(suite=suite_name, module=module_name):
+                    path, _is_package = finder.module_paths[module_name]
+                    self.assertEqual(
+                        snapshot.files[path].data,
+                        publisher_command_signatures.authority_file_bytes(path),
+                    )
+
+    def test_consumer_runner_rejects_after_bootstrap_shadows_and_cache_poisoning(self):
+        source = b"""\
+import json
+import pathlib
+import shlex
+import unittest
+
+class SnapshotBindingTests(unittest.TestCase):
+    def test_snapshot_and_stdlib_are_bound(self):
+        self.assertFalse(getattr(json, "ATTACKER", False))
+        self.assertFalse(getattr(pathlib, "ATTACKER", False))
+        self.assertFalse(getattr(shlex, "ATTACKER", False))
+        self.assertEqual(SOURCE, "snapshot")
+
+SOURCE = "snapshot"
+"""
+        files = {
+            "tests/authority/test_bound.py": (
+                publisher_command_signatures._AuthorityFile(
+                    path="tests/authority/test_bound.py",
+                    mode="100644",
+                    object_id="a" * 40,
+                    data=source,
+                )
+            )
+        }
+        snapshot = publisher_command_signatures._AuthoritySnapshot(
+            root=ROOT,
+            revision="b" * 40,
+            tree_id="c" * 40,
+            object_format="sha1",
+            files=files,
+            parser=publisher_shell_contract,
+        )
+        poisoned_modules = {
+            name: types.ModuleType(name)
+            for name in (
+                "json",
+                "pathlib",
+                "shlex",
+                "tests",
+                "tests.authority",
+                "tests.authority.test_bound",
+            )
+        }
+        for module in poisoned_modules.values():
+            module.ATTACKER = True
+        ARTIFACT_ROOT.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(
+            prefix="publisher-consumer-shadow-",
+            dir=ARTIFACT_ROOT,
+        ) as temporary:
+            shadow = Path(temporary)
+            for name in ("json.py", "pathlib.py", "shlex.py"):
+                (shadow / name).write_text("ATTACKER = True\n")
+            package = shadow / "tests" / "authority"
+            package.mkdir(parents=True)
+            (shadow / "tests" / "__init__.py").write_text("ATTACKER = True\n")
+            (package / "__init__.py").write_text("ATTACKER = True\n")
+            (package / "test_bound.py").write_text(
+                "raise AssertionError('live consumer imported')\n"
+            )
+            with (
+                mock.patch.object(
+                    publisher_command_signatures,
+                    "_AUTHORITY_SNAPSHOT",
+                    snapshot,
+                ),
+                mock.patch.dict(
+                    publisher_command_signatures._CONSUMER_SUITES,
+                    {"shadow-test": ("tests.authority.test_bound",)},
+                    clear=True,
+                ),
+                mock.patch.dict(sys.modules, poisoned_modules),
+                mock.patch.object(sys, "path", [str(shadow), *sys.path]),
+                redirect_stderr(io.StringIO()),
+            ):
+                self.assertEqual(
+                    publisher_command_signatures._run_consumer_suite(
+                        "shadow-test"
+                    ),
+                    0,
+                )
+
     def test_git_commit_tree_and_blob_objects_are_rehashed(self):
         root_descriptor = os.open(
             ROOT,
@@ -929,9 +1055,125 @@ class PublisherCommandSignatureTests(unittest.TestCase):
                                 root_descriptor,
                                 object_id=object_id,
                                 object_type=object_type,
+                                object_format=(
+                                    publisher_command_signatures
+                                    ._GIT_OBJECT_FORMATS["sha1"]
+                                ),
                             )
         finally:
             os.close(root_descriptor)
+
+    def test_real_sha1_and_sha256_repositories_verify_full_object_chains(self):
+        ARTIFACT_ROOT.mkdir(parents=True, exist_ok=True)
+        for format_name in ("sha1", "sha256"):
+            with self.subTest(format=format_name), tempfile.TemporaryDirectory(
+                prefix=f"publisher-{format_name}-",
+                dir=ARTIFACT_ROOT,
+            ) as temporary:
+                root = Path(temporary)
+                subprocess.run(
+                    [
+                        "/usr/bin/git",
+                        "init",
+                        f"--object-format={format_name}",
+                        "--quiet",
+                        str(root),
+                    ],
+                    check=True,
+                )
+                path = root / "nested" / "authority.py"
+                path.parent.mkdir()
+                path.write_bytes(b"AUTHORITY = True\n")
+                subprocess.run(
+                    ["/usr/bin/git", "-C", str(root), "add", "."],
+                    check=True,
+                )
+                environment = {
+                    **os.environ,
+                    "GIT_AUTHOR_EMAIL": "authority@example.invalid",
+                    "GIT_AUTHOR_NAME": "Authority Test",
+                    "GIT_COMMITTER_EMAIL": "authority@example.invalid",
+                    "GIT_COMMITTER_NAME": "Authority Test",
+                }
+                subprocess.run(
+                    [
+                        "/usr/bin/git",
+                        "-C",
+                        str(root),
+                        "commit",
+                        "--quiet",
+                        "-m",
+                        "authority",
+                    ],
+                    check=True,
+                    env=environment,
+                )
+                descriptor = os.open(
+                    root,
+                    os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC,
+                )
+                try:
+                    revision, tree_id, object_format = (
+                        publisher_command_signatures._authority_revision(
+                            descriptor,
+                            revision="HEAD",
+                        )
+                    )
+                    self.assertEqual(object_format.name, format_name)
+                    self.assertEqual(
+                        len(revision),
+                        object_format.hex_length,
+                    )
+                    authority_file = (
+                        publisher_command_signatures._git_authority_file(
+                            descriptor,
+                            tree_id=tree_id,
+                            path="nested/authority.py",
+                            object_format=object_format,
+                        )
+                    )
+                    self.assertEqual(authority_file.mode, "100644")
+                    self.assertEqual(
+                        authority_file.data,
+                        b"AUTHORITY = True\n",
+                    )
+                    other_format = publisher_command_signatures._GIT_OBJECT_FORMATS[
+                        "sha256" if format_name == "sha1" else "sha1"
+                    ]
+                    with self.assertRaisesRegex(
+                        ValueError,
+                        "object request differs",
+                    ):
+                        publisher_command_signatures._verified_git_object(
+                            descriptor,
+                            object_id=authority_file.object_id,
+                            object_type="blob",
+                            object_format=other_format,
+                        )
+                finally:
+                    os.close(descriptor)
+
+    def test_unknown_git_object_format_fails_closed(self):
+        descriptor = os.open(
+            ROOT,
+            os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC,
+        )
+        try:
+            with mock.patch.object(
+                publisher_command_signatures,
+                "_run_git",
+                return_value=b"sha512\n",
+            ):
+                with self.assertRaisesRegex(
+                    ValueError,
+                    "object format differs",
+                ):
+                    publisher_command_signatures._authority_revision(
+                        descriptor,
+                        revision="HEAD",
+                    )
+        finally:
+            os.close(descriptor)
 
 
 if __name__ == "__main__":

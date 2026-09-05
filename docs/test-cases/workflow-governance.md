@@ -170,7 +170,7 @@ issue rather than this repository.
 ### Actions
 
 1. Run
-   `python3 -m unittest discover -s tests/workflows -p "test_*.py" -v`.
+   `python3 -m scripts.workflow_pilot.publisher_command_signatures --check --consumer-suite workflows`.
 2. Run
    `python3 -m unittest scripts.docs_check_tests.test_development_workflow_skill -v`.
 3. Inspect the synthetic `opened`, child-head `synchronize`, `reopened`, and
@@ -231,7 +231,7 @@ debug/release, or archival behavior and needs no feature gate.
 
 ### Automation
 
-`python3 -m unittest discover -s tests/workflows -p "test_*.py" -v` parses the
+`python3 -m scripts.workflow_pilot.publisher_command_signatures --check --consumer-suite workflows` parses the
 workflow, evaluates synthetic PR actions and push metadata, rejects inline and
 block PR branch filters, proves a parent-only push cannot refresh the child,
 checks the required child-head `synchronize` and later base-change `edited`
@@ -270,7 +270,7 @@ availability or grant credentials.
 2. Run
    `python3 -m unittest scripts.workflow_pilot.tests.test_candidate_evidence -v`.
 3. Run
-   `python3 -m unittest discover -s tests/workflows -p "test_*.py" -v`.
+   `python3 -m scripts.workflow_pilot.publisher_command_signatures --check --consumer-suite workflows`.
 4. Run
    `python3 -m unittest tests.upstream_port.test_verify -v`.
 5. Inspect the parsed body-only, title-only, body-and-title, base-only,
@@ -529,7 +529,7 @@ full run; a later metadata continuity run advances the required canonical
 `summary` context only after proving the newest prior successful full run,
 while candidate eligibility remains bound to that prior full run.
 
-`python3 -m unittest discover -s tests/workflows -p "test_*.py" -v` parses the
+`python3 -m scripts.workflow_pilot.publisher_command_signatures --check --consumer-suite workflows` parses the
 workflow and asserts exact trigger, job, head, worker-condition, summary, setup,
 pin, and environment semantics, including the pre-fix negative selection.
 

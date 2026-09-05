@@ -1005,7 +1005,7 @@ class TesterCaseRegistryTests(unittest.TestCase):
                     "TC-WORKFLOW-STACKED-CI-001": {
                         "document": "docs/test-cases/workflow-governance.md",
                         "commands": {
-                            'python3 -m unittest discover -s tests/workflows -p "test_*.py" -v',
+                            'python3 -m scripts.workflow_pilot.publisher_command_signatures --check --consumer-suite workflows',
                             "python3 -m unittest "
                             "scripts.docs_check_tests."
                             "test_development_workflow_skill -v",
@@ -1020,8 +1020,9 @@ class TesterCaseRegistryTests(unittest.TestCase):
                             "python3 -m unittest "
                             "scripts.workflow_pilot.tests."
                             "test_candidate_evidence -v",
-                            "python3 -m unittest discover -s "
-                            "tests/workflows -p 'test_*.py' -v",
+                            "python3 -m scripts.workflow_pilot."
+                            "publisher_command_signatures --check "
+                            "--consumer-suite workflows",
                             "python3 -m unittest tests.upstream_port.test_verify -v",
                             "python3 -m unittest "
                             "scripts.docs_check_tests."
@@ -1033,8 +1034,9 @@ class TesterCaseRegistryTests(unittest.TestCase):
                         "commands": {
                             "python3 -m unittest discover -s "
                             "scripts/workflow_pilot/tests -p 'test_*.py' -v",
-                            "python3 -m unittest discover -s "
-                            "tests/workflows -p 'test_*.py' -v",
+                            "python3 -m scripts.workflow_pilot."
+                            "publisher_command_signatures --check "
+                            "--consumer-suite workflows",
                             "python3 scripts/check_docs.py --check",
                         },
                     },

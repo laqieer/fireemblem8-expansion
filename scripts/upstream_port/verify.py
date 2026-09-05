@@ -18,6 +18,7 @@ directly to reproduce it locally; see docs/upstream-porting.md.
 
 from __future__ import annotations
 
+import hashlib
 import os
 import re
 import shlex
@@ -864,6 +865,36 @@ _WORKFLOW_PILOT_TEST_STEP_NAME = (
 _WORKFLOW_PILOT_BASELINE_STEP_NAME = (
     "Validate workflow-pilot baseline against checked-out Git history"
 )
+_PUBLISHER_AUTHORITY_BOOTSTRAP_SHA256 = (
+    "7cab8cda5567d6677783d95b46e5f7832e2b5f82a5def01090c5a2a6b9e9ef48"
+)
+_PUBLISHER_AUTHORITY_SUITES = {
+    "Verify checked-out revision": "check",
+    "Run upstream-port tooling test suite": "upstream-port",
+    "Run workflow contract test suite": "workflows",
+}
+_PUBLISHER_AUTHORITY_ENV = {
+    "BASH_ENV": "''",
+    "ENV": "''",
+    "EXPECTED_AUTHORITY_SHA": (
+        "${{ (needs.event-classifier.result == 'success' && "
+        "needs.event-classifier.outputs.expected_head) || "
+        "(needs.event-classifier.result == 'failure' && "
+        "needs.event-identity.outputs.fallback_sha) || '' }}"
+    ),
+    "GIT_CONFIG_COUNT": "'0'",
+    "GIT_CONFIG_GLOBAL": "/dev/null",
+    "GIT_CONFIG_NOSYSTEM": "'1'",
+    "GIT_NO_LAZY_FETCH": "'1'",
+    "GIT_NO_REPLACE_OBJECTS": "'1'",
+    "HOME": "/",
+    "LD_AUDIT": "''",
+    "LD_LIBRARY_PATH": "''",
+    "LD_PRELOAD": "''",
+    "PATH": "/usr/bin:/bin",
+    "PYTHONHOME": "''",
+    "PYTHONPATH": "''",
+}
 _FULL_MODE_ONLY_JOB_STEPS = {
     ("host-tests", "Verify checked-out revision"),
     ("host-tests", "Hydrate workflow-pilot Git authority"),
@@ -960,11 +991,11 @@ _EXPECTED_STEP_ROLES = {
         ("setup", _METADATA_ADAPTER_STEP_NAME),
         ("setup", None),
         ("setup", "Verify checked-out revision"),
+        ("gate", "Run upstream-port tooling test suite"),
+        ("gate", "Run workflow contract test suite"),
         ("setup", "Hydrate workflow-pilot Git authority"),
         ("setup", "Install host-only dependencies (no arm-none-eabi toolchain)"),
         ("gate", "Run gba-playtest host test suite"),
-        ("gate", "Run upstream-port tooling test suite"),
-        ("gate", "Run workflow contract test suite"),
         ("gate", _WORKFLOW_PILOT_TEST_STEP_NAME),
         ("gate", _WORKFLOW_PILOT_BASELINE_STEP_NAME),
         ("gate", "Run localization host test suite (issue #18)"),
@@ -1649,6 +1680,42 @@ def _parse_step(block, job_name, index):
             values[name] = scalar
 
     name = values.get("name")
+    authority_suite = (
+        _PUBLISHER_AUTHORITY_SUITES.get(name)
+        if job_name == "host-tests"
+        else None
+    )
+    if authority_suite is not None:
+        if (
+            literal_run_script is None
+            or hashlib.sha256(
+                (literal_run_script.rstrip() + "\n").encode("utf-8")
+            ).hexdigest()
+            != _PUBLISHER_AUTHORITY_BOOTSTRAP_SHA256
+            or values.get("env")
+            != tuple(
+                sorted(
+                    {
+                        **_PUBLISHER_AUTHORITY_ENV,
+                        "AUTHORITY_SUITE": authority_suite,
+                    }.items()
+                )
+            )
+        ):
+            raise ValueError(
+                f"{step_label} publisher authority bootstrap differs"
+            )
+        if authority_suite != "check":
+            values["run"] = (
+                (
+                    "python3",
+                    "-m",
+                    "scripts.workflow_pilot.publisher_command_signatures",
+                    "--check",
+                    "--consumer-suite",
+                    authority_suite,
+                ),
+            )
     if job_name == "event-identity":
         if (
             index != 0
@@ -2131,8 +2198,8 @@ def _parse_step(block, job_name, index):
         else:
             expected_fields = (
                 {"name", "env", "run"}
-                if name
-                in {
+                if authority_suite is not None
+                or name in {
                     _WORKFLOW_PILOT_TEST_STEP_NAME,
                     _WORKFLOW_PILOT_BASELINE_STEP_NAME,
                     "Hydrate workflow-pilot Git authority",
@@ -2146,16 +2213,23 @@ def _parse_step(block, job_name, index):
                     f"{step_label} must contain exactly "
                     f"{', '.join(sorted(expected_fields))}"
                 )
-            if (job_name, name) in _FULL_MODE_ONLY_JOB_STEPS and values["if"] != _FULL_WORKER_STEP_CONDITION:
+            if (
+                (job_name, name) in _FULL_MODE_ONLY_JOB_STEPS
+                and values["if"] != _FULL_WORKER_STEP_CONDITION
+            ):
                 raise ValueError(f"{step_label} full-mode if differs")
-            if "env" in values and values["env"] != tuple(
-                sorted(
-                    tuple(
-                        entry.split(": ", 1)
-                        if ": " in entry
-                        else (entry[:-1], "")
+            if (
+                "env" in values
+                and authority_suite is None
+                and values["env"] != tuple(
+                    sorted(
+                        tuple(
+                            entry.split(": ", 1)
+                            if ": " in entry
+                            else (entry[:-1], "")
+                        )
+                        for entry in _SCRUBBED_PILOT_ENV
                     )
-                    for entry in _SCRUBBED_PILOT_ENV
                 )
             ):
                 raise ValueError(
@@ -2347,44 +2421,14 @@ def gates(jobs: int = 2) -> List[Gate]:
     """
     return [
         Gate(
-            name="gba-playtest-host-suite",
-            command=[
-                "GBA_PLAYTEST_HOST_ONLY=1",
-                "python3",
-                "-m",
-                "unittest",
-                "discover",
-                "-s",
-                "tools/gba-playtest/tests",
-                "-v",
-            ],
-            applicable_note=(
-                "issue #13 host lane (build.yml `host-tests` job, textually "
-                "first): every tools/gba-playtest host test -- scenario/schema "
-                "parsing, generators, config, save/migration fixtures, "
-                "timeouts, retry policy, deterministic sorted-JSON output, "
-                "provenance/diagnostics. Host-only (build-essential + "
-                "libmgba-dev, no arm-none-eabi toolchain); never builds/links "
-                "the ROM, so it does not overlap the modern-linker gates below. "
-                "GBA_PLAYTEST_HOST_ONLY=1 (mirrored verbatim from build.yml, "
-                "and applied to THIS child process only) makes that host-only "
-                "scope explicit: the ROM-dependent live-integration tests skip "
-                "by mode instead of by whether a git-ignored build artifact "
-                "happens to exist, so this gate cannot be perturbed by the "
-                "modern-linker/item-expansion gates below rewriting those "
-                "artifacts. Live coverage stays with those ROM gates"
-            ),
-        ),
-        Gate(
             name="upstream-port-tests",
             command=[
                 "python3",
                 "-m",
-                "unittest",
-                "discover",
-                "-s",
-                "tests/upstream_port",
-                "-v",
+                "scripts.workflow_pilot.publisher_command_signatures",
+                "--check",
+                "--consumer-suite",
+                "upstream-port",
             ],
             applicable_note=(
                 "issue #12/#15 host lane (same `host-tests` job): pure-stdlib "
@@ -2401,19 +2445,45 @@ def gates(jobs: int = 2) -> List[Gate]:
             command=[
                 "python3",
                 "-m",
-                "unittest",
-                "discover",
-                "-s",
-                "tests/workflows",
-                "-p",
-                "test_*.py",
-                "-v",
+                "scripts.workflow_pilot.publisher_command_signatures",
+                "--check",
+                "--consumer-suite",
+                "workflows",
             ],
             applicable_note=(
                 "fast host lane (same `host-tests` job): stdlib-only static "
                 "contracts for the consolidated Build CI job graph. No "
                 "compiler, ROM, linker, network, or subordinate runtime gate "
                 "is invoked"
+            ),
+        ),
+        Gate(
+            name="gba-playtest-host-suite",
+            command=[
+                "GBA_PLAYTEST_HOST_ONLY=1",
+                "python3",
+                "-m",
+                "unittest",
+                "discover",
+                "-s",
+                "tools/gba-playtest/tests",
+                "-v",
+            ],
+            applicable_note=(
+                "issue #13 host lane (build.yml `host-tests` job): every "
+                "tools/gba-playtest host test -- scenario/schema "
+                "parsing, generators, config, save/migration fixtures, "
+                "timeouts, retry policy, deterministic sorted-JSON output, "
+                "provenance/diagnostics. Host-only (build-essential + "
+                "libmgba-dev, no arm-none-eabi toolchain); never builds/links "
+                "the ROM, so it does not overlap the modern-linker gates below. "
+                "GBA_PLAYTEST_HOST_ONLY=1 (mirrored verbatim from build.yml, "
+                "and applied to THIS child process only) makes that host-only "
+                "scope explicit: the ROM-dependent live-integration tests skip "
+                "by mode instead of by whether a git-ignored build artifact "
+                "happens to exist, so this gate cannot be perturbed by the "
+                "modern-linker/item-expansion gates below rewriting those "
+                "artifacts. Live coverage stays with those ROM gates"
             ),
         ),
         Gate(

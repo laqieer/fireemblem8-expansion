@@ -8,6 +8,8 @@ import ast
 from collections import Counter
 from dataclasses import asdict, dataclass
 import hashlib
+import importlib.abc
+import importlib.machinery
 import json
 import os
 import posixpath
@@ -17,6 +19,7 @@ import stat
 import subprocess
 import sys
 import types
+import unittest
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -30,7 +33,7 @@ REGISTRY_PATH = (
 )
 REGISTRY_SCHEMA_VERSION = 1
 REVIEWED_SIGNATURE_REGISTRY_SHA256 = (
-    "0ec719cc59214af79ab8a27497c441ed3507b9c4f4ff46fcd6bfce16bb295dc1"
+    "08f212c6d7785d1b09cc945e9645c19f99f58970aae0cb76f615bd9b054d785e"
 )
 BUILDER_STEP_NAME = "Build candidate in isolated namespace and stage public inputs"
 _TOP_LEVEL_HEREDOC_LANGUAGES = {
@@ -112,6 +115,13 @@ _AUTHORITY_PATHS = (
     "tests/workflows/__init__.py",
     "tests/workflows/test_patch_release_workflow.py",
 )
+_AUTHORITY_PYTHON_PREFIXES = (
+    "scripts/modernize",
+    "scripts/upstream_port",
+    "scripts/workflow_pilot",
+    "tests/upstream_port",
+    "tests/workflows",
+)
 _PARSER_AUTHORITY_PATH = (
     "scripts/workflow_pilot/publisher_shell_contract.py"
 )
@@ -137,6 +147,20 @@ _TRUSTED_PARSER_IMPORTS = {
         "typing",
     )
 }
+_TRUSTED_RUNTIME_MODULES = {
+    name: module
+    for name, module in sys.modules.items()
+    if not name.startswith(("scripts", "tests"))
+}
+_TRUSTED_RUNTIME_PATH = tuple(
+    entry
+    for entry in sys.path
+    if entry
+    and os.path.commonpath(
+        (str(ROOT), os.path.abspath(entry))
+    )
+    != str(ROOT)
+)
 
 
 @dataclass(frozen=True)
@@ -152,8 +176,62 @@ class _AuthoritySnapshot:
     root: Path
     revision: str
     tree_id: str
+    object_format: str
     files: dict[str, _AuthorityFile]
     parser: types.ModuleType
+
+
+@dataclass(frozen=True)
+class _GitObjectFormat:
+    name: str
+    hex_length: int
+    raw_length: int
+
+    def digest(self, data: bytes) -> str:
+        return hashlib.new(self.name, data).hexdigest()
+
+    def is_object_id(self, value: str) -> bool:
+        return (
+            len(value) == self.hex_length
+            and re.fullmatch(r"[0-9a-f]+", value) is not None
+        )
+
+
+_GIT_OBJECT_FORMATS = {
+    "sha1": _GitObjectFormat("sha1", 40, 20),
+    "sha256": _GitObjectFormat("sha256", 64, 32),
+}
+
+
+_CONSUMER_SUITES = {
+    "publisher": (
+        "scripts.workflow_pilot.tests.test_publisher_command_signatures",
+    ),
+    "upstream-port": tuple(
+        f"tests.upstream_port.{name}"
+        for name in (
+            "test_classify",
+            "test_cli_readonly",
+            "test_drift",
+            "test_drift_workflow",
+            "test_merge_commits",
+            "test_output_safety",
+            "test_ref_binding",
+            "test_report_patch",
+            "test_scan",
+            "test_state",
+            "test_verify",
+        )
+    ),
+    "workflows": (
+        "scripts.workflow_pilot.tests.test_publisher_command_signatures",
+        "tests.workflows.test_build_ci_checkout",
+        "tests.workflows.test_build_ci_topology",
+        "tests.workflows.test_codeql_fanalyzer_gate",
+        "tests.workflows.test_issue_templates",
+        "tests.workflows.test_patch_release_workflow",
+    ),
+}
 
 
 def _file_signature(metadata: os.stat_result) -> tuple[int, ...]:
@@ -418,7 +496,14 @@ def _authority_revision(
     root_descriptor: int,
     *,
     revision: str | None,
-) -> tuple[str, str]:
+) -> tuple[str, str, _GitObjectFormat]:
+    format_name = _run_git(
+        root_descriptor,
+        ["rev-parse", "--show-object-format=storage"],
+    ).decode("ascii").strip()
+    object_format = _GIT_OBJECT_FORMATS.get(format_name)
+    if object_format is None:
+        raise ValueError("publisher authority Git object format differs")
     expected = globals().get("_BOOTSTRAP_REVISION")
     if expected is None:
         expected = os.environ.get("EXPECTED_BUILD_SHA")
@@ -428,7 +513,7 @@ def _authority_revision(
         root_descriptor,
         ["rev-parse", "--verify", f"{revision}^{{commit}}"],
     ).decode("ascii").strip()
-    if re.fullmatch(r"[0-9a-f]{40}", resolved) is None:
+    if not object_format.is_object_id(resolved):
         raise ValueError("publisher authority revision differs")
     head = _run_git(
         root_descriptor,
@@ -440,20 +525,25 @@ def _authority_revision(
         root_descriptor,
         object_id=resolved,
         object_type="commit",
+        object_format=object_format,
     )
     first_line = commit.split(b"\n", 1)[0]
     if not first_line.startswith(b"tree "):
         raise ValueError("publisher authority tree identity differs")
     tree_id = first_line.removeprefix(b"tree ").decode("ascii")
-    if re.fullmatch(r"[0-9a-f]{40}", tree_id) is None:
+    if not object_format.is_object_id(tree_id):
         raise ValueError("publisher authority tree identity differs")
-    return resolved, tree_id
+    return resolved, tree_id, object_format
 
 
-def _git_object_id(object_type: str, data: bytes) -> str:
-    return hashlib.sha1(
+def _git_object_id(
+    object_format: _GitObjectFormat,
+    object_type: str,
+    data: bytes,
+) -> str:
+    return object_format.digest(
         f"{object_type} {len(data)}\0".encode("ascii") + data
-    ).hexdigest()
+    )
 
 
 def _verified_git_object(
@@ -461,9 +551,10 @@ def _verified_git_object(
     *,
     object_id: str,
     object_type: str,
+    object_format: _GitObjectFormat,
 ) -> bytes:
     if (
-        re.fullmatch(r"[0-9a-f]{40}", object_id) is None
+        not object_format.is_object_id(object_id)
         or object_type not in {"blob", "commit", "tree"}
     ):
         raise ValueError("publisher authority Git object request differs")
@@ -477,31 +568,39 @@ def _verified_git_object(
         root_descriptor,
         ["cat-file", object_type, object_id],
     )
-    if len(data) != int(size) or _git_object_id(object_type, data) != object_id:
+    if (
+        len(data) != int(size)
+        or _git_object_id(object_format, object_type, data) != object_id
+    ):
         raise ValueError("publisher authority Git object identity differs")
     return data
 
 
-def _tree_entries(data: bytes) -> dict[str, tuple[str, str]]:
+def _tree_entries(
+    data: bytes,
+    *,
+    object_format: _GitObjectFormat,
+) -> dict[str, tuple[str, str]]:
     entries: dict[str, tuple[str, str]] = {}
     offset = 0
     while offset < len(data):
         separator = data.find(b" ", offset)
         terminator = data.find(b"\0", separator + 1)
-        if separator <= offset or terminator < 0 or terminator + 21 > len(data):
+        entry_end = terminator + 1 + object_format.raw_length
+        if separator <= offset or terminator < 0 or entry_end > len(data):
             raise ValueError("publisher authority Git tree is malformed")
         mode = data[offset:separator].decode("ascii")
         name = data[separator + 1 : terminator].decode("utf-8", "strict")
-        object_id = data[terminator + 1 : terminator + 21].hex()
+        object_id = data[terminator + 1 : entry_end].hex()
         if (
             name in {"", ".", ".."}
             or "/" in name
             or name in entries
-            or re.fullmatch(r"[0-9a-f]{40}", object_id) is None
+            or not object_format.is_object_id(object_id)
         ):
             raise ValueError("publisher authority Git tree entry differs")
         entries[name] = (mode, object_id)
-        offset = terminator + 21
+        offset = entry_end
     return entries
 
 
@@ -510,6 +609,7 @@ def _git_authority_file(
     *,
     tree_id: str,
     path: str,
+    object_format: _GitObjectFormat,
 ) -> _AuthorityFile:
     parts = _relative_parts(path)
     object_id = tree_id
@@ -519,8 +619,12 @@ def _git_authority_file(
             root_descriptor,
             object_id=object_id,
             object_type="tree",
+            object_format=object_format,
         )
-        entry = _tree_entries(tree).get(part)
+        entry = _tree_entries(
+            tree,
+            object_format=object_format,
+        ).get(part)
         if entry is None:
             raise ValueError(f"publisher authority {path} tree entry differs")
         mode, object_id = entry
@@ -535,6 +639,7 @@ def _git_authority_file(
         root_descriptor,
         object_id=object_id,
         object_type="blob",
+        object_format=object_format,
     )
     return _AuthorityFile(
         path=path,
@@ -542,6 +647,66 @@ def _git_authority_file(
         object_id=object_id,
         data=blob,
     )
+
+
+def _git_python_files(
+    root_descriptor: int,
+    *,
+    tree_id: str,
+    object_format: "_GitObjectFormat",
+    prefix: str,
+) -> dict[str, _AuthorityFile]:
+    parts = _relative_parts(prefix)
+    object_id = tree_id
+    for part in parts:
+        tree = _verified_git_object(
+            root_descriptor,
+            object_id=object_id,
+            object_type="tree",
+            object_format=object_format,
+        )
+        entry = _tree_entries(tree, object_format=object_format).get(part)
+        if entry is None or entry[0] not in {"40000", "040000"}:
+            raise ValueError(
+                f"publisher authority Python prefix {prefix} differs"
+            )
+        _mode, object_id = entry
+
+    files: dict[str, _AuthorityFile] = {}
+
+    def visit(current_id: str, current_path: str) -> None:
+        tree = _verified_git_object(
+            root_descriptor,
+            object_id=current_id,
+            object_type="tree",
+            object_format=object_format,
+        )
+        for name, (mode, child_id) in _tree_entries(
+            tree,
+            object_format=object_format,
+        ).items():
+            path = f"{current_path}/{name}"
+            if mode in {"40000", "040000"}:
+                visit(child_id, path)
+            elif path.endswith(".py"):
+                if mode not in {"100644", "100755"}:
+                    raise ValueError(
+                        f"publisher authority Python file {path} mode differs"
+                    )
+                files[path] = _AuthorityFile(
+                    path=path,
+                    mode=mode,
+                    object_id=child_id,
+                    data=_verified_git_object(
+                        root_descriptor,
+                        object_id=child_id,
+                        object_type="blob",
+                        object_format=object_format,
+                    ),
+                )
+
+    visit(object_id, prefix)
+    return files
 
 
 def _parser_from_authority(
@@ -593,7 +758,7 @@ def _load_authority_snapshot(
 ) -> _AuthoritySnapshot:
     root_descriptor = _open_absolute_directory_nofollow(root)
     try:
-        resolved_revision, tree_id = _authority_revision(
+        resolved_revision, tree_id, object_format = _authority_revision(
             root_descriptor,
             revision=revision,
         )
@@ -602,9 +767,22 @@ def _load_authority_snapshot(
                 root_descriptor,
                 tree_id=tree_id,
                 path=path,
+                object_format=object_format,
             )
             for path in _AUTHORITY_PATHS
         }
+        for prefix in _AUTHORITY_PYTHON_PREFIXES:
+            for path, authority_file in _git_python_files(
+                root_descriptor,
+                tree_id=tree_id,
+                object_format=object_format,
+                prefix=prefix,
+            ).items():
+                previous = files.setdefault(path, authority_file)
+                if previous != authority_file:
+                    raise ValueError(
+                        f"publisher authority Python file {path} is ambiguous"
+                    )
     finally:
         os.close(root_descriptor)
     for path, authority_file in files.items():
@@ -619,6 +797,7 @@ def _load_authority_snapshot(
         root=Path(os.path.abspath(root)),
         revision=resolved_revision,
         tree_id=tree_id,
+        object_format=object_format.name,
         files=files,
         parser=parser,
     )
@@ -638,6 +817,158 @@ def authority_file_bytes(path: str) -> bytes:
         raise ValueError(
             f"publisher authority path is not in the closed inventory: {path}"
         ) from error
+
+
+class _SnapshotModuleFinder(
+    importlib.abc.MetaPathFinder,
+    importlib.abc.Loader,
+):
+    def __init__(self, snapshot: _AuthoritySnapshot):
+        self.snapshot = snapshot
+        self.module_paths: dict[str, tuple[str, bool]] = {}
+        package_names = {"scripts", "tests"}
+        for path in snapshot.files:
+            if not path.endswith(".py"):
+                continue
+            if path.endswith("/__init__.py"):
+                module_name = path[: -len("/__init__.py")].replace("/", ".")
+                self.module_paths[module_name] = (path, True)
+                package_names.add(module_name)
+            else:
+                module_name = path[:-3].replace("/", ".")
+                self.module_paths[module_name] = (path, False)
+            parts = module_name.split(".")
+            package_names.update(
+                ".".join(parts[:index])
+                for index in range(1, len(parts))
+            )
+        self.namespace_packages = package_names - set(self.module_paths)
+
+    def find_spec(self, fullname, path=None, target=None):
+        entry = self.module_paths.get(fullname)
+        if entry is not None:
+            _file_path, is_package = entry
+            return importlib.machinery.ModuleSpec(
+                fullname,
+                self,
+                is_package=is_package,
+            )
+        if fullname in self.namespace_packages:
+            return importlib.machinery.ModuleSpec(
+                fullname,
+                self,
+                is_package=True,
+            )
+        return None
+
+    def create_module(self, spec):
+        return None
+
+    def exec_module(self, module):
+        entry = self.module_paths.get(module.__name__)
+        if entry is None:
+            module.__file__ = f"<authority-namespace:{module.__name__}>"
+            module.__path__ = []
+            module.__package__ = module.__name__
+            return
+        path, is_package = entry
+        authority_file = self.snapshot.files[path]
+        module.__file__ = path
+        module.__loader__ = self
+        module.__authority_object_id__ = authority_file.object_id
+        module.__authority_tree_id__ = self.snapshot.tree_id
+        if is_package:
+            module.__path__ = []
+            module.__package__ = module.__name__
+        else:
+            module.__package__ = module.__name__.rpartition(".")[0]
+        exec(
+            compile(authority_file.data, path, "exec"),
+            module.__dict__,
+        )
+
+
+class _CurrentAuthorityModule(types.ModuleType):
+    def __getattr__(self, name):
+        try:
+            return globals()[name]
+        except KeyError as error:
+            raise AttributeError(name) from error
+
+    def __setattr__(self, name, value):
+        if name.startswith("__"):
+            super().__setattr__(name, value)
+        else:
+            globals()[name] = value
+
+    def __delattr__(self, name):
+        if name.startswith("__"):
+            super().__delattr__(name)
+        else:
+            try:
+                del globals()[name]
+            except KeyError as error:
+                raise AttributeError(name) from error
+
+
+class _IsolationGuardFinder(importlib.abc.MetaPathFinder):
+    def find_spec(self, fullname, path=None, target=None):
+        sys.path[:] = _TRUSTED_RUNTIME_PATH
+        return None
+
+
+def _run_consumer_suite(name: str) -> int:
+    modules = _CONSUMER_SUITES.get(name)
+    if modules is None:
+        raise ValueError(f"unknown publisher authority consumer suite {name!r}")
+    snapshot = _authority_snapshot()
+    finder = _SnapshotModuleFinder(snapshot)
+    previous_path = sys.path[:]
+    previous_meta_path = sys.meta_path[:]
+    repository_modules = {
+        module_name: module
+        for module_name, module in sys.modules.items()
+        if module_name == "scripts"
+        or module_name == "tests"
+        or module_name.startswith(("scripts.", "tests."))
+    }
+    try:
+        for module_name in repository_modules:
+            sys.modules.pop(module_name, None)
+        authority_module = _CurrentAuthorityModule(
+            "scripts.workflow_pilot.publisher_command_signatures"
+        )
+        authority_module.__file__ = __file__
+        authority_module.__package__ = "scripts.workflow_pilot"
+        authority_module.__authority_tree_id__ = snapshot.tree_id
+        sys.modules[authority_module.__name__] = authority_module
+        for module_name in tuple(sys.modules):
+            if (
+                not module_name.startswith(("scripts", "tests"))
+                and module_name not in _TRUSTED_RUNTIME_MODULES
+            ):
+                sys.modules.pop(module_name, None)
+        sys.modules.update(_TRUSTED_RUNTIME_MODULES)
+        sys.path[:] = _TRUSTED_RUNTIME_PATH
+        sys.meta_path[:] = [
+            _IsolationGuardFinder(),
+            finder,
+            *previous_meta_path,
+        ]
+        suite = unittest.defaultTestLoader.loadTestsFromNames(modules)
+        result = unittest.TextTestRunner(verbosity=2).run(suite)
+        return 0 if result.wasSuccessful() else 1
+    finally:
+        for module_name in tuple(sys.modules):
+            if (
+                module_name == "scripts"
+                or module_name == "tests"
+                or module_name.startswith(("scripts.", "tests."))
+            ):
+                sys.modules.pop(module_name, None)
+        sys.modules.update(repository_modules)
+        sys.path[:] = previous_path
+        sys.meta_path[:] = previous_meta_path
 
 
 _WRITING_REGISTRY = (
@@ -1447,6 +1778,7 @@ def registry_document(signatures: Iterable[CommandSignature]) -> dict[str, Any]:
             ),
             "authority_source": "immutable-git-tree",
             "closure": list(_AUTHORITY_PATHS),
+            "python_closure": list(_AUTHORITY_PYTHON_PREFIXES),
             "parser_api": [
                 "literal_run_script_from_step_block",
                 "split_bash_command_records",
@@ -1702,9 +2034,17 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--write-registry", action="store_true")
     parser.add_argument("--check", action="store_true")
+    parser.add_argument(
+        "--consumer-suite",
+        choices=tuple(_CONSUMER_SUITES),
+    )
     arguments = parser.parse_args(argv)
-    if arguments.write_registry == arguments.check:
-        parser.error("select exactly one of --write-registry or --check")
+    if arguments.write_registry and (
+        arguments.check or arguments.consumer_suite is not None
+    ):
+        parser.error("--write-registry cannot run another authority action")
+    if not arguments.write_registry and not arguments.check:
+        parser.error("select --write-registry or --check")
     try:
         if arguments.write_registry:
             _write_registry(REGISTRY_PATH)
@@ -1713,6 +2053,8 @@ def main(argv: list[str] | None = None) -> int:
                 _WORKFLOW_AUTHORITY_PATH
             ].data.decode("utf-8")
             assert_command_inventory(publisher_builder_run_script(workflow))
+            if arguments.consumer_suite is not None:
+                return _run_consumer_suite(arguments.consumer_suite)
     except (OSError, ValueError) as error:
         print(f"publisher-command-signatures: {error}", file=sys.stderr)
         return 1
