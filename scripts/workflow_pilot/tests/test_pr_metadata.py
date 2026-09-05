@@ -641,6 +641,88 @@ def _add_pr_states(client: ScriptedClient, *states: dict) -> None:
     client.add("GET", _endpoint(f"pulls/{PR_NUMBER}"), *states)
 
 
+def _api_failure(
+    status: int = 422,
+    *,
+    returncode: int = 1,
+    output: bytes | None = None,
+    transport_error: Exception | None = None,
+):
+    raw = output if output is not None else (
+        f"HTTP/2.0 {status} Error\nContent-Type: application/json\r\n\r\n"
+        '{"message":"Validation Failed"}\n'
+    ).encode("utf-8")
+
+    def runner(arguments, **_kwargs):
+        if transport_error is not None:
+            raise transport_error
+        return subprocess.CompletedProcess(
+            arguments, returncode, stdout=raw,
+            stderr=b"gh: Validation Failed (HTTP 422)\n",
+        )
+
+    def request(*, method, endpoint, body):
+        return pr_metadata.GitHubClient("/usr/bin/true", runner=runner).request(
+            method, endpoint, body=body, label="pull request metadata update"
+        )
+
+    return request
+
+
+def _mutation_client(
+    *,
+    failure=None,
+    history: tuple[dict, ...] = (),
+    title: str | None = None,
+    body: str = "new body",
+    pre_state: dict | None = None,
+) -> tuple[ScriptedClient, list[dict]]:
+    state = _pr() if pre_state is None else pre_state
+    client = ScriptedClient()
+    _add_pr_states(client, state, state)
+    _add_snapshot(client, [_run(101, 10, mode="full")], copies=2)
+    _add_edit_transaction(client, title=title, body=body, pre_state=state)
+    comments = copy.deepcopy(list(history))
+    posts = []
+
+    def create_comment(*, body, **_kwargs):
+        comment_id = max((item["id"] for item in comments), default=400) + 1
+        second = (
+            6 + len(history)
+            if body["body"].startswith(pr_metadata.CONFIRMATION_MARKER)
+            else len(comments) + 1
+        )
+        timestamp = f"2026-09-04T00:00:{second:02d}Z"
+        payload = _comment(
+            comment_id, body["body"], created_at=timestamp, updated_at=timestamp
+        )
+        comments.append(payload)
+        posts.append(payload)
+        return payload
+
+    client.routes[("POST", _endpoint(f"issues/{PR_NUMBER}/comments"))] = [
+        create_comment, create_comment
+    ]
+    comments_route = (
+        "GET",
+        _query(f"issues/{PR_NUMBER}/comments", [("per_page", "100"), ("page", "1")]),
+    )
+    client.routes[comments_route] = [
+        lambda **_kwargs: copy.deepcopy(comments) for _ in range(6)
+    ]
+    target = _pr(
+        title=title if title is not None else state["title"],
+        body=body, updated_at="2026-09-04T00:00:05Z",
+    )
+    client.add("PATCH", _endpoint(f"pulls/{PR_NUMBER}"), failure or target)
+    if failure is not None:
+        _add_snapshot(client, [_run(101, 10, mode="full")])
+        client.routes[("POST", "graphql")][2] = _response(
+            _graphql_payload(state, _metadata_version())
+        )
+    return client, posts
+
+
 def _add_edit_transaction(
     client: ScriptedClient,
     *,
@@ -908,6 +990,77 @@ def _cli_metadata_version_call(
             sort_keys=True,
         ),
     )
+
+
+def _cli_rejection_calls(
+    body: str,
+    *,
+    history: tuple[dict, ...] = (),
+    failure: dict | None = None,
+    held: bool = False,
+    recovery: bool = False,
+) -> list[dict]:
+    target = _pr(body=body, updated_at="2026-09-04T00:00:05Z")
+    target_version = _metadata_version(body_last_edited_at="2026-09-04T00:00:05Z")
+    state, version = (target, target_version) if recovery else (_pr(), _metadata_version())
+    comments_endpoint = _endpoint(f"issues/{PR_NUMBER}/comments")
+    list_endpoint = _query(f"issues/{PR_NUMBER}/comments", [("per_page", "100"), ("page", "1")])
+    calls = []
+    for _ in range(2):
+        calls.extend([
+            _cli_api_call("GET", _endpoint(f"pulls/{PR_NUMBER}"), payload=state),
+            *_cli_snapshot_calls([_run(101, 10, mode="full")]),
+        ])
+    calls.extend([
+        _cli_metadata_version_call(state, version),
+        *_cli_stable_comment_walk(_cli_api_call("GET", list_endpoint, payload=list(history))),
+    ])
+    creating = not held and not recovery
+    intent_id = max((comment["id"] for comment in history), default=400) + int(creating)
+    intent_time = f"2026-09-04T00:00:{len(history) + 1:02d}Z"
+    comments = list(history)
+    if creating:
+        template = _comment(intent_id, "", created_at=intent_time, updated_at=intent_time)
+        calls.append(_cli_api_call(
+            "POST", comments_endpoint, payload=template, status=201,
+            input_text=None, echo_body=True,
+        ))
+        comments.append(template)
+    walk = _cli_stable_comment_walk(_cli_api_call(
+        "GET", list_endpoint, payload=comments, echo_last_comment=creating
+    ))
+    if not recovery:
+        calls.extend([
+            *_cli_snapshot_calls([_run(101, 10, mode="full")]),
+            *copy.deepcopy(walk), _cli_metadata_version_call(state, version),
+        ])
+        if held:
+            return calls
+        patch = _cli_api_call(
+            "PATCH", _endpoint(f"pulls/{PR_NUMBER}"), payload=target,
+            input_text=json.dumps({"body": body}, separators=(",", ":"), sort_keys=True),
+        )
+        if failure is not None:
+            patch.update(failure)
+        calls.append(patch)
+    if failure is not None:
+        if not failure.get("definite"):
+            return calls
+        calls.extend([
+            *_cli_snapshot_calls([_run(101, 10, mode="full")]),
+            *copy.deepcopy(walk), _cli_metadata_version_call(state, version),
+        ])
+        second = len(history) + 2
+    else:
+        calls.extend([*copy.deepcopy(walk), _cli_metadata_version_call(target, target_version)])
+        second = 6 + len(history)
+    terminal_time = f"2026-09-04T00:00:{second:02d}Z"
+    calls.append(_cli_api_call(
+        "POST", comments_endpoint,
+        payload=_comment(intent_id + 1, "", created_at=terminal_time, updated_at=terminal_time),
+        status=201, input_text=None, echo_body=True,
+    ))
+    return calls
 
 
 def _canonical_decision(**changes: object) -> str:
@@ -1318,7 +1471,8 @@ with log_path.open("a", encoding="utf-8") as stream:
 state_path.write_text(str(index + 1), encoding="ascii")
 if "raw_response_hex" in expected:
     sys.stdout.buffer.write(bytes.fromhex(expected["raw_response_hex"]))
-    raise SystemExit(0)
+    sys.stderr.write(expected.get("stderr", ""))
+    raise SystemExit(expected.get("returncode", 0))
 status = expected["status"]
 reason = "Created" if status == 201 else "OK"
 sys.stdout.write(f"HTTP/2 {status} {reason}\n")
@@ -1338,8 +1492,8 @@ if "payload" in expected:
             if record["method"] == "POST"
             and "/comments" in record["endpoint"]
         )
-        payload = [dict(payload[0])]
-        payload[0]["body"] = body
+        payload = [dict(comment) for comment in payload]
+        payload[-1]["body"] = body
     sys.stdout.write("Content-Type: application/json\n\n")
     sys.stdout.write(
         json.dumps(
@@ -1352,6 +1506,8 @@ if "payload" in expected:
     )
 else:
     sys.stdout.write("\n")
+sys.stderr.write(expected.get("stderr", ""))
+raise SystemExit(expected.get("returncode", 0))
 """
 
 
@@ -2564,7 +2720,7 @@ class PullRequestMetadataTests(unittest.TestCase):
         self.assertEqual(decision.intent_comment_id, 401)
         self.assertEqual(decision.confirmation_comment_id, 402)
 
-    def test_retry_unmatched_intent_reapplies_patch_from_pre_state(self):
+    def test_retry_unmatched_intent_holds_pre_state_without_duplicate_patch(self):
         pre_state = _pr()
         target_state = _pr(
             body="new body",
@@ -2642,20 +2798,19 @@ class PullRequestMetadataTests(unittest.TestCase):
             body="new body",
             essential_reason=None,
         )
-        self.assertEqual(decision.action, "updated")
+        self.assertEqual(decision.action, "deferred")
         self.assertEqual(decision.intent_comment_id, 401)
-        self.assertEqual(decision.confirmation_comment_id, 402)
+        self.assertFalse(decision.mutated)
+        self.assertIsNone(decision.confirmation_comment_id)
+        self.assertIsNone(decision.abort_comment_id)
+        self.assertFalse(any(call[0] == "PATCH" for call in client.calls))
         transaction_posts = [
             call
             for call in client.calls
             if call[:2]
             == ("POST", _endpoint(f"issues/{PR_NUMBER}/comments"))
         ]
-        self.assertEqual(len(transaction_posts), 1)
-        self.assertIn(
-            pr_metadata.CONFIRMATION_MARKER,
-            transaction_posts[0][2]["body"],
-        )
+        self.assertEqual(transaction_posts, [])
 
     def test_post_intent_refresh_requires_complete_unchanged_selected_intent(self):
         comments_route = (
@@ -6735,6 +6890,18 @@ class PullRequestMetadataTests(unittest.TestCase):
         self.assertEqual(updated.run_id, 101)
         self.assertEqual(updated.intent_comment_id, 401)
         self.assertEqual(updated.confirmation_comment_id, 402)
+        held_fields = {
+            "intent_comment_id": 401,
+            "intent_comment_url": (
+                f"https://github.com/{REPOSITORY}/pull/{PR_NUMBER}#issuecomment-401"
+            ),
+        }
+        held = pr_metadata.Decision(action="deferred", **common, **held_fields)
+        self.assertFalse(held.mutated)
+        self.assertIsNone(held.confirmation_comment_id)
+        self.assertIsNone(held.abort_comment_id)
+        with self.assertRaises(pr_metadata.MetadataEditError):
+            replace(held, mutated=True)
         for changes in (
             {"action": "comment-updated"},
             {"action": "comment-updated", "run_id": 101},
@@ -6745,18 +6912,13 @@ class PullRequestMetadataTests(unittest.TestCase):
             {"action": "deferred", "run_id": 1000000000000000000},
             {"action": "updated"},
             {"action": "updated", "intent_comment_id": 401},
+            {"action": "deferred", "intent_comment_id": 401},
+            {"action": "updated", **held_fields},
+            {"action": "no-op", **held_fields},
             {
                 "action": "updated",
                 "intent_comment_id": 401,
                 "intent_comment_url": "https://example.test/forged",
-            },
-            {
-                "action": "deferred",
-                "intent_comment_id": 401,
-                "intent_comment_url": (
-                    f"https://github.com/{REPOSITORY}/pull/{PR_NUMBER}"
-                    "#issuecomment-401"
-                ),
             },
         ):
             with self.subTest(changes=changes):
@@ -7597,6 +7759,259 @@ class PullRequestMetadataTests(unittest.TestCase):
         self.assertNotIn("actor{__typenamedatabaseId", query)
 
 
+class PullRequestRejectedMutationTests(unittest.TestCase):
+    def edit(self, client, *, title=None, body="new body"):
+        return pr_metadata.edit_metadata(
+            client, repository=REPOSITORY, pr_number=PR_NUMBER,
+            head_sha=HEAD, base_sha=BASE, title=title, body=body,
+            essential_reason=None,
+        )
+
+    def test_definite_rejection_aborts_and_corrected_values_succeed(self):
+        cases = [(status, _pr(), None) for status in (400, 401, 403, 404, 409, 422, 429)]
+        cases.extend([(422, _pr(body=None), None), (422, _pr(), "new title")])
+        for status, state, title in cases:
+            with self.subTest(status=status, empty=state["body"] is None, title=title):
+                client, posts = _mutation_client(
+                    failure=_api_failure(status), pre_state=state, title=title
+                )
+                decision = self.edit(client, title=title)
+                self.assertEqual(decision.action, "deferred")
+                self.assertTrue(decision.mutated)
+                self.assertEqual(decision.abort_comment_id, 402)
+                self.assertIsNone(decision.confirmation_comment_id)
+                self.assertEqual(len(posts), 2)
+                intent = pr_metadata._parse_intent_comment_body(posts[0]["body"])
+                abort = pr_metadata._parse_abort_comment_body(posts[1]["body"])
+                self.assertEqual(abort.intent_nonce, intent.nonce)
+                self.assertEqual(abort.intent_comment_id, 401)
+                self.assertEqual(abort.reason, "patch-rejected")
+                self.assertEqual(abort.observed_version, _metadata_version())
+                self.assertEqual(
+                    abort.observed_metadata_sha256,
+                    _metadata_sha256(state["title"], state["body"] or ""),
+                )
+                patch_index = next(
+                    index for index, call in enumerate(client.calls) if call[0] == "PATCH"
+                )
+                refresh = client.calls[patch_index + 1:]
+                self.assertEqual(refresh[0][:2], ("GET", _endpoint("actions/workflows/build.yml")))
+                self.assertEqual(refresh[-2][:2], ("POST", "graphql"))
+                self.assertEqual(
+                    sum(call[0] == "GET" and "/comments?" in call[1] for call in refresh), 2
+                )
+                corrected_title = "corrected title" if title is not None else None
+                retry, successor_posts = _mutation_client(
+                    history=tuple(posts), pre_state=state,
+                    body="corrected body", title=corrected_title,
+                )
+                corrected = self.edit(retry, body="corrected body", title=corrected_title)
+                self.assertEqual(corrected.action, "updated")
+                self.assertEqual(corrected.intent_comment_id, 403)
+                self.assertEqual(corrected.confirmation_comment_id, 404)
+                successor = pr_metadata._parse_intent_comment_body(successor_posts[0]["body"])
+                confirmation = pr_metadata._parse_confirmation_comment_body(successor_posts[1]["body"])
+                self.assertNotEqual(intent.nonce, successor.nonce)
+                self.assertEqual(confirmation.intent_nonce, successor.nonce)
+                self.assertGreater(successor_posts[0]["id"], posts[1]["id"])
+                self.assertGreaterEqual(successor_posts[0]["created_at"], posts[1]["created_at"])
+                expected = {"body": "corrected body"}
+                if corrected_title is not None:
+                    expected["title"] = corrected_title
+                self.assertEqual([call[2] for call in retry.calls if call[0] == "PATCH"], [expected])
+
+    def test_ambiguous_failures_never_abort_or_duplicate_patch_on_retry(self):
+        cases = {
+            "unsupported-client-rejection": _api_failure(405),
+            "request-timeout": _api_failure(408),
+            "server-error": _api_failure(500),
+            "server-unavailable": _api_failure(503),
+            "accepted": _api_failure(202),
+            "success-with-error-exit": _api_failure(200),
+            "stderr-only": _api_failure(output=b""),
+            "network": _api_failure(transport_error=OSError("connection reset")),
+            "timeout": _api_failure(transport_error=subprocess.TimeoutExpired(["gh"], 30)),
+            "killed": _api_failure(returncode=-9),
+            "unexpected-exit": _api_failure(returncode=2),
+            "invalid-json": _api_failure(
+                output=b"HTTP/2 422 Error\nContent-Type: application/json\n\n{"
+            ),
+            "bare-cr": _api_failure(
+                output=b"HTTP/2 422 Error\nContent-Type: application/json\rX-Test: yes\n\n{}"
+            ),
+        }
+        for name, failure in cases.items():
+            with self.subTest(failure=name):
+                client, posts = _mutation_client(failure=failure)
+                with self.assertRaises(pr_metadata.MetadataEditError):
+                    self.edit(client)
+                self.assertEqual(len(posts), 1)
+                self.assertEqual(sum(call[0] == "PATCH" for call in client.calls), 1)
+                self.assertEqual(client.calls[-1][0], "PATCH")
+                retry, retried_posts = _mutation_client(history=tuple(posts))
+                held = self.edit(retry)
+                self.assertEqual(held.action, "deferred")
+                self.assertFalse(held.mutated)
+                self.assertEqual(held.intent_comment_id, 401)
+                self.assertIsNone(held.abort_comment_id)
+                self.assertIsNone(held.confirmation_comment_id)
+                self.assertEqual(retried_posts, [])
+                self.assertFalse(any(call[0] == "PATCH" for call in retry.calls))
+
+                changed, changed_posts = _mutation_client(history=tuple(posts), body="corrected")
+                with self.assertRaises(pr_metadata.MetadataEditError):
+                    self.edit(changed, body="corrected")
+                self.assertEqual(changed_posts, [])
+                self.assertFalse(any(call[0] == "PATCH" for call in changed.calls))
+
+                target = _pr(body="new body", updated_at="2026-09-04T00:00:05Z")
+                recovered, recovered_posts = _mutation_client(history=tuple(posts), pre_state=target)
+                target_version = _metadata_version(body_last_edited_at="2026-09-04T00:00:05Z")
+                recovered.routes[("POST", "graphql")] = [
+                    _response(_graphql_payload(target, target_version)) for _ in range(2)
+                ]
+                result = self.edit(recovered)
+                self.assertEqual(result.action, "recovered")
+                self.assertFalse(any(call[0] == "PATCH" for call in recovered.calls))
+                self.assertEqual(len(recovered_posts), 1)
+                confirmation = pr_metadata._parse_confirmation_comment_body(recovered_posts[0]["body"])
+                self.assertEqual(confirmation.intent_comment_id, 401)
+                self.assertEqual(confirmation.metadata_version, target_version)
+
+    def test_rejection_refresh_rebinds_intent_and_requires_complete_authority(self):
+        comments_route = (
+            "GET",
+            _query(f"issues/{PR_NUMBER}/comments", [("per_page", "100"), ("page", "1")]),
+        )
+        for drift in (*INTENT_DRIFTS, "run", "unstable-pages", "candidate", "state", "target", "version", "unavailable", "owner"):
+            with self.subTest(drift=drift):
+                client, posts = _mutation_client(failure=_api_failure())
+                if drift in INTENT_DRIFTS:
+                    client.routes[comments_route][4:6] = [
+                        lambda **_kwargs: _drifted_intent_page(posts[0], drift)
+                    ] * 2
+                elif drift == "unstable-pages":
+                    client.routes[comments_route][5] = []
+                elif drift == "run":
+                    client.routes[("GET", _endpoint("actions/workflows/build.yml"))][3] = (
+                        pr_metadata.MetadataEditError("workflow authority unavailable")
+                    )
+                elif drift == "unavailable":
+                    client.routes[("POST", "graphql")][2] = pr_metadata.MetadataEditError(
+                        "fresh observation timed out"
+                    )
+                else:
+                    state = _pr(head=NEW_HEAD) if drift == "candidate" else _pr()
+                    version = _metadata_version()
+                    if drift in ("state", "target", "version"):
+                        state = _pr(
+                            body={
+                                "state": "third state",
+                                "target": "new body",
+                                "version": "Stable body",
+                            }[drift],
+                            updated_at="2026-09-04T00:00:05Z",
+                        )
+                        version = _metadata_version(body_last_edited_at="2026-09-04T00:00:05Z")
+                    payload = _graphql_payload(state, version)
+                    if drift == "owner":
+                        payload["data"]["repository"]["owner"]["databaseId"] += 1
+                    client.routes[("POST", "graphql")][2] = _response(payload)
+                with self.assertRaises(pr_metadata.MetadataEditError):
+                    self.edit(client)
+                self.assertEqual(len(posts), 1)
+                self.assertEqual(sum(call[0] == "PATCH" for call in client.calls), 1)
+                self.assertNotEqual(client.calls[-1][0], "PATCH")
+
+    def test_rejection_refresh_preserves_existing_terminal_precedence(self):
+        comments_route = (
+            "GET",
+            _query(f"issues/{PR_NUMBER}/comments", [("per_page", "100"), ("page", "1")]),
+        )
+        for terminal in ("confirmation", "abort"):
+            with self.subTest(terminal=terminal):
+                client, posts = _mutation_client(failure=_api_failure())
+
+                def terminated(**_kwargs):
+                    intent = pr_metadata._parse_intent_comment_body(posts[0]["body"])
+                    record = (
+                        _confirmation_comment(_confirmation(intent), created_at="2026-09-04T00:00:02Z")
+                        if terminal == "confirmation"
+                        else _abort_comment(_abort(intent), comment_id=402)
+                    )
+                    successor = _intent_comment(
+                        replace(intent, nonce="d" * 64 if intent.nonce != "d" * 64 else "e" * 64),
+                        comment_id=403, created_at="2026-09-04T00:00:04Z",
+                    )
+                    return [posts[0], record, successor]
+
+                client.routes[comments_route][4:6] = [terminated, terminated]
+                client.routes[("POST", "graphql")][2] = pr_metadata.MetadataEditError(
+                    "terminal precedence must not require later metadata"
+                )
+                result = self.edit(client)
+                self.assertEqual(result.action, "deferred")
+                self.assertTrue(result.mutated)
+                self.assertEqual(
+                    (result.confirmation_comment_id, result.abort_comment_id),
+                    (402, None) if terminal == "confirmation" else (None, 402),
+                )
+                self.assertEqual(len(posts), 1)
+                self.assertEqual(sum(call[0] == "PATCH" for call in client.calls), 1)
+
+    def test_rejected_patch_does_not_invent_abort_after_abort_delivery_failure(self):
+        for maybe_created in (False, True):
+            with self.subTest(maybe_created=maybe_created):
+                client, posts = _mutation_client(failure=_api_failure())
+                route = ("POST", _endpoint(f"issues/{PR_NUMBER}/comments"))
+                create = client.routes[route][1]
+
+                def fail_abort(**kwargs):
+                    if maybe_created:
+                        create(**kwargs)
+                    raise pr_metadata.MetadataEditError("abort response timed out")
+
+                client.routes[route][1] = fail_abort
+                with self.assertRaises(pr_metadata.MetadataEditError):
+                    self.edit(client)
+                self.assertEqual(len(posts), 2 if maybe_created else 1)
+                retry, retry_posts = _mutation_client(history=tuple(posts))
+                result = self.edit(retry)
+                self.assertEqual(result.action, "updated" if maybe_created else "deferred")
+                self.assertEqual(sum(call[0] == "PATCH" for call in retry.calls), int(maybe_created))
+                self.assertEqual(len(retry_posts), 2 if maybe_created else 0)
+
+    def test_rejection_type_remains_bound_to_the_exact_patch_request(self):
+        for method, endpoint in (
+            ("GET", _endpoint(f"pulls/{PR_NUMBER}")),
+            ("POST", "graphql"),
+            ("PATCH", _endpoint("issues/comments/401")),
+        ):
+            with self.subTest(method=method, endpoint=endpoint):
+                def wrong_request(**_kwargs):
+                    return _api_failure()(method=method, endpoint=endpoint, body=None)
+
+                client, posts = _mutation_client(failure=wrong_request)
+                with self.assertRaises(pr_metadata.MetadataEditError):
+                    self.edit(client)
+                self.assertEqual(client.calls[-1][0], "PATCH")
+                self.assertEqual(len(posts), 1)
+
+    def test_http_error_retains_validated_status_without_trusting_diagnostic(self):
+        for status in (422, 500):
+            for returncode in (0, 1):
+                with self.subTest(status=status, returncode=returncode):
+                    with self.assertRaises(pr_metadata.MetadataEditError) as raised:
+                        _api_failure(status, returncode=returncode)(
+                            method="PATCH", endpoint=_endpoint(f"pulls/{PR_NUMBER}"),
+                            body={"body": "new body"},
+                        )
+                    self.assertEqual(raised.exception.response.status, status)
+                    self.assertEqual(raised.exception.response.payload, {"message": "Validation Failed"})
+                    self.assertEqual(raised.exception.method, "PATCH")
+                    self.assertEqual(raised.exception.endpoint, _endpoint(f"pulls/{PR_NUMBER}"))
+
+
 @unittest.skipUnless(
     os.environ.get("PR_METADATA_LIVE_REPOSITORY")
     and os.environ.get("PR_METADATA_LIVE_PR"),
@@ -7667,6 +8082,144 @@ class PullRequestMetadataLauncherTests(unittest.TestCase):
             self.assertEqual(record["git_environment"], [])
             self.assertEqual(record["argv"][0], "api")
             self.assertIn("--include", record["argv"])
+
+    def recorded_comments(self, calls, records):
+        return tuple(
+            {**calls[index]["payload"], "body": json.loads(record["input"])["body"]}
+            for index, record in enumerate(records)
+            if record["method"] == "POST" and "/comments" in record["endpoint"]
+        )
+
+    def test_rejected_patch_cli_aborts_and_accepts_corrected_successor(self):
+        body_path = self.sandbox.root / "body.txt"
+        body_path.write_text("new body", encoding="utf-8")
+        arguments = [*self.common_arguments(), "--body-file", str(body_path)]
+        calls = _cli_rejection_calls("new body", failure={
+            "status": 422, "payload": {"message": "Validation Failed"},
+            "returncode": 1, "stderr": "gh: Validation Failed (HTTP 422)\n",
+            "definite": True,
+        })
+        completed, records = self.sandbox.run("edit", arguments, calls)
+        self.assertEqual(completed.returncode, 3, completed.stderr)
+        self.assertEqual(completed.stderr, "")
+        decision = json.loads(completed.stdout)
+        self.assertEqual(completed.stdout, json.dumps(decision, sort_keys=True, separators=(",", ":")) + "\n")
+        self.assertEqual(decision["action"], "deferred")
+        self.assertEqual(decision["abort_comment_id"], 402)
+        self.assertIsNone(decision["confirmation_comment_id"])
+        self.assert_isolated_calls(records, len(calls))
+        history = self.recorded_comments(calls, records)
+        self.assertEqual(len(history), 2)
+        intent = pr_metadata._parse_intent_comment_body(history[0]["body"])
+        abort = pr_metadata._parse_abort_comment_body(history[1]["body"])
+        self.assertEqual(abort.reason, "patch-rejected")
+        self.assertEqual(abort.intent_nonce, intent.nonce)
+        self.assertEqual(abort.observed_version, _metadata_version())
+        self.assertEqual(records[-2]["endpoint"], "graphql")
+        self.assertEqual(sum(record["method"] == "PATCH" for record in records), 1)
+
+        body_path.write_text("corrected body", encoding="utf-8")
+        calls = _cli_rejection_calls("corrected body", history=history)
+        completed, records = self.sandbox.run("edit", arguments, calls)
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertEqual(json.loads(completed.stdout)["action"], "updated")
+        self.assert_isolated_calls(records, len(calls))
+        successor_comments = self.recorded_comments(calls, records)
+        successor = pr_metadata._parse_intent_comment_body(successor_comments[0]["body"])
+        confirmation = pr_metadata._parse_confirmation_comment_body(successor_comments[1]["body"])
+        self.assertNotEqual(intent.nonce, successor.nonce)
+        self.assertEqual(confirmation.intent_nonce, successor.nonce)
+        self.assertGreater(confirmation.intent_comment_id, history[1]["id"])
+        self.assertEqual(
+            [json.loads(record["input"]) for record in records if record["method"] == "PATCH"],
+            [{"body": "corrected body"}],
+        )
+
+    def test_ambiguous_patch_cli_holds_pre_state_and_recovers_applied_target(self):
+        body_path = self.sandbox.root / "body.txt"
+        body_path.write_text("new body", encoding="utf-8")
+        arguments = [*self.common_arguments(), "--body-file", str(body_path)]
+        cases = (
+            {"status": 500, "payload": {"message": "Internal Server Error"}, "returncode": 1},
+            {"status": 408, "payload": {"message": "Request Timeout"}, "returncode": 1},
+            {"raw_response_hex": "", "returncode": 1, "stderr": "connection reset; HTTP 422\n"},
+            {
+                "raw_response_hex": (
+                    b"HTTP/2 422 Error\nContent-Type: application/json\rX-Bad: yes\n\n{}"
+                ).hex(),
+                "returncode": 1,
+            },
+            {"status": 422, "payload": {"message": "Validation Failed"}, "returncode": 2},
+            {"status": 200, "returncode": 1, "stderr": "response delivery failed\n"},
+        )
+        for failure in cases:
+            with self.subTest(failure=failure):
+                calls = _cli_rejection_calls("new body", failure=failure)
+                completed, records = self.sandbox.run("edit", arguments, calls)
+                self.assertEqual(completed.returncode, 2, completed.stderr)
+                self.assertEqual(completed.stdout, "")
+                self.assertNotIn("Traceback", completed.stderr)
+                self.assert_isolated_calls(records, len(calls))
+                history = self.recorded_comments(calls, records)
+                self.assertEqual(len(history), 1)
+                self.assertEqual(records[-1]["method"], "PATCH")
+
+                calls = _cli_rejection_calls("new body", history=history, held=True)
+                completed, records = self.sandbox.run("edit", arguments, calls)
+                self.assertEqual(completed.returncode, 3, completed.stderr)
+                decision = json.loads(completed.stdout)
+                self.assertEqual(decision["action"], "deferred")
+                self.assertFalse(decision["mutated"])
+                self.assertEqual(decision["intent_comment_id"], 401)
+                self.assertIsNone(decision["abort_comment_id"])
+                self.assertIsNone(decision["confirmation_comment_id"])
+                self.assert_isolated_calls(records, len(calls))
+                self.assertFalse(any(record["method"] == "PATCH" for record in records))
+                self.assertEqual(self.recorded_comments(calls, records), ())
+
+                calls = _cli_rejection_calls("new body", history=history, recovery=True)
+                completed, records = self.sandbox.run("edit", arguments, calls)
+                self.assertEqual(completed.returncode, 0, completed.stderr)
+                self.assertEqual(json.loads(completed.stdout)["action"], "recovered")
+                self.assert_isolated_calls(records, len(calls))
+                self.assertFalse(any(record["method"] == "PATCH" for record in records))
+                confirmation_comments = self.recorded_comments(calls, records)
+                self.assertEqual(len(confirmation_comments), 1)
+                confirmation = pr_metadata._parse_confirmation_comment_body(confirmation_comments[0]["body"])
+                self.assertEqual(confirmation.intent_comment_id, 401)
+
+    def test_rejected_patch_cli_requires_fresh_intent_and_metadata_authority(self):
+        body_path = self.sandbox.root / "body.txt"
+        body_path.write_text("new body", encoding="utf-8")
+        arguments = [*self.common_arguments(), "--body-file", str(body_path)]
+        for drift in ("missing-intent", "deleted-author", "invalid-metadata"):
+            with self.subTest(drift=drift):
+                calls = _cli_rejection_calls("new body", failure={
+                    "status": 422, "payload": {"message": "Validation Failed"},
+                    "returncode": 1, "definite": True,
+                })
+                if drift == "invalid-metadata":
+                    calls[-2]["payload"]["data"]["repository"]["owner"]["databaseId"] += 1
+                    expected_count = len(calls) - 1
+                else:
+                    walk = [
+                        index for index, call in enumerate(calls)
+                        if call["method"] == "GET" and "/comments?" in call["endpoint"]
+                    ][-2:]
+                    for index in walk:
+                        if drift == "missing-intent":
+                            calls[index]["payload"] = []
+                            calls[index].pop("echo_last_comment")
+                        else:
+                            calls[index]["payload"][0]["user"] = None
+                    expected_count = walk[-1] + 1
+                completed, records = self.sandbox.run("edit", arguments, calls)
+                self.assertEqual(completed.returncode, 2, completed.stderr)
+                self.assertEqual(completed.stdout, "")
+                self.assertNotIn("Traceback", completed.stderr)
+                self.assert_isolated_calls(records, expected_count)
+                self.assertEqual(sum(record["method"] == "PATCH" for record in records), 1)
+                self.assertEqual(len(self.recorded_comments(calls, records)), 1)
 
     def test_unhashable_run_conclusion_is_a_fail_closed_cli_error(self):
         body_path = self.sandbox.root / "body.md"

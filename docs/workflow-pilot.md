@@ -547,8 +547,11 @@ owner-authored GitHub comments rather than a local receipt:
    ID/nonce and binds the complete target state plus that metadata-version
    authority.
 
-The command returns only validated intent and confirmation comment IDs/URLs.
-No caller-authored receipt file or mutable local ledger exists.
+Successful updates and target-state recovery return validated intent and
+confirmation comment IDs/URLs. A read-only ambiguous-outcome hold may return
+only its authenticated intent ID/URL; that deferred result is not an
+authoritative pair and cannot authorize no-op or reconciliation. No
+caller-authored receipt file or mutable local ledger exists.
 
 The REST `body` field is required but nullable; GraphQL's `PullRequest.body`
 is a non-null string. The helper normalizes REST null to the canonical empty
@@ -744,14 +747,45 @@ metadata run is deferred, and an already-successful eligible one is complete.
 
 If PATCH succeeds but confirmation creation fails or its response is
 indeterminate, retry the same edit command. The helper refetches the latest
-unmatched immutable intent. If the exact pre-state and pre-version remain it
-retries PATCH; if the exact target state and metadata-version authority match
-it creates the missing confirmation; any third state fails closed. A no-op
+unmatched immutable intent. If the exact target state and metadata-version
+authority match, it creates the missing confirmation without another PATCH.
+If the exact pre-state and pre-version remain, the helper refreshes complete
+authority and returns a read-only deferred intent hold: the first request
+might still apply. Neither a duplicate PATCH nor an abort is safe merely
+because a read still shows pre-state. Any third state fails closed. A no-op
 without an authoritative intent/confirmation pair is refused. With a pair, it
 returns no-op only when the exact confirmation-bound post-watermark metadata
 run is a canonical completed success. An absent or active run defers; a
 canonical failure defers with reconciliation/rerun guidance; malformed or
 unbound runs fail closed or remain ineligible.
+
+A definite PATCH rejection has a separate, bounded recovery path. The
+`GitHubClient` preserves the method, endpoint, and parsed HTTP response in a
+typed error even when `gh api` exits `1`. The same byte limits, strict UTF-8,
+raw HTTP framing, media type, headers, and JSON validation apply to error
+responses. Only a complete response with status **400, 401, 403, 404, 409, 422,
+or 429**, from the exact PR PATCH endpoint and a normally exiting `gh`
+(status `0` or `1`), counts as a definite rejection. Stderr text such as
+`HTTP 422` is not evidence. Timeout/network/start failures, HTTP 408, server
+errors, other statuses, malformed/absent responses, abnormal subprocess exits,
+and success-shaped HTTP responses with a nonzero exit remain ambiguous.
+
+After a definite rejection, the helper takes a fourth complete run/job
+snapshot and a fresh stable two-pass comment walk, rebinds every field of the
+selected intent, and honors any observed terminal before proceeding. One final
+complete authenticated GraphQL observation must still attest the exact
+candidate, pre-state, and metadata version. Only then does it append an
+immutable `patch-rejected` abort and return a **deferred**, not successful,
+decision. Correct the requested values and retry: the retained abort allows
+a strictly newer, independently validated successor intent and its normal
+PATCH/confirmation. No immutable record is edited or deleted.
+
+Missing, malformed, or changed fresh authority leaves the intent held without
+a fabricated abort. If rejection recovery crashes or abort delivery fails, a
+later invocation may consume an actually created terminal, or recover an
+authenticated applied target, but cannot retrospectively infer rejection from
+pre-state alone. Do not change request fields, blindly retry PATCH, or manually
+invent an abort to clear an ambiguous intent.
 
 This full authorization policy is intentionally narrower than mutation
 eligibility. A new title/body PATCH still uses `_blocking_active_runs` and
@@ -773,15 +807,16 @@ semantics apply.
 Immediately before PATCH, the helper refetches complete PR, run, metadata
 and transaction-comment authority, then makes one final complete
 repository/owner/PR/ref/title/body/updatedAt/editor/title-event/UserContentEdit GraphQL
-request as the last network operation before PATCH. For a selected intent that
-is still present, unchanged, and active, candidate, pre-state, provided-field,
+request as the last network operation before PATCH. For a newly created intent
+that is still present, unchanged, and active, candidate, pre-state, provided-field,
 version, run-snapshot, or active-intent drift creates an immutable owner-authored
 abort comment and performs zero PATCH. An already observed confirmation or
 abort instead defers without appending another terminal. Abort comments
 reference the exact intent ID/nonce and observed state/version, are never
-edited/deleted, and close that intent. Retry recognizes a maybe-created abort
-or safely attempts the same abort again; malformed, duplicate, forged, or
-contradictory aborts are fatal. This still cannot make the final GET and PATCH
+edited/deleted, and close that intent. Retry recognizes a maybe-created abort;
+an unmatched intent without a terminal remains held if the prior outcome is
+unknown. Malformed, duplicate, forged, or contradictory aborts are fatal.
+This still cannot make the final GET and PATCH
 atomic. The authoritative PATCH response's exact head/base and complete
 title/body attestation detects drift occurring in that irreducible window.
 

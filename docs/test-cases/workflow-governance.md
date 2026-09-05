@@ -1279,7 +1279,33 @@ the exact branch and head; timeout or ambiguity fails before `gh run watch`.
    watermark.
    Exercise PATCH success followed by failed/indeterminate confirmation
    creation, then retry against the unmatched intent with pre-state, target
-   state, and invalid third-state outcomes.
+   state, and invalid third-state outcomes. An unmatched pre-state retry must
+   hold without PATCH or abort, even after repeated fresh reads; target-state
+   recovery must confirm the exact immutable field/version authority without
+   another PATCH.
+   Return a complete HTTP 422 validation rejection with `gh` exit 1 from the
+   actual PR PATCH. Require a fourth complete run/job snapshot, stable two-pass
+   comments, full selected-intent rebind, and a final authenticated GraphQL
+   observation before one immutable `patch-rejected` abort. The result remains
+   deferred, not successful. Correct the requested values, retain the original
+   intent and abort, and retry: require a fresh nonce, ordered successor,
+   changed-only PATCH, and matching confirmation. Repeat with supported definite
+   HTTP 400/401/403/404/409/429 rejections, canonical empty bodies, and mixed
+   title/body requests.
+   Replay timeout/network failures, HTTP 408/5xx/202, malformed/absent raw
+   envelopes, abnormal `gh` exits, diagnostic-only `HTTP 422`, and HTTP 200 with
+   exit 1. Require an error without decision JSON or an abort; the subsequent
+   pre-state retry returns a read-only deferred intent hold with no duplicate
+   PATCH. Changed requested values remain blocked while ambiguous, but an
+   actually applied, owner-authenticated exact target can recover confirmation.
+   After a definite rejection, mutate run authority, either stable comment
+   walk, every selected intent field/author identity, candidate, metadata
+   values/version, or final GraphQL authority; require no cached-data abort.
+   An already observed confirmation or abort takes precedence, including with a
+   successor present. Fail abort delivery with and without actually creating
+   the comment: retry consumes a real terminal, never fabricates one.
+   Replay these positive/adversarial cases through the isolated fake `gh`
+   launcher, including nonzero subprocess status and canonical JSON/exit codes.
    Table-test title-changed/body-provided-same, body-changed/title-provided-same,
    both-changed, and no-change requests. Assert exact `provided_fields`,
    `changed_fields`, changed-only PATCH JSON, per-field version advancement,
@@ -1306,7 +1332,7 @@ the exact branch and head; timeout or ambiguity fails before `gh run watch`.
    confirmation predating intent as invalid.
    After intent creation, inject candidate/head/base, pre-state, supplied
    unchanged-field, title/body version, run-snapshot, and transaction-comment
-   drift before PATCH while the selected intent remains present, unchanged,
+   drift before PATCH while the newly created intent remains present, unchanged,
    and active. Require zero PATCH and one immutable owner-authored abort
    comment. If a confirmation or
    abort is already observed, require deferral without a second terminal.
@@ -1512,6 +1538,11 @@ authority; duplicate/ambiguous run numbers fail closed.
 The isolated launcher emits one exact canonical JSON line with status `0` for
 success/no-op/complete, status `3` for deferred/refused, and status `2` with no
 decision JSON for invalid arguments, files, or API authority.
+For a definite, freshly revalidated PATCH rejection, status `3` carries the
+intent and `patch-rejected` abort IDs. Corrected values can then create a
+successor. A read-only ambiguous pre-state hold carries only its intent ID/URL,
+no terminal, and `mutated: false`; it is not a confirmed pair. Updated/recovered
+and authoritative no-op results still require their original pair contracts.
 Job/run timestamps use exact UTC-second GitHub RFC3339 syntax and enforce
 status-dependent nullability and chronology, with only the captured
 one-second unassigned-skip timestamp exception.
@@ -1526,6 +1557,13 @@ retain exact job sets plus terminal upper bounds; active `updated_at` is not a
 live completion bound.
 
 ### Negative control
+
+Before the rejection fix, a real HTTP 422/nonzero `gh` response lost its status,
+left an active intent, and permanently rejected corrected values. An unmatched
+pre-state retry also issued a potentially duplicate PATCH. The actual-function
+and isolated CLI regressions must fail if either behavior returns. Treating
+stderr as rejection proof, aborting after an ambiguous response, skipping fresh
+authority or complete rebind, or accepting an intent-only no-op also fails.
 
 Empty override reasons, stale/new candidate identity, incomplete or drifting
 pagination, redirect or Link-header contradiction/loop, duplicate run

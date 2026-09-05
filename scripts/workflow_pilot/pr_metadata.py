@@ -44,6 +44,7 @@ GITHUB_TIMESTAMP_RE = re.compile(
     r"([0-9]{2}):([0-9]{2}):([0-9]{2})Z$"
 )
 DIGEST_RE = re.compile(r"^[0-9a-f]{64}$")
+DEFINITE_PATCH_REJECTIONS = frozenset({400, 401, 403, 404, 409, 422, 429})
 
 FULL_JOB_NAMES = frozenset(candidate_evidence.KNOWN_JOB_IDS)
 METADATA_JOB_NAMES = (
@@ -447,6 +448,14 @@ class Decision:
         ):
             pass
         elif (
+            self.action == "deferred"
+            and self.mutated is False
+            and self.intent_comment_id is not None
+            and self.confirmation_comment_id is None
+            and self.abort_comment_id is None
+        ):
+            pass
+        elif (
             self.intent_comment_id is not None
             or self.intent_comment_url is not None
             or self.confirmation_comment_id is not None
@@ -455,8 +464,8 @@ class Decision:
             or self.abort_comment_url is not None
         ):
             raise MetadataEditError(
-                "only updated, recovered, or authoritative no-op/deferred "
-                "Decisions may contain intent and confirmation comments"
+                "transaction comments require an authoritative pair, an abort, "
+                "or a read-only deferred intent hold"
             )
 
     def canonical_json(self) -> str:
@@ -475,6 +484,26 @@ class ApiResponse:
     status: int
     headers: dict[str, str]
     payload: object
+
+
+class GitHubHTTPError(MetadataEditError):
+    """A complete validated HTTP response rejected the expected API status."""
+
+    def __init__(
+        self,
+        method: str,
+        endpoint: str,
+        response: ApiResponse,
+        *,
+        label: str,
+        expected_status: int,
+    ) -> None:
+        self.method = method
+        self.endpoint = endpoint
+        self.response = response
+        super().__init__(
+            f"{label} returned HTTP {response.status}, expected {expected_status}"
+        )
 
 
 @dataclass(frozen=True)
@@ -1042,6 +1071,7 @@ def _parse_edit_abort(payload: object) -> EditAbort:
     if not isinstance(reason, str) or reason not in {
         "candidate-drift",
         "metadata-version-drift",
+        "patch-rejected",
         "pre-state-drift",
         "run-authority-drift",
         "transaction-drift",
@@ -1386,14 +1416,14 @@ class GitHubClient:
             diagnostic = completed.stderr.decode("utf-8")
         except UnicodeDecodeError as error:
             raise MetadataEditError(f"{label} subprocess output is not UTF-8") from error
-        if completed.returncode != 0:
-            detail = diagnostic.strip()
-            if len(detail) > 512:
-                detail = detail[:512] + "..."
-            raise MetadataEditError(
-                f"{label} request failed"
-                + (f": {detail}" if detail else "")
-            )
+        detail = diagnostic.strip()
+        if len(detail) > 512:
+            detail = detail[:512] + "..."
+        failure = f"{label} request failed" + (f": {detail}" if detail else "")
+        if completed.returncode not in (0, 1) or (
+            completed.returncode != 0 and not output
+        ):
+            raise MetadataEditError(failure)
         response = _parse_http_response(
             output,
             label=label,
@@ -1404,9 +1434,12 @@ class GitHubClient:
             200 if endpoint == "graphql" else 201 if method == "POST" else 200
         )
         if response.status != expected_status:
-            raise MetadataEditError(
-                f"{label} returned HTTP {response.status}, expected {expected_status}"
+            raise GitHubHTTPError(
+                method, endpoint, response,
+                label=label, expected_status=expected_status,
             )
+        if completed.returncode != 0:
+            raise MetadataEditError(failure)
         return response
 
 
@@ -3545,6 +3578,23 @@ def edit_metadata(
                     == intent.pre_metadata_sha256
                     else "pre-state-drift"
                 )
+        if not intent_created:
+            return Decision(
+                action="deferred",
+                base_sha=base_sha,
+                guidance=_comment_guidance(current),
+                head_sha=head_sha,
+                mutated=False,
+                reason=(
+                    "unmatched metadata edit intent has an ambiguous earlier PATCH "
+                    "outcome; no PATCH or abort is safe from pre-state; retry the "
+                    "same request only to recover an authenticated applied target"
+                ),
+                repository=repository,
+                pr_number=pr_number,
+                intent_comment_id=latest_intent_comment.comment_id,
+                intent_comment_url=latest_intent_comment.html_url,
+            )
         if reason is not None:
             abort_comment = _create_abort_comment(
                 client,
@@ -3575,12 +3625,18 @@ def edit_metadata(
     if "body" in changed:
         mutation["body"] = target_body
     if patch_required:
-        mutation_response = client.request(
-            "PATCH",
-            _endpoint(repository, f"pulls/{pr_number}"),
-            body=mutation,
-            label="pull request metadata update",
-        )
+        try:
+            mutation_response = client.request(
+                "PATCH",
+                _endpoint(repository, f"pulls/{pr_number}"),
+                body=mutation,
+                label="pull request metadata update",
+            )
+        except GitHubHTTPError as error:
+            return _abort_rejected_patch(
+                client, current, latest_intent_comment,
+                error=error, mutated=intent_created,
+            )
         after = _parse_pull_request_payload(
             mutation_response.payload,
             repository,
@@ -4571,6 +4627,63 @@ def _create_abort_comment(
             "abort comment creation response did not attest the abort"
         )
     return comment
+
+
+def _abort_rejected_patch(
+    client: GitHubClient,
+    state: PullRequestState,
+    intent_comment: CommentState,
+    *,
+    error: GitHubHTTPError,
+    mutated: bool,
+) -> Decision:
+    if (
+        error.method != "PATCH"
+        or error.endpoint != _endpoint(state.repository, f"pulls/{state.number}")
+        or error.response.status not in DEFINITE_PATCH_REJECTIONS
+    ):
+        raise error
+    runs = list_candidate_runs(client, state)
+    intents, confirmations, aborts = _transaction_comments(client, state)
+    intent_comment = _rebind_intent_comment(intent_comment, intents)
+    terminal = _terminal_intent_decision(
+        state, intent_comment, confirmations, aborts, mutated=mutated,
+    )
+    if terminal is not None:
+        return terminal
+    intent = intent_comment.intent
+    _validate_receipt_watermark(intent, runs)
+    observed, version = _fetch_metadata_observation(client, state)
+    if (
+        not _same_pr_contract(observed, state)
+        or not _receipt_matches_pre_state(intent, observed, version)
+    ):
+        raise MetadataEditError(
+            f"HTTP {error.response.status} rejected metadata PATCH, but fresh "
+            "candidate/pre-state/version changed; unmatched intent remains held"
+        ) from error
+    abort = _create_abort_comment(
+        client, observed, intent_comment,
+        observed_version=version, reason="patch-rejected",
+    )
+    return Decision(
+        action="deferred",
+        base_sha=observed.base_sha,
+        guidance=_comment_guidance(observed),
+        head_sha=observed.head_sha,
+        mutated=True,
+        reason=(
+            f"metadata PATCH rejected (HTTP {error.response.status}); intent "
+            "aborted after fresh authority checks; correct the requested values "
+            "and retry with a new intent"
+        ),
+        repository=observed.repository,
+        pr_number=observed.number,
+        intent_comment_id=intent_comment.comment_id,
+        intent_comment_url=intent_comment.html_url,
+        abort_comment_id=abort.comment_id,
+        abort_comment_url=abort.html_url,
+    )
 
 
 def _authoritative_edit_pair(
