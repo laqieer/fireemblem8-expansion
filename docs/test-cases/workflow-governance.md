@@ -1462,11 +1462,11 @@ game behavior needs a compensating change.
 - **Feature / originating issue:** `workflow-governance` /
   [issue #204](https://github.com/laqieer/fireemblem8-expansion/issues/204).
 - **Supported configuration or artifact:** Linux x86-64 host with Python 3,
-  Git, existing build-essential `/usr/bin/cc`, unprivileged
-  user/mount/PID/network namespaces, Landlock, `memfd_create`,
-  `/proc/self/fd` for trusted launcher compilation, pidfds, seccomp, and
-  write/grow/shrink/seal kernel file seals. No bubblewrap, new apt package,
-  GitHub token, ROM, emulator, ARM toolchain, or network is required.
+  Git, OpenSSH verification, existing build-essential `/usr/bin/cc`, Landlock,
+  `memfd_create`, `/proc/self/fd` for trusted launcher compilation, pidfds,
+  raw seccomp BPF, and write/grow/shrink/seal kernel file seals. No user
+  namespace, bubblewrap, new apt package, GitHub token, ROM, emulator, ARM
+  toolchain, or network is required.
 - **Prerequisites and clean starting state:** exact issue #204 source checkout;
   no prior `build/test-artifacts/sealed-execution-capsule` directory or running
   test child.
@@ -1478,49 +1478,60 @@ game behavior needs a compensating change.
 2. Observe the preserved negative control: validate a trusted pathname, swap
    it at the subprocess boundary, receive a forged pass/authority binding, and
    restore it.
-3. Authenticate the exact repository/context/base-origin-head/path-mode-blob
-   contract and mint an opaque verified authority capability. Reject a
-   candidate-signed self-consistent base, manual object, dict/dataclass,
-   copied/deep-copied/pickled/deserialized capability, wrong repository/object
-   format/revision/tree, and false ancestry relationship.
-4. Build one exact Git bundle from only capability-admitted artifact requests:
-   two programs, their closed package/module and standard-library imports, and
-   base/origin/head data. Swap every materialized program, module, and data
-   pathname after bundle construction.
-5. Execute table-driven outer-checker, inner-assertion, five sibling-member,
+3. Load the externally installed public signer identity into a sealed
+   descriptor. At both public build and execute entries, verify the OpenSSH
+   signature and exact repository/context/signer/namespace/validity/nonce/
+   roles/base-origin-head/path-mode-blob/ancestry record. Reject a
+   candidate-signed self-consistent base, changed signature, wrong verifier,
+   signer, repository, validity, nonce, object format, revision, tree, role,
+   and relationship.
+4. Import every capsule module symbol and manually construct, copy,
+   deep-copy, pickle, and deserialize its internal dataclasses/mappings.
+   Confirm no mint/capability API exists and none can satisfy a public entry.
+5. Build one exact Git bundle from only signed-record-admitted artifact
+   requests: two programs, their closed package/module and standard-library
+   imports, and base/origin/head data. Swap every materialized program, module,
+   and data pathname after bundle construction.
+6. Execute table-driven outer-checker, inner-assertion, five sibling-member,
    remote-round, local-remediation, and artifact-read requests through the
    same capsule.
-6. Exercise missing, extra, duplicate, wrong-mode, wrong-blob, wrong-role,
+7. Exercise missing, extra, duplicate, wrong-mode, wrong-blob, wrong-role,
    unknown-role, changed-content, symlink, unexpected import, and pathname
    fallback controls.
-7. Exercise self-authenticated/fake bundles, all-zero IDs, mixed revisions,
+8. Exercise self-authenticated/fake bundles, all-zero IDs, mixed revisions,
    wrong tree/blob/mode/content/object format/role, a candidate program labeled
    as base, mutable/unsealed/reused/wrong/unexpected inherited descriptors,
    duplicate/non-finite JSON, and unsupported-platform handling.
-8. In a hosted-like environment with no bubblewrap, compile the fixed C
-   supervisor directly into a sealed memfd and create the namespaces itself.
+9. Run the hosted preflight and prove Landlock, seccomp, pidfds, memfd seals,
+   `no_new_privs`, and explicitly `userns: false`. Compile the fixed C
+   supervisor directly into a sealed memfd with no namespace/container tool.
    From program code attempt `/bin/cat /etc/hostname`, subprocess, socket,
    `ctypes`, executable mapping, fork/exec, `setsid`/double-fork, import-hook
    replacement, file writes, `/proc`, environment, and credential reads.
-9. Force child crash, timeout, closed stdio, oversized/malformed/partial
+10. Disable the Python audit guard in the test harness and invoke raw
+    `openat2`, `ioctl`, executable `mmap`/`mprotect`, ptrace, BPF, perf, and
+    keyring syscalls; require the post-start seccomp filter itself to deny each.
+11. Force child crash, timeout, closed stdio, oversized/malformed/partial
    output, parent interruption, and abrupt parent `SIGKILL`.
-10. Run `python3 scripts/check_docs.py --check`.
+12. Run `python3 scripts/check_docs.py --check`.
 
 ### Expected result
 
-Public execution accepts only an opaque capability minted from an authenticated
-exact-SHA contract and revalidates the selected bundle directly against Git
-immediately before sealing; bundle/spec-authored labels and digests are never
-authority. Only bytes read from sealed program, request, and bundle descriptors
-execute or load. The sealed native supervisor creates capability-free
-mount/PID/network/user namespaces itself, with a Landlock read/execute-only
-interpreter view, empty environment, denied proc traversal, `no_new_privs`,
-seccomp, rlimits, parent-death/lifeline containment, and a closed descriptor
-set. Path swaps cannot
+Every public entry independently verifies the external asymmetric signature
+and complete exact-SHA record, then revalidates the selected bundle against Git
+immediately before sealing; bundle/spec/object-authored labels are never
+authority and there is no trusted mutable mint. Only bytes read from sealed
+program, request, and bundle descriptors execute or load. The hosted-compatible
+native supervisor uses the current host namespaces, a Landlock interpreter
+allowlist, empty environment, denied proc/secret reads, `no_new_privs`, dropped
+capabilities, rlimits, race-checked parent death, pidfd termination, and
+initial plus post-start seccomp filters. Path swaps cannot
 change exact code/data, and forged checker/assertion replacements cannot pass.
 Forbidden process, network, native-code, import, filesystem, environment, and
-namespace operations fail. Receipt construction occurs only after pidfd proof
-that containment is empty. Every malformed or interrupted case leaves no live
+process/network/native/open/ioctl/executable-mapping operations fail. Process
+creation is denied, so descendants and session escapes cannot exist. Receipt
+construction occurs only after pidfd proof that the supervisor terminated.
+Every malformed or interrupted case leaves no live
 descendant, open descriptor, or receipt.
 
 ### Negative control
@@ -1533,10 +1544,11 @@ bytes instead.
 
 ### Interactions and save compatibility
 
-Dependencies are an independently authenticated exact-SHA contract, existing
-exact-tree Git authority and isolated-launcher patterns, Linux x86-64
-namespaces/Landlock/seccomp/pidfds, and existing build-essential `/usr/bin/cc`.
-There is no bubblewrap or new runtime package. Issue #179 and PR #189 are dependents.
+Dependencies are an externally asymmetric-signed exact-SHA request and sealed
+public verifier identity, existing exact-tree Git authority and
+isolated-launcher patterns, Linux x86-64 Landlock/seccomp/pidfds, OpenSSH, and
+existing build-essential `/usr/bin/cc`. There is no userns, bubblewrap, or new
+runtime package. Issue #179 and PR #189 are dependents.
 PR #189 conflicts at its pathname launch surfaces and remains blocked until it
 adopts this seam.
 There is no feature flag or gameplay, ROM, RAM, save, configuration identity,
@@ -1556,7 +1568,8 @@ its registry contract.
 
 The suite removes its bounded ignored test repository. Manual cleanup and
 manual-only evidence are none. Linux sealed descriptors are mandatory;
-unsupported kernels, architectures, namespace policy, or missing compiler
-fail closed with no temporary-file, pathname, container, or audit-only fallback. The
+unsupported kernels, architectures, verifier installation, or missing compiler
+fail closed with no temporary-file, pathname, namespace, container, or
+audit-only fallback. The
 capsule provides execution integrity only; issue #179 continues to own
 review-family policy and authenticated receipt semantics.

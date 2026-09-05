@@ -727,34 +727,38 @@ dispositions, sibling policy, or receipt signing.
 [`sealed_execution_capsule.py`](../scripts/workflow_pilot/sealed_execution_capsule.py)
 provides the narrow integration seam:
 
-1. The trusted parent authenticates a canonical, domain-separated exact-SHA
-   contract, then calls
-   `load_verified_authority_policy(repository_root, envelope, hmac_key=..., expected_context=...)`.
-   The signed payload binds repository identity, Git object format, context,
-   one exact revision/tree per `base`, `origin`, or `head` label, exact allowed
-   path/role/mode/blob rules, required ancestry edges, and the sorted safe
-   standard-library allowlist. The loader revalidates all of those facts from
-   Git and returns an opaque `VerifiedAuthorityPolicy`.
-2. The capability cannot be directly constructed, copied, deep-copied,
-   pickled, or deserialized; unregistered lookalikes reject. Candidate
-   requests, `ArtifactRequest` values, and bundle bytes contain no authority
-   choice. They can select only an already admitted label/path/role from the
-   capability. The capability remains in the trusted parent and is never
-   exposed through the request or child bundle.
-3. Call `build_artifact_bundle(capability, requests)`. It reads every admitted
-   mode, blob ID, and byte from Git, rejects symlinks and non-regular modes,
-   validates the complete static import closure, and emits canonical schema-v2
-   evidence bytes. It does not mint or return authority.
-4. Call
-   `execute_capsule(capability, bundle, program_artifact_id=..., request=...)`.
-   Raw bundles, dictionaries, dataclasses, manual objects, and spec-derived
-   authority reject. Immediately before sealing, execution holds a no-follow
-   repository descriptor and rebuilds every selected artifact from the opaque
-   capability and Git. An omitted, extra, mixed-revision, fake-ID,
-   candidate-labeled-base, or changed module/data item fails before launch.
-   Issue #179's trust-root order is therefore: authenticated exact-base request
-   -> verified authority capability -> sealed capsule.
-5. Consume `CapsuleResult.output`, `receipt`, and `receipt_sha256`. The receipt
+1. A hardened external installation supplies one sealed descriptor containing
+   exactly one OpenSSH `ssh-ed25519` allowed-signer identity. Its private key
+   never enters this repository, workflow process, request, bundle, or
+   capsule. The trusted #179 layer obtains an exact-base request signed by that
+   external signer.
+2. Every call to `build_artifact_bundle(...)` and `execute_capsule(...)`
+   independently invokes absolute `/usr/bin/ssh-keygen -Y verify` over the
+   signed record and sealed public-verifier descriptor. There is no Python
+   capability, mint, registry, reusable policy object, or mutable authority
+   state. Importing or constructing every module class cannot create trust.
+3. The canonical signed payload binds schema/version, signer and signature
+   namespace, validity window, request nonce, repository identity, Git object
+   format, context, exact `base`/`origin`/`head` revisions and trees, ancestry
+   edges, exact allowed path/role/mode/blob rules, program/request roles, and
+   the sorted standard-library allowlist.
+4. `build_artifact_bundle(repository_root, signed_contract, requests,
+   verifier_fd=..., expected_signer=..., expected_context=...,
+   expected_verifier_sha256=..., expected_nonce=...)` permits each
+   `ArtifactRequest` to select only a
+   signed label/path/role. It reads the selected exact Git objects, validates
+   the static import closure, and emits canonical schema-v2 evidence bytes.
+   The bundle neither chooses nor returns authority.
+5. `execute_capsule(...)` accepts the same signed inputs, re-verifies the
+   external signature and complete contract, holds a no-follow repository
+   descriptor, and rebuilds every selected artifact from Git immediately
+   before sealing. Candidate-signed/self-consistent contracts, substituted
+   verifier keys, expired/future/nonced records, manual objects, mappings,
+   pickled state, raw bundles, mixed revisions, or candidate-labeled-base
+   artifacts reject. The #179 trust-root order is:
+   externally signed exact-base request -> verify at entry -> exact Git bytes
+   -> sealed capsule.
+6. Consume `CapsuleResult.output`, `receipt`, and `receipt_sha256`. The receipt
    binds the exact program, request, artifact-bundle, and raw output bytes read
    by the execution boundary. A later authenticated review receipt may include
    this complete capsule receipt; it must not rehash a materialized pathname.
@@ -767,51 +771,53 @@ directly into a fourth sealed memfd with absolute `/usr/bin/cc` and the fixed
 both compiler argv/source digests and the resulting sealed ELF digest. No
 credential is accepted or inherited.
 
-The sealed C supervisor itself creates unprivileged user, mount, PID, network,
-IPC, and UTS namespaces with kernel `unshare`; no container runtime or new apt
-package is used. It maps only the invoking UID/GID, clears capabilities and the
-environment, applies `no_new_privs` and Landlock so candidate-time filesystem
-access is a read/execute-only interpreter/library view under `/usr`, `/lib`,
-and `/lib64`, with all writes and reads of `/etc`, the repository, home, and
-other paths denied. `/proc` is not mounted in the new PID namespace; bootstrap
-traversal guards deny inherited host-proc enumeration. The fixed x86-64
-seccomp filter denies process/thread creation, later execution,
-sockets/network, namespace/mount changes, ptrace, native-code helper
-facilities, and privilege/security-control changes before a one-time
-descriptor-based `execveat` of `/usr/bin/python3 -I -S`.
+The sealed C supervisor uses no user, PID, mount, or network namespace and does
+not depend on AppArmor user-namespace policy. It verifies the inherited FD set,
+clears the environment, sets strict rlimits, installs race-checked
+`PR_SET_PDEATHSIG`, `PR_SET_NO_NEW_PRIVS`, drops capabilities, and applies
+Landlock. Landlock permits read/execute only for the interpreter/runtime trees
+under `/usr`, `/lib`, and `/lib64`; it denies writes and reads of `/etc`,
+home, the repository, `/proc`, `/sys`, `/dev`, and secret paths.
 
-The namespace launcher forks a PID-namespace init and a worker. The outer
-launcher has a race-checked `PR_SET_PDEATHSIG`; an inherited lifeline makes PID
-1 kill the complete namespace if that launcher disappears, and the worker has
-its own race-checked parent-death signal before execution. This contains
-`setsid`, double-fork, closed-stdio, timeout, success, interruption, and abrupt
-trusted-parent `SIGKILL` paths without a cgroup or privileged helper.
+Before the one allowed descriptor-based `execveat` of
+`/usr/bin/python3 -I -S`, an initial raw seccomp filter denies process/thread
+creation, additional execution, sockets/network, ptrace, namespace/mount
+changes, BPF/perf/keyring facilities, and other privilege controls. After the
+dynamic loader and trusted bootstrap modules have loaded, the bootstrap uses
+the already trusted runtime to install a second irreversible raw BPF filter.
+That final filter additionally denies `open`, `openat`, `openat2`, `ioctl`,
+executable `mmap`/`mprotect`, and final-filter replacement before any signed
+program/request/bundle descriptor is read or any signed program byte executes.
+The signed standard-library allowlist is passed separately for trusted preload
+and must exactly match the subsequently read sealed bundle.
 
 The minimal Python bootstrap verifies all descriptor seals and envelopes,
 closes authority FDs before program code, preloads only the declared safe
 standard-library modules, installs the descriptor-backed module/data loader,
-empties `sys.path` and the environment, and denies later pathname opens and
-undeclared imports. These Python guards are defense in depth; the filesystem,
-network, process, and lifetime boundary is enforced by namespaces, seccomp,
-`no_new_privs`, resource limits, and parent-death signaling rather than by an
-audit hook.
+empties `sys.path` and the environment, and denies later pathname opens,
+traversal, undeclared imports, and access to bootstrap-only modules. These
+Python guards are defense in depth; Landlock, the two seccomp stages,
+`no_new_privs`, rlimits, capability drop, and parent-death signaling enforce
+the system boundary.
 
 Output, stderr, artifact count/size, request size, and runtime are bounded;
 successful execution additionally requires empty stderr.
-Timeout or interruption kills the supervisor process group; PID-namespace
-teardown covers `setsid` or double-fork attempts even if process creation is
-later relaxed. A pidfd must prove the namespace supervisor terminated before a
-receipt is created.
+The final filter makes descendants, `setsid`, double-fork, and later execution
+impossible. Timeout or interruption kills the supervisor process group, while
+`PDEATHSIG` covers abrupt trusted-parent death. A pidfd must prove the exact
+supervisor terminated before a receipt is created.
 
 This capability intentionally supports only Linux x86-64 hosts with
 `memfd_create`, `/proc/self/fd` for the trusted pre-sandbox compiler handoff,
-kernel file seals, pidfds, Landlock, seccomp, unprivileged
-PID/user/mount/network namespaces, and the existing build-essential
-`/usr/bin/cc`. There is no bubblewrap/container dependency, pathname,
-temporary-file, mutable-FD, unsealed, audit-only, or portable fallback.
-Unsupported kernels fail before program execution.
-Issue #179 can use one trusted authority policy and bundle for its exact-base
-outer checker, assertion program/import closure, and base/origin/head data,
-then select the applicable program artifact for outer, behavior, member,
-remote-round, or local-remediation requests while preserving its own
-family/disposition and authenticated-signing policy above this seam.
+kernel file seals, pidfds, Landlock, raw seccomp BPF, OpenSSH verification, and
+the existing build-essential `/usr/bin/cc`. `hosted_security_preflight()`
+proves those facilities and explicitly reports `userns: false`; launcher-stage
+failures name the unavailable primitive. There is no namespace, bubblewrap,
+container, new apt package, pathname-execution, temporary-file, mutable-FD,
+unsealed, audit-only, or portable fallback. Unsupported hosted kernels fail
+before program execution.
+
+Issue #179 supplies the externally signed exact-base request and selects the
+allowed outer checker, assertion/import closure, and base/origin/head data.
+This capsule verifies and executes those bytes but does not implement family,
+disposition, remote-round, remediation, or receipt-signing semantics.

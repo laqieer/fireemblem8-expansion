@@ -1,6 +1,6 @@
 {
   "issue": 204,
   "category": "security",
-  "summary": "Add a reusable Linux x86-64 sealed-descriptor capsule with an opaque authenticated exact-Git authority capability and a native no-bubblewrap namespace, Landlock, seccomp, and parent-death supervisor.",
+  "summary": "Add a reusable Linux x86-64 sealed-descriptor capsule that verifies externally OpenSSH-signed exact-Git authority at every entry and uses hosted-compatible Landlock, staged seccomp, pidfd, and parent-death containment without user namespaces.",
   "semver_impact": "none"
 }

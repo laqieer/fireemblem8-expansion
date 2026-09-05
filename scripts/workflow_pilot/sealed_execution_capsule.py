@@ -8,17 +8,17 @@ import ast
 import dataclasses
 import fcntl
 import hashlib
-import hmac
 import json
 import os
 import re
+import secrets
 import select
 import selectors
 import signal
 import subprocess
 import sys
 import time
-import weakref
+from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 from typing import Any, Callable, Iterable, Mapping, Sequence
 
@@ -125,7 +125,7 @@ class _AuthorityRecord:
 
 @dataclasses.dataclass(frozen=True)
 class ArtifactRequest:
-    """A path/role requested from an already verified authority capability."""
+    """A path/role requested from an externally signed authority contract."""
 
     authority: str
     path: str
@@ -133,32 +133,8 @@ class ArtifactRequest:
     module_name: str | None = None
 
 
-class VerifiedAuthorityPolicy:
-    """Opaque, non-serializable capability minted by authenticated policy loading."""
-
-    __slots__ = ("__weakref__",)
-
-    def __new__(cls, *args, **kwargs):
-        raise TypeError(
-            "VerifiedAuthorityPolicy can only be minted by "
-            "load_verified_authority_policy"
-        )
-
-    def __copy__(self):
-        raise TypeError("verified authority capabilities cannot be copied")
-
-    def __deepcopy__(self, memo):
-        raise TypeError("verified authority capabilities cannot be copied")
-
-    def __reduce__(self):
-        raise TypeError("verified authority capabilities cannot be serialized")
-
-    def __repr__(self):
-        return "<VerifiedAuthorityPolicy opaque>"
-
-
 @dataclasses.dataclass(frozen=True)
-class _VerifiedAuthorityState:
+class _SignedAuthorityState:
     repository_root: Path
     repository: str
     context: str
@@ -166,9 +142,13 @@ class _VerifiedAuthorityState:
     relationships: tuple[tuple[str, str], ...]
     stdlib_modules: tuple[str, ...]
     contract_sha256: str
+    verifier_sha256: str
+    signer: str
+    nonce: str
 
 
-AUTHORITY_CONTRACT_DOMAIN = b"workflow-sealed-authority-contract-v1\0"
+SSH_KEYGEN = "/usr/bin/ssh-keygen"
+AUTHORITY_SIGNATURE_NAMESPACE = "workflow-sealed-authority-v1"
 
 
 @dataclasses.dataclass(frozen=True)
@@ -554,62 +534,191 @@ def _expect_exact_keys(
     return value
 
 
-def _authority_capability_accessors():
-    registry: weakref.WeakKeyDictionary[
-        VerifiedAuthorityPolicy, _VerifiedAuthorityState
-    ] = weakref.WeakKeyDictionary()
+def _read_sealed_verifier_identity(
+    verifier_fd: int,
+    expected_signer: str,
+    expected_verifier_sha256: str,
+) -> bytes:
+    if (
+        isinstance(verifier_fd, bool)
+        or not isinstance(verifier_fd, int)
+        or verifier_fd < 3
+    ):
+        raise CapsuleError("verifier identity must be an inherited sealed descriptor")
+    if not isinstance(expected_signer, str) or re.fullmatch(
+        r"[A-Za-z0-9._@+-]{1,128}", expected_signer
+    ) is None:
+        raise CapsuleError("authority signer identity is invalid")
+    if not isinstance(expected_verifier_sha256, str) or re.fullmatch(
+        r"[0-9a-f]{64}", expected_verifier_sha256
+    ) is None:
+        raise CapsuleError("authority verifier digest is invalid")
+    try:
+        stat_result = os.fstat(verifier_fd)
+        seals = fcntl.fcntl(verifier_fd, fcntl.F_GET_SEALS)
+        if seals & REQUIRED_SEALS != REQUIRED_SEALS:
+            raise CapsuleError("verifier identity descriptor is not fully sealed")
+        if stat_result.st_size <= 0 or stat_result.st_size > 64 * 1024:
+            raise CapsuleError("verifier identity descriptor has an invalid size")
+        raw = os.pread(verifier_fd, stat_result.st_size + 1, 0)
+    except OSError as error:
+        raise CapsuleError("cannot read sealed verifier identity") from error
+    try:
+        text = raw.decode("ascii")
+    except UnicodeDecodeError as error:
+        raise CapsuleError("verifier identity must be ASCII") from error
+    lines = text.splitlines()
+    if len(lines) != 1 or not text.endswith("\n"):
+        raise CapsuleError("verifier identity must contain one canonical signer")
+    fields = lines[0].split()
+    if (
+        len(fields) != 3
+        or fields[0] != expected_signer
+        or fields[1] != "ssh-ed25519"
+        or not fields[2]
+    ):
+        raise CapsuleError("verifier identity does not match the expected signer")
+    try:
+        decoded = base64.b64decode(fields[2], validate=True)
+    except ValueError as error:
+        raise CapsuleError("verifier public key is not canonical base64") from error
+    if base64.b64encode(decoded).decode("ascii") != fields[2]:
+        raise CapsuleError("verifier public key is not canonical base64")
+    if not secrets.compare_digest(_sha256(raw), expected_verifier_sha256):
+        raise CapsuleError("verifier identity digest differs from hardened installation")
+    return raw
 
-    def mint(state: _VerifiedAuthorityState) -> VerifiedAuthorityPolicy:
-        capability = object.__new__(VerifiedAuthorityPolicy)
-        registry[capability] = state
-        return capability
 
-    def get(capability: VerifiedAuthorityPolicy) -> _VerifiedAuthorityState:
-        if type(capability) is not VerifiedAuthorityPolicy:
-            raise CapsuleError(
-                "execution requires an exact verified authority capability"
-            )
-        try:
-            return registry[capability]
-        except (KeyError, TypeError) as error:
-            raise CapsuleError(
-                "authority capability was not minted by the trusted policy loader"
-            ) from error
-
-    return mint, get
-
-
-_mint_verified_authority, _verified_authority_state = (
-    _authority_capability_accessors()
-)
-del _authority_capability_accessors
-
-
-def load_verified_authority_policy(
-    repository_root: Path,
-    authenticated_contract: bytes,
+def _verify_ssh_signature(
+    payload: bytes,
+    signature: bytes,
     *,
-    hmac_key: bytes,
-    expected_context: str,
-) -> VerifiedAuthorityPolicy:
-    """Authenticate and verify an exact-SHA authority contract, then mint a capability."""
+    verifier_fd: int,
+    expected_signer: str,
+    expected_verifier_sha256: str,
+) -> str:
+    verifier = _read_sealed_verifier_identity(
+        verifier_fd,
+        expected_signer,
+        expected_verifier_sha256,
+    )
+    signature_fd = -1
+    verifier_copy_fd = -1
+    try:
+        verifier_copy_fd = os.memfd_create(
+            "workflow-capsule-authority-verifier",
+            flags=os.MFD_ALLOW_SEALING | getattr(os, "MFD_CLOEXEC", 0),
+        )
+        verifier_offset = 0
+        while verifier_offset < len(verifier):
+            written = os.write(verifier_copy_fd, verifier[verifier_offset:])
+            if written <= 0:
+                raise CapsuleError("verifier descriptor write made no progress")
+            verifier_offset += written
+        os.lseek(verifier_copy_fd, 0, os.SEEK_SET)
+        fcntl.fcntl(verifier_copy_fd, fcntl.F_ADD_SEALS, REQUIRED_SEALS)
+        if (
+            fcntl.fcntl(verifier_copy_fd, fcntl.F_GET_SEALS)
+            & REQUIRED_SEALS
+            != REQUIRED_SEALS
+        ):
+            raise CapsuleError("authority verifier copy is not fully sealed")
+        signature_fd = os.memfd_create(
+            "workflow-capsule-authority-signature",
+            flags=os.MFD_ALLOW_SEALING | getattr(os, "MFD_CLOEXEC", 0),
+        )
+        offset = 0
+        while offset < len(signature):
+            written = os.write(signature_fd, signature[offset:])
+            if written <= 0:
+                raise CapsuleError("signature descriptor write made no progress")
+            offset += written
+        os.lseek(signature_fd, 0, os.SEEK_SET)
+        fcntl.fcntl(signature_fd, fcntl.F_ADD_SEALS, REQUIRED_SEALS)
+        if fcntl.fcntl(signature_fd, fcntl.F_GET_SEALS) & REQUIRED_SEALS != REQUIRED_SEALS:
+            raise CapsuleError("authority signature descriptor is not fully sealed")
+        completed = subprocess.run(
+            (
+                SSH_KEYGEN,
+                "-Y",
+                "verify",
+                "-q",
+                "-f",
+                f"/proc/self/fd/{verifier_copy_fd}",
+                "-I",
+                expected_signer,
+                "-n",
+                AUTHORITY_SIGNATURE_NAMESPACE,
+                "-s",
+                f"/proc/self/fd/{signature_fd}",
+            ),
+            input=payload,
+            env={
+                "HOME": "/",
+                "LANG": "C",
+                "LC_ALL": "C",
+                "PATH": "/usr/bin:/bin",
+            },
+            check=False,
+            capture_output=True,
+            close_fds=True,
+            pass_fds=(verifier_copy_fd, signature_fd),
+            timeout=30,
+        )
+    except (OSError, subprocess.TimeoutExpired) as error:
+        raise CapsuleError("cannot execute bounded authority signature verification") from error
+    finally:
+        if signature_fd >= 0:
+            os.close(signature_fd)
+        if verifier_copy_fd >= 0:
+            os.close(verifier_copy_fd)
+    if completed.returncode != 0:
+        raise CapsuleError("authority contract signature verification failed")
+    return _sha256(verifier)
 
-    if not isinstance(authenticated_contract, bytes) or len(authenticated_contract) > (
+
+def _parse_contract_time(value: Any, label: str) -> datetime:
+    if not isinstance(value, str) or not value.endswith("Z"):
+        raise CapsuleError(f"{label} must be an RFC 3339 UTC timestamp")
+    try:
+        parsed = datetime.fromisoformat(value[:-1] + "+00:00")
+    except ValueError as error:
+        raise CapsuleError(f"{label} is not a valid timestamp") from error
+    if parsed.tzinfo != timezone.utc:
+        raise CapsuleError(f"{label} must use UTC")
+    return parsed
+
+
+def _verify_signed_authority_contract(
+    repository_root: Path,
+    signed_contract: bytes,
+    *,
+    verifier_fd: int,
+    expected_signer: str,
+    expected_verifier_sha256: str,
+    expected_context: str,
+    expected_nonce: str,
+) -> _SignedAuthorityState:
+    """Verify an external SSH signature and every exact-SHA authority fact."""
+
+    if not isinstance(signed_contract, bytes) or len(signed_contract) > (
         MAX_BUNDLE_BYTES
     ):
-        raise CapsuleError("authenticated authority contract is invalid or oversized")
-    if not isinstance(hmac_key, bytes) or len(hmac_key) < 32:
-        raise CapsuleError("authority contract HMAC key must contain at least 32 bytes")
+        raise CapsuleError("signed authority contract is invalid or oversized")
     if not isinstance(expected_context, str) or not expected_context:
         raise CapsuleError("authority contract context must be nonempty")
+    if not isinstance(expected_nonce, str) or re.fullmatch(
+        r"[A-Za-z0-9_-]{16,128}", expected_nonce
+    ) is None:
+        raise CapsuleError("authority contract nonce is invalid")
     envelope = _expect_exact_keys(
-        parse_json_bytes(authenticated_contract, "authority contract envelope"),
+        parse_json_bytes(signed_contract, "authority contract envelope"),
         "authority contract envelope",
-        {"schema_version", "payload_b64", "hmac_sha256"},
+        {"schema_version", "payload_b64", "signature_b64"},
     )
     if type(envelope["schema_version"]) is not int or envelope["schema_version"] != 1:
         raise CapsuleError("authority contract envelope version is unsupported")
-    if normalized_json(envelope) != authenticated_contract:
+    if normalized_json(envelope) != signed_contract:
         raise CapsuleError("authority contract envelope is not canonical JSON")
     try:
         payload = base64.b64decode(envelope["payload_b64"], validate=True)
@@ -617,17 +726,21 @@ def load_verified_authority_policy(
         raise CapsuleError("authority contract payload is not canonical base64") from error
     if base64.b64encode(payload).decode("ascii") != envelope["payload_b64"]:
         raise CapsuleError("authority contract payload is not canonical base64")
-    expected_seal = hmac.new(
-        hmac_key,
-        AUTHORITY_CONTRACT_DOMAIN + payload,
-        hashlib.sha256,
-    ).hexdigest()
-    if (
-        not isinstance(envelope["hmac_sha256"], str)
-        or re.fullmatch(r"[0-9a-f]{64}", envelope["hmac_sha256"]) is None
-        or not hmac.compare_digest(envelope["hmac_sha256"], expected_seal)
-    ):
-        raise CapsuleError("authority contract authentication failed")
+    try:
+        signature = base64.b64decode(envelope["signature_b64"], validate=True)
+    except (TypeError, ValueError) as error:
+        raise CapsuleError("authority signature is not canonical base64") from error
+    if base64.b64encode(signature).decode("ascii") != envelope["signature_b64"]:
+        raise CapsuleError("authority signature is not canonical base64")
+    if not signature or len(signature) > 64 * 1024:
+        raise CapsuleError("authority signature has an invalid size")
+    verifier_sha256 = _verify_ssh_signature(
+        payload,
+        signature,
+        verifier_fd=verifier_fd,
+        expected_signer=expected_signer,
+        expected_verifier_sha256=expected_verifier_sha256,
+    )
     contract = _expect_exact_keys(
         parse_json_bytes(payload, "authority contract"),
         "authority contract",
@@ -635,6 +748,13 @@ def load_verified_authority_policy(
             "schema_version",
             "repository",
             "context",
+            "signer",
+            "signature_namespace",
+            "nonce",
+            "not_before",
+            "not_after",
+            "program_role",
+            "request_role",
             "object_format",
             "authorities",
             "relationships",
@@ -645,6 +765,26 @@ def load_verified_authority_policy(
         raise CapsuleError("authority contract version is unsupported")
     if contract["context"] != expected_context:
         raise CapsuleError("authority contract context differs")
+    if (
+        contract["signer"] != expected_signer
+        or contract["signature_namespace"] != AUTHORITY_SIGNATURE_NAMESPACE
+        or contract["nonce"] != expected_nonce
+        or contract["program_role"] != "python-program"
+        or contract["request_role"] != "canonical-json-request"
+    ):
+        raise CapsuleError(
+            "authority signer, namespace, nonce, or execution roles differ"
+        )
+    not_before = _parse_contract_time(contract["not_before"], "contract.not_before")
+    not_after = _parse_contract_time(contract["not_after"], "contract.not_after")
+    now = datetime.now(timezone.utc)
+    if (
+        not_before > now
+        or not_after < now
+        or not_after <= not_before
+        or (not_after - not_before).total_seconds() > 600
+    ):
+        raise CapsuleError("authority contract validity window is invalid or expired")
     if (
         not isinstance(contract["repository"], str)
         or not contract["repository"]
@@ -803,7 +943,7 @@ def load_verified_authority_policy(
     canonical_payload = normalized_json(contract)
     if canonical_payload != payload:
         raise CapsuleError("authority contract payload is not canonical JSON")
-    state = _VerifiedAuthorityState(
+    return _SignedAuthorityState(
         repository_root=root,
         repository=repository,
         context=expected_context,
@@ -811,17 +951,41 @@ def load_verified_authority_policy(
         relationships=tuple(relationships),
         stdlib_modules=allowed_stdlib,
         contract_sha256=_sha256(payload),
+        verifier_sha256=verifier_sha256,
+        signer=expected_signer,
+        nonce=expected_nonce,
     )
-    return _mint_verified_authority(state)
 
 
 def build_artifact_bundle(
-    capability: VerifiedAuthorityPolicy,
+    repository_root: Path,
+    signed_contract: bytes,
+    requests: Sequence[ArtifactRequest],
+    *,
+    verifier_fd: int,
+    expected_signer: str,
+    expected_verifier_sha256: str,
+    expected_context: str,
+    expected_nonce: str,
+) -> ArtifactBundle:
+    """Verify signed authority, then build only its admitted artifacts."""
+
+    state = _verify_signed_authority_contract(
+        repository_root,
+        signed_contract,
+        verifier_fd=verifier_fd,
+        expected_signer=expected_signer,
+        expected_verifier_sha256=expected_verifier_sha256,
+        expected_context=expected_context,
+        expected_nonce=expected_nonce,
+    )
+    return _build_artifact_bundle_from_state(state, requests)
+
+
+def _build_artifact_bundle_from_state(
+    state: _SignedAuthorityState,
     requests: Sequence[ArtifactRequest],
 ) -> ArtifactBundle:
-    """Build only artifacts admitted by an authenticated verified authority."""
-
-    state = _verified_authority_state(capability)
     if not requests or len(requests) > MAX_ARTIFACTS:
         raise CapsuleError(f"artifact count must be between 1 and {MAX_ARTIFACTS}")
     rules = {
@@ -1060,13 +1224,12 @@ def validate_artifact_bundle(
     return data
 
 
-def verify_artifact_bundle(
-    capability: VerifiedAuthorityPolicy,
+def _verify_artifact_bundle(
+    state: _SignedAuthorityState,
     bundle: ArtifactBundle,
 ) -> dict[str, Any]:
     """Rebuild the closed bundle from trusted Git immediately before sealing."""
 
-    state = _verified_authority_state(capability)
     if not isinstance(bundle, ArtifactBundle):
         raise CapsuleError("public execution requires a constructed ArtifactBundle")
     if bundle.stdlib_modules != state.stdlib_modules:
@@ -1095,7 +1258,7 @@ def verify_artifact_bundle(
             os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC,
         )
         before = os.fstat(root_fd)
-        rebuilt = build_artifact_bundle(capability, requests)
+        rebuilt = _build_artifact_bundle_from_state(state, requests)
         after = os.fstat(root_fd)
         path_state = os.stat(root, follow_symlinks=False)
         identity = (before.st_dev, before.st_ino, before.st_mode)
@@ -1144,10 +1307,12 @@ def _require_platform() -> None:
         or fcntl_missing
         or not Path("/proc/self/fd").is_dir()
         or not os.access(CC, os.X_OK)
+        or not os.access(SSH_KEYGEN, os.X_OK)
     ):
         raise CapsuleError(
             "sealed execution capsules require Linux x86_64, memfd sealing, "
-            "/proc/self/fd, unprivileged namespaces, and /usr/bin/cc"
+            "pidfds, /proc/self/fd, /usr/bin/cc, and /usr/bin/ssh-keygen; "
+            "Landlock and seccomp are checked by the actionable launcher preflight"
         )
 
 
@@ -1202,8 +1367,6 @@ _SANDBOX_LAUNCHER_SOURCE = r'''
 #include <linux/capability.h>
 #include <linux/landlock.h>
 #include <linux/seccomp.h>
-#include <poll.h>
-#include <sched.h>
 #include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -1211,11 +1374,8 @@ _SANDBOX_LAUNCHER_SOURCE = r'''
 #include <string.h>
 #include <sys/prctl.h>
 #include <sys/resource.h>
-#include <sys/mount.h>
-#include <sys/stat.h>
 #include <sys/syscall.h>
 #include <sys/types.h>
-#include <sys/wait.h>
 #include <unistd.h>
 
 #if !defined(__x86_64__)
@@ -1258,37 +1418,6 @@ static int set_limit(int resource, rlim_t value)
 {
     struct rlimit limit = { value, value };
     return setrlimit(resource, &limit);
-}
-
-static int write_text(const char *path, const char *text)
-{
-    int fd = open(path, O_WRONLY | O_CLOEXEC);
-    size_t length = strlen(text);
-    ssize_t written;
-    if (fd < 0)
-        return -1;
-    written = write(fd, text, length);
-    if (close(fd) != 0 || written != (ssize_t)length)
-        return -1;
-    return 0;
-}
-
-static int setup_user_namespace(uid_t uid, gid_t gid)
-{
-    char mapping[128];
-    if (unshare(CLONE_NEWUSER) != 0)
-        return -1;
-    if (write_text("/proc/self/setgroups", "deny\n") != 0 && errno != ENOENT)
-        return -1;
-    if (snprintf(mapping, sizeof(mapping), "0 %lu 1\n", (unsigned long)uid) <= 0 ||
-        write_text("/proc/self/uid_map", mapping) != 0)
-        return -1;
-    if (snprintf(mapping, sizeof(mapping), "0 %lu 1\n", (unsigned long)gid) <= 0 ||
-        write_text("/proc/self/gid_map", mapping) != 0)
-        return -1;
-    if (setresgid(0, 0, 0) != 0 || setresuid(0, 0, 0) != 0)
-        return -1;
-    return 0;
 }
 
 static int add_landlock_path(int ruleset_fd, const char *path, __u64 access)
@@ -1401,8 +1530,6 @@ static int install_filter(int python_fd)
         DENY_SYSCALL(setns),
         DENY_SYSCALL(setsid),
         DENY_SYSCALL(setpgid),
-        DENY_SYSCALL(prctl),
-        DENY_SYSCALL(seccomp),
         DENY_SYSCALL(bpf),
         DENY_SYSCALL(perf_event_open),
         DENY_SYSCALL(userfaultfd),
@@ -1441,12 +1568,32 @@ int main(int argc, char **argv, char **environment)
     int python_fd;
     long maximum_fd;
     pid_t parent;
-    pid_t child;
-    pid_t worker;
-    uid_t uid = getuid();
-    gid_t gid = getgid();
-    int status;
-    int lifeline[2];
+
+    if (argc == 2 && strcmp(argv[1], "--preflight") == 0) {
+        parent = getppid();
+        if (parent <= 0 || prctl(PR_SET_PDEATHSIG, SIGKILL) != 0 ||
+            getppid() != parent ||
+            prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) != 0 ||
+            setup_landlock() != 0 ||
+            drop_capabilities() != 0)
+            FAIL("preflight-security");
+        python_fd = open("/usr/bin/python3", O_PATH | O_CLOEXEC);
+        if (python_fd < 0 ||
+            set_limit(RLIMIT_CORE, 0) != 0 ||
+            set_limit(RLIMIT_FSIZE, 2 * 1024 * 1024) != 0 ||
+            set_limit(RLIMIT_NOFILE, 32) != 0 ||
+            set_limit(RLIMIT_CPU, 120) != 0 ||
+            set_limit(RLIMIT_AS, 512 * 1024 * 1024) != 0 ||
+            install_filter(python_fd) != 0)
+            FAIL("preflight-limits-seccomp");
+        close(python_fd);
+        if (dprintf(
+                1,
+                "{\"landlock\":true,\"memfd\":true,\"no_new_privs\":true,"
+                "\"pidfd\":true,\"seccomp\":true,\"userns\":false}\n") < 0)
+            FAIL("preflight-output");
+        return 0;
+    }
 
     if (argc < 10 || strcmp(argv[6], "--") != 0 ||
         strcmp(argv[7], "/usr/bin/python3") != 0)
@@ -1469,91 +1616,6 @@ int main(int argc, char **argv, char **environment)
     if (parent <= 0 || prctl(PR_SET_PDEATHSIG, SIGKILL) != 0 ||
         getppid() != parent)
         FAIL("parent-death");
-    if (setup_user_namespace(uid, gid) != 0 ||
-        unshare(
-            CLONE_NEWNS | CLONE_NEWNET | CLONE_NEWIPC |
-            CLONE_NEWUTS | CLONE_NEWPID) != 0 ||
-        sethostname("sealed-capsule", 14) != 0 ||
-        pipe2(lifeline, O_CLOEXEC) != 0)
-        FAIL("namespaces");
-    child = fork();
-    if (child < 0)
-        FAIL("pid-namespace-fork");
-    if (child > 0) {
-        close(lifeline[0]);
-        close(program_fd);
-        close(request_fd);
-        close(bundle_fd);
-        close(ready_fd);
-        close(launcher_fd);
-        while (waitpid(child, &status, 0) < 0) {
-            if (errno != EINTR)
-                FAIL("wait");
-        }
-        close(lifeline[1]);
-        if (WIFEXITED(status))
-            return WEXITSTATUS(status);
-        if (WIFSIGNALED(status))
-            return 128 + WTERMSIG(status);
-        return 125;
-    }
-
-    close(lifeline[1]);
-    if (prctl(PR_SET_PDEATHSIG, SIGKILL) != 0)
-        FAIL("pid-namespace-init-parent");
-    worker = fork();
-    if (worker < 0)
-        FAIL("worker-fork");
-    if (worker > 0) {
-        struct pollfd watch = {
-            .fd = lifeline[0],
-            .events = POLLIN | POLLHUP | POLLERR,
-        };
-        close(program_fd);
-        close(request_fd);
-        close(bundle_fd);
-        close(ready_fd);
-        close(launcher_fd);
-        while (1) {
-            pid_t waited = waitpid(worker, &status, WNOHANG);
-            if (waited == worker)
-                break;
-            if (waited < 0 && errno != EINTR)
-                FAIL("worker-wait");
-            if (poll(&watch, 1, 100) < 0 && errno != EINTR)
-                FAIL("lifeline-poll");
-            if (watch.revents & (POLLHUP | POLLERR)) {
-                kill(-1, SIGKILL);
-                while (waitpid(worker, &status, 0) < 0 && errno == EINTR)
-                    ;
-                return 125;
-            }
-        }
-        close(lifeline[0]);
-        kill(-1, SIGKILL);
-        {
-            int cleanup_status;
-            while (1) {
-                pid_t cleaned = waitpid(-1, &cleanup_status, 0);
-                if (cleaned > 0 || (cleaned < 0 && errno == EINTR))
-                    continue;
-                if (cleaned < 0 && errno == ECHILD)
-                    break;
-                FAIL("namespace-cleanup");
-            }
-        }
-        if (WIFEXITED(status))
-            return WEXITSTATUS(status);
-        if (WIFSIGNALED(status))
-            return 128 + WTERMSIG(status);
-        return 125;
-    }
-
-    close(lifeline[0]);
-    parent = getppid();
-    if (parent <= 0 || prctl(PR_SET_PDEATHSIG, SIGKILL) != 0 ||
-        getppid() != parent)
-        FAIL("worker-parent");
     maximum_fd = sysconf(_SC_OPEN_MAX);
     if (maximum_fd < 0 || maximum_fd > 65536)
         maximum_fd = 65536;
@@ -1921,6 +1983,62 @@ def preload_stdlib(stdlib_modules):
             raise Failure("standard-library policy is unsafe")
         importlib.import_module(name)
 
+def install_final_seccomp():
+    import ctypes
+    class SockFilter(ctypes.Structure):
+        _fields_ = [
+            ("code", ctypes.c_ushort),
+            ("jt", ctypes.c_ubyte),
+            ("jf", ctypes.c_ubyte),
+            ("k", ctypes.c_uint),
+        ]
+    class SockFprog(ctypes.Structure):
+        _fields_ = [
+            ("len", ctypes.c_ushort),
+            ("filter", ctypes.POINTER(SockFilter)),
+        ]
+    def stmt(code, value):
+        return SockFilter(code, 0, 0, value)
+    def jump(code, value, yes, no):
+        return SockFilter(code, yes, no, value)
+    load_nr = 0x20
+    load_word = 0x20
+    jump_equal = 0x15
+    alu_and = 0x54
+    return_value = 0x06
+    allow = 0x7fff0000
+    deny = 0x00050000 | 1
+    instructions = [
+        stmt(load_nr, 0),
+    ]
+    for syscall_number in (
+        2, 4, 6, 16, 21, 29, 30, 31, 41, 42, 43, 44, 45, 49, 50, 53,
+        56, 57, 58, 59, 78, 89, 101, 126, 134, 154, 155, 157, 165, 166,
+        175, 176, 217, 246, 248,
+        249, 250, 257, 262, 267, 269, 298, 304, 308, 317, 321, 322, 323,
+        329, 330, 331, 332, 424, 425, 426, 427, 434, 435, 437, 438, 439,
+    ):
+        instructions.extend([
+            jump(jump_equal, syscall_number, 0, 1),
+            stmt(return_value, deny),
+        ])
+    for syscall_number, argument_offset in ((9, 32), (10, 32)):
+        instructions.extend([
+            jump(jump_equal, syscall_number, 0, 5),
+            stmt(load_word, argument_offset),
+            stmt(alu_and, 4),
+            jump(jump_equal, 0, 1, 0),
+            stmt(return_value, deny),
+            stmt(load_nr, 0),
+        ])
+    instructions.append(stmt(return_value, allow))
+    array = (SockFilter * len(instructions))(*instructions)
+    program = SockFprog(len(instructions), array)
+    libc = ctypes.CDLL(None, use_errno=True)
+    if libc.prctl(22, 2, ctypes.byref(program)) != 0:
+        error = ctypes.get_errno()
+        raise OSError(error, "cannot install final capsule seccomp filter")
+
 def clear_environment():
     for key in tuple(os.environ):
         del os.environ[key]
@@ -1932,21 +2050,38 @@ def main():
         parser.add_argument("--" + name + "-envelope-sha256", required=True)
     parser.add_argument("--nonce", required=True)
     parser.add_argument("--program-artifact-id", required=True)
+    parser.add_argument("--stdlib-modules-b64", required=True)
     args = parser.parse_args()
     fds = [args.program_fd, args.request_fd, args.bundle_fd]
     if len(set(fds)) != len(fds) or any(fd < 3 or fd > 63 for fd in fds):
         raise Failure("capsule descriptors must be distinct inherited FDs")
+    try:
+        stdlib_raw = base64.b64decode(args.stdlib_modules_b64, validate=True)
+    except (TypeError, ValueError) as error:
+        raise Failure("bootstrap standard-library policy is not base64") from error
+    if base64.b64encode(stdlib_raw).decode("ascii") != args.stdlib_modules_b64:
+        raise Failure("bootstrap standard-library policy is not canonical base64")
+    stdlib_policy = parse_json(stdlib_raw, "bootstrap standard-library policy")
+    if (
+        not isinstance(stdlib_policy, list)
+        or stdlib_policy != sorted(set(stdlib_policy))
+        or any(not isinstance(name, str) or MODULE_RE.fullmatch(name) is None for name in stdlib_policy)
+    ):
+        raise Failure("bootstrap standard-library policy is invalid")
+    preload_stdlib(stdlib_policy)
+    install_final_seccomp()
     program = decode_descriptor(args.program_fd, 3 * 1024 * 1024, "program", "program", args.nonce, args.program_envelope_sha256)
     request_raw = decode_descriptor(args.request_fd, 2 * 1024 * 1024, "request", "request", args.nonce, args.request_envelope_sha256)
     bundle_raw = decode_descriptor(args.bundle_fd, 24 * 1024 * 1024, "bundle", "bundle", args.nonce, args.bundle_envelope_sha256)
     request_value = parse_json(request_raw, "request")
     records, stdlib_modules = validate_bundle(bundle_raw)
+    if stdlib_modules != set(stdlib_policy):
+        raise Failure("sealed bundle standard-library policy differs")
     selected = [record for record in records if record["artifact_id"] == args.program_artifact_id]
     if len(selected) != 1 or selected[0]["role"] != "program" or selected[0]["_content"] != program:
         raise Failure("executed program is not the selected sealed bundle artifact")
     for fd in fds:
         os.close(fd)
-    preload_stdlib(stdlib_modules)
     loader = BundleLoader(records, stdlib_modules)
     sys.meta_path.insert(0, loader)
     install_api(records, request_value)
@@ -2071,6 +2206,7 @@ def _bootstrap_arguments(
     bundle_digest: str,
     nonce: str,
     program_artifact_id: str,
+    stdlib_modules: Sequence[str],
 ) -> tuple[str, ...]:
     return (
         PYTHON,
@@ -2094,6 +2230,8 @@ def _bootstrap_arguments(
         nonce,
         "--program-artifact-id",
         program_artifact_id,
+        "--stdlib-modules-b64",
+        base64.b64encode(normalized_json(list(stdlib_modules))).decode("ascii"),
     )
 
 
@@ -2153,13 +2291,85 @@ def _verify_containment_empty(
     poller = select.poll()
     poller.register(pidfd, select.POLLIN | select.POLLHUP | select.POLLERR)
     if not poller.poll(0):
-        raise CapsuleExecutionError("sandbox PID namespace did not terminate")
+        raise CapsuleExecutionError("sandbox supervisor did not terminate")
+
+
+def hosted_security_preflight() -> dict[str, bool]:
+    """Prove hosted Landlock/seccomp/pidfd/memfd support without user namespaces."""
+
+    _require_platform()
+    launcher_fd = -1
+    pidfd = -1
+    process: subprocess.Popen[bytes] | None = None
+    try:
+        launcher_fd, _digest = _compile_sandbox_launcher()
+        process = subprocess.Popen(
+            (f"/proc/self/fd/{launcher_fd}", "--preflight"),
+            cwd="/",
+            env={},
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            close_fds=True,
+            pass_fds=(launcher_fd,),
+            start_new_session=True,
+        )
+        pidfd = os.pidfd_open(process.pid)
+        try:
+            stdout, stderr = process.communicate(timeout=10)
+        except subprocess.TimeoutExpired as error:
+            _kill_process_group(process)
+            raise CapsuleError("hosted capsule security preflight timed out") from error
+        if (
+            process.returncode != 0
+            or stderr
+            or len(stdout) > 4096
+        ):
+            detail = stderr.decode("utf-8", errors="replace").strip()
+            raise CapsuleError(
+                "hosted capsule security preflight failed"
+                + (f": {detail}" if detail else "")
+            )
+        _verify_containment_empty(process, pidfd)
+        result = parse_json_bytes(stdout, "hosted security preflight")
+        expected = {
+            "landlock": True,
+            "memfd": True,
+            "no_new_privs": True,
+            "pidfd": True,
+            "seccomp": True,
+            "userns": False,
+        }
+        if result != expected:
+            raise CapsuleError("hosted capsule security preflight result differs")
+        return result
+    except OSError as error:
+        if process is not None:
+            _kill_process_group(process)
+        raise CapsuleError("cannot run hosted capsule security preflight") from error
+    finally:
+        if process is not None:
+            _kill_process_group(process)
+            if process.stdout is not None:
+                process.stdout.close()
+            if process.stderr is not None:
+                process.stderr.close()
+        if pidfd >= 0:
+            os.close(pidfd)
+        if launcher_fd >= 0:
+            os.close(launcher_fd)
 
 
 def execute_capsule(
-    capability: VerifiedAuthorityPolicy,
+    repository_root: Path,
+    signed_contract: bytes,
     bundle: ArtifactBundle,
     *,
+    verifier_fd: int,
+    expected_signer: str,
+    expected_verifier_sha256: str,
+    expected_context: str,
+    expected_nonce: str,
     program_artifact_id: str,
     request: Any,
     timeout: float = 30.0,
@@ -2176,8 +2386,16 @@ def execute_capsule(
         raise CapsuleError(
             f"timeout must be greater than zero and at most {MAX_TIMEOUT_SECONDS}"
         )
-    state = _verified_authority_state(capability)
-    bundle_data = verify_artifact_bundle(capability, bundle)
+    state = _verify_signed_authority_contract(
+        repository_root,
+        signed_contract,
+        verifier_fd=verifier_fd,
+        expected_signer=expected_signer,
+        expected_verifier_sha256=expected_verifier_sha256,
+        expected_context=expected_context,
+        expected_nonce=expected_nonce,
+    )
+    bundle_data = _verify_artifact_bundle(state, bundle)
     bundle_bytes = bundle.payload
     program = _program_from_bundle(bundle_data, program_artifact_id)
     request_bytes = _request_bytes(request)
@@ -2209,10 +2427,7 @@ def execute_capsule(
         if _before_spawn is not None:
             _before_spawn()
         ready_read_fd, ready_write_fd = os.pipe2(os.O_CLOEXEC)
-        environment = {
-            "HOME": "/",
-            "PATH": "/usr/bin:/bin",
-        }
+        environment: dict[str, str] = {}
         bootstrap_arguments = _bootstrap_arguments(
             program_fd=program_fd,
             program_digest=program_envelope_digest,
@@ -2222,6 +2437,7 @@ def execute_capsule(
             bundle_digest=bundle_envelope_digest,
             nonce=nonce,
             program_artifact_id=program_artifact_id,
+            stdlib_modules=state.stdlib_modules,
         )
         command = _sandbox_command(
             launcher_fd=launcher_fd,
@@ -2287,12 +2503,15 @@ def execute_capsule(
             "program_artifact_id": program_artifact_id,
             "program_sha256": _sha256(program),
             "artifact_bundle_sha256": _sha256(bundle_bytes),
-            "authority_map_sha256": _sha256(
+            "authority_rules_sha256": _sha256(
                 normalized_json(
                     [_policy_json(policy) for policy in state.authorities]
                 )
             ),
             "authority_contract_sha256": state.contract_sha256,
+            "authority_verifier_sha256": state.verifier_sha256,
+            "authority_signer": state.signer,
+            "authority_nonce": state.nonce,
             "request_sha256": _sha256(request_bytes),
             "output_sha256": _sha256(stdout),
             "sandbox_launcher_sha256": launcher_digest,
@@ -2302,7 +2521,7 @@ def execute_capsule(
             "sandbox_compiler_argv_sha256": _sha256(
                 normalized_json([CC, *SANDBOX_COMPILER_FLAGS])
             ),
-            "sandbox_profile": "linux-x86_64-native-user-pid-net-landlock-seccomp-v2",
+            "sandbox_profile": "linux-x86_64-hosted-landlock-seccomp-pdeath-v3",
         }
         return CapsuleResult(
             output=output,

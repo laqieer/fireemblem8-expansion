@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import base64
+import ast
 import copy
 import fcntl
 import hashlib
-import hmac
+import inspect
 import json
 import os
 import pickle
@@ -12,6 +13,7 @@ import shutil
 import subprocess
 import time
 import unittest
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest import mock
 
@@ -84,6 +86,35 @@ elif mode == "native-loader":
         origin=request["path"],
     )
     __import__("_imp").create_dynamic(specification)
+elif mode == "raw-open":
+    os.open("/etc/hostname", os.O_RDONLY)
+elif mode == "raw-ioctl":
+    __import__("fcntl").ioctl(1, 0)
+elif mode == "raw-syscall":
+    ctypes = __import__("ctypes")
+    libc = ctypes.CDLL(None, use_errno=True)
+    result = libc.syscall(request["number"], 0, 0, 0, 0, 0, 0)
+    if result == -1:
+        raise OSError(ctypes.get_errno(), "raw syscall denied")
+    raise RuntimeError("raw syscall unexpectedly succeeded")
+elif mode == "raw-mmap-exec":
+    ctypes = __import__("ctypes")
+    libc = ctypes.CDLL(None, use_errno=True)
+    libc.mmap.restype = ctypes.c_void_p
+    address = libc.mmap(None, 4096, 7, 0x22, -1, 0)
+    if address == ctypes.c_void_p(-1).value:
+        raise OSError(ctypes.get_errno(), "executable mmap denied")
+    raise RuntimeError("executable mmap unexpectedly succeeded")
+elif mode == "raw-mprotect-exec":
+    ctypes = __import__("ctypes")
+    libc = ctypes.CDLL(None, use_errno=True)
+    libc.mmap.restype = ctypes.c_void_p
+    address = libc.mmap(None, 4096, 3, 0x22, -1, 0)
+    if address == ctypes.c_void_p(-1).value:
+        raise OSError(ctypes.get_errno(), "writable mmap failed")
+    if libc.mprotect(ctypes.c_void_p(address), 4096, 5) == -1:
+        raise OSError(ctypes.get_errno(), "executable mprotect denied")
+    raise RuntimeError("executable mprotect unexpectedly succeeded")
 elif mode == "fork":
     os.fork()
 elif mode == "exec":
@@ -193,7 +224,9 @@ def authenticated_contract(
     specs: tuple[capsule._ArtifactSpec, ...],
     relationships: tuple[tuple[str, str], ...],
     stdlib_modules: tuple[str, ...],
-    key: bytes,
+    private_key: Path,
+    signer: str,
+    nonce: str,
 ) -> bytes:
     grouped: dict[str, list[capsule._ArtifactSpec]] = {}
     for spec in specs:
@@ -241,6 +274,17 @@ def authenticated_contract(
             "schema_version": 1,
             "repository": repository_name,
             "context": context,
+            "signer": signer,
+            "signature_namespace": capsule.AUTHORITY_SIGNATURE_NAMESPACE,
+            "nonce": nonce,
+            "not_before": (
+                datetime.now(timezone.utc) - timedelta(seconds=30)
+            ).isoformat().replace("+00:00", "Z"),
+            "not_after": (
+                datetime.now(timezone.utc) + timedelta(minutes=5)
+            ).isoformat().replace("+00:00", "Z"),
+            "program_role": "python-program",
+            "request_role": "canonical-json-request",
             "object_format": object_format,
             "authorities": authorities,
             "relationships": [
@@ -250,39 +294,74 @@ def authenticated_contract(
             "stdlib_modules": list(stdlib_modules),
         }
     )
+    completed = subprocess.run(
+        (
+            capsule.SSH_KEYGEN,
+            "-Y",
+            "sign",
+            "-f",
+            str(private_key),
+            "-n",
+            capsule.AUTHORITY_SIGNATURE_NAMESPACE,
+        ),
+        input=payload,
+        env={"HOME": "/", "LANG": "C", "LC_ALL": "C", "PATH": "/usr/bin:/bin"},
+        check=True,
+        capture_output=True,
+    )
     return capsule.normalized_json(
         {
             "schema_version": 1,
             "payload_b64": base64.b64encode(payload).decode("ascii"),
-            "hmac_sha256": hmac.new(
-                key,
-                capsule.AUTHORITY_CONTRACT_DOMAIN + payload,
-                hashlib.sha256,
-            ).hexdigest(),
+            "signature_b64": base64.b64encode(completed.stdout).decode("ascii"),
         }
     )
 
 
 def mutate_authenticated_contract(
     envelope_bytes: bytes,
-    key: bytes,
+    private_key: Path,
     mutate,
 ) -> bytes:
     envelope = json.loads(envelope_bytes)
     payload = json.loads(base64.b64decode(envelope["payload_b64"]))
     mutate(payload)
     payload_bytes = capsule.normalized_json(payload)
+    completed = subprocess.run(
+        (
+            capsule.SSH_KEYGEN,
+            "-Y",
+            "sign",
+            "-f",
+            str(private_key),
+            "-n",
+            capsule.AUTHORITY_SIGNATURE_NAMESPACE,
+        ),
+        input=payload_bytes,
+        env={"HOME": "/", "LANG": "C", "LC_ALL": "C", "PATH": "/usr/bin:/bin"},
+        check=True,
+        capture_output=True,
+    )
     return capsule.normalized_json(
         {
             "schema_version": 1,
             "payload_b64": base64.b64encode(payload_bytes).decode("ascii"),
-            "hmac_sha256": hmac.new(
-                key,
-                capsule.AUTHORITY_CONTRACT_DOMAIN + payload_bytes,
-                hashlib.sha256,
-            ).hexdigest(),
+            "signature_b64": base64.b64encode(completed.stdout).decode("ascii"),
         }
     )
+
+
+def sealed_raw_descriptor(name: str, payload: bytes) -> int:
+    fd = os.memfd_create(
+        name,
+        flags=os.MFD_ALLOW_SEALING | getattr(os, "MFD_CLOEXEC", 0),
+    )
+    offset = 0
+    while offset < len(payload):
+        offset += os.write(fd, payload[offset:])
+    os.lseek(fd, 0, os.SEEK_SET)
+    fcntl.fcntl(fd, fcntl.F_ADD_SEALS, capsule.REQUIRED_SEALS)
+    return fd
 
 
 class SealedExecutionCapsuleTests(unittest.TestCase):
@@ -388,8 +467,59 @@ class SealedExecutionCapsuleTests(unittest.TestCase):
             "sys",
             "time",
         )
-        cls.contract_key = b"trusted-parent-authority-key-32!!"
+        cls.signer = "workflow-capsule-authority"
+        cls.nonce = "issue-204-authority-nonce-0001"
         cls.context = "issue-204-test-authority"
+        cls.private_key = TEST_ROOT / "authority-signing-key"
+        subprocess.run(
+            (
+                capsule.SSH_KEYGEN,
+                "-q",
+                "-t",
+                "ed25519",
+                "-N",
+                "",
+                "-f",
+                str(cls.private_key),
+            ),
+            check=True,
+            capture_output=True,
+        )
+        public_fields = cls.private_key.with_suffix(".pub").read_text(
+            encoding="ascii"
+        ).split()
+        verifier_bytes = (
+            f"{cls.signer} {public_fields[0]} {public_fields[1]}\n"
+        ).encode("ascii")
+        cls.verifier_sha256 = hashlib.sha256(verifier_bytes).hexdigest()
+        cls.verifier_fd = sealed_raw_descriptor(
+            "workflow-capsule-verifier",
+            verifier_bytes,
+        )
+        cls.attacker_private_key = TEST_ROOT / "attacker-signing-key"
+        subprocess.run(
+            (
+                capsule.SSH_KEYGEN,
+                "-q",
+                "-t",
+                "ed25519",
+                "-N",
+                "",
+                "-f",
+                str(cls.attacker_private_key),
+            ),
+            check=True,
+            capture_output=True,
+        )
+        attacker_fields = cls.attacker_private_key.with_suffix(".pub").read_text(
+            encoding="ascii"
+        ).split()
+        cls.attacker_verifier_fd = sealed_raw_descriptor(
+            "workflow-capsule-attacker-verifier",
+            f"{cls.signer} {attacker_fields[0]} {attacker_fields[1]}\n".encode(
+                "ascii"
+            ),
+        )
         cls.contract = authenticated_contract(
             cls.repository,
             repository_name="example/capsule",
@@ -397,13 +527,9 @@ class SealedExecutionCapsuleTests(unittest.TestCase):
             specs=cls.specs,
             relationships=(("base", "origin"), ("origin", "head")),
             stdlib_modules=cls.stdlib_modules,
-            key=cls.contract_key,
-        )
-        cls.capability = capsule.load_verified_authority_policy(
-            cls.repository,
-            cls.contract,
-            hmac_key=cls.contract_key,
-            expected_context=cls.context,
+            private_key=cls.private_key,
+            signer=cls.signer,
+            nonce=cls.nonce,
         )
         cls.requests = tuple(
             capsule.ArtifactRequest(
@@ -415,8 +541,14 @@ class SealedExecutionCapsuleTests(unittest.TestCase):
             for spec in cls.specs
         )
         cls.bundle = capsule.build_artifact_bundle(
-            cls.capability,
+            cls.repository,
+            cls.contract,
             cls.requests,
+            verifier_fd=cls.verifier_fd,
+            expected_signer=cls.signer,
+            expected_verifier_sha256=cls.verifier_sha256,
+            expected_context=cls.context,
+            expected_nonce=cls.nonce,
         )
         parsed = capsule.validate_artifact_bundle(
             cls.bundle.payload, expected_artifact_ids=cls.bundle.artifact_ids
@@ -429,15 +561,67 @@ class SealedExecutionCapsuleTests(unittest.TestCase):
 
     @classmethod
     def tearDownClass(cls) -> None:
+        os.close(cls.verifier_fd)
+        os.close(cls.attacker_verifier_fd)
         shutil.rmtree(TEST_ROOT, ignore_errors=True)
 
     def execute(self, mode: str = "positive", context: str = "outer", **kwargs):
         return capsule.execute_capsule(
-            self.capability,
+            self.repository,
+            self.contract,
             self.bundle,
+            verifier_fd=self.verifier_fd,
+            expected_signer=self.signer,
+            expected_verifier_sha256=self.verifier_sha256,
+            expected_context=self.context,
+            expected_nonce=self.nonce,
             program_artifact_id=self.program_ids["trusted_program.py"],
             request={"mode": mode, "context": context, **kwargs},
             timeout=0.8 if "timeout" in mode else 10,
+        )
+
+    def build(self, requests):
+        return self.build_with_contract(self.contract, requests)
+
+    def build_with_contract(
+        self,
+        contract,
+        requests,
+        *,
+        verifier_fd=None,
+        verifier_sha256=None,
+        signer=None,
+        context=None,
+        nonce=None,
+    ):
+        return capsule.build_artifact_bundle(
+            self.repository,
+            contract,
+            requests,
+            verifier_fd=self.verifier_fd if verifier_fd is None else verifier_fd,
+            expected_signer=self.signer if signer is None else signer,
+            expected_verifier_sha256=(
+                self.verifier_sha256
+                if verifier_sha256 is None
+                else verifier_sha256
+            ),
+            expected_context=self.context if context is None else context,
+            expected_nonce=self.nonce if nonce is None else nonce,
+        )
+
+    def execute_bundle(self, bundle, *, program_artifact_id, request, **kwargs):
+        return capsule.execute_capsule(
+            self.repository,
+            self.contract,
+            bundle,
+            verifier_fd=self.verifier_fd,
+            expected_signer=self.signer,
+            expected_verifier_sha256=self.verifier_sha256,
+            expected_context=self.context,
+            expected_nonce=self.nonce,
+            program_artifact_id=program_artifact_id,
+            request=request,
+            **kwargs,
         )
 
     def test_old_path_launch_reproduces_pr189_swap_boundary(self):
@@ -465,10 +649,7 @@ class SealedExecutionCapsuleTests(unittest.TestCase):
         self.assertEqual(path.read_bytes(), trusted)
 
     def test_exact_bundle_is_deterministic_and_bound_to_executed_bytes(self):
-        rebuilt = capsule.build_artifact_bundle(
-            self.capability,
-            self.requests,
-        )
+        rebuilt = self.build(self.requests)
         self.assertEqual(rebuilt, self.bundle)
         first = self.execute(context="outer")
         second = self.execute(context="outer")
@@ -498,13 +679,25 @@ class SealedExecutionCapsuleTests(unittest.TestCase):
             first.receipt["authority_contract_sha256"],
             hashlib.sha256(contract_payload).hexdigest(),
         )
+        self.assertEqual(first.receipt["authority_signer"], self.signer)
+        self.assertEqual(first.receipt["authority_nonce"], self.nonce)
+        self.assertEqual(
+            first.receipt["authority_verifier_sha256"],
+            hashlib.sha256(
+                os.pread(
+                    self.verifier_fd,
+                    os.fstat(self.verifier_fd).st_size,
+                    0,
+                )
+            ).hexdigest(),
+        )
         self.assertEqual(
             first.receipt_sha256,
             hashlib.sha256(capsule.normalized_json(first.receipt)).hexdigest(),
         )
         self.assertEqual(
             first.receipt["sandbox_profile"],
-            "linux-x86_64-native-user-pid-net-landlock-seccomp-v2",
+            "linux-x86_64-hosted-landlock-seccomp-pdeath-v3",
         )
         self.assertRegex(first.receipt["sandbox_launcher_sha256"], r"^[0-9a-f]{64}$")
         self.assertEqual(
@@ -519,6 +712,20 @@ class SealedExecutionCapsuleTests(unittest.TestCase):
                 )
             ).hexdigest(),
         )
+
+    def test_public_build_and_execute_each_verify_external_signature(self):
+        with mock.patch.object(
+            capsule,
+            "_verify_ssh_signature",
+            wraps=capsule._verify_ssh_signature,
+        ) as verify:
+            bundle = self.build(self.requests)
+            self.execute_bundle(
+                bundle,
+                program_artifact_id=self.program_ids["trusted_program.py"],
+                request={"mode": "authority"},
+            )
+        self.assertEqual(verify.call_count, 2)
 
     def test_all_former_path_roles_are_immutable_after_construction(self):
         paths = [
@@ -538,8 +745,7 @@ class SealedExecutionCapsuleTests(unittest.TestCase):
                 path.symlink_to(self.repository / "candidate_only.py")
 
         try:
-            result = capsule.execute_capsule(
-                self.capability,
+            result = self.execute_bundle(
                 self.bundle,
                 program_artifact_id=self.program_ids["trusted_program.py"],
                 request={"mode": "positive", "context": "artifact"},
@@ -583,8 +789,7 @@ class SealedExecutionCapsuleTests(unittest.TestCase):
                     materialized.write_text(FORGED_PROGRAM, encoding="utf-8")
 
                 try:
-                    result = capsule.execute_capsule(
-                        self.capability,
+                    result = self.execute_bundle(
                         self.bundle,
                         program_artifact_id=self.program_ids[program_path],
                         request={"mode": "authority"},
@@ -633,14 +838,13 @@ class SealedExecutionCapsuleTests(unittest.TestCase):
         for name, mutate in cases.items():
             with self.subTest(name=name):
                 with self.assertRaises(capsule.CapsuleError):
-                    capsule.execute_capsule(
-                        self.capability,
+                    self.execute_bundle(
                         self.mutated_bundle(mutate),
                         program_artifact_id=self.program_ids["trusted_program.py"],
                         request={"mode": "positive", "context": name},
                     )
 
-    def test_public_execution_rejects_self_authenticated_and_fake_authority(self):
+    def test_public_import_and_signed_authority_attacks_reject(self):
         data = json.loads(self.bundle.payload)
         target = next(
             record for record in data["artifacts"] if record["role"] == "program"
@@ -660,33 +864,60 @@ class SealedExecutionCapsuleTests(unittest.TestCase):
             self.stdlib_modules,
         )
         with self.assertRaises(capsule.CapsuleError):
-            capsule.execute_capsule(
-                self.capability,
+            self.execute_bundle(
                 forged_bundle,
                 program_artifact_id=target["artifact_id"],
                 request={"mode": "authority"},
             )
 
-        with self.assertRaises(TypeError):
-            capsule.VerifiedAuthorityPolicy()
-        manual = object.__new__(capsule.VerifiedAuthorityPolicy)
-        for fake in (manual, {}, policies):
+        for name in (
+            "VerifiedAuthorityPolicy",
+            "load_verified_authority_policy",
+            "_mint_verified_authority",
+            "_verified_authority_state",
+            "_authority_capability_accessors",
+        ):
+            self.assertFalse(hasattr(capsule, name), name)
+        for entry in (capsule.build_artifact_bundle, capsule.execute_capsule):
+            parameters = inspect.signature(entry).parameters
+            self.assertNotIn("capability", parameters)
+            self.assertNotIn("private_key", parameters)
+            self.assertIn("signed_contract", parameters)
+            self.assertIn("verifier_fd", parameters)
+        manual_state = capsule._SignedAuthorityState(
+            repository_root=self.repository,
+            repository="example/capsule",
+            context=self.context,
+            authorities=policies,
+            relationships=(),
+            stdlib_modules=self.stdlib_modules,
+            contract_sha256="0" * 64,
+            verifier_sha256="0" * 64,
+            signer=self.signer,
+            nonce=self.nonce,
+        )
+        for fake in (
+            manual_state,
+            copy.copy(manual_state),
+            copy.deepcopy(manual_state),
+            pickle.loads(pickle.dumps(manual_state)),
+            {},
+            policies,
+        ):
             with self.subTest(fake=type(fake).__name__):
                 with self.assertRaises(capsule.CapsuleError):
                     capsule.execute_capsule(
+                        self.repository,
                         fake,
                         self.bundle,
+                        verifier_fd=self.verifier_fd,
+                        expected_signer=self.signer,
+                        expected_verifier_sha256=self.verifier_sha256,
+                        expected_context=self.context,
+                        expected_nonce=self.nonce,
                         program_artifact_id=self.program_ids["trusted_program.py"],
                         request={"mode": "authority"},
                     )
-        for operation in (
-            copy.copy,
-            copy.deepcopy,
-            lambda value: pickle.loads(pickle.dumps(value)),
-        ):
-            with self.subTest(operation=operation):
-                with self.assertRaises(TypeError):
-                    operation(self.capability)
 
         candidate_contract = authenticated_contract(
             self.repository,
@@ -702,26 +933,76 @@ class SealedExecutionCapsuleTests(unittest.TestCase):
             ),
             relationships=(),
             stdlib_modules=("json",),
-            key=b"candidate-controlled-authority-key!!",
+            private_key=self.attacker_private_key,
+            signer=self.signer,
+            nonce=self.nonce,
         )
-        with self.assertRaisesRegex(capsule.CapsuleError, "authentication failed"):
-            capsule.load_verified_authority_policy(
-                self.repository,
+        with self.assertRaisesRegex(capsule.CapsuleError, "digest|signature"):
+            self.build_with_contract(
                 candidate_contract,
-                hmac_key=self.contract_key,
-                expected_context=self.context,
+                [capsule.ArtifactRequest("base", "candidate_program.py", "program")],
             )
-        with self.assertRaisesRegex(capsule.CapsuleError, "not admitted"):
-            capsule.build_artifact_bundle(
-                self.capability,
-                [
-                    capsule.ArtifactRequest(
-                        "base",
-                        "candidate_program.py",
-                        "program",
-                    )
-                ],
+        with self.assertRaisesRegex(capsule.CapsuleError, "digest|signature"):
+            self.build_with_contract(
+                self.contract,
+                self.requests,
+                verifier_fd=self.attacker_verifier_fd,
             )
+        with self.assertRaisesRegex(capsule.CapsuleError, "digest"):
+            self.build_with_contract(
+                self.contract,
+                self.requests,
+                verifier_sha256="0" * 64,
+            )
+        with self.assertRaises(capsule.CapsuleError):
+            self.build_with_contract(
+                self.contract,
+                self.requests,
+                signer="wrong-authority-signer",
+            )
+        tampered = json.loads(self.contract)
+        signature = bytearray(base64.b64decode(tampered["signature_b64"]))
+        signature[-2] ^= 1
+        tampered["signature_b64"] = base64.b64encode(signature).decode("ascii")
+        with self.assertRaisesRegex(capsule.CapsuleError, "signature verification"):
+            self.build_with_contract(
+                capsule.normalized_json(tampered),
+                self.requests,
+            )
+        verifier_bytes = os.pread(
+            self.verifier_fd,
+            os.fstat(self.verifier_fd).st_size,
+            0,
+        )
+        unsealed_verifier = os.memfd_create(
+            "unsealed-verifier",
+            flags=os.MFD_ALLOW_SEALING,
+        )
+        try:
+            os.write(unsealed_verifier, verifier_bytes)
+            with self.assertRaisesRegex(capsule.CapsuleError, "not fully sealed"):
+                self.build_with_contract(
+                    self.contract,
+                    self.requests,
+                    verifier_fd=unsealed_verifier,
+                )
+        finally:
+            os.close(unsealed_verifier)
+        path_verifier = os.open(
+            self.private_key.with_suffix(".pub"),
+            os.O_RDONLY | os.O_CLOEXEC,
+        )
+        try:
+            with self.assertRaisesRegex(
+                capsule.CapsuleError, "sealed verifier|verifier identity"
+            ):
+                self.build_with_contract(
+                    self.contract,
+                    self.requests,
+                    verifier_fd=path_verifier,
+                )
+        finally:
+            os.close(path_verifier)
 
     def test_mixed_revision_and_candidate_under_base_authority_reject(self):
         candidate_blob = run_git(
@@ -754,15 +1035,13 @@ class SealedExecutionCapsuleTests(unittest.TestCase):
 
         mixed = mutate_authenticated_contract(
             self.contract,
-            self.contract_key,
+            self.private_key,
             add_mixed_base,
         )
         with self.assertRaises(capsule.CapsuleError):
-            capsule.load_verified_authority_policy(
-                self.repository,
+            self.build_with_contract(
                 mixed,
-                hmac_key=self.contract_key,
-                expected_context=self.context,
+                self.requests,
             )
 
         mutations = {
@@ -771,6 +1050,17 @@ class SealedExecutionCapsuleTests(unittest.TestCase):
             ),
             "object-format": lambda payload: payload.update(object_format="sha256"),
             "context": lambda payload: payload.update(context="wrong-context"),
+            "nonce": lambda payload: payload.update(nonce="wrong-nonce-value"),
+            "expired": lambda payload: payload.update(
+                not_before="2020-01-01T00:00:00Z",
+                not_after="2020-01-01T00:01:00Z",
+            ),
+            "future": lambda payload: payload.update(
+                not_before="2099-01-01T00:00:00Z",
+                not_after="2099-01-01T00:01:00Z",
+            ),
+            "program-role": lambda payload: payload.update(program_role="forged"),
+            "request-role": lambda payload: payload.update(request_role="forged"),
             "schema-bool": lambda payload: payload.update(schema_version=True),
             "revision": lambda payload: payload["authorities"][0].update(
                 revision="0" * 40
@@ -783,14 +1073,12 @@ class SealedExecutionCapsuleTests(unittest.TestCase):
         for name, mutate in mutations.items():
             with self.subTest(name=name):
                 changed = mutate_authenticated_contract(
-                    self.contract, self.contract_key, mutate
+                    self.contract, self.private_key, mutate
                 )
                 with self.assertRaises(capsule.CapsuleError):
-                    capsule.load_verified_authority_policy(
-                        self.repository,
+                    self.build_with_contract(
                         changed,
-                        hmac_key=self.contract_key,
-                        expected_context=self.context,
+                        self.requests,
                     )
 
     def test_import_closure_and_stdlib_policy_are_closed(self):
@@ -801,20 +1089,24 @@ class SealedExecutionCapsuleTests(unittest.TestCase):
         )
         with self.assertRaisesRegex(capsule.CapsuleError, "closed bundle"):
             capsule.build_artifact_bundle(
-                self.capability,
+                self.repository,
+                self.contract,
                 without_helper,
+                verifier_fd=self.verifier_fd,
+                expected_signer=self.signer,
+                expected_verifier_sha256=self.verifier_sha256,
+                expected_context=self.context,
+                expected_nonce=self.nonce,
             )
         unsafe = mutate_authenticated_contract(
             self.contract,
-            self.contract_key,
+            self.private_key,
             lambda payload: payload.update(stdlib_modules=["ctypes"]),
         )
         with self.assertRaisesRegex(capsule.CapsuleError, "unsafe"):
-            capsule.load_verified_authority_policy(
-                self.repository,
+            self.build_with_contract(
                 unsafe,
-                hmac_key=self.contract_key,
-                expected_context=self.context,
+                self.requests,
             )
 
     def test_execution_reloads_every_blob_from_git_before_sealing(self):
@@ -857,15 +1149,10 @@ class SealedExecutionCapsuleTests(unittest.TestCase):
         for name, mutate in mutations.items():
             with self.subTest(name=name):
                 contract = mutate_authenticated_contract(
-                    self.contract, self.contract_key, mutate
+                    self.contract, self.private_key, mutate
                 )
                 with self.assertRaises(capsule.CapsuleError):
-                    capsule.load_verified_authority_policy(
-                        self.repository,
-                        contract,
-                        hmac_key=self.contract_key,
-                        expected_context=self.context,
-                    )
+                    self.build_with_contract(contract, self.requests)
 
         (self.repository / "unsafe.py").symlink_to("trusted_program.py")
         run_git(self.repository, "add", "unsafe.py")
@@ -880,14 +1167,14 @@ class SealedExecutionCapsuleTests(unittest.TestCase):
             ),
             relationships=(),
             stdlib_modules=(),
-            key=self.contract_key,
+            private_key=self.private_key,
+            signer=self.signer,
+            nonce=self.nonce,
         )
         with self.assertRaises(capsule.CapsuleError):
-            capsule.load_verified_authority_policy(
-                self.repository,
+            self.build_with_contract(
                 symlink_contract,
-                hmac_key=self.contract_key,
-                expected_context=self.context,
+                [capsule.ArtifactRequest("base", "unsafe.py", "program")],
             )
 
     def test_exact_tree_authority_rejects_redirection_and_ignores_ambient_git(self):
@@ -899,13 +1186,7 @@ class SealedExecutionCapsuleTests(unittest.TestCase):
             "GIT_CONFIG_VALUE_0": "999",
         }
         with mock.patch.dict(os.environ, hostile, clear=False):
-            capability = capsule.load_verified_authority_policy(
-                self.repository,
-                self.contract,
-                hmac_key=self.contract_key,
-                expected_context=self.context,
-            )
-            rebuilt = capsule.build_artifact_bundle(capability, self.requests)
+            rebuilt = self.build(self.requests)
         self.assertEqual(rebuilt, self.bundle)
 
         alternates = self.repository / ".git" / "objects" / "info" / "alternates"
@@ -913,12 +1194,7 @@ class SealedExecutionCapsuleTests(unittest.TestCase):
         alternates.write_text(str(ROOT / ".git" / "objects") + "\n", encoding="utf-8")
         try:
             with self.assertRaisesRegex(capsule.CapsuleError, "alternate object"):
-                capsule.load_verified_authority_policy(
-                    self.repository,
-                    self.contract,
-                    hmac_key=self.contract_key,
-                    expected_context=self.context,
-                )
+                self.build(self.requests)
         finally:
             alternates.unlink()
 
@@ -1016,6 +1292,7 @@ class SealedExecutionCapsuleTests(unittest.TestCase):
                 bundle_digest=bundle_digest,
                 nonce=nonce,
                 program_artifact_id=self.program_ids["trusted_program.py"],
+                stdlib_modules=self.stdlib_modules,
             )
             command = capsule._sandbox_command(
                 launcher_fd=launcher_fd,
@@ -1073,7 +1350,7 @@ class SealedExecutionCapsuleTests(unittest.TestCase):
         finally:
             os.close(fd)
 
-    def test_native_supervisor_creates_namespaces_without_bubblewrap(self):
+    def test_hosted_supervisor_uses_no_namespaces_or_bubblewrap(self):
         namespaces = {}
 
         def inspect_namespaces(pid: int) -> None:
@@ -1085,22 +1362,37 @@ class SealedExecutionCapsuleTests(unittest.TestCase):
             )
 
         with mock.patch.dict(os.environ, {"PATH": "/no-bubblewrap"}, clear=False):
-            result = capsule.execute_capsule(
-                self.capability,
+            result = self.execute_bundle(
                 self.bundle,
                 program_artifact_id=self.program_ids["trusted_program.py"],
                 request={"mode": "namespace"},
                 _after_spawn=inspect_namespaces,
             )
-        self.assertEqual(result.output, {"hostname": "sealed-capsule", "pid": 2})
-        self.assertNotEqual(namespaces["user"], os.readlink("/proc/self/ns/user"))
-        self.assertNotEqual(namespaces["mount"], os.readlink("/proc/self/ns/mnt"))
-        self.assertNotEqual(namespaces["network"], os.readlink("/proc/self/ns/net"))
-        self.assertNotEqual(
+        self.assertEqual(result.output["hostname"], os.uname().nodename)
+        self.assertGreater(result.output["pid"], 1)
+        self.assertEqual(namespaces["user"], os.readlink("/proc/self/ns/user"))
+        self.assertEqual(namespaces["mount"], os.readlink("/proc/self/ns/mnt"))
+        self.assertEqual(namespaces["network"], os.readlink("/proc/self/ns/net"))
+        self.assertEqual(
             namespaces["pid_children"],
             os.readlink("/proc/self/ns/pid_for_children"),
         )
         self.assertFalse(hasattr(capsule, "BWRAP"))
+        self.assertNotIn("CLONE_NEWUSER", capsule._SANDBOX_LAUNCHER_SOURCE)
+        self.assertNotIn("unshare(", capsule._SANDBOX_LAUNCHER_SOURCE)
+
+    def test_hosted_preflight_proves_supported_kernel_without_userns(self):
+        self.assertEqual(
+            capsule.hosted_security_preflight(),
+            {
+                "landlock": True,
+                "memfd": True,
+                "no_new_privs": True,
+                "pidfd": True,
+                "seccomp": True,
+                "userns": False,
+            },
+        )
 
     def test_build_topology_declares_no_new_capsule_runtime_package(self):
         workflow = (ROOT / ".github" / "workflows" / "build.yml").read_text(
@@ -1115,6 +1407,7 @@ class SealedExecutionCapsuleTests(unittest.TestCase):
         self.assertTrue(
             all(
                 "bubblewrap" not in line and "bwrap" not in line
+                and "openssh-client" not in line
                 for line in install_lines
             )
         )
@@ -1178,6 +1471,60 @@ class SealedExecutionCapsuleTests(unittest.TestCase):
                     or b"file too short" in caught.exception.stderr
                 )
 
+    def test_post_start_seccomp_denies_raw_kernel_escape_syscalls(self):
+        unhooked_bootstrap = capsule._BOOTSTRAP_SOURCE.replace(
+            "    install_guards(records, stdlib_modules)\n",
+            "    pass\n",
+        )
+        self.assertNotEqual(unhooked_bootstrap, capsule._BOOTSTRAP_SOURCE)
+        cases = {
+            "raw-open": {},
+            "raw-ioctl": {},
+            "raw-mmap-exec": {},
+            "raw-mprotect-exec": {},
+            "ptrace": {"number": 101},
+            "perf-event-open": {"number": 298},
+            "bpf": {"number": 321},
+            "keyctl": {"number": 250},
+            "shmat": {"number": 30},
+            "pkey-mprotect": {"number": 329},
+            "getdents64": {"number": 217},
+            "statx": {"number": 332},
+            "openat2": {"number": 437},
+        }
+        with mock.patch.object(capsule, "_BOOTSTRAP_SOURCE", unhooked_bootstrap):
+            for name, extra in cases.items():
+                mode = name if name.startswith("raw-") else "raw-syscall"
+                with self.subTest(name=name):
+                    with self.assertRaises(capsule.CapsuleExecutionError) as caught:
+                        self.execute(mode=mode, **extra)
+                    self.assertIn(
+                        b"[Errno 1]",
+                        caught.exception.stderr,
+                    )
+
+    def test_bootstrap_installs_final_filter_before_reading_signed_bytes(self):
+        syntax = ast.parse(capsule._BOOTSTRAP_SOURCE)
+        main = next(
+            node
+            for node in syntax.body
+            if isinstance(node, ast.FunctionDef) and node.name == "main"
+        )
+        calls = {}
+        for node in ast.walk(main):
+            if not isinstance(node, ast.Call):
+                continue
+            if isinstance(node.func, ast.Name):
+                calls.setdefault(node.func.id, []).append(node.lineno)
+        self.assertLess(
+            min(calls["preload_stdlib"]),
+            min(calls["install_final_seccomp"]),
+        )
+        self.assertLess(
+            min(calls["install_final_seccomp"]),
+            min(calls["decode_descriptor"]),
+        )
+
     def test_parent_interruption_kills_child_and_closes_descriptors(self):
         before = len(os.listdir("/proc/self/fd"))
         child_pid = None
@@ -1190,8 +1537,7 @@ class SealedExecutionCapsuleTests(unittest.TestCase):
         with self.assertRaisesRegex(
             capsule.CapsuleExecutionError, "launch was interrupted"
         ):
-            capsule.execute_capsule(
-                self.capability,
+            self.execute_bundle(
                 self.bundle,
                 program_artifact_id=self.program_ids["trusted_program.py"],
                 request={"mode": "timeout"},
@@ -1206,37 +1552,42 @@ class SealedExecutionCapsuleTests(unittest.TestCase):
             capsule,
             "_verify_containment_empty",
             side_effect=capsule.CapsuleExecutionError(
-                "sandbox PID namespace did not terminate"
+                "sandbox supervisor did not terminate"
             ),
         ):
             with self.assertRaisesRegex(
                 capsule.CapsuleExecutionError,
-                "PID namespace did not terminate",
+                "supervisor did not terminate",
             ):
                 self.execute(mode="positive")
 
     def test_bounds_strict_json_and_fail_closed_platform(self):
         with self.assertRaises(capsule.CapsuleError):
             capsule.execute_capsule(
-                self.capability,
+                self.repository,
+                self.contract,
                 self.bundle.payload,
+                verifier_fd=self.verifier_fd,
+                expected_signer=self.signer,
+                expected_verifier_sha256=self.verifier_sha256,
+                expected_context=self.context,
+                expected_nonce=self.nonce,
                 program_artifact_id=self.program_ids["trusted_program.py"],
                 request={},
             )
         with self.assertRaises(capsule.CapsuleError):
-            capsule.execute_capsule(
-                self.capability,
+            self.execute_bundle(
                 self.bundle,
                 program_artifact_id=self.program_ids["trusted_program.py"],
                 request=b'{"x":1,"x":2}',
             )
         with self.assertRaises(capsule.CapsuleError):
-            capsule.build_artifact_bundle(
-                self.capability,
-                [self.requests[0]] * (capsule.MAX_ARTIFACTS + 1),
-            )
+            self.build([self.requests[0]] * (capsule.MAX_ARTIFACTS + 1))
         with mock.patch.object(capsule.sys, "platform", "darwin"):
             with self.assertRaisesRegex(capsule.CapsuleError, "require Linux"):
+                capsule._require_platform()
+        with mock.patch.object(capsule, "SSH_KEYGEN", "/missing/ssh-keygen"):
+            with self.assertRaisesRegex(capsule.CapsuleError, "ssh-keygen"):
                 capsule._require_platform()
         self.assertFalse(hasattr(capsule, "BWRAP"))
 
@@ -1267,15 +1618,21 @@ class SealedExecutionCapsuleTests(unittest.TestCase):
         result = self.execute(mode="fds")
         self.assertEqual(result.output, {"fds": []})
 
-    def test_abrupt_parent_sigkill_terminates_pid_namespace(self):
+    def test_abrupt_parent_sigkill_terminates_supervisor(self):
         read_fd, write_fd = os.pipe()
         helper_pid = os.fork()
         if helper_pid == 0:
             os.close(read_fd)
             try:
                 capsule.execute_capsule(
-                    self.capability,
+                    self.repository,
+                    self.contract,
                     self.bundle,
+                    verifier_fd=self.verifier_fd,
+                    expected_signer=self.signer,
+                    expected_verifier_sha256=self.verifier_sha256,
+                    expected_context=self.context,
+                    expected_nonce=self.nonce,
                     program_artifact_id=self.program_ids["trusted_program.py"],
                     request={"mode": "timeout"},
                     timeout=60,
@@ -1354,25 +1711,33 @@ class SealedExecutionCapsuleTests(unittest.TestCase):
             specs=(spec,),
             relationships=(),
             stdlib_modules=(),
-            key=self.contract_key,
-        )
-        capability = capsule.load_verified_authority_policy(
-            repository,
-            contract,
-            hmac_key=self.contract_key,
-            expected_context="sha256-capsule",
+            private_key=self.private_key,
+            signer=self.signer,
+            nonce=self.nonce,
         )
         bundle = capsule.build_artifact_bundle(
-            capability,
+            repository,
+            contract,
             [capsule.ArtifactRequest("base", "program.py", "program")],
+            verifier_fd=self.verifier_fd,
+            expected_signer=self.signer,
+            expected_verifier_sha256=self.verifier_sha256,
+            expected_context="sha256-capsule",
+            expected_nonce=self.nonce,
         )
         parsed = capsule.validate_artifact_bundle(bundle.payload)
         record = parsed["artifacts"][0]
         self.assertEqual(record["object_format"], "sha256")
         self.assertEqual(len(record["blob_oid"]), 64)
         result = capsule.execute_capsule(
-            capability,
+            repository,
+            contract,
             bundle,
+            verifier_fd=self.verifier_fd,
+            expected_signer=self.signer,
+            expected_verifier_sha256=self.verifier_sha256,
+            expected_context="sha256-capsule",
+            expected_nonce=self.nonce,
             program_artifact_id=record["artifact_id"],
             request={},
         )
