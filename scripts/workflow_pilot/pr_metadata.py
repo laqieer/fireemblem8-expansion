@@ -121,7 +121,7 @@ class PullRequestState:
     base_sha: str
     base_ref: str
     title: str
-    body: str | None
+    body: str
     updated_at: datetime.datetime
 
 
@@ -1497,8 +1497,10 @@ def _parse_pull_request_payload(
     base_ref = _text(base.get("ref"), "pull request base ref")
     title = _text(payload.get("title"), "pull request title")
     body = payload.get("body")
-    if body is not None and not isinstance(body, str):
+    if "body" not in payload or (body is not None and not isinstance(body, str)):
         raise MetadataEditError("pull request body must be text or null")
+    if body is None:
+        body = ""
     updated_at = _github_timestamp(
         payload.get("updated_at"),
         "pull request updated_at",
@@ -1788,6 +1790,7 @@ def fetch_metadata_version(
         or pull.get("baseRefOid") != state.base_sha
         or pull.get("baseRefName") != state.base_ref
         or pull.get("title") != state.title
+        or not isinstance(pull.get("body"), str)
         or pull.get("body") != state.body
     ):
         raise MetadataEditError("metadata version pull request identity drifted")

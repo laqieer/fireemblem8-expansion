@@ -579,8 +579,9 @@ confirmation comment IDs, and run confirmation-comment-bound
 `pr-metadata reconcile` after that exact full Build succeeds. The two
 append-only owner-authored comments and metadata-specific GitHub version are
 authoritative rather than caller data or a mutable local ledger.
-Reconciliation refetches the unique latest pair, derives pending state from it
-plus GitHub run/event identity, and reruns only the failed lightweight metadata
+Reconciliation refetches the requested confirmation and its referenced intent,
+validates that exact pair against current metadata/version and GitHub run/event
+identity, and reruns only the failed lightweight metadata
 continuity run. It never edits/deletes either transaction comment or
 dispatches/cancels a full Build. See
 [`docs/workflow-pilot.md`](../../../docs/workflow-pilot.md#safe-pull-request-metadata-ordering).

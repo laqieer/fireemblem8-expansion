@@ -550,6 +550,16 @@ owner-authored GitHub comments rather than a local receipt:
 The command returns only validated intent and confirmation comment IDs/URLs.
 No caller-authored receipt file or mutable local ledger exists.
 
+The REST `body` field is required but nullable; GraphQL's `PullRequest.body`
+is a non-null string. The helper normalizes REST null to the canonical empty
+string when constructing observed PR state. Body comparisons, digests, changed
+fields, PATCH-response attestation, and reconciliation therefore agree on an
+empty body without conflating an absent or malformed field with valid empty
+content. GraphQL must still supply a string. Nonempty bodies and their digests
+are unchanged. Omitting `--body-file` still means no body request; supplying an
+empty file for an already empty body does not fabricate a body-edit version,
+while clearing nonempty content requires the real new edit node.
+
 GitHub's GraphQL `Actor` interface exposes `__typename` and `login`, but not
 `databaseId` directly. The production query therefore selects
 `editor { __typename login ... on User { databaseId } }` and the same shape
@@ -640,7 +650,7 @@ rejecting duplicate or conflicting terminal edges. Confirmed and aborted
 intents are terminal and excluded before active-intent selection. Recovery
 uses the unique latest active intent only within the exact current candidate
 group. Multiple unclosed active intents sharing a `createdAt` second remain
-ambiguous. Historical/latest-pair ordering uses `(createdAt, comment ID)` only
+ambiguous. Historical/automatic-recovery ordering uses `(createdAt, comment ID)` only
 after proving terminal comments do not predate their intent. Thus an
 equal-second aborted predecessor followed by a higher-ID successor is valid.
 Post-intent revalidation checks the selected intent's terminal state before

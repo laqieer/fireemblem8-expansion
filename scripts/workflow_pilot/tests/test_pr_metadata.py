@@ -184,7 +184,7 @@ def _graphql_payload(
                     "databaseId": state["id"],
                     "baseRefOid": state["base"]["sha"],
                     "baseRefName": state["base"]["ref"],
-                    "body": state["body"],
+                    "body": "" if state["body"] is None else state["body"],
                     "editor": editor,
                     "headRefOid": state["head"]["sha"],
                     "headRefName": state["head"]["ref"],
@@ -630,31 +630,43 @@ def _add_edit_transaction(
     title: str | None = None,
     body: str | None = None,
     response_changes: dict[str, object] | None = None,
+    pre_state: dict | None = None,
+    pre_version: pr_metadata.MetadataVersion | None = None,
 ) -> None:
-    pre_state = _pr()
+    pre_state = _pr() if pre_state is None else copy.deepcopy(pre_state)
     post_state = _pr(
         title=title if title is not None else pre_state["title"],
         body=body if body is not None else pre_state["body"],
         updated_at="2026-09-04T00:00:05Z",
     )
-    pre_version = _metadata_version()
+    pre_version = _metadata_version() if pre_version is None else pre_version
     title_changed = title is not None and title != pre_state["title"]
-    body_changed = body is not None and body != pre_state["body"]
-    post_version = _metadata_version(
-        title_event_id="RTE_2" if title_changed else "RTE_1",
-        title_event_created_at=(
-            "2026-09-04T00:00:05Z"
-            if title_changed
-            else "2026-09-03T00:00:00Z"
-        ),
-        title_previous="Stable title" if title_changed else "Older title",
-        title_current=title if title is not None else "Stable title",
-        body_last_edited_at=(
-            "2026-09-04T00:00:05Z"
-            if body_changed
-            else "2026-09-04T00:00:00Z"
-        ),
-    )
+    pre_body = "" if pre_state["body"] is None else pre_state["body"]
+    body_changed = body is not None and body != pre_body
+    post_version = pre_version
+    if title_changed:
+        post_version = replace(
+            post_version,
+            title_event_id="RTE_2",
+            title_event_created_at="2026-09-04T00:00:05Z",
+            title_previous=pre_state["title"],
+            title_current=title,
+            title_actor_id=OWNER_ID,
+            title_actor_login="owner",
+        )
+    if body_changed:
+        count = pre_version.body_edit_total_count + 1
+        post_version = replace(
+            post_version,
+            body_last_edited_at="2026-09-04T00:00:05Z",
+            body_editor_id=OWNER_ID,
+            body_editor_login="owner",
+            body_edit_total_count=count,
+            body_edit_id=f"UCE_{count}",
+            body_edit_created_at="2026-09-04T00:00:05Z",
+            body_edit_edited_at="2026-09-04T00:00:05Z",
+            body_edit_updated_at="2026-09-04T00:00:05Z",
+        )
     _add_metadata_versions(
         client,
         (pre_state, pre_version),
@@ -4911,6 +4923,109 @@ class PullRequestMetadataTests(unittest.TestCase):
                             PR_NUMBER,
                         ),
                     )
+
+    def test_bodyless_rest_state_matches_nonnull_graphql_body(self):
+        raw = _pr(body=None)
+        version = _metadata_version(body_last_edited_at=None)
+        payload = _graphql_payload(raw, version)
+        payload["data"]["repository"]["pullRequest"]["body"] = ""
+        client = ScriptedClient()
+        client.add("POST", "graphql", _response(payload))
+        state = pr_metadata._parse_pull_request_payload(raw, REPOSITORY, PR_NUMBER)
+        self.assertEqual(pr_metadata.fetch_metadata_version(client, state), version)
+        self.assertEqual(state.body, "")
+
+    def test_bodyless_title_creation_and_clearing_share_canonical_empty_body(self):
+        cases = (
+            ("title-only", None, "New title", None, None, {"title": "New title"}, 0),
+            ("unchanged-empty", None, "New title", "", None, {"title": "New title"}, 0),
+            ("first-body", None, None, "New body", "New body", {"body": "New body"}, 1),
+            ("clear-body", "Stable body", None, "", None, {"body": ""}, 2),
+        )
+        for name, initial_body, title, body, returned_body, mutation, edit_count in cases:
+            with self.subTest(case=name):
+                pre_state = _pr(body=initial_body)
+                pre_version = _metadata_version(
+                    body_last_edited_at=(
+                        None if initial_body is None else "2026-09-04T00:00:00Z"
+                    )
+                )
+                client = ScriptedClient()
+                _add_pr_states(client, pre_state, pre_state)
+                _add_snapshot(client, [_run(101, 10, mode="full")], copies=2)
+                _add_edit_transaction(
+                    client,
+                    title=title,
+                    body=body,
+                    pre_state=pre_state,
+                    pre_version=pre_version,
+                )
+                client.add(
+                    "PATCH",
+                    _endpoint(f"pulls/{PR_NUMBER}"),
+                    _pr(
+                        title=title if title is not None else "Stable title",
+                        body=returned_body,
+                        updated_at="2026-09-04T00:00:05Z",
+                    ),
+                )
+                decision = pr_metadata.edit_metadata(
+                    client,
+                    repository=REPOSITORY,
+                    pr_number=PR_NUMBER,
+                    head_sha=HEAD,
+                    base_sha=BASE,
+                    title=title,
+                    body=body,
+                    essential_reason=None,
+                )
+                self.assertEqual(decision.action, "updated")
+                self.assertEqual(
+                    [call[2] for call in client.calls if call[0] == "PATCH"],
+                    [mutation],
+                )
+                posted = [
+                    call[2]["body"] for call in client.calls
+                    if call[:2] == ("POST", _endpoint(f"issues/{PR_NUMBER}/comments"))
+                ]
+                intent = pr_metadata._parse_intent_comment_body(posted[0])
+                confirmation = pr_metadata._parse_confirmation_comment_body(posted[1])
+                self.assertEqual(
+                    intent.pre_metadata_sha256,
+                    _metadata_sha256(
+                        "Stable title", "" if initial_body is None else initial_body
+                    ),
+                )
+                self.assertEqual(
+                    confirmation.metadata_version.body_edit_total_count, edit_count
+                )
+
+    def test_empty_body_normalization_does_not_admit_missing_or_malformed_fields(self):
+        raw = _pr(body=None)
+        raw.pop("body")
+        with self.assertRaises(pr_metadata.MetadataEditError):
+            pr_metadata._parse_pull_request_payload(raw, REPOSITORY, PR_NUMBER)
+        state = pr_metadata._parse_pull_request_payload(
+            _pr(body=None), REPOSITORY, PR_NUMBER
+        )
+        for value in (None, False, 0, [], {}, "unexpected body"):
+            with self.subTest(body=value):
+                payload = _graphql_payload(
+                    _pr(body=None), _metadata_version(body_last_edited_at=None)
+                )
+                payload["data"]["repository"]["pullRequest"]["body"] = value
+                client = ScriptedClient()
+                client.add("POST", "graphql", payload)
+                with self.assertRaises(pr_metadata.MetadataEditError):
+                    pr_metadata.fetch_metadata_version(client, state)
+        payload = _graphql_payload(
+            _pr(body=None), _metadata_version(body_last_edited_at=None)
+        )
+        payload["data"]["repository"]["pullRequest"].pop("body")
+        client = ScriptedClient()
+        client.add("POST", "graphql", payload)
+        with self.assertRaises(pr_metadata.MetadataEditError):
+            pr_metadata.fetch_metadata_version(client, state)
 
     def test_body_no_edit_to_first_edit_has_unique_node_authority(self):
         pre = _metadata_version(body_last_edited_at=None)

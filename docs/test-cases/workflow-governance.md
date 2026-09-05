@@ -1245,6 +1245,12 @@ the exact branch and head; timeout or ambiguity fails before `gh run watch`.
    `PR_METADATA_LIVE_PR=189` to parse a nonempty body-edit connection.
    Exercise synthetic closed fixtures as well: the history probe succeeds,
    while edit, reconcile, and evidence-comment modes reject before mutation.
+   Exercise REST null and GraphQL empty-string bodies, title-only edits with
+   omitted or explicitly unchanged empty bodies, first body creation, and
+   clearing nonempty content when REST returns null. Require one canonical
+   empty-body identity, only the actually changed PATCH fields, and body-version
+   advancement only for real body changes. Missing REST body and missing,
+   null, malformed, or differing GraphQL body fields remain invalid.
 2. Exercise a same-head/same-base full Build whose complete exact Build job
    shape is queued. Attempt a default body edit with exact repository, PR,
    head, and base arguments, and confirm the initially active Build takes one
