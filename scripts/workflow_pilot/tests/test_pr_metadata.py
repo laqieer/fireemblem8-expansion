@@ -1294,6 +1294,31 @@ class PullRequestMetadataTests(unittest.TestCase):
         self.assertFalse(any(method != "GET" for method, _endpoint, _body in client.calls))
         self.assertFalse(any("/cancel" in endpoint for _method, endpoint, _body in client.calls))
 
+    def test_mutation_path_still_blocks_older_active_full(self):
+        client = ScriptedClient()
+        _add_pr_states(client, _pr())
+        _add_snapshot(
+            client,
+            [
+                _run(303, 13, mode="full"),
+                _run(302, 12, mode="full", active=True),
+                _run(101, 10, mode="full"),
+            ],
+        )
+        decision = pr_metadata.edit_metadata(
+            client,
+            repository=REPOSITORY,
+            pr_number=PR_NUMBER,
+            head_sha=HEAD,
+            base_sha=BASE,
+            title=None,
+            body="new body",
+            essential_reason=None,
+        )
+        self.assertEqual(decision.action, "deferred")
+        self.assertEqual(decision.run_id, 302)
+        self.assertFalse(decision.mutated)
+
     def test_partial_active_full_graphs_defer_without_exact_set_errors(self):
         cases = {}
         queued_record, _ = _run(110, 14, mode="full", active=True)
@@ -2762,6 +2787,7 @@ class PullRequestMetadataTests(unittest.TestCase):
                 "active",
                 [(active_record, active_jobs), _run(101, 10, mode="full")],
                 "deferred",
+                202,
             )
         )
         cases.append(
@@ -2772,6 +2798,7 @@ class PullRequestMetadataTests(unittest.TestCase):
                     _run(101, 10, mode="full"),
                 ],
                 "deferred",
+                202,
             )
         )
         malformed_record, malformed_jobs = _run(
@@ -2791,9 +2818,49 @@ class PullRequestMetadataTests(unittest.TestCase):
                     _run(101, 10, mode="full"),
                 ],
                 "error",
+                None,
             )
         )
-        for name, runs, expected in cases:
+        cases.append(
+            (
+                "newest-full-success-older-active",
+                [
+                    _run(303, 13, mode="full"),
+                    _run(302, 12, mode="full", active=True),
+                    _run(202, 11, mode="metadata-only", success=True),
+                    _run(101, 10, mode="full"),
+                ],
+                "no-op",
+                202,
+            )
+        )
+        cases.append(
+            (
+                "newest-full-active",
+                [
+                    _run(303, 13, mode="full", active=True),
+                    _run(302, 12, mode="full"),
+                    _run(202, 11, mode="metadata-only", success=True),
+                    _run(101, 10, mode="full"),
+                ],
+                "deferred",
+                303,
+            )
+        )
+        cases.append(
+            (
+                "newest-full-failure-older-active",
+                [
+                    _run(303, 13, mode="full", success=False),
+                    _run(302, 12, mode="full", active=True),
+                    _run(202, 11, mode="metadata-only", success=True),
+                    _run(101, 10, mode="full"),
+                ],
+                "error",
+                None,
+            )
+        )
+        for name, runs, expected, expected_run_id in cases:
             with self.subTest(case=name):
                 client = ScriptedClient()
                 _add_pr_states(client, _pr(), _pr())
@@ -2837,11 +2904,12 @@ class PullRequestMetadataTests(unittest.TestCase):
                     essential_reason=None,
                 )
                 self.assertEqual(decision.action, expected)
-                self.assertEqual(decision.run_id, 202)
-                self.assertIn(
-                    "reconcile",
-                    " ".join(decision.guidance[0]),
-                )
+                self.assertEqual(decision.run_id, expected_run_id)
+                if expected == "deferred":
+                    self.assertIn(
+                        "reconcile",
+                        " ".join(decision.guidance[0]),
+                    )
 
     def test_superseded_candidate_intents_do_not_block_current_candidate(self):
         old_intent = _receipt(head_sha=NEW_HEAD, nonce="b" * 64)
@@ -3326,6 +3394,17 @@ class PullRequestMetadataTests(unittest.TestCase):
                 202,
             ),
             (
+                "newest-success-older-active-full",
+                [
+                    _run(304, 13, mode="full"),
+                    _run(303, 12, mode="full", active=True),
+                    _run(202, 11, mode="metadata-only", success=True),
+                    _run(101, 10, mode="full"),
+                ],
+                "complete",
+                202,
+            ),
+            (
                 "metadata-attempt-two-same-identity",
                 [
                     _run(303, 12, mode="full"),
@@ -3381,6 +3460,23 @@ class PullRequestMetadataTests(unittest.TestCase):
             client,
             [
                 failed_full,
+                _run(202, 11, mode="metadata-only", success=True),
+                _run(101, 10, mode="full"),
+            ],
+        )
+        with self.assertRaisesRegex(
+            pr_metadata.MetadataEditError,
+            "newest exact full Build is not successful",
+        ):
+            _reconcile(client)
+
+        client = ScriptedClient()
+        _add_pr_states(client, _pr())
+        _add_snapshot(
+            client,
+            [
+                _run(304, 13, mode="full", success=False),
+                _run(303, 12, mode="full", active=True),
                 _run(202, 11, mode="metadata-only", success=True),
                 _run(101, 10, mode="full"),
             ],
@@ -4529,7 +4625,7 @@ class PullRequestMetadataTests(unittest.TestCase):
                 _add_snapshot(client, snapshot)
                 with self.assertRaisesRegex(
                     pr_metadata.MetadataEditError,
-                    "repeat an identity",
+                    "changed number|reuse a run number",
                 ):
                     pr_metadata.list_candidate_runs(
                         client,
@@ -4539,6 +4635,38 @@ class PullRequestMetadataTests(unittest.TestCase):
                             PR_NUMBER,
                         ),
                     )
+
+    def test_run_authority_collapses_same_identity_to_latest_attempt(self):
+        client = ScriptedClient()
+        attempt_one = _run(
+            101,
+            10,
+            mode="full",
+            success=False,
+            attempt=1,
+        )
+        attempt_two = _run(
+            101,
+            10,
+            mode="full",
+            success=True,
+            attempt=2,
+        )
+        _add_pr_states(client, _pr())
+        _add_snapshot(client, [attempt_one, attempt_two])
+        runs = pr_metadata.list_candidate_runs(
+            client,
+            pr_metadata.fetch_pull_request(
+                client,
+                REPOSITORY,
+                PR_NUMBER,
+            ),
+        )
+        self.assertEqual(len(runs), 1)
+        self.assertEqual(runs[0].run_id, 101)
+        self.assertEqual(runs[0].run_number, 10)
+        self.assertEqual(runs[0].run_attempt, 2)
+        self.assertEqual(runs[0].conclusion, "success")
 
     def test_run_authority_rejects_wrong_workflow_repo_head_event_and_path(self):
         mutations = {

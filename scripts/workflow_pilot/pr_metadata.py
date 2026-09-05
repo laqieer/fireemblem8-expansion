@@ -2392,20 +2392,36 @@ def list_candidate_runs(
         )
         for raw in raw_runs
     )
-    seen_ids = set()
-    seen_numbers = set()
+    by_id: dict[int, RunState] = {}
+    number_to_id: dict[int, int] = {}
     previous_number = None
-    exact_runs = []
     for run_id, run_number, run in visible:
-        if run_id in seen_ids or run_number in seen_numbers:
-            raise MetadataEditError("Build workflow runs repeat an identity")
-        if previous_number is not None and run_number >= previous_number:
+        if previous_number is not None and run_number > previous_number:
             raise MetadataEditError("Build workflow runs are not newest-first")
-        seen_ids.add(run_id)
-        seen_numbers.add(run_number)
         previous_number = run_number
-        exact_runs.append(run)
-    return tuple(exact_runs)
+        existing_id = number_to_id.get(run_number)
+        if existing_id is not None and existing_id != run_id:
+            raise MetadataEditError(
+                "Build workflow runs reuse a run number"
+            )
+        number_to_id[run_number] = run_id
+        existing = by_id.get(run_id)
+        if existing is None:
+            by_id[run_id] = run
+            continue
+        if existing.run_number != run_number:
+            raise MetadataEditError("Build workflow run id changed number")
+        if existing.run_attempt == run.run_attempt:
+            raise MetadataEditError("Build workflow runs repeat an attempt")
+        if run.run_attempt > existing.run_attempt:
+            by_id[run_id] = run
+    return tuple(
+        sorted(
+            by_id.values(),
+            key=lambda run: run.run_number,
+            reverse=True,
+        )
+    )
 
 
 def _jobs_by_name(run: RunState) -> dict[str, JobState]:
@@ -3034,12 +3050,11 @@ def edit_metadata(
             state=current,
             version=current_version,
         )
-        blocking = _blocking_active_runs(current_runs)
-        if blocking:
-            run_id = blocking[0].run_id
+        current_full, authorized = _current_full_authorization(current_runs)
+        if not authorized:
+            run_id = current_full.run_id
             reason = "an exact-head full or unproven Build is still active"
         else:
-            current_full = _current_full_authorization(current_runs)
             metadata = _transaction_metadata_run(current_runs, intent)
             if metadata is None:
                 run_id = current_full.run_id
@@ -3199,12 +3214,31 @@ def edit_metadata(
 
 def _current_full_authorization(
     runs: tuple[RunState, ...],
-) -> RunState:
-    latest_full = _latest_full(runs)
-    if latest_full is None:
+) -> tuple[RunState, bool]:
+    relevant = [
+        run
+        for run in runs
+        if run.binding == "unbound"
+        or (
+            run.binding == "explicit-same"
+            and run.mode in {"active-full", "active-unknown", "full"}
+        )
+    ]
+    if not relevant:
         raise MetadataEditError("no exact-head full Build exists")
-    require_full_success(latest_full)
-    return latest_full
+    newest_number = max(run.run_number for run in relevant)
+    newest = [run for run in relevant if run.run_number == newest_number]
+    if len(newest) != 1:
+        raise MetadataEditError("newest full Build authority is ambiguous")
+    run = newest[0]
+    if (
+        run.binding == "unbound"
+        or run.status in ACTIVE_RUN_STATUSES
+        or run.mode != "full"
+    ):
+        return run, False
+    require_full_success(run)
+    return run, True
 
 
 def _transaction_metadata_run(
@@ -3264,8 +3298,8 @@ def reconcile_metadata(
         version=initial_version,
     )
     _validate_receipt_watermark(receipt, first_runs)
-    blocking_active = _blocking_active_runs(first_runs)
-    if blocking_active:
+    first_full, authorized = _current_full_authorization(first_runs)
+    if not authorized:
         return Decision(
             action="deferred",
             base_sha=base_sha,
@@ -3275,9 +3309,8 @@ def reconcile_metadata(
             reason="an exact-head full or unproven Build is still active",
             repository=repository,
             pr_number=pr_number,
-            run_id=blocking_active[0].run_id,
+            run_id=first_full.run_id,
         )
-    first_full = _current_full_authorization(first_runs)
     first_metadata = _transaction_metadata_run(first_runs, receipt)
     if first_metadata is None:
         return Decision(
@@ -3361,7 +3394,19 @@ def reconcile_metadata(
         )
     current_runs = list_candidate_runs(client, current)
     _validate_receipt_watermark(receipt, current_runs)
-    current_full = _current_full_authorization(current_runs)
+    current_full, current_authorized = _current_full_authorization(current_runs)
+    if not current_authorized:
+        return Decision(
+            action="deferred",
+            base_sha=base_sha,
+            guidance=_reconcile_guidance(current, confirmation_comment_id),
+            head_sha=head_sha,
+            mutated=False,
+            reason="newest exact full or unproven Build is still active",
+            repository=repository,
+            pr_number=pr_number,
+            run_id=current_full.run_id,
+        )
     current_metadata = _transaction_metadata_run(current_runs, receipt)
     if (
         current_runs != first_runs

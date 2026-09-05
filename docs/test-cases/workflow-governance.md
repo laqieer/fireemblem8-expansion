@@ -1285,6 +1285,11 @@ the exact branch and head; timeout or ambiguity fails before `gh run watch`.
    successes, same-ID full attempts, metadata attempt 2 with the same ID/number,
    ambiguous distinct metadata IDs, and a second reconcile after the exact
    metadata rerun succeeds.
+   For both reconcile and authoritative no-op, exercise newest full success
+   with an older active full, newest full failure with an older active full,
+   and newest active full. Confirm mutation eligibility still blocks on any
+   active full. Exercise duplicate attempt rejection and latest-attempt
+   collapse for the same run ID/number.
    Exercise equal-second intent/confirmation comments as valid and a
    confirmation predating intent as invalid.
 4. Update a synthetic canonical marked evidence comment owned by the
@@ -1400,6 +1405,11 @@ run is selected solely by explicit-same metadata shape and run number above
 the intent watermark. It need not be newer than a later full run. The unique
 earliest stable metadata ID/number survives attempts; multiple distinct
 post-watermark metadata IDs are ambiguous and fail closed.
+Mutation eligibility remains deliberately different: any concurrent active
+full blocks a new edit. Reconcile/no-op first collapse same run ID/number to
+the latest attempt, then evaluate only the newest distinct relevant full or
+unproven run. Older active/failure states do not override newer terminal
+authority; duplicate/ambiguous run numbers fail closed.
 The isolated launcher emits one exact canonical JSON line with status `0` for
 success/no-op/complete, status `3` for deferred/refused, and status `2` with no
 decision JSON for invalid arguments, files, or API authority.

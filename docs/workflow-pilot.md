@@ -666,6 +666,16 @@ run is a canonical completed success. An absent or active run defers; a
 canonical failure defers with reconciliation/rerun guidance; malformed or
 unbound runs fail closed or remain ineligible.
 
+This full authorization policy is intentionally narrower than mutation
+eligibility. A new title/body PATCH still uses `_blocking_active_runs` and
+defers for any concurrent exact/unproven active full run. Reconciliation and
+authoritative no-op collapse repeated attempts of the same run ID/number to the
+highest attempt, then evaluate only the newest distinct relevant full/
+unproven identity. Older active or failed full runs cannot override a newer
+terminal full success; a newer terminal failure cannot be masked by an older
+active run. Reused run numbers across distinct IDs and duplicate attempts fail
+closed.
+
 Field-set recovery is immutable. Retries must supply the same
 `provided_fields` values and target digest as the unmatched intent; the helper
 cannot add, remove, or reclassify fields. Version advancement and the PATCH

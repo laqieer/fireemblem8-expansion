@@ -4732,13 +4732,14 @@ printf '%s\t%s\t%s\n' "$result" \
         )
         for requirement in (
             "isolated launcher suites",
-            "transaction scoping",
-            "UserContentEdit",
-            "never by comparison with the full run number",
-            "multiple plausible metadata IDs fail closed",
+            "any-active-full barrier",
+            "highest attempt",
+            "Older active/failed runs cannot override",
             "absent, active, failed, malformed, unbound",
-            "same full ID attempt",
-            "metadata attempt 2 with stable ID/number",
+            "same ID/number attempts",
+            "metadata attempt 2",
+            "newest full success with older active full",
+            "mutation eligibility still blocks any active full",
         ):
             with self.subTest(registry_requirement=requirement):
                 self.assertIn(normalize_policy(requirement), indexed_contract)
