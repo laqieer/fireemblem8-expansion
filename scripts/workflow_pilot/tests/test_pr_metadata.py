@@ -4076,6 +4076,107 @@ class PullRequestMetadataTests(unittest.TestCase):
                 comments=predating_comments,
             )
 
+    def test_same_second_aborted_predecessor_and_successor_are_ordered(self):
+        predecessor = _receipt(nonce="a" * 64)
+        predecessor_abort = _abort(predecessor)
+        successor = _receipt(nonce="b" * 64)
+        successor_confirmation = _confirmation(
+            successor,
+            intent_comment_id=404,
+        )
+        comments = [
+            _intent_comment(
+                predecessor,
+                comment_id=401,
+                created_at="2026-09-04T00:00:01Z",
+            ),
+            _abort_comment(
+                predecessor_abort,
+                comment_id=403,
+                created_at="2026-09-04T00:00:01Z",
+            ),
+            _intent_comment(
+                successor,
+                comment_id=404,
+                created_at="2026-09-04T00:00:01Z",
+            ),
+            _confirmation_comment(
+                successor_confirmation,
+                comment_id=405,
+                created_at="2026-09-04T00:00:02Z",
+            ),
+        ]
+        client = ScriptedClient()
+        _add_pr_states(client, _pr())
+        _add_snapshot(
+            client,
+            [
+                _run(202, 11, mode="metadata-only", success=True),
+                _run(101, 10, mode="full"),
+            ],
+        )
+        decision = _reconcile(
+            client,
+            receipt=successor,
+            confirmation=successor_confirmation,
+            confirmation_comment_id=405,
+            comments=comments,
+        )
+        self.assertEqual(decision.action, "complete")
+        self.assertEqual(decision.run_id, 202)
+
+    def test_multiple_same_second_active_intents_remain_ambiguous(self):
+        first = _receipt(nonce="a" * 64)
+        second = _receipt(nonce="b" * 64)
+        client = ScriptedClient()
+        _add_pr_states(client, _pr(), _pr())
+        _add_snapshot(client, [_run(101, 10, mode="full")], copies=2)
+        _add_metadata_versions(client, (_pr(), _metadata_version()))
+        client.add(
+            "GET",
+            _query(
+                f"issues/{PR_NUMBER}/comments",
+                [("per_page", "100"), ("page", "1")],
+            ),
+            [
+                _intent_comment(first, comment_id=401),
+                _intent_comment(second, comment_id=402),
+            ],
+        )
+        with self.assertRaisesRegex(
+            pr_metadata.MetadataEditError,
+            "latest metadata edit intent is ambiguous",
+        ):
+            pr_metadata.edit_metadata(
+                client,
+                repository=REPOSITORY,
+                pr_number=PR_NUMBER,
+                head_sha=HEAD,
+                base_sha=BASE,
+                title=None,
+                body="new body",
+                essential_reason=None,
+            )
+
+    def test_conflicting_confirmation_and_abort_links_fail_closed(self):
+        receipt = _receipt()
+        client = ScriptedClient()
+        _add_pr_states(client, _pr())
+        with self.assertRaisesRegex(
+            pr_metadata.MetadataEditError,
+            "both confirmation and abort",
+        ):
+            _reconcile(
+                client,
+                receipt=receipt,
+                confirmation=_confirmation(receipt),
+                comments=[
+                    _intent_comment(receipt),
+                    _confirmation_comment(_confirmation(receipt)),
+                    _abort_comment(_abort(receipt)),
+                ],
+            )
+
     def test_abort_comments_close_intents_and_fail_closed(self):
         receipt = _receipt(
             provided_fields={"body": _sha256("new body")},

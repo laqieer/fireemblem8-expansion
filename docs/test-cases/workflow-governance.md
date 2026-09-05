@@ -1304,6 +1304,10 @@ the exact branch and head; timeout or ambiguity fails before `gh run watch`.
    Retry an aborted intent: target-match follows no-op/refusal, while a
    remaining change creates a fresh ordered successor intent with a distinct
    nonce.
+   Exercise an abort and successor intent in the same second with increasing
+   comment IDs, followed by confirmation and reconcile/recovery. Repeat with
+   two same-second unclosed active intents and require ambiguity. Reject
+   duplicate or conflicting confirmation/abort terminal links.
    Place malformed intent/confirmation/abort marker-like text from
    contributor, bot, deleted, and non-owner comments before and after valid
    owner transactions; require it to be ignored. Owner malformed markers
@@ -1425,6 +1429,11 @@ drift rather than claiming atomicity. Abort closes only its intent; a remaining
 change creates a newer successor intent, while target-match follows normal
 no-op/refusal behavior. Non-owner marker-like text is ordinary ignored content
 and cannot enter protected parsing; owner malformed records remain fatal.
+Transaction graph construction links confirmations and aborts before active
+selection. Terminal intents are excluded; equal-second aborted predecessor
+plus higher-ID successor is valid, while multiple equal-second unclosed active
+intents remain ambiguous. Comment IDs refine same-second ordering only after
+predating edges have been rejected.
 Full authorization and transaction metadata selection are independent. The
 newest exact full run must be canonical success, but the transaction metadata
 run is selected solely by explicit-same metadata shape and run number above

@@ -611,10 +611,17 @@ comments, duplicate nonces, duplicate confirmations, and contradictory pairs.
 All protected comments are validated before selection, so malformed historical
 records remain fatal. Well-formed records are then grouped by repository, PR,
 head, base, and workflow; superseded candidate groups are ignored. Recovery
-uses the unique latest intent only within the exact current candidate group.
-The selected confirmation must reference that intent. Intent and confirmation
-may share a second because exact comment ID and nonce provide linkage;
-confirmation may not predate intent. It refetches the metadata-specific version and complete current
+first links every confirmation and abort to an exact intent ID/nonce/candidate,
+rejecting duplicate or conflicting terminal edges. Confirmed and aborted
+intents are terminal and excluded before active-intent selection. Recovery
+uses the unique latest active intent only within the exact current candidate
+group. Multiple unclosed active intents sharing a `createdAt` second remain
+ambiguous. Historical/latest-pair ordering uses `(createdAt, comment ID)` only
+after proving terminal comments do not predate their intent. Thus an
+equal-second aborted predecessor followed by a higher-ID successor is valid.
+The selected confirmation must reference the latest overall candidate intent.
+Intent and confirmation may share a second because exact comment ID and nonce
+provide linkage; confirmation may not predate intent. It refetches the metadata-specific version and complete current
 title/body state; later direct edits and edit-and-revert change
 `RenamedTitleEvent` or body `UserContentEdit` count/node authority and
 invalidate the pair.

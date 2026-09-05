@@ -3206,12 +3206,21 @@ def edit_metadata(
     current_workflow_id = (
         current_runs[0].workflow_id if current_runs else 0
     )
-    latest_intent_comment = _latest_intent(
-        _candidate_intents(
-            intents,
-            current,
-            current_workflow_id,
+    candidate_intents = _candidate_intents(
+        intents,
+        current,
+        current_workflow_id,
+    )
+    latest_active_intent = _latest_intent(
+        _active_intents(
+            candidate_intents,
+            confirmations,
+            aborts,
         )
+    )
+    latest_intent_comment = (
+        latest_active_intent
+        or _latest_ordered_intent(candidate_intents)
     )
     latest_confirmation_comment = (
         confirmations.get(latest_intent_comment.comment_id)
@@ -3410,10 +3419,14 @@ def edit_metadata(
             current,
         )
         fresh_latest = _latest_intent(
-            _candidate_intents(
-                fresh_intents,
-                current,
-                fresh_runs[0].workflow_id if fresh_runs else 0,
+            _active_intents(
+                _candidate_intents(
+                    fresh_intents,
+                    current,
+                    fresh_runs[0].workflow_id if fresh_runs else 0,
+                ),
+                fresh_confirmations,
+                fresh_aborts,
             )
         )
         existing_abort = fresh_aborts.get(latest_intent_comment.comment_id)
@@ -4239,6 +4252,10 @@ def _transaction_comments(
             or confirmation.base_sha != intent.base_sha
             or confirmation.intent_nonce != intent.nonce
             or comment.created_at < intent_comment.created_at
+            or (
+                comment.created_at == intent_comment.created_at
+                and comment.comment_id <= intent_comment.comment_id
+            )
         ):
             raise MetadataEditError(
                 "metadata edit confirmation contradicts its intent"
@@ -4266,6 +4283,10 @@ def _transaction_comments(
             or abort.intent_head_sha != intent.head_sha
             or abort.intent_base_sha != intent.base_sha
             or comment.created_at < intent_comment.created_at
+            or (
+                comment.created_at == intent_comment.created_at
+                and comment.comment_id <= intent_comment.comment_id
+            )
         ):
             raise MetadataEditError("metadata edit abort contradicts its intent")
         if abort.intent_comment_id in by_intent:
@@ -4307,6 +4328,29 @@ def _latest_intent(
     if len(newest) != 1:
         raise MetadataEditError("latest metadata edit intent is ambiguous")
     return newest[0]
+
+
+def _latest_ordered_intent(
+    intents: list[CommentState],
+) -> CommentState | None:
+    return max(
+        intents,
+        key=lambda comment: (comment.created_at, comment.comment_id),
+        default=None,
+    )
+
+
+def _active_intents(
+    intents: list[CommentState],
+    confirmations: dict[int, CommentState],
+    aborts: dict[int, CommentState],
+) -> list[CommentState]:
+    return [
+        intent
+        for intent in intents
+        if intent.comment_id not in confirmations
+        and intent.comment_id not in aborts
+    ]
 
 
 def _create_intent_comment(
@@ -4389,7 +4433,7 @@ def _authoritative_edit_pair(
     workflow_id: int,
 ) -> tuple[EditReceipt, CommentState, EditConfirmation, CommentState]:
     intents, confirmations, aborts = _transaction_comments(client, state)
-    latest = _latest_intent(
+    latest = _latest_ordered_intent(
         _candidate_intents(intents, state, workflow_id)
     )
     if latest is None or latest.intent is None:
