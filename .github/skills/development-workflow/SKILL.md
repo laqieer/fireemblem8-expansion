@@ -678,10 +678,11 @@ base to be an ancestor of both the live current base and the candidate head.
 Never validate an observation against copies of its own fields.
 It never creates a new namespace or genesis. A second protected branch under
 `refs/heads/workflow-pilot/authority-anchor/` binds every authority head and
-sequence. One preflighted normal `git push --atomic` publishes both
-direct-parent commits or neither. Separate/split pushes, stale coordinator
-plans, and origins without atomic capability reject. The planner never emits
-a force-capable command.
+sequence. One short-lived signed publication-plan identity authorizes the
+external credential broker to derive and atomically preflight/push both
+direct-parent commits or neither. Separate/split, stale, arbitrary-ref,
+wrong-object, substituted plans, and origins without atomic support reject.
+The planner never emits an endpoint, refspec, credential, or force command.
 
 The terminal coordinator attestation includes the normalized live GitHub
 ruleset API response. It must name the authority's ruleset ID, active branch

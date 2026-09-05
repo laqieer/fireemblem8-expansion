@@ -9,9 +9,11 @@ import binascii
 import copy
 import contextlib
 import hashlib
+import json
 import os
 import re
 import signal
+import socket
 import stat
 import subprocess
 import sys
@@ -113,6 +115,8 @@ PR_OBSERVATION_DOMAIN = b"workflow-pilot-github-pr-observation-v1\0"
 PUBLICATION_ATTESTATION_DOMAIN = (
     b"workflow-pilot-authority-publication-v1\0"
 )
+PUBLICATION_PLAN_DOMAIN = b"workflow-pilot-authority-publication-plan-v1\0"
+TRANSPORT_RESPONSE_DOMAIN = b"workflow-pilot-transport-broker-response-v1\0"
 RESULT_ATTESTATION_DOMAIN = b"workflow-pilot-canonical-result-v1\0"
 REPORTER_TRUST_ANCHOR_DOMAIN = (
     b"workflow-pilot-reporter-trust-anchor-v1\0"
@@ -146,6 +150,8 @@ PROVEN_HOST_ONLY_PREFIXES = (
 TRUSTED_INSTALLATION_MAX_BYTES = 1024 * 1024
 TRUSTED_INSTALLATION_READ_BYTES = TRUSTED_INSTALLATION_MAX_BYTES + 1
 HISTORY_CARRIER_MAX_BYTES = 1024 * 1024
+TRANSPORT_RESPONSE_MAX_BYTES = 16 * 1024 * 1024
+PUBLICATION_PLAN_MAX_LIFETIME_SECONDS = 60
 REMOTE_GIT_TIMEOUT_SECONDS = 30.0
 REMOTE_GIT_TIMEOUT_CODE = "remote-git-timeout"
 REMOTE_GIT_PREFLIGHT_TIMEOUT_CODE = "remote-git-preflight-timeout"
@@ -262,48 +268,82 @@ def _copy_object_closure(source: Path, target: Path, roots: tuple[str, ...]) -> 
         label="object snapshot import", execute_error_label="Git index-pack")
     if indexed.returncode != 0: raise HandoffDataError("cannot verify authenticated object snapshot")
     run_git(target, "fsck", "--strict", "--no-dangling", *roots)
-def _run_bounded_git_transport(
-    repository_root: Path, installation_path: Path | None,
-    command: tuple[str, ...], endpoint_arguments: tuple[str, ...], *,
-    timeout_code: str, source_objects: tuple[str, ...] = (),
-    fetched_object: str | None = None,
-) -> subprocess.CompletedProcess[bytes]:
-    with tempfile.TemporaryDirectory(prefix="workflow-pilot-git-") as temporary:
-        sealed = Path(temporary); (sealed / "refs").mkdir(); (sealed / "objects").mkdir()
-        (sealed / "HEAD").write_text("ref: refs/heads/sealed\n")
-        (sealed / "config").write_text("[core]\nrepositoryformatversion=0\nbare=true\n")
-        _copy_object_closure(repository_root, sealed, source_objects)
-        environment = {"CURL_HOME": str(sealed), "GIT_DIR": str(sealed), "HOME": str(sealed),
-            "GIT_SSH_COMMAND": "/usr/bin/ssh -F /dev/null -oBatchMode=yes",
-            "GIT_SSH_VARIANT": "ssh", "XDG_CONFIG_HOME": str(sealed),
-            **reporter.git_environment(offline=False)}
-        with _transport_capability(repository_root, installation_path) as (endpoint, descriptors):
-            arguments = (*command, "--", endpoint, *endpoint_arguments)
-            completed = _run_bounded_process(
-                argv=reporter.git_command(sealed, *arguments), cwd=sealed, env=environment,
-                stdin=None, timeout_seconds=REMOTE_GIT_TIMEOUT_SECONDS,
-                timeout_code=timeout_code, label=f"Git {' '.join(arguments)}",
-                execute_error_label="Git", pass_fds=descriptors)
-        if completed.returncode == 0 and fetched_object is not None:
-            _copy_object_closure(sealed, repository_root, (fetched_object,))
-        return completed
+def _broker_request(repository_root: Path | None, installation_path: Path | None,
+                    operation: str, arguments: dict[str, Any]) -> bytes:
+    with _transport_capability(repository_root, installation_path) as installation: pass
+    request = {
+        "schema_version": 1, "request_nonce": os.urandom(32).hex(),
+        "operation": operation, "repository": installation["repository"],
+        "repository_id": installation["repository_database_id"],
+        "endpoint": installation["authority_protection"]["remote_url"], "arguments": arguments,
+    }
+    payload = normalized_json(request) + b"\n"; broker = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    broker.settimeout(REMOTE_GIT_TIMEOUT_SECONDS); raw = bytearray()
+    try:
+        broker_name = str(installation["_transport_socket"])
+        broker.connect("\0" + broker_name[1:] if broker_name.startswith("@") else broker_name)
+        broker.sendall(payload)
+        while len(raw) <= TRANSPORT_RESPONSE_MAX_BYTES:
+            chunk = broker.recv(min(65536, TRANSPORT_RESPONSE_MAX_BYTES + 1 - len(raw)))
+            if not chunk: break
+            raw.extend(chunk)
+    except (OSError, TimeoutError) as error:
+        raise HandoffDataError(f"{REMOTE_GIT_TIMEOUT_CODE}: authenticated transport broker failed: {error}") from error
+    finally:
+        broker.close()
+    if len(raw) > TRANSPORT_RESPONSE_MAX_BYTES: raise HandoffDataError("authenticated transport broker response is oversized")
+    try:
+        response = expect_object(json.loads(bytes(raw)), "transport broker response")
+    except (UnicodeError, json.JSONDecodeError) as error:
+        raise HandoffDataError("authenticated transport broker returned invalid JSON") from error
+    expect_keys(
+        response, "transport broker response", ("schema_version", "request_digest",
+        "returncode", "stdout_base64", "stderr", "credential_used", "signature"),
+    )
+    if expect_int(response["schema_version"], "transport broker response.schema_version", 1) != 1:
+        raise HandoffDataError("transport broker response.schema_version must be 1")
+    if response["request_digest"] != hashlib.sha256(normalized_json(request)).hexdigest():
+        raise HandoffDataError("transport broker response does not bind its request")
+    verify_external_signature(
+        installation["_signer"], signed_record_payload(TRANSPORT_RESPONSE_DOMAIN, response),
+        response["signature"], "transport broker response.signature",
+    )
+    if not expect_bool(response["credential_used"], "transport broker response.credential_used"):
+        raise HandoffDataError("authenticated transport broker did not use its credential")
+    try:
+        stdout = base64.b64decode(response["stdout_base64"], validate=True)
+    except (ValueError, binascii.Error) as error:
+        raise HandoffDataError("transport broker response stdout is not canonical base64") from error
+    if base64.b64encode(stdout).decode("ascii") != response["stdout_base64"]: raise HandoffDataError("transport broker response stdout is not canonical base64")
+    if expect_int(response["returncode"], "transport broker response.returncode", 0) != 0:
+        detail = expect_string(response["stderr"], "transport broker response.stderr", allow_empty=True)
+        raise HandoffDataError(f"authenticated transport broker {operation} failed" + (f": {detail}" if detail else ""))
+    return stdout
 def _run_git_online(
-    repository_root: Path, installation_path: Path | None,
+    repository_root: Path | None, installation_path: Path | None,
     command: tuple[str, ...], endpoint_arguments: tuple[str, ...], *,
     fetched_object: str | None = None,
 ) -> bytes:
-    completed = _run_bounded_git_transport(
-        repository_root, installation_path, command, endpoint_arguments,
-        timeout_code=REMOTE_GIT_TIMEOUT_CODE,
-        fetched_object=fetched_object,
-    )
-    if completed.returncode == 0:
-        return completed.stdout
-    detail = completed.stderr.decode("utf-8", errors="replace").strip()
-    raise HandoffDataError(
-        f"Git {' '.join((*command, *endpoint_arguments))} failed"
-        + (f": {detail}" if detail else "")
-    )
+    operation = command[0]
+    if operation == "ls-remote": return _broker_request(
+        repository_root, installation_path, "ls-remote", {"references": list(endpoint_arguments)})
+    if operation != "fetch" or fetched_object is None or endpoint_arguments != (fetched_object,):
+        raise HandoffDataError("authenticated transport operation is not allowlisted")
+    if repository_root is None:
+        raise HandoffDataError("authenticated fetch requires a repository root")
+    pack = _broker_request(repository_root, installation_path, "fetch", {"object_ids": [fetched_object]})
+    artifacts = repository_root / "build" / "test-artifacts"; artifacts.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix="workflow-pilot-fetch-", dir=artifacts) as temporary:
+        sealed = Path(temporary); run_git(sealed, "init", "--bare", "-q")
+        indexed = _run_bounded_process(
+            argv=reporter.git_command(sealed, "index-pack", "--stdin", "--strict", "--fsck-objects"),
+            cwd=sealed, env=reporter.git_environment(offline=True), stdin=pack,
+            timeout_seconds=REMOTE_GIT_TIMEOUT_SECONDS, timeout_code=REMOTE_GIT_TIMEOUT_CODE,
+            label="authenticated fetch import", execute_error_label="Git index-pack",
+        )
+        if indexed.returncode != 0: raise HandoffDataError("authenticated transport returned an invalid object pack")
+        _copy_object_closure(sealed, repository_root, (fetched_object,))
+    return b""
 def authoritative_current_time(
     value: datetime | None,
     *,
@@ -831,47 +871,155 @@ def load_history_authority_transition_summary(
     )
     expect_enum(event["kind"], {"genesis", "handoff", "pr_binding"}, f"{label}.event.kind")
     return authority
-def _publish_authority_updates(
-    repository_root: Path,
-    installation_path: Path | None,
-    updates: list[tuple[str, str]],
-    *,
-    dry_run: bool,
-) -> None:
-    if len(updates) != 2:
-        raise HandoffDataError(
-            "authority publication requires exactly two atomic ref updates"
+def publication_plan_identity(plan: dict[str, Any]) -> str:
+    return hashlib.sha256(normalized_json(plan)).hexdigest()
+def _load_publication_plan(repository_root: Path | None, installation_path: Path | None,
+                           plan_identity: str, *, current_time: datetime | None = None
+                           ) -> tuple[dict[str, Any], dict[str, Any]]:
+    if reporter.SHA256_RE.fullmatch(plan_identity) is None:
+        raise HandoffDataError("publication plan identity must be a SHA-256")
+    installation = load_coordinator_installation(repository_root, installation_path)
+    plans_root, plans_fd = _open_trusted_directory_path(installation["_publication_plans"], label="publication plan store")
+    try:
+        plan_fd, metadata = _open_trusted_entry(
+            f"{plan_identity}.json", dir_fd=plans_fd, label="signed publication plan",
+            directory=False, max_bytes=TRUSTED_INSTALLATION_MAX_BYTES, require_single_link=True,
         )
-    object_ids = tuple(expect_sha(object_id, "authority publication object") for object_id, _reference in updates)
-    completed = _run_bounded_git_transport(
-        repository_root, installation_path,
-        ("push", "--atomic", *(("--dry-run",) if dry_run else ())),
-        tuple(f"{object_id}:{reference}" for object_id, reference in updates),
-        timeout_code=(
-            REMOTE_GIT_PREFLIGHT_TIMEOUT_CODE if dry_run else REMOTE_GIT_TIMEOUT_CODE
-        ),
-        source_objects=object_ids,
+        try:
+            raw = _read_trusted_file(plan_fd, metadata, label="signed publication plan",
+                                     max_bytes=TRUSTED_INSTALLATION_MAX_BYTES)
+        finally:
+            os.close(plan_fd)
+    finally:
+        os.close(plans_fd)
+    plan = copy.deepcopy(expect_object(_parse_trusted_json(
+        raw, str(plans_root / f"{plan_identity}.json")), "signed publication plan"))
+    if publication_plan_identity(plan) != plan_identity:
+        raise HandoffDataError("signed publication plan identity mismatch")
+    expect_keys(
+        plan, "signed publication plan",
+        ("schema_version", "repository", "repository_id", "issue", "operation",
+         "endpoint", "authority_ref", "anchor_ref",
+         "expected_authority_object_id", "expected_anchor_object_id",
+         "new_authority_object_id", "new_anchor_object_id", "sequence",
+         "operation_nonce", "issued_at", "expires_at", "signature"),
     )
-    if completed.returncode != 0:
-        detail = completed.stderr.decode("utf-8", errors="replace").strip()
-        raise HandoffDataError(
-            "origin does not support the required atomic authority push"
-            + (f": {detail}" if detail else "")
+    if expect_int(plan["schema_version"], "signed publication plan.schema_version", 1) != 1: raise HandoffDataError("signed publication plan.schema_version must be 1")
+    issue = expect_int(plan["issue"], "signed publication plan.issue", 1)
+    if (
+        plan["repository"] != installation["repository"] or
+        expect_int(plan["repository_id"], "signed publication plan.repository_id", 1) != installation["repository_database_id"] or
+        plan["endpoint"] != installation["authority_protection"]["remote_url"] or
+        plan["authority_ref"] != history_authority_ref(issue, None) or
+        plan["anchor_ref"] != history_anchor_ref(issue)
+    ):
+        raise HandoffDataError("signed publication plan identity or destination mismatch")
+    expect_enum(plan["operation"], {"bootstrap", "advance", "bind"}, "signed publication plan.operation")
+    for field in ("expected_authority_object_id", "expected_anchor_object_id"): expect_sha(plan[field], f"signed publication plan.{field}", nullable=True)
+    for field in ("new_authority_object_id", "new_anchor_object_id"): expect_sha(plan[field], f"signed publication plan.{field}")
+    expect_int(plan["sequence"], "signed publication plan.sequence", 0)
+    if reporter.SHA256_RE.fullmatch(expect_string(plan["operation_nonce"], "signed publication plan.operation_nonce")) is None:
+        raise HandoffDataError("signed publication plan.operation_nonce must be a SHA-256")
+    issued_at = parse_time(plan["issued_at"], "signed publication plan.issued_at")
+    expires_at = parse_time(plan["expires_at"], "signed publication plan.expires_at")
+    now = authoritative_current_time(current_time, label="publication current_time")
+    if (
+        issued_at > now or expires_at < now or expires_at <= issued_at
+        or (expires_at - issued_at).total_seconds() > PUBLICATION_PLAN_MAX_LIFETIME_SECONDS
+    ):
+        raise HandoffDataError("signed publication plan lifetime is invalid or expired")
+    verify_external_signature(installation["_signer"], signed_record_payload(PUBLICATION_PLAN_DOMAIN, plan),
+                              plan["signature"], "signed publication plan.signature")
+    return installation, plan
+def _publication_object(repository_root: Path, object_id: str, filename: str,
+                        expected_parent: str | None) -> dict[str, Any]:
+    if run_git(repository_root, "cat-file", "-t", object_id).strip() != b"commit":
+        raise HandoffDataError(f"publication {filename} object must be a commit")
+    parents = run_git(repository_root, "rev-list", "--parents", "-n", "1", object_id).decode().split()[1:]
+    if parents != ([] if expected_parent is None else [expected_parent]):
+        raise HandoffDataError(f"publication {filename} object has the wrong parent")
+    entries = run_git(repository_root, "ls-tree", object_id).decode().splitlines()
+    if len(entries) != 1 or not entries[0].endswith(f"\t{filename}"):
+        raise HandoffDataError(f"publication {filename} object must contain only {filename}")
+    return expect_object(_parse_trusted_json(
+        run_git(repository_root, "show", f"{object_id}:{filename}"),
+        f"publication {filename}"), f"publication {filename}")
+def _validate_publication_snapshot(snapshot: Path, installation: dict[str, Any],
+                                   plan: dict[str, Any]) -> None:
+    _publication_object(snapshot, plan["new_authority_object_id"], "authority.json",
+                        plan["expected_authority_object_id"])
+    authority = load_history_authority_transition_summary(
+        snapshot, plan["new_authority_object_id"], plan["repository"], plan["issue"],
+        label="publication authority",
+    )
+    anchor = _publication_object(snapshot, plan["new_anchor_object_id"], "anchor.json",
+                                 plan["expected_anchor_object_id"])
+    expect_keys(
+        anchor, "publication anchor",
+        ("schema_version", "repository", "issue", "sequence",
+         "authority_object_id", "previous_object_id"),
+    )
+    if (
+        expect_int(anchor["schema_version"], "publication anchor.schema_version", 1) != 1
+        or anchor["repository"] != plan["repository"]
+        or expect_int(anchor["issue"], "publication anchor.issue", 1) != plan["issue"]
+        or expect_int(anchor["sequence"], "publication anchor.sequence", 0) != plan["sequence"]
+        or anchor["authority_object_id"] != plan["new_authority_object_id"]
+        or anchor["previous_object_id"] != plan["expected_anchor_object_id"]
+        or authority["sequence"] != plan["sequence"]
+        or authority["previous_object_id"] != plan["expected_authority_object_id"]
+    ):
+        raise HandoffDataError("publication objects do not match the signed plan")
+    publication = parse_publication_attestation(
+        authority["publication_attestation"], signer=installation["_signer"],
+        repository=plan["repository"], repository_database_id=plan["repository_id"],
+        issue=plan["issue"], authority_ref=plan["authority_ref"],
+        anchor_ref=plan["anchor_ref"],
+        authority_object_id=plan["expected_authority_object_id"],
+        anchor_object_id=plan["expected_anchor_object_id"],
+        ruleset_id=installation["authority_protection"]["ruleset_id"],
+        authorized_bypass_actors=_expected_installation_authorized_bypass_actors(installation),
+    )
+    binding = authority["pr_binding"]
+    require_publication_attestation_binding(
+        publication, operation=plan["operation"],
+        new_head_seal=authority["event"]["handoff_seal"] if plan["operation"] == "advance" else None,
+        history_receipt=authority["event"]["history_receipt"],
+        history_carrier=authority["event"]["history_carrier"],
+        pull_request_observation=binding if plan["operation"] == "bind" else None,
+        binding_expectation=(publication_binding_expectation_for_observation(
+            authority["delivery_expectation"], binding) if plan["operation"] == "bind" else None),
+        label="signed publication plan does not bind its authority record",
+    )
+    if publication["operation_nonce"] != plan["operation_nonce"]:
+        raise HandoffDataError("signed publication plan nonce mismatch")
+def publish_authority_plan(installation_path: Path | None, plan_identity: str) -> None:
+    installation, plan = _load_publication_plan(None, installation_path, plan_identity)
+    with tempfile.TemporaryDirectory(prefix=".workflow-pilot-publish-", dir=installation["_root"]) as temporary:
+        snapshot = Path(temporary); run_git(snapshot, "init", "--bare", "-q")
+        roots = (plan["new_authority_object_id"], plan["new_anchor_object_id"])
+        _copy_object_closure(installation["_publication_objects"], snapshot, roots)
+        _validate_publication_snapshot(snapshot, installation, plan)
+        observed = {
+            plan["authority_ref"]: _remote_ref_oid(None, installation_path, plan["authority_ref"], allow_missing=True),
+            plan["anchor_ref"]: _remote_ref_oid(None, installation_path, plan["anchor_ref"], allow_missing=True)}
+        if observed != {
+            plan["authority_ref"]: plan["expected_authority_object_id"],
+            plan["anchor_ref"]: plan["expected_anchor_object_id"],
+        }:
+            raise HandoffDataError("signed publication plan remote expectation is stale")
+        pack = _run_bounded_process(
+            argv=reporter.git_command(snapshot, "pack-objects", "--stdout", "--revs"),
+            cwd=snapshot, env=reporter.git_environment(offline=True),
+            stdin="".join(f"{item}\n" for item in roots).encode("ascii"),
+            timeout_seconds=REMOTE_GIT_TIMEOUT_SECONDS,
+            timeout_code=REMOTE_GIT_PREFLIGHT_TIMEOUT_CODE,
+            label="publication object snapshot", execute_error_label="Git pack-objects",
         )
-def require_atomic_push_capability(
-    repository_root: Path,
-    installation_path: Path | None,
-    updates: list[tuple[str, str]],
-) -> None:
-    _publish_authority_updates(
-        repository_root, installation_path, updates, dry_run=True
-    )
-def publish_authority_updates(
-    repository_root: Path,
-    installation_path: Path | None,
-    updates: list[tuple[str, str]],
-) -> None:
-    _publish_authority_updates(repository_root, installation_path, updates, dry_run=False)
+        if pack.returncode != 0: raise HandoffDataError("cannot export verified publication object snapshot")
+        _broker_request(None, installation_path, "publish", {
+            "plan_identity": plan_identity,
+            "object_pack_base64": base64.b64encode(pack.stdout).decode("ascii")})
 def validate_repository_root(repository_root: Path) -> Path:
     return _raise_pilot_error(reporter.validate_repository_root, repository_root)
 def _parse_actor(
@@ -1427,8 +1575,8 @@ def _read_trusted_installation_member(
     raw_path: str,
     *,
     label: str,
-    repository_root: Path,
-    git_dir: Path,
+    repository_root: Path | None,
+    git_dir: Path | None,
 ) -> tuple[Path, bytes]:
     requested = Path(expect_string(raw_path, label))
     absolute_path = (
@@ -1441,9 +1589,9 @@ def _read_trusted_installation_member(
         raise HandoffDataError(
             f"{label} must stay rooted under the coordinator installation"
         )
-    if _path_within(absolute_path, repository_root) or _path_within(
-        absolute_path,
-        git_dir,
+    if repository_root is not None and git_dir is not None and (
+        _path_within(absolute_path, repository_root)
+        or _path_within(absolute_path, git_dir)
     ):
         raise HandoffDataError(
             f"{label} must stay outside the candidate worktree and Git dir"
@@ -1482,10 +1630,11 @@ def _read_trusted_installation_member(
     finally:
         os.close(current_descriptor)
 def load_coordinator_installation(
-    repository_root: Path,
+    repository_root: Path | None,
     installation_path: Path | None = None,
 ) -> dict[str, Any]:
-    repository_root = validate_repository_root(repository_root)
+    if repository_root is not None:
+        repository_root = validate_repository_root(repository_root)
     if installation_path is None:
         raw_path = os.environ.get(COORDINATOR_INSTALLATION_ENV)
         if not raw_path:
@@ -1493,20 +1642,23 @@ def load_coordinator_installation(
                 "trusted coordinator installation is required"
             )
         installation_path = Path(raw_path)
-    git_dir = Path(
-        run_git(repository_root, "rev-parse", "--absolute-git-dir")
-        .decode("utf-8")
-        .strip()
-    ).resolve()
+    git_dir = (
+        Path(
+            run_git(repository_root, "rev-parse", "--absolute-git-dir")
+            .decode("utf-8")
+            .strip()
+        ).resolve()
+        if repository_root is not None else None
+    )
     installation_root, installation_descriptor = _open_trusted_directory_path(
         installation_path,
         label="trusted coordinator installation",
     )
     bootstrap_descriptor = os.dup(installation_descriptor)
     try:
-        if _path_within(installation_root, repository_root) or _path_within(
-            installation_root,
-            git_dir,
+        if repository_root is not None and git_dir is not None and (
+            _path_within(installation_root, repository_root)
+            or _path_within(installation_root, git_dir)
         ):
             raise HandoffDataError(
                 "trusted coordinator installation must be outside the "
@@ -1537,6 +1689,8 @@ def load_coordinator_installation(
             "authorized_coordinators",
             "authorized_non_user_bypass_actors",
             "authority_protection",
+            "transport_broker",
+            "publication_store",
             "delivery",
             "bootstrap_validator",
             "signer_public",
@@ -1652,7 +1806,7 @@ def load_coordinator_installation(
     )
     expect_enum(
         protection["mode"],
-        {"bare-remote-config", "github-ruleset-api"},
+        {"external-broker", "github-ruleset-api"},
         "coordinator installation.authority_protection.mode",
     )
     if protection["enforcement"] != "active":
@@ -1681,15 +1835,38 @@ def load_coordinator_installation(
         protection["deletions_allowed"],
         "coordinator installation.authority_protection.deletions_allowed",
     )
-    if protection["mode"] == "bare-remote-config":
-        if protection["force_pushes_allowed"]:
-            raise HandoffDataError(
-                "coordinator installation bare-remote-config must reject force pushes"
-            )
-        if protection["deletions_allowed"]:
-            raise HandoffDataError(
-                "coordinator installation bare-remote-config must reject deletions"
-            )
+    if protection["mode"] == "external-broker":
+        if protection["force_pushes_allowed"]: raise HandoffDataError("coordinator installation external-broker must reject force pushes")
+        if protection["deletions_allowed"]: raise HandoffDataError("coordinator installation external-broker must reject deletions")
+    broker = expect_object(manifest["transport_broker"], "coordinator installation.transport_broker")
+    expect_keys(broker, "coordinator installation.transport_broker", ("protocol", "socket"))
+    if broker["protocol"] != "workflow-pilot-git-broker-v1":
+        raise HandoffDataError("coordinator installation transport broker protocol mismatch")
+    broker_name = expect_string(broker["socket"], "coordinator installation.transport_broker.socket")
+    if broker_name.startswith("@"):
+        if re.fullmatch(r"@[A-Za-z0-9._-]{1,80}", broker_name) is None: raise HandoffDataError("coordinator installation transport broker socket is invalid")
+        broker_socket: Path | str = broker_name
+    else:
+        broker_socket = Path(broker_name)
+        if not broker_socket.is_absolute(): broker_socket = installation_root / broker_socket
+        broker_socket = Path(os.path.abspath(os.fspath(broker_socket)))
+        if not _path_within(broker_socket, installation_root): raise HandoffDataError("coordinator installation transport broker socket must stay external")
+        try:
+            broker_metadata = os.lstat(broker_socket)
+        except OSError as error:
+            raise HandoffDataError(f"cannot inspect coordinator transport broker: {error}") from error
+        if not stat.S_ISSOCK(broker_metadata.st_mode): raise HandoffDataError("coordinator installation transport broker must be a Unix socket")
+        _require_owner_controlled(broker_metadata, label="coordinator transport broker")
+    publication_store = expect_object(manifest["publication_store"], "coordinator installation.publication_store")
+    expect_keys(publication_store, "coordinator installation.publication_store", ("plans", "objects"))
+    publication_paths = []
+    for field in ("plans", "objects"):
+        path = Path(expect_string(publication_store[field], f"coordinator installation.publication_store.{field}"))
+        if not path.is_absolute(): path = installation_root / path
+        path, descriptor = _open_trusted_directory_path(path, label=f"coordinator installation publication {field}")
+        os.close(descriptor)
+        if not _path_within(path, installation_root): raise HandoffDataError(f"coordinator installation publication {field} must stay external")
+        publication_paths.append(path)
     delivery = expect_object(
         manifest["delivery"],
         "coordinator installation.delivery",
@@ -1736,18 +1913,13 @@ def load_coordinator_installation(
         manifest["signer_public"],
         "coordinator installation.signer_public",
     )
-    return {
-        **manifest,
-        "_root": installation_root,
-        "_collector": parsed_collector,
-        "_authorized": authorized,
-        "_authorized_non_user_bypass": non_user_bypass,
-        "_bootstrap_validator": bootstrap_path,
-        "_bootstrap_validator_source": bootstrap_source,
-        "_signer": signer,
-    }
+    return {**manifest, "_root": installation_root, "_collector": parsed_collector,
+        "_authorized": authorized, "_authorized_non_user_bypass": non_user_bypass,
+        "_bootstrap_validator": bootstrap_path, "_bootstrap_validator_source": bootstrap_source,
+        "_signer": signer, "_transport_socket": broker_socket,
+        "_publication_plans": publication_paths[0], "_publication_objects": publication_paths[1]}
 @contextlib.contextmanager
-def _transport_capability(repository_root: Path, installation_path: Path | None):
+def _transport_capability(repository_root: Path | None, installation_path: Path | None):
     if installation_path is not None and not isinstance(installation_path, Path):
         raise HandoffDataError("coordinator installation must be an external path")
     installation = load_coordinator_installation(repository_root, installation_path)
@@ -1756,17 +1928,10 @@ def _transport_capability(repository_root: Path, installation_path: Path | None)
         raise HandoffDataError("coordinator installation remote_url is not canonical")
     repository = installation["repository"]
     if remote in {f"https://github.com/{repository}.git", f"ssh://git@github.com/{repository}.git", f"git@github.com:{repository}.git"}:
-        yield remote, (); return
-    if installation["authority_protection"]["mode"] != "bare-remote-config" or not Path(remote).is_absolute():
+        yield installation; return
+    if installation["authority_protection"]["mode"] != "external-broker" or remote != f"broker://{repository}":
         raise HandoffDataError("coordinator installation remote_url is not canonical")
-    remote_path, remote_fd = _open_trusted_directory_path(Path(remote), label="local authority remote")
-    try:
-        if str(remote_path) != remote: raise HandoffDataError("coordinator installation remote_url is not canonical")
-        for name, directory in (("config", False), ("HEAD", False), ("objects", True), ("refs", True), ("hooks", True)):
-            descriptor, _metadata = _open_trusted_entry(name, dir_fd=remote_fd, label=f"local authority {name}", directory=directory); os.close(descriptor)
-        yield f"/proc/self/fd/{remote_fd}", (remote_fd,)
-    finally:
-        os.close(remote_fd)
+    yield installation
 def _git_blob(
     repository_root: Path,
     commit_sha: str,
@@ -2093,7 +2258,7 @@ def history_anchor_ref(issue: int) -> str:
     expect_int(issue, "history authority issue", 1)
     return f"{HISTORY_ANCHOR_REF_PREFIX}/issue-{issue}"
 def _remote_ref_oid(
-    repository_root: Path,
+    repository_root: Path | None,
     installation_path: Path | None,
     reference: str,
     *,
@@ -3354,19 +3519,6 @@ def plan_history_authority(
         anchor_reference,
         allow_missing=True,
     )
-    preflight_object = (
-        run_git(repository_root, "rev-parse", "HEAD")
-        .decode("ascii")
-        .strip()
-    )
-    require_atomic_push_capability(
-        repository_root,
-        coordinator_installation,
-        [
-            (remote_object or preflight_object, reference),
-            (remote_anchor or preflight_object, anchor_reference),
-        ],
-    )
     if operation == "bootstrap":
         if remote_object is not None or remote_anchor is not None:
             raise HandoffDataError(
@@ -3709,12 +3861,11 @@ def plan_history_authority(
             actor["database_id"] for actor in installation["_authorized"]
         ),
         "operation_nonce": parsed_publication["operation_nonce"],
-        "atomic_push": (
-            "scripts.workflow_pilot.agent_handoff.publish_authority_updates("
-            "<external-owner-repository>, <external-installation-path>, "
-            f"<new-authority-commit>:{reference} "
-            f"<new-anchor-commit>:{anchor_reference})"
-        ),
+        "publication": {
+            "api": "scripts.workflow_pilot.agent_handoff.publish_authority_plan",
+            "arguments": ("<external-installation-path>", "<signed-plan-identity>"),
+            "credential_scope": installation["authority_protection"]["remote_url"],
+        },
     }
 def seal_git_authority(authority: dict[str, Any]) -> str:
     return hashlib.sha256(
@@ -5882,10 +6033,11 @@ def verify_reporter_record(
 def _repository_from_origin(
     repository_root: Path, installation_path: Path | None,
 ) -> str:
-    origin = load_coordinator_installation(repository_root, installation_path)["authority_protection"]["remote_url"]
+    installation = load_coordinator_installation(repository_root, installation_path)
+    origin = installation["authority_protection"]["remote_url"]
     with _transport_capability(repository_root, installation_path): pass
     repository = reporter._github_repository_from_remote(origin)  # noqa: SLF001
-    if repository is None and Path(origin).is_absolute():
+    if repository is None and origin == f"broker://{installation['repository']}":
         repository = read_remote_repository_identity(repository_root, installation_path)
     if repository is None:
         raise HandoffDataError(

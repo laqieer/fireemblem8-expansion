@@ -1475,9 +1475,11 @@ game behavior needs a compensating change.
    live current base and the candidate head. Reject invented, closed, merged,
    self-consistent-but-wrong fields, stale current-base observations,
    rebinding, same-owner reuse, non-descendant/rewritten base, rollback,
-   replay, and ABA. Confirm one
-   preflighted `git push --atomic` publishes both refs; split/two-coordinator
-   plans and servers without atomic capability reject without partial state.
+   replay, and ABA. Confirm one short-lived signed plan lets the authenticated
+   broker derive and atomically publish only the issue authority and anchor;
+   split/two-coordinator, master/tag/unrelated/wrong issue/ref/object/old-OID/
+   substituted plans and servers without atomic capability reject without
+   credential exposure or partial state.
    Model the 2026 ruleset response with `actor_type: User`, equal frozen
    `actor_id`/`database_id`, and `bypass_mode: always`; reject a
    `RepositoryRole` masquerading as the user. Before trusting fetched
@@ -1506,10 +1508,10 @@ game behavior needs a compensating change.
    inside an otherwise signed carrier document/result, refresh the publication
    `history_carrier_digest`, and confirm readback still rejects because the
    original handoff signatures and recomputed `make_history_receipt()` no
-   longer verify. In `bare-remote-config`, set either protected-ref force-push
+   longer verify. In `external-broker`, set either protected-ref force-push
    or deletion allowance true and confirm installation trust fails before
    authority bootstrap or handoff validation begins.
-6. Repoint the protected authority remote through a stalling transport and prove both authority reads and atomic-push preflight exit under an explicit wall-clock timeout, kill the whole process group, and stop after one bounded attempt rather than spinning retries or leaving an orphan helper. Apply the same bounded timeout/process-group cleanup to trusted-parent and bootstrap checker execution plus receipt re-verification. Then perform a real post-snapshot remote push to the delivery branch and confirm terminal remote reconciliation marks coverage incomplete before trusted push while reporter aggregation preserves the bundle rejection.
+6. Stall the authenticated broker and prove authority reads and publication exit under an explicit wall-clock timeout after one bounded attempt. Replace candidate-visible local server config/hooks/refs/objects after validation and confirm broker-owned protected state and its real rejection hook remain authoritative. Apply bounded timeout/process-group cleanup to trusted-parent/bootstrap checker execution and receipt re-verification. Then perform a real post-snapshot remote push and confirm terminal reconciliation marks coverage incomplete before trusted push while reporter aggregation preserves the bundle rejection.
 7. Reconcile a direct watcher timeout with an authoritative successful
    `github-actions-api` run. Then use an authoritative failed run plus a
    watcher process error and confirm delivery remains failed.
@@ -1572,8 +1574,8 @@ lane. No feature flag, migration, or manual criterion applies.
 creates bounded temporary repositories below `build/test-artifacts/`, derives
 real ancestry/branch/diff/worktree/trailer facts with the issue #176 clean Git
 boundary, executes only the closed safe check runner, verifies receipts, and
-uses a protected local bare remote plus separate owner/implementation and
-coordinator-installation directories to exercise deterministic
+uses an authenticated external broker with protected hidden local server state
+plus separate owner/implementation/coordinator installation to exercise deterministic
 bootstrap/advance/bind plans, normal fast-forward updates, explicit fetch,
 rollback/replay/ABA, stable/moving read boundaries, bounded exhaustion, and
 eligibility-token revalidation. It performs no GitHub mutation. The complete

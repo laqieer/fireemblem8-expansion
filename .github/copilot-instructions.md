@@ -118,10 +118,10 @@ and the pre-observation publication request, never to fields copied from the
 response itself. Keep `delivery_expectation.immediate_base_oid` as frozen
 provenance, bind the live current base OID separately, and require the frozen
 base to be an ancestor of both the live current base and the candidate head.
-Every authority and independent anchor
-update is one normal `git push --atomic` transaction after atomic-capability
-preflight; both commits directly parent the observed pair. Split or stale
-plans reject. A terminal signed GitHub ruleset API response must prove active
+Every authority and independent anchor update consumes one short-lived signed
+publication-plan identity through the authenticated external broker, which
+derives both direct-parent updates and performs atomic preflight/push. Split,
+stale, arbitrary-ref, wrong-object, or substituted plans reject. A terminal signed GitHub ruleset API response must prove active
 exact-branch targeting, restricted updates/non-fast-forwards/deletion, and
 only expected GitHub `User` bypass records whose `actor_id` and `database_id`
 both equal the frozen coordinator user ID with exact `always` mode.

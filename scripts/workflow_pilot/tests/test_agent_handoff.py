@@ -28,6 +28,9 @@ COORDINATOR_INSTALLATIONS = {}
 AUTHORIZED_COORDINATORS = {}
 SIGNER_SERVICES = {}
 SIGNER_CONSUME_STATES = {}
+BROKER_SERVICES = {}
+BROKER_REMOTES = {}
+BROKER_CREDENTIALS = {}
 SYNTHETIC_AUTHORITY_ADVANCES = 0
 def load_handoff_schema():
     return json.loads(
@@ -172,11 +175,128 @@ for line in sys.stdin:
         flush=True,
     )
 """
+BROKER_SERVICE = r"""
+import base64, ctypes, hashlib, json, os, shutil, socket, subprocess, sys, tempfile
+def norm(value):
+    return (json.dumps(value, ensure_ascii=True, sort_keys=True, separators=(",", ":")) + "\n").encode("ascii")
+def payload(domain, value):
+    return domain + norm({key: item for key, item in value.items() if key != "signature"})
+def verify(domain, value, signer):
+    signature = base64.b64decode(value["signature"], validate=True); modulus = int(signer["modulus_hex"], 16)
+    size = (modulus.bit_length() + 7) // 8
+    if len(signature) != size: return False
+    encoded = pow(int.from_bytes(signature, "big"), signer["exponent"], modulus).to_bytes(size, "big")
+    digest = bytes.fromhex("3031300d060960864801650304020105000420") + hashlib.sha256(payload(domain, value)).digest()
+    return encoded == b"\x00\x01" + b"\xff" * (size - len(digest) - 3) + b"\x00" + digest
+config = json.loads(sys.stdin.readline()); private = open(sys.argv[1], "rb").read()
+private_fd = os.memfd_create("workflow-pilot-broker-key", flags=0); os.write(private_fd, private); os.lseek(private_fd, 0, os.SEEK_SET)
+ctypes.CDLL(None).prctl(4, 0, 0, 0, 0); seed = config["remote"]
+remote = os.path.join(os.path.dirname(seed), "broker-" + os.urandom(12).hex() + ".git"); os.rename(seed, remote)
+subprocess.run(["git", "init", "-q", "--bare", seed], check=True); wrappers = {}
+for operation in ("upload-pack", "receive-pack"):
+    wrapper = os.path.join(os.path.dirname(remote), "." + os.path.basename(remote) + "-" + operation)
+    with open(wrapper, "w") as stream:
+        stream.write("#!/bin/sh\n[ \"$WORKFLOW_PILOT_BROKER_CREDENTIAL\" = '" + config["credential"] + "' ] || exit 97\nexec git-" + operation + " \"$@\"\n")
+    os.chmod(wrapper, 0o700); wrappers[operation] = wrapper
+with open(os.path.join(remote, "hooks", "pre-receive"), "w") as stream:
+    stream.write("#!/bin/sh\n[ \"$WORKFLOW_PILOT_BROKER_CREDENTIAL\" = '" + config["credential"] + "' ]\n")
+os.chmod(os.path.join(remote, "hooks", "pre-receive"), 0o700)
+env = {"PATH": "/usr/bin:/bin", "LC_ALL": "C", "GIT_CONFIG_NOSYSTEM": "1",
+       "GIT_CONFIG_GLOBAL": "/dev/null", "GIT_TERMINAL_PROMPT": "0",
+       "WORKFLOW_PILOT_BROKER_CREDENTIAL": config["credential"]}
+def run(repo, *args, input=None):
+    return subprocess.run(["git", "--no-pager", "-C", repo, *args], input=input, env=env, capture_output=True)
+def oid(ref):
+    value = run(remote, "rev-parse", "--verify", "-q", ref); return value.stdout.decode().strip() if value.returncode == 0 else None
+def signed_response(request, code=0, stdout=b"", stderr=""):
+    response = {"schema_version": 1, "request_digest": hashlib.sha256(norm(request)).hexdigest(),
+                "returncode": code, "stdout_base64": base64.b64encode(stdout).decode(),
+                "stderr": stderr, "credential_used": True}
+    signature = subprocess.run(
+        ["openssl", "dgst", "-sha256", "-sign", f"/proc/self/fd/{private_fd}"],
+        input=payload(b"workflow-pilot-transport-broker-response-v1\0", response),
+        pass_fds=(private_fd,), check=True, capture_output=True).stdout
+    response["signature"] = base64.b64encode(signature).decode(); return norm(response)
+def load_plan(identity):
+    with open(os.path.join(config["plans"], identity + ".json")) as stream: plan = json.load(stream)
+    if hashlib.sha256(norm(plan)).hexdigest() != identity: raise ValueError("plan identity")
+    if not verify(b"workflow-pilot-authority-publication-plan-v1\0", plan, config["signer"]): raise ValueError("plan signature")
+    issue = plan["issue"]
+    if (plan["repository"] != config["repository"] or plan["repository_id"] != config["repository_id"]
+        or plan["endpoint"] != config["endpoint"]
+        or plan["authority_ref"] != f"refs/heads/workflow-pilot/authority/issue-{issue}"
+        or plan["anchor_ref"] != f"refs/heads/workflow-pilot/authority-anchor/issue-{issue}"):
+        raise ValueError("plan scope")
+    return plan
+def publish(request):
+    plan = load_plan(request["arguments"]["plan_identity"])
+    if oid(plan["authority_ref"]) != plan["expected_authority_object_id"] or oid(plan["anchor_ref"]) != plan["expected_anchor_object_id"]: raise ValueError("stale plan")
+    pack = base64.b64decode(request["arguments"]["object_pack_base64"], validate=True)
+    with tempfile.TemporaryDirectory(dir=os.path.dirname(remote), prefix=".broker-publish-") as temporary:
+        run(temporary, "init", "--bare", "-q"); imported = run(temporary, "index-pack", "--stdin", "--strict", "--fsck-objects", input=pack)
+        if imported.returncode: raise ValueError("invalid pack")
+        for field in ("new_authority_object_id", "new_anchor_object_id"):
+            if run(temporary, "cat-file", "-t", plan[field]).stdout.strip() != b"commit": raise ValueError("missing commit")
+        authority = json.loads(run(temporary, "show", plan["new_authority_object_id"] + ":authority.json").stdout); anchor = json.loads(run(temporary, "show", plan["new_anchor_object_id"] + ":anchor.json").stdout)
+        if (authority["repository"] != plan["repository"] or authority["issue"] != plan["issue"]
+            or authority["sequence"] != plan["sequence"] or authority["previous_object_id"] != plan["expected_authority_object_id"]
+            or anchor != {"schema_version": 1, "repository": plan["repository"], "issue": plan["issue"],
+                          "sequence": plan["sequence"], "authority_object_id": plan["new_authority_object_id"],
+                          "previous_object_id": plan["expected_anchor_object_id"]}):
+            raise ValueError("object scope")
+        refspecs = [plan["new_authority_object_id"] + ":" + plan["authority_ref"], plan["new_anchor_object_id"] + ":" + plan["anchor_ref"]]
+        leases = [f"--force-with-lease={plan['authority_ref']}:{plan['expected_authority_object_id'] or ''}",
+                  f"--force-with-lease={plan['anchor_ref']}:{plan['expected_anchor_object_id'] or ''}"]
+        for dry in (True, False):
+            args = ["push", "--atomic", "--receive-pack", wrappers["receive-pack"], *leases]
+            if dry: args.append("--dry-run")
+            result = run(temporary, *args, remote, *refspecs)
+            if result.returncode: raise ValueError(result.stderr.decode(errors="replace"))
+    return b""
+sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM); address = "\0" + config["socket"][1:] if config["socket"].startswith("@") else config["socket"]; sock.bind(address)
+if not config["socket"].startswith("@"): os.chmod(config["socket"], 0o700)
+sock.listen(); print(json.dumps({"ready": True, "remote": remote}), flush=True)
+while True:
+    connection, _ = sock.accept()
+    try:
+        raw = bytearray()
+        while not raw.endswith(b"\n") and len(raw) <= 20 * 1024 * 1024:
+            chunk = connection.recv(65536)
+            if not chunk: break
+            raw.extend(chunk)
+        request = json.loads(raw)
+        if (request["schema_version"] != 1 or request["repository"] != config["repository"]
+            or request["repository_id"] != config["repository_id"] or request["endpoint"] != config["endpoint"]):
+            raise ValueError("request scope")
+        operation = request["operation"]
+        if operation == "ls-remote":
+            result = run(remote, "ls-remote", "--upload-pack", wrappers["upload-pack"], remote, *request["arguments"]["references"])
+            if result.returncode: raise ValueError(result.stderr.decode(errors="replace"))
+            output = result.stdout
+        elif operation == "fetch":
+            wanted = request["arguments"]["object_ids"]
+            with tempfile.TemporaryDirectory(dir=os.path.dirname(remote), prefix=".broker-fetch-") as temporary:
+                run(temporary, "init", "--bare", "-q")
+                for object_id in wanted:
+                    result = run(temporary, "fetch", "--no-tags", "--upload-pack", wrappers["upload-pack"], remote, object_id)
+                    if result.returncode: raise ValueError(result.stderr.decode(errors="replace"))
+                output = run(temporary, "pack-objects", "--stdout", "--revs", input="".join(item + "\n" for item in wanted).encode()).stdout
+        elif operation == "publish": output = publish(request)
+        else: raise ValueError("operation")
+        connection.sendall(signed_response(request, stdout=output))
+    except Exception as error: connection.sendall(signed_response(request, 1, stderr=str(error)))
+    finally: connection.close()
+"""
 def git(repository_root, *arguments):
+    environment = reporter.git_environment(offline=True)
+    for implementation, owner in AUTHORITY_OWNERS.items():
+        if Path(repository_root) in {Path(owner), BROKER_REMOTES.get(implementation)}:
+            environment["WORKFLOW_PILOT_BROKER_CREDENTIAL"] = BROKER_CREDENTIALS[implementation]
+            break
     return subprocess.run(
         reporter.git_command(repository_root, *arguments),
         cwd=repository_root,
-        env=reporter.git_environment(offline=True),
+        env=environment,
         check=True,
         capture_output=True,
         text=True,
@@ -193,6 +313,22 @@ def git_with_input(repository_root, arguments, value, environment=None):
         check=True,
         capture_output=True,
     ).stdout.decode("ascii").strip()
+def broker_git(repository_root, *arguments, git_root=None):
+    if git_root is None:
+        git_root = repository_root
+    environment = reporter.git_environment(offline=True)
+    environment["WORKFLOW_PILOT_BROKER_CREDENTIAL"] = BROKER_CREDENTIALS[
+        str(repository_root)
+    ]
+    return subprocess.run(
+        reporter.git_command(git_root, *arguments),
+        cwd=git_root, env=environment, check=True,
+        capture_output=True, text=True,
+    ).stdout.strip()
+def broker_environment(repository_root):
+    environment = reporter.git_environment(offline=True)
+    environment["WORKFLOW_PILOT_BROKER_CREDENTIAL"] = BROKER_CREDENTIALS[str(repository_root)]
+    return environment
 def signer_request(repository_root, request):
     service = SIGNER_SERVICES[str(repository_root)]
     service.stdin.write(json.dumps(request) + "\n")
@@ -464,33 +600,21 @@ def ruleset_response(issue=178, repository_root=None):
         ]
         + copy.deepcopy(non_user_bypass),
     }
-def install_stalling_transport(repository_root):
-    stall_script = repository_root.parent / "stalling-ssh.sh"
-    invocation_log = repository_root.parent / "stalling-ssh.log"
-    child_pid_path = repository_root.parent / "stalling-ssh-child.pid"
-    stall_script.write_text(
-        "#!/bin/sh\n"
-        f"printf '%s\\n' \"$*\" >> '{invocation_log}'\n"
-        "(sleep 30) &\n"
-        "child=$!\n"
-        f"printf '%s' \"$child\" > '{child_pid_path}'\n"
-        "wait \"$child\"\n",
-        encoding="utf-8",
+def install_stalling_broker(repository_root):
+    address = "@workflow-pilot-stall-" + secrets.token_hex(10)
+    service = subprocess.Popen(
+        [sys.executable, "-I", "-c",
+         "import socket,sys,time\ns=socket.socket(socket.AF_UNIX,socket.SOCK_STREAM);s.bind('\\0'+sys.argv[1]);s.listen();print('ready',flush=True);c,_=s.accept();time.sleep(30)",
+         address[1:]],
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
     )
-    stall_script.chmod(0o700)
-    remote_url = "ssh://git@github.com/example/workflow.git"
+    if service.stdout.readline().strip() != "ready":
+        raise AssertionError(service.stderr.read())
     manifest_path = COORDINATOR_INSTALLATIONS[str(repository_root)] / "installation.json"
     manifest = json.loads(manifest_path.read_text())
-    manifest["authority_protection"]["remote_url"] = remote_url
+    manifest["transport_broker"]["socket"] = address
     manifest_path.write_text(json.dumps(manifest))
-    git(
-        repository_root,
-        "remote",
-        "set-url",
-        "origin",
-        remote_url,
-    )
-    return invocation_log, child_pid_path, stall_script
+    return service
 def wait_for_pid_exit(pid_path, timeout=2.0):
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
@@ -790,14 +914,9 @@ def publish_self_consistent_history_carrier(
         history_carrier=history_carrier,
         history_receipt=history_receipt,
     )
-    publish_authority_plan(
-        repository_root,
-        AUTHORITY_OWNERS[str(repository_root)],
-        plan,
-        current["object_id"],
-        issue=document["handoffs"][0]["issue"],
-        pull_request=document["handoffs"][0]["pull_request"],
-        read_back=False,
+    publish_unvalidated_authority_plan(
+        repository_root, AUTHORITY_OWNERS[str(repository_root)],
+        plan, current["object_id"],
     )
     return history_receipt, history_carrier
 def rename_handoff(document, handoff_id, *, owner=None):
@@ -878,7 +997,7 @@ def owner_create_record_commit(
             "GIT_COMMITTER_DATE": "2026-08-31T00:00:00Z",
         },
     )
-def publish_authority_plan(
+def materialize_authority_plan(
     repository_root,
     owner_root,
     plan,
@@ -886,7 +1005,7 @@ def publish_authority_plan(
     *,
     issue,
     pull_request,
-    read_back=True,
+    **overrides,
 ):
     object_id = owner_create_record_commit(
         owner_root, plan["record"], "authority.json", parent
@@ -896,16 +1015,69 @@ def publish_authority_plan(
     anchor_object_id = owner_create_record_commit(
         owner_root, anchor_record, "anchor.json", plan["expected_anchor_object_id"]
     )
-    agent_handoff.publish_authority_updates(
-        owner_root,
-        installation_root_path(repository_root),
-        [(object_id, plan["ref"]), (anchor_object_id, plan["anchor_ref"])],
+    manifest = installation_manifest(repository_root)
+    issued_at = datetime.now(timezone.utc)
+    signed_plan = {
+        "schema_version": 1,
+        "repository": manifest["repository"],
+        "repository_id": manifest["repository_database_id"],
+        "issue": issue,
+        "operation": plan["operation"],
+        "endpoint": manifest["authority_protection"]["remote_url"],
+        "authority_ref": plan["ref"],
+        "anchor_ref": plan["anchor_ref"],
+        "expected_authority_object_id": plan["expected_remote_object_id"],
+        "expected_anchor_object_id": plan["expected_anchor_object_id"],
+        "new_authority_object_id": object_id,
+        "new_anchor_object_id": anchor_object_id,
+        "sequence": plan["record"]["sequence"],
+        "operation_nonce": plan["operation_nonce"],
+        "issued_at": iso_utc(issued_at),
+        "expires_at": iso_utc(issued_at + timedelta(minutes=1)),
+    }
+    signed_plan.update(overrides)
+    signed_plan["signature"] = external_sign(
+        repository_root,
+        agent_handoff.signed_record_payload(
+            agent_handoff.PUBLICATION_PLAN_DOMAIN, signed_plan
+        ),
+    )
+    identity = agent_handoff.publication_plan_identity(signed_plan)
+    plans_root = installation_root_path(repository_root) / manifest["publication_store"]["plans"]
+    (plans_root / f"{identity}.json").write_bytes(
+        agent_handoff.normalized_json(signed_plan)
+    )
+    return identity, object_id, anchor_object_id
+def publish_authority_plan(
+    repository_root, owner_root, plan, parent, *, issue, pull_request, read_back=True,
+):
+    identity, object_id, anchor_object_id = materialize_authority_plan(
+        repository_root, owner_root, plan, parent, issue=issue,
+        pull_request=pull_request,
+    )
+    agent_handoff.publish_authority_plan(
+        installation_root_path(repository_root), identity
     )
     if not read_back:
         return object_id, anchor_object_id
     return agent_handoff.read_history_authority(
         repository_root, "example/workflow", issue, pull_request
     )
+def publish_unvalidated_authority_plan(repository_root, owner_root, plan, parent):
+    authority = owner_create_record_commit(
+        owner_root, plan["record"], "authority.json", parent
+    )
+    anchor = copy.deepcopy(plan["anchor_record_template"])
+    anchor["authority_object_id"] = authority
+    anchor_id = owner_create_record_commit(
+        owner_root, anchor, "anchor.json", plan["expected_anchor_object_id"]
+    )
+    broker_git(
+        repository_root, "push", "-q", "--atomic", "origin",
+        f"{authority}:{plan['ref']}", f"{anchor_id}:{plan['anchor_ref']}",
+        git_root=owner_root,
+    )
+    return authority, anchor_id
 def protected_root_authority(
     repository_root,
     parent,
@@ -1159,11 +1331,11 @@ def set_history_authority(
     )
 def ensure_remote_branch(repository_root, branch):
     head_sha = git(repository_root, "rev-parse", f"refs/heads/{branch}")
-    git(
+    broker_git(
         repository_root,
         "push",
         "-q",
-        "origin",
+        str(BROKER_REMOTES[str(repository_root)]),
         f"{head_sha}:refs/heads/{branch}",
     )
 def bind_history_authority(
@@ -1290,14 +1462,15 @@ def publish_bound_history_authority(
         "anchor.json",
         current["anchor_object_id"],
     )
-    git(
-        owner_root,
+    broker_git(
+        repository_root,
         "push",
         "-q",
         "--atomic",
         "origin",
         f"{object_id}:{current['ref']}",
         f"{anchor_object_id}:{current['anchor_ref']}",
+        git_root=owner_root,
     )
     return object_id, anchor_object_id
 def publish_bound_authority(
@@ -1349,39 +1522,20 @@ def reporter_fixture_with_handoffs(*bundles):
 
 @contextmanager
 def handoff_repository(
-    *,
-    issue=178,
-    branch=None,
-    authorized_coordinators=None,
+    *, issue=178, branch=None, authorized_coordinators=None,
     authorized_non_user_bypass_actors=None,
 ):
-    with tempfile.TemporaryDirectory(
-        prefix="agent-handoff-",
-        dir=TEST_ARTIFACTS,
-    ) as temporary:
-        if branch is None:
-            branch = f"agent/issue-{issue}"
-        if authorized_coordinators is None:
-            authorized_coordinators = [
-                {"login": "coordinator", "database_id": 9001}
-            ]
-        if authorized_non_user_bypass_actors is None:
-            authorized_non_user_bypass_actors = []
-        test_root = Path(temporary)
-        remote_root = test_root / "authority.git"
-        owner_root = test_root / "owner"
-        repository_root = test_root / "implementation"
-        installation_root = test_root / "coordinator-installation"
-        signer_root = test_root / "external-signer"
-        remote_root.mkdir()
-        owner_root.mkdir()
-        repository_root.mkdir()
-        installation_root.mkdir(mode=0o700)
-        signer_root.mkdir(mode=0o700)
-        git(remote_root, "init", "-q", "--bare")
-        git(remote_root, "config", "receive.denyNonFastForwards", "true")
-        git(remote_root, "config", "receive.denyDeletes", "true")
-        git(remote_root, "config", "receive.advertiseAtomic", "true")
+    with tempfile.TemporaryDirectory(prefix="agent-handoff-", dir=TEST_ARTIFACTS) as temporary:
+        branch = branch or f"agent/issue-{issue}"
+        authorized_coordinators = authorized_coordinators or [{"login": "coordinator", "database_id": 9001}]
+        authorized_non_user_bypass_actors = authorized_non_user_bypass_actors or []
+        test_root = Path(temporary); remote_root = test_root / "authority.git"
+        repository_root = test_root / "implementation"; installation_root = test_root / "coordinator-installation"
+        owner_root = installation_root / "publication-objects"; signer_root = test_root / "external-signer"
+        remote_root.mkdir(); repository_root.mkdir(); installation_root.mkdir(mode=0o700)
+        owner_root.mkdir(); signer_root.mkdir(mode=0o700); git(remote_root, "init", "-q", "--bare")
+        for key in ("receive.denyNonFastForwards", "receive.denyDeletes", "receive.advertiseAtomic"):
+            git(remote_root, "config", key, "true")
         transaction_hook = remote_root / "hooks" / "reference-transaction"
         transaction_hook.write_text(
             "#!/bin/sh\n"
@@ -1397,28 +1551,12 @@ def handoff_repository(
             encoding="utf-8",
         )
         transaction_hook.chmod(0o700)
-        git(owner_root, "init", "-q", "-b", "master")
-        git(owner_root, "config", "user.name", "Authority Owner")
-        git(owner_root, "config", "user.email", "owner@example.invalid")
-        git(owner_root, "remote", "add", "origin", str(remote_root))
-        owner_write_blob_ref(
-            owner_root,
-            agent_handoff.REPOSITORY_IDENTITY_REF,
-            {
-                "schema_version": 1,
-                "repository": "example/workflow",
-            },
-        )
-        git(repository_root, "init", "-q", "-b", "master")
-        git(repository_root, "config", "user.name", "Handoff Test")
-        git(repository_root, "config", "user.email", "handoff@example.invalid")
-        git(
-            repository_root,
-            "remote",
-            "add",
-            "origin",
-            str(remote_root),
-        )
+        git(owner_root, "init", "-q", "-b", "master"); git(owner_root, "config", "user.name", "Authority Owner")
+        git(owner_root, "config", "user.email", "owner@example.invalid"); git(owner_root, "remote", "add", "origin", str(remote_root))
+        owner_write_blob_ref(owner_root, agent_handoff.REPOSITORY_IDENTITY_REF,
+                             {"schema_version": 1, "repository": "example/workflow"})
+        git(repository_root, "init", "-q", "-b", "master"); git(repository_root, "config", "user.name", "Handoff Test")
+        git(repository_root, "config", "user.email", "handoff@example.invalid"); git(repository_root, "remote", "add", "origin", str(remote_root))
         private_key = signer_root / "private.pem"
         subprocess.run(
             [
@@ -1434,102 +1572,87 @@ def handoff_repository(
             check=True,
             capture_output=True,
         )
-        signer_service = subprocess.Popen(
-            [sys.executable, "-I", "-c", SIGNER_SERVICE, str(private_key)],
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-        )
+        signer_service = subprocess.Popen([sys.executable, "-I", "-c", SIGNER_SERVICE, str(private_key)],
+            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         signer_numbers = json.loads(signer_service.stdout.readline())
-        private_key.unlink()
         signer_public = {
             "algorithm": "rsa-pkcs1v15-sha256",
             "key_id": "",
             "modulus_hex": signer_numbers["modulus_hex"],
             "exponent": signer_numbers["exponent"],
             "service_identity": "test-external-coordinator-signer",
-            "isolation_attestation": {
-                "kind": "external-isolated-service",
+            "isolation_attestation": {"kind": "external-isolated-service",
                 "private_key_in_implementation_namespace": False,
-                "signing_api": "single-use-terminal-attestation",
-            },
+                "signing_api": "single-use-terminal-attestation"},
         }
-        signer_public = signer_public_with_key_id(signer_public)
-        SIGNER_SERVICES[str(repository_root)] = signer_service
-        SIGNER_CONSUME_STATES[str(repository_root)] = {
-            "store_id": "test-external-monotonic-store",
-            "sequence": 0,
-            "anchor": "0" * 64,
-        }
-        AUTHORITY_OWNERS[str(repository_root)] = owner_root
-        AUTHORIZED_COORDINATORS[str(repository_root)] = copy.deepcopy(
-            authorized_coordinators
-        )
+        signer_public = signer_public_with_key_id(signer_public); key = str(repository_root)
+        SIGNER_SERVICES[key] = signer_service
+        SIGNER_CONSUME_STATES[key] = {"store_id": "test-external-monotonic-store", "sequence": 0, "anchor": "0" * 64}
+        AUTHORITY_OWNERS[key] = owner_root; AUTHORIZED_COORDINATORS[key] = copy.deepcopy(authorized_coordinators)
         bootstrap_validator = installation_root / "raw_diff_check.py"
-        bootstrap_validator.write_bytes(
-            agent_handoff.RAW_DIFF_CHECK_PATH.read_bytes()
-        )
-        bootstrap_validator.chmod(0o500)
+        bootstrap_validator.write_bytes(agent_handoff.RAW_DIFF_CHECK_PATH.read_bytes()); bootstrap_validator.chmod(0o500)
+        plans_root = installation_root / "publication-plans"; plans_root.mkdir(mode=0o700)
+        broker_socket = "@workflow-pilot-" + secrets.token_hex(12)
         (installation_root / "installation.json").write_text(
             json.dumps(
                 {
                     "schema_version": 1,
                     "repository": "example/workflow",
                     "repository_database_id": 7001,
-                    "collector": {
-                        "login": "collector",
-                        "database_id": 9000,
-                    },
+                    "collector": {"login": "collector", "database_id": 9000},
                     "authorized_coordinators": authorized_coordinators,
-                    "authorized_non_user_bypass_actors": (
-                        authorized_non_user_bypass_actors
-                    ),
+                    "authorized_non_user_bypass_actors": authorized_non_user_bypass_actors,
                     "authority_protection": {
-                        "mode": "bare-remote-config",
+                        "mode": "external-broker",
                         "ruleset_id": 77,
                         "enforcement": "active",
-                        "authority_ref_prefix": (
-                            agent_handoff.HISTORY_REF_PREFIX
-                        ),
-                        "anchor_ref_prefix": (
-                            agent_handoff.HISTORY_ANCHOR_REF_PREFIX
-                        ),
-                        "remote_url": str(remote_root),
+                        "authority_ref_prefix": agent_handoff.HISTORY_REF_PREFIX,
+                        "anchor_ref_prefix": agent_handoff.HISTORY_ANCHOR_REF_PREFIX,
+                        "remote_url": "broker://example/workflow",
                         "force_pushes_allowed": False,
                         "deletions_allowed": False,
                     },
+                    "transport_broker": {"protocol": "workflow-pilot-git-broker-v1", "socket": broker_socket},
+                    "publication_store": {"plans": "publication-plans", "objects": "publication-objects"},
                     "delivery": {
                         "immediate_base_branch": "master",
                         "delivery_branch": branch,
                         "head_repository_full_name": "example/workflow",
                     },
-                    "bootstrap_validator": {
-                        "path": str(bootstrap_validator),
-                    },
+                    "bootstrap_validator": {"path": str(bootstrap_validator)},
                     "signer_public": signer_public,
                 }
             ),
             encoding="utf-8",
         )
+        broker_service = subprocess.Popen([sys.executable, "-I", "-c", BROKER_SERVICE, str(private_key)],
+            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        broker_credential = secrets.token_hex(32)
+        broker_service.stdin.write(json.dumps({
+            "remote": str(remote_root),
+            "socket": broker_socket,
+            "plans": str(plans_root),
+            "objects": str(owner_root),
+            "repository": "example/workflow",
+            "repository_id": 7001,
+            "endpoint": "broker://example/workflow",
+            "credential": broker_credential,
+            "signer": signer_public,
+        }) + "\n")
+        broker_service.stdin.flush()
+        broker_ready_line = broker_service.stdout.readline()
+        if not broker_ready_line: raise AssertionError(broker_service.stderr.read())
+        broker_ready = json.loads(broker_ready_line)
+        if not broker_ready.get("ready"): raise AssertionError(broker_service.stderr.read())
+        private_key.unlink(); broker_remote = Path(broker_ready["remote"])
+        BROKER_SERVICES[key] = broker_service; BROKER_REMOTES[key] = broker_remote; BROKER_CREDENTIALS[key] = broker_credential
+        git(owner_root, "remote", "set-url", "origin", str(broker_remote))
         COORDINATOR_INSTALLATIONS[str(repository_root)] = installation_root
-        seed = repository_root / "README.md"
-        seed.write_text("base\n", encoding="utf-8")
-        checker = (
-            repository_root
-            / "scripts"
-            / "workflow_pilot"
-            / "raw_diff_check.py"
-        )
-        checker.parent.mkdir(parents=True)
+        seed = repository_root / "README.md"; seed.write_text("base\n", encoding="utf-8")
+        checker = repository_root / "scripts" / "workflow_pilot" / "raw_diff_check.py"; checker.parent.mkdir(parents=True)
         checker.write_bytes(agent_handoff.RAW_DIFF_CHECK_PATH.read_bytes())
         schema = repository_root / agent_handoff.HANDOFF_SCHEMA_REPOSITORY_PATH
-        schema.write_bytes(
-            (
-                ROOT
-                / agent_handoff.HANDOFF_SCHEMA_REPOSITORY_PATH
-            ).read_bytes()
-        )
+        schema.write_bytes((ROOT / agent_handoff.HANDOFF_SCHEMA_REPOSITORY_PATH).read_bytes())
         git(
             repository_root,
             "add",
@@ -1539,17 +1662,12 @@ def handoff_repository(
         )
         git(repository_root, "commit", "-q", "-m", "test: base")
         base_sha = git(repository_root, "rev-parse", "HEAD")
-        seed.write_text("base\nparent\n", encoding="utf-8")
-        git(repository_root, "add", "README.md")
+        seed.write_text("base\nparent\n", encoding="utf-8"); git(repository_root, "add", "README.md")
         git(repository_root, "commit", "-q", "-m", "test: assigned parent")
         parent_sha = git(repository_root, "rev-parse", "HEAD")
         git(repository_root, "switch", "-q", "-c", branch)
-        implementation = repository_root / "scripts" / "workflow_pilot"
-        implementation.mkdir(parents=True, exist_ok=True)
-        (implementation / "change.py").write_text(
-            "HANDOFF = True\nEVIDENCE = 'focused'\n",
-            encoding="utf-8",
-        )
+        implementation = repository_root / "scripts" / "workflow_pilot"; implementation.mkdir(parents=True, exist_ok=True)
+        (implementation / "change.py").write_text("HANDOFF = True\nEVIDENCE = 'focused'\n", encoding="utf-8")
         git(repository_root, "add", "scripts/workflow_pilot/change.py")
         git(
             repository_root,
@@ -1561,26 +1679,17 @@ def handoff_repository(
         )
         result_sha = git(repository_root, "rev-parse", "HEAD")
         try:
-            with mock.patch.dict(
-                os.environ,
-                {
-                    agent_handoff.COORDINATOR_INSTALLATION_ENV: str(
-                        installation_root
-                    )
-                },
-            ):
+            with mock.patch.dict(os.environ, {agent_handoff.COORDINATOR_INSTALLATION_ENV: str(installation_root)}):
                 set_history_authority(repository_root, 0, None, issue=issue)
                 yield repository_root, base_sha, parent_sha, result_sha
         finally:
-            signer_service.stdin.close()
-            signer_service.wait(timeout=10)
-            signer_service.stdout.close()
-            signer_service.stderr.close()
-            del AUTHORITY_OWNERS[str(repository_root)]
-            del COORDINATOR_INSTALLATIONS[str(repository_root)]
-            del AUTHORIZED_COORDINATORS[str(repository_root)]
-            del SIGNER_SERVICES[str(repository_root)]
-            del SIGNER_CONSUME_STATES[str(repository_root)]
+            broker_service.terminate(); broker_service.wait(timeout=10)
+            for stream in (broker_service.stdin, broker_service.stdout, broker_service.stderr): stream.close()
+            signer_service.stdin.close(); signer_service.wait(timeout=10)
+            for stream in (signer_service.stdout, signer_service.stderr): stream.close()
+            for registry in (AUTHORITY_OWNERS, COORDINATOR_INSTALLATIONS, AUTHORIZED_COORDINATORS,
+                             SIGNER_SERVICES, SIGNER_CONSUME_STATES, BROKER_SERVICES,
+                             BROKER_REMOTES, BROKER_CREDENTIALS): del registry[key]
 def timestamped_states(receipt=None):
     if receipt is not None:
         started = datetime.fromisoformat(
@@ -3186,59 +3295,79 @@ class ExactHandoffTests(unittest.TestCase):
             dirty = agent_handoff.validate_document(handoff_document(root, parent, result), root)
             self.assertIn("dirty-worktree", dirty["summary"]["rejection_codes"])
             self.assertFalse(marker.exists())
-    def test_remote_rewrites_cannot_replace_installation_endpoint(self):
-        with handoff_repository() as (root, _base, _parent, _result):
-            temporary_clients = set(Path(tempfile.gettempdir()).glob("workflow-pilot-git-*"))
+    def test_authenticated_broker_seals_endpoint_server_and_credentials(self):
+        with handoff_repository() as (root, _base, parent, result):
             installation = installation_root_path(root)
             ref = agent_handoff.REPOSITORY_IDENTITY_REF
             oid = agent_handoff._remote_ref_oid(root, installation, ref, allow_missing=False)
             agent_handoff._fetch_remote_authority(root, installation, ref, oid)
-            head = git(root, "rev-parse", "HEAD")
-            updates = [(head, agent_handoff.history_authority_ref(999, None)), (head, agent_handoff.history_anchor_ref(999))]
-            agent_handoff.require_atomic_push_capability(root, installation, updates)
-            remote = Path(installation_manifest(root)["authority_protection"]["remote_url"])
-            substitute = root.parent / "substitute.git"
-            shutil.copytree(remote, substitute)
-            git(substitute, "config", "receive.advertiseAtomic", "false")
-            included = root.parent / "remote-rewrite.config"
-            included.write_text(f'[url "{substitute.as_uri()}"]\n\tinsteadOf = {remote}\n\tpushInsteadOf = {remote}\n[remote "origin"]\n\turl = {substitute}\n\tpushurl = {substitute}\n[remote "backup"]\n\turl = {substitute}\n[http]\n\tproxy = http://127.0.0.1:9\n\tcurloptResolve = workflow-pilot.invalid:443:127.0.0.1\n\tsslVerify = false\n\tsslCAInfo = {included}\n[http "https://workflow-pilot.invalid"]\n\tproxy = http://127.0.0.1:9\n[credential]\n\thelper = {included}\n')
-            git(root, "config", "--add", "include.path", str(included))
-            operations = (lambda: agent_handoff._remote_ref_oid(root, installation, ref, allow_missing=False), lambda: agent_handoff._fetch_remote_authority(root, installation, ref, oid), lambda: agent_handoff.require_atomic_push_capability(root, installation, updates))
-            self.assertEqual(operations[0](), oid)
-            operations[1]()
-            operations[2]()
-            self.assertTrue((remote.parent / "hook-ran").is_file())
-            with self.assertRaisesRegex(agent_handoff.HandoffDataError, "external path"): agent_handoff.publish_authority_updates(root, installation_manifest(root), updates)
-            for endpoint in ("ssh://git@github.com/example/workflow.git", "git@github.com:example/workflow.git"):
-                manifest = installation_manifest(root); manifest["authority_protection"]["remote_url"] = endpoint; (installation / "installation.json").write_text(json.dumps(manifest))
-                with agent_handoff._transport_capability(root, installation) as capability: self.assertEqual(capability[0], endpoint)
-            common = Path(git(root, "rev-parse", "--git-common-dir")); common = common if common.is_absolute() else root / common
-            objects = common / "objects"; held = common / "objects-held"; remote_held = root.parent / "authority-held"; original = agent_handoff._run_bounded_process
-            def swap(**kwargs):
-                if "push" not in kwargs["argv"]: return original(**kwargs)
-                objects.rename(held); objects.mkdir(); remote.rename(remote_held); shutil.copytree(substitute, remote)
-                try: return original(**kwargs)
-                finally: shutil.rmtree(remote); remote_held.rename(remote); objects.rmdir(); held.rename(objects)
-            manifest = installation_manifest(root); manifest["authority_protection"]["remote_url"] = str(remote); (installation / "installation.json").write_text(json.dumps(manifest))
-            (remote.parent / "hook-ran").unlink(missing_ok=True)
-            with mock.patch.object(agent_handoff, "_run_bounded_process", side_effect=swap): agent_handoff.publish_authority_updates(root, installation, updates)
-            self.assertTrue((remote.parent / "hook-ran").is_file())
-            linked = root.parent / "linked"; git(root, "worktree", "add", "-q", "--detach", str(linked), head)
-            alternate = root.parent / "alternate.git"; alternate.mkdir(); git(alternate, "init", "-q", "--bare")
-            alternate_oid = owner_create_record_commit(alternate, {"alternate": True}, "authority.json", None)
-            info = common / "objects" / "info"; info.mkdir(exist_ok=True); (info / "alternates").write_text(str(alternate / "objects"))
-            alternate_updates = [(alternate_oid, agent_handoff.history_authority_ref(1000, None)), (alternate_oid, agent_handoff.history_anchor_ref(1000))]
-            agent_handoff.publish_authority_updates(linked, installation, alternate_updates)
-            self.assertEqual(git(remote, "rev-parse", alternate_updates[0][1]), alternate_oid)
-            (info / "alternates").unlink()
-            helper = root.parent / "option-helper"; option_marker = root.parent / "option-executed"; helper.write_text(f'#!/bin/sh\nprintf ran > "{option_marker}"\n'); helper.chmod(0o700)
-            manifest["authority_protection"]["remote_url"] = f"--upload-pack={helper}"; (installation / "installation.json").write_text(json.dumps(manifest))
-            with self.assertRaisesRegex(agent_handoff.HandoffDataError, "not canonical"): operations[0]()
-            self.assertFalse(option_marker.exists())
-            manifest = installation_manifest(root); manifest["authority_protection"]["remote_url"] = "https://github.com/example/workflow.git"; (installation / "installation.json").write_text(json.dumps(manifest))
-            with self.assertRaises(agent_handoff.HandoffDataError) as failure: operations[0]()
-            self.assertNotIn("127.0.0.1", str(failure.exception))
-            self.assertEqual(set(Path(tempfile.gettempdir()).glob("workflow-pilot-git-*")), temporary_clients)
+            hostile = root.parent / "hostile.config"
+            hostile.write_text('[url "file:///nonexistent"]\n\tinsteadOf = broker://example/workflow\n[credential]\n\thelper = !echo leaked\n')
+            git(root, "config", "--add", "include.path", str(hostile))
+            decoy = Path(git(root, "remote", "get-url", "origin"))
+            swapped = []
+            for name in ("hooks", "refs", "objects"):
+                original, moved = decoy / name, decoy / f"{name}.held"
+                original.rename(moved); original.mkdir(); swapped.append((original, moved))
+            config, held = decoy / "config", decoy / "config.held"
+            config.rename(held); config.write_text("[core]\nrepositoryformatversion=0\nbare=true\n"); swapped.append((config, held))
+            marker = root.parent / "hook-ran"; marker.unlink(missing_ok=True)
+            try:
+                self.assertEqual(agent_handoff._remote_ref_oid(root, installation, ref, allow_missing=False), oid)
+                advance_history_authority(root)
+            finally:
+                for original, moved in reversed(swapped):
+                    if original.is_dir(): original.rmdir()
+                    else: original.unlink()
+                    moved.rename(original)
+            self.assertTrue(marker.is_file())
+            credential = BROKER_CREDENTIALS[str(root)]
+            self.assertNotIn(credential, repr(dict(os.environ)))
+            self.assertFalse(any(
+                credential.encode() in path.read_bytes()
+                for path in root.rglob("*") if path.is_file()
+            ))
+            self.assertFalse(hasattr(agent_handoff, "publish_authority_updates"))
+            with self.assertRaisesRegex(agent_handoff.HandoffDataError, "signed publication plan"):
+                agent_handoff.publish_authority_plan(installation, "0" * 64)
+    def test_signed_plan_is_the_only_publication_authority(self):
+        with handoff_repository() as (root, _base, parent, result):
+            document = handoff_document(root, parent, result)
+            report = agent_handoff.validate_document(document, root)
+            current, _history, plan = plan_advance_authority(root, document, report)
+            installation = installation_root_path(root)
+            cases = (
+                {"authority_ref": "refs/heads/master"},
+                {"anchor_ref": "refs/tags/release"},
+                {"authority_ref": agent_handoff.history_authority_ref(179, None)},
+                {"issue": 179},
+                {"endpoint": "https://github.com/example/other.git"},
+                {"new_authority_object_id": git(root, "rev-parse", "HEAD")},
+                {"expected_authority_object_id": "f" * 40},
+                {"operation_nonce": "e" * 64},
+                {"expires_at": "2026-01-01T00:00:00Z"},
+            )
+            for overrides in cases:
+                with self.subTest(overrides=overrides):
+                    parameters = {"issue": 178, "pull_request": None, **overrides}
+                    identity, _authority, _anchor = materialize_authority_plan(
+                        root, AUTHORITY_OWNERS[str(root)], plan, current["object_id"],
+                        **parameters,
+                    )
+                    with self.assertRaises(agent_handoff.HandoffDataError):
+                        agent_handoff.publish_authority_plan(installation, identity)
+            identity, _authority, _anchor = materialize_authority_plan(
+                root, AUTHORITY_OWNERS[str(root)], plan, current["object_id"],
+                issue=178, pull_request=None,
+            )
+            plans = installation / "publication-plans"
+            substitute = "d" * 64
+            (plans / f"{substitute}.json").write_bytes((plans / f"{identity}.json").read_bytes())
+            with self.assertRaisesRegex(agent_handoff.HandoffDataError, "identity mismatch"):
+                agent_handoff.publish_authority_plan(installation, substitute)
+            agent_handoff.publish_authority_plan(installation, identity)
+            published = agent_handoff.read_history_authority(root, "example/workflow", 178, None)
+            self.assertEqual(published["sequence"], current["sequence"] + 1)
     def test_assignment_states_are_distinct_and_not_inferred(self):
         with handoff_repository() as (root, _base, parent, result):
             for state_name in (
@@ -3850,10 +3979,14 @@ class ExactHandoffTests(unittest.TestCase):
             refresh_coordinator_receipt(first, root)
             first_report = agent_handoff.validate_document(first, root)
             genesis, first_receipt, plan = plan_advance_authority(root, first, first_report)
-            self.assertIn("publish_authority_updates", plan["atomic_push"])
-            self.assertNotIn("git push", plan["atomic_push"])
-            self.assertNotIn(" origin ", plan["atomic_push"])
-            self.assertNotIn("--force", plan["atomic_push"])
+            self.assertEqual(
+                plan["publication"]["api"],
+                "scripts.workflow_pilot.agent_handoff.publish_authority_plan",
+            )
+            self.assertEqual(
+                plan["publication"]["arguments"],
+                ("<external-installation-path>", "<signed-plan-identity>"),
+            )
             set_history_authority(
                 root,
                 1,
@@ -3930,7 +4063,7 @@ class ExactHandoffTests(unittest.TestCase):
                         bound["anchor_object_id"],
                     ),
                 )
-            remote = Path(git(root, "remote", "get-url", "origin"))
+            remote = BROKER_REMOTES[str(root)]
             transaction_hook = remote / "hooks" / "reference-transaction"
             transaction_hook.chmod(0o600)
             git(
@@ -3962,7 +4095,7 @@ class ExactHandoffTests(unittest.TestCase):
                     f"{genesis['object_id']}:{bound['ref']}",
                 ),
                 cwd=AUTHORITY_OWNERS[str(root)],
-                env=reporter.git_environment(offline=True),
+                env=broker_environment(root),
                 check=False,
                 capture_output=True,
             )
@@ -4030,14 +4163,9 @@ class ExactHandoffTests(unittest.TestCase):
                 "unauthorized typed bypass",
             ):
                 agent_handoff.validate_document(extra_bypass, root)
-    def test_bare_remote_installation_requires_force_push_and_deletion_disabled(self):
+    def test_external_broker_installation_requires_force_push_and_deletion_disabled(self):
         with handoff_repository() as (root, _base, _parent, _result):
-            self.assertEqual(
-                agent_handoff.load_coordinator_installation(root)[
-                    "authority_protection"
-                ]["mode"],
-                "bare-remote-config",
-            )
+            self.assertEqual(agent_handoff.load_coordinator_installation(root)["authority_protection"]["mode"], "external-broker")
             installation_path = installation_root_path(root) / "installation.json"
             baseline = installation_manifest(root)
             for field, pattern in (
@@ -4045,222 +4173,72 @@ class ExactHandoffTests(unittest.TestCase):
                 ("deletions_allowed", "must reject deletions"),
             ):
                 with self.subTest(field=field):
-                    mutated = copy.deepcopy(baseline)
-                    mutated["authority_protection"][field] = True
-                    installation_path.write_text(
-                        json.dumps(mutated),
-                        encoding="utf-8",
-                    )
-                    with self.assertRaisesRegex(
-                        agent_handoff.HandoffDataError,
-                        pattern,
-                    ):
+                    mutated = copy.deepcopy(baseline); mutated["authority_protection"][field] = True
+                    installation_path.write_text(json.dumps(mutated), encoding="utf-8")
+                    with self.assertRaisesRegex(agent_handoff.HandoffDataError, pattern):
                         agent_handoff.load_coordinator_installation(root)
-                    installation_path.write_text(
-                        json.dumps(baseline),
-                        encoding="utf-8",
-                    )
-            current = agent_handoff.read_history_authority(
-                root,
-                "example/workflow",
-                178,
-                None,
-            )
-            base_document = handoff_document(root, _parent, _result)
-            base_result = agent_handoff.validate_document(
-                base_document,
-                root,
-            )
-            base_history = agent_handoff.make_history_receipt(
-                base_document,
-                base_result,
-                "issue-178-round-1",
-            )
-            unrelated = authority_publication(
-                root,
-                current,
-                operation="advance",
-                history_receipt=base_history,
-            )
-            unrelated["ruleset_response"]["id"] = 78
-            unrelated["signature"] = external_sign(
-                root,
-                agent_handoff.signed_record_payload(
-                    agent_handoff.PUBLICATION_ATTESTATION_DOMAIN,
-                    unrelated,
-                ),
-            )
-            with self.assertRaisesRegex(
-                agent_handoff.HandoffDataError,
-                "unrelated or incomplete",
-            ):
-                agent_handoff.plan_history_authority(
-                    root,
-                    "example/workflow",
-                    178,
-                    None,
-                    operation="advance",
-                    expected_object_id=current["object_id"],
-                    expected_sequence=current["sequence"],
-                    handoff_document=base_document,
-                    handoff_result=base_result,
-                    handoff_id="issue-178-round-1",
-                    publication_attestation=unrelated,
-                )
+                    installation_path.write_text(json.dumps(baseline), encoding="utf-8")
     def test_trusted_installation_members_stay_external_and_race_free(self):
         with handoff_repository() as (root, _base, _parent, _result):
             source_installation = installation_root_path(root)
             def install_case(name):
-                target = source_installation.parent / name
-                shutil.copytree(source_installation, target)
-                manifest = json.loads(
-                    (target / "installation.json").read_text(encoding="utf-8")
-                )
-                manifest["bootstrap_validator"]["path"] = str(
-                    target / "raw_diff_check.py"
-                )
-                (target / "installation.json").write_text(
-                    json.dumps(manifest),
-                    encoding="utf-8",
-                )
+                target = source_installation.parent / name; shutil.copytree(source_installation, target)
+                manifest = json.loads((target / "installation.json").read_text())
+                manifest["bootstrap_validator"]["path"] = str(target / "raw_diff_check.py")
+                (target / "installation.json").write_text(json.dumps(manifest))
                 return target
-            positive = agent_handoff.load_coordinator_installation(
-                root,
-                source_installation,
-            )
-            self.assertEqual(
-                hashlib.sha256(positive["_bootstrap_validator_source"]).hexdigest(),
-                hashlib.sha256(
-                    (source_installation / "raw_diff_check.py").read_bytes()
-                ).hexdigest(),
-            )
+            def reject(path, pattern):
+                with self.assertRaisesRegex(agent_handoff.HandoffDataError, pattern):
+                    agent_handoff.load_coordinator_installation(root, path)
+            positive = agent_handoff.load_coordinator_installation(root, source_installation)
+            self.assertEqual(hashlib.sha256(positive["_bootstrap_validator_source"]).digest(),
+                             hashlib.sha256((source_installation / "raw_diff_check.py").read_bytes()).digest())
             manifest_link = install_case("manifest-link")
             candidate_manifest = root / "candidate-installation.json"
-            candidate_manifest.write_text(
-                json.dumps(installation_manifest(root)),
-                encoding="utf-8",
-            )
-            (manifest_link / "installation.json").unlink()
-            os.symlink(candidate_manifest, manifest_link / "installation.json")
-            with self.assertRaisesRegex(
-                agent_handoff.HandoffDataError,
-                "regular file",
-            ):
-                agent_handoff.load_coordinator_installation(root, manifest_link)
-            real_parent = source_installation.parent / "real-parent"
-            real_parent.mkdir()
+            candidate_manifest.write_text(json.dumps(installation_manifest(root)))
+            (manifest_link / "installation.json").unlink(); os.symlink(candidate_manifest, manifest_link / "installation.json")
+            reject(manifest_link, "regular file")
+            real_parent = source_installation.parent / "real-parent"; real_parent.mkdir()
             parent_symlink_install = real_parent / "coordinator-installation"
             shutil.copytree(source_installation, parent_symlink_install)
-            parent_manifest = json.loads(
-                (parent_symlink_install / "installation.json").read_text(
-                    encoding="utf-8"
-                )
-            )
-            parent_manifest["bootstrap_validator"]["path"] = str(
-                parent_symlink_install / "raw_diff_check.py"
-            )
-            (parent_symlink_install / "installation.json").write_text(
-                json.dumps(parent_manifest),
-                encoding="utf-8",
-            )
+            parent_manifest = json.loads((parent_symlink_install / "installation.json").read_text())
+            parent_manifest["bootstrap_validator"]["path"] = str(parent_symlink_install / "raw_diff_check.py")
+            (parent_symlink_install / "installation.json").write_text(json.dumps(parent_manifest))
             symlink_parent = source_installation.parent / "linked-parent"
             os.symlink(real_parent, symlink_parent)
-            with self.assertRaisesRegex(
-                agent_handoff.HandoffDataError,
-                "must be a directory",
-            ):
-                agent_handoff.load_coordinator_installation(
-                    root,
-                    symlink_parent / "coordinator-installation",
-                )
+            reject(symlink_parent / "coordinator-installation", "must be a directory")
             outside_validator = install_case("outside-validator")
-            outside_manifest = json.loads(
-                (outside_validator / "installation.json").read_text(
-                    encoding="utf-8"
-                )
-            )
+            outside_manifest = json.loads((outside_validator / "installation.json").read_text())
             external_validator = source_installation.parent / "external.py"
-            external_validator.write_bytes(
-                (outside_validator / "raw_diff_check.py").read_bytes()
-            )
-            outside_manifest["bootstrap_validator"]["path"] = str(
-                external_validator
-            )
-            (outside_validator / "installation.json").write_text(
-                json.dumps(outside_manifest),
-                encoding="utf-8",
-            )
-            with self.assertRaisesRegex(
-                agent_handoff.HandoffDataError,
-                "rooted under the coordinator installation",
-            ):
-                agent_handoff.load_coordinator_installation(
-                    root,
-                    outside_validator,
-                )
+            external_validator.write_bytes((outside_validator / "raw_diff_check.py").read_bytes())
+            outside_manifest["bootstrap_validator"]["path"] = str(external_validator)
+            (outside_validator / "installation.json").write_text(json.dumps(outside_manifest))
+            reject(outside_validator, "rooted under the coordinator installation")
             validator_link = install_case("validator-link")
             candidate_validator = root / "candidate-validator.py"
-            candidate_validator.write_bytes(
-                (validator_link / "raw_diff_check.py").read_bytes()
-            )
-            (validator_link / "raw_diff_check.py").unlink()
-            os.symlink(candidate_validator, validator_link / "raw_diff_check.py")
-            with self.assertRaisesRegex(
-                agent_handoff.HandoffDataError,
-                "regular file",
-            ):
-                agent_handoff.load_coordinator_installation(root, validator_link)
+            candidate_validator.write_bytes((validator_link / "raw_diff_check.py").read_bytes())
+            (validator_link / "raw_diff_check.py").unlink(); os.symlink(candidate_validator, validator_link / "raw_diff_check.py")
+            reject(validator_link, "regular file")
             race_install = install_case("swap-race")
-            replacement_manifest = installation_manifest(root)
-            replacement_manifest["repository"] = "example/other"
-            real_open = os.open
-            swapped = False
+            replacement_manifest = installation_manifest(root); replacement_manifest["repository"] = "example/other"
+            real_open = os.open; swapped = False
             def swap_on_open(path, flags, mode=0o777, *, dir_fd=None):
                 nonlocal swapped
                 if path == "installation.json" and not swapped:
-                    swapped = True
-                    replacement_path = race_install / "replacement.json"
-                    replacement_path.write_text(
-                        json.dumps(replacement_manifest),
-                        encoding="utf-8",
-                    )
-                    os.replace(
-                        replacement_path,
-                        race_install / "installation.json",
-                    )
+                    swapped = True; replacement_path = race_install / "replacement.json"
+                    replacement_path.write_text(json.dumps(replacement_manifest))
+                    os.replace(replacement_path, race_install / "installation.json")
                 return real_open(path, flags, mode, dir_fd=dir_fd)
             with mock.patch("scripts.workflow_pilot.agent_handoff.os.open", side_effect=swap_on_open):
-                with self.assertRaisesRegex(
-                    agent_handoff.HandoffDataError,
-                    "changed before read",
-                ):
-                    agent_handoff.load_coordinator_installation(root, race_install)
+                reject(race_install, "changed before read")
             fifo_install = install_case("validator-fifo")
-            (fifo_install / "raw_diff_check.py").unlink()
-            os.mkfifo(fifo_install / "raw_diff_check.py")
-            with self.assertRaisesRegex(
-                agent_handoff.HandoffDataError,
-                "regular file",
-            ):
-                agent_handoff.load_coordinator_installation(root, fifo_install)
+            (fifo_install / "raw_diff_check.py").unlink(); os.mkfifo(fifo_install / "raw_diff_check.py")
+            reject(fifo_install, "regular file")
             hardlink_install = install_case("validator-hardlink")
             source_validator = hardlink_install / "validator-source.py"
-            source_validator.write_bytes(
-                (hardlink_install / "raw_diff_check.py").read_bytes()
-            )
-            (hardlink_install / "raw_diff_check.py").unlink()
-            os.link(
-                source_validator,
-                hardlink_install / "raw_diff_check.py",
-            )
-            with self.assertRaisesRegex(
-                agent_handoff.HandoffDataError,
-                "must not be hardlinked",
-            ):
-                agent_handoff.load_coordinator_installation(
-                    root,
-                    hardlink_install,
-                )
+            source_validator.write_bytes((hardlink_install / "raw_diff_check.py").read_bytes())
+            (hardlink_install / "raw_diff_check.py").unlink(); os.link(source_validator, hardlink_install / "raw_diff_check.py")
+            reject(hardlink_install, "must not be hardlinked")
     def test_multiple_authorized_coordinators_allow_one_actor_and_freeze_the_set(self):
         with handoff_repository(
             authorized_coordinators=[
@@ -4339,102 +4317,15 @@ class ExactHandoffTests(unittest.TestCase):
                 bind_history_authority(root, coordinator_database_id=9999)
             bound = bind_history_authority(root, coordinator_database_id=9002)
             self.assertEqual(bound["pr_binding"]["coordinator_database_id"], 9002)
-    def test_atomic_publication_rejects_split_and_stale_coordinators(self):
-        with handoff_repository() as (root, _base, parent, result):
-            document = handoff_document(root, parent, result)
-            report = agent_handoff.validate_document(document, root)
-            current, history, plan = plan_advance_authority(root, document, report)
-            owner = AUTHORITY_OWNERS[str(root)]
-            def commits(message):
-                authority_id = owner_create_record_commit(
-                    owner,
-                    plan["record"],
-                    "authority.json",
-                    current["object_id"],
-                    message=message,
-                )
-                anchor = copy.deepcopy(plan["anchor_record_template"])
-                anchor["authority_object_id"] = authority_id
-                anchor_id = owner_create_record_commit(
-                    owner,
-                    anchor,
-                    "anchor.json",
-                    current["anchor_object_id"],
-                    message=message,
-                )
-                return authority_id, anchor_id
-            first_authority, first_anchor = commits(b"coordinator one\n")
-            second_authority, second_anchor = commits(b"coordinator two\n")
-            git(
-                owner,
-                "push",
-                "-q",
-                "--atomic",
-                "origin",
-                f"{first_authority}:{plan['ref']}",
-                f"{first_anchor}:{plan['anchor_ref']}",
-            )
-            stale = subprocess.run(
-                reporter.git_command(
-                    owner,
-                    "push",
-                    "--atomic",
-                    "origin",
-                    f"{second_authority}:{plan['ref']}",
-                    f"{second_anchor}:{plan['anchor_ref']}",
-                ),
-                cwd=owner,
-                env=reporter.git_environment(offline=True),
-                check=False,
-                capture_output=True,
-            )
-            self.assertNotEqual(stale.returncode, 0)
-            self.assertEqual(
-                git(root, "ls-remote", "--refs", "origin", plan["ref"]).split()[0],
-                first_authority,
-            )
-            split = subprocess.run(
-                reporter.git_command(
-                    owner,
-                    "push",
-                    "origin",
-                    f"{second_authority}:{plan['ref']}",
-                ),
-                cwd=owner,
-                env=reporter.git_environment(offline=True),
-                check=False,
-                capture_output=True,
-            )
-            self.assertNotEqual(split.returncode, 0)
-            recovered = advance_history_authority(root)
-            self.assertEqual(recovered["sequence"], 2)
+    def test_publication_rejects_server_without_atomic_support(self):
         with handoff_repository() as (root, _base, _parent, _result):
-            remote = Path(git(root, "remote", "get-url", "origin"))
-            git(remote, "config", "receive.advertiseAtomic", "false")
-            current = agent_handoff.read_history_authority(
-                root,
-                "example/workflow",
-                178,
-                None,
-            )
+            git(BROKER_REMOTES[str(root)], "config", "receive.advertiseAtomic", "false")
             document = handoff_document(root, _parent, _result)
             report = agent_handoff.validate_document(document, root)
-            with self.assertRaisesRegex(
-                agent_handoff.HandoffDataError,
-                "does not support the required atomic",
-            ):
-                agent_handoff.plan_history_authority(
-                    root,
-                    "example/workflow",
-                    178,
-                    None,
-                    operation="advance",
-                    expected_object_id=current["object_id"],
-                    expected_sequence=current["sequence"],
-                    handoff_document=document,
-                    handoff_result=report,
-                    handoff_id="issue-178-round-1",
-                )
+            current, _history, plan = plan_advance_authority(root, document, report)
+            with self.assertRaisesRegex(agent_handoff.HandoffDataError, "authenticated transport broker publish failed"):
+                publish_authority_plan(root, AUTHORITY_OWNERS[str(root)], plan,
+                                       current["object_id"], issue=178, pull_request=None)
     def test_external_attestation_binds_every_eligibility_input(self):
         with handoff_repository() as (root, _base, parent, result):
             installation = COORDINATOR_INSTALLATIONS[str(root)]
@@ -5166,14 +5057,8 @@ class ExactHandoffTests(unittest.TestCase):
                         ),
                     )
                     plan["record"]["publication_attestation"] = publication
-                    publish_authority_plan(
-                        root,
-                        AUTHORITY_OWNERS[str(root)],
-                        plan,
-                        current["object_id"],
-                        issue=history["issue"],
-                        pull_request=history["pull_request"],
-                        read_back=False,
+                    publish_unvalidated_authority_plan(
+                        root, AUTHORITY_OWNERS[str(root)], plan, current["object_id"]
                     )
                     successor = copy.deepcopy(document)
                     configure_review_successor(
@@ -5229,14 +5114,8 @@ class ExactHandoffTests(unittest.TestCase):
                 history_carrier=None,
                 history_receipt=forged_history,
             )
-            publish_authority_plan(
-                root,
-                AUTHORITY_OWNERS[str(root)],
-                plan,
-                current["object_id"],
-                issue=history["issue"],
-                pull_request=history["pull_request"],
-                read_back=False,
+            publish_unvalidated_authority_plan(
+                root, AUTHORITY_OWNERS[str(root)], plan, current["object_id"]
             )
             change = root / "scripts" / "workflow_pilot" / "change.py"
             change.write_text("FORGED = True\n", encoding="utf-8")
@@ -5288,14 +5167,8 @@ class ExactHandoffTests(unittest.TestCase):
                 history_carrier=mutated_carrier,
                 history_receipt=history,
             )
-            publish_authority_plan(
-                root,
-                AUTHORITY_OWNERS[str(root)],
-                plan,
-                current["object_id"],
-                issue=history["issue"],
-                pull_request=history["pull_request"],
-                read_back=False,
+            publish_unvalidated_authority_plan(
+                root, AUTHORITY_OWNERS[str(root)], plan, current["object_id"]
             )
             with self.assertRaisesRegex(
                 agent_handoff.HandoffDataError,
@@ -5374,6 +5247,7 @@ class ExactHandoffTests(unittest.TestCase):
                     )
                     mutated_document = copy.deepcopy(document)
                     mutate(mutated_document["history_authority"])
+                    set_coordinator_receipt_time(mutated_document, iso_utc(datetime.now(timezone.utc).replace(microsecond=0)))
                     sign_coordinator_document(mutated_document, root)
                     with self.assertRaises(agent_handoff.HandoffDataError):
                         agent_handoff.validate_document(mutated_document, root)
@@ -5860,7 +5734,7 @@ class ExactHandoffTests(unittest.TestCase):
             )
             report = agent_handoff.validate_document(document, root)
             self.assertTrue(report["summary"]["trusted_push_eligible"])
-            remote = Path(git(root, "remote", "get-url", "origin"))
+            remote = BROKER_REMOTES[str(root)]
             transaction_hook = remote / "hooks" / "reference-transaction"
             transaction_hook.chmod(0o600)
             git(remote, "update-ref", "-d", reference)
@@ -6271,11 +6145,11 @@ class ExactHandoffTests(unittest.TestCase):
     def test_terminal_remote_reconciliation_rejects_post_snapshot_push(self):
         with handoff_repository() as (root, _base, parent, result):
             document = handoff_document(root, parent, result)
-            git(
+            broker_git(
                 root,
                 "push",
                 "-q",
-                "origin",
+                str(BROKER_REMOTES[str(root)]),
                 f"{result}:refs/heads/{document['handoffs'][0]['expected_branch']}",
             )
             report = agent_handoff.validate_document(document, root)
@@ -6321,7 +6195,7 @@ class ExactHandoffTests(unittest.TestCase):
                 authorized_non_user,
             )
             owner = AUTHORITY_OWNERS[str(root)]
-            remote = Path(git(root, "remote", "get-url", "origin"))
+            remote = BROKER_REMOTES[str(root)]
             transaction_hook = remote / "hooks" / "reference-transaction"
             def publish_forged(*, signer=None, ruleset_id=None, bypass_actors=None):
                 record = {
@@ -6505,88 +6379,35 @@ class ExactHandoffTests(unittest.TestCase):
                     finally:
                         restore_current()
     def test_remote_git_transport_timeouts_are_bounded(self):
-        def invoke_authority_read(root):
-            return agent_handoff.read_history_authority(
-                root,
-                "example/workflow",
-                178,
-                None,
-            )
-        def invoke_atomic_preflight(root):
-            installation = installation_root_path(root)
-            return agent_handoff.require_atomic_push_capability(
-                root,
-                installation,
-                [
-                    (
-                        git(root, "rev-parse", "HEAD"),
-                        agent_handoff.history_authority_ref(178, None),
-                    ),
-                    (
-                        git(root, "rev-parse", "HEAD^"),
-                        agent_handoff.history_anchor_ref(178),
-                    ),
-                ],
-            )
-        cases = (
-            (
-                "authority-read",
-                invoke_authority_read,
-                "remote-git-timeout: Git ls-remote",
-            ),
-            (
-                "atomic-preflight",
-                invoke_atomic_preflight,
-                "remote-git-preflight-timeout: Git push",
-            ),
-        )
-        for name, callback, pattern in cases:
+        for name in ("authority-read", "publication"):
             with self.subTest(case=name):
-                with handoff_repository() as (root, _base, _parent, _result):
-                    log_path, pid_path, transport = install_stalling_transport(root)
-                    environment = reporter.git_environment(offline=False)
-                    environment.update(
-                        {
-                            "GIT_SSH_COMMAND": str(transport),
-                            "GIT_SSH_VARIANT": "simple",
-                        }
-                    )
+                with handoff_repository() as (root, _base, parent, result):
+                    if name == "publication":
+                        document = handoff_document(root, parent, result)
+                        report = agent_handoff.validate_document(document, root)
+                        current, _history, plan = plan_advance_authority(root, document, report)
+                        identity, _authority, _anchor = materialize_authority_plan(
+                            root, AUTHORITY_OWNERS[str(root)], plan, current["object_id"],
+                            issue=178, pull_request=None,
+                        )
+                    service = install_stalling_broker(root)
                     started = time.monotonic()
-                    with (
-                        mock.patch.object(
-                            reporter,
-                            "git_environment",
-                            return_value=environment,
-                        ),
-                        mock.patch.object(
-                            agent_handoff,
-                            "REMOTE_GIT_TIMEOUT_SECONDS",
-                            0.2,
-                        ),
-                    ):
+                    with mock.patch.object(agent_handoff, "REMOTE_GIT_TIMEOUT_SECONDS", 0.2):
                         with self.assertRaisesRegex(
                             agent_handoff.HandoffDataError,
-                            pattern,
+                            "remote-git-timeout: authenticated transport broker failed",
                         ):
-                            callback(root)
+                            if name == "authority-read":
+                                agent_handoff.read_history_authority(
+                                    root, "example/workflow", 178, None
+                                )
+                            else:
+                                agent_handoff.publish_authority_plan(
+                                    installation_root_path(root), identity
+                                )
                     self.assertLess(time.monotonic() - started, 2.0)
-                    invocations = [
-                        line
-                        for line in log_path.read_text(
-                            encoding="utf-8"
-                        ).splitlines()
-                        if line
-                    ]
-                    self.assertEqual(len(invocations), 1)
-                    self.assertIn(
-                        (
-                            "git-upload-pack"
-                            if name == "authority-read"
-                            else "git-receive-pack"
-                        ),
-                        invocations[0],
-                    )
-                    wait_for_pid_exit(pid_path)
+                    service.terminate(); service.wait(timeout=2)
+                    service.stdout.close(); service.stderr.close()
     def test_allowed_check_subprocess_timeouts_are_bounded(self):
         with handoff_repository() as (root, _base, parent, result):
             pid_path = root.parent / "hanging-check.pid"
@@ -7318,7 +7139,7 @@ class ReporterHandoffExtensionTests(unittest.TestCase):
                 "anchor.json",
                 message=b"alternate anchor\n",
             )
-            remote = Path(git(root, "remote", "get-url", "origin"))
+            remote = BROKER_REMOTES[str(root)]
             hook = remote / "hooks" / "reference-transaction"
             hook.chmod(0o600)
             git(

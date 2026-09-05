@@ -760,16 +760,16 @@ signature fields remain nonempty.
 worktree to public configuration and the external bootstrap validator. Its
 `installation.json` contains repository IDs, authorized coordinator users,
 explicit separately typed non-user bypasses, frozen delivery/base branches,
-the exact canonical authority remote URL, expected ruleset identities, and public signer material only. Same-UID
-HMAC secrets, candidate-authored digests, and permission modes do not establish
-trust. Authority reads reject any fetched authority chain whose signer
+the exact canonical authority endpoint, an authenticated transport-broker
+socket, publication-plan/object stores, expected ruleset identities, and
+public signer material only. Same-UID HMAC secrets, candidate-authored
+digests, and permission modes do not establish trust. Authority reads reject any fetched authority chain whose signer
 identity/public material digest, ruleset ID, full bypass actor set, or frozen
 delivery repository/branch identity drift from that verified installation
 before any fetched publication signature or ruleset response can self-attest
-the substitute history. In `bare-remote-config` mode, the installation must
-also reject both force pushes and deletions for the protected refs before
-bootstrap or trust begins. Missing external asymmetric attestation fails
-closed.
+the substitute history. `external-broker` fixtures and GitHub ruleset
+installations reject force pushes and deletions before bootstrap or trust.
+Missing external asymmetric attestation fails closed.
 
 `assignment_sent`, `assignment_received`, `progressing`, `committed`, and
 `handed_off` are distinct, unique, strictly ordered states. A result is
@@ -859,11 +859,14 @@ exactly authorized bypass actors. A coordinator uses the 2026 REST user shape:
 Non-user types require explicit separately typed frozen authorization and
 default to rejection. An unrelated ruleset ID or unexpected bypass rejects.
 
-Publication is one normal `git push --atomic` containing both direct-parent
-commits. The coordinator first preflights remote atomic capability. A split
-push, a stale competing coordinator plan, or a server without atomic support
-rejects without moving either protected head; recovery requires a new plan
-from the common observed pair.
+Publication accepts only the external installation path and one short-lived
+signed publication-plan identity. The plan binds repository/endpoint, issue,
+operation, nonce/sequence, exact authority/anchor refs, expected old OIDs, and
+new commit OIDs. The publisher snapshots and validates both complete object
+closures before contacting the authenticated broker; the broker independently
+checks the same plan, preflights and performs one atomic push. Split, stale,
+master/tag/unrelated/wrong-issue/ref/object/OID, substituted, or expired plans
+cannot reach credentials or move a protected head.
 
 Each fixed three-attempt read queries both remote OIDs, fetches their exact
 objects without writing `FETCH_HEAD` or local refs, and queries both again.
@@ -920,12 +923,16 @@ python3 -m scripts.workflow_pilot.agent_handoff \
   --publication-attestation <signed-json> \
   --coordinator-installation <external-path>
 ```
-The output names normalized authority and anchor records, both expected remote
-objects, the single-use operation nonce, authorized numeric actors, and one
-atomic push template. It never emits separate or force-capable commands,
-creates an object, updates a ref, or pushes. Each advance/bind requires current
-objects, sequence, externally signed publication inputs, and a fresh atomic
-preflight.
+The output names normalized authority and anchor records, expected remote
+objects, the single-use nonce, authorized numeric actors, and the external
+signed-plan publication API. It never emits refspecs, endpoints, separate or
+force-capable commands, creates an object, updates a ref, obtains a credential,
+or pushes. The external coordinator materializes and signs the exact plan, then
+calls `publish_authority_plan(<external-installation>, <signed-plan-id>)`.
+Every `ls-remote`, fetch, preflight, and push crosses the same signed broker
+boundary; GitHub credentials remain broker-private and local tests use an
+authenticated protected broker whose server storage is absent from candidate
+paths and whose real server-side hook rejects split updates.
 Normal clones fetch the authority explicitly during validation. Implementation
 owners remain prohibited from every bootstrap/advance/push action.
 
