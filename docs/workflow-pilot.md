@@ -777,16 +777,30 @@ signals, native-library loading and network attempts reject. A caught denial
 is latched and cannot be converted into a successful receipt. This is an
 execution-authority boundary for trusted programs, not a claim that Python
 audit hooks can confine arbitrary malicious Python or native code. A
-worker-only seccomp-BPF filter additionally kills forbidden pathname/network
-acquisition, process creation/exec, group/session changes, signaling,
-ptrace/prctl and alternate-ABI attempts. This closes native operations such
-as `setpgid` which do not emit a Python audit event and could otherwise escape
-guardian cleanup. The filter also denies the `access`/`faccessat`/`faccessat2`
-existence-probe family on each supported ABI, plus current-directory,
-stat/statfs, readlink, directory-enumeration, extended-attribute and timestamp
-pathname metadata operations. In particular, `os.access()` emits no Python
-audit event and must not turn live filesystem existence into a signable
-verdict. Test declared artifact existence with
+worker-only seccomp-BPF filter uses a **closed capability allowlist**, with
+explicit x86-64/AArch64 syscall mappings and process termination for every
+unlisted, future or alternate-ABI call. It is not a growing pathname blacklist.
+The allowed capabilities are private descriptor I/O/duplication/readiness,
+anonymous memfds/pipes, interpreter memory allocation/synchronization,
+self/runtime observations, clocks/entropy, signal handling and exit.
+Only protocol pipes survive FD admission; no filesystem descriptor or
+pathname-acquisition capability is available afterward. `fstat` can inspect
+those private descriptors, not reopen a path. Restricted `fcntl` commands
+support descriptor flags/duplication, pipe-size inspection and memfd seals,
+not asynchronous signal ownership, filesystem commands or leases.
+`prlimit64` can only inspect the worker's own limits (`pid=0`,
+`new_limit=NULL`); it cannot inspect another process or change a limit.
+
+Thus pathname acquisition, metadata, mutation and probes are all denied:
+access, stat/statfs, readlink, directory enumeration, chdir/chroot,
+ownership/mode changes, extended attributes, timestamps, link/rename/delete,
+mount/handle/quota/watch interfaces and exec. Network acquisition,
+process/thread creation, group/session changes, signaling and ptrace/prctl
+are also absent. Unknown `os.*` audit events, as well as native-library,
+resource, subprocess and socket audit events, latch a denial rather than
+silently gaining authority. In particular, neither unaudited `os.access()`
+nor caught `os.chroot()`/`os.chown()` errors may turn live filesystem
+existence into a signable verdict. Test declared artifact existence with
 `context.entry(tree, path)["mode"] is not None`; this answers from the sealed
 Git entry even if the working pathname is created, deleted or restored.
 The guardian itself retains the capabilities to supervise and launch declared
@@ -832,6 +846,10 @@ diagnostics and zero exit status. Caller-owned #179 finding/round/disposition
 bindings remain in the request and semantic result; callers still validate
 them. Durable cross-invocation replay scope/publication remains the existing
 receipt consumer's responsibility, not a second persistence subsystem.
+Receipt construction and `.receipt` parsing share `MAX_RECEIPT_BYTES`;
+signing and verification enforce that same inner bound and the separate
+`MAX_SIGNED_RECEIPT_BYTES` wrapper bound. An admitted result cannot defer
+a size failure until its receipt is first used.
 
 The existing production `classify-event` mode bootstraps the runtime directly
 from hash-verified exact-HEAD Git object bytes, with no repository entry in
@@ -851,6 +869,16 @@ artifacts, 8,192 distinct Git proof objects, eight tree slots, 32 programs and
 four nested invocation levels. The proof-object count is enforced before
 fetching an additional object, not only when parsing a serialized bundle;
 cached objects remain usable at the limit.
+Canonical receipts have a separate **1 MiB + 4 KiB** ceiling: the additional
+4 KiB bounds parent-added argv/bootstrap and digest metadata, which is not
+part of the worker output. Signed receipts allow exactly 93 further bytes
+for the canonical outer object and 64-character HMAC. Both encodings include
+one trailing newline. These are receipt-specific allowances, not an increase
+to program output, collection, requests or nested-message limits.
+Construction, parsing, signing and verification reject over-limit records.
+A near-limit loaded-artifact list can therefore produce a usable top-level
+receipt even when the added metadata crosses 1 MiB; a nested value-plus-receipt
+that exceeds its existing 1 MiB transport still rejects.
 Each invocation accepts a positive timeout up to 120 seconds. A worker also
 has a 512 MiB address-space ceiling and a CPU ceiling. On both supported ABIs,
 hard `RLIMIT_NOFILE=64` bounds new descriptor allocation, and hard

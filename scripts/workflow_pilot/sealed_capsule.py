@@ -47,6 +47,10 @@ MAX_BUNDLE_BYTES = 16 * 1024 * 1024
 MAX_PROGRAM_BYTES = 2 * 1024 * 1024
 MAX_REQUEST_BYTES = 4 * 1024 * 1024
 MAX_OUTPUT_BYTES = 1024 * 1024
+MAX_RECEIPT_BYTES = MAX_OUTPUT_BYTES + 4 * 1024
+# The canonical wrapper adds 93 bytes; both encodings have one trailing newline.
+MAX_SIGNED_RECEIPT_BYTES = MAX_RECEIPT_BYTES + len(
+    b'{"hmac_sha256":"' + b"0" * 64 + b'","receipt":}')
 MAX_DIAGNOSTIC_BYTES = 64 * 1024
 MAX_ENTRIES = 1024
 MAX_SECONDS = 120
@@ -681,13 +685,17 @@ class ExecutionResult:
     output_bytes: bytes
     _verification: object = field(default=None, repr=False, compare=False)
 
+    def __post_init__(self):
+        parse(self.receipt_bytes, MAX_RECEIPT_BYTES)
+        parse(self.output_bytes, MAX_OUTPUT_BYTES)
+
     @property
     def value(self):
-        return parse(self.output_bytes)
+        return parse(self.output_bytes, MAX_OUTPUT_BYTES)
 
     @property
     def receipt(self):
-        return parse(self.receipt_bytes)
+        return parse(self.receipt_bytes, MAX_RECEIPT_BYTES)
 
 
 def sign_receipt(result: ExecutionResult, key: bytes) -> bytes:
@@ -698,15 +706,21 @@ def sign_receipt(result: ExecutionResult, key: bytes) -> bytes:
     if record["output_sha256"] != digest(result.output_bytes):
         raise CapsuleError("receipt/output identity mismatch")
     seal = hmac.new(key, RECEIPT_DOMAIN + result.receipt_bytes, hashlib.sha256).hexdigest()
-    return canonical({"receipt": record, "hmac_sha256": seal})
+    signed = canonical({"receipt": record, "hmac_sha256": seal})
+    if len(signed) > MAX_SIGNED_RECEIPT_BYTES:
+        raise CapsuleError("signed receipt exceeds byte limit")
+    return signed
 
 
 def verify_receipt(raw: bytes, key: bytes, expected: ExecutionResult) -> dict:
-    value = _keys(parse(raw), {"receipt", "hmac_sha256"}, "signed receipt")
+    value = _keys(parse(raw, MAX_SIGNED_RECEIPT_BYTES),
+                  {"receipt", "hmac_sha256"}, "signed receipt")
     if (not isinstance(key, bytes) or len(key) < 32 or not isinstance(expected, ExecutionResult)
             or expected._verification is not _VERIFIED_RESULT):
         raise CapsuleError("receipt verification needs its exact expected execution")
     received = canonical(value["receipt"])
+    if len(received) > MAX_RECEIPT_BYTES:
+        raise CapsuleError("receipt exceeds byte limit")
     actual = hmac.new(key, RECEIPT_DOMAIN + received, hashlib.sha256).hexdigest()
     if (not isinstance(value["hmac_sha256"], str)
             or not hmac.compare_digest(actual, value["hmac_sha256"])
@@ -862,12 +876,7 @@ class _Guard(importlib.abc.MetaPathFinder, importlib.abc.Loader):
     def audit(self, event, arguments):
         if event == "open":
             self.reject("filesystem/descriptor open is forbidden after capsule validation")
-        if event in {"os.system", "os.fork", "os.forkpty", "os.posix_spawn", "os.exec",
-                     "os.kill", "os.killpg",
-                     "subprocess.Popen", "ctypes.dlopen", "ctypes.dlsym",
-                     "os.listdir", "os.scandir", "os.chdir", "os.chmod", "os.remove",
-                     "os.rename", "os.rmdir", "os.mkdir", "os.link", "os.symlink",
-                     "os.truncate", "socket.__new__"}:
+        if event.startswith(("os.", "socket.", "subprocess.", "ctypes.", "resource.")):
             self.reject(f"operation outside capsule capabilities: {event}")
         if event == "import" and arguments[0] not in sys.modules and arguments[0] not in self.bundle.modules:
             self.reject(f"import outside sealed closure: {arguments[0]}")
@@ -917,35 +926,44 @@ def _inherited_fds():
 
 
 def _lock_worker_kernel():
-    """Block live pathname authority and group escape, including unaudited calls."""
+    """Allow only private-FD/memory/runtime capabilities; unknown calls kill."""
     machine = os.uname().machine
-    if machine == "x86_64":
-        architecture = 0xC000003E
-        forbidden = {
-            2, 4, 6, 41, 53, 56, 57, 58, 59, 62, 76, 77, 78, 80, 81, 82, 83, 84,
-            85, 86, 87, 88, 89, 90, 92, 94, 101, 109, 112, 129, 133, 157, 165, 166,
-            200, 217, 234, 257, 258, 259, 260, 261, 262, 263, 264, 265, 266, 267,
-            268, 272, 297, 303, 304, 308, 310, 311, 316, 317, 321, 322, 323, 332,
-        }
-        forbidden.update({21, 269})             # access, faccessat
-        forbidden.update({79, 137, 138})         # getcwd, statfs, fstatfs
-        forbidden.update({132, 235, 280})        # utime, utimes, utimensat
-        forbidden.update(range(188, 200))        # all pathname/FD xattr variants
-    elif machine == "aarch64":
-        architecture = 0xC00000B7
-        forbidden = {
-            17, 33, 34, 35, 36, 37, 38, 39, 40, 48, 49, 50, 56, 61, 78, 79,
-            97, 117, 129, 130, 131, 138, 154, 157, 167, 198, 199, 220, 221,
-            240, 264, 265, 268, 270, 271, 276, 277, 280, 281, 282, 291,
-        }
-        forbidden.update({43, 44, 88})           # statfs, fstatfs, utimensat
-        forbidden.update(range(5, 17))           # all pathname/FD xattr variants
-    else:
+    abis = {"x86_64": (0xC000003E, 0), "aarch64": (0xC00000B7, 1)}
+    if machine not in abis:
         raise CapsuleUnavailable(f"sealed worker syscall ABI is unsupported: {machine}")
-    # The newer cross-architecture syscall range includes pidfd signaling/
-    # acquisition, io_uring, mount APIs, clone3, openat2 and faccessat2.
-    forbidden.update({424, 425, 426, 427, 428, 429, 430, 431, 432, 433,
-                      434, 435, 437, 438, 439, 442})
+    architecture, column = abis[machine]
+    # x86-64 / AArch64 Linux syscall numbers. Only anonymous memfds and pipes
+    # can be created, and only protocol pipes survive worker FD admission.
+    calls = {
+        "read": (0, 63), "write": (1, 64), "close": (3, 57), "fstat": (5, 80),
+        "lseek": (8, 62), "pread64": (17, 67), "pwrite64": (18, 68),
+        "readv": (19, 65), "writev": (20, 66),
+        "preadv": (295, 69), "pwritev": (296, 70),
+        "preadv2": (327, 286), "pwritev2": (328, 287),
+        "pipe": (22, None), "pipe2": (293, 59), "memfd_create": (319, 279),
+        "dup": (32, 23), "dup2": (33, None), "dup3": (292, 24), "fcntl": (72, 25),
+        "poll": (7, None), "select": (23, None),
+        "pselect6": (270, 72), "ppoll": (271, 73),
+        "epoll_create": (213, None), "epoll_create1": (291, 20),
+        "epoll_ctl": (233, 21), "epoll_wait": (232, None),
+        "epoll_pwait": (281, 22), "epoll_pwait2": (441, 441),
+        # Interpreter allocation and synchronization, without new threads.
+        "mmap": (9, 222), "mprotect": (10, 226), "munmap": (11, 215),
+        "brk": (12, 214), "mremap": (25, 216), "madvise": (28, 233),
+        "futex": (202, 98), "sched_yield": (24, 124),
+        # Self/runtime observations, waits, signal handling and shutdown.
+        "rt_sigaction": (13, 134), "rt_sigprocmask": (14, 135),
+        "rt_sigreturn": (15, 139), "sigaltstack": (131, 132),
+        "nanosleep": (35, 101), "clock_nanosleep": (230, 115),
+        "clock_gettime": (228, 113), "clock_getres": (229, 114),
+        "gettimeofday": (96, 169), "time": (201, None),
+        "restart_syscall": (219, 128), "getrandom": (318, 278),
+        "getpid": (39, 172), "getppid": (110, 173), "gettid": (186, 178),
+        "getuid": (102, 174), "geteuid": (107, 175),
+        "getgid": (104, 176), "getegid": (108, 177),
+        "getrlimit": (97, 163), "getrusage": (98, 165), "prlimit64": (302, 261),
+        "exit": (60, 93), "exit_group": (231, 94),
+    }
 
     class Filter(ctypes.Structure):
         _fields_ = [("code", ctypes.c_ushort), ("jt", ctypes.c_ubyte),
@@ -963,9 +981,28 @@ def _lock_worker_kernel():
         (0x35, 0, 1, 0x40000000),              # no x32/alternate syscall ABI
         (0x06, 0, 0, kill_process),
     ]
-    for number in sorted(forbidden):
-        instructions.extend(((0x15, 0, 1, number), (0x06, 0, 0, kill_process)))
-    instructions.append((0x06, 0, 0, allow))
+    for name, numbers in calls.items():
+        number = numbers[column]
+        if number is None:
+            continue
+        rule = []
+        if name == "fcntl":
+            # No locks, async-signal ownership, leases or filesystem commands.
+            rule.extend(((0x20, 0, 0, 28), (0x15, 1, 0, 0),
+                         (0x06, 0, 0, kill_process), (0x20, 0, 0, 24)))
+            for command in (0, 1, 2, 3, 1030, 1032, 1033, 1034):
+                rule.extend(((0x15, 0, 1, command), (0x06, 0, 0, allow)))
+            rule.append((0x06, 0, 0, kill_process))
+        else:
+            if name == "prlimit64":
+                # pid == 0 and new_limit == NULL, including both 32-bit halves.
+                for offset in (16, 20, 32, 36):
+                    rule.extend(((0x20, 0, 0, offset), (0x15, 1, 0, 0),
+                                 (0x06, 0, 0, kill_process)))
+            rule.append((0x06, 0, 0, allow))
+        instructions.append((0x15, 0, len(rule), number))
+        instructions.extend(rule)
+    instructions.append((0x06, 0, 0, kill_process))
     filters = (Filter * len(instructions))(*(Filter(*entry) for entry in instructions))
     program = Program(len(instructions), filters)
     libc = ctypes.CDLL(None, use_errno=True)

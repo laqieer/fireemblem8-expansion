@@ -148,6 +148,106 @@ class SealedCapsuleTests(unittest.TestCase):
             self.assertIn((slot, "inputs/state.json"), paths)
         self.assertIn(("base", "checks/helper.py"), paths)
 
+    def test_near_output_limit_loaded_receipts_remain_usable_without_transport_growth(self):
+        self.write("checks/bounds.py", b"""def capsule_main(request, context):
+    if request.get('nested'):
+        return context.invoke('bounds', {'paths': request['paths']})
+    for path in request['paths']:
+        context.entry('base', path)
+    return None
+""")
+        revision = self.commit()
+        spec = capsule.CapsuleSpec(trees={"base": revision},
+                                   programs={"bounds": "checks/bounds.py"})
+        bundle = capsule._Bundle(capsule._make_bundle(self.root, spec.record()))
+        initial = [bundle.artifacts[("base", record["path"])] for record in bundle.modules.values()]
+        binding = {
+            "version": capsule.VERSION, "program": "bounds", "nonce": "0" * 64,
+            **{field: "0" * 64 for field in ("program_sha256", "runtime_sha256",
+               "artifact_sha256", "request_sha256", "payload_sha256")},
+        }
+        paths = [f"absent/{index:04d}" for index in range(1000)]
+        metadata = [{"tree": "base", "path": path, "role": "data", "mode": None,
+                     "blob": None, "sha256": None, "size": None} for path in paths]
+        size = len(capsule.canonical({
+            "binding": binding, "result": None, "loaded": initial + metadata,
+            "diagnostics": {"stdout_sha256": capsule.digest(b""), "stderr_sha256": capsule.digest(b"")},
+        }))
+        key = b"test-only-capsule-signing-key-1234"
+        collect = capsule._collect
+        overhead = None
+        for crossing in ("receipt", "signed-wrapper"):
+            target = capsule.MAX_OUTPUT_BYTES - (128 if overhead is None else overhead + 40)
+            padding, extra = divmod(target - size, len(paths))
+            declared = tuple(path + "x" * (padding + (index < extra))
+                             for index, path in enumerate(paths))
+            self.assertLessEqual(max(len(path.encode("utf-8")) for path in declared), 1024)
+            full = capsule.CapsuleSpec(trees=spec.trees, programs=spec.programs,
+                                       data={"base": declared})
+            observed = []
+
+            def capture(process, timeout, limit, *args, **kwargs):
+                status, stdout, stderr = collect(process, timeout, limit, *args, **kwargs)
+                observed.append((len(stdout), limit))
+                return status, stdout, stderr
+
+            with self.subTest(crossing=crossing), capsule.prepare(self.root, full) as prepared:
+                with mock.patch.object(capsule, "_collect", side_effect=capture):
+                    result = prepared.execute("bounds", {"paths": list(declared)})
+                self.assertEqual(observed, [(target, capsule.MAX_OUTPUT_BYTES + capsule.MAX_DIAGNOSTIC_BYTES)])
+                overhead = len(result.receipt_bytes) - target
+                self.assertIsNone(result.value)
+                self.assertEqual(len(result.receipt["loaded"]), len(initial) + len(declared))
+                self.assertEqual(
+                    {entry["path"] for entry in result.receipt["loaded"] if entry["role"] == "data"},
+                    set(declared),
+                )
+                if crossing == "receipt":
+                    self.assertGreater(len(result.receipt_bytes), capsule.MAX_OUTPUT_BYTES)
+                    with self.assertRaises(capsule.CapsuleError):
+                        prepared.execute("bounds", {"paths": list(declared), "nested": True})
+                else:
+                    self.assertLessEqual(len(result.receipt_bytes), capsule.MAX_OUTPUT_BYTES)
+                signed = capsule.sign_receipt(result, key)
+                self.assertGreater(len(signed), capsule.MAX_OUTPUT_BYTES)
+                self.assertLessEqual(len(result.receipt_bytes), capsule.MAX_RECEIPT_BYTES)
+                self.assertLessEqual(len(signed), capsule.MAX_SIGNED_RECEIPT_BYTES)
+                self.assertEqual(capsule.verify_receipt(signed, key, result), result.receipt)
+
+    def test_receipt_and_signed_bounds_accept_exact_sizes_and_reject_one_byte_over(self):
+        key = b"test-only-capsule-signing-key-1234"
+        with capsule.Capsule(self.bundle, self.spec) as prepared:
+            result = prepared.execute("assertion", {})
+            signed = capsule.sign_receipt(result, key)
+            receipt_size, signed_size = len(result.receipt_bytes), len(signed)
+            self.assertEqual(
+                signed_size - receipt_size,
+                capsule.MAX_SIGNED_RECEIPT_BYTES - capsule.MAX_RECEIPT_BYTES,
+            )
+            with mock.patch.multiple(capsule, MAX_RECEIPT_BYTES=receipt_size,
+                                     MAX_SIGNED_RECEIPT_BYTES=signed_size):
+                exact = prepared.execute("assertion", {})
+                self.assertEqual(len(exact.receipt_bytes), receipt_size)
+                self.assertEqual(capsule.verify_receipt(capsule.sign_receipt(exact, key), key, exact),
+                                 exact.receipt)
+                with mock.patch.object(capsule, "MAX_RECEIPT_BYTES", receipt_size - 1):
+                    for operation in (
+                        lambda: prepared.execute("assertion", {}),
+                        lambda: capsule.ExecutionResult(result.receipt_bytes, result.output_bytes),
+                        lambda: result.receipt,
+                        lambda: capsule.sign_receipt(result, key),
+                        lambda: capsule.verify_receipt(signed, key, result),
+                    ):
+                        with self.assertRaises(capsule.CapsuleError):
+                            operation()
+                with mock.patch.object(capsule, "MAX_SIGNED_RECEIPT_BYTES", signed_size - 1):
+                    with self.assertRaises(capsule.CapsuleError):
+                        capsule.sign_receipt(result, key)
+                    with self.assertRaises(capsule.CapsuleError):
+                        capsule.verify_receipt(signed, key, result)
+        with self.assertRaises(capsule.CapsuleError):
+            capsule.ExecutionResult(result.receipt_bytes, capsule.canonical("x" * capsule.MAX_OUTPUT_BYTES))
+
     def test_swap_restore_every_former_path_cannot_change_sealed_execution(self):
         paths = ("checks/checker.py", "checks/assertion.py", "checks/helper.py",
                  "inputs/state.json", capsule.RUNTIME_PATH)
@@ -611,6 +711,58 @@ class SealedCapsuleTests(unittest.TestCase):
                     child.wait(timeout=3)
         self.assertEqual(before, {fd: identity[:2] for fd, identity in self.descriptors().items()})
 
+    def test_live_chroot_and_chown_oracles_cannot_return_receipted_verdicts(self):
+        source = """import errno, os
+def capsule_main(request, context):
+    try:
+        if request['operation'] == 'chroot':
+            os.chroot(request['path'])
+        else:
+            os.chown(request['path'], -1, -1)
+    except OSError as error:
+        return {'exists': error.errno != errno.ENOENT, 'errno': error.errno}
+    return {'exists': True, 'errno': 0}
+"""
+        control = (source + "\nimport json, sys\n"
+                   "print(json.dumps(capsule_main(json.loads(sys.argv[1]), None)))\n")
+        path = self.root / "inputs/owned-metadata-oracle"
+        before = {fd: identity[:2] for fd, identity in self.descriptors().items()}
+        try:
+            with self.attack(source) as prepared:
+                for operation in ("chroot", "chown"):
+                    for present in (False, True):
+                        with self.subTest(operation=operation, present=present):
+                            path.unlink(missing_ok=True)
+                            if present:
+                                path.write_bytes(b"ordinary owned file, never a chroot directory\n")
+                            request = {"operation": operation, "path": str(path)}
+                            observed = subprocess.run(
+                                [capsule.PYTHON, "-I", "-S", "-c", control,
+                                 capsule.canonical(request).decode("ascii")],
+                                env=capsule.ENVIRONMENT, capture_output=True, check=True, timeout=3,
+                            )
+                            expected_errno = (errno.ENOTDIR if operation == "chroot" else 0) if present else errno.ENOENT
+                            self.assertEqual(json.loads(observed.stdout),
+                                             {"exists": present, "errno": expected_errno})
+                            with self.assertRaises(capsule.CapsuleError):
+                                prepared.execute("attack", request)
+        finally:
+            path.unlink(missing_ok=True)
+        self.assertEqual(before, {fd: identity[:2] for fd, identity in self.descriptors().items()})
+
+    def test_os_audit_namespace_is_closed_and_denials_are_latched(self):
+        for event in ("os.chroot", "os.chown", "os.chmod", "os.utime", "os.rename",
+                      "os.getxattr", "os.setxattr", "os.removexattr", "os.listxattr",
+                      "os.future_path_operation"):
+            with self.subTest(event=event):
+                guard = capsule._Guard(None, "", b"")
+                with self.assertRaises(capsule.CapsuleError):
+                    guard.audit(event, ())
+                self.assertEqual(len(guard.denied), 1)
+        guard = capsule._Guard(None, "", b"")
+        guard.audit("mmap.__new__", (-1, 4096, 0, 0))
+        self.assertEqual(guard.denied, [])
+
     def test_caught_pathname_metadata_probes_cannot_return_pass(self):
         attempts = {
             "access": "os.access(path, os.F_OK)",
@@ -622,10 +774,17 @@ class SealedCapsuleTests(unittest.TestCase):
             "statvfs": "os.statvfs(path)",
             "pathconf": "os.pathconf(path, 'PC_NAME_MAX')",
             "getcwd": "os.getcwd()",
+            "chroot": "os.chroot(path)",
+            "chown": "os.chown(path, -1, -1)",
+            "chown-no-follow": "os.chown(path, -1, -1, follow_symlinks=False)",
+            "lchown": "os.lchown(path, -1, -1)",
+            "chmod": "os.chmod(path, 0o600)",
             "getxattr": "os.getxattr(path, 'user.capsule')",
             "getxattr-no-follow": "os.getxattr(path, 'user.capsule', follow_symlinks=False)",
             "listxattr": "os.listxattr(path)",
             "listxattr-no-follow": "os.listxattr(path, follow_symlinks=False)",
+            "setxattr": "os.setxattr(path, 'user.capsule', b'probe')",
+            "removexattr": "os.removexattr(path, 'user.capsule')",
             "utime": "os.utime(path, None)",
         }
         for label, attempt in attempts.items():
@@ -643,28 +802,65 @@ class SealedCapsuleTests(unittest.TestCase):
 
     def test_metadata_syscall_filters_cover_both_supported_abis(self):
         policies = {
-            "x86_64": (0xC000003E, (0, 1, 60), {
+            "x86_64": (0xC000003E, {
+                0, 1, 3, 5, 7, 8, 9, 10, 11, 12, 13, 14, 15, 17, 18, 19, 20,
+                22, 23, 24, 25, 28, 32, 33, 35, 39, 60, 72, 96, 97, 98,
+                102, 104, 107, 108, 110, 131, 186, 201, 202, 213, 219, 228,
+                229, 230, 231, 232, 233, 270, 271, 281, 291, 292, 293,
+                295, 296, 302, 318, 319, 327, 328, 441,
+            }, {
                 "access": 21, "faccessat": 269, "faccessat2": 439, "getcwd": 79,
                 "stat": 4, "lstat": 6, "newfstatat": 262, "statx": 332,
-                "statfs": 137, "fstatfs": 138, "readlink": 89, "readlinkat": 267,
+                "ustat": 136, "statfs": 137, "fstatfs": 138, "lookup_dcookie": 212,
+                "readlink": 89, "readlinkat": 267,
                 "getdents": 78, "getdents64": 217, "utime": 132, "utimes": 235,
                 "futimesat": 261, "utimensat": 280,
+                "chroot": 161, "chdir": 80, "fchdir": 81, "pivot_root": 155,
+                "chown": 92, "fchown": 93, "lchown": 94, "fchownat": 260,
+                "chmod": 90, "fchmod": 91, "fchmodat": 268, "fchmodat2": 452,
+                "open": 2, "creat": 85, "openat": 257, "openat2": 437,
+                "name_to_handle_at": 303, "open_by_handle_at": 304,
+                "mkdir": 83, "rmdir": 84, "mknod": 133, "mkdirat": 258, "mknodat": 259,
+                "link": 86, "symlink": 88, "linkat": 265, "symlinkat": 266,
+                "unlink": 87, "unlinkat": 263, "rename": 82, "renameat": 264, "renameat2": 316,
+                "truncate": 76, "ftruncate": 77, "mount": 165, "umount2": 166,
+                "quotactl": 179, "quotactl_fd": 443, "acct": 163, "uselib": 134,
+                "swapon": 167, "swapoff": 168, "execve": 59, "execveat": 322,
+                "inotify_add_watch": 254, "fanotify_mark": 301,
                 **{f"xattr-{number}": number for number in range(188, 200)},
             }),
-            "aarch64": (0xC00000B7, (63, 64, 93), {
+            "aarch64": (0xC00000B7, {
+                20, 21, 22, 23, 24, 25, 57, 59, 62, 63, 64, 65, 66, 67, 68,
+                69, 70, 72, 73, 80, 93, 94, 98, 101, 113, 114, 115, 124,
+                128, 132, 134, 135, 139, 163, 165, 169, 172, 173, 174, 175,
+                176, 177, 178, 214, 215, 216, 222, 226, 233, 261, 278,
+                279, 286, 287, 441,
+            }, {
                 "faccessat": 48, "faccessat2": 439, "getcwd": 17,
                 "newfstatat": 79, "statx": 291, "statfs": 43, "fstatfs": 44,
-                "readlinkat": 78, "getdents64": 61, "utimensat": 88,
+                "lookup_dcookie": 18, "readlinkat": 78, "getdents64": 61, "utimensat": 88,
+                "chroot": 51, "chdir": 49, "fchdir": 50, "pivot_root": 41,
+                "fchownat": 54, "fchown": 55, "fchmod": 52, "fchmodat": 53, "fchmodat2": 452,
+                "openat": 56, "openat2": 437, "name_to_handle_at": 264, "open_by_handle_at": 265,
+                "mknodat": 33, "mkdirat": 34, "unlinkat": 35, "symlinkat": 36, "linkat": 37,
+                "renameat": 38, "renameat2": 276, "truncate": 45, "ftruncate": 46,
+                "mount": 40, "umount2": 39, "quotactl": 60, "quotactl_fd": 443,
+                "acct": 89, "swapon": 224, "swapoff": 225, "execve": 221, "execveat": 281,
+                "inotify_add_watch": 27, "fanotify_mark": 263,
                 **{f"xattr-{number}": number for number in range(5, 17)},
             }),
         }
 
-        def verdict(instructions, architecture, number):
+        def verdict(instructions, architecture, number, arguments=(0,) * 6):
+            data = {0: number & 0xFFFFFFFF, 4: architecture}
+            for index, argument in enumerate(arguments):
+                data[16 + 8 * index] = argument & 0xFFFFFFFF
+                data[20 + 8 * index] = (argument >> 32) & 0xFFFFFFFF
             pc, accumulator = 0, None
             while pc < len(instructions):
                 code, yes, no, operand = instructions[pc]
                 if code == 0x20:
-                    accumulator = {0: number, 4: architecture}[operand]
+                    accumulator = data[operand]
                 elif code == 0x15:
                     pc += yes if accumulator == operand else no
                 elif code == 0x35:
@@ -699,6 +895,19 @@ class SealedCapsuleTests(unittest.TestCase):
                     self.assertEqual(verdict(instructions, architecture, number), 0x7FFF0000)
                     self.assertEqual(verdict(instructions, architecture ^ 1, number), 0x80000000)
                     self.assertEqual(verdict(instructions, architecture, number | 0x40000000), 0x80000000)
+                for number in {*range(512), 4096, -1} - allowed:
+                    self.assertEqual(verdict(instructions, architecture, number), 0x80000000,
+                                     f"{machine}: unexpected syscall capability {number}")
+                fcntl_number, prlimit_number = (72, 302) if machine == "x86_64" else (25, 261)
+                for command in (0, 1, 2, 3, 1030, 1032, 1033, 1034):
+                    self.assertEqual(verdict(instructions, architecture, fcntl_number,
+                                             (3, command, 0, 0, 0, 0)), 0x7FFF0000)
+                for command in (4, 5, 6, 7, 8, 9, 10, 1024, 1025, 1031, 4096, 1 << 32):
+                    self.assertEqual(verdict(instructions, architecture, fcntl_number,
+                                             (3, command, 0, 0, 0, 0)), 0x80000000)
+                for pid, new_limit in ((1, 0), (0, 1), (1 << 32, 0), (0, 1 << 32)):
+                    self.assertEqual(verdict(instructions, architecture, prlimit_number,
+                                             (pid, 7, new_limit, 0, 0, 0)), 0x80000000)
         with mock.patch.object(os, "uname", return_value=types.SimpleNamespace(machine="riscv64")):
             with self.assertRaises(capsule.CapsuleUnavailable):
                 capsule._lock_worker_kernel()
@@ -841,6 +1050,45 @@ def capsule_main(request, context):
         self.assertEqual(result["errors"], {"write": errno.EFBIG, "pwrite": errno.EFBIG})
         self.assertEqual(result["size"], limit)
         self.assertEqual(result["limit"], [limit, limit])
+        self.assertEqual(before, {fd: identity[:2] for fd, identity in self.descriptors().items()})
+
+    def test_closed_kernel_policy_preserves_private_memory_ipc_and_nested_execution(self):
+        before = {fd: identity[:2] for fd, identity in self.descriptors().items()}
+        with self.attack("""import fcntl, mmap, os, selectors
+def capsule_main(request, context):
+    if request.get('nested'):
+        return 'nested-sealed'
+    descriptors = []
+    try:
+        descriptor = os.memfd_create('private-buffer', os.MFD_CLOEXEC | os.MFD_ALLOW_SEALING)
+        descriptors.append(descriptor)
+        with mmap.mmap(-1, 4096) as memory:
+            memory[:6] = b'sealed'
+            os.write(descriptor, memory[:6])
+        os.pwrite(descriptor, b'IPC', 0)
+        fcntl.fcntl(descriptor, fcntl.F_ADD_SEALS, 15)
+        duplicate = os.dup(descriptor)
+        descriptors.append(duplicate)
+        read_fd, write_fd = os.pipe2(os.O_CLOEXEC)
+        descriptors.extend((read_fd, write_fd))
+        with selectors.DefaultSelector() as selector:
+            selector.register(read_fd, selectors.EVENT_READ)
+            os.write(write_fd, b'ready')
+            ready = bool(selector.select(1))
+            message = os.read(read_fd, 5)
+        return {'memory': os.pread(duplicate, 6, 0).decode(), 'size': os.fstat(duplicate).st_size,
+                'seals': fcntl.fcntl(duplicate, fcntl.F_GET_SEALS),
+                'ready': ready, 'message': message.decode(),
+                'nested': context.invoke('attack', {'nested': True})['value']}
+    finally:
+        for descriptor in descriptors:
+            os.close(descriptor)
+""") as prepared:
+            result = prepared.execute("attack", {})
+        self.assertEqual(result.value, {
+            "memory": "IPCled", "size": 6, "seals": 15, "ready": True,
+            "message": "ready", "nested": "nested-sealed",
+        })
         self.assertEqual(before, {fd: identity[:2] for fd, identity in self.descriptors().items()})
 
     def test_mutating_sys_path_cannot_load_an_ambient_module(self):

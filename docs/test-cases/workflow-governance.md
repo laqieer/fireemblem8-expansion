@@ -1510,7 +1510,15 @@ prevent native process-group/session escape. Unsupported ABIs fail closed.
    invocations must reject, not sign different existence-based verdicts.
    Exercise effective-ID/no-follow access, stat/readlink, filesystem metadata,
    current-directory, extended-attribute and timestamp probes, including
-   caught errors. In contrast, `context.entry()` must retain the declared
+   caught errors. Run `os.chroot()` against an owned **regular file**, never
+   a directory, and `os.chown(path, -1, -1)` without changing owner/group.
+   Delete/recreate only that fixture between invocations. Outside the capsule,
+   missing paths produce `ENOENT`, while the regular file produces `ENOTDIR`
+   for chroot and success for chown. Inside the capsule, both states must
+   reject even when the trusted program catches the error. No privilege or
+   actual root-directory change is needed. Ownership/mode/xattr mutation
+   attempts and unknown `os.*` audit events must also latch a denial.
+   In contrast, `context.entry()` must retain the declared
    present/absent artifact answers after the working paths are swapped.
    Import `ElementTree` with `from xml.etree import ElementTree`, including
    from a transitive trusted helper, without adding `CapsuleSpec.modules`.
@@ -1520,7 +1528,15 @@ prevent native process-group/session escape. Unsupported ABIs fail closed.
 7. Exercise exact argv/digest receipt verification, HMAC mutation, replay
    against another invocation, forged result construction and credential
    environment injection. Children receive no key/token; stale/forged receipts
-   reject.
+   reject. Declare 1,000 long absent data paths and consume their sealed
+   metadata while returning `null`. Keep the real guardian output below
+   1 MiB, first with the parent receipt exceeding 1 MiB, then with only the
+   signed wrapper exceeding 1 MiB. Both must parse, sign and verify.
+   Constrain the receipt and signed-receipt test bounds to the actual
+   admitted encoding sizes: exact sizes pass; a one-byte excess rejects at
+   execution-result construction, receipt access, signing and verification.
+   Returning that large receipt through a nested invocation must still
+   reject when the unchanged 1 MiB nested-message bound is exceeded.
 8. Force a crash, empty/partial/malformed or oversized output, timeout,
    interruption and abrupt parent death during nested execution. The tests
    observe real processes/descriptors and require bounded teardown with no
@@ -1535,6 +1551,9 @@ prevent native process-group/session escape. Unsupported ABIs fail closed.
    Write to a new memfd through the 1 MiB file-size boundary: an overlapping
    write is shortened to the limit, and further `write`/`pwrite` attempts
    report `EFBIG`. Descriptor sets must return to their starting identities.
+   Exercise anonymous mmap, private memfd writes/reads/seals/duplication,
+   pipe readiness and nested execution together. The closed syscall policy
+   must preserve these capabilities without permitting filesystem acquisition.
 9. Read a real same-owner event file successfully. Pass a real symlink to
    that file: direct admission and the production launcher must reject it,
    without output. Inject only a mismatched `st_uid` into the opened file's
@@ -1576,13 +1595,25 @@ must reject these behaviors while preserving valid deep closures, nested
 execution, within-limit writes and same-owner event admission. Removing the
 no-follow flag or ownership comparison must fail the event-admission tests.
 
+The closed-policy correction preserves the regular-file/missing-path chroot
+oracle: before the fix, the same capsule and request returned signable
+existence verdicts from `ENOTDIR` versus `ENOENT`. Chown was denied natively
+on x86-64, but its audit denial and AArch64 `fchownat` mapping were absent.
+Before the receipt correction, real guardian output of 1,048,448 bytes
+produced an admitted 1,049,442-byte receipt that failed signing; a
+1,048,536-byte receipt signed into 1,048,629 bytes that failed verification.
+The real near-limit fixtures and exact-size/one-byte-overflow controls pin
+both failures without widening the worker or nested output allowance.
+
 ### Automation
 
 The named unittest modules automate every assertion using real memfd,
 subprocesses, raw Git objects, JSON, module imports, receipts, and PID/FD
 observations. No raw tracked-source text assertion is the behavioral oracle.
-Parsed seccomp-BPF instruction evaluation covers metadata syscall numbers,
-allowed read/write/exit, and alternate-ABI rejection for both supported ABIs;
+Parsed seccomp-BPF instruction evaluation covers the closed allowed sets and
+every other syscall number through 511 plus unknown/future numbers,
+the complete pathname metadata/mutation/probe families, argument-restricted
+fcntl/prlimit, and alternate-ABI rejection for both supported ABIs;
 native execution covers the current host only, not an emulated AArch64 claim.
 Git supplies immutable source authority and review/history; changed strings
 alone are not proof. No subjective/manual criterion applies.
