@@ -180,6 +180,12 @@ The graphics formats include `.4bpp.fk` and
 `.feimg[1-4].bin`/`.fetsa[1-4].bin` (with `.fk`/`.lz` derivatives) only when
 their corresponding tracked image source exists. Unknown stems, other numeric
 variants, and arbitrary ignored binary/compression files are not allowlisted.
+Bitmap `.4bpp`/`.8bpp` output requires a tracked PNG; `.gbapal` requires a
+tracked PNG or JASC `.pal`. A `.4bpp.h` needs its tracked bitmap or PNG
+producer. Committed raw `.agbpal` data does not establish those conversions,
+and `.8bpp.h` has no supported producer. These source-format requirements also
+apply to recognized `.fk`/`.lz` derivatives; direct LZ output from a tracked
+input remains supported.
 Do not keep original user work in generated
 directories. Ignored saves, baseroms, local configuration, editor state, or
 other unrecognized files require preservation. Symlinks are not followed by

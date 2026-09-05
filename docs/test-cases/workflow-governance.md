@@ -52,6 +52,11 @@ workflow, using credentials, or changing ROM behavior.
    private metadata. This uses local Git transport, never network access.
    Unknown ignored graphics remain held, while tracked-source-backed
    `.4bpp.fk` and `.feimg[1-4].bin`/`.fetsa[1-4].bin` derivatives are disposable.
+   Distinguish PNG bitmap sources, JASC `.pal` palette sources, and raw
+   committed `.agbpal` files: palettes do not establish bitmap/header
+   production, raw palettes do not establish `.gbapal` conversion, and PNG
+   does not establish unsupported `.8bpp.h` output. Repeat those holds with
+   `.fk`/`.lz` derivatives and confirm ignored contents remain unchanged.
 8. Pass an uppercase full `--proof-sha` through the CLI and require the same
    canonical proof result; uppercase GitHub/programmatic identities still fail.
    A command failing without stderr reports its exit code. Simulated

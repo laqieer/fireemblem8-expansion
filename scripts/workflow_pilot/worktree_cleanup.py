@@ -272,10 +272,15 @@ def generated_ignored(name, tracked):
     image = re.fullmatch(r"(.+)\.(?:feimg|fetsa)[1-4]\.bin", source)
     if image:
         return image[1] + ".png" in tracked
-    for suffix in (".4bpp", ".8bpp", ".gbapal", ".4bpp.h", ".8bpp.h"):
+    for suffix, inputs in (
+        (".4bpp", (".png",)),
+        (".8bpp", (".png",)),
+        (".gbapal", (".png", ".pal")),
+        (".4bpp.h", (".png", ".4bpp")),
+    ):
         if source.endswith(suffix):
             stem = source[:-len(suffix)]
-            return any(stem + ext in tracked for ext in (".png", ".pal", ".agbpal"))
+            return any(stem + ext in tracked for ext in inputs)
     return False
 
 

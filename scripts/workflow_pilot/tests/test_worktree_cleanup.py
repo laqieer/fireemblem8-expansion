@@ -955,6 +955,35 @@ class CleanupTests(unittest.TestCase):
                 unknown.unlink()
         self.assertEqual(self.result(apply=True)["decision"], "removed")
 
+    def test_graphics_products_require_their_actual_source_format(self):
+        graphics = self.target / "graphics"
+        graphics.mkdir()
+        for name in ("image.png", "palette.pal", "raw-palette.agbpal"):
+            (graphics / name).write_bytes(b"tracked source-format ownership fixture")
+        with (self.target / ".gitignore").open("a") as output:
+            output.write("*.4bpp\n*.8bpp\n*.gbapal\n*.4bpp.h\n*.8bpp.h\n*.fk\n*.lz\n")
+        self.command(self.target, "add", ".")
+        self.command(self.target, "commit", "-qm", "distinct graphics source formats")
+        self.head = self.command(self.target, "rev-parse", "HEAD").strip()
+        self.command(self.root, "merge", "-q", "--no-ff", "topic", "-m", "merge formats")
+        self.merge = self.command(self.root, "rev-parse", "HEAD").strip()
+        self.api = Responses(self.root, self.head, self.merge)
+        for name in ("image.4bpp", "image.8bpp", "image.gbapal", "image.4bpp.h", "palette.gbapal"):
+            for compression in ("", ".lz", ".fk", ".fk.lz"):
+                (graphics / (name + compression)).write_bytes(b"generated graphics")
+        self.assertEqual(self.result()["decision"], "eligible")
+        for name in ("palette.4bpp", "palette.8bpp", "palette.4bpp.h",
+                     "raw-palette.4bpp", "raw-palette.8bpp", "raw-palette.gbapal",
+                     "raw-palette.4bpp.h", "image.8bpp.h"):
+            for compression in ("", ".lz", ".fk", ".fk.lz"):
+                with self.subTest(name=name, compression=compression):
+                    file = graphics / (name + compression)
+                    file.write_bytes(b"unrelated ignored graphics data")
+                    self.held("ignored non-build/local data")
+                    self.assertEqual(file.read_bytes(), b"unrelated ignored graphics data")
+                    file.unlink()
+        self.assertEqual(self.result(apply=True)["decision"], "removed")
+
     def test_mounts_and_uninspectable_processes_block_removal(self):
         with patch.object(cleanup, "mount_paths", return_value=[self.target / "build"]):
             self.held("mount")
@@ -1322,6 +1351,28 @@ class CleanupTests(unittest.TestCase):
 
 
 class CleanupCommandTests(unittest.TestCase):
+    def test_graphics_output_admission_uses_per_format_sources(self):
+        sources = {
+            ".4bpp": {".png"},
+            ".8bpp": {".png"},
+            ".gbapal": {".png", ".pal"},
+            ".4bpp.h": {".png", ".4bpp"},
+            ".8bpp.h": set(),
+        }
+        for output, allowed in sources.items():
+            for source in (".png", ".pal", ".agbpal", ".4bpp"):
+                if source == output:
+                    continue
+                for compression in ("", ".lz", ".fk", ".fk.lz"):
+                    with self.subTest(output=output, source=source, compression=compression):
+                        self.assertEqual(
+                            cleanup.generated_ignored("graphics/fixture" + output + compression,
+                                                      {"graphics/fixture" + source}),
+                            source in allowed,
+                        )
+        self.assertTrue(cleanup.generated_ignored("graphics/fixture.agbpal.lz",
+                                                 {"graphics/fixture.agbpal"}))
+
     def test_unsupported_platform_checks_fail_closed(self):
         with patch.object(cleanup.sys, "platform", "darwin"):
             for check in (cleanup.process_cwds, cleanup.mount_paths):
