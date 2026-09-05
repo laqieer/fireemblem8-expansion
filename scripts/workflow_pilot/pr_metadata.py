@@ -4252,10 +4252,7 @@ def _transaction_comments(
             or confirmation.base_sha != intent.base_sha
             or confirmation.intent_nonce != intent.nonce
             or comment.created_at < intent_comment.created_at
-            or (
-                comment.created_at == intent_comment.created_at
-                and comment.comment_id <= intent_comment.comment_id
-            )
+            or comment.comment_id <= intent_comment.comment_id
         ):
             raise MetadataEditError(
                 "metadata edit confirmation contradicts its intent"
@@ -4283,10 +4280,7 @@ def _transaction_comments(
             or abort.intent_head_sha != intent.head_sha
             or abort.intent_base_sha != intent.base_sha
             or comment.created_at < intent_comment.created_at
-            or (
-                comment.created_at == intent_comment.created_at
-                and comment.comment_id <= intent_comment.comment_id
-            )
+            or comment.comment_id <= intent_comment.comment_id
         ):
             raise MetadataEditError("metadata edit abort contradicts its intent")
         if abort.intent_comment_id in by_intent:

@@ -619,6 +619,10 @@ group. Multiple unclosed active intents sharing a `createdAt` second remain
 ambiguous. Historical/latest-pair ordering uses `(createdAt, comment ID)` only
 after proving terminal comments do not predate their intent. Thus an
 equal-second aborted predecessor followed by a higher-ID successor is valid.
+Every confirmation/abort edge independently requires both
+`terminal.createdAt >= intent.createdAt` and
+`terminal.comment_id > intent.comment_id`; a later timestamp never excuses an
+equal or lower ID.
 The selected confirmation must reference the latest overall candidate intent.
 Intent and confirmation may share a second because exact comment ID and nonce
 provide linkage; confirmation may not predate intent. It refetches the metadata-specific version and complete current

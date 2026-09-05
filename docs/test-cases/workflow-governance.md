@@ -1308,6 +1308,9 @@ the exact branch and head; timeout or ambiguity fails before `gh run watch`.
    comment IDs, followed by confirmation and reconcile/recovery. Repeat with
    two same-second unclosed active intents and require ambiguity. Reject
    duplicate or conflicting confirmation/abort terminal links.
+   For both confirmation and abort, accept equal-second higher-ID edges; reject
+   later-time equal/lower IDs and earlier-time higher IDs. Timestamp and
+   comment-ID ordering are independent invariants.
    Place malformed intent/confirmation/abort marker-like text from
    contributor, bot, deleted, and non-owner comments before and after valid
    owner transactions; require it to be ignored. Owner malformed markers
@@ -1433,7 +1436,8 @@ Transaction graph construction links confirmations and aborts before active
 selection. Terminal intents are excluded; equal-second aborted predecessor
 plus higher-ID successor is valid, while multiple equal-second unclosed active
 intents remain ambiguous. Comment IDs refine same-second ordering only after
-predating edges have been rejected.
+predating edges have been rejected. Every terminal edge independently requires
+a strictly higher comment ID and a non-predating timestamp.
 Full authorization and transaction metadata selection are independent. The
 newest exact full run must be canonical success, but the transaction metadata
 run is selected solely by explicit-same metadata shape and run number above

@@ -4076,6 +4076,137 @@ class PullRequestMetadataTests(unittest.TestCase):
                 comments=predating_comments,
             )
 
+    def test_terminal_edges_require_independent_time_and_id_ordering(self):
+        receipt = _receipt()
+        confirmation = _confirmation(receipt)
+        abort = _abort(receipt)
+
+        positive_cases = (
+            (
+                "confirmation-equal-time-higher-id",
+                [
+                    _intent_comment(
+                        receipt,
+                        comment_id=401,
+                        created_at="2026-09-04T00:00:01Z",
+                    ),
+                    _confirmation_comment(
+                        confirmation,
+                        comment_id=402,
+                        created_at="2026-09-04T00:00:01Z",
+                    ),
+                ],
+            ),
+            (
+                "abort-equal-time-higher-id",
+                [
+                    _intent_comment(
+                        receipt,
+                        comment_id=401,
+                        created_at="2026-09-04T00:00:01Z",
+                    ),
+                    _abort_comment(
+                        abort,
+                        comment_id=403,
+                        created_at="2026-09-04T00:00:01Z",
+                    ),
+                ],
+            ),
+        )
+        for name, comments in positive_cases:
+            with self.subTest(case=name):
+                client = ScriptedClient()
+                _add_receipt_comments = _query(
+                    f"issues/{PR_NUMBER}/comments",
+                    [("per_page", "100"), ("page", "1")],
+                )
+                client.add("GET", _add_receipt_comments, comments)
+                intents, confirmations, aborts = pr_metadata._transaction_comments(
+                    client,
+                    pr_metadata._parse_pull_request_payload(
+                        _pr(),
+                        REPOSITORY,
+                        PR_NUMBER,
+                    ),
+                )
+                self.assertEqual(len(intents), 1)
+                self.assertEqual(
+                    bool(confirmations),
+                    "confirmation" in name,
+                )
+                self.assertEqual(bool(aborts), "abort" in name)
+
+        negative_cases = (
+            (
+                "confirmation-later-time-lower-id",
+                [
+                    _intent_comment(
+                        receipt,
+                        comment_id=401,
+                        created_at="2026-09-04T00:00:01Z",
+                    ),
+                    _confirmation_comment(
+                        confirmation,
+                        comment_id=400,
+                        created_at="2026-09-04T00:00:02Z",
+                    ),
+                ],
+            ),
+            (
+                "abort-later-time-lower-id",
+                [
+                    _intent_comment(
+                        receipt,
+                        comment_id=401,
+                        created_at="2026-09-04T00:00:01Z",
+                    ),
+                    _abort_comment(
+                        abort,
+                        comment_id=400,
+                        created_at="2026-09-04T00:00:02Z",
+                    ),
+                ],
+            ),
+            (
+                "abort-earlier-time-higher-id",
+                [
+                    _intent_comment(
+                        receipt,
+                        comment_id=401,
+                        created_at="2026-09-04T00:00:02Z",
+                    ),
+                    _abort_comment(
+                        abort,
+                        comment_id=403,
+                        created_at="2026-09-04T00:00:01Z",
+                    ),
+                ],
+            ),
+        )
+        for name, comments in negative_cases:
+            with self.subTest(case=name):
+                client = ScriptedClient()
+                client.add(
+                    "GET",
+                    _query(
+                        f"issues/{PR_NUMBER}/comments",
+                        [("per_page", "100"), ("page", "1")],
+                    ),
+                    comments,
+                )
+                with self.assertRaisesRegex(
+                    pr_metadata.MetadataEditError,
+                    "contradicts its intent",
+                ):
+                    pr_metadata._transaction_comments(
+                        client,
+                        pr_metadata._parse_pull_request_payload(
+                            _pr(),
+                            REPOSITORY,
+                            PR_NUMBER,
+                        ),
+                    )
+
     def test_same_second_aborted_predecessor_and_successor_are_ordered(self):
         predecessor = _receipt(nonce="a" * 64)
         predecessor_abort = _abort(predecessor)

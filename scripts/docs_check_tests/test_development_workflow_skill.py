@@ -4732,11 +4732,15 @@ printf '%s\t%s\t%s\n' "$result" \
         )
         for requirement in (
             "isolated launcher suites",
-            "validated transaction graph",
+            "linked transaction graph",
             "equal-second aborted predecessor",
-            "multiple equal-second active intents",
-            "conflicting terminal links",
-            "terminal and excluded from active ambiguity",
+            "active ambiguity",
+            "duplicate/conflicting terminal",
+            "later-time equal/lower IDs",
+            "earlier-time higher IDs",
+            "terminal intents are excluded before active selection",
+            "terminal comment ID > intent comment ID",
+            "terminal createdAt >= intent createdAt",
         ):
             with self.subTest(registry_requirement=requirement):
                 self.assertIn(normalize_policy(requirement), indexed_contract)
