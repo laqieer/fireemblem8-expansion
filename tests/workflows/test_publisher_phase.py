@@ -87,6 +87,7 @@ class PublisherPhaseTests(unittest.TestCase):
         ).replace(
             'membership "$$"', "'membership' \"${$}\"",
         ).replace("cd /", "'cd' '/' # spelling does not establish authority")
+        changed = fixtures.move_command(changed, "limit-v", "limit-c")
         first, second = (
             fixtures.command(changed, "export-" + name)
             for name in ("target.gba", "metadata.json")
@@ -100,6 +101,66 @@ class PublisherPhaseTests(unittest.TestCase):
             [(step.before, step.after) for step in original_trace],
             [(step.before, step.after) for step in changed_trace],
         )
+
+    def test_namespace_setup_keeps_its_reserved_failure_substage(self):
+        changed = fixtures.move_command(self.source, "stage-mount-audit", "readonly-control")
+        missing = ROOT / "build/test-artifacts" / ("missing-hidden-" + uuid.uuid4().hex)
+        self.assertFalse(missing.exists())
+        selected = {
+            "strict-shell", "stage-namespace", "stage-trap",
+            "stage-mount-audit", "hidden-directory",
+        }
+        for label, source, failure_status in (
+            ("original", self.source, 81), ("relocated", changed, 82),
+        ):
+            start = source.index("isolated_stage_failure() {")
+            end = source.index("\n}", start) + 2
+            hidden = fixtures.command(source, "hidden-directory")
+            statements = [
+                item.command for item in authority.reviewed_inventory().validate(source).commands
+                if not item.nested and item.scope == "builder_main"
+                and item.signature.name.removeprefix("builder_main.") in selected
+                and item.command.offset <= hidden.offset
+            ]
+            script = source[start:end] + '\nhidden="$1"\n' + "\n".join(
+                source[node.offset:node.end] for node in statements
+            )
+            for directory, expected in ((ROOT, 0), (missing, failure_status)):
+                with self.subTest(order=label, directory=directory):
+                    completed = subprocess.run(
+                        ["/bin/bash", "--noprofile", "--norc", "-c", script, "--", str(directory)],
+                        capture_output=True, check=False,
+                    )
+                    self.assertEqual(completed.returncode, expected, completed.stderr)
+                    self.assertEqual(completed.stdout, b"")
+                    self.assertEqual(completed.stderr, b"")
+        authority.validate_builder_script(self.source)
+        with self.assertRaises(phase.PhaseError):
+            authority.validate_builder_script(changed)
+
+    def test_failure_only_operations_keep_their_reserved_substages(self):
+        analysis = authority.validate_workflow(self.workflow)
+        stage = None
+        witnessed = set()
+        for event in analysis.events:
+            if event.scope != "builder_main":
+                continue
+            name = event.signature.removeprefix("builder_main.")
+            if name.startswith("stage-") and event.kind == authority.EventKind.STATE_WRITE:
+                stage = name.removeprefix("stage-")
+            machine = phase._Machine()
+            if name not in machine.error_only:
+                continue
+            witnessed.add(stage)
+            machine.stage = stage
+            machine.consume(event)
+            self.assertEqual(machine.transitions, [])
+            for wrong_stage in {"namespace", "mount-audit", "candidate-preflight"} - {stage}:
+                with self.subTest(signature=event.signature, stage=wrong_stage):
+                    machine.stage = wrong_stage
+                    with self.assertRaises(phase.PhaseError):
+                        machine.consume(event)
+        self.assertEqual(witnessed, {"namespace", "mount-audit", "candidate-preflight"})
 
     def test_events_cannot_fabricate_completion_or_hide_a_wrong_call_frame(self):
         analysis = authority.validate_builder_script(self.source)

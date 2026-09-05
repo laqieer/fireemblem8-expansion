@@ -186,6 +186,14 @@ and remapping the failure handler also reject. The ERR callback is the one
 registered failure-only exception: it can exit with a fixed code, never
 establish a successful phase.
 
+Preparation also retains the reserved diagnostic substages: namespace setup
+must stay in `namespace` (81), while the writable-mount audit and resource-limit
+operations stay in `mount-audit` (82). Failure-only branches retain their own
+substage. Independent initialization, limit and file-install operations can
+reorder within their respective substages, but moving the mount-audit boundary
+before namespace completion rejects. Otherwise, even an unchanged failing
+hidden-directory check would be mislabeled 82 instead of 81.
+
 The machine proves the required **success-path structure**, not that a build
 has run. Actual completion evidence comes from executing the foreground
 launcher, checker, exporter, and post-check. A live checker invoked before

@@ -53,8 +53,11 @@ behavior. Publisher runtime cases use disposable Linux namespaces.
    substitution or different entry frame; change result capture edges, setup
    context, export ownership/close order, final post-check, success position
    and fixed failure mapping. Every mutation rejects even after refreshing
-   the separate outer raw identities. Equivalent quoting, independent
-   initializer reorder and the two independent file-install orderings pass.
+   the separate outer raw identities. Move `stage-mount-audit` before
+   `readonly-control`, move namespace setup after that boundary, or move limits
+   into the wrong preparation substage: each must reject. Equivalent quoting,
+   independent initializer and resource-limit reorder within the same substage,
+   and the two independent file-install orderings pass.
 5. Observe the live namespace scenario. The exact foreground candidate PID is
    absent from `/proc` before the checker; only wrapper/checker remain, and the
    actual sealed export contains `target.gba` (32 MiB) and `metadata.json`
@@ -74,6 +77,8 @@ behavior. Publisher runtime cases use disposable Linux namespaces.
 All commands pass in the supported configuration. Both production consumers
 and the exact-tree CLI enforce the complete success path, including the final
 post-check, with one fixed checker and no legacy membership observation.
+Namespace setup keeps diagnostic 81, the mount audit keeps 82, and failure-only
+branches cannot move to a different diagnostic substage.
 
 ### Negative control
 
@@ -89,6 +94,13 @@ snapshot cannot establish candidate completion: the production phase
 validator rejects the identical placement. Live descendants instead make the
 canonical checker itself fail. No test manufactures a `MEMBERSHIP_VERIFIED`
 event as evidence of execution.
+
+The direct Bash substage probe executes the production stage assignments,
+hidden-directory test and ERR handler. An existing directory succeeds; a
+missing directory returns 81 in the original order but 82 after moving the
+mount-audit boundary early. The unchanged inventory accepts both arrangements;
+the corrected phase validator and both consumers reject the relocated one.
+This pins failure attribution with actual execution, not only source ordering.
 
 The canonical post-check also rejects real file deletions, extra names,
 symlinks/hardlinks/directories, changed ownership/modes, short targets and

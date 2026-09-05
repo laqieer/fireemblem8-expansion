@@ -262,6 +262,13 @@ class _Machine:
     def consume(self, event: Event) -> None:
         name = event.signature.removeprefix("builder_main.")
         if name in self.error_only:
+            if name in {"candidate-exit", "candidate-unknown"}:
+                expected_stage = "candidate-preflight"
+            elif name == "runtime-rejection" or _context("loop", "runtime-records") in event.context:
+                expected_stage = "mount-audit"
+            else:
+                expected_stage = "namespace"
+            _require(self.stage == expected_stage, "failure-only operation outside its reserved substage")
             return
         _require(not self.success, "operation after final success")
         if name.startswith("stage-") and name != "stage-trap":
@@ -332,8 +339,17 @@ class _Machine:
             self.success = True
         else:
             _require(self.phase == Phase.PREPARING, "isolation operation reordered across launch")
-            if name.startswith("runtime-") and name != "runtime-limit":
-                _require(self.stage == "mount-audit", "writable audit outside its failure frame")
+            if name == "strict-shell":
+                expected_stage = None
+            elif name == "suppress-output":
+                expected_stage = "mount-audit" if self.setup[name] else "namespace"
+            elif name.startswith("limit-") or (
+                name.startswith("runtime-") and name != "runtime-limit"
+            ):
+                expected_stage = "mount-audit"
+            else:
+                expected_stage = "namespace"
+            _require(self.stage == expected_stage, "isolation operation outside its reserved failure substage")
             self.setup[name] += 1
 
 

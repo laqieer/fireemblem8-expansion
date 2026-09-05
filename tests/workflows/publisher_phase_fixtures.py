@@ -65,6 +65,11 @@ def adversarial_builders(source):
     yield "missing-post-check", replace_command(source, "post-check", "")
     yield "early-success", move_command(source, "success", "membership-check")
     yield "wrong-failure-frame", move_command(source, "stage-output-validate", "export-owner")
+    yield "early-mount-audit", move_command(source, "stage-mount-audit", "readonly-control")
+    yield "namespace-after-mount-audit", move_command(source, "readonly-control", "runtime-create")
+    yield "audit-limit-in-namespace", move_command(source, "limit-c", "readonly-control")
+    yield "namespace-limit-in-audit", move_command(source, "runtime-limit", "runtime-create")
+    yield "audit-output-in-namespace", move_command(source, "suppress-output", "readonly-control", occurrence=1)
     yield "errexit-disabled", replace_command(source, "strict-shell", "set -Euo pipefail")
     yield "wrong-trap", replace_command(source, "stage-trap", "trap isolated_stage_failure EXIT")
     launcher_node = command(source, "candidate-launch")
@@ -105,4 +110,7 @@ PHASE_ONLY_CASES = frozenset({
     "early-export-file", "early-owner", "early-post-check", "conditional-post-check",
     "late-initial-seal", "early-final-seal", "early-success",
     "wrong-failure-frame", "wrong-result-edges", "wrong-isolated-substage", "late-error-handler",
+    "early-mount-audit", "namespace-after-mount-audit",
+    "audit-limit-in-namespace", "namespace-limit-in-audit",
+    "audit-output-in-namespace",
 })
