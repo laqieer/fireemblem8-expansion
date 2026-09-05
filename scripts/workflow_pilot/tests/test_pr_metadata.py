@@ -6184,6 +6184,26 @@ class PullRequestMetadataTests(unittest.TestCase):
                 _comment(301, desired, author_id=88),
                 "did not attest",
             ),
+            (
+                "login",
+                _comment(301, desired, author_login="other"),
+                "did not attest",
+            ),
+            (
+                "type",
+                _comment(301, desired, author_type="Bot"),
+                "did not attest",
+            ),
+            (
+                "association",
+                _comment(301, desired, author_association="NONE"),
+                "did not attest",
+            ),
+            (
+                "site-admin",
+                _comment(301, desired, site_admin=True),
+                "did not attest",
+            ),
         ):
             with self.subTest(mismatch=name):
                 client = ScriptedClient()
@@ -6671,6 +6691,78 @@ class PullRequestMetadataTests(unittest.TestCase):
         )
         self.assertEqual(parsed.hour, 23)
 
+    def test_read_only_metadata_history_accepts_open_and_closed_fixtures(self):
+        for state_name in ("open", "closed"):
+            with self.subTest(state=state_name):
+                state = _pr()
+                state["state"] = state_name
+                version = _metadata_version()
+                client = ScriptedClient()
+                _add_pr_states(client, state)
+                _add_metadata_versions(client, (state, version))
+                actual = pr_metadata.inspect_metadata_history(
+                    client, REPOSITORY, PR_NUMBER
+                )
+                self.assertEqual(actual, version)
+                self.assertEqual(
+                    {(method, endpoint) for method, endpoint, _body in client.calls},
+                    {("GET", _endpoint(f"pulls/{PR_NUMBER}")), ("POST", "graphql")},
+                )
+                self.assertEqual(len(client.calls), 2)
+
+    def test_closed_fixtures_cannot_authorize_any_mutation_mode(self):
+        calls = (
+            (
+                pr_metadata.edit_metadata,
+                {"title": None, "body": "new body", "essential_reason": "urgent"},
+            ),
+            (pr_metadata.reconcile_metadata, {"confirmation_comment_id": 402}),
+            (
+                pr_metadata.update_evidence_comment,
+                {"comment_body": f"{pr_metadata.EVIDENCE_MARKER}\nevidence\n"},
+            ),
+        )
+        for operation, arguments in calls:
+            with self.subTest(mode=operation.__name__):
+                closed = _pr()
+                closed["state"] = "closed"
+                client = ScriptedClient()
+                _add_pr_states(client, closed)
+                with self.assertRaisesRegex(
+                    pr_metadata.MetadataEditError, "pull request must be open"
+                ):
+                    operation(
+                        client,
+                        repository=REPOSITORY,
+                        pr_number=PR_NUMBER,
+                        head_sha=HEAD,
+                        base_sha=BASE,
+                        **arguments,
+                    )
+                self.assertEqual(
+                    client.calls, [("GET", _endpoint(f"pulls/{PR_NUMBER}"), None)]
+                )
+
+    def test_read_only_history_rejects_invalid_state_and_identity(self):
+        cases = (
+            {"state": None},
+            {"state": "merged"},
+            {"state": True},
+            {"state": "closed", "number": PR_NUMBER + 1},
+            {"state": "closed", "head": {"ref": HEAD_REF, "sha": "invalid"}},
+        )
+        for changes in cases:
+            with self.subTest(changes=changes):
+                state = _pr()
+                state.update(changes)
+                client = ScriptedClient()
+                _add_pr_states(client, state)
+                with self.assertRaises(pr_metadata.MetadataEditError):
+                    pr_metadata.inspect_metadata_history(
+                        client, REPOSITORY, PR_NUMBER
+                    )
+                self.assertEqual(len(client.calls), 1)
+
     def test_graphql_actor_interfaces_use_user_inline_fragments(self):
         query = "".join(pr_metadata.METADATA_VERSION_QUERY.split())
         self.assertIn(
@@ -6704,12 +6796,11 @@ class LivePullRequestMetadataQueryTests(unittest.TestCase):
         repository = os.environ["PR_METADATA_LIVE_REPOSITORY"]
         pr_number = int(os.environ["PR_METADATA_LIVE_PR"])
         client = pr_metadata.GitHubClient(pr_metadata._resolve_gh())
-        state = pr_metadata.fetch_pull_request(
+        version = pr_metadata.inspect_metadata_history(
             client,
             repository,
             pr_number,
         )
-        version = pr_metadata.fetch_metadata_version(client, state)
         self.assertIsInstance(version, pr_metadata.MetadataVersion)
         self.assertGreaterEqual(version.body_edit_total_count, 0)
         if version.body_edit_total_count == 0:

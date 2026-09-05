@@ -598,6 +598,9 @@ validated PR repository payload and exactly one standalone marker.
 Marked missing/deleted authors, bots, non-owner associations, cross-repository
 IDs, duplicate or embedded markers, and a PATCH response that does not attest
 the same author/comment plus the requested body are rejected.
+Response author identity includes the numeric ID, login, user type,
+`site_admin: false`, and owner association; matching only a subset cannot
+authorize a canonical update.
 Structured results reserve `run_id` exclusively for an Actions workflow run
 and `comment_id` exclusively for the canonical issue comment. Both fields are
 optional and serialized in every result, but they are mutually exclusive;
@@ -644,6 +647,15 @@ Transaction comments are never edited or deleted by reconciliation and their
 `issue_comment` creation does not trigger Build CI.
 The separately marked canonical evidence comment may continue to be updated;
 it never becomes a receipt and does not supersede the latest receipt marker.
+
+The live metadata-history probe uses the separate read-only
+`inspect_metadata_history()` entrypoint. It validates the same repository,
+owner, PR, head/base, and metadata-version identities for either an open or a
+closed PR, so its documented fixture remains usable after merge. It performs
+only a REST GET and the metadata GraphQL query, returning
+history rather than mutation authority. Every edit, reconciliation, and
+evidence-comment mode still requires an open PR; unknown PR states fail closed
+even in the history probe.
 
 After the newest exact full Build succeeds, run:
 

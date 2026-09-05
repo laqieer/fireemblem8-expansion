@@ -1409,6 +1409,8 @@ def _parse_pull_request_payload(
     payload: object,
     repository: str,
     pr_number: int,
+    *,
+    allow_closed: bool = False,
 ) -> PullRequestState:
     if not isinstance(payload, dict):
         raise MetadataEditError("pull request response must be an object")
@@ -1424,8 +1426,13 @@ def _parse_pull_request_payload(
         _endpoint(repository, f"pulls/{pr_number}"),
         field="pull request URL",
     )
-    if payload.get("state") != "open":
-        raise MetadataEditError("pull request must be open")
+    allowed_states = ("open", "closed") if allow_closed else ("open",)
+    if payload.get("state") not in allowed_states:
+        raise MetadataEditError(
+            "pull request state must be open or closed"
+            if allow_closed
+            else "pull request must be open"
+        )
     head = payload.get("head")
     base = payload.get("base")
     if not isinstance(head, dict) or not isinstance(base, dict):
@@ -1499,6 +1506,26 @@ def fetch_pull_request(
         label="pull request",
     )
     return _parse_pull_request_payload(response.payload, repository, pr_number)
+
+
+def inspect_metadata_history(
+    client: GitHubClient,
+    repository: str,
+    pr_number: int,
+) -> MetadataVersion:
+    """Read metadata history without requiring a mutable, open pull request."""
+    response = client.request(
+        "GET",
+        _endpoint(repository, f"pulls/{pr_number}"),
+        label="metadata history pull request",
+    )
+    state = _parse_pull_request_payload(
+        response.payload,
+        repository,
+        pr_number,
+        allow_closed=True,
+    )
+    return fetch_metadata_version(client, state)
 
 
 def require_identity(
@@ -4544,6 +4571,7 @@ def update_evidence_comment(
         or updated.author_id != original.author_id
         or updated.author_login != original.author_login
         or updated.author_type != original.author_type
+        or updated.author_site_admin != original.author_site_admin
         or updated.author_association != original.author_association
         or updated.body != comment_body
     ):

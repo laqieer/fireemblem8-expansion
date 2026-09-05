@@ -1239,9 +1239,12 @@ the exact branch and head; timeout or ambiguity fails before `gh run watch`.
    `PR_METADATA_LIVE_REPOSITORY=laqieer/fireemblem8-expansion
    PR_METADATA_LIVE_PR=202 python3 -m unittest
    scripts.workflow_pilot.tests.test_pr_metadata.LivePullRequestMetadataQueryTests
-   -v`. This sends only REST/GraphQL reads and executes the exact production
-   metadata-version query against the existing no-body-edit PR. Repeat with
+   -v`. This sends only REST/GraphQL reads through `inspect_metadata_history()`
+   and executes the exact production metadata-version query. Fixtures may be
+   open or closed; merging the fixture PR does not expire the probe. Repeat with
    `PR_METADATA_LIVE_PR=189` to parse a nonempty body-edit connection.
+   Exercise synthetic closed fixtures as well: the history probe succeeds,
+   while edit, reconcile, and evidence-comment modes reject before mutation.
 2. Exercise a same-head/same-base full Build whose complete exact Build job
    shape is queued. Attempt a default body edit with exact repository, PR,
    head, and base arguments, and confirm the initially active Build takes one
@@ -1542,6 +1545,9 @@ still reconciles after its exact full and metadata runs succeed, while
 misbound or contradictory terminal records continue to fail closed. These
 observations do not provide a distributed writer lock: the supported delivery
 coordinator serializes helper invocations.
+For canonical comment updates, mutate each response author field (ID, login,
+type, site-admin status, and association) independently and require rejection;
+the owner-scoped unmodified response remains accepted.
 There is no manual-only criterion. No ARM runtime test is needed because this
 is host-only delivery orchestration.
 
