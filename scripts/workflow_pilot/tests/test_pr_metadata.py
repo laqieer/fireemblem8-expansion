@@ -3292,6 +3292,192 @@ class PullRequestMetadataTests(unittest.TestCase):
         self.assertEqual(decision.action, "complete")
         self.assertEqual(decision.run_id, 202)
 
+    def test_full_authorization_and_transaction_metadata_are_independent(self):
+        cases = (
+            (
+                "metadata-success-later-full-success",
+                [
+                    _run(303, 12, mode="full"),
+                    _run(202, 11, mode="metadata-only", success=True),
+                    _run(101, 10, mode="full"),
+                ],
+                "complete",
+                202,
+            ),
+            (
+                "metadata-active-later-full-success",
+                [
+                    _run(303, 12, mode="full"),
+                    _run(202, 11, mode="metadata-only", active=True),
+                    _run(101, 10, mode="full"),
+                ],
+                "deferred",
+                202,
+            ),
+            (
+                "multiple-later-full-successes",
+                [
+                    _run(304, 13, mode="full"),
+                    _run(303, 12, mode="full"),
+                    _run(202, 11, mode="metadata-only", success=True),
+                    _run(101, 10, mode="full"),
+                ],
+                "complete",
+                202,
+            ),
+            (
+                "metadata-attempt-two-same-identity",
+                [
+                    _run(303, 12, mode="full"),
+                    _run(
+                        202,
+                        11,
+                        mode="metadata-only",
+                        success=True,
+                        attempt=2,
+                    ),
+                    _run(101, 10, mode="full"),
+                ],
+                "complete",
+                202,
+            ),
+            (
+                "same-full-id-new-attempt",
+                [
+                    _run(202, 11, mode="metadata-only", success=True),
+                    _run(101, 10, mode="full", attempt=2),
+                ],
+                "complete",
+                202,
+            ),
+        )
+        for name, runs, action, run_id in cases:
+            with self.subTest(case=name):
+                client = ScriptedClient()
+                _add_pr_states(client, _pr())
+                _add_snapshot(client, runs)
+                decision = _reconcile(client)
+                self.assertEqual(decision.action, action)
+                self.assertEqual(decision.run_id, run_id)
+
+        client = ScriptedClient()
+        _add_pr_states(client, _pr())
+        _add_snapshot(
+            client,
+            [
+                _run(303, 12, mode="full", active=True),
+                _run(202, 11, mode="metadata-only", success=True),
+                _run(101, 10, mode="full"),
+            ],
+        )
+        decision = _reconcile(client)
+        self.assertEqual(decision.action, "deferred")
+        self.assertEqual(decision.run_id, 303)
+
+        client = ScriptedClient()
+        failed_full = _run(303, 12, mode="full", success=False)
+        _add_pr_states(client, _pr())
+        _add_snapshot(
+            client,
+            [
+                failed_full,
+                _run(202, 11, mode="metadata-only", success=True),
+                _run(101, 10, mode="full"),
+            ],
+        )
+        with self.assertRaisesRegex(
+            pr_metadata.MetadataEditError,
+            "newest exact full Build is not successful",
+        ):
+            _reconcile(client)
+
+    def test_failed_transaction_metadata_reruns_despite_later_full(self):
+        client = ScriptedClient()
+        _add_pr_states(client, _pr(), _pr())
+        runs = [
+            _run(303, 12, mode="full"),
+            _run(202, 11, mode="metadata-only", success=False),
+            _run(101, 10, mode="full"),
+        ]
+        _add_snapshot(client, runs, copies=2)
+        client.add(
+            "POST",
+            _endpoint("actions/runs/202/rerun"),
+            None,
+        )
+        decision = _reconcile(client)
+        self.assertEqual(decision.action, "rerun")
+        self.assertEqual(decision.run_id, 202)
+        self.assertIn(
+            ("POST", _endpoint("actions/runs/202/rerun"), None),
+            client.calls,
+        )
+
+    def test_multiple_post_watermark_metadata_identities_are_ambiguous(self):
+        client = ScriptedClient()
+        _add_pr_states(client, _pr())
+        _add_snapshot(
+            client,
+            [
+                _run(203, 13, mode="metadata-only", success=True),
+                _run(303, 12, mode="full"),
+                _run(202, 11, mode="metadata-only", success=True),
+                _run(101, 10, mode="full"),
+            ],
+        )
+        with self.assertRaisesRegex(
+            pr_metadata.MetadataEditError,
+            "metadata run identities are ambiguous",
+        ):
+            _reconcile(client)
+
+    def test_second_reconcile_completes_same_metadata_run_after_rerun(self):
+        receipt = _receipt()
+        confirmation = _confirmation(receipt)
+        client = ScriptedClient()
+        _add_pr_states(client, _pr(), _pr())
+        failed_runs = [
+            _run(303, 12, mode="full"),
+            _run(202, 11, mode="metadata-only", success=False),
+            _run(101, 10, mode="full"),
+        ]
+        _add_snapshot(client, failed_runs, copies=2)
+        client.add(
+            "POST",
+            _endpoint("actions/runs/202/rerun"),
+            None,
+        )
+        first = _reconcile(
+            client,
+            receipt=receipt,
+            confirmation=confirmation,
+        )
+        self.assertEqual(first.action, "rerun")
+
+        client = ScriptedClient()
+        _add_pr_states(client, _pr())
+        _add_snapshot(
+            client,
+            [
+                _run(303, 12, mode="full"),
+                _run(
+                    202,
+                    11,
+                    mode="metadata-only",
+                    success=True,
+                    attempt=2,
+                ),
+                _run(101, 10, mode="full"),
+            ],
+        )
+        second = _reconcile(
+            client,
+            receipt=receipt,
+            confirmation=confirmation,
+        )
+        self.assertEqual(second.action, "complete")
+        self.assertEqual(second.run_id, 202)
+
     def test_reconciliation_rejects_rerun_attempt_at_watermark(self):
         client = ScriptedClient()
         old_rerun = _run(

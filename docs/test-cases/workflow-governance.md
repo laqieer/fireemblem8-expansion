@@ -1280,6 +1280,11 @@ the exact branch and head; timeout or ambiguity fails before `gh run watch`.
    For a maybe-created confirmation pair, exercise absent, active, failed, and
    canonical successful post-watermark metadata runs. Only the canonical
    completed success may return exit-0 no-op.
+   Exercise edit-bound metadata success/failure followed by a later full Build,
+   active/failed/successful newest full authorization, multiple later full
+   successes, same-ID full attempts, metadata attempt 2 with the same ID/number,
+   ambiguous distinct metadata IDs, and a second reconcile after the exact
+   metadata rerun succeeds.
    Exercise equal-second intent/confirmation comments as valid and a
    confirmation predating intent as invalid.
 4. Update a synthetic canonical marked evidence comment owned by the
@@ -1389,6 +1394,12 @@ predate intent.
 An authoritative-pair no-op additionally requires the exact
 confirmation-bound metadata run to pass canonical completed-success
 validation; visible active/failure states defer with reconciliation guidance.
+Full authorization and transaction metadata selection are independent. The
+newest exact full run must be canonical success, but the transaction metadata
+run is selected solely by explicit-same metadata shape and run number above
+the intent watermark. It need not be newer than a later full run. The unique
+earliest stable metadata ID/number survives attempts; multiple distinct
+post-watermark metadata IDs are ambiguous and fail closed.
 The isolated launcher emits one exact canonical JSON line with status `0` for
 success/no-op/complete, status `3` for deferred/refused, and status `2` with no
 decision JSON for invalid arguments, files, or API authority.

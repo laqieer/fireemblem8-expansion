@@ -3039,9 +3039,10 @@ def edit_metadata(
             run_id = blocking[0].run_id
             reason = "an exact-head full or unproven Build is still active"
         else:
-            _full, metadata = _pending_metadata(current_runs, intent)
+            current_full = _current_full_authorization(current_runs)
+            metadata = _transaction_metadata_run(current_runs, intent)
             if metadata is None:
-                run_id = _full.run_id
+                run_id = current_full.run_id
                 reason = (
                     "matching metadata has an authoritative pair but its "
                     "continuity run is not visible yet"
@@ -3196,26 +3197,40 @@ def edit_metadata(
     )
 
 
-def _pending_metadata(
+def _current_full_authorization(
     runs: tuple[RunState, ...],
-    receipt: EditReceipt,
-) -> tuple[RunState, RunState | None]:
+) -> RunState:
     latest_full = _latest_full(runs)
     if latest_full is None:
         raise MetadataEditError("no exact-head full Build exists")
     require_full_success(latest_full)
-    metadata = next(
-        (
-            run
-            for run in runs
-            if run.binding == "explicit-same"
-            and run.mode in {"metadata-only", "active-metadata-only"}
-            and run.run_number > latest_full.run_number
-            and run.run_number > receipt.watermark_run_number
-        ),
-        None,
+    return latest_full
+
+
+def _transaction_metadata_run(
+    runs: tuple[RunState, ...],
+    receipt: EditReceipt,
+) -> RunState | None:
+    candidates = [
+        run
+        for run in runs
+        if run.binding == "explicit-same"
+        and run.mode in {"metadata-only", "active-metadata-only"}
+        and run.run_number > receipt.watermark_run_number
+    ]
+    identities = {
+        (run.run_id, run.run_number)
+        for run in candidates
+    }
+    if len(identities) > 1:
+        raise MetadataEditError(
+            "multiple post-watermark metadata run identities are ambiguous"
+        )
+    return min(
+        candidates,
+        key=lambda run: (run.run_number, run.run_id),
+        default=None,
     )
-    return latest_full, metadata
 
 
 def reconcile_metadata(
@@ -3262,7 +3277,8 @@ def reconcile_metadata(
             pr_number=pr_number,
             run_id=blocking_active[0].run_id,
         )
-    first_full, first_metadata = _pending_metadata(first_runs, receipt)
+    first_full = _current_full_authorization(first_runs)
+    first_metadata = _transaction_metadata_run(first_runs, receipt)
     if first_metadata is None:
         return Decision(
             action="deferred",
@@ -3345,7 +3361,8 @@ def reconcile_metadata(
         )
     current_runs = list_candidate_runs(client, current)
     _validate_receipt_watermark(receipt, current_runs)
-    current_full, current_metadata = _pending_metadata(current_runs, receipt)
+    current_full = _current_full_authorization(current_runs)
+    current_metadata = _transaction_metadata_run(current_runs, receipt)
     if (
         current_runs != first_runs
         or current_metadata is None

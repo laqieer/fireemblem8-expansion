@@ -4686,6 +4686,9 @@ printf '%s\t%s\t%s\n' "$result" \
             "malformed historical records remain fatal",
             "confirmation may not predate intent",
             "canonical completed success",
+            "Full authorization and transaction metadata selection are independent",
+            "need not be newer than a later full run",
+            "multiple distinct post-watermark metadata IDs are ambiguous",
             "databaseId` only through `... on User` inline fragments",
             "bot, deleted, null, and wrong-ID actors",
             "LivePullRequestMetadataQueryTests",
@@ -4728,14 +4731,14 @@ printf '%s\t%s\t%s\n' "$result" \
             )
         )
         for requirement in (
-            "isolated launcher with deterministic fake gh",
-            "two-phase comments",
-            "title RenamedTitleEvent",
-            "body userContentEdits(first:2)",
-            "same-second edit-revert with hidden runs",
-            "without cross-subsystem timestamp comparison",
-            "old-head unmatched/paired records",
+            "isolated launcher suites",
+            "transaction scoping",
+            "UserContentEdit",
+            "never by comparison with the full run number",
+            "multiple plausible metadata IDs fail closed",
             "absent, active, failed, malformed, unbound",
+            "same full ID attempt",
+            "metadata attempt 2 with stable ID/number",
         ):
             with self.subTest(registry_requirement=requirement):
                 self.assertIn(normalize_policy(requirement), indexed_contract)

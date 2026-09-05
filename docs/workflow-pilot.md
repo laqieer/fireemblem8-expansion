@@ -636,13 +636,17 @@ Use confirmation-comment-bound `pr-metadata reconcile`:
 ```
 
 Reconciliation revalidates head/base and all exact run authority twice, then
-reruns only the newest `completed`/`failure` lightweight metadata continuity
-run whose run number is strictly newer than both the successful full Build and
-the intent's pre-PATCH run-number watermark. Actions and issue-comment
-timestamps are never compared for causality: the matching run may materialize
-before or after confirmation. If it is not visible yet, reconciliation defers;
-an older successful metadata run never completes a newer edit. A rerun attempt
-of a watermarked run is not a new edit event. The
+uses two independent run identities. The newest exact-head/base full run is
+only the current authorization gate: active defers, noncanonical/failure
+holds, and canonical success permits processing. The edit-bound metadata run
+is the unique explicit-same metadata identity whose run number is strictly
+above the intent watermark; it is never compared to the current full run
+number. The unique earliest stable metadata ID/number is retained across rerun
+attempts. Multiple distinct plausible post-watermark metadata IDs are
+ambiguous and fail closed. Actions and issue-comment timestamps are never
+compared for causality. If the edit-bound run is not visible yet,
+reconciliation defers. A later successful full run does not hide or replace
+the edit-bound metadata identity. The
 eligible run's identity/router/classifier and adapter jobs must be canonical
 successes, expensive jobs and the publisher must be canonical skips, and
 summary must be the canonical failure. Cancelled, timed-out, action-required,
