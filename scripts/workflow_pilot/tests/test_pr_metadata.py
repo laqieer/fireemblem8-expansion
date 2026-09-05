@@ -647,8 +647,18 @@ def _add_edit_transaction(
     _add_metadata_versions(
         client,
         (pre_state, pre_version),
+        (pre_state, pre_version),
         (post_state, post_version),
     )
+    client.add("GET", _endpoint(f"pulls/{PR_NUMBER}"), pre_state)
+    for (method, endpoint), responses in list(client.routes.items()):
+        if (
+            method == "GET"
+            and "actions/" in endpoint
+            and responses
+        ):
+            responses.append(copy.deepcopy(responses[-1]))
+    intent_payload: dict[str, object] = {}
     client.add(
         "GET",
         _query(
@@ -656,6 +666,7 @@ def _add_edit_transaction(
             [("per_page", "100"), ("page", "1")],
         ),
         [],
+        lambda **_kwargs: [copy.deepcopy(intent_payload)],
     )
 
     def response(
@@ -684,6 +695,9 @@ def _add_edit_transaction(
             created_at=created_at,
             updated_at=created_at,
         )
+        if method_name == "intent":
+            intent_payload.clear()
+            intent_payload.update(copy.deepcopy(payload))
         payload.update(response_changes or {})
         return payload
 
@@ -756,6 +770,7 @@ def _cli_api_call(
     status: int = 200,
     input_text: str | None = "",
     echo_body: bool = False,
+    echo_last_comment: bool = False,
 ) -> dict:
     call = {
         "endpoint": endpoint,
@@ -765,6 +780,8 @@ def _cli_api_call(
     }
     if echo_body:
         call["echo_body"] = True
+    if echo_last_comment:
+        call["echo_last_comment"] = True
     if payload is not _MISSING:
         call["payload"] = payload
     return call
@@ -850,6 +867,8 @@ def _cli_metadata_version_call(
 def _canonical_decision(**changes: object) -> str:
     payload = {
         "action": "updated",
+        "abort_comment_id": None,
+        "abort_comment_url": None,
         "base_sha": BASE,
         "comment_id": None,
         "guidance": [],
@@ -1018,6 +1037,52 @@ def _confirmation_comment(
     return payload
 
 
+def _abort(
+    receipt: pr_metadata.EditReceipt,
+    *,
+    intent_comment_id: int = 401,
+    reason: str = "run-authority-drift",
+    observed_state: dict | None = None,
+    observed_version: pr_metadata.MetadataVersion | None = None,
+) -> pr_metadata.EditAbort:
+    state = observed_state or _pr()
+    return pr_metadata.EditAbort(
+        schema_version=1,
+        repository=receipt.repository,
+        repository_id=receipt.repository_id,
+        pr_number=receipt.pr_number,
+        intent_comment_id=intent_comment_id,
+        intent_nonce=receipt.nonce,
+        intent_head_sha=receipt.head_sha,
+        intent_base_sha=receipt.base_sha,
+        observed_head_sha=state["head"]["sha"],
+        observed_base_sha=state["base"]["sha"],
+        observed_metadata_sha256=_metadata_sha256(
+            state["title"],
+            state["body"],
+        ),
+        observed_version=observed_version or _metadata_version(),
+        reason=reason,
+    )
+
+
+def _abort_comment(
+    abort: pr_metadata.EditAbort,
+    *,
+    comment_id: int = 403,
+    created_at: str = "2026-09-04T00:00:03Z",
+    **changes: object,
+) -> dict:
+    payload = _comment(
+        comment_id,
+        pr_metadata._abort_comment_body(abort),
+        created_at=created_at,
+        updated_at=created_at,
+    )
+    payload.update(changes)
+    return payload
+
+
 def _add_transaction_comments(
     client: ScriptedClient,
     receipt: pr_metadata.EditReceipt,
@@ -1179,6 +1244,19 @@ if "payload" in expected:
     if expected.get("echo_body"):
         payload = dict(payload)
         payload["body"] = json.loads(input_text)["body"]
+    if expected.get("echo_last_comment"):
+        prior = [
+            json.loads(line)
+            for line in log_path.read_text(encoding="utf-8").splitlines()
+        ]
+        body = next(
+            json.loads(record["input"])["body"]
+            for record in reversed(prior)
+            if record["method"] == "POST"
+            and "/comments" in record["endpoint"]
+        )
+        payload = [dict(payload[0])]
+        payload[0]["body"] = body
     sys.stdout.write("Content-Type: application/json\n\n")
     sys.stdout.write(
         json.dumps(
@@ -2208,7 +2286,19 @@ class PullRequestMetadataTests(unittest.TestCase):
             for call in client.calls
             if call[:2] == ("GET", _endpoint(f"pulls/{PR_NUMBER}"))
         ]
-        self.assertEqual(len(pr_gets), 2)
+        self.assertEqual(len(pr_gets), 3)
+        patch_index = next(
+            index
+            for index, call in enumerate(client.calls)
+            if call[:2] == ("PATCH", _endpoint(f"pulls/{PR_NUMBER}"))
+        )
+        self.assertTrue(
+            all(
+                index < patch_index
+                for index, call in enumerate(client.calls)
+                if call[:2] == ("GET", _endpoint(f"pulls/{PR_NUMBER}"))
+            )
+        )
 
     def test_transaction_comment_creation_responses_must_attest_authority(self):
         cases = (
@@ -2415,10 +2505,11 @@ class PullRequestMetadataTests(unittest.TestCase):
             pre_version=pre_version,
         )
         client = ScriptedClient()
-        _add_pr_states(client, pre_state, pre_state)
-        _add_snapshot(client, [_run(101, 10, mode="full")], copies=2)
+        _add_pr_states(client, pre_state, pre_state, pre_state)
+        _add_snapshot(client, [_run(101, 10, mode="full")], copies=3)
         _add_metadata_versions(
             client,
+            (pre_state, pre_version),
             (pre_state, pre_version),
             (target_state, target_version),
         )
@@ -2428,6 +2519,7 @@ class PullRequestMetadataTests(unittest.TestCase):
                 f"issues/{PR_NUMBER}/comments",
                 [("per_page", "100"), ("page", "1")],
             ),
+            [_intent_comment(intent)],
             [_intent_comment(intent)],
         )
         client.add(
@@ -2625,9 +2717,21 @@ class PullRequestMetadataTests(unittest.TestCase):
     def test_supplied_unchanged_field_drift_fails_after_changed_only_patch(self):
         client = ScriptedClient()
         successful_full = _run(101, 10, mode="full")
-        _add_pr_states(client, _pr(), _pr())
-        _add_snapshot(client, [successful_full], copies=2)
-        _add_metadata_versions(client, (_pr(), _metadata_version()))
+        drifted = _pr(
+            body="concurrent drift",
+            updated_at="2026-09-04T00:00:02Z",
+        )
+        _add_pr_states(client, _pr(), _pr(), drifted)
+        _add_snapshot(client, [successful_full], copies=3)
+        drifted_version = _metadata_version(
+            body_last_edited_at="2026-09-04T00:00:02Z",
+        )
+        _add_metadata_versions(
+            client,
+            (_pr(), _metadata_version()),
+            (drifted, drifted_version),
+        )
+        intent_payload = {}
         client.add(
             "GET",
             _query(
@@ -2635,6 +2739,7 @@ class PullRequestMetadataTests(unittest.TestCase):
                 [("per_page", "100"), ("page", "1")],
             ),
             [],
+            lambda **_kwargs: [copy.deepcopy(intent_payload)],
         )
 
         def intent_response(
@@ -2644,47 +2749,61 @@ class PullRequestMetadataTests(unittest.TestCase):
             body: dict[str, object] | None,
         ) -> dict:
             del method, endpoint
-            return _comment(
-                401,
-                body["body"],
-                created_at="2026-09-04T00:00:01Z",
-                updated_at="2026-09-04T00:00:01Z",
+            marker = (
+                pr_metadata.INTENT_MARKER
+                if pr_metadata.INTENT_MARKER in body["body"]
+                else pr_metadata.ABORT_MARKER
             )
+            payload = _comment(
+                401 if marker == pr_metadata.INTENT_MARKER else 403,
+                body["body"],
+                created_at=(
+                    "2026-09-04T00:00:01Z"
+                    if marker == pr_metadata.INTENT_MARKER
+                    else "2026-09-04T00:00:03Z"
+                ),
+                updated_at=(
+                    "2026-09-04T00:00:01Z"
+                    if marker == pr_metadata.INTENT_MARKER
+                    else "2026-09-04T00:00:03Z"
+                ),
+            )
+            if marker == pr_metadata.INTENT_MARKER:
+                intent_payload.update(copy.deepcopy(payload))
+            return payload
 
         client.add(
             "POST",
             _endpoint(f"issues/{PR_NUMBER}/comments"),
             intent_response,
+            intent_response,
         )
-        client.add(
-            "PATCH",
-            _endpoint(f"pulls/{PR_NUMBER}"),
-            _pr(
-                title="New title",
-                body="concurrent drift",
-                updated_at="2026-09-04T00:00:05Z",
-            ),
+        decision = pr_metadata.edit_metadata(
+            client,
+            repository=REPOSITORY,
+            pr_number=PR_NUMBER,
+            head_sha=HEAD,
+            base_sha=BASE,
+            title="New title",
+            body="Stable body",
+            essential_reason=None,
         )
-        with self.assertRaisesRegex(
-            pr_metadata.MetadataEditError,
-            "complete target metadata",
-        ):
-            pr_metadata.edit_metadata(
-                client,
-                repository=REPOSITORY,
-                pr_number=PR_NUMBER,
-                head_sha=HEAD,
-                base_sha=BASE,
-                title="New title",
-                body="Stable body",
-                essential_reason=None,
+        self.assertEqual(decision.action, "deferred")
+        self.assertEqual(decision.abort_comment_id, 403)
+        self.assertFalse(
+            any(
+                call[:2] == ("PATCH", _endpoint(f"pulls/{PR_NUMBER}"))
+                for call in client.calls
             )
-        patch = next(
+        )
+        abort_call = next(
             call
             for call in client.calls
-            if call[:2] == ("PATCH", _endpoint(f"pulls/{PR_NUMBER}"))
+            if call[:2]
+            == ("POST", _endpoint(f"issues/{PR_NUMBER}/comments"))
+            and pr_metadata.ABORT_MARKER in call[2]["body"]
         )
-        self.assertEqual(patch[2], {"title": "New title"})
+        self.assertIn("pre-state-drift", abort_call[2]["body"])
 
     def test_no_op_requires_and_returns_authoritative_pair(self):
         receipt = _receipt()
@@ -3891,6 +4010,98 @@ class PullRequestMetadataTests(unittest.TestCase):
                 confirmation=confirmation,
                 comments=predating_comments,
             )
+
+    def test_abort_comments_close_intents_and_fail_closed(self):
+        receipt = _receipt(
+            provided_fields={"body": _sha256("new body")},
+            changed_fields={"body": _sha256("new body")},
+            pre_title="Stable title",
+            pre_body="Stable body",
+            pre_metadata_sha256=_metadata_sha256(
+                "Stable title",
+                "Stable body",
+            ),
+            target_metadata_sha256=_metadata_sha256(
+                "Stable title",
+                "new body",
+            ),
+        )
+        abort = _abort(receipt)
+        client = ScriptedClient()
+        _add_pr_states(client, _pr(), _pr())
+        _add_snapshot(client, [_run(101, 10, mode="full")], copies=2)
+        _add_metadata_versions(client, (_pr(), _metadata_version()))
+        client.add(
+            "GET",
+            _query(
+                f"issues/{PR_NUMBER}/comments",
+                [("per_page", "100"), ("page", "1")],
+            ),
+            [_intent_comment(receipt), _abort_comment(abort)],
+        )
+        decision = pr_metadata.edit_metadata(
+            client,
+            repository=REPOSITORY,
+            pr_number=PR_NUMBER,
+            head_sha=HEAD,
+            base_sha=BASE,
+            title=None,
+            body="new body",
+            essential_reason=None,
+        )
+        self.assertEqual(decision.action, "deferred")
+        self.assertEqual(decision.abort_comment_id, 403)
+        self.assertFalse(
+            any(method == "PATCH" for method, _endpoint, _body in client.calls)
+        )
+
+        for name, comments in (
+            (
+                "duplicate",
+                [
+                    _intent_comment(receipt),
+                    _abort_comment(abort),
+                    _abort_comment(abort, comment_id=404),
+                ],
+            ),
+            (
+                "forged",
+                [
+                    _intent_comment(receipt),
+                    _abort_comment(
+                        replace(abort, intent_nonce="f" * 64),
+                    ),
+                ],
+            ),
+        ):
+            with self.subTest(case=name):
+                client = ScriptedClient()
+                _add_pr_states(client, _pr(), _pr())
+                _add_snapshot(
+                    client,
+                    [_run(101, 10, mode="full")],
+                    copies=2,
+                )
+                _add_metadata_versions(client, (_pr(), _metadata_version()))
+                client.add(
+                    "GET",
+                    _query(
+                        f"issues/{PR_NUMBER}/comments",
+                        [("per_page", "100"), ("page", "1")],
+                    ),
+                    comments,
+                )
+                with self.assertRaises(pr_metadata.MetadataEditError):
+                    pr_metadata.edit_metadata(
+                        client,
+                        repository=REPOSITORY,
+                        pr_number=PR_NUMBER,
+                        head_sha=HEAD,
+                        base_sha=BASE,
+                        title=None,
+                        body="new body",
+                        essential_reason=None,
+                    )
 
     def test_later_direct_metadata_changes_invalidate_receipt(self):
         title_receipt = _receipt(
@@ -6175,6 +6386,29 @@ class PullRequestMetadataLauncherTests(unittest.TestCase):
                 status=201,
                 input_text=None,
                 echo_body=True,
+            ),
+            _cli_api_call(
+                "GET",
+                _endpoint(f"pulls/{PR_NUMBER}"),
+                payload=_pr(),
+            ),
+            *_cli_snapshot_calls([successful_full]),
+            _cli_metadata_version_call(_pr(), _metadata_version()),
+            _cli_api_call(
+                "GET",
+                _query(
+                    f"issues/{PR_NUMBER}/comments",
+                    [("per_page", "100"), ("page", "1")],
+                ),
+                payload=[
+                    _comment(
+                        401,
+                        "",
+                        created_at="2026-09-04T00:00:01Z",
+                        updated_at="2026-09-04T00:00:01Z",
+                    )
+                ],
+                echo_last_comment=True,
             ),
             _cli_api_call(
                 "PATCH",

@@ -15,7 +15,7 @@ import shutil
 import subprocess
 import sys
 import urllib.parse
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 from typing import Any, Callable, Literal
 
@@ -35,6 +35,7 @@ WORKFLOW_PATH = ".github/workflows/build.yml"
 EVIDENCE_MARKER = "<!-- workflow-pilot-candidate-evidence -->"
 INTENT_MARKER = "<!-- workflow-pilot-metadata-edit-intent:v1 -->"
 CONFIRMATION_MARKER = "<!-- workflow-pilot-metadata-edit-confirmation:v1 -->"
+ABORT_MARKER = "<!-- workflow-pilot-metadata-edit-abort:v1 -->"
 HTTP_STATUS_RE = re.compile(r"^HTTP/(?:1(?:\.[01])?|2(?:\.0)?) ([1-5][0-9]{2})(?: .*)?$")
 HEADER_NAME_RE = re.compile(r"^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$")
 LINK_PART_RE = re.compile(r'\s*<([^>]+)>\s*;\s*rel="([^"]+)"\s*(?:,\s*|$)')
@@ -131,6 +132,7 @@ class CommentState:
     updated_at: datetime.datetime
     intent: EditReceipt | None
     confirmation: EditConfirmation | None
+    abort: EditAbort | None
 
 
 @dataclass(frozen=True)
@@ -299,6 +301,48 @@ class EditConfirmation:
 
 
 @dataclass(frozen=True)
+class EditAbort:
+    schema_version: int
+    repository: str
+    repository_id: int
+    pr_number: int
+    intent_comment_id: int
+    intent_nonce: str
+    intent_head_sha: str
+    intent_base_sha: str
+    observed_head_sha: str
+    observed_base_sha: str
+    observed_metadata_sha256: str
+    observed_version: MetadataVersion
+    reason: str
+
+    def canonical_payload(self) -> dict[str, object]:
+        return {
+            "intent_base_sha": self.intent_base_sha,
+            "intent_comment_id": self.intent_comment_id,
+            "intent_head_sha": self.intent_head_sha,
+            "intent_nonce": self.intent_nonce,
+            "observed_base_sha": self.observed_base_sha,
+            "observed_head_sha": self.observed_head_sha,
+            "observed_metadata_sha256": self.observed_metadata_sha256,
+            "observed_version": self.observed_version.canonical_payload(),
+            "pr_number": self.pr_number,
+            "reason": self.reason,
+            "repository": self.repository,
+            "repository_id": self.repository_id,
+            "schema_version": self.schema_version,
+        }
+
+    def canonical_json(self) -> str:
+        return json.dumps(
+            self.canonical_payload(),
+            ensure_ascii=True,
+            separators=(",", ":"),
+            sort_keys=True,
+        ) + "\n"
+
+
+@dataclass(frozen=True)
 class Decision:
     action: str
     base_sha: str
@@ -314,6 +358,8 @@ class Decision:
     intent_comment_url: str | None = None
     confirmation_comment_id: int | None = None
     confirmation_comment_url: str | None = None
+    abort_comment_id: int | None = None
+    abort_comment_url: str | None = None
 
     def __post_init__(self) -> None:
         for field, value in (
@@ -321,6 +367,7 @@ class Decision:
             ("comment_id", self.comment_id),
             ("intent_comment_id", self.intent_comment_id),
             ("confirmation_comment_id", self.confirmation_comment_id),
+            ("abort_comment_id", self.abort_comment_id),
         ):
             if value is not None and (
                 isinstance(value, bool)
@@ -342,6 +389,7 @@ class Decision:
                 self.confirmation_comment_id,
                 self.confirmation_comment_url,
             ),
+            ("abort", self.abort_comment_id, self.abort_comment_url),
         ):
             if (comment_id is None) != (url is None):
                 raise MetadataEditError(
@@ -371,6 +419,8 @@ class Decision:
                 or self.intent_comment_url is None
                 or self.confirmation_comment_id is None
                 or self.confirmation_comment_url is None
+                or self.abort_comment_id is not None
+                or self.abort_comment_url is not None
             ):
                 raise MetadataEditError(
                     "updated Decision requires intent and confirmation comments"
@@ -382,10 +432,17 @@ class Decision:
         ):
             pass
         elif (
+            self.action == "deferred"
+            and self.abort_comment_id is not None
+        ):
+            pass
+        elif (
             self.intent_comment_id is not None
             or self.intent_comment_url is not None
             or self.confirmation_comment_id is not None
             or self.confirmation_comment_url is not None
+            or self.abort_comment_id is not None
+            or self.abort_comment_url is not None
         ):
             raise MetadataEditError(
                 "only updated, recovered, or authoritative no-op/deferred "
@@ -631,15 +688,15 @@ def _parse_metadata_version_payload(
     title_current = payload["title_current"]
     title_actor_id = payload["title_actor_id"]
     title_actor_login = payload["title_actor_login"]
-    title_values = (
+    title_identity_values = (
         title_event_id,
         title_event_created_at,
         title_previous,
         title_current,
-        title_actor_id,
-        title_actor_login,
     )
-    if all(value is None for value in title_values):
+    if all(value is None for value in title_identity_values):
+        if title_actor_id is not None or title_actor_login is not None:
+            raise MetadataEditError(f"{label} title actor is partial")
         pass
     elif (
         not isinstance(title_event_id, str)
@@ -655,14 +712,17 @@ def _parse_metadata_version_payload(
                 f"{label} title event created_at",
             )
         )
-        title_actor_id = _positive_int(
-            title_actor_id,
-            f"{label} title actor id",
-        )
-        title_actor_login = _text(
-            title_actor_login,
-            f"{label} title actor login",
-        )
+        if (title_actor_id is None) != (title_actor_login is None):
+            raise MetadataEditError(f"{label} title actor is partial")
+        if title_actor_id is not None:
+            title_actor_id = _positive_int(
+                title_actor_id,
+                f"{label} title actor id",
+            )
+            title_actor_login = _text(
+                title_actor_login,
+                f"{label} title actor login",
+            )
     body_last_edited_at = payload["body_last_edited_at"]
     body_editor_id = payload["body_editor_id"]
     body_editor_login = payload["body_editor_login"]
@@ -945,6 +1005,82 @@ def _parse_edit_confirmation(payload: object) -> EditConfirmation:
             payload["metadata_version"],
             label="edit confirmation",
         ),
+    )
+
+
+def _parse_edit_abort(payload: object) -> EditAbort:
+    expected = {
+        "intent_base_sha",
+        "intent_comment_id",
+        "intent_head_sha",
+        "intent_nonce",
+        "observed_base_sha",
+        "observed_head_sha",
+        "observed_metadata_sha256",
+        "observed_version",
+        "pr_number",
+        "reason",
+        "repository",
+        "repository_id",
+        "schema_version",
+    }
+    if not isinstance(payload, dict) or set(payload) != expected:
+        raise MetadataEditError("edit abort shape is invalid")
+    if payload["schema_version"] != 1:
+        raise MetadataEditError("edit abort schema_version is invalid")
+    reason = payload["reason"]
+    if reason not in {
+        "candidate-drift",
+        "metadata-version-drift",
+        "pre-state-drift",
+        "run-authority-drift",
+        "transaction-drift",
+    }:
+        raise MetadataEditError("edit abort reason is invalid")
+    nonce = payload["intent_nonce"]
+    digest = payload["observed_metadata_sha256"]
+    repository = payload["repository"]
+    if not isinstance(repository, str):
+        raise MetadataEditError("edit abort repository is invalid")
+    if not isinstance(nonce, str) or DIGEST_RE.fullmatch(nonce) is None:
+        raise MetadataEditError("edit abort nonce is invalid")
+    if not isinstance(digest, str) or DIGEST_RE.fullmatch(digest) is None:
+        raise MetadataEditError("edit abort metadata digest is invalid")
+    return EditAbort(
+        schema_version=1,
+        repository=_repository(repository),
+        repository_id=_positive_int(
+            payload["repository_id"],
+            "edit abort repository_id",
+        ),
+        pr_number=_positive_int(payload["pr_number"], "edit abort pr_number"),
+        intent_comment_id=_positive_int(
+            payload["intent_comment_id"],
+            "edit abort intent_comment_id",
+        ),
+        intent_nonce=nonce,
+        intent_head_sha=_sha(
+            payload["intent_head_sha"],
+            "edit abort intent head",
+        ),
+        intent_base_sha=_sha(
+            payload["intent_base_sha"],
+            "edit abort intent base",
+        ),
+        observed_head_sha=_sha(
+            payload["observed_head_sha"],
+            "edit abort observed head",
+        ),
+        observed_base_sha=_sha(
+            payload["observed_base_sha"],
+            "edit abort observed base",
+        ),
+        observed_metadata_sha256=digest,
+        observed_version=_parse_metadata_version_payload(
+            payload["observed_version"],
+            label="edit abort observed version",
+        ),
+        reason=reason,
     )
 
 
@@ -2760,7 +2896,21 @@ def _validate_confirmation(
         receipt,
         intent_comment_id=intent_comment_id,
         state=state,
-        version=version,
+        version=confirmation.metadata_version,
+    )
+    confirmed_version = confirmation.metadata_version
+    actor_erasure = (
+        confirmed_version.title_actor_id == state.repository_owner_id
+        and confirmed_version.title_actor_login
+        == state.repository.split("/", 1)[0]
+        and version.title_actor_id is None
+        and version.title_actor_login is None
+        and replace(
+            version,
+            title_actor_id=confirmed_version.title_actor_id,
+            title_actor_login=confirmed_version.title_actor_login,
+        )
+        == confirmed_version
     )
     if (
         confirmation.repository != state.repository
@@ -2771,10 +2921,34 @@ def _validate_confirmation(
         or confirmation.intent_comment_id != intent_comment_id
         or confirmation.intent_nonce != receipt.nonce
         or confirmation.metadata_sha256 != receipt.target_metadata_sha256
-        or confirmation.metadata_version != version
+        or (
+            confirmation.metadata_version != version
+            and not actor_erasure
+        )
         or confirmation != expected
     ):
         raise MetadataEditError("edit confirmation authority is stale or forged")
+
+
+def _metadata_versions_equivalent(
+    previous: MetadataVersion,
+    current: MetadataVersion,
+    state: PullRequestState,
+) -> bool:
+    if previous == current:
+        return True
+    return (
+        previous.title_actor_id == state.repository_owner_id
+        and previous.title_actor_login == state.repository.split("/", 1)[0]
+        and current.title_actor_id is None
+        and current.title_actor_login is None
+        and replace(
+            current,
+            title_actor_id=previous.title_actor_id,
+            title_actor_login=previous.title_actor_login,
+        )
+        == previous
+    )
 
 
 def _validate_receipt_watermark(
@@ -2839,6 +3013,21 @@ def _reconcile_guidance(
             "--confirmation-comment-id",
             str(confirmation_comment_id),
         ),
+    )
+
+
+def _same_pr_contract(
+    left: PullRequestState,
+    right: PullRequestState,
+) -> bool:
+    return (
+        left.repository == right.repository
+        and left.repository_id == right.repository_id
+        and left.repository_owner_id == right.repository_owner_id
+        and left.number == right.number
+        and left.head_sha == right.head_sha
+        and left.head_ref == right.head_ref
+        and left.base_sha == right.base_sha
     )
 
 
@@ -2982,7 +3171,7 @@ def edit_metadata(
             require_full_success(latest_full)
 
     current_version = fetch_metadata_version(client, current)
-    intents, confirmations = _transaction_comments(client, current)
+    intents, confirmations, aborts = _transaction_comments(client, current)
     current_workflow_id = (
         current_runs[0].workflow_id if current_runs else 0
     )
@@ -2998,13 +3187,22 @@ def edit_metadata(
         if latest_intent_comment is not None
         else None
     )
+    latest_abort_comment = (
+        aborts.get(latest_intent_comment.comment_id)
+        if latest_intent_comment is not None
+        else None
+    )
     intent = (
         latest_intent_comment.intent
         if latest_intent_comment is not None
         else None
     )
     patch_required = not initially_matches
-    if intent is not None and latest_confirmation_comment is None:
+    if (
+        intent is not None
+        and latest_confirmation_comment is None
+        and latest_abort_comment is None
+    ):
         _validate_receipt_identity(intent, current)
         _validate_receipt_watermark(intent, current_runs)
         if (
@@ -3024,6 +3222,21 @@ def edit_metadata(
             raise MetadataEditError(
                 "active metadata edit intent matches neither pre-state nor target"
             )
+    elif latest_abort_comment is not None:
+        return Decision(
+            action="deferred",
+            base_sha=base_sha,
+            guidance=(),
+            head_sha=head_sha,
+            mutated=False,
+            reason="latest exact-candidate metadata intent is aborted",
+            repository=repository,
+            pr_number=pr_number,
+            intent_comment_id=latest_intent_comment.comment_id,
+            intent_comment_url=latest_intent_comment.html_url,
+            abort_comment_id=latest_abort_comment.comment_id,
+            abort_comment_url=latest_abort_comment.html_url,
+        )
     elif initially_matches:
         if (
             intent is None
@@ -3132,6 +3345,84 @@ def edit_metadata(
 
     if intent is None or latest_intent_comment is None:
         raise MetadataEditError("metadata edit intent state is incomplete")
+    if patch_required:
+        fresh = fetch_pull_request(client, repository, pr_number)
+        fresh_runs = list_candidate_runs(client, fresh)
+        fresh_version = fetch_metadata_version(client, fresh)
+        fresh_intents, fresh_confirmations, fresh_aborts = _transaction_comments(
+            client,
+            fresh,
+        )
+        fresh_latest = _latest_intent(
+            _candidate_intents(
+                fresh_intents,
+                fresh,
+                fresh_runs[0].workflow_id if fresh_runs else 0,
+            )
+        )
+        existing_abort = fresh_aborts.get(latest_intent_comment.comment_id)
+        if existing_abort is not None:
+            return Decision(
+                action="deferred",
+                base_sha=base_sha,
+                guidance=(),
+                head_sha=head_sha,
+                mutated=False,
+                reason="metadata edit intent is already aborted",
+                repository=repository,
+                pr_number=pr_number,
+                intent_comment_id=latest_intent_comment.comment_id,
+                intent_comment_url=latest_intent_comment.html_url,
+                abort_comment_id=existing_abort.comment_id,
+                abort_comment_url=existing_abort.html_url,
+            )
+        reason = None
+        if (
+            not _same_pr_contract(current, fresh)
+            or fresh.head_sha != intent.head_sha
+            or fresh.base_sha != intent.base_sha
+        ):
+            reason = "candidate-drift"
+        elif not _receipt_matches_pre_state(intent, fresh, fresh_version):
+            reason = (
+                "metadata-version-drift"
+                if _metadata_digest(fresh.title, fresh.body)
+                == intent.pre_metadata_sha256
+                else "pre-state-drift"
+            )
+        elif fresh_runs != current_runs:
+            reason = "run-authority-drift"
+        elif (
+            fresh_latest is None
+            or fresh_latest.comment_id != latest_intent_comment.comment_id
+            or fresh_latest.comment_id in fresh_confirmations
+        ):
+            reason = "transaction-drift"
+        elif essential_reason is None and _blocking_active_runs(fresh_runs):
+            reason = "run-authority-drift"
+        if reason is not None:
+            abort_comment = _create_abort_comment(
+                client,
+                fresh,
+                latest_intent_comment,
+                intent,
+                observed_version=fresh_version,
+                reason=reason,
+            )
+            return Decision(
+                action="deferred",
+                base_sha=base_sha,
+                guidance=(),
+                head_sha=head_sha,
+                mutated=True,
+                reason=f"metadata edit intent aborted: {reason}",
+                repository=repository,
+                pr_number=pr_number,
+                intent_comment_id=latest_intent_comment.comment_id,
+                intent_comment_url=latest_intent_comment.html_url,
+                abort_comment_id=abort_comment.comment_id,
+                abort_comment_url=abort_comment.html_url,
+            )
     mutation: dict[str, object] = {}
     changed = set(_changed_fields(intent))
     if "title" in changed:
@@ -3379,7 +3670,11 @@ def reconcile_metadata(
         or current_confirmation != confirmation
         or current_confirmation_comment.comment_id
         != confirmation_comment.comment_id
-        or current_version != initial_version
+        or not _metadata_versions_equivalent(
+            initial_version,
+            current_version,
+            current,
+        )
     ):
         return Decision(
             action="deferred",
@@ -3560,6 +3855,10 @@ def _confirmation_comment_body(confirmation: EditConfirmation) -> str:
     return CONFIRMATION_MARKER + "\n" + confirmation.canonical_json()
 
 
+def _abort_comment_body(abort: EditAbort) -> str:
+    return ABORT_MARKER + "\n" + abort.canonical_json()
+
+
 def _parse_intent_comment_body(body: str) -> EditReceipt:
     if body.count(INTENT_MARKER) != 1 or not _marker_is_standalone(
         body,
@@ -3606,6 +3905,26 @@ def _parse_confirmation_comment_body(body: str) -> EditConfirmation:
             "metadata edit confirmation comment JSON is not canonical"
         )
     return confirmation
+
+
+def _parse_abort_comment_body(body: str) -> EditAbort:
+    if body.count(ABORT_MARKER) != 1 or not _marker_is_standalone(
+        body,
+        ABORT_MARKER,
+    ):
+        raise MetadataEditError(
+            "metadata edit abort marker is duplicated or embedded"
+        )
+    prefix = ABORT_MARKER + "\n"
+    if not body.startswith(prefix):
+        raise MetadataEditError("metadata edit abort marker must be first")
+    raw_abort = body[len(prefix) :]
+    abort = _parse_edit_abort(
+        _parse_json(raw_abort, "metadata edit abort comment")
+    )
+    if raw_abort != abort.canonical_json():
+        raise MetadataEditError("metadata edit abort JSON is not canonical")
+    return abort
 
 
 def _parse_comment_payload(
@@ -3675,12 +3994,14 @@ def _parse_comment_payload(
     evidence_marker_count = body.count(EVIDENCE_MARKER)
     intent_marker_count = body.count(INTENT_MARKER)
     confirmation_marker_count = body.count(CONFIRMATION_MARKER)
+    abort_marker_count = body.count(ABORT_MARKER)
     marker_kinds = sum(
         bool(count)
         for count in (
             evidence_marker_count,
             intent_marker_count,
             confirmation_marker_count,
+            abort_marker_count,
         )
     )
     if marker_kinds > 1:
@@ -3689,6 +4010,7 @@ def _parse_comment_payload(
         evidence_marker_count
         or intent_marker_count
         or confirmation_marker_count
+        or abort_marker_count
     )
     if protected:
         marker = (
@@ -3697,6 +4019,8 @@ def _parse_comment_payload(
             else INTENT_MARKER
             if intent_marker_count
             else CONFIRMATION_MARKER
+            if confirmation_marker_count
+            else ABORT_MARKER
         )
         if protected != 1 or not _marker_is_standalone(body, marker):
             raise MetadataEditError(
@@ -3728,15 +4052,18 @@ def _parse_comment_payload(
     _text(raw.get("node_id"), f"pull request comment {comment_id} node_id")
     intent = None
     confirmation = None
-    if intent_marker_count or confirmation_marker_count:
+    abort = None
+    if intent_marker_count or confirmation_marker_count or abort_marker_count:
         if updated_at != created_at:
             raise MetadataEditError(
                 f"metadata edit transaction comment {comment_id} was edited"
             )
         if intent_marker_count:
             intent = _parse_intent_comment_body(body)
-        else:
+        elif confirmation_marker_count:
             confirmation = _parse_confirmation_comment_body(body)
+        else:
+            abort = _parse_abort_comment_body(body)
     return CommentState(
         comment_id=comment_id,
         repository=repository,
@@ -3751,6 +4078,7 @@ def _parse_comment_payload(
         updated_at=updated_at,
         intent=intent,
         confirmation=confirmation,
+        abort=abort,
     )
 
 
@@ -3789,7 +4117,11 @@ def _create_transaction_comment(
 def _transaction_comments(
     client: GitHubClient,
     state: PullRequestState,
-) -> tuple[list[CommentState], dict[int, CommentState]]:
+) -> tuple[
+    list[CommentState],
+    dict[int, CommentState],
+    dict[int, CommentState],
+]:
     comments = _list_comments(
         client,
         state.repository,
@@ -3839,7 +4171,36 @@ def _transaction_comments(
                 "metadata edit confirmation contradicts its intent"
             )
         by_intent[confirmation.intent_comment_id] = comment
-    return intents, by_intent
+    aborts = [
+        comment for comment in comments if comment.abort is not None
+    ]
+    abort_by_intent = {}
+    for comment in aborts:
+        abort = comment.abort
+        if abort is None:
+            raise MetadataEditError("metadata edit abort is invalid")
+        if abort.intent_comment_id in abort_by_intent:
+            raise MetadataEditError("metadata edit intent has duplicate aborts")
+        intent_comment = intents_by_id.get(abort.intent_comment_id)
+        if intent_comment is None or intent_comment.intent is None:
+            raise MetadataEditError("metadata edit abort references unknown intent")
+        intent = intent_comment.intent
+        if (
+            abort.repository != intent.repository
+            or abort.repository_id != intent.repository_id
+            or abort.pr_number != intent.pr_number
+            or abort.intent_nonce != intent.nonce
+            or abort.intent_head_sha != intent.head_sha
+            or abort.intent_base_sha != intent.base_sha
+            or comment.created_at < intent_comment.created_at
+        ):
+            raise MetadataEditError("metadata edit abort contradicts its intent")
+        if abort.intent_comment_id in by_intent:
+            raise MetadataEditError(
+                "metadata edit intent has both confirmation and abort"
+            )
+        abort_by_intent[abort.intent_comment_id] = comment
+    return intents, by_intent, abort_by_intent
 
 
 def _candidate_intents(
@@ -3911,18 +4272,57 @@ def _create_confirmation_comment(
     return comment
 
 
+def _create_abort_comment(
+    client: GitHubClient,
+    state: PullRequestState,
+    intent_comment: CommentState,
+    intent: EditReceipt,
+    *,
+    observed_version: MetadataVersion,
+    reason: str,
+) -> CommentState:
+    abort = EditAbort(
+        schema_version=1,
+        repository=intent.repository,
+        repository_id=intent.repository_id,
+        pr_number=intent.pr_number,
+        intent_comment_id=intent_comment.comment_id,
+        intent_nonce=intent.nonce,
+        intent_head_sha=intent.head_sha,
+        intent_base_sha=intent.base_sha,
+        observed_head_sha=state.head_sha,
+        observed_base_sha=state.base_sha,
+        observed_metadata_sha256=_metadata_digest(state.title, state.body),
+        observed_version=observed_version,
+        reason=reason,
+    )
+    comment = _create_transaction_comment(
+        client,
+        state,
+        body=_abort_comment_body(abort),
+        label="metadata edit abort comment creation",
+    )
+    if comment.abort != abort or comment.intent is not None:
+        raise MetadataEditError(
+            "abort comment creation response did not attest the abort"
+        )
+    return comment
+
+
 def _authoritative_edit_pair(
     client: GitHubClient,
     state: PullRequestState,
     confirmation_comment_id: int,
     workflow_id: int,
 ) -> tuple[EditReceipt, CommentState, EditConfirmation, CommentState]:
-    intents, confirmations = _transaction_comments(client, state)
+    intents, confirmations, aborts = _transaction_comments(client, state)
     latest = _latest_intent(
         _candidate_intents(intents, state, workflow_id)
     )
     if latest is None or latest.intent is None:
         raise MetadataEditError("metadata edit intent comment is missing")
+    if latest.comment_id in aborts:
+        raise MetadataEditError("latest metadata edit intent is aborted")
     confirmation_comment = confirmations.get(latest.comment_id)
     if (
         confirmation_comment is None

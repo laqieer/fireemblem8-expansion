@@ -683,6 +683,17 @@ payload always use the intent's `changed_fields`. If every provided field
 already equals pre-state, no intent is created and authoritative no-op
 semantics apply.
 
+Immediately before PATCH, the helper refetches complete PR, run, metadata
+version, and transaction-comment authority. Any candidate, pre-state,
+provided-field, version, run-snapshot, or active-intent drift creates an
+immutable owner-authored abort comment and performs zero PATCH. Abort comments
+reference the exact intent ID/nonce and observed state/version, are never
+edited/deleted, and close that intent. Retry recognizes a maybe-created abort
+or safely attempts the same abort again; malformed, duplicate, forged, or
+contradictory aborts are fatal. This still cannot make the final GET and PATCH
+atomic. The authoritative PATCH response's exact head/base and complete
+title/body attestation detects drift occurring in that irreducible window.
+
 Every successful title/body update returns this reconciliation command. The
 second run snapshot closes the deterministic pre-PATCH run-state race; only an
 external same-SHA full rerun that starts after that final authority query is an

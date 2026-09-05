@@ -4732,14 +4732,12 @@ printf '%s\t%s\t%s\n' "$result" \
         )
         for requirement in (
             "isolated launcher suites",
-            "any-active-full barrier",
-            "highest attempt",
-            "Older active/failed runs cannot override",
-            "absent, active, failed, malformed, unbound",
-            "same ID/number attempts",
-            "metadata attempt 2",
-            "newest full success with older active full",
-            "mutation eligibility still blocks any active full",
+            "final pre-PATCH refetch",
+            "immutable abort",
+            "zero PATCH",
+            "maybe-created",
+            "unsafe abort retry",
+            "non-atomic",
         ):
             with self.subTest(registry_requirement=requirement):
                 self.assertIn(normalize_policy(requirement), indexed_contract)

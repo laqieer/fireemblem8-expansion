@@ -1292,6 +1292,12 @@ the exact branch and head; timeout or ambiguity fails before `gh run watch`.
    collapse for the same run ID/number.
    Exercise equal-second intent/confirmation comments as valid and a
    confirmation predating intent as invalid.
+   After intent creation, inject candidate/head/base, pre-state, supplied
+   unchanged-field, title/body version, run-snapshot, and transaction-comment
+   drift before PATCH. Require zero PATCH and one immutable owner-authored
+   abort comment. Replay maybe-created, duplicate, forged, edited, and
+   contradictory abort comments; malformed historical abort markers remain
+   fatal.
 4. Update a synthetic canonical marked evidence comment owned by the
    repository owner while the same full Build is active.
 5. Replay stale head/base before edit and reconciliation, post-edit identity
@@ -1399,6 +1405,11 @@ predate intent.
 An authoritative-pair no-op additionally requires the exact
 confirmation-bound metadata run to pass canonical completed-success
 validation; visible active/failure states defer with reconciliation guidance.
+The final pre-PATCH revalidation refetches PR, run, metadata-version, and
+transaction-comment authority. Drift emits an immutable abort/supersession
+comment and zero PATCH. The final GET/PATCH window is explicitly non-atomic;
+strict PATCH-response candidate and complete-state attestation detects any
+resulting drift rather than claiming atomicity.
 Full authorization and transaction metadata selection are independent. The
 newest exact full run must be canonical success, but the transaction metadata
 run is selected solely by explicit-same metadata shape and run number above
