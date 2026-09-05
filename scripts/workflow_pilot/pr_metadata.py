@@ -212,7 +212,8 @@ class EditReceipt:
     pre_fields: tuple[EditFieldDigest, ...]
     target_metadata_sha256: str
     pre_version: MetadataVersion
-    requested_fields: tuple[EditFieldDigest, ...]
+    provided_fields: tuple[EditFieldDigest, ...]
+    changed_fields: tuple[EditFieldDigest, ...]
     watermark_run_id: int
     watermark_run_number: int
     watermark_created_at: str
@@ -231,9 +232,13 @@ class EditReceipt:
             "pr_number": self.pr_number,
             "repository": self.repository,
             "repository_id": self.repository_id,
-            "requested_fields": {
+            "provided_fields": {
                 field.field: field.sha256
-                for field in self.requested_fields
+                for field in self.provided_fields
+            },
+            "changed_fields": {
+                field.field: field.sha256
+                for field in self.changed_fields
             },
             "schema_version": self.schema_version,
             "target_metadata_sha256": self.target_metadata_sha256,
@@ -569,7 +574,7 @@ def _field_state_digest(value: str | None) -> str:
     )
 
 
-def _requested_field_digests(
+def _provided_field_digests(
     *,
     title: str | None,
     body: str | None,
@@ -580,7 +585,21 @@ def _requested_field_digests(
     if title is not None:
         fields.append(EditFieldDigest("title", _content_digest(title)))
     if not fields:
-        raise MetadataEditError("edit receipt requires a requested field")
+        raise MetadataEditError("edit intent requires a provided field")
+    return tuple(fields)
+
+
+def _changed_field_digests(
+    state: PullRequestState,
+    *,
+    title: str | None,
+    body: str | None,
+) -> tuple[EditFieldDigest, ...]:
+    fields = []
+    if body is not None and body != state.body:
+        fields.append(EditFieldDigest("body", _content_digest(body)))
+    if title is not None and title != state.title:
+        fields.append(EditFieldDigest("title", _content_digest(title)))
     return tuple(fields)
 
 
@@ -747,7 +766,8 @@ def _parse_edit_receipt(payload: object) -> EditReceipt:
         "pr_number",
         "repository",
         "repository_id",
-        "requested_fields",
+        "provided_fields",
+        "changed_fields",
         "schema_version",
         "target_metadata_sha256",
         "watermark",
@@ -764,21 +784,40 @@ def _parse_edit_receipt(payload: object) -> EditReceipt:
     if not isinstance(repository, str):
         raise MetadataEditError("edit receipt repository is invalid")
     repository = _repository(repository)
-    requested = payload["requested_fields"]
+    provided = payload["provided_fields"]
     if (
-        not isinstance(requested, dict)
-        or not requested
-        or not set(requested) <= {"body", "title"}
+        not isinstance(provided, dict)
+        or not provided
+        or not set(provided) <= {"body", "title"}
     ):
-        raise MetadataEditError("edit receipt requested_fields are invalid")
-    requested_fields = []
-    for field in sorted(requested):
-        digest = requested[field]
+        raise MetadataEditError("edit intent provided_fields are invalid")
+    provided_fields = []
+    for field in sorted(provided):
+        digest = provided[field]
         if not isinstance(digest, str) or DIGEST_RE.fullmatch(digest) is None:
             raise MetadataEditError(
-                f"edit receipt {field} digest is invalid"
+                f"edit intent provided {field} digest is invalid"
             )
-        requested_fields.append(EditFieldDigest(field, digest))
+        provided_fields.append(EditFieldDigest(field, digest))
+    changed = payload["changed_fields"]
+    if (
+        not isinstance(changed, dict)
+        or not changed
+        or not set(changed) <= set(provided)
+    ):
+        raise MetadataEditError("edit intent changed_fields are invalid")
+    changed_fields = []
+    for field in sorted(changed):
+        digest = changed[field]
+        if (
+            not isinstance(digest, str)
+            or DIGEST_RE.fullmatch(digest) is None
+            or digest != provided[field]
+        ):
+            raise MetadataEditError(
+                f"edit intent changed {field} digest is invalid"
+            )
+        changed_fields.append(EditFieldDigest(field, digest))
     pre_fields = payload["pre_fields"]
     if not isinstance(pre_fields, dict) or set(pre_fields) != {"body", "title"}:
         raise MetadataEditError("edit receipt pre_fields are invalid")
@@ -839,7 +878,8 @@ def _parse_edit_receipt(payload: object) -> EditReceipt:
             payload["pre_version"],
             label="edit receipt pre_version",
         ),
-        requested_fields=tuple(requested_fields),
+        provided_fields=tuple(provided_fields),
+        changed_fields=tuple(changed_fields),
         watermark_run_id=_positive_int(
             watermark["run_id"],
             "edit receipt watermark run_id",
@@ -2518,6 +2558,8 @@ def _edit_receipt(
     title: str | None,
     body: str | None,
     pre_version: MetadataVersion,
+    provided_fields: tuple[EditFieldDigest, ...],
+    changed_fields: tuple[EditFieldDigest, ...],
 ) -> EditReceipt:
     if not runs:
         raise MetadataEditError(
@@ -2543,7 +2585,8 @@ def _edit_receipt(
         ),
         target_metadata_sha256=_metadata_digest(target_title, target_body),
         pre_version=pre_version,
-        requested_fields=_requested_field_digests(title=title, body=body),
+        provided_fields=provided_fields,
+        changed_fields=changed_fields,
         watermark_run_id=watermark.run_id,
         watermark_run_number=watermark.run_number,
         watermark_created_at=_timestamp_text(watermark.created_at),
@@ -2568,8 +2611,12 @@ def _validate_receipt_identity(
         raise MetadataEditError("edit receipt identity is stale or forged")
 
 
-def _receipt_fields(receipt: EditReceipt) -> dict[str, str]:
-    return {field.field: field.sha256 for field in receipt.requested_fields}
+def _provided_fields(receipt: EditReceipt) -> dict[str, str]:
+    return {field.field: field.sha256 for field in receipt.provided_fields}
+
+
+def _changed_fields(receipt: EditReceipt) -> dict[str, str]:
+    return {field.field: field.sha256 for field in receipt.changed_fields}
 
 
 def _receipt_pre_fields(receipt: EditReceipt) -> dict[str, str]:
@@ -2601,7 +2648,7 @@ def _validate_receipt_target(
         "body": state.body,
         "title": state.title,
     }
-    for field in receipt.requested_fields:
+    for field in receipt.provided_fields:
         value = values[field.field]
         if value is None or _content_digest(value) != field.sha256:
             raise MetadataEditError(
@@ -2631,8 +2678,8 @@ def _confirmation_for_target(
     version: MetadataVersion,
 ) -> EditConfirmation:
     _validate_receipt_target(receipt, state)
-    requested = set(_receipt_fields(receipt))
-    if "title" in requested:
+    changed = set(_changed_fields(receipt))
+    if "title" in changed:
         if (
             version.title_event_id is None
             or version.title_event_id == receipt.pre_version.title_event_id
@@ -2652,7 +2699,7 @@ def _confirmation_for_target(
         != receipt.pre_version.title_event_created_at
     ):
         raise MetadataEditError("unrequested title metadata version changed")
-    if "body" in requested:
+    if "body" in changed:
         if (
             version.body_edit_total_count
             != receipt.pre_version.body_edit_total_count + 1
@@ -2799,10 +2846,13 @@ def edit_metadata(
     target_title = title if title is not None else initial.title
     target_body = body if body is not None else initial.body
     target_digest = _metadata_digest(target_title, target_body)
-    requested_fields = _requested_field_digests(title=title, body=body)
-    initially_matches = (
-        target_title == initial.title and target_body == initial.body
+    provided_fields = _provided_field_digests(title=title, body=body)
+    changed_fields = _changed_field_digests(
+        initial,
+        title=title,
+        body=body,
     )
+    initially_matches = not changed_fields
     initial_runs = list_candidate_runs(client, initial)
     active_full = _blocking_active_runs(initial_runs)
     latest_full = _latest_full(initial_runs)
@@ -2933,8 +2983,8 @@ def edit_metadata(
         _validate_receipt_identity(intent, current)
         _validate_receipt_watermark(intent, current_runs)
         if (
-            _receipt_fields(intent)
-            != {field.field: field.sha256 for field in requested_fields}
+            _provided_fields(intent)
+            != {field.field: field.sha256 for field in provided_fields}
             or intent.target_metadata_sha256 != target_digest
         ):
             raise MetadataEditError(
@@ -3023,6 +3073,12 @@ def edit_metadata(
             title=title,
             body=body,
             pre_version=current_version,
+            provided_fields=provided_fields,
+            changed_fields=_changed_field_digests(
+                current,
+                title=title,
+                body=body,
+            ),
         )
         latest_intent_comment = _create_intent_comment(
             client,
@@ -3033,10 +3089,11 @@ def edit_metadata(
     if intent is None or latest_intent_comment is None:
         raise MetadataEditError("metadata edit intent state is incomplete")
     mutation: dict[str, object] = {}
-    if title is not None:
-        mutation["title"] = title
-    if body is not None:
-        mutation["body"] = body
+    changed = set(_changed_fields(intent))
+    if "title" in changed:
+        mutation["title"] = target_title
+    if "body" in changed:
+        mutation["body"] = target_body
     if patch_required:
         mutation_response = client.request(
             "PATCH",

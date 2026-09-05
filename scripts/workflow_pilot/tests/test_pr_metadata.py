@@ -627,18 +627,20 @@ def _add_edit_transaction(
         updated_at="2026-09-04T00:00:05Z",
     )
     pre_version = _metadata_version()
+    title_changed = title is not None and title != pre_state["title"]
+    body_changed = body is not None and body != pre_state["body"]
     post_version = _metadata_version(
-        title_event_id="RTE_2" if title is not None else "RTE_1",
+        title_event_id="RTE_2" if title_changed else "RTE_1",
         title_event_created_at=(
             "2026-09-04T00:00:05Z"
-            if title is not None
+            if title_changed
             else "2026-09-03T00:00:00Z"
         ),
-        title_previous="Stable title" if title is not None else "Older title",
+        title_previous="Stable title" if title_changed else "Older title",
         title_current=title if title is not None else "Stable title",
         body_last_edited_at=(
             "2026-09-04T00:00:05Z"
-            if body is not None
+            if body_changed
             else "2026-09-04T00:00:00Z"
         ),
     )
@@ -878,7 +880,8 @@ def _receipt_payload(
     pr_number: int = PR_NUMBER,
     head_sha: str = HEAD,
     base_sha: str = BASE,
-    requested_fields: dict[str, str] | None = None,
+    provided_fields: dict[str, str] | None = None,
+    changed_fields: dict[str, str] | None = None,
     watermark_run_id: int = 101,
     watermark_run_number: int = 10,
     watermark_created_at: str = "2026-09-04T00:00:00Z",
@@ -893,6 +896,11 @@ def _receipt_payload(
 ) -> dict:
     pre_version = pre_version or _metadata_version(
         body_last_edited_at="2026-09-03T00:00:00Z",
+    )
+    provided_fields = (
+        provided_fields
+        if provided_fields is not None
+        else {"body": _sha256("Stable body")}
     )
     return {
         "base_sha": base_sha,
@@ -911,10 +919,11 @@ def _receipt_payload(
         "pr_number": pr_number,
         "repository": repository,
         "repository_id": repository_id,
-        "requested_fields": (
-            requested_fields
-            if requested_fields is not None
-            else {"body": _sha256("Stable body")}
+        "provided_fields": provided_fields,
+        "changed_fields": (
+            changed_fields
+            if changed_fields is not None
+            else dict(provided_fields)
         ),
         "schema_version": 1,
         "target_metadata_sha256": (
@@ -945,7 +954,7 @@ def _confirmation(
     version: pr_metadata.MetadataVersion | None = None,
 ) -> pr_metadata.EditConfirmation:
     if version is None:
-        if "body" in {field.field for field in receipt.requested_fields}:
+        if "body" in {field.field for field in receipt.changed_fields}:
             version = replace(
                 receipt.pre_version,
                 body_last_edited_at="2026-09-04T00:00:00Z",
@@ -1052,7 +1061,7 @@ def _reconcile(
 ) -> pr_metadata.Decision:
     receipt = receipt or _receipt()
     if version is None:
-        if "body" in {field.field for field in receipt.requested_fields}:
+        if "body" in {field.field for field in receipt.changed_fields}:
             version = replace(
                 receipt.pre_version,
                 body_last_edited_at="2026-09-04T00:00:00Z",
@@ -1517,6 +1526,159 @@ class PullRequestMetadataTests(unittest.TestCase):
         )
         self.assertEqual(decision.action, "updated")
 
+    def test_provided_and_changed_fields_drive_exact_patch_and_versions(self):
+        cases = (
+            (
+                "title-changed-body-same",
+                "New title",
+                "Stable body",
+                {"title": "New title"},
+                {"body", "title"},
+                {"title"},
+            ),
+            (
+                "body-changed-title-same",
+                "Stable title",
+                "New body",
+                {"body": "New body"},
+                {"body", "title"},
+                {"body"},
+            ),
+            (
+                "both-changed",
+                "New title",
+                "New body",
+                {"body": "New body", "title": "New title"},
+                {"body", "title"},
+                {"body", "title"},
+            ),
+        )
+        for (
+            name,
+            title,
+            body,
+            expected_patch,
+            expected_provided,
+            expected_changed,
+        ) in cases:
+            with self.subTest(case=name):
+                client = ScriptedClient()
+                successful_full = _run(101, 10, mode="full")
+                _add_pr_states(client, _pr(), _pr())
+                _add_snapshot(client, [successful_full], copies=2)
+                client.add(
+                    "PATCH",
+                    _endpoint(f"pulls/{PR_NUMBER}"),
+                    _pr(
+                        title=title,
+                        body=body,
+                        updated_at="2026-09-04T00:00:05Z",
+                    ),
+                )
+                _add_edit_transaction(
+                    client,
+                    title=title,
+                    body=body,
+                )
+                decision = pr_metadata.edit_metadata(
+                    client,
+                    repository=REPOSITORY,
+                    pr_number=PR_NUMBER,
+                    head_sha=HEAD,
+                    base_sha=BASE,
+                    title=title,
+                    body=body,
+                    essential_reason=None,
+                )
+                self.assertEqual(decision.action, "updated")
+                patch = next(
+                    call
+                    for call in client.calls
+                    if call[:2]
+                    == ("PATCH", _endpoint(f"pulls/{PR_NUMBER}"))
+                )
+                self.assertEqual(patch[2], expected_patch)
+                intent_call = next(
+                    call
+                    for call in client.calls
+                    if call[:2]
+                    == ("POST", _endpoint(f"issues/{PR_NUMBER}/comments"))
+                    and pr_metadata.INTENT_MARKER in call[2]["body"]
+                )
+                intent = pr_metadata._parse_intent_comment_body(
+                    intent_call[2]["body"]
+                )
+                self.assertEqual(
+                    {field.field for field in intent.provided_fields},
+                    expected_provided,
+                )
+                self.assertEqual(
+                    {field.field for field in intent.changed_fields},
+                    expected_changed,
+                )
+                if "body" not in expected_changed:
+                    self.assertEqual(
+                        decision.confirmation_comment_id,
+                        402,
+                    )
+
+    def test_both_changed_fields_require_both_version_advances(self):
+        pre = _metadata_version()
+        receipt = _receipt(
+            provided_fields={
+                "body": _sha256("New body"),
+                "title": _sha256("New title"),
+            },
+            changed_fields={
+                "body": _sha256("New body"),
+                "title": _sha256("New title"),
+            },
+            pre_title="Stable title",
+            pre_body="Stable body",
+            pre_metadata_sha256=_metadata_sha256(
+                "Stable title",
+                "Stable body",
+            ),
+            target_metadata_sha256=_metadata_sha256(
+                "New title",
+                "New body",
+            ),
+            pre_version=pre,
+        )
+        state = pr_metadata._parse_pull_request_payload(
+            _pr(title="New title", body="New body"),
+            REPOSITORY,
+            PR_NUMBER,
+        )
+        title_only = replace(
+            pre,
+            title_event_id="RTE_2",
+            title_event_created_at="2026-09-04T00:00:05Z",
+            title_previous="Stable title",
+            title_current="New title",
+        )
+        body_only = replace(
+            pre,
+            body_last_edited_at="2026-09-04T00:00:05Z",
+            body_edit_total_count=pre.body_edit_total_count + 1,
+            body_edit_id="UCE_2",
+            body_edit_created_at="2026-09-04T00:00:05Z",
+            body_edit_edited_at="2026-09-04T00:00:05Z",
+            body_edit_updated_at="2026-09-04T00:00:05Z",
+        )
+        for name, version in (
+            ("title-only", title_only),
+            ("body-only", body_only),
+        ):
+            with self.subTest(case=name):
+                with self.assertRaises(pr_metadata.MetadataEditError):
+                    pr_metadata._confirmation_for_target(
+                        receipt,
+                        intent_comment_id=401,
+                        state=state,
+                        version=version,
+                    )
+
     def test_essential_override_updates_metadata_and_derives_reconciliation(self):
         client = ScriptedClient()
         active_full = _run(101, 10, mode="full", active=True)
@@ -1562,7 +1724,7 @@ class PullRequestMetadataTests(unittest.TestCase):
         )
         self.assertEqual(
             pr_metadata._parse_intent_comment_body(mutations[0][2]["body"])
-            .requested_fields,
+            .provided_fields,
             (
                 pr_metadata.EditFieldDigest(
                     "title",
@@ -1620,7 +1782,7 @@ class PullRequestMetadataTests(unittest.TestCase):
             pr_number=PR_NUMBER,
             head_sha=HEAD,
             base_sha=BASE,
-            title=None,
+            title="Stable title",
             body="Stable body",
             essential_reason=None,
         )
@@ -1996,7 +2158,7 @@ class PullRequestMetadataTests(unittest.TestCase):
             transaction_calls[0][2]["body"]
         )
         self.assertEqual(
-            intent.requested_fields,
+            intent.provided_fields,
             (pr_metadata.EditFieldDigest("body", _sha256("new body")),),
         )
         self.assertEqual(
@@ -2211,7 +2373,7 @@ class PullRequestMetadataTests(unittest.TestCase):
             body_last_edited_at="2026-09-04T00:00:05Z",
         )
         intent = _receipt(
-            requested_fields={"body": _sha256("new body")},
+            provided_fields={"body": _sha256("new body")},
             pre_title="Stable title",
             pre_body="Stable body",
             pre_metadata_sha256=_metadata_sha256(
@@ -2292,7 +2454,7 @@ class PullRequestMetadataTests(unittest.TestCase):
 
     def test_retry_unmatched_intent_rejects_third_state(self):
         intent = _receipt(
-            requested_fields={"body": _sha256("new body")},
+            provided_fields={"body": _sha256("new body")},
             pre_title="Stable title",
             pre_body="Stable body",
             pre_metadata_sha256=_metadata_sha256(
@@ -2338,6 +2500,164 @@ class PullRequestMetadataTests(unittest.TestCase):
             any(method == "PATCH" for method, _endpoint, _body in client.calls)
         )
 
+    def test_mixed_field_retry_uses_immutable_changed_set(self):
+        pre_version = _metadata_version()
+        intent = _receipt(
+            provided_fields={
+                "body": _sha256("Stable body"),
+                "title": _sha256("New title"),
+            },
+            changed_fields={"title": _sha256("New title")},
+            pre_title="Stable title",
+            pre_body="Stable body",
+            pre_metadata_sha256=_metadata_sha256(
+                "Stable title",
+                "Stable body",
+            ),
+            target_metadata_sha256=_metadata_sha256(
+                "New title",
+                "Stable body",
+            ),
+            pre_version=pre_version,
+        )
+        target_state = _pr(title="New title", body="Stable body")
+        target_version = replace(
+            pre_version,
+            title_event_id="RTE_2",
+            title_event_created_at="2026-09-04T00:00:05Z",
+            title_previous="Stable title",
+            title_current="New title",
+        )
+        client = ScriptedClient()
+        _add_pr_states(client, target_state, target_state)
+        _add_snapshot(client, [_run(101, 10, mode="full")], copies=2)
+        _add_metadata_versions(
+            client,
+            (target_state, target_version),
+            (target_state, target_version),
+        )
+        client.add(
+            "GET",
+            _query(
+                f"issues/{PR_NUMBER}/comments",
+                [("per_page", "100"), ("page", "1")],
+            ),
+            [_intent_comment(intent)],
+        )
+
+        def confirmation_response(
+            *,
+            method: str,
+            endpoint: str,
+            body: dict[str, object] | None,
+        ) -> dict:
+            del method, endpoint
+            return _comment(
+                402,
+                body["body"],
+                created_at="2026-09-04T00:00:06Z",
+                updated_at="2026-09-04T00:00:06Z",
+            )
+
+        client.add(
+            "POST",
+            _endpoint(f"issues/{PR_NUMBER}/comments"),
+            confirmation_response,
+        )
+        decision = pr_metadata.edit_metadata(
+            client,
+            repository=REPOSITORY,
+            pr_number=PR_NUMBER,
+            head_sha=HEAD,
+            base_sha=BASE,
+            title="New title",
+            body="Stable body",
+            essential_reason=None,
+        )
+        self.assertEqual(decision.action, "recovered")
+        self.assertFalse(
+            any(method == "PATCH" for method, _endpoint, _body in client.calls)
+        )
+        confirmation_call = next(
+            call
+            for call in client.calls
+            if call[:2]
+            == ("POST", _endpoint(f"issues/{PR_NUMBER}/comments"))
+        )
+        confirmation = pr_metadata._parse_confirmation_comment_body(
+            confirmation_call[2]["body"]
+        )
+        self.assertEqual(
+            pr_metadata._body_version_identity(
+                confirmation.metadata_version
+            ),
+            pr_metadata._body_version_identity(pre_version),
+        )
+
+    def test_supplied_unchanged_field_drift_fails_after_changed_only_patch(self):
+        client = ScriptedClient()
+        successful_full = _run(101, 10, mode="full")
+        _add_pr_states(client, _pr(), _pr())
+        _add_snapshot(client, [successful_full], copies=2)
+        _add_metadata_versions(client, (_pr(), _metadata_version()))
+        client.add(
+            "GET",
+            _query(
+                f"issues/{PR_NUMBER}/comments",
+                [("per_page", "100"), ("page", "1")],
+            ),
+            [],
+        )
+
+        def intent_response(
+            *,
+            method: str,
+            endpoint: str,
+            body: dict[str, object] | None,
+        ) -> dict:
+            del method, endpoint
+            return _comment(
+                401,
+                body["body"],
+                created_at="2026-09-04T00:00:01Z",
+                updated_at="2026-09-04T00:00:01Z",
+            )
+
+        client.add(
+            "POST",
+            _endpoint(f"issues/{PR_NUMBER}/comments"),
+            intent_response,
+        )
+        client.add(
+            "PATCH",
+            _endpoint(f"pulls/{PR_NUMBER}"),
+            _pr(
+                title="New title",
+                body="concurrent drift",
+                updated_at="2026-09-04T00:00:05Z",
+            ),
+        )
+        with self.assertRaisesRegex(
+            pr_metadata.MetadataEditError,
+            "complete target metadata",
+        ):
+            pr_metadata.edit_metadata(
+                client,
+                repository=REPOSITORY,
+                pr_number=PR_NUMBER,
+                head_sha=HEAD,
+                base_sha=BASE,
+                title="New title",
+                body="Stable body",
+                essential_reason=None,
+            )
+        patch = next(
+            call
+            for call in client.calls
+            if call[:2] == ("PATCH", _endpoint(f"pulls/{PR_NUMBER}"))
+        )
+        self.assertEqual(patch[2], {"title": "New title"})
+
     def test_no_op_requires_and_returns_authoritative_pair(self):
         receipt = _receipt()
         confirmation = _confirmation(receipt)
@@ -2372,7 +2692,7 @@ class PullRequestMetadataTests(unittest.TestCase):
             pr_number=PR_NUMBER,
             head_sha=HEAD,
             base_sha=BASE,
-            title=None,
+            title="Stable title",
             body="Stable body",
             essential_reason=None,
         )
@@ -2807,10 +3127,18 @@ class PullRequestMetadataTests(unittest.TestCase):
         float_version = _receipt_payload()
         float_version["schema_version"] = 1.0
         invalid_payloads.append(("float-version", float_version))
-        wrong_field = _receipt_payload(requested_fields={"labels": "a" * 64})
+        wrong_field = _receipt_payload(provided_fields={"labels": "a" * 64})
         invalid_payloads.append(("wrong-field", wrong_field))
-        bad_digest = _receipt_payload(requested_fields={"body": "A" * 64})
+        bad_digest = _receipt_payload(provided_fields={"body": "A" * 64})
         invalid_payloads.append(("bad-digest", bad_digest))
+        empty_changed = _receipt_payload(changed_fields={})
+        invalid_payloads.append(("empty-changed", empty_changed))
+        extra_changed = _receipt_payload(changed_fields={"title": "a" * 64})
+        invalid_payloads.append(("changed-not-provided", extra_changed))
+        mismatched_changed = _receipt_payload(
+            changed_fields={"body": "b" * 64},
+        )
+        invalid_payloads.append(("changed-digest-mismatch", mismatched_changed))
         bad_path = _receipt_payload(workflow_path=".github/workflows/other.yml")
         invalid_payloads.append(("workflow-path", bad_path))
         for name, payload in invalid_payloads:
@@ -2825,7 +3153,7 @@ class PullRequestMetadataTests(unittest.TestCase):
             _receipt(head_sha=NEW_HEAD),
             _receipt(base_sha="4" * 40),
             _receipt(
-                requested_fields={
+                provided_fields={
                     "body": _sha256("stale body")
                 }
             ),
@@ -2981,7 +3309,7 @@ class PullRequestMetadataTests(unittest.TestCase):
 
     def test_later_direct_metadata_changes_invalidate_receipt(self):
         title_receipt = _receipt(
-            requested_fields={"title": _sha256("Stable title")},
+            provided_fields={"title": _sha256("Stable title")},
         )
         cases = (
             (
@@ -3060,7 +3388,7 @@ class PullRequestMetadataTests(unittest.TestCase):
             (
                 "title-revert",
                 _receipt(
-                    requested_fields={"title": _sha256("Stable title")},
+                    provided_fields={"title": _sha256("Stable title")},
                 ),
                 _metadata_version(
                     title_event_id="RTE_3",
@@ -3094,7 +3422,7 @@ class PullRequestMetadataTests(unittest.TestCase):
             (
                 "title-login",
                 _receipt(
-                    requested_fields={"title": _sha256("Stable title")},
+                    provided_fields={"title": _sha256("Stable title")},
                 ),
                 _metadata_version(title_actor_login="attacker"),
             ),
@@ -3181,7 +3509,7 @@ class PullRequestMetadataTests(unittest.TestCase):
         self.assertIsNone(version.title_actor_id)
         self.assertIsNone(version.title_actor_login)
         receipt = _receipt(
-            requested_fields={"title": _sha256("Stable title")},
+            provided_fields={"title": _sha256("Stable title")},
         )
         with self.assertRaisesRegex(
             pr_metadata.MetadataEditError,
@@ -5335,7 +5663,7 @@ class PullRequestMetadataLauncherTests(unittest.TestCase):
             _metadata_sha256("CLI title", body),
         )
         self.assertEqual(
-            intent.requested_fields,
+            intent.provided_fields,
             (
                 pr_metadata.EditFieldDigest("body", _sha256(body)),
                 pr_metadata.EditFieldDigest("title", _sha256("CLI title")),

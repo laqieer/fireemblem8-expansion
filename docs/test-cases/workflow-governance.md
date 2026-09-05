@@ -1268,6 +1268,11 @@ the exact branch and head; timeout or ambiguity fails before `gh run watch`.
    Exercise PATCH success followed by failed/indeterminate confirmation
    creation, then retry against the unmatched intent with pre-state, target
    state, and invalid third-state outcomes.
+   Table-test title-changed/body-provided-same, body-changed/title-provided-same,
+   both-changed, and no-change requests. Assert exact `provided_fields`,
+   `changed_fields`, changed-only PATCH JSON, per-field version advancement,
+   mixed-field retry recovery, and rejection when a supplied unchanged field
+   drifts concurrently.
 4. Update a synthetic canonical marked evidence comment owned by the
    repository owner while the same full Build is active.
 5. Replay stale head/base before edit and reconciliation, post-edit identity
@@ -1360,6 +1365,12 @@ for the canonical issue comment; the optional fields are always serialized,
 strictly mutually exclusive, and `comment-updated` requires only `comment_id`.
 An `updated` decision returns only validated intent and confirmation comment
 IDs/URLs, never caller-trusted transaction fields.
+The intent separates `provided_fields` from `changed_fields`. Every supplied
+value is digest-bound and participates in complete target-state validation;
+only changed fields enter PATCH JSON and require title/body history
+advancement. Mixed edits therefore cannot demand an event for an unchanged
+supplied field. Zero-change input creates no intent and uses authoritative
+no-op semantics.
 The isolated launcher emits one exact canonical JSON line with status `0` for
 success/no-op/complete, status `3` for deferred/refused, and status `2` with no
 decision JSON for invalid arguments, files, or API authority.

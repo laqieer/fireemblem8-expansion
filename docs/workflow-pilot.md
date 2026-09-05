@@ -515,10 +515,14 @@ owner-authored GitHub comments rather than a local receipt:
 
 1. Before PATCH, an immutable **intent** comment records a unique nonce,
    repository/PR/head/base/workflow identity, complete pre-state and target
-   title/body digests, requested-field digests, the exact pre-edit
+   title/body digests, `provided_fields` digests for every supplied file,
+   `changed_fields` digests only for values differing from pre-state, the exact pre-edit
    metadata-version authority, and the highest fully observed pre-PATCH run
    ID/number/creation-time watermark.
-2. The helper PATCHes and strictly validates the complete title/body response.
+2. The helper PATCHes only `changed_fields` and strictly validates the complete
+   title/body response. A provided-but-unchanged field is never PATCHed and
+   requires no metadata-version advance, but remains bound by its provided
+   digest, the pre-state, target digest, response, recovery, and current state.
    It then queries metadata-specific GitHub authority: the latest exact
    `RenamedTitleEvent` for title changes and the latest immutable GraphQL
    `UserContentEdit` node for body changes. Body authority binds connection
@@ -569,7 +573,8 @@ same-second edit/revert invalidates confirmation even when body text and
   "pr_number": 123,
   "repository": "owner/name",
   "repository_id": 123,
-  "requested_fields": {"body": "<sha256>"},
+  "provided_fields": {"body": "<sha256>", "title": "<sha256>"},
+  "changed_fields": {"title": "<sha256>"},
   "schema_version": 1,
   "target_metadata_sha256": "<sha256>",
   "watermark": {
@@ -649,6 +654,13 @@ it creates the missing confirmation; any third state fails closed. A no-op
 without an authoritative intent/confirmation pair is refused. With a pair, it
 returns no-op only when a post-watermark run is already visible; otherwise it
 defers recovery.
+
+Field-set recovery is immutable. Retries must supply the same
+`provided_fields` values and target digest as the unmatched intent; the helper
+cannot add, remove, or reclassify fields. Version advancement and the PATCH
+payload always use the intent's `changed_fields`. If every provided field
+already equals pre-state, no intent is created and authoritative no-op
+semantics apply.
 
 Every successful title/body update returns this reconciliation command. The
 second run snapshot closes the deterministic pre-PATCH run-state race; only an
