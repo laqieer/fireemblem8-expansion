@@ -539,6 +539,88 @@ class SealedCapsuleTests(unittest.TestCase):
                 self.assertEqual(source.get(kind, oid), content)
                 read.assert_not_called()
 
+    def test_shared_prefix_tree_parsing_is_linear_in_unique_proof_bytes(self):
+        paths = tuple(f"inputs/cached/shared/leaf/value-{index:03d}.json" for index in range(64))
+        contents = {path: capsule.canonical({"value": index}) for index, path in enumerate(paths)}
+        for path, content in contents.items():
+            self.write(path, content)
+        revision = self.commit()
+        spec = capsule.CapsuleSpec(
+            trees={"base": revision}, programs={"assertion": "checks/assertion.py"},
+            data={"base": paths},
+        )
+        consumed, tree_sizes = {}, {}
+
+        class CountedTree(bytes):
+            def find(self, sub, start=0, *args):
+                if sub == b" " and start == 0:
+                    oid = capsule._oid("tree", self)
+                    consumed[oid] = consumed.get(oid, 0) + len(self)
+                return super().find(sub, start, *args)
+
+        git = capsule._git
+
+        def read(root, *arguments):
+            raw = git(root, *arguments)
+            if arguments[:2] == ("cat-file", "tree"):
+                tree_sizes[arguments[2]] = len(raw)
+                return CountedTree(raw)
+            return raw
+
+        with mock.patch.object(capsule, "_git", side_effect=read):
+            raw = capsule._make_bundle(self.root, spec.record())
+        with self.subTest(stage="construction"):
+            self.assertEqual(sum(consumed.values()), sum(tree_sizes.values()))
+            self.assertEqual(consumed, tree_sizes)
+        consumed.clear()
+        decode = capsule.base64.b64decode
+
+        def decode_proof(value, **kwargs):
+            content = decode(value, **kwargs)
+            return (CountedTree(content) if capsule._oid("tree", content) in tree_sizes
+                    else content)
+
+        with mock.patch.object(capsule.base64, "b64decode", side_effect=decode_proof):
+            bundle = capsule._Bundle(raw, spec.record())
+        with self.subTest(stage="independent-validation"):
+            self.assertEqual(sum(consumed.values()), sum(tree_sizes.values()))
+            self.assertEqual(consumed, tree_sizes)
+        self.assertEqual({path: bundle.content("base", path) for path in paths}, contents)
+
+    def test_tree_cache_revalidates_replaced_proofs_and_rejects_bad_suffixes(self):
+        bundle = capsule._Bundle(self.bundle, self.spec.record())
+        for source in (capsule._ObjectSource(dict(bundle.objects)), capsule._GitSource(self.root)):
+            with self.subTest(source=type(source).__name__):
+                oid = source.tree(self.base)
+                expected = source.lookup(self.base, "checks/helper.py")
+                kind, content = source.objects[oid]
+                altered = content[:-1] + bytes([content[-1] ^ 1])
+                source.objects[oid] = (kind, altered)
+                with self.assertRaises(capsule.CapsuleError):
+                    source.lookup(self.base, "checks/helper.py")
+                source.objects[oid] = (kind, content)
+                self.assertEqual(source.lookup(self.base, "checks/helper.py"), expected)
+        value = capsule.parse(self.bundle, capsule.MAX_BUNDLE_BYTES)
+        index = next(index for index, entry in enumerate(value["objects"]) if entry["kind"] == "tree")
+        for change in ("oid", "bytes"):
+            mutated = copy.deepcopy(value)
+            mutated["objects"][index][change] = ("0" * 40 if change == "oid" else
+                                                 capsule.base64.b64encode(altered).decode("ascii"))
+            with self.subTest(change=change), self.assertRaises(capsule.CapsuleError):
+                capsule._Bundle(capsule.canonical(mutated), self.spec.record())
+        entry = b"100644 item\0" + bytes.fromhex("a" * 40)
+        for suffix in (entry, b"100644 incomplete\0"):
+            tree = entry + suffix
+            tree_oid = capsule._oid("tree", tree)
+            commit = f"tree {tree_oid}\n".encode("ascii")
+            commit_oid = capsule._oid("commit", commit)
+            source = capsule._ObjectSource({
+                commit_oid: ("commit", commit), tree_oid: ("tree", tree),
+            })
+            for attempt in range(2):
+                with self.subTest(suffix=suffix, attempt=attempt), self.assertRaises(capsule.CapsuleError):
+                    source.lookup(commit_oid, "item")
+
     def test_undeclared_program_and_data_do_not_fall_back(self):
         with capsule.Capsule(self.bundle, self.spec) as prepared:
             with self.assertRaises(capsule.CapsuleError):
@@ -637,11 +719,15 @@ class SealedCapsuleTests(unittest.TestCase):
         attempts = (
             "__import__('xml.etree.ElementTree', fromlist=['ElementTree'])",
             "from xml.etree import nonexistent_capsule_export",
+            "__import__('importlib.util', fromlist=['util'])",
+            "__import__('importlib', fromlist=['util']).util",
+            "importlib.import_module('importlib.util')",
+            "__import__('json', fromlist=['decoder']).decoder",
         )
         for attempt in attempts:
             with self.subTest(attempt=attempt):
                 with self.attack(
-                    "import xml.etree\n"
+                    "import xml.etree, importlib, json\n"
                     "def capsule_main(request, context):\n"
                     "    try:\n        " + attempt + "\n"
                     "    except Exception:\n        pass\n"
@@ -649,6 +735,101 @@ class SealedCapsuleTests(unittest.TestCase):
                 ) as prepared:
                     with self.assertRaises(capsule.CapsuleError):
                         prepared.execute("attack", {})
+
+    def test_program_visible_module_cache_excludes_runtime_preloads(self):
+        with self.attack(
+            "import sys\n"
+            "def capsule_main(request, context):\n"
+            "    return sorted(sys.modules)\n"
+        ) as prepared:
+            result = prepared.execute("attack", {})
+        self.assertEqual(set(result.value), {"sys", "checks", "checks.attack"})
+
+    def test_preloaded_undeclared_dynamic_imports_and_direct_cache_reads_reject(self):
+        with self.attack("""import sys
+cached_import = __import__
+def capsule_main(request, context):
+    name = request['module']
+    if request['route'] == 'index':
+        return sys.modules[name].__name__
+    if request['route'] == 'get':
+        return sys.modules.get(name) is None
+    try:
+        cached_import(name)
+    except Exception:
+        pass
+    return {'status': 'pass'}
+""") as prepared:
+            for name in ("__capsule_runtime__", "subprocess", "ctypes"):
+                for route in ("import", "index", "get"):
+                    with self.subTest(module=name, route=route):
+                        request = {"module": name, "route": route}
+                        if route == "get":
+                            self.assertTrue(prepared.execute("attack", request).value)
+                        else:
+                            with self.assertRaises(capsule.CapsuleError):
+                                prepared.execute("attack", request)
+
+    def test_cached_dynamic_imports_reject_undeclared_module_table_injection(self):
+        with self.attack("""import builtins, importlib, sys
+cached_import = __import__
+cached_builtin = builtins.__import__
+cached_portable_import = importlib.__import__
+cached_import_module = importlib.import_module
+def capsule_main(request, context):
+    sys.modules[request['module']] = sys
+    try:
+        if request['route'] == 'builtin':
+            cached_import(request['module'])
+        elif request['route'] == 'builtins':
+            cached_builtin(request['module'])
+        elif request['route'] == 'portable':
+            cached_portable_import(request['module'])
+        else:
+            cached_import_module(request['module'])
+    except Exception:
+        pass
+    return {'status': 'pass'}
+""") as prepared:
+            for route in ("builtin", "builtins", "portable", "importlib"):
+                with self.subTest(route=route), self.assertRaises(capsule.CapsuleError):
+                    prepared.execute("attack", {"module": "subprocess", "route": route})
+
+    def test_declared_cached_imports_preserve_static_dynamic_and_nested_execution(self):
+        self.write("checks/cached_dynamic.py", b"value = 'declared-dynamic'\n")
+        self.write("checks/cached_package/__init__.py", b"from .. import cached_dynamic as alias\n")
+        self.write("checks/cached.py", b"""import importlib, sys
+from checks import helper
+from checks.cached_package import alias
+cached_import = __import__
+def capsule_main(request, context):
+    json = cached_import('json')
+    dynamic = importlib.import_module('checks.cached_dynamic')
+    xml = importlib.import_module('xml.etree.ElementTree')
+    value = {'static': helper.value(), 'dynamic': dynamic.value,
+             'alias': alias is dynamic,
+             'json': json.loads('{"sealed":true}'), 'xml': xml.fromstring('<sealed/>').tag,
+             'cached': sys.modules['json'] is json and sys.modules[dynamic.__name__] is dynamic
+                       and sys.modules['xml.etree.ElementTree'] is xml}
+    if request.get('nested'):
+        return value
+    return {'value': value, 'nested': context.invoke('cached', {'nested': True})}
+""")
+        revision = self.commit()
+        spec = capsule.CapsuleSpec(
+            trees={"base": revision}, programs={"cached": "checks/cached.py"},
+            modules=("json", "xml.etree.ElementTree", "checks.cached_dynamic"),
+        )
+        with capsule.prepare(self.root, spec) as prepared:
+            result = prepared.execute("cached", {})
+        expected = {"static": "trusted-module", "dynamic": "declared-dynamic",
+                    "alias": True, "json": {"sealed": True}, "xml": "sealed", "cached": True}
+        self.assertEqual(result.value["value"], expected)
+        self.assertEqual(result.value["nested"]["value"], expected)
+        for receipt in (result.receipt, result.value["nested"]["receipt"]):
+            self.assertEqual(receipt["program"], "cached")
+            self.assertTrue({"checks/helper.py", "checks/cached_dynamic.py"}.issubset(
+                entry["path"] for entry in receipt["loaded"]))
 
     def test_artifact_existence_uses_sealed_entries_after_path_swap(self):
         self.write("checks/existence.py",
@@ -751,15 +932,16 @@ def capsule_main(request, context):
         self.assertEqual(before, {fd: identity[:2] for fd, identity in self.descriptors().items()})
 
     def test_os_audit_namespace_is_closed_and_denials_are_latched(self):
+        bundle = capsule._Bundle(self.bundle, self.spec.record())
         for event in ("os.chroot", "os.chown", "os.chmod", "os.utime", "os.rename",
                       "os.getxattr", "os.setxattr", "os.removexattr", "os.listxattr",
                       "os.future_path_operation"):
             with self.subTest(event=event):
-                guard = capsule._Guard(None, "", b"")
+                guard = capsule._Guard(bundle, "", b"")
                 with self.assertRaises(capsule.CapsuleError):
                     guard.audit(event, ())
                 self.assertEqual(len(guard.denied), 1)
-        guard = capsule._Guard(None, "", b"")
+        guard = capsule._Guard(bundle, "", b"")
         guard.audit("mmap.__new__", (-1, 4096, 0, 0))
         self.assertEqual(guard.denied, [])
 

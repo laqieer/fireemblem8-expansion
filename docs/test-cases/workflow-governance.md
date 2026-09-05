@@ -1567,9 +1567,23 @@ prevent native process-group/session escape. Unsupported ABIs fail closed.
    closure allowance. Collection must stop at the proof-object limit before
    fetching another object or serializing an over-limit bundle; cached
    objects at that limit must remain readable.
+   Declare many data paths with the same directory prefixes and count the
+   actual tree bytes parsed. Preparation and independent bundle validation
+   must each parse every distinct used tree exactly once while returning all
+   original data bytes. Replace a cached tree's bytes or a proof's OID, and
+   append duplicate or truncated entries after a valid requested entry:
+   these must reject, including repeated lookup after a failed parse.
 6. Attempt undeclared imports, `sys.path` injection, file specs, pathname data,
    subprocess/fork, signals and network access. Catching a denied operation
    and returning `{"status":"pass"}` must still fail.
+   Run a program importing only `sys`: the runtime, `subprocess` and `ctypes`
+   must be absent from both enumerated and direct `sys.modules` lookups.
+   Dynamic imports of those names must reject even through a cached
+   `__import__` function and even if caught. Adding an undeclared alias to
+   `sys.modules` must not authorize cached builtin or importlib imports.
+   In contrast, declared static helpers, explicit dynamic stdlib/submodules,
+   package-exported module aliases and cache identity checks must pass in
+   both outer and nested invocations with the expected loaded receipts.
    Run the real `os.access(request["path"], os.F_OK)` assertion against an
    owned child's `/proc/<pid>` path, then close its input and reap it. Both
    invocations must reject, not sign different existence-based verdicts.
@@ -1669,6 +1683,15 @@ produced an admitted 1,049,442-byte receipt that failed signing; a
 1,048,536-byte receipt signed into 1,048,629 bytes that failed verification.
 The real near-limit fixtures and exact-size/one-byte-overflow controls pin
 both failures without widening the worker or nested output allowance.
+
+The module-cache correction preserves a sys-only pre-fix program that could
+recover the runtime, `subprocess` and `ctypes` through both dynamic imports
+and direct table reads. Cached builtin/importlib calls also accepted a
+program-inserted undeclared alias without triggering the importer or audit
+hook. The shared-prefix control measured repeated whole-tree parsing in
+both preparation and bundle validation, instead of one parse per unique
+tree. Reverting either correction fails these behavioral controls; declared
+imports and the same immutable data remain positive controls.
 
 ### Automation
 

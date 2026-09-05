@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import ast
 import base64
+import builtins
 import ctypes
 import errno
 import hashlib
@@ -332,6 +333,7 @@ class _ObjectSource:
     def __init__(self, objects=None):
         self.objects = {} if objects is None else objects
         self.used = set()
+        self._parsed_trees = {}
 
     def get(self, kind, oid):
         self.used.add(oid)
@@ -350,25 +352,37 @@ class _ObjectSource:
             raise CapsuleError("invalid commit tree identity")
         return tree
 
+    def entries(self, oid):
+        raw = self.get("tree", oid)
+        cached = self._parsed_trees.get(oid)
+        if cached is not None and cached[0] is raw:
+            return cached[1]
+        if not isinstance(raw, bytes) or _oid("tree", raw) != oid:
+            raise CapsuleError("Git tree bytes do not match requested identity")
+        entries = {}
+        offset = 0
+        while offset < len(raw):
+            space, end = raw.find(b" ", offset), raw.find(b"\0", offset)
+            if space < offset or end <= space or end + 21 > len(raw):
+                raise CapsuleError("malformed tree proof")
+            try:
+                mode = raw[offset:space].decode("ascii").zfill(6)
+            except UnicodeError as error:
+                raise CapsuleError("invalid tree mode") from error
+            name = raw[space + 1:end]
+            if (name in entries or not name or b"/" in name
+                    or mode not in {"040000", "100644", "100755", "120000", "160000"}):
+                raise CapsuleError("duplicate or invalid tree entry")
+            entries[name] = (mode, raw[end + 1:end + 21].hex())
+            offset = end + 21
+        self._parsed_trees[oid] = (raw, entries)
+        return entries
+
     def lookup(self, commit, path):
         oid = self.tree(commit)
         parts = _path(path).split("/")
         for index, part in enumerate(parts):
-            raw = self.get("tree", oid)
-            entries = {}
-            offset = 0
-            while offset < len(raw):
-                space, end = raw.find(b" ", offset), raw.find(b"\0", offset)
-                if space < offset or end <= space or end + 21 > len(raw):
-                    raise CapsuleError("malformed tree proof")
-                mode = raw[offset:space].decode("ascii").zfill(6)
-                name = raw[space + 1:end]
-                if (name in entries or not name or b"/" in name
-                        or mode not in {"040000", "100644", "100755", "120000", "160000"}):
-                    raise CapsuleError("duplicate or invalid tree entry")
-                entries[name] = (mode, raw[end + 1:end + 21].hex())
-                offset = end + 21
-            found = entries.get(part.encode("utf-8"))
+            found = self.entries(oid).get(part.encode("utf-8"))
             if found is None:
                 return None
             mode, oid = found
@@ -847,10 +861,36 @@ class _Guard(importlib.abc.MetaPathFinder, importlib.abc.Loader):
     def __init__(self, bundle, program_path, program_raw):
         self.bundle, self.loaded, self.denied = bundle, set(), []
         self.program_path, self.program_raw = program_path, program_raw
+        self.stdlib = {name.rsplit(".", level)[0] for name in bundle.stdlib
+                       for level in range(name.count(".") + 1)}
+        self.imports = self.stdlib | set(bundle.modules)
+        self._import = builtins.__import__
+        self._import_module = importlib.import_module
 
     def reject(self, reason):
         self.denied.append(reason)
         raise CapsuleError(reason)
+
+    def check_import(self, name):
+        if not isinstance(name, str) or name not in self.imports:
+            self.reject(f"import outside sealed closure: {name}")
+
+    def import_builtin(self, name, globals=None, locals=None, fromlist=(), level=0):
+        target = (importlib.util.resolve_name("." * level + name,
+                                              (globals or {}).get("__package__"))
+                  if level else name)
+        self.check_import(target)
+        module = self._import(name, globals, locals, fromlist, level)
+        if fromlist and hasattr(module, "__path__"):
+            for item in fromlist:
+                exported = getattr(module, item, None)
+                if isinstance(exported, type(sys)) and target + "." + item not in self.imports:
+                    self.check_import(exported.__name__)
+        return module
+
+    def import_module(self, name, package=None):
+        self.check_import(importlib.util.resolve_name(name, package))
+        return self._import_module(name, package)
 
     def find_spec(self, fullname, path=None, target=None):
         record = self.bundle.modules.get(fullname)
@@ -878,8 +918,8 @@ class _Guard(importlib.abc.MetaPathFinder, importlib.abc.Loader):
             self.reject("filesystem/descriptor open is forbidden after capsule validation")
         if event.startswith(("os.", "socket.", "subprocess.", "ctypes.", "resource.")):
             self.reject(f"operation outside capsule capabilities: {event}")
-        if event == "import" and arguments[0] not in sys.modules and arguments[0] not in self.bundle.modules:
-            self.reject(f"import outside sealed closure: {arguments[0]}")
+        if event == "import":
+            self.check_import(arguments[0])
 
 
 class CapsuleContext:
@@ -1017,13 +1057,18 @@ def _worker(bundle, envelope, binding, program_raw, reply_fd, invoke_fd, invoke_
     _lock_worker_kernel()
     path = bundle.spec["programs"][envelope["program"]]
     guard = _Guard(bundle, path, program_raw)
+    # Runtime globals retain private references, not program-visible cache entries.
     for name in tuple(sys.modules):
-        if name in bundle.modules:
+        if name not in guard.stdlib:
             del sys.modules[name]
     sys.path[:] = []
     sys.path_importer_cache.clear()
     sys.meta_path[:] = [guard]
     sys.dont_write_bytecode = True
+    # Cache hits bypass both meta_path and import audits.
+    builtins.__import__ = guard.import_builtin
+    importlib.__import__ = guard.import_builtin
+    importlib.import_module = guard.import_module
     sys.addaudithook(guard.audit)
 
     def no_file_spec(*args, **kwargs):

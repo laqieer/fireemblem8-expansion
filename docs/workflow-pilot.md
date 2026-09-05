@@ -748,6 +748,14 @@ not ambient `sys.path`, `sys.modules` parents or meta-path importers. Ordinary
 exports such as `collections.Counter` are not mistaken for submodules. The
 isolated worker completes these trusted imports before closing its importer;
 there is no post-validation pathname fallback.
+Before program code runs, `sys.modules` retains only declared standard-library
+names and their package parents; execution adds modules loaded from the sealed
+base closure. Runtime/bootstrap modules and undeclared preload dependencies are
+removed from that table; the runtime keeps its own private references.
+Ordinary imports, cached `__import__` calls and `importlib.import_module()`
+check the same declaration even on cache hits. Direct cache lookup cannot
+recover an ambient module, and inserting an undeclared cache alias does not
+authorize an import. Declared package exports and module aliases remain usable.
 Programs/modules come only from the `base` tree. Other declared trees are
 inert data, not executable candidate imports. Missing data and symlink data
 are represented explicitly: `read()` returns `None` for absence and literal
@@ -869,6 +877,12 @@ artifacts, 8,192 distinct Git proof objects, eight tree slots, 32 programs and
 four nested invocation levels. The proof-object count is enforced before
 fetching an additional object, not only when parsing a serialized bundle;
 cached objects remain usable at the limit.
+Each construction or independent bundle validation keeps its own parsed-tree
+cache keyed by immutable Git OID. Only a fully identity- and structure-validated
+tree enters the cache; shared-prefix lookups parse each distinct tree once,
+not once per artifact. Replaced object bytes are revalidated, malformed suffix
+entries still reject, and no cache crosses an independent validation boundary.
+The existing proof-object count and aggregate byte limits apply unchanged.
 Canonical receipts have a separate **1 MiB + 4 KiB** ceiling: the additional
 4 KiB bounds parent-added argv/bootstrap and digest metadata, which is not
 part of the worker output. Signed receipts allow exactly 93 further bytes
