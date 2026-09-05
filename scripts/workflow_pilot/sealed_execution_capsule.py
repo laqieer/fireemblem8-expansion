@@ -8,7 +8,7 @@ import ast
 import dataclasses
 import fcntl
 import hashlib
-import importlib.util
+import hmac
 import json
 import os
 import re
@@ -18,6 +18,7 @@ import signal
 import subprocess
 import sys
 import time
+import weakref
 from pathlib import Path, PurePosixPath
 from typing import Any, Callable, Iterable, Mapping, Sequence
 
@@ -26,7 +27,6 @@ from . import reporter
 
 GIT = "/usr/bin/git"
 PYTHON = "/usr/bin/python3"
-BWRAP = "/usr/bin/bwrap"
 CC = "/usr/bin/cc"
 SCHEMA_VERSION = 2
 RECEIPT_VERSION = 2
@@ -80,7 +80,7 @@ class CapsuleExecutionError(CapsuleError):
 
 
 @dataclasses.dataclass(frozen=True)
-class ArtifactSpec:
+class _ArtifactSpec:
     """One required exact-tree artifact."""
 
     authority: str
@@ -98,12 +98,11 @@ class ArtifactBundle:
 
     payload: bytes
     artifact_ids: tuple[str, ...]
-    authorities: tuple["AuthorityPolicy", ...]
     stdlib_modules: tuple[str, ...]
 
 
 @dataclasses.dataclass(frozen=True)
-class ArtifactRule:
+class _ArtifactRule:
     """One exact path admitted by a trusted authority policy."""
 
     path: str
@@ -114,14 +113,62 @@ class ArtifactRule:
 
 
 @dataclasses.dataclass(frozen=True)
-class AuthorityPolicy:
+class _AuthorityRecord:
     """The one exact commit/tree and closed artifact set for an authority."""
 
     authority: str
     revision: str
     tree: str
     object_format: str
-    artifacts: tuple[ArtifactRule, ...]
+    artifacts: tuple[_ArtifactRule, ...]
+
+
+@dataclasses.dataclass(frozen=True)
+class ArtifactRequest:
+    """A path/role requested from an already verified authority capability."""
+
+    authority: str
+    path: str
+    role: str
+    module_name: str | None = None
+
+
+class VerifiedAuthorityPolicy:
+    """Opaque, non-serializable capability minted by authenticated policy loading."""
+
+    __slots__ = ("__weakref__",)
+
+    def __new__(cls, *args, **kwargs):
+        raise TypeError(
+            "VerifiedAuthorityPolicy can only be minted by "
+            "load_verified_authority_policy"
+        )
+
+    def __copy__(self):
+        raise TypeError("verified authority capabilities cannot be copied")
+
+    def __deepcopy__(self, memo):
+        raise TypeError("verified authority capabilities cannot be copied")
+
+    def __reduce__(self):
+        raise TypeError("verified authority capabilities cannot be serialized")
+
+    def __repr__(self):
+        return "<VerifiedAuthorityPolicy opaque>"
+
+
+@dataclasses.dataclass(frozen=True)
+class _VerifiedAuthorityState:
+    repository_root: Path
+    repository: str
+    context: str
+    authorities: tuple[_AuthorityRecord, ...]
+    relationships: tuple[tuple[str, str], ...]
+    stdlib_modules: tuple[str, ...]
+    contract_sha256: str
+
+
+AUTHORITY_CONTRACT_DOMAIN = b"workflow-sealed-authority-contract-v1\0"
 
 
 @dataclasses.dataclass(frozen=True)
@@ -233,7 +280,7 @@ def _canonical_path(value: str) -> str:
     return decoded
 
 
-def _validate_spec(spec: ArtifactSpec) -> ArtifactSpec:
+def _validate_spec(spec: _ArtifactSpec) -> _ArtifactSpec:
     if spec.authority not in AUTHORITIES:
         raise CapsuleError(f"unknown artifact authority {spec.authority!r}")
     if (
@@ -283,7 +330,7 @@ def _artifact_id(record: Mapping[str, Any]) -> str:
     return _sha256(normalized_json(identity))
 
 
-def _resolve_artifact(repository_root: Path, spec: ArtifactSpec) -> dict[str, Any]:
+def _resolve_artifact(repository_root: Path, spec: _ArtifactSpec) -> dict[str, Any]:
     spec = _validate_spec(spec)
     try:
         object_format = _run_git(
@@ -386,7 +433,7 @@ def _canonical_stdlib_modules(modules: Iterable[str]) -> tuple[str, ...]:
     return canonical
 
 
-def _authority_policies(records: Sequence[dict[str, Any]]) -> tuple[AuthorityPolicy, ...]:
+def _authority_policies(records: Sequence[dict[str, Any]]) -> tuple[_AuthorityRecord, ...]:
     policies = []
     for authority in sorted({record["authority"] for record in records}):
         selected = [record for record in records if record["authority"] == authority]
@@ -398,7 +445,7 @@ def _authority_policies(records: Sequence[dict[str, Any]]) -> tuple[AuthorityPol
                 f"authority {authority!r} must use exactly one revision, tree, and object format"
             )
         rules = tuple(
-            ArtifactRule(
+            _ArtifactRule(
                 path=record["path"],
                 role=record["role"],
                 module_name=record["module_name"],
@@ -408,7 +455,7 @@ def _authority_policies(records: Sequence[dict[str, Any]]) -> tuple[AuthorityPol
             for record in selected
         )
         policies.append(
-            AuthorityPolicy(
+            _AuthorityRecord(
                 authority=authority,
                 revision=selected[0]["revision"],
                 tree=selected[0]["tree"],
@@ -419,7 +466,7 @@ def _authority_policies(records: Sequence[dict[str, Any]]) -> tuple[AuthorityPol
     return tuple(policies)
 
 
-def _policy_json(policy: AuthorityPolicy) -> dict[str, Any]:
+def _policy_json(policy: _AuthorityRecord) -> dict[str, Any]:
     return {
         "authority": policy.authority,
         "revision": policy.revision,
@@ -497,9 +544,331 @@ def _validate_python_import_closure(
                     )
 
 
-def build_artifact_bundle(
+def _expect_exact_keys(
+    value: Any,
+    label: str,
+    keys: set[str],
+) -> dict[str, Any]:
+    if not isinstance(value, dict) or set(value) != keys:
+        raise CapsuleError(f"{label} has unknown or missing fields")
+    return value
+
+
+def _authority_capability_accessors():
+    registry: weakref.WeakKeyDictionary[
+        VerifiedAuthorityPolicy, _VerifiedAuthorityState
+    ] = weakref.WeakKeyDictionary()
+
+    def mint(state: _VerifiedAuthorityState) -> VerifiedAuthorityPolicy:
+        capability = object.__new__(VerifiedAuthorityPolicy)
+        registry[capability] = state
+        return capability
+
+    def get(capability: VerifiedAuthorityPolicy) -> _VerifiedAuthorityState:
+        if type(capability) is not VerifiedAuthorityPolicy:
+            raise CapsuleError(
+                "execution requires an exact verified authority capability"
+            )
+        try:
+            return registry[capability]
+        except (KeyError, TypeError) as error:
+            raise CapsuleError(
+                "authority capability was not minted by the trusted policy loader"
+            ) from error
+
+    return mint, get
+
+
+_mint_verified_authority, _verified_authority_state = (
+    _authority_capability_accessors()
+)
+del _authority_capability_accessors
+
+
+def load_verified_authority_policy(
     repository_root: Path,
-    specs: Sequence[ArtifactSpec],
+    authenticated_contract: bytes,
+    *,
+    hmac_key: bytes,
+    expected_context: str,
+) -> VerifiedAuthorityPolicy:
+    """Authenticate and verify an exact-SHA authority contract, then mint a capability."""
+
+    if not isinstance(authenticated_contract, bytes) or len(authenticated_contract) > (
+        MAX_BUNDLE_BYTES
+    ):
+        raise CapsuleError("authenticated authority contract is invalid or oversized")
+    if not isinstance(hmac_key, bytes) or len(hmac_key) < 32:
+        raise CapsuleError("authority contract HMAC key must contain at least 32 bytes")
+    if not isinstance(expected_context, str) or not expected_context:
+        raise CapsuleError("authority contract context must be nonempty")
+    envelope = _expect_exact_keys(
+        parse_json_bytes(authenticated_contract, "authority contract envelope"),
+        "authority contract envelope",
+        {"schema_version", "payload_b64", "hmac_sha256"},
+    )
+    if type(envelope["schema_version"]) is not int or envelope["schema_version"] != 1:
+        raise CapsuleError("authority contract envelope version is unsupported")
+    if normalized_json(envelope) != authenticated_contract:
+        raise CapsuleError("authority contract envelope is not canonical JSON")
+    try:
+        payload = base64.b64decode(envelope["payload_b64"], validate=True)
+    except (TypeError, ValueError) as error:
+        raise CapsuleError("authority contract payload is not canonical base64") from error
+    if base64.b64encode(payload).decode("ascii") != envelope["payload_b64"]:
+        raise CapsuleError("authority contract payload is not canonical base64")
+    expected_seal = hmac.new(
+        hmac_key,
+        AUTHORITY_CONTRACT_DOMAIN + payload,
+        hashlib.sha256,
+    ).hexdigest()
+    if (
+        not isinstance(envelope["hmac_sha256"], str)
+        or re.fullmatch(r"[0-9a-f]{64}", envelope["hmac_sha256"]) is None
+        or not hmac.compare_digest(envelope["hmac_sha256"], expected_seal)
+    ):
+        raise CapsuleError("authority contract authentication failed")
+    contract = _expect_exact_keys(
+        parse_json_bytes(payload, "authority contract"),
+        "authority contract",
+        {
+            "schema_version",
+            "repository",
+            "context",
+            "object_format",
+            "authorities",
+            "relationships",
+            "stdlib_modules",
+        },
+    )
+    if type(contract["schema_version"]) is not int or contract["schema_version"] != 1:
+        raise CapsuleError("authority contract version is unsupported")
+    if contract["context"] != expected_context:
+        raise CapsuleError("authority contract context differs")
+    if (
+        not isinstance(contract["repository"], str)
+        or not contract["repository"]
+        or contract["object_format"] not in {"sha1", "sha256"}
+    ):
+        raise CapsuleError("authority contract repository or object format is invalid")
+    allowed_stdlib = _canonical_stdlib_modules(contract["stdlib_modules"])
+    try:
+        root = reporter.validate_repository_root(repository_root)
+        remote = _run_git(root, "config", "--get", "remote.origin.url").decode(
+            "utf-8"
+        ).strip()
+        repository = reporter._github_repository_from_remote(remote)
+        object_format = _run_git(
+            root, "rev-parse", "--show-object-format"
+        ).decode("ascii").strip()
+    except reporter.PilotDataError as error:
+        raise CapsuleError(str(error)) from error
+    except UnicodeDecodeError as error:
+        raise CapsuleError("cannot verify authority contract repository identity") from error
+    if repository != contract["repository"]:
+        raise CapsuleError("authority contract repository identity differs")
+    if object_format != contract["object_format"]:
+        raise CapsuleError("authority contract object format differs")
+
+    raw_authorities = contract["authorities"]
+    if not isinstance(raw_authorities, list) or not raw_authorities:
+        raise CapsuleError("authority contract must contain authorities")
+    authorities: list[_AuthorityRecord] = []
+    for index, raw_authority in enumerate(raw_authorities):
+        label = f"authority contract authorities[{index}]"
+        authority = _expect_exact_keys(
+            raw_authority,
+            label,
+            {"authority", "revision", "tree", "artifacts"},
+        )
+        name = authority["authority"]
+        if name not in AUTHORITIES:
+            raise CapsuleError(f"{label}.authority is unsupported")
+        revision = authority["revision"]
+        tree = authority["tree"]
+        oid_length = {"sha1": 40, "sha256": 64}[object_format]
+        if (
+            not isinstance(revision, str)
+            or len(revision) != oid_length
+            or HEX_RE.fullmatch(revision) is None
+            or not isinstance(tree, str)
+            or len(tree) != oid_length
+            or HEX_RE.fullmatch(tree) is None
+        ):
+            raise CapsuleError(f"{label} has malformed exact Git identities")
+        actual_revision = _run_git(
+            root, "rev-parse", "--verify", f"{revision}^{{commit}}"
+        ).decode("ascii").strip()
+        actual_tree = _run_git(root, "rev-parse", f"{revision}^{{tree}}").decode(
+            "ascii"
+        ).strip()
+        if actual_revision != revision or actual_tree != tree:
+            raise CapsuleError(f"{label} does not match exact Git authority")
+        raw_rules = authority["artifacts"]
+        if not isinstance(raw_rules, list) or not raw_rules:
+            raise CapsuleError(f"{label}.artifacts must be nonempty")
+        rules: list[_ArtifactRule] = []
+        for rule_index, raw_rule in enumerate(raw_rules):
+            rule_label = f"{label}.artifacts[{rule_index}]"
+            value = _expect_exact_keys(
+                raw_rule,
+                rule_label,
+                {"path", "role", "module_name", "mode", "blob_oid"},
+            )
+            spec = _validate_spec(
+                _ArtifactSpec(
+                    authority=name,
+                    revision=revision,
+                    path=value["path"],
+                    role=value["role"],
+                    module_name=value["module_name"],
+                    expected_mode=value["mode"],
+                    expected_blob_oid=value["blob_oid"],
+                )
+            )
+            _resolve_artifact(root, spec)
+            rules.append(
+                _ArtifactRule(
+                    path=spec.path,
+                    role=spec.role,
+                    module_name=spec.module_name,
+                    mode=spec.expected_mode,
+                    blob_oid=spec.expected_blob_oid,
+                )
+            )
+        if len({rule.path for rule in rules}) != len(rules):
+            raise CapsuleError(f"{label} contains duplicate artifact paths")
+        if rules != sorted(rules, key=lambda rule: rule.path):
+            raise CapsuleError(f"{label} artifact rules must be sorted by path")
+        authorities.append(
+            _AuthorityRecord(
+                authority=name,
+                revision=revision,
+                tree=tree,
+                object_format=object_format,
+                artifacts=tuple(rules),
+            )
+        )
+    canonical_authorities = tuple(
+        sorted(authorities, key=lambda authority: authority.authority)
+    )
+    if authorities != list(canonical_authorities) or len(
+        {authority.authority for authority in authorities}
+    ) != len(authorities):
+        raise CapsuleError("authority contract authorities must be unique and sorted")
+
+    raw_relationships = contract["relationships"]
+    if not isinstance(raw_relationships, list):
+        raise CapsuleError("authority contract relationships must be a list")
+    relationships: list[tuple[str, str]] = []
+    authority_by_name = {
+        authority.authority: authority for authority in canonical_authorities
+    }
+    for index, raw_relationship in enumerate(raw_relationships):
+        relationship = _expect_exact_keys(
+            raw_relationship,
+            f"authority contract relationships[{index}]",
+            {"ancestor", "descendant"},
+        )
+        edge = (relationship["ancestor"], relationship["descendant"])
+        if (
+            edge[0] not in authority_by_name
+            or edge[1] not in authority_by_name
+            or edge[0] == edge[1]
+        ):
+            raise CapsuleError("authority contract relationship is invalid")
+        completed = subprocess.run(
+            (
+                GIT,
+                "--no-replace-objects",
+                "-C",
+                str(root),
+                "merge-base",
+                "--is-ancestor",
+                authority_by_name[edge[0]].revision,
+                authority_by_name[edge[1]].revision,
+            ),
+            env=_git_environment(root),
+            check=False,
+            capture_output=True,
+            timeout=60,
+        )
+        if completed.returncode != 0:
+            raise CapsuleError(
+                f"authority relationship {edge[0]}->{edge[1]} is not satisfied"
+            )
+        relationships.append(edge)
+    if relationships != sorted(set(relationships)):
+        raise CapsuleError("authority contract relationships must be unique and sorted")
+    canonical_payload = normalized_json(contract)
+    if canonical_payload != payload:
+        raise CapsuleError("authority contract payload is not canonical JSON")
+    state = _VerifiedAuthorityState(
+        repository_root=root,
+        repository=repository,
+        context=expected_context,
+        authorities=canonical_authorities,
+        relationships=tuple(relationships),
+        stdlib_modules=allowed_stdlib,
+        contract_sha256=_sha256(payload),
+    )
+    return _mint_verified_authority(state)
+
+
+def build_artifact_bundle(
+    capability: VerifiedAuthorityPolicy,
+    requests: Sequence[ArtifactRequest],
+) -> ArtifactBundle:
+    """Build only artifacts admitted by an authenticated verified authority."""
+
+    state = _verified_authority_state(capability)
+    if not requests or len(requests) > MAX_ARTIFACTS:
+        raise CapsuleError(f"artifact count must be between 1 and {MAX_ARTIFACTS}")
+    rules = {
+        (authority.authority, rule.path): (authority, rule)
+        for authority in state.authorities
+        for rule in authority.artifacts
+    }
+    specs: list[_ArtifactSpec] = []
+    seen: set[tuple[str, str]] = set()
+    for request in requests:
+        if type(request) is not ArtifactRequest:
+            raise CapsuleError("artifact requests must use exact ArtifactRequest values")
+        path = _canonical_path(request.path)
+        key = (request.authority, path)
+        if key in seen:
+            raise CapsuleError("artifact requests contain duplicate authority paths")
+        seen.add(key)
+        admitted = rules.get(key)
+        if admitted is None:
+            raise CapsuleError("artifact request is not admitted by verified authority")
+        authority, rule = admitted
+        if (
+            request.role != rule.role
+            or request.module_name != rule.module_name
+        ):
+            raise CapsuleError("artifact request role differs from verified authority")
+        specs.append(
+            _ArtifactSpec(
+                authority=authority.authority,
+                revision=authority.revision,
+                path=rule.path,
+                role=rule.role,
+                module_name=rule.module_name,
+                expected_mode=rule.mode,
+                expected_blob_oid=rule.blob_oid,
+            )
+        )
+    return _build_artifact_bundle_from_specs(
+        state.repository_root,
+        specs,
+        stdlib_modules=state.stdlib_modules,
+    )
+
+
+def _build_artifact_bundle_from_specs(
+    repository_root: Path,
+    specs: Sequence[_ArtifactSpec],
     *,
     stdlib_modules: Sequence[str] = (),
 ) -> ArtifactBundle:
@@ -563,7 +932,6 @@ def build_artifact_bundle(
     return ArtifactBundle(
         payload=payload,
         artifact_ids=tuple(ids),
-        authorities=policies,
         stdlib_modules=allowed_stdlib,
     )
 
@@ -585,7 +953,7 @@ def validate_artifact_bundle(
         "artifacts",
     }:
         raise CapsuleError("artifact bundle has unknown or missing fields")
-    if data["schema_version"] != SCHEMA_VERSION:
+    if type(data["schema_version"]) is not int or data["schema_version"] != SCHEMA_VERSION:
         raise CapsuleError("artifact bundle schema version is unsupported")
     stdlib_modules = data["stdlib_modules"]
     if not isinstance(stdlib_modules, list):
@@ -617,7 +985,7 @@ def validate_artifact_bundle(
         if not isinstance(record, dict) or set(record) != expected_fields:
             raise CapsuleError(f"{label} has unknown or missing fields")
         spec = _validate_spec(
-            ArtifactSpec(
+            _ArtifactSpec(
                 authority=record["authority"],
                 revision=record["revision"],
                 path=record["path"],
@@ -693,54 +1061,31 @@ def validate_artifact_bundle(
 
 
 def verify_artifact_bundle(
-    repository_root: Path,
+    capability: VerifiedAuthorityPolicy,
     bundle: ArtifactBundle,
-    *,
-    authority_map: Sequence[AuthorityPolicy],
-    stdlib_modules: Sequence[str],
 ) -> dict[str, Any]:
     """Rebuild the closed bundle from trusted Git immediately before sealing."""
 
+    state = _verified_authority_state(capability)
     if not isinstance(bundle, ArtifactBundle):
         raise CapsuleError("public execution requires a constructed ArtifactBundle")
-    policies = tuple(authority_map)
-    if not policies or tuple(sorted(policies, key=lambda item: item.authority)) != policies:
-        raise CapsuleError("authority map must be nonempty, unique, and sorted")
-    if len({policy.authority for policy in policies}) != len(policies):
-        raise CapsuleError("authority map contains duplicate authorities")
-    allowed_stdlib = _canonical_stdlib_modules(stdlib_modules)
-    if bundle.authorities != policies:
-        raise CapsuleError("trusted authority map differs from the bundle")
-    if bundle.stdlib_modules != allowed_stdlib:
+    if bundle.stdlib_modules != state.stdlib_modules:
         raise CapsuleError("trusted standard-library policy differs from the bundle")
-
-    specs: list[ArtifactSpec] = []
-    for policy in policies:
-        if policy.authority not in AUTHORITIES:
-            raise CapsuleError(f"unknown authority {policy.authority!r}")
-        if (
-            policy.object_format not in {"sha1", "sha256"}
-            or len(policy.revision) != {"sha1": 40, "sha256": 64}[policy.object_format]
-            or len(policy.tree) != {"sha1": 40, "sha256": 64}[policy.object_format]
-            or HEX_RE.fullmatch(policy.revision) is None
-            or HEX_RE.fullmatch(policy.tree) is None
-            or not policy.artifacts
-        ):
-            raise CapsuleError(f"authority policy {policy.authority!r} is malformed")
-        for rule in policy.artifacts:
-            specs.append(
-                ArtifactSpec(
-                    authority=policy.authority,
-                    revision=policy.revision,
-                    path=rule.path,
-                    role=rule.role,
-                    module_name=rule.module_name,
-                    expected_mode=rule.mode,
-                    expected_blob_oid=rule.blob_oid,
-                )
-            )
+    parsed = validate_artifact_bundle(
+        bundle.payload,
+        expected_artifact_ids=bundle.artifact_ids,
+    )
+    requests = tuple(
+        ArtifactRequest(
+            authority=record["authority"],
+            path=record["path"],
+            role=record["role"],
+            module_name=record["module_name"],
+        )
+        for record in parsed["artifacts"]
+    )
     try:
-        root = reporter.validate_repository_root(repository_root)
+        root = reporter.validate_repository_root(state.repository_root)
     except reporter.PilotDataError as error:
         raise CapsuleError(str(error)) from error
     root_fd = -1
@@ -750,11 +1095,7 @@ def verify_artifact_bundle(
             os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC,
         )
         before = os.fstat(root_fd)
-        rebuilt = build_artifact_bundle(
-            root,
-            specs,
-            stdlib_modules=allowed_stdlib,
-        )
+        rebuilt = build_artifact_bundle(capability, requests)
         after = os.fstat(root_fd)
         path_state = os.stat(root, follow_symlinks=False)
         identity = (before.st_dev, before.st_ino, before.st_mode)
@@ -769,8 +1110,6 @@ def verify_artifact_bundle(
     finally:
         if root_fd >= 0:
             os.close(root_fd)
-    if rebuilt.authorities != policies:
-        raise CapsuleError("trusted Git authority revision, tree, or artifacts differ")
     if rebuilt.payload != bundle.payload or rebuilt.artifact_ids != bundle.artifact_ids:
         raise CapsuleError("artifact bundle bytes differ from trusted Git authority")
     return validate_artifact_bundle(
@@ -804,12 +1143,11 @@ def _require_platform() -> None:
         or missing
         or fcntl_missing
         or not Path("/proc/self/fd").is_dir()
-        or not os.access(BWRAP, os.X_OK)
         or not os.access(CC, os.X_OK)
     ):
         raise CapsuleError(
             "sealed execution capsules require Linux x86_64, memfd sealing, "
-            "/proc/self/fd, /usr/bin/bwrap, and /usr/bin/cc"
+            "/proc/self/fd, unprivileged namespaces, and /usr/bin/cc"
         )
 
 
@@ -861,7 +1199,11 @@ _SANDBOX_LAUNCHER_SOURCE = r'''
 #include <fcntl.h>
 #include <linux/audit.h>
 #include <linux/filter.h>
+#include <linux/capability.h>
+#include <linux/landlock.h>
 #include <linux/seccomp.h>
+#include <poll.h>
+#include <sched.h>
 #include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -869,8 +1211,11 @@ _SANDBOX_LAUNCHER_SOURCE = r'''
 #include <string.h>
 #include <sys/prctl.h>
 #include <sys/resource.h>
+#include <sys/mount.h>
+#include <sys/stat.h>
 #include <sys/syscall.h>
 #include <sys/types.h>
+#include <sys/wait.h>
 #include <unistd.h>
 
 #if !defined(__x86_64__)
@@ -880,6 +1225,11 @@ _SANDBOX_LAUNCHER_SOURCE = r'''
 #define DENY_SYSCALL(name) \
     BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, __NR_##name, 0, 1), \
     BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ERRNO | EPERM)
+#define FAIL(stage) \
+    do { \
+        dprintf(2, "capsule-launcher:%s:%s\n", stage, strerror(errno)); \
+        return 125; \
+    } while (0)
 
 static int parse_fd(const char *text)
 {
@@ -892,16 +1242,124 @@ static int parse_fd(const char *text)
     return (int)value;
 }
 
-static int keep_fd(int fd, int program_fd, int request_fd, int bundle_fd, int ready_fd)
+static int keep_fd(
+    int fd,
+    int program_fd,
+    int request_fd,
+    int bundle_fd,
+    int ready_fd,
+    int launcher_fd)
 {
     return fd <= 2 || fd == program_fd || fd == request_fd ||
-        fd == bundle_fd || fd == ready_fd;
+        fd == bundle_fd || fd == ready_fd || fd == launcher_fd;
 }
 
 static int set_limit(int resource, rlim_t value)
 {
     struct rlimit limit = { value, value };
     return setrlimit(resource, &limit);
+}
+
+static int write_text(const char *path, const char *text)
+{
+    int fd = open(path, O_WRONLY | O_CLOEXEC);
+    size_t length = strlen(text);
+    ssize_t written;
+    if (fd < 0)
+        return -1;
+    written = write(fd, text, length);
+    if (close(fd) != 0 || written != (ssize_t)length)
+        return -1;
+    return 0;
+}
+
+static int setup_user_namespace(uid_t uid, gid_t gid)
+{
+    char mapping[128];
+    if (unshare(CLONE_NEWUSER) != 0)
+        return -1;
+    if (write_text("/proc/self/setgroups", "deny\n") != 0 && errno != ENOENT)
+        return -1;
+    if (snprintf(mapping, sizeof(mapping), "0 %lu 1\n", (unsigned long)uid) <= 0 ||
+        write_text("/proc/self/uid_map", mapping) != 0)
+        return -1;
+    if (snprintf(mapping, sizeof(mapping), "0 %lu 1\n", (unsigned long)gid) <= 0 ||
+        write_text("/proc/self/gid_map", mapping) != 0)
+        return -1;
+    if (setresgid(0, 0, 0) != 0 || setresuid(0, 0, 0) != 0)
+        return -1;
+    return 0;
+}
+
+static int add_landlock_path(int ruleset_fd, const char *path, __u64 access)
+{
+    int path_fd = open(path, O_PATH | O_CLOEXEC);
+    struct landlock_path_beneath_attr rule = {
+        .allowed_access = access,
+        .parent_fd = path_fd,
+    };
+    int result;
+    if (path_fd < 0)
+        return -1;
+    result = syscall(
+        SYS_landlock_add_rule,
+        ruleset_fd,
+        LANDLOCK_RULE_PATH_BENEATH,
+        &rule,
+        0);
+    close(path_fd);
+    return result;
+}
+
+static int setup_landlock(void)
+{
+    const __u64 read_execute =
+        LANDLOCK_ACCESS_FS_EXECUTE |
+        LANDLOCK_ACCESS_FS_READ_FILE |
+        LANDLOCK_ACCESS_FS_READ_DIR;
+    struct landlock_ruleset_attr ruleset = {
+        .handled_access_fs =
+            read_execute |
+            LANDLOCK_ACCESS_FS_WRITE_FILE |
+            LANDLOCK_ACCESS_FS_REMOVE_DIR |
+            LANDLOCK_ACCESS_FS_REMOVE_FILE |
+            LANDLOCK_ACCESS_FS_MAKE_CHAR |
+            LANDLOCK_ACCESS_FS_MAKE_DIR |
+            LANDLOCK_ACCESS_FS_MAKE_REG |
+            LANDLOCK_ACCESS_FS_MAKE_SOCK |
+            LANDLOCK_ACCESS_FS_MAKE_FIFO |
+            LANDLOCK_ACCESS_FS_MAKE_BLOCK |
+            LANDLOCK_ACCESS_FS_MAKE_SYM |
+            LANDLOCK_ACCESS_FS_REFER |
+            LANDLOCK_ACCESS_FS_TRUNCATE,
+    };
+    int ruleset_fd = syscall(
+        SYS_landlock_create_ruleset,
+        &ruleset,
+        sizeof(ruleset),
+        0);
+    if (ruleset_fd < 0)
+        return -1;
+    if (add_landlock_path(ruleset_fd, "/usr", read_execute) != 0 ||
+        (access("/lib", F_OK) == 0 &&
+            add_landlock_path(ruleset_fd, "/lib", read_execute) != 0) ||
+        (access("/lib64", F_OK) == 0 &&
+            add_landlock_path(ruleset_fd, "/lib64", read_execute) != 0) ||
+        syscall(SYS_landlock_restrict_self, ruleset_fd, 0) != 0) {
+        close(ruleset_fd);
+        return -1;
+    }
+    return close(ruleset_fd);
+}
+
+static int drop_capabilities(void)
+{
+    struct __user_cap_header_struct header = {
+        .version = _LINUX_CAPABILITY_VERSION_3,
+        .pid = 0,
+    };
+    struct __user_cap_data_struct data[2] = {{0}};
+    return syscall(SYS_capset, &header, &data);
 }
 
 static int install_filter(int python_fd)
@@ -979,54 +1437,171 @@ int main(int argc, char **argv, char **environment)
     int request_fd;
     int bundle_fd;
     int ready_fd;
+    int launcher_fd;
     int python_fd;
     long maximum_fd;
     pid_t parent;
+    pid_t child;
+    pid_t worker;
+    uid_t uid = getuid();
+    gid_t gid = getgid();
+    int status;
+    int lifeline[2];
 
-    if (argc < 9 || strcmp(argv[5], "--") != 0 ||
-        strcmp(argv[6], "/usr/bin/python3") != 0)
-        return 125;
+    if (argc < 10 || strcmp(argv[6], "--") != 0 ||
+        strcmp(argv[7], "/usr/bin/python3") != 0)
+        FAIL("arguments");
     program_fd = parse_fd(argv[1]);
     request_fd = parse_fd(argv[2]);
     bundle_fd = parse_fd(argv[3]);
     ready_fd = parse_fd(argv[4]);
+    launcher_fd = parse_fd(argv[5]);
     if (program_fd < 0 || request_fd < 0 || bundle_fd < 0 || ready_fd < 0 ||
+        launcher_fd < 0 ||
         program_fd == request_fd || program_fd == bundle_fd ||
         program_fd == ready_fd || request_fd == bundle_fd ||
-        request_fd == ready_fd || bundle_fd == ready_fd)
-        return 125;
+        request_fd == ready_fd || bundle_fd == ready_fd ||
+        launcher_fd == program_fd || launcher_fd == request_fd ||
+        launcher_fd == bundle_fd || launcher_fd == ready_fd)
+        FAIL("descriptors");
 
     parent = getppid();
     if (parent <= 0 || prctl(PR_SET_PDEATHSIG, SIGKILL) != 0 ||
         getppid() != parent)
+        FAIL("parent-death");
+    if (setup_user_namespace(uid, gid) != 0 ||
+        unshare(
+            CLONE_NEWNS | CLONE_NEWNET | CLONE_NEWIPC |
+            CLONE_NEWUTS | CLONE_NEWPID) != 0 ||
+        sethostname("sealed-capsule", 14) != 0 ||
+        pipe2(lifeline, O_CLOEXEC) != 0)
+        FAIL("namespaces");
+    child = fork();
+    if (child < 0)
+        FAIL("pid-namespace-fork");
+    if (child > 0) {
+        close(lifeline[0]);
+        close(program_fd);
+        close(request_fd);
+        close(bundle_fd);
+        close(ready_fd);
+        close(launcher_fd);
+        while (waitpid(child, &status, 0) < 0) {
+            if (errno != EINTR)
+                FAIL("wait");
+        }
+        close(lifeline[1]);
+        if (WIFEXITED(status))
+            return WEXITSTATUS(status);
+        if (WIFSIGNALED(status))
+            return 128 + WTERMSIG(status);
         return 125;
-    if (prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) != 0)
+    }
+
+    close(lifeline[1]);
+    if (prctl(PR_SET_PDEATHSIG, SIGKILL) != 0)
+        FAIL("pid-namespace-init-parent");
+    worker = fork();
+    if (worker < 0)
+        FAIL("worker-fork");
+    if (worker > 0) {
+        struct pollfd watch = {
+            .fd = lifeline[0],
+            .events = POLLIN | POLLHUP | POLLERR,
+        };
+        close(program_fd);
+        close(request_fd);
+        close(bundle_fd);
+        close(ready_fd);
+        close(launcher_fd);
+        while (1) {
+            pid_t waited = waitpid(worker, &status, WNOHANG);
+            if (waited == worker)
+                break;
+            if (waited < 0 && errno != EINTR)
+                FAIL("worker-wait");
+            if (poll(&watch, 1, 100) < 0 && errno != EINTR)
+                FAIL("lifeline-poll");
+            if (watch.revents & (POLLHUP | POLLERR)) {
+                kill(-1, SIGKILL);
+                while (waitpid(worker, &status, 0) < 0 && errno == EINTR)
+                    ;
+                return 125;
+            }
+        }
+        close(lifeline[0]);
+        kill(-1, SIGKILL);
+        {
+            int cleanup_status;
+            while (1) {
+                pid_t cleaned = waitpid(-1, &cleanup_status, 0);
+                if (cleaned > 0 || (cleaned < 0 && errno == EINTR))
+                    continue;
+                if (cleaned < 0 && errno == ECHILD)
+                    break;
+                FAIL("namespace-cleanup");
+            }
+        }
+        if (WIFEXITED(status))
+            return WEXITSTATUS(status);
+        if (WIFSIGNALED(status))
+            return 128 + WTERMSIG(status);
         return 125;
+    }
+
+    close(lifeline[0]);
+    parent = getppid();
+    if (parent <= 0 || prctl(PR_SET_PDEATHSIG, SIGKILL) != 0 ||
+        getppid() != parent)
+        FAIL("worker-parent");
     maximum_fd = sysconf(_SC_OPEN_MAX);
     if (maximum_fd < 0 || maximum_fd > 65536)
         maximum_fd = 65536;
-    for (int fd = 3; fd < maximum_fd; ++fd)
-        if (!keep_fd(fd, program_fd, request_fd, bundle_fd, ready_fd) &&
+    for (int fd = 3; fd < maximum_fd; ++fd) {
+        if (!keep_fd(
+                fd,
+                program_fd,
+                request_fd,
+                bundle_fd,
+                ready_fd,
+                launcher_fd) &&
             fcntl(fd, F_GETFD) != -1)
-            return 125;
+            FAIL("unexpected-descriptor");
+    }
+    if (close(launcher_fd) != 0 ||
+        prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) != 0 ||
+        setup_landlock() != 0 ||
+        drop_capabilities() != 0)
+        FAIL("privilege-drop");
     python_fd = open("/usr/bin/python3", O_PATH | O_CLOEXEC);
     if (python_fd < 0 || python_fd > 63)
-        return 125;
+        FAIL("python");
 
     if (set_limit(RLIMIT_CORE, 0) != 0 ||
         set_limit(RLIMIT_FSIZE, 2 * 1024 * 1024) != 0 ||
         set_limit(RLIMIT_NOFILE, 32) != 0 ||
         set_limit(RLIMIT_CPU, 120) != 0 ||
         set_limit(RLIMIT_AS, 512 * 1024 * 1024) != 0)
-        return 125;
+        FAIL("limits");
     if (install_filter(python_fd) != 0)
-        return 125;
+        FAIL("seccomp");
     if (write(ready_fd, "R", 1) != 1 || close(ready_fd) != 0)
-        return 125;
-    syscall(SYS_execveat, python_fd, "", &argv[6], environment, AT_EMPTY_PATH);
-    return 125;
+        FAIL("ready");
+    syscall(SYS_execveat, python_fd, "", &argv[7], environment, AT_EMPTY_PATH);
+    FAIL("execveat");
 }
 '''
+SANDBOX_COMPILER_FLAGS = (
+    "-pipe",
+    "-O2",
+    "-std=c11",
+    "-Wall",
+    "-Wextra",
+    "-Werror",
+    "-x",
+    "c",
+    "-",
+)
 
 
 def _compile_sandbox_launcher() -> tuple[int, str]:
@@ -1040,15 +1615,7 @@ def _compile_sandbox_launcher() -> tuple[int, str]:
         completed = subprocess.run(
             (
                 CC,
-                "-pipe",
-                "-O2",
-                "-std=c11",
-                "-Wall",
-                "-Wextra",
-                "-Werror",
-                "-x",
-                "c",
-                "-",
+                *SANDBOX_COMPILER_FLAGS,
                 "-o",
                 f"/proc/self/fd/{fd}",
             ),
@@ -1194,7 +1761,7 @@ def artifact_id(record):
 
 def validate_bundle(raw):
     data = parse_json(raw, "artifact bundle")
-    if not isinstance(data, dict) or set(data) != {"schema_version", "authorities", "stdlib_modules", "artifacts"} or data["schema_version"] != 2:
+    if not isinstance(data, dict) or set(data) != {"schema_version", "authorities", "stdlib_modules", "artifacts"} or type(data["schema_version"]) is not int or data["schema_version"] != 2:
         raise Failure("artifact bundle header differs")
     stdlib_modules = data["stdlib_modules"]
     if not isinstance(stdlib_modules, list) or stdlib_modules != sorted(set(stdlib_modules)):
@@ -1331,16 +1898,21 @@ def install_guards(records, stdlib_modules):
             if isinstance(args[0], int):
                 return
             raise PermissionError("capsule filesystem access is forbidden")
+        if event in {"os.listdir", "os.scandir"}:
+            raise PermissionError("capsule filesystem traversal is forbidden")
         if event == "import" and args:
             name = args[0]
             if isinstance(name, str) and any(name == allowed or name.startswith(allowed + ".") for allowed in admitted):
                 return
-            if isinstance(name, str) and name in sys.builtin_module_names:
-                return
             raise ImportError("module is not present in the sealed import policy: " + str(name))
     sys.addaudithook(audit)
     for name in tuple(sys.modules):
-        if name.split(".", 1)[0] in FORBIDDEN_STDLIB:
+        if (
+            name in {"builtins", "_frozen_importlib", "_frozen_importlib_external"}
+            or any(name == allowed or name.startswith(allowed + ".") for allowed in admitted)
+        ):
+            continue
+        else:
             sys.modules.pop(name, None)
 
 def preload_stdlib(stdlib_modules):
@@ -1534,77 +2106,13 @@ def _sandbox_command(
     ready_fd: int,
     bootstrap_arguments: Sequence[str],
 ) -> tuple[str, ...]:
-    masks: list[str] = []
-    for module_name in ("_ctypes", "mmap"):
-        spec = importlib.util.find_spec(module_name)
-        if (
-            spec is None
-            or spec.origin is None
-            or not spec.origin.startswith("/usr/")
-            or not Path(spec.origin).is_file()
-        ):
-            raise CapsuleError(
-                f"cannot locate required native-module mask for {module_name}"
-            )
-        masks.extend(("--ro-bind", "/dev/null", spec.origin))
     return (
-        BWRAP,
-        "--unshare-all",
-        "--die-with-parent",
-        "--new-session",
-        "--hostname",
-        "sealed-capsule",
-        "--cap-drop",
-        "ALL",
-        "--ro-bind",
-        "/usr",
-        "/usr",
-        "--ro-bind-try",
-        "/lib",
-        "/lib",
-        "--ro-bind-try",
-        "/lib64",
-        "/lib64",
-        *masks,
-        "--dev",
-        "/dev",
-        "--dir",
-        "/tmp",
-        "--dir",
-        "/home",
-        "--clearenv",
-        "--setenv",
-        "HOME",
-        "/home",
-        "--setenv",
-        "LANG",
-        "C.UTF-8",
-        "--setenv",
-        "LC_ALL",
-        "C.UTF-8",
-        "--setenv",
-        "PATH",
-        "/usr/bin",
-        "--setenv",
-        "PYTHONDONTWRITEBYTECODE",
-        "1",
-        "--setenv",
-        "PYTHONHASHSEED",
-        "0",
-        "--perms",
-        "0555",
-        "--ro-bind-data",
-        str(launcher_fd),
-        "/capsule-launcher",
-        "--remount-ro",
-        "/dev",
-        "--remount-ro",
-        "/",
-        "/capsule-launcher",
+        f"/proc/self/fd/{launcher_fd}",
         str(program_fd),
         str(request_fd),
         str(bundle_fd),
         str(ready_fd),
+        str(launcher_fd),
         "--",
         *bootstrap_arguments,
     )
@@ -1622,9 +2130,17 @@ def _wait_sandbox_ready(
         raise CapsuleExecutionError("sandbox did not establish containment")
     ready = os.read(ready_fd, 2)
     if ready != b"R":
+        try:
+            process.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            _kill_process_group(process)
+        stderr = b""
+        if process.stderr is not None:
+            stderr = process.stderr.read(MAX_STDERR_BYTES + 1)
         raise CapsuleExecutionError(
             "sandbox failed before containment was established",
             returncode=process.poll(),
+            stderr=stderr,
         )
 
 
@@ -1641,11 +2157,9 @@ def _verify_containment_empty(
 
 
 def execute_capsule(
-    repository_root: Path,
+    capability: VerifiedAuthorityPolicy,
     bundle: ArtifactBundle,
     *,
-    authority_map: Sequence[AuthorityPolicy],
-    stdlib_modules: Sequence[str],
     program_artifact_id: str,
     request: Any,
     timeout: float = 30.0,
@@ -1662,14 +2176,8 @@ def execute_capsule(
         raise CapsuleError(
             f"timeout must be greater than zero and at most {MAX_TIMEOUT_SECONDS}"
         )
-    trusted_authorities = tuple(authority_map)
-    allowed_stdlib = tuple(stdlib_modules)
-    bundle_data = verify_artifact_bundle(
-        repository_root,
-        bundle,
-        authority_map=trusted_authorities,
-        stdlib_modules=allowed_stdlib,
-    )
+    state = _verified_authority_state(capability)
+    bundle_data = verify_artifact_bundle(capability, bundle)
     bundle_bytes = bundle.payload
     program = _program_from_bundle(bundle_data, program_artifact_id)
     request_bytes = _request_bytes(request)
@@ -1781,13 +2289,20 @@ def execute_capsule(
             "artifact_bundle_sha256": _sha256(bundle_bytes),
             "authority_map_sha256": _sha256(
                 normalized_json(
-                    [_policy_json(policy) for policy in trusted_authorities]
+                    [_policy_json(policy) for policy in state.authorities]
                 )
             ),
+            "authority_contract_sha256": state.contract_sha256,
             "request_sha256": _sha256(request_bytes),
             "output_sha256": _sha256(stdout),
             "sandbox_launcher_sha256": launcher_digest,
-            "sandbox_profile": "linux-x86_64-bwrap-pid-net-mount-seccomp-v1",
+            "sandbox_launcher_source_sha256": _sha256(
+                _SANDBOX_LAUNCHER_SOURCE.encode("ascii")
+            ),
+            "sandbox_compiler_argv_sha256": _sha256(
+                normalized_json([CC, *SANDBOX_COMPILER_FLAGS])
+            ),
+            "sandbox_profile": "linux-x86_64-native-user-pid-net-landlock-seccomp-v2",
         }
         return CapsuleResult(
             output=output,
