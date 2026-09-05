@@ -59,6 +59,44 @@ threads, untraced/reparenting clones, anonymous executable mappings, ptrace,
 memfds and alternative executable dispatch reject. All failures remain failures
 even if candidate code would otherwise catch an exception.
 
+Candidate `symlink`/`symlinkat` and the entire `rename`/`renameat`/`renameat2`
+family reject before execution. A symlink target is relative to its containing
+directory, not the creating process's cwd; a moved cwd/dirfd ancestor also
+changes kernel `..` resolution without changing the recorded path. Neither
+alias is needed by the supported consumers. Denying them keeps candidate
+output-path authorization and subsequent FD authority bound to the same
+destination, rather than pretending lexical normalization resolves an alias.
+Hardlinks can only join authorized `/work` files and consume creation quota.
+Existing trusted runtime symlinks are resolved component-by-component within
+the guest root, before `..` and with each syscall's final-component follow
+semantics. Absolute links never resolve against the supervisor's host root.
+Open, cwd and directory-FD records retain that authorized destination, so a
+runtime alias cannot disguise an undeclared `/repo` access as a library read.
+
+### Mapping, protection and fork contract
+
+Anonymous memory must be private. Shared anonymous mappings reject even when
+initially `PROT_NONE` or read-only; writable shared file mappings also reject.
+Read-only mappings of immutable admitted source/runtime files remain supported,
+including Python `mmap.ACCESS_READ`. No `/work`, pipe or device-backed mapping
+is admitted, even with `O_RDONLY`, `MAP_PRIVATE`, a duplicated FD, or a closed
+original descriptor: writes through another descriptor/process can otherwise
+change still-unmodified private pages through the backing inode.
+
+`mprotect` accepts only `PROT_NONE`/`PROT_READ`, never writable/executable
+upgrades. `mremap` supports ordinary nonzero-old-size resizing with zero flags
+or `MREMAP_MAYMOVE`; zero-size clones, fixed destinations, `MREMAP_DONTUNMAP`
+and unknown flags reject. mmap's supported flags exclude growing/huge-page
+and unknown allocation forms. Alternate shared-memory, protection-key,
+process-memory, userfaultfd, remap-file-pages and asynchronous-I/O interfaces
+remain unadmitted. These restrictions avoid a partial mapping-provenance model.
+
+Private anonymous read/write mappings and copy-on-write fork remain supported.
+Shared-VM clones require the existing suspended-parent `CLONE_VFORK` contract;
+shared cwd/FD tables, candidate threads and unsupported `clone3` requests
+reject. The real GNU C/C++ compiler/linker, native tools, Make 4.3 and registry
+consumers exercise this policy without a compiler exception or untraced worker.
+
 ### Make, observer and interceptor
 
 Only the trusted Make binary and static interceptor aliases can execute in the
@@ -181,6 +219,14 @@ no core dumps and a 4,096-creation aggregate cap. Limits may be lowered, not
 raised. Filesystem observations and serialized semantic results consume the
 same bounded control budget. Parallel calls to one session reject; a violation
 makes the entire session unusable.
+
+The creation quota reserves attempts **before kernel dispatch**, including
+`open`/`openat` with `O_CREAT` or `O_TMPFILE`, `creat`, `mkdir`/`mkdirat`, and
+`link`/`linkat` (including `AT_EMPTY_PATH`). Closing/unlinking an object or
+starting another command does not refund/reset the aggregate quota. Failed
+creation attempts are conservatively charged too. Symlinks, relocation,
+special-file creation and unadmitted open variants are denied, not uncounted
+alternatives.
 
 Context exit, timeout, overflow, worker failure, malformed output and
 SIGINT/SIGTERM kill/reap the recorded process groups and traced descendants,

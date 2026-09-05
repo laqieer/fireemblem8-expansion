@@ -3,7 +3,7 @@
 The sparse, noexec mount is the filesystem boundary. Ptrace adds violation
 reporting (including caught failures), FD/channel separation, exec authority
 and complete metadata/mmap/directory observations. No candidate code runs in
-this Python process. Unknown syscalls and shared-memory threads reject.
+this Python process. Mutable shared memory and namespace aliases reject.
 """
 
 from __future__ import annotations
@@ -18,6 +18,7 @@ import re
 import resource
 import signal
 import time
+from collections import deque
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -27,6 +28,12 @@ LIBC.ptrace.restype = ctypes.c_long
 WALL = 0x40000000
 TRACEME, PEEKDATA, SYSCALL, GETREGS, SETOPTIONS = 0, 2, 24, 12, 0x4200
 OPTIONS = 1 | 2 | 4 | 8 | 16 | 0x100000  # syscall/fork/vfork/clone/exec/exitkill
+PROT_READ, PROT_WRITE, PROT_EXEC = 1, 2, 4
+MAP_SHARED, MAP_PRIVATE, MAP_SHARED_VALIDATE = 1, 2, 3
+MAP_ANONYMOUS = 0x20
+# Fixed placement, loader hints and stacks do not alias pages or change their
+# size. Growing/huge-page and unknown flags cannot bypass 4 KiB reservations.
+MMAP_FLAGS = 3 | 0x10 | MAP_ANONYMOUS | 0x800 | 0x1000 | 0x20000 | 0x100000
 
 
 class Violation(RuntimeError):
@@ -124,6 +131,7 @@ class Policy:
         self.memory_peak = 0
         self.processes = {}
         self.executable = set(config["executables"])
+        self.executable.update(self.resolve(path) for path in config["executables"])
         version = config["python_version"]
         self.runtime_probes = {
             "/usr/bin/pybuilddir.txt", "/usr/bin/Modules/Setup.local",
@@ -183,12 +191,53 @@ class Policy:
             raise Violation("aggregate address-space budget exhausted before allocation/fork")
         state.memory_reservation = additional
 
+    def reserve_creation(self):
+        self.created += 1
+        if self.created > self.config["creation_limit"]:
+            raise Violation("aggregate file-creation budget exhausted")
+
     def observer(self, state, registers):
         return state.role == "make" and any(
             start <= registers.rip < end for start, end in state.observer_ranges
         )
 
-    def path(self, pid, state, address, dirfd=-100):
+    def resolve(self, name, *, follow_final=True):
+        # Only trusted, immutable symlinks remain: candidate symlinks and
+        # ancestor relocation are forbidden. Resolve in the guest root, not
+        # through the supervisor's host-root interpretation of absolute links.
+        pending = deque(name.split("/"))
+        resolved = []
+        links = 0
+        while pending:
+            part = pending.popleft()
+            if part in {"", "."}:
+                continue
+            if part == "..":
+                if resolved:
+                    resolved.pop()
+                continue
+            if follow_final or pending:
+                try:
+                    target = os.readlink(Path(self.config["root"]).joinpath(*resolved, part))
+                except OSError as error:
+                    if error.errno not in {errno.EINVAL, errno.ENOENT, errno.ENOTDIR}:
+                        raise Violation("cannot resolve confined pathname") from error
+                else:
+                    links += 1
+                    try:
+                        target_size = len(target.encode("utf-8", "strict"))
+                    except UnicodeEncodeError as error:
+                        raise Violation("symlink target is not strict UTF-8") from error
+                    if links > 40 or target_size + sum(len(item) + 1 for item in pending) > 4096:
+                        raise Violation("confined symlink resolution exceeds bound")
+                    if target.startswith("/"):
+                        resolved.clear()
+                    pending.extendleft(reversed(target.split("/")))
+                    continue
+            resolved.append(part)
+        return "/" + "/".join(resolved)
+
+    def path(self, pid, state, address, dirfd=-100, *, follow_final=True):
         dirfd = ctypes.c_int(dirfd).value
         name = cstring(pid, address)
         if "\0" in name:
@@ -202,7 +251,7 @@ class Policy:
             if base.startswith("<"):
                 raise Violation("relative path through a non-directory descriptor")
             name = base.rstrip("/") + "/" + name
-        return posixpath.normpath(name)
+        return self.resolve(name, follow_final=follow_final)
 
     def fd(self, state, fd):
         if fd not in state.fds:
@@ -345,18 +394,28 @@ class Policy:
         state.pending = None
         trusted = self.observer(state, r)
         if n in {2, 85, 257}:  # open, creat, openat
-            path = self.path(pid, state, b if n == 257 else a, signed(a) if n == 257 else -100)
             flags = c if n == 257 else b
-            writing = n == 85 or bool(flags & (os.O_WRONLY | os.O_RDWR | os.O_CREAT | os.O_TRUNC))
-            if n == 85 or flags & os.O_CREAT:
-                self.created += 1
-                if self.created > self.config["creation_limit"]:
-                    raise Violation("aggregate file-creation budget exhausted")
+            follow = n == 85 or not (
+                flags & os.O_NOFOLLOW or flags & os.O_CREAT and flags & os.O_EXCL
+            )
+            path = self.path(
+                pid, state, b if n == 257 else a, signed(a) if n == 257 else -100,
+                follow_final=follow,
+            )
+            creating = n == 85 or flags & os.O_CREAT or flags & os.O_TMPFILE == os.O_TMPFILE
+            writing = creating or bool(flags & (os.O_WRONLY | os.O_RDWR | os.O_TRUNC))
             self.check(state, path, "write" if writing else "read", observer=trusted)
+            if creating:
+                self.reserve_creation()
             state.pending = ("open", path)
         elif n in {4, 6, 21, 89, 262, 267, 269, 332, 439}:  # metadata, access, readlink
             at = n in {262, 267, 269, 332, 439}
-            path = self.path(pid, state, b if at else a, signed(a) if at else -100)
+            follow = n not in {6, 89, 267} and not (
+                n in {262, 439} and d & 0x100 or n == 332 and c & 0x100
+            )
+            path = self.path(
+                pid, state, b if at else a, signed(a) if at else -100, follow_final=follow,
+            )
             self.check(state, path, "metadata", observer=trusted)
         elif n in {5, 138}:  # fstat, fstatfs
             self.check_fd(state, a, "metadata", r)
@@ -382,22 +441,39 @@ class Policy:
             self.check_fd(state, a, "directory", r)
         elif n == 9:
             descriptor = signed(e)
-            if d & 1 and c & 2:
-                raise Violation("shared writable mappings/argument races are forbidden")
-            if descriptor != -1 and not d & 0x20:
+            kind = d & 0xF
+            if d & ~MMAP_FLAGS or kind not in {MAP_SHARED, MAP_PRIVATE, MAP_SHARED_VALIDATE}:
+                raise Violation("unadmitted mmap flags")
+            if c & ~(PROT_READ | PROT_WRITE | PROT_EXEC):
+                raise Violation("unadmitted mmap protection")
+            if kind != MAP_PRIVATE:
+                if d & MAP_ANONYMOUS:
+                    raise Violation("shared anonymous mappings/argument races are forbidden")
+                if c & PROT_WRITE:
+                    raise Violation("shared writable mappings/argument races are forbidden")
+            if not d & MAP_ANONYMOUS:
                 path = self.check_fd(state, descriptor, "read", r)
-                if c & 4 and path not in self.executable and not path.startswith(("/usr/", "/lib/", "/lib64/", "/bin/")):
+                # Even MAP_PRIVATE + O_RDONLY can observe another process's
+                # writes to the backing inode until COW. Closing/duplicating/
+                # hardlinking the FD does not make /work immutable.
+                if path.startswith("<") or path == "/dev/null" or path == "/work" or path.startswith("/work/"):
+                    raise Violation("mutable backing-file mappings/argument races are forbidden")
+                if c & PROT_EXEC and path not in self.executable and not path.startswith(("/usr/", "/lib/", "/lib64/", "/bin/")):
                     raise Violation("candidate executable mmap denied")
-            elif c & 4:
+            elif c & PROT_EXEC:
                 raise Violation("anonymous executable mmap denied")
             self.reserve_memory(pid, state, b)
         elif n == 12:
             self.reserve_memory(pid, state, max(0, a - state.break_end) if a else 0)
         elif n == 25:
-            self.reserve_memory(pid, state, c if d & 4 else max(0, c - b))
+            if not b or d & ~1:
+                raise Violation("remap aliases/fixed relocation are forbidden")
+            self.reserve_memory(pid, state, max(0, c - b))
         elif n == 10:
-            if c & 4:
-                raise Violation("adding executable memory denied")
+            if c & PROT_WRITE:
+                raise Violation("adding writable memory protection denied")
+            if c & ~PROT_READ:
+                raise Violation("adding executable/unknown memory protection denied")
         elif n == 59:
             path = self.path(pid, state, a)
             if path not in self.executable:
@@ -452,26 +528,35 @@ class Policy:
         elif n == 81:
             state.pending = ("cwd", self.check_fd(state, a, "metadata", r))
         elif n in {76, 83, 84, 87, 90, 92, 94}:
-            path = self.path(pid, state, a)
+            path = self.path(pid, state, a, follow_final=n in {76, 90, 92})
             self.check(state, path, "write")
             if n == 76:
                 self.written += b
             if n == 83:
-                self.created += 1
+                self.reserve_creation()
         elif n in {77, 91, 93}:
             self.check_fd(state, a, "write", r)
             if n == 77:
                 self.written += b
-        elif n in {82, 86, 88}:
+        elif n in {88, 266}:
+            raise Violation("candidate symlink creation is forbidden")
+        elif n in {82, 264, 316}:
+            # Moving a cwd/dirfd ancestor changes the kernel's '..' meaning
+            # without changing its recorded path. No supported tool needs it.
+            raise Violation("candidate directory-entry relocation is forbidden")
+        elif n == 86:
             for pointer in (a, b):
-                self.check(state, self.path(pid, state, pointer), "write")
+                self.check(state, self.path(pid, state, pointer, follow_final=False), "write")
+            self.reserve_creation()
         elif n in {258, 260, 263, 268, 280}:
-            self.check(state, self.path(pid, state, b, signed(a)), "write")
+            follow = n == 268 or n == 260 and not e & 0x100 or n == 280 and not d & 0x100
+            self.check(state, self.path(pid, state, b, signed(a), follow_final=follow), "write")
             if n == 258:
-                self.created += 1
-        elif n in {264, 265, 316}:
-            self.check(state, self.path(pid, state, b, signed(a)), "write")
-            self.check(state, self.path(pid, state, d, signed(c)), "write")
+                self.reserve_creation()
+        elif n == 265:
+            self.check(state, self.path(pid, state, b, signed(a), follow_final=bool(e & 0x400)), "write")
+            self.check(state, self.path(pid, state, d, signed(c), follow_final=False), "write")
+            self.reserve_creation()
         elif n == 62:
             if signed(a) != pid:
                 raise Violation("cross-process signal denied")
@@ -511,8 +596,6 @@ class Policy:
             273, 281, 291, 292, 309, 318, 324, 334,
         }:
             raise Violation(f"unadmitted syscall {n}")
-        if self.created > self.config["creation_limit"]:
-            raise Violation("aggregate file-creation budget exhausted")
         if self.written > self.config["write_limit"]:
             raise Violation("aggregate capsule storage budget exhausted")
 

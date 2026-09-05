@@ -11,6 +11,7 @@ import threading
 import time
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from scripts.validation_ownership.authority import AuthorityLoader, ENVIRONMENT, GitTreeEntry, git_tree_entries
 from scripts.validation_ownership.budget import Limits, MakeProbeError, ProbeBudget
@@ -415,6 +416,398 @@ class FoundationTests(unittest.TestCase):
                             ("/usr/bin/python3", "-I", "-B", "/repo/reader.py"), code=("reader.py",),
                         ))
                 self.assert_clean(session)
+
+    def test_candidate_symlink_and_relocated_directory_aliases_reject(self):
+        controls = [
+            "os.symlink('../../repo', '/work/alias')\n"
+            "assert os.access('/work/alias/reader.py', os.R_OK)\n"
+            "assert not os.access('/work/alias/undeclared', os.R_OK)\n",
+            "directory = os.open('/work', os.O_RDONLY | os.O_DIRECTORY)\n"
+            "os.symlink('../../repo', 'alias', dir_fd=directory)\n",
+            "os.rename('/work/a/b', '/work/b')\n"
+            "assert os.access('../../../repo/reader.py', os.R_OK)\n"
+            "assert not os.access('../../../repo/undeclared', os.R_OK)\n",
+            "directory = os.open('.', os.O_RDONLY | os.O_DIRECTORY)\n"
+            "os.rename('/work/a/b', '/work/b')\n"
+            "assert os.access('../../../repo/reader.py', os.R_OK, dir_fd=directory)\n",
+            "directory = os.open('/work', os.O_RDONLY | os.O_DIRECTORY)\n"
+            "os.rename('a/b', 'b', src_dir_fd=directory, dst_dir_fd=directory)\n"
+            "assert os.access('../../../repo/reader.py', os.R_OK)\n",
+            "assert ctypes.CDLL(None).syscall(316, -100, b'/work/a/b', -100, b'/work/b', 0) == 0\n"
+            "assert os.access('../../../repo/reader.py', os.R_OK)\n",
+        ]
+        for operation in controls:
+            with self.subTest(operation=operation):
+                self.add("reader.py", (
+                    "import ctypes, os\nos.makedirs('/work/a/b/c')\nos.chdir('/work/a/b/c')\n"
+                    + operation + "print('alias admitted')\n"
+                ))
+                session = self.session()
+                with self.assertRaisesRegex(MakeProbeError, "symlink creation|directory-entry relocation"):
+                    with session:
+                        session.command(Command(
+                            ("/usr/bin/python3", "-I", "-B", "/repo/reader.py"), code=("reader.py",),
+                        ))
+                self.assert_clean(session)
+
+    def test_trusted_runtime_symlinks_use_the_authorized_source_destination(self):
+        runtime = self.directory / "runtime"
+        runtime.mkdir()
+        (runtime / "alias").symlink_to("../../../../repo")
+        (runtime / "absolute").symlink_to("/repo")
+        (runtime / "file").symlink_to("/repo/data/admitted")
+        self.add("data/admitted", b"owned")
+        prefix = "/usr/lib/x86_64-linux-gnu/gconv/"
+        for name in ("alias", "absolute", "alias/../repo"):
+            for operation, accepted in (
+                (
+                    "descriptor = os.open(alias + '/data/admitted', os.O_RDONLY)\n"
+                    "descriptor = os.dup(descriptor)\n"
+                    "with mmap.mmap(descriptor, 0, access=mmap.ACCESS_READ) as view:\n"
+                    " os.write(1, view[:])\n", True,
+                ),
+                ("os.access(alias + '/undeclared', os.R_OK)\n", False),
+                ("os.chdir(alias)\nos.access('undeclared', os.R_OK)\n", False),
+                (
+                    "directory = os.open(alias, os.O_RDONLY | os.O_DIRECTORY)\n"
+                    "os.access('undeclared', os.R_OK, dir_fd=directory)\n", False,
+                ),
+            ):
+                with self.subTest(alias=name, operation=operation):
+                    self.add("reader.py", (
+                        "import mmap, os\nalias = " + repr(prefix + name) + "\n" + operation
+                    ))
+                    session = self.session()
+                    with session:
+                        run = session._sandbox_run
+                        def with_runtime_alias(root, **kwargs):
+                            kwargs["mounts"].append(session._mount(runtime, prefix.rstrip("/")))
+                            return run(root, **kwargs)
+                        with patch.object(session, "_sandbox_run", with_runtime_alias):
+                            command = Command(
+                                ("/usr/bin/python3", "-I", "-B", "/repo/reader.py"),
+                                code=("reader.py",), sources=("data/admitted",) if accepted else (),
+                            )
+                            if accepted:
+                                result = session.command(command)
+                                self.assertEqual(result.stdout, b"owned")
+                                self.assertEqual(result.consumed, ("data/admitted",))
+                            else:
+                                with self.assertRaisesRegex(MakeProbeError, "undeclared source"):
+                                    session.command(command)
+                    self.assert_clean(session)
+        self.add("reader.py", (
+            "import os, stat\nlink = " + repr(prefix + "file") + "\n"
+            "assert stat.S_ISLNK(os.lstat(link).st_mode)\n"
+            "assert os.readlink(link) == '/repo/data/admitted'\n"
+            "descriptor = os.open(link, os.O_PATH | os.O_NOFOLLOW)\n"
+            "assert stat.S_ISLNK(os.fstat(descriptor).st_mode)\n"
+            "assert os.readlink('', dir_fd=descriptor) == '/repo/data/admitted'\n"
+            "os.close(descriptor)\nprint('nofollow metadata')\n"
+        ))
+        with self.session() as session:
+            run = session._sandbox_run
+            def with_runtime_alias(root, **kwargs):
+                kwargs["mounts"].append(session._mount(runtime, prefix.rstrip("/")))
+                return run(root, **kwargs)
+            with patch.object(session, "_sandbox_run", with_runtime_alias):
+                result = session.command(Command(
+                    ("/usr/bin/python3", "-I", "-B", "/repo/reader.py"), code=("reader.py",),
+                ))
+                self.assertEqual(result.stdout, b"nofollow metadata\n")
+                self.assertEqual(result.consumed, ())
+        self.assert_clean(session)
+
+    @staticmethod
+    def mapping_program(operation):
+        return (
+            "import ctypes, mmap, os\n"
+            "libc = ctypes.CDLL(None, use_errno=True)\n"
+            "libc.mmap.restype = ctypes.c_void_p\n"
+            "libc.mmap.argtypes = [ctypes.c_void_p, ctypes.c_size_t, ctypes.c_int, "
+            "ctypes.c_int, ctypes.c_int, ctypes.c_long]\n"
+            "libc.mprotect.argtypes = [ctypes.c_void_p, ctypes.c_size_t, ctypes.c_int]\n"
+            "libc.mremap.restype = ctypes.c_void_p\n"
+            "libc.mremap.argtypes = [ctypes.c_void_p, ctypes.c_size_t, "
+            "ctypes.c_size_t, ctypes.c_int, ctypes.c_void_p]\n"
+            "libc.munmap.argtypes = [ctypes.c_void_p, ctypes.c_size_t]\n"
+            "def mapping(protection, flags, descriptor=-1):\n"
+            " address = libc.mmap(None, 4096, protection, flags, descriptor, 0)\n"
+            " assert address not in (None, ctypes.c_void_p(-1).value), ctypes.get_errno()\n"
+            " return address\n"
+            "def child_write(address):\n"
+            " child = os.fork()\n"
+            " if child == 0:\n"
+            "  ctypes.memmove(address, b'child\\0', 6)\n"
+            "  os._exit(0)\n"
+            " assert os.waitpid(child, 0)[1] == 0\n"
+            + operation
+        )
+
+    def test_shared_mapping_protection_upgrade_and_fork_reject(self):
+        for protection in (0, 1):
+            with self.subTest(protection=protection):
+                self.add("reader.py", self.mapping_program(
+                    f"address = mapping({protection}, mmap.MAP_SHARED | mmap.MAP_ANONYMOUS)\n"
+                    "assert libc.mprotect(address, 4096, 3) == 0\n"
+                    "ctypes.memmove(address, b'parent\\0', 7)\n"
+                    "child_write(address)\n"
+                    "assert ctypes.string_at(address, 6) == b'child\\0'\n"
+                    "class Vector(ctypes.Structure):\n"
+                    " _fields_ = [('base', ctypes.c_void_p), ('length', ctypes.c_size_t)]\n"
+                    "vector = Vector.from_address(address + 128)\n"
+                    "child = os.fork()\n"
+                    "if child == 0:\n"
+                    " ctypes.memmove(address, b'reader.py\\0', 10)\n"
+                    " ctypes.memmove(address + 256, b'child\\n', 6)\n"
+                    " vector.base, vector.length = address + 256, 6\n"
+                    " os._exit(0)\n"
+                    "assert os.waitpid(child, 0)[1] == 0\n"
+                    "assert libc.access(ctypes.c_void_p(address), os.R_OK) == 0\n"
+                    "assert libc.writev(1, ctypes.byref(vector), 1) == 6\n"
+                    "assert libc.munmap(address, 4096) == 0\nprint('shared across fork')\n"
+                ))
+                before = subprocess.run(
+                    ["/usr/bin/python3", "-I", "-B", str(self.root / "reader.py")],
+                    cwd=self.root, env=ENVIRONMENT, capture_output=True, timeout=10,
+                )
+                self.assertEqual(before.returncode, 0, before.stderr)
+                self.assertEqual(before.stdout, b"child\nshared across fork\n")
+                session = self.session()
+                with self.assertRaisesRegex(MakeProbeError, "shared anonymous"):
+                    with session:
+                        session.command(Command(
+                            ("/usr/bin/python3", "-I", "-B", "/repo/reader.py"), code=("reader.py",),
+                        ))
+                self.assert_clean(session)
+
+    def test_mutable_backing_file_mappings_reject_even_readonly_private_aliases(self):
+        for flags in ("mmap.MAP_PRIVATE", "mmap.MAP_SHARED"):
+            with self.subTest(flags=flags):
+                self.add("reader.py", self.mapping_program(
+                    "path = os.environ.get('MAPPING_FIXTURE', '/work/backing')\n"
+                    "with open(path, 'wb') as stream: stream.write(b'parent\\0' + b'\\0'*4089)\n"
+                    "original = os.open(path, os.O_RDONLY)\n"
+                    "descriptor = os.dup(original)\nos.close(original)\n"
+                    f"address = mapping(1, {flags}, descriptor)\nos.close(descriptor)\n"
+                    "child = os.fork()\n"
+                    "if child == 0:\n"
+                    " descriptor = os.open(path, os.O_WRONLY)\n"
+                    " assert os.pwrite(descriptor, b'child\\0', 0) == 6\n"
+                    " os.close(descriptor)\n os._exit(0)\n"
+                    "assert os.waitpid(child, 0)[1] == 0\n"
+                    "assert ctypes.string_at(address, 6) == b'child\\0'\n"
+                    "assert libc.munmap(address, 4096) == 0\nprint('mutable backing observed')\n"
+                ))
+                before = subprocess.run(
+                    ["/usr/bin/python3", "-I", "-B", str(self.root / "reader.py")],
+                    cwd=self.root, env={
+                        **ENVIRONMENT, "MAPPING_FIXTURE": str(self.directory / "backing"),
+                    }, capture_output=True, timeout=10,
+                )
+                self.assertEqual(before.returncode, 0, before.stderr)
+                self.assertEqual(before.stdout, b"mutable backing observed\n")
+                session = self.session()
+                with self.assertRaisesRegex(MakeProbeError, "mutable backing"):
+                    with session:
+                        session.command(Command(
+                            ("/usr/bin/python3", "-I", "-B", "/repo/reader.py"), code=("reader.py",),
+                        ))
+                self.assert_clean(session)
+
+    def test_protection_and_remap_alias_families_reject(self):
+        self.add("data/page", b"immutable" + b"\0" * (4096 - 9))
+        controls = [
+            (
+                "address = mapping(1, mmap.MAP_PRIVATE | mmap.MAP_ANONYMOUS)\n"
+                "assert libc.mprotect(address, 4096, 3) == 0\n",
+                (), "writable memory protection",
+            ),
+            (
+                "descriptor = os.open('data/page', os.O_RDONLY)\n"
+                "address = mapping(1, mmap.MAP_SHARED, descriptor)\n"
+                "alias = libc.mremap(address, 0, 4096, 1, None)\n"
+                "assert alias != ctypes.c_void_p(-1).value\n"
+                "assert ctypes.string_at(alias, 9) == b'immutable'\n",
+                ("data/page",), "remap alias",
+            ),
+        ]
+        for flags in (3, 5, 7):
+            controls.append((
+                "address = mapping(3, mmap.MAP_PRIVATE | mmap.MAP_ANONYMOUS)\n"
+                "destination = mapping(3, mmap.MAP_PRIVATE | mmap.MAP_ANONYMOUS)\n"
+                "ctypes.memmove(address, b'private\\0', 8)\n"
+                f"alias = libc.mremap(address, 4096, 4096, {flags}, destination)\n"
+                "assert alias != ctypes.c_void_p(-1).value\n"
+                "assert ctypes.string_at(alias, 8) == b'private\\0'\n",
+                (), "remap alias",
+            ))
+        for operation, sources, expected in controls:
+            with self.subTest(operation=operation):
+                self.add("reader.py", self.mapping_program(operation + "print('upgrade admitted')\n"))
+                before = subprocess.run(
+                    ["/usr/bin/python3", "-I", "-B", str(self.root / "reader.py")],
+                    cwd=self.root, env=ENVIRONMENT, capture_output=True, timeout=10,
+                )
+                self.assertEqual(before.returncode, 0, before.stderr)
+                self.assertEqual(before.stdout, b"upgrade admitted\n")
+                session = self.session()
+                with self.assertRaisesRegex(MakeProbeError, expected):
+                    with session:
+                        session.command(Command(
+                            ("/usr/bin/python3", "-I", "-B", "/repo/reader.py"),
+                            code=("reader.py",), sources=sources,
+                        ))
+                self.assert_clean(session)
+
+    def test_private_mapping_resize_fork_and_read_protection_stay_supported(self):
+        self.add("reader.py", self.mapping_program(
+            "address = mapping(3, mmap.MAP_PRIVATE | mmap.MAP_ANONYMOUS)\n"
+            "ctypes.memmove(address, b'parent\\0', 7)\nchild_write(address)\n"
+            "assert ctypes.string_at(address, 7) == b'parent\\0'\n"
+            "address = libc.mremap(address, 4096, 8192, 1, None)\n"
+            "assert address != ctypes.c_void_p(-1).value\n"
+            "assert ctypes.string_at(address, 7) == b'parent\\0'\n"
+            "assert libc.mprotect(address, 8192, 1) == 0\n"
+            "assert libc.munmap(address, 8192) == 0\n"
+            "print('private fork and resize')\n"
+        ))
+        with self.session() as session:
+            result = session.command(Command(
+                ("/usr/bin/python3", "-I", "-B", "/repo/reader.py"), code=("reader.py",),
+            ))
+            self.assertEqual(result.stdout, b"private fork and resize\n")
+        self.assert_clean(session)
+
+    def test_shared_clone_state_rejects_but_suspended_parent_spawn_stays_supported(self):
+        self.add("native.c", (
+            "#define _GNU_SOURCE\n#include <sched.h>\n#include <signal.h>\n"
+            "#include <stdio.h>\n#include <stdlib.h>\n#include <sys/mman.h>\n"
+            "#include <sys/wait.h>\n#include <unistd.h>\n"
+            "static int child(void *argument) { (void)argument; _exit(0); }\n"
+            "int main(int argc, char **argv) {\n"
+            " if(argc != 2) return 2;\n"
+            " void *stack = mmap(NULL, 16384, PROT_READ | PROT_WRITE,\n"
+            "  MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);\n"
+            " if(stack == MAP_FAILED) return 3;\n"
+            " int flags = (int)strtoul(argv[1], NULL, 0) | SIGCHLD;\n"
+            " pid_t pid = clone(child, (char *)stack + 16384, flags, NULL);\n"
+            " int status;\n"
+            " if(pid < 0 || waitpid(pid, &status, 0) != pid || status != 0) return 4;\n"
+            " if(munmap(stack, 16384)) return 5;\n"
+            " puts(\"owned child reaped\"); return 0;\n}\n"
+        ))
+        with self.session() as session:
+            tool = session.compile_native(("native.c",))
+            for flags in (0, 0x100 | 0x4000):
+                self.assertEqual(session.native(tool, (str(flags),)).stdout, b"owned child reaped\n")
+        self.assert_clean(session)
+        for flags in (0x100, 0x200, 0x400):
+            with self.subTest(flags=flags):
+                session = self.session()
+                with self.assertRaisesRegex(MakeProbeError, "shared-memory candidate threads|shared-state clone"):
+                    with session:
+                        tool = session.compile_native(("native.c",))
+                        session.native(tool, (str(flags),))
+                self.assert_clean(session)
+
+    def test_alternate_memory_alias_and_creation_interfaces_remain_fail_closed(self):
+        # Invalid IDs/addresses keep these calls harmless even if an admission
+        # regression lets the kernel see them. No global IPC object is created.
+        for number in (29, 30, 31, 67, 133, 216, 259, 310, 311, 319, 323, 329, 425, 437, 440):
+            with self.subTest(syscall=number):
+                self.add("reader.py", (
+                    "import ctypes\n"
+                    f"ctypes.CDLL(None).syscall({number}, -1, -1, -1, -1, -1, -1)\n"
+                ))
+                session = self.session()
+                with self.assertRaisesRegex(MakeProbeError, f"unadmitted syscall {number}"):
+                    with session:
+                        session.command(Command(
+                            ("/usr/bin/python3", "-I", "-B", "/repo/reader.py"), code=("reader.py",),
+                        ))
+                self.assert_clean(session)
+
+    def test_all_supported_creation_attempts_reserve_the_aggregate_quota(self):
+        controls = [
+            ("", "os.close(os.open('/work/'+str(index), os.O_CREAT | os.O_WRONLY, 0o600))"),
+            ("", "os.close(libc.syscall(85, ('/work/'+str(index)).encode(), 0o600))"),
+            ("", "os.mkdir('/work/'+str(index))"),
+            ("", "os.mkdir(str(index), dir_fd=directory)"),
+            ("", "os.close(os.open('/work', os.O_TMPFILE | os.O_RDWR, 0o600))"),
+            ("", "os.close(libc.syscall(2, b'/work', os.O_TMPFILE | os.O_RDWR, 0o600))"),
+            ("open('/work/seed', 'wb').close()\n", "os.link('/work/seed', '/work/'+str(index))"),
+            ("open('/work/seed', 'wb').close()\n",
+             "os.link('seed', str(index), src_dir_fd=directory, dst_dir_fd=directory)"),
+        ]
+        for setup, operation in controls:
+            for allowed in (True, False):
+                with self.subTest(operation=operation, allowed=allowed):
+                    self.add("reader.py", (
+                        "import ctypes, os\nlibc = ctypes.CDLL(None)\nos.chdir('/work')\n"
+                        "directory = os.open('/work', os.O_RDONLY | os.O_DIRECTORY)\n"
+                        + setup + "for index in range(2):\n " + operation + "\nprint('created')\n"
+                    ))
+                    creations = 2 + bool(setup)
+                    session = self.session(created_files=creations if allowed else 1)
+                    if allowed:
+                        with session:
+                            output = session.command(Command(
+                                ("/usr/bin/python3", "-I", "-B", "/repo/reader.py"), code=("reader.py",),
+                            ))
+                            self.assertEqual(output.stdout, b"created\n")
+                            self.assertEqual(session.files_created, creations)
+                    else:
+                        with self.assertRaisesRegex(MakeProbeError, "file-creation budget"):
+                            with session:
+                                session.command(Command(
+                                    ("/usr/bin/python3", "-I", "-B", "/repo/reader.py"), code=("reader.py",),
+                                ))
+                        self.assertEqual(session.files_created, 2)
+                    self.assert_clean(session)
+
+    def test_unsupported_creation_and_empty_path_link_cannot_bypass_low_quota(self):
+        controls = [
+            ("os.symlink('missing', '/work/link')", "symlink creation"),
+            ("os.symlink('missing', 'link', dir_fd=directory)", "symlink creation"),
+            ("os.mkfifo('/work/fifo')", "unadmitted syscall"),
+            (
+                "descriptor = os.open('/work', os.O_TMPFILE | os.O_RDWR, 0o600)\n"
+                "libc.syscall(265, descriptor, b'', directory, b'link', 0x1000)",
+                "file-creation budget",
+            ),
+        ]
+        for operation, expected in controls:
+            with self.subTest(operation=operation):
+                self.add("reader.py", (
+                    "import ctypes, os\nlibc = ctypes.CDLL(None)\nos.chdir('/work')\n"
+                    "directory = os.open('/work', os.O_RDONLY | os.O_DIRECTORY)\n"
+                    + operation + "\nprint('unsupported creation admitted')\n"
+                ))
+                session = self.session(created_files=1)
+                with self.assertRaisesRegex(MakeProbeError, expected):
+                    with session:
+                        session.command(Command(
+                            ("/usr/bin/python3", "-I", "-B", "/repo/reader.py"), code=("reader.py",),
+                        ))
+                self.assert_clean(session)
+
+    def test_creation_quota_is_not_reset_between_commands(self):
+        self.add("Makefile", "all: ;\n")
+        with self.session(created_files=1) as session:
+            for index in range(2):
+                command = Command((
+                    "/usr/bin/python3", "-I", "-B", "-c",
+                    "import os; os.close(os.open('/work', os.O_TMPFILE | os.O_RDWR, 0o600))",
+                    str(index),
+                ))
+                if index == 0:
+                    session.command(command)
+                    self.assertEqual(session.files_created, 1)
+                else:
+                    with self.assertRaisesRegex(MakeProbeError, "file-creation budget"):
+                        session.command(command)
+        self.assert_clean(session)
 
     def test_fanout_bound_and_parent_interrupt_clean_descendants(self):
         self.add("reader.py", (

@@ -1489,6 +1489,13 @@ Start from a clean checkout; fixtures use only ignored `build/test-artifacts`.
    falsely reported source declarations, and symlink/FIFO controls. Every
    mismatch must fail closed. Real C/C++ candidate tools compile and run only
    in channel-free capsules; changed ELF handles and channel/FD access reject.
+   The alias controls create a relative symlink from a deeper cwd and relocate
+   a cwd/dirfd ancestor before a `..` lookup. All symlink and rename variants
+   must reject before dispatch; they cannot hide an undeclared attempt under
+   a recorded `/work` path.
+   An owned, namespace-only runtime alias fixture also checks relative and
+   absolute trusted symlinks: declared source open/mmap still reports the real
+   source, while direct, cwd and directory-FD undeclared accesses reject.
 5. Change unrelated docs/source/modes/symlink targets in the disposable fixture:
    execution identity changes while the unrelated owner's semantic digest
    remains stable. Change a real owner input and require changed semantics and
@@ -1498,6 +1505,18 @@ Start from a clean checkout; fixtures use only ignored `build/test-artifacts`.
    processes cannot reset the aggregate deadline. Malformed binary/text
    protocols, worker failure and SIGTERM interruption must reject and leave
    no live owned child, descriptor, mapping, cache or owned scratch tree.
+   Creation controls include `O_TMPFILE`, `creat`, directory creation,
+   hardlinks/`linkat`, `AT_EMPTY_PATH` and a one-creation limit across commands.
+   Supported attempts consume quota before dispatch; symlink, relocation and
+   special-file alternatives reject rather than escaping accounting.
+7. Run the same suite's mapping controls. A read-only/`PROT_NONE` shared
+   anonymous mapping upgraded writable and inherited by a child must reject,
+   as must mutable file backing even through a read-only private mmap and
+   duplicated/closed descriptors. The benign unconfined control demonstrates
+   child-written pathname and `writev` vector bytes reaching real syscalls.
+   Writable protection upgrades, remap clones/fixed/DONTUNMAP aliases and
+   alternate memory APIs reject. Private COW fork, ordinary private resize,
+   read-only source mmap and suspended-parent native spawn remain positive.
 
 ### Negative controls
 
@@ -1507,6 +1526,13 @@ paths; a per-process timeout really admits work beyond a single total budget.
 These controls are restricted to disposable test inputs and are not a
 production bypass switch. Normal positive behavior is tested alongside every
 boundary; no failure is converted to successful evidence.
+
+The original #206 guard additionally admitted relative symlink and relocated
+cwd/dirfd aliases, shared mapping upgrades and private mappings of mutable
+backing files; it reported zero creations for `O_TMPFILE` and omitted hardlink
+entries. The frozen process regressions fail against that guard. Their benign
+unconfined mapping controls use only owned buffers, fixture paths and reaped
+child PIDs; no timed race against unrelated host data or process is required.
 
 ### Automation
 
