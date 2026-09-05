@@ -78,11 +78,11 @@ METADATA_VERSION_QUERY = """query($owner:String!,$name:String!,$number:Int!){
       number
       title
       url
-      editor{__typename databaseId login}
+      editor{__typename login ... on User{databaseId}}
       timelineItems(last:100,itemTypes:[RENAMED_TITLE_EVENT]){
         nodes{__typename ... on RenamedTitleEvent{
           id createdAt previousTitle currentTitle
-          actor{__typename databaseId login}
+          actor{__typename login ... on User{databaseId}}
         }}
       }
     }

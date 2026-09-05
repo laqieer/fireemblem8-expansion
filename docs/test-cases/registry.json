@@ -2326,6 +2326,10 @@
           "evidence": "scripts/workflow_pilot/tests/test_pr_metadata.py"
         },
         {
+          "command": "PR_METADATA_LIVE_REPOSITORY=laqieer/fireemblem8-expansion PR_METADATA_LIVE_PR=202 python3 -m unittest scripts.workflow_pilot.tests.test_pr_metadata.LivePullRequestMetadataQueryTests -v",
+          "evidence": "scripts/workflow_pilot/tests/test_pr_metadata.py"
+        },
+        {
           "command": "python3 -m unittest scripts.docs_check_tests.test_development_workflow_skill -v",
           "evidence": "scripts/docs_check_tests/test_development_workflow_skill.py"
         }

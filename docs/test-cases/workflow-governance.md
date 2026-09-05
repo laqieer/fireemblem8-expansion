@@ -1235,6 +1235,12 @@ the exact branch and head; timeout or ambiguity fails before `gh run watch`.
    This suite invokes `/usr/bin/python3 -I
    scripts/workflow_pilot/isolated_launcher.py pr-metadata` with a deterministic
    fake `gh` for edit, reconcile, and evidence-comment paths.
+   With authenticated read access, run
+   `PR_METADATA_LIVE_REPOSITORY=laqieer/fireemblem8-expansion
+   PR_METADATA_LIVE_PR=202 python3 -m unittest
+   scripts.workflow_pilot.tests.test_pr_metadata.LivePullRequestMetadataQueryTests
+   -v`. This sends only REST/GraphQL reads and executes the exact production
+   metadata-version query against the existing PR.
 2. Exercise a same-head/same-base full Build whose complete exact Build job
    shape is queued. Attempt a default body edit with exact repository, PR,
    head, and base arguments, and confirm the initially active Build takes one
@@ -1332,6 +1338,10 @@ can authorize mutation or reconciliation. Header parsing permits only
 consistent LF/CRLF framing and visible ASCII with SP-only value separation.
 The marked comment author must match the exact owner numeric user ID as well
 as owner login/type/site-admin/association.
+The GraphQL `Actor` selections request `__typename` and `login` on the
+interface, and request `databaseId` only through `... on User` inline
+fragments. User actors retain exact numeric-ID/login binding; bot, deleted,
+null, and wrong-ID actors fail wherever owner edit authority is required.
 Exact-head runs use typed `explicit-same`, `explicit-other`, and `unbound`
 binding states. Active unbound runs block; terminal unbound runs cannot provide
 evidence; explicit-other runs are ignored only after full validation; multiple

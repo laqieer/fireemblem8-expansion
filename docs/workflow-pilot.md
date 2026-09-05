@@ -530,6 +530,13 @@ owner-authored GitHub comments rather than a local receipt:
 The command returns only validated intent and confirmation comment IDs/URLs.
 No caller-authored receipt file or mutable local ledger exists.
 
+GitHub's GraphQL `Actor` interface exposes `__typename` and `login`, but not
+`databaseId` directly. The production query therefore selects
+`editor { __typename login ... on User { databaseId } }` and the same shape
+for `RenamedTitleEvent.actor`. Owner authority requires the `User` fragment's
+exact numeric ID and login; bots and deleted/null actors cannot authorize the
+requested edit.
+
 ```json
 {
   "base_sha": "<40-lowercase-hex>",

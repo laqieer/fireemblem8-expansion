@@ -3007,6 +3007,80 @@ class PullRequestMetadataTests(unittest.TestCase):
                         version=version,
                     )
 
+    def test_metadata_version_actor_interface_variants_fail_closed(self):
+        state = _pr()
+        cases = {}
+        body_bot = _graphql_payload(state, _metadata_version())
+        body_bot["data"]["repository"]["pullRequest"]["editor"] = {
+            "__typename": "Bot",
+            "login": "automation[bot]",
+        }
+        cases["body-bot"] = body_bot
+        body_deleted = _graphql_payload(state, _metadata_version())
+        body_deleted["data"]["repository"]["pullRequest"]["editor"] = None
+        cases["body-deleted"] = body_deleted
+        title_bot = _graphql_payload(state, _metadata_version())
+        title_bot["data"]["repository"]["pullRequest"]["timelineItems"][
+            "nodes"
+        ][0]["actor"] = {
+            "__typename": "Bot",
+            "login": "automation[bot]",
+        }
+        cases["title-bot"] = title_bot
+        for name, payload in cases.items():
+            with self.subTest(case=name):
+                client = ScriptedClient()
+                client.add("POST", "graphql", _response(payload))
+                with self.assertRaises(pr_metadata.MetadataEditError):
+                    pr_metadata.fetch_metadata_version(
+                        client,
+                        pr_metadata._parse_pull_request_payload(
+                            state,
+                            REPOSITORY,
+                            PR_NUMBER,
+                        ),
+                    )
+
+        title_deleted = _graphql_payload(
+            state,
+            _metadata_version(
+                title_actor_id=None,
+                title_actor_login=None,
+            ),
+        )
+        title_deleted["data"]["repository"]["pullRequest"]["timelineItems"][
+            "nodes"
+        ][0]["actor"] = None
+        client = ScriptedClient()
+        client.add("POST", "graphql", _response(title_deleted))
+        version = pr_metadata.fetch_metadata_version(
+            client,
+            pr_metadata._parse_pull_request_payload(
+                state,
+                REPOSITORY,
+                PR_NUMBER,
+            ),
+        )
+        self.assertIsNone(version.title_actor_id)
+        self.assertIsNone(version.title_actor_login)
+        receipt = _receipt(
+            requested_fields={"title": _sha256("Stable title")},
+        )
+        with self.assertRaisesRegex(
+            pr_metadata.MetadataEditError,
+            "title metadata version does not uniquely attest",
+        ):
+            pr_metadata._confirmation_for_target(
+                receipt,
+                intent_comment_id=401,
+                state=pr_metadata._parse_pull_request_payload(
+                    state,
+                    REPOSITORY,
+                    PR_NUMBER,
+                ),
+                version=version,
+            )
+
     def test_same_second_body_version_ambiguity_fails_closed(self):
         client = ScriptedClient()
         _add_pr_states(client, _pr())
@@ -4650,6 +4724,44 @@ class PullRequestMetadataTests(unittest.TestCase):
             "timestamp",
         )
         self.assertEqual(parsed.hour, 23)
+
+    def test_graphql_actor_interfaces_use_user_inline_fragments(self):
+        query = "".join(pr_metadata.METADATA_VERSION_QUERY.split())
+        self.assertIn(
+            "editor{__typenamelogin...onUser{databaseId}}",
+            query,
+        )
+        self.assertIn(
+            "actor{__typenamelogin...onUser{databaseId}}",
+            query,
+        )
+        self.assertNotIn("editor{__typenamedatabaseId", query)
+        self.assertNotIn("actor{__typenamedatabaseId", query)
+
+
+@unittest.skipUnless(
+    os.environ.get("PR_METADATA_LIVE_REPOSITORY")
+    and os.environ.get("PR_METADATA_LIVE_PR"),
+    "set PR_METADATA_LIVE_REPOSITORY and PR_METADATA_LIVE_PR",
+)
+class LivePullRequestMetadataQueryTests(unittest.TestCase):
+    def test_actual_metadata_version_query_parses_existing_pull_request(self):
+        repository = os.environ["PR_METADATA_LIVE_REPOSITORY"]
+        pr_number = int(os.environ["PR_METADATA_LIVE_PR"])
+        client = pr_metadata.GitHubClient(pr_metadata._resolve_gh())
+        state = pr_metadata.fetch_pull_request(
+            client,
+            repository,
+            pr_number,
+        )
+        version = pr_metadata.fetch_metadata_version(client, state)
+        self.assertIsInstance(version, pr_metadata.MetadataVersion)
+        if version.title_actor_id is not None:
+            self.assertGreater(version.title_actor_id, 0)
+            self.assertTrue(version.title_actor_login)
+        if version.body_last_edited_at is not None:
+            self.assertGreater(version.body_editor_id, 0)
+            self.assertTrue(version.body_editor_login)
 
 
 class PullRequestMetadataLauncherTests(unittest.TestCase):

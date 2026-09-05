@@ -4623,6 +4623,8 @@ printf '%s\t%s\t%s\n' "$result" \
             '"title_actor_login": "owner"',
             "two append-only",
             "same-second body authority",
+            "editor { __typename login ... on User { databaseId } }",
+            "RenamedTitleEvent.actor",
         ):
             with self.subTest(pilot_requirement=requirement):
                 self.assertIn(
@@ -4672,6 +4674,9 @@ printf '%s\t%s\t%s\n' "$result" \
             "later direct metadata edit",
             "edit-and-revert",
             "PATCH success followed by failed/indeterminate confirmation",
+            "databaseId` only through `... on User` inline fragments",
+            "bot, deleted, null, and wrong-ID actors",
+            "LivePullRequestMetadataQueryTests",
             "No ARM runtime test is needed",
             "There is no manual-only criterion",
         ):
