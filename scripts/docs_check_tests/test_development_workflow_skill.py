@@ -4732,12 +4732,12 @@ printf '%s\t%s\t%s\n' "$result" \
         )
         for requirement in (
             "isolated launcher suites",
-            "final pre-PATCH refetch",
+            "final complete GraphQL",
             "immutable abort",
             "zero PATCH",
-            "maybe-created",
-            "unsafe abort retry",
-            "non-atomic",
+            "successor intents",
+            "non-owner transaction marker text",
+            "irreducible request window",
         ):
             with self.subTest(registry_requirement=requirement):
                 self.assertIn(normalize_policy(requirement), indexed_contract)

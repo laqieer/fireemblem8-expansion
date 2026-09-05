@@ -1298,6 +1298,16 @@ the exact branch and head; timeout or ambiguity fails before `gh run watch`.
    abort comment. Replay maybe-created, duplicate, forged, edited, and
    contradictory abort comments; malformed historical abort markers remain
    fatal.
+   Assert the production GraphQL call is the final network request immediately
+   before PATCH. Inject drift during the last run/comment response and expose
+   it in that GraphQL response; require zero PATCH.
+   Retry an aborted intent: target-match follows no-op/refusal, while a
+   remaining change creates a fresh ordered successor intent with a distinct
+   nonce.
+   Place malformed intent/confirmation/abort marker-like text from
+   contributor, bot, deleted, and non-owner comments before and after valid
+   owner transactions; require it to be ignored. Owner malformed markers
+   remain fatal.
 4. Update a synthetic canonical marked evidence comment owned by the
    repository owner while the same full Build is active.
 5. Replay stale head/base before edit and reconciliation, post-edit identity
@@ -1405,11 +1415,16 @@ predate intent.
 An authoritative-pair no-op additionally requires the exact
 confirmation-bound metadata run to pass canonical completed-success
 validation; visible active/failure states defer with reconciliation guidance.
-The final pre-PATCH revalidation refetches PR, run, metadata-version, and
-transaction-comment authority. Drift emits an immutable abort/supersession
-comment and zero PATCH. The final GET/PATCH window is explicitly non-atomic;
-strict PATCH-response candidate and complete-state attestation detects any
-resulting drift rather than claiming atomicity.
+The final pre-PATCH revalidation completes run and transaction-comment
+authority first, then performs one complete GraphQL
+repository/owner/PR/ref/metadata/version request as the final network operation
+before PATCH. Drift emits an immutable abort/supersession comment and zero
+PATCH. The final GraphQL/PATCH window is explicitly non-atomic; strict
+PATCH-response candidate and complete-state attestation detects any resulting
+drift rather than claiming atomicity. Abort closes only its intent; a remaining
+change creates a newer successor intent, while target-match follows normal
+no-op/refusal behavior. Non-owner marker-like text is ordinary ignored content
+and cannot enter protected parsing; owner malformed records remain fatal.
 Full authorization and transaction metadata selection are independent. The
 newest exact full run must be canonical success, but the transaction metadata
 run is selected solely by explicit-same metadata shape and run number above

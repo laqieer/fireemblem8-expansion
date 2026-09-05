@@ -684,7 +684,9 @@ already equals pre-state, no intent is created and authoritative no-op
 semantics apply.
 
 Immediately before PATCH, the helper refetches complete PR, run, metadata
-version, and transaction-comment authority. Any candidate, pre-state,
+and transaction-comment authority, then makes one final complete
+repository/owner/PR/ref/title/body/editor/title-event/UserContentEdit GraphQL
+request as the last network operation before PATCH. Any candidate, pre-state,
 provided-field, version, run-snapshot, or active-intent drift creates an
 immutable owner-authored abort comment and performs zero PATCH. Abort comments
 reference the exact intent ID/nonce and observed state/version, are never
@@ -693,6 +695,20 @@ or safely attempts the same abort again; malformed, duplicate, forged, or
 contradictory aborts are fatal. This still cannot make the final GET and PATCH
 atomic. The authoritative PATCH response's exact head/base and complete
 title/body attestation detects drift occurring in that irreducible window.
+
+A valid abort closes only its referenced intent. On a later invocation, an
+unchanged target follows ordinary authoritative-pair/no-op/refusal behavior;
+a remaining real target change creates a strictly newer successor intent with
+a fresh nonce. The successor must order after the abort and is independently
+revalidated before PATCH. Repeated drift therefore produces bounded
+intent/abort generations rather than permanently blocking the candidate.
+
+Comment identity/body/timestamps are always validated. Protected transaction
+parsing is applied only after exact repository-owner numeric ID/login,
+`User`/`OWNER`, and non-site-admin authentication. Marker-like text from a
+contributor, bot, deleted account, or other non-owner is ordinary ignored
+comment content and cannot poison transaction history. An owner-authored
+malformed protected marker remains fatal.
 
 Every successful title/body update returns this reconciliation command. The
 second run snapshot closes the deterministic pre-PATCH run-state race; only an

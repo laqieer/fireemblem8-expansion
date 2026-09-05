@@ -71,10 +71,15 @@ METADATA_VERSION_QUERY = """query($owner:String!,$name:String!,$number:Int!){
   repository(owner:$owner,name:$name){
     databaseId
     nameWithOwner
+    owner{__typename login ... on User{databaseId}}
     pullRequest(number:$number){
+      id
+      databaseId
       baseRefOid
+      baseRefName
       body
       headRefOid
+      headRefName
       lastEditedAt
       number
       title
@@ -108,10 +113,13 @@ class PullRequestState:
     repository: str
     repository_id: int
     repository_owner_id: int
+    pull_request_id: int
+    pull_request_node_id: str
     number: int
     head_sha: str
     head_ref: str
     base_sha: str
+    base_ref: str
     title: str
     body: str | None
     updated_at: datetime.datetime
@@ -127,6 +135,7 @@ class CommentState:
     author_id: int | None
     author_login: str | None
     author_type: str | None
+    author_site_admin: bool | None
     author_association: str | None
     created_at: datetime.datetime
     updated_at: datetime.datetime
@@ -1405,6 +1414,11 @@ def _parse_pull_request_payload(
         raise MetadataEditError("pull request response must be an object")
     if _positive_int(payload.get("number"), "pull request number") != pr_number:
         raise MetadataEditError("pull request number drifted")
+    pull_request_id = _positive_int(payload.get("id"), "pull request id")
+    pull_request_node_id = _text(
+        payload.get("node_id"),
+        "pull request node id",
+    )
     _require_api_url(
         payload.get("url"),
         _endpoint(repository, f"pulls/{pr_number}"),
@@ -1448,7 +1462,7 @@ def _parse_pull_request_payload(
         "pull request repository owner id",
     )
     head_ref = _text(head.get("ref"), "pull request head ref")
-    _text(base.get("ref"), "pull request base ref")
+    base_ref = _text(base.get("ref"), "pull request base ref")
     title = _text(payload.get("title"), "pull request title")
     body = payload.get("body")
     if body is not None and not isinstance(body, str):
@@ -1461,10 +1475,13 @@ def _parse_pull_request_payload(
         repository=repository,
         repository_id=repository_id,
         repository_owner_id=repository_owner_id,
+        pull_request_id=pull_request_id,
+        pull_request_node_id=pull_request_node_id,
         number=pr_number,
         head_sha=_sha(head.get("sha"), "pull request head"),
         head_ref=head_ref,
         base_sha=_sha(base.get("sha"), "pull request base"),
+        base_ref=base_ref,
         title=title,
         body=body,
         updated_at=updated_at,
@@ -1696,14 +1713,28 @@ def fetch_metadata_version(
         or repository.get("nameWithOwner") != state.repository
     ):
         raise MetadataEditError("metadata version repository identity drifted")
+    owner_id, owner_login = _graphql_user(
+        repository.get("owner"),
+        label="metadata version repository owner",
+        required=True,
+    )
+    if (
+        owner_id != state.repository_owner_id
+        or owner_login != state.repository.split("/", 1)[0]
+    ):
+        raise MetadataEditError("metadata version repository owner drifted")
     pull = repository.get("pullRequest")
     if (
         not isinstance(pull, dict)
+        or pull.get("databaseId") != state.pull_request_id
+        or pull.get("id") != state.pull_request_node_id
         or pull.get("number") != state.number
         or pull.get("url")
         != f"https://github.com/{state.repository}/pull/{state.number}"
         or pull.get("headRefOid") != state.head_sha
+        or pull.get("headRefName") != state.head_ref
         or pull.get("baseRefOid") != state.base_sha
+        or pull.get("baseRefName") != state.base_ref
         or pull.get("title") != state.title
         or pull.get("body") != state.body
     ):
@@ -3223,20 +3254,47 @@ def edit_metadata(
                 "active metadata edit intent matches neither pre-state nor target"
             )
     elif latest_abort_comment is not None:
-        return Decision(
-            action="deferred",
-            base_sha=base_sha,
-            guidance=(),
-            head_sha=head_sha,
-            mutated=False,
-            reason="latest exact-candidate metadata intent is aborted",
-            repository=repository,
-            pr_number=pr_number,
-            intent_comment_id=latest_intent_comment.comment_id,
-            intent_comment_url=latest_intent_comment.html_url,
-            abort_comment_id=latest_abort_comment.comment_id,
-            abort_comment_url=latest_abort_comment.html_url,
+        if initially_matches:
+            return Decision(
+                action="refused",
+                base_sha=base_sha,
+                guidance=(),
+                head_sha=head_sha,
+                mutated=False,
+                reason=(
+                    "matching metadata has no non-aborted authoritative pair"
+                ),
+                repository=repository,
+                pr_number=pr_number,
+            )
+        previous_intent = intent
+        intent = _edit_receipt(
+            current,
+            current_runs,
+            title=title,
+            body=body,
+            pre_version=current_version,
+            provided_fields=provided_fields,
+            changed_fields=_changed_field_digests(
+                current,
+                title=title,
+                body=body,
+            ),
         )
+        if previous_intent is not None and intent.nonce == previous_intent.nonce:
+            raise MetadataEditError("successor intent reused an aborted nonce")
+        latest_intent_comment = _create_intent_comment(
+            client,
+            current,
+            intent,
+        )
+        if (
+            latest_intent_comment.created_at < latest_abort_comment.created_at
+            or latest_intent_comment.comment_id <= latest_abort_comment.comment_id
+        ):
+            raise MetadataEditError(
+                "successor intent is not ordered after its abort"
+            )
     elif initially_matches:
         if (
             intent is None
@@ -3346,17 +3404,15 @@ def edit_metadata(
     if intent is None or latest_intent_comment is None:
         raise MetadataEditError("metadata edit intent state is incomplete")
     if patch_required:
-        fresh = fetch_pull_request(client, repository, pr_number)
-        fresh_runs = list_candidate_runs(client, fresh)
-        fresh_version = fetch_metadata_version(client, fresh)
+        fresh_runs = list_candidate_runs(client, current)
         fresh_intents, fresh_confirmations, fresh_aborts = _transaction_comments(
             client,
-            fresh,
+            current,
         )
         fresh_latest = _latest_intent(
             _candidate_intents(
                 fresh_intents,
-                fresh,
+                current,
                 fresh_runs[0].workflow_id if fresh_runs else 0,
             )
         )
@@ -3377,20 +3433,7 @@ def edit_metadata(
                 abort_comment_url=existing_abort.html_url,
             )
         reason = None
-        if (
-            not _same_pr_contract(current, fresh)
-            or fresh.head_sha != intent.head_sha
-            or fresh.base_sha != intent.base_sha
-        ):
-            reason = "candidate-drift"
-        elif not _receipt_matches_pre_state(intent, fresh, fresh_version):
-            reason = (
-                "metadata-version-drift"
-                if _metadata_digest(fresh.title, fresh.body)
-                == intent.pre_metadata_sha256
-                else "pre-state-drift"
-            )
-        elif fresh_runs != current_runs:
+        if fresh_runs != current_runs:
             reason = "run-authority-drift"
         elif (
             fresh_latest is None
@@ -3400,13 +3443,34 @@ def edit_metadata(
             reason = "transaction-drift"
         elif essential_reason is None and _blocking_active_runs(fresh_runs):
             reason = "run-authority-drift"
+        final_version = None
+        if reason is None:
+            try:
+                final_version = fetch_metadata_version(client, current)
+            except MetadataEditError:
+                reason = "candidate-drift"
+        if (
+            reason is None
+            and final_version is not None
+            and not _receipt_matches_pre_state(
+                intent,
+                current,
+                final_version,
+            )
+        ):
+            reason = (
+                "metadata-version-drift"
+                if _metadata_digest(current.title, current.body)
+                == intent.pre_metadata_sha256
+                else "pre-state-drift"
+            )
         if reason is not None:
             abort_comment = _create_abort_comment(
                 client,
-                fresh,
+                current,
                 latest_intent_comment,
                 intent,
-                observed_version=fresh_version,
+                observed_version=final_version or current_version,
                 reason=reason,
             )
             return Decision(
@@ -3964,6 +4028,7 @@ def _parse_comment_payload(
     author_id = None
     author_login = None
     author_type = None
+    author_site_admin = None
     association = None
     if user is not None:
         if not isinstance(user, dict):
@@ -3986,15 +4051,29 @@ def _parse_comment_payload(
             raise MetadataEditError(
                 f"pull request comment {comment_id} site_admin is invalid"
             )
+        author_site_admin = user["site_admin"]
     if association_raw is not None:
         association = _text(
             association_raw,
             f"pull request comment {comment_id} author association",
         )
+    is_owner = (
+        author_id == repository_owner_id
+        and author_login == owner
+        and author_type == "User"
+        and isinstance(user, dict)
+        and user.get("site_admin") is False
+        and association == "OWNER"
+    )
     evidence_marker_count = body.count(EVIDENCE_MARKER)
     intent_marker_count = body.count(INTENT_MARKER)
     confirmation_marker_count = body.count(CONFIRMATION_MARKER)
     abort_marker_count = body.count(ABORT_MARKER)
+    if not is_owner:
+        evidence_marker_count = 0
+        intent_marker_count = 0
+        confirmation_marker_count = 0
+        abort_marker_count = 0
     marker_kinds = sum(
         bool(count)
         for count in (
@@ -4026,14 +4105,7 @@ def _parse_comment_payload(
             raise MetadataEditError(
                 "protected comment marker is duplicated or embedded"
             )
-        if (
-            author_id != repository_owner_id
-            or author_login != owner
-            or author_type != "User"
-            or not isinstance(user, dict)
-            or user.get("site_admin") is not False
-            or association != "OWNER"
-        ):
+        if not is_owner:
             raise MetadataEditError(
                 f"pull request comment {comment_id} author is not the repository owner"
             )
@@ -4073,6 +4145,7 @@ def _parse_comment_payload(
         author_id=author_id,
         author_login=author_login,
         author_type=author_type,
+        author_site_admin=author_site_admin,
         author_association=association,
         created_at=created_at,
         updated_at=updated_at,
@@ -4365,6 +4438,14 @@ def update_evidence_comment(
     )
     marked = []
     for comment in comments:
+        if (
+            comment.author_id != initial.repository_owner_id
+            or comment.author_login != initial.repository.split("/", 1)[0]
+            or comment.author_type != "User"
+            or comment.author_site_admin is not False
+            or comment.author_association != "OWNER"
+        ):
+            continue
         occurrences = comment.body.count(EVIDENCE_MARKER)
         if occurrences == 0:
             continue

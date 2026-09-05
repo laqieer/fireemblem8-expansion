@@ -174,11 +174,20 @@ def _graphql_payload(
             "repository": {
                 "databaseId": state["base"]["repo"]["id"],
                 "nameWithOwner": state["base"]["repo"]["full_name"],
+                "owner": {
+                    "__typename": "User",
+                    "databaseId": OWNER_ID,
+                    "login": owner,
+                },
                 "pullRequest": {
+                    "id": state["node_id"],
+                    "databaseId": state["id"],
                     "baseRefOid": state["base"]["sha"],
+                    "baseRefName": state["base"]["ref"],
                     "body": state["body"],
                     "editor": editor,
                     "headRefOid": state["head"]["sha"],
+                    "headRefName": state["head"]["ref"],
                     "lastEditedAt": version.body_last_edited_at,
                     "number": state["number"],
                     "timelineItems": {"nodes": nodes},
@@ -254,6 +263,8 @@ def _pr(
     updated_at: str = "2026-09-04T00:00:00Z",
 ) -> dict:
     return {
+        "id": 9001,
+        "node_id": "PR_node_199",
         "number": PR_NUMBER,
         "state": "open",
         "title": title,
@@ -2286,7 +2297,7 @@ class PullRequestMetadataTests(unittest.TestCase):
             for call in client.calls
             if call[:2] == ("GET", _endpoint(f"pulls/{PR_NUMBER}"))
         ]
-        self.assertEqual(len(pr_gets), 3)
+        self.assertEqual(len(pr_gets), 2)
         patch_index = next(
             index
             for index, call in enumerate(client.calls)
@@ -2803,7 +2814,7 @@ class PullRequestMetadataTests(unittest.TestCase):
             == ("POST", _endpoint(f"issues/{PR_NUMBER}/comments"))
             and pr_metadata.ABORT_MARKER in call[2]["body"]
         )
-        self.assertIn("pre-state-drift", abort_call[2]["body"])
+        self.assertIn("candidate-drift", abort_call[2]["body"])
 
     def test_no_op_requires_and_returns_authoritative_pair(self):
         receipt = _receipt()
@@ -3169,6 +3180,60 @@ class PullRequestMetadataTests(unittest.TestCase):
                 body="Stable body",
                 essential_reason=None,
             )
+
+    def test_nonowner_marker_text_cannot_poison_transactions(self):
+        receipt = _receipt()
+        confirmation = _confirmation(receipt)
+        comments = []
+        for index, marker in enumerate(
+            (
+                pr_metadata.INTENT_MARKER,
+                pr_metadata.CONFIRMATION_MARKER,
+                pr_metadata.ABORT_MARKER,
+            ),
+            1,
+        ):
+            comments.append(
+                _comment(
+                    300 + index,
+                    f"{marker}\nmalformed attacker text\n",
+                    author_id=OWNER_ID + index,
+                    author_login=f"attacker{index}",
+                    author_association="CONTRIBUTOR",
+                )
+            )
+        comments.extend(
+            [
+                _intent_comment(receipt),
+                _confirmation_comment(confirmation),
+            ]
+        )
+        comments.append(
+            _comment(
+                399,
+                f"{pr_metadata.INTENT_MARKER}\nlate bot poison\n",
+                author_login="automation[bot]",
+                author_type="Bot",
+                author_association="NONE",
+            )
+        )
+        client = ScriptedClient()
+        _add_pr_states(client, _pr())
+        _add_snapshot(
+            client,
+            [
+                _run(202, 11, mode="metadata-only", success=True),
+                _run(101, 10, mode="full"),
+            ],
+        )
+        decision = _reconcile(
+            client,
+            receipt=receipt,
+            confirmation=confirmation,
+            comments=comments,
+        )
+        self.assertEqual(decision.action, "complete")
+        self.assertEqual(decision.run_id, 202)
 
     def test_stale_new_candidate_is_rejected_before_run_queries(self):
         client = ScriptedClient()
@@ -4028,9 +4093,13 @@ class PullRequestMetadataTests(unittest.TestCase):
         )
         abort = _abort(receipt)
         client = ScriptedClient()
-        _add_pr_states(client, _pr(), _pr())
+        target_state = _pr(body="new body")
+        _add_pr_states(client, target_state, target_state)
         _add_snapshot(client, [_run(101, 10, mode="full")], copies=2)
-        _add_metadata_versions(client, (_pr(), _metadata_version()))
+        _add_metadata_versions(
+            client,
+            (target_state, _confirmation(receipt).metadata_version),
+        )
         client.add(
             "GET",
             _query(
@@ -4049,8 +4118,7 @@ class PullRequestMetadataTests(unittest.TestCase):
             body="new body",
             essential_reason=None,
         )
-        self.assertEqual(decision.action, "deferred")
-        self.assertEqual(decision.abort_comment_id, 403)
+        self.assertEqual(decision.action, "refused")
         self.assertFalse(
             any(method == "PATCH" for method, _endpoint, _body in client.calls)
         )
@@ -5677,7 +5745,7 @@ class PullRequestMetadataTests(unittest.TestCase):
             (
                 "author",
                 _comment(301, desired, author_id=88),
-                "repository owner",
+                "did not attest",
             ),
         ):
             with self.subTest(mismatch=name):
@@ -6387,13 +6455,7 @@ class PullRequestMetadataLauncherTests(unittest.TestCase):
                 input_text=None,
                 echo_body=True,
             ),
-            _cli_api_call(
-                "GET",
-                _endpoint(f"pulls/{PR_NUMBER}"),
-                payload=_pr(),
-            ),
             *_cli_snapshot_calls([successful_full]),
-            _cli_metadata_version_call(_pr(), _metadata_version()),
             _cli_api_call(
                 "GET",
                 _query(
@@ -6410,6 +6472,7 @@ class PullRequestMetadataLauncherTests(unittest.TestCase):
                 ],
                 echo_last_comment=True,
             ),
+            _cli_metadata_version_call(_pr(), _metadata_version()),
             _cli_api_call(
                 "PATCH",
                 _endpoint(f"pulls/{PR_NUMBER}"),
@@ -6496,6 +6559,9 @@ class PullRequestMetadataLauncherTests(unittest.TestCase):
             for record in records
             if record["method"] == "PATCH"
         )
+        patch_index = records.index(patch_record)
+        self.assertEqual(records[patch_index - 1]["endpoint"], "graphql")
+        self.assertEqual(records[patch_index - 1]["method"], "POST")
         self.assertEqual(
             json.loads(patch_record["input"]),
             {"body": body, "title": "CLI title"},
