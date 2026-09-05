@@ -1468,7 +1468,7 @@ namespaces. See the [foundation contract](../ownership-probe-foundation.md).
 No ROM, emulator, credentials, remote workflow or feature flag is required.
 Start from a clean checkout; fixtures use only ignored `build/test-artifacts`.
 
-### Actions and expected result
+### Actions
 
 1. Run `make -f scripts/validation_ownership/foundation.mk ownership-probe-check`.
    Inspect the returned native `localization-check` dependency on
@@ -1517,8 +1517,23 @@ Start from a clean checkout; fixtures use only ignored `build/test-artifacts`.
    Writable protection upgrades, remap clones/fixed/DONTUNMAP aliases and
    alternate memory APIs reject. Private COW fork, ordinary private resize,
    read-only source mmap and suspended-parent native spawn remain positive.
+8. The bootstrap controls reproduce a nondumpable stopped child and a
+   pathname ending at an unmapped page. The old memory reads fail with `EIO`.
+   Post-drop observation must work without restoring credentials/capabilities,
+   and NUL-terminated boundary strings must read correctly while malformed
+   UTF-8 and overlong paths still reject. Every control reaps its own child.
 
-### Negative controls
+### Expected result
+
+The real consumer reports the native localization prerequisite and exactly the
+declared chapterbundle source. Candidate programs cannot forge observation
+channels or hide undeclared source access; unsupported aliases, shared mutable
+memory and resource exhaustion reject before unsafe work proceeds. Immutable
+source mmap, private COW fork and valid boundary pathnames remain supported.
+Execution snapshots change independently of unrelated semantic owner identity,
+and every failure clears owned processes, channels, mappings and caches.
+
+### Negative control
 
 The pre-fix native Make processes really forge the inherited test channel;
 unconfined source functions really read/stat/enumerate undeclared fixture
@@ -1534,6 +1549,13 @@ entries. The frozen process regressions fail against that guard. Their benign
 unconfined mapping controls use only owned buffers, fixture paths and reaped
 child PIDs; no timed race against unrelated host data or process is required.
 
+### Interactions and save compatibility
+
+This host-only contract changes no save, migration, config identity, generated
+game content, localization, modern/archival behavior or ROM/RAM. Other feature
+interactions: none. The authority and existing generated-registry schema stay
+shared; PR186/#180 must still perform their downstream graph adoption.
+
 ### Automation
 
 `python3 -m unittest scripts.validation_ownership.tests.test_foundation -v`
@@ -1546,9 +1568,7 @@ No subjective/manual-only criterion applies.
 
 Fixtures and session channels are removed automatically. Remove the empty
 `build/test-artifacts/ownership-foundation-tests` parent if desired. No remote
-state is read or changed. This host-only contract changes no save, migration,
-config identity, generated game content, localization, modern/archival
-behavior or ROM/RAM. Other feature interactions: none.
+state is read or changed.
 
 The introducing root does not claim PR186's full graph, domain matrix, oracle,
 lifecycle or absent-on-master `validation-ownership-check` target. Those remain

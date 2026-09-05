@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import ctypes
+import errno
 import hashlib
 import json
 import os
@@ -10,6 +12,7 @@ import subprocess
 import threading
 import time
 import unittest
+from contextlib import contextmanager
 from pathlib import Path
 from unittest.mock import patch
 
@@ -53,6 +56,82 @@ class FoundationTests(unittest.TestCase):
         self.assertIsNone(session.snapshot)
         self.assertIsNone(session.base)
         self.assertFalse(self.scratch.exists())
+
+    @contextmanager
+    def stopped_tracee(self, setup):
+        from scripts.validation_ownership.syscall_guard import ptrace, SETOPTIONS
+        child = os.fork()
+        if child == 0:
+            try:
+                setup()
+                os._exit(0)
+            except BaseException:
+                os._exit(125)
+        stopped = False
+        try:
+            waited, status = os.waitpid(child, 0)
+            self.assertEqual(waited, child)
+            stopped = os.WIFSTOPPED(status)
+            self.assertTrue(stopped, status)
+            ptrace(SETOPTIONS, child, 0, 0x100000)
+            yield child
+        finally:
+            if stopped:
+                os.kill(child, signal.SIGKILL)
+                os.waitpid(child, 0)
+
+    def test_ptrace_bootstrap_restores_post_drop_memory_observation(self):
+        from scripts.validation_ownership.syscall_guard import memory, ptrace, trace_me, TRACEME
+        libc = ctypes.CDLL(None, use_errno=True)
+        buffer = ctypes.create_string_buffer(b"owned")
+        def drop_dumpability():
+            if libc.prctl(4, 0, 0, 0, 0):
+                raise OSError(ctypes.get_errno(), "cannot model post-setuid dumpability")
+        def previous_bootstrap():
+            drop_dumpability()
+            ptrace(TRACEME, 0)
+            os.kill(os.getpid(), signal.SIGSTOP)
+        with self.stopped_tracee(previous_bootstrap) as child:
+            with self.assertRaises(OSError) as caught:
+                memory(child, ctypes.addressof(buffer), 6)
+            self.assertEqual(caught.exception.errno, errno.EIO)
+        with self.stopped_tracee(lambda: trace_me(drop_dumpability)) as child:
+            self.assertEqual(memory(child, ctypes.addressof(buffer), 6), b"owned\0")
+
+    def test_ptrace_pathname_stops_at_nul_before_an_unmapped_page(self):
+        from scripts.validation_ownership.syscall_guard import cstring, memory, trace_me, Violation
+        libc = ctypes.CDLL(None, use_errno=True)
+        libc.mmap.restype = ctypes.c_void_p
+        libc.mmap.argtypes = [
+            ctypes.c_void_p, ctypes.c_size_t, ctypes.c_int,
+            ctypes.c_int, ctypes.c_int, ctypes.c_long,
+        ]
+        libc.munmap.argtypes = [ctypes.c_void_p, ctypes.c_size_t]
+        page = os.sysconf("SC_PAGE_SIZE")
+        address = libc.mmap(None, page * 2, 3, 0x22, -1, 0)
+        self.assertNotIn(address, (None, ctypes.c_void_p(-1).value))
+        try:
+            for payload, expected in (
+                (b"end\0", "end"), (b"\xc3\xa9\0", "é"), (b"\0", ""),
+                (b"\xff\0", "strict UTF-8"), (b"x" * 4096, "pathname exceeds bound"),
+            ):
+                with self.subTest(payload_length=len(payload), expected=expected):
+                    start = address + page - len(payload)
+                    ctypes.memmove(start, payload, len(payload))
+                    def unmap_guard_page():
+                        if libc.munmap(address + page, page):
+                            raise OSError(ctypes.get_errno(), "cannot unmap owned guard page")
+                    with self.stopped_tracee(lambda: trace_me(unmap_guard_page)) as child:
+                        with self.assertRaises(OSError) as caught:
+                            memory(child, address + page - 4, 8)
+                        self.assertEqual(caught.exception.errno, errno.EIO)
+                        if payload in (b"\xff\0", b"x" * 4096):
+                            with self.assertRaisesRegex(Violation, expected):
+                                cstring(child, start)
+                        else:
+                            self.assertEqual(cstring(child, start), expected)
+        finally:
+            self.assertEqual(libc.munmap(address, page * 2), 0)
 
     def test_authentic_make_target_and_domain_semantics(self):
         self.add("Makefile", "MODE ?= red\ninclude rules.mk\n")

@@ -59,6 +59,16 @@ threads, untraced/reparenting clones, anonymous executable mappings, ptrace,
 memfds and alternative executable dispatch reject. All failures remain failures
 even if candidate code would otherwise catch an exception.
 
+After dropping privileges, the trusted child bootstrap restores dumpability
+before `TRACEME`; UID/GID, capabilities, `no_new_privs` and the zero core-file
+limit remain unchanged. This permits the parent to observe candidate memory
+without requiring `CAP_SYS_PTRACE`, including after the sudo route's
+credential transition. Candidate `prctl` cannot change that observation state.
+Pathname reads stop at NUL within each aligned ptrace word, so a valid string
+ending at an unmapped page does not require reading the next page. Strict
+UTF-8 and the 4,096-byte pathname bound still apply. Ptrace errors identify
+their request rather than collapsing distinct failures into bare `EIO`.
+
 Candidate `symlink`/`symlinkat` and the entire `rename`/`renameat`/`renameat2`
 family reject before execution. A symlink target is relative to its containing
 directory, not the creating process's cwd; a moved cwd/dirfd ancestor also

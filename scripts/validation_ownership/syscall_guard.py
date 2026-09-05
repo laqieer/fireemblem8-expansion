@@ -57,7 +57,7 @@ def ptrace(request, pid, address=0, data=0):
     )
     error = ctypes.get_errno()
     if result == -1 and error:
-        raise OSError(error, os.strerror(error))
+        raise OSError(error, f"ptrace request {request:#x}: {os.strerror(error)}")
     return result
 
 
@@ -77,8 +77,10 @@ def cstring(pid, address):
     if not address:
         raise Violation("null pathname")
     result = bytearray()
-    for offset in range(0, 4096, 8):
-        word = memory(pid, address + offset, 8)
+    while len(result) < 4096:
+        cursor = address + len(result)
+        count = min(8 - (cursor & 7), 4096 - len(result))
+        word = memory(pid, cursor, count)
         if b"\0" in word:
             result.extend(word.split(b"\0", 1)[0])
             try:
@@ -87,6 +89,17 @@ def cstring(pid, address):
                 raise Violation("pathname is not strict UTF-8") from error
         result.extend(word)
     raise Violation("pathname exceeds bound")
+
+
+def trace_me(drop_privileges):
+    drop_privileges()
+    # setuid/setgid in the sudo route clears dumpability. TRACEME alone does
+    # not restore the parent's memory access without CAP_SYS_PTRACE.
+    if LIBC.prctl(4, 1, 0, 0, 0):  # PR_SET_DUMPABLE; credentials/caps stay dropped
+        error = ctypes.get_errno()
+        raise OSError(error, "cannot restore tracee memory observation")
+    ptrace(TRACEME, 0)
+    os.kill(os.getpid(), signal.SIGSTOP)
 
 
 def signed(value):
@@ -650,9 +663,7 @@ def supervise(config, drop_privileges):
             resource.setrlimit(resource.RLIMIT_STACK, (16 * 1024 * 1024, 16 * 1024 * 1024))
             cpu = max(1, math.ceil(config["deadline"] - time.monotonic()))
             resource.setrlimit(resource.RLIMIT_CPU, (cpu, cpu))
-            drop_privileges()
-            ptrace(TRACEME, 0)
-            os.kill(os.getpid(), signal.SIGSTOP)
+            trace_me(drop_privileges)
             os.execve(config["argv"][0], config["argv"], config["environment"])
         except BaseException as failure:
             os.write(2, ("capsule exec failed: " + repr(failure)).encode("utf-8")[:4096])
