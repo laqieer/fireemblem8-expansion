@@ -67,8 +67,14 @@ symlinked, hardlinked, executable-mode-changed, or redirected inputs reject.
 It compares both the trusted source checkout and the selected checkout to that
 tree **before importing local authority modules**. The isolated CLI then
 compiles the same captured, verified bytes through a source-only loader for
-the complete closure, including package initializers. It neither consults
-bytecode/extension caches nor reopens source paths after verification;
+the importable authority closure, including package initializers. The
+canonical `Program` payload (`PROGRAM_PATH`) and embedded workflow programs
+remain captured data for staging and AST inspection, not importable modules.
+Even a committed package initializer importing `publisher_programs` rejects
+before that program executes. The authority CLI is itself a registered
+`Program`, but remains an authority entry point, not a data-only payload.
+The source-only loader neither consults repository bytecode/extension caches
+nor reopens repository source paths after verification;
 previously imported repository modules cannot substitute for the captured
 ones. `-I -S` alone does not exclude adjacent unchecked-hash Python caches,
 and `-B` only disables cache writes, not reads. `bind_exact_tree` is a data
@@ -99,8 +105,33 @@ Import-time policy permits only the captured repository module set and
 standard-library modules from trusted interpreter directories, built-ins or
 frozen modules. It checks cached imports too; dynamic `builtins.__import__`
 and `importlib.import_module` cannot fall back to ambient packages, custom
-finders, or repository/site-package standard-library shadows. Git blob sizes
-are queried and capped at 1 MiB **before** a bounded content read.
+finders, or repository/site-package standard-library shadows.
+
+An execution audit enforces the same source authority independently of import
+syntax or loader method spelling. Direct, aliased, or previously bound loaders
+and already compiled code cannot execute ambient Python or data-only programs.
+Executed code must match code compiled from the captured authority source,
+installed system standard-library source, or the interpreter's frozen module.
+An allowed filename alone is insufficient: substituted source, unchecked-hash
+caches and sourceless bytecode with forged filenames reject before executing.
+Direct native imports also require a system standard-library name and origin.
+Anonymous code generation, such as `dataclasses` and `collections.namedtuple`,
+requires observed compilation and matching execution in the same verified
+stdlib frame; a loader handling anonymous cached bytecode does not qualify.
+The audit is active only during the source-only validation context.
+
+This is a **module/code-origin boundary, not a malicious-Python sandbox**.
+The launcher, reviewed exact-tree authority, interpreter and installed system
+stdlib are trusted. Validation is single-threaded; it does not contain
+deliberate in-process policy tampering, arbitrary already-running Python
+callbacks, or unsafe actions requested through trusted native/process/code
+generation APIs. Those are review and publisher-isolation responsibilities,
+not guarantees supplied by import hooks or audit events. No second program
+registry or filename blacklist authorizes code: the existing canonical program
+source stays data, and executable code is derived from the captured import
+closure and trusted interpreter sources.
+
+Git blob sizes are queried and capped at 1 MiB **before** a bounded content read.
 
 From a clean source checkout at the exact candidate:
 

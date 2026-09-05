@@ -56,8 +56,12 @@ workflow, using credentials, or changing ROM behavior.
    literal input path, bounded read and absence of success output.
 6. Confirm every consumed module rejects dirty content, deletion, symlink and
    mode drift. Added package imports must also belong to the selected tree;
-   unknown/dynamic imports and Git-environment redirection fail. A hostile
-   target program is inspected as data and never executes.
+   imports outside captured authority or trusted stdlib and Git-environment
+   redirection fail. All data-only `Program` sources stay captured for staging
+   and AST inspection but absent from importable authority. A fixture commits
+   both `from . import publisher_programs` in the package initializer and an
+   inert marker write in that program. Exact-tree binding succeeds, but the
+   CLI rejects without creating the marker; ordinary import creates it.
 7. Confirm the fresh staging regression uses the complete parsed workflow
    environment and the actual Bash/Git prologue. Removing only its Git-variable
    unset produces exit 128; the real prologue succeeds and stages exactly the
@@ -92,6 +96,21 @@ workflow, using credentials, or changing ROM behavior.
     inert package that raises a deliberate error. A 1 MiB authority source
     passes; a 1 MiB-plus-one Git blob is rejected after its size query and
     before any content read. Every authorized blob read is explicitly bounded.
+11. Confirm direct `SourceFileLoader.exec_module`, bound/unbound method
+    aliases, `get_code` plus aliased `exec`, and previously bound loaders
+    cannot execute an ambient marker program. Replay unchecked-hash and
+    sourceless caches, including caches claiming an allowed authority filename,
+    a stdlib module name or an anonymous filename. Reopening an allowed
+    filename with changed code rejects while its already captured code still
+    executes unchanged. The ordinary-loader controls create the inert markers;
+    guarded execution leaves them absent. These are executable-origin checks,
+    not dirty-tree or AST-callee-spelling failures.
+12. Confirm direct system stdlib loading, `Fraction` arithmetic, generated
+    dataclasses and named tuples retain their actual values. A source-loaded
+    stdlib `runpy` cannot promote anonymous cached bytecode to generated code.
+    A direct system `_json` native loader works, but the same loader pointed
+    at a fixture-local copy rejects. Exiting the guarded context restores
+    ordinary controlled loading.
 
 ### Expected result
 
@@ -116,6 +135,10 @@ verification-tail fixtures while preserving command counts. The regression
 changes only the relevant typed placement to demonstrate that the context
 authority, not a raw hash mismatch, accounts for rejection. The old loader's
 ambient-import fallback executes the inert external-package control.
+At pre-correction `8342faed`, both the committed program import and aliased
+external loader succeed and write their inert markers. A filename-only or
+stdlib-caller-only execution check is also insufficient: the cached-code and
+source-loaded `runpy` controls preserve those independent negative cases.
 
 ### Interactions and save compatibility
 
@@ -126,6 +149,12 @@ by this case. Updating a production operation requires updating its typed
 signature and behavioral evidence together. Arbitrary Bash syntax,
 unregistered executables and caller-provided Python are unsupported, not
 silently analyzed as safe.
+The source-only loader enforces code origin; it is not a sandbox for arbitrary
+malicious reviewed Python. It trusts the bootstrap, interpreter and system
+stdlib, and does not contain in-process policy tampering or arbitrary
+pre-existing callbacks/native/process operations. Generated code requires
+actual matching stdlib compilation and execution, not just a filename or
+caller label. See the [trust model](../patch_release.md#closed-publisher-command-authority-issue-200).
 
 The case has no save, configuration, generated-data, localization, target
 ROM/RAM, modern profile or archival impact. No manual criterion applies.
