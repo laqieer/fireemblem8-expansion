@@ -1494,7 +1494,7 @@ The complete deployment and public API contract is
   processes must never receive credentials. The normal repository is not the
   test endpoint; App tokens, OAuth/classic PATs and deploy keys are unsupported.
 
-### Exact actions
+### Actions
 
 1. Run the deterministic real Git/TLS/protocol regressions from source:
 
@@ -1626,7 +1626,7 @@ The complete deployment and public API contract is
    rollback: require exact fresh authenticated readback and preserved deadline
    evidence, or retain the hold. No generic recovery/rollback push is exposed.
 
-### Expected and negative results
+### Expected result
 
 Exactly one authorized issue authority+anchor transition succeeds atomically;
 all other capabilities reject before publication. The candidate cannot read
@@ -1636,6 +1636,8 @@ Every accepted response has the pinned signature, exact plan/session digest,
 live deadline and exact read-back OIDs. No token, key, askpass/agent capability
 or arbitrary process output appears in candidate files/environment, argv,
 logs or responses.
+
+### Negative control
 
 The negative control reproduces the reported pre-fix boundary: an
 unauthenticated same-UID abstract socket can accept an expired plan and move
@@ -1671,7 +1673,7 @@ Likewise a timeout, missing/wrong-request observation, reused non-replay nonce
 or hook-only rejection must never satisfy the validation oracle. Removing the
 dedicated hook must restore a real successful atomic publication.
 
-### Interactions, compatibility and automation
+### Interactions and save compatibility
 
 Dependencies: the protected installation, external terminal signer and
 existing exact-repository/signed-record contracts. Dependent: #178 / PR191.
@@ -1679,6 +1681,8 @@ Conflict: PR191's provisional broker and duplicate timestamp parser must use
 this foundation; its handoff/lifecycle/history/PR/ruleset checks remain
 required. There are no save/configuration, generated game data, localization,
 ROM/RAM, modern debug/release, archival or required-Build-context changes.
+
+### Automation
 
 The three focused unittest modules cover deterministic protocol behavior,
 credential identity controls, actual Git and TLS.

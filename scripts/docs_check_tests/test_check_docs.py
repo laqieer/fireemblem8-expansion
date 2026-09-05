@@ -986,6 +986,17 @@ class TesterCaseRegistryTests(unittest.TestCase):
             "workflow-governance": {
                 "reference": ".github/skills/development-workflow/SKILL.md",
                 "cases": {
+                    "TC-WORKFLOW-AUTHENTICATED-GIT-BROKER-001": {
+                        "document": "docs/test-cases/workflow-governance.md",
+                        "commands": {
+                            "python3 -m unittest scripts.workflow_pilot.tests."
+                            "test_git_broker scripts.workflow_pilot.tests."
+                            "test_signed_records -v",
+                            "/usr/bin/python3 -I scripts/workflow_pilot/tests/"
+                            "protected_broker_fixture.py --broker-uid 65534 "
+                            "--coordinator-uid 65532 --candidate-uid 65533",
+                        },
+                    },
                     "TC-WORKFLOW-CI-WAIT-001": {
                         "document": "docs/test-cases/workflow-governance.md",
                         "commands": {
