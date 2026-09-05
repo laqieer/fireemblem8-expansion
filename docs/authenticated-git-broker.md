@@ -78,6 +78,10 @@ separators and one trailing LF. Duplicate keys, floats, non-finite values and
 noncanonical bytes reject. Signatures are canonical Base64 RSA
 PKCS#1-v1.5/SHA-256, with a 2048–4096-bit modulus and exponent 65537. Public-key
 identity, canonical padding and RSA representative bounds are enforced.
+Repository and issue-ref patterns require strict end of input, not an end-of-line
+match: a final LF or any other trailing input rejects. Repository components
+`.` and `..` are reserved and reject in both the schema and installed-policy
+parser; names such as `.git` and `...` retain their existing lexical meaning.
 
 PR191 should retain its complete handoff/history/receipt/PR/ruleset validator
 and trusted installation. After that validator approves a publication:
@@ -227,8 +231,13 @@ The policy and journal are frozen together.
 Supported transports (closed root-installed **transport policy**, not request
 fields):
 
-- `{"kind":"local"}`: endpoint `file:///absolute/protected/remote.git`, below
-  the broker's private state. Native bare Git `receive.denyNonFastForwards`,
+- `{"kind":"local"}`: endpoint `file:///absolute/protected/remote.git`, a
+  **strict descendant** of the configured broker state directory. The state
+  directory itself, ancestors, siblings (including similarly prefixed names)
+  and protected remotes elsewhere such as `/srv/...` fail preflight. This
+  matches the shipped unit's `ProtectSystem=strict` write boundary; ownership
+  alone does not make an outside remote writable by that unit. Symlink and
+  traversal paths remain prohibited. Native bare Git `receive.denyNonFastForwards`,
   `receive.denyDeletes` and `core.bare` must be true. Only the closed standard
   bare/receive config is allowed; includes, alternate object stores, external
   hook paths, special files and links reject. The complete config, hooks,
@@ -398,17 +407,29 @@ actual authority/anchor protections, a provisioned broker, current trusted
 signer and fresh exact plans. Do not fabricate that result from local mocks
 or uncredentialed ls-remote.
 
-Possible synthetic CI follow-up: the existing Build `host-tests` owner already
-discovers broker tests through `isolated_launcher.py reporter-tests`. Its
-disposable Linux runner could additionally own an explicit
-`protected_broker_fixture.py` invocation after establishing a reviewed,
-root-owned installation and three reserved nonroot UIDs. That fixture is not
-currently invoked by unittest discovery. This would use synthetic keys and a
-local remote only, not real credentials, and would not discharge credentialed
-HTTPS/SSH or deployed-service cgroup acceptance. No such deployment or workflow
-change is part of this credential-principal correction; all external holds
-remain. The new credential tests are discovered by the existing host-test
-owner without a workflow change.
+Every protected plan adversary receives a fresh signed plan/nonce and its
+matching full pack. Only explicit replay cases reuse a consumed plan.
+The rejection hook is removed after its dedicated check, and a fresh
+publication must then succeed before the field-validation cases run.
+The root-controlled fixture invokes the production `serve` entry point with
+test-only observers around the real plan validator and reservation method.
+These observers record only plan digests and returned/rejected stages in
+broker-private state; they neither replace checks nor change the wire protocol.
+The controller requires the expected validation stage and unchanged complete
+journal/ref snapshots. Timeouts, connection loss without the matching broker
+observation, signed hook rejection and downstream failures are not validation
+evidence. Replays must pass plan validation and reject reservation, with an
+already consumed exact plan in the unchanged journal.
+
+The existing Build `host-tests` owner discovers broker tests through
+`isolated_launcher.py reporter-tests`, including the same fixture helpers
+over real noncredentialed Git/TLS. Mutation controls omit each of the six
+tested field checks individually; the rejection oracle must fail even when a
+later journal, object, hook or deadline check would reject publication.
+The protected three-UID command is not invoked by unittest discovery.
+No privileged fixture/credentialed workflow or Build topology change is
+introduced; all protected-installation, live GitHub credential and deployed
+cgroup acceptance holds remain.
 
 Dependencies: existing signed-record, exact-repository, protected User bypass
 and trusted external installation contracts, plus the narrow GitHub credential

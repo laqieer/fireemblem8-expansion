@@ -9,16 +9,17 @@ the exact processes it starts. All artifacts remain below this checkout.
 from __future__ import annotations
 
 import argparse
-import copy
 import hashlib
 import json
 import os
 import shutil
 import socket
 import sqlite3
+import ssl
 import subprocess
 import sys
 import time
+from contextlib import closing, contextmanager
 from datetime import timedelta
 from pathlib import Path
 
@@ -31,11 +32,120 @@ if __name__ == "__main__":
 
 from scripts.workflow_pilot import git_broker as broker
 from scripts.workflow_pilot import git_broker_protocol as protocol
+from scripts.workflow_pilot import git_broker_store as store_module
 from scripts.workflow_pilot.git_broker_store import clean_environment
 from scripts.workflow_pilot.signed_records import (
     RecordError, canonical_json, format_utc, strict_json, utc_now,
 )
 from scripts.workflow_pilot.tests.broker_test_support import Fixture, Keys, artifact_directory
+
+
+PLAN_ATTACKS = ("expired", "future", "issue", "endpoint", "master", "tag")
+
+
+@contextmanager
+def observe_validation(emit):
+    """Observe real validator/reservation outcomes without replacing their checks."""
+    validate, reserve = store_module.validate_plan, store_module.PublicationStore.reserve
+
+    def observed(stage, plan, action):
+        event = {"request_digest": protocol.plan_digest(plan), "stage": stage}
+        try:
+            result = action()
+        except RecordError:
+            emit({**event, "outcome": "rejected"})
+            raise
+        emit({**event, "outcome": "passed"})
+        return result
+
+    def checked_plan(plan, policy, peer, now):
+        return observed("plan", plan, lambda: validate(plan, policy, peer, now))
+
+    def checked_reservation(store, plan, peer):
+        return observed("reservation", plan, lambda: reserve(store, plan, peer))
+
+    store_module.validate_plan = checked_plan
+    store_module.PublicationStore.reserve = checked_reservation
+    try:
+        yield
+    finally:
+        store_module.validate_plan = validate
+        store_module.PublicationStore.reserve = reserve
+
+
+def journal_snapshot(state):
+    with closing(sqlite3.connect(
+        f"file:{state / 'nonces.sqlite3'}?mode=ro", uri=True, timeout=1,
+    )) as journal:
+        return journal.execute(
+            "SELECT nonce,digest,sequence,status,old_refs,new_refs,completed_at,expires_at "
+            "FROM operations ORDER BY nonce"
+        ).fetchall()
+
+
+def adversarial_plan(fixture, kind):
+    plan, pack, _current = fixture.make_plan()
+    if kind == "expired":
+        plan["issued_at"] = format_utc(utc_now() - timedelta(seconds=20))
+        plan["expires_at"] = format_utc(utc_now() - timedelta(seconds=1))
+    elif kind == "future":
+        plan["issued_at"] = format_utc(utc_now() + timedelta(seconds=5))
+        plan["expires_at"] = format_utc(utc_now() + timedelta(seconds=10))
+    elif kind == "issue":
+        plan["issue"] = 178
+    elif kind == "endpoint":
+        plan["endpoint"] = "https://github.com/other/repository.git"
+    elif kind == "master":
+        plan["updates"][0]["ref"] = "refs/heads/master"
+    elif kind == "tag":
+        plan["updates"][0]["ref"] = "refs/tags/unapproved"
+    else:
+        raise RecordError("unknown protected fixture adversary")
+    fixture.keys.sign(protocol.PLAN_DOMAIN, plan)
+    return plan, pack
+
+
+def require_validation_rejection(plan, result, events, before, after, *, replay=False):
+    wanted = [
+        {"request_digest": protocol.plan_digest(plan), "stage": "plan",
+         "outcome": "passed" if replay else "rejected"},
+        {"request_digest": protocol.plan_digest(plan), "stage": "reservation", "outcome": "rejected"},
+    ]
+    if result not in ({"transport": "closed"}, {"transport": "disconnected"}) or events != wanted:
+        raise RecordError("attack lacks observed broker validation rejection")
+    if before != after:
+        raise RecordError("rejected attack changed the protected journal")
+    if replay:
+        if not any(row[0] == plan["nonce"] and row[1] == protocol.plan_digest(plan) for row in before):
+            raise RecordError("replay control did not reuse an actually consumed plan")
+    elif any(row[0] == plan["nonce"] for row in before):
+        raise RecordError("non-replay attack did not use a fresh nonce")
+
+
+def check_rejection(fixture, submit, read_events, plan, pack, *, replay=False):
+    before = journal_snapshot(fixture.state)
+    refs = fixture.git(fixture.remote, "for-each-ref", "--format=%(refname) %(objectname)")
+    offset = len(read_events())
+    result = submit("attack", plan, pack)
+    require_validation_rejection(
+        plan, result, read_events()[offset:], before, journal_snapshot(fixture.state), replay=replay,
+    )
+    if fixture.git(fixture.remote, "for-each-ref", "--format=%(refname) %(objectname)") != refs:
+        raise RecordError("rejected attack changed protected refs")
+
+
+def check_hook_rejection(fixture, submit, hook):
+    plan, pack, _current = fixture.make_plan()
+    try:
+        if submit("publish", plan, pack)["status"] != "rejected":
+            raise RecordError("protected receive-pack hook was bypassed")
+    finally:
+        hook.unlink()
+    valid, valid_pack, current = fixture.make_plan()
+    result = submit("publish", valid, valid_pack)
+    if result["status"] != "published" or result["refs"] != protocol.expected_refs(valid, "new"):
+        raise RecordError("publication after removing the rejection hook failed")
+    fixture.current = current
 
 
 def private_copy(source, destination, owner):
@@ -108,6 +218,43 @@ print(json.dumps(result, sort_keys=True))
     return len(values)
 
 
+def direct_authenticated_exchange(client, connection, plan, pack=None, *, reserve=False):
+    channel = broker.Channel(connection, utc_now() + timedelta(seconds=5))
+    hello = protocol.validate_hello(
+        strict_json(channel.read_frame(protocol.MAX_RESPONSE), protocol.MAX_RESPONSE),
+        client.policy.deployment_id, client.manifest["response_public_key"], utc_now(),
+    )
+    if not reserve and not isinstance(pack, bytes):
+        raise RecordError("adversarial request requires the matching complete pack")
+    try:
+        channel.send_frame(canonical_json({
+            "protocol": protocol.PROTOCOL, "session_nonce": hello["session_nonce"],
+            "operation": "publish", "plan": plan,
+        }), protocol.MAX_JSON)
+        if reserve:
+            connection.settimeout(20)
+            return {"disconnected": not connection.recv(1)}
+        channel.send_frame(pack, protocol.MAX_PACK)
+        channel._timeout()
+        first = connection.recv(1)
+        if not first:
+            return {"transport": "closed"}
+        size = int.from_bytes(first + channel.receive(3), "big")
+        if not 0 < size <= protocol.MAX_RESPONSE:
+            raise RecordError("adversarial response frame size bound")
+        response = protocol.validate_response(
+            strict_json(channel.receive(size), protocol.MAX_RESPONSE), client.policy,
+            client.manifest["response_public_key"], plan, hello, utc_now(),
+        )
+        return {"transport": "response", "status": response["status"]}
+    except (ConnectionError, ssl.SSLEOFError):
+        if reserve:
+            raise
+        # Disconnection alone proves nothing; the controller also requires the
+        # real broker's validation trace and unchanged protected journal/refs.
+        return {"transport": "disconnected"}
+
+
 def direct_authenticated_request(client, plan, pack=None, *, reserve=False):
     manifest = client.manifest
     with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as raw:
@@ -119,18 +266,7 @@ def direct_authenticated_request(client, plan, pack=None, *, reserve=False):
         ) as connection:
             if hashlib.sha256(connection.getpeercert(binary_form=True)).hexdigest() != manifest["server_certificate_sha256"]:
                 raise RecordError("protected fixture broker pin changed")
-            channel = broker.Channel(connection, utc_now() + timedelta(seconds=3))
-            hello = strict_json(channel.read_frame(protocol.MAX_RESPONSE), protocol.MAX_RESPONSE)
-            channel.send_frame(canonical_json({
-                "protocol": protocol.PROTOCOL, "session_nonce": hello["session_nonce"],
-                "operation": "publish", "plan": plan,
-            }), protocol.MAX_JSON)
-            if pack is not None:
-                channel.send_frame(pack, protocol.MAX_PACK)
-            if reserve:
-                connection.settimeout(20)
-                return {"disconnected": not connection.recv(1)}
-            return channel.read_frame(protocol.MAX_RESPONSE)
+            return direct_authenticated_exchange(client, connection, plan, pack, reserve=reserve)
 
 
 def client_action(arguments):
@@ -138,15 +274,11 @@ def client_action(arguments):
     if arguments.client_action == "preflight":
         return consumer.request()
     plan = strict_json(broker.read_regular(arguments.plan, protocol.MAX_JSON), protocol.MAX_JSON)
-    if arguments.client_action == "attack":
-        try:
-            direct_authenticated_request(consumer, plan)
-        except (RecordError, OSError):
-            return {"rejected": True}
-        return {"rejected": False}
     if arguments.client_action == "reserve":
         return direct_authenticated_request(consumer, plan, reserve=True)
     pack = broker.read_regular(arguments.pack, protocol.MAX_PACK) if arguments.pack else None
+    if arguments.client_action == "attack":
+        return direct_authenticated_request(consumer, plan, pack)
     return consumer.request(plan, pack, readback=arguments.client_action == "readback")
 
 
@@ -172,7 +304,6 @@ def exercise(broker_uid, coordinator_uid, candidate_uid):
         fixture.store.close()
         fixture.store = None
         recursive_owner(fixture.state, broker_uid)
-        recursive_owner(fixture.remote, broker_uid)
         runtime, server_keys, client_keys = root / "runtime", root / "server-keys", root / "client-keys"
         for directory, owner, mode in (
             (runtime, broker_uid, 0o755), (server_keys, broker_uid, 0o700),
@@ -207,9 +338,17 @@ def exercise(broker_uid, coordinator_uid, candidate_uid):
         client_path.write_bytes(canonical_json(client))
         server_path.chmod(0o644)
         client_path.chmod(0o644)
-        entry = ROOT / "scripts/workflow_pilot/git_broker.py"
         endpoint = Path(server["socket"])
         plan_path, pack_path = root / "plan.json", root / "objects.pack"
+        events_path = fixture.state / "validation-events.jsonl"
+        events_path.touch(mode=0o600)
+        os.chown(events_path, broker_uid, broker_uid)
+
+        def read_events():
+            return [
+                strict_json(line + b"\n", protocol.MAX_RESPONSE)
+                for line in broker.read_regular(events_path, protocol.MAX_JSON).splitlines()
+            ]
 
         def client_command(action, plan=None, pack=None, *, installation=None, background=False):
             command = [
@@ -238,7 +377,10 @@ def exercise(broker_uid, coordinator_uid, candidate_uid):
 
         def start():
             child = subprocess.Popen(
-                ["/usr/bin/python3", "-I", str(entry), "serve", "--installation", str(server_path)],
+                [
+                    "/usr/bin/python3", "-I", str(Path(__file__).resolve()),
+                    "--serve-installation", str(server_path), "--validation-events", str(events_path),
+                ],
                 user=broker_uid, group=broker_uid, extra_groups=[], cwd=root,
                 env=clean_environment(fixture.state / "home"), stdin=subprocess.DEVNULL,
                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
@@ -270,39 +412,23 @@ def exercise(broker_uid, coordinator_uid, candidate_uid):
         )
         denied = candidate_probe(candidate_uid, [
             str(client_keys / "client.key"), str(server_keys / "server.key"),
-            str(fixture.remote / "config"), str(hook), str(object_file),
+            str(fixture.remote / "config"), str(hook), str(object_file), str(events_path),
             str(fixture.remote / fixture.policy.refs[0]),
             f"/proc/{process.pid}/environ", f"/proc/{process.pid}/mem",
         ], endpoint, process.pid)
         coordinator_denials = candidate_probe(coordinator_uid, [
             str(server_keys / "server.key"), str(fixture.remote / "config"),
-            str(hook), str(object_file), f"/proc/{process.pid}/environ",
+            str(hook), str(object_file), str(events_path), f"/proc/{process.pid}/environ",
         ], endpoint, process.pid)
-        advance, advance_pack, _next = fixture.make_plan()
-        if client_command("publish", advance, advance_pack)["status"] != "rejected":
-            raise RecordError("protected receive-pack hook was bypassed")
-        before = fixture.git(fixture.remote, "show-ref")
-        for kind in ("expired", "future", "issue", "endpoint", "master", "tag", "replay"):
-            changed = copy.deepcopy(plan if kind == "replay" else advance)
-            if kind == "expired":
-                changed["issued_at"] = format_utc(utc_now() - timedelta(seconds=20))
-                changed["expires_at"] = format_utc(utc_now() - timedelta(seconds=1))
-            elif kind == "future":
-                changed["issued_at"] = format_utc(utc_now() + timedelta(seconds=5))
-                changed["expires_at"] = format_utc(utc_now() + timedelta(seconds=10))
-            elif kind == "issue":
-                changed["issue"] = 178
-            elif kind == "endpoint":
-                changed["endpoint"] = "https://github.com/other/repository.git"
-            elif kind == "master":
-                changed["updates"][0]["ref"] = "refs/heads/master"
-            elif kind == "tag":
-                changed["updates"][0]["ref"] = "refs/tags/unapproved"
-            keys.sign(protocol.PLAN_DOMAIN, changed)
-            if client_command("attack", changed) != {"rejected": True}:
-                raise RecordError("broker independently accepted a prohibited publication")
-        if fixture.git(fixture.remote, "show-ref") != before:
-            raise RecordError("rejected attack changed protected refs")
+        check_hook_rejection(fixture, client_command, hook)
+        for kind in PLAN_ATTACKS:
+            changed, matching_pack = adversarial_plan(fixture, kind)
+            check_rejection(fixture, client_command, read_events, changed, matching_pack)
+        replay, replay_pack, current = fixture.make_plan()
+        if client_command("publish", replay, replay_pack)["status"] != "published":
+            raise RecordError("fresh replay control publication failed")
+        fixture.current = current
+        check_rejection(fixture, client_command, read_events, replay, replay_pack, replay=True)
         for name, change in (
             ("same-uid", {"broker_uid": coordinator_uid}), ("abstract", {"socket": "\0not-authority"}),
             ("wrong-peer", {"broker_uid": candidate_uid}),
@@ -317,7 +443,7 @@ def exercise(broker_uid, coordinator_uid, candidate_uid):
                 pass
             else:
                 raise RecordError("untrusted endpoint or server substitution accepted")
-        pending, _pending_pack, _next = fixture.make_plan()
+        pending, pending_pack, _next = fixture.make_plan()
         waiting_client = client_command("reserve", pending, background=True)
         try:
             end, reserved = time.monotonic() + 3, False
@@ -349,14 +475,14 @@ def exercise(broker_uid, coordinator_uid, candidate_uid):
         process = start()
         if client_command("readback", pending)["status"] != "uncertain":
             raise RecordError("SIGKILL/restart lost the consumed operation")
-        if client_command("attack", pending) != {"rejected": True}:
-            raise RecordError("interrupted capability was reusable after restart")
+        check_rejection(fixture, client_command, read_events, pending, pending_pack, replay=True)
         stop_owned(process)
         process = None
         return {
             "case": "TC-WORKFLOW-AUTHENTICATED-GIT-BROKER-001",
             "protected_local": "passed", "candidate_denials": denied,
             "coordinator_credential_denials": coordinator_denials,
+            "observed_plan_validation_rejections": len(PLAN_ATTACKS),
             "killed_reservation_replay": "rejected after durable restart",
             "atomic_refs": list(fixture.policy.refs),
             "credentialed_github": "not exercised; externally provisioned disposable endpoint required",
@@ -375,10 +501,16 @@ def main():
     parser.add_argument("--candidate-uid", type=int, default=65533)
     parser.add_argument("--client-action", choices=("preflight", "publish", "readback", "attack", "reserve"))
     parser.add_argument("--client-installation", type=Path)
+    parser.add_argument("--serve-installation", type=Path)
+    parser.add_argument("--validation-events", type=Path)
     parser.add_argument("--plan", type=Path)
     parser.add_argument("--pack", type=Path)
     arguments = parser.parse_args()
     try:
+        if arguments.serve_installation:
+            with arguments.validation_events.open("ab", buffering=0) as events:
+                with observe_validation(lambda event: events.write(canonical_json(event))):
+                    return broker.main(["serve", "--installation", str(arguments.serve_installation)])
         result = (
             client_action(arguments) if arguments.client_action
             else exercise(arguments.broker_uid, arguments.coordinator_uid, arguments.candidate_uid)

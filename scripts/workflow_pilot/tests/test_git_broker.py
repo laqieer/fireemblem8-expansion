@@ -1,6 +1,7 @@
 import base64
 import copy
 import hashlib
+import json
 import os
 import shutil
 import signal
@@ -13,6 +14,7 @@ import unittest
 import zlib
 from datetime import timedelta
 from pathlib import Path
+from types import SimpleNamespace
 from unittest import mock
 
 import jsonschema
@@ -25,6 +27,7 @@ from scripts.workflow_pilot.signed_records import (
     verify_signature,
 )
 from scripts.workflow_pilot.tests.broker_test_support import Fixture, Keys, artifact_directory
+from scripts.workflow_pilot.tests import protected_broker_fixture as protected
 
 
 class BrokerFixtureTests(unittest.TestCase):
@@ -103,6 +106,91 @@ class BrokerTests(BrokerFixtureTests):
         schema = __import__("json").loads(Path(protocol.__file__).with_name("git_broker.schema.json").read_text())
         jsonschema.Draft202012Validator.check_schema(schema)
         jsonschema.Draft202012Validator(schema, format_checker=jsonschema.FormatChecker()).validate(plan)
+
+    def test_repository_schema_and_runtime_reject_reserved_names_and_trailing_input(self):
+        plan, _pack, _current = self.fixture.make_plan()
+        schema = json.loads(Path(protocol.__file__).with_name("git_broker.schema.json").read_text())
+        validator = jsonschema.Draft202012Validator(schema)
+        cases = [
+            ("a/b", True), ("example/...", True), ("example/.git", True),
+            ("example/_", True), ("a" * 39 + "/" + "b" * 100, True),
+            ("example/.", False), ("example/..", False), ("./repo", False),
+            ("../repo", False), ("example/", False), ("example/repo/extra", False),
+            ("a" * 40 + "/repo", False), ("example/" + "b" * 101, False),
+        ]
+        cases.extend(("example/repo" + suffix, False) for suffix in (
+            "\n", "\r", "\r\n", " ", "\0", "\u2028", "\u2029",
+        ))
+        for repository, expected in cases:
+            with self.subTest(repository=repository):
+                changed = copy.deepcopy(plan)
+                changed["repository"] = repository
+                self.keys.sign(protocol.PLAN_DOMAIN, changed)
+                try:
+                    policy = protocol.Policy.parse({**self.fixture.policy.__dict__, "repository": repository})
+                    protocol.validate_plan(changed, policy, self.keys.client_fingerprint, utc_now())
+                    runtime_accepts = True
+                except RecordError:
+                    runtime_accepts = False
+                self.assertEqual(runtime_accepts, expected)
+                self.assertEqual(validator.is_valid(changed), runtime_accepts)
+
+    def test_ref_schema_and_runtime_require_strict_end_of_input(self):
+        plan, _pack, _current = self.fixture.make_plan()
+        schema = json.loads(Path(protocol.__file__).with_name("git_broker.schema.json").read_text())
+        validator = jsonschema.Draft202012Validator(schema)
+        for index in (0, 1):
+            for suffix in ("", "\n", "\r", "\r\n", " ", "\0", "\u2028", "\u2029"):
+                with self.subTest(index=index, suffix=suffix):
+                    changed = copy.deepcopy(plan)
+                    changed["updates"][index]["ref"] += suffix
+                    self.keys.sign(protocol.PLAN_DOMAIN, changed)
+                    try:
+                        protocol.validate_plan(
+                            changed, self.fixture.policy, self.keys.client_fingerprint, utc_now(),
+                        )
+                        runtime_accepts = True
+                    except RecordError:
+                        runtime_accepts = False
+                    self.assertEqual(runtime_accepts, not suffix)
+                    self.assertEqual(validator.is_valid(changed), runtime_accepts)
+        plan["updates"].reverse()
+        self.keys.sign(protocol.PLAN_DOMAIN, plan)
+        validator.validate(plan)
+        protocol.validate_plan(plan, self.fixture.policy, self.keys.client_fingerprint, utc_now())
+
+    def test_local_preflight_requires_remote_strictly_below_state(self):
+        actual_uid = os.geteuid()
+        manifest = self.fixture.manifest()
+        manifest.update(broker_uid=actual_uid or 65534, socket="/run/workflow-pilot-fixture.sock")
+        installation = self.directory / "server.json"
+        inside = self.fixture.state / "remotes" / "authority.git"
+        outside = self.directory / "outside.git"
+        prefix = self.directory / "state-other" / "authority.git"
+        for path in (inside, outside, prefix):
+            path.mkdir(mode=0o700, parents=True)
+        real_protected = broker.protected_path
+
+        def fixture_ownership(path, _owners, **options):
+            # Exercise real paths/modes/links, not a claimed root installation.
+            return real_protected(path, {0, actual_uid}, **options)
+
+        def preflight(remote):
+            manifest["policy"]["endpoint"] = remote.as_uri()
+            installation.write_bytes(canonical_json(manifest))
+            return broker.load_installation(installation, "server")
+
+        with mock.patch.object(broker, "protected_path", side_effect=fixture_ownership), mock.patch.object(
+            broker.os, "geteuid", return_value=manifest["broker_uid"],
+        ):
+            self.assertEqual(preflight(inside)[1].endpoint, inside.as_uri())
+            for path in (outside, prefix, self.fixture.state, self.directory):
+                with self.subTest(remote=path), self.assertRaises(RecordError):
+                    preflight(path)
+            link = self.fixture.state / "linked.git"
+            link.symlink_to(outside, target_is_directory=True)
+            with self.assertRaises(RecordError):
+                preflight(link)
 
     def test_every_identity_and_signed_plan_boundary_rejects_before_reservation(self):
         plan, _pack, _current = self.fixture.make_plan()
@@ -470,6 +558,26 @@ class BrokerTests(BrokerFixtureTests):
             with self.subTest(path=path.name), self.assertRaises((RecordError, OSError)):
                 broker.read_regular(path, protocol.MAX_JSON)
 
+    def test_protected_attack_sends_pack_and_never_counts_transport_errors_as_rejection(self):
+        plan, pack, _current = self.fixture.make_plan()
+        plan_path, pack_path = self.directory / "plan.json", self.directory / "objects.pack"
+        plan_path.write_bytes(canonical_json(plan))
+        pack_path.write_bytes(pack)
+        arguments = SimpleNamespace(
+            client_installation=self.directory / "client.json", client_action="attack",
+            plan=plan_path, pack=pack_path,
+        )
+        consumer = object()
+        for error in (TimeoutError, ConnectionResetError, OSError, RecordError):
+            with self.subTest(error=error.__name__), mock.patch.object(
+                broker, "BrokerClient", return_value=consumer,
+            ), mock.patch.object(
+                protected, "direct_authenticated_request", side_effect=error("synthetic failure"),
+            ) as request:
+                with self.assertRaises(error):
+                    protected.client_action(arguments)
+                request.assert_called_once_with(consumer, plan, pack)
+
 
 class PackBoundsTests(BrokerFixtureTests):
     """Real full Git packs at the store's object-loading boundary."""
@@ -654,6 +762,144 @@ class AuthenticatedChannelTests(BrokerFixtureTests):
         client = object.__new__(broker.BrokerClient)
         client.manifest, client.policy = manifest, self.fixture.policy
         return client._request_authenticated(connection, plan, pack, readback=readback)
+
+    def fixture_submit(self, action, plan, pack):
+        def request(connection, manifest):
+            if action == "publish":
+                return self.client(connection, manifest, plan, pack)
+            self.assertEqual(action, "attack")
+            client = object.__new__(broker.BrokerClient)
+            client.manifest, client.policy = manifest, self.fixture.policy
+            return protected.direct_authenticated_exchange(client, connection, plan, pack)
+        return self.tls_pair(self.exchange, request)
+
+    def test_protected_fixture_observes_each_fresh_signed_adversary_and_actual_replay(self):
+        self.fixture.bootstrap()
+        self.protocol_store()
+        events, nonces = [], set()
+        with protected.observe_validation(events.append):
+            for kind in protected.PLAN_ATTACKS:
+                with self.subTest(kind=kind):
+                    plan, pack = protected.adversarial_plan(self.fixture, kind)
+                    self.assertNotIn(plan["nonce"], nonces)
+                    nonces.add(plan["nonce"])
+                    self.assertEqual(len(pack), plan["pack"]["size"])
+                    self.assertEqual(hashlib.sha256(pack).hexdigest(), plan["pack"]["sha256"])
+                    verify_signature(
+                        self.fixture.policy.signing_key,
+                        signed_payload(protocol.PLAN_DOMAIN, plan), plan["signature"],
+                    )
+                    protected.check_rejection(
+                        self.fixture, self.fixture_submit, lambda: events, plan, pack,
+                    )
+            valid, pack, current = self.fixture.make_plan()
+            response = self.fixture_submit("publish", valid, pack)
+            self.assertEqual(response["status"], "published")
+            self.assertEqual(response["refs"], protocol.expected_refs(valid, "new"))
+            self.fixture.current = current
+            protected.check_rejection(
+                self.fixture, self.fixture_submit, lambda: events, valid, pack, replay=True,
+            )
+
+    def test_protected_fixture_detects_each_skipped_plan_field_check(self):
+        real_validate = store_module.validate_plan
+        self.fixture.close()
+        for kind in protected.PLAN_ATTACKS:
+            with self.subTest(kind=kind):
+                self.fixture = Fixture(self.directory / kind, self.keys)
+                plan, pack = protected.adversarial_plan(self.fixture, kind)
+                self.protocol_store()
+                events = []
+
+                def skip_field(submitted, policy, peer, now):
+                    # Keep every other check, including the original signature.
+                    # Only the selected semantic check sees a repaired control.
+                    verify_signature(
+                        policy.signing_key, signed_payload(protocol.PLAN_DOMAIN, submitted),
+                        submitted["signature"],
+                    )
+                    control = copy.deepcopy(submitted)
+                    if kind in ("expired", "future"):
+                        now = parse_utc(control["issued_at"])
+                    elif kind in ("issue", "endpoint"):
+                        control[kind] = getattr(policy, kind)
+                    else:
+                        control["updates"][0]["ref"] = policy.refs[0]
+                    self.keys.sign(protocol.PLAN_DOMAIN, control)
+                    real_validate(control, policy, peer, now)
+                    return submitted
+
+                with mock.patch.object(store_module, "validate_plan", side_effect=skip_field), \
+                     protected.observe_validation(events.append):
+                    with self.assertRaisesRegex(RecordError, "observed broker validation rejection"):
+                        protected.check_rejection(
+                            self.fixture, self.fixture_submit, lambda: events, plan, pack,
+                        )
+                self.assertEqual(events[0], {
+                    "request_digest": protocol.plan_digest(plan), "stage": "plan", "outcome": "passed",
+                })
+                self.assertEqual(events[1]["outcome"], "passed")
+
+    def test_protected_fixture_refuses_timeout_disconnect_response_and_missing_trace_evidence(self):
+        plan, pack = protected.adversarial_plan(self.fixture, "issue")
+        before = protected.journal_snapshot(self.fixture.state)
+        self.protocol_store()
+        events = []
+        with protected.observe_validation(events.append):
+            protected.check_rejection(self.fixture, self.fixture_submit, lambda: events, plan, pack)
+        after = protected.journal_snapshot(self.fixture.state)
+        wrong_digest = [{**event, "request_digest": "0" * 64} for event in events]
+        for result, observed in (
+            ({"transport": "timeout"}, events), ({"transport": "closed"}, []),
+            ({"transport": "disconnected"}, []), ({"transport": "closed"}, wrong_digest),
+            ({"transport": "response", "status": "rejected"}, events),
+            ({"transport": "response", "status": "published"}, events),
+        ):
+            with self.subTest(result=result, trace=observed), self.assertRaises(RecordError):
+                protected.require_validation_rejection(plan, result, observed, before, after)
+
+    def test_protected_fixture_refuses_reused_nonce_for_nonreplay_case(self):
+        consumed = self.fixture.bootstrap()
+        plan, pack = protected.adversarial_plan(self.fixture, "issue")
+        plan["nonce"] = consumed["nonce"]
+        self.keys.sign(protocol.PLAN_DOMAIN, plan)
+        self.protocol_store()
+        events = []
+        with protected.observe_validation(events.append), self.assertRaisesRegex(
+            RecordError, "non-replay attack did not use a fresh nonce",
+        ):
+            protected.check_rejection(self.fixture, self.fixture_submit, lambda: events, plan, pack)
+
+    def test_protected_hook_rejection_is_not_validation_evidence_and_cleanup_restores_publication(self):
+        self.fixture.bootstrap()
+        hook = self.fixture.remote / "hooks" / "pre-receive"
+        hook.parent.mkdir()
+        marker = self.directory / "protected-hook-ran"
+        hook.write_text(f"#!/bin/sh\nprintf authoritative > '{marker}'\nexit 1\n")
+        hook.chmod(0o700)
+        plan, pack, _current = self.fixture.make_plan()
+        self.protocol_store()
+        events = []
+        try:
+            with protected.observe_validation(events.append):
+                with self.assertRaisesRegex(RecordError, "observed broker validation rejection"):
+                    protected.check_rejection(
+                        self.fixture, self.fixture_submit, lambda: events, plan, pack,
+                    )
+                self.assertEqual(self.channel_errors, [])
+                self.assertEqual(marker.read_text(), "authoritative")
+                self.assertEqual(events[0]["outcome"], "passed")
+                protected.check_hook_rejection(self.fixture, self.fixture_submit, hook)
+            self.assertFalse(hook.exists())
+            expected = dict(zip(self.fixture.policy.refs, self.fixture.current[2:4]))
+            self.assertEqual(
+                self.fixture.git(
+                    self.fixture.remote, "for-each-ref", "--format=%(refname) %(objectname)",
+                ).decode().splitlines(),
+                [f"{ref} {expected[ref]}" for ref in sorted(expected)],
+            )
+        finally:
+            hook.unlink(missing_ok=True)
 
     def test_production_exchange_authenticates_plan_result_and_readback(self):
         plan, pack, _current = self.fixture.make_plan()

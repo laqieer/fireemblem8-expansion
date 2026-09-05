@@ -197,7 +197,7 @@ def load_installation(path: Path, role: str) -> tuple[dict, Policy]:
         protected_path("/usr/lib/git-core", {0}, directory=True)
         if certificate_fingerprint(Path(manifest["certificate"])) != manifest["server_certificate_sha256"]:
             raise RecordError("server certificate does not match installed identity")
-        protected_path(manifest["state"], {0, broker}, directory=True, secret=True)
+        state = protected_path(manifest["state"], {0, broker}, directory=True, secret=True)
         protected_path(manifest["response_private_key"], {0, broker}, secret=True)
         transport = manifest["transport"]
         if not isinstance(transport, dict):
@@ -208,6 +208,8 @@ def load_installation(path: Path, role: str) -> tuple[dict, Policy]:
             if not policy.endpoint.startswith("file:///"):
                 raise RecordError("local transport/endpoint mismatch")
             remote = protected_path(policy.endpoint[7:], {0, broker}, directory=True, secret=True)
+            if state not in remote.parents:
+                raise RecordError("local remote must be a strict descendant of broker state")
             # A symlink, alternate object store, special file or writable hook
             # invalidates this mode, even if Git would otherwise ignore it.
             count = 0

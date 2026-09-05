@@ -94,7 +94,8 @@ class Keys:
 class Fixture:
     def __init__(self, root, keys):
         self.root, self.keys = root, keys
-        self.state, self.remote, self.source = root / "state", root / "remote.git", root / "source.git"
+        self.state, self.source = root / "state", root / "source.git"
+        self.remote = self.state / "remote.git"
         root.mkdir(mode=0o700, parents=True, exist_ok=True)
         self.state.mkdir(mode=0o700)
         for directory in (self.remote, self.source):

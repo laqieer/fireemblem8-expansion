@@ -13,7 +13,7 @@
     "schema_version": {"const": 1, "type": "integer"},
     "protocol": {"const": "workflow-pilot-authenticated-git-broker-v1"},
     "deployment_id": {"$ref": "#/$defs/digest"},
-    "repository": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9-]{0,38}/[A-Za-z0-9_.-]{1,100}$"},
+    "repository": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9-]{0,38}/(?!\\.{1,2}(?![\\s\\S]))[A-Za-z0-9_.-]{1,100}(?![\\s\\S])"},
     "repository_id": {"$ref": "#/$defs/positive"},
     "issue": {"$ref": "#/$defs/positive"},
     "endpoint": {"type": "string", "minLength": 1, "maxLength": 4096},
@@ -33,7 +33,7 @@
         "properties": {
           "ref": {
             "type": "string",
-            "pattern": "^refs/heads/workflow-pilot/(?:authority|authority-anchor)/issue-[1-9][0-9]*$"
+            "pattern": "^refs/heads/workflow-pilot/(?:authority|authority-anchor)/issue-[1-9][0-9]*(?![\\s\\S])"
           },
           "old": {"anyOf": [{"type": "null"}, {"$ref": "#/$defs/oid"}]},
           "new": {"$ref": "#/$defs/oid"}

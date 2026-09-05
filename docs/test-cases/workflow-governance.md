@@ -1514,6 +1514,16 @@ The complete deployment and public API contract is
    and JSON Schema must agree on all clock/date inputs, including hour 24,
    invalid leap days, offsets, malformed dates and excessive precision.
 
+   Full signed-plan JSON Schema validation and the runtime must also agree
+   on repository/ref trailing input: final LF, CRLF, whitespace, NUL and
+   Unicode line separators reject. Reserved `.`/`..` repository components
+   reject; ordinary names, `.git`, `...` and the documented length boundaries
+   retain their behavior. Local-remote preflight accepts only a strict state
+   descendant and rejects the state itself, ancestors, outside/similarly
+   prefixed siblings and links. Its host test uses real filesystem paths and
+   modes with explicitly substituted installation ownership, not a claimed
+   protected-principal deployment.
+
    The same command includes real deltified-pack controls. A Git-generated
    offset-delta pack must publish both exact refs. A full reference-delta
    pack must load at its exact resolved individual/total limits. Its three
@@ -1547,7 +1557,7 @@ The complete deployment and public API contract is
 
    Those numeric UIDs must be reserved for this fixture in that environment;
    the command creates no accounts or global settings. It starts the real
-   production `serve` command under the broker UID and invokes the production
+   production `serve` entry point under the broker UID and invokes the production
    `BrokerClient` under the separate unprivileged coordinator UID. The root
    test controller is not a protocol peer. It tests candidate denial for private
    keys, remote config/hooks/refs/objects, process memory/environment and the
@@ -1556,6 +1566,21 @@ The complete deployment and public API contract is
    server-hook rejection and independently rejected signed adversarial
    requests. It tries same-UID, abstract, wrong-peer and substituted-server
    installations, and a real broker SIGKILL/restart with a consumed reservation.
+
+   The controller removes the rejecting hook immediately after its dedicated
+   assertion and requires another exact publication to succeed. Each
+   non-replay adversary gets a newly generated, appropriately signed plan and
+   matching complete pack. The fixture's test-only server observer calls the
+   original plan validator/reservation methods and writes only plan digest
+   and outcome records to broker-private state. For each field adversary,
+   require an observed plan-validation rejection followed by reservation
+   rejection, no new journal row, and identical complete journal/ref snapshots.
+   An explicit replay must instead pass plan validation and reject reservation
+   for an already consumed exact plan, also without journal/ref changes.
+   Timeout, lost connection without that observation, a signed hook rejection
+   or any later failure must fail the fixture rather than count as a rejected
+   plan. Candidate and coordinator access to the observation file must deny.
+   This observer changes no production validation or wire contract.
 
    An unprivileged/shared checkout must report `BLOCKED/FAILED` and exit 2,
    **not pass or skip**. Record this as missing protected deployment
@@ -1633,6 +1658,18 @@ path must fail the wrong-User and wrong-key regressions. Restoring the old
 HTTPS helper's file reopening must fail the post-verification token
 replacement regression. A token prefix, protected filename, public user
 lookup or caller-supplied fingerprint is never sufficient evidence by itself.
+
+The pre-correction deployment/schema controls admitted protected remotes
+outside state, repository `.`/`..` and repository/ref final LF. Restoring those
+behaviors must fail the focused preflight and full-schema/runtime parity tests.
+The old adversarial fixture counted a pack-less request's timeout as success,
+reused a consumed nonce and left a rejecting hook installed. Host regressions
+now run the same rejection oracle over real TLS and Git. Individually omit
+the expired, future, issue, endpoint, master-ref or tag-ref check: every
+mutant must make that oracle fail, even if a later check prevents publication.
+Likewise a timeout, missing/wrong-request observation, reused non-replay nonce
+or hook-only rejection must never satisfy the validation oracle. Removing the
+dedicated hook must restore a real successful atomic publication.
 
 ### Interactions, compatibility and automation
 
