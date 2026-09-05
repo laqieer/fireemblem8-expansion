@@ -4682,6 +4682,10 @@ printf '%s\t%s\t%s\n' "$result" \
             "body-changed/title-provided-same",
             "changed-only PATCH JSON",
             "supplied unchanged field drifts concurrently",
+            "superseded candidate groups are ignored",
+            "malformed historical records remain fatal",
+            "confirmation may not predate intent",
+            "canonical completed success",
             "databaseId` only through `... on User` inline fragments",
             "bot, deleted, null, and wrong-ID actors",
             "LivePullRequestMetadataQueryTests",
@@ -4730,6 +4734,8 @@ printf '%s\t%s\t%s\n' "$result" \
             "body userContentEdits(first:2)",
             "same-second edit-revert with hidden runs",
             "without cross-subsystem timestamp comparison",
+            "old-head unmatched/paired records",
+            "absent, active, failed, malformed, unbound",
         ):
             with self.subTest(registry_requirement=requirement):
                 self.assertIn(normalize_policy(requirement), indexed_contract)

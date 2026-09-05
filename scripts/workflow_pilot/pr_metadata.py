@@ -2967,7 +2967,16 @@ def edit_metadata(
 
     current_version = fetch_metadata_version(client, current)
     intents, confirmations = _transaction_comments(client, current)
-    latest_intent_comment = _latest_intent(intents)
+    current_workflow_id = (
+        current_runs[0].workflow_id if current_runs else 0
+    )
+    latest_intent_comment = _latest_intent(
+        _candidate_intents(
+            intents,
+            current,
+            current_workflow_id,
+        )
+    )
     latest_confirmation_comment = (
         confirmations.get(latest_intent_comment.comment_id)
         if latest_intent_comment is not None
@@ -3025,27 +3034,48 @@ def edit_metadata(
             state=current,
             version=current_version,
         )
-        decision = Decision(
-            action="no-op",
-            base_sha=base_sha,
-            guidance=(),
-            head_sha=head_sha,
-            mutated=False,
-            reason="requested metadata already has an authoritative edit pair",
-            repository=repository,
-            pr_number=pr_number,
-            intent_comment_id=latest_intent_comment.comment_id,
-            intent_comment_url=latest_intent_comment.html_url,
-            confirmation_comment_id=latest_confirmation_comment.comment_id,
-            confirmation_comment_url=latest_confirmation_comment.html_url,
-        )
-        if any(
-            run.binding == "explicit-same"
-            and run.mode in {"metadata-only", "active-metadata-only"}
-            and run.run_number > intent.watermark_run_number
-            for run in current_runs
-        ):
-            return decision
+        blocking = _blocking_active_runs(current_runs)
+        if blocking:
+            run_id = blocking[0].run_id
+            reason = "an exact-head full or unproven Build is still active"
+        else:
+            _full, metadata = _pending_metadata(current_runs, intent)
+            if metadata is None:
+                run_id = _full.run_id
+                reason = (
+                    "matching metadata has an authoritative pair but its "
+                    "continuity run is not visible yet"
+                )
+            elif metadata.status in ACTIVE_RUN_STATUSES:
+                run_id = metadata.run_id
+                reason = "the confirmation-bound metadata run is still active"
+            elif metadata.conclusion == "success":
+                require_metadata_success(metadata)
+                return Decision(
+                    action="no-op",
+                    base_sha=base_sha,
+                    guidance=(),
+                    head_sha=head_sha,
+                    mutated=False,
+                    reason=(
+                        "requested metadata and its confirmation-bound "
+                        "continuity run already succeed"
+                    ),
+                    repository=repository,
+                    pr_number=pr_number,
+                    run_id=metadata.run_id,
+                    intent_comment_id=latest_intent_comment.comment_id,
+                    intent_comment_url=latest_intent_comment.html_url,
+                    confirmation_comment_id=latest_confirmation_comment.comment_id,
+                    confirmation_comment_url=latest_confirmation_comment.html_url,
+                )
+            else:
+                require_metadata_failure(metadata)
+                run_id = metadata.run_id
+                reason = (
+                    "the confirmation-bound metadata run failed and requires "
+                    "reconciliation"
+                )
         return Decision(
             action="deferred",
             base_sha=base_sha,
@@ -3055,12 +3085,10 @@ def edit_metadata(
             ),
             head_sha=head_sha,
             mutated=False,
-            reason=(
-                "matching metadata has an authoritative pair but its "
-                "continuity run is not visible yet"
-            ),
+            reason=reason,
             repository=repository,
             pr_number=pr_number,
+            run_id=run_id,
             intent_comment_id=latest_intent_comment.comment_id,
             intent_comment_url=latest_intent_comment.html_url,
             confirmation_comment_id=latest_confirmation_comment.comment_id,
@@ -3201,11 +3229,15 @@ def reconcile_metadata(
 ) -> Decision:
     initial = fetch_pull_request(client, repository, pr_number)
     require_identity(initial, head_sha=head_sha, base_sha=base_sha)
+    first_runs = list_candidate_runs(client, initial)
+    if not first_runs:
+        raise MetadataEditError("no exact-head Build run exists")
     receipt, intent_comment, confirmation, confirmation_comment = (
         _authoritative_edit_pair(
             client,
             initial,
             confirmation_comment_id,
+            first_runs[0].workflow_id,
         )
     )
     initial_version = fetch_metadata_version(client, initial)
@@ -3216,7 +3248,6 @@ def reconcile_metadata(
         state=initial,
         version=initial_version,
     )
-    first_runs = list_candidate_runs(client, initial)
     _validate_receipt_watermark(receipt, first_runs)
     blocking_active = _blocking_active_runs(first_runs)
     if blocking_active:
@@ -3282,6 +3313,7 @@ def reconcile_metadata(
         client,
         current,
         confirmation_comment_id,
+        first_runs[0].workflow_id,
     )
     current_version = fetch_metadata_version(client, current)
     _validate_confirmation(
@@ -3716,6 +3748,7 @@ def _transaction_comments(
     confirmations = [
         comment for comment in comments if comment.confirmation is not None
     ]
+    intents_by_id = {comment.comment_id: comment for comment in intents}
     by_intent = {}
     for comment in confirmations:
         confirmation = comment.confirmation
@@ -3725,15 +3758,45 @@ def _transaction_comments(
             raise MetadataEditError(
                 "metadata edit intent has duplicate confirmations"
             )
-        if not any(
-            intent.comment_id == confirmation.intent_comment_id
-            for intent in intents
-        ):
+        intent_comment = intents_by_id.get(confirmation.intent_comment_id)
+        if intent_comment is None or intent_comment.intent is None:
             raise MetadataEditError(
                 "metadata edit confirmation references an unknown intent"
             )
+        intent = intent_comment.intent
+        if (
+            confirmation.repository != intent.repository
+            or confirmation.repository_id != intent.repository_id
+            or confirmation.pr_number != intent.pr_number
+            or confirmation.head_sha != intent.head_sha
+            or confirmation.base_sha != intent.base_sha
+            or confirmation.intent_nonce != intent.nonce
+            or comment.created_at < intent_comment.created_at
+        ):
+            raise MetadataEditError(
+                "metadata edit confirmation contradicts its intent"
+            )
         by_intent[confirmation.intent_comment_id] = comment
     return intents, by_intent
+
+
+def _candidate_intents(
+    intents: list[CommentState],
+    state: PullRequestState,
+    workflow_id: int,
+) -> list[CommentState]:
+    return [
+        comment
+        for comment in intents
+        if comment.intent is not None
+        and comment.intent.repository == state.repository
+        and comment.intent.repository_id == state.repository_id
+        and comment.intent.pr_number == state.number
+        and comment.intent.head_sha == state.head_sha
+        and comment.intent.base_sha == state.base_sha
+        and comment.intent.workflow_id == workflow_id
+        and comment.intent.workflow_path == WORKFLOW_PATH
+    ]
 
 
 def _latest_intent(
@@ -3790,9 +3853,12 @@ def _authoritative_edit_pair(
     client: GitHubClient,
     state: PullRequestState,
     confirmation_comment_id: int,
+    workflow_id: int,
 ) -> tuple[EditReceipt, CommentState, EditConfirmation, CommentState]:
     intents, confirmations = _transaction_comments(client, state)
-    latest = _latest_intent(intents)
+    latest = _latest_intent(
+        _candidate_intents(intents, state, workflow_id)
+    )
     if latest is None or latest.intent is None:
         raise MetadataEditError("metadata edit intent comment is missing")
     confirmation_comment = confirmations.get(latest.comment_id)
@@ -3805,10 +3871,7 @@ def _authoritative_edit_pair(
             "latest metadata edit intent lacks the selected confirmation"
         )
     confirmation = confirmation_comment.confirmation
-    if (
-        confirmation.intent_nonce != latest.intent.nonce
-        or confirmation_comment.created_at <= latest.created_at
-    ):
+    if confirmation_comment.created_at < latest.created_at:
         raise MetadataEditError("metadata edit confirmation nonce drifted")
     _validate_receipt_identity(latest.intent, state)
     return latest.intent, latest, confirmation, confirmation_comment

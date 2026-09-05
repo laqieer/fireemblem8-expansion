@@ -607,9 +607,14 @@ The intent/confirmation pair is not a secret, signature, or authentication
 token. Reconciliation refetches every transaction comment, parses both closed
 canonical schemas, requires exact repository/PR/comment URLs and
 repository-owner numeric ID/login/`User`/`OWNER` authority, rejects edited
-comments, duplicate nonces, duplicate confirmations, and ambiguous latest
-intents, and requires the selected confirmation to reference the unique latest
-intent. It refetches the metadata-specific version and complete current
+comments, duplicate nonces, duplicate confirmations, and contradictory pairs.
+All protected comments are validated before selection, so malformed historical
+records remain fatal. Well-formed records are then grouped by repository, PR,
+head, base, and workflow; superseded candidate groups are ignored. Recovery
+uses the unique latest intent only within the exact current candidate group.
+The selected confirmation must reference that intent. Intent and confirmation
+may share a second because exact comment ID and nonce provide linkage;
+confirmation may not predate intent. It refetches the metadata-specific version and complete current
 title/body state; later direct edits and edit-and-revert change
 `RenamedTitleEvent` or body `UserContentEdit` count/node authority and
 invalidate the pair.
@@ -652,8 +657,10 @@ unmatched immutable intent. If the exact pre-state and pre-version remain it
 retries PATCH; if the exact target state and metadata-version authority match
 it creates the missing confirmation; any third state fails closed. A no-op
 without an authoritative intent/confirmation pair is refused. With a pair, it
-returns no-op only when a post-watermark run is already visible; otherwise it
-defers recovery.
+returns no-op only when the exact confirmation-bound post-watermark metadata
+run is a canonical completed success. An absent or active run defers; a
+canonical failure defers with reconciliation/rerun guidance; malformed or
+unbound runs fail closed or remain ineligible.
 
 Field-set recovery is immutable. Retries must supply the same
 `provided_fields` values and target digest as the unmatched intent; the helper

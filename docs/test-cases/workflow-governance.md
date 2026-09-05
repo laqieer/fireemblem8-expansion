@@ -1273,6 +1273,15 @@ the exact branch and head; timeout or ambiguity fails before `gh run watch`.
    `changed_fields`, changed-only PATCH JSON, per-field version advancement,
    mixed-field retry recovery, and rejection when a supplied unchanged field
    drifts concurrently.
+   Add well-formed unmatched and paired intent records from a superseded head,
+   then confirm current-candidate recovery ignores them while malformed old
+   protected-marker records remain fatal. Exercise same-candidate multiple
+   intent selection.
+   For a maybe-created confirmation pair, exercise absent, active, failed, and
+   canonical successful post-watermark metadata runs. Only the canonical
+   completed success may return exit-0 no-op.
+   Exercise equal-second intent/confirmation comments as valid and a
+   confirmation predating intent as invalid.
 4. Update a synthetic canonical marked evidence comment owned by the
    repository owner while the same full Build is active.
 5. Replay stale head/base before edit and reconciliation, post-edit identity
@@ -1371,6 +1380,15 @@ only changed fields enter PATCH JSON and require title/body history
 advancement. Mixed edits therefore cannot demand an event for an unchanged
 supplied field. Zero-change input creates no intent and uses authoritative
 no-op semantics.
+All transaction comments are structurally and authoritatively validated before
+candidate selection. Well-formed records are grouped by repository/PR/head/
+base/workflow; superseded candidate groups are ignored, while malformed
+historical records remain fatal. Confirmation may equal intent's second
+because its exact intent ID/nonce proves linkage, but confirmation may not
+predate intent.
+An authoritative-pair no-op additionally requires the exact
+confirmation-bound metadata run to pass canonical completed-success
+validation; visible active/failure states defer with reconciliation guidance.
 The isolated launcher emits one exact canonical JSON line with status `0` for
 success/no-op/complete, status `3` for deferred/refused, and status `2` with no
 decision JSON for invalid arguments, files, or API authority.
