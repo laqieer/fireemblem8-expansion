@@ -1526,9 +1526,11 @@ game behavior needs a compensating change.
 
 **Issue:** [#204](https://github.com/laqieer/fireemblem8-expansion/issues/204).
 **Contract:** [sealed execution API](../workflow-pilot.md#sealed-exact-tree-execution-capsules).
-**Profile:** committed source checkout on Linux x86-64 with 64-bit Python 3,
-Git SHA-1, sealed memfd, `/proc`, fork, process groups, `waitid(WNOWAIT)` and
-prctl; no ROM, emulator, token or
+**Profile:** committed source checkout on Linux x86-64 with 64-bit Python 3.10+
+for both preparation and fixed root-owned `/usr/bin/python3` execution, including
+`sys.stdlib_module_names`, `fcntl`, `resource` and required descriptor/process
+APIs; Git SHA-1, sealed memfd, readable `/proc/self/fd` and `/proc/self/exe`,
+fork, process groups, `waitid(WNOWAIT)` and prctl; no ROM, emulator, token or
 remote mutation. The existing source build is sufficient; there is no
 downloadable game artifact for this host-only case.
 
@@ -1636,6 +1638,22 @@ Unvalidated ABIs fail closed before launch. Pidfds are not a prerequisite.
    installer must raise `CapsuleUnavailable` before Git collection, memfd
    creation, fork, process launch or native filter installation. The same
    rejection applies to a 32-bit interpreter on an x86-64 host.
+   Simulate a Python 3.9 preparer and missing `sys.stdlib_module_names` or
+   process/descriptor APIs. Each public admission must reject before Git
+   collection, sealed resources or worker/program launch, and guardian
+   admission must retain `CapsuleUnavailable`. Simulate a different execution
+   interpreter: Python 3.9, missing capabilities, wrong ABI, malformed/oversized
+   reports, launch failure and timeout must fail with the same disposition.
+   Only the fixed isolated system-Python probe may run before that decision;
+   it receives no capsule descriptors or candidate code. Verify real probe
+   timeout/output-bound teardown with no owned process/descriptor leak.
+   Run the actual current system interpreter as the positive control.
+   A different, capability-complete Python 3.10+ report is admissible, but
+   changing the executable identity during probing or after preparation must
+   invalidate admission before new resources or launches. Check root ownership
+   and non-writability before probing; never substitute a caller-controlled
+   `sys.executable`. One preparation probe suffices across descriptor creation
+   and repeated/nested execution; there is no global stale capability cache.
    Simulate missing, unreadable and non-directory `/proc/self/fd` facilities:
    preparation must raise `CapsuleUnavailable` before any Git/process or
    memfd creation, and guardian admission must preserve that error type.
@@ -1715,6 +1733,17 @@ must fail the before-launch regressions, while real Linux x86-64 nested
 execution still passes. The former parent-death regression unconditionally
 called `os.pidfd_open`/`signal.pidfd_send_signal`, adding an undeclared facility
 requirement; the real nested test now passes with both APIs disabled.
+
+The Python-capability correction preserves the pre-fix 64-bit Python 3.9
+counterexample: `_platform()` admitted it, and removing
+`sys.stdlib_module_names` caused `AttributeError` during bundle assembly
+instead of an explicit unavailable disposition. A newer preparer also launched
+the fixed execution interpreter without checking whether it supplied that
+Python 3.10 API. The regression substitutes versions/capability reports rather
+than installing older interpreters. Real current-interpreter probing,
+classifier execution, nested calls and receipts remain the positive evidence.
+Reverting the gate fails the before-resource controls; malformed reports never
+become successful execution or compatibility fallback.
 
 ### Automation
 

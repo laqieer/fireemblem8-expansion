@@ -87,6 +87,63 @@ def _finish_owned_process(pid, generation, *, terminate=False):
 
 
 class CapsulePlatformTests(unittest.TestCase):
+    def assert_python_unavailable_before_resources(self):
+        spec = capsule.CapsuleSpec(
+            trees={"base": "a" * 40}, programs={"checker": "checks/checker.py"})
+        admissions = {
+            "platform": capsule._platform,
+            "prepare": lambda: capsule.prepare(ROOT, spec),
+            "capsule": lambda: capsule.Capsule(b"{}", spec),
+            "descriptor": lambda: capsule.SealedBytes(b"unavailable", "test", 100),
+            "execute": lambda: capsule._execute(None, None, "checker", {}, 1, 0),
+        }
+        for name, admit in admissions.items():
+            with (
+                self.subTest(admission=name),
+                mock.patch.object(capsule, "_make_bundle", side_effect=AssertionError) as collect,
+                mock.patch.object(capsule, "_inherited_fds", side_effect=AssertionError) as descriptors,
+                mock.patch.object(capsule, "_prctl", side_effect=AssertionError) as prctl,
+                mock.patch.object(os, "memfd_create", create=True, side_effect=AssertionError) as create,
+                mock.patch.object(os, "fork", create=True, side_effect=AssertionError) as fork,
+                mock.patch.object(subprocess, "Popen", side_effect=AssertionError) as launch,
+            ):
+                with self.assertRaises(capsule.CapsuleUnavailable) as error:
+                    admit()
+                self.assertEqual(error.exception.disposition, "sealed-capsule-unavailable")
+                for operation in (collect, descriptors, prctl, create, fork, launch):
+                    operation.assert_not_called()
+
+    def test_older_preparation_python_fails_before_resources_or_worker_launch(self):
+        with mock.patch.object(sys, "version_info", (3, 9, 0, "final", 0)):
+            self.assert_python_unavailable_before_resources()
+
+    def test_missing_preparation_capabilities_fail_before_resources_or_worker_launch(self):
+        for module, name in (
+            (sys, "stdlib_module_names"), (sys, "addaudithook"),
+            (capsule, "fcntl"), (capsule, "resource"),
+            (os, "waitid"), (os, "WNOWAIT"),
+        ):
+            with self.subTest(capability=name), mock.patch.object(module, name, None, create=True):
+                if name == "stdlib_module_names":
+                    del sys.stdlib_module_names
+                self.assert_python_unavailable_before_resources()
+
+    def test_unsupported_guardian_python_is_unavailable_before_worker_creation(self):
+        with (
+            mock.patch.object(sys, "version_info", (3, 9, 0, "final", 0)),
+            mock.patch.object(capsule, "_inherited_fds", side_effect=AssertionError) as descriptors,
+            mock.patch.object(os, "fork", create=True, side_effect=AssertionError) as fork,
+            mock.patch.object(subprocess, "Popen", side_effect=AssertionError) as launch,
+            mock.patch.object(os, "write") as diagnostic,
+            mock.patch.object(os, "waitpid", side_effect=ChildProcessError),
+        ):
+            with self.assertRaises(SystemExit) as error:
+                capsule._supervise(["3", "4", "5", "6", "7", "", "", ""])
+            self.assertEqual(error.exception.code, 125)
+            self.assertTrue(diagnostic.call_args.args[1].startswith(b"CapsuleUnavailable:"))
+            for operation in (descriptors, fork, launch):
+                operation.assert_not_called()
+
     def test_unvalidated_abis_fail_before_resources_or_process_creation(self):
         spec = capsule.CapsuleSpec(
             trees={"base": "a" * 40}, programs={"checker": "checks/checker.py"})
@@ -133,6 +190,160 @@ class CapsulePlatformTests(unittest.TestCase):
                         admit()
             native.assert_not_called()
             descriptors.assert_not_called()
+
+
+@unittest.skipUnless(
+    sys.platform == "linux" and os.uname().machine == "x86_64"
+    and capsule.ctypes.sizeof(capsule.ctypes.c_void_p) == 8,
+    "Linux x86-64 Python interpreter admission")
+class CapsuleInterpreterTests(unittest.TestCase):
+    def assert_probe_unavailable_before_resources(self, reply=None, failure=None):
+        spec = capsule.CapsuleSpec(
+            trees={"base": "a" * 40}, programs={"checker": "checks/checker.py"})
+        for name, admit in (
+            ("prepare", lambda: capsule.prepare(ROOT, spec)),
+            ("capsule", lambda: capsule.Capsule(b"{}", spec)),
+            ("execute", lambda: capsule._execute(None, None, "checker", {}, 1, 0)),
+        ):
+            with (
+                self.subTest(admission=name),
+                mock.patch.object(capsule, "_interpreter_identity",
+                                  side_effect=lambda path: (path,)),
+                mock.patch.object(capsule, "_make_bundle", side_effect=AssertionError) as collect,
+                mock.patch.object(capsule, "_Bundle", side_effect=AssertionError) as bundle,
+                mock.patch.object(os, "memfd_create", side_effect=AssertionError) as create,
+                mock.patch.object(os, "fork", side_effect=AssertionError) as fork,
+                mock.patch.object(subprocess, "Popen") as launch,
+                mock.patch.object(capsule, "_collect", return_value=reply,
+                                  side_effect=failure) as probe,
+            ):
+                with self.assertRaises(capsule.CapsuleUnavailable) as error:
+                    admit()
+                self.assertEqual(error.exception.disposition, "sealed-capsule-unavailable")
+                for operation in (collect, bundle, create, fork):
+                    operation.assert_not_called()
+                launch.assert_called_once()
+                command = launch.call_args.args[0]
+                self.assertEqual(command[:5], [capsule.PYTHON, "-I", "-S", "-c", capsule.PYTHON_PROBE])
+                self.assertEqual(json.loads(command[5]), capsule.PYTHON_APIS)
+                self.assertEqual(launch.call_args.kwargs, {
+                    "stdin": subprocess.DEVNULL, "stdout": subprocess.PIPE,
+                    "stderr": subprocess.PIPE, "env": capsule.ENVIRONMENT, "cwd": "/",
+                    "start_new_session": True, "close_fds": True,
+                })
+                probe.assert_called_once_with(
+                    launch.return_value, capsule.PYTHON_PROBE_SECONDS, capsule.MAX_PYTHON_PROBE_BYTES)
+
+    def test_different_execution_python_must_meet_version_abi_and_capability_requirements(self):
+        for field, value in (
+            ("version", [3, 9]), ("version", [3, 10.0]),
+            ("stdlib_module_names", False), ("stdlib_module_names", "true"),
+            ("capabilities", False), ("capabilities", 1),
+            ("machine", "aarch64"), ("platform", "unsupported"),
+            ("pointer_bytes", 4), ("pointer_bytes", 8.0),
+        ):
+            with self.subTest(field=field, value=value):
+                report = {**capsule._python_report(), field: value}
+                self.assert_probe_unavailable_before_resources((0, capsule.canonical(report), b""))
+
+    def test_failed_malformed_and_oversized_execution_probes_are_unavailable(self):
+        valid = capsule.canonical(capsule._python_report())
+        for reply in (
+            (1, valid, b""), (0, valid, b"unexpected diagnostic"), (0, b"", b""),
+            (0, b"not JSON", b""), (0, valid.rstrip(), b""), (0, b"{}\n", b""),
+            (0, b"[]\n", b""), (0, b"x" * (capsule.MAX_PYTHON_PROBE_BYTES + 1), b""),
+        ):
+            with self.subTest(status=reply[0], output=reply[1][:40], stderr=reply[2]):
+                self.assert_probe_unavailable_before_resources(reply)
+        for failure in (capsule.CapsuleError("process timeout"),
+                        capsule.CapsuleError("process output exceeds limit"),
+                        subprocess.TimeoutExpired([capsule.PYTHON], capsule.PYTHON_PROBE_SECONDS)):
+            with self.subTest(failure=failure):
+                self.assert_probe_unavailable_before_resources(failure=failure)
+
+    def test_execution_probe_startup_failure_is_unavailable(self):
+        with mock.patch.object(subprocess, "Popen", side_effect=OSError(errno.ENOENT, "unavailable")):
+            with self.assertRaises(capsule.CapsuleUnavailable):
+                capsule._probe_python()
+
+    def test_real_probe_timeout_and_output_bounds_reap_the_owned_child(self):
+        processes = []
+        real_popen = subprocess.Popen
+
+        def launch(*args, **kwargs):
+            process = real_popen(*args, **kwargs)
+            processes.append(process)
+            return process
+
+        for source in ("import time; time.sleep(10)", "import os; os.write(1, b'x' * 8192)"):
+            with (
+                self.subTest(source=source),
+                mock.patch.object(capsule, "PYTHON_PROBE", source),
+                mock.patch.object(capsule, "PYTHON_PROBE_SECONDS", 0.2),
+                mock.patch.object(subprocess, "Popen", side_effect=launch),
+            ):
+                before = capsule._inherited_fds()
+                with self.assertRaises(capsule.CapsuleUnavailable):
+                    capsule._probe_python()
+                self.assertIsNotNone(processes[-1].returncode)
+                self.assertTrue(processes[-1].stdout.closed)
+                self.assertTrue(processes[-1].stderr.closed)
+                self.assertEqual(capsule._inherited_fds(), before)
+
+    def test_current_interpreter_probe_is_real_and_matches_local_capabilities(self):
+        self.assertEqual(capsule._probe_python(), capsule._python_report())
+        with mock.patch.object(capsule, "_probe_python", side_effect=AssertionError) as probe:
+            admitted = capsule._ExecutionInterpreter()
+            admitted.check()
+            with capsule.SealedBytes(b"current interpreter", "probe-positive", 100) as descriptor:
+                self.assertEqual(descriptor.read(), b"current interpreter")
+            probe.assert_not_called()
+
+    def test_different_supported_interpreter_is_probed_once_without_path_fallback(self):
+        report = {**capsule._python_report(), "version": [3, 10]}
+        with (
+            mock.patch.object(sys, "executable", "/untrusted/python"),
+            mock.patch.object(capsule, "_interpreter_identity", side_effect=lambda path: (path,)),
+            mock.patch.object(subprocess, "Popen") as launch,
+            mock.patch.object(capsule, "_collect", return_value=(0, capsule.canonical(report), b"")),
+        ):
+            admitted = capsule._ExecutionInterpreter()
+            admitted.check()
+            admitted.check()
+            launch.assert_called_once()
+            self.assertEqual(launch.call_args.args[0][0], "/usr/bin/python3")
+
+    def test_changed_interpreter_identity_invalidates_probe_and_admission(self):
+        report = capsule.canonical(capsule._python_report())
+        with (
+            mock.patch.object(capsule, "_interpreter_identity", side_effect=[("old",), ("new",)]),
+            mock.patch.object(subprocess, "Popen"),
+            mock.patch.object(capsule, "_collect", return_value=(0, report, b"")),
+        ):
+            with self.assertRaises(capsule.CapsuleUnavailable):
+                capsule._probe_python()
+        admitted = capsule._ExecutionInterpreter()
+        with (
+            mock.patch.object(capsule, "_interpreter_identity", return_value=("changed",)),
+            mock.patch.object(subprocess, "Popen", side_effect=AssertionError) as launch,
+        ):
+            with self.assertRaises(capsule.CapsuleUnavailable):
+                admitted.check()
+            launch.assert_not_called()
+
+    def test_untrusted_system_interpreter_never_runs_a_probe(self):
+        current = os.stat(capsule.PYTHON)
+        for uid, mode in (
+            (1, current.st_mode), (0, 0o100777), (0, 0o100644), (0, 0o040755),
+        ):
+            with (
+                self.subTest(uid=uid, mode=mode),
+                mock.patch.object(os, "stat", return_value=types.SimpleNamespace(st_uid=uid, st_mode=mode)),
+                mock.patch.object(subprocess, "Popen", side_effect=AssertionError) as launch,
+            ):
+                with self.assertRaises(capsule.CapsuleUnavailable):
+                    capsule._ExecutionInterpreter()
+                launch.assert_not_called()
 
 
 @unittest.skipUnless(sys.platform == "linux", "Linux child supervision")
@@ -263,6 +474,32 @@ class SealedCapsuleTests(unittest.TestCase):
         self.assertEqual(assertion["receipt"]["program"], "assertion")
         self.assertEqual(result.receipt["program"], "checker")
         self.assertEqual(assertion["receipt"]["artifact_sha256"], result.receipt["artifact_sha256"])
+
+    def test_preparation_probes_different_python_once_and_reuses_admission_for_execution(self):
+        with (
+            mock.patch.object(capsule, "_interpreter_identity", side_effect=lambda path: (path,)),
+            mock.patch.object(capsule, "_probe_python", wraps=capsule._probe_python) as probe,
+        ):
+            with capsule.prepare(self.root, self.spec) as prepared:
+                nested = prepared.execute("checker", {}).value
+                direct = prepared.execute("assertion", {}).value
+                self.assertEqual(nested["assertion"]["value"], direct)
+                self.assertEqual(direct["status"], "pass")
+            probe.assert_called_once()
+
+    def test_prepared_interpreter_change_rejects_before_new_execution_resources(self):
+        with capsule.Capsule(self.bundle, self.spec) as prepared:
+            with (
+                mock.patch.object(capsule, "_interpreter_identity", return_value=("changed",)),
+                mock.patch.object(prepared.bundle_fd, "read", side_effect=AssertionError) as read,
+                mock.patch.object(os, "memfd_create", side_effect=AssertionError) as create,
+                mock.patch.object(os, "fork", side_effect=AssertionError) as fork,
+                mock.patch.object(subprocess, "Popen", side_effect=AssertionError) as launch,
+            ):
+                with self.assertRaises(capsule.CapsuleUnavailable):
+                    prepared.execute("checker", {})
+                for operation in (read, create, fork, launch):
+                    operation.assert_not_called()
 
     def test_receipt_names_exact_executed_descriptor_bytes_and_argv(self):
         seen = {}

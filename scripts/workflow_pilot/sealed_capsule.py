@@ -58,6 +58,41 @@ MAX_SECONDS = 120
 MAX_DEPTH = 4
 MAX_WORKER_FDS = 64
 MAX_WORKER_FILE_BYTES = 1024 * 1024
+MAX_PYTHON_PROBE_BYTES = 4096
+PYTHON_PROBE_SECONDS = 5
+PYTHON_APIS = {
+    "callable": {
+        "os": ["memfd_create", "fork", "waitid", "waitpid", "pread", "pipe2",
+               "set_blocking", "setpgid", "killpg"],
+        "sys": ["addaudithook"],
+        "fcntl": ["fcntl"],
+        "resource": ["setrlimit"],
+    },
+    "int": {
+        "os": ["MFD_CLOEXEC", "MFD_ALLOW_SEALING", "O_CLOEXEC", "P_PID",
+               "WEXITED", "WNOHANG", "WNOWAIT"],
+        "fcntl": ["F_ADD_SEALS", "F_GET_SEALS"],
+        "resource": ["RLIMIT_CORE", "RLIMIT_CPU", "RLIMIT_AS", "RLIMIT_NOFILE", "RLIMIT_FSIZE"],
+    },
+}
+PYTHON_PROBE = """import ctypes,importlib,json,os,sys
+available=True
+for kind,modules in json.loads(sys.argv[1]).items():
+    for name,attributes in modules.items():
+        try:
+            module=importlib.import_module(name)
+        except ImportError:
+            module=None
+        for attribute in attributes:
+            value=getattr(module,attribute,None)
+            available=available and (callable(value) if kind=='callable' else type(value) is int)
+names=getattr(sys,'stdlib_module_names',None)
+print(json.dumps({
+    'version':list(sys.version_info[:2]),'platform':sys.platform,
+    'machine':os.uname().machine,'pointer_bytes':ctypes.sizeof(ctypes.c_void_p),
+    'stdlib_module_names':isinstance(names,frozenset) and {'os','sys','fcntl','resource'}<=names,
+    'capabilities':available},sort_keys=True,separators=(',',':')))
+"""
 SEALS = 0x01 | 0x02 | 0x04 | 0x08
 SHA1 = re.compile(r"[0-9a-f]{40}\Z")
 SHA256 = re.compile(r"[0-9a-f]{64}\Z")
@@ -619,14 +654,90 @@ def _runtime_machine():
     return machine
 
 
+def _python_report():
+    modules = {"os": os, "sys": sys, "fcntl": fcntl, "resource": resource}
+    names = getattr(sys, "stdlib_module_names", None)
+    available = all(
+        callable(getattr(modules[name], attribute, None)) if kind == "callable"
+        else type(getattr(modules[name], attribute, None)) is int
+        for kind, libraries in PYTHON_APIS.items()
+        for name, attributes in libraries.items() for attribute in attributes)
+    return {
+        "version": list(sys.version_info[:2]), "platform": sys.platform,
+        "machine": os.uname().machine, "pointer_bytes": ctypes.sizeof(ctypes.c_void_p),
+        "stdlib_module_names": isinstance(names, frozenset) and modules.keys() <= names,
+        "capabilities": available,
+    }
+
+
+def _require_python(report):
+    _keys(report, {"version", "platform", "machine", "pointer_bytes",
+                   "stdlib_module_names", "capabilities"}, "Python capability report")
+    version = report["version"]
+    if (not isinstance(version, list) or len(version) != 2
+            or any(type(number) is not int for number in version)
+            or version[0] != 3 or version[1] < 10
+            or report["platform"] != "linux" or report["machine"] != "x86_64"
+            or type(report["pointer_bytes"]) is not int or report["pointer_bytes"] != 8
+            or report["stdlib_module_names"] is not True
+            or report["capabilities"] is not True):
+        raise CapsuleUnavailable(
+            "sealed capsules require Linux x86-64 Python 3.10+, sys.stdlib_module_names "
+            "and the required process/descriptor APIs")
+
+
 def _platform():
     _runtime_machine()
-    if (fcntl is None or resource is None
-            or not hasattr(os, "memfd_create") or not hasattr(os, "fork")
-            or not hasattr(os, "waitid") or not hasattr(os, "WNOWAIT")):
-        raise CapsuleUnavailable("Linux sealed memfd and process supervision are required")
+    _require_python(_python_report())
     _inherited_fds()
     _prctl(4, 0)  # PR_SET_DUMPABLE: candidate peers cannot open live /proc FDs.
+
+
+def _interpreter_identity(path):
+    try:
+        entry = os.stat(path)
+    except OSError as error:
+        raise CapsuleUnavailable(f"cannot identify Python interpreter: {path}") from error
+    if path == PYTHON and (not stat.S_ISREG(entry.st_mode) or entry.st_uid != 0
+                           or entry.st_mode & 0o022 or not entry.st_mode & 0o111):
+        raise CapsuleUnavailable("capsules require a root-owned, non-writable system Python")
+    return (entry.st_dev, entry.st_ino, entry.st_size, entry.st_mode, entry.st_uid,
+            entry.st_gid, entry.st_mtime_ns, entry.st_ctime_ns)
+
+
+def _probe_python():
+    identity = _interpreter_identity(PYTHON)
+    try:
+        process = subprocess.Popen(
+            [PYTHON, "-I", "-S", "-c", PYTHON_PROBE, canonical(PYTHON_APIS).decode("ascii")],
+            stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            env=ENVIRONMENT, cwd="/", start_new_session=True, close_fds=True)
+        status, stdout, stderr = _collect(process, PYTHON_PROBE_SECONDS, MAX_PYTHON_PROBE_BYTES)
+        if status != 0 or stderr:
+            raise CapsuleError(f"Python capability probe failed ({status}): {stderr[:4096]!r}")
+        report = parse(stdout, MAX_PYTHON_PROBE_BYTES)
+        _require_python(report)
+        if _interpreter_identity(PYTHON) != identity:
+            raise CapsuleError("system Python changed during capability probe")
+        return report
+    except (OSError, subprocess.SubprocessError, CapsuleError) as error:
+        raise CapsuleUnavailable(f"system execution interpreter unavailable: {error}") from error
+
+
+class _ExecutionInterpreter:
+    """Per-capsule admission, usable only while the trusted executable is unchanged."""
+
+    def __init__(self):
+        _platform()
+        self.identity = _interpreter_identity(PYTHON)
+        if _interpreter_identity("/proc/self/exe") != self.identity:
+            _probe_python()
+        self.check()
+
+    def check(self):
+        _platform()
+        if _interpreter_identity(PYTHON) != self.identity:
+            raise CapsuleUnavailable("system Python changed; prepare a new capsule")
 
 
 def _descriptor_identity(fd):
@@ -755,8 +866,12 @@ def verify_receipt(raw: bytes, key: bytes, expected: ExecutionResult) -> dict:
 
 
 class Capsule:
-    def __init__(self, raw: bytes, spec: CapsuleSpec):
-        _platform()
+    def __init__(self, raw: bytes, spec: CapsuleSpec, *, _interpreter=None):
+        if _interpreter is None:
+            _interpreter = _ExecutionInterpreter()
+        else:
+            _interpreter.check()
+        self._interpreter = _interpreter
         bundle = _Bundle(raw, spec.record())
         self.bundle_fd = SealedBytes(raw, "artifacts", MAX_BUNDLE_BYTES)
         try:
@@ -767,7 +882,8 @@ class Capsule:
             raise
 
     def execute(self, program: str, request: Any, *, timeout: float = 30) -> ExecutionResult:
-        return _execute(self.bundle_fd, self.runtime_fd, program, request, timeout, 0)
+        return _execute(self.bundle_fd, self.runtime_fd, program, request, timeout, 0,
+                        _interpreter=self._interpreter)
 
     def close(self):
         self.bundle_fd.close()
@@ -782,14 +898,19 @@ class Capsule:
 
 def prepare(repository_root: Path, spec: CapsuleSpec) -> Capsule:
     """Read and prove the exact declared Git closure before any execution."""
-    _platform()
-    return Capsule(_make_bundle(repository_root, spec.record()), spec)
+    interpreter = _ExecutionInterpreter()
+    return Capsule(_make_bundle(repository_root, spec.record()), spec, _interpreter=interpreter)
 
 
-def _execute(bundle_fd, runtime_fd, program, request, timeout, depth, cancel_fd=None):
+def _execute(bundle_fd, runtime_fd, program, request, timeout, depth, cancel_fd=None,
+             *, _interpreter=None):
     if (type(timeout) not in (int, float) or not math.isfinite(timeout)
             or not 0 < timeout <= MAX_SECONDS or depth > MAX_DEPTH):
         raise CapsuleError("invalid capsule time/depth bound")
+    if _interpreter is None:
+        _interpreter = _ExecutionInterpreter()
+    else:
+        _interpreter.check()
     bundle_raw, runtime_raw = bundle_fd.read(), runtime_fd.read()
     bundle = _Bundle(bundle_raw)
     if runtime_raw != bundle.content("base", RUNTIME_PATH):
@@ -1166,11 +1287,11 @@ def _supervise(arguments):
     try:
         if len(arguments) != 8:
             raise CapsuleError("invalid descriptor bootstrap")
+        interpreter = _ExecutionInterpreter()
         runtime_fd, program_fd, request_fd, bundle_fd, life_fd = map(int, arguments[:5])
         inherited = {runtime_fd, program_fd, request_fd, bundle_fd, life_fd}
         if len(inherited) != 5 or _inherited_fds() != {0, 1, 2, *inherited}:
             raise CapsuleError("unexpected inherited descriptor or alias")
-        _platform()
         _prctl(36, 1)  # PR_SET_CHILD_SUBREAPER: reap the complete worker group.
         runtime_raw = _read_descriptor(runtime_fd, MAX_PROGRAM_BYTES)
         program_raw = _read_descriptor(program_fd, MAX_PROGRAM_BYTES)
@@ -1272,11 +1393,12 @@ def _supervise(arguments):
                         pending.clear()
                         # Each nested launch has its own guardian. If this parent
                         # dies, its liveness writer closes and that guardian cleans up.
+                        interpreter.check()
                         with SealedBytes(bundle_raw, "nested-artifacts", MAX_BUNDLE_BYTES) as artifact:
                             with SealedBytes(runtime_raw, "nested-runtime", MAX_PROGRAM_BYTES) as runtime:
                                 result = _execute(artifact, runtime, nested["program"], nested["request"],
                                                   min(MAX_SECONDS, max(0.001, deadline - time.monotonic())),
-                                                  depth + 1, life_fd)
+                                                  depth + 1, life_fd, _interpreter=interpreter)
                         response = canonical({"result": {"value": result.value, "receipt": result.receipt},
                                               "error": None})
                         if len(response) > MAX_OUTPUT_BYTES:

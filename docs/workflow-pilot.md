@@ -913,10 +913,14 @@ malformed messages, nonempty diagnostics and interrupted execution produce
 no admitted result or signature. Owned descriptors close on every path,
 without closing an unrelated FD reused at the same integer.
 
-Supported execution is currently **Linux x86-64 with 64-bit Python 3 only**.
-It requires sealed memfd, mounted/readable `/proc/self/fd`, fork, process
-groups, `waitid(WNOWAIT)`, and the non-dumpable/subreaper/parent-death prctl
-facilities plus unprivileged seccomp-BPF. Neither execution nor the real
+Supported execution is currently **Linux x86-64 with 64-bit Python 3.10+ only**,
+for both the trusted preparation interpreter and fixed, root-owned
+`/usr/bin/python3` execution interpreter. Both must provide
+`sys.stdlib_module_names`, the required `os` descriptor/process APIs and
+constants, `fcntl` seals and `resource` limits. It requires sealed memfd,
+mounted/readable `/proc/self/fd` and `/proc/self/exe`, fork, process groups,
+`waitid(WNOWAIT)`, and the non-dumpable/subreaper/parent-death prctl facilities
+plus unprivileged seccomp-BPF. Neither execution nor the real
 parent-death regression requires pidfds. The regression observes saved
 process generations and reaps adopted children; cleanup signals only
 generation-matching children whose PIDs remain reserved until reaped.
@@ -929,9 +933,21 @@ repositories are explicitly unsupported. Missing facilities raise `CapsuleUnavai
 with disposition `sealed-capsule-unavailable`; the production launcher exits
 nonzero and does **not** retry through a pathname, ordinary importer,
 temporary directory or post-execution rehash.
-Preparation probes runtime ABI and descriptor enumeration before collecting
-Git objects or launching a process. An unavailable procfs during guardian
-admission retains the same explicit disposition.
+Preparation checks the caller's Python version/capabilities, runtime ABI and
+descriptor enumeration before collecting Git objects or creating capsule
+resources. If `/proc/self/exe` identifies the same system executable, that
+live capability check also admits execution. Otherwise a fixed `-I -S`
+system-interpreter probe runs with no capsule descriptors, candidate code
+or ambient environment, a five-second deadline and a 4 KiB limit per output
+stream. An old or capability-incomplete interpreter, failed probe or malformed
+report raises `CapsuleUnavailable` before Git collection or capsule resources,
+workers and programs are launched. There is no `sys.executable` or PATH fallback.
+Admission is per capsule, not a global cache: executable identity and metadata
+are checked after probing and before reuse, including nested execution.
+A changed system interpreter requires fresh preparation. Sealed descriptors
+do not spawn probes, and guardians reuse their live system-interpreter
+admission for nested calls. An unavailable procfs during guardian admission
+retains the same explicit disposition.
 
 ### PR #189 adoption and completion boundary
 
