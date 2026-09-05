@@ -741,6 +741,13 @@ objects by their Git identities, traverses exact tree entries, and derives
 the complete static trusted import closure, including package initializers
 and proven absent namespace initializers. Dynamic trusted imports must be
 declared in `CapsuleSpec.modules`; undeclared imports cannot fall back.
+Static standard-library package imports also preload their named submodules:
+`from xml.etree import ElementTree` needs no dynamic declaration. Preparation
+inspects builtin/frozen specs and explicit platform-library package paths,
+not ambient `sys.path`, `sys.modules` parents or meta-path importers. Ordinary
+exports such as `collections.Counter` are not mistaken for submodules. The
+isolated worker completes these trusted imports before closing its importer;
+there is no post-validation pathname fallback.
 Programs/modules come only from the `base` tree. Other declared trees are
 inert data, not executable candidate imports. Missing data and symlink data
 are represented explicitly: `read()` returns `None` for absence and literal
@@ -774,8 +781,16 @@ worker-only seccomp-BPF filter additionally kills forbidden pathname/network
 acquisition, process creation/exec, group/session changes, signaling,
 ptrace/prctl and alternate-ABI attempts. This closes native operations such
 as `setpgid` which do not emit a Python audit event and could otherwise escape
-guardian cleanup. The guardian itself retains the capabilities to supervise
-and launch declared nested capsules.
+guardian cleanup. The filter also denies the `access`/`faccessat`/`faccessat2`
+existence-probe family on each supported ABI, plus current-directory,
+stat/statfs, readlink, directory-enumeration, extended-attribute and timestamp
+pathname metadata operations. In particular, `os.access()` emits no Python
+audit event and must not turn live filesystem existence into a signable
+verdict. Test declared artifact existence with
+`context.entry(tree, path)["mode"] is not None`; this answers from the sealed
+Git entry even if the working pathname is created, deleted or restored.
+The guardian itself retains the capabilities to supervise and launch declared
+nested capsules.
 
 ### Public API and production integration
 

@@ -1501,6 +1501,18 @@ prevent native process-group/session escape. Unsupported ABIs fail closed.
 6. Attempt undeclared imports, `sys.path` injection, file specs, pathname data,
    subprocess/fork, signals and network access. Catching a denied operation
    and returning `{"status":"pass"}` must still fail.
+   Run the real `os.access(request["path"], os.F_OK)` assertion against an
+   owned child's `/proc/<pid>` path, then close its input and reap it. Both
+   invocations must reject, not sign different existence-based verdicts.
+   Exercise effective-ID/no-follow access, stat/readlink, filesystem metadata,
+   current-directory, extended-attribute and timestamp probes, including
+   caught errors. In contrast, `context.entry()` must retain the declared
+   present/absent artifact answers after the working paths are swapped.
+   Import `ElementTree` with `from xml.etree import ElementTree`, including
+   from a transitive trusted helper, without adding `CapsuleSpec.modules`.
+   Package submodules and ordinary exported attributes must work together.
+   Candidate stdlib shadows/importers and undeclared stdlib submodules must
+   never become an alternate loading path.
 7. Exercise exact argv/digest receipt verification, HMAC mutation, replay
    against another invocation, forged result construction and credential
    environment injection. Children receive no key/token; stale/forged receipts
@@ -1529,11 +1541,23 @@ rejects the substituted program, while legitimate exact bytes still pass.
 Removing the seals, closure binding, descriptor loader, denial latch or
 guardian fails the corresponding behavioral controls.
 
+The PR210 correction also preserves two reproduced negative controls:
+before the syscall fix, an unchanged no-data capsule returned signable
+`pass`/`fail` results before/after reaping the requested child. Its program,
+runtime, artifact and request-payload digests were identical; invocation
+nonces and envelope digests were intentionally distinct. Before the static
+closure fix, `from xml.etree import ElementTree` failed in the closed importer
+unless redundantly declared as a dynamic module. Reverting either correction
+fails the corresponding focused regression.
+
 ### Automation
 
 The named unittest modules automate every assertion using real memfd,
 subprocesses, raw Git objects, JSON, module imports, receipts, and PID/FD
 observations. No raw tracked-source text assertion is the behavioral oracle.
+Parsed seccomp-BPF instruction evaluation covers metadata syscall numbers,
+allowed read/write/exit, and alternate-ABI rejection for both supported ABIs;
+native execution covers the current host only, not an emulated AArch64 claim.
 Git supplies immutable source authority and review/history; changed strings
 alone are not proof. No subjective/manual criterion applies.
 

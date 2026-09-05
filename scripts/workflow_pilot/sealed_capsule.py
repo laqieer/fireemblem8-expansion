@@ -15,6 +15,7 @@ import hashlib
 import hmac
 import importlib
 import importlib.abc
+import importlib.machinery
 import importlib.util
 import json
 import math
@@ -392,6 +393,23 @@ class _GitSource(_ObjectSource):
         return super().get(kind, oid)
 
 
+def _stdlib_spec(name):
+    """Inspect only platform roots, without importing a candidate-shadowed parent."""
+    search = [os.path.dirname(os.__file__)]
+    parts = name.split(".")
+    for index in range(len(parts)):
+        fullname = ".".join(parts[:index + 1])
+        spec = (importlib.machinery.BuiltinImporter.find_spec(fullname)
+                or importlib.machinery.FrozenImporter.find_spec(fullname)
+                or importlib.machinery.PathFinder.find_spec(fullname, search))
+        if spec is None or index == len(parts) - 1:
+            return spec
+        search = spec.submodule_search_locations
+        if search is None:
+            return None
+    return None
+
+
 def _assemble(source, spec):
     artifacts, modules, stdlib, scanned = {}, {}, set(), set()
     program_paths = set(spec["programs"].values())
@@ -432,8 +450,11 @@ def _assemble(source, spec):
         if not MODULE.fullmatch(name):
             raise CapsuleError(f"invalid import name: {name}")
         if name.split(".")[0] in sys.stdlib_module_names:
+            module_spec = _stdlib_spec(name)
+            if module_spec is None and not required:
+                return False
             stdlib.add(name)
-            return False
+            return module_spec is not None and module_spec.submodule_search_locations is not None
         if name in modules:
             return modules[name]["package"]
         prefix = name.replace(".", "/")
@@ -887,7 +908,7 @@ def _inherited_fds():
 
 
 def _lock_worker_kernel():
-    """Keep the worker in its owned group even for operations without audit events."""
+    """Block live pathname authority and group escape, including unaudited calls."""
     machine = os.uname().machine
     if machine == "x86_64":
         architecture = 0xC000003E
@@ -897,6 +918,10 @@ def _lock_worker_kernel():
             200, 217, 234, 257, 258, 259, 260, 261, 262, 263, 264, 265, 266, 267,
             268, 272, 297, 303, 304, 308, 310, 311, 316, 317, 321, 322, 323, 332,
         }
+        forbidden.update({21, 269})             # access, faccessat
+        forbidden.update({79, 137, 138})         # getcwd, statfs, fstatfs
+        forbidden.update({132, 235, 280})        # utime, utimes, utimensat
+        forbidden.update(range(188, 200))        # all pathname/FD xattr variants
     elif machine == "aarch64":
         architecture = 0xC00000B7
         forbidden = {
@@ -904,12 +929,14 @@ def _lock_worker_kernel():
             97, 117, 129, 130, 131, 138, 154, 157, 167, 198, 199, 220, 221,
             240, 264, 265, 268, 270, 271, 276, 277, 280, 281, 282, 291,
         }
+        forbidden.update({43, 44, 88})           # statfs, fstatfs, utimensat
+        forbidden.update(range(5, 17))           # all pathname/FD xattr variants
     else:
         raise CapsuleUnavailable(f"sealed worker syscall ABI is unsupported: {machine}")
     # The newer cross-architecture syscall range includes pidfd signaling/
-    # acquisition, io_uring, mount APIs, clone3 and openat2.
+    # acquisition, io_uring, mount APIs, clone3, openat2 and faccessat2.
     forbidden.update({424, 425, 426, 427, 428, 429, 430, 431, 432, 433,
-                      434, 435, 437, 438, 442})
+                      434, 435, 437, 438, 439, 442})
 
     class Filter(ctypes.Structure):
         _fields_ = [("code", ctypes.c_ushort), ("jt", ctypes.c_ubyte),

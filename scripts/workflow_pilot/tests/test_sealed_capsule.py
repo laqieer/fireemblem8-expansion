@@ -15,6 +15,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import types
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -439,6 +440,230 @@ class SealedCapsuleTests(unittest.TestCase):
         with capsule.prepare(self.root, undeclared) as prepared:
             with self.assertRaises(capsule.CapsuleError):
                 prepared.execute("transitive", {})
+
+    def test_static_stdlib_package_submodules_and_exported_attributes(self):
+        self.write("checks/stdlib_helper.py",
+               b"from xml.etree import ElementTree\n"
+               b"def tag():\n    return ElementTree.fromstring('<sealed/>').tag\n")
+        with self.attack(
+            "from checks import stdlib_helper\n"
+            "from collections import Counter, abc\n"
+            "from concurrent.futures import Future\n"
+            "from os.path import basename\n"
+            "from urllib import parse\n"
+            "def capsule_main(request, context):\n"
+            "    return {'xml': stdlib_helper.tag(), 'counts': dict(Counter('aba')),\n"
+            "            'mapping': isinstance({}, abc.Mapping), 'done': Future().done(),\n"
+            "            'basename': basename('sealed/input'),\n"
+            "            'query': parse.parse_qs('state=fixed')}\n"
+        ) as prepared:
+            bundle = capsule._Bundle(prepared.bundle_fd.read())
+            self.assertEqual(bundle.spec["modules"], [])
+            self.assertTrue({"xml.etree.ElementTree", "collections.abc", "urllib.parse"}
+                        .issubset(bundle.stdlib))
+            self.assertTrue({"collections.Counter", "concurrent.futures.Future"}
+                            .isdisjoint(bundle.stdlib))
+            result = prepared.execute("attack", {})
+        self.assertEqual(result.value, {
+            "xml": "sealed", "counts": {"a": 2, "b": 1}, "mapping": True, "done": False,
+            "basename": "input", "query": {"state": ["fixed"]},
+        })
+
+    def test_static_stdlib_resolution_never_uses_candidate_importers(self):
+        paths = ("xml/__init__.py", "xml/etree/__init__.py", "xml/etree/ElementTree.py")
+        for path in paths:
+            self.write(path, b"raise RuntimeError('candidate stdlib shadow executed')\n")
+        shadow = types.ModuleType("xml")
+        shadow.__path__ = [str(self.root / "xml")]
+
+        class CandidateFinder:
+            def find_spec(self, fullname, path=None, target=None):
+                raise AssertionError(f"ambient importer consulted: {fullname}")
+
+        try:
+            with (
+                mock.patch.object(sys, "path", [str(self.root), *sys.path]),
+                mock.patch.object(sys, "meta_path", [CandidateFinder(), *sys.meta_path]),
+                mock.patch.dict(sys.modules, {"xml": shadow}),
+            ):
+                with self.attack(
+                    "from xml.etree import ElementTree\n"
+                    "def capsule_main(request, context):\n"
+                    "    return ElementTree.fromstring('<trusted/>').tag\n"
+                ) as prepared:
+                    result = prepared.execute("attack", {})
+            self.assertEqual(result.value, "trusted")
+        finally:
+            for path in paths:
+                (self.root / path).unlink()
+
+    def test_undeclared_stdlib_submodules_and_missing_exports_still_reject(self):
+        attempts = (
+            "__import__('xml.etree.ElementTree', fromlist=['ElementTree'])",
+            "from xml.etree import nonexistent_capsule_export",
+        )
+        for attempt in attempts:
+            with self.subTest(attempt=attempt):
+                with self.attack(
+                    "import xml.etree\n"
+                    "def capsule_main(request, context):\n"
+                    "    try:\n        " + attempt + "\n"
+                    "    except Exception:\n        pass\n"
+                    "    return {'status': 'pass'}\n"
+                ) as prepared:
+                    with self.assertRaises(capsule.CapsuleError):
+                        prepared.execute("attack", {})
+
+    def test_artifact_existence_uses_sealed_entries_after_path_swap(self):
+        self.write("checks/existence.py",
+               b"def capsule_main(request, context):\n"
+               b"    return {path: context.entry('head', path)['mode'] is not None\n"
+               b"            for path in request['paths']}\n")
+        revision = self.commit()
+        paths = ("inputs/state.json", "inputs/not-present.json")
+        spec = capsule.CapsuleSpec(
+            trees={"base": revision, "head": revision},
+            programs={"existence": "checks/existence.py"}, data={"head": paths},
+        )
+        saved = (self.root / paths[0]).read_bytes()
+        try:
+            with capsule.prepare(self.root, spec) as prepared:
+                request = {"paths": list(paths)}
+                before = prepared.execute("existence", request)
+                (self.root / paths[0]).unlink()
+                self.write(paths[1], b"ambient existence is not authority\n")
+                after = prepared.execute("existence", request)
+            self.assertEqual(before.value, {paths[0]: True, paths[1]: False})
+            self.assertEqual(after.value, before.value)
+            key = b"test-only-capsule-signing-key-1234"
+            for result in (before, after):
+                self.assertEqual(
+                    capsule.verify_receipt(capsule.sign_receipt(result, key), key, result),
+                    result.receipt,
+                )
+        finally:
+            self.write(paths[0], saved)
+            (self.root / paths[1]).unlink(missing_ok=True)
+
+    def test_live_path_existence_cannot_change_a_receipted_verdict(self):
+        before = {fd: identity[:2] for fd, identity in self.descriptors().items()}
+        with self.attack(
+            "import os\n"
+            "def capsule_main(request, context):\n"
+            "    return {'status': 'pass' if os.access(request['path'], os.F_OK) else 'fail'}\n"
+        ) as prepared:
+            child = subprocess.Popen(
+                [capsule.PYTHON, "-I", "-S", "-c", "import sys; sys.stdin.buffer.read()"],
+                stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            )
+            try:
+                request = {"path": f"/proc/{child.pid}"}
+                for alive in (True, False):
+                    if not alive:
+                        child.stdin.close()
+                        child.wait(timeout=3)
+                    self.assertEqual(os.access(request["path"], os.F_OK), alive)
+                    with self.subTest(alive=alive):
+                        with self.assertRaises(capsule.CapsuleError):
+                            prepared.execute("attack", request)
+            finally:
+                child.stdin.close()
+                if child.poll() is None:
+                    child.kill()
+                    child.wait(timeout=3)
+        self.assertEqual(before, {fd: identity[:2] for fd, identity in self.descriptors().items()})
+
+    def test_caught_pathname_metadata_probes_cannot_return_pass(self):
+        attempts = {
+            "access": "os.access(path, os.F_OK)",
+            "access-effective-ids": "os.access(path, os.F_OK, effective_ids=True)",
+            "access-no-follow": "os.access(path, os.F_OK, follow_symlinks=False)",
+            "stat": "os.stat(path)",
+            "lstat": "os.lstat(path)",
+            "readlink": "os.readlink(path)",
+            "statvfs": "os.statvfs(path)",
+            "pathconf": "os.pathconf(path, 'PC_NAME_MAX')",
+            "getcwd": "os.getcwd()",
+            "getxattr": "os.getxattr(path, 'user.capsule')",
+            "getxattr-no-follow": "os.getxattr(path, 'user.capsule', follow_symlinks=False)",
+            "listxattr": "os.listxattr(path)",
+            "listxattr-no-follow": "os.listxattr(path, follow_symlinks=False)",
+            "utime": "os.utime(path, None)",
+        }
+        for label, attempt in attempts.items():
+            with self.subTest(operation=label):
+                with self.attack(
+                    "import os\n"
+                    "def capsule_main(request, context):\n"
+                    "    path = request['path']\n"
+                    "    try:\n        " + attempt + "\n"
+                    "    except Exception:\n        pass\n"
+                    "    return {'status': 'pass'}\n"
+                ) as prepared:
+                    with self.assertRaises(capsule.CapsuleError):
+                        prepared.execute("attack", {"path": str(self.root / "inputs/state.json")})
+
+    def test_metadata_syscall_filters_cover_both_supported_abis(self):
+        policies = {
+            "x86_64": (0xC000003E, (0, 1, 60), {
+                "access": 21, "faccessat": 269, "faccessat2": 439, "getcwd": 79,
+                "stat": 4, "lstat": 6, "newfstatat": 262, "statx": 332,
+                "statfs": 137, "fstatfs": 138, "readlink": 89, "readlinkat": 267,
+                "getdents": 78, "getdents64": 217, "utime": 132, "utimes": 235,
+                "futimesat": 261, "utimensat": 280,
+                **{f"xattr-{number}": number for number in range(188, 200)},
+            }),
+            "aarch64": (0xC00000B7, (63, 64, 93), {
+                "faccessat": 48, "faccessat2": 439, "getcwd": 17,
+                "newfstatat": 79, "statx": 291, "statfs": 43, "fstatfs": 44,
+                "readlinkat": 78, "getdents64": 61, "utimensat": 88,
+                **{f"xattr-{number}": number for number in range(5, 17)},
+            }),
+        }
+
+        def verdict(instructions, architecture, number):
+            pc, accumulator = 0, None
+            while pc < len(instructions):
+                code, yes, no, operand = instructions[pc]
+                if code == 0x20:
+                    accumulator = {0: number, 4: architecture}[operand]
+                elif code == 0x15:
+                    pc += yes if accumulator == operand else no
+                elif code == 0x35:
+                    pc += yes if accumulator >= operand else no
+                elif code == 0x06:
+                    return operand
+                else:
+                    self.fail(f"unsupported seccomp instruction: {code}")
+                pc += 1
+            self.fail("seccomp filter has no verdict")
+
+        for machine, (architecture, allowed, denied) in policies.items():
+            with self.subTest(machine=machine):
+                instructions = []
+
+                def prctl(option, *args):
+                    if option == 22:
+                        program = args[1]._obj
+                        instructions.extend((entry.code, entry.jt, entry.jf, entry.k)
+                                            for entry in program.filters[:program.length])
+                    return 0
+
+                kernel = mock.Mock()
+                kernel.prctl.side_effect = prctl
+                with mock.patch.object(os, "uname", return_value=types.SimpleNamespace(machine=machine)):
+                    with mock.patch.object(capsule.ctypes, "CDLL", return_value=kernel):
+                        capsule._lock_worker_kernel()
+                for name, number in denied.items():
+                    with self.subTest(syscall=name):
+                        self.assertEqual(verdict(instructions, architecture, number), 0x80000000)
+                for number in allowed:
+                    self.assertEqual(verdict(instructions, architecture, number), 0x7FFF0000)
+                    self.assertEqual(verdict(instructions, architecture ^ 1, number), 0x80000000)
+                    self.assertEqual(verdict(instructions, architecture, number | 0x40000000), 0x80000000)
+        with mock.patch.object(os, "uname", return_value=types.SimpleNamespace(machine="riscv64")):
+            with self.assertRaises(capsule.CapsuleUnavailable):
+                capsule._lock_worker_kernel()
 
     def test_absence_and_symlink_data_are_exact_inert_artifacts(self):
         link = self.root / "inputs/link.json"
