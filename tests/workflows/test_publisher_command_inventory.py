@@ -698,11 +698,84 @@ class PublisherExactTreeTests(unittest.TestCase):
             fake = ModuleType(name)
             fake.__spec__ = importlib.util.spec_from_file_location(name, self.directory / (name + ".py"))
             with self.subTest(module=name), mock.patch.dict(sys.modules, {name: fake}):
-                for importer in (lambda: builtins.__import__(name), lambda: importlib.import_module(name)):
-                    with authority._source_only_authority(sources), self.assertRaises(ValueError):
-                        importer()
+                importers = (
+                    ("builtin", lambda: builtins.__import__(name)),
+                    ("import-module", lambda: importlib.import_module(name)),
+                    ("importlib-compat", lambda: importlib.__import__(name)),
+                    ("prebound-builtin", lambda: original_import(name)),
+                )
+                for label, importer in importers:
+                    with self.subTest(importer=label):
+                        with authority._source_only_authority(sources):
+                            if name == "unregistered_package":
+                                with self.assertRaises(authority.InventoryError):
+                                    importer()
+                            else:
+                                actual = importer()
+                                self.assertIsNot(actual, fake)
+                                self.assertEqual(actual.Fraction(1, 2) + actual.Fraction(1, 3),
+                                                 actual.Fraction(5, 6))
+                        self.assertIs(sys.modules[name], fake)
         self.assertIs(builtins.__import__, original_import)
         self.assertIs(importlib.import_module, original_import_module)
+
+    def test_prebound_from_import_cannot_reuse_a_quarantined_package_attribute(self):
+        sources = authority._bind_exact_sources(self.directory, self.commit)
+        package = importlib.import_module("email")
+        original_import = builtins.__import__
+        for name, cached in (("email.parser", True), ("email.parser", False),
+                             ("ambient_parser", True)):
+            fake = ModuleType(name)
+            fake.__spec__ = importlib.util.spec_from_file_location(
+                name, self.directory / "ambient-email-parser.py",
+            )
+            with mock.patch.dict(sys.modules), \
+                 mock.patch.object(package, "parser", fake, create=True):
+                for importer in (original_import, importlib.__import__):
+                    for fail in (False, True):
+                        with self.subTest(name=name, cached=cached,
+                                          importer=importer.__module__, failure=fail):
+                            sys.modules.pop("email.parser", None)
+                            if cached:
+                                sys.modules[name] = fake
+                            else:
+                                sys.modules.pop(name, None)
+
+                            def exercise():
+                                with authority._source_only_authority(sources):
+                                    actual = importer("email", fromlist=("parser",)).parser
+                                    self.assertIsNot(actual, fake)
+                                    message = actual.Parser().parsestr("Subject: captured\n\n")
+                                    self.assertEqual(message["Subject"], "captured")
+                                    if fail:
+                                        raise authority.InventoryError("fixture failure")
+
+                            if fail:
+                                with self.assertRaisesRegex(authority.InventoryError, "fixture failure"):
+                                    exercise()
+                            else:
+                                exercise()
+                            if cached:
+                                self.assertIs(sys.modules[name], fake)
+                            else:
+                                self.assertIsNot(sys.modules.get(name), fake)
+                            self.assertIs(package.parser, fake)
+
+    def test_exact_tree_api_cannot_import_cached_external_module_via_importlib(self):
+        package = self.directory / "scripts/workflow_pilot/__init__.py"
+        package.write_text(package.read_text() + "\nimport importlib\n"
+                           "assert importlib.__import__('unregistered_package').VALUE == 7\n")
+        self.snapshot()
+        fake = ModuleType("unregistered_package")
+        fake.VALUE = 7
+        fake.__spec__ = importlib.util.spec_from_file_location(
+            fake.__name__, self.directory / "ambient-package.py",
+        )
+        with mock.patch.object(authority, "SOURCE_ROOT", self.directory), \
+             mock.patch.dict(sys.modules, {fake.__name__: fake}):
+            with self.assertRaisesRegex(authority.InventoryError, "outside publisher authority"):
+                authority.validate_exact_tree(self.directory, self.commit)
+            self.assertIs(sys.modules[fake.__name__], fake)
 
     def test_real_cli_loads_system_stdlib_not_ambient_finders_or_package_shadows(self):
         package = self.directory / "scripts/workflow_pilot/__init__.py"
@@ -1090,6 +1163,23 @@ class PublisherExactTreeTests(unittest.TestCase):
         )
         self.assertEqual(control.returncode, 0, control.stderr)
         self.assertEqual(marker.read_text(), "inert program")
+
+    def test_committed_authority_exit_cannot_satisfy_validation(self):
+        package = self.directory / "scripts/workflow_pilot/__init__.py"
+        original = package.read_text()
+        for code in (0, None, 17):
+            with self.subTest(code=code):
+                package.write_text(original + f"\nraise SystemExit({code!r})\n")
+                self.snapshot()
+                completed = self.cli()
+                self.assertEqual(completed.returncode, 1, completed.stderr)
+                self.assertIn(b"authority terminated before validation completed", completed.stderr)
+                self.assertNotIn(b"reviewed commands", completed.stdout)
+                with mock.patch.object(authority, "SOURCE_ROOT", self.directory):
+                    with self.assertRaisesRegex(authority.InventoryError, "terminated") as rejected:
+                        authority.validate_exact_tree(self.directory, self.commit)
+                self.assertIsInstance(rejected.exception.__cause__, SystemExit)
+                self.assertEqual(rejected.exception.__cause__.code, code)
 
     def test_all_program_data_sources_are_captured_but_not_importable(self):
         sources = authority._bind_exact_sources(self.directory, self.commit)

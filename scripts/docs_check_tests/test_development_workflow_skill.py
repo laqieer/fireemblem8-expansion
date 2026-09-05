@@ -4622,6 +4622,7 @@ printf '%s\t%s\t%s\n' "$result" \
         expected_cases = [
             "TC-WORKFLOW-PUBLISHER-PHASE-001",
             "TC-WORKFLOW-PUBLISHER-COMMAND-INVENTORY-001",
+            "TC-WORKFLOW-WORKTREE-CLEANUP-001",
             "TC-WORKFLOW-IMMEDIATE-PUSH-001",
             "TC-WORKFLOW-CI-WAIT-001",
             "TC-WORKFLOW-MANUAL-HANDOFF-001",

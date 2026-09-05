@@ -110,9 +110,14 @@ An extra registered command exceeds its reviewed multiplicity; appending an
 unknown command anywhere in either trusted step also rejects.
 Import-time policy permits only the captured repository module set and
 standard-library modules from trusted interpreter directories, built-ins or
-frozen modules. It checks cached imports too; dynamic `builtins.__import__`
-and `importlib.import_module` cannot fall back to ambient packages, custom
-finders, or repository/site-package standard-library shadows.
+frozen modules. Untrusted cached modules and module-valued exports from
+retained modules are quarantined during validation and restored afterward, including
+on failure. Dynamic `builtins.__import__`, `importlib.import_module`,
+`importlib.__import__`, and previously bound import functions cannot fall
+back to those caches, ambient packages, custom finders, or repository/site-package
+standard-library shadows. A standard-library name may load its genuine system
+module instead of a quarantined shadow. Orphaned parent bindings and aliases
+are included even when the original module has no `sys.modules` entry.
 
 An execution audit enforces the same source authority independently of import
 syntax or loader method spelling. Direct, aliased, or previously bound loaders

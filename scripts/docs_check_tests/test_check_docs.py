@@ -1031,6 +1031,13 @@ class TesterCaseRegistryTests(unittest.TestCase):
                             "test_embedded_publisher_shell_and_python_are_syntactically_valid",
                         },
                     },
+                    "TC-WORKFLOW-WORKTREE-CLEANUP-001": {
+                        "document": "docs/test-cases/workflow-governance.md",
+                        "commands": {
+                            "python3 -m unittest scripts.workflow_pilot.tests."
+                            "test_worktree_cleanup -v",
+                        },
+                    },
                     "TC-WORKFLOW-IMMEDIATE-PUSH-001": {
                         "document": "docs/test-cases/workflow-governance.md",
                         "commands": {

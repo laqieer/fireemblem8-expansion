@@ -484,6 +484,7 @@
         "https://github.com/laqieer/fireemblem8-expansion/issues/177",
         "https://github.com/laqieer/fireemblem8-expansion/issues/200",
         "https://github.com/laqieer/fireemblem8-expansion/issues/201",
+        "https://github.com/laqieer/fireemblem8-expansion/issues/208",
         "https://github.com/laqieer/fireemblem8-expansion/issues/207"
       ],
       "reference": ".github/skills/development-workflow/SKILL.md",
@@ -496,7 +497,8 @@
         "TC-WORKFLOW-BODY-EDIT-001",
         "TC-WORKFLOW-PILOT-BASELINE-001",
         "TC-WORKFLOW-PUBLISHER-COMMAND-INVENTORY-001",
-        "TC-WORKFLOW-PUBLISHER-PHASE-001"
+        "TC-WORKFLOW-PUBLISHER-PHASE-001",
+        "TC-WORKFLOW-WORKTREE-CLEANUP-001"
       ]
     },
     {
@@ -2244,6 +2246,34 @@
         {
           "command": "python3 -m unittest -v tests.workflows.test_patch_release_workflow.PatchReleaseWorkflowTests.test_child_launcher_closes_bash_memfd_pipe_and_socket_fds tests.workflows.test_patch_release_workflow.PatchReleaseWorkflowTests.test_supervisor_launcher_authenticates_session_before_namespace_and_leaves_no_orphan tests.workflows.test_patch_release_workflow.PatchReleaseWorkflowTests.test_stopped_supervisor_dies_with_parent_before_resume_without_orphan tests.workflows.test_patch_release_workflow.PatchReleaseWorkflowTests.test_cleanup_reauthenticates_and_terminates_owned_supervisor",
           "evidence": "tests/workflows/test_patch_release_workflow.py"
+        }
+      ]
+    },
+    {
+      "id": "TC-WORKFLOW-WORKTREE-CLEANUP-001",
+      "title": "Remove only proven completed worktrees",
+      "feature_id": "workflow-governance",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/208"
+      ],
+      "document": "docs/test-cases/workflow-governance.md",
+      "anchor": "tc-workflow-worktree-cleanup-001-remove-only-proven-completed-worktrees",
+      "profiles": [
+        "Linux source checkout with Python 3 and Git; deterministic GitHub responses"
+      ],
+      "purpose": "Remove completed worktree residue only after merged work has successful automatic master Build and relevant exact-proof-commit CI.",
+      "prerequisites": "Run from the source root; fixtures use exclusively owned build/worktree-cleanup-* directories, no credentials, network, ROM or emulator.",
+      "actions": "Run the focused real-Git suite; plan inertly and apply an eligible fixture. Exercise local ownership/work, bare/nested repositories, every private recovery/REUC stage, shared commit reachability, private configuration/edit buffers/index snapshots/locks, unknown or malformed index extensions and valid v2-v4 caches, local promisor fetching, source-backed generated paths, active paths/owned processes, remote identity/pagination/CI, non-UTF8 target/backlink/mount paths with lossless ASCII JSON, and both apply-pass drift controls. Mount records are ordinary fixture byte files, never real mounts.",
+      "expected_result": "Only the fresh eligible explicit target is removed normally; its branch and other work remain. Every REUC object is preserved by shared refs, unique private metadata stays byte-identical, and the report contains proof, observed allocated size and precise retention reasons with lossless filesystem byte paths.",
+      "negative_control": "The pre-fix workflow leaves completed fixtures; the initial helper deletes bare/private-recovery fixtures and lazy-fetches promisor objects. The first correction still accepts REUC-only blobs, private configuration/index backups and unknown extensions, and crashes decoding non-UTF8 backlink/mount paths. These and premature, implicit, dirty, active, foreign, unpushed, stale or missing-evidence deletion fail behavioral controls.",
+      "interactions": "Depends on the existing completion gate, Git, gh for live reads, Linux process visibility and one coordinator's preserved-path inventory; conflicts with force/prune, premature deletion or unreported active assignments. Cleanup never delays immediate commit publication.",
+      "save_compatibility": "Source-only workflow tooling; no ROM/RAM, save/config, generated-data, localization, modern or archival changes.",
+      "cleanup": "Tests remove only their UUID-owned fixture roots; the coordinator alone applies real historical cleanup after merge/master gates and records retained blockers.",
+      "limitations": "Allocated blocks are not exact physical freed bytes. Ambiguous squash/rebase history, private-only recovery/REUC objects, private configuration or unfamiliar metadata/index formats, any promisor configuration, missing API/local objects and unknown ignored data stay held. Tests scope process inventory to owned PIDs and skip unsupported non-Linux/proc hosts; live use still fails closed on missing visibility or malformed byte-path records. No manual-only visual criterion.",
+      "automation": [
+        {
+          "command": "python3 -m unittest scripts.workflow_pilot.tests.test_worktree_cleanup -v",
+          "evidence": "scripts/workflow_pilot/tests/test_worktree_cleanup.py"
         }
       ]
     },

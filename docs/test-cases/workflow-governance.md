@@ -260,11 +260,18 @@ authority.
    The parser distinguishes quoted regex metacharacters and a quoted `[[`
    executable from Bash's actual conditional keyword. A safe Bash-only regex
    probe supplies independent positive/negative execution evidence.
-10. Confirm dynamic `builtins.__import__`, aliases and indirect
-    `importlib.import_module` calls cannot import an ambient package, including
-    an already cached one. Trusted system standard-library loading succeeds
-    despite an ambient finder or repository shadow; cached standard-library
-    shadows reject. The ordinary-loader negative control executes only an
+10. Confirm dynamic `builtins.__import__`, aliases, `importlib.__import__`,
+    prebound import functions and indirect `importlib.import_module` calls
+    cannot import an ambient package, including an already cached one.
+    The exact-tree API must reject a committed initializer trying the cached
+    external-module route. Cached child-module attributes on a trusted
+    package must not bypass this through a from-import, including orphaned
+    bindings with no module-table entry and exports under another alias.
+    Genuine system
+    standard-library modules may load instead of quarantined shadows, and
+    quarantined caller modules and package bindings return unchanged after success or
+    failure. Trusted system loading also succeeds despite an ambient finder
+    or repository shadow. The ordinary-loader negative control executes only an
     inert package that raises a deliberate error. A 1 MiB authority source
     passes; a 1 MiB-plus-one Git blob is rejected after its size query and
     before any content read. Every authorized blob read is explicitly bounded.
@@ -311,6 +318,10 @@ At pre-correction `8342faed`, both the committed program import and aliased
 external loader succeed and write their inert markers. A filename-only or
 stdlib-caller-only execution check is also insufficient: the cached-code and
 source-loaded `runpy` controls preserve those independent negative cases.
+The earlier cache guard lets `importlib.__import__` accept a cached external
+module in the exact-tree API and lets prebound from-imports return a cached
+package shadow. These executable controls fail independently of source
+binding; quarantine closes both routes without disabling genuine stdlib use.
 
 ### Interactions and save compatibility
 
@@ -346,6 +357,163 @@ checks plus publisher/upstream decision parity. The upstream-specific method
 independently verifies its production call site against the shared corpus.
 The two existing mount-reader methods and syntax method retain the canonical
 programs' decoded-output and compile contracts.
+
+## TC-WORKFLOW-WORKTREE-CLEANUP-001: Remove only proven completed worktrees
+
+- **Feature / originating issue:** `workflow-governance` /
+  [issue #208](https://github.com/laqieer/fireemblem8-expansion/issues/208).
+- **Supported configuration or artifact:** Linux source checkout with Python
+  3 and Git; live use also requires authenticated `gh`. The automated case
+  needs no credentials, network, ROM, emulator, or game build.
+- **Prerequisites and clean starting state:** run from the source root. The
+  suite creates exclusively owned disposable repositories and real linked
+  worktrees under `build/worktree-cleanup-*`, not system temporary directories.
+  It never selects the developer's registered historical worktrees.
+
+### Actions
+
+1. Run
+   `python3 -m unittest scripts.workflow_pilot.tests.test_worktree_cleanup -v`.
+2. Confirm that a clean feature branch with an exact merged PR/head, preserved
+   Git ancestry, automatic green master Build, and successful relevant
+   exact-commit CI is eligible in dry-run without any index, registration, or
+   file change. Apply removes only that explicitly selected worktree, including
+   known generated output, while its branch, main checkout, and symlink
+   referents remain.
+3. Exercise pending/failed/cancelled/latest-rerun and missing/stale/candidate
+   CI; open PR, changed branch/head, unique/unpushed work, dirty/staged/untracked
+   files, ignored saves, hidden-index changes, locks, incomplete Git
+   operations, detached/current/master/active/foreign/broad-root targets,
+   nested repositories/mounts, and missing registrations. Every case retains
+   the workspace and reports its blocker.
+4. Exercise explicit preserved paths for an agent between commands and a real
+   live process whose CWD is in the fixture. Introduce local, lock, process,
+   head, and remote proof changes after planning and just before removal.
+   Revalidation must prevent removal without trusting prior eligibility.
+5. Exercise paginated GitHub data beyond the first page, duplicate/invalid
+   record identities, missing totals, oversized and incomplete collections,
+   wrong repository identity, changed workflow detail, old historical green
+   proof, and an explicit later master proof containing the merge.
+6. In the owned fixtures, put a real bare repository with its own unique commit
+   under ignored `build/`. Create a detached commit and return to the completed
+   branch; also place unique objects in old/new entries of private reflogs,
+   `ORIG_HEAD`, and a non-first `FETCH_HEAD` entry. All remain retained unless
+   shared refs durably retain those objects. A common-directory reflog alone
+   is not a durable ref. Repeat with changes after planning.
+7. Configure an owned local promisor remote containing a proof commit absent
+   from the fixture's shared object database. Dry-run must retain without
+   adding or changing objects, packs, indexes, promisor markers, refs, or
+   private metadata. This uses local Git transport, never network access.
+   Unknown ignored graphics remain held, while tracked-source-backed
+   `.4bpp.fk` and `.feimg[1-4].bin`/`.fetsa[1-4].bin` derivatives are disposable.
+   Distinguish PNG bitmap sources, JASC `.pal` palette sources, and raw
+   committed `.agbpal` files: palettes do not establish bitmap/header
+   production, raw palettes do not establish `.gbapal` conversion, and PNG
+   does not establish unsupported `.8bpp.h` output. Repeat those holds with
+   `.fk`/`.lz` derivatives and confirm ignored contents remain unchanged.
+8. Pass an uppercase full `--proof-sha` through the CLI and require the same
+   canonical proof result; uppercase GitHub/programmatic identities still fail.
+   A command failing without stderr reports its exit code. Simulated
+   unsupported platforms fail closed; real-worktree tests explicitly skip a
+   non-Linux or missing-`/proc` host rather than pretending removal succeeded.
+9. Create real three-stage index conflicts from unreachable blobs, resolve
+   back to the committed content, and verify clean status with nonempty
+   `git ls-files --resolve-undo -z`. Preserve all three stages: saving only two
+   via shared refs must still retain the tree. Saving all blobs through shared
+   commit ancestry permits normal removal without losing the blobs. Introduce
+   REUC objects or change only recorded modes after planning and immediately
+   before removal; both invalidate eligibility.
+10. Create worktree-local configuration (enabled, disabled and empty), index
+    backups/locks, split-index bases, private excludes/hooks/rerere data, and
+    uncommitted edit buffers. All remain byte-identical and retained. A valid
+    index with an unfamiliar optional extension is retained even though Git
+    can report clean status; malformed/checksum-invalid/truncated index and
+    REUC data are held too. Ordinary DIRC v2–v4 indexes, including compressed
+    long/non-UTF-8 paths and reconstructible caches, remain eligible.
+    Empty private `refs/heads/`, `refs/tags/`, and nested ref containers remain
+    eligible on both older Git and Git versions that initialize them.
+    Any contained file or symlink retains the tree without changing shared
+    refs or external data; repeat insertion on both apply passes.
+    Repeat metadata/configuration/extension changes on both apply passes.
+11. Move an owned Git worktree to a non-UTF-8 path; its real backlink and JSON
+    path must round-trip to the original filesystem bytes, and eligible
+    removal still works. Use fixture mount records with non-UTF-8 names and
+    escaped spaces, tabs, newlines and backslashes. Unrelated mounts do not
+    block; mounts at or inside the workspace or private Git directory do.
+    Repeat mount/backlink drift on both apply passes. Malformed mount records
+    retain with a reason rather than crashing or silently ignoring mounts.
+    Report a retained non-UTF-8 ignored filename through strict ASCII JSON
+    without losing either its name or file content.
+12. For actual delivery, the coordinator first merges the task's PR, verifies
+   all relevant exact-master CI and `make remote-completion-check`, then runs
+   the [documented planner/apply commands](../workflow-pilot.md#completed-worktree-cleanup).
+   Preserve all assigned workspaces throughout apply. Record removed paths,
+   observed pre-removal allocated sizes, proof identities, and retained reasons.
+
+### Expected result
+
+Only explicitly selected, freshly proven completed worktrees are removed by
+normal Git removal. Dry-run is inert. The master proof contains the PR merge;
+an unrelated newer master failure does not invalidate a historical completed
+proof. Current failing/pending reruns supersede old green evidence.
+Apply refuses implicit targets or a missing preserved-workspace inventory.
+No branch is deleted and no global prune or forced cleanup occurs.
+Private recovery checks run during planning, fresh assessment, and the final
+local check. A shared ref may protect recovery ancestry or a non-commit
+object; a shared reflog alone may not. Every configured promisor/partial-clone
+repository is retained before object access, including on Git 2.43.
+Every REUC object participates in the same durable-object proof, regardless
+of clean current status. Unique private configuration, recovery/index
+snapshots, edit buffers and unfamiliar index extensions are not build output.
+Filesystem byte paths remain lossless through Git, mount/backlink checks and
+JSON. Fresh checks still cover non-UTF-8 path and private-metadata drift.
+
+### Negative control
+
+The pre-fix workflow has no post-completion planner/apply operation, so
+completed fixtures remain indefinitely. Within the regression, removing
+revalidation or accepting merge/candidate success alone causes destructive
+negative controls to fail; changing spelling or ordering without behavior
+changes does not supply or invalidate deletion evidence.
+The initial helper incorrectly accepted bare repositories and private-only
+recovery objects, and a missing proof object could trigger a promisor fetch
+during dry-run. These real-Git regressions must fail with those safeguards
+removed; keeping the current branch's ancestry is not equivalent evidence.
+Its first recovery fix still accepted REUC-only unreachable blobs, private
+configuration/backups and unrecognized index extensions, and text decoding
+crashed on valid non-UTF-8 target/backlink/mount names. The extended controls
+fail against that parent helper, including after-plan/final-check drift.
+
+### Interactions and save compatibility
+
+Dependencies are Git, the existing automatic exact-master completion
+definition, `gh` for live read operations, Linux process visibility, and the
+coordinator's complete active-path inventory. Conflicts are premature/forced
+cleanup, unreported active ownership, and mistaking candidate CI for master
+proof. Immediate owner-push and WIP transparency remain separate and are
+never delayed for cleanup. There are no game-feature, ROM/RAM, save/config,
+generated-data, localization, modern profile, or archival interactions.
+
+### Automation
+
+`python3 -m unittest scripts.workflow_pilot.tests.test_worktree_cleanup -v`
+executes real Git operations with deterministic GitHub responses. The existing
+workflow-pilot test discovery includes this case without changing CI topology.
+The registry entry binds this source-only procedure to its behavioral suite.
+
+### Cleanup and limitations
+
+The suite removes only its own UUID-named fixture roots. Live historical
+cleanup is coordinator-owned, never a test side effect. Allocated sizes are
+not exact physical freed bytes. Unknown ignored local data, squash/rebase
+ancestry, private-only recovery/REUC objects, private configuration or unknown
+metadata/index formats, promisor configuration, missing history/API evidence,
+or incomplete process visibility are
+retention blockers, not permission to force deletion. No visual/audio/manual
+judgment is required; actual service availability and active ownership remain
+live operational checks. Fixture process inventory includes only owned PIDs;
+the live helper retains its full same-owner visibility requirement. Mount
+records are simulated with byte files, never actual or privileged mounts.
 
 ## TC-WORKFLOW-IMMEDIATE-PUSH-001: Publish new commits immediately and expose WIP ownership
 
