@@ -28,7 +28,7 @@ import warnings
 from pathlib import Path
 from typing import Any, BinaryIO
 
-from . import reporter
+from . import reporter, signed_schema
 
 
 PROTOCOL = "workflow-pilot-authenticated-git-broker-v1"
@@ -42,7 +42,6 @@ SUBPROCESS_OUTPUT_MAX_BYTES = 1024 * 1024
 CONFIG_MAX_BYTES = 1024 * 1024
 JOURNAL_MAX_BYTES = 16 * 1024 * 1024
 CAPABILITY_MEMFD_NAME = "/memfd:workflow-pilot-git-capability"
-REMOTE_MUTATION_GUARD_SECONDS = 2
 OPENSSL = "/usr/bin/openssl"
 GIT = reporter.GIT
 HEX_64_RE = re.compile(r"^[0-9a-f]{64}$")
@@ -58,6 +57,10 @@ class BrokerError(ValueError):
     def __init__(self, code: str, message: str):
         super().__init__(message)
         self.code = code
+
+
+class IndeterminatePublication(BrokerError):
+    """A transmitted push needs exact remote reconciliation."""
 
 
 def _fail(code: str, message: str) -> None:
@@ -490,6 +493,12 @@ def _validate_capability(
     now: datetime_module.datetime,
     deadline: OperationDeadline | None = None,
 ) -> dict[str, Any]:
+    try:
+        signed_schema.validate_record(
+            capability, "capability", "launch capability"
+        )
+    except signed_schema.SchemaError as error:
+        raise BrokerError("invalid-capability", str(error)) from error
     _exact_keys(
         capability,
         "launch capability",
@@ -529,7 +538,7 @@ def _validate_capability(
     plan_identity = _string(
         capability["plan_identity"], "capability.plan_identity", HEX_64_RE
     )
-    if capability["operation"] not in {"preflight", "publish"}:
+    if capability["operation"] not in {"preflight", "publish", "reconcile"}:
         _fail("invalid-capability", "launch capability operation is not allowlisted")
     _string(
         capability["capability_nonce"],
@@ -601,7 +610,14 @@ def _validate_plan(
     *,
     now: datetime_module.datetime,
     deadline: OperationDeadline | None = None,
+    allow_expired: bool = False,
 ) -> dict[str, Any]:
+    try:
+        signed_schema.validate_record(
+            plan, "plan", "signed publication plan"
+        )
+    except signed_schema.SchemaError as error:
+        raise BrokerError("invalid-plan", str(error)) from error
     _exact_keys(
         plan,
         "signed publication plan",
@@ -672,7 +688,7 @@ def _validate_plan(
     sequence = _integer(plan["sequence"], "plan.sequence", 1)
     issued_at = _time(plan["issued_at"], "plan.issued_at")
     expires_at = _time(plan["expires_at"], "plan.expires_at")
-    if issued_at > now or expires_at <= now:
+    if issued_at > now or (expires_at <= now and not allow_expired):
         _fail("plan-lifetime", "publication plan is not currently valid")
     lifetime = (expires_at - issued_at).total_seconds()
     if lifetime <= 0 or lifetime > installation["plan_lifetime_seconds"]:
@@ -684,9 +700,19 @@ def _validate_plan(
     authority = installation["plan_signers"].get(key_id)
     if authority is None or authority["signer"] != signer or authority["actor"] != actor:
         _fail("unauthorized-signer", "publication plan signer/actor is not installed")
-    verification_deadline = OperationDeadline(
-        min(expires_at, deadline.absolute) if deadline is not None else expires_at
-    )
+    if allow_expired:
+        if deadline is None:
+            _fail(
+                "invalid-plan",
+                "expired plan verification requires a reconcile deadline",
+            )
+        verification_deadline = deadline
+    else:
+        verification_deadline = OperationDeadline(
+            min(expires_at, deadline.absolute)
+            if deadline is not None
+            else expires_at
+        )
     _verify_ed25519(
         authority["public_key"],
         _signed_payload(PLAN_DOMAIN, plan),
@@ -729,6 +755,7 @@ def _load_broker_installation(path: Path) -> dict[str, Any]:
             "protected_remote",
             "pack_max_bytes",
             "operation_timeout_seconds",
+            "reconciliation_timeout_seconds",
             "plan_lifetime_seconds",
             "test_only",
         ),
@@ -755,6 +782,11 @@ def _load_broker_installation(path: Path) -> dict[str, Any]:
         "pack_max_bytes": _integer(raw["pack_max_bytes"], "installation.pack_max_bytes", 1),
         "operation_timeout_seconds": _integer(
             raw["operation_timeout_seconds"], "installation.operation_timeout_seconds", 1
+        ),
+        "reconciliation_timeout_seconds": _integer(
+            raw["reconciliation_timeout_seconds"],
+            "installation.reconciliation_timeout_seconds",
+            1,
         ),
         "plan_lifetime_seconds": _integer(
             raw["plan_lifetime_seconds"],
@@ -1343,7 +1375,6 @@ def _check_protected_remote(
             owners=remote["_owners"],
             candidate_uid=remote["_candidate_uid"],
             mutable=True,
-            deadline=deadline,
         )
     _audit_directory_fd(
         remote["refs_fd"],
@@ -1502,14 +1533,17 @@ def _validate_request_header(
         request["repository"], "request.repository", REPOSITORY_RE
     )
     issue = _integer(request["issue"], "request.issue", 1)
-    if request["operation"] not in {"preflight", "publish"}:
+    if request["operation"] not in {"preflight", "publish", "reconcile"}:
         _fail("invalid-request", "broker request operation is not allowlisted")
     pack_size = _integer(request["pack_size"], "request.pack_size")
     if pack_size > installation["pack_max_bytes"]:
         _fail("oversized-pack", "broker request pack exceeds its size limit")
-    if request["operation"] == "preflight":
+    if request["operation"] in {"preflight", "reconcile"}:
         if pack_size != 0 or request["pack_sha256"] != hashlib.sha256(b"").hexdigest():
-            _fail("invalid-request", "preflight request must not carry an object pack")
+            _fail(
+                "invalid-request",
+                "non-publication request must not carry an object pack",
+            )
     elif pack_size <= 0:
         _fail("invalid-request", "publish request requires an object pack")
     request_deadline = _time(
@@ -1595,6 +1629,10 @@ def _git_environment(
         "GIT_PROTOCOL_FROM_USER": "0",
         "GIT_NO_REPLACE_OBJECTS": "1",
         "GIT_NO_LAZY_FETCH": "1",
+        "GIT_AUTHOR_NAME": "Workflow Pilot Broker",
+        "GIT_AUTHOR_EMAIL": "workflow-pilot-broker@example.invalid",
+        "GIT_COMMITTER_NAME": "Workflow Pilot Broker",
+        "GIT_COMMITTER_EMAIL": "workflow-pilot-broker@example.invalid",
     }
     auth = installation["authentication"]
     if auth["mode"] == "https-askpass":
@@ -1761,6 +1799,7 @@ def _git(
     deadline: OperationDeadline,
     cwd: Path | None = None,
     stdin: BinaryIO | None = None,
+    input_bytes: bytes | None = None,
 ) -> bytes:
     command = [GIT, "--no-pager"]
     if installation["test_only"]:
@@ -1785,6 +1824,7 @@ def _git(
         timeout=installation["operation_timeout_seconds"],
         cwd=cwd,
         stdin=stdin,
+        input_bytes=input_bytes,
         deadline=deadline,
         pass_fds=pass_fds,
     )
@@ -2003,6 +2043,14 @@ class ReplayJournal:
                     required.add("result")
                 if event not in {"reserved", "completed"} or set(entry) != required:
                     _fail("journal-corrupt", "replay journal entry fields differ")
+                if event == "completed" and entry["result"] not in {
+                    "published",
+                    "safe-failed",
+                    "indeterminate",
+                    "committed-late",
+                    "security-hold",
+                }:
+                    _fail("journal-corrupt", "replay journal outcome differs")
                 if (
                     entry.get("previous_hash") != previous
                     or entry.get("installation_id") != self.installation_id
@@ -2116,10 +2164,36 @@ class ReplayJournal:
             for entry in reservations
             if entry["repository"] == plan["repository"] and entry["issue"] == plan["issue"]
         ]
+        for reservation in relevant:
+            outcomes = [
+                entry
+                for entry in self.entries
+                if entry["event"] == "completed"
+                and entry["nonce"] == reservation["nonce"]
+                and entry["plan_identity"] == reservation["plan_identity"]
+            ]
+            if not outcomes or outcomes[-1]["result"] == "indeterminate":
+                _fail(
+                    "indeterminate",
+                    "an earlier publication requires reconciliation",
+                )
+            if outcomes[-1]["result"] == "security-hold":
+                _fail(
+                    "security-hold",
+                    "an earlier publication is under security hold",
+                )
         if relevant and plan["sequence"] <= max(entry["sequence"] for entry in relevant):
             _fail("replay", "publication plan sequence does not advance")
 
     def complete(self, plan: dict[str, Any], plan_identity: str, result: str) -> None:
+        if result not in {
+            "published",
+            "safe-failed",
+            "indeterminate",
+            "committed-late",
+            "security-hold",
+        }:
+            _fail("journal-corrupt", "publication outcome is not allowlisted")
         self._append(
             {
                 "event": "completed",
@@ -2131,6 +2205,38 @@ class ReplayJournal:
                 "result": result,
             }
         )
+
+    def require_reconciliation(
+        self,
+        plan: dict[str, Any],
+        plan_identity: str,
+    ) -> None:
+        reservations = [
+            entry
+            for entry in self.entries
+            if entry["event"] == "reserved"
+            and entry["nonce"] == plan["nonce"]
+            and entry["plan_identity"] == plan_identity
+        ]
+        outcomes = [
+            entry
+            for entry in self.entries
+            if entry["event"] == "completed"
+            and entry["nonce"] == plan["nonce"]
+            and entry["plan_identity"] == plan_identity
+        ]
+        if (
+            not reservations
+            or (
+                outcomes
+                and outcomes[-1]["result"]
+                not in {"indeterminate", "published", "committed-late"}
+            )
+        ):
+            _fail(
+                "reconciliation-not-required",
+                "plan does not have an indeterminate publication to reconcile",
+            )
 
 
 def _publish(
@@ -2188,43 +2294,89 @@ def _publish(
             f"{plan['new_anchor_oid']}:{plan['anchor_ref']}",
         ]
         deadline.check("immediately before remote mutation")
-        mutation_deadline = OperationDeadline(
-            deadline.absolute
-            - datetime_module.timedelta(
-                seconds=REMOTE_MUTATION_GUARD_SECONDS
+        try:
+            _git(
+                installation,
+                home,
+                [
+                    "-C",
+                    os.fspath(staging),
+                    "push",
+                    "--atomic",
+                    "--porcelain",
+                    "--no-verify",
+                    *leases,
+                    _runtime_endpoint(installation),
+                    *refspecs,
+                ],
+                deadline=deadline,
             )
-        )
-        _git(
-            installation,
-            home,
-            [
-                "-C",
-                os.fspath(staging),
-                "push",
-                "--atomic",
-                "--porcelain",
-                "--no-verify",
-                *leases,
-                _runtime_endpoint(installation),
-                *refspecs,
-            ],
-            deadline=mutation_deadline,
-        )
-        deadline.check("immediately after remote mutation")
-        _check_protected_remote(
-            installation["protected_remote"], deadline
-        )
-        readback = _remote_refs(installation, home, *refs, deadline)
-        deadline.check("after exact remote readback")
+            deadline.check("immediately after remote push returned")
+            _check_protected_remote(
+                installation["protected_remote"], deadline
+            )
+            readback = _remote_refs(installation, home, *refs, deadline)
+            deadline.check("after exact remote readback")
+        except (BrokerError, OSError) as error:
+            raise IndeterminatePublication(
+                "indeterminate",
+                "transmitted atomic push requires exact reconciliation",
+            ) from error
         wanted = {
             plan["authority_ref"]: plan["new_authority_oid"],
             plan["anchor_ref"]: plan["new_anchor_oid"],
         }
         if readback != wanted:
-            _fail("remote-readback", "exact remote ref readback differs after publication")
+            raise IndeterminatePublication(
+                "indeterminate",
+                "post-push refs require exact reconciliation",
+            )
         return {ref: value for ref, value in readback.items() if value is not None}
     finally:
         shutil.rmtree(operation_root, ignore_errors=True)
+
+
+def _reconcile_remote(
+    installation: dict[str, Any],
+    plan: dict[str, Any],
+) -> tuple[str, dict[str, str | None] | None]:
+    deadline = OperationDeadline(
+        datetime_module.datetime.now(datetime_module.timezone.utc)
+        + datetime_module.timedelta(
+            seconds=installation["reconciliation_timeout_seconds"]
+        )
+    )
+    try:
+        _check_protected_remote(
+            installation["protected_remote"], deadline
+        )
+    except (BrokerError, OSError):
+        return "security-hold", None
+    try:
+        home = installation["state_directory"] / "reconciliation-home"
+        home.mkdir(mode=0o700, exist_ok=True)
+        refs = _remote_refs(
+            installation,
+            home,
+            plan["authority_ref"],
+            plan["anchor_ref"],
+            deadline,
+        )
+    except (BrokerError, OSError):
+        return "indeterminate", None
+    expected = {
+        plan["authority_ref"]: plan["expected_authority_oid"],
+        plan["anchor_ref"]: plan["expected_anchor_oid"],
+    }
+    planned = {
+        plan["authority_ref"]: plan["new_authority_oid"],
+        plan["anchor_ref"]: plan["new_anchor_oid"],
+    }
+    if refs == planned:
+        return "committed-late", refs
+    if refs == expected:
+        return "safe-failed", refs
+    return "security-hold", refs
 
 
 def _load_plan(
@@ -2233,6 +2385,7 @@ def _load_plan(
     now: datetime_module.datetime,
     *,
     deadline: OperationDeadline | None = None,
+    allow_expired: bool = False,
 ) -> dict[str, Any]:
     _string(plan_identity, "request.plan_identity", HEX_64_RE)
     try:
@@ -2264,7 +2417,13 @@ def _load_plan(
         os.close(plan_fd)
     if hashlib.sha256(_normalized_json(plan)).hexdigest() != plan_identity:
         _fail("invalid-plan", "signed publication plan identity differs")
-    return _validate_plan(plan, installation, now=now, deadline=deadline)
+    return _validate_plan(
+        plan,
+        installation,
+        now=now,
+        deadline=deadline,
+        allow_expired=allow_expired,
+    )
 
 
 def _response(
@@ -2283,14 +2442,29 @@ def _response(
     ).st_ino
     broker_namespace_uid = os.geteuid()
     broker_uid = _outer_uid(broker_namespace_uid)
+    request_nonce = request.get("request_nonce")
+    if (
+        not isinstance(request_nonce, str)
+        or HEX_64_RE.fullmatch(request_nonce) is None
+    ):
+        request_nonce = None
+    repository = request.get("repository")
+    if (
+        not isinstance(repository, str)
+        or REPOSITORY_RE.fullmatch(repository) is None
+    ):
+        repository = None
+    issue = request.get("issue")
+    if isinstance(issue, bool) or not isinstance(issue, int) or issue < 1:
+        issue = None
     response = {
         "schema_version": 1,
         "protocol": PROTOCOL,
         "phase": phase,
         "request_digest": _digest(request),
-        "request_nonce": request.get("request_nonce"),
-        "repository": request.get("repository"),
-        "issue": request.get("issue"),
+        "request_nonce": request_nonce,
+        "repository": repository,
+        "issue": issue,
         "plan_identity": capability["_plan_identity"],
         "capability_nonce": capability["capability_nonce"],
         "installation_id": installation["installation_id"],
@@ -2315,6 +2489,12 @@ def _response(
         "key_id": installation["broker_key_id"],
         "value": base64.b64encode(signature).decode("ascii"),
     }
+    try:
+        signed_schema.validate_record(
+            response, "result", "broker response"
+        )
+    except signed_schema.SchemaError as error:
+        raise BrokerError("invalid-response", str(error)) from error
     return response
 
 
@@ -2388,6 +2568,77 @@ def _credential_readiness(
     }
     if current != expected:
         _fail("stale-remote", "remote refs differ from the signed expected state")
+    probe_root = (
+        installation["state_directory"]
+        / "readiness-probes"
+        / os.urandom(16).hex()
+    )
+    probe_root.parent.mkdir(mode=0o700, exist_ok=True)
+    try:
+        _git(
+            installation,
+            home,
+            ["init", "--bare", "--quiet", os.fspath(probe_root)],
+            deadline=deadline,
+        )
+        tree = _git(
+            installation,
+            home,
+            ["-C", os.fspath(probe_root), "mktree"],
+            deadline=deadline,
+            input_bytes=b"",
+        ).decode("ascii").strip()
+        _sha(tree, "readiness tree")
+        commit = _git(
+            installation,
+            home,
+            [
+                "-C",
+                os.fspath(probe_root),
+                "commit-tree",
+                tree,
+                "-m",
+                "workflow-pilot write authorization probe",
+            ],
+            deadline=deadline,
+        ).decode("ascii").strip()
+        _sha(commit, "readiness commit")
+        leases = [
+            f"--force-with-lease={ref}:{expected[ref] or ''}"
+            for ref in (plan["authority_ref"], plan["anchor_ref"])
+        ]
+        _git(
+            installation,
+            home,
+            [
+                "-C",
+                os.fspath(probe_root),
+                "push",
+                "--dry-run",
+                "--atomic",
+                "--porcelain",
+                "--no-verify",
+                *leases,
+                _runtime_endpoint(installation),
+                f"{commit}:{plan['authority_ref']}",
+                f"{commit}:{plan['anchor_ref']}",
+            ],
+            deadline=deadline,
+        )
+        unchanged = _remote_refs(
+            installation,
+            home,
+            plan["authority_ref"],
+            plan["anchor_ref"],
+            deadline,
+        )
+        if unchanged != expected:
+            _fail(
+                "security-hold",
+                "write-authorization dry-run changed protected refs",
+            )
+    finally:
+        shutil.rmtree(probe_root, ignore_errors=True)
     deadline.check("after authenticated readiness")
 
 
@@ -2453,6 +2704,7 @@ def serve_connection(
             capability["_plan_identity"],
             datetime_module.datetime.now(datetime_module.timezone.utc),
             deadline=deadline,
+            allow_expired=capability["operation"] == "reconcile",
         )
         if (
             plan["repository"] != capability["repository"]
@@ -2462,13 +2714,13 @@ def serve_connection(
                 "capability-mismatch",
                 "issued capability does not bind its signed plan repository/issue",
             )
-        deadline = OperationDeadline(
-            min(
-                request_deadline,
-                capability["_expires_time"],
-                plan["_expires_time"],
-            )
-        )
+        effective_times = [
+            request_deadline,
+            capability["_expires_time"],
+        ]
+        if capability["operation"] != "reconcile":
+            effective_times.append(plan["_expires_time"])
+        deadline = OperationDeadline(min(effective_times))
         if (
             request["pack_sha256"] != plan["pack_sha256"]
             or request["pack_size"] != plan["pack_size"]
@@ -2481,7 +2733,17 @@ def serve_connection(
                 deadline,
             ) as journal:
                 journal.check_available(plan)
-        _credential_readiness(installation, plan, deadline)
+        elif request["operation"] == "reconcile":
+            with ReplayJournal(
+                installation["state_directory"],
+                installation["installation_id"],
+                deadline,
+            ) as journal:
+                journal.require_reconciliation(
+                    plan, capability["_plan_identity"]
+                )
+        if request["operation"] != "reconcile":
+            _credential_readiness(installation, plan, deadline)
         ack = _response(
             installation,
             request,
@@ -2550,6 +2812,43 @@ def serve_connection(
                 deadline=deadline,
             )
             return
+        if request["operation"] == "reconcile":
+            outcome, reconciled_refs = _reconcile_remote(
+                installation, plan
+            )
+            with ReplayJournal(
+                installation["state_directory"],
+                installation["installation_id"],
+                deadline,
+            ) as journal:
+                journal.complete(
+                    plan, capability["_plan_identity"], outcome
+                )
+            result = _response(
+                installation,
+                request,
+                capability,
+                deadline,
+                phase="result",
+                status=(
+                    "ok"
+                    if outcome in {"committed-late", "safe-failed"}
+                    else "error"
+                ),
+                code=outcome,
+                refs=reconciled_refs,
+            )
+            _send_frame(
+                connection,
+                result,
+                maximum=RESPONSE_MAX_BYTES,
+                deadline=(
+                    deadline
+                    if result["status"] == "ok"
+                    else None
+                ),
+            )
+            return
         pack_path = _read_pack(
             connection,
             request,
@@ -2572,12 +2871,44 @@ def serve_connection(
                     pack_path,
                     deadline,
                 )
+            except IndeterminatePublication:
+                journal.deadline = None
+                journal.complete(
+                    plan,
+                    capability["_plan_identity"],
+                    "indeterminate",
+                )
+                outcome, reconciled_refs = _reconcile_remote(
+                    installation, plan
+                )
+                if outcome != "indeterminate":
+                    journal.complete(
+                        plan,
+                        capability["_plan_identity"],
+                        outcome,
+                    )
+                if outcome == "committed-late":
+                    refs = {
+                        ref: oid
+                        for ref, oid in (reconciled_refs or {}).items()
+                        if oid is not None
+                    }
+                    response_code = "committed-late"
+                else:
+                    raise BrokerError(
+                        outcome,
+                        "indeterminate push reconciliation did not confirm commit",
+                    )
             except BrokerError:
-                journal.complete(plan, capability["_plan_identity"], "failed")
+                journal.complete(
+                    plan, capability["_plan_identity"], "safe-failed"
+                )
                 raise
-            journal.complete(
-                plan, capability["_plan_identity"], "published"
-            )
+            else:
+                journal.complete(
+                    plan, capability["_plan_identity"], "published"
+                )
+                response_code = "published"
         response = _response(
             installation,
             request,
@@ -2585,7 +2916,7 @@ def serve_connection(
             deadline,
             phase="result",
             status="ok",
-            code="published",
+            code=response_code,
             refs=refs,
         )
     except (BrokerError, OSError) as error:
@@ -2610,7 +2941,12 @@ def serve_connection(
             connection,
             response,
             maximum=RESPONSE_MAX_BYTES,
-            deadline=deadline if response["status"] == "ok" else None,
+            deadline=(
+                deadline
+                if response["status"] == "ok"
+                and response["code"] == "published"
+                else None
+            ),
         )
     except OSError:
         pass
@@ -2643,6 +2979,7 @@ def _load_client_installation(path: Path) -> dict[str, Any]:
             "broker_public_key",
             "pack_max_bytes",
             "operation_timeout_seconds",
+            "test_only",
         ),
     )
     if (
@@ -2656,7 +2993,7 @@ def _load_client_installation(path: Path) -> dict[str, Any]:
             raw["installation_id"], "installation.installation_id", HEX_64_RE
         ),
         "repository": _string(raw["repository"], "installation.repository", REPOSITORY_RE),
-        "endpoint": _canonical_endpoint(raw["endpoint"], allow_local=False),
+        "test_only": raw["test_only"],
         "expected_broker_uid": _integer(
             raw["expected_broker_uid"], "installation.expected_broker_uid"
         ),
@@ -2669,6 +3006,11 @@ def _load_client_installation(path: Path) -> dict[str, Any]:
             raw["operation_timeout_seconds"], "installation.operation_timeout_seconds", 1
         ),
     }
+    if not isinstance(result["test_only"], bool):
+        _fail("invalid-installation", "client installation.test_only must be boolean")
+    result["endpoint"] = _canonical_endpoint(
+        raw["endpoint"], allow_local=result["test_only"]
+    )
     if result["expected_broker_uid"] == candidate_uid:
         _fail("insecure-installation", "broker and candidate principals must differ")
     if result["expected_capability_uid"] == candidate_uid:
@@ -2693,7 +3035,11 @@ def _verify_response(
     now: datetime_module.datetime,
     expected_context: dict[str, Any] | None = None,
     enforce_broker_process: bool = True,
-) -> tuple[dict[str, Any], dict[str, str] | None, int | None]:
+) -> tuple[
+    dict[str, Any],
+    dict[str, str | None] | None,
+    int | None,
+]:
     _exact_keys(
         response,
         "broker response",
@@ -2785,20 +3131,28 @@ def _verify_response(
     pidfd = None
     if enforce_broker_process and expected_context is None:
         pidfd = _observe_broker_process(context, installation)
-    expected_status = (
-        ("ready", "ready")
-        if expected_phase == "ack"
-        else (
-            ("ok", "ready")
-            if request["operation"] == "preflight"
-            else ("ok", "published")
-        )
-    )
-    if (response["status"], response["code"]) != expected_status:
+    if expected_phase == "ack":
+        allowed_statuses = {("ready", "ready")}
+    elif request["operation"] == "preflight":
+        allowed_statuses = {("ok", "ready")}
+    elif request["operation"] == "reconcile":
+        allowed_statuses = {
+            ("ok", "committed-late"),
+            ("ok", "safe-failed"),
+        }
+    else:
+        allowed_statuses = {
+            ("ok", "published"),
+            ("ok", "committed-late"),
+        }
+    if (response["status"], response["code"]) not in allowed_statuses:
         if pidfd is not None:
             os.close(pidfd)
         _fail("broker-rejected", f"broker rejected publication: {response['code']}")
-    if completed > effective_deadline:
+    if (
+        completed > effective_deadline
+        and response["code"] in {"ready", "published"}
+    ):
         if pidfd is not None:
             os.close(pidfd)
         _fail("invalid-response", "successful broker response exceeded its effective deadline")
@@ -2815,7 +3169,8 @@ def _verify_response(
     refs = _object(response["refs"], "response.refs")
     for name, oid in refs.items():
         _string(name, "response ref")
-        _sha(oid, f"response ref {name}")
+        if oid is not None:
+            _sha(oid, f"response ref {name}")
     if len(refs) != 2:
         _fail("invalid-response", "broker response must contain exactly two refs")
     return context, refs, pidfd
@@ -2861,17 +3216,37 @@ def _observe_broker_process(
             "peer-authentication-failed",
             "observed broker principal differs from signed readiness",
         )
-    own_namespace = os.stat(
-        "/proc/self/ns/user", follow_symlinks=True
-    ).st_ino
-    if (
-        installation["expected_broker_uid"] == os.geteuid()
-        and namespace == own_namespace
-    ):
+    if installation["expected_broker_uid"] == os.geteuid():
         os.close(pidfd)
         _fail(
             "peer-authentication-failed",
-            "broker lacks a distinct UID or user namespace",
+            "broker outer host UID is not distinct from the candidate",
+        )
+    try:
+        os.kill(pid, 0)
+    except PermissionError:
+        pass
+    except ProcessLookupError:
+        os.close(pidfd)
+        _fail("peer-authentication-failed", "signed broker process exited")
+    else:
+        os.close(pidfd)
+        _fail(
+            "peer-authentication-failed",
+            "candidate can signal the broker process",
+        )
+    try:
+        memory_fd = os.open(f"/proc/{pid}/mem", os.O_RDONLY)
+    except PermissionError:
+        pass
+    except OSError:
+        pass
+    else:
+        os.close(memory_fd)
+        os.close(pidfd)
+        _fail(
+            "peer-authentication-failed",
+            "candidate can read broker process memory",
         )
     namespace_uid = context["broker_namespace_uid"]
     mapped_uid = None
@@ -2910,7 +3285,7 @@ def publish_via_connection(
     *,
     enforce_peer: bool = True,
 ) -> dict[str, str]:
-    refs = _client_operation(
+    _code, refs = _client_operation(
         connection,
         installation,
         issue,
@@ -2918,8 +3293,9 @@ def publish_via_connection(
         pack_path=pack_path,
         enforce_peer=enforce_peer,
     )
-    assert refs is not None
-    return refs
+    if refs is None or any(value is None for value in refs.values()):
+        _fail("invalid-response", "published result lacks exact ref objects")
+    return {name: value for name, value in refs.items() if value is not None}
 
 
 def preflight_via_connection(
@@ -2939,6 +3315,26 @@ def preflight_via_connection(
     )
 
 
+def reconcile_via_connection(
+    connection: socket.socket,
+    installation: dict[str, Any],
+    issue: int,
+    *,
+    enforce_peer: bool = True,
+) -> tuple[str, dict[str, str | None]]:
+    code, refs = _client_operation(
+        connection,
+        installation,
+        issue,
+        operation="reconcile",
+        pack_path=None,
+        enforce_peer=enforce_peer,
+    )
+    if refs is None:
+        _fail("invalid-response", "reconciliation result lacks exact refs")
+    return code, refs
+
+
 def _client_operation(
     connection: socket.socket,
     installation: dict[str, Any],
@@ -2947,7 +3343,7 @@ def _client_operation(
     operation: str,
     pack_path: Path | None,
     enforce_peer: bool,
-) -> dict[str, str] | None:
+) -> tuple[str, dict[str, str | None] | None]:
     _require_unnamed_socket(connection)
     if enforce_peer:
         _pid, uid, _gid = _peer_credentials(connection)
@@ -3056,7 +3452,7 @@ def _finish_client_operation(
     operation: str,
     pack_path: Path | None,
     pidfd: int | None,
-) -> dict[str, str] | None:
+) -> tuple[str, dict[str, str | None] | None]:
     effective_deadline = OperationDeadline(
         _time(context["effective_deadline"], "ack.effective_deadline")
     )
@@ -3121,7 +3517,7 @@ def _finish_client_operation(
             "invalid-response",
             "broker reported success after client pack write failure",
         )
-    return refs
+    return final["code"], refs
 
 
 def _set_parent_death_signal() -> None:
@@ -3179,6 +3575,10 @@ def build_parser() -> argparse.ArgumentParser:
     preflight.add_argument("--installation", required=True, type=Path)
     preflight.add_argument("--connection-fd", required=True, type=int)
     preflight.add_argument("--issue", required=True, type=int)
+    reconcile = subparsers.add_parser("reconcile")
+    reconcile.add_argument("--installation", required=True, type=Path)
+    reconcile.add_argument("--connection-fd", required=True, type=int)
+    reconcile.add_argument("--issue", required=True, type=int)
     return parser
 
 
@@ -3203,15 +3603,22 @@ def main(argv: list[str] | None = None) -> int:
                 serve_connection(connection, installation, capability)
             return 0
         installation = _load_client_installation(arguments.installation.resolve(strict=True))
-        if arguments.mode == "preflight":
+        if arguments.mode in {"preflight", "reconcile"}:
             _close_unrelated_fds({0, 1, 2, arguments.connection_fd})
             with _socket_from_fd(arguments.connection_fd) as connection:
-                preflight_via_connection(
-                    connection, installation, arguments.issue
-                )
+                if arguments.mode == "preflight":
+                    preflight_via_connection(
+                        connection, installation, arguments.issue
+                    )
+                    result = {"repository": installation["repository"], "ready": True}
+                else:
+                    outcome, refs = reconcile_via_connection(
+                        connection, installation, arguments.issue
+                    )
+                    result = {"outcome": outcome, "refs": refs}
             print(
                 json.dumps(
-                    {"repository": installation["repository"], "ready": True},
+                    result,
                     sort_keys=True,
                     separators=(",", ":"),
                 )

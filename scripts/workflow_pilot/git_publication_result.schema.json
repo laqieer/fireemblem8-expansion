@@ -1,0 +1,233 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/laqieer/fireemblem8-expansion/schemas/workflow-pilot-git-publication-result-v1.json",
+  "title": "Workflow-pilot Git publication broker response",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "protocol",
+    "phase",
+    "request_digest",
+    "request_nonce",
+    "repository",
+    "issue",
+    "plan_identity",
+    "capability_nonce",
+    "installation_id",
+    "broker_key_id",
+    "broker_pid",
+    "broker_uid",
+    "broker_namespace_uid",
+    "broker_user_namespace",
+    "effective_deadline",
+    "status",
+    "code",
+    "refs",
+    "completed_at",
+    "signature"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "protocol": {
+      "const": "workflow-pilot-authenticated-git-broker-v1"
+    },
+    "phase": {
+      "enum": [
+        "ack",
+        "result"
+      ]
+    },
+    "request_digest": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "request_nonce": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      ]
+    },
+    "repository": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"
+        }
+      ]
+    },
+    "issue": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "integer",
+          "minimum": 1
+        }
+      ]
+    },
+    "plan_identity": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "capability_nonce": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "installation_id": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "broker_key_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_.-]{1,80}$"
+    },
+    "broker_pid": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "broker_uid": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "broker_namespace_uid": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "broker_user_namespace": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "effective_deadline": {
+      "type": "string",
+      "format": "date-time",
+      "x-workflow-pilot-format": "rfc3339-utc-second",
+      "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])-([0-2][0-9]|3[01])T([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]Z$"
+    },
+    "status": {
+      "enum": [
+        "ready",
+        "ok",
+        "error"
+      ]
+    },
+    "code": {
+      "enum": [
+        "authenticated-response-unavailable",
+        "authority-unavailable",
+        "broker-io-failed",
+        "broker-rejected",
+        "capability-mismatch",
+        "client-disconnected",
+        "committed-late",
+        "credential-unavailable",
+        "git-failed",
+        "git-timeout",
+        "git-unavailable",
+        "indeterminate",
+        "insecure-installation",
+        "invalid-capability",
+        "invalid-endpoint",
+        "invalid-installation",
+        "invalid-json",
+        "invalid-plan",
+        "invalid-record",
+        "invalid-request",
+        "invalid-response",
+        "invalid-signature",
+        "invalid-time",
+        "journal-corrupt",
+        "journal-full",
+        "journal-rollback",
+        "operation-expired",
+        "oversized-pack",
+        "oversized-process-output",
+        "oversized-record",
+        "oversized-request",
+        "oversized-response",
+        "pack-unavailable",
+        "peer-authentication-failed",
+        "peer-authentication-unavailable",
+        "plan-lifetime",
+        "process-hardening-failed",
+        "published",
+        "ready",
+        "reconciliation-not-required",
+        "remote-readback",
+        "remote-state-changed",
+        "replay",
+        "request-expired",
+        "safe-failed",
+        "security-hold",
+        "signature-tool-failed",
+        "stale-remote",
+        "unauthorized-signer",
+        "wrong-destination",
+        "wrong-objects",
+        "wrong-operation",
+        "wrong-pack",
+        "wrong-refs"
+      ]
+    },
+    "refs": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "additionalProperties": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "string",
+                "pattern": "^[0-9a-f]{40}$"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "completed_at": {
+      "type": "string",
+      "format": "date-time",
+      "x-workflow-pilot-format": "rfc3339-utc-second",
+      "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])-([0-2][0-9]|3[01])T([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]Z$"
+    },
+    "signature": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "algorithm",
+        "key_id",
+        "value"
+      ],
+      "properties": {
+        "algorithm": {
+          "const": "ed25519"
+        },
+        "key_id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.-]{1,80}$"
+        },
+        "value": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9+/]{86}==$"
+        }
+      }
+    }
+  }
+}

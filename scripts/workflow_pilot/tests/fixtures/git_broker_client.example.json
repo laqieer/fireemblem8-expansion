@@ -9,5 +9,6 @@
   "broker_key_id": "broker-2026-09",
   "broker_public_key": "/etc/workflow-pilot/keys/broker-2026-09.public.pem",
   "pack_max_bytes": 67108864,
-  "operation_timeout_seconds": 120
+  "operation_timeout_seconds": 120,
+  "test_only": false
 }

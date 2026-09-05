@@ -1,6 +1,6 @@
 {
   "issue": 205,
   "category": "security",
-  "summary": "Add an authenticated one-shot Git authority publication broker with sealed plan-bound capabilities, staged signed framing, protected external credentials and Git state, absolute deadlines, and durable replay protection.",
+  "summary": "Add an authenticated one-shot Git authority publication broker with sealed plan-bound capabilities, separate host principals, receive-pack write preflight, staged signed framing, protected credentials and Git state, durable replay protection, and exact indeterminate-push reconciliation.",
   "semver_impact": "minor"
 }

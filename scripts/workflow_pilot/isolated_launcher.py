@@ -16,11 +16,13 @@ MODES = frozenset(
         "baseline",
         "classify-event",
         "git-broker-publish",
+        "git-broker-reconcile",
         "git-broker-preflight",
         "git-broker-serve",
         "hydrate",
         "lifecycle-check",
         "reporter-tests",
+        "validate-signed-record",
     }
 )
 LIFECYCLE_CHECKS = frozenset({"workflow-pilot-reporter", "workflow-pilot-tests"})
@@ -118,6 +120,7 @@ def dispatch(mode: str, arguments: list[str]) -> int:
     if mode in {
         "git-broker-preflight",
         "git-broker-publish",
+        "git-broker-reconcile",
         "git-broker-serve",
     }:
         from scripts.workflow_pilot import git_publication_broker
@@ -125,9 +128,14 @@ def dispatch(mode: str, arguments: list[str]) -> int:
         broker_mode = {
             "git-broker-preflight": "preflight",
             "git-broker-publish": "publish",
+            "git-broker-reconcile": "reconcile",
             "git-broker-serve": "serve",
         }[mode]
         return git_publication_broker.main([broker_mode, *arguments])
+    if mode == "validate-signed-record":
+        from scripts.workflow_pilot import signed_schema
+
+        return signed_schema.main(arguments)
 
     controlled_repository_root(arguments)
     if mode == "anchor-refs":

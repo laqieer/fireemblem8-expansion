@@ -13,8 +13,8 @@ The candidate-side client and the broker are
 [`scripts/workflow_pilot/git_publication_broker.py`](../scripts/workflow_pilot/git_publication_broker.py).
 They are two roles, not one trust domain:
 
-- the broker runs under a separate OS principal or stronger host/namespace
-  boundary;
+- the broker runs under a separate **outer host UID**. A user namespace that
+  maps the broker back to the candidate's host UID is not authority;
 - an external trusted capability issuer creates a fresh unnamed `AF_UNIX`
   `SOCK_STREAM` socket pair, launches exactly one broker operation with one end,
   and gives the other inherited descriptor to exactly one candidate client;
@@ -37,7 +37,7 @@ does not claim same-UID isolation.
 The production entry points require isolated Python startup:
 
 ```text
-/usr/bin/python3 -I scripts/workflow_pilot/isolated_launcher.py \
+/usr/bin/python3 -I /opt/workflow-pilot-broker/scripts/workflow_pilot/isolated_launcher.py \
   git-broker-serve --installation /etc/workflow-pilot/broker.json \
   --connection-fd 3 --capability-fd 4
 
@@ -45,6 +45,10 @@ The production entry points require isolated Python startup:
   git-broker-publish --installation /etc/workflow-pilot/client.json \
   --connection-fd 3 --issue 205 \
   --pack build/test-artifacts/authority.pack
+
+/usr/bin/python3 -I scripts/workflow_pilot/isolated_launcher.py \
+  git-broker-reconcile --installation /etc/workflow-pilot/client.json \
+  --connection-fd 3 --issue 205
 ```
 
 The external capability issuer, not candidate code, owns socket-pair creation
@@ -55,6 +59,10 @@ the descriptor allowlist, UID transition, launch deadline, and process teardown.
 It must close both descriptors after the one operation. Do not put a broker
 socket path, private key, token, askpass output, or SSH-agent descriptor in the
 candidate environment.
+The broker launcher/package and schemas under `/opt/workflow-pilot-broker` are
+an immutable root-owned installation of the reviewed repository code, never
+the candidate checkout. The client may run from the candidate tree because it
+holds no credential or server authority.
 
 The candidate names no plan. Supplying another issue or operation produces a
 signed rejection before the object pack is read. Another otherwise valid plan
@@ -71,6 +79,8 @@ The connection capability conforms to
 [`git_publication_capability.schema.json`](../scripts/workflow_pilot/git_publication_capability.schema.json)
 and is independently signed under the
 `workflow-pilot-git-publication-capability-v1` domain.
+Signed ACK/final fields and durable outcome names are published in
+[`git_publication_result.schema.json`](../scripts/workflow_pilot/git_publication_result.schema.json).
 
 The broker independently verifies all of the following:
 
@@ -99,9 +109,26 @@ The effective deadline is the minimum of the request, capability, and plan
 expiries. One absolute wall/monotonic deadline is carried through signature
 validation, credential readiness, remote reads, replay validation, pack
 index/closure checks, hook execution, push, and exact readback. Every child
-timeout is clamped to its remaining duration. Remote mutation uses an earlier
-guard deadline exported to protected hooks, with checks immediately before
-push, immediately afterward, and after readback.
+timeout is clamped to its remaining duration, and the broker never starts a
+push after that deadline.
+
+A network server is independent once an authenticated atomic push is
+transmitted. Killing local Git cannot prove that GitHub did not commit after
+the deadline. Therefore any timeout, disconnect, deadline crossing, failed
+post-push readback, or ambiguous push result is `indeterminate`: the nonce and
+sequence remain permanently consumed and quarantined. The broker performs a
+new bounded exact two-ref readback:
+
+| Readback | Durable result |
+| --- | --- |
+| Exact planned authority and anchor | `committed-late` |
+| Exact signed old authority and anchor | `safe-failed` |
+| Mixed or any other pair, or protected authority failure | `security-hold` |
+| Readback unavailable | `indeterminate`; only a new trusted `reconcile` capability may retry readback |
+
+Reconciliation never retransmits a push. Local protected hooks may enforce the
+exported deadline, but neither code nor documentation claims that a remote
+server cannot move refs after locally observed expiry.
 
 `master`, other heads, other tags, deletions, wildcard refspecs, arbitrary Git
 commands, thin/missing closures, extra objects, and a third ref are not
@@ -114,7 +141,10 @@ owner/type/mode checked. Mutable refs/objects storage must be broker-owned;
 candidate ownership, writable modes, symlinks, special files, or path swaps
 fail or remain outside the descriptor-bound server.
 
-The shared signed-record parser accepts only
+The required
+[`signed_schema.py`](../scripts/workflow_pilot/signed_schema.py) entry point
+registers the calendar-aware `rfc3339-utc-second` format and is invoked by
+every normal plan and capability validator. The shared signed-record parser accepts only
 `YYYY-MM-DDTHH:MM:SSZ`. It constructs the UTC calendar fields directly, so
 invalid dates, year `0000`, non-leap February 29, April 31, hour `24`, offsets,
 lowercase separators, and fractional seconds are rejected identically on every
@@ -146,7 +176,7 @@ The broker JSON is a closed object with these fields:
 | `plan_store`, `state_directory` | Protected signed plans and replay/process state. |
 | `authentication` | One of `https-askpass`, `ssh-agent`, or test-only `local-test`. |
 | `protected_remote` | `null` for a production network remote; required device/inode/config/hook identities for a local test remote. |
-| limits | Positive `pack_max_bytes`, `operation_timeout_seconds`, and `plan_lifetime_seconds`. |
+| limits | Positive `pack_max_bytes`, `operation_timeout_seconds`, `reconciliation_timeout_seconds`, and `plan_lifetime_seconds`. |
 | `test_only` | `false` in production. |
 
 The committed redacted structures are
@@ -167,7 +197,8 @@ kills the full Git process group, including the Popen-before-watchdog window.
 The client JSON contains only `schema_version`, `protocol`, `installation_id`,
 `repository`, `endpoint`, `expected_broker_uid`,
 `expected_capability_uid`, `broker_key_id`, `broker_public_key`,
-`pack_max_bytes`, and `operation_timeout_seconds`.
+`pack_max_bytes`, `operation_timeout_seconds`, and externally installed
+`test_only` (`false` in production).
 Validate deployment before launching candidate work:
 
 ```text
@@ -183,8 +214,12 @@ externally installed signing key authenticates the broker response because
 transferred socket-pair credentials authenticate the capability issuer, not
 the eventual descriptor holder. Preflight is a real signed non-publication
 exchange: it verifies the sealed plan binding, service response key, observed
-broker PID/UID/user-namespace through a live pidfd and `/proc`, configuration,
-credential/agent readiness, protected remote, and exact current refs. It
+broker PID/outer-host-UID through a live pidfd and `/proc`, inability to signal
+or ptrace the service, configuration, credential/agent readiness, protected
+remote, and exact current refs. It then performs an exact atomic two-ref
+`git push --dry-run` through receive-pack and verifies refs remain unchanged,
+so public anonymous reads, read-only principals, expired tokens, and read-only
+SSH agent identities do not pass as write readiness. It
 returns only `ready`, never an expected UID copied from a manifest. Missing
 service, wrong UID/namespace/key, candidate-owned installation, writable or
 symlinked authority, stale refs, or unavailable credentials fail closed.
@@ -229,19 +264,28 @@ Run:
 ```text
 python3 -m unittest scripts.workflow_pilot.tests.test_git_publication_broker -v
 /usr/bin/python3 -I scripts/workflow_pilot/isolated_launcher.py reporter-tests
+/usr/bin/python3 -I scripts/workflow_pilot/isolated_launcher.py \
+  validate-signed-record --schema plan --input <signed-plan.json>
 python3 scripts/check_docs.py --check
 ```
 
 The focused suite creates all files beneath
 `build/test-artifacts/git-publication-broker`, starts a signed one-shot broker
 process, exercises an actual TLS smart-HTTP Git server and askpass challenge,
-and removes the fixture. A trusted test issuer also launches a broker in a
-distinct mapped user namespace and verifies its signed PID/UID/namespace
-readiness without publication. Same-principal, wrong-UID, absent-service, and
-candidate-owned preflight controls reject. Operators must still provide the real separate principal,
+and removes the fixture. A mapped namespace with the same outer UID is a
+negative control. When passwordless `sudo` is available, the integration test
+uses root as capability issuer, `nobody` as broker, and `daemon` as candidate;
+it runs the real installation loaders and isolated serve/preflight/publish
+CLIs, proves file/signal/ptrace isolation, and performs the receive-pack dry
+run plus publication. The hosted `host-tests` workflow runs this test on its
+sudo-capable runner; local hosts without passwordless sudo report one explicit
+skip. Operators must still provide the real separate principal,
 trusted coordinator, protected installation paths, GitHub repository
 permissions/rules, TLS/SSH host identity, and rollback-resistant service
-storage.
+storage. Linux deployment must expose signed broker PID/status/UID mapping and
+pidfd observation to the unprivileged candidate while denying signals,
+`/proc/<pid>/mem`, ptrace, and every broker-owned file. Hosted integration
+requires passwordless sudo plus distinct `nobody` and `daemon` accounts.
 
 No reasoning agent should wait for CI on behalf of this service. The delivery
 coordinator retains the repository's existing direct bounded workflow watcher

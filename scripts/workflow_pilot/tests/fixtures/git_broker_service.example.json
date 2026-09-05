@@ -26,6 +26,7 @@
   "protected_remote": null,
   "pack_max_bytes": 67108864,
   "operation_timeout_seconds": 120,
+  "reconciliation_timeout_seconds": 120,
   "plan_lifetime_seconds": 300,
   "test_only": false
 }

@@ -1247,10 +1247,11 @@ the exact branch and head; timeout or ambiguity fails before `gh run watch`.
    askpass credential file. Inspect candidate environment, response, server
    log, replay journal, and fixture root for credential text or core files.
 6. Launch the readiness capability through a trusted issuer into a broker
-   process with mapped namespace UID 991. Verify the signed broker PID, outer
-   UID, namespace UID/inode, response key, credential/config/remote readiness,
-   exact refs, and zero publication. Repeat absent, wrong-UID, same-namespace,
-   and candidate-owned controls.
+   under a real separate outer host UID when passwordless sudo is available.
+   Verify signed PID/UID, inability to signal/ptrace/read broker files,
+   response key, credential/config/remote readiness, exact refs, and zero
+   publication. Repeat absent, wrong-UID, same-outer-UID mapped namespace, and
+   candidate-owned controls.
 7. Send malformed headers and pack write failures. Verify a signed rejection
    arrives before pack transfer or is drained as the final bounded result;
    raw pipe errors never become evidence.
@@ -1272,8 +1273,11 @@ signature. A sealed authority-signed launch record binds one connection to one
 repository/issue/operation/plan; the candidate sends no plan identity.
 
 The effective deadline is the minimum request/capability/plan expiry and
-clamps every validation and subprocess. An earlier mutation cutoff reaches the
-server hook; expiry before completion leaves both refs unchanged. Config,
+clamps every validation and subprocess; no push starts after it. A transmitted
+push that crosses the deadline is durably `indeterminate`, consumes its nonce
+and sequence, and reconciles by exact readback to `committed-late`,
+`safe-failed`, `security-hold`, or still-`indeterminate`. Reconciliation never
+re-pushes. Config,
 hooks, refs, objects, packed refs, and alternates are recursively audited, and
 Git uses the already-open remote directory descriptor so a post-ACK pathname
 and malicious hook replacement cannot execute.
@@ -1281,9 +1285,12 @@ and malicious hook replacement cannot execute.
 The actual HTTPS Git exchange invokes askpass after a TLS server challenge,
 but the credential is absent from candidate environment/files/arguments,
 response, logs, journal, and core output. Timeout or broker death kills the Git
-process group and leaves both refs unchanged, including broker death before
-watchdog creation. Production preflight fails closed without a live signed
-distinct-principal broker. The shared semantic schema consumer and parser
+process group, including broker death before watchdog creation; a transmitted
+or reserved operation is reconciled rather than retried. Production preflight
+fails closed without a live signed different-outer-UID broker and an
+authenticated atomic receive-pack dry run. Public anonymous reads,
+read-only/expired HTTPS credentials, and read-only SSH identities reject. The
+registered semantic schema entry point and parser
 accept exactly real UTC calendar times at whole-second precision and reject
 year zero, invalid leap/month days, hour `24`, offsets, and fractions.
 
@@ -1310,8 +1317,9 @@ modern debug/release, or archival impact.
 `python3 -m unittest scripts.workflow_pilot.tests.test_git_publication_broker -v`
 provides behavioral publication/readback, adversarial protocol, actual Git
 pack/ref/hook, TLS askpass, sealed capabilities, staged signed framing,
-absolute deadlines, recursive descriptor authority, replay durability,
-distinct namespace principal observation, pre-exec parent death, semantic
+absolute deadlines and reconciliation, recursive descriptor authority,
+replay durability, sudo-backed separate-principal CLI coverage,
+pre-exec parent death, semantic
 schema-time parity, and no-secret evidence. The isolated reporter command
 proves integration with the existing signed-record consumer, and
 `python3 scripts/check_docs.py --check` parses the indexed procedure and
@@ -1322,10 +1330,12 @@ deployment documentation.
 The suite removes its unique children below
 `build/test-artifacts/git-publication-broker`; the empty ignored parent may
 remain. Most local behavior fixtures disable peer observation only inside the
-library test; the readiness case uses a real mapped distinct user namespace
-and signed live process observation without sudo. The production CLI has no
-peer/process bypass, and same-principal production preflight rejects.
-Deployment must supply a real separate
+library test. A mapped namespace with the same outer UID is a negative, not
+authority. The real root-issuer/nobody-broker/daemon-candidate CLI test runs
+when passwordless sudo is available and is structurally part of hosted
+`host-tests`; unsupported local hosts record one explicit skip. The production
+CLI has no peer/process bypass, and same-principal production preflight
+rejects. Deployment must supply a real separate
 principal or stronger boundary, external descriptor coordinator, protected
 paths and rollback-resistant storage, GitHub permissions/rules, and trusted
 TLS/SSH host identity. No manual-only criterion applies.
