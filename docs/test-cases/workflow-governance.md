@@ -1781,7 +1781,24 @@ The complete deployment and public API contract is
    `0660` with the installed socket GID passes, and a named-user access ACL
    fails even when the mode still reads `0660`. Parsed systemd contracts keep
    the separate socket supplementary group, private state and cgroup teardown
-   without treating status 2 as successful. The real-process service cases
+   without treating status 2 as successful.
+
+   For both installation roles, resolve the installed accounts and primary/
+   supplementary group assignments. Safe assignments pass; giving either of
+   two declared candidates the socket group as a primary or supplementary
+   group must reject. The supplementary case must reject even without an
+   explicit socket-group member entry. Missing accounts, primary/socket groups,
+   failed/malformed lookups, unresolved/unauthorized explicit group members
+   and an unassigned coordinator must fail closed, not return `ready`.
+   **Pre-fix negative control:** both role preflights accept those unsafe
+   candidate memberships and unavailable account/group observations.
+   Source tests substitute NSS/ownership observations, not protected
+   deployment. All CLI and network credential preflights must reject unsafe
+   membership before opening authority state, credentials or the socket.
+   Fixture controls preserve a non-UID primary GID and nonempty supplementary
+   groups, and reject child reports with altered UID/GID or dropped groups.
+
+   The real-process service cases
    replace only installation/peer authority: SIGTERM while idle or receiving
    an incomplete pack exits 0 and removes the socket; the incomplete nonce
    stays consumed. SIGTERM in a real receive-pack hook kills its children,
@@ -1798,10 +1815,17 @@ The complete deployment and public API contract is
      --broker-uid 65534 --coordinator-uid 65532 --candidate-uid 65533
    ```
 
-   Those numeric UIDs must be reserved for this fixture in that environment;
+   Those numeric UIDs must identify provisioned, resolvable accounts reserved
+   for this fixture in that environment;
    its socket GID defaults to `65532` (`--socket-gid` selects another reserved
-   group). Only the broker/coordinator child credentials receive that group;
-   no accounts, groups or global settings are created. It starts the real
+   group). Its provisioned membership must include broker/coordinator and
+   exclude the candidate. Missing account/group data reports unavailable/
+   failed with exit 2 before fixture artifacts or children are created.
+   The fixture preserves each account's actual primary and initialized
+   supplementary groups, rather than manufacturing a candidate group list.
+   Access probes must report the matching effective kernel credentials
+   before their denials count. No accounts, groups or global settings are
+   created. It starts the real
    production `serve` entry point under the broker UID and invokes the production
    `BrokerClient` under the separate unprivileged coordinator UID. The root
    test controller is not a protocol peer. It tests candidate denial for private

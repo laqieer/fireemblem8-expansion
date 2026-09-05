@@ -2,16 +2,21 @@
 
 import base64
 import copy
+import grp
 import hashlib
 import importlib.util
 import marshal
 import os
+import pwd
 import shutil
 import struct
 import subprocess
 import uuid
+from contextlib import contextmanager
 from datetime import timedelta
 from pathlib import Path
+from types import SimpleNamespace
+from unittest import mock
 
 from scripts.workflow_pilot import git_broker as broker
 from scripts.workflow_pilot import git_broker_protocol as protocol
@@ -36,6 +41,35 @@ def command(arguments, cwd, data=None, environment=None):
         arguments, cwd=cwd, env=environment or clean_environment(cwd),
         input=data, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True, timeout=15,
     ).stdout
+
+
+@contextmanager
+def principal_database(manifest):
+    """Synthetic NSS observations, never a substitute for protected deployment."""
+    authorized = {manifest["broker_uid"], manifest["coordinator_uid"]}
+    users = {
+        uid: SimpleNamespace(pw_name=f"fixture-{uid}", pw_uid=uid, pw_gid=uid)
+        for uid in (*authorized, *manifest["candidate_uids"])
+    }
+    supplementary = {
+        uid: {manifest["socket_gid"]} if uid in authorized else set() for uid in users
+    }
+    groups = {
+        gid: SimpleNamespace(gr_name=f"fixture-group-{gid}", gr_gid=gid, gr_mem=[])
+        for gid in {*users, manifest["socket_gid"]}
+    }
+    groups[manifest["socket_gid"]].gr_mem = [users[uid].pw_name for uid in authorized]
+
+    def account(name):
+        return {user.pw_name: user for user in users.values()}[name]
+
+    with mock.patch.object(pwd, "getpwuid", side_effect=lambda uid: users[uid]), \
+         mock.patch.object(pwd, "getpwnam", side_effect=account), \
+         mock.patch.object(grp, "getgrgid", side_effect=lambda gid: groups[gid]), \
+         mock.patch.object(os, "getgrouplist", side_effect=lambda name, gid: sorted(
+             {gid, *supplementary[account(name).pw_uid]},
+         )):
+        yield SimpleNamespace(users=users, groups=groups, supplementary=supplementary)
 
 
 def installed_copy(root):

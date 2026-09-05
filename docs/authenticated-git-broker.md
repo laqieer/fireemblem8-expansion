@@ -220,9 +220,25 @@ dedicated `fe8-git-coordinator` socket group externally; the unit gives it to
 the broker through `SupplementaryGroups` while keeping the broker's private
 primary group for state. Give the coordinator that socket group too. Its
 numeric GID must equal `socket_gid` in both protected manifests. Preflight
-requires the executing principal to hold that group. The external
-administrator must ensure no other primary/supplementary memberships grant
-candidate access; neither startup nor tests create host users or groups.
+requires the executing principal to hold that group **and** resolves every
+installed UID through the trusted system account/group database (`getpwuid`,
+`getgrgid`, `getgrouplist`). Both authorized accounts must be assigned the
+socket group; every candidate's primary and initialized supplementary groups
+must exclude it, including supplementary assignments absent from the group's
+explicit member list. Explicit socket-group members must also resolve only
+to the broker/coordinator UIDs. Missing accounts, missing primary/socket
+groups, lookup failures, inconsistent data or another member fail closed
+with exit 2, never `ready`. Bare reserved numeric UIDs, directory modes and
+service role labels are not membership evidence. A unit-only supplementary
+grant does not replace the provisioned account assignment.
+
+`candidate_uids` must enumerate every untrusted implementation principal.
+The external administrator controls the authoritative account/group database
+and must prevent unlisted or privileged launch-time grants. Initialize child
+groups from that database; restart affected processes after membership changes
+so stale or inherited credentials cannot retain socket access. NSS assignment
+checks are not an audit of arbitrary already-running process credentials.
+Neither startup nor tests create host users or groups.
 The instance
 name identifies an issue installation, for example `issue-205`; it does not
 authorize an issue number supplied by a request.
@@ -248,7 +264,7 @@ The fields are:
 | --- | --- |
 | `schema_version`, `role` | `1`, and `server` or `client` |
 | `policy` | Exact `Policy` fields below; no request-derived authority |
-| `broker_uid`, `coordinator_uid`, `candidate_uids` | Actual distinct kernel UIDs; candidate list nonempty |
+| `broker_uid`, `coordinator_uid`, `candidate_uids` | Actual distinct kernel UIDs with resolvable provisioned accounts; nonempty candidate list covers every untrusted principal |
 | `socket` | `/run/workflow-pilot-broker-issue-205/broker.sock` or the corresponding protected instance path |
 | `socket_gid` | Nonzero dedicated broker/coordinator-only group GID; provision membership outside the service |
 | `certificate`, `private_key`, `ca_certificate` | Absolute role-specific certificate/key/CA paths |
@@ -259,7 +275,9 @@ Server-only fields are `state` (the instance's private `/var/lib` directory),
 `response_private_key` (matching the pinned response key), and `transport`.
 Existing manifests without `socket_gid` fail closed and must be reprovisioned
 by the external owner; the signed-plan wire schema and journal identity are
-unchanged.
+unchanged. The shared installation check covers server/client preflight,
+startup, publication revalidation, and network credential capture/workers;
+an unavailable group lookup never falls back to configured roles.
 The private TLS/response/transport keys are readable only by the broker;
 the client's TLS key only by the coordinator. The CA **private** key is not
 installed in either service. Certificates must be current and issued by the
@@ -444,8 +462,14 @@ Noncredentialed real Git/TLS unit tests are deterministic protocol evidence.
 Loader regressions substitute only source ownership when exercising the real
 captured-byte loader; they also run an unchecked-hash cache under `-B` as a
 negative control and verify rejection before imports. Socket regressions
-inspect real Unix socket metadata/ACLs and parse the deployment unit. Service
-regressions run real processes/TLS/Git with explicitly synthetic installation
+inspect real Unix socket metadata/ACLs and parse the deployment unit.
+Preflight regressions substitute only account/group and installation ownership
+observations: positive initialized memberships pass; either candidate primary
+or supplementary socket membership and unavailable account/group data reject
+before authority I/O. The same regression on the pre-fix implementation accepts
+those unsafe observations. Fixture tests require preserved primary/nonempty
+supplementary groups and reject altered child-reported kernel credentials.
+Service regressions run real processes/TLS/Git with explicitly synthetic installation
 and peer authority, then signal idle, reserved and executing requests. They
 check clean SIGTERM, failing SIGINT/cleanup, child termination, spent nonces
 and preserved uncertainty. None is a same-UID protected positive.
@@ -472,8 +496,13 @@ Both service and client use the captured-source bootstrap. The fixture
 allows its actual candidate UID to rewrite an adjacent unchecked-hash cache,
 proves the ordinary `-B` importer executes that negative control, and requires
 the production entry point and subsequent service/client operations never to
-execute it. It gives the socket group only to broker/coordinator children
-and requires a candidate's actual `connect()` to fail with permission denial.
+execute it. Before allocating artifacts it validates the already provisioned
+accounts and group assignments. It launches each child with that account's
+real primary and full initialized supplementary groups, never a UID-derived
+GID or artificially empty candidate group list. Candidate/coordinator probes
+report their effective kernel UID/GID/groups; changed or dropped credentials
+fail the fixture. It requires a candidate's actual `connect()` to fail with
+permission denial.
 A post-connect protocol rejection, timeout or unavailable listener does not
 satisfy direct-connect denial. Normal SIGTERM must return 0 and remove the
 socket, including before a clean restart.

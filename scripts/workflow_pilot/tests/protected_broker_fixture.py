@@ -150,17 +150,17 @@ def check_hook_rejection(fixture, submit, hook):
     fixture.current = current
 
 
-def private_copy(source, destination, owner):
+def private_copy(source, destination, owner, group):
     shutil.copyfile(source, destination)
-    os.chown(destination, owner, owner)
+    os.chown(destination, owner, group)
     destination.chmod(0o600)
 
 
-def recursive_owner(root, uid):
+def recursive_owner(root, uid, gid):
     for directory, children, files in os.walk(root):
-        os.chown(directory, uid, uid)
+        os.chown(directory, uid, gid)
         for name in children + files:
-            os.chown(Path(directory) / name, uid, uid)
+            os.chown(Path(directory) / name, uid, gid)
 
 
 def wait_for_socket(process, endpoint):
@@ -185,10 +185,14 @@ def stop_owned(process):
 
 
 def candidate_probe(uid, paths, endpoint, server_pid, *, socket_gid=None):
+    primary, groups = broker.principal_groups(uid)
+    supplementary = sorted(groups - {primary})
     program = """
 import json, os, socket, sys
 paths, endpoint, allow_connect = json.loads(sys.argv[1])
-result = {}
+result = {"effective_credentials": {
+    "uid": os.geteuid(), "gid": os.getegid(), "groups": sorted(os.getgroups()),
+}}
 for path in paths:
     for mode, flag in (("read", os.O_RDONLY), ("write", os.O_WRONLY)):
         try:
@@ -219,18 +223,19 @@ print(json.dumps(result, sort_keys=True))
 """
     output = subprocess.run(
         ["/usr/bin/python3", "-I", "-c", program, json.dumps([paths, str(endpoint), socket_gid is not None])],
-        user=uid, group=uid, extra_groups=[] if socket_gid is None else [socket_gid],
+        user=uid, group=primary, extra_groups=supplementary,
         cwd="/", env={"PATH": "/usr/bin:/bin"},
         capture_output=True, timeout=5, check=True, close_fds=True,
     )
     values = json.loads(output.stdout)
     expected = {path + ":" + mode: "denied" for path in paths for mode in ("read", "write")}
+    expected["effective_credentials"] = {"uid": uid, "gid": primary, "groups": supplementary}
     expected["direct_connect"] = "denied" if socket_gid is None else "connected"
     if socket_gid is not None:
         expected["direct_protocol"] = "denied"
     if values != expected:
         raise RecordError("candidate crossed the actual protected principal boundary")
-    return len(values)
+    return len(values) - 1
 
 
 def direct_authenticated_exchange(client, connection, plan, pack=None, *, reserve=False):
@@ -301,9 +306,16 @@ def exercise(broker_uid, coordinator_uid, candidate_uid, socket_gid):
     if (
         os.geteuid() != 0 or 0 in (broker_uid, coordinator_uid, candidate_uid)
         or len({broker_uid, coordinator_uid, candidate_uid}) != 3
-        or socket_gid <= 0 or socket_gid in (broker_uid, candidate_uid)
+        or socket_gid <= 0
     ):
         raise RecordError("external root-owned three-principal fixture is unavailable")
+    principals = broker.socket_group_principals(
+        broker_uid, coordinator_uid, [candidate_uid], socket_gid,
+    )
+    credentials = {
+        uid: {"user": uid, "group": primary, "extra_groups": sorted(groups - {primary})}
+        for uid, (primary, groups) in principals.items()
+    }
     # Root inside a one-UID user namespace is not a substitute for three kernel
     # principals. Nor may a root test execute code below a candidate-owned path.
     for parent in (ROOT, *ROOT.parents):
@@ -319,24 +331,24 @@ def exercise(broker_uid, coordinator_uid, candidate_uid, socket_gid):
         fixture.root.chmod(0o755)
         fixture.store.close()
         fixture.store = None
-        recursive_owner(fixture.state, broker_uid)
+        recursive_owner(fixture.state, broker_uid, principals[broker_uid][0])
         entry = installed_copy(root / "installed")
         cache_marker = fixture.state / "unchecked-cache-executed"
         cache = poison_bytecode(entry, cache_marker)
-        recursive_owner(cache.parent, candidate_uid)
+        recursive_owner(cache.parent, candidate_uid, principals[candidate_uid][0])
         # The candidate really rewrites an importable unchecked-hash cache
         # adjacent to the protected sources, not just a mock importer result.
         subprocess.run([
             "/usr/bin/python3", "-I", "-c",
             "import sys;from pathlib import Path;p=Path(sys.argv[1]);p.write_bytes(p.read_bytes())",
             str(cache),
-        ], user=candidate_uid, group=candidate_uid, extra_groups=[], cwd="/",
+        ], **credentials[candidate_uid], cwd="/",
             env={"PATH": "/usr/bin:/bin"}, check=True, timeout=5, capture_output=True)
         subprocess.run([
             "/usr/bin/python3", "-I", "-B", "-c",
             f"import sys;sys.path.insert(0,{str(entry.parents[2])!r});"
             "from scripts.workflow_pilot import signed_records",
-        ], user=broker_uid, group=broker_uid, extra_groups=[socket_gid], cwd="/",
+        ], **credentials[broker_uid], cwd="/",
             env=clean_environment(fixture.state / "home"), check=True, timeout=5, capture_output=True)
         if not cache_marker.exists():
             raise RecordError("writable-cache negative control did not execute")
@@ -347,14 +359,14 @@ def exercise(broker_uid, coordinator_uid, candidate_uid, socket_gid):
             (client_keys, coordinator_uid, 0o700),
         ):
             directory.mkdir(mode=mode)
-            os.chown(directory, owner, owner)
+            os.chown(directory, owner, principals[owner][0])
         public_ca = root / "ca.crt"
         shutil.copyfile(keys.root / "ca.crt", public_ca)
         public_ca.chmod(0o644)
         for name in ("server.crt", "server.key"):
-            private_copy(keys.root / name, server_keys / name, broker_uid)
+            private_copy(keys.root / name, server_keys / name, broker_uid, principals[broker_uid][0])
         for name in ("client.crt", "client.key"):
-            private_copy(keys.root / name, client_keys / name, coordinator_uid)
+            private_copy(keys.root / name, client_keys / name, coordinator_uid, principals[coordinator_uid][0])
         server = fixture.manifest()
         client = fixture.manifest(client=True)
         for config in (server, client):
@@ -380,7 +392,7 @@ def exercise(broker_uid, coordinator_uid, candidate_uid, socket_gid):
         plan_path, pack_path = root / "plan.json", root / "objects.pack"
         events_path = fixture.state / "validation-events.jsonl"
         events_path.touch(mode=0o600)
-        os.chown(events_path, broker_uid, broker_uid)
+        os.chown(events_path, broker_uid, principals[broker_uid][0])
 
         def read_events():
             return [
@@ -403,7 +415,7 @@ def exercise(broker_uid, coordinator_uid, candidate_uid, socket_gid):
                 pack_path.chmod(0o644)
                 command.extend(["--pack", str(pack_path)])
             options = dict(
-                user=coordinator_uid, group=coordinator_uid, extra_groups=[socket_gid],
+                **credentials[coordinator_uid],
                 cwd=root, env={"PATH": "/usr/bin:/bin"}, close_fds=True,
                 stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
             )
@@ -421,7 +433,7 @@ def exercise(broker_uid, coordinator_uid, candidate_uid, socket_gid):
                     "--serve-installation", str(server_path), "--validation-events", str(events_path),
                     "--broker-entry", str(entry),
                 ],
-                user=broker_uid, group=broker_uid, extra_groups=[socket_gid], cwd=root,
+                **credentials[broker_uid], cwd=root,
                 env=clean_environment(fixture.state / "home"), stdin=subprocess.DEVNULL,
                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                 close_fds=True, start_new_session=True,
@@ -436,7 +448,7 @@ def exercise(broker_uid, coordinator_uid, candidate_uid, socket_gid):
         completed = subprocess.run([
             "/usr/bin/python3", "-I", "-B", str(entry),
             "preflight-server", "--installation", str(server_path),
-        ], user=broker_uid, group=broker_uid, extra_groups=[socket_gid], cwd=root,
+        ], **credentials[broker_uid], cwd=root,
             env=clean_environment(fixture.state / "home"), capture_output=True, timeout=15, check=True)
         if strict_json(completed.stdout, protocol.MAX_RESPONSE).get("ready") is not True:
             raise RecordError("installed source-only entry point did not pass preflight")
@@ -538,6 +550,7 @@ def exercise(broker_uid, coordinator_uid, candidate_uid, socket_gid):
             "protected_local": "passed", "candidate_denials": denied,
             "coordinator_credential_denials": coordinator_denials,
             "socket_access": "candidate connect denied by kernel; coordinator group admitted",
+            "principal_groups": "provisioned primary/supplementary groups preserved and probe credentials checked",
             "installed_cache_substitution": "source-only; unchecked-hash negative control executed",
             "normal_sigterm": "exit 0 with socket/journal cleanup",
             "observed_plan_validation_rejections": len(PLAN_ATTACKS),
@@ -588,7 +601,8 @@ def main():
     except (RecordError, OSError, ValueError, subprocess.SubprocessError):
         print(
             "protected broker fixture: BLOCKED/FAILED; require distinct real UIDs "
-            "and a root-owned installation in a disposable authorized Linux environment",
+            "with available provisioned account/group data and a root-owned installation "
+            "in a disposable authorized Linux environment",
             file=sys.stderr,
         )
         return 2

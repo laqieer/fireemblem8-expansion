@@ -36,7 +36,7 @@ from scripts.workflow_pilot.signed_records import (
     verify_signature,
 )
 from scripts.workflow_pilot.tests.broker_test_support import (
-    Fixture, Keys, artifact_directory, installed_copy, poison_bytecode,
+    Fixture, Keys, artifact_directory, installed_copy, poison_bytecode, principal_database,
 )
 from scripts.workflow_pilot.tests import protected_broker_fixture as protected
 
@@ -228,15 +228,71 @@ class BrokerSocketPermissionTests(unittest.TestCase):
         broker.socket_permissions(self.endpoint, self.manifest)
 
     def test_protected_probe_does_not_count_post_connect_rejection_or_unavailability_as_denial(self):
+        credentials = {"uid": 65533, "gid": 65533, "groups": [65530]}
         for result in (
             {"direct_protocol": "denied"},
             {"direct_connect": "connected", "direct_protocol": "denied"},
             {"direct_connect": "unavailable"},
         ):
             with self.subTest(result=result), mock.patch.object(
-                protected.subprocess, "run", return_value=SimpleNamespace(stdout=canonical_json(result)),
+                protected.subprocess, "run", return_value=SimpleNamespace(stdout=canonical_json({
+                    **result, "effective_credentials": credentials,
+                })),
+            ), mock.patch.object(
+                broker, "principal_groups", return_value=(65533, frozenset({65533, 65530})),
             ), self.assertRaises(RecordError):
                 protected.candidate_probe(65533, [], self.endpoint, 1)
+
+    def test_protected_probe_preserves_and_checks_initialized_group_credentials(self):
+        manifest = {"broker_uid": 65534, "coordinator_uid": 65532,
+                    "candidate_uids": [65533], "socket_gid": 65532}
+        for uid, socket_gid in ((65533, None), (65532, 65532)):
+            with self.subTest(uid=uid), principal_database(manifest) as principals:
+                principals.users[uid].pw_gid = 65530
+                principals.groups[65530] = SimpleNamespace(gr_gid=65530)
+                principals.supplementary[uid].update({65529, 65528})
+                supplementary = sorted(principals.supplementary[uid])
+                values = {
+                    "effective_credentials": {"uid": uid, "gid": 65530, "groups": supplementary},
+                    "direct_connect": "denied" if socket_gid is None else "connected",
+                }
+                if socket_gid is not None:
+                    values["direct_protocol"] = "denied"
+                with mock.patch.object(protected.subprocess, "run", return_value=SimpleNamespace(
+                    stdout=canonical_json(values),
+                )) as launch:
+                    protected.candidate_probe(uid, [], self.endpoint, 1, socket_gid=socket_gid)
+                    self.assertEqual(launch.call_args.kwargs["user"], uid)
+                    self.assertEqual(launch.call_args.kwargs["group"], 65530)
+                    self.assertEqual(launch.call_args.kwargs["extra_groups"], supplementary)
+                    for field, bad in (("uid", uid + 1), ("gid", uid), ("groups", [])):
+                        changed = copy.deepcopy(values)
+                        changed["effective_credentials"][field] = bad
+                        launch.return_value.stdout = canonical_json(changed)
+                        with self.subTest(field=field), self.assertRaises(RecordError):
+                            protected.candidate_probe(uid, [], self.endpoint, 1, socket_gid=socket_gid)
+
+    def test_protected_fixture_rejects_candidate_groups_before_creating_artifacts(self):
+        manifest = {"broker_uid": 65534, "coordinator_uid": 65532,
+                    "candidate_uids": [65533], "socket_gid": 65532}
+        for defect in ("primary", "supplementary", "unavailable"):
+            with self.subTest(defect=defect), principal_database(manifest) as principals, \
+                 mock.patch.object(protected.os, "geteuid", return_value=0), \
+                 mock.patch.object(Path, "stat", side_effect=AssertionError(
+                     "group failure must precede source installation checks",
+                 )), \
+                 mock.patch.object(protected, "artifact_directory") as artifacts, \
+                 mock.patch.object(protected.subprocess, "run") as launch:
+                if defect == "primary":
+                    principals.users[65533].pw_gid = 65532
+                elif defect == "supplementary":
+                    principals.supplementary[65533].add(65532)
+                else:
+                    del principals.users[65533]
+                with self.assertRaises(RecordError):
+                    protected.exercise(65534, 65532, 65533, 65532)
+                artifacts.assert_not_called()
+                launch.assert_not_called()
 
 
 class BrokerFixtureTests(unittest.TestCase):
@@ -262,6 +318,18 @@ class BrokerFixtureTests(unittest.TestCase):
             self.fixture.store.remote_refs(utc_now() + timedelta(seconds=3)),
             dict.fromkeys(self.fixture.policy.refs),
         )
+
+    @contextmanager
+    def installation_identity(self, manifest):
+        actual_uid, protected_path = os.geteuid(), broker.protected_path
+        actor = manifest["broker_uid" if manifest["role"] == "server" else "coordinator_uid"]
+        with principal_database(manifest) as principals, \
+             mock.patch.object(broker, "protected_path", side_effect=lambda path, owners, **options:
+                               protected_path(path, {0, actual_uid}, **options)), \
+             mock.patch.object(broker.os, "geteuid", return_value=actor), \
+             mock.patch.object(broker.os, "getegid", return_value=principals.users[actor].pw_gid), \
+             mock.patch.object(broker.os, "getgroups", return_value=sorted(principals.supplementary[actor])):
+            yield principals
 
 
 class BrokerTests(BrokerFixtureTests):
@@ -389,7 +457,7 @@ class BrokerTests(BrokerFixtureTests):
             installation.write_bytes(canonical_json(manifest))
             return broker.load_installation(installation, "server")
 
-        with mock.patch.object(
+        with principal_database(manifest), mock.patch.object(
             broker.os, "getgroups", return_value=[manifest["socket_gid"]],
         ), mock.patch.object(broker, "protected_path", side_effect=fixture_ownership), mock.patch.object(
             broker.os, "geteuid", return_value=manifest["broker_uid"],
@@ -417,7 +485,8 @@ class BrokerTests(BrokerFixtureTests):
             actor = manifest["coordinator_uid" if client else "broker_uid"]
             group = manifest["socket_gid"]
             installation.write_bytes(canonical_json(manifest))
-            with mock.patch.object(broker, "protected_path", side_effect=fixture_ownership), \
+            with principal_database(manifest), \
+                 mock.patch.object(broker, "protected_path", side_effect=fixture_ownership), \
                  mock.patch.object(broker.os, "geteuid", return_value=actor), \
                  mock.patch.object(broker.os, "getegid", return_value=group + 1), \
                  mock.patch.object(broker.os, "getgroups", return_value=[]) as groups:
@@ -425,6 +494,10 @@ class BrokerTests(BrokerFixtureTests):
                     broker.load_installation(installation, role)
                 groups.return_value = [group]
                 self.assertEqual(broker.load_installation(installation, role)[0]["socket_gid"], group)
+                groups.return_value = []
+                with mock.patch.object(broker.os, "getegid", return_value=group):
+                    self.assertEqual(broker.load_installation(installation, role)[0]["socket_gid"], group)
+                groups.return_value = [group]
                 for invalid in (None, True, 0, -1, 2**31, str(group)):
                     with self.subTest(role=role, invalid=invalid):
                         installation.write_bytes(canonical_json({**manifest, "socket_gid": invalid}))
@@ -434,6 +507,100 @@ class BrokerTests(BrokerFixtureTests):
                 installation.write_bytes(canonical_json(manifest))
                 with self.assertRaises(RecordError):
                     broker.load_installation(installation, role)
+
+    def test_preflight_excludes_every_candidates_primary_and_supplementary_socket_groups(self):
+        installation = self.directory / "candidate-groups.json"
+        for client in (False, True):
+            manifest = self.fixture.manifest(client=client)
+            manifest.update(socket="/run/workflow-pilot-fixture.sock", candidate_uids=[65533, 65531])
+            installation.write_bytes(canonical_json(manifest))
+            for candidate in manifest["candidate_uids"]:
+                for membership in ("primary", "supplementary"):
+                    with self.subTest(role=manifest["role"], candidate=candidate, membership=membership), \
+                         self.installation_identity(manifest) as principals:
+                        broker.load_installation(installation, manifest["role"])
+                        if membership == "primary":
+                            principals.users[candidate].pw_gid = manifest["socket_gid"]
+                        else:
+                            # NSS initgroups may grant membership absent from gr_mem.
+                            principals.supplementary[candidate].add(manifest["socket_gid"])
+                        with self.assertRaises(RecordError):
+                            broker.load_installation(installation, manifest["role"])
+
+    def test_preflight_requires_resolvable_accounts_groups_and_exclusive_group_members(self):
+        installation = self.directory / "principal-data.json"
+        for client in (False, True):
+            manifest = self.fixture.manifest(client=client)
+            manifest["socket"] = "/run/workflow-pilot-fixture.sock"
+            installation.write_bytes(canonical_json(manifest))
+            for defect in ("candidate-account", "broker-account", "coordinator-account", "socket-group",
+                           "primary-group", "unknown-member", "candidate-member", "lookup-error",
+                           "unassigned-coordinator"):
+                with self.subTest(role=manifest["role"], defect=defect), \
+                     self.installation_identity(manifest) as principals:
+                    candidate = manifest["candidate_uids"][0]
+                    group = principals.groups[manifest["socket_gid"]]
+                    if defect.endswith("-account"):
+                        uid = candidate if defect == "candidate-account" else manifest[
+                            defect.removesuffix("-account") + "_uid"
+                        ]
+                        del principals.users[uid]
+                    elif defect == "socket-group":
+                        del principals.groups[manifest["socket_gid"]]
+                    elif defect == "primary-group":
+                        del principals.groups[principals.users[candidate].pw_gid]
+                    elif defect == "unknown-member":
+                        group.gr_mem.append("unresolvable-principal")
+                    elif defect == "candidate-member":
+                        group.gr_mem.append(principals.users[candidate].pw_name)
+                    elif defect == "unassigned-coordinator":
+                        coordinator = manifest["coordinator_uid"]
+                        principals.users[coordinator].pw_gid = manifest["broker_uid"]
+                        principals.supplementary[coordinator].clear()
+                    else:
+                        principals.supplementary[candidate] = None
+                    with self.assertRaises(RecordError):
+                        broker.load_installation(installation, manifest["role"])
+            with self.installation_identity(manifest), mock.patch.object(
+                broker.os, "getgrouplist", side_effect=OSError("NSS unavailable"),
+            ), self.assertRaises(RecordError):
+                broker.load_installation(installation, manifest["role"])
+
+    def test_all_entry_points_reject_candidate_socket_access_before_authority_io(self):
+        installation = self.directory / "entry-groups.json"
+        for command in ("serve", "preflight-server", "preflight-client", "publish", "readback",
+                        "credential", "credential-check"):
+            client = command in {"preflight-client", "publish", "readback"}
+            manifest = self.fixture.manifest(client=client)
+            manifest["socket"] = "/run/workflow-pilot-fixture.sock"
+            installation.write_bytes(canonical_json(manifest))
+            arguments = [command, "--installation", str(installation)]
+            if command == "credential":
+                arguments = [command, "get"]
+            elif command == "credential-check":
+                arguments = [command]
+            elif command in {"publish", "readback"}:
+                arguments += ["--plan", str(self.directory / "must-not-read.json")]
+                if command == "publish":
+                    arguments += ["--pack", str(self.directory / "must-not-read.pack")]
+            with self.subTest(command=command), self.installation_identity(manifest) as principals, \
+                 mock.patch.dict(os.environ, {"FE8_BROKER_INSTALLATION": str(installation)}), \
+                 mock.patch.object(broker, "tls_context") as tls, \
+                 mock.patch.object(broker, "PublicationStore") as store, \
+                 mock.patch.object(broker, "run_bounded") as worker, \
+                 mock.patch.object(broker, "network_credential_contract") as credentials, \
+                 mock.patch.object(broker, "read_snapshot") as snapshot, \
+                 mock.patch.object(broker, "socket_permissions") as endpoint, \
+                 mock.patch.object(broker.sys, "stdout", mock.Mock(buffer=io.BytesIO())), \
+                 mock.patch.object(broker.sys, "stderr", io.StringIO()):
+                principals.supplementary[manifest["candidate_uids"][0]].add(manifest["socket_gid"])
+                mask = os.umask(0o077)
+                try:
+                    self.assertEqual(broker.main(arguments), 2)
+                finally:
+                    os.umask(mask)
+                for effect in (tls, store, worker, credentials, snapshot, endpoint):
+                    effect.assert_not_called()
 
     def test_every_identity_and_signed_plan_boundary_rejects_before_reservation(self):
         plan, _pack, _current = self.fixture.make_plan()

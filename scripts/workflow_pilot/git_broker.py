@@ -6,12 +6,14 @@ from __future__ import annotations
 import argparse
 import base64
 import fcntl
+import grp
 import hashlib
 import http.client
 import importlib.abc
 import importlib.util
 import json
 import os
+import pwd
 import re
 import signal
 import socket
@@ -246,6 +248,41 @@ def network_credential_contract(transport: dict, policy: Policy) -> None:
         raise RecordError("network credentials require the exact installed User bypass")
 
 
+def principal_groups(uid: int) -> tuple[int, frozenset[int]]:
+    """Resolve initialized OS credentials, not just explicit /etc/group members."""
+    try:
+        account = pwd.getpwuid(uid)
+        primary = integer(account.pw_gid, 0, 2**32 - 2)
+        if account.pw_uid != uid or not account.pw_name or grp.getgrgid(primary).gr_gid != primary:
+            raise RecordError("inconsistent principal account/group identity")
+        groups = frozenset(
+            integer(gid, 0, 2**32 - 2) for gid in os.getgrouplist(account.pw_name, primary)
+        )
+    except (KeyError, OSError, TypeError, ValueError) as error:
+        raise RecordError("principal account/group data unavailable or invalid") from error
+    if primary not in groups:
+        raise RecordError("principal primary group is missing from initialized credentials")
+    return primary, groups
+
+
+def socket_group_principals(broker: int, coordinator: int, candidates: list[int], socket_gid: int) -> dict:
+    authorized = {broker, coordinator}
+    try:
+        group = grp.getgrgid(socket_gid)
+        members = {pwd.getpwnam(name).pw_uid for name in group.gr_mem}
+    except (KeyError, OSError, TypeError, ValueError) as error:
+        raise RecordError("socket group/member data unavailable or invalid") from error
+    if group.gr_gid != socket_gid or members - authorized:
+        raise RecordError("socket group admits a principal outside broker/coordinator authority")
+    principals = {
+        uid: principal_groups(uid) for uid in (broker, coordinator, *candidates)
+    }
+    for uid, (_primary, groups) in principals.items():
+        if (socket_gid in groups) != (uid in authorized):
+            raise RecordError("initialized principal groups violate coordinator-only socket access")
+    return principals
+
+
 def load_installation(path: Path, role: str) -> tuple[dict, Policy]:
     protected_path(path, {0})
     manifest = strict_json(read_regular(path, INSTALLATION_MAX), INSTALLATION_MAX)
@@ -269,6 +306,7 @@ def load_installation(path: Path, role: str) -> tuple[dict, Policy]:
     socket_gid = integer(manifest["socket_gid"], 1, 2**31 - 1)
     if socket_gid not in {os.getegid(), *os.getgroups()}:
         raise RecordError("principal lacks the installed coordinator-only socket group")
+    socket_group_principals(broker, coordinator, candidates, socket_gid)
     module_root = Path(__file__).resolve().parent
     for name in INSTALLED_MODULES:
         protected_path(module_root / name, {0})

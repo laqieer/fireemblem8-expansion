@@ -155,6 +155,25 @@ class CredentialTests(BrokerFixtureTests):
     def remote_refs(self):
         return self.fixture.store.remote_refs(utc_now() + timedelta(seconds=5))
 
+    def test_candidate_socket_membership_blocks_network_credentials_before_capture(self):
+        for kind in ("https", "ssh"):
+            self.use_transport(kind)
+            self.manifest["socket"] = "/run/workflow-pilot-fixture.sock"
+            installation = self.fixture.store.installation
+            installation.write_bytes(canonical_json(self.manifest))
+            with self.subTest(kind=kind), self.installation_identity(self.manifest) as principals, \
+                 mock.patch.object(broker, "sealed_snapshot") as snapshot, \
+                 mock.patch.object(broker, "run_bounded") as worker:
+                self.assertEqual(broker.load_installation(installation, "server")[0], self.manifest)
+                principals.supplementary[self.manifest["candidate_uids"][0]].add(self.manifest["socket_gid"])
+                with self.assertRaises(RecordError), broker.verified_credentials(
+                    installation, self.fixture.policy, self.manifest["transport"], self.fixture.state,
+                    utc_now() + timedelta(seconds=5),
+                ):
+                    self.fail("candidate-accessible installation exposed network credentials")
+                snapshot.assert_not_called()
+                worker.assert_not_called()
+
     def test_https_identity_is_checked_before_every_remote_git_operation(self):
         with self.identity_fixture():
             self.assertEqual(self.remote_refs(), dict.fromkeys(self.fixture.policy.refs))
