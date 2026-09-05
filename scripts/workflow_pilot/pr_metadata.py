@@ -138,6 +138,35 @@ class Decision:
     repository: str
     pr_number: int
     run_id: int | None = None
+    comment_id: int | None = None
+
+    def __post_init__(self) -> None:
+        for field, value in (
+            ("run_id", self.run_id),
+            ("comment_id", self.comment_id),
+        ):
+            if value is not None and (
+                isinstance(value, bool)
+                or not isinstance(value, int)
+                or value < 1
+                or value > 999999999999999999
+            ):
+                raise MetadataEditError(
+                    f"Decision {field} must be a positive integer"
+                )
+        if self.run_id is not None and self.comment_id is not None:
+            raise MetadataEditError(
+                "Decision run_id and comment_id are mutually exclusive"
+            )
+        if self.action == "comment-updated":
+            if self.comment_id is None or self.run_id is not None:
+                raise MetadataEditError(
+                    "comment-updated Decision requires only comment_id"
+                )
+        elif self.comment_id is not None:
+            raise MetadataEditError(
+                "only comment-updated Decision may contain comment_id"
+            )
 
     def canonical_json(self) -> str:
         payload = asdict(self)
@@ -1613,14 +1642,14 @@ def edit_metadata(
         body is None or body == initial.body
     ):
         return Decision(
-            "no-op",
-            base_sha,
-            (),
-            head_sha,
-            False,
-            "requested metadata already matches",
-            repository,
-            pr_number,
+            action="no-op",
+            base_sha=base_sha,
+            guidance=(),
+            head_sha=head_sha,
+            mutated=False,
+            reason="requested metadata already matches",
+            repository=repository,
+            pr_number=pr_number,
         )
 
     initial_runs = list_candidate_runs(client, initial)
@@ -1629,26 +1658,29 @@ def edit_metadata(
     if essential_reason is None:
         if active_full:
             return Decision(
-                "deferred",
-                base_sha,
-                _comment_guidance(initial),
-                head_sha,
-                False,
-                "an exact-head full Build is active; update the canonical evidence comment instead",
-                repository,
-                pr_number,
-                active_full[0].run_id,
+                action="deferred",
+                base_sha=base_sha,
+                guidance=_comment_guidance(initial),
+                head_sha=head_sha,
+                mutated=False,
+                reason=(
+                    "an exact-head full Build is active; update the canonical "
+                    "evidence comment instead"
+                ),
+                repository=repository,
+                pr_number=pr_number,
+                run_id=active_full[0].run_id,
             )
         if latest_full is None:
             return Decision(
-                "refused",
-                base_sha,
-                _comment_guidance(initial),
-                head_sha,
-                False,
-                "no exact-head full Build can authorize metadata continuity",
-                repository,
-                pr_number,
+                action="refused",
+                base_sha=base_sha,
+                guidance=_comment_guidance(initial),
+                head_sha=head_sha,
+                mutated=False,
+                reason="no exact-head full Build can authorize metadata continuity",
+                repository=repository,
+                pr_number=pr_number,
             )
         require_full_success(latest_full)
     elif not essential_reason.strip():
@@ -1667,14 +1699,14 @@ def edit_metadata(
     if current != initial:
         if essential_reason is None:
             return Decision(
-                "deferred",
-                base_sha,
-                _comment_guidance(current),
-                head_sha,
-                False,
-                "pull request metadata changed before mutation",
-                repository,
-                pr_number,
+                action="deferred",
+                base_sha=base_sha,
+                guidance=_comment_guidance(current),
+                head_sha=head_sha,
+                mutated=False,
+                reason="pull request metadata changed before mutation",
+                repository=repository,
+                pr_number=pr_number,
             )
         raise MetadataEditError(
             "pull request metadata changed before essential mutation"
@@ -1685,27 +1717,31 @@ def edit_metadata(
     if essential_reason is None:
         if current_runs != initial_runs:
             return Decision(
-                "deferred",
-                base_sha,
-                _comment_guidance(current),
-                head_sha,
-                False,
-                "exact Build run authority changed before mutation",
-                repository,
-                pr_number,
-                current_active_full[0].run_id if current_active_full else None,
+                action="deferred",
+                base_sha=base_sha,
+                guidance=_comment_guidance(current),
+                head_sha=head_sha,
+                mutated=False,
+                reason="exact Build run authority changed before mutation",
+                repository=repository,
+                pr_number=pr_number,
+                run_id=(
+                    current_active_full[0].run_id
+                    if current_active_full
+                    else None
+                ),
             )
         if current_active_full:
             return Decision(
-                "deferred",
-                base_sha,
-                _comment_guidance(current),
-                head_sha,
-                False,
-                "an exact-head full Build became active before mutation",
-                repository,
-                pr_number,
-                current_active_full[0].run_id,
+                action="deferred",
+                base_sha=base_sha,
+                guidance=_comment_guidance(current),
+                head_sha=head_sha,
+                mutated=False,
+                reason="an exact-head full Build became active before mutation",
+                repository=repository,
+                pr_number=pr_number,
+                run_id=current_active_full[0].run_id,
             )
         if current_latest_full is None:
             raise MetadataEditError(
@@ -1765,15 +1801,15 @@ def edit_metadata(
             "the newest exact-head full Build succeeds"
         )
     return Decision(
-        "updated",
-        base_sha,
-        guidance,
-        head_sha,
-        True,
-        reason,
-        repository,
-        pr_number,
-        active_full[0].run_id if active_full else latest_full.run_id,
+        action="updated",
+        base_sha=base_sha,
+        guidance=guidance,
+        head_sha=head_sha,
+        mutated=True,
+        reason=reason,
+        repository=repository,
+        pr_number=pr_number,
+        run_id=active_full[0].run_id if active_full else latest_full.run_id,
     )
 
 
@@ -1810,53 +1846,53 @@ def reconcile_metadata(
     blocking_active = _blocking_active_runs(first_runs)
     if blocking_active:
         return Decision(
-            "deferred",
-            base_sha,
-            (_helper_command("reconcile", initial),),
-            head_sha,
-            False,
-            "the newest exact full Build is still active",
-            repository,
-            pr_number,
-            blocking_active[0].run_id,
+            action="deferred",
+            base_sha=base_sha,
+            guidance=(_helper_command("reconcile", initial),),
+            head_sha=head_sha,
+            mutated=False,
+            reason="the newest exact full Build is still active",
+            repository=repository,
+            pr_number=pr_number,
+            run_id=blocking_active[0].run_id,
         )
     first_full, first_metadata = _pending_metadata(first_runs)
     if first_metadata is None:
         return Decision(
-            "deferred",
-            base_sha,
-            (_helper_command("reconcile", initial),),
-            head_sha,
-            False,
-            "the exact metadata-only run is not visible yet",
-            repository,
-            pr_number,
-            first_full.run_id,
+            action="deferred",
+            base_sha=base_sha,
+            guidance=(_helper_command("reconcile", initial),),
+            head_sha=head_sha,
+            mutated=False,
+            reason="the exact metadata-only run is not visible yet",
+            repository=repository,
+            pr_number=pr_number,
+            run_id=first_full.run_id,
         )
     if first_metadata.status in ACTIVE_RUN_STATUSES:
         return Decision(
-            "deferred",
-            base_sha,
-            (_helper_command("reconcile", initial),),
-            head_sha,
-            False,
-            "the exact metadata-only run is already active",
-            repository,
-            pr_number,
-            first_metadata.run_id,
+            action="deferred",
+            base_sha=base_sha,
+            guidance=(_helper_command("reconcile", initial),),
+            head_sha=head_sha,
+            mutated=False,
+            reason="the exact metadata-only run is already active",
+            repository=repository,
+            pr_number=pr_number,
+            run_id=first_metadata.run_id,
         )
     if first_metadata.conclusion == "success":
         require_metadata_success(first_metadata)
         return Decision(
-            "complete",
-            base_sha,
-            (),
-            head_sha,
-            False,
-            "metadata continuity already succeeds",
-            repository,
-            pr_number,
-            first_metadata.run_id,
+            action="complete",
+            base_sha=base_sha,
+            guidance=(),
+            head_sha=head_sha,
+            mutated=False,
+            reason="metadata continuity already succeeds",
+            repository=repository,
+            pr_number=pr_number,
+            run_id=first_metadata.run_id,
         )
     require_metadata_failure(first_metadata)
 
@@ -1864,15 +1900,15 @@ def reconcile_metadata(
     require_identity(current, head_sha=head_sha, base_sha=base_sha)
     if current != initial:
         return Decision(
-            "deferred",
-            base_sha,
-            (_helper_command("reconcile", current),),
-            head_sha,
-            False,
-            "pull request metadata changed during reconciliation",
-            repository,
-            pr_number,
-            first_metadata.run_id,
+            action="deferred",
+            base_sha=base_sha,
+            guidance=(_helper_command("reconcile", current),),
+            head_sha=head_sha,
+            mutated=False,
+            reason="pull request metadata changed during reconciliation",
+            repository=repository,
+            pr_number=pr_number,
+            run_id=first_metadata.run_id,
         )
     current_runs = list_candidate_runs(client, current)
     current_full, current_metadata = _pending_metadata(current_runs)
@@ -1887,15 +1923,22 @@ def reconcile_metadata(
         or current_metadata.conclusion != first_metadata.conclusion
     ):
         return Decision(
-            "deferred",
-            base_sha,
-            (_helper_command("reconcile", current),),
-            head_sha,
-            False,
-            "exact Build run state changed during reconciliation; retry from fresh authority",
-            repository,
-            pr_number,
-            current_metadata.run_id if current_metadata else current_full.run_id,
+            action="deferred",
+            base_sha=base_sha,
+            guidance=(_helper_command("reconcile", current),),
+            head_sha=head_sha,
+            mutated=False,
+            reason=(
+                "exact Build run state changed during reconciliation; retry "
+                "from fresh authority"
+            ),
+            repository=repository,
+            pr_number=pr_number,
+            run_id=(
+                current_metadata.run_id
+                if current_metadata
+                else current_full.run_id
+            ),
         )
     require_metadata_failure(current_metadata)
     client.request(
@@ -1904,15 +1947,15 @@ def reconcile_metadata(
         label="metadata continuity rerun",
     )
     return Decision(
-        "rerun",
-        base_sha,
-        (),
-        head_sha,
-        True,
-        "reran only the exact metadata-only continuity run",
-        repository,
-        pr_number,
-        current_metadata.run_id,
+        action="rerun",
+        base_sha=base_sha,
+        guidance=(),
+        head_sha=head_sha,
+        mutated=True,
+        reason="reran only the exact metadata-only continuity run",
+        repository=repository,
+        pr_number=pr_number,
+        run_id=current_metadata.run_id,
     )
 
 
@@ -2182,15 +2225,18 @@ def update_evidence_comment(
             "comment mutation response did not attest the requested canonical update"
         )
     return Decision(
-        "comment-updated",
-        base_sha,
-        (),
-        head_sha,
-        True,
-        "canonical evidence comment updated without editing pull request metadata",
-        repository,
-        pr_number,
-        comment_id,
+        action="comment-updated",
+        base_sha=base_sha,
+        guidance=(),
+        head_sha=head_sha,
+        mutated=True,
+        reason=(
+            "canonical evidence comment updated without editing pull request "
+            "metadata"
+        ),
+        repository=repository,
+        pr_number=pr_number,
+        comment_id=comment_id,
     )
 
 
@@ -2224,7 +2270,14 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             child.add_argument("--essential-reason")
         elif mode == "evidence-comment":
             child.add_argument("--comment-file", type=Path, required=True)
-    return parser.parse_args(argv)
+    arguments = parser.parse_args(argv)
+    if (
+        arguments.mode == "edit"
+        and arguments.title_file is None
+        and arguments.body_file is None
+    ):
+        parser.error("edit requires --title-file, --body-file, or both")
+    return arguments
 
 
 def _resolve_gh() -> str:

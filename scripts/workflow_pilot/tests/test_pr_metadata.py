@@ -4,12 +4,17 @@ from __future__ import annotations
 
 import copy
 import json
+import os
 import subprocess
+import tempfile
 import unittest
+from pathlib import Path
 
 from scripts.workflow_pilot import candidate_evidence, pr_metadata
 
 
+ROOT = Path(__file__).resolve().parents[3]
+LAUNCHER = Path("scripts/workflow_pilot/isolated_launcher.py")
 REPOSITORY = "owner/repo"
 REPOSITORY_ID = 1302699505
 OWNER_ID = 77
@@ -448,6 +453,258 @@ def _add_snapshot(
                 for _ in range(copies)
             ),
         )
+
+
+_MISSING = object()
+
+
+def _cli_api_call(
+    method: str,
+    endpoint: str,
+    *,
+    payload: object = _MISSING,
+    status: int = 200,
+    input_text: str = "",
+) -> dict:
+    call = {
+        "endpoint": endpoint,
+        "input": input_text,
+        "method": method,
+        "status": status,
+    }
+    if payload is not _MISSING:
+        call["payload"] = payload
+    return call
+
+
+def _cli_snapshot_calls(
+    runs_and_jobs: list[tuple[dict, list[dict]]],
+) -> list[dict]:
+    calls = [
+        _cli_api_call(
+            "GET",
+            _endpoint("actions/workflows/build.yml"),
+            payload=_workflow(),
+        ),
+        _cli_api_call(
+            "GET",
+            _query(
+                "actions/workflows/build.yml/runs",
+                [
+                    ("event", "pull_request"),
+                    ("head_sha", HEAD),
+                    ("per_page", "100"),
+                    ("page", "1"),
+                ],
+            ),
+            payload={
+                "total_count": len(runs_and_jobs),
+                "workflow_runs": [
+                    record for record, _jobs in runs_and_jobs
+                ],
+            },
+        ),
+    ]
+    for record, jobs in runs_and_jobs:
+        if record["status"] == "completed":
+            calls.append(
+                _cli_api_call(
+                    "GET",
+                    _endpoint(f"actions/runs/{record['id']}"),
+                    payload=record,
+                )
+            )
+        calls.append(
+            _cli_api_call(
+                "GET",
+                _query(
+                    (
+                        f"actions/runs/{record['id']}/attempts/"
+                        f"{record['run_attempt']}/jobs"
+                    ),
+                    [("per_page", "100"), ("page", "1")],
+                ),
+                payload={"total_count": len(jobs), "jobs": jobs},
+            )
+        )
+    return calls
+
+
+def _canonical_decision(**changes: object) -> str:
+    payload = {
+        "action": "updated",
+        "base_sha": BASE,
+        "comment_id": None,
+        "guidance": [],
+        "head_sha": HEAD,
+        "mutated": False,
+        "pr_number": PR_NUMBER,
+        "reason": "",
+        "repository": REPOSITORY,
+        "run_id": None,
+    }
+    payload.update(changes)
+    return json.dumps(
+        payload,
+        ensure_ascii=True,
+        separators=(",", ":"),
+        sort_keys=True,
+    ) + "\n"
+
+
+FAKE_GH_DRIVER = r"""#!/usr/bin/python3
+import json
+import os
+from pathlib import Path
+import sys
+
+scenario_path = Path(os.environ["FAKE_GH_SCENARIO"])
+state_path = Path(os.environ["FAKE_GH_STATE"])
+log_path = Path(os.environ["FAKE_GH_LOG"])
+calls = json.loads(scenario_path.read_text(encoding="utf-8"))["calls"]
+index = int(state_path.read_text(encoding="ascii")) if state_path.exists() else 0
+if index >= len(calls):
+    print("fake-gh: unexpected extra call", file=sys.stderr)
+    raise SystemExit(97)
+expected = calls[index]
+arguments = sys.argv[1:]
+if not arguments or arguments[0] != "api":
+    print("fake-gh: expected api mode", file=sys.stderr)
+    raise SystemExit(97)
+try:
+    method = arguments[arguments.index("--method") + 1]
+    endpoint = next(item for item in arguments if item.startswith("repos/"))
+except (StopIteration, ValueError, IndexError):
+    print("fake-gh: malformed argv", file=sys.stderr)
+    raise SystemExit(97)
+input_text = sys.stdin.read() if "--input" in arguments else ""
+if (
+    method != expected["method"]
+    or endpoint != expected["endpoint"]
+    or input_text != expected["input"]
+):
+    print(
+        "fake-gh: call mismatch "
+        + json.dumps(
+            {
+                "actual": [method, endpoint, input_text],
+                "expected": [
+                    expected["method"],
+                    expected["endpoint"],
+                    expected["input"],
+                ],
+            },
+            sort_keys=True,
+        ),
+        file=sys.stderr,
+    )
+    raise SystemExit(97)
+record = {
+    "argv": arguments,
+    "endpoint": endpoint,
+    "git_environment": sorted(
+        name for name in os.environ if name.startswith("GIT_")
+    ),
+    "gh_host": os.environ.get("GH_HOST"),
+    "gh_repo": os.environ.get("GH_REPO"),
+    "input": input_text,
+    "method": method,
+}
+with log_path.open("a", encoding="utf-8") as stream:
+    stream.write(json.dumps(record, sort_keys=True) + "\n")
+state_path.write_text(str(index + 1), encoding="ascii")
+status = expected["status"]
+reason = "Created" if status == 201 else "OK"
+sys.stdout.write(f"HTTP/2 {status} {reason}\n")
+if "payload" in expected:
+    sys.stdout.write("Content-Type: application/json\n\n")
+    sys.stdout.write(
+        json.dumps(
+            expected["payload"],
+            ensure_ascii=True,
+            separators=(",", ":"),
+            sort_keys=True,
+        )
+        + "\n"
+    )
+else:
+    sys.stdout.write("\n")
+"""
+
+
+class LauncherSandbox:
+    def __init__(self, root: Path):
+        self.root = root
+        self.scenario = root / "scenario.json"
+        self.state = root / "state.txt"
+        self.log = root / "calls.jsonl"
+        self.site_marker = root / "sitecustomize-loaded"
+        driver = root / "fake_gh.py"
+        driver.write_text(FAKE_GH_DRIVER, encoding="utf-8")
+        gh = root / "gh"
+        gh.write_text(
+            '#!/bin/sh\nexec /usr/bin/python3 -I "$FAKE_GH_DRIVER" "$@"\n',
+            encoding="ascii",
+        )
+        gh.chmod(0o755)
+        (root / "sitecustomize.py").write_text(
+            "import os\n"
+            "from pathlib import Path\n"
+            "Path(os.environ['SITE_MARKER']).write_text('loaded')\n",
+            encoding="ascii",
+        )
+        self.environment = dict(os.environ)
+        self.environment.update(
+            {
+                "FAKE_GH_DRIVER": str(driver),
+                "FAKE_GH_LOG": str(self.log),
+                "FAKE_GH_SCENARIO": str(self.scenario),
+                "FAKE_GH_STATE": str(self.state),
+                "GH_REPO": "attacker/repository",
+                "GIT_DIR": str(root / "redirected.git"),
+                "PATH": f"{root}:/usr/bin:/bin",
+                "PYTHONPATH": str(root),
+                "SITE_MARKER": str(self.site_marker),
+            }
+        )
+
+    def run(
+        self,
+        mode: str,
+        arguments: list[str],
+        calls: list[dict],
+    ) -> tuple[subprocess.CompletedProcess[str], list[dict]]:
+        self.scenario.write_text(
+            json.dumps({"calls": calls}, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        for path in (self.state, self.log):
+            path.unlink(missing_ok=True)
+        completed = subprocess.run(
+            [
+                "/usr/bin/python3",
+                "-I",
+                str(LAUNCHER),
+                "pr-metadata",
+                mode,
+                *arguments,
+            ],
+            cwd=ROOT,
+            env=self.environment,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        records = (
+            [
+                json.loads(line)
+                for line in self.log.read_text(encoding="utf-8").splitlines()
+            ]
+            if self.log.exists()
+            else []
+        )
+        return completed, records
 
 
 class PullRequestMetadataTests(unittest.TestCase):
@@ -2087,6 +2344,20 @@ class PullRequestMetadataTests(unittest.TestCase):
             comment_body=body,
         )
         self.assertEqual(decision.action, "comment-updated")
+        self.assertIsNone(decision.run_id)
+        self.assertEqual(decision.comment_id, 301)
+        self.assertEqual(
+            decision.canonical_json(),
+            _canonical_decision(
+                action="comment-updated",
+                comment_id=301,
+                mutated=True,
+                reason=(
+                    "canonical evidence comment updated without editing pull "
+                    "request metadata"
+                ),
+            ),
+        )
         mutations = [call for call in client.calls if call[0] != "GET"]
         self.assertEqual(
             mutations,
@@ -2105,6 +2376,43 @@ class PullRequestMetadataTests(unittest.TestCase):
             ),
             2,
         )
+
+    def test_decision_run_and_comment_ids_are_strictly_mutually_exclusive(self):
+        common = {
+            "base_sha": BASE,
+            "guidance": (),
+            "head_sha": HEAD,
+            "mutated": False,
+            "reason": "fixture",
+            "repository": REPOSITORY,
+            "pr_number": PR_NUMBER,
+        }
+        run = pr_metadata.Decision(
+            action="deferred",
+            run_id=101,
+            **common,
+        )
+        self.assertEqual(run.run_id, 101)
+        self.assertIsNone(run.comment_id)
+        comment = pr_metadata.Decision(
+            action="comment-updated",
+            comment_id=301,
+            **common,
+        )
+        self.assertIsNone(comment.run_id)
+        self.assertEqual(comment.comment_id, 301)
+        for changes in (
+            {"action": "comment-updated"},
+            {"action": "comment-updated", "run_id": 101},
+            {"action": "comment-updated", "run_id": 101, "comment_id": 301},
+            {"action": "deferred", "comment_id": 301},
+            {"action": "deferred", "run_id": True},
+            {"action": "deferred", "run_id": 0},
+            {"action": "deferred", "run_id": 1000000000000000000},
+        ):
+            with self.subTest(changes=changes):
+                with self.assertRaises(pr_metadata.MetadataEditError):
+                    pr_metadata.Decision(**common, **changes)
 
     def test_comment_mutation_response_must_attest_identity_and_body(self):
         desired = f"{pr_metadata.EVIDENCE_MARKER}\nNew evidence\n"
@@ -2609,6 +2917,404 @@ class PullRequestMetadataTests(unittest.TestCase):
             "timestamp",
         )
         self.assertEqual(parsed.hour, 23)
+
+
+class PullRequestMetadataLauncherTests(unittest.TestCase):
+    def setUp(self) -> None:
+        artifact_root = ROOT / "build" / "test-artifacts"
+        artifact_root.mkdir(parents=True, exist_ok=True)
+        self.temporary = tempfile.TemporaryDirectory(
+            prefix="workflow-pr-metadata-launcher-",
+            dir=artifact_root,
+        )
+        self.addCleanup(self.temporary.cleanup)
+        self.sandbox = LauncherSandbox(Path(self.temporary.name))
+
+    def common_arguments(self) -> list[str]:
+        return [
+            "--repository",
+            REPOSITORY,
+            "--pr",
+            str(PR_NUMBER),
+            "--head-sha",
+            HEAD,
+            "--base-sha",
+            BASE,
+        ]
+
+    def assert_isolated_calls(
+        self,
+        records: list[dict],
+        expected_count: int,
+    ) -> None:
+        self.assertEqual(len(records), expected_count)
+        self.assertFalse(self.sandbox.site_marker.exists())
+        for record in records:
+            self.assertEqual(record["gh_host"], "github.com")
+            self.assertIsNone(record["gh_repo"])
+            self.assertEqual(record["git_environment"], [])
+            self.assertEqual(record["argv"][0], "api")
+            self.assertIn("--include", record["argv"])
+
+    def test_edit_launcher_fast_defer_and_mutation_paths(self):
+        body_path = self.sandbox.root / "body.md"
+        body_path.write_text("Deferred body\n", encoding="utf-8")
+        active_record, active_jobs = _run(
+            202,
+            11,
+            mode="full",
+            active=True,
+        )
+        active_jobs = [
+            job
+            for job in active_jobs
+            if job["name"] == "event-identity"
+        ]
+        calls = [
+            _cli_api_call(
+                "GET",
+                _endpoint(f"pulls/{PR_NUMBER}"),
+                payload=_pr(),
+            ),
+            *_cli_snapshot_calls([(active_record, active_jobs)]),
+        ]
+        completed, records = self.sandbox.run(
+            "edit",
+            [
+                *self.common_arguments(),
+                "--body-file",
+                str(body_path),
+            ],
+            calls,
+        )
+        self.assertEqual(completed.returncode, 3, completed.stderr)
+        self.assertEqual(completed.stderr, "")
+        self.assertEqual(
+            completed.stdout,
+            _canonical_decision(
+                action="deferred",
+                guidance=[
+                    [
+                        "/usr/bin/python3",
+                        "-I",
+                        "scripts/workflow_pilot/isolated_launcher.py",
+                        "pr-metadata",
+                        "evidence-comment",
+                        "--repository",
+                        REPOSITORY,
+                        "--pr",
+                        str(PR_NUMBER),
+                        "--head-sha",
+                        HEAD,
+                        "--base-sha",
+                        BASE,
+                        "--comment-file",
+                        "<canonical-evidence-file>",
+                    ]
+                ],
+                reason=(
+                    "an exact-head full Build is active; update the canonical "
+                    "evidence comment instead"
+                ),
+                run_id=202,
+            ),
+        )
+        self.assert_isolated_calls(records, len(calls))
+        self.assertFalse(any(record["method"] != "GET" for record in records))
+
+        marker = self.sandbox.root / "injection-executed"
+        body = f'$(touch "{marker}")\n--method DELETE\n'
+        title_path = self.sandbox.root / "title.txt"
+        body_path.write_text(body, encoding="utf-8")
+        title_path.write_text("CLI title\n", encoding="utf-8")
+        successful_full = _run(101, 10, mode="full")
+        calls = [
+            _cli_api_call(
+                "GET",
+                _endpoint(f"pulls/{PR_NUMBER}"),
+                payload=_pr(),
+            ),
+            *_cli_snapshot_calls([successful_full]),
+            _cli_api_call(
+                "GET",
+                _endpoint(f"pulls/{PR_NUMBER}"),
+                payload=_pr(),
+            ),
+            *_cli_snapshot_calls([successful_full]),
+            _cli_api_call(
+                "PATCH",
+                _endpoint(f"pulls/{PR_NUMBER}"),
+                payload=_pr(title="CLI title", body=body),
+                input_text=json.dumps(
+                    {"body": body, "title": "CLI title"},
+                    ensure_ascii=False,
+                    separators=(",", ":"),
+                    sort_keys=True,
+                ),
+            ),
+        ]
+        completed, records = self.sandbox.run(
+            "edit",
+            [
+                *self.common_arguments(),
+                "--title-file",
+                str(title_path),
+                "--body-file",
+                str(body_path),
+            ],
+            calls,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertEqual(completed.stderr, "")
+        self.assertEqual(
+            completed.stdout,
+            _canonical_decision(
+                guidance=[
+                    [
+                        "/usr/bin/python3",
+                        "-I",
+                        "scripts/workflow_pilot/isolated_launcher.py",
+                        "pr-metadata",
+                        "reconcile",
+                        "--repository",
+                        REPOSITORY,
+                        "--pr",
+                        str(PR_NUMBER),
+                        "--head-sha",
+                        HEAD,
+                        "--base-sha",
+                        BASE,
+                    ]
+                ],
+                mutated=True,
+                reason=(
+                    "metadata updated; reconcile the exact metadata-only run "
+                    "to close any non-atomic same-SHA Build race"
+                ),
+                run_id=101,
+            ),
+        )
+        self.assert_isolated_calls(records, len(calls))
+        self.assertFalse(marker.exists())
+        self.assertEqual(
+            json.loads(records[-1]["input"]),
+            {"body": body, "title": "CLI title"},
+        )
+        self.assertEqual(records[-1]["argv"][-2:], ["--input", "-"])
+
+    def test_reconcile_and_evidence_comment_launcher_paths(self):
+        failed_metadata = _run(
+            202,
+            11,
+            mode="metadata-only",
+            success=False,
+        )
+        successful_full = _run(101, 10, mode="full")
+        runs = [failed_metadata, successful_full]
+        calls = [
+            _cli_api_call(
+                "GET",
+                _endpoint(f"pulls/{PR_NUMBER}"),
+                payload=_pr(),
+            ),
+            *_cli_snapshot_calls(runs),
+            _cli_api_call(
+                "GET",
+                _endpoint(f"pulls/{PR_NUMBER}"),
+                payload=_pr(),
+            ),
+            *_cli_snapshot_calls(runs),
+            _cli_api_call(
+                "POST",
+                _endpoint("actions/runs/202/rerun"),
+                status=201,
+            ),
+        ]
+        completed, records = self.sandbox.run(
+            "reconcile",
+            self.common_arguments(),
+            calls,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertEqual(completed.stderr, "")
+        self.assertEqual(
+            completed.stdout,
+            _canonical_decision(
+                action="rerun",
+                mutated=True,
+                reason="reran only the exact metadata-only continuity run",
+                run_id=202,
+            ),
+        )
+        self.assert_isolated_calls(records, len(calls))
+        self.assertEqual(records[-1]["method"], "POST")
+        self.assertEqual(records[-1]["input"], "")
+
+        comment_body = (
+            f"{pr_metadata.EVIDENCE_MARKER}\n"
+            f"Candidate: `{HEAD}`\n"
+        )
+        comment_path = self.sandbox.root / "evidence.md"
+        comment_path.write_text(comment_body, encoding="utf-8")
+        calls = [
+            _cli_api_call(
+                "GET",
+                _endpoint(f"pulls/{PR_NUMBER}"),
+                payload=_pr(),
+            ),
+            _cli_api_call(
+                "GET",
+                _query(
+                    f"issues/{PR_NUMBER}/comments",
+                    [("per_page", "100"), ("page", "1")],
+                ),
+                payload=[
+                    _comment(
+                        301,
+                        f"{pr_metadata.EVIDENCE_MARKER}\nOld evidence\n",
+                    )
+                ],
+            ),
+            _cli_api_call(
+                "GET",
+                _endpoint(f"pulls/{PR_NUMBER}"),
+                payload=_pr(),
+            ),
+            _cli_api_call(
+                "PATCH",
+                _endpoint("issues/comments/301"),
+                payload=_comment(301, comment_body),
+                input_text=json.dumps(
+                    {"body": comment_body},
+                    ensure_ascii=False,
+                    separators=(",", ":"),
+                    sort_keys=True,
+                ),
+            ),
+        ]
+        completed, records = self.sandbox.run(
+            "evidence-comment",
+            [
+                *self.common_arguments(),
+                "--comment-file",
+                str(comment_path),
+            ],
+            calls,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertEqual(completed.stderr, "")
+        self.assertEqual(
+            completed.stdout,
+            _canonical_decision(
+                action="comment-updated",
+                comment_id=301,
+                mutated=True,
+                reason=(
+                    "canonical evidence comment updated without editing pull "
+                    "request metadata"
+                ),
+            ),
+        )
+        self.assert_isolated_calls(records, len(calls))
+        output = json.loads(completed.stdout)
+        self.assertIsNone(output["run_id"])
+        self.assertEqual(output["comment_id"], 301)
+
+    def test_launcher_rejects_mode_file_and_identity_inputs(self):
+        cases = (
+            (
+                "unknown-submode",
+                "unknown",
+                self.common_arguments(),
+                "invalid choice",
+            ),
+            (
+                "missing-edit-file",
+                "edit",
+                self.common_arguments(),
+                "edit requires --title-file, --body-file, or both",
+            ),
+            (
+                "missing-comment-file",
+                "evidence-comment",
+                self.common_arguments(),
+                "required",
+            ),
+            (
+                "missing-body-path",
+                "edit",
+                [
+                    *self.common_arguments(),
+                    "--body-file",
+                    str(self.sandbox.root / "missing.md"),
+                ],
+                "cannot read body file",
+            ),
+            (
+                "repository-injection",
+                "edit",
+                [
+                    "--repository",
+                    "owner/repo;touch-injection",
+                    "--pr",
+                    str(PR_NUMBER),
+                    "--head-sha",
+                    HEAD,
+                    "--base-sha",
+                    BASE,
+                    "--body-file",
+                    str(self.sandbox.root / "missing.md"),
+                ],
+                "--repository must be an owner/name slug",
+            ),
+            (
+                "malformed-head",
+                "edit",
+                [
+                    "--repository",
+                    REPOSITORY,
+                    "--pr",
+                    str(PR_NUMBER),
+                    "--head-sha",
+                    "$(touch injected)",
+                    "--base-sha",
+                    BASE,
+                    "--body-file",
+                    str(self.sandbox.root / "missing.md"),
+                ],
+                "--head-sha must be a full lowercase SHA",
+            ),
+        )
+        for name, mode, arguments, error in cases:
+            with self.subTest(case=name):
+                completed, records = self.sandbox.run(
+                    mode,
+                    arguments,
+                    [],
+                )
+                self.assertEqual(completed.returncode, 2)
+                self.assertEqual(completed.stdout, "")
+                self.assertIn(error, completed.stderr)
+                self.assertEqual(records, [])
+
+        completed = subprocess.run(
+            [
+                "/usr/bin/python3",
+                "-I",
+                str(LAUNCHER),
+                "unknown-mode",
+            ],
+            cwd=ROOT,
+            env=self.sandbox.environment,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        self.assertEqual(completed.returncode, 2)
+        self.assertEqual(completed.stdout, "")
+        self.assertIn("mode must be one of", completed.stderr)
+        self.assertFalse(self.sandbox.site_marker.exists())
 
 
 if __name__ == "__main__":

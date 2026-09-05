@@ -475,10 +475,11 @@ base_sha="$(gh api "repos/$repo/pulls/$pr" --jq .base.sha)"
   --body-file /path/to/stable-pr-body.md
 ```
 
-The default edit takes two complete exact-candidate run snapshots. It returns
-`deferred` without changing metadata when any same-head/same-base full Build is
-queued or in progress, when the second snapshot differs from the first, or
-when the second snapshot no longer proves the same successful full Build.
+An initially active same-head/same-base full or unproven Build takes one
+complete run/job snapshot and immediately returns `deferred` without changing
+metadata. A mutation-eligible default edit takes two complete exact-candidate
+run/job snapshots. It returns `deferred` when the second snapshot differs from
+the first or no longer proves the same successful full Build.
 Its structured guidance points to the canonical comment route:
 
 ```bash
@@ -510,6 +511,14 @@ validated PR repository payload and exactly one standalone marker.
 Marked missing/deleted authors, bots, non-owner associations, cross-repository
 IDs, duplicate or embedded markers, and a PATCH response that does not attest
 the same author/comment plus the requested body are rejected.
+Structured results reserve `run_id` exclusively for an Actions workflow run
+and `comment_id` exclusively for the canonical issue comment. Both fields are
+optional and serialized in every result, but they are mutually exclusive;
+`comment-updated` requires only `comment_id`.
+The isolated CLI writes exactly one canonical JSON line for a decision: exit
+status `0` means successful, no-op, or already complete; `3` means deferred or
+refused; and `2` reports invalid arguments, unreadable files, or malformed API
+authority without decision JSON on stdout.
 
 After the newest exact full Build succeeds, run:
 

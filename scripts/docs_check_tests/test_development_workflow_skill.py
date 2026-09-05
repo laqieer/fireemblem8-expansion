@@ -4599,9 +4599,24 @@ printf '%s\t%s\t%s\n' "$result" \
                 with self.subTest(requirement=requirement):
                     self.assertIn(normalize_policy(requirement), normalized)
         for requirement in (
+            "initially active same-head/same-base full or unproven Build takes "
+            "one complete run/job snapshot",
+            "mutation-eligible default edit takes two complete exact-candidate "
+            "run/job snapshots",
+            "`run_id` exclusively for an Actions workflow run",
+            "`comment_id` exclusively for the canonical issue comment",
+            "mutually exclusive",
+        ):
+            with self.subTest(pilot_requirement=requirement):
+                self.assertIn(
+                    normalize_policy(requirement),
+                    normalize_policy(pilot),
+                )
+        for requirement in (
             "pr-metadata reconcile",
             "performs no PR metadata mutation",
-            "two complete run/job snapshots",
+            "initially active Build takes one complete run/job snapshot",
+            "mutation-eligible default edit with two complete run/job snapshots",
             "completed failed metadata run",
             "repository-owner comment",
             "/repositories/<numeric-id>/",
@@ -4622,6 +4637,12 @@ printf '%s\t%s\t%s\n' "$result" \
             "eight-job-without-summary",
             "active `updated_at` is not a live completion bound",
             "Completed runs refresh exact run authority",
+            "deterministic fake `gh`",
+            "`run_id` for Actions workflow runs",
+            "`comment_id`",
+            "strictly mutually exclusive",
+            "status `3` for deferred/refused",
+            "status `2` with no decision JSON",
             "No ARM runtime test is needed",
             "There is no manual-only criterion",
         ):
@@ -4654,6 +4675,20 @@ printf '%s\t%s\t%s\n' "$result" \
             indexed["document"],
             "docs/test-cases/workflow-governance.md",
         )
+        indexed_contract = normalize_policy(
+            " ".join(
+                indexed[field]
+                for field in ("actions", "expected_result", "negative_control")
+            )
+        )
+        for requirement in (
+            "isolated launcher and deterministic fake gh",
+            "one-snapshot active fast defer",
+            "two-snapshot mutation eligibility",
+            "mutually exclusive run_id and comment_id fields",
+        ):
+            with self.subTest(registry_requirement=requirement):
+                self.assertIn(normalize_policy(requirement), indexed_contract)
 
     def test_manual_handoff_human_lifecycle_mutations_fail_closed(self):
         surfaces = (

@@ -1230,10 +1230,15 @@ the exact branch and head; timeout or ambiguity fails before `gh run watch`.
 
 1. Run
    `python3 -m unittest scripts.workflow_pilot.tests.test_pr_metadata -v`.
+   This suite invokes `/usr/bin/python3 -I
+   scripts/workflow_pilot/isolated_launcher.py pr-metadata` with a deterministic
+   fake `gh` for edit, reconcile, and evidence-comment paths.
 2. Exercise a same-head/same-base full Build whose complete exact Build job
    shape is queued. Attempt a default body edit with exact repository, PR,
-   head, and base arguments. Then exercise two snapshots where the first full
-   Build succeeds and the second exposes an active rerun.
+   head, and base arguments, and confirm the initially active Build takes one
+   complete run/job snapshot before fast defer. Separately exercise a
+   mutation-eligible default edit with two complete run/job snapshots where
+   the first full Build succeeds and the second exposes an active rerun.
    Exercise queued zero-job, one-job, current eight-job-without-summary,
    unknown partial, and provable active metadata-only shapes.
 3. Repeat with a nonempty essential-contract reason, keep the same full run
@@ -1273,9 +1278,11 @@ the exact branch and head; timeout or ambiguity fails before `gh run watch`.
 ### Expected result
 
 The default edit returns a structured `deferred` decision, performs no PR
-metadata mutation, and points to the canonical evidence-comment command. It
-queries two complete run/job snapshots and refuses mutation if the authority
-changes or the second snapshot has an active full Build. A
+metadata mutation, and points to the canonical evidence-comment command. An
+initially active full or unproven Build fast-defers after one complete run/job
+snapshot. A mutation-eligible default edit queries two complete run/job
+snapshots and refuses mutation if the authority changes or the second snapshot
+has an active full Build. A
 nonempty essential override revalidates exact current head/base immediately
 before PATCH, refreshes run authority, requires the PATCH response to attest
 the requested exact metadata, leaves every same-SHA full Build active, and
@@ -1300,6 +1307,12 @@ can authorize mutation or reconciliation. Header parsing permits only
 consistent LF/CRLF framing and visible ASCII with SP-only value separation.
 The marked comment author must match the exact owner numeric user ID as well
 as owner login/type/site-admin/association.
+Canonical JSON reserves `run_id` for Actions workflow runs and `comment_id`
+for the canonical issue comment; the optional fields are always serialized,
+strictly mutually exclusive, and `comment-updated` requires only `comment_id`.
+The isolated launcher emits one exact canonical JSON line with status `0` for
+success/no-op/complete, status `3` for deferred/refused, and status `2` with no
+decision JSON for invalid arguments, files, or API authority.
 Job/run timestamps use exact UTC-second GitHub RFC3339 syntax and enforce
 status-dependent nullability and chronology, with only the captured
 one-second unassigned-skip timestamp exception.
