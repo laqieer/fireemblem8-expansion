@@ -263,6 +263,37 @@ superseded candidate run after that candidate actually changes. A broken
 master Build requires an immediate fix-forward or revert and blocks that
 issue's closure and remote completion, but not unrelated independent PRs.
 
+### Completed-worktree cleanup
+
+After the PR is merged, all relevant exact-master CI is green, and
+`make remote-completion-check` passes, the delivery coordinator must run the
+[completed-worktree planner](../docs/workflow-pilot.md#completed-worktree-cleanup)
+and apply it to explicitly selected eligible leftovers. Do not delete the
+workspace earlier: failing master CI still needs its fix owner.
+The coordinator supplies every assigned/active path with `--preserve`,
+including agents between commands, and does not reassign a target during apply.
+Keep the source/coordinator workspace outside the removal set.
+
+Planning is read-only by default. Apply freshly verifies exact Git ownership,
+local work, merged PR association, and automatic master Build plus relevant
+exact-proof-commit CI; a candidate success or a merged PR alone is insufficient.
+Historical completed work may use its verified post-merge master proof rather
+than an unrelated newer run. Retain every ambiguous, active, locked, dirty,
+untracked, unpushed, or missing/failed/pending-evidence workspace. Also retain
+nested/bare Git repositories, private reflog/pseudoref/index resolve-undo
+objects not durably reachable from shared refs, private configuration and
+unclassified recovery/index metadata, and partial/promisor repositories whose
+object lookups could fetch during a dry-run. Preserve filesystem byte paths in
+mount/backlink checks and reports. Do not erase configuration/recovery records
+or rewrite indexes to bypass these holds. Use only normal
+`git worktree remove` through the helper, never force, unlock, delete branches,
+globally prune, or recursively delete broad directories.
+Record removed paths, observed allocated sizes, and precise retained reasons
+in existing completion evidence; do not invent physical freed-byte totals or
+commit a mutable worktree ledger. Cleanup never delays immediate owner-push:
+an implementation agent returns each new commit immediately, including WIP,
+and never keeps it locally while waiting for review, CI, or cleanup.
+
 ## Development workflow skill
 
 For incoming feature requests, ideas, bug reports, or regressions, invoke the
