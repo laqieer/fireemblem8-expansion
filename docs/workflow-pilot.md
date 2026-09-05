@@ -100,6 +100,116 @@ input-format/cohort checksum: it detects identity, timestamp, PR/SHA
 association, and relationship substitution that preserves aggregate metrics,
 but does not hash source files, blobs, objects, ROMs, or the repository tree.
 
+## Completed-worktree cleanup
+
+Issue [#208](https://github.com/laqieer/fireemblem8-expansion/issues/208)
+adds a conservative framework capability through the existing workflow-pilot
+package, not a publication broker, background service, or persistent ledger.
+It uses Python's standard library, Git, and authenticated `gh` read operations.
+The **delivery coordinator** owns actual historical cleanup, only after the
+task's PR is merged, all relevant exact-master CI is green, and
+`make remote-completion-check` passes. Implementation agents validate locally
+and immediately return each commit for owner-context push; neither cleanup
+nor pending review/CI delays publication or WIP visibility (issue #207).
+
+Run from a retained source/coordinator checkout. List **every** assigned or
+active workspace, even if its agent is between shell commands or its PR has
+just merged. Keep those assignments fixed throughout apply:
+
+```bash
+# No targets means inventory all registrations; this never removes anything.
+python3 -m scripts.workflow_pilot.worktree_cleanup --repository-root . \
+  --preserve /absolute/coordinator-worktree \
+  --preserve /absolute/active-agent-worktree
+
+# Repeat --target for individually selected paths from the plan.
+python3 -m scripts.workflow_pilot.worktree_cleanup --repository-root . \
+  --preserve /absolute/coordinator-worktree \
+  --preserve /absolute/active-agent-worktree \
+  --target /absolute/completed-worktree --apply
+```
+
+`--apply` requires both explicit targets and a preserved-workspace inventory.
+There is no plan-import or caller-provided `eligible` authority. All paths are
+exact Git-registered roots; a similarly named directory is not enough.
+The helper keeps the invoking/source/main/master worktrees, broad
+home/repository/session roots and ancestors, other registered worktree
+ancestors, explicit preserved paths, and active process working directories.
+It checks exact Git common-directory and metadata-backlink ownership, branch
+and HEAD, ordinary and hidden-index changes, all untracked files, private
+worktree refs, incomplete Git operations, and upstream divergence.
+Detached, unassociated/reused branches, missing registrations, nested Git
+repositories/submodules, mounts, special files, and unknown ignored local data
+remain held, not guessed disposable.
+
+Only known generated ignored output is disposable: `build/`, `.dep/`,
+`.deps/`, bytecode caches, standard root build products, the eight existing
+Make-built host tools, and source-backed compiler/graphics intermediates.
+Do not keep original user work in generated
+directories. Ignored saves, baseroms, local configuration, editor state, or
+other unrecognized files require preservation. Symlinks are not followed by
+the size scan; unknown ignored data is not silently treated as build output.
+
+Remote proof uses `origin`'s exact GitHub repository identity and the newest
+PR for that branch, with its exact local/head SHA, same-repository head,
+merged state, and `master` base. The local HEAD must be an ancestor of the
+merge, the merge an ancestor of the proof, and the proof an ancestor of
+GitHub's live master ref. This deliberately retains squash/rebase histories
+whose ancestry does not establish that local work was delivered. Missing
+local objects require a coordinator-owned fetch, not implicit mutation by
+the planner. Deleted remote branches are acceptable only when the exact
+merged PR/head and master ancestry still prove the work was pushed.
+
+By default the proof SHA is the PR's merge commit. Use `--proof-sha FULL_SHA`
+to select a known later master descendant, for example after a CI fix-forward.
+It must pass the same checks; the option is not a success override. A valid
+historical proof is not invalidated by an unrelated newer failure.
+The mandatory Build follows the existing Make completion gate: exact proof
+commit, `master`, automatic `push`, `build.yml`, completed/success.
+Candidate or manual Build alone never suffices. The latest observed master
+workflow for each workflow identity, the latest automatic Build, all
+associated exact-commit checks, and latest external check/status contexts must
+also pass. Reruns use current attempts, including an older run rerun more
+recently; a newer failed/pending attempt cannot hide behind an older success.
+Skipped Actions jobs are nonexecuted, not substitutes for a successful
+workflow; external checks require success.
+
+GitHub pages have bounded cardinality, stable totals where supplied, unique
+record IDs, and validated repository/commit identities. Missing, malformed,
+over-bound, stale, or changing evidence retains the target. The API cache is
+only an in-memory optimization for one pass. Apply clears it before each
+target and compares fresh Git/PR/CI proof with the plan, then repeats local
+identity/status/lock/process checks immediately before normal
+`git worktree remove`. There is no force, unlock, branch deletion, global
+prune, or recursive filesystem deletion fallback.
+
+JSON reports `eligible`, `retained`, or `removed`, the evidence, and the first
+precise retention blocker. `allocated_bytes` measures observed allocated
+blocks before removal, deduplicating hardlinks within that tree. It is null
+when earlier checks retain a tree without scanning it. It is **not** exact
+physical space freed: shared/reflink blocks and open files defeat that claim.
+Dry-run exits zero after reporting holds; apply exits one if any explicit
+target remains, or two for invalid arguments or unavailable root authority.
+Record this output in the coordinator's existing completion evidence, outside
+the removal targets; do not commit a mutable worktree list.
+
+Supported live use is Linux with visible same-owner process CWDs and a
+coordinator-maintained complete preserved-path list. Other users' assignments
+must also be included explicitly; this is not an OS-wide process lock or an
+atomic GitHub/filesystem transaction. An uninspectable same-owner process
+blocks removal. Do not reassign targets while cleanup is running. API limits,
+unavailable history, ambiguous identities, and retained user data are precise
+operational holds, never reasons to broaden deletion.
+
+There are no game-feature dependencies or conflicts, feature flags, CI
+topology changes, ROM/RAM/save/config/generated-data/localization changes, or
+modern/debug/release/archival build impacts. Workflow dependencies are the
+existing completion gate and sole coordinator; conflicts are premature or
+forceful cleanup and incomplete active-workspace ownership. Rollback is
+reverting this helper and guidance; eligible Git work remains reconstructible
+upstream. The automated and human procedure is
+[TC-WORKFLOW-WORKTREE-CLEANUP-001](test-cases/workflow-governance.md#tc-workflow-worktree-cleanup-001-remove-only-proven-completed-worktrees).
+
 ## Build event classification and candidate evidence
 
 Issue [#177](https://github.com/laqieer/fireemblem8-expansion/issues/177)

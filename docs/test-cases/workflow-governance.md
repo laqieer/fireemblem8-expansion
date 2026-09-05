@@ -4,6 +4,92 @@ These source-only procedures cover the repository's agent delivery policy.
 They exercise documented orchestration contracts without dispatching a
 workflow, using credentials, or changing ROM behavior.
 
+## TC-WORKFLOW-WORKTREE-CLEANUP-001: Remove only proven completed worktrees
+
+- **Feature / originating issue:** `workflow-governance` /
+  [issue #208](https://github.com/laqieer/fireemblem8-expansion/issues/208).
+- **Supported configuration or artifact:** Linux source checkout with Python
+  3 and Git; live use also requires authenticated `gh`. The automated case
+  needs no credentials, network, ROM, emulator, or game build.
+- **Prerequisites and clean starting state:** run from the source root. The
+  suite creates exclusively owned disposable repositories and real linked
+  worktrees under `build/worktree-cleanup-*`, not system temporary directories.
+  It never selects the developer's registered historical worktrees.
+
+### Actions
+
+1. Run
+   `python3 -m unittest scripts.workflow_pilot.tests.test_worktree_cleanup -v`.
+2. Confirm that a clean feature branch with an exact merged PR/head, preserved
+   Git ancestry, automatic green master Build, and successful relevant
+   exact-commit CI is eligible in dry-run without any index, registration, or
+   file change. Apply removes only that explicitly selected worktree, including
+   known generated output, while its branch, main checkout, and symlink
+   referents remain.
+3. Exercise pending/failed/cancelled/latest-rerun and missing/stale/candidate
+   CI; open PR, changed branch/head, unique/unpushed work, dirty/staged/untracked
+   files, ignored saves, hidden-index changes, locks, incomplete Git
+   operations, detached/current/master/active/foreign/broad-root targets,
+   nested repositories/mounts, and missing registrations. Every case retains
+   the workspace and reports its blocker.
+4. Exercise explicit preserved paths for an agent between commands and a real
+   live process whose CWD is in the fixture. Introduce local, lock, process,
+   head, and remote proof changes after planning and just before removal.
+   Revalidation must prevent removal without trusting prior eligibility.
+5. Exercise paginated GitHub data beyond the first page, duplicate/invalid
+   record identities, missing totals, oversized and incomplete collections,
+   wrong repository identity, changed workflow detail, old historical green
+   proof, and an explicit later master proof containing the merge.
+6. For actual delivery, the coordinator first merges the task's PR, verifies
+   all relevant exact-master CI and `make remote-completion-check`, then runs
+   the [documented planner/apply commands](../workflow-pilot.md#completed-worktree-cleanup).
+   Preserve all assigned workspaces throughout apply. Record removed paths,
+   observed pre-removal allocated sizes, proof identities, and retained reasons.
+
+### Expected result
+
+Only explicitly selected, freshly proven completed worktrees are removed by
+normal Git removal. Dry-run is inert. The master proof contains the PR merge;
+an unrelated newer master failure does not invalidate a historical completed
+proof. Current failing/pending reruns supersede old green evidence.
+Apply refuses implicit targets or a missing preserved-workspace inventory.
+No branch is deleted and no global prune or forced cleanup occurs.
+
+### Negative control
+
+The pre-fix workflow has no post-completion planner/apply operation, so
+completed fixtures remain indefinitely. Within the regression, removing
+revalidation or accepting merge/candidate success alone causes destructive
+negative controls to fail; changing spelling or ordering without behavior
+changes does not supply or invalidate deletion evidence.
+
+### Interactions and save compatibility
+
+Dependencies are Git, the existing automatic exact-master completion
+definition, `gh` for live read operations, Linux process visibility, and the
+coordinator's complete active-path inventory. Conflicts are premature/forced
+cleanup, unreported active ownership, and mistaking candidate CI for master
+proof. Immediate owner-push and WIP transparency remain separate and are
+never delayed for cleanup. There are no game-feature, ROM/RAM, save/config,
+generated-data, localization, modern profile, or archival interactions.
+
+### Automation
+
+`python3 -m unittest scripts.workflow_pilot.tests.test_worktree_cleanup -v`
+executes real Git operations with deterministic GitHub responses. The existing
+workflow-pilot test discovery includes this case without changing CI topology.
+The registry entry binds this source-only procedure to its behavioral suite.
+
+### Cleanup and limitations
+
+The suite removes only its own UUID-named fixture roots. Live historical
+cleanup is coordinator-owned, never a test side effect. Allocated sizes are
+not exact physical freed bytes. Unknown ignored local data, squash/rebase
+ancestry, missing history/API evidence, or incomplete process visibility are
+retention blockers, not permission to force deletion. No visual/audio/manual
+judgment is required; actual service availability and active ownership remain
+live operational checks.
+
 ## TC-WORKFLOW-CI-WAIT-001: Keep CI waiting centralized and trusted pushes owner-scoped
 
 - **Feature / originating issue:** `workflow-governance` /

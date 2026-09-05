@@ -704,11 +704,46 @@ For every issue-specific PR:
    closure for human review.
 5. For tracked changes, run `make remote-completion-check` only after the
    intended `master` commit has one successful consolidated Build CI result.
+6. After the PR is merged and all relevant exact-master CI is green, the
+   delivery coordinator performs the completed-worktree cleanup below. Do not
+   discard a workspace still needed to fix failed or incomplete master CI.
 
 The task is complete only when the implementation and documentation are
 persistent upstream, the combined Build check for the exact pushed `master`
 commit is green, the remote completion gate passes, and no current-request
 work item remains open.
+
+### Completed-worktree cleanup
+
+Use the existing workflow tooling's
+[read-only planner and explicit apply command](../../../docs/workflow-pilot.md#completed-worktree-cleanup).
+The coordinator supplies every assigned/active workspace through `--preserve`,
+including an agent between commands, and keeps assignments unchanged until
+apply returns. Run from a retained source/coordinator workspace, never from a
+target. Implementation agents do not remove real historical worktrees.
+
+Run the planner after completion rather than losing track of historical
+leftovers. Apply only to explicit registered targets after fresh Git ownership,
+clean tracked/untracked state, pushed/merged PR head, and post-merge automatic
+master Build plus relevant exact-proof-commit CI checks. The existing Make
+remote-completion definition remains authoritative; candidate CI or merge
+alone never qualifies. A historical successful master proof containing the
+merge remains useful even if unrelated newer work has failing CI.
+
+Retain active, current/master, locked, dirty/untracked, unpushed/unique, foreign,
+ambiguous, and missing/failed/pending-evidence paths. Never force removal,
+unlock user worktrees, delete branches, globally prune registrations, or
+recursively remove repository/home/session roots. Normal `git worktree remove`
+is the only removal operation. Publish removed paths, their pre-removal
+allocated sizes (not purported exact physical bytes freed), and precise
+retained reasons in the existing completion evidence. Do not create a committed
+mutable worktree ledger.
+
+Cleanup is separate from immediate publication: return each newly created
+commit immediately for the coordinator's owner-context push, including WIP.
+Never retain a commit locally pending review, CI, batching, or cleanup.
+The indexed behavioral regression is
+[`TC-WORKFLOW-WORKTREE-CLEANUP-001`](../../../docs/test-cases/workflow-governance.md#tc-workflow-worktree-cleanup-001-remove-only-proven-completed-worktrees).
 
 ## Required final report
 
