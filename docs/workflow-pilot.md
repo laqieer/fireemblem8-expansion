@@ -772,11 +772,33 @@ Runtime, selected program, canonical request and artifact bundle are separate
 anonymous `memfd` descriptors. Write, grow, shrink and seal seals are applied
 before execution; each owned descriptor retains its inode/size identity.
 Mutable, aliased, replaced, reused and unexpected inherited descriptors
-reject. The actual command is `/usr/bin/python3 -I -S -c <closed bootstrap>
-<descriptor identities>`; the bootstrap uses `pread`, never a pathname or
-`/proc/self/fd/N` script. Program execution uses the program descriptor bytes,
-and module/data loading uses the artifact descriptor bytes. Changing or
-restoring any former pathname cannot change those bytes.
+reject. The actual argv is `/usr/bin/python3 -I -S -c <protected startup and
+closed bootstrap> <interpreter descriptor/identity> <capsule descriptor
+identities>`. The kernel executes an anonymous, fully sealed **execute-only**
+copy of the fixed root-owned system Python, bounded to 32 MiB. Its
+`/proc/self/fd/N` executable reference resolves the already-owned interpreter
+inode, not a repository or temporary script. The bootstrap still reads all
+capsule runtime/program bytes with `pread`, never a pathname or
+`/proc/self/fd/N` script; modules/data come from the artifact descriptor.
+Changing or restoring any former pathname cannot change those bytes.
+
+Ordinary Linux exec resets dumpability to 1: a Python or native bootstrap that
+calls `PR_SET_DUMPABLE` afterward leaves a same-UID access interval. This
+launcher instead requires the interpreter image to be unreadable under the
+launching credentials and the existing `fs.suid_dumpable=0` policy. Linux
+therefore enforces non-dumpability at exec itself, **before the dynamic loader
+or Python initializes**. The startup verifies that state; it never repairs an
+exposed ordinary exec. Parent/fork state remains non-dumpable throughout the
+transition. No setuid helper, privilege, executable disk copy or ordinary-exec
+fallback is used.
+
+The protected image is retained by each guardian, validated against its
+executing inode and inherited source identity, and reused by every nested
+launch. It is closed with the other non-protocol descriptors before worker
+entry. Image seals, execute-only mode, effective unreadability, source identity
+and kernel policy are rechecked before launch; failure means no admitted
+execution. Preparation/constructor failures and normal teardown close the
+owned image without closing an unrelated descriptor reused at its integer.
 
 After platform-stdlib preload, the child has an empty `sys.path`, a closed
 descriptor-backed importer and no bytecode/file-loader fallback. Filesystem
@@ -920,7 +942,10 @@ for both the trusted preparation interpreter and fixed, root-owned
 constants, `fcntl` seals and `resource` limits. It requires sealed memfd,
 mounted/readable `/proc/self/fd` and `/proc/self/exe`, fork, process groups,
 `waitid(WNOWAIT)`, and the non-dumpable/subreaper/parent-death prctl facilities
-plus unprivileged seccomp-BPF. Neither execution nor the real
+plus unprivileged seccomp-BPF. Executable memfds, enforceable execute-only
+permissions and a readable `/proc/sys/fs/suid_dumpable` already set to `0`
+are required. A caller whose credentials bypass image read permissions is
+unsupported. Admission changes no system policy or privileges. Neither execution nor the real
 parent-death regression requires pidfds. The regression observes saved
 process generations and reaps adopted children; cleanup signals only
 generation-matching children whose PIDs remain reserved until reaped.
@@ -935,17 +960,17 @@ nonzero and does **not** retry through a pathname, ordinary importer,
 temporary directory or post-execution rehash.
 Preparation checks the caller's Python version/capabilities, runtime ABI and
 descriptor enumeration before collecting Git objects or creating capsule
-resources. If `/proc/self/exe` identifies the same system executable, that
-live capability check also admits execution. Otherwise a fixed `-I -S`
-system-interpreter probe runs with no capsule descriptors, candidate code
-or ambient environment, a five-second deadline and a 4 KiB limit per output
-stream. An old or capability-incomplete interpreter, failed probe or malformed
-report raises `CapsuleUnavailable` before Git collection or capsule resources,
-workers and programs are launched. There is no `sys.executable` or PATH fallback.
+resources. One fixed `-I -S` probe executes the protected system image before
+any capsule descriptors or Git collection, with no candidate code or ambient
+environment, a five-second deadline and a 4 KiB limit per output stream.
+It inherits only its trusted interpreter image, not capsule authority.
+An old or capability-incomplete interpreter, failed probe, unavailable protected
+exec facility or malformed report raises `CapsuleUnavailable` before capsule
+resources, workers and programs are launched. There is no `sys.executable` or PATH fallback.
 Admission is per capsule, not a global cache: executable identity and metadata
 are checked after probing and before reuse, including nested execution.
 A changed system interpreter requires fresh preparation. Sealed descriptors
-do not spawn probes, and guardians reuse their live system-interpreter
+do not spawn probes, and guardians reuse their inherited protected-image
 admission for nested calls. An unavailable procfs during guardian admission
 retains the same explicit disposition.
 

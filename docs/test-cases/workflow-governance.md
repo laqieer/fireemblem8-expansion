@@ -1530,7 +1530,9 @@ game behavior needs a compensating change.
 for both preparation and fixed root-owned `/usr/bin/python3` execution, including
 `sys.stdlib_module_names`, `fcntl`, `resource` and required descriptor/process
 APIs; Git SHA-1, sealed memfd, readable `/proc/self/fd` and `/proc/self/exe`,
-fork, process groups, `waitid(WNOWAIT)` and prctl; no ROM, emulator, token or
+executable memfds with enforceable execute-only permissions,
+`fs.suid_dumpable=0`, fork, process groups, `waitid(WNOWAIT)` and prctl;
+no ROM, emulator, token or
 remote mutation. The existing source build is sufficient; there is no
 downloadable game artifact for this host-only case.
 
@@ -1538,6 +1540,9 @@ The worker also requires unprivileged seccomp-BPF on x86-64 to prevent native
 process-group/session escape. AArch64 is not a supported runtime: prospective
 filter-mapping tests do not supply real AArch64 end-to-end evidence.
 Unvalidated ABIs fail closed before launch. Pidfds are not a prerequisite.
+The exec-entry regression uses Linux's own-child `PTRACE_TRACEME` exec-stop
+and parent ptrace attachment. It never changes Yama, dumpability sysctls or
+privileges. Every observed/signaled process is created and reaped by the test.
 
 ### Actions
 
@@ -1654,6 +1659,25 @@ Unvalidated ABIs fail closed before launch. Pidfds are not a prerequisite.
    and non-writability before probing; never substitute a caller-controlled
    `sys.executable`. One preparation probe suffices across descriptor creation
    and repeated/nested execution; there is no global stale capability cache.
+   Stop a real Python child at `PTRACE_TRACEME`'s successful-exec trap, before
+   the loader's first instruction. With a non-dumpable caller, ordinary exec
+   must still expose the owned sealed fixture through `/proc/<pid>/fd` to
+   the same UID and report dumpable `1` at Python entry. Execute the same
+   trusted Python bytes from the sealed execute-only image: FD opens must
+   report `EACCES` at that kernel stop, `/proc/<pid>/fd` ownership must be root,
+   and Python must report dumpable `0` without setting it. Repeat through the
+   actual outer checker and nested assertion launch; every inherited protocol,
+   artifact and interpreter FD must remain inaccessible, while exact receipts
+   and parent-side signing still pass.
+   Separately stop each child after Python initialization. The same-UID
+   parent must read the ordinary-exec fixture and attach with ptrace, but
+   receive `EACCES`/`EPERM` for the protected counterpart. Substitute ordinary
+   exec as a mutation control: the kernel-entry regression must fail even
+   though a later startup check could reject or reset dumpability.
+   Check image byte identity with the root-owned interpreter, immutable seals,
+   execute-only mode, the 32 MiB image bound, descriptor reuse, denied memfd
+   execute permission and unsupported/unreadable dumpability policy. These
+   failures must precede capsule resources or launch and leave no owned leak.
    Simulate missing, unreadable and non-directory `/proc/self/fd` facilities:
    preparation must raise `CapsuleUnavailable` before any Git/process or
    memfd creation, and guardian admission must preserve that error type.
@@ -1744,6 +1768,15 @@ than installing older interpreters. Real current-interpreter probing,
 classifier execution, nested calls and receipts remain the positive evidence.
 Reverting the gate fails the before-resource controls; malformed reports never
 become successful execution or compatibility fallback.
+
+The continuous-exec correction preserves the real pre-fix Linux counterexample:
+a dumpable-`0` parent launches ordinary `/usr/bin/python3`, but its child at the
+kernel exec-stop is already dumpable, with same-UID readable sealed authority.
+A Python-level `PR_SET_DUMPABLE` or a native executable's first `prctl` is too
+late. The execute-only, sealed identical system image changes the kernel's
+exec decision itself. Separate real-process controls prove protection both
+before any loader/Python instruction and at initialized-Python ptrace access;
+the actual nested pipeline still produces exact signable receipts.
 
 ### Automation
 

@@ -6,6 +6,7 @@ import copy
 import errno
 import hashlib
 import hmac
+import inspect
 import json
 import mmap
 import os
@@ -86,6 +87,61 @@ def _finish_owned_process(pid, generation, *, terminate=False):
     return False
 
 
+def _wait_owned_stop(process, expected):
+    deadline = time.monotonic() + 5
+    while time.monotonic() < deadline:
+        pid, status = os.waitpid(process.pid, os.WUNTRACED | os.WNOHANG)
+        if pid:
+            if not os.WIFSTOPPED(status) or os.WSTOPSIG(status) != expected:
+                raise AssertionError(f"owned child did not reach its expected stop: {status}")
+            return
+        time.sleep(0.005)
+    raise AssertionError("owned child stop timed out")
+
+
+def _observe_owned_exec(popen, command, options, observations):
+    import ctypes
+    ptrace = ctypes.CDLL(None, use_errno=True).ptrace
+    ptrace.argtypes = [ctypes.c_uint, ctypes.c_int, ctypes.c_void_p, ctypes.c_void_p]
+    ptrace.restype = ctypes.c_long
+
+    def trace():
+        if ptrace(0, 0, None, None):
+            os._exit(126)
+
+    process = popen(command, **{**options, "preexec_fn": trace})
+    try:
+        # TRACEME's successful-exec trap precedes ld.so's first instruction.
+        _wait_owned_stop(process, signal.SIGTRAP)
+        with open(f"/proc/{process.pid}/status") as stream:
+            uid = int(next(line.split()[2] for line in stream if line.startswith("Uid:")))
+        if uid != os.geteuid():
+            raise AssertionError("exec observer must have the victim's effective UID")
+        access = []
+        for fd in (0, 1, 2, *options["pass_fds"]):
+            try:
+                opened = os.open(f"/proc/{process.pid}/fd/{fd}", os.O_RDONLY | os.O_CLOEXEC)
+            except OSError as error:
+                access.append(error.errno)
+            else:
+                os.close(opened)
+                access.append(0)
+        observations.append({"same_uid": True, "fd_access_errno": access,
+                             "proc_fd_owner": os.stat(f"/proc/{process.pid}/fd").st_uid})
+        if not access or any(value != errno.EACCES for value in access):
+            raise AssertionError("kernel exec-entry exposed inherited authority")
+        if ptrace(17, process.pid, None, None):
+            raise AssertionError("cannot detach the owned exec-stop observer")
+        return process
+    except BaseException:
+        process.kill()
+        process.wait(timeout=5)
+        for stream in (process.stdin, process.stdout, process.stderr):
+            if stream is not None:
+                stream.close()
+        raise
+
+
 class CapsulePlatformTests(unittest.TestCase):
     def assert_python_unavailable_before_resources(self):
         spec = capsule.CapsuleSpec(
@@ -121,7 +177,7 @@ class CapsulePlatformTests(unittest.TestCase):
         for module, name in (
             (sys, "stdlib_module_names"), (sys, "addaudithook"),
             (capsule, "fcntl"), (capsule, "resource"),
-            (os, "waitid"), (os, "WNOWAIT"),
+            (os, "fchmod"), (os, "waitid"), (os, "WNOWAIT"),
         ):
             with self.subTest(capability=name), mock.patch.object(module, name, None, create=True):
                 if name == "stdlib_module_names":
@@ -205,13 +261,11 @@ class CapsuleInterpreterTests(unittest.TestCase):
             ("capsule", lambda: capsule.Capsule(b"{}", spec)),
             ("execute", lambda: capsule._execute(None, None, "checker", {}, 1, 0)),
         ):
+            before = capsule._inherited_fds()
             with (
                 self.subTest(admission=name),
-                mock.patch.object(capsule, "_interpreter_identity",
-                                  side_effect=lambda path: (path,)),
                 mock.patch.object(capsule, "_make_bundle", side_effect=AssertionError) as collect,
                 mock.patch.object(capsule, "_Bundle", side_effect=AssertionError) as bundle,
-                mock.patch.object(os, "memfd_create", side_effect=AssertionError) as create,
                 mock.patch.object(os, "fork", side_effect=AssertionError) as fork,
                 mock.patch.object(subprocess, "Popen") as launch,
                 mock.patch.object(capsule, "_collect", return_value=reply,
@@ -220,19 +274,23 @@ class CapsuleInterpreterTests(unittest.TestCase):
                 with self.assertRaises(capsule.CapsuleUnavailable) as error:
                     admit()
                 self.assertEqual(error.exception.disposition, "sealed-capsule-unavailable")
-                for operation in (collect, bundle, create, fork):
+                for operation in (collect, bundle, fork):
                     operation.assert_not_called()
                 launch.assert_called_once()
                 command = launch.call_args.args[0]
-                self.assertEqual(command[:5], [capsule.PYTHON, "-I", "-S", "-c", capsule.PYTHON_PROBE])
-                self.assertEqual(json.loads(command[5]), capsule.PYTHON_APIS)
+                self.assertEqual(command[:5], [
+                    capsule.PYTHON, "-I", "-S", "-c", capsule.PYTHON_STARTUP + capsule.PYTHON_PROBE])
+                self.assertEqual(tuple(json.loads(command[6])), capsule._interpreter_identity(capsule.PYTHON))
+                self.assertEqual(json.loads(command[7]), capsule.PYTHON_APIS)
                 self.assertEqual(launch.call_args.kwargs, {
                     "stdin": subprocess.DEVNULL, "stdout": subprocess.PIPE,
                     "stderr": subprocess.PIPE, "env": capsule.ENVIRONMENT, "cwd": "/",
                     "start_new_session": True, "close_fds": True,
+                    "executable": f"/proc/self/fd/{command[5]}", "pass_fds": (int(command[5]),),
                 })
                 probe.assert_called_once_with(
                     launch.return_value, capsule.PYTHON_PROBE_SECONDS, capsule.MAX_PYTHON_PROBE_BYTES)
+            self.assertEqual(capsule._inherited_fds(), before)
 
     def test_different_execution_python_must_meet_version_abi_and_capability_requirements(self):
         for field, value in (
@@ -262,9 +320,17 @@ class CapsuleInterpreterTests(unittest.TestCase):
                 self.assert_probe_unavailable_before_resources(failure=failure)
 
     def test_execution_probe_startup_failure_is_unavailable(self):
-        with mock.patch.object(subprocess, "Popen", side_effect=OSError(errno.ENOENT, "unavailable")):
-            with self.assertRaises(capsule.CapsuleUnavailable):
-                capsule._probe_python()
+        for number in (errno.ENOENT, errno.EACCES, errno.EPERM, errno.ENOEXEC):
+            before = capsule._inherited_fds()
+            with (
+                self.subTest(errno=number),
+                mock.patch.object(subprocess, "Popen",
+                                  side_effect=OSError(number, "unavailable")) as launch,
+            ):
+                with self.assertRaises(capsule.CapsuleUnavailable):
+                    capsule._probe_python()
+                launch.assert_called_once()
+            self.assertEqual(capsule._inherited_fds(), before)
 
     def test_real_probe_timeout_and_output_bounds_reap_the_owned_child(self):
         processes = []
@@ -292,44 +358,44 @@ class CapsuleInterpreterTests(unittest.TestCase):
 
     def test_current_interpreter_probe_is_real_and_matches_local_capabilities(self):
         self.assertEqual(capsule._probe_python(), capsule._python_report())
-        with mock.patch.object(capsule, "_probe_python", side_effect=AssertionError) as probe:
-            admitted = capsule._ExecutionInterpreter()
-            admitted.check()
-            with capsule.SealedBytes(b"current interpreter", "probe-positive", 100) as descriptor:
-                self.assertEqual(descriptor.read(), b"current interpreter")
-            probe.assert_not_called()
+        with mock.patch.object(capsule, "_probe_python", wraps=capsule._probe_python) as probe:
+            with capsule._ExecutionInterpreter() as admitted:
+                admitted.check()
+                with capsule.SealedBytes(b"current interpreter", "probe-positive", 100) as descriptor:
+                    self.assertEqual(descriptor.read(), b"current interpreter")
+                probe.assert_called_once_with(admitted)
 
     def test_different_supported_interpreter_is_probed_once_without_path_fallback(self):
         report = {**capsule._python_report(), "version": [3, 10]}
         with (
             mock.patch.object(sys, "executable", "/untrusted/python"),
-            mock.patch.object(capsule, "_interpreter_identity", side_effect=lambda path: (path,)),
             mock.patch.object(subprocess, "Popen") as launch,
             mock.patch.object(capsule, "_collect", return_value=(0, capsule.canonical(report), b"")),
         ):
-            admitted = capsule._ExecutionInterpreter()
-            admitted.check()
-            admitted.check()
-            launch.assert_called_once()
-            self.assertEqual(launch.call_args.args[0][0], "/usr/bin/python3")
+            with capsule._ExecutionInterpreter() as admitted:
+                admitted.check()
+                admitted.check()
+                launch.assert_called_once()
+                self.assertEqual(launch.call_args.args[0][0], "/usr/bin/python3")
 
     def test_changed_interpreter_identity_invalidates_probe_and_admission(self):
         report = capsule.canonical(capsule._python_report())
-        with (
-            mock.patch.object(capsule, "_interpreter_identity", side_effect=[("old",), ("new",)]),
-            mock.patch.object(subprocess, "Popen"),
-            mock.patch.object(capsule, "_collect", return_value=(0, report, b"")),
-        ):
-            with self.assertRaises(capsule.CapsuleUnavailable):
-                capsule._probe_python()
-        admitted = capsule._ExecutionInterpreter()
-        with (
-            mock.patch.object(capsule, "_interpreter_identity", return_value=("changed",)),
-            mock.patch.object(subprocess, "Popen", side_effect=AssertionError) as launch,
-        ):
-            with self.assertRaises(capsule.CapsuleUnavailable):
-                admitted.check()
-            launch.assert_not_called()
+        with capsule._ExecutionInterpreter(_probe=False) as admitted:
+            with (
+                mock.patch.object(capsule, "_interpreter_identity",
+                                  side_effect=[admitted.identity, ("changed",)]),
+                mock.patch.object(subprocess, "Popen"),
+                mock.patch.object(capsule, "_collect", return_value=(0, report, b"")),
+            ):
+                with self.assertRaises(capsule.CapsuleUnavailable):
+                    capsule._probe_python(admitted)
+            with (
+                mock.patch.object(capsule, "_interpreter_identity", return_value=("changed",)),
+                mock.patch.object(subprocess, "Popen", side_effect=AssertionError) as launch,
+            ):
+                with self.assertRaises(capsule.CapsuleUnavailable):
+                    admitted.check()
+                launch.assert_not_called()
 
     def test_untrusted_system_interpreter_never_runs_a_probe(self):
         current = os.stat(capsule.PYTHON)
@@ -344,6 +410,209 @@ class CapsuleInterpreterTests(unittest.TestCase):
                 with self.assertRaises(capsule.CapsuleUnavailable):
                     capsule._ExecutionInterpreter()
                 launch.assert_not_called()
+
+
+@unittest.skipUnless(
+    sys.platform == "linux" and os.uname().machine == "x86_64"
+    and capsule.ctypes.sizeof(capsule.ctypes.c_void_p) == 8,
+    "Linux x86-64 protected exec contract")
+class CapsuleExecProtectionTests(unittest.TestCase):
+    def test_kernel_exec_stop_denies_fds_before_any_python_or_loader_instruction(self):
+        source = ("import ctypes,json,os\n"
+                  "print(json.dumps({'dumpable':ctypes.CDLL(None).prctl(3,0,0,0,0),"
+                  "'uid':os.geteuid()}))\n")
+        real_popen, observations = subprocess.Popen, []
+        with (
+            capsule.SealedBytes(b"sealed authority", "entry-fixture", 100) as fixture,
+            capsule._ExecutionInterpreter() as interpreter,
+        ):
+            self.assertEqual(capsule.ctypes.CDLL(None).prctl(3, 0, 0, 0, 0), 0)
+
+            def observe(command, **options):
+                return _observe_owned_exec(real_popen, command, options, observations)
+
+            with mock.patch.object(subprocess, "Popen", side_effect=observe):
+                process, _ = interpreter.launch(source, [], pass_fds=(fixture.fd,))
+                status, stdout, stderr = capsule._collect(process, 5, 4096)
+            self.assertEqual((status, stderr), (0, b""))
+            self.assertEqual(json.loads(stdout), {"dumpable": 0, "uid": os.geteuid()})
+            self.assertEqual(observations, [{
+                "same_uid": True, "fd_access_errno": [errno.EACCES] * 5, "proc_fd_owner": 0,
+            }])
+
+            def ordinary_exec(command, **options):
+                options["executable"] = capsule.PYTHON
+                return _observe_owned_exec(real_popen, command, options, observations)
+
+            with mock.patch.object(subprocess, "Popen", side_effect=ordinary_exec):
+                with self.assertRaisesRegex(AssertionError, "kernel exec-entry exposed"):
+                    interpreter.launch(source, [], pass_fds=(fixture.fd,))
+            self.assertEqual(observations[-1]["fd_access_errno"][3], 0)
+            self.assertEqual(observations[-1]["proc_fd_owner"], os.geteuid())
+
+    def test_same_uid_parent_ptrace_and_fd_reads_after_python_initialization(self):
+        source = ("import ctypes,json,os,signal\n"
+                  "os.kill(os.getpid(),signal.SIGSTOP)\n"
+                  "print(json.dumps({'dumpable':ctypes.CDLL(None).prctl(3,0,0,0,0)}))\n")
+        ptrace = capsule.ctypes.CDLL(None, use_errno=True).ptrace
+        ptrace.argtypes = [capsule.ctypes.c_uint, capsule.ctypes.c_int,
+                          capsule.ctypes.c_void_p, capsule.ctypes.c_void_p]
+        ptrace.restype = capsule.ctypes.c_long
+        with (
+            capsule.SealedBytes(b"same-uid authority", "ptrace-fixture", 100) as fixture,
+            capsule._ExecutionInterpreter() as interpreter,
+        ):
+            for protected in (False, True):
+                with self.subTest(protected=protected):
+                    if protected:
+                        process, _ = interpreter.launch(source, [], pass_fds=(fixture.fd,))
+                    else:
+                        process = subprocess.Popen(
+                            [capsule.PYTHON, "-I", "-S", "-c", source],
+                            stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                            pass_fds=(fixture.fd,), env=capsule.ENVIRONMENT, close_fds=True,
+                            start_new_session=True, cwd="/")
+                    try:
+                        _wait_owned_stop(process, signal.SIGSTOP)
+                        path = f"/proc/{process.pid}/fd/{fixture.fd}"
+                        try:
+                            fd = os.open(path, os.O_RDONLY | os.O_CLOEXEC)
+                        except PermissionError:
+                            self.assertTrue(protected)
+                        else:
+                            try:
+                                self.assertFalse(protected)
+                                self.assertEqual(os.read(fd, 100), fixture.read())
+                            finally:
+                                os.close(fd)
+                        capsule.ctypes.set_errno(0)
+                        attached = ptrace(16, process.pid, None, None)
+                        error = capsule.ctypes.get_errno()
+                        if attached == 0:
+                            _wait_owned_stop(process, signal.SIGSTOP)
+                            self.assertEqual(ptrace(17, process.pid, None, None), 0)
+                        if protected:
+                            self.assertEqual((attached, error), (-1, errno.EPERM))
+                        else:
+                            self.assertEqual(attached, 0)
+                        os.kill(process.pid, signal.SIGCONT)
+                        status, stdout, stderr = capsule._collect(process, 5, 4096)
+                        self.assertEqual((status, stderr), (0, b""))
+                        self.assertEqual(json.loads(stdout), {"dumpable": 0 if protected else 1})
+                    finally:
+                        if process.poll() is None:
+                            process.kill()
+                            process.wait(timeout=5)
+                        process.stdout.close()
+                        process.stderr.close()
+
+    def test_startup_rejects_unprotected_exec_instead_of_repairing_dumpability(self):
+        real_popen = subprocess.Popen
+
+        def ordinary_exec(command, **options):
+            return real_popen(command, **{**options, "executable": capsule.PYTHON})
+
+        before = capsule._inherited_fds()
+        with mock.patch.object(subprocess, "Popen", side_effect=ordinary_exec):
+            with self.assertRaises(capsule.CapsuleUnavailable):
+                capsule._probe_python()
+        self.assertEqual(capsule._inherited_fds(), before)
+
+    def test_unavailable_exec_policy_or_memfd_permissions_prevent_capsule_launch(self):
+        spec = capsule.CapsuleSpec(trees={"base": "a" * 40},
+                                   programs={"checker": "checks/checker.py"})
+        for value in (b"1\n", b"2\n", b"", b"invalid\n"):
+            with (
+                self.subTest(policy=value),
+                mock.patch("builtins.open", mock.mock_open(read_data=value)),
+                mock.patch.object(capsule, "_make_bundle", side_effect=AssertionError) as bundle,
+                mock.patch.object(os, "memfd_create", side_effect=AssertionError) as create,
+                mock.patch.object(subprocess, "Popen", side_effect=AssertionError) as launch,
+            ):
+                with self.assertRaises(capsule.CapsuleUnavailable):
+                    capsule.prepare(ROOT, spec)
+                for operation in (bundle, create, launch):
+                    operation.assert_not_called()
+        with (
+            mock.patch("builtins.open", side_effect=PermissionError(errno.EACCES, "policy hidden")),
+            mock.patch.object(os, "memfd_create", side_effect=AssertionError) as create,
+            mock.patch.object(subprocess, "Popen", side_effect=AssertionError) as launch,
+        ):
+            with self.assertRaises(capsule.CapsuleUnavailable):
+                capsule.prepare(ROOT, spec)
+            create.assert_not_called()
+            launch.assert_not_called()
+        before = capsule._inherited_fds()
+        with (
+            mock.patch.object(os, "fchmod", side_effect=OSError(errno.EPERM, "no executable memfd")),
+            mock.patch.object(capsule, "_make_bundle", side_effect=AssertionError) as bundle,
+            mock.patch.object(subprocess, "Popen", side_effect=AssertionError) as launch,
+        ):
+            with self.assertRaises(capsule.CapsuleUnavailable):
+                capsule.prepare(ROOT, spec)
+            bundle.assert_not_called()
+            launch.assert_not_called()
+        self.assertEqual(capsule._inherited_fds(), before)
+
+    def test_bypassable_image_read_permissions_reject_before_launch(self):
+        with capsule._ExecutionInterpreter(_probe=False) as interpreter:
+            before = capsule._inherited_fds()
+            real_open = os.open
+
+            def bypass(path, *args, **kwargs):
+                if path == f"/proc/self/fd/{interpreter.image.fd}":
+                    return os.dup(interpreter.image.fd)
+                return real_open(path, *args, **kwargs)
+
+            with (
+                mock.patch.object(os, "open", side_effect=bypass),
+                mock.patch.object(subprocess, "Popen", side_effect=AssertionError) as launch,
+            ):
+                with self.assertRaises(capsule.CapsuleUnavailable):
+                    interpreter.launch("raise AssertionError", [])
+                launch.assert_not_called()
+            self.assertEqual(capsule._inherited_fds(), before)
+
+    def test_system_image_is_immutable_execute_only_and_bounded(self):
+        with capsule._ExecutionInterpreter() as interpreter:
+            image = interpreter.image
+            self.assertEqual(image.read(), Path(capsule.PYTHON).read_bytes())
+            self.assertEqual(os.fstat(image.fd).st_mode & 0o777, 0o111)
+            with self.assertRaises(OSError):
+                os.write(image.fd, b"substitution")
+            os.fchmod(image.fd, 0o555)
+            with mock.patch.object(subprocess, "Popen", side_effect=AssertionError) as launch:
+                with self.assertRaises(capsule.CapsuleUnavailable):
+                    interpreter.launch("raise AssertionError", [])
+                launch.assert_not_called()
+        before = capsule._inherited_fds()
+        with (
+            mock.patch.object(capsule, "MAX_PYTHON_IMAGE_BYTES", 1),
+            mock.patch.object(os, "memfd_create", side_effect=AssertionError) as create,
+            mock.patch.object(subprocess, "Popen", side_effect=AssertionError) as launch,
+        ):
+            with self.assertRaises(capsule.CapsuleUnavailable):
+                capsule._ExecutionInterpreter()
+            create.assert_not_called()
+            launch.assert_not_called()
+        self.assertEqual(capsule._inherited_fds(), before)
+
+    def test_reused_interpreter_fd_is_rejected_without_closing_its_replacement(self):
+        with (
+            capsule._ExecutionInterpreter() as interpreter,
+            capsule.SealedBytes(b"unrelated replacement", "image-replacement", 100) as replacement,
+        ):
+            reused = interpreter.image.fd
+            os.dup2(replacement.fd, reused)
+            try:
+                with mock.patch.object(subprocess, "Popen", side_effect=AssertionError) as launch:
+                    with self.assertRaises(capsule.CapsuleUnavailable):
+                        interpreter.launch("raise AssertionError", [])
+                    launch.assert_not_called()
+                interpreter.close()
+                self.assertEqual(os.pread(reused, 100, 0), replacement.read())
+            finally:
+                os.close(reused)
 
 
 @unittest.skipUnless(sys.platform == "linux", "Linux child supervision")
@@ -475,9 +744,51 @@ class SealedCapsuleTests(unittest.TestCase):
         self.assertEqual(result.receipt["program"], "checker")
         self.assertEqual(assertion["receipt"]["artifact_sha256"], result.receipt["artifact_sha256"])
 
+    def test_outer_and_nested_guardians_deny_same_uid_access_at_kernel_exec_entry(self):
+        observation_path = self.root / "exec-entry-observations.jsonl"
+        observer = (
+            inspect.getsource(_wait_owned_stop) + "\n" + inspect.getsource(_observe_owned_exec)
+            + f"""
+_exec_observations=[]
+_exec_popen=subprocess.Popen
+def _observed_popen(command,**options):
+    process={_observe_owned_exec.__name__}(_exec_popen,command,options,_exec_observations)
+    with open({str(observation_path)!r},'a') as output:
+        output.write(json.dumps(_exec_observations[-1])+'\\n')
+    return process
+subprocess.Popen=_observed_popen
+"""
+        )
+        self.write(capsule.RUNTIME_PATH, self.runtime + b"\n" + observer.encode("utf-8"))
+        try:
+            revision = self.commit()
+            spec = capsule.CapsuleSpec(
+                trees={"base": revision, "origin": self.origin, "head": self.head},
+                programs=self.spec.programs, data=self.spec.data)
+            outer = []
+            real_popen = subprocess.Popen
+
+            def observe(command, **options):
+                return _observe_owned_exec(real_popen, command, options, outer)
+
+            with capsule.prepare(self.root, spec) as prepared:
+                with mock.patch.object(subprocess, "Popen", side_effect=observe):
+                    result = prepared.execute("checker", {})
+            expected = {"same_uid": True, "fd_access_errno": [errno.EACCES] * 9, "proc_fd_owner": 0}
+            self.assertEqual(outer, [expected])
+            self.assertEqual([json.loads(line) for line in observation_path.read_text().splitlines()],
+                             [expected])
+            self.assertEqual(result.value["assertion"]["value"]["status"], "pass")
+            self.assertEqual(result.value["assertion"]["receipt"]["program"], "assertion")
+            key = b"test-only-protected-exec-receipt-key"
+            self.assertEqual(capsule.verify_receipt(capsule.sign_receipt(result, key), key, result),
+                             result.receipt)
+        finally:
+            self.write(capsule.RUNTIME_PATH, self.runtime)
+            observation_path.unlink(missing_ok=True)
+
     def test_preparation_probes_different_python_once_and_reuses_admission_for_execution(self):
         with (
-            mock.patch.object(capsule, "_interpreter_identity", side_effect=lambda path: (path,)),
             mock.patch.object(capsule, "_probe_python", wraps=capsule._probe_python) as probe,
         ):
             with capsule.prepare(self.root, self.spec) as prepared:
@@ -507,7 +818,9 @@ class SealedCapsuleTests(unittest.TestCase):
 
         def capture(command, **kwargs):
             seen["argv"] = command
-            runtime, program, request, artifacts, _ = kwargs["pass_fds"]
+            runtime, program, request, artifacts, _, image = kwargs["pass_fds"]
+            self.assertEqual(kwargs["executable"], f"/proc/self/fd/{image}")
+            self.assertEqual(os.fstat(image).st_mode & 0o777, 0o111)
             seen["digests"] = {
                 "runtime_sha256": capsule.digest(os.pread(runtime, capsule.MAX_PROGRAM_BYTES, 0)),
                 "program_sha256": capsule.digest(os.pread(program, capsule.MAX_PROGRAM_BYTES, 0)),
@@ -1792,7 +2105,8 @@ spec=c.CapsuleSpec(**c.parse(raw,c.MAX_BUNDLE_BYTES)['spec'])
 launch=c.subprocess.Popen
 def traced(*args,**kwargs):
     child=launch(*args,**kwargs)
-    print(child.pid,flush=True)
+    if len(kwargs.get('pass_fds',()))==6:
+        print(child.pid,flush=True)
     return child
 c.subprocess.Popen=traced
 with c.Capsule(raw,spec) as prepared:

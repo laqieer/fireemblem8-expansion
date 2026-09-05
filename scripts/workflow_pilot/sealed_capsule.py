@@ -58,11 +58,12 @@ MAX_SECONDS = 120
 MAX_DEPTH = 4
 MAX_WORKER_FDS = 64
 MAX_WORKER_FILE_BYTES = 1024 * 1024
+MAX_PYTHON_IMAGE_BYTES = 32 * 1024 * 1024
 MAX_PYTHON_PROBE_BYTES = 4096
 PYTHON_PROBE_SECONDS = 5
 PYTHON_APIS = {
     "callable": {
-        "os": ["memfd_create", "fork", "waitid", "waitpid", "pread", "pipe2",
+        "os": ["memfd_create", "fchmod", "fork", "waitid", "waitpid", "pread", "pipe2",
                "set_blocking", "setpgid", "killpg"],
         "sys": ["addaudithook"],
         "fcntl": ["fcntl"],
@@ -112,11 +113,23 @@ GIT_ENVIRONMENT = {
     "GIT_TERMINAL_PROMPT": "0",
 }
 
-# Only the system interpreter reads this constant. The runtime itself is read
-# with pread from the inherited sealed descriptor, not /proc/self/fd/N.
+# Execute-only ELF permissions make the kernel deny dumping before userspace,
+# including ld.so and Python initialization. This check must never repair it.
+PYTHON_STARTUP = """import os,sys,fcntl,ctypes,json
+if ctypes.CDLL(None).prctl(3,0,0,0,0)!=0:
+    os.write(2,b'CapsuleUnavailable: Python exec is not continuously non-dumpable')
+    raise SystemExit(125)
+_capsule_image_fd=int(sys.argv.pop(1))
+_capsule_python_identity=tuple(json.loads(sys.argv.pop(1)))
+_image=os.fstat(_capsule_image_fd); _running=os.stat('/proc/self/exe')
+if ((_image.st_dev,_image.st_ino)!=(_running.st_dev,_running.st_ino)
+    or _image.st_mode&0o7777!=0o111 or fcntl.fcntl(_capsule_image_fd,1034)&15!=15):
+    raise SystemExit(125)
+"""
+
+# Only the trusted interpreter reads this constant. Capsule runtime/source
+# bytes use pread, never a pathname or /proc/self/fd/N script.
 BOOTSTRAP = """import os,sys,fcntl,hashlib,ctypes,types
-c=ctypes.CDLL(None,use_errno=True)
-if c.prctl(4,0,0,0,0)!=0: raise SystemExit(125)
 f=int(sys.argv[1]); n=int(sys.argv[2])
 if fcntl.fcntl(f,1034)&15!=15: raise SystemExit(125)
 b=os.pread(f,n+1,0)
@@ -124,7 +137,7 @@ if len(b)!=n or hashlib.sha256(b).hexdigest()!=sys.argv[3]: raise SystemExit(125
 m=types.ModuleType('__capsule_runtime__')
 sys.modules[m.__name__]=m
 exec(compile(b,'sealed:runtime','exec',dont_inherit=True),m.__dict__)
-m._supervise(sys.argv[4:])
+m._supervise(sys.argv[4:],_capsule_image_fd,_capsule_python_identity)
 """
 
 
@@ -705,39 +718,141 @@ def _interpreter_identity(path):
             entry.st_gid, entry.st_mtime_ns, entry.st_ctime_ns)
 
 
-def _probe_python():
-    identity = _interpreter_identity(PYTHON)
+def _probe_python(interpreter=None):
+    owned = interpreter is None
+    if owned:
+        interpreter = _ExecutionInterpreter(_probe=False)
     try:
-        process = subprocess.Popen(
-            [PYTHON, "-I", "-S", "-c", PYTHON_PROBE, canonical(PYTHON_APIS).decode("ascii")],
-            stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-            env=ENVIRONMENT, cwd="/", start_new_session=True, close_fds=True)
+        process, _ = interpreter.launch(PYTHON_PROBE, [canonical(PYTHON_APIS).decode("ascii")])
         status, stdout, stderr = _collect(process, PYTHON_PROBE_SECONDS, MAX_PYTHON_PROBE_BYTES)
         if status != 0 or stderr:
             raise CapsuleError(f"Python capability probe failed ({status}): {stderr[:4096]!r}")
         report = parse(stdout, MAX_PYTHON_PROBE_BYTES)
         _require_python(report)
-        if _interpreter_identity(PYTHON) != identity:
-            raise CapsuleError("system Python changed during capability probe")
+        interpreter.check()
         return report
     except (OSError, subprocess.SubprocessError, CapsuleError) as error:
         raise CapsuleUnavailable(f"system execution interpreter unavailable: {error}") from error
+    finally:
+        if owned:
+            interpreter.close()
+
+
+def _exec_policy():
+    try:
+        with open("/proc/sys/fs/suid_dumpable", "rb") as stream:
+            if stream.read(16) != b"0\n":
+                raise CapsuleUnavailable("protected Python exec requires fs.suid_dumpable=0")
+    except OSError as error:
+        raise CapsuleUnavailable("cannot establish the kernel exec dumpability policy") from error
 
 
 class _ExecutionInterpreter:
-    """Per-capsule admission, usable only while the trusted executable is unchanged."""
+    """A kernel-protected, sealed system image shared by outer/nested guardians."""
 
-    def __init__(self):
+    def __init__(self, *, _probe=True):
         _platform()
+        _exec_policy()
         self.identity = _interpreter_identity(PYTHON)
-        if _interpreter_identity("/proc/self/exe") != self.identity:
-            _probe_python()
-        self.check()
+        self.image = None
+        try:
+            with open(PYTHON, "rb") as source:
+                opened = os.fstat(source.fileno())
+                if (opened.st_dev, opened.st_ino, opened.st_size) != self.identity[:3]:
+                    raise CapsuleUnavailable("system Python changed before image preparation")
+                if opened.st_size > MAX_PYTHON_IMAGE_BYTES:
+                    raise CapsuleUnavailable("system Python exceeds the protected image bound")
+                raw = source.read(MAX_PYTHON_IMAGE_BYTES + 1)
+            if len(raw) != opened.st_size or _interpreter_identity(PYTHON) != self.identity:
+                raise CapsuleUnavailable("system Python changed during image preparation")
+            self.image = SealedBytes(raw, "python-image", MAX_PYTHON_IMAGE_BYTES)
+            os.fchmod(self.image.fd, 0o111)
+            self.check()
+            if _probe:
+                _probe_python(self)
+        except BaseException as error:
+            self.close()
+            if isinstance(error, OSError):
+                raise CapsuleUnavailable("host cannot prepare an execute-only Python memfd") from error
+            raise
+
+    @classmethod
+    def inherited(cls, fd, identity):
+        _platform()
+        if (type(fd) is not int or not isinstance(identity, tuple) or len(identity) != 8
+                or any(type(value) is not int for value in identity)):
+            raise CapsuleError("missing protected interpreter admission")
+        result = cls.__new__(cls)
+        result.identity = identity
+        result.image = SealedBytes.__new__(SealedBytes)
+        result.image.fd, result.image.limit = fd, MAX_PYTHON_IMAGE_BYTES
+        result.image.identity = _descriptor_identity(fd)
+        try:
+            if _descriptor_identity(fd) != _descriptor_identity_from_path("/proc/self/exe"):
+                raise CapsuleError("inherited image is not the executing interpreter")
+            result.check()
+            return result
+        except BaseException:
+            result.close()
+            raise
 
     def check(self):
         _platform()
+        _exec_policy()
         if _interpreter_identity(PYTHON) != self.identity:
             raise CapsuleUnavailable("system Python changed; prepare a new capsule")
+        image = self.image
+        if image is None or image.fd < 0:
+            raise CapsuleUnavailable("protected Python image is closed")
+        try:
+            entry = os.fstat(image.fd)
+            if (not stat.S_ISREG(entry.st_mode) or entry.st_nlink != 0
+                    or _descriptor_identity(image.fd) != image.identity
+                    or entry.st_size > MAX_PYTHON_IMAGE_BYTES or entry.st_mode & 0o7777 != 0o111
+                    or fcntl.fcntl(image.fd, fcntl.F_GET_SEALS) & SEALS != SEALS):
+                raise CapsuleUnavailable("Python image is not sealed, anonymous and execute-only")
+        except OSError as error:
+            raise CapsuleUnavailable("protected Python descriptor is unavailable") from error
+        try:
+            readable = os.open(f"/proc/self/fd/{image.fd}", os.O_RDONLY | os.O_CLOEXEC)
+        except OSError as error:
+            if error.errno != errno.EACCES:
+                raise CapsuleUnavailable("cannot establish execute-only Python permissions") from error
+        else:
+            os.close(readable)
+            raise CapsuleUnavailable("Python image read permissions are bypassable by this caller")
+
+    def launch(self, source, arguments, *, pass_fds=(), stdin=subprocess.DEVNULL):
+        self.check()
+        command = [PYTHON, "-I", "-S", "-c", PYTHON_STARTUP + source, str(self.image.fd),
+                   canonical(list(self.identity)).decode("ascii"), *arguments]
+        try:
+            process = subprocess.Popen(
+                command, executable=f"/proc/self/fd/{self.image.fd}",
+                stdin=stdin, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                env=ENVIRONMENT, cwd="/", start_new_session=True, close_fds=True,
+                pass_fds=(*pass_fds, self.image.fd))
+        except OSError as error:
+            raise CapsuleUnavailable("host cannot execute the protected Python image") from error
+        return process, command
+
+    def close(self):
+        if self.image is not None:
+            self.image.close()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        self.close()
+
+
+def _descriptor_identity_from_path(path):
+    try:
+        entry = os.stat(path)
+    except OSError as error:
+        raise CapsuleUnavailable("cannot identify the executing protected interpreter") from error
+    return (entry.st_dev, entry.st_ino, entry.st_size)
 
 
 def _descriptor_identity(fd):
@@ -872,13 +987,17 @@ class Capsule:
         else:
             _interpreter.check()
         self._interpreter = _interpreter
-        bundle = _Bundle(raw, spec.record())
-        self.bundle_fd = SealedBytes(raw, "artifacts", MAX_BUNDLE_BYTES)
         try:
-            self.runtime_fd = SealedBytes(bundle.content("base", RUNTIME_PATH),
-                                          "runtime", MAX_PROGRAM_BYTES)
+            bundle = _Bundle(raw, spec.record())
+            self.bundle_fd = SealedBytes(raw, "artifacts", MAX_BUNDLE_BYTES)
+            try:
+                self.runtime_fd = SealedBytes(bundle.content("base", RUNTIME_PATH),
+                                              "runtime", MAX_PROGRAM_BYTES)
+            except BaseException:
+                self.bundle_fd.close()
+                raise
         except BaseException:
-            self.bundle_fd.close()
+            self._interpreter.close()
             raise
 
     def execute(self, program: str, request: Any, *, timeout: float = 30) -> ExecutionResult:
@@ -888,6 +1007,7 @@ class Capsule:
     def close(self):
         self.bundle_fd.close()
         self.runtime_fd.close()
+        self._interpreter.close()
 
     def __enter__(self):
         return self
@@ -899,7 +1019,11 @@ class Capsule:
 def prepare(repository_root: Path, spec: CapsuleSpec) -> Capsule:
     """Read and prove the exact declared Git closure before any execution."""
     interpreter = _ExecutionInterpreter()
-    return Capsule(_make_bundle(repository_root, spec.record()), spec, _interpreter=interpreter)
+    try:
+        return Capsule(_make_bundle(repository_root, spec.record()), spec, _interpreter=interpreter)
+    except BaseException:
+        interpreter.close()
+        raise
 
 
 def _execute(bundle_fd, runtime_fd, program, request, timeout, depth, cancel_fd=None,
@@ -908,9 +1032,10 @@ def _execute(bundle_fd, runtime_fd, program, request, timeout, depth, cancel_fd=
             or not 0 < timeout <= MAX_SECONDS or depth > MAX_DEPTH):
         raise CapsuleError("invalid capsule time/depth bound")
     if _interpreter is None:
-        _interpreter = _ExecutionInterpreter()
-    else:
-        _interpreter.check()
+        with _ExecutionInterpreter() as interpreter:
+            return _execute(bundle_fd, runtime_fd, program, request, timeout, depth, cancel_fd,
+                            _interpreter=interpreter)
+    _interpreter.check()
     bundle_raw, runtime_raw = bundle_fd.read(), runtime_fd.read()
     bundle = _Bundle(bundle_raw)
     if runtime_raw != bundle.content("base", RUNTIME_PATH):
@@ -927,9 +1052,9 @@ def _execute(bundle_fd, runtime_fd, program, request, timeout, depth, cancel_fd=
             if len({_descriptor_identity(fd)[:2] for fd in fds}) != len(fds):
                 raise CapsuleError("descriptor aliasing is not permitted")
             life_read, life_write = os.pipe2(os.O_CLOEXEC)
-            command = [PYTHON, "-I", "-S", "-c", BOOTSTRAP, str(runtime_fd.fd),
-                       str(len(runtime_raw)), digest(runtime_raw), *(str(fd) for fd in fds),
-                       str(life_read), digest(envelope), digest(bundle_raw), digest(program_fd.read())]
+            arguments = [str(runtime_fd.fd), str(len(runtime_raw)), digest(runtime_raw),
+                         *(str(fd) for fd in fds), str(life_read), digest(envelope),
+                         digest(bundle_raw), digest(program_fd.read())]
             closed = False
 
             def close_life():
@@ -939,10 +1064,8 @@ def _execute(bundle_fd, runtime_fd, program, request, timeout, depth, cancel_fd=
                     os.close(life_write)
 
             try:
-                process = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                                           stderr=subprocess.PIPE, env=ENVIRONMENT, cwd="/",
-                                           start_new_session=True, close_fds=True,
-                                           pass_fds=(*fds, life_read))
+                process, command = _interpreter.launch(
+                    BOOTSTRAP, arguments, stdin=subprocess.PIPE, pass_fds=(*fds, life_read))
                 process.stdin.close()
                 os.close(life_read)
                 life_read = -1
@@ -1281,23 +1404,24 @@ def _write_before_deadline(fd, raw, deadline, life_fd):
         os.set_blocking(fd, True)
 
 
-def _supervise(arguments):
+def _supervise(arguments, image_fd=None, interpreter_identity=None):
     worker_pid = None
     open_fds = []
+    interpreter = None
     try:
         if len(arguments) != 8:
             raise CapsuleError("invalid descriptor bootstrap")
-        interpreter = _ExecutionInterpreter()
+        interpreter = _ExecutionInterpreter.inherited(image_fd, interpreter_identity)
         runtime_fd, program_fd, request_fd, bundle_fd, life_fd = map(int, arguments[:5])
-        inherited = {runtime_fd, program_fd, request_fd, bundle_fd, life_fd}
-        if len(inherited) != 5 or _inherited_fds() != {0, 1, 2, *inherited}:
+        inherited = {image_fd, runtime_fd, program_fd, request_fd, bundle_fd, life_fd}
+        if len(inherited) != 6 or _inherited_fds() != {0, 1, 2, *inherited}:
             raise CapsuleError("unexpected inherited descriptor or alias")
         _prctl(36, 1)  # PR_SET_CHILD_SUBREAPER: reap the complete worker group.
         runtime_raw = _read_descriptor(runtime_fd, MAX_PROGRAM_BYTES)
         program_raw = _read_descriptor(program_fd, MAX_PROGRAM_BYTES)
         request_raw = _read_descriptor(request_fd, MAX_REQUEST_BYTES)
         bundle_raw = _read_descriptor(bundle_fd, MAX_BUNDLE_BYTES)
-        if len({_descriptor_identity(fd)[:2] for fd in inherited - {life_fd}}) != 4:
+        if len({_descriptor_identity(fd)[:2] for fd in inherited - {life_fd}}) != 5:
             raise CapsuleError("aliased sealed descriptors")
         if [digest(request_raw), digest(bundle_raw), digest(program_raw)] != arguments[5:]:
             raise CapsuleError("descriptor digest differs from launched identity")
@@ -1345,7 +1469,7 @@ def _supervise(arguments):
                 os.dup2(stdout_w, 1)
                 os.dup2(stderr_w, 2)
                 keep = {0, 1, 2, reply_w, invoke_w, invoke_reply_r}
-                for fd in {runtime_fd, program_fd, request_fd, bundle_fd, life_fd, *open_fds} - keep:
+                for fd in (inherited | set(open_fds)) - keep:
                     os.close(fd)
                 _worker(bundle, envelope, binding, program_raw, reply_w, invoke_w, invoke_reply_r)
                 sys.stdout.flush()
@@ -1450,6 +1574,8 @@ def _supervise(arguments):
                 os.close(fd)
             except OSError:
                 pass
+        if interpreter is not None:
+            interpreter.close()
         while True:
             try:
                 child, _ = os.waitpid(-1, os.WNOHANG)
