@@ -29,6 +29,7 @@ behavior. Publisher runtime cases use disposable Linux namespaces.
    python3 -m unittest -v \
      tests.workflows.test_publisher_phase \
      tests.upstream_port.test_verify.VerifyGatesMirrorWorkflowTests.test_publisher_phase_uses_shared_execution_authority \
+     tests.workflows.test_patch_release_workflow.PatchReleaseWorkflowTests.test_writable_mount_audit_rejects_unexpected_rw_targets_and_preserves_allowed_private_mounts \
      tests.workflows.test_patch_release_workflow.PatchReleaseWorkflowTests.test_child_launcher_closes_bash_memfd_pipe_and_socket_fds \
      tests.workflows.test_patch_release_workflow.PatchReleaseWorkflowTests.test_supervisor_launcher_authenticates_session_before_namespace_and_leaves_no_orphan \
      tests.workflows.test_patch_release_workflow.PatchReleaseWorkflowTests.test_stopped_supervisor_dies_with_parent_before_resume_without_orphan \
@@ -82,6 +83,8 @@ and the exact-tree CLI enforce the complete success path, including the final
 post-check, with one fixed checker and no legacy membership observation.
 Namespace setup keeps diagnostic 81, the mount audit keeps 82, and failure-only
 branches cannot move to a different diagnostic substage.
+The extracted writable-mount audit includes the real isolated failure handler:
+allowed private mounts pass and an unexpected writable target returns 82.
 
 ### Negative control
 
@@ -107,6 +110,9 @@ missing directory returns 81 in the original order but 82 after moving the
 mount-audit boundary early. The unchanged inventory accepts both arrangements;
 the corrected phase validator and both consumers reject the relocated one.
 This pins failure attribution with actual execution, not only source ordering.
+Omitting the handler from the writable-mount fixture reproduces the old
+command-not-found exit 127; restoring the production handler returns its
+reserved mount-audit status 82 instead.
 
 The canonical post-check also rejects real file deletions, extra names,
 symlinks/hardlinks/directories, changed ownership/modes, short targets and
@@ -129,7 +135,9 @@ The focused commands above exercise the real phase validator, both semantic
 consumers, the exact-tree CLI, candidate FD closure and authenticated supervisor
 lifecycle. The prerequisite command-inventory case additionally executes both
 fresh-step Git staging commands under the complete workflow environment and
-checks launcher source/import binding without eager execution or cache loading.
+checks launcher source binding and rejects repository-local imports without
+eager execution or cache loading. Production installs a standalone launcher,
+not its transitive Python package.
 It also runs the child producer mutations through isolated fixture-commit CLIs,
 with the new producer registration module in the captured import closure.
 All deterministic assertions are automated; no visual, audio, subjective, or
@@ -148,8 +156,13 @@ cgroup-view file before execing the unchanged checker. It does not determine
 the result or emit a phase event. Real kernel cgroup delegation/join/kill,
 dedicated-UID isolation, and the complete production publisher still require
 the supported privileged runner and exact-master Build. Do not equate a local
-pass with #177 recovery. Hosts without namespace support cannot run the live
-case; no success-shaped fallback is provided.
+pass with #177 recovery. A bounded preflight uses the same namespace command
+and checks private proc, read-only bind remounts and capability dropping before
+candidate execution. Hosts denying those prerequisites skip only the live
+namespace scenarios with an explicit diagnostic; record them as unavailable,
+not passing, and rerun on a supported host for live-case evidence. Semantic
+checks and direct fixed-handler tests still run. A failure after a successful
+preflight remains an assertion failure; no success-shaped fallback is provided.
 
 Roll back this child on a
 regression while retaining the recovery hold rather than disabling its phase
@@ -207,8 +220,15 @@ authority.
    literal input path, bounded read and absence of success output.
 6. Confirm every consumed module rejects dirty content, deletion, symlink and
    mode drift. Added package imports must also belong to the selected tree;
-   unknown/dynamic imports and Git-environment redirection fail. A hostile
-   target program is inspected as data and never executes.
+   imports outside captured authority or trusted stdlib and Git-environment
+   redirection fail. All data-only `Program` sources stay captured for staging
+   and AST inspection but absent from importable authority. A fixture commits
+   both `from . import publisher_programs` in the package initializer and an
+   inert marker write in that program. Exact-tree binding succeeds, but the
+   CLI rejects without creating the marker; ordinary import creates it.
+   The same committed marker control covers the standalone candidate launcher
+   through normal imports and aliased direct loaders; cached loader controls
+   also include the launcher.
 7. Confirm the fresh staging regression uses the complete parsed workflow
    environment and the actual Bash/Git prologue. Removing only its Git-variable
    unset produces exit 128; the real prologue succeeds and stages exactly the
@@ -224,8 +244,10 @@ authority.
    not alter the real isolated CLI, with or without `-B`. The control loader
    executes the inert cache and raises its deliberate error while all tracked
    sources still match Git. The corrected CLI succeeds; changed package
-   or launcher source rejects before import; added launcher imports join the
-   captured closure without executing the launcher. A second fixture changes source files after
+   or launcher source rejects before import. Repository-local launcher imports
+   reject before staging, including relative and absolute forms: the deployed
+   single-file invocation cannot import those uninstalled dependencies. The
+   regression runs that actual invocation as its negative control. A second fixture changes source files after
    verification and proves both consumers still execute only the captured
    verified bytes, without reopening paths or importing outside the closure.
    Each program's declared inputs/outputs also survive into its signature and
@@ -246,6 +268,21 @@ authority.
     inert package that raises a deliberate error. A 1 MiB authority source
     passes; a 1 MiB-plus-one Git blob is rejected after its size query and
     before any content read. Every authorized blob read is explicitly bounded.
+11. Confirm direct `SourceFileLoader.exec_module`, bound/unbound method
+    aliases, `get_code` plus aliased `exec`, and previously bound loaders
+    cannot execute an ambient marker program. Replay unchecked-hash and
+    sourceless caches, including caches claiming an allowed authority filename,
+    a stdlib module name or an anonymous filename. Reopening an allowed
+    filename with changed code rejects while its already captured code still
+    executes unchanged. The ordinary-loader controls create the inert markers;
+    guarded execution leaves them absent. These are executable-origin checks,
+    not dirty-tree or AST-callee-spelling failures.
+12. Confirm direct system stdlib loading, `Fraction` arithmetic, generated
+    dataclasses and named tuples retain their actual values. A source-loaded
+    stdlib `runpy` cannot promote anonymous cached bytecode to generated code.
+    A direct system `_json` native loader works, but the same loader pointed
+    at a fixture-local copy rejects. Exiting the guarded context restores
+    ordinary controlled loading.
 
 ### Expected result
 
@@ -270,6 +307,10 @@ verification-tail fixtures while preserving command counts. The regression
 changes only the relevant typed placement to demonstrate that the context
 authority, not a raw hash mismatch, accounts for rejection. The old loader's
 ambient-import fallback executes the inert external-package control.
+At pre-correction `8342faed`, both the committed program import and aliased
+external loader succeed and write their inert markers. A filename-only or
+stdlib-caller-only execution check is also insufficient: the cached-code and
+source-loaded `runpy` controls preserve those independent negative cases.
 
 ### Interactions and save compatibility
 
@@ -280,6 +321,12 @@ successful publisher Build. Updating a production operation requires updating it
 signature and behavioral evidence together. Arbitrary Bash syntax,
 unregistered executables and caller-provided Python are unsupported, not
 silently analyzed as safe.
+The source-only loader enforces code origin; it is not a sandbox for arbitrary
+malicious reviewed Python. It trusts the bootstrap, interpreter and system
+stdlib, and does not contain in-process policy tampering or arbitrary
+pre-existing callbacks/native/process operations. Generated code requires
+actual matching stdlib compilation and execution, not just a filename or
+caller label. See the [trust model](../patch_release.md#closed-publisher-command-authority-issue-200).
 
 The case has no save, configuration, generated-data, localization, target
 ROM/RAM, modern profile or archival impact. No manual criterion applies.

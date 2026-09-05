@@ -928,36 +928,74 @@ class PublisherExactTreeTests(unittest.TestCase):
                 self.assertNotIn(b"unverified authority executed", completed.stderr)
                 shutil.copy2(ROOT / source, path)
 
-    def test_launcher_transitive_sources_bind_without_eager_registry_or_program_execution(self):
+    def test_standalone_launcher_rejects_repository_imports_before_staging(self):
         source_path = "scripts/workflow_pilot/publisher_candidate.py"
         added_path = "scripts/workflow_pilot/launcher_support.py"
         launcher = self.directory / source_path
-        launcher.write_text("from . import launcher_support\n" + launcher.read_text())
+        original = launcher.read_text()
         added = self.directory / added_path
         added.write_text("raise RuntimeError('launcher transitive source executed')\n")
-        self.git("add", "--", source_path, added_path)
-        self.git("-c", "user.name=Publisher test", "-c", "user.email=publisher-test@example.invalid",
-                 "-c", "commit.gpgsign=false", "-c", "core.hooksPath=/dev/null",
-                 "commit", "-qm", "Transitive launcher source fixture")
-        self.commit = self.git("rev-parse", "HEAD").decode().strip()
-        with (
-            mock.patch.object(authority, "SOURCE_ROOT", self.directory),
-            mock.patch.object(authority, "reviewed_inventory", side_effect=AssertionError("eager registry")),
+        self.paths = (*self.paths, added_path)
+        staged = self.directory / "runtime/candidate-launcher.py"
+        staged.parent.mkdir()
+        for imported in (
+            "from . import launcher_support",
+            "from scripts.workflow_pilot import launcher_support",
+            "import scripts.workflow_pilot.launcher_support",
         ):
-            sources = authority._bind_exact_sources(self.directory, self.commit)
-            self.assertIn(added_path, sources)
-            self.assertEqual(sources[added_path], added.read_bytes())
-            self.assertIn(source_path, sources)
-        self.inert_cache(source_path)
-        self.inert_cache(added_path)
-        completed = self.cli()
-        self.assertEqual(completed.returncode, 0, completed.stderr)
-        self.assertEqual(completed.stderr, b"")
-        added.write_text("raise RuntimeError('changed launcher import executed')\n")
-        completed = self.cli()
-        self.assertEqual(completed.returncode, 1)
-        self.assertIn(b"authority differs from exact tree", completed.stderr)
-        self.assertNotIn(b"changed launcher import executed", completed.stderr)
+            with self.subTest(imported=imported):
+                launcher.write_text(imported + "\n" + original)
+                self.snapshot()
+                shutil.copyfile(launcher, staged)
+                control = subprocess.run(
+                    ["/usr/bin/python3", "-I", "-S", str(staged)],
+                    capture_output=True, check=False,
+                )
+                self.assertEqual(control.returncode, 1, control.stderr)
+                self.assertNotIn(b"launcher transitive source executed", control.stderr)
+                with (
+                    mock.patch.object(authority, "SOURCE_ROOT", self.directory),
+                    mock.patch.object(authority, "reviewed_inventory", side_effect=AssertionError("eager registry")),
+                    self.assertRaisesRegex(ValueError, "standalone publisher program"),
+                ):
+                    authority._bind_exact_sources(self.directory, self.commit)
+                completed = self.cli()
+                self.assertEqual(completed.returncode, 1, completed.stderr)
+                self.assertIn(b"standalone publisher program", completed.stderr)
+                self.assertNotIn(b"authority differs from exact tree", completed.stderr)
+
+    def test_committed_candidate_import_and_loaders_cannot_execute_program_data(self):
+        marker = self.directory / "candidate-data-executed"
+        target = self.directory / "scripts/workflow_pilot/publisher_candidate.py"
+        target.write_text(
+            f"from pathlib import Path\nPath({str(marker)!r}).write_text('inert candidate')\n"
+        )
+        package = self.directory / "scripts/workflow_pilot/__init__.py"
+        original = package.read_text()
+        loader_source = (
+            "import importlib.machinery, types\n"
+            f"loader = importlib.machinery.SourceFileLoader('candidate_data', {str(target)!r})\n"
+            "run = loader.exec_module\nrun(types.ModuleType('candidate_data'))\n"
+        )
+        for source in ("from . import publisher_candidate\n", loader_source):
+            with self.subTest(source=source):
+                marker.unlink(missing_ok=True)
+                package.write_text(original + "\n" + source)
+                self.snapshot()
+                with mock.patch.object(authority, "SOURCE_ROOT", self.directory):
+                    self.assertEqual(authority.bind_exact_tree(self.directory, self.commit), self.paths)
+                completed = self.cli()
+                self.assertFalse(marker.exists(), completed.stderr)
+                self.assertEqual(completed.returncode, 1, completed.stderr)
+                self.assertNotIn(b"authority differs from exact tree", completed.stderr)
+                control = subprocess.run(
+                    ["/usr/bin/python3", "-I", "-S", "-c",
+                     "import sys; sys.path.insert(0, sys.argv[1]); import scripts.workflow_pilot",
+                     str(self.directory)], capture_output=True, check=False,
+                )
+                self.assertEqual(control.returncode, 0, control.stderr)
+                self.assertEqual(marker.read_text(), "inert candidate")
+                marker.unlink()
 
     def test_both_consumers_execute_captured_sources_without_reopening_paths(self):
         sources = authority._bind_exact_sources(self.directory, self.commit)
@@ -1029,6 +1067,258 @@ class PublisherExactTreeTests(unittest.TestCase):
             authority.validate_exact_tree(self.directory, self.commit)
         self.assertFalse(marker.exists())
 
+    def test_committed_program_import_is_data_only_and_never_executed(self):
+        marker = self.directory / "program-executed"
+        target = self.directory / authority.PROGRAM_PATH
+        target.write_text(
+            target.read_text()
+            + f"\nfrom pathlib import Path\nPath({str(marker)!r}).write_text('inert program')\n"
+        )
+        package = self.directory / "scripts/workflow_pilot/__init__.py"
+        package.write_text(package.read_text() + "\nfrom . import publisher_programs\n")
+        self.snapshot()
+        with mock.patch.object(authority, "SOURCE_ROOT", self.directory):
+            self.assertEqual(authority.bind_exact_tree(self.directory, self.commit), self.paths)
+        completed = self.cli()
+        self.assertFalse(marker.exists(), completed.stderr)
+        self.assertEqual(completed.returncode, 1, completed.stderr)
+        self.assertNotIn(b"authority differs from exact tree", completed.stderr)
+        control = subprocess.run(
+            ["/usr/bin/python3", "-I", "-S", "-c",
+             "import sys; sys.path.insert(0, sys.argv[1]); import scripts.workflow_pilot",
+             str(self.directory)], capture_output=True, check=False,
+        )
+        self.assertEqual(control.returncode, 0, control.stderr)
+        self.assertEqual(marker.read_text(), "inert program")
+
+    def test_all_program_data_sources_are_captured_but_not_importable(self):
+        sources = authority._bind_exact_sources(self.directory, self.commit)
+        loader = authority._SourceOnlyAuthority(sources)
+        for signature in authority.reviewed_inventory().signatures:
+            program = signature.program
+            if program is None:
+                continue
+            with self.subTest(program=program.name):
+                self.assertEqual(
+                    sources[program.source_path],
+                    self.git("show", self.commit + ":" + program.source_path),
+                )
+                name = program.source_path.removesuffix(".py").replace("/", ".")
+                if program.name == "authority-preflight":
+                    self.assertIn(name, loader.modules)
+                else:
+                    self.assertNotIn(name, loader.modules)
+                    self.assertNotIn(str(ROOT / program.source_path), loader.executable_sources)
+
+    def test_committed_direct_and_aliased_loaders_cannot_execute_ambient_source(self):
+        marker = self.directory / "loader-executed"
+        ambient = self.directory / "ambient.py"
+        ambient.write_text(
+            f"from pathlib import Path\nPath({str(marker)!r}).write_text('inert loader')\n"
+        )
+        package = self.directory / "scripts/workflow_pilot/__init__.py"
+        original = package.read_text()
+        prologue = (
+            "import importlib.machinery, types\n"
+            f"loader = importlib.machinery.SourceFileLoader('ambient', {str(ambient)!r})\n"
+            "module = types.ModuleType('ambient')\n"
+        )
+        for action in (
+            "loader.exec_module(module)\n",
+            "run = loader.exec_module\nrun(module)\n",
+            "run = type(loader).exec_module\nrun(loader, module)\n",
+            "read = loader.get_code\ncode = read('ambient')\nrun = exec\nrun(code, vars(module))\n",
+        ):
+            with self.subTest(action=action):
+                source = prologue + action
+                updated = original + "\n" + source
+                if package.read_text() != updated:
+                    package.write_text(updated)
+                    self.snapshot()
+                completed = self.cli()
+                self.assertFalse(marker.exists(), completed.stderr)
+                self.assertEqual(completed.returncode, 1, completed.stderr)
+                self.assertNotIn(b"authority differs from exact tree", completed.stderr)
+                self.assertNotIn(b"dynamic publisher authority import", completed.stderr)
+                control = subprocess.run(
+                    ["/usr/bin/python3", "-I", "-S", "-c", source],
+                    capture_output=True, check=False,
+                )
+                self.assertEqual(control.returncode, 0, control.stderr)
+                self.assertEqual(marker.read_text(), "inert loader")
+                marker.unlink()
+
+    def test_committed_cached_loaders_cannot_substitute_code_or_program_data(self):
+        marker = self.directory / "cached-loader-executed"
+        alternative = self.directory / "inert-cache.py"
+        alternative.write_text(
+            f"from pathlib import Path\nPath({str(marker)!r}).write_text('inert cache')\n"
+        )
+        ambient = self.directory / "ambient.py"
+        ambient.write_text("VALUE = 1\n")
+        captured = self.directory / "scripts/workflow_pilot/publisher_shell.py"
+        program = self.directory / authority.PROGRAM_PATH
+        candidate = self.directory / "scripts/workflow_pilot/publisher_candidate.py"
+        package = self.directory / "scripts/workflow_pilot/__init__.py"
+        original = package.read_text()
+        for source_path, filename, loader_kind in (
+            (ambient, str(ambient), "SourceFileLoader"),
+            (captured, str(captured), "SourceFileLoader"),
+            (program, str(program), "SourceFileLoader"),
+            (candidate, str(candidate), "SourceFileLoader"),
+            (candidate, str(candidate), "SourcelessFileLoader"),
+            (ambient, str(captured), "SourcelessFileLoader"),
+            (ambient, "<string>", "SourcelessFileLoader"),
+        ):
+            with self.subTest(source=source_path, filename=filename, loader=loader_kind):
+                cache = Path(importlib.util.cache_from_source(str(source_path)))
+                cache.parent.mkdir(parents=True, exist_ok=True)
+                py_compile.compile(
+                    str(alternative), cfile=str(cache), dfile=filename, doraise=True,
+                    invalidation_mode=py_compile.PycInvalidationMode.UNCHECKED_HASH,
+                )
+                path = cache if loader_kind == "SourcelessFileLoader" else source_path
+                source = (
+                    "import importlib.machinery, types\n"
+                    f"loader = importlib.machinery.{loader_kind}('fractions', {str(path)!r})\n"
+                    "run = loader.exec_module\nrun(types.ModuleType('fractions'))\n"
+                )
+                updated = original + "\n" + source
+                if package.read_text() != updated:
+                    package.write_text(updated)
+                    self.snapshot()
+                completed = self.cli()
+                self.assertFalse(marker.exists(), completed.stderr)
+                self.assertEqual(completed.returncode, 1, completed.stderr)
+                self.assertNotIn(b"authority differs from exact tree", completed.stderr)
+                self.assertNotIn(b"dynamic publisher authority import", completed.stderr)
+                control = subprocess.run(
+                    ["/usr/bin/python3", "-I", "-S", "-c", source],
+                    capture_output=True, check=False,
+                )
+                self.assertEqual(control.returncode, 0, control.stderr)
+                self.assertEqual(marker.read_text(), "inert cache")
+                marker.unlink()
+                cache.unlink()
+
+    def test_prebound_loader_and_cached_code_cannot_bypass_execution_boundary(self):
+        sources = authority._bind_exact_sources(self.directory, self.commit)
+        marker = self.directory / "prebound-loader-executed"
+        ambient = self.directory / "ambient.py"
+        ambient.write_text(
+            f"from pathlib import Path\nPath({str(marker)!r}).write_text('inert prebound')\n"
+        )
+        loader = importlib.machinery.SourceFileLoader("ambient", str(ambient))
+        run = loader.exec_module
+        code = loader.get_code("ambient")
+        execute = builtins.exec
+        cache = importlib.util.cache_from_source(str(ambient))
+        cached_run = importlib.machinery.SourcelessFileLoader("ambient", cache).exec_module
+        for action in (
+            lambda: run(ModuleType("ambient")),
+            lambda: cached_run(ModuleType("ambient")),
+            lambda: execute(code, {}),
+        ):
+            with self.subTest(action=action):
+                with authority._source_only_authority(sources), self.assertRaises(ValueError):
+                    action()
+                self.assertFalse(marker.exists())
+                action()
+                self.assertEqual(marker.read_text(), "inert prebound")
+                marker.unlink()
+
+    def test_execution_uses_captured_code_not_an_allowed_filename_alone(self):
+        sources = authority._bind_exact_sources(self.directory, self.commit)
+        path = "scripts/workflow_pilot/__init__.py"
+        target = self.directory / path
+        captured = compile(sources[path], str(target), "exec", dont_inherit=True)
+        marker = self.directory / "reopened-source-executed"
+        target.write_text(
+            f"from pathlib import Path\nPath({str(marker)!r}).write_text('inert changed source')\n"
+        )
+        run = importlib.machinery.SourceFileLoader("captured", str(target)).exec_module
+        expected = {}
+        exec(captured, expected)
+        with mock.patch.object(authority, "SOURCE_ROOT", self.directory):
+            with authority._source_only_authority(sources):
+                result = {}
+                exec(captured, result)
+                self.assertEqual(result, expected)
+                with self.assertRaisesRegex(ValueError, "differs from allowed source"):
+                    run(ModuleType("captured"))
+        self.assertFalse(marker.exists())
+        run(ModuleType("captured"))
+        self.assertEqual(marker.read_text(), "inert changed source")
+
+    def test_direct_native_loader_requires_a_system_stdlib_origin(self):
+        sources = authority._bind_exact_sources(self.directory, self.commit)
+        system = importlib.import_module("_json")
+        origin = Path(system.__spec__.origin)
+        ambient = self.directory / origin.name
+        shutil.copyfile(origin, ambient)
+        make_module = importlib.util.module_from_spec
+        allowed = importlib.util.spec_from_file_location("_json", origin)
+        denied = importlib.util.spec_from_file_location("_json", ambient)
+        with authority._source_only_authority(sources):
+            module = make_module(allowed)
+            allowed.loader.exec_module(module)
+            self.assertEqual(module.scanstring('"ok"', 1), ("ok", 4))
+            with self.assertRaisesRegex(ValueError, "native import origin"):
+                make_module(denied)
+        control = make_module(denied)
+        denied.loader.exec_module(control)
+        self.assertEqual(control.scanstring('"ok"', 1), ("ok", 4))
+
+    def test_stdlib_loader_cannot_relabel_cached_code_as_generated(self):
+        marker = self.directory / "anonymous-cache-executed"
+        alternative = self.directory / "inert-cache.py"
+        alternative.write_text(
+            f"from pathlib import Path\nPath({str(marker)!r}).write_text('inert anonymous')\n"
+        )
+        cache = self.directory / "anonymous.pyc"
+        py_compile.compile(str(alternative), cfile=str(cache), dfile="<string>", doraise=True)
+        package = self.directory / "scripts/workflow_pilot/__init__.py"
+        source = (
+            "import importlib.machinery, runpy, types\n"
+            "loader = importlib.machinery.SourceFileLoader('source_runpy', runpy.__file__)\n"
+            "module = types.ModuleType('source_runpy')\n"
+            "loader.exec_module(module)\n"
+            f"module.run_path({str(cache)!r})\n"
+        )
+        package.write_text(package.read_text() + "\n" + source)
+        self.snapshot()
+        completed = self.cli()
+        self.assertFalse(marker.exists(), completed.stderr)
+        self.assertEqual(completed.returncode, 1, completed.stderr)
+        self.assertNotIn(b"authority differs from exact tree", completed.stderr)
+        control = subprocess.run(
+            ["/usr/bin/python3", "-I", "-S", "-c", source], capture_output=True, check=False,
+        )
+        self.assertEqual(control.returncode, 0, control.stderr)
+        self.assertEqual(marker.read_text(), "inert anonymous")
+
+    def test_real_cli_preserves_direct_stdlib_loading_and_generated_records(self):
+        package = self.directory / "scripts/workflow_pilot/__init__.py"
+        package.write_text(
+            package.read_text()
+            + "\nimport importlib.machinery, importlib, types\n"
+            "from collections import namedtuple\n"
+            "from dataclasses import asdict, make_dataclass\n"
+            "fractions = importlib.import_module('fractions')\n"
+            "loader = importlib.machinery.SourceFileLoader('allowed_copy', fractions.__file__)\n"
+            "module = types.ModuleType('allowed_copy')\n"
+            "run = loader.exec_module\nrun(module)\n"
+            "assert module.Fraction(1, 2) + module.Fraction(1, 3) == module.Fraction(5, 6)\n"
+            "Record = make_dataclass('Record', [('value', int)], frozen=True)\n"
+            "assert asdict(Record(7)) == {'value': 7}\n"
+            "Pair = namedtuple('Pair', 'first second')\n"
+            "assert Pair(3, 4)._asdict() == {'first': 3, 'second': 4}\n"
+        )
+        self.snapshot()
+        completed = self.cli()
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertEqual(completed.stderr, b"")
+
     def test_isolated_cli_does_not_enable_repository_stdlib_shadows(self):
         marker = self.directory / "shadow-executed"
         for name in ("json", "hashlib", "shlex", "typing"):
@@ -1055,11 +1345,9 @@ class PublisherExactTreeTests(unittest.TestCase):
             self.assertIn("scripts/workflow_pilot/added_authority.py", authority.authority_paths())
             with self.assertRaises(ValueError):
                 authority.bind_exact_tree(self.directory, self.commit)
-        for statement in ("import unregistered_package", "__import__('unregistered_package')"):
-            with self.subTest(statement=statement):
-                package.write_text(statement + "\n")
-                with mock.patch.object(authority, "SOURCE_ROOT", self.directory), self.assertRaises(ValueError):
-                    authority.authority_paths()
+        package.write_text("import unregistered_package\n")
+        with mock.patch.object(authority, "SOURCE_ROOT", self.directory), self.assertRaises(ValueError):
+            authority.authority_paths()
 
     def test_git_environment_and_commit_inputs_cannot_redirect_binding(self):
         with mock.patch.dict(os.environ, {

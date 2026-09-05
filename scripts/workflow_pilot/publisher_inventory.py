@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import __future__
 import argparse
 import ast
 import builtins
@@ -20,13 +21,16 @@ import stat
 import subprocess
 import sys
 import sysconfig
-from types import MappingProxyType
+from types import CodeType, MappingProxyType
 
 
 CASE_ID = "TC-WORKFLOW-PUBLISHER-COMMAND-INVENTORY-001"
 WORKFLOW_PATH = ".github/workflows/build.yml"
 PROGRAM_PATH = "scripts/workflow_pilot/publisher_programs.py"
 PROGRAM_RUNTIME_PATH = "/mnt/control/publisher-programs.py"
+STANDALONE_PROGRAM_PATHS = frozenset({
+    PROGRAM_PATH, "scripts/workflow_pilot/publisher_candidate.py",
+})
 SOURCE_ROOT = Path(__file__).resolve().parents[2]
 MAX_AUTHORITY_BYTES = 1024 * 1024
 ENTRY_SCOPES = frozenset({"entry", "producer", "staging"})
@@ -36,6 +40,11 @@ STDLIB_ROOTS = tuple({
         sysconfig.get_config_var("DESTSHARED"),
     ) if path
 })
+FUTURE_FLAGS = sum(
+    getattr(__future__, name).compiler_flag for name in __future__.all_feature_names
+)
+_ACTIVE_SOURCE_AUTHORITY = None
+_EXECUTION_AUDIT_INSTALLED = False
 
 
 class InventoryError(ValueError):
@@ -709,10 +718,9 @@ def _authority_sources(read_source) -> dict[str, bytes]:
     pending = [
         "scripts.workflow_pilot.publisher_inventory",
         "scripts.workflow_pilot.publisher_signatures",
-        "scripts.workflow_pilot.publisher_programs",
-        "scripts.workflow_pilot.publisher_candidate",
         "scripts.workflow_pilot.publisher_shell_contract",
         "scripts.upstream_port.verify",
+        *(path.removesuffix(".py").replace("/", ".") for path in STANDALONE_PROGRAM_PATHS),
     ]
     sources = {WORKFLOW_PATH: read_source(WORKFLOW_PATH)}
     modules: set[str] = set()
@@ -750,6 +758,8 @@ def _authority_sources(read_source) -> dict[str, bytes]:
                 continue
             for target in targets:
                 if target.startswith("scripts."):
+                    if path in STANDALONE_PROGRAM_PATHS:
+                        raise InventoryError(f"standalone publisher program imports repository module: {path}")
                     candidate = SOURCE_ROOT / (target.replace(".", "/") + ".py")
                     if candidate.is_file():
                         pending.append(target)
@@ -759,13 +769,6 @@ def _authority_sources(read_source) -> dict[str, bytes]:
                         raise InventoryError("unresolved publisher authority import")
                 elif target.split(".", 1)[0] not in sys.stdlib_module_names | {"__future__"}:
                     raise InventoryError("unregistered external publisher authority import")
-        for node in ast.walk(tree):
-            if isinstance(node, ast.Call) and (
-                isinstance(node.func, ast.Name) and node.func.id == "__import__"
-                or isinstance(node.func, ast.Attribute)
-                and node.func.attr in {"import_module", "spec_from_file_location", "exec_module"}
-            ):
-                raise InventoryError("dynamic publisher authority import")
     return dict(sorted(sources.items()))
 
 
@@ -820,7 +823,8 @@ class _SourceOnlyAuthority(importlib.abc.MetaPathFinder, importlib.abc.Loader):
         self.sources = sources
         self.modules = {}
         for path in sources:
-            if not path.endswith(".py"):
+            # Program payloads remain captured data, not validator dependencies.
+            if path in STANDALONE_PROGRAM_PATHS or not path.endswith(".py"):
                 continue
             package = path.endswith("/__init__.py")
             name = path.removesuffix("/__init__.py") if package else path[:-3]
@@ -829,6 +833,84 @@ class _SourceOnlyAuthority(importlib.abc.MetaPathFinder, importlib.abc.Loader):
             components = name.split(".")
             for index in range(1, len(components)):
                 self.modules.setdefault(".".join(components[:index]), (None, True))
+        self.executable_sources = {
+            str(SOURCE_ROOT / path): sources[path]
+            for path, _package in self.modules.values() if path is not None
+        }
+        self.code_trees = {}
+        self.generated_source = None
+        self.checking_generated_source = False
+
+    def code_tree(self, filename):
+        """Derive executable code from the same captured/stdlib source authority."""
+        if filename not in self.code_trees:
+            if filename in self.executable_sources:
+                code = compile(
+                    self.executable_sources[filename], filename, "exec", dont_inherit=True,
+                )
+            elif filename.startswith("<frozen ") and filename.endswith(">"):
+                name = filename[len("<frozen "):-1]
+                if (
+                    name.split(".", 1)[0] not in sys.stdlib_module_names
+                    or importlib.machinery.FrozenImporter.find_spec(name) is None
+                ):
+                    raise InventoryError(f"untrusted publisher frozen code: {filename}")
+                code = importlib.machinery.FrozenImporter.get_code(name)
+            elif Path(filename).is_absolute() and self.trusted_path(filename):
+                path = Path(filename)
+                if path.suffix != ".py":
+                    raise InventoryError(f"no publisher stdlib source for code: {filename}")
+                code = compile(path.read_bytes(), filename, "exec", dont_inherit=True)
+            else:
+                raise InventoryError(f"executable outside publisher authority: {filename}")
+
+            def descendants(value):
+                yield value
+                for constant in value.co_consts:
+                    if isinstance(constant, CodeType):
+                        yield from descendants(constant)
+
+            self.code_trees[filename] = frozenset(descendants(code))
+        return self.code_trees[filename]
+
+    def record_compile(self, source, filename, caller):
+        if (
+            not self.checking_generated_source
+            and isinstance(source, (str, bytes)) and isinstance(filename, str)
+            and filename.startswith("<") and not filename.startswith("<frozen ")
+        ):
+            self.generated_source = (source, filename, caller)
+
+    def check_execution(self, code, caller):
+        filename = code.co_filename
+        if filename.startswith("<") and not filename.startswith("<frozen "):
+            generated = self.generated_source
+            self.generated_source = None
+            origin = caller.f_code.co_filename
+            if (
+                generated is not None and generated[1] == filename and generated[2] is caller
+                and Path(origin).is_absolute() and self.trusted_path(origin)
+                and caller.f_code in self.code_tree(origin)
+            ):
+                # Match the actual stdlib generation, not a loader's call stack
+                # or an anonymous filename forged by cached bytecode.
+                self.checking_generated_source = True
+                try:
+                    for mode in ("exec", "eval", "single"):
+                        try:
+                            expected = compile(
+                                generated[0], filename, mode, dont_inherit=True,
+                                flags=caller.f_code.co_flags & FUTURE_FLAGS,
+                            )
+                        except SyntaxError:
+                            continue
+                        if code == expected:
+                            return
+                finally:
+                    self.checking_generated_source = False
+        elif code in self.code_tree(filename):
+            return
+        raise InventoryError(f"publisher executable differs from allowed source: {filename}")
 
     def find_spec(self, fullname, path=None, target=None):
         self.check_name(fullname)
@@ -910,10 +992,32 @@ class _SourceOnlyAuthority(importlib.abc.MetaPathFinder, importlib.abc.Loader):
             exec(compile(self.sources[path], module.__file__, "exec", dont_inherit=True), module.__dict__)
 
 
+def _audit_source_execution(event, arguments):
+    loader = _ACTIVE_SOURCE_AUTHORITY
+    if loader is None:
+        return
+    if event == "compile":
+        loader.record_compile(*arguments, sys._getframe(1))
+    elif event == "exec":
+        loader.check_execution(arguments[0], sys._getframe(1))
+    elif event == "import" and arguments[1] is not None:
+        name, filename = arguments[:2]
+        if (
+            name.split(".", 1)[0] not in sys.stdlib_module_names
+            or not loader.trusted_path(filename)
+        ):
+            raise InventoryError(f"untrusted publisher native import origin: {name}")
+
+
 @contextmanager
 def _source_only_authority(sources):
     """Exclude both on-disk caches and previously imported repository modules."""
+    global _ACTIVE_SOURCE_AUTHORITY, _EXECUTION_AUDIT_INSTALLED
     loader = _SourceOnlyAuthority(sources)
+    if not _EXECUTION_AUDIT_INSTALLED:
+        sys.addaudithook(_audit_source_execution)
+        _EXECUTION_AUDIT_INSTALLED = True
+    previous_authority = _ACTIVE_SOURCE_AUTHORITY
     previous = {
         name: module for name, module in sys.modules.copy().items()
         if name == "scripts" or name.startswith("scripts.")
@@ -945,9 +1049,11 @@ def _source_only_authority(sources):
 
     builtins.__import__ = checked_import
     importlib.import_module = checked_import_module
+    _ACTIVE_SOURCE_AUTHORITY = loader
     try:
         yield
     finally:
+        _ACTIVE_SOURCE_AUTHORITY = previous_authority
         builtins.__import__ = original_import
         importlib.import_module = original_import_module
         sys.meta_path.remove(loader)

@@ -1340,10 +1340,18 @@ def writable_mount_transport_section_source(workflow: str) -> str:
         workflow,
         "Build candidate in isolated namespace and stage public inputs",
     )
+    script = publisher_shell_contract.builder_isolation_shell_source(
+        script, label="writable mount audit fixture",
+    )
+    handler_start = script.find("isolated_stage_failure() {")
+    handler = (
+        script[handler_start:script.index("\n}", handler_start) + 2] + "\n"
+        if handler_start >= 0 else ""
+    )
     start = script.index("list_writable_mount_records() {")
     end_marker = "exec < /dev/null > /dev/null 2>&1\n"
     end = script.index(end_marker, start)
-    return script[start:end]
+    return handler + script[start:end]
 
 
 def run_dev_mount_target_parser(
@@ -3241,7 +3249,7 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
                 count=1,
             )
 
-            def run_case(records: list[str]) -> subprocess.CompletedProcess[str]:
+            def run_case(records: list[str], source: str = section) -> subprocess.CompletedProcess[str]:
                 if records_path.exists():
                     records_path.unlink()
                 records_path.write_bytes(
@@ -3256,7 +3264,7 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
                         'TRANSPORT_ROOT="$1"\n'
                         'TRANSPORT_UID="$2"\n'
                         'RECORDS_PATH="$3"\n'
-                        + section,
+                        + source,
                         "--",
                         str(transport_root),
                         str(os.getuid()),
@@ -3294,19 +3302,16 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
             self.assertEqual(completed.returncode, 0, completed.stderr)
             self.assertEqual(completed.stdout, "")
 
-            completed = run_case(
-                [
-                    "/",
-                    "ro,relatime",
-                    "/mnt/name with space",
-                    "rw,relatime",
-                ]
-            )
-            self.assertEqual(completed.returncode, 1)
+            unexpected = ["/", "ro,relatime", "/mnt/name with space", "rw,relatime"]
+            completed = run_case(unexpected)
+            self.assertEqual(completed.returncode, 82, completed.stderr)
             self.assertIn(
                 "unexpected writable mount: /mnt/name with space",
                 completed.stderr,
             )
+            without_handler = section[section.index("list_writable_mount_records() {"):]
+            completed = run_case(unexpected, without_handler)
+            self.assertEqual(completed.returncode, 127, completed.stderr)
 
     def test_supervisor_rw_mount_audit_fails_on_exact_master_and_passes_current_workflow(
         self,

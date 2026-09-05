@@ -24,6 +24,47 @@ from tests.workflows import test_patch_release_workflow as publisher
 ROOT = Path(__file__).resolve().parents[2]
 
 
+def run_phase_namespace(script, *arguments):
+    return subprocess.run(
+        [
+            "/usr/bin/unshare", "--user", "--map-root-user", "--mount",
+            "--pid", "--fork", "--kill-child=KILL", "--mount-proc",
+            "/bin/bash", "--noprofile", "--norc", "-euo", "pipefail",
+            "-c", script, "--", *arguments,
+        ],
+        stdin=subprocess.DEVNULL, capture_output=True, check=False, timeout=15,
+    )
+
+
+def require_phase_namespace():
+    script = r'''
+test "$$" = 1
+test "$(/usr/bin/id -u)" = 0
+test "$(/usr/bin/id -g)" = 0
+test -r /proc/1/stat
+/usr/bin/mount --make-rprivate /
+/usr/bin/mount -t tmpfs -o size=1m,nosuid,nodev phase-preflight /mnt
+/usr/bin/mkdir /mnt/export
+/usr/bin/mount --bind /mnt/export /mnt/export
+/usr/bin/mount -o remount,bind,ro,nosuid,nodev,noexec /mnt/export
+/usr/bin/setpriv --reuid=0 --regid=0 --keep-groups --no-new-privs \
+  --bounding-set=-all --inh-caps=-all --ambient-caps=-all /bin/true
+'''
+    try:
+        completed = run_phase_namespace(script)
+    except (FileNotFoundError, PermissionError) as error:
+        raise unittest.SkipTest(
+            "publisher phase namespace capability unavailable: " + str(error)[:180]
+        ) from error
+    if completed.returncode != 0:
+        raise unittest.SkipTest(
+            "publisher phase namespace capability unavailable: "
+            + publisher._bounded_process_diagnostic(completed, total_limit=180)
+        )
+    if completed.stdout or completed.stderr:
+        raise AssertionError("publisher phase namespace preflight produced unexpected output")
+
+
 class PublisherPhaseTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -306,6 +347,7 @@ class PublisherPhaseRuntimeTests(unittest.TestCase):
     """
 
     def setUp(self):
+        self.namespace_checked = False
         self.directory = ROOT / "build/test-artifacts" / ("publisher-phase-" + uuid.uuid4().hex)
         self.directory.mkdir(parents=True)
         self.addCleanup(shutil.rmtree, self.directory)
@@ -322,6 +364,9 @@ class PublisherPhaseRuntimeTests(unittest.TestCase):
     def run_namespace(self, case, *, candidate_exit=0, descendant=False, detached=False,
                       missing_output=False, export_failure=False, writable_export=False,
                       early_checker=False, background_launch=False):
+        if not self.namespace_checked:
+            require_phase_namespace()
+            self.namespace_checked = True
         directory = self.directory / case
         control = directory / "control"
         home = directory / "home"
@@ -420,19 +465,36 @@ isolated_stage=output-validate
 '''
         script = setup + "\nbuilder_main() {\n" + self.failure + "\ntrap isolated_stage_failure ERR\n"
         script += "exec < /dev/null > /dev/null 2>&1\n" + tail + '\n}\nbuilder_main "$@"\n'
-        completed = subprocess.run(
-            [
-                "/usr/bin/unshare", "--user", "--map-root-user", "--mount",
-                "--pid", "--fork", "--kill-child=KILL", "--mount-proc",
-                "/bin/bash", "--noprofile", "--norc", "-euo", "pipefail",
-                "-c", script, "--", str(directory),
-            ],
-            stdin=subprocess.DEVNULL, capture_output=True, check=False, timeout=15,
-        )
+        completed = run_phase_namespace(script, str(directory))
         self.assertEqual(completed.stdout, b"")
         self.assertEqual(completed.stderr, b"", completed.stderr)
         observation = home / "observation.json"
         return completed.returncode, export, json.loads(observation.read_text()) if observation.exists() else None
+
+    def test_namespace_capability_denial_skips_before_candidate_with_bounded_diagnostic(self):
+        completed = subprocess.CompletedProcess(
+            ["/usr/bin/unshare"], 1, b"",
+            b"unshare: write failed /proc/self/uid_map: Operation not permitted\n" * 40,
+        )
+        with mock.patch(f"{__name__}.run_phase_namespace", return_value=completed) as run:
+            with self.assertRaises(unittest.SkipTest) as context:
+                self.run_namespace("uid-map-denied")
+        self.assertIn("namespace capability unavailable:", str(context.exception))
+        self.assertIn("rc=1", str(context.exception))
+        self.assertIn("Operation not permitted", str(context.exception))
+        self.assertLessEqual(len(str(context.exception)), 240)
+        self.assertEqual(run.call_count, 1)
+        self.assertEqual(list(self.directory.iterdir()), [])
+
+    def test_live_failure_after_successful_namespace_preflight_is_not_skipped(self):
+        with mock.patch(f"{__name__}.run_phase_namespace", side_effect=(
+            subprocess.CompletedProcess(["/usr/bin/unshare"], 0, b"", b""),
+            subprocess.CompletedProcess(["/usr/bin/unshare"], 1, b"", b"runtime setup failed\n"),
+        )) as run:
+            with self.assertRaisesRegex(AssertionError, "runtime setup failed"):
+                self.run_namespace("runtime-failure")
+        self.assertEqual(run.call_count, 2)
+        self.assertTrue(self.namespace_checked)
 
     def test_live_launch_reap_membership_export_and_fixed_failure_substages(self):
         status, export, observed = self.run_namespace("positive")
