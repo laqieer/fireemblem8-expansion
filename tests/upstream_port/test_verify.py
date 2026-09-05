@@ -1230,6 +1230,45 @@ class VerifyCliCwdTests(unittest.TestCase):
         with open(BUILD_WORKFLOW_PATH, "r", encoding="utf-8") as handle:
             original = handle.read()
         verify_mod._parse_workflow_structure_text(original)
+        run_script = patch_workflow_tests.named_step_run_script(
+            original,
+            "Build candidate in isolated namespace and stage public inputs",
+        )
+        checker_pattern = re.compile(
+            re.escape(
+                publisher_shell_contract.PATCH_RELEASE_MEMBERSHIP_CHECKER_INTRODUCER
+            )
+            + r"\n.*?\nPY\n",
+            re.DOTALL,
+        )
+        checker_match = checker_pattern.search(run_script)
+        self.assertIsNotNone(checker_match)
+        checker = checker_match.group(0)
+        without_checker = (
+            run_script[: checker_match.start()]
+            + run_script[checker_match.end() :]
+        )
+        reordered = without_checker.replace(
+            "/usr/bin/python3 -I -S /mnt/control/candidate-launcher.py",
+            checker + "/usr/bin/python3 -I -S /mnt/control/candidate-launcher.py",
+            1,
+        )
+        builder_block = patch_workflow_tests.named_patch_release_step_block(
+            original,
+            "Build candidate in isolated namespace and stage public inputs",
+        )
+        builder_header = (
+            builder_block.split("      run: |\n", 1)[0] + "      run: |\n"
+        )
+        reordered_workflow = original.replace(
+            builder_block,
+            builder_header
+            + "".join(
+                "        " + line
+                for line in reordered.splitlines(keepends=True)
+            ),
+            1,
+        )
         mutations = (
             original.replace(
                 publisher_shell_contract.PATCH_RELEASE_MEMBERSHIP_CHECKER_INTRODUCER,
@@ -1242,6 +1281,7 @@ class VerifyCliCwdTests(unittest.TestCase):
                 "/usr/bin/touch /dev/null",
                 1,
             ),
+            reordered_workflow,
         )
         for changed in mutations:
             with self.subTest(mutation=changed[:180]):

@@ -195,14 +195,16 @@
       "title": "Trusted BPS-only all-locales/all-features release artifact",
       "issue_urls": [
         "https://github.com/laqieer/fireemblem8-expansion/issues/49",
-        "https://github.com/laqieer/fireemblem8-expansion/issues/200"
+        "https://github.com/laqieer/fireemblem8-expansion/issues/200",
+        "https://github.com/laqieer/fireemblem8-expansion/issues/201"
       ],
       "reference": "docs/patch_release.md",
       "status": "current",
       "required_cases": [
         "TC-CI-PATCH-049-001",
         "TC-CI-PATCH-049-002",
-        "TC-WORKFLOW-PUBLISHER-COMMAND-INVENTORY-001"
+        "TC-WORKFLOW-PUBLISHER-COMMAND-INVENTORY-001",
+        "TC-WORKFLOW-PUBLISHER-PHASE-001"
       ]
     },
     {
@@ -1278,6 +1280,50 @@
         },
         {
           "command": "python3 -m unittest tests.upstream_port.test_verify.VerifyGatesMirrorWorkflowTests.test_patch_release_workflow_imports_without_yaml_dependency tests.upstream_port.test_verify.VerifyCliCwdTests.test_patch_release_command_inventory_decisions_are_mirrored -v",
+          "evidence": "tests/upstream_port/test_verify.py"
+        }
+      ]
+    },
+    {
+      "id": "TC-WORKFLOW-PUBLISHER-PHASE-001",
+      "title": "Enforce the trusted publisher phase machine",
+      "feature_id": "patch-release-artifact",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/201"
+      ],
+      "document": "docs/test-cases/patch-release.md",
+      "anchor": "tc-workflow-publisher-phase-001-enforce-the-trusted-publisher-phase-machine",
+      "profiles": [
+        "Supported Linux host workflow profile at the exact candidate commit, stacked directly on issue #200; no ROM, base image, secret, save, emulator, or network"
+      ],
+      "purpose": "Prove one typed deterministic state machine admits only the exact authenticated candidate-launch, successful foreground reap, membership-check, export, cleanup, containment, and final-validation transition sequence.",
+      "prerequisites": "Repository root with Python 3 and issue #200's committed parser, command-signature validator, semantic-event registry, and patch-release workflow; mutation fixtures use only disposable project-local paths.",
+      "actions": "Run the direct phase-machine suite, both mirrored publisher validators, the runtime publisher lifecycle fixtures, issue #200 command-authority tests, upstream topology checks, and documentation validation.",
+      "expected_result": "The production publisher reaches complete only after exact session authentication, synchronous candidate completion with terminal success and reap, one top-level membership check, all registered export-family writes, authenticated supervisor reap, empty process/cgroup/UID containment, export commit, and final metadata validation. Missing, duplicate, early, late, reordered, conditional, skipped, helper, callback, trap, background, list, pipeline, subshell, substitution, wrong-frame, stale-generation, wrong-process/session/result, nonterminal, bypass, and export-family drift variants fail closed.",
+      "negative_control": "The pre-phase contract accepts the unchanged membership checker before candidate launch/completion or after isolated export when the command inventory is refreshed; the phase validator rejects each transition mutation.",
+      "interactions": "Genuine stack child of issue #200 and dependency of the final issue #177/PR #195 fix-forward. It reuses #200's command signatures and semantic events, conflicts with no other feature, and requires every new export command to update both the command authority and phase evidence.",
+      "save_compatibility": "No gameplay, ROM, RAM, save, configuration identity, generated-data, localization, modern target, or archival behavior change.",
+      "cleanup": "The tests remove project-local temporary registries and mutated workflow fixtures; no publisher secret, base image, ROM, save, or emulator state is created.",
+      "limitations": "Host-only workflow capability. Runtime evidence exercises the real process/session/cgroup lifecycle fixtures and exact membership program, but does not publish an artifact.",
+      "automation": [
+        {
+          "command": "python3 -m scripts.workflow_pilot.publisher_phase_machine --check",
+          "evidence": "scripts/workflow_pilot/publisher_phase_machine.py"
+        },
+        {
+          "command": "python3 -m unittest scripts.workflow_pilot.tests.test_publisher_phase_machine -v",
+          "evidence": "scripts/workflow_pilot/tests/test_publisher_phase_machine.py"
+        },
+        {
+          "command": "python3 -m unittest tests.workflows.test_patch_release_workflow -v",
+          "evidence": "tests/workflows/test_patch_release_workflow.py"
+        },
+        {
+          "command": "python3 -m unittest scripts.workflow_pilot.tests.test_publisher_command_signatures -v",
+          "evidence": "scripts/workflow_pilot/tests/test_publisher_command_signatures.py"
+        },
+        {
+          "command": "python3 -m unittest tests.upstream_port.test_verify -v",
           "evidence": "tests/upstream_port/test_verify.py"
         }
       ]

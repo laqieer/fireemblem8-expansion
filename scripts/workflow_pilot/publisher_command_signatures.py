@@ -6,7 +6,7 @@ from __future__ import annotations
 import argparse
 import ast
 from collections import Counter
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 import hashlib
 import importlib.util
 import json
@@ -43,7 +43,7 @@ REGISTRY_PATH = (
 )
 REGISTRY_SCHEMA_VERSION = 1
 REVIEWED_SIGNATURE_REGISTRY_SHA256 = (
-    "385a3c2c2e62fdf01813e07fdcd81038f57307785c280910e279c36c266f167f"
+    "d3d65715f60973d698315c739e6645167b570508bf0885863884dabff9f8c35f"
 )
 BUILDER_STEP_NAME = "Build candidate in isolated namespace and stage public inputs"
 _TOP_LEVEL_HEREDOC_LANGUAGES = {
@@ -120,6 +120,80 @@ _AUTHORITY_MODULE_PATHS = {
         ROOT / "scripts" / "workflow_pilot" / "publisher_command_signatures.py"
     ),
 }
+PHASE_EVENT_PREFIX = "publisher-phase:"
+PHASE_SUPERVISOR_LAUNCH = PHASE_EVENT_PREFIX + "supervisor-launch-started"
+PHASE_SUPERVISOR_AUTHENTICATED = PHASE_EVENT_PREFIX + "supervisor-authenticated"
+PHASE_SUPERVISOR_RUNNING = PHASE_EVENT_PREFIX + "supervisor-running"
+PHASE_CANDIDATE_LAUNCH = PHASE_EVENT_PREFIX + "candidate-launch-started"
+PHASE_CANDIDATE_OUTPUT_WRITE = PHASE_EVENT_PREFIX + "candidate-output-write"
+PHASE_CANDIDATE_COMPLETED = PHASE_EVENT_PREFIX + "candidate-completed"
+PHASE_MEMBERSHIP_COMPLETED = PHASE_EVENT_PREFIX + "membership-check-completed"
+PHASE_ISOLATED_HANDOFF_VALIDATED = (
+    PHASE_EVENT_PREFIX + "isolated-handoff-validated"
+)
+PHASE_HOST_HANDOFF_VALIDATED = PHASE_EVENT_PREFIX + "host-handoff-validated"
+PHASE_EXPORT_STARTED = PHASE_EVENT_PREFIX + "export-started"
+PHASE_EXPORT_WRITE = PHASE_EVENT_PREFIX + "export-write"
+PHASE_EXPORT_SEALED = PHASE_EVENT_PREFIX + "export-sealed"
+PHASE_SUPERVISOR_REAPED = PHASE_EVENT_PREFIX + "supervisor-reaped"
+PHASE_PRE_EXPORT_CONTAINMENT = PHASE_EVENT_PREFIX + "pre-export-containment-empty"
+PHASE_EXPORT_RESET = PHASE_EVENT_PREFIX + "export-reset"
+PHASE_EXPORT_STAGE_READY = PHASE_EVENT_PREFIX + "export-stage-ready"
+PHASE_EXPORT_COMMITTED = PHASE_EVENT_PREFIX + "export-committed"
+PHASE_FINAL_CONTAINMENT = PHASE_EVENT_PREFIX + "final-containment-empty"
+PHASE_FINAL_POST_CHECK = PHASE_EVENT_PREFIX + "final-post-check-completed"
+PHASE_CONTROL_BYPASS = PHASE_EVENT_PREFIX + "control-bypass"
+PHASE_EVENT_NAMES = frozenset(
+    {
+        PHASE_SUPERVISOR_LAUNCH,
+        PHASE_SUPERVISOR_AUTHENTICATED,
+        PHASE_SUPERVISOR_RUNNING,
+        PHASE_CANDIDATE_LAUNCH,
+        PHASE_CANDIDATE_OUTPUT_WRITE,
+        PHASE_CANDIDATE_COMPLETED,
+        PHASE_MEMBERSHIP_COMPLETED,
+        PHASE_ISOLATED_HANDOFF_VALIDATED,
+        PHASE_HOST_HANDOFF_VALIDATED,
+        PHASE_EXPORT_STARTED,
+        PHASE_EXPORT_WRITE,
+        PHASE_EXPORT_SEALED,
+        PHASE_SUPERVISOR_REAPED,
+        PHASE_PRE_EXPORT_CONTAINMENT,
+        PHASE_EXPORT_RESET,
+        PHASE_EXPORT_STAGE_READY,
+        PHASE_EXPORT_COMMITTED,
+        PHASE_FINAL_CONTAINMENT,
+        PHASE_FINAL_POST_CHECK,
+        PHASE_CONTROL_BYPASS,
+    }
+)
+_PHASE_ARTIFACT_PREFIXES = (
+    "$HANDOFF",
+    "/mnt/handoff",
+    "/mnt/export",
+    "$PATCH_INPUT_ROOT",
+    "$PATCH_ARTIFACT_DIR",
+)
+_PHASE_ARTIFACT_WRITERS = frozenset(
+    {
+        "7z",
+        "bzip2",
+        "chown",
+        "cp",
+        "gzip",
+        "install",
+        "ln",
+        "mkdir",
+        "mv",
+        "rename",
+        "rm",
+        "rsync",
+        "tar",
+        "tee",
+        "xz",
+        "zip",
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -560,11 +634,13 @@ def _signature_id(
 
 
 def _shell_signatures(layer: str, script: str) -> tuple[CommandSignature, ...]:
-    return _shell_signatures_in_context(
-        layer,
-        script,
-        initial_owner="<main>",
-        initial_control_context=(),
+    return _annotate_publisher_phase_events(
+        _shell_signatures_in_context(
+            layer,
+            script,
+            initial_owner="<main>",
+            initial_control_context=(),
+        )
     )
 
 
@@ -691,6 +767,432 @@ def _shell_signatures_in_context(
     return tuple(signatures)
 
 
+def _signature_has(
+    signature: CommandSignature,
+    *,
+    executable: str | None = None,
+    argv: tuple[str, ...] | None = None,
+    wrappers: tuple[str, ...] | None = None,
+    context: tuple[str, ...] | None = None,
+) -> bool:
+    return (
+        (executable is None or signature.executable == executable)
+        and (argv is None or signature.argv == argv)
+        and (wrappers is None or signature.wrappers == wrappers)
+        and (context is None or signature.control_context == context)
+    )
+
+
+def _with_phase_event(
+    signatures: list[CommandSignature],
+    index: int,
+    event: str,
+) -> None:
+    signature = signatures[index]
+    events = tuple(dict.fromkeys((*signature.events, event)))
+    base_id = signature.signature_id.split("~phase-", 1)[0]
+    phase_events = tuple(
+        value for value in events if value.startswith(PHASE_EVENT_PREFIX)
+    )
+    phase_suffix = _sha256_text("\0".join(phase_events))[:12]
+    signatures[index] = replace(
+        signature,
+        signature_id=f"{base_id}~phase-{phase_suffix}",
+        events=events,
+    )
+
+
+def _mark_terminal_of_sequence(
+    signatures: list[CommandSignature],
+    predicates: tuple[dict[str, object], ...],
+    event: str,
+) -> None:
+    matches = []
+    for start in range(len(signatures) - len(predicates) + 1):
+        if all(
+            _signature_has(signatures[start + offset], **predicate)
+            for offset, predicate in enumerate(predicates)
+        ):
+            matches.append(start + len(predicates) - 1)
+    if len(matches) == 1:
+        _with_phase_event(signatures, matches[0], event)
+
+
+def _artifact_target(value: str) -> bool:
+    return any(value.startswith(prefix + "/") for prefix in _PHASE_ARTIFACT_PREFIXES)
+
+
+def _annotate_publisher_phase_events(
+    source: tuple[CommandSignature, ...],
+) -> tuple[CommandSignature, ...]:
+    signatures = list(source)
+    for index, signature in enumerate(signatures):
+        basename = posixpath.basename(signature.executable.removeprefix("helper:"))
+        resources = _resource_tokens(
+            (
+                *signature.argv,
+                *(target for _operator, target in signature.redirections),
+                *signature.writes,
+            )
+        )
+        artifact_write = (
+            basename in _PHASE_ARTIFACT_WRITERS
+            and any(_artifact_target(resource) for resource in resources)
+        )
+        if artifact_write:
+            event = (
+                PHASE_CANDIDATE_OUTPUT_WRITE
+                if signature.layer == "candidate-build"
+                else PHASE_EXPORT_WRITE
+            )
+            _with_phase_event(signatures, index, event)
+        if _signature_has(
+            signature,
+            executable="/usr/bin/python3",
+            argv=(
+                "-I",
+                "-S",
+                "$BUILDER_ROOT/control/supervisor-launcher.py",
+                "$$",
+                "--",
+                "/usr/bin/timeout",
+                "--signal=TERM",
+                "--kill-after=30s",
+                "55m",
+                "/usr/bin/sudo",
+                "/usr/bin/unshare",
+                "--fork",
+                "--kill-child=KILL",
+                "--mount",
+                "--pid",
+                "--mount-proc",
+                "--net",
+                "--ipc",
+                "--uts",
+                "/bin/bash",
+                "-c",
+                "$builder_isolation_script",
+                "builder-isolation",
+                "$builder_cgroup",
+                "$builder_uid",
+                "$builder_gid",
+                "$BUILDER_ROOT",
+                "$RUNNER_TEMP",
+                "$BUILDER_ROOT/control/candidate-build.sh",
+                "$BUILDER_ROOT/control/candidate-launcher.py",
+                "$host_uid",
+                "$host_gid",
+            ),
+            context=(),
+        ):
+            _with_phase_event(signatures, index, PHASE_SUPERVISOR_LAUNCH)
+        elif _signature_has(
+            signature,
+            executable="@shell-state",
+            wrappers=("builder_session_authenticated=1",),
+            context=("loop", "if", "if"),
+        ):
+            _with_phase_event(signatures, index, PHASE_SUPERVISOR_AUTHENTICATED)
+        elif _signature_has(
+            signature,
+            executable="@shell-state",
+            wrappers=("builder_launch_detail=session-started",),
+            context=("loop", "if"),
+        ):
+            _with_phase_event(signatures, index, PHASE_SUPERVISOR_RUNNING)
+        elif _signature_has(
+            signature,
+            executable="/usr/bin/python3",
+            argv=(
+                "-I",
+                "-S",
+                "/mnt/control/candidate-launcher.py",
+                "$builder_uid",
+                "$builder_gid",
+                "/mnt/control/candidate-build.sh",
+                "$host_runner_temp",
+            ),
+            context=(),
+        ):
+            _with_phase_event(signatures, index, PHASE_CANDIDATE_LAUNCH)
+        elif _signature_has(
+            signature,
+            executable="/usr/bin/python3",
+            argv=("-I", "-S", "-", "$$"),
+            context=(),
+        ) and signature.stdin == "heredoc:PY":
+            _with_phase_event(signatures, index, PHASE_MEMBERSHIP_COMPLETED)
+        elif _signature_has(
+            signature,
+            executable="/usr/bin/mount",
+            argv=(
+                "-o",
+                "remount,bind,rw,nosuid,nodev,noexec",
+                "/mnt/export",
+            ),
+            context=(),
+        ):
+            _with_phase_event(signatures, index, PHASE_EXPORT_STARTED)
+        elif _signature_has(
+            signature,
+            executable="/usr/bin/install",
+            argv=(
+                "-m",
+                "0400",
+                "$metadata_source",
+                "$PATCH_INPUT_ROOT/metadata.json",
+            ),
+            context=(),
+        ):
+            _with_phase_event(signatures, index, PHASE_EXPORT_COMMITTED)
+        elif _signature_has(
+            signature,
+            executable="/bin/rm",
+            argv=("-rf", "--", "$PATCH_INPUT_ROOT"),
+            context=(),
+        ):
+            _with_phase_event(signatures, index, PHASE_EXPORT_RESET)
+        elif _signature_has(
+            signature,
+            executable="/usr/bin/install",
+            argv=("-d", "-m", "0700", "$PATCH_INPUT_ROOT"),
+            context=(),
+        ):
+            _with_phase_event(signatures, index, PHASE_EXPORT_STAGE_READY)
+        elif (
+            signature.layer == "publisher-host"
+            and _signature_has(
+                signature,
+                executable="/usr/bin/python3",
+                argv=(
+                    "-I",
+                    "-S",
+                    "-c",
+                    (
+                        "import json,sys; value=json.load(open(sys.argv[1], "
+                        'encoding="utf-8")); assert isinstance(value, dict); '
+                        'assert value.get("build_commit") == sys.argv[2]'
+                    ),
+                    "$PATCH_INPUT_ROOT/metadata.json",
+                    "$PATCH_COMMIT",
+                ),
+                context=(),
+            )
+        ):
+            _with_phase_event(signatures, index, PHASE_FINAL_POST_CHECK)
+
+    _mark_terminal_of_sequence(
+        signatures,
+        (
+            {
+                "executable": "/usr/bin/python3",
+                "argv": (
+                    "-I",
+                    "-S",
+                    "/mnt/control/candidate-launcher.py",
+                    "$builder_uid",
+                    "$builder_gid",
+                    "/mnt/control/candidate-build.sh",
+                    "$host_runner_temp",
+                ),
+                "context": (),
+            },
+            {
+                "executable": "@shell-state",
+                "wrappers": ("candidate_status=$?",),
+                "context": (),
+            },
+            {"executable": "set", "argv": ("-e",), "context": ()},
+            {
+                "executable": "@expression",
+                "argv": ("[", "$candidate_status", "-ne", "0", "]"),
+                "context": (),
+            },
+            {"executable": "@shell-state", "context": ("if",)},
+            {
+                "executable": "exit",
+                "argv": ("$candidate_status",),
+                "context": ("if",),
+            },
+            {"executable": "@shell-state", "context": ("if",)},
+        ),
+        PHASE_CANDIDATE_COMPLETED,
+    )
+    _mark_terminal_of_sequence(
+        signatures,
+        (
+            {
+                "executable": "wait",
+                "argv": ("$builder_supervisor_pid",),
+                "context": (),
+            },
+            {
+                "executable": "@shell-state",
+                "wrappers": ("builder_status=$?",),
+                "context": (),
+            },
+            {"executable": "set", "argv": ("-e",), "context": ()},
+            {
+                "executable": "@shell-state",
+                "wrappers": ("builder_supervisor_pid=",),
+                "context": (),
+            },
+            {
+                "executable": "@shell-state",
+                "wrappers": ("builder_supervisor_wait_pid=",),
+                "context": (),
+            },
+            {
+                "executable": "@expression",
+                "argv": ("[", "$builder_status", "-ne", "0", "]"),
+                "context": (),
+            },
+            {"executable": "@shell-state", "context": ("if",)},
+            {
+                "executable": "printf",
+                "context": ("if",),
+            },
+            {
+                "executable": "exit",
+                "argv": ("$builder_status",),
+                "context": ("if",),
+            },
+            {"executable": "@shell-state", "context": ("if",)},
+        ),
+        PHASE_SUPERVISOR_REAPED,
+    )
+    _mark_terminal_of_sequence(
+        signatures,
+        (
+            {
+                "executable": "builder_group_is_empty",
+                "argv": ("$builder_session_id",),
+                "context": (),
+            },
+            {"executable": "builder_cgroup_is_empty", "context": ()},
+            {
+                "executable": "builder_uid_is_empty",
+                "argv": ("$builder_uid",),
+                "context": (),
+            },
+            {"executable": "remove_builder_cgroup", "context": ()},
+            {
+                "executable": "test",
+                "argv": ("!", "-e", "$builder_cgroup"),
+                "context": (),
+            },
+        ),
+        PHASE_PRE_EXPORT_CONTAINMENT,
+    )
+    _mark_terminal_of_sequence(
+        signatures,
+        (
+            {"executable": "terminate_builder_processes", "context": ()},
+            {"executable": "remove_builder_cgroup", "context": ()},
+            {"executable": "remove_builder_state", "context": ()},
+            {
+                "executable": "trap",
+                "argv": ("-", "EXIT", "INT", "TERM"),
+                "context": (),
+            },
+            {
+                "executable": "builder_group_is_empty",
+                "argv": ("$builder_session_id",),
+                "context": (),
+            },
+            {
+                "executable": "test",
+                "argv": ("!", "-e", "$builder_cgroup"),
+                "context": (),
+            },
+            {
+                "executable": "builder_uid_is_empty",
+                "argv": ("$builder_uid",),
+                "context": (),
+            },
+            {
+                "executable": "builder_passwd_entry_absent",
+                "argv": ("$builder_user",),
+                "context": (),
+            },
+            {
+                "executable": "test",
+                "argv": ("!", "-e", "$BUILDER_ROOT"),
+                "context": (),
+            },
+            {
+                "executable": "test",
+                "argv": ("!", "-e", "$PATCH_WHEELHOUSE"),
+                "context": (),
+            },
+        ),
+        PHASE_FINAL_CONTAINMENT,
+    )
+    metadata_size_sequences = []
+    predicates = (
+        {
+            "executable": "test",
+            "argv": ("$metadata_size", "-gt", "0"),
+            "context": (),
+        },
+        {
+            "executable": "test",
+            "argv": ("$metadata_size", "-le", "1048576"),
+            "context": (),
+        },
+    )
+    for start in range(len(signatures) - len(predicates) + 1):
+        if all(
+            _signature_has(signatures[start + offset], **predicate)
+            for offset, predicate in enumerate(predicates)
+        ):
+            metadata_size_sequences.append(start + len(predicates) - 1)
+    for index in metadata_size_sequences:
+        event = (
+            PHASE_ISOLATED_HANDOFF_VALIDATED
+            if signatures[index].layer == "builder-isolation"
+            else PHASE_HOST_HANDOFF_VALIDATED
+        )
+        _with_phase_event(signatures, index, event)
+    export_start = [
+        index
+        for index, signature in enumerate(signatures)
+        if PHASE_EXPORT_STARTED in signature.events
+    ]
+    for start in export_start:
+        for index in range(start + 1, len(signatures)):
+            signature = signatures[index]
+            if (
+                signature.executable == "/usr/bin/mount"
+                and signature.argv
+                == (
+                    "-o",
+                    "remount,bind,ro,nosuid,nodev,noexec",
+                    "/mnt/export",
+                )
+                and signature.control_context == ()
+            ):
+                _with_phase_event(signatures, index, PHASE_EXPORT_SEALED)
+                break
+    candidate_launches = [
+        index
+        for index, signature in enumerate(signatures)
+        if PHASE_CANDIDATE_LAUNCH in signature.events
+    ]
+    for start in candidate_launches:
+        for index in range(start + 1, len(signatures)):
+            signature = signatures[index]
+            if signature.layer != signatures[start].layer:
+                break
+            if (
+                signature.owner == "builder_main"
+                and signature.executable
+                in {"break", "continue", "return", "exit", "exec"}
+            ):
+                _with_phase_event(signatures, index, PHASE_CONTROL_BYPASS)
+    return tuple(signatures)
+
+
 def _python_accesses(tree: ast.AST) -> tuple[tuple[str, str], ...]:
     accesses: list[tuple[str, str]] = []
     constants = {
@@ -791,7 +1293,7 @@ def _python_signature(
                     mode = keyword.value.value
             if isinstance(mode, str) and any(marker in mode for marker in "wax+"):
                 writes.append(path.value)
-    events = ["python-invocation", f"python-{source_kind}"]
+    events = [*shell_signature.events, "python-invocation", f"python-{source_kind}"]
     if any(path == "/mnt/supervisor/cgroup/cgroup.procs" for _mode, path in accesses):
         events.append("cgroup-membership-check")
     command = f"python:{shell_signature.signature_id}"
@@ -1133,6 +1635,22 @@ def _write_registry(path: Path) -> None:
     path.write_bytes(render_registry(registry_document(signatures)))
 
 
+def _assert_phase_machine(signatures: tuple[CommandSignature, ...]) -> None:
+    phase_path = Path(__file__).resolve().parent / "publisher_phase_machine.py"
+    spec = importlib.util.spec_from_file_location(
+        "_publisher_phase_machine_check",
+        phase_path,
+    )
+    if spec is None or spec.loader is None:
+        raise ImportError("publisher phase machine is unavailable")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    errors = module.phase_machine_errors(signatures)
+    if errors:
+        raise ValueError("; ".join(errors))
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--write-registry", action="store_true")
@@ -1145,7 +1663,9 @@ def main(argv: list[str] | None = None) -> int:
             _write_registry(REGISTRY_PATH)
         else:
             workflow = WORKFLOW_PATH.read_text(encoding="utf-8")
-            assert_command_inventory(publisher_builder_run_script(workflow))
+            run_script = publisher_builder_run_script(workflow)
+            assert_command_inventory(run_script)
+            _assert_phase_machine(build_command_signatures(run_script))
     except (OSError, ValueError) as error:
         print(f"publisher-command-signatures: {error}", file=sys.stderr)
         return 1

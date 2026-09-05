@@ -417,5 +417,110 @@ are unchanged.
 
 Temporary registry and command mutations are removed by the tests. This is a
 host-only command/access identity contract, so no ARM runtime scenario is
-applicable. Issue #201 owns candidate-launch/checker/export phase ordering; this
-case intentionally emits but does not order those future semantic events.
+applicable. Issue #201 consumes these semantic events without adding another
+command parser or allowlist.
+
+## TC-WORKFLOW-PUBLISHER-PHASE-001: Enforce the trusted publisher phase machine
+
+- **Feature / originating issue:** `patch-release-artifact` /
+  [issue #201](https://github.com/laqieer/fireemblem8-expansion/issues/201).
+- **Supported configuration or artifact:** supported Linux publisher host
+  profile at the exact candidate commit, stacked directly on issue #200; no
+  ROM, base image, secret, save, emulator, or network access is required.
+- **Prerequisites and clean starting state:** start at the repository root
+  with Python 3 and issue #200's committed parser, typed command registry,
+  semantic events, and patch-release workflow unchanged. Mutation fixtures use
+  disposable project-local paths.
+
+### Actions
+
+1. Validate the exact production command inventory and phase transition:
+
+   ```bash
+   python3 -m scripts.workflow_pilot.publisher_command_signatures --check
+   python3 -m scripts.workflow_pilot.publisher_phase_machine --check
+   ```
+
+2. Run the compact direct transition and command-authority suites:
+
+   ```bash
+   python3 -m unittest \
+     scripts.workflow_pilot.tests.test_publisher_phase_machine \
+     scripts.workflow_pilot.tests.test_publisher_command_signatures -v
+   ```
+
+3. Run the mirrored workflow validator, runtime process/session/cgroup
+   lifecycle fixtures, upstream topology mirror, and documentation checks:
+
+   ```bash
+   python3 -m unittest tests.workflows.test_patch_release_workflow -v
+   python3 -m unittest tests.upstream_port.test_verify -v
+   python3 -m unittest scripts.docs_check_tests.test_check_docs -v
+   python3 scripts/check_docs.py --check --check-examples
+   ```
+
+### Expected result
+
+The production event stream reaches `complete` only through
+`candidate-running`, `candidate-reaped`, `membership-verified`, `exporting`,
+and `export-committed`. Candidate completion carries the exact supervised
+process/session identity, successful isolated substage, terminal status,
+foreground reap, and closed top-level builder frame. The one fixed
+membership-checker program completes exactly once in that same trusted frame
+after candidate completion and before the first writable export boundary.
+
+The isolated target/metadata copies and ownership change, authenticated
+supervisor reap, empty process-group/cgroup/UID checks, host handoff
+validation, destination reset and creation, two host staging writes, final
+cleanup, and commit-metadata validation are all explicit semantic events.
+There is no successful terminal state before final containment is empty and
+the final metadata check completes. The command authority and phase machine
+agree on every accepted or rejected fixture.
+
+Missing, duplicate, early, late, reordered, conditional, skipped,
+helper/callback/trap-mediated, background, list, pipeline, subshell,
+substitution, wrong-frame, stale-generation, wrong-process/session/result,
+nonterminal, and `break`/`continue`/`return`/`exit`/`exec` bypass variants fail.
+Adding, deleting, or drifting an artifact writer, rename, move, copy, archive,
+handoff, or publication path fails until both issue #200's signature/event
+authority and this transition evidence are updated.
+
+### Negative control
+
+With only the issue #200 counted inventory refreshed, moving the unchanged
+membership checker before candidate launch, before completion, after export
+start, or after export sealing preserves the authorized command set. The
+phase machine rejects every such stream, along with duplicate, conditional,
+helper, asynchronous, nested, forged-completion, export-before-checker, and
+omitted-post-check fixtures. The unchanged production stream passes, so the
+negative matrix is not success-shaped.
+
+### Interactions and save compatibility
+
+This is a genuine stack child of issue #200 and a prerequisite for the final
+issue #177 / PR #195 fix-forward. It uses issue #200's signatures and semantic
+events as the sole command authority. It has no other dependencies or feature
+conflicts and changes no trigger, job, required context, artifact format,
+gameplay, target, save field/layout/migration/epoch, configuration identity,
+generated data, localization, ROM/RAM budget, modern profile, or archival
+behavior.
+
+### Automation
+
+- `python3 -m scripts.workflow_pilot.publisher_phase_machine --check` validates
+  the exact production registry and transition stream.
+- `python3 -m unittest scripts.workflow_pilot.tests.test_publisher_phase_machine -v`
+  covers direct state transitions, identity/frame/generation/result binding,
+  negative ordering and bypass matrices, formatting/order invariance, and
+  export-family completeness after a refreshed command registry.
+- `python3 -m unittest tests.workflows.test_patch_release_workflow -v` mirrors
+  the phase decision and exercises the real membership checker plus
+  authenticated supervisor, parent-death, orphan, and cgroup cleanup fixtures.
+- `python3 -m unittest scripts.workflow_pilot.tests.test_publisher_command_signatures tests.upstream_port.test_verify -v`
+  preserves issue #200 authority and the independent workflow topology parser.
+
+### Cleanup and limitations
+
+The suites remove their project-local temporary registries and mutations.
+This is a host-only workflow capability; no ARM runtime or manual visual,
+audio, or UX criterion applies, and no artifact is published by these tests.

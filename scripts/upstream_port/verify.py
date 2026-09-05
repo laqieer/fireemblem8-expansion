@@ -28,6 +28,7 @@ from typing import List
 from scripts.workflow_pilot import (
     metadata_adapter_contract,
     publisher_command_signatures,
+    publisher_phase_machine,
     publisher_shell_contract,
     summary_continuity_contract,
 )
@@ -1956,6 +1957,9 @@ def _parse_step(block, job_name, index):
                     label=step_label,
                 )
                 publisher_command_signatures.assert_command_inventory(
+                    publisher_run_script
+                )
+                publisher_phase_machine.assert_publisher_phase(
                     publisher_run_script
                 )
             except ValueError as error:

@@ -1140,6 +1140,7 @@ class TesterCaseRegistryTests(unittest.TestCase):
             "TC-CI-PATCH-049-001",
             "TC-CI-PATCH-049-002",
             "TC-WORKFLOW-PUBLISHER-COMMAND-INVENTORY-001",
+            "TC-WORKFLOW-PUBLISHER-PHASE-001",
         ]
         self.assertEqual(feature["required_cases"], case_ids)
         cases = {entry["id"]: entry for entry in registry["cases"]}

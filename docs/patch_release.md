@@ -165,18 +165,34 @@ inventory, parser, helpers, and Python programs to the same exact validation
 tree. Editing only the workflow, only the registry, or only a signature fails
 completeness.
 
-This capability depends on the existing workflow-pilot parser and exact-tree
-publisher validators. It conflicts with PR #195 until that branch is rebuilt
-on this authority and is a prerequisite for issue #201 and the final issue
-#177 fix. Issue #201's candidate-launch/checker/export ordering and phase
-machine are explicit non-goals here; this registry emits typed events for that
-future consumer but does not enforce their ordering.
+This command authority is the only parser and allowlist used by the typed
+publisher phase machine in
+[`publisher_phase_machine.py`](../scripts/workflow_pilot/publisher_phase_machine.py).
+The phase machine is the issue #201 child of issue #200 and the prerequisite
+for the final issue #177 / PR #195 fix-forward. It consumes the registry's
+semantic events and accepts only the reviewed transition from authenticated
+supervisor launch through synchronous candidate completion, the single
+membership check, isolated export, authenticated host reap, empty containment,
+host staging, export commit, and final metadata validation.
 
-The host lane runs the registry check from its verified checkout with Python
-isolated mode before any candidate test suite can mutate the worktree. The
-validator also rejects noncanonical parser, validator, or registry paths, so a
-`PYTHONPATH`, import, symlink, or alternate-registry substitution cannot become
-the reviewed authority.
+The transition contract binds each event to its semantic command signature,
+generation, process/session identity, owner, and control frame. Conditional,
+helper, callback, trap, background, list, pipeline, subshell, substitution,
+duplicate, stale, skipped, reordered, nonterminal, or wrong-identity events
+cannot reach the terminal state. A semantic control-transfer digest also
+covers every reviewed `break`, `continue`, `return`, `exit`, `exec`, and
+`trap`, independent of formatting or unrelated command order. Candidate output
+writes are confined to the reviewed handoff pair; every trusted export writer
+is an explicit export-family event between export start and commit. Adding a
+writer, rename, move, copy, archive, handoff, or publication command therefore
+requires both an issue #200 signature/event update and corresponding issue
+#201 phase evidence. Updating only one side fails closed.
+
+The host lane runs the registry check, which also invokes the phase check, from
+its verified checkout with Python isolated mode before any candidate test
+suite can mutate the worktree. The validators also reject noncanonical parser,
+validator, or registry paths, so a `PYTHONPATH`, import, symlink, or
+alternate-registry substitution cannot become the reviewed authority.
 
 Before candidate code starts, its PID-1 wrapper redirects inherited standard
 input/output/error permanently to private `/dev/null`. A trusted isolated

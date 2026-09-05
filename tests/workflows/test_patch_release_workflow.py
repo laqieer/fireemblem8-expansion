@@ -24,7 +24,11 @@ from contextlib import redirect_stderr
 from pathlib import Path
 from unittest import mock
 
-from scripts.workflow_pilot import publisher_command_signatures, publisher_shell_contract
+from scripts.workflow_pilot import (
+    publisher_command_signatures,
+    publisher_phase_machine,
+    publisher_shell_contract,
+)
 from scripts.modernize import patch_release
 
 
@@ -1481,6 +1485,7 @@ def publisher_boundary_errors(workflow: str) -> list[str]:
             label="publisher builder isolation shell",
         )
         publisher_command_signatures.assert_command_inventory(run_script)
+        publisher_phase_machine.assert_publisher_phase(run_script)
     except (AssertionError, ValueError):
         errors.append("publisher builder isolation shell differs")
     if workflow_has_supervisor_parent_readonly_remount(workflow):
@@ -4182,6 +4187,42 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
         self.assertTrue(
             publisher_command_signatures.command_inventory_errors(mutated)
         )
+
+    def test_publisher_phase_machine_is_mirrored_by_workflow_validator(self):
+        run_script = named_step_run_script(
+            self.text,
+            "Build candidate in isolated namespace and stage public inputs",
+        )
+        self.assertEqual(
+            publisher_phase_machine.publisher_phase_errors(run_script),
+            (),
+        )
+        checker_pattern = re.compile(
+            re.escape(
+                publisher_shell_contract.PATCH_RELEASE_MEMBERSHIP_CHECKER_INTRODUCER
+            )
+            + r"\n.*?\nPY\n",
+            re.DOTALL,
+        )
+        match = checker_pattern.search(run_script)
+        self.assertIsNotNone(match)
+        checker = match.group(0)
+        without_checker = run_script[: match.start()] + run_script[match.end() :]
+        launcher = "/usr/bin/python3 -I -S /mnt/control/candidate-launcher.py"
+        reordered = without_checker.replace(launcher, checker + launcher, 1)
+        block = named_patch_release_step_block(
+            self.text,
+            "Build candidate in isolated namespace and stage public inputs",
+        )
+        header = block.split("      run: |\n", 1)[0] + "      run: |\n"
+        rendered = "".join(
+            "        " + line for line in reordered.splitlines(keepends=True)
+        )
+        mutated_workflow = self.text.replace(block, header + rendered, 1)
+        self.assertTrue(
+            publisher_phase_machine.publisher_phase_errors(reordered)
+        )
+        self.assertTrue(publisher_boundary_errors(mutated_workflow))
 
     def test_reference_literal_run_parser_rejects_complex_yaml_styles(self):
         step_block = named_patch_release_step_block(
