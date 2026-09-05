@@ -3,7 +3,11 @@
 import base64
 import copy
 import hashlib
+import importlib.util
+import marshal
 import os
+import shutil
+import struct
 import subprocess
 import uuid
 from datetime import timedelta
@@ -32,6 +36,34 @@ def command(arguments, cwd, data=None, environment=None):
         arguments, cwd=cwd, env=environment or clean_environment(cwd),
         input=data, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True, timeout=15,
     ).stdout
+
+
+def installed_copy(root):
+    module_root = root / "scripts" / "workflow_pilot"
+    module_root.mkdir(mode=0o755, parents=True)
+    for directory in (root, root / "scripts", module_root):
+        directory.chmod(0o755)
+    for name in broker.INSTALLED_MODULES:
+        destination = module_root / name
+        shutil.copyfile(Path(broker.__file__).parent / name, destination)
+        destination.chmod(0o644)
+    return module_root / "git_broker.py"
+
+
+def poison_bytecode(entry, marker, name="signed_records.py"):
+    source = entry.with_name(name)
+    cache = Path(importlib.util.cache_from_source(str(source)))
+    cache.parent.mkdir(mode=0o777, exist_ok=True)
+    payload = source.read_bytes() + (
+        f"\nfrom pathlib import Path\nPath({str(marker)!r}).write_text('unchecked cache executed')\n"
+    ).encode()
+    # PEP 552 unchecked-hash caches are consumed even by python -B.
+    cache.write_bytes(
+        importlib.util.MAGIC_NUMBER + struct.pack("<I", 1) + b"\0" * 8
+        + marshal.dumps(compile(payload, str(source), "exec", dont_inherit=True))
+    )
+    cache.chmod(0o666)
+    return cache
 
 
 class Keys:
@@ -145,7 +177,7 @@ class Fixture:
         value = {
             "schema_version": 1, "role": kind, "policy": copy.deepcopy(self.policy.__dict__),
             "broker_uid": 65534, "coordinator_uid": 65532, "candidate_uids": [65533],
-            "socket": str(self.root / "broker.sock"),
+            "socket": str(self.root / "broker.sock"), "socket_gid": 65532,
             "certificate": str(self.keys.root / (kind + ".crt")),
             "private_key": str(self.keys.root / (kind + ".key")),
             "ca_certificate": str(self.keys.root / "ca.crt"),

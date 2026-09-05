@@ -7,6 +7,7 @@ Wants=network-online.target
 Type=simple
 User=fe8-git-broker
 Group=fe8-git-broker
+SupplementaryGroups=fe8-git-coordinator
 UMask=0077
 StateDirectory=workflow-pilot-broker-%i
 StateDirectoryMode=0700

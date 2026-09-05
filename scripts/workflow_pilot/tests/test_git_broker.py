@@ -1,17 +1,26 @@
 import base64
+import configparser
 import copy
 import hashlib
+import importlib
+import io
 import json
 import os
+import shlex
 import shutil
 import signal
 import socket
+import sqlite3
 import ssl
+import stat
 import struct
+import subprocess
+import sys
 import threading
 import time
 import unittest
 import zlib
+from contextlib import closing, contextmanager
 from datetime import timedelta
 from pathlib import Path
 from types import SimpleNamespace
@@ -26,8 +35,208 @@ from scripts.workflow_pilot.signed_records import (
     RecordError, canonical_json, format_utc, parse_utc, signed_payload, strict_json, utc_now,
     verify_signature,
 )
-from scripts.workflow_pilot.tests.broker_test_support import Fixture, Keys, artifact_directory
+from scripts.workflow_pilot.tests.broker_test_support import (
+    Fixture, Keys, artifact_directory, installed_copy, poison_bytecode,
+)
 from scripts.workflow_pilot.tests import protected_broker_fixture as protected
+
+
+class BrokerBootstrapTests(unittest.TestCase):
+    def setUp(self):
+        self.root = artifact_directory("broker-loader")
+        self.entry = installed_copy(self.root / "installed")
+        self.marker = self.root / "cache-executed"
+
+    def tearDown(self):
+        shutil.rmtree(self.root)
+
+    @contextmanager
+    def synthetic_root_ownership(self):
+        lstat, fstat = Path.lstat, os.fstat
+
+        def owned(metadata):
+            values = list(metadata)
+            values[4] = 0
+            return os.stat_result(values)
+
+        # Only ownership is simulated. Real modes, links, types, opened bytes
+        # and loader behavior are tested; this is not protected-deployment proof.
+        with mock.patch.object(Path, "lstat", lambda path: owned(lstat(path))), mock.patch.object(
+            broker.os, "fstat", side_effect=lambda fd: owned(fstat(fd)),
+        ):
+            yield
+
+    def test_unprotected_bootstrap_rejects_before_any_local_source_or_cache_executes(self):
+        poison_bytecode(self.entry, self.marker)
+        control = subprocess.run([
+            "/usr/bin/python3", "-I", "-B", "-c",
+            f"import sys;sys.path.insert(0,{str(self.entry.parents[2])!r});"
+            "from scripts.workflow_pilot import signed_records",
+        ], cwd=self.root, capture_output=True, timeout=5, check=True)
+        self.assertEqual(control.stdout, b"")
+        self.assertTrue(self.marker.exists(), "-B unexpectedly prevented the negative control")
+        self.marker.unlink()
+        self.entry.with_name("git_broker_store.py").chmod(0o666)
+        completed = subprocess.run(
+            ["/usr/bin/python3", "-I", "-B", str(self.entry), "--help"],
+            cwd=self.root, capture_output=True, timeout=5,
+        )
+        self.assertFalse(self.marker.exists(), "local bytecode ran before source preflight")
+        self.assertEqual(completed.returncode, 2)
+
+    def test_every_source_is_checked_before_package_code_executes(self):
+        initializer = self.entry.with_name("__init__.py")
+        initializer.write_text(
+            f"from pathlib import Path\nPath({str(self.marker)!r}).write_text('source executed')\n"
+        )
+        source = self.entry.with_name("git_broker_store.py")
+        original = source.read_bytes()
+        with self.synthetic_root_ownership():
+            for defect in ("writable", "symlink", "hardlink", "oversized", "directory"):
+                with self.subTest(defect=defect):
+                    if defect == "writable":
+                        source.chmod(0o666)
+                    elif defect == "symlink":
+                        source.unlink()
+                        source.symlink_to(initializer)
+                    elif defect == "hardlink":
+                        source.unlink()
+                        os.link(initializer, source)
+                    elif defect == "oversized":
+                        source.write_bytes(b" " * (1024 * 1024 + 1))
+                    else:
+                        source.unlink()
+                        source.mkdir()
+                    try:
+                        with self.assertRaises((OSError, ValueError)):
+                            with broker._source_only_broker(self.entry):
+                                self.fail("unprotected source reached local import")
+                        self.assertFalse(self.marker.exists())
+                    finally:
+                        if source.is_dir():
+                            source.rmdir()
+                        else:
+                            source.unlink()
+                        source.write_bytes(original)
+                        source.chmod(0o644)
+            self.entry.parent.chmod(0o777)
+            try:
+                with self.assertRaises(ValueError):
+                    broker._capture_installed_sources(self.entry)
+            finally:
+                self.entry.parent.chmod(0o755)
+
+    def test_source_only_loader_ignores_all_caches_and_never_reopens_captured_paths(self):
+        for name in broker.INSTALLED_MODULES:
+            poison_bytecode(self.entry, self.marker, name)
+        with self.synthetic_root_ownership():
+            captured = broker._capture_installed_sources(self.entry)
+        self.entry.with_name("signed_records.py").write_text("raise RuntimeError('path reopened')\n")
+        self.entry.with_name("uncaptured.py").write_text("raise RuntimeError('import fallback')\n")
+        (self.entry.parent.parent / "__init__.py").write_text("raise RuntimeError('package fallback')\n")
+        previous = {name: module for name, module in sys.modules.items() if name.startswith("scripts.")}
+        with mock.patch.object(broker, "_capture_installed_sources", return_value=captured) as capture, \
+             mock.patch.object(broker.os, "open", side_effect=AssertionError("source pathname reopened")), \
+             mock.patch.object(Path, "read_bytes", side_effect=AssertionError("source pathname reopened")):
+            with broker._source_only_broker(self.entry) as installed:
+                self.assertIsNot(installed, broker)
+                records = importlib.import_module("scripts.workflow_pilot.signed_records")
+                self.assertIs(installed.RecordError, records.RecordError)
+                self.assertEqual(records.parse_utc("2026-09-05T23:00:00Z").hour, 23)
+                with self.assertRaises(records.RecordError):
+                    records.parse_utc("2026-09-05T24:00:00Z")
+                with self.assertRaises(ModuleNotFoundError):
+                    importlib.import_module("scripts.workflow_pilot.uncaptured")
+                self.assertEqual(sys.modules["scripts"].__path__, [])
+                self.assertEqual(sys.modules["scripts.workflow_pilot"].__path__, [])
+        capture.assert_called_once_with(self.entry)
+        self.assertFalse(self.marker.exists())
+        for name, module in previous.items():
+            self.assertIs(sys.modules[name], module)
+
+    def test_deployed_unit_keeps_private_state_explicit_socket_group_and_failure_statuses(self):
+        unit = configparser.ConfigParser(interpolation=None)
+        unit.optionxform = str
+        unit.read(Path(broker.__file__).parent / "deployment" / "workflow-pilot-git-broker@.service")
+        service = unit["Service"]
+        self.assertEqual(service["User"], "fe8-git-broker")
+        self.assertEqual(service["Group"], "fe8-git-broker")
+        self.assertEqual(shlex.split(service["SupplementaryGroups"]), ["fe8-git-coordinator"])
+        self.assertEqual(int(service["UMask"], 8), 0o077)
+        self.assertEqual(int(service["StateDirectoryMode"], 8), 0o700)
+        self.assertEqual(int(service["RuntimeDirectoryMode"], 8) & 0o022, 0)
+        self.assertEqual(service["KillMode"], "control-group")
+        self.assertEqual(service["SendSIGKILL"], "yes")
+        self.assertEqual(service["TimeoutStopSec"], "2")
+        self.assertEqual(service["NoNewPrivileges"], "yes")
+        self.assertNotIn("2", shlex.split(service.get("SuccessExitStatus", "")))
+        for directive, command in (("ExecStartPre", "preflight-server"), ("ExecStart", "serve")):
+            arguments = shlex.split(service[directive])
+            self.assertEqual(arguments[:2], ["/usr/bin/python3", "-I"])
+            self.assertEqual(Path(arguments[2]).name, "git_broker.py")
+            self.assertEqual(arguments[3:], [command, "--installation", "/etc/fe8-git-broker/%i.json"])
+
+
+class BrokerSocketPermissionTests(unittest.TestCase):
+    def setUp(self):
+        self.root = artifact_directory("broker-socket")
+        self.endpoint = self.root / "broker.sock"
+        descriptor = os.open(self.root, os.O_RDONLY | os.O_DIRECTORY)
+        self.listener = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        try:
+            self.listener.bind(f"/proc/self/fd/{descriptor}/broker.sock")
+        finally:
+            os.close(descriptor)
+        self.endpoint.chmod(0o660)
+        self.manifest = {"broker_uid": os.geteuid(), "socket_gid": self.endpoint.stat().st_gid}
+
+    def tearDown(self):
+        self.listener.close()
+        shutil.rmtree(self.root)
+
+    def test_client_requires_exact_socket_owner_group_type_and_permissions(self):
+        broker.socket_permissions(self.endpoint, self.manifest)
+        for mode in (0o666, 0o600, 0o770, 0o777):
+            self.endpoint.chmod(mode)
+            with self.subTest(mode=oct(mode)), self.assertRaises(RecordError):
+                broker.socket_permissions(self.endpoint, self.manifest)
+        self.endpoint.chmod(0o660)
+        for field in ("broker_uid", "socket_gid"):
+            with self.subTest(field=field), self.assertRaises(RecordError):
+                broker.socket_permissions(self.endpoint, {**self.manifest, field: self.manifest[field] + 1})
+        self.endpoint.unlink()
+        self.endpoint.write_bytes(b"not a socket")
+        self.endpoint.chmod(0o660)
+        with self.assertRaises(RecordError):
+            broker.socket_permissions(self.endpoint, self.manifest)
+
+    def test_group_mode_does_not_authorize_inherited_named_user_acl(self):
+        # Linux POSIX ACL v2: a named user can otherwise inherit socket write
+        # access even while chmod reports exactly 0660.
+        acl = struct.pack("<I", 2) + b"".join(
+            struct.pack("<HHI", tag, permissions, identity)
+            for tag, permissions, identity in (
+                (1, 6, 0xffffffff), (2, 6, os.geteuid() + 1),
+                (4, 6, 0xffffffff), (16, 6, 0xffffffff), (32, 0, 0xffffffff),
+            )
+        )
+        os.setxattr(self.endpoint, "system.posix_acl_access", acl)
+        self.assertEqual(stat.S_IMODE(self.endpoint.stat().st_mode), 0o660)
+        with self.assertRaises(RecordError):
+            broker.socket_permissions(self.endpoint, self.manifest)
+        os.removexattr(self.endpoint, "system.posix_acl_access")
+        broker.socket_permissions(self.endpoint, self.manifest)
+
+    def test_protected_probe_does_not_count_post_connect_rejection_or_unavailability_as_denial(self):
+        for result in (
+            {"direct_protocol": "denied"},
+            {"direct_connect": "connected", "direct_protocol": "denied"},
+            {"direct_connect": "unavailable"},
+        ):
+            with self.subTest(result=result), mock.patch.object(
+                protected.subprocess, "run", return_value=SimpleNamespace(stdout=canonical_json(result)),
+            ), self.assertRaises(RecordError):
+                protected.candidate_probe(65533, [], self.endpoint, 1)
 
 
 class BrokerFixtureTests(unittest.TestCase):
@@ -180,7 +389,9 @@ class BrokerTests(BrokerFixtureTests):
             installation.write_bytes(canonical_json(manifest))
             return broker.load_installation(installation, "server")
 
-        with mock.patch.object(broker, "protected_path", side_effect=fixture_ownership), mock.patch.object(
+        with mock.patch.object(
+            broker.os, "getgroups", return_value=[manifest["socket_gid"]],
+        ), mock.patch.object(broker, "protected_path", side_effect=fixture_ownership), mock.patch.object(
             broker.os, "geteuid", return_value=manifest["broker_uid"],
         ):
             self.assertEqual(preflight(inside)[1].endpoint, inside.as_uri())
@@ -191,6 +402,38 @@ class BrokerTests(BrokerFixtureTests):
             link.symlink_to(outside, target_is_directory=True)
             with self.assertRaises(RecordError):
                 preflight(link)
+
+    def test_preflight_requires_explicit_socket_group_and_actual_process_membership(self):
+        actual_uid, protected_path = os.geteuid(), broker.protected_path
+        installation = self.directory / "group-installation.json"
+
+        def fixture_ownership(path, _owners, **options):
+            return protected_path(path, {0, actual_uid}, **options)
+
+        for client in (False, True):
+            manifest = self.fixture.manifest(client=client)
+            manifest["socket"] = "/run/workflow-pilot-fixture.sock"
+            role = "client" if client else "server"
+            actor = manifest["coordinator_uid" if client else "broker_uid"]
+            group = manifest["socket_gid"]
+            installation.write_bytes(canonical_json(manifest))
+            with mock.patch.object(broker, "protected_path", side_effect=fixture_ownership), \
+                 mock.patch.object(broker.os, "geteuid", return_value=actor), \
+                 mock.patch.object(broker.os, "getegid", return_value=group + 1), \
+                 mock.patch.object(broker.os, "getgroups", return_value=[]) as groups:
+                with self.subTest(role=role), self.assertRaises(RecordError):
+                    broker.load_installation(installation, role)
+                groups.return_value = [group]
+                self.assertEqual(broker.load_installation(installation, role)[0]["socket_gid"], group)
+                for invalid in (None, True, 0, -1, 2**31, str(group)):
+                    with self.subTest(role=role, invalid=invalid):
+                        installation.write_bytes(canonical_json({**manifest, "socket_gid": invalid}))
+                        with self.assertRaises(RecordError):
+                            broker.load_installation(installation, role)
+                del manifest["socket_gid"]
+                installation.write_bytes(canonical_json(manifest))
+                with self.assertRaises(RecordError):
+                    broker.load_installation(installation, role)
 
     def test_every_identity_and_signed_plan_boundary_rejects_before_reservation(self):
         plan, _pack, _current = self.fixture.make_plan()
@@ -577,6 +820,220 @@ class BrokerTests(BrokerFixtureTests):
                 with self.assertRaises(error):
                     protected.client_action(arguments)
                 request.assert_called_once_with(consumer, plan, pack)
+
+
+class BrokerServiceTests(BrokerFixtureTests):
+    """Real listener/process cleanup with synthetic installation ownership only."""
+
+    def setUp(self):
+        super().setUp()
+        self.fixture.close()
+        self.fixture.store = None
+        self.process = None
+
+    def tearDown(self):
+        protected.stop_owned(self.process)
+        if self.process is not None:
+            self.process.communicate(timeout=3)
+        if self.fixture.store is not None:
+            self.fixture.close()
+        shutil.rmtree(self.directory)
+
+    def start(self, *, exchange=False, cleanup_error=False):
+        manifest = self.fixture.manifest()
+        # Short relative address avoids Linux's sun_path bound in long CI paths.
+        # Only the unavailable protected installation/peer boundary is replaced.
+        manifest.update(socket="broker.sock", socket_gid=os.getegid(), broker_uid=os.geteuid())
+        script = (
+            "import sys\nfrom pathlib import Path\n"
+            f"sys.path.insert(0,{str(Path(broker.__file__).resolve().parents[2])!r})\n"
+            "from scripts.workflow_pilot import git_broker as broker\n"
+            f"manifest={manifest!r}\n"
+            "broker.load_installation=lambda path,role:(manifest,broker.Policy.parse(manifest['policy']))\n"
+        )
+        if exchange:
+            script += "broker.peer_uid=lambda connection,expected:None\n"
+        if cleanup_error:
+            script += (
+                "unlink=Path.unlink\n"
+                "def fail_unlink(path,*args,**kwargs):\n"
+                "    if str(path)=='broker.sock': raise OSError('synthetic cleanup failure')\n"
+                "    return unlink(path,*args,**kwargs)\n"
+                "Path.unlink=fail_unlink\n"
+            )
+        script += "raise SystemExit(broker.main(['serve','--installation','synthetic.json']))\n"
+        self.process = subprocess.Popen(
+            ["/usr/bin/python3", "-I", "-c", script], cwd=self.directory,
+            env=store_module.clean_environment(self.directory), stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, close_fds=True,
+        )
+        protected.wait_for_socket(self.process, self.directory / "broker.sock")
+
+    def stop(self, signum=signal.SIGTERM):
+        self.process.send_signal(signum)
+        output, errors = self.process.communicate(timeout=5)
+        code = self.process.returncode
+        self.process = None
+        self.assertEqual(output, b"")
+        return code, errors
+
+    def reopen(self):
+        self.fixture.store = store_module.PublicationStore(self.fixture.policy, self.fixture.state)
+        return self.fixture.store
+
+    @contextmanager
+    def connection(self):
+        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as raw:
+            raw.settimeout(3)
+            address = f"/proc/{self.process.pid}/cwd/broker.sock"
+            end = time.monotonic() + 3
+            while True:
+                try:
+                    raw.connect(address)
+                    break
+                except ConnectionRefusedError:
+                    if time.monotonic() >= end:
+                        raise
+                    time.sleep(0.01)
+            with broker.tls_context(self.fixture.manifest(client=True), False).wrap_socket(
+                raw, server_hostname="workflow-pilot-git-broker",
+            ) as connection:
+                yield connection
+
+    def begin_plan(self, connection, plan, pack=None):
+        channel = broker.Channel(connection, utc_now() + timedelta(seconds=5))
+        hello = protocol.validate_hello(
+            strict_json(channel.read_frame(protocol.MAX_RESPONSE), protocol.MAX_RESPONSE),
+            self.fixture.policy.deployment_id, self.keys.response_key, utc_now(),
+        )
+        channel.send_frame(canonical_json({
+            "protocol": protocol.PROTOCOL, "session_nonce": hello["session_nonce"],
+            "operation": "publish", "plan": plan,
+        }), protocol.MAX_JSON)
+        if pack is not None:
+            channel.send_frame(pack, protocol.MAX_PACK)
+
+    def await_status(self, plan, expected):
+        end, actual = time.monotonic() + 5, None
+        while time.monotonic() < end:
+            with closing(sqlite3.connect(self.fixture.state / "nonces.sqlite3", timeout=1)) as journal:
+                actual = journal.execute(
+                    "SELECT status FROM operations WHERE nonce=?", (plan["nonce"],),
+                ).fetchone()
+            if actual == (expected,):
+                return
+            time.sleep(0.01)
+        self.fail(f"request never reached {expected}: {actual}")
+
+    def test_socket_is_coordinator_group_only_before_accept(self):
+        self.start()
+        endpoint = (self.directory / "broker.sock").lstat()
+        self.assertTrue(stat.S_ISSOCK(endpoint.st_mode))
+        self.assertEqual(stat.S_IMODE(endpoint.st_mode), 0o660)
+        self.assertEqual(endpoint.st_gid, os.getegid())
+
+    def test_sigterm_cleanly_unwinds_listener_and_journal(self):
+        self.start()
+        self.assertEqual(self.stop(), (0, b""))
+        self.assertFalse((self.directory / "broker.sock").exists())
+        self.assertEqual(self.reopen().db.execute("SELECT count(*) FROM operations").fetchone(), (0,))
+
+    def test_sigint_remains_failure_and_unwinds_listener(self):
+        self.start()
+        code, errors = self.stop(signal.SIGINT)
+        self.assertEqual(code, 2)
+        self.assertTrue(errors)
+        self.assertFalse((self.directory / "broker.sock").exists())
+        self.reopen()
+
+    def test_sigterm_does_not_swallow_cleanup_failure(self):
+        self.start(cleanup_error=True)
+        code, errors = self.stop()
+        self.assertEqual(code, 2)
+        self.assertTrue(errors)
+        self.reopen()
+
+    def test_sigterm_during_incomplete_pack_keeps_nonce_consumed(self):
+        plan, _pack, _current = self.fixture.make_plan()
+        self.start(exchange=True)
+        with self.connection() as connection:
+            self.begin_plan(connection, plan)
+            self.await_status(plan, "reserved")
+            self.assertEqual(self.stop(), (0, b""))
+        store = self.reopen()
+        self.assertEqual(store.db.execute("SELECT status FROM operations").fetchone(), ("rejected",))
+        with self.assertRaises(RecordError):
+            store.reserve(plan, self.keys.client_fingerprint)
+        self.assertEqual(store.remote_refs(utc_now() + timedelta(seconds=3)), dict.fromkeys(self.fixture.policy.refs))
+        self.assertFalse((self.directory / "broker.sock").exists())
+
+    def test_sigterm_during_receive_pack_kills_children_and_preserves_uncertainty(self):
+        marker = self.directory / "hook-pids"
+        hook = self.fixture.remote / "hooks" / "pre-receive"
+        hook.parent.mkdir(mode=0o700)
+        hook.write_text(
+            "#!/bin/sh\nsleep 30 &\nprintf '%s %s\\n' \"$$\" \"$!\" > "
+            + shlex.quote(str(marker)) + "\nwait\n"
+        )
+        hook.chmod(0o700)
+        plan, pack, _current = self.fixture.make_plan()
+        self.start(exchange=True)
+        with self.connection() as connection:
+            self.begin_plan(connection, plan, pack)
+            self.await_status(plan, "executing")
+            end = time.monotonic() + 5
+            identities = []
+            while time.monotonic() < end:
+                if marker.exists():
+                    identities = [int(value) for value in marker.read_text().split()]
+                    if len(identities) == 2:
+                        break
+                time.sleep(0.01)
+            self.assertEqual(len(identities), 2, "real receive-pack hook never started")
+            self.assertEqual(self.stop(), (0, b""))
+
+        def running(pid):
+            try:
+                return Path(f"/proc/{pid}/stat").read_text().split(") ", 1)[1].split()[0] != "Z"
+            except FileNotFoundError:
+                return False
+
+        end = time.monotonic() + 3
+        while any(running(pid) for pid in identities) and time.monotonic() < end:
+            time.sleep(0.01)
+        self.assertFalse(any(running(pid) for pid in identities))
+        store = self.reopen()
+        self.assertEqual(
+            store.db.execute("SELECT status,completed_at FROM operations").fetchone(), ("uncertain", None),
+        )
+        self.assertEqual(
+            store.readback(plan, self.keys.client_fingerprint, utc_now() + timedelta(seconds=3))[0],
+            "uncertain",
+        )
+        with self.assertRaises(RecordError):
+            store.reserve(plan, self.keys.client_fingerprint)
+        self.assertEqual(list(store.work.iterdir()), [])
+        self.assertFalse((self.directory / "broker.sock").exists())
+
+    def test_clean_stop_is_scoped_to_serve_and_does_not_mask_interruptions_or_errors(self):
+        previous = signal.getsignal(signal.SIGTERM)
+        mask = os.umask(0o077)
+        try:
+            with mock.patch.object(broker, "serve", side_effect=lambda *a, **k: os.kill(os.getpid(), signal.SIGTERM)):
+                self.assertEqual(broker.main(["serve", "--installation", "synthetic.json"]), 0)
+            self.assertIs(signal.getsignal(signal.SIGTERM), previous)
+            for command, target, failure in (
+                ("preflight-server", "load_installation", KeyboardInterrupt),
+                ("serve", "serve", KeyboardInterrupt),
+                ("serve", "serve", RecordError("synthetic service failure")),
+            ):
+                with self.subTest(command=command, failure=failure), mock.patch.object(
+                    broker, target, side_effect=failure,
+                ), mock.patch.object(broker.sys, "stderr", io.StringIO()):
+                    self.assertEqual(broker.main([command, "--installation", "synthetic.json"]), 2)
+                self.assertIs(signal.getsignal(signal.SIGTERM), previous)
+        finally:
+            os.umask(mask)
 
 
 class PackBoundsTests(BrokerFixtureTests):

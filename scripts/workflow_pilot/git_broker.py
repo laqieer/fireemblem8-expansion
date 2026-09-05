@@ -8,6 +8,8 @@ import base64
 import fcntl
 import hashlib
 import http.client
+import importlib.abc
+import importlib.util
 import json
 import os
 import re
@@ -22,13 +24,109 @@ import time
 from contextlib import ExitStack, contextmanager
 from datetime import datetime, timedelta
 from pathlib import Path
+from types import MappingProxyType
+
+
+INSTALLED_MODULES = (
+    "__init__.py", "signed_records.py", "git_broker_protocol.py",
+    "git_broker_store.py", "git_broker.py",
+)
+
+
+def _capture_installed_sources(entry: Path) -> tuple[Path, dict[str, bytes]]:
+    """Capture the entire protected closure before any repository import."""
+    if not entry.is_absolute() or ".." in entry.parts or entry.name != "git_broker.py":
+        raise ValueError("absolute installed broker entry point required")
+    root = entry.parent
+    for directory in (root, *root.parents):
+        metadata = directory.lstat()
+        if (
+            metadata.st_uid != 0 or metadata.st_mode & 0o022
+            or not stat.S_ISDIR(metadata.st_mode)
+        ):
+            raise ValueError("broker source parent is not protected")
+    sources = {}
+    for name in INSTALLED_MODULES:
+        descriptor = os.open(
+            root / name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC,
+        )
+        with os.fdopen(descriptor, "rb") as source:
+            metadata = os.fstat(source.fileno())
+            if (
+                metadata.st_uid != 0 or metadata.st_mode & 0o022 or metadata.st_nlink != 1
+                or not stat.S_ISREG(metadata.st_mode) or metadata.st_size > 1024 * 1024
+            ):
+                raise ValueError("broker source is not a protected bounded regular file")
+            raw = source.read(1024 * 1024 + 1)
+            if len(raw) != metadata.st_size:
+                raise ValueError("broker source changed while being captured")
+            sources[name] = raw
+    return root, sources
+
+
+class _SourceOnlyBroker(importlib.abc.MetaPathFinder, importlib.abc.Loader):
+    """Reuse the captured-source loader pattern; never consult installed caches."""
+
+    def __init__(self, root, sources):
+        self.root, self.sources = root, MappingProxyType(dict(sources))
+        self.modules = {"scripts": (None, True)}
+        for name in sources:
+            package = name == "__init__.py"
+            module = "scripts.workflow_pilot" + ("" if package else "." + name[:-3])
+            self.modules[module] = (name, package)
+
+    def find_spec(self, fullname, path=None, target=None):
+        if fullname != "scripts" and not fullname.startswith("scripts."):
+            return None
+        if fullname not in self.modules:
+            raise ModuleNotFoundError("import outside installed broker closure", name=fullname)
+        name, package = self.modules[fullname]
+        return importlib.util.spec_from_loader(
+            fullname, self, origin=str(self.root / name) if name else fullname, is_package=package,
+        )
+
+    def create_module(self, spec):
+        return None
+
+    def exec_module(self, module):
+        name, package = self.modules[module.__spec__.name]
+        if package:
+            module.__path__ = []
+        if name is not None:
+            module.__file__ = str(self.root / name)
+            exec(compile(self.sources[name], module.__file__, "exec", dont_inherit=True), module.__dict__)
+
+
+@contextmanager
+def _source_only_broker(entry: Path):
+    loader = _SourceOnlyBroker(*_capture_installed_sources(entry))
+    previous = {
+        name: module for name, module in sys.modules.copy().items()
+        if name == "scripts" or name.startswith("scripts.")
+    }
+    for name in previous:
+        del sys.modules[name]
+    sys.meta_path.insert(0, loader)
+    try:
+        yield importlib.import_module("scripts.workflow_pilot.git_broker")
+    finally:
+        sys.meta_path.remove(loader)
+        for name in tuple(sys.modules):
+            if name == "scripts" or name.startswith("scripts."):
+                del sys.modules[name]
+        sys.modules.update(previous)
 
 
 if __name__ == "__main__":
     if not sys.flags.isolated:
         print("git-broker: isolated Python startup (-I) required", file=sys.stderr)
         raise SystemExit(2)
-    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+    try:
+        with _source_only_broker(Path(__file__)) as installed:
+            raise SystemExit(installed.main())
+    except (OSError, ValueError, ImportError, SyntaxError):
+        print("git-broker: protected source bootstrap failed closed", file=sys.stderr)
+        raise SystemExit(2)
 
 from scripts.workflow_pilot.git_broker_protocol import (
     HELLO_DOMAIN, MAX_JSON, MAX_LIFETIME, MAX_PACK, MAX_RESPONSE, PROTOCOL,
@@ -51,18 +149,14 @@ SNAPSHOT_SEALS = fcntl.F_SEAL_WRITE | fcntl.F_SEAL_GROW | fcntl.F_SEAL_SHRINK | 
 GITHUB_LOGIN = r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?"
 SERVER_FIELDS = {
     "schema_version", "role", "policy", "broker_uid", "coordinator_uid", "candidate_uids",
-    "socket", "state", "certificate", "private_key", "ca_certificate",
+    "socket", "socket_gid", "state", "certificate", "private_key", "ca_certificate",
     "server_certificate_sha256", "response_public_key", "response_private_key", "transport",
 }
 CLIENT_FIELDS = {
     "schema_version", "role", "policy", "broker_uid", "coordinator_uid", "candidate_uids",
-    "socket", "certificate", "private_key", "ca_certificate",
+    "socket", "socket_gid", "certificate", "private_key", "ca_certificate",
     "server_certificate_sha256", "response_public_key",
 }
-INSTALLED_MODULES = (
-    "__init__.py", "signed_records.py", "git_broker_protocol.py",
-    "git_broker_store.py", "git_broker.py",
-)
 
 
 def protected_path(path: str | Path, owners: set[int], *, directory: bool = False, secret: bool = False) -> Path:
@@ -172,6 +266,9 @@ def load_installation(path: Path, role: str) -> tuple[dict, Policy]:
         or os.geteuid() != (broker if role == "server" else coordinator)
     ):
         raise RecordError("broker, coordinator and candidates require separate OS principals")
+    socket_gid = integer(manifest["socket_gid"], 1, 2**31 - 1)
+    if socket_gid not in {os.getegid(), *os.getgroups()}:
+        raise RecordError("principal lacks the installed coordinator-only socket group")
     module_root = Path(__file__).resolve().parent
     for name in INSTALLED_MODULES:
         protected_path(module_root / name, {0})
@@ -484,6 +581,17 @@ def peer_uid(connection: socket.socket, expected: int) -> None:
         raise RecordError("same-UID or unauthorized peer")
 
 
+def socket_permissions(endpoint: Path, manifest: dict) -> None:
+    metadata = endpoint.lstat()
+    if (
+        not stat.S_ISSOCK(metadata.st_mode) or metadata.st_nlink != 1
+        or metadata.st_uid != manifest["broker_uid"] or metadata.st_gid != manifest["socket_gid"]
+        or stat.S_IMODE(metadata.st_mode) != 0o660
+        or "system.posix_acl_access" in os.listxattr(endpoint, follow_symlinks=False)
+    ):
+        raise RecordError("broker endpoint lacks exclusive coordinator-group access")
+
+
 def tls_context(manifest: dict, server: bool) -> ssl.SSLContext:
     context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER if server else ssl.PROTOCOL_TLS_CLIENT)
     context.minimum_version = ssl.TLSVersion.TLSv1_3
@@ -619,7 +727,9 @@ def serve(installation: Path, *, once: bool = False) -> None:
         # Never unlink an existing socket: it may belong to a live service.
         listener.bind(str(endpoint))
         bound = endpoint.lstat().st_ino
-        os.chmod(endpoint, 0o666)
+        os.chown(endpoint, -1, manifest["socket_gid"], follow_symlinks=False)
+        os.chmod(endpoint, 0o660)
+        socket_permissions(endpoint, manifest)
         listener.listen(4)
         while True:
             raw, _ = listener.accept()
@@ -635,10 +745,12 @@ def serve(installation: Path, *, once: bool = False) -> None:
             if once:
                 return
     finally:
-        listener.close()
-        if bound is not None and endpoint.exists() and endpoint.lstat().st_ino == bound:
-            endpoint.unlink()
-        store.close()
+        try:
+            listener.close()
+            if bound is not None and endpoint.exists() and endpoint.lstat().st_ino == bound:
+                endpoint.unlink()
+        finally:
+            store.close()
 
 
 class BrokerClient:
@@ -650,9 +762,7 @@ class BrokerClient:
     def request(self, plan: dict | None = None, pack: bytes | None = None, *, readback: bool = False) -> dict:
         manifest = self.manifest
         endpoint = Path(manifest["socket"])
-        metadata = endpoint.lstat()
-        if not stat.S_ISSOCK(metadata.st_mode) or metadata.st_uid != manifest["broker_uid"]:
-            raise RecordError("broker endpoint was substituted")
+        socket_permissions(endpoint, manifest)
         context = tls_context(manifest, False)
         with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as raw:
             raw.settimeout(5)
@@ -721,6 +831,10 @@ def credential_helper(action: str) -> None:
     sys.stdout.buffer.write(b"username=x-access-token\npassword=" + token + b"\n\n")
 
 
+class _ServeStopped(BaseException):
+    """SIGTERM unwinds the service without reclassifying failures or SIGINT."""
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
@@ -749,9 +863,15 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         if arguments.command == "serve":
             def stop(_signum, _frame):
-                raise KeyboardInterrupt
-            signal.signal(signal.SIGTERM, stop)
-            serve(arguments.installation, once=arguments.once)
+                signal.signal(signal.SIGTERM, signal.SIG_IGN)
+                raise _ServeStopped
+            previous = signal.signal(signal.SIGTERM, stop)
+            try:
+                serve(arguments.installation, once=arguments.once)
+            except _ServeStopped:
+                return 0
+            finally:
+                signal.signal(signal.SIGTERM, previous)
             return 0
         if arguments.command == "preflight-server":
             manifest, policy = load_installation(arguments.installation, "server")
@@ -779,7 +899,3 @@ def main(argv: list[str] | None = None) -> int:
     except (RecordError, OSError, ValueError, TypeError, KeyError, sqlite3.Error, KeyboardInterrupt):
         print("git-broker: protected preflight/protocol failed closed", file=sys.stderr)
         return 2
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())

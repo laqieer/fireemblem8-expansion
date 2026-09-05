@@ -8,7 +8,7 @@ a replacement for that handoff validator.
 
 The production consumer is
 [`BrokerClient`](../scripts/workflow_pilot/git_broker.py), also exposed through
-the installed `publish` and `readback` commands. It talks to the production
+the source-only installed `publish` and `readback` commands. It talks to the production
 `serve` command, which uses
 [`PublicationStore`](../scripts/workflow_pilot/git_broker_store.py). Tests
 exercise real Git receive-pack, real TLS, the actual consumer and the same
@@ -54,9 +54,16 @@ Each connection requires both:
 The server signs its fresh session and result with an independently pinned
 RSA response key. Neither an abstract Unix address nor filesystem permissions
 under one UID establish authority. The filesystem socket's parent cannot be
-replaced by a candidate. A candidate that can reach the socket is disconnected
-before TLS or request handling; a CA-valid but unapproved client certificate
-also rejects.
+replaced by a candidate. A candidate that can resolve the socket path is refused
+at `connect()` by kernel permissions, before it can occupy the listen backlog.
+The broker-owned socket is mode `0660` with the protected installation's
+`socket_gid`: a dedicated group containing only the broker and trusted
+coordinator, never a candidate's primary or supplementary group. The server
+sets and verifies owner/group/mode before listening, and the client verifies
+them before connecting. Inherited access ACLs reject rather than silently
+granting another user access despite mode `0660`. Peer-UID and mTLS checks
+remain mandatory; a group member without the expected UID or an approved
+client certificate still rejects.
 
 There is **no generic credential, signing, URL, ref, shell-command, helper or
 push API**. Every installation names one repository identity and one issue.
@@ -105,8 +112,11 @@ and trusted installation. After that validator approves a publication:
    sign-any-bytes endpoint. `Policy.signer` uses PR191's full six-field signer
    record and existing `workflow-pilot-agent-coordinator-attestation-v2`
    public identity, not a key supplied by the request.
-5. Invoke the installed `BrokerClient(client_installation).request(plan,
-   pack)` or installed CLI. Accept only an authenticated `published` response
+5. Invoke the installed CLI, which source-loads
+   `BrokerClient(client_installation).request(plan, pack)`. An embedded
+   coordinator must use an equivalently protected source-only bootstrap,
+   not ordinary `sys.path` imports of the installed package or `python -m`.
+   Accept only an authenticated `published` response
    whose refs equal the two exact new OIDs. Keep PR191's terminal receipt,
    protected history, live authority confirmation and eligibility checks.
 6. After loss of a reply, use a **new** authenticated `readback` session with
@@ -178,16 +188,42 @@ make a local test pass.** Use a disposable authorized VM/container or an
 already provisioned protected service. A one-UID user namespace or an
 unauthenticated local test daemon is not a substitute.
 
-Install these reviewed source files, without candidate-writable bytecode or
-package directories, under `/opt/fe8-git-broker/scripts/workflow_pilot/`:
+Install these reviewed source files, without writable package directories,
+under `/opt/fe8-git-broker/scripts/workflow_pilot/`:
 
 - `__init__.py`, `signed_records.py`, `git_broker_protocol.py`,
   `git_broker_store.py`, `git_broker.py`.
 
 All parents and files must be root-owned; code files are `0644`, public
-directories `0755`. Install the reviewed
+directories `0755`. Execute the trusted `git_broker.py` file with isolated
+Python (`-I`). Before importing **any** repository module, that bootstrap
+checks every source and parent in the existing installed-module closure.
+It opens each source once without following a link, verifies the opened
+regular file's owner/mode/link count/size, and captures its bytes. Only after
+the entire closure passes does it compile those bytes into fresh modules,
+including the package initializer and broker itself. Package search paths
+are empty and imports outside that closure reject; existing module-cache
+entries cannot substitute code. There is no pathname or bytecode fallback.
+
+Remove stale caches as installation hygiene, but correctness does not depend
+on their absence: adjacent candidate-writable unchecked-hash `.pyc` files are
+never loaded. `-B` alone only disables bytecode **writes**, not those reads.
+Even `--help` from an unprotected installation fails before local imports.
+The root-controlled bootstrap and system Python/standard library remain
+trusted deployment prerequisites; executing an attacker-modified launcher
+cannot establish authority.
+
+Install the reviewed
 [`workflow-pilot-git-broker@.service`](../scripts/workflow_pilot/deployment/workflow-pilot-git-broker@.service)
-template using the already provisioned `fe8-git-broker` account. The instance
+template using the already provisioned `fe8-git-broker` account. Provision the
+dedicated `fe8-git-coordinator` socket group externally; the unit gives it to
+the broker through `SupplementaryGroups` while keeping the broker's private
+primary group for state. Give the coordinator that socket group too. Its
+numeric GID must equal `socket_gid` in both protected manifests. Preflight
+requires the executing principal to hold that group. The external
+administrator must ensure no other primary/supplementary memberships grant
+candidate access; neither startup nor tests create host users or groups.
+The instance
 name identifies an issue installation, for example `issue-205`; it does not
 authorize an issue number supplied by a request.
 
@@ -197,6 +233,12 @@ Commands have an additional independent eight-second hard-kill timeout,
 shortened to the remaining plan/session lifetime, even if the broker itself
 is SIGKILLed.
 Do not use unmanaged background Git helpers in production.
+Normal `serve` SIGTERM unwinds active requests, subprocesses, the socket and
+journal before exiting 0. Cleanup errors and SIGINT still fail; non-serve
+interruptions are not converted to success. No `SuccessExitStatus=2` exception
+is needed. A clean service stop does not certify a pending publication:
+incomplete packs remain spent, and interrupted receive-pack retains journal
+uncertainty and the existing protected reconciliation hold.
 
 Both installation files are canonical JSON, not shell configuration. Their
 closed field sets are `SERVER_FIELDS` / `CLIENT_FIELDS` in `git_broker.py`.
@@ -208,12 +250,16 @@ The fields are:
 | `policy` | Exact `Policy` fields below; no request-derived authority |
 | `broker_uid`, `coordinator_uid`, `candidate_uids` | Actual distinct kernel UIDs; candidate list nonempty |
 | `socket` | `/run/workflow-pilot-broker-issue-205/broker.sock` or the corresponding protected instance path |
+| `socket_gid` | Nonzero dedicated broker/coordinator-only group GID; provision membership outside the service |
 | `certificate`, `private_key`, `ca_certificate` | Absolute role-specific certificate/key/CA paths |
 | `server_certificate_sha256` | SHA-256 of the externally provisioned server certificate's DER bytes |
 | `response_public_key` | `algorithm`, lowercase `modulus_hex`, `exponent`; pinned out of band |
 
 Server-only fields are `state` (the instance's private `/var/lib` directory),
 `response_private_key` (matching the pinned response key), and `transport`.
+Existing manifests without `socket_gid` fail closed and must be reprovisioned
+by the external owner; the signed-plan wire schema and journal identity are
+unchanged.
 The private TLS/response/transport keys are readable only by the broker;
 the client's TLS key only by the coordinator. The CA **private** key is not
 installed in either service. Certificates must be current and issued by the
@@ -344,6 +390,7 @@ persistent journal or send UID/name-wide signals.
 
 | Resource | Hard bound |
 | --- | --- |
+| Each source in the fixed installed-module closure | 1 MiB, captured once before local imports |
 | Canonical request JSON | 256 KiB |
 | Signed hello/result | 8 KiB |
 | Full pack | 16 MiB; 4,096 objects |
@@ -394,6 +441,14 @@ The full tester procedure is
 There is no visual/audio/UX or human-review criterion.
 
 Noncredentialed real Git/TLS unit tests are deterministic protocol evidence.
+Loader regressions substitute only source ownership when exercising the real
+captured-byte loader; they also run an unchecked-hash cache under `-B` as a
+negative control and verify rejection before imports. Socket regressions
+inspect real Unix socket metadata/ACLs and parse the deployment unit. Service
+regressions run real processes/TLS/Git with explicitly synthetic installation
+and peer authority, then signal idle, reserved and executing requests. They
+check clean SIGTERM, failing SIGINT/cleanup, child termination, spent nonces
+and preserved uncertainty. None is a same-UID protected positive.
 The credential regressions use synthetic GitHub responses with the actual
 identity validators, real Ed25519 derivation, parsed OpenSSH configuration,
 sealed-handle/file-substitution controls and a real TLS rejection of an
@@ -413,6 +468,15 @@ The rejection hook is removed after its dedicated check, and a fresh
 publication must then succeed before the field-validation cases run.
 The root-controlled fixture invokes the production `serve` entry point with
 test-only observers around the real plan validator and reservation method.
+Both service and client use the captured-source bootstrap. The fixture
+allows its actual candidate UID to rewrite an adjacent unchecked-hash cache,
+proves the ordinary `-B` importer executes that negative control, and requires
+the production entry point and subsequent service/client operations never to
+execute it. It gives the socket group only to broker/coordinator children
+and requires a candidate's actual `connect()` to fail with permission denial.
+A post-connect protocol rejection, timeout or unavailable listener does not
+satisfy direct-connect denial. Normal SIGTERM must return 0 and remove the
+socket, including before a clean restart.
 These observers record only plan digests and returned/rejected stages in
 broker-private state; they neither replace checks nor change the wire protocol.
 The controller requires the expected validation stage and unchanged complete

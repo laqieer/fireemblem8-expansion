@@ -1478,7 +1478,9 @@ The complete deployment and public API contract is
   existing `jsonschema` validator for the focused schema tests.
 - For protected acceptance, an already authorized disposable Linux
   environment with a root-owned, publicly traversable installation. Three
-  actual distinct kernel UIDs are required. Do not change a shared user's
+  actual distinct kernel UIDs and a dedicated broker/coordinator-only socket
+  group are required. Candidate primary/supplementary groups must exclude it.
+  Do not change a shared user's
   ownership, add users or relax host settings to satisfy this test.
 - The protected local fixture starts with its own two absent issue refs and
   empty journal. It generates synthetic test keys inside its private
@@ -1546,6 +1548,26 @@ The complete deployment and public API contract is
    mutate those snapshots must fail, and handles must close afterward.
    These observations do not prove protected deployment or live GitHub access.
 
+   The loader cases put valid unchecked-hash bytecode beside copied source;
+   an ordinary `-B` import executes the negative-control marker. The installed
+   bootstrap must reject unprotected source before any such import. With only
+   ownership simulated, the real loader must check the complete source
+   closure first, then ignore every cache, previously imported module and
+   replaced source path while executing the captured bytes. Unknown local
+   imports must reject without pathname fallback.
+
+   Inspect real Unix socket owner/group/mode and ACL behavior: only exact
+   `0660` with the installed socket GID passes, and a named-user access ACL
+   fails even when the mode still reads `0660`. Parsed systemd contracts keep
+   the separate socket supplementary group, private state and cgroup teardown
+   without treating status 2 as successful. The real-process service cases
+   replace only installation/peer authority: SIGTERM while idle or receiving
+   an incomplete pack exits 0 and removes the socket; the incomplete nonce
+   stays consumed. SIGTERM in a real receive-pack hook kills its children,
+   removes private work and retains `uncertain`, never a guessed rollback or
+   success. SIGINT, non-serve interruption and cleanup errors remain failures.
+   These are local behavior checks, not same-UID protected acceptance.
+
 2. Run the protected acceptance command in the **already provisioned
    disposable root-owned installation**, under its authorized root test
    controller:
@@ -1556,16 +1578,30 @@ The complete deployment and public API contract is
    ```
 
    Those numeric UIDs must be reserved for this fixture in that environment;
-   the command creates no accounts or global settings. It starts the real
+   its socket GID defaults to `65532` (`--socket-gid` selects another reserved
+   group). Only the broker/coordinator child credentials receive that group;
+   no accounts, groups or global settings are created. It starts the real
    production `serve` entry point under the broker UID and invokes the production
    `BrokerClient` under the separate unprivileged coordinator UID. The root
    test controller is not a protocol peer. It tests candidate denial for private
    keys, remote config/hooks/refs/objects, process memory/environment and the
-   direct socket protocol, coordinator denial for broker credentials/state,
+   direct socket `connect()` (actual permission denial before backlog
+   admission), coordinator denial for broker credentials/state,
    plus exact atomic publication/readback, trusted
    server-hook rejection and independently rejected signed adversarial
    requests. It tries same-UID, abstract, wrong-peer and substituted-server
    installations, and a real broker SIGKILL/restart with a consumed reservation.
+   It also requires ordinary SIGTERM to exit 0, remove the socket and permit
+   a clean restart without resetting the journal.
+
+   The controller installs a reviewed root-owned source copy and lets the
+   actual candidate UID rewrite an adjacent unchecked-hash `.pyc`. Ordinary
+   import under `-B` must execute the synthetic negative-control marker;
+   remove that marker, then run the real installed preflight, source-loaded
+   service and source-loaded client. None may execute the cache. Root source
+   ownership/permissions are not mocked in this protected procedure. A missing
+   service, failed connect, post-connect rejection or timeout must not count
+   as a permission-denied direct-connect result.
 
    The controller removes the rejecting hook immediately after its dedicated
    assertion and requires another exact publication to succeed. Each
