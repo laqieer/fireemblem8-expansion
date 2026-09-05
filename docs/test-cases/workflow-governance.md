@@ -9,7 +9,8 @@ workflow, using credentials, or changing ROM behavior.
 - **Feature / originating issue:** `workflow-governance` /
   [issue #206](https://github.com/laqieer/fireemblem8-expansion/issues/206).
 - **Supported configuration or artifact:** supported x86-64 Linux source
-  checkout with GNU Make, Python 3, `build-essential`, seccomp-BPF, and user namespaces or exact
+  checkout with GNU Make, Python 3, `build-essential`, Landlock,
+  seccomp-BPF/user-notification, and user namespaces or exact
   passwordless `sudo -n /usr/bin/unshare`; no ROM, emulator, token, or live
   GitHub object is required.
 - **Prerequisites and clean starting state:** start at the repository root
@@ -27,7 +28,8 @@ workflow, using credentials, or changing ROM behavior.
 4. Confirm the aggregate tests reject 4,097 states before launch, terminate a
    long subprocess and noncooperative blocking-I/O worker under one deadline,
    bound 4,096 snapshot files, reject large snapshot bytes, a theoretical
-   8 GiB cache entry, and event/mapping/output/future fanout, and leave no
+   8 GiB cache entry, infinite target/variant/program/worker iterables, an
+   oversized directory, and event/mapping/output/future fanout, and leave no
    child, FIFO, socket, IPC object, or descriptor residue.
 
 ### Expected result
@@ -49,19 +51,24 @@ semantic owner fingerprint; a real declared owner input changes the semantic
 fingerprint.
 
 Generated registry code receives only admitted code and the trusted declared
-source/import set. Post-bootstrap seccomp and IPC isolation reject memfd/native
+source/import set. Landlock plus supervisor-owned seccomp notification and IPC
+isolation reject memfd/native
 execution, exec/fork/clone, socket/network, ptrace, namespace, and persistent
 SysV shared-memory/semaphore/message routes. Exact admitted extension
 dependencies pass; missing or tampered ELF dependencies and unknown/ctypes
-imports reject. Undeclared open, mmap, stat, lstat, fstat, scandir, glob,
+imports reject. The reviewer probes recover loaded `ctypes`, inspect the real
+unpatched importer/open/stat objects, and attempt anonymous executable mmap
+plus native mmap/mprotect; kernel policy still denies every escape.
+Undeclared open, mmap, stat, lstat, fstat, scandir, glob,
 symlink, and dynamic paths reject, while a declared directory/glob using those
 access forms passes.
 
 Snapshot type, exact permissions, size, `mtime_ns`, UID/GID, and bytes are
 fingerprinted and materialized; chmod, touch, and type changes alter identity.
-The metadata proxy exposes only those fields and rejects inode/device/ctime/
-link-count and raw syscall routes. Candidate metadata, trusted permission,
-report, and nonce-authenticated missing-source consumption sets agree exactly.
+The supervisor emulates stat/statx from those fields and canonicalizes
+unsupported inode/device/ctime/link-count fields to zero, including scandir
+inode values. Candidate metadata, trusted permission, report, normal access,
+and supervisor-authenticated missing-source consumption sets agree exactly.
 Crash, timeout, or arbitrary nonzero omission replay is failure, not evidence.
 Invalid bytes reject at the named Make/JSON text boundary and remain distinct
 from valid raw output.
@@ -72,7 +79,7 @@ Removing candidate `noexec`, exposing an executable Make/compiler/Python
 path, inheriting a supervisor descriptor, accepting a reserved control or
 unknown command, putting the execution snapshot in the semantic fingerprint,
 mounting an undeclared source, trusting candidate-broadened metadata, omitting
-authenticated source-removal consumption replay, accepting crash/timeout as
+supervisor-observed source-removal consumption replay, accepting crash/timeout as
 consumption, exposing unsupported metadata, omitting snapshot byte/operation
 accounting, creating per-variant deadlines/caches, or using unkillable thread
 futures makes the focused suite fail.

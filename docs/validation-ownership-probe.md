@@ -28,7 +28,7 @@ the check fails closed. The existing maximum remains 3,600 seconds.
 | Shell interceptor | Is compiled supervisor-side, is the only exposed command executable, and sends exact raw argv over a read-only mounted Unix socket. The candidate cannot write, include, or open the socket with GNU Make's file functions. |
 | Registered command | Must match exactly one trusted regular expression and program basename. Its raw output is byte-accounted and cached only inside the current `ProbeBudget`. |
 | Candidate-derived native tool | Must be compiled supervisor-side, then bound through `RegisteredCommand.native`. Its executable digest is sealed before registration and rechecked before a second socket-free chroot starts it with `close_fds=True` and the remaining global deadline. Candidate copies remain `noexec`. |
-| Generated registry code | Starts through the trusted Python bootstrap with one closed `SourceContract.admitted_imports` set, exact extension-module/ELF dependency mounts, restricted file/metadata proxies, and a post-bootstrap seccomp filter. |
+| Generated registry code | Starts through the trusted Python bootstrap with one closed `SourceContract.admitted_imports` set, exact extension-module/ELF dependency mounts, Landlock, and a final seccomp user-notification filter owned by the supervisor. |
 
 GNU Make's `load` directive and `override`/`eval` assignments to `SHELL`,
 `.SHELLFLAGS`, `MAKE`, `MAKEFLAGS`, `MFLAGS`, or `GNUMAKEFLAGS` are rejected
@@ -52,13 +52,17 @@ as bytes; UTF-8 is required only where Make trace, command, or JSON protocol
 text is decoded.
 
 The trusted Python bootstrap loads its declared standard-library and extension
-closure from an exact copied module set before installing `no_new_privs` plus
-a seccomp deny filter for
+closure from an exact copied module set before installing `no_new_privs`,
+Landlock read-only access to the admitted `/repo` tree, and a seccomp
+user-notification filter for
 `memfd_create`, executable replacement, process/thread creation, sockets,
 ptrace/process-memory APIs, namespace/mount changes, SysV IPC, BPF,
 `userfaultfd`, executable-module loading, and related native escape syscalls.
-It then removes non-admitted modules from `sys.modules`; `ctypes` and
-`_ctypes` are never candidate imports. Every extension's recursively resolved
+It then removes non-admitted modules from `sys.modules`. Python import hooks,
+audit hooks, patched `open`/`stat`, closures, and hidden Python values are not
+security authorities: even if candidate code recovers loaded `ctypes`, raw
+`posix`, or the original builtins, the final kernel policy remains
+irreversible. Every extension's recursively resolved
 ELF dependencies are mounted at their loader paths, and
 `SourceObservation.runtime_sha256` binds the module bytes/metadata plus those
 resolved paths and hashes. Both launcher modes create a fresh IPC
@@ -95,21 +99,27 @@ one non-recursive directory pattern. Candidate metadata must equal that
 trusted record.
 
 The load phase receives one immutable materialization containing only admitted
-program files and resolved sources. Trusted `open`, mmap file descriptors,
-stat/lstat/fstat, directory iteration, glob, and dynamic-path proxies authorize
-only those paths. Stat results expose only file type, permission mode, size,
-`mtime_ns`, UID, and GID; inode, device, ctime, link-count, raw `dir_fd`,
-`readlink`, and direct `_io`/`posix`/`ctypes` routes reject. The reported list
-must exactly equal the permitted list.
+program files and resolved sources. The supervisor receives the sealed seccomp
+listener by `SCM_RIGHTS`, reads syscall path arguments with
+`process_vm_readv`, canonicalizes them against the sandbox root/dirfd, and
+authorizes or rejects open/openat/openat2, access, readlink, mmap, stat/lstat/
+fstat/newfstatat/statx, and getdents/scandir behavior. It records the exact
+normal-load operation/path set. Stat/statx responses are supervisor-emulated
+from the snapshot: type, permission mode, size, `mtime_ns`, UID, and GID are
+exact; inode, device, ctime, and link-count are canonical zero. Supervised
+getdents likewise returns zero inode identities. The reported, permitted, and
+observed source sets must exactly agree.
 
-Omission replay reuses that immutable materialization and masks one path in
-the trusted proxy, avoiding quadratic recopy. Consumption is accepted only
-when the bootstrap catches its private missing-source exception and emits the
-exact nonce-bound typed outcome. A normal nonzero exit, signal, crash,
-timeout, changed report, or self-authored text is a probe failure, never
-dependency evidence. This makes declared, reported, permitted, and
-behaviorally consumed sets agree without a best-effort syscall trace or a
-candidate-broadened declaration.
+Omission replay reuses that immutable materialization and kernel-masks one
+source, avoiding quadratic recopy. The omitted identity exists only in the
+supervisor policy, never in candidate Python objects, environment, files, or
+descriptors. Consumption is accepted only when the supervisor observed and
+denied the exact attempted access to that source and the trusted bootstrap
+returned its fixed controlled-denial result with empty output. A normal
+nonzero exit, signal, crash, timeout, changed report, or self-authored text is
+a probe failure, never dependency evidence. This makes declared, reported,
+permitted, observed, and behaviorally consumed sets agree without
+candidate-controlled tracing or a candidate-broadened declaration.
 
 PR #186 should replace its candidate-derived source authorization and
 inotify observation with `probe_generated_sources`, passing its graph/schema
@@ -130,7 +140,10 @@ operation. It owns:
 
 Snapshot capture charges declared file sizes before reading, checks the
 deadline during every chunk, and charges each stat/read/materialization
-operation. `run_bounded_process` creates a process group, incrementally accounts stdout
+operation. Targets, variants, owner inputs, mount/command registries,
+directory scans, source/program/import reports, and worker inputs are consumed
+incrementally: deadline/count checks happen before append or deduplication,
+and sorting occurs only after the bounded collection exists. `run_bounded_process` creates a process group, incrementally accounts stdout
 and stderr, closes inherited descriptors, and terminates the group on timeout,
 overflow, interruption, or parent failure. `run_bounded_futures` rejects an
 oversized batch before launch and uses killable, reaped process groups rather

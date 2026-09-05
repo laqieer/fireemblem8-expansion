@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import itertools
 import multiprocessing
 import os
 import shutil
@@ -678,7 +679,7 @@ class SnapshotMetadataTests(ProbeTestCase):
         self.assertEqual(metadata.st_uid, os.getuid())
         self.assertEqual(metadata.st_gid, os.getgid())
 
-    def test_candidate_metadata_proxy_supports_only_declared_fields(self):
+    def test_candidate_metadata_syscalls_return_snapshot_fields(self):
         timestamp = 1_700_000_003_000_000_000
         root = self.fixture(
             "source-metadata-positive",
@@ -723,25 +724,22 @@ class SnapshotMetadataTests(ProbeTestCase):
                     "if sys.argv[1] == 'metadata': print('{}')\n"
                     "else:\n"
                     " value=os.stat('/repo/data/a.txt')\n"
-                    f" print(value.{field})\n"
+                    f" assert value.{field} == 0\n"
                     " print(json.dumps(['data/a.txt']))\n",
                     encoding="ascii",
                 )
-                with self.assertRaisesRegex(
-                    SourceProbeError,
-                    "admitted-source confinement",
-                ):
-                    self.source_probe(
-                        root,
-                        SourceContract(
-                            "data/a.txt",
-                            None,
-                            ("data/a.txt",),
-                            {},
-                            ("json", "os", "sys"),
-                        ),
-                        load_arguments=["load"],
-                    )
+                observation = self.source_probe(
+                    root,
+                    SourceContract(
+                        "data/a.txt",
+                        None,
+                        ("data/a.txt",),
+                        {},
+                        ("json", "os", "sys"),
+                    ),
+                    load_arguments=["load"],
+                )
+                self.assertEqual(observation.reported_sources, ("data/a.txt",))
 
 
 class GeneratedSourceConfinementTests(ProbeTestCase):
@@ -759,6 +757,7 @@ class GeneratedSourceConfinementTests(ProbeTestCase):
                     "else:\n"
                     " paths = sorted(glob.glob('/repo/data/*.txt'))\n"
                     " names = sorted(item.name for item in os.scandir('/repo/data'))\n"
+                    " assert all(item.inode() == 0 for item in os.scandir('/repo/data'))\n"
                     " for path in paths:\n"
                     "  os.stat(path); os.lstat(path)\n"
                     "  with open(path, 'rb') as stream:\n"
@@ -783,6 +782,14 @@ class GeneratedSourceConfinementTests(ProbeTestCase):
             ("data/a.txt", "data/b.txt"),
         )
         self.assertRegex(observation.runtime_sha256, r"^[0-9a-f]{64}$")
+        self.assertEqual(
+            {
+                event["path"]
+                for event in observation.access_events
+                if event["path"].endswith(".txt")
+            },
+            {"/repo/data/a.txt", "/repo/data/b.txt"},
+        )
 
     def test_unknown_and_ctypes_imports_fail_closed(self):
         for label, imported in (("unknown", "socket"), ("ctypes", "ctypes")):
@@ -814,7 +821,7 @@ class GeneratedSourceConfinementTests(ProbeTestCase):
                         load_arguments=["load"],
                     )
 
-    def test_bootstrap_authority_fd_and_nonce_file_are_gone_before_candidate(self):
+    def test_bootstrap_control_fds_and_config_file_are_gone_before_candidate(self):
         root = self.fixture(
             "source-bootstrap-hidden",
             {
@@ -824,9 +831,10 @@ class GeneratedSourceConfinementTests(ProbeTestCase):
                 "from pathlib import Path\n"
                 "if sys.argv[1] == 'metadata': print('{}')\n"
                 "else:\n"
-                " try: os.read(6,1)\n"
-                " except OSError: pass\n"
-                " else: raise RuntimeError('bootstrap fd survived')\n"
+                " for fd in (6,7):\n"
+                "  try: os.read(fd,1)\n"
+                "  except OSError: pass\n"
+                "  else: raise RuntimeError('control fd survived')\n"
                 " assert not Path('/trusted/runtime.json').exists()\n"
                 " Path('/repo/data/a.txt').read_bytes()\n"
                 " print(json.dumps(['data/a.txt']))\n"
@@ -951,7 +959,35 @@ class GeneratedSourceConfinementTests(ProbeTestCase):
                 load_arguments=["load"],
             )
 
-    def test_candidate_cannot_steal_nonce_from_traceback_frames(self):
+    def test_candidate_exception_without_denied_access_cannot_forge_omission(self):
+        root = self.fixture(
+            "source-fake-missing",
+            {
+                "data/a.txt": "alpha\n",
+                "probe.py": (
+                    "import json,sys\n"
+                    "if sys.argv[1] == 'metadata': print('{}')\n"
+                    "else:\n"
+                    " raise FileNotFoundError('candidate-forged')\n"
+                ),
+            },
+        )
+        with self.assertRaisesRegex(
+            SourceProbeError,
+            "load failed|authenticated missing-source outcome",
+        ):
+            self.source_probe(
+                root,
+                SourceContract(
+                    "data/a.txt",
+                    None,
+                    ("data/a.txt",),
+                    {},
+                ),
+                load_arguments=["load"],
+            )
+
+    def test_candidate_traceback_cannot_forge_supervisor_omission(self):
         root = self.fixture(
             "source-traceback-forgery",
             {
@@ -964,11 +1000,12 @@ class GeneratedSourceConfinementTests(ProbeTestCase):
                     " try: Path('/repo/data/a.txt').read_bytes()\n"
                     " except FileNotFoundError as error:\n"
                     "  frame=error.__traceback__.tb_frame\n"
-                    "  nonce=None\n"
+                    "  nonce=None; omitted=None\n"
                     "  while frame is not None:\n"
                     "   nonce=frame.f_locals.get('nonce',nonce)\n"
+                    "   omitted=frame.f_locals.get('omitted_source',omitted)\n"
                     "   frame=frame.f_back\n"
-                    "  if nonce:\n"
+                    "  if nonce or omitted:\n"
                     "   os.write(2,('VO-OMITTED-SOURCE-v1 %s data/a.txt\\n' % nonce).encode())\n"
                     "   os._exit(86)\n"
                     " print(json.dumps(['data/a.txt']))\n"
@@ -986,6 +1023,116 @@ class GeneratedSourceConfinementTests(ProbeTestCase):
                     None,
                     ("data/a.txt",),
                     {},
+                ),
+                load_arguments=["load"],
+            )
+
+    def test_reviewer_closure_probe_has_no_security_monkeypatches(self):
+        root = self.fixture(
+            "source-reviewer-closures",
+            {
+                "data/a.txt": "alpha\n",
+                "probe.py": (
+                    "import builtins,json,os,sys\n"
+                    "from pathlib import Path\n"
+                    "if sys.argv[1] == 'metadata': print('{}')\n"
+                    "else:\n"
+                    " assert getattr(builtins.open,'__closure__',None) is None\n"
+                    " assert getattr(builtins.__import__,'__closure__',None) is None\n"
+                    " assert getattr(os.stat,'__closure__',None) is None\n"
+                    " Path('/repo/data/a.txt').read_bytes()\n"
+                    " print(json.dumps(['data/a.txt']))\n"
+                ),
+            },
+        )
+        observation = self.source_probe(
+            root,
+            SourceContract(
+                "data/a.txt",
+                None,
+                ("data/a.txt",),
+                {},
+                ("builtins", "json", "os", "pathlib", "sys"),
+            ),
+            load_arguments=["load"],
+        )
+        self.assertEqual(observation.reported_sources, ("data/a.txt",))
+
+    def test_reviewer_anonymous_exec_mmap_is_denied(self):
+        root = self.fixture(
+            "source-reviewer-mmap-exec",
+            {
+                "data/a.txt": "alpha\n",
+                "probe.py": (
+                    "import json,mmap,sys\n"
+                    "if sys.argv[1] == 'metadata': print('{}')\n"
+                    "else:\n"
+                    " mmap.mmap(-1,4096,prot=mmap.PROT_READ|mmap.PROT_WRITE|mmap.PROT_EXEC)\n"
+                    " print(json.dumps(['data/a.txt']))\n"
+                ),
+            },
+        )
+        with self.assertRaisesRegex(
+            SourceProbeError,
+            "admitted-source confinement|denied filesystem operation",
+        ):
+            self.source_probe(
+                root,
+                SourceContract(
+                    "data/a.txt",
+                    None,
+                    ("data/a.txt",),
+                    {},
+                    ("json", "mmap", "sys"),
+                ),
+                load_arguments=["load"],
+            )
+
+    def test_reviewer_recovered_ctypes_mmap_and_mprotect_are_denied(self):
+        root = self.fixture(
+            "source-reviewer-recovered-ctypes",
+            {
+                "data/a.txt": "alpha\n",
+                "probe.py": (
+                    "import json,sys\n"
+                    "from pathlib import Path\n"
+                    "def classes():\n"
+                    " seen=set(); pending=[object]\n"
+                    " while pending:\n"
+                    "  base=pending.pop()\n"
+                    "  try: children=base.__subclasses__()\n"
+                    "  except TypeError: continue\n"
+                    "  for child in children:\n"
+                    "   if child in seen: continue\n"
+                    "   seen.add(child); pending.append(child)\n"
+                    " yield from seen\n"
+                    "if sys.argv[1] == 'metadata': print('{}')\n"
+                    "else:\n"
+                    " CDLL=next(cls for cls in classes() if cls.__name__=='CDLL')\n"
+                    " libc=CDLL(None)\n"
+                    " assert libc.open(b'/etc/passwd',0) == -1\n"
+                    " assert libc.mkdir(b'/work/forged',0o700) == -1\n"
+                    " assert libc.mmap(0,4096,7,0x62,-1,0) == -1\n"
+                    " address=libc.mmap(0,4096,3,0x62,-1,0)\n"
+                    " assert address not in (-1,0)\n"
+                    " assert libc.mprotect(address,4096,7) == -1\n"
+                    " Path('/repo/data/a.txt').read_bytes()\n"
+                    " print(json.dumps(['data/a.txt']))\n"
+                ),
+            },
+        )
+        with self.assertRaisesRegex(
+            SourceProbeError,
+            "denied filesystem operation",
+        ):
+            self.source_probe(
+                root,
+                SourceContract(
+                    "data/a.txt",
+                    None,
+                    ("data/a.txt",),
+                    {},
+                    ("json", "pathlib", "sys"),
                 ),
                 load_arguments=["load"],
             )
@@ -1120,7 +1267,10 @@ class GeneratedSourceConfinementTests(ProbeTestCase):
             source_probe,
             "_python_runtime_mounts",
             side_effect=without_libffi,
-        ), self.assertRaisesRegex(SourceProbeError, "code-only confinement"):
+        ), self.assertRaisesRegex(
+            SourceProbeError,
+            "code-only confinement|controlled execution",
+        ):
             self.source_probe(
                 root,
                 SourceContract(
@@ -1151,7 +1301,10 @@ class GeneratedSourceConfinementTests(ProbeTestCase):
             source_probe,
             "_python_runtime_mounts",
             side_effect=tampered_libffi,
-        ), self.assertRaisesRegex(SourceProbeError, "code-only confinement"):
+        ), self.assertRaisesRegex(
+            SourceProbeError,
+            "code-only confinement|controlled execution",
+        ):
             self.source_probe(
                 root,
                 SourceContract(
@@ -1230,7 +1383,7 @@ class GeneratedSourceConfinementTests(ProbeTestCase):
         )
         with self.assertRaisesRegex(
             SourceProbeError,
-            "authenticated missing-source outcome",
+            "authenticated missing-source outcome|initial access set",
         ):
             self.source_probe(
                 root,
@@ -1289,6 +1442,37 @@ class GeneratedSourceConfinementTests(ProbeTestCase):
                     "*.txt",
                     ("data/a.txt",),
                     {"root": "data", "pattern": "*.txt"},
+                ),
+                load_arguments=["load"],
+            )
+
+    def test_metadata_phase_cannot_read_declared_load_sources(self):
+        root = self.fixture(
+            "source-metadata-no-data",
+            {
+                "data/a.txt": "alpha\n",
+                "probe.py": (
+                    "import json,sys\n"
+                    "from pathlib import Path\n"
+                    "if sys.argv[1] == 'metadata':\n"
+                    " Path('/repo/data/a.txt').read_bytes(); print('{}')\n"
+                    "else:\n"
+                    " Path('/repo/data/a.txt').read_bytes()\n"
+                    " print(json.dumps(['data/a.txt']))\n"
+                ),
+            },
+        )
+        with self.assertRaisesRegex(
+            SourceProbeError,
+            "metadata failed|metadata attempted",
+        ):
+            self.source_probe(
+                root,
+                SourceContract(
+                    "data/a.txt",
+                    None,
+                    ("data/a.txt",),
+                    {},
                 ),
                 load_arguments=["load"],
             )
@@ -1557,6 +1741,122 @@ class AggregateBudgetTests(ProbeTestCase):
         deadline_budget = ProbeBudget(limits(seconds=0.1), clock=clock)
         with self.assertRaisesRegex(ProbeBudgetError, "deadline"):
             ExecutionSnapshot.capture(root, deadline_budget)
+
+    def test_infinite_target_variant_and_worker_iterables_fail_before_launch(self):
+        root = self.fixture(
+            "infinite-iterables",
+            {"Makefile": "all:\n\t@echo safe\n"},
+        )
+        target_budget = ProbeBudget(limits(variants=4))
+        snapshot = ExecutionSnapshot.capture(root, target_budget)
+        with self.assertRaisesRegex(ProbeBudgetError, "targets"):
+            run_make_probe(
+                snapshot,
+                targets=(f"target-{index}" for index in itertools.count()),
+                variants=(MakeVariant(),),
+                owner_inputs={},
+                registered_commands=(),
+                scratch_root=SCRATCH,
+                budget=target_budget,
+            )
+        self.assertEqual(target_budget.snapshot()["subprocesses"], 0)
+
+        variant_budget = ProbeBudget(limits(variants=4))
+        snapshot = ExecutionSnapshot.capture(root, variant_budget)
+        with self.assertRaisesRegex(ProbeBudgetError, "variant/state"):
+            run_make_probe(
+                snapshot,
+                targets=("all",),
+                variants=(
+                    MakeVariant.from_dict({"STATE": str(index)})
+                    for index in itertools.count()
+                ),
+                owner_inputs={"all": {"Makefile"}},
+                registered_commands=(),
+                scratch_root=SCRATCH,
+                budget=variant_budget,
+            )
+        self.assertEqual(variant_budget.snapshot()["subprocesses"], 0)
+
+        assignment_budget = ProbeBudget(limits(variants=4))
+        snapshot = ExecutionSnapshot.capture(root, assignment_budget)
+        with self.assertRaisesRegex(ProbeBudgetError, "variant assignments"):
+            run_make_probe(
+                snapshot,
+                targets=("all",),
+                variants=(
+                    MakeVariant(
+                        (("STATE", str(index)) for index in itertools.count())
+                    ),
+                ),
+                owner_inputs={"all": {"Makefile"}},
+                registered_commands=(),
+                scratch_root=SCRATCH,
+                budget=assignment_budget,
+            )
+        self.assertEqual(assignment_budget.snapshot()["subprocesses"], 0)
+
+        worker_budget = ProbeBudget(
+            limits(count_overrides={"pending": 64, "futures": 64})
+        )
+        with self.assertRaisesRegex(ProbeBudgetError, "worker input"):
+            run_bounded_futures(
+                worker_budget,
+                itertools.count(),
+                lambda item, _remaining: item,
+            )
+        self.assertEqual(multiprocessing.active_children(), [])
+
+    def test_oversized_tree_and_program_generator_fail_incrementally(self):
+        root = SCRATCH / "oversized-tree"
+        shutil.rmtree(root, ignore_errors=True)
+        root.mkdir()
+        for index in range(40):
+            (root / f"{index:02d}.txt").write_bytes(b"x")
+        constrained = ProbeBudget(
+            limits(count_overrides={"snapshot_files": 32})
+        )
+        with self.assertRaisesRegex(ProbeBudgetError, "snapshot tree"):
+            ExecutionSnapshot.capture(root, constrained)
+        path_budget = ProbeBudget(
+            limits(count_overrides={"snapshot_files": 8})
+        )
+        with self.assertRaisesRegex(ProbeBudgetError, "snapshot input paths"):
+            ExecutionSnapshot.capture(
+                root,
+                path_budget,
+                (f"{index}.txt" for index in itertools.count()),
+            )
+
+        source_root = self.fixture(
+            "infinite-program-paths",
+            {"probe.py": "print('{}')\n", "data/a.txt": "a"},
+        )
+        source_budget = ProbeBudget(
+            limits(count_overrides={"snapshot_files": 8})
+        )
+        with self.assertRaisesRegex(
+            ProbeBudgetError,
+            "program paths",
+        ):
+            probe_generated_sources(
+                source_root,
+                program_paths=(
+                    f"probe-{index}.py" for index in itertools.count()
+                ),
+                entrypoint="probe.py",
+                metadata_arguments=["metadata"],
+                load_arguments=["load"],
+                contract=SourceContract(
+                    "data/a.txt",
+                    None,
+                    ("data/a.txt",),
+                    {},
+                ),
+                scratch_root=SCRATCH,
+                budget=source_budget,
+            )
+        self.assertEqual(source_budget.snapshot()["subprocesses"], 0)
 
     def test_source_omissions_reuse_one_materialized_snapshot(self):
         files = {

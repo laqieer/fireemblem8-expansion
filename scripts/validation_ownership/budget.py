@@ -174,13 +174,46 @@ T = TypeVar("T")
 R = TypeVar("R")
 
 
+def bounded_collect(
+    budget: ProbeBudget,
+    items: Iterable[T],
+    *,
+    limit: int,
+    label: str,
+    unique: bool = False,
+) -> list[T]:
+    """Collect only after checking the global deadline and item cap."""
+    result = []
+    seen = set()
+    iterator = iter(items)
+    while True:
+        budget.remaining(label)
+        try:
+            item = next(iterator)
+        except StopIteration:
+            break
+        if unique:
+            if item in seen:
+                continue
+            seen.add(item)
+        if len(result) >= limit:
+            raise ProbeBudgetError(f"{label} exceeds aggregate count bound")
+        result.append(item)
+    return result
+
+
 def run_bounded_futures(
     budget: ProbeBudget,
     items: Iterable[T],
     worker: Callable[[T, float], R],
 ) -> list[R]:
     """Run a bounded batch in killable worker process groups."""
-    pending = list(items)
+    pending = bounded_collect(
+        budget,
+        items,
+        limit=budget.limits.workers,
+        label="probe worker input",
+    )
     if not pending:
         return []
     with budget.lease("pending", len(pending)), budget.lease(

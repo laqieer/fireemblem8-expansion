@@ -16,20 +16,24 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
 
-from scripts.validation_ownership.budget import ProbeBudget, ProbeBudgetError
+from scripts.validation_ownership.budget import (
+    ProbeBudget,
+    ProbeBudgetError,
+    bounded_collect,
+)
 from scripts.validation_ownership.sandbox import (
     PYTHON,
     ExecutionSnapshot,
     Mount,
     ProbeSandboxError,
     SandboxRunner,
+    SyscallPolicy,
     runtime_dependency_mounts,
     run_bounded_process,
     strict_utf8,
 )
 from scripts.validation_ownership.candidate_runtime import (
-    OMISSION_EXIT,
-    OMISSION_PREFIX,
+    CONTROLLED_DENIAL_EXIT,
 )
 
 
@@ -98,12 +102,17 @@ class SourceContract:
                 del metadata
             return current
 
+        exact_values = bounded_collect(
+            budget,
+            self.exact_sources,
+            limit=budget.limits.counts["snapshot_files"],
+            label="declared generated sources",
+            unique=True,
+        )
         exact = tuple(
             sorted(
-                {
-                    _canonical_path(path, "declared generated source")
-                    for path in self.exact_sources
-                }
+                _canonical_path(path, "declared generated source")
+                for path in exact_values
             )
         )
         if len(exact) != len(self.exact_sources):
@@ -132,7 +141,15 @@ class SourceContract:
                     or not any(character in pattern for character in "*?[")
                 ):
                     raise SourceProbeError("declared source pattern is invalid")
-                children = sorted(source_root.iterdir())
+                children = sorted(
+                    bounded_collect(
+                        budget,
+                        source_root.iterdir(),
+                        limit=budget.limits.counts["snapshot_files"],
+                        label="generated source directory",
+                    ),
+                    key=lambda path: path.name,
+                )
                 budget.charge_count("snapshot_ops", len(children) * 3)
                 expected = {
                     path.relative_to(candidate_root).as_posix()
@@ -161,6 +178,7 @@ class SourceObservation:
     raw_report: bytes
     execution_snapshot_sha256: str
     runtime_sha256: str
+    access_events: tuple[dict[str, object], ...]
 
 
 def _python_runtime_mounts(
@@ -208,12 +226,21 @@ def _python_runtime_mounts(
         completed.stdout,
         "trusted candidate Python import closure",
     )
+    if not isinstance(module_paths, list):
+        raise SourceProbeError("trusted candidate Python import closure is invalid")
+    checked_module_paths = bounded_collect(
+        budget,
+        module_paths,
+        limit=budget.limits.counts["snapshot_files"],
+        label="Python runtime modules",
+        unique=True,
+    )
     if (
-        not isinstance(module_paths, list)
-        or module_paths != sorted(set(module_paths))
-        or not all(isinstance(path, str) for path in module_paths)
+        len(checked_module_paths) != len(module_paths)
+        or not all(isinstance(path, str) for path in checked_module_paths)
     ):
         raise SourceProbeError("trusted candidate Python import closure is invalid")
+    module_paths = sorted(checked_module_paths)
     destination.mkdir(parents=True, exist_ok=False)
     extensions = []
     copied = 0
@@ -316,12 +343,17 @@ def probe_generated_sources(
         raise SourceProbeError("candidate source root is a symlink")
     candidate_root = candidate_root.resolve(strict=True)
     entrypoint = _canonical_path(entrypoint, "generated-source entrypoint")
+    selected_program_values = bounded_collect(
+        budget,
+        program_paths,
+        limit=budget.limits.counts["snapshot_files"],
+        label="generated-source program paths",
+        unique=True,
+    )
     selected_programs = tuple(
         sorted(
-            {
-                _canonical_path(path, "generated-source program path")
-                for path in program_paths
-            }
+            _canonical_path(path, "generated-source program path")
+            for path in selected_program_values
         )
     )
     if entrypoint not in selected_programs:
@@ -337,9 +369,17 @@ def probe_generated_sources(
         raise SourceProbeError(
             "trusted graph/schema metadata is not strict JSON"
         ) from error
+    admitted_import_values = bounded_collect(
+        budget,
+        contract.admitted_imports,
+        limit=budget.limits.counts["snapshot_files"],
+        label="admitted Python imports",
+        unique=True,
+    )
     if (
-        not contract.admitted_imports
-        or tuple(sorted(set(contract.admitted_imports)))
+        not admitted_import_values
+        or len(admitted_import_values) != len(contract.admitted_imports)
+        or tuple(sorted(admitted_import_values))
         != contract.admitted_imports
         or any(
             re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", name) is None
@@ -399,23 +439,56 @@ def probe_generated_sources(
                 for entry in complete_snapshot.entries
             },
         }
-
+        policy_metadata = {
+            "/repo" if path == "." else f"/repo/{path}": record
+            for path, record in metadata_records.items()
+        }
         def execute(
             arguments: Iterable[str],
             *,
             admitted_sources: Iterable[str],
             omitted_source: str | None,
-        ) -> tuple[subprocess.CompletedProcess[bytes], str]:
-            nonce = secrets.token_hex(32)
+        ) -> subprocess.CompletedProcess[bytes]:
+            selected_source_paths = tuple(
+                bounded_collect(
+                    budget,
+                    admitted_sources,
+                    limit=budget.limits.counts["snapshot_files"],
+                    label="per-run admitted sources",
+                    unique=True,
+                )
+            )
+            selected_relative_paths = {"."}
+            for collection in (selected_programs, selected_source_paths):
+                for relative in collection:
+                    if (
+                        relative not in selected_relative_paths
+                        and len(selected_relative_paths)
+                        >= budget.limits.counts["snapshot_files"]
+                    ):
+                        raise ProbeBudgetError(
+                            "per-run admitted paths exceed aggregate count bound"
+                        )
+                    selected_relative_paths.add(relative)
+            for relative in tuple(selected_relative_paths):
+                selected_relative_paths.update(
+                    parent.as_posix()
+                    for parent in Path(relative).parents
+                    if parent.as_posix() != "."
+                )
+            selected_policy_paths = frozenset(
+                "/repo" if path == "." else f"/repo/{path}"
+                for path in selected_relative_paths
+            )
+            selected_policy_metadata = {
+                path: policy_metadata[path]
+                for path in selected_policy_paths
+            }
             config_path = base / f"runtime-{secrets.token_hex(8)}.json"
             config_path.write_text(
                 json.dumps(
                     {
-                        "admitted_imports": sorted(set(contract.admitted_imports)),
-                        "admitted_paths": sorted(set(admitted_sources)),
-                        "metadata": metadata_records,
-                        "nonce": nonce,
-                        "omitted_source": omitted_source,
+                        "admitted_imports": admitted_import_values,
                         "program_paths": list(selected_programs),
                     },
                     ensure_ascii=True,
@@ -462,18 +535,28 @@ def probe_generated_sources(
                         read_only=read_only,
                         writable=[Mount(work, "/work")],
                         bootstrap_config=config_path,
+                        syscall_policy=SyscallPolicy(
+                            repository_root=tree,
+                            allowed_paths=selected_policy_paths,
+                            metadata=selected_policy_metadata,
+                            omitted_path=(
+                                None
+                                if omitted_source is None
+                                else f"/repo/{omitted_source}"
+                            ),
+                        ),
                     )
                 except (ProbeBudgetError, ProbeSandboxError) as error:
                     raise SourceProbeError(
                         f"candidate controlled execution failed: {error}"
                     ) from error
-                return completed, nonce
+                return completed
             finally:
                 config_path.unlink(missing_ok=True)
                 if omission_mask is not None:
                     omission_mask.unlink(missing_ok=True)
 
-        metadata_completed, _ = execute(
+        metadata_completed = execute(
             metadata_arguments,
             admitted_sources=(),
             omitted_source=None,
@@ -485,6 +568,13 @@ def probe_generated_sources(
                     metadata_completed.stderr,
                     "candidate source metadata stderr",
                 )
+                )
+        if any(
+                event["denied"]
+                for event in metadata_completed.syscall_events
+        ):
+                raise SourceProbeError(
+                    "candidate source metadata attempted a denied filesystem operation"
             )
         metadata = _json_output(
             metadata_completed.stdout,
@@ -495,7 +585,7 @@ def probe_generated_sources(
                 "candidate source metadata differs from trusted graph/schema contract"
             )
 
-        load_completed, _ = execute(
+        load_completed = execute(
             load_arguments,
             admitted_sources=permitted,
             omitted_source=None,
@@ -504,35 +594,76 @@ def probe_generated_sources(
             raise SourceProbeError(
                 "candidate source load failed in admitted-source confinement: "
                 + strict_utf8(load_completed.stderr, "candidate source load stderr")
+                + f" returncode={load_completed.returncode} "
+                f"events={load_completed.syscall_events!r}"
+            )
+        if any(event["denied"] for event in load_completed.syscall_events):
+            raise SourceProbeError(
+                "candidate source load attempted a denied filesystem operation"
             )
         reported = _json_output(
             load_completed.stdout,
             "candidate generated-source report",
         )
+        if not isinstance(reported, list):
+            raise SourceProbeError("candidate generated-source report is invalid")
+        checked_reported = bounded_collect(
+            budget,
+            reported,
+            limit=budget.limits.counts["snapshot_files"],
+            label="candidate generated-source report",
+            unique=True,
+        )
         if (
-            not isinstance(reported, list)
-            or reported != sorted(reported)
-            or len(reported) != len(set(reported))
-            or not all(isinstance(path, str) for path in reported)
+            len(checked_reported) != len(reported)
+            or checked_reported != sorted(checked_reported)
+            or not all(isinstance(path, str) for path in checked_reported)
         ):
             raise SourceProbeError("candidate generated-source report is invalid")
-        reported_tuple = tuple(reported)
+        reported_tuple = tuple(checked_reported)
         if reported_tuple != permitted:
             raise SourceProbeError(
                 "declared/reported/permitted generated-source sets differ"
             )
+        observed_sources = {
+            event["path"].removeprefix("/repo/")
+            for event in load_completed.syscall_events
+            if not event["denied"]
+            and event["path"].startswith("/repo/")
+            and event["path"].removeprefix("/repo/") in permitted
+            and event["operation"]
+            in {"access", "fstat", "lstat", "mmap", "newfstatat", "open", "openat", "openat2", "stat", "statx"}
+        }
+        if observed_sources != set(permitted):
+            raise SourceProbeError(
+                "candidate initial access set differs from permitted sources "
+                f"(observed={sorted(observed_sources)}, "
+                f"permitted={list(permitted)})"
+            )
 
         for source in permitted:
-            mutation, nonce = execute(
+            mutation = execute(
                 load_arguments,
                 admitted_sources=permitted,
                 omitted_source=source,
             )
-            expected = f"{OMISSION_PREFIX} {nonce} {source}\n".encode("ascii")
+            denied = [
+                event
+                for event in mutation.syscall_events
+                if event["denied"]
+            ]
             if (
-                mutation.returncode != OMISSION_EXIT
+                mutation.returncode != CONTROLLED_DENIAL_EXIT
                 or mutation.stdout
-                or mutation.stderr != expected
+                or mutation.stderr
+                or denied
+                != [
+                    {
+                        "denied": True,
+                        "operation": denied[0]["operation"] if denied else "",
+                        "path": f"/repo/{source}",
+                    }
+                ]
             ):
                 raise SourceProbeError(
                     f"candidate omission replay for {source!r} did not "
@@ -547,4 +678,5 @@ def probe_generated_sources(
             raw_report=load_completed.stdout,
             execution_snapshot_sha256=complete_snapshot.digest,
             runtime_sha256=runtime_sha256,
+            access_events=tuple(load_completed.syscall_events),
         )

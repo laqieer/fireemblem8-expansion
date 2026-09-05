@@ -10,7 +10,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
 
-from scripts.validation_ownership.budget import ProbeBudget, ProbeCache
+from scripts.validation_ownership.budget import (
+    ProbeBudget,
+    ProbeCache,
+    bounded_collect,
+)
 from scripts.validation_ownership.sandbox import (
     MAKE,
     ExecutionSnapshot,
@@ -81,6 +85,7 @@ class MakeObservation:
 def _validate_make_controls(
     snapshot: ExecutionSnapshot,
     paths: Iterable[str],
+    budget: ProbeBudget,
 ) -> None:
     def strip_comment(line: str) -> str:
         for index, character in enumerate(line):
@@ -95,7 +100,14 @@ def _validate_make_controls(
                 return line[:index]
         return line
 
-    for path in sorted(set(paths)):
+    selected_paths = bounded_collect(
+        budget,
+        paths,
+        limit=budget.limits.counts["snapshot_files"],
+        label="loaded Make inputs",
+        unique=True,
+    )
+    for path in sorted(selected_paths):
         entry = snapshot.entry(path)
         try:
             text = strict_utf8(entry.data, f"GNU Make input {entry.path!r}")
@@ -124,6 +136,7 @@ def _validate_make_controls(
 def _loaded_makefiles(
     snapshot: ExecutionSnapshot,
     stdout: bytes,
+    budget: ProbeBudget,
 ) -> set[str]:
     try:
         text = strict_utf8(stdout, "GNU Make verbose output")
@@ -154,6 +167,11 @@ def _loaded_makefiles(
             raise MakeProbeError(
                 f"GNU Make loaded input outside the execution snapshot: {path!r}"
             )
+        if (
+            path not in loaded
+            and len(loaded) >= budget.limits.counts["snapshot_files"]
+        ):
+            raise MakeProbeError("GNU Make loaded input count exceeds bound")
         loaded.add(path)
     if "Makefile" not in loaded:
         raise MakeProbeError("GNU Make did not report its candidate Makefile")
@@ -216,9 +234,17 @@ def _semantic_output(stdout: bytes, stderr: bytes) -> dict[str, object]:
 def _owner_input_record(
     snapshot: ExecutionSnapshot,
     owner_inputs: Iterable[str],
+    budget: ProbeBudget,
 ) -> list[dict[str, object]]:
     records = []
-    for path in sorted(set(owner_inputs)):
+    selected_inputs = bounded_collect(
+        budget,
+        owner_inputs,
+        limit=budget.limits.counts["snapshot_files"],
+        label="Make owner inputs",
+        unique=True,
+    )
+    for path in sorted(selected_inputs):
         entry = snapshot.entry(path)
         records.append(
             {
@@ -248,8 +274,21 @@ def run_make_probe(
     budget: ProbeBudget,
 ) -> list[MakeObservation]:
     """Observe every target/state under one aggregate probe authority."""
-    selected_targets = sorted(set(targets))
-    selected_variants = list(variants)
+    selected_targets = sorted(
+        bounded_collect(
+            budget,
+            targets,
+            limit=budget.limits.variants,
+            label="GNU Make targets",
+            unique=True,
+        )
+    )
+    selected_variants = bounded_collect(
+        budget,
+        variants,
+        limit=budget.limits.variants,
+        label="GNU Make variant/state inputs",
+    )
     if not selected_targets or any(
         not target
         or "\0" in target
@@ -261,17 +300,39 @@ def run_make_probe(
         raise MakeProbeError("GNU Make probe targets are invalid")
     if not selected_variants:
         selected_variants = [MakeVariant()]
+    bounded_variants = []
     for variant in selected_variants:
-        _validate_variant(variant)
-    missing_owner_inputs = set(selected_targets) - set(owner_inputs)
+        bounded_variant = MakeVariant(
+            tuple(
+                bounded_collect(
+                    budget,
+                    variant.assignments,
+                    limit=budget.limits.variants,
+                    label="GNU Make variant assignments",
+                )
+            )
+        )
+        _validate_variant(bounded_variant)
+        bounded_variants.append(bounded_variant)
+    selected_variants = bounded_variants
+    missing_owner_inputs = {
+        target for target in selected_targets if target not in owner_inputs
+    }
     if missing_owner_inputs:
         raise MakeProbeError(
             f"GNU Make targets lack declared owner inputs: "
             f"{sorted(missing_owner_inputs)}"
         )
     budget.preflight_variants(len(selected_targets) * len(selected_variants))
-    _validate_make_controls(snapshot, {"Makefile"})
-    registered_commands = tuple(registered_commands)
+    _validate_make_controls(snapshot, ("Makefile",), budget)
+    registered_commands = tuple(
+        bounded_collect(
+            budget,
+            registered_commands,
+            limit=budget.limits.counts["mappings"],
+            label="registered commands",
+        )
+    )
     scratch_root = scratch_root.resolve(strict=True)
     with tempfile.TemporaryDirectory(
         prefix="make-probe-",
@@ -305,6 +366,7 @@ def run_make_probe(
             target_owner_inputs = _owner_input_record(
                 snapshot,
                 owner_inputs[target],
+                budget,
             )
             for variant in selected_variants:
                 assignments = list(variant.assignments)
@@ -347,7 +409,8 @@ def run_make_probe(
                     raise MakeProbeError(str(error)) from error
                 _validate_make_controls(
                     snapshot,
-                    _loaded_makefiles(snapshot, completed.stdout),
+                    _loaded_makefiles(snapshot, completed.stdout, budget),
+                    budget,
                 )
                 if completed.returncode != 0 or completed.stderr:
                     raise MakeProbeError(

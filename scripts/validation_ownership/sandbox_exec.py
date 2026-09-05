@@ -26,6 +26,7 @@ PR_SET_KEEPCAPS = 8
 PR_CAPBSET_DROP = 24
 LINUX_CAPABILITY_VERSION_3 = 0x20080522
 BOOTSTRAP_FD = 6
+SUPERVISOR_FD = 7
 
 
 class _CapabilityHeader(ctypes.Structure):
@@ -153,6 +154,7 @@ def main() -> int:
         "runner_gid",
         "runner_uid",
         "sudo_drop",
+        "supervisor_fd",
         "writable",
     }
     if set(config) != expected:
@@ -178,6 +180,21 @@ def main() -> int:
             bootstrap_path,
             os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | os.O_NOFOLLOW,
         )
+    supervisor_descriptor = config["supervisor_fd"]
+    if supervisor_descriptor is not None:
+        if not isinstance(supervisor_descriptor, int) or supervisor_descriptor < 3:
+            raise SystemExit("sandbox supervisor descriptor is invalid")
+        safe_supervisor = os.dup(supervisor_descriptor)
+        os.dup2(safe_supervisor, SUPERVISOR_FD, inheritable=True)
+        os.set_inheritable(SUPERVISOR_FD, True)
+        os.close(safe_supervisor)
+        if supervisor_descriptor != SUPERVISOR_FD:
+            os.close(supervisor_descriptor)
+    else:
+        try:
+            os.close(SUPERVISOR_FD)
+        except OSError:
+            pass
     _mount(str(root), str(root), MS_BIND | MS_REC)
     for item in config["read_only"]:
         if set(item) != {"noexec", "source", "target"}:

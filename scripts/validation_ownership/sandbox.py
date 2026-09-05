@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
+import ctypes
+import errno
+import fcntl
 import hashlib
 import json
 import os
 import re
 import secrets
+import select
 import selectors
 import shlex
 import shutil
@@ -28,6 +32,7 @@ from scripts.validation_ownership.budget import (
     ProbeBudget,
     ProbeBudgetError,
     ProbeCache,
+    bounded_collect,
 )
 
 
@@ -44,6 +49,509 @@ RESPONSE_MAGIC = b"VORES001"
 MAX_ARGUMENTS = 4096
 MAX_ARGUMENT_BYTES = 1024 * 1024
 MAX_SOCKET_OUTPUT = 16 * 1024 * 1024
+SECCOMP_USER_NOTIF_FLAG_CONTINUE = 1
+AT_FDCWD = -100
+PROT_EXEC = 0x4
+SECCOMP_CONTROL_MAGIC = b"VO-SECCOMP-LISTENER-v1"
+
+
+def _ioctl(direction: int, type_value: int, number: int, size: int) -> int:
+    return (
+        (direction << 30)
+        | (size << 16)
+        | (type_value << 8)
+        | number
+    )
+
+
+SECCOMP_IOCTL_NOTIF_RECV = _ioctl(3, ord("!"), 0, 80)
+SECCOMP_IOCTL_NOTIF_SEND = _ioctl(3, ord("!"), 1, 24)
+
+
+class _Iovec(ctypes.Structure):
+    _fields_ = [("base", ctypes.c_void_p), ("length", ctypes.c_size_t)]
+
+
+@dataclass(frozen=True)
+class SyscallPolicy:
+    """Supervisor-only syscall/path authority for candidate Python."""
+
+    repository_root: Path
+    allowed_paths: frozenset[str]
+    metadata: dict[str, dict[str, object]]
+    omitted_path: str | None = None
+
+
+class _SyscallSupervisor:
+    PATH_SYSCALLS = {
+        2: ("open", 0, None),
+        4: ("stat", 0, 1),
+        6: ("lstat", 0, 1),
+        21: ("access", 0, None),
+        89: ("readlink", 0, None),
+        257: ("openat", 1, None),
+        262: ("newfstatat", 1, 2),
+        267: ("readlinkat", 1, None),
+        269: ("faccessat", 1, None),
+        332: ("statx", 1, 4),
+        437: ("openat2", 1, None),
+        439: ("faccessat2", 1, None),
+    }
+
+    def __init__(
+        self,
+        channel: socket.socket,
+        policy: SyscallPolicy,
+        budget: ProbeBudget,
+    ):
+        self.channel = channel
+        self.policy = policy
+        self.budget = budget
+        self.events: list[dict[str, object]] = []
+        self.error: BaseException | None = None
+        self.stop_event = threading.Event()
+        self.listener_fd: int | None = None
+        self.thread = threading.Thread(target=self._run, daemon=True)
+        self._directory_offsets: dict[tuple[int, int], int] = {}
+        self._finished = False
+
+    def __enter__(self) -> "_SyscallSupervisor":
+        self.channel.settimeout(0.05)
+        self.thread.start()
+        return self
+
+    @staticmethod
+    def _read_memory(pid: int, address: int, size: int) -> bytes:
+        if address == 0 or size <= 0 or size > 1024 * 1024:
+            raise ProbeSandboxError("candidate syscall memory range is invalid")
+        buffer = ctypes.create_string_buffer(size)
+        local = _Iovec(ctypes.cast(buffer, ctypes.c_void_p), size)
+        remote = _Iovec(ctypes.c_void_p(address), size)
+        libc = ctypes.CDLL(None, use_errno=True)
+        count = libc.process_vm_readv(
+            pid,
+            ctypes.byref(local),
+            1,
+            ctypes.byref(remote),
+            1,
+            0,
+        )
+        if count < 0:
+            error = ctypes.get_errno()
+            raise OSError(error, os.strerror(error), "process_vm_readv")
+        return bytes(buffer.raw[:count])
+
+    @staticmethod
+    def _write_memory(pid: int, address: int, data: bytes) -> None:
+        buffer = ctypes.create_string_buffer(data)
+        local = _Iovec(ctypes.cast(buffer, ctypes.c_void_p), len(data))
+        remote = _Iovec(ctypes.c_void_p(address), len(data))
+        libc = ctypes.CDLL(None, use_errno=True)
+        count = libc.process_vm_writev(
+            pid,
+            ctypes.byref(local),
+            1,
+            ctypes.byref(remote),
+            1,
+            0,
+        )
+        if count != len(data):
+            error = ctypes.get_errno()
+            raise OSError(error, os.strerror(error), "process_vm_writev")
+
+    @classmethod
+    def _read_c_string(cls, pid: int, address: int) -> str:
+        data = cls._read_memory(pid, address, 4096)
+        end = data.find(b"\0")
+        if end < 0:
+            raise ProbeSandboxError("candidate syscall path is not terminated")
+        try:
+            return data[:end].decode("utf-8")
+        except UnicodeDecodeError as error:
+            raise ProbeSandboxError(
+                "candidate syscall path is not valid UTF-8"
+            ) from error
+
+    def _translate_host_path(self, pid: int, value: str) -> str:
+        repository = self.policy.repository_root.resolve(strict=True)
+        path = Path(value)
+        candidates = [repository]
+        try:
+            process_root = Path(f"/proc/{pid}/root").resolve(strict=True)
+            candidates.append(process_root / "repo")
+        except OSError:
+            pass
+        resolved = path.resolve(strict=False)
+        for candidate_root in candidates:
+            try:
+                relative = resolved.relative_to(
+                    candidate_root.resolve(strict=False)
+                )
+            except ValueError:
+                continue
+            return (
+                "/repo"
+                if not relative.parts
+                else f"/repo/{relative.as_posix()}"
+            )
+        return os.path.normpath(value)
+
+    def _canonical_path(
+        self,
+        pid: int,
+        directory_fd: int,
+        raw_path: str,
+    ) -> str:
+        if raw_path.startswith("/"):
+            candidate = os.path.normpath(raw_path)
+        else:
+            descriptor_path = (
+                f"/proc/{pid}/cwd"
+                if directory_fd == AT_FDCWD
+                else f"/proc/{pid}/fd/{directory_fd}"
+            )
+            base = self._translate_host_path(pid, os.readlink(descriptor_path))
+            candidate = os.path.normpath(f"{base}/{raw_path}")
+        if candidate != "/repo" and not candidate.startswith("/repo/"):
+            raise PermissionError(
+                f"candidate path {candidate!r} is outside the admitted repository"
+            )
+        return candidate
+
+    @staticmethod
+    def _stat_bytes(record: dict[str, object]) -> bytes:
+        data = bytearray(144)
+        mode = int(record["mode"])
+        uid = int(record["uid"])
+        gid = int(record["gid"])
+        size = int(record["size"])
+        mtime_ns = int(record["mtime_ns"])
+        struct.pack_into("<I", data, 24, mode)
+        struct.pack_into("<I", data, 28, uid)
+        struct.pack_into("<I", data, 32, gid)
+        struct.pack_into("<q", data, 48, size)
+        struct.pack_into("<q", data, 88, mtime_ns // 1_000_000_000)
+        struct.pack_into("<q", data, 96, mtime_ns % 1_000_000_000)
+        return bytes(data)
+
+    @staticmethod
+    def _statx_bytes(record: dict[str, object]) -> bytes:
+        data = bytearray(256)
+        mask = 0x0001 | 0x0002 | 0x0008 | 0x0010 | 0x0040 | 0x0200
+        mtime_ns = int(record["mtime_ns"])
+        struct.pack_into("<I", data, 0, mask)
+        struct.pack_into("<I", data, 20, int(record["uid"]))
+        struct.pack_into("<I", data, 24, int(record["gid"]))
+        struct.pack_into("<H", data, 28, int(record["mode"]))
+        struct.pack_into("<Q", data, 40, int(record["size"]))
+        struct.pack_into("<qI", data, 112, mtime_ns // 1_000_000_000, mtime_ns % 1_000_000_000)
+        return bytes(data)
+
+    def _path_for_fd(self, pid: int, descriptor: int) -> str:
+        return self._translate_host_path(
+            pid,
+            os.readlink(f"/proc/{pid}/fd/{descriptor}")
+        )
+
+    def _record(self, operation: str, path: str, *, denied: bool) -> None:
+        encoded = f"{operation}\0{path}\0{int(denied)}".encode("utf-8")
+        self.budget.charge_count("events")
+        self.budget.charge_bytes("events", len(encoded))
+        self.events.append(
+            {"denied": denied, "operation": operation, "path": path}
+        )
+
+    def _directory_bytes(
+        self,
+        pid: int,
+        descriptor: int,
+        path: str,
+        maximum: int,
+    ) -> bytes:
+        if maximum < 24:
+            raise ProbeSandboxError("candidate directory buffer is too small")
+        maximum = min(maximum, 1024 * 1024)
+        prefix = path.rstrip("/") + "/"
+        children = []
+        for candidate, record in self.policy.metadata.items():
+            self.budget.remaining("directory observation")
+            if not candidate.startswith(prefix):
+                continue
+            suffix = candidate[len(prefix):]
+            if not suffix or "/" in suffix:
+                continue
+            if len(children) >= self.budget.limits.counts["snapshot_files"]:
+                raise ProbeBudgetError(
+                    "directory observation exceeds aggregate count bound"
+                )
+            children.append((suffix, record))
+        children.sort(key=lambda item: item[0])
+        key = (pid, descriptor)
+        index = self._directory_offsets.get(key, 0)
+        output = bytearray()
+        while index < len(children):
+            name, record = children[index]
+            encoded = name.encode("utf-8") + b"\0"
+            record_length = (19 + len(encoded) + 7) & ~7
+            if len(output) + record_length > maximum:
+                break
+            chunk = bytearray(record_length)
+            entry_type = 8 if record["kind"] == "file" else 4
+            struct.pack_into(
+                "<QqHB",
+                chunk,
+                0,
+                0,
+                index + 1,
+                record_length,
+                entry_type,
+            )
+            chunk[19:19 + len(encoded)] = encoded
+            output.extend(chunk)
+            index += 1
+        if not output and index < len(children):
+            raise ProbeSandboxError("candidate directory buffer is too small")
+        self._directory_offsets[key] = index
+        return bytes(output)
+
+    def _respond(
+        self,
+        notification_id: int,
+        *,
+        error: int = 0,
+        value: int = 0,
+        continue_syscall: bool = False,
+    ) -> None:
+        assert self.listener_fd is not None
+        response = struct.pack(
+            "<QqiI",
+            notification_id,
+            value,
+            -error if error else 0,
+            SECCOMP_USER_NOTIF_FLAG_CONTINUE if continue_syscall else 0,
+        )
+        fcntl.ioctl(
+            self.listener_fd,
+            SECCOMP_IOCTL_NOTIF_SEND,
+            response,
+        )
+
+    def _handle(self, data: bytes) -> None:
+        notification_id, pid, _, number, arch, _, *arguments = struct.unpack(
+            "<QIIiIQQQQQQQ",
+            data,
+        )
+        if arch != 0xC000003E:
+            self._respond(notification_id, error=errno.EPERM)
+            return
+        if number == 3:
+            self._directory_offsets.pop((pid, arguments[0]), None)
+            self._respond(notification_id, continue_syscall=True)
+            return
+        if number in {9, 10, 329}:
+            protection = arguments[2]
+            if protection & PROT_EXEC:
+                self._record("exec-memory", "<memory>", denied=True)
+                self._respond(notification_id, error=errno.EPERM)
+                return
+            if number == 9 and arguments[4] != 0xFFFFFFFFFFFFFFFF:
+                try:
+                    path = self._path_for_fd(pid, arguments[4])
+                except OSError:
+                    path = "<unknown-fd>"
+                if (
+                    path == self.policy.omitted_path
+                    or path not in self.policy.allowed_paths
+                ):
+                    self._record("mmap", path, denied=True)
+                    self._respond(notification_id, error=errno.EACCES)
+                    return
+                self._record("mmap", path, denied=False)
+            self._respond(notification_id, continue_syscall=True)
+            return
+        if number in {5, 217}:
+            try:
+                path = self._path_for_fd(pid, arguments[0])
+            except OSError:
+                self._respond(notification_id, error=errno.EACCES)
+                return
+            operation = "fstat" if number == 5 else "scandir"
+            if path == self.policy.omitted_path:
+                self._record(operation, path, denied=True)
+                self._respond(notification_id, error=errno.ENOENT)
+                return
+            if path not in self.policy.allowed_paths:
+                self._record(operation, path, denied=True)
+                self._respond(notification_id, error=errno.EACCES)
+                return
+            self._record(operation, path, denied=False)
+            if number == 5:
+                payload = self._stat_bytes(self.policy.metadata[path])
+                self.budget.charge_bytes("outputs", len(payload))
+                self._write_memory(
+                    pid,
+                    arguments[1],
+                    payload,
+                )
+                self._respond(notification_id)
+            else:
+                directory_data = self._directory_bytes(
+                    pid,
+                    arguments[0],
+                    path,
+                    arguments[2],
+                )
+                if directory_data:
+                    self.budget.charge_bytes("outputs", len(directory_data))
+                    self._write_memory(pid, arguments[1], directory_data)
+                self._respond(notification_id, value=len(directory_data))
+            return
+        specification = self.PATH_SYSCALLS.get(number)
+        if specification is None:
+            self._respond(notification_id, error=errno.EPERM)
+            return
+        operation, path_index, output_index = specification
+        directory_fd = (
+            ctypes.c_int(arguments[0]).value
+            if number in {257, 262, 267, 269, 332, 437, 439}
+            else AT_FDCWD
+        )
+        try:
+            raw_path = self._read_c_string(pid, arguments[path_index])
+            path = self._canonical_path(pid, directory_fd, raw_path)
+        except (OSError, PermissionError, ProbeSandboxError):
+            self._respond(notification_id, error=errno.EACCES)
+            return
+        omitted = self.policy.omitted_path
+        if path == omitted:
+            self._record(operation, path, denied=True)
+            self._respond(notification_id, error=errno.ENOENT)
+            return
+        if path not in self.policy.allowed_paths:
+            self._record(operation, path, denied=True)
+            self._respond(notification_id, error=errno.EACCES)
+            return
+        if operation in {"open", "openat", "openat2"}:
+            if operation == "open":
+                flags = arguments[1]
+            elif operation == "openat":
+                flags = arguments[2]
+            else:
+                flags = struct.unpack(
+                    "<Q",
+                    self._read_memory(pid, arguments[2], 8),
+                )[0]
+            if flags & (
+                os.O_WRONLY
+                | os.O_RDWR
+                | os.O_CREAT
+                | os.O_TRUNC
+                | os.O_APPEND
+            ):
+                self._record(operation, path, denied=True)
+                self._respond(notification_id, error=errno.EACCES)
+                return
+        self._record(operation, path, denied=False)
+        if output_index is None:
+            self._respond(notification_id, continue_syscall=True)
+        elif operation == "statx":
+            payload = self._statx_bytes(self.policy.metadata[path])
+            self.budget.charge_bytes("outputs", len(payload))
+            self._write_memory(
+                pid,
+                arguments[output_index],
+                payload,
+            )
+            self._respond(notification_id)
+        else:
+            payload = self._stat_bytes(self.policy.metadata[path])
+            self.budget.charge_bytes("outputs", len(payload))
+            self._write_memory(
+                pid,
+                arguments[output_index],
+                payload,
+            )
+            self._respond(notification_id)
+
+    def _run(self) -> None:
+        try:
+            while not self.stop_event.is_set() and self.listener_fd is None:
+                try:
+                    message, ancillary, _, _ = self.channel.recvmsg(
+                        32,
+                        socket.CMSG_SPACE(struct.calcsize("i")),
+                    )
+                except socket.timeout:
+                    continue
+                if message != SECCOMP_CONTROL_MAGIC:
+                    raise ProbeSandboxError(
+                        "candidate seccomp listener message is invalid"
+                    )
+                for level, kind, payload in ancillary:
+                    if level == socket.SOL_SOCKET and kind == socket.SCM_RIGHTS:
+                        self.listener_fd = struct.unpack("i", payload[:4])[0]
+                        os.set_blocking(self.listener_fd, False)
+                        break
+                if self.listener_fd is None:
+                    raise ProbeSandboxError(
+                        "candidate did not transfer a seccomp listener"
+                    )
+            while not self.stop_event.is_set() and self.listener_fd is not None:
+                readable, _, _ = select.select([self.listener_fd], [], [], 0.05)
+                if not readable:
+                    continue
+                buffer = bytearray(80)
+                try:
+                    fcntl.ioctl(
+                        self.listener_fd,
+                        SECCOMP_IOCTL_NOTIF_RECV,
+                        buffer,
+                        True,
+                    )
+                except BlockingIOError:
+                    continue
+                except OSError as error:
+                    if error.errno in {errno.ENOENT, errno.EBADF}:
+                        continue
+                    raise
+                try:
+                    self._handle(bytes(buffer))
+                except BaseException as error:
+                    self.error = error
+                    notification_id = struct.unpack_from("<Q", buffer, 0)[0]
+                    try:
+                        self._respond(
+                            notification_id,
+                            error=errno.EOVERFLOW,
+                        )
+                    except OSError:
+                        pass
+                    self.stop_event.set()
+                    return
+        except BaseException as error:
+            if not self.stop_event.is_set():
+                self.error = error
+
+    def finish(self) -> None:
+        if self._finished:
+            return
+        self._finished = True
+        self.stop_event.set()
+        if self.listener_fd is not None:
+            os.close(self.listener_fd)
+            self.listener_fd = None
+        self.channel.close()
+        self.thread.join(timeout=2)
+        if self.thread.is_alive():
+            raise ProbeSandboxError("seccomp supervisor did not stop")
+        if self.error is not None:
+            raise ProbeSandboxError(
+                f"seccomp supervisor failed: {self.error}"
+            ) from self.error
+
+    def __exit__(self, exc_type, exc, traceback) -> None:
+        del exc_type, exc, traceback
+        self.finish()
 
 
 class ProbeSandboxError(RuntimeError):
@@ -93,6 +601,7 @@ def run_bounded_process(
     environment: dict[str, str],
     cwd: Path | None = None,
     on_start: Callable[[int], None] | None = None,
+    pass_fds: tuple[int, ...] = (),
 ) -> subprocess.CompletedProcess[bytes]:
     """Run one child under the aggregate deadline and output allowance."""
     budget.reserve_subprocess()
@@ -105,6 +614,7 @@ def run_bounded_process(
         stderr=subprocess.PIPE,
         start_new_session=True,
         close_fds=True,
+        pass_fds=pass_fds,
     )
     selector = selectors.DefaultSelector()
     assert process.stdout is not None
@@ -269,7 +779,14 @@ def _runtime_dependencies(
     budget: ProbeBudget,
 ) -> list[tuple[Path, str]]:
     dependencies: dict[str, Path] = {}
-    for executable in sorted({path.resolve(strict=True) for path in executables}):
+    selected_executables = bounded_collect(
+        budget,
+        (path.resolve(strict=True) for path in executables),
+        limit=budget.limits.counts["snapshot_files"],
+        label="runtime dependency inputs",
+        unique=True,
+    )
+    for executable in sorted(selected_executables):
         completed = run_bounded_process(
             ["/usr/bin/ldd", str(executable)],
             budget,
@@ -289,6 +806,14 @@ def _runtime_dependencies(
                 match = re.match(r"\s*(/[^\s]+)\s+\(", line)
             if match is not None:
                 target = Path(match.group(1)).as_posix()
+                if (
+                    target not in dependencies
+                    and len(dependencies)
+                    >= budget.limits.counts["snapshot_files"]
+                ):
+                    raise ProbeBudgetError(
+                        "runtime dependencies exceed aggregate count bound"
+                    )
                 dependencies[target] = Path(target).resolve(strict=True)
     return [
         (source, target)
@@ -366,7 +891,10 @@ class ExecutionSnapshot:
         if not selected or len({entry.path for entry in selected}) != len(selected):
             raise ProbeSandboxError("execution snapshot paths are empty or duplicate")
         self.entries = tuple(selected)
-        digest = hashlib.sha256(b"validation-ownership-execution-snapshot-v1\0")
+        digest = hashlib.sha256(
+            b"validation-ownership-execution-snapshot-v2\0"
+            b"stat-unsupported-fields-zero-v1\0"
+        )
         for entry in self.entries:
             encoded = entry.path.encode("utf-8")
             digest.update(struct.pack("<I", len(encoded)))
@@ -394,23 +922,56 @@ class ExecutionSnapshot:
         directory_paths: set[str] = set()
         if paths is None:
             candidates = []
-            for candidate in sorted(root.rglob("*")):
-                budget.remaining("snapshot enumeration")
-                budget.charge_count("snapshot_ops")
-                metadata = os.lstat(candidate)
-                if stat.S_ISDIR(metadata.st_mode):
-                    directory_paths.add(candidate.relative_to(root).as_posix())
-                    continue
-                candidates.append(candidate.relative_to(root).as_posix())
+            pending_directories = [root]
+            while pending_directories:
+                directory = pending_directories.pop()
+                with os.scandir(directory) as iterator:
+                    for item in iterator:
+                        budget.remaining("snapshot enumeration")
+                        budget.charge_count("snapshot_ops")
+                        if (
+                            len(candidates) + len(directory_paths)
+                            >= budget.limits.counts["snapshot_files"]
+                        ):
+                            raise ProbeBudgetError(
+                                "snapshot tree exceeds aggregate file bound"
+                            )
+                        candidate = Path(item.path)
+                        relative = candidate.relative_to(root).as_posix()
+                        if item.is_symlink():
+                            raise ProbeSandboxError(
+                                f"snapshot path {relative!r} uses a symlink"
+                            )
+                        if item.is_dir(follow_symlinks=False):
+                            directory_paths.add(relative)
+                            pending_directories.append(candidate)
+                        else:
+                            candidates.append(relative)
+            candidates.sort()
         else:
-            selected_candidates = sorted(set(paths))
+            selected_candidates = sorted(
+                bounded_collect(
+                    budget,
+                    paths,
+                    limit=budget.limits.counts["snapshot_files"],
+                    label="snapshot input paths",
+                    unique=True,
+                )
+            )
             candidates = []
-            directory_paths = {
-                parent.as_posix()
-                for relative in selected_candidates
-                for parent in Path(relative).parents
-                if parent.as_posix() != "."
-            }
+            for relative in selected_candidates:
+                for parent in Path(relative).parents:
+                    if parent.as_posix() == ".":
+                        continue
+                    if (
+                        parent.as_posix() not in directory_paths
+                        and len(directory_paths) + len(selected_candidates)
+                        >= budget.limits.counts["snapshot_files"]
+                    ):
+                        raise ProbeBudgetError(
+                            "snapshot parent paths exceed aggregate file bound"
+                        )
+                    directory_paths.add(parent.as_posix())
             for relative in selected_candidates:
                 candidate = root / relative
                 metadata = os.lstat(candidate)
@@ -1055,11 +1616,33 @@ class SandboxRunner:
         cache_namespace: tuple[object, ...] = (),
         cwd: str = "/repo",
         bootstrap_config: Path | None = None,
+        syscall_policy: SyscallPolicy | None = None,
     ) -> tuple[subprocess.CompletedProcess[bytes], list[dict[str, object]]]:
         executable = executable.resolve(strict=True)
-        selected_read_only = list(read_only)
-        selected_writable = list(writable)
-        dispatcher = None if dispatcher is None else tuple(dispatcher)
+        selected_read_only = bounded_collect(
+            self.budget,
+            read_only,
+            limit=self.budget.limits.counts["snapshot_files"],
+            label="sandbox read-only mounts",
+        )
+        selected_writable = bounded_collect(
+            self.budget,
+            writable,
+            limit=self.budget.limits.counts["snapshot_files"],
+            label="sandbox writable mounts",
+        )
+        dispatcher = (
+            None
+            if dispatcher is None
+            else tuple(
+                bounded_collect(
+                    self.budget,
+                    dispatcher,
+                    limit=self.budget.limits.counts["mappings"],
+                    label="sandbox dispatch registry",
+                )
+            )
+        )
         with tempfile.TemporaryDirectory(
             prefix="probe-sandbox-",
             dir=self.scratch_root,
@@ -1086,6 +1669,8 @@ class SandboxRunner:
                 )
                 runtime_executables = [executable]
                 server = None
+                syscall_supervisor = None
+                syscall_child = None
                 if dispatcher is not None:
                     if interceptor is None:
                         raise ProbeSandboxError(
@@ -1130,6 +1715,20 @@ class SandboxRunner:
                             noexec=True,
                         )
                     )
+                if syscall_policy is not None:
+                    syscall_parent, syscall_child = socket.socketpair(
+                        socket.AF_UNIX,
+                        socket.SOCK_SEQPACKET | socket.SOCK_CLOEXEC,
+                    )
+                    syscall_child.set_inheritable(True)
+                    stack.callback(syscall_child.close)
+                    syscall_supervisor = stack.enter_context(
+                        _SyscallSupervisor(
+                            syscall_parent,
+                            syscall_policy,
+                            self.budget,
+                        )
+                    )
                 for dependency, target in self._dependencies(runtime_executables):
                     selected_read_only.append(
                         Mount(dependency, target, noexec=False)
@@ -1163,6 +1762,11 @@ class SandboxRunner:
                     "runner_gid": self.launcher_authority["runner_gid"],
                     "runner_uid": self.launcher_authority["runner_uid"],
                     "sudo_drop": self.launcher_authority["sudo_drop"],
+                    "supervisor_fd": (
+                        None
+                        if syscall_child is None
+                        else syscall_child.fileno()
+                    ),
                     "writable": [
                         {
                             "source": str(mount.source.resolve(strict=True)),
@@ -1191,8 +1795,21 @@ class SandboxRunner:
                     command,
                     self.budget,
                     environment=_clean_environment(),
-                    on_start=(
-                        None if server is None else server.set_root_pid
+                    on_start=lambda pid: (
+                        server.set_root_pid(pid) if server is not None else None,
+                        syscall_child.close()
+                        if syscall_child is not None
+                        else None,
+                    ),
+                    pass_fds=(
+                        ()
+                        if syscall_child is None
+                        else (syscall_child.fileno(),)
                     ),
                 )
+                if syscall_supervisor is not None:
+                    syscall_supervisor.finish()
+                    completed.syscall_events = syscall_supervisor.events
+                else:
+                    completed.syscall_events = []
                 return completed, [] if server is None else server.events
