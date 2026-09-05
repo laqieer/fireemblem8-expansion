@@ -574,12 +574,14 @@ isolated `pr-metadata edit` helper with exact current head/base identity. Its
 default path defers an active-full-build race without metadata mutation or run
 cancellation. An essential frozen-contract correction requires a nonempty
 reason; record that reason in the canonical evidence comment, leave the
-same-SHA full Build active, preserve the helper's immutable edit receipt, and
-run receipt-bound `pr-metadata reconcile` after that exact full Build succeeds.
-The receipt is caller-carried state rather than a mutable ledger.
-Reconciliation derives pending state from the receipt plus GitHub run/event
-identity and reruns only the failed lightweight metadata continuity run. It
-never dispatches or cancels a full Build. See
+same-SHA full Build active, preserve the helper's returned GitHub receipt
+comment ID, and run receipt-comment-bound `pr-metadata reconcile` after that
+exact full Build succeeds. The dedicated append-only owner-authored comment is
+the authority rather than a caller-authored receipt or mutable local ledger.
+Reconciliation refetches the unique latest receipt comment, derives pending
+state from it plus GitHub run/event identity, and reruns only the failed
+lightweight metadata continuity run. It never edits/deletes the receipt or
+dispatches/cancels a full Build. See
 [`docs/workflow-pilot.md`](../../../docs/workflow-pilot.md#safe-pull-request-metadata-ordering).
 
 Triage every AI review finding. Fix valid findings, answer questions, and close

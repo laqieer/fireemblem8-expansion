@@ -31,6 +31,17 @@ def _sha256(value: str) -> str:
     return hashlib.sha256(value.encode("utf-8")).hexdigest()
 
 
+def _metadata_sha256(title: str, body: str | None) -> str:
+    return _sha256(
+        json.dumps(
+            {"body": body, "title": title},
+            ensure_ascii=False,
+            separators=(",", ":"),
+            sort_keys=True,
+        )
+    )
+
+
 def _endpoint(suffix: str) -> str:
     return pr_metadata._endpoint(REPOSITORY, suffix)
 
@@ -104,6 +115,8 @@ def _comment(
     author_association: str = "OWNER",
     author_id: int = 77,
     site_admin: bool = False,
+    created_at: str = "2026-09-04T00:00:00Z",
+    updated_at: str = "2026-09-04T00:00:01Z",
 ) -> dict:
     owner, name = repository.split("/", 1)
     return {
@@ -128,8 +141,8 @@ def _comment(
             "site_admin": site_admin,
         },
         "author_association": author_association,
-        "created_at": "2026-09-04T00:00:00Z",
-        "updated_at": "2026-09-04T00:00:01Z",
+        "created_at": created_at,
+        "updated_at": updated_at,
     }
 
 
@@ -400,6 +413,12 @@ class ScriptedClient:
         response = route.pop(0)
         if isinstance(response, Exception):
             raise response
+        if callable(response):
+            response = response(
+                method=method,
+                endpoint=endpoint,
+                body=copy.deepcopy(body),
+            )
         if isinstance(response, pr_metadata.ApiResponse):
             return copy.deepcopy(response)
         return _response(
@@ -410,6 +429,38 @@ class ScriptedClient:
 
 def _add_pr_states(client: ScriptedClient, *states: dict) -> None:
     client.add("GET", _endpoint(f"pulls/{PR_NUMBER}"), *states)
+
+
+def _add_receipt_creation(
+    client: ScriptedClient,
+    *,
+    comment_id: int = 401,
+    created_at: str = "2026-09-04T00:00:06Z",
+    response_changes: dict[str, object] | None = None,
+) -> None:
+    def response(
+        *,
+        method: str,
+        endpoint: str,
+        body: dict[str, object] | None,
+    ) -> dict:
+        del method, endpoint
+        if not isinstance(body, dict) or not isinstance(body.get("body"), str):
+            raise AssertionError("receipt creation requires a comment body")
+        payload = _comment(
+            comment_id,
+            body["body"],
+            created_at=created_at,
+            updated_at=created_at,
+        )
+        payload.update(response_changes or {})
+        return payload
+
+    client.add(
+        "POST",
+        _endpoint(f"issues/{PR_NUMBER}/comments"),
+        response,
+    )
 
 
 def _add_snapshot(
@@ -471,7 +522,8 @@ def _cli_api_call(
     *,
     payload: object = _MISSING,
     status: int = 200,
-    input_text: str = "",
+    input_text: str | None = "",
+    echo_body: bool = False,
 ) -> dict:
     call = {
         "endpoint": endpoint,
@@ -479,6 +531,8 @@ def _cli_api_call(
         "method": method,
         "status": status,
     }
+    if echo_body:
+        call["echo_body"] = True
     if payload is not _MISSING:
         call["payload"] = payload
     return call
@@ -547,8 +601,9 @@ def _canonical_decision(**changes: object) -> str:
         "mutated": False,
         "pr_number": PR_NUMBER,
         "reason": "",
+        "receipt_comment_id": None,
+        "receipt_comment_url": None,
         "repository": REPOSITORY,
-        "receipt": None,
         "run_id": None,
     }
     payload.update(changes)
@@ -574,11 +629,19 @@ def _receipt_payload(
     watermark_created_at: str = "2026-09-04T00:00:00Z",
     workflow_id: int = WORKFLOW_ID,
     workflow_path: str = pr_metadata.WORKFLOW_PATH,
+    nonce: str = "a" * 64,
+    metadata_sha256: str | None = None,
 ) -> dict:
     return {
         "base_sha": base_sha,
         "edit_updated_at": edit_updated_at,
         "head_sha": head_sha,
+        "metadata_sha256": (
+            metadata_sha256
+            if metadata_sha256 is not None
+            else _metadata_sha256("Stable title", "Stable body")
+        ),
+        "nonce": nonce,
         "pr_number": pr_number,
         "repository": repository,
         "repository_id": repository_id,
@@ -602,6 +665,79 @@ def _receipt_payload(
 
 def _receipt(**changes: object) -> pr_metadata.EditReceipt:
     return pr_metadata._parse_edit_receipt(_receipt_payload(**changes))
+
+
+def _receipt_comment(
+    receipt: pr_metadata.EditReceipt,
+    *,
+    comment_id: int = 401,
+    created_at: str = "2026-09-04T00:00:01Z",
+    updated_at: str | None = None,
+    **changes: object,
+) -> dict:
+    payload = _comment(
+        comment_id,
+        pr_metadata._receipt_comment_body(receipt),
+        created_at=created_at,
+        updated_at=updated_at if updated_at is not None else created_at,
+    )
+    payload.update(changes)
+    return payload
+
+
+def _add_receipt_comments(
+    client: ScriptedClient,
+    receipt: pr_metadata.EditReceipt,
+    *,
+    comment_id: int = 401,
+    created_at: str = "2026-09-04T00:00:01Z",
+    comments: list[dict] | None = None,
+    copies: int = 2,
+) -> None:
+    endpoint = _query(
+        f"issues/{PR_NUMBER}/comments",
+        [("per_page", "100"), ("page", "1")],
+    )
+    payload = (
+        comments
+        if comments is not None
+        else [
+            _receipt_comment(
+                receipt,
+                comment_id=comment_id,
+                created_at=created_at,
+            )
+        ]
+    )
+    client.add(
+        "GET",
+        endpoint,
+        *(copy.deepcopy(payload) for _ in range(copies)),
+    )
+
+
+def _reconcile(
+    client: ScriptedClient,
+    *,
+    receipt: pr_metadata.EditReceipt | None = None,
+    receipt_comment_id: int = 401,
+    comments: list[dict] | None = None,
+) -> pr_metadata.Decision:
+    receipt = receipt or _receipt()
+    _add_receipt_comments(
+        client,
+        receipt,
+        comment_id=receipt_comment_id,
+        comments=comments,
+    )
+    return pr_metadata.reconcile_metadata(
+        client,
+        repository=REPOSITORY,
+        pr_number=PR_NUMBER,
+        head_sha=HEAD,
+        base_sha=BASE,
+        receipt_comment_id=receipt_comment_id,
+    )
 
 
 FAKE_GH_DRIVER = r"""#!/usr/bin/python3
@@ -633,7 +769,10 @@ input_text = sys.stdin.read() if "--input" in arguments else ""
 if (
     method != expected["method"]
     or endpoint != expected["endpoint"]
-    or input_text != expected["input"]
+    or (
+        expected["input"] is not None
+        and input_text != expected["input"]
+    )
 ):
     print(
         "fake-gh: call mismatch "
@@ -669,10 +808,14 @@ status = expected["status"]
 reason = "Created" if status == 201 else "OK"
 sys.stdout.write(f"HTTP/2 {status} {reason}\n")
 if "payload" in expected:
+    payload = expected["payload"]
+    if expected.get("echo_body"):
+        payload = dict(payload)
+        payload["body"] = json.loads(input_text)["body"]
     sys.stdout.write("Content-Type: application/json\n\n")
     sys.stdout.write(
         json.dumps(
-            expected["payload"],
+            payload,
             ensure_ascii=True,
             separators=(",", ":"),
             sort_keys=True,
@@ -1003,6 +1146,7 @@ class PullRequestMetadataTests(unittest.TestCase):
                 updated_at="2026-09-04T00:00:05Z",
             ),
         )
+        _add_receipt_creation(client)
         decision = pr_metadata.edit_metadata(
             client,
             repository=REPOSITORY,
@@ -1025,6 +1169,7 @@ class PullRequestMetadataTests(unittest.TestCase):
             _endpoint(f"pulls/{PR_NUMBER}"),
             _pr(title="Essential correction"),
         )
+        _add_receipt_creation(client)
 
         decision = pr_metadata.edit_metadata(
             client,
@@ -1044,14 +1189,25 @@ class PullRequestMetadataTests(unittest.TestCase):
             call for call in client.calls if call[0] != "GET"
         ]
         self.assertEqual(
-            mutations,
+            [(method, endpoint) for method, endpoint, _body in mutations],
             [
-                (
-                    "PATCH",
-                    _endpoint(f"pulls/{PR_NUMBER}"),
-                    {"title": "Essential correction"},
-                )
+                ("PATCH", _endpoint(f"pulls/{PR_NUMBER}")),
+                ("POST", _endpoint(f"issues/{PR_NUMBER}/comments")),
             ],
+        )
+        self.assertEqual(
+            mutations[0][2],
+            {"title": "Essential correction"},
+        )
+        self.assertEqual(
+            pr_metadata._parse_receipt_comment_body(mutations[1][2]["body"])
+            .requested_fields,
+            (
+                pr_metadata.EditFieldDigest(
+                    "title",
+                    _sha256("Essential correction"),
+                ),
+            ),
         )
 
     def test_empty_essential_reason_is_rejected(self):
@@ -1406,6 +1562,7 @@ class PullRequestMetadataTests(unittest.TestCase):
                 updated_at="2026-09-04T00:00:05Z",
             ),
         )
+        _add_receipt_creation(client)
 
         decision = pr_metadata.edit_metadata(
             client,
@@ -1418,22 +1575,107 @@ class PullRequestMetadataTests(unittest.TestCase):
             essential_reason=None,
         )
         self.assertEqual(decision.action, "updated")
-        self.assertIsNotNone(decision.receipt)
+        self.assertEqual(decision.receipt_comment_id, 401)
         self.assertEqual(
-            decision.receipt.canonical_payload(),
-            _receipt_payload(
-                edit_updated_at="2026-09-04T00:00:05Z",
-                requested_fields={
-                    "body": _sha256("new body")
-                },
-            ),
+            decision.receipt_comment_url,
+            f"https://github.com/{REPOSITORY}/pull/{PR_NUMBER}"
+            "#issuecomment-401",
         )
+        receipt_call = next(
+            call
+            for call in client.calls
+            if call[:2]
+            == ("POST", _endpoint(f"issues/{PR_NUMBER}/comments"))
+        )
+        receipt = pr_metadata._parse_receipt_comment_body(
+            receipt_call[2]["body"]
+        )
+        self.assertEqual(receipt.edit_updated_at, "2026-09-04T00:00:05Z")
+        self.assertEqual(
+            receipt.requested_fields,
+            (pr_metadata.EditFieldDigest("body", _sha256("new body")),),
+        )
+        self.assertEqual(
+            receipt.metadata_sha256,
+            _metadata_sha256("Stable title", "new body"),
+        )
+        self.assertRegex(receipt.nonce, r"^[0-9a-f]{64}$")
         pr_gets = [
             call
             for call in client.calls
             if call[:2] == ("GET", _endpoint(f"pulls/{PR_NUMBER}"))
         ]
         self.assertEqual(len(pr_gets), 2)
+
+    def test_receipt_comment_creation_response_must_attest_authority(self):
+        cases = (
+            (
+                "body",
+                {"body": f"{pr_metadata.RECEIPT_MARKER}\n{{}}\n"},
+            ),
+            (
+                "identity",
+                {"id": 402},
+            ),
+            (
+                "non-owner",
+                {
+                    "user": {
+                        "id": OWNER_ID + 1,
+                        "login": "attacker",
+                        "type": "User",
+                        "site_admin": False,
+                    },
+                    "author_association": "NONE",
+                },
+            ),
+            (
+                "edited",
+                {"updated_at": "2026-09-04T00:00:07Z"},
+            ),
+            (
+                "predates-patch",
+                {
+                    "created_at": "2026-09-04T00:00:04Z",
+                    "updated_at": "2026-09-04T00:00:04Z",
+                },
+            ),
+        )
+        for name, changes in cases:
+            with self.subTest(case=name):
+                client = ScriptedClient()
+                successful_full = _run(101, 10, mode="full")
+                _add_pr_states(client, _pr(), _pr())
+                _add_snapshot(client, [successful_full], copies=2)
+                client.add(
+                    "PATCH",
+                    _endpoint(f"pulls/{PR_NUMBER}"),
+                    _pr(
+                        body="new body",
+                        updated_at="2026-09-04T00:00:05Z",
+                    ),
+                )
+                _add_receipt_creation(
+                    client,
+                    response_changes=changes,
+                )
+                with self.assertRaises(pr_metadata.MetadataEditError):
+                    pr_metadata.edit_metadata(
+                        client,
+                        repository=REPOSITORY,
+                        pr_number=PR_NUMBER,
+                        head_sha=HEAD,
+                        base_sha=BASE,
+                        title=None,
+                        body="new body",
+                        essential_reason=None,
+                    )
+                self.assertFalse(
+                    any(
+                        "/cancel" in endpoint or "/dispatches" in endpoint
+                        for _method, endpoint, _body in client.calls
+                    )
+                )
 
     def test_stale_new_candidate_is_rejected_before_run_queries(self):
         client = ScriptedClient()
@@ -1475,14 +1717,7 @@ class PullRequestMetadataTests(unittest.TestCase):
             None,
         )
 
-        decision = pr_metadata.reconcile_metadata(
-            client,
-            repository=REPOSITORY,
-            pr_number=PR_NUMBER,
-            head_sha=HEAD,
-            base_sha=BASE,
-            receipt=_receipt(),
-        )
+        decision = _reconcile(client)
 
         self.assertEqual(decision.action, "rerun")
         self.assertEqual(decision.run_id, 202)
@@ -1522,14 +1757,7 @@ class PullRequestMetadataTests(unittest.TestCase):
                     pr_metadata.MetadataEditError,
                     "only a completed failed metadata continuity run",
                 ):
-                    pr_metadata.reconcile_metadata(
-                        client,
-                        repository=REPOSITORY,
-                        pr_number=PR_NUMBER,
-                        head_sha=HEAD,
-                        base_sha=BASE,
-                        receipt=_receipt(),
-                    )
+                    _reconcile(client)
                 self.assertFalse(
                     any(method != "GET" for method, _endpoint, _body in client.calls)
                 )
@@ -1576,14 +1804,7 @@ class PullRequestMetadataTests(unittest.TestCase):
                     [(record, jobs), _run(101, 10, mode="full")],
                 )
                 with self.assertRaises(pr_metadata.MetadataEditError):
-                    pr_metadata.reconcile_metadata(
-                        client,
-                        repository=REPOSITORY,
-                        pr_number=PR_NUMBER,
-                        head_sha=HEAD,
-                        base_sha=BASE,
-                        receipt=_receipt(),
-                    )
+                    _reconcile(client)
                 self.assertFalse(
                     any(method != "GET" for method, _endpoint, _body in client.calls)
                 )
@@ -1605,14 +1826,7 @@ class PullRequestMetadataTests(unittest.TestCase):
             ],
         )
 
-        decision = pr_metadata.reconcile_metadata(
-            client,
-            repository=REPOSITORY,
-            pr_number=PR_NUMBER,
-            head_sha=HEAD,
-            base_sha=BASE,
-            receipt=_receipt(),
-        )
+        decision = _reconcile(client)
         self.assertEqual(decision.action, "deferred")
         self.assertFalse(decision.mutated)
         self.assertFalse(any(method != "GET" for method, _endpoint, _body in client.calls))
@@ -1627,14 +1841,7 @@ class PullRequestMetadataTests(unittest.TestCase):
                 _run(101, 10, mode="full", active=True),
             ],
         )
-        decision = pr_metadata.reconcile_metadata(
-            client,
-            repository=REPOSITORY,
-            pr_number=PR_NUMBER,
-            head_sha=HEAD,
-            base_sha=BASE,
-            receipt=_receipt(),
-        )
+        decision = _reconcile(client)
         self.assertEqual(decision.action, "deferred")
         self.assertEqual(decision.run_id, 101)
         self.assertFalse(any(method != "GET" for method, _endpoint, _body in client.calls))
@@ -1653,14 +1860,7 @@ class PullRequestMetadataTests(unittest.TestCase):
             pr_metadata.MetadataEditError,
             "identity changed",
         ):
-            pr_metadata.reconcile_metadata(
-                client,
-                repository=REPOSITORY,
-                pr_number=PR_NUMBER,
-                head_sha=HEAD,
-                base_sha=BASE,
-                receipt=_receipt(),
-            )
+            _reconcile(client)
         self.assertFalse(any(method != "GET" for method, _endpoint, _body in client.calls))
 
     def test_successful_metadata_run_is_already_reconciled(self):
@@ -1673,14 +1873,7 @@ class PullRequestMetadataTests(unittest.TestCase):
                 _run(101, 10, mode="full"),
             ],
         )
-        decision = pr_metadata.reconcile_metadata(
-            client,
-            repository=REPOSITORY,
-            pr_number=PR_NUMBER,
-            head_sha=HEAD,
-            base_sha=BASE,
-            receipt=_receipt(),
-        )
+        decision = _reconcile(client)
         self.assertEqual(decision.action, "complete")
         self.assertFalse(decision.mutated)
 
@@ -1690,12 +1883,8 @@ class PullRequestMetadataTests(unittest.TestCase):
         successful_full = _run(101, 10, mode="full")
         _add_pr_states(client, _pr())
         _add_snapshot(client, [old_success, successful_full])
-        decision = pr_metadata.reconcile_metadata(
+        decision = _reconcile(
             client,
-            repository=REPOSITORY,
-            pr_number=PR_NUMBER,
-            head_sha=HEAD,
-            base_sha=BASE,
             receipt=_receipt(
                 watermark_run_id=202,
                 watermark_run_number=11,
@@ -1732,12 +1921,8 @@ class PullRequestMetadataTests(unittest.TestCase):
                         _endpoint("actions/runs/203/rerun"),
                         None,
                     )
-                decision = pr_metadata.reconcile_metadata(
+                decision = _reconcile(
                     client,
-                    repository=REPOSITORY,
-                    pr_number=PR_NUMBER,
-                    head_sha=HEAD,
-                    base_sha=BASE,
                     receipt=_receipt(
                         watermark_run_id=202,
                         watermark_run_number=11,
@@ -1761,12 +1946,8 @@ class PullRequestMetadataTests(unittest.TestCase):
         successful_full = _run(101, 10, mode="full")
         _add_pr_states(client, _pr())
         _add_snapshot(client, [old_rerun, successful_full])
-        decision = pr_metadata.reconcile_metadata(
+        decision = _reconcile(
             client,
-            repository=REPOSITORY,
-            pr_number=PR_NUMBER,
-            head_sha=HEAD,
-            base_sha=BASE,
             receipt=_receipt(
                 watermark_run_id=202,
                 watermark_run_number=11,
@@ -1792,14 +1973,7 @@ class PullRequestMetadataTests(unittest.TestCase):
                 _run(101, 10, mode="full"),
             ],
         )
-        decision = pr_metadata.reconcile_metadata(
-            client,
-            repository=REPOSITORY,
-            pr_number=PR_NUMBER,
-            head_sha=HEAD,
-            base_sha=BASE,
-            receipt=_receipt(),
-        )
+        decision = _reconcile(client)
         self.assertEqual(decision.action, "deferred")
         self.assertEqual(decision.run_id, 202)
 
@@ -1819,14 +1993,7 @@ class PullRequestMetadataTests(unittest.TestCase):
                 _run(101, 10, mode="full"),
             ],
         )
-        decision = pr_metadata.reconcile_metadata(
-            client,
-            repository=REPOSITORY,
-            pr_number=PR_NUMBER,
-            head_sha=HEAD,
-            base_sha=BASE,
-            receipt=_receipt(),
-        )
+        decision = _reconcile(client)
         self.assertEqual(decision.action, "deferred")
         self.assertFalse(decision.mutated)
 
@@ -1874,14 +2041,7 @@ class PullRequestMetadataTests(unittest.TestCase):
                 client = ScriptedClient()
                 _add_pr_states(client, _pr())
                 with self.assertRaises(pr_metadata.MetadataEditError):
-                    pr_metadata.reconcile_metadata(
-                        client,
-                        repository=REPOSITORY,
-                        pr_number=PR_NUMBER,
-                        head_sha=HEAD,
-                        base_sha=BASE,
-                        receipt=receipt,
-                    )
+                    _reconcile(client, receipt=receipt)
 
         for receipt in (
             _receipt(watermark_run_id=999),
@@ -1897,14 +2057,7 @@ class PullRequestMetadataTests(unittest.TestCase):
                     pr_metadata.MetadataEditError,
                     "watermark is stale or forged",
                 ):
-                    pr_metadata.reconcile_metadata(
-                        client,
-                        repository=REPOSITORY,
-                        pr_number=PR_NUMBER,
-                        head_sha=HEAD,
-                        base_sha=BASE,
-                        receipt=receipt,
-                    )
+                    _reconcile(client, receipt=receipt)
 
         client = ScriptedClient()
         _add_pr_states(
@@ -1918,16 +2071,213 @@ class PullRequestMetadataTests(unittest.TestCase):
             pr_metadata.MetadataEditError,
             "omits a pre-edit workflow run",
         ):
-            pr_metadata.reconcile_metadata(
+            _reconcile(
                 client,
-                repository=REPOSITORY,
-                pr_number=PR_NUMBER,
-                head_sha=HEAD,
-                base_sha=BASE,
                 receipt=_receipt(
                     edit_updated_at="2026-09-04T00:00:01Z",
                 ),
             )
+
+    def test_receipt_comment_authority_and_latest_selection_fail_closed(self):
+        receipt = _receipt()
+        base_comment = _receipt_comment(receipt)
+        cases = {
+            "deleted": [],
+            "edited": [
+                _receipt_comment(
+                    receipt,
+                    updated_at="2026-09-04T00:00:02Z",
+                )
+            ],
+            "non-owner": [
+                {
+                    **base_comment,
+                    "user": {
+                        "id": OWNER_ID + 1,
+                        "login": "attacker",
+                        "type": "User",
+                        "site_admin": False,
+                    },
+                    "author_association": "NONE",
+                }
+            ],
+            "bot": [
+                {
+                    **base_comment,
+                    "user": {
+                        "id": OWNER_ID,
+                        "login": "owner",
+                        "type": "Bot",
+                        "site_admin": False,
+                    },
+                }
+            ],
+            "cross-repository": [
+                {
+                    **base_comment,
+                    "url": (
+                        "https://api.github.com/repos/other/repo/"
+                        "issues/comments/401"
+                    ),
+                }
+            ],
+            "duplicate-marker": [
+                {
+                    **base_comment,
+                    "body": (
+                        f"{pr_metadata.RECEIPT_MARKER}\n"
+                        f"{pr_metadata.RECEIPT_MARKER}\n"
+                    ),
+                }
+            ],
+            "wrong-id": [_receipt_comment(receipt, comment_id=402)],
+            "older-than-latest": [
+                base_comment,
+                _receipt_comment(
+                    _receipt(nonce="b" * 64),
+                    comment_id=402,
+                    created_at="2026-09-04T00:00:02Z",
+                ),
+            ],
+            "latest-ambiguous": [
+                base_comment,
+                _receipt_comment(
+                    _receipt(nonce="b" * 64),
+                    comment_id=402,
+                ),
+            ],
+            "duplicate-nonce": [
+                base_comment,
+                _receipt_comment(
+                    receipt,
+                    comment_id=402,
+                    created_at="2026-09-04T00:00:02Z",
+                ),
+            ],
+        }
+        for name, comments in cases.items():
+            with self.subTest(case=name):
+                client = ScriptedClient()
+                _add_pr_states(client, _pr())
+                with self.assertRaises(pr_metadata.MetadataEditError):
+                    _reconcile(
+                        client,
+                        receipt=receipt,
+                        comments=comments,
+                    )
+                self.assertFalse(
+                    any(method != "GET" for method, _endpoint, _body in client.calls)
+                )
+
+    def test_later_direct_metadata_changes_invalidate_receipt(self):
+        title_receipt = _receipt(
+            requested_fields={"title": _sha256("Stable title")},
+        )
+        cases = (
+            (
+                "later-body-edit",
+                _pr(
+                    body="changed without helper",
+                    updated_at="2026-09-04T00:00:02Z",
+                ),
+                title_receipt,
+            ),
+            (
+                "unsupported-direct-edit",
+                _pr(
+                    title="Direct edit",
+                    updated_at="2026-09-04T00:00:02Z",
+                ),
+                _receipt(),
+            ),
+        )
+        for name, state, receipt in cases:
+            with self.subTest(case=name):
+                client = ScriptedClient()
+                _add_pr_states(client, state)
+                with self.assertRaises(pr_metadata.MetadataEditError):
+                    _reconcile(client, receipt=receipt)
+                self.assertFalse(
+                    any(method != "GET" for method, _endpoint, _body in client.calls)
+                )
+
+        client = ScriptedClient()
+        _add_pr_states(
+            client,
+            _pr(updated_at="2026-09-04T00:00:02Z"),
+        )
+        later_record, _later_jobs = _run(
+            203,
+            12,
+            mode="metadata-only",
+            active=True,
+        )
+        later_record.update(
+            {
+                "created_at": "2026-09-04T00:00:02Z",
+                "run_started_at": None,
+                "status": "queued",
+                "updated_at": "2026-09-04T00:00:02Z",
+            }
+        )
+        _add_snapshot(
+            client,
+            [(later_record, []), _run(101, 10, mode="full")],
+        )
+        decision = _reconcile(client)
+        self.assertEqual(decision.action, "deferred")
+        self.assertEqual(decision.run_id, 203)
+        self.assertFalse(decision.mutated)
+
+    def test_same_second_receipt_and_metadata_run_defers(self):
+        client = ScriptedClient()
+        metadata = _run(202, 11, mode="metadata-only", success=True)
+        successful_full = _run(101, 10, mode="full")
+        _add_pr_states(client, _pr())
+        _add_snapshot(client, [metadata, successful_full])
+        receipt = _receipt()
+        decision = _reconcile(
+            client,
+            receipt=receipt,
+            comments=[
+                _receipt_comment(
+                    receipt,
+                    created_at="2026-09-04T00:00:00Z",
+                )
+            ],
+        )
+        self.assertEqual(decision.action, "deferred")
+        self.assertFalse(decision.mutated)
+
+    def test_later_evidence_comment_does_not_invalidate_receipt(self):
+        client = ScriptedClient()
+        _add_pr_states(
+            client,
+            _pr(updated_at="2026-09-04T00:00:02Z"),
+        )
+        _add_snapshot(
+            client,
+            [
+                _run(202, 11, mode="metadata-only", success=True),
+                _run(101, 10, mode="full"),
+            ],
+        )
+        receipt = _receipt()
+        decision = _reconcile(
+            client,
+            receipt=receipt,
+            comments=[
+                _receipt_comment(receipt),
+                _comment(
+                    500,
+                    f"{pr_metadata.EVIDENCE_MARKER}\nUpdated evidence\n",
+                    created_at="2026-09-04T00:00:02Z",
+                    updated_at="2026-09-04T00:00:02Z",
+                ),
+            ],
+        )
+        self.assertEqual(decision.action, "complete")
+        self.assertEqual(decision.run_id, 202)
 
     def test_incomplete_run_pagination_fails_closed(self):
         client = ScriptedClient()
@@ -2798,6 +3148,7 @@ class PullRequestMetadataTests(unittest.TestCase):
             _endpoint(f"pulls/{PR_NUMBER}"),
             _pr(body="new stable body"),
         )
+        _add_receipt_creation(client)
 
         decision = pr_metadata.edit_metadata(
             client,
@@ -2811,7 +3162,18 @@ class PullRequestMetadataTests(unittest.TestCase):
         )
         self.assertEqual(decision.action, "updated")
         self.assertIn("reconcile", decision.guidance[0])
-        self.assertEqual(decision.receipt.watermark_run_id, 202)
+        receipt_call = next(
+            call
+            for call in client.calls
+            if call[:2]
+            == ("POST", _endpoint(f"issues/{PR_NUMBER}/comments"))
+        )
+        self.assertEqual(
+            pr_metadata._parse_receipt_comment_body(
+                receipt_call[2]["body"]
+            ).watermark_run_id,
+            202,
+        )
         other_jobs_endpoint = _query(
             "actions/runs/202/attempts/1/jobs",
             [("per_page", "100"), ("page", "1")],
@@ -2937,7 +3299,7 @@ class PullRequestMetadataTests(unittest.TestCase):
             2,
         )
 
-    def test_decision_run_and_comment_ids_are_strictly_mutually_exclusive(self):
+    def test_decision_identifier_roles_are_strict(self):
         common = {
             "base_sha": BASE,
             "guidance": (),
@@ -2961,6 +3323,18 @@ class PullRequestMetadataTests(unittest.TestCase):
         )
         self.assertIsNone(comment.run_id)
         self.assertEqual(comment.comment_id, 301)
+        updated = pr_metadata.Decision(
+            action="updated",
+            run_id=101,
+            receipt_comment_id=401,
+            receipt_comment_url=(
+                f"https://github.com/{REPOSITORY}/pull/{PR_NUMBER}"
+                "#issuecomment-401"
+            ),
+            **common,
+        )
+        self.assertEqual(updated.run_id, 101)
+        self.assertEqual(updated.receipt_comment_id, 401)
         for changes in (
             {"action": "comment-updated"},
             {"action": "comment-updated", "run_id": 101},
@@ -2970,7 +3344,20 @@ class PullRequestMetadataTests(unittest.TestCase):
             {"action": "deferred", "run_id": 0},
             {"action": "deferred", "run_id": 1000000000000000000},
             {"action": "updated"},
-            {"action": "deferred", "receipt": _receipt()},
+            {"action": "updated", "receipt_comment_id": 401},
+            {
+                "action": "updated",
+                "receipt_comment_id": 401,
+                "receipt_comment_url": "https://example.test/forged",
+            },
+            {
+                "action": "deferred",
+                "receipt_comment_id": 401,
+                "receipt_comment_url": (
+                    f"https://github.com/{REPOSITORY}/pull/{PR_NUMBER}"
+                    "#issuecomment-401"
+                ),
+            },
         ):
             with self.subTest(changes=changes):
                 with self.assertRaises(pr_metadata.MetadataEditError):
@@ -3622,6 +4009,19 @@ class PullRequestMetadataLauncherTests(unittest.TestCase):
                     sort_keys=True,
                 ),
             ),
+            _cli_api_call(
+                "POST",
+                _endpoint(f"issues/{PR_NUMBER}/comments"),
+                payload=_comment(
+                    401,
+                    "",
+                    created_at="2026-09-04T00:00:06Z",
+                    updated_at="2026-09-04T00:00:06Z",
+                ),
+                status=201,
+                input_text=None,
+                echo_body=True,
+            ),
         ]
         completed, records = self.sandbox.run(
             "edit",
@@ -3654,8 +4054,8 @@ class PullRequestMetadataLauncherTests(unittest.TestCase):
                         HEAD,
                         "--base-sha",
                         BASE,
-                        "--receipt-file",
-                        "<edit-receipt-file>",
+                        "--receipt-comment-id",
+                        "401",
                     ]
                 ],
                 mutated=True,
@@ -3664,37 +4064,42 @@ class PullRequestMetadataLauncherTests(unittest.TestCase):
                     "to close any non-atomic same-SHA Build race"
                 ),
                 run_id=101,
-                receipt=_receipt_payload(
-                    edit_updated_at="2026-09-04T00:00:05Z",
-                    requested_fields={
-                        "body": _sha256(body),
-                        "title": _sha256("CLI title"),
-                    },
+                receipt_comment_id=401,
+                receipt_comment_url=(
+                    f"https://github.com/{REPOSITORY}/pull/{PR_NUMBER}"
+                    "#issuecomment-401"
                 ),
             ),
         )
         self.assert_isolated_calls(records, len(calls))
         self.assertFalse(marker.exists())
+        patch_record = records[-2]
         self.assertEqual(
-            json.loads(records[-1]["input"]),
+            json.loads(patch_record["input"]),
             {"body": body, "title": "CLI title"},
         )
-        self.assertEqual(records[-1]["argv"][-2:], ["--input", "-"])
+        self.assertEqual(patch_record["argv"][-2:], ["--input", "-"])
+        receipt = pr_metadata._parse_receipt_comment_body(
+            json.loads(records[-1]["input"])["body"]
+        )
+        self.assertEqual(receipt.edit_updated_at, "2026-09-04T00:00:05Z")
+        self.assertEqual(
+            receipt.metadata_sha256,
+            _metadata_sha256("CLI title", body),
+        )
+        self.assertEqual(
+            receipt.requested_fields,
+            (
+                pr_metadata.EditFieldDigest("body", _sha256(body)),
+                pr_metadata.EditFieldDigest("title", _sha256("CLI title")),
+            ),
+        )
+        self.assertRegex(receipt.nonce, r"^[0-9a-f]{64}$")
 
     def test_reconcile_and_evidence_comment_launcher_paths(self):
-        receipt_path = self.sandbox.root / "receipt.json"
-        receipt_path.write_text(
-            json.dumps(
-                _receipt_payload(
-                    watermark_run_id=202,
-                    watermark_run_number=11,
-                ),
-                ensure_ascii=True,
-                separators=(",", ":"),
-                sort_keys=True,
-            )
-            + "\n",
-            encoding="ascii",
+        old_receipt = _receipt(
+            watermark_run_id=202,
+            watermark_run_number=11,
         )
         old_success = _run(202, 11, mode="metadata-only", success=True)
         successful_full = _run(101, 10, mode="full")
@@ -3704,14 +4109,22 @@ class PullRequestMetadataLauncherTests(unittest.TestCase):
                 _endpoint(f"pulls/{PR_NUMBER}"),
                 payload=_pr(),
             ),
+            _cli_api_call(
+                "GET",
+                _query(
+                    f"issues/{PR_NUMBER}/comments",
+                    [("per_page", "100"), ("page", "1")],
+                ),
+                payload=[_receipt_comment(old_receipt)],
+            ),
             *_cli_snapshot_calls([old_success, successful_full]),
         ]
         completed, records = self.sandbox.run(
             "reconcile",
             [
                 *self.common_arguments(),
-                "--receipt-file",
-                str(receipt_path),
+                "--receipt-comment-id",
+                "401",
             ],
             calls,
         )
@@ -3735,8 +4148,8 @@ class PullRequestMetadataLauncherTests(unittest.TestCase):
                         HEAD,
                         "--base-sha",
                         BASE,
-                        "--receipt-file",
-                        "<edit-receipt-file>",
+                        "--receipt-comment-id",
+                        "401",
                     ]
                 ],
                 reason="the exact metadata-only run is not visible yet",
@@ -3752,27 +4165,34 @@ class PullRequestMetadataLauncherTests(unittest.TestCase):
             success=False,
         )
         runs = [failed_metadata, successful_full]
-        receipt_path.write_text(
-            json.dumps(
-                _receipt_payload(),
-                ensure_ascii=True,
-                separators=(",", ":"),
-                sort_keys=True,
-            )
-            + "\n",
-            encoding="ascii",
-        )
+        receipt = _receipt()
         calls = [
             _cli_api_call(
                 "GET",
                 _endpoint(f"pulls/{PR_NUMBER}"),
                 payload=_pr(),
             ),
+            _cli_api_call(
+                "GET",
+                _query(
+                    f"issues/{PR_NUMBER}/comments",
+                    [("per_page", "100"), ("page", "1")],
+                ),
+                payload=[_receipt_comment(receipt)],
+            ),
             *_cli_snapshot_calls(runs),
             _cli_api_call(
                 "GET",
                 _endpoint(f"pulls/{PR_NUMBER}"),
                 payload=_pr(),
+            ),
+            _cli_api_call(
+                "GET",
+                _query(
+                    f"issues/{PR_NUMBER}/comments",
+                    [("per_page", "100"), ("page", "1")],
+                ),
+                payload=[_receipt_comment(receipt)],
             ),
             *_cli_snapshot_calls(runs),
             _cli_api_call(
@@ -3785,8 +4205,8 @@ class PullRequestMetadataLauncherTests(unittest.TestCase):
             "reconcile",
             [
                 *self.common_arguments(),
-                "--receipt-file",
-                str(receipt_path),
+                "--receipt-comment-id",
+                "401",
             ],
             calls,
         )
@@ -3876,11 +4296,6 @@ class PullRequestMetadataLauncherTests(unittest.TestCase):
         self.assertEqual(output["comment_id"], 301)
 
     def test_launcher_rejects_mode_file_and_identity_inputs(self):
-        malformed_receipt = self.sandbox.root / "malformed-receipt.json"
-        malformed_receipt.write_text(
-            '{"schema_version":1,"schema_version":1}\n',
-            encoding="ascii",
-        )
         cases = (
             (
                 "unknown-submode",
@@ -3901,20 +4316,32 @@ class PullRequestMetadataLauncherTests(unittest.TestCase):
                 "required",
             ),
             (
-                "missing-receipt-file",
+                "missing-receipt-comment-id",
                 "reconcile",
                 self.common_arguments(),
                 "required",
             ),
             (
-                "malformed-receipt",
+                "caller-receipt-file-unsupported",
                 "reconcile",
                 [
                     *self.common_arguments(),
+                    "--receipt-comment-id",
+                    "401",
                     "--receipt-file",
-                    str(malformed_receipt),
+                    str(self.sandbox.root / "forged.json"),
                 ],
-                "repeats key",
+                "unrecognized arguments",
+            ),
+            (
+                "invalid-receipt-comment-id",
+                "reconcile",
+                [
+                    *self.common_arguments(),
+                    "--receipt-comment-id",
+                    "0",
+                ],
+                "--receipt-comment-id must be a positive integer",
             ),
             (
                 "missing-body-path",

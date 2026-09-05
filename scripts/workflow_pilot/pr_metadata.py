@@ -10,6 +10,7 @@ import json
 import math
 import os
 import re
+import secrets
 import shutil
 import subprocess
 import sys
@@ -32,6 +33,7 @@ SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 REPOSITORY_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 WORKFLOW_PATH = ".github/workflows/build.yml"
 EVIDENCE_MARKER = "<!-- workflow-pilot-candidate-evidence -->"
+RECEIPT_MARKER = "<!-- workflow-pilot-metadata-edit-receipt:v1 -->"
 HTTP_STATUS_RE = re.compile(r"^HTTP/(?:1(?:\.[01])?|2(?:\.0)?) ([1-5][0-9]{2})(?: .*)?$")
 HEADER_NAME_RE = re.compile(r"^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$")
 LINK_PART_RE = re.compile(r'\s*<([^>]+)>\s*;\s*rel="([^"]+)"\s*(?:,\s*|$)')
@@ -88,11 +90,15 @@ class CommentState:
     comment_id: int
     repository: str
     pr_number: int
+    html_url: str
     body: str
     author_id: int | None
     author_login: str | None
     author_type: str | None
     author_association: str | None
+    created_at: datetime.datetime
+    updated_at: datetime.datetime
+    receipt: EditReceipt | None
 
 
 @dataclass(frozen=True)
@@ -148,6 +154,8 @@ class EditReceipt:
     base_sha: str
     workflow_id: int
     workflow_path: str
+    nonce: str
+    metadata_sha256: str
     requested_fields: tuple[EditFieldDigest, ...]
     edit_updated_at: str
     watermark_run_id: int
@@ -159,6 +167,8 @@ class EditReceipt:
             "base_sha": self.base_sha,
             "edit_updated_at": self.edit_updated_at,
             "head_sha": self.head_sha,
+            "metadata_sha256": self.metadata_sha256,
+            "nonce": self.nonce,
             "pr_number": self.pr_number,
             "repository": self.repository,
             "repository_id": self.repository_id,
@@ -199,12 +209,14 @@ class Decision:
     pr_number: int
     run_id: int | None = None
     comment_id: int | None = None
-    receipt: EditReceipt | None = None
+    receipt_comment_id: int | None = None
+    receipt_comment_url: str | None = None
 
     def __post_init__(self) -> None:
         for field, value in (
             ("run_id", self.run_id),
             ("comment_id", self.comment_id),
+            ("receipt_comment_id", self.receipt_comment_id),
         ):
             if value is not None and (
                 isinstance(value, bool)
@@ -219,6 +231,21 @@ class Decision:
             raise MetadataEditError(
                 "Decision run_id and comment_id are mutually exclusive"
             )
+        if (self.receipt_comment_id is None) != (
+            self.receipt_comment_url is None
+        ):
+            raise MetadataEditError(
+                "Decision receipt comment ID and URL must appear together"
+            )
+        if self.receipt_comment_id is not None:
+            expected_url = (
+                f"https://github.com/{self.repository}/pull/{self.pr_number}"
+                f"#issuecomment-{self.receipt_comment_id}"
+            )
+            if self.receipt_comment_url != expected_url:
+                raise MetadataEditError(
+                    "Decision receipt comment URL identity drifted"
+                )
         if self.action == "comment-updated":
             if self.comment_id is None or self.run_id is not None:
                 raise MetadataEditError(
@@ -229,19 +256,24 @@ class Decision:
                 "only comment-updated Decision may contain comment_id"
             )
         if self.action == "updated":
-            if self.receipt is None:
-                raise MetadataEditError("updated Decision requires an edit receipt")
-        elif self.receipt is not None:
-            raise MetadataEditError("only updated Decision may contain an edit receipt")
+            if (
+                self.receipt_comment_id is None
+                or self.receipt_comment_url is None
+            ):
+                raise MetadataEditError(
+                    "updated Decision requires a receipt comment identity"
+                )
+        elif (
+            self.receipt_comment_id is not None
+            or self.receipt_comment_url is not None
+        ):
+            raise MetadataEditError(
+                "only updated Decision may contain a receipt comment identity"
+            )
 
     def canonical_json(self) -> str:
         payload = asdict(self)
         payload["guidance"] = [list(command) for command in self.guidance]
-        payload["receipt"] = (
-            self.receipt.canonical_payload()
-            if self.receipt is not None
-            else None
-        )
         return json.dumps(
             payload,
             ensure_ascii=True,
@@ -405,6 +437,16 @@ def _content_digest(value: str) -> str:
     return hashlib.sha256(value.encode("utf-8")).hexdigest()
 
 
+def _metadata_digest(title: str, body: str | None) -> str:
+    canonical = json.dumps(
+        {"body": body, "title": title},
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    )
+    return _content_digest(canonical)
+
+
 def _requested_field_digests(
     *,
     title: str | None,
@@ -425,6 +467,8 @@ def _parse_edit_receipt(payload: object) -> EditReceipt:
         "base_sha",
         "edit_updated_at",
         "head_sha",
+        "metadata_sha256",
+        "nonce",
         "pr_number",
         "repository",
         "repository_id",
@@ -459,6 +503,15 @@ def _parse_edit_receipt(payload: object) -> EditReceipt:
                 f"edit receipt {field} digest is invalid"
             )
         requested_fields.append(EditFieldDigest(field, digest))
+    nonce = payload["nonce"]
+    if not isinstance(nonce, str) or DIGEST_RE.fullmatch(nonce) is None:
+        raise MetadataEditError("edit receipt nonce is invalid")
+    metadata_sha256 = payload["metadata_sha256"]
+    if (
+        not isinstance(metadata_sha256, str)
+        or DIGEST_RE.fullmatch(metadata_sha256) is None
+    ):
+        raise MetadataEditError("edit receipt metadata digest is invalid")
     workflow = payload["workflow"]
     if not isinstance(workflow, dict) or set(workflow) != {"id", "path"}:
         raise MetadataEditError("edit receipt workflow shape is invalid")
@@ -499,6 +552,8 @@ def _parse_edit_receipt(payload: object) -> EditReceipt:
             "edit receipt workflow id",
         ),
         workflow_path=WORKFLOW_PATH,
+        nonce=nonce,
+        metadata_sha256=metadata_sha256,
         requested_fields=tuple(requested_fields),
         edit_updated_at=_timestamp_text(edit_updated_at),
         watermark_run_id=_positive_int(
@@ -1832,6 +1887,8 @@ def _edit_receipt(
         base_sha=state.base_sha,
         workflow_id=watermark.workflow_id,
         workflow_path=WORKFLOW_PATH,
+        nonce=secrets.token_hex(32),
+        metadata_sha256=_metadata_digest(state.title, state.body),
         requested_fields=_requested_field_digests(title=title, body=body),
         edit_updated_at=_timestamp_text(state.updated_at),
         watermark_run_id=watermark.run_id,
@@ -1856,6 +1913,10 @@ def _validate_receipt_identity(
         or receipt.workflow_path != WORKFLOW_PATH
     ):
         raise MetadataEditError("edit receipt identity is stale or forged")
+    if _metadata_digest(state.title, state.body) != receipt.metadata_sha256:
+        raise MetadataEditError(
+            "edit receipt complete metadata digest does not match the pull request"
+        )
     values = {
         "body": state.body,
         "title": state.title,
@@ -1902,6 +1963,20 @@ def _validate_receipt_watermark(
         )
 
 
+def _post_receipt_runs(
+    receipt: EditReceipt,
+    receipt_comment: CommentState,
+    runs: tuple[RunState, ...],
+) -> tuple[RunState, ...]:
+    return tuple(
+        run
+        for run in runs
+        if run.binding != "explicit-other"
+        and run.run_number > receipt.watermark_run_number
+        and run.created_at >= receipt_comment.created_at
+    )
+
+
 def _helper_command(
     mode: str,
     state: PullRequestState,
@@ -1938,13 +2013,14 @@ def _comment_guidance(state: PullRequestState) -> tuple[tuple[str, ...], ...]:
 
 def _reconcile_guidance(
     state: PullRequestState,
+    receipt_comment_id: int,
 ) -> tuple[tuple[str, ...], ...]:
     return (
         _helper_command(
             "reconcile",
             state,
-            "--receipt-file",
-            "<edit-receipt-file>",
+            "--receipt-comment-id",
+            str(receipt_comment_id),
         ),
     )
 
@@ -2131,7 +2207,8 @@ def edit_metadata(
         title=title,
         body=body,
     )
-    guidance = _reconcile_guidance(after)
+    receipt_comment = _create_edit_receipt_comment(client, after, receipt)
+    guidance = _reconcile_guidance(after, receipt_comment.comment_id)
     reason = (
         "metadata updated; reconcile the exact metadata-only run to close any "
         "non-atomic same-SHA Build race"
@@ -2151,7 +2228,8 @@ def edit_metadata(
         repository=repository,
         pr_number=pr_number,
         run_id=active_full[0].run_id if active_full else latest_full.run_id,
-        receipt=receipt,
+        receipt_comment_id=receipt_comment.comment_id,
+        receipt_comment_url=receipt_comment.html_url,
     )
 
 
@@ -2160,6 +2238,7 @@ def _pending_metadata(
     receipt: EditReceipt,
     *,
     edit_updated_at: datetime.datetime,
+    receipt_created_at: datetime.datetime,
 ) -> tuple[RunState, RunState | None]:
     latest_full = _latest_full(runs)
     if latest_full is None:
@@ -2174,6 +2253,7 @@ def _pending_metadata(
             and run.run_number > latest_full.run_number
             and run.run_number > receipt.watermark_run_number
             and run.created_at >= edit_updated_at
+            and run.created_at < receipt_created_at
         ),
         None,
     )
@@ -2187,23 +2267,50 @@ def reconcile_metadata(
     pr_number: int,
     head_sha: str,
     base_sha: str,
-    receipt: EditReceipt,
+    receipt_comment_id: int,
 ) -> Decision:
     initial = fetch_pull_request(client, repository, pr_number)
     require_identity(initial, head_sha=head_sha, base_sha=base_sha)
-    edit_updated_at = _validate_receipt_identity(receipt, initial)
+    receipt, receipt_comment = _authoritative_edit_receipt(
+        client,
+        initial,
+        receipt_comment_id,
+    )
+    edit_updated_at = _github_timestamp(
+        receipt.edit_updated_at,
+        "edit receipt updated_at",
+    )
     first_runs = list_candidate_runs(client, initial)
     _validate_receipt_watermark(
         receipt,
         first_runs,
         edit_updated_at=edit_updated_at,
     )
+    post_receipt = _post_receipt_runs(
+        receipt,
+        receipt_comment,
+        first_runs,
+    )
+    if post_receipt:
+        return Decision(
+            action="deferred",
+            base_sha=base_sha,
+            guidance=_reconcile_guidance(initial, receipt_comment_id),
+            head_sha=head_sha,
+            mutated=False,
+            reason=(
+                "exact Build ordering does not prove the receipt is current"
+            ),
+            repository=repository,
+            pr_number=pr_number,
+            run_id=post_receipt[0].run_id,
+        )
     blocking_active = _blocking_active_runs(first_runs)
     if blocking_active:
         return Decision(
             action="deferred",
             base_sha=base_sha,
-            guidance=_reconcile_guidance(initial),
+            guidance=_reconcile_guidance(initial, receipt_comment_id),
             head_sha=head_sha,
             mutated=False,
             reason="an exact-head full or unproven Build is still active",
@@ -2215,12 +2322,13 @@ def reconcile_metadata(
         first_runs,
         receipt,
         edit_updated_at=edit_updated_at,
+        receipt_created_at=receipt_comment.created_at,
     )
     if first_metadata is None:
         return Decision(
             action="deferred",
             base_sha=base_sha,
-            guidance=_reconcile_guidance(initial),
+            guidance=_reconcile_guidance(initial, receipt_comment_id),
             head_sha=head_sha,
             mutated=False,
             reason="the exact metadata-only run is not visible yet",
@@ -2232,7 +2340,7 @@ def reconcile_metadata(
         return Decision(
             action="deferred",
             base_sha=base_sha,
-            guidance=_reconcile_guidance(initial),
+            guidance=_reconcile_guidance(initial, receipt_comment_id),
             head_sha=head_sha,
             mutated=False,
             reason="the exact metadata-only run is already active",
@@ -2257,12 +2365,32 @@ def reconcile_metadata(
 
     current = fetch_pull_request(client, repository, pr_number)
     require_identity(current, head_sha=head_sha, base_sha=base_sha)
-    _validate_receipt_identity(receipt, current)
+    current_receipt, current_receipt_comment = _authoritative_edit_receipt(
+        client,
+        current,
+        receipt_comment_id,
+    )
+    if (
+        current_receipt != receipt
+        or current_receipt_comment.comment_id != receipt_comment.comment_id
+        or current_receipt_comment.created_at != receipt_comment.created_at
+    ):
+        return Decision(
+            action="deferred",
+            base_sha=base_sha,
+            guidance=_reconcile_guidance(current, receipt_comment_id),
+            head_sha=head_sha,
+            mutated=False,
+            reason="metadata edit receipt authority changed during reconciliation",
+            repository=repository,
+            pr_number=pr_number,
+            run_id=first_metadata.run_id,
+        )
     if current != initial:
         return Decision(
             action="deferred",
             base_sha=base_sha,
-            guidance=_reconcile_guidance(current),
+            guidance=_reconcile_guidance(current, receipt_comment_id),
             head_sha=head_sha,
             mutated=False,
             reason="pull request metadata changed during reconciliation",
@@ -2276,10 +2404,30 @@ def reconcile_metadata(
         current_runs,
         edit_updated_at=edit_updated_at,
     )
+    current_post_receipt = _post_receipt_runs(
+        receipt,
+        current_receipt_comment,
+        current_runs,
+    )
+    if current_post_receipt:
+        return Decision(
+            action="deferred",
+            base_sha=base_sha,
+            guidance=_reconcile_guidance(current, receipt_comment_id),
+            head_sha=head_sha,
+            mutated=False,
+            reason=(
+                "exact Build ordering no longer proves the receipt is current"
+            ),
+            repository=repository,
+            pr_number=pr_number,
+            run_id=current_post_receipt[0].run_id,
+        )
     current_full, current_metadata = _pending_metadata(
         current_runs,
         receipt,
         edit_updated_at=edit_updated_at,
+        receipt_created_at=receipt_comment.created_at,
     )
     if (
         current_runs != first_runs
@@ -2294,7 +2442,7 @@ def reconcile_metadata(
         return Decision(
             action="deferred",
             base_sha=base_sha,
-            guidance=_reconcile_guidance(current),
+            guidance=_reconcile_guidance(current, receipt_comment_id),
             head_sha=head_sha,
             mutated=False,
             reason=(
@@ -2425,6 +2573,34 @@ def _list_comments(
     raise MetadataEditError("pull request comments exceed the pagination bound")
 
 
+def _receipt_comment_body(receipt: EditReceipt) -> str:
+    return RECEIPT_MARKER + "\n" + receipt.canonical_json()
+
+
+def _parse_receipt_comment_body(body: str) -> EditReceipt:
+    if body.count(RECEIPT_MARKER) != 1 or not _marker_is_standalone(
+        body,
+        RECEIPT_MARKER,
+    ):
+        raise MetadataEditError(
+            "metadata edit receipt marker is duplicated or embedded"
+        )
+    prefix = RECEIPT_MARKER + "\n"
+    if not body.startswith(prefix):
+        raise MetadataEditError(
+            "metadata edit receipt marker must be the first line"
+        )
+    raw_receipt = body[len(prefix) :]
+    receipt = _parse_edit_receipt(
+        _parse_json(raw_receipt, "metadata edit receipt comment")
+    )
+    if raw_receipt != receipt.canonical_json():
+        raise MetadataEditError(
+            "metadata edit receipt comment JSON is not canonical"
+        )
+    return receipt
+
+
 def _parse_comment_payload(
     raw: object,
     repository: str,
@@ -2489,11 +2665,16 @@ def _parse_comment_payload(
             association_raw,
             f"pull request comment {comment_id} author association",
         )
-    marker_count = body.count(EVIDENCE_MARKER)
-    if marker_count:
-        if marker_count != 1 or not _marker_is_standalone(body):
+    evidence_marker_count = body.count(EVIDENCE_MARKER)
+    receipt_marker_count = body.count(RECEIPT_MARKER)
+    if evidence_marker_count and receipt_marker_count:
+        raise MetadataEditError("pull request comment mixes protected markers")
+    protected = evidence_marker_count or receipt_marker_count
+    if protected:
+        marker = EVIDENCE_MARKER if evidence_marker_count else RECEIPT_MARKER
+        if protected != 1 or not _marker_is_standalone(body, marker):
             raise MetadataEditError(
-                "canonical evidence marker is duplicated or embedded"
+                "protected comment marker is duplicated or embedded"
             )
         if (
             author_id != repository_owner_id
@@ -2506,22 +2687,133 @@ def _parse_comment_payload(
             raise MetadataEditError(
                 f"pull request comment {comment_id} author is not the repository owner"
             )
-    for field in ("created_at", "updated_at", "node_id"):
-        _text(raw.get(field), f"pull request comment {comment_id} {field}")
+    created_at = _github_timestamp(
+        raw.get("created_at"),
+        f"pull request comment {comment_id} created_at",
+    )
+    updated_at = _github_timestamp(
+        raw.get("updated_at"),
+        f"pull request comment {comment_id} updated_at",
+    )
+    if updated_at < created_at:
+        raise MetadataEditError(
+            f"pull request comment {comment_id} chronology is invalid"
+        )
+    _text(raw.get("node_id"), f"pull request comment {comment_id} node_id")
+    receipt = None
+    if receipt_marker_count:
+        if updated_at != created_at:
+            raise MetadataEditError(
+                f"metadata edit receipt comment {comment_id} was edited"
+            )
+        receipt = _parse_receipt_comment_body(body)
     return CommentState(
         comment_id=comment_id,
         repository=repository,
         pr_number=pr_number,
+        html_url=html_url,
         body=body,
         author_id=author_id,
         author_login=author_login,
         author_type=author_type,
         author_association=association,
+        created_at=created_at,
+        updated_at=updated_at,
+        receipt=receipt,
     )
 
 
-def _marker_is_standalone(body: str) -> bool:
-    return sum(line.strip() == EVIDENCE_MARKER for line in body.splitlines()) == 1
+def _marker_is_standalone(body: str, marker: str = EVIDENCE_MARKER) -> bool:
+    return sum(line.strip() == marker for line in body.splitlines()) == 1
+
+
+def _create_edit_receipt_comment(
+    client: GitHubClient,
+    state: PullRequestState,
+    receipt: EditReceipt,
+) -> CommentState:
+    body = _receipt_comment_body(receipt)
+    response = client.request(
+        "POST",
+        _endpoint(state.repository, f"issues/{state.number}/comments"),
+        body={"body": body},
+        label="metadata edit receipt comment creation",
+    )
+    comment = _parse_comment_payload(
+        response.payload,
+        state.repository,
+        state.number,
+        state.repository_owner_id,
+    )
+    if (
+        comment.receipt != receipt
+        or comment.body != body
+        or comment.created_at < state.updated_at
+    ):
+        raise MetadataEditError(
+            "receipt comment creation response did not attest the edit receipt"
+        )
+    return comment
+
+
+def _authoritative_edit_receipt(
+    client: GitHubClient,
+    state: PullRequestState,
+    receipt_comment_id: int,
+) -> tuple[EditReceipt, CommentState]:
+    comments = _list_comments(
+        client,
+        state.repository,
+        state.number,
+        state.repository_id,
+        state.repository_owner_id,
+    )
+    receipt_comments = [
+        comment for comment in comments if comment.receipt is not None
+    ]
+    nonces = [
+        comment.receipt.nonce
+        for comment in receipt_comments
+        if comment.receipt is not None
+    ]
+    if len(nonces) != len(set(nonces)):
+        raise MetadataEditError("metadata edit receipt nonce is duplicated")
+    target = next(
+        (
+            comment
+            for comment in receipt_comments
+            if comment.comment_id == receipt_comment_id
+        ),
+        None,
+    )
+    if target is None:
+        raise MetadataEditError(
+            "metadata edit receipt comment is missing or deleted"
+        )
+    newest_created_at = max(
+        comment.created_at for comment in receipt_comments
+    )
+    newest = [
+        comment
+        for comment in receipt_comments
+        if comment.created_at == newest_created_at
+    ]
+    if len(newest) != 1:
+        raise MetadataEditError(
+            "latest metadata edit receipt comment is ambiguous"
+        )
+    if newest[0].comment_id != target.comment_id:
+        raise MetadataEditError(
+            "metadata edit receipt comment is stale"
+        )
+    if target.receipt is None:
+        raise MetadataEditError("metadata edit receipt comment is invalid")
+    edit_updated_at = _validate_receipt_identity(target.receipt, state)
+    if edit_updated_at > target.created_at:
+        raise MetadataEditError(
+            "metadata edit receipt comment predates the PATCH response"
+        )
+    return target.receipt, target
 
 
 def update_evidence_comment(
@@ -2638,7 +2930,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             child.add_argument("--body-file", type=Path)
             child.add_argument("--essential-reason")
         elif mode == "reconcile":
-            child.add_argument("--receipt-file", type=Path, required=True)
+            child.add_argument("--receipt-comment-id", type=int, required=True)
         elif mode == "evidence-comment":
             child.add_argument("--comment-file", type=Path, required=True)
     arguments = parser.parse_args(argv)
@@ -2696,21 +2988,16 @@ def main(argv: list[str] | None = None) -> int:
                 essential_reason=args.essential_reason,
             )
         elif args.mode == "reconcile":
-            receipt_text = _read_text(
-                args.receipt_file,
-                label="edit receipt file",
-                maximum=MAX_BODY_BYTES,
-            )
-            receipt = _parse_edit_receipt(
-                _parse_json(receipt_text, "edit receipt file")
-            )
             decision = reconcile_metadata(
                 client,
                 repository=repository,
                 pr_number=pr_number,
                 head_sha=head_sha,
                 base_sha=base_sha,
-                receipt=receipt,
+                receipt_comment_id=_positive_int(
+                    args.receipt_comment_id,
+                    "--receipt-comment-id",
+                ),
             )
         else:
             decision = update_evidence_comment(

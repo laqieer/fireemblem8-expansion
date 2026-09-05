@@ -4595,8 +4595,10 @@ printf '%s\t%s\t%s\n' "$result" \
                 "pr-metadata edit",
                 "canonical evidence comment",
                 "same-SHA full Build",
-                "immutable edit receipt",
-                "receipt-bound `pr-metadata reconcile`",
+                "receipt comment ID",
+                "receipt-comment-bound `pr-metadata reconcile`",
+                "owner-authored",
+                "mutable local ledger",
             ):
                 with self.subTest(requirement=requirement):
                     self.assertIn(normalize_policy(requirement), normalized)
@@ -4609,9 +4611,14 @@ printf '%s\t%s\t%s\n' "$result" \
             "`comment_id` exclusively for the canonical issue comment",
             "mutually exclusive",
             '"requested_fields": {"body": "<sha256>"}',
+            '"metadata_sha256": "<sha256>"',
+            '"nonce": "<64-lowercase-hex>"',
             '"schema_version": 1',
             '"watermark":',
-            "--receipt-file /path/to/edit-receipt.json",
+            "--receipt-comment-id <receipt-comment-id>",
+            "complete post-PATCH title/body digest",
+            "unique latest valid receipt",
+            "same-second ordering",
         ):
             with self.subTest(pilot_requirement=requirement):
                 self.assertIn(
@@ -4653,9 +4660,13 @@ printf '%s\t%s\t%s\n' "$result" \
             "Active unbound runs block",
             "terminal unbound runs cannot provide evidence",
             "highest fully observed pre-PATCH run ID/number/creation timestamp",
-            "caller-carried",
-            "no split, new subsystem, or mutable ledger",
+            "dedicated immutable owner-authored issue comment",
+            "no split, new subsystem, or mutable local ledger",
             "not a secret, signature, or authentication token",
+            "`receipt_comment_id`",
+            "`receipt_comment_url`",
+            "later direct metadata edit",
+            "edit-and-revert",
             "No ARM runtime test is needed",
             "There is no manual-only criterion",
         ):
@@ -4696,9 +4707,9 @@ printf '%s\t%s\t%s\n' "$result" \
         )
         for requirement in (
             "isolated launcher and deterministic fake gh",
-            "one-snapshot active fast defer",
-            "two-snapshot mutation eligibility",
-            "mutually exclusive run_id and comment_id fields",
+            "GitHub-authenticated receipt creation and latest-marker selection",
+            "caller-authored receipt authority",
+            "same-second ambiguity",
         ):
             with self.subTest(registry_requirement=requirement):
                 self.assertIn(normalize_policy(requirement), indexed_contract)
