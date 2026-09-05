@@ -3,7 +3,9 @@ import copy
 import hashlib
 import json
 import os
+import resource
 import secrets
+import shlex
 import shutil
 import subprocess
 import sys
@@ -29,6 +31,19 @@ AUTHORIZED_COORDINATORS = {}
 SIGNER_SERVICES = {}
 SIGNER_CONSUME_STATES = {}
 SYNTHETIC_AUTHORITY_ADVANCES = 0
+def documented_command(path, module, values):
+    for block in (ROOT / path).read_text().split("```bash\n")[1:]:
+        command = shlex.split(block.split("```", 1)[0].replace("\\\n", ""))
+        if command[:3] != ["python3", "-m", module] or any(
+            option in command for option in ("--expected", "--authority-operation")
+        ):
+            continue
+        command[0] = sys.executable
+        for option, value in values.items():
+            if option in command:
+                command[command.index(option) + 1] = str(value)
+        return command
+    raise AssertionError(f"no operational {module} example in {path}")
 def load_handoff_schema():
     return json.loads(
         (
@@ -2584,6 +2599,181 @@ class AuthorityReadRaceTests(unittest.TestCase):
                     authority_hook=advance_at_eligibility,
                 )
             self.assertTrue(advanced)
+class RawDiffBoundaryTests(unittest.TestCase):
+    def setUp(self):
+        directory = tempfile.TemporaryDirectory(prefix="raw-diff-", dir=TEST_ARTIFACTS)
+        self.addCleanup(directory.cleanup)
+        self.directory = Path(directory.name)
+        self.root = self.directory / "main"
+        self.root.mkdir()
+        git(self.root, "init", "-q", "-b", "master")
+        for key, value in (("user.name", "Test"), ("user.email", "test@example.invalid"),
+                           ("core.autocrlf", "false"), ("core.hooksPath", "/dev/null")):
+            git(self.root, "config", key, value)
+        self.parent = self.commit(None)
+        self.linked = self.directory / "linked"
+        git(self.root, "worktree", "add", "-q", "--detach", str(self.linked), self.parent)
+        self.private = Path(git(self.linked, "rev-parse", "--absolute-git-dir"))
+
+    def commit(self, content):
+        path = self.root / "sample.txt"
+        if content is None:
+            path.unlink(missing_ok=True)
+        else:
+            path.write_bytes(content)
+        git(self.root, "add", "-A")
+        git(self.root, "commit", "-q", "--allow-empty", "-m", "fixture")
+        return git(self.root, "rev-parse", "HEAD")
+
+    def check(self, parent, candidate):
+        def limits():
+            resource.setrlimit(resource.RLIMIT_AS, (128 * 1024 * 1024,) * 2)
+            resource.setrlimit(resource.RLIMIT_CPU, (8,) * 2)
+        return subprocess.run(
+            [sys.executable, "-I", "-", "--repository-root", str(self.root),
+             "--parent", parent, "--candidate", candidate],
+            input=agent_handoff.RAW_DIFF_CHECK_PATH.read_bytes(),
+            env=raw_diff_check.git_environment(), capture_output=True,
+            timeout=10, preexec_fn=limits,
+        )
+
+    def test_pinned_whitespace_and_whitespace_only_eof(self):
+        for before, after, exit_code in (
+            (None, b"clean\n", 0), (None, b"clean\r\n", 1),
+            (None, b"\n", 1), (b"", b"\n", 1), (None, b"\n\n", 1),
+            (b"old\n\n", b"new\n\n", 0), (b"\n", b"clean\n\n", 0),
+            (b"clean\n", b"clean\n\n", 1), (b"\n\n", b"\n", 0),
+            (b"clean\n", b"clean\n \n", 1), (None, b" \tindent\n", 1),
+            (None, b"\tindent\n", 0), (None, b"clean", 0),
+        ):
+            with self.subTest(before=before, after=after):
+                parent, candidate = self.commit(before), self.commit(after)
+                completed = self.check(parent, candidate)
+                self.assertEqual(completed.returncode, exit_code, completed.stderr.decode())
+        parent, candidate = self.commit(None), self.commit(b"clean\r\n")
+        oracle = subprocess.run(
+            raw_diff_check.git_command(self.root, "diff", "--no-ext-diff",
+                                       "--no-textconv", "--check", parent, candidate),
+            env=raw_diff_check.git_environment(), capture_output=True, timeout=10,
+        )
+        self.assertNotEqual(oracle.returncode, 0)
+        self.assertIn(b"blank-at-eol", self.check(parent, candidate).stdout)
+
+    def test_blob_and_output_caps_precede_materialization(self):
+        for prefix in (b"x", b"\0"):
+            with self.subTest(prefix=prefix):
+                self.commit(None)
+                with (self.root / "sample.txt").open("wb") as stream:
+                    stream.write(prefix)
+                    for _ in range(64):
+                        stream.write(b"x" * 65536)
+                git(self.root, "add", "sample.txt")
+                git(self.root, "commit", "-q", "-m", "4 MiB plus one byte")
+                candidate = git(self.root, "rev-parse", "HEAD")
+                completed = self.check(self.parent, candidate)
+                self.assertEqual(completed.returncode, 2, completed.stderr.decode())
+                self.assertIn(b"blob bytes exceed", completed.stderr)
+                with self.assertRaisesRegex(ValueError, "output exceeds"):
+                    raw_diff_check.run_git(self.root, "cat-file", "blob", f"{candidate}:sample.txt")
+                os.truncate(self.root / "sample.txt", 4 * 1024 * 1024)
+                oid = git(self.root, "hash-object", "-w", "sample.txt")
+                self.assertEqual(len(raw_diff_check.run_git(self.root, "cat-file", "blob", oid)), 4 * 1024 * 1024)
+
+    def test_bounded_git_drains_both_pipes_and_reaps_on_failure(self):
+        original_popen, processes = subprocess.Popen, []
+        def spawn(*args, **kwargs):
+            process = original_popen(*args, **kwargs)
+            processes.append(process)
+            return process
+        for source, error in (
+            ("import os\nfor _ in range(33):\n os.write(1,b'x'*65536)\n os.write(2,b'x'*65536)\n", "output exceeds"),
+            ("import time; time.sleep(1)", "timed out"),
+        ):
+            with self.subTest(error=error), mock.patch.object(
+                raw_diff_check, "git_command", return_value=[sys.executable, "-I", "-c", source]
+            ), mock.patch.object(raw_diff_check, "GIT_TIMEOUT_SECONDS", 0.2, create=True), mock.patch.object(
+                subprocess, "Popen", side_effect=spawn
+            ):
+                with self.assertRaisesRegex(ValueError, error):
+                    raw_diff_check.run_git(self.root, "unused")
+            self.assertIsNotNone(processes[-1].poll())
+
+    def assert_preflight_rejects(self, root, *, attributes_only=False):
+        validators = [(reporter, reporter.validate_repository_root, reporter.PilotDataError)]
+        if attributes_only:
+            validators.append((raw_diff_check, raw_diff_check.exact_repository_root, ValueError))
+        for module, validate, error in validators:
+            with self.subTest(validator=module.__name__), mock.patch.object(
+                module, "run_git", side_effect=AssertionError("Git consumed unsafe metadata")
+            ):
+                with self.assertRaises((error, OSError)):
+                    validate(root)
+
+    def test_shared_and_private_metadata_reject_before_git(self):
+        empty = self.directory / "empty"
+        empty.touch()
+        self.assertEqual(reporter.validate_repository_root(self.root), self.root)
+        self.assertEqual(raw_diff_check.exact_repository_root(self.root), self.root)
+        for admin in (self.root / ".git", self.private):
+            for relative in ("info/attributes", "info/grafts", "objects/info/alternates",
+                             "objects/info/http-alternates"):
+                path = admin / relative
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.touch()
+                self.assertEqual(reporter.validate_repository_root(self.linked), self.linked)
+                self.assertEqual(raw_diff_check.exact_repository_root(self.linked), self.linked)
+                path.unlink()
+                for kind in ("nonempty", "symlink", "fifo", "directory"):
+                    with self.subTest(admin=admin, relative=relative, kind=kind):
+                        if kind == "nonempty": path.write_bytes(b"not permitted\n")
+                        elif kind == "symlink": path.symlink_to(empty)
+                        elif kind == "fifo": os.mkfifo(path)
+                        else: path.mkdir()
+                        try:
+                            self.assert_preflight_rejects(
+                                self.linked, attributes_only=relative == "info/attributes"
+                            )
+                        finally:
+                            path.rmdir() if kind == "directory" else path.unlink()
+
+    def test_gitdir_commondir_and_metadata_parents_are_nofollow_bounded(self):
+        for path in (self.linked / ".git", self.private / "commondir"):
+            original = path.read_bytes()
+            backup = self.directory / "control"
+            backup.write_bytes(original)
+            kinds = ("symlink", "fifo", "oversized", "malformed")
+            for kind in kinds + (("directory",) if path.name == "commondir" else ()):
+                with self.subTest(path=path, kind=kind):
+                    path.unlink()
+                    if kind == "symlink": path.symlink_to(backup)
+                    elif kind == "fifo": os.mkfifo(path)
+                    elif kind == "directory": path.mkdir()
+                    else: path.write_bytes(b"x" * 4097 if kind == "oversized" else b"\0\n")
+                    try:
+                        self.assert_preflight_rejects(self.linked, attributes_only=True)
+                    finally:
+                        path.rmdir() if kind == "directory" else path.unlink()
+                        path.write_bytes(original)
+        for path in (self.root / ".git" / "info", self.private / "info",
+                     self.root / ".git" / "objects" / "info"):
+            path.mkdir(parents=True, exist_ok=True)
+            backup = path.with_name("saved-info")
+            path.rename(backup)
+            path.symlink_to(backup, target_is_directory=True)
+            try:
+                self.assert_preflight_rejects(
+                    self.linked, attributes_only=path.parent.name != "objects"
+                )
+            finally:
+                path.unlink()
+                backup.rename(path)
+        (self.linked / ".git").write_text(
+            f"gitdir: {os.path.relpath(self.private, self.linked)}\n"
+        )
+        (self.private / "commondir").write_text(str(self.root / ".git") + "\n")
+        self.assertEqual(raw_diff_check.exact_repository_root(self.linked), self.linked)
+        self.assertEqual(reporter.validate_repository_root(self.linked), self.linked)
+
 class ExactHandoffTests(unittest.TestCase):
     def test_schema_v2_closes_candidate_reported_authority(self):
         schema = load_handoff_schema()
@@ -3088,22 +3278,17 @@ class ExactHandoffTests(unittest.TestCase):
             fixture_path = Path(fixture_directory) / "handoff.json"
             document = handoff_document(root, parent, result)
             fixture_path.write_text(json.dumps(document), encoding="utf-8")
-            command = [
-                sys.executable,
-                "-m",
-                "scripts.workflow_pilot.agent_handoff",
-                "--fixture",
-                str(fixture_path),
-                "--worktree",
-                str(root),
-            ]
-            accepted = subprocess.run(
-                command,
-                cwd=ROOT,
-                check=False,
-                capture_output=True,
-            )
-            self.assertEqual(accepted.returncode, 0, accepted.stderr.decode())
+            environment = dict(os.environ)
+            environment.pop(agent_handoff.COORDINATOR_INSTALLATION_ENV, None)
+            for path in ("docs/workflow-pilot.md", ".github/skills/development-workflow/SKILL.md"):
+                command = documented_command(path, "scripts.workflow_pilot.agent_handoff", {
+                    "--fixture": fixture_path, "--worktree": root,
+                    "--coordinator-installation": installation_root_path(root),
+                })
+                accepted = subprocess.run(
+                    command, cwd=ROOT, env=environment, capture_output=True, timeout=30,
+                )
+                self.assertEqual(accepted.returncode, 0, accepted.stderr.decode())
             accepted_result = json.loads(accepted.stdout)
             self.assertTrue(accepted_result["summary"]["trusted_push_eligible"])
             self.assertEqual(accepted.stdout, agent_handoff.normalized_json(accepted_result))
@@ -3439,7 +3624,7 @@ class ExactHandoffTests(unittest.TestCase):
             ):
                 with self.assertRaisesRegex(
                     ValueError,
-                    "local Git attributes are not permitted",
+                    "local attributes file is not permitted",
                 ):
                     raw_diff_check.exact_repository_root(str(root))
             with mock.patch(
@@ -7266,21 +7451,6 @@ class ReporterHandoffExtensionTests(unittest.TestCase):
             fixture = reporter_fixture_with_handoffs(accepted, stale)
             trust = reporter_fixture_trust(accepted, stale)
             installation = reporter_fixture_installation(accepted, stale)
-            command = [
-                sys.executable,
-                "-m",
-                "scripts.workflow_pilot.reporter",
-                "--repository-root",
-                None,
-                "--fixture",
-                None,
-                "--decisions",
-                None,
-                "--implementation-handoff-trust",
-                None,
-                "--implementation-handoff-installation",
-                str(installation_root_path(root)),
-            ]
             decisions = test_reporter.minimal_decisions()
             with test_reporter.git_authority(fixture, implementation_handoff_trust=trust, implementation_handoff_installation=installation) as (authoritative_fixture, authority_root):
                 for bundle in authoritative_fixture["implementation_handoffs"]:
@@ -7295,13 +7465,24 @@ class ReporterHandoffExtensionTests(unittest.TestCase):
                     trust_root = Path(temporary)
                     trust_path = trust_root / "operational-trust.json"
                     trust_path.write_text(json.dumps(trust), encoding="utf-8")
-                    command[4], command[6], command[8], command[10] = map(str, (authority_root, fixture_path, decisions_path, trust_path))
+                    command = documented_command("docs/workflow-pilot.md", "scripts.workflow_pilot.reporter", {
+                        "--repository-root": authority_root, "--fixture": fixture_path,
+                        "--decisions": decisions_path, "--implementation-handoff-trust": trust_path,
+                        "--implementation-handoff-installation": installation_root_path(root),
+                    })
                     completed = subprocess.run(command, cwd=ROOT, check=False, capture_output=True)
                     self.assertEqual(completed.returncode, 0, completed.stderr.decode())
                     self.assertEqual(completed.stdout, reporter.normalized_json(report))
+                    for flag in ("--implementation-handoff-trust", "--implementation-handoff-installation"):
+                        index = command.index(flag)
+                        missing = subprocess.run(command[:index] + command[index + 2:], cwd=ROOT, capture_output=True, timeout=30)
+                        self.assertEqual(missing.returncode, 2)
+                        self.assertIn(b"schema version 2 requires", missing.stderr)
                     link_path = trust_root / "operational-trust-link.json"
                     link_path.symlink_to(trust_path.name)
-                    linked = subprocess.run([*command[:10], str(link_path), *command[11:]], cwd=ROOT, check=False, capture_output=True)
+                    linked_command = command.copy()
+                    linked_command[command.index("--implementation-handoff-trust") + 1] = str(link_path)
+                    linked = subprocess.run(linked_command, cwd=ROOT, check=False, capture_output=True)
                     self.assertEqual(linked.returncode, 2)
                     self.assertIn(b"implementation handoff trust sidecar must be a regular file", linked.stderr)
         self.assertEqual(report["schema_version"], 2)

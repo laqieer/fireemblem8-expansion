@@ -707,7 +707,8 @@ worktree:
 ```bash
 python3 -m scripts.workflow_pilot.agent_handoff \
   --fixture build/test-artifacts/agent-handoff.json \
-  --worktree /absolute/path/to/the/exact/worktree
+  --worktree /absolute/path/to/the/exact/worktree \
+  --coordinator-installation /external/coordinator-installation
 ```
 The document is per-assignment input and evidence, not a live ledger or a
 manually synchronized Git snapshot. The coordinator may preserve it with
@@ -804,10 +805,19 @@ stalled helper tree is killed before it can orphan. The checker's exact Git argv
 quoting/diff policy, `--no-ext-diff`, `--no-textconv`, and `--text` under the
 minimal Git environment. It parses raw added lines and candidate EOF bytes
 itself, so root/nested/macro/negative tracked `whitespace` attributes cannot
-override the policy; benign unrelated attributes remain valid. Before any Git
-command, relevant metadata paths are inspected with no-follow `lstat`; only
-absent or empty regular files are permitted. A nonempty
-local `.git/info/attributes` rejects. Repository-local
+override the policy; benign unrelated attributes remain valid. CRLF adds
+trailing CR whitespace: `cr-at-eol` is not enabled. Blank-at-EOF counts actual
+blank lines, including a new file containing just one LF, but not a nonblank
+line's terminator or unchanged trailing blank lines. This deliberately rejects
+whitespace-only new files even where Git 2.43's `diff --check` overlooks them.
+Changed parent/candidate blobs total at most 4 MiB, preflighted before text
+diffing; each Git subprocess has a 30-second deadline and a streamed 4 MiB
+combined-output cap. At most 100 whitespace diagnostics are returned.
+Before any Git command, one shared no-follow preflight checks private and
+`commondir` metadata roots, including directory components. `.git` and
+`commondir` files use bounded nonblocking reads (4096 bytes). Local attributes,
+and the reporter's graft/alternate-object metadata, must be absent or empty
+regular files; symlinks, FIFOs, directories, and nonempty files reject. Repository-local
 `core.whitespace=-trailing-space`, diff drivers/textconv, aliases, hostile
 global/system files, or ambient `GIT_EXTERNAL_DIFF` therefore cannot change
 pass/fail or receipt output.
@@ -1060,7 +1070,9 @@ argument:
 python3 -m scripts.workflow_pilot.reporter \
   --repository-root . \
   --fixture build/test-artifacts/workflow-pilot-operational.json \
-  --decisions .github/workflow-pilot-decisions.json
+  --decisions .github/workflow-pilot-decisions.json \
+  --implementation-handoff-trust /external/workflow-pilot-operational-trust.json \
+  --implementation-handoff-installation /external/coordinator-installation
 ```
 Conversely, omitting `--expected` from a version 1 baseline run fails, so the
 new mode cannot bypass the frozen baseline comparison or executable lifecycle

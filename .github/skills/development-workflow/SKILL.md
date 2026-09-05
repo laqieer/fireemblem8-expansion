@@ -582,7 +582,8 @@ with:
 
 ```bash
 python3 -m scripts.workflow_pilot.agent_handoff \
-  --fixture <path> --worktree <exact-worktree>
+  --fixture <path> --worktree <exact-worktree> \
+  --coordinator-installation <external-path>
 ```
 
 The assignment records the issue/PR, exact parent SHA, expected branch and

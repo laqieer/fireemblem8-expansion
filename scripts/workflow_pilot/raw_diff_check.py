@@ -4,11 +4,15 @@
 from __future__ import annotations
 
 import argparse
+import io
 import os
 import re
+import selectors
 import stat
 import subprocess
 import sys
+import time
+from contextlib import contextmanager
 from pathlib import Path
 
 
@@ -18,6 +22,10 @@ HUNK_RE = re.compile(
     rb"^@@ -[0-9]+(?:,[0-9]+)? \+([0-9]+)(?:,([0-9]+))? @@"
 )
 WHITESPACE_POLICY = "blank-at-eol,blank-at-eof,space-before-tab"
+MAX_BYTES = 4 * 1024 * 1024
+MAX_METADATA_BYTES = 4096
+MAX_DIAGNOSTICS = 100
+GIT_TIMEOUT_SECONDS = 30
 
 
 def git_environment() -> dict[str, str]:
@@ -67,60 +75,121 @@ def git_command(repository_root: Path, *arguments: str) -> tuple[str, ...]:
 
 
 def run_git(repository_root: Path, *arguments: str) -> bytes:
-    completed = subprocess.run(
+    with subprocess.Popen(
         git_command(repository_root, *arguments),
-        cwd=repository_root,
-        env=git_environment(),
-        check=False,
-        capture_output=True,
-    )
-    if completed.returncode != 0:
-        detail = completed.stderr.decode("utf-8", errors="replace").strip()
-        raise ValueError(
-            f"Git {' '.join(arguments)} failed"
-            + (f": {detail}" if detail else "")
-        )
-    return completed.stdout
-def _git_dir(repository_root: Path) -> Path:
-        entry = repository_root / ".git"
-        metadata = entry.lstat()
-        if stat.S_ISDIR(metadata.st_mode):
-            return entry
-        if not stat.S_ISREG(metadata.st_mode):
-            raise ValueError("repository .git entry is not permitted")
-        raw = entry.read_text(encoding="utf-8")
-        if not raw.startswith("gitdir:"):
-            raise ValueError("repository .git file is malformed")
-        git_dir = Path(raw[len("gitdir:"):].strip())
-        if not git_dir.is_absolute():
-            git_dir = repository_root / git_dir
-        git_dir = git_dir.resolve(strict=True)
-        if not git_dir.is_dir():
-            raise ValueError("repository gitdir is not a directory")
-        return git_dir
-def _reject_local_attributes(repository_root: Path) -> None:
-        attributes = _git_dir(repository_root) / "info" / "attributes"
+        cwd=repository_root, env=git_environment(), stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+    ) as process:
+        output = {process.stdout: bytearray(), process.stderr: bytearray()}
+        remaining = MAX_BYTES
+        deadline = time.monotonic() + GIT_TIMEOUT_SECONDS
         try:
-            metadata = attributes.lstat()
-        except FileNotFoundError:
-            return
-        if not stat.S_ISREG(metadata.st_mode) or metadata.st_size:
-            raise ValueError("local Git attributes are not permitted")
+            with selectors.DefaultSelector() as selector:
+                for stream in output:
+                    selector.register(stream, selectors.EVENT_READ)
+                while selector.get_map():
+                    wait = deadline - time.monotonic()
+                    if wait <= 0:
+                        raise ValueError("Git timed out")
+                    for key, _ in selector.select(wait):
+                        chunk = os.read(key.fd, min(65536, remaining + 1))
+                        remaining -= len(chunk)
+                        if remaining < 0:
+                            raise ValueError("Git output exceeds 4 MiB")
+                        if chunk:
+                            output[key.fileobj].extend(chunk)
+                        else:
+                            selector.unregister(key.fileobj)
+            process.wait(timeout=max(0, deadline - time.monotonic()))
+        except subprocess.TimeoutExpired as error:
+            raise ValueError("Git timed out") from error
+        finally:
+            if process.poll() is None:
+                process.kill()
+            process.wait()
+        if process.returncode:
+            detail = output[process.stderr].decode("utf-8", errors="replace").strip()
+            raise ValueError(f"Git {' '.join(arguments)} failed: {detail}")
+        return bytes(output[process.stdout])
+
+
+@contextmanager
+def _directory_fd(path: Path):
+    flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+    descriptor = os.open(path.anchor, flags)
+    try:
+        for part in path.parts[1:]:
+            child = os.open(part, flags, dir_fd=descriptor)
+            os.close(descriptor)
+            descriptor = child
+        yield descriptor
+    finally:
+        os.close(descriptor)
+
+
+def _metadata_file(path: Path, label: str, *, read: bool = False) -> bytes | None:
+    try:
+        with _directory_fd(path.parent) as parent:
+            metadata = os.stat(path.name, dir_fd=parent, follow_symlinks=False)
+            if not stat.S_ISREG(metadata.st_mode) or (metadata.st_size and not read):
+                raise ValueError(f"repository {label} is not permitted")
+            if not read:
+                return b""
+            if metadata.st_size > MAX_METADATA_BYTES:
+                raise ValueError(f"repository {label} exceeds 4096 bytes")
+            signature = lambda value: (value.st_dev, value.st_ino, value.st_mode,
+                                       value.st_size, value.st_mtime_ns, value.st_ctime_ns)
+            descriptor = os.open(path.name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK,
+                                 dir_fd=parent)
+            try:
+                if signature(os.fstat(descriptor)) != signature(metadata):
+                    raise ValueError(f"repository {label} changed before read")
+                raw = os.read(descriptor, MAX_METADATA_BYTES + 1)
+                current = os.stat(path.name, dir_fd=parent, follow_symlinks=False)
+                if (len(raw) != metadata.st_size or signature(current) != signature(metadata)
+                        or signature(os.fstat(descriptor)) != signature(metadata)):
+                    raise ValueError(f"repository {label} changed during read")
+                return raw
+            finally:
+                os.close(descriptor)
+    except FileNotFoundError:
+        return None
+
+
+def _metadata_directory(raw: bytes | None, prefix: bytes, base: Path) -> Path:
+    if raw is None or not raw.startswith(prefix):
+        raise ValueError("repository Git directory file is malformed")
+    value = raw[len(prefix):].rstrip(b"\r\n")
+    if not value or any(byte in value for byte in (b"\0", b"\r", b"\n")):
+        raise ValueError("repository Git directory file is malformed")
+    path = base / os.fsdecode(value)
+    with _directory_fd(path):
+        return path
+
+
+def reject_git_metadata(repository_root: Path, paths: tuple[tuple[str, str], ...]) -> None:
+    entry = repository_root / ".git"
+    private = entry if stat.S_ISDIR(entry.lstat().st_mode) else _metadata_directory(
+        _metadata_file(entry, ".git entry", read=True), b"gitdir: ", repository_root
+    )
+    common = _metadata_file(private / "commondir", "commondir", read=True)
+    roots = (private,) if common is None else (
+        private, _metadata_directory(common, b"", private)
+    )
+    for root in roots:
+        for relative, label in paths:
+            _metadata_file(root / relative, label)
 
 
 def exact_repository_root(value: str) -> Path:
-        root = Path(value).resolve(strict=True)
-        if not root.is_dir():
-            raise ValueError("repository root is not a directory")
-        _reject_local_attributes(root)
-        top = Path(
-            run_git(root, "rev-parse", "--show-toplevel")
-            .decode("utf-8")
-            .strip()
-        ).resolve()
-        if root != top:
-            raise ValueError(f"repository root must be exact Git top level {top}")
-        return root
+    root = Path(value).resolve(strict=True)
+    if not root.is_dir():
+        raise ValueError("repository root is not a directory")
+    reject_git_metadata(root, (("info/attributes", "local attributes file"),))
+    top = Path(run_git(root, "rev-parse", "--show-toplevel").decode("utf-8").strip()).resolve()
+    if root != top:
+        raise ValueError(f"repository root must be exact Git top level {top}")
+    return root
 
 
 def validate_sha(value: str, label: str) -> str:
@@ -134,11 +203,37 @@ def leading_space_before_tab(content: bytes) -> bool:
     return b" \t" in leading
 
 
+def trailing_blank_lines(content: bytes) -> int:
+    count = 0
+    for line in io.BytesIO(content):
+        count = count + 1 if not line.strip(b" \t\r\n") else 0
+    return count
+
+
 def raw_diff_errors(
     repository_root: Path,
     parent_sha: str,
     candidate_sha: str,
 ) -> list[str]:
+    records = run_git(
+        repository_root, "diff", "--raw", "--no-ext-diff", "--no-textconv",
+        "--no-renames", "--abbrev=40", "-z", parent_sha, candidate_sha, "--",
+    ).split(b"\0")
+    changes = []
+    total = 0
+    for index in range(0, len(records) - 1, 2):
+        old_mode, new_mode, old_oid, new_oid, _status = records[index].split()
+        oids = []
+        for mode, oid in ((old_mode[1:], old_oid), (new_mode, new_oid)):
+            if mode in (b"000000", b"160000"):
+                oids.append(None)
+                continue
+            object_id = oid.decode("ascii")
+            total += int(run_git(repository_root, "cat-file", "-s", object_id))
+            if total > MAX_BYTES:
+                raise ValueError("changed blob bytes exceed 4 MiB")
+            oids.append(object_id)
+        changes.append((os.fsdecode(records[index + 1]), oids))
     diff = run_git(
         repository_root,
         "diff",
@@ -156,7 +251,8 @@ def raw_diff_errors(
     errors = []
     path = None
     line_number = None
-    for line in diff.split(b"\n"):
+    for line in io.BytesIO(diff):
+        line = line.removesuffix(b"\n")
         if line.startswith(b"diff --git "):
             path = None
             line_number = None
@@ -173,56 +269,25 @@ def raw_diff_errors(
             continue
         if line.startswith(b"+"):
             content = line[1:]
-            if content.endswith(b"\r"):
-                content = content[:-1]
-            if content.endswith((b" ", b"\t")):
+            if content.endswith((b" ", b"\t", b"\r")):
                 errors.append(f"{path}:{line_number}: blank-at-eol")
             if leading_space_before_tab(content):
                 errors.append(f"{path}:{line_number}: space-before-tab")
             line_number += 1
+            if len(errors) >= MAX_DIAGNOSTICS:
+                return sorted(set(errors))[:MAX_DIAGNOSTICS]
         elif line.startswith(b" "):
             line_number += 1
 
-    changed_paths = run_git(
-        repository_root,
-        "diff",
-        "--name-only",
-        "--no-renames",
-        "-z",
-        parent_sha,
-        candidate_sha,
-        "--",
-    ).split(b"\0")
-    for raw_path in changed_paths:
-        if not raw_path:
+    for path_text, (old_oid, new_oid) in changes:
+        if new_oid is None:
             continue
-        path_text = raw_path.decode("utf-8", errors="surrogateescape")
-        try:
-            candidate = run_git(
-                repository_root,
-                "cat-file",
-                "blob",
-                f"{candidate_sha}:{path_text}",
-            )
-        except ValueError:
-            continue
-        try:
-            parent = run_git(
-                repository_root,
-                "cat-file",
-                "blob",
-                f"{parent_sha}:{path_text}",
-            )
-        except ValueError:
-            parent = b""
-        candidate_lf = candidate.replace(b"\r\n", b"\n")
-        parent_lf = parent.replace(b"\r\n", b"\n")
-        candidate_blank_lines = len(candidate_lf) - len(
-            candidate_lf.rstrip(b"\n")
-        )
-        parent_blank_lines = len(parent_lf) - len(parent_lf.rstrip(b"\n"))
-        if candidate_blank_lines > 1 and candidate_blank_lines > parent_blank_lines:
+        candidate = run_git(repository_root, "cat-file", "blob", new_oid)
+        parent = run_git(repository_root, "cat-file", "blob", old_oid) if old_oid else b""
+        if trailing_blank_lines(candidate) > trailing_blank_lines(parent):
             errors.append(f"{path_text}:EOF: blank-at-eof")
+            if len(errors) >= MAX_DIAGNOSTICS:
+                break
     return sorted(set(errors))
 
 

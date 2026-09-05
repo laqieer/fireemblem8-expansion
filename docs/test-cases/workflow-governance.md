@@ -1512,6 +1512,20 @@ game behavior needs a compensating change.
    rows reject. Signature fields remain nonempty. Replace `.git/info/attributes`
    with a FIFO and confirm both repository-root validators reject it by
    no-follow `lstat` before any Git command can block on it.
+   Run the focused `test_agent_handoff.RawDiffBoundaryTests` class: clean LF
+   and unchanged trailing blanks pass; CRLF, a newly added one-LF file, and
+   added EOF blanks fail. Create 4 MiB-plus-one-byte text and NUL-containing
+   blobs incrementally; isolated checker processes bounded to 128 MiB/8 CPU
+   seconds must reject before text materialization. Exercise linked worktrees
+   with relative/absolute `.git` and `commondir` paths; shared/private
+   attributes, grafts and alternates allow only absent/empty regular files.
+   Replace metadata and directory components with symlinks, FIFOs, directories,
+   malformed or oversized control files; intercept Git dispatch to prove
+   preflight rejection without letting Git consume those entries.
+   Execute both documented handoff examples without an installation environment
+   fallback and the schema-v2 reporter example with external trust/installation;
+   removing either reporter flag must fail. Pre-fix controls accept oversized
+   blobs, CRLF and one-LF files, miss shared metadata, and fail the public CLIs.
 4. Exercise the repeated-parent/stale, wrong-parent, unrelated-branch, dirty,
    incomplete, missing-evidence, missing-trailer, out-of-scope, line-budget,
    lifetime, and RSS fixtures. Confirm script-only diffs derive zero ROM, RAM,
