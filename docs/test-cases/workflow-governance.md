@@ -1309,6 +1309,11 @@ the exact branch and head; timeout or ambiguity fails before `gh run watch`.
    drift before PATCH while the selected intent remains active. Require zero
    PATCH and one immutable owner-authored abort comment. If a confirmation or
    abort is already observed, require deferral without a second terminal.
+   Assert that the abort's observed head/base, metadata digest, and version
+   equal the validated final GraphQL observation, not the cached pre-state.
+   For malformed repository identity, missing/invalid observation fields, or
+   inconsistent body-version evidence, require an error without fabricated
+   abort evidence or PATCH.
    Replay maybe-created, duplicate, forged, edited, and
    contradictory abort comments; malformed historical abort markers remain
    fatal.

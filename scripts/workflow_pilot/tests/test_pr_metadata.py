@@ -192,6 +192,7 @@ def _graphql_payload(
                     "number": state["number"],
                     "timelineItems": {"nodes": nodes},
                     "title": state["title"],
+                    "updatedAt": state["updated_at"],
                     "url": (
                         f"https://github.com/{REPOSITORY}/pull/{PR_NUMBER}"
                     ),
@@ -3065,7 +3066,86 @@ class PullRequestMetadataTests(unittest.TestCase):
             == ("POST", _endpoint(f"issues/{PR_NUMBER}/comments"))
             and pr_metadata.ABORT_MARKER in call[2]["body"]
         )
-        self.assertIn("candidate-drift", abort_call[2]["body"])
+        self.assertIn("pre-state-drift", abort_call[2]["body"])
+        abort = pr_metadata._parse_abort_comment_body(abort_call[2]["body"])
+        self.assertEqual(
+            abort.observed_metadata_sha256,
+            _metadata_sha256(drifted["title"], drifted["body"]),
+        )
+        self.assertEqual(abort.observed_version, drifted_version)
+
+    def test_abort_observations_bind_actual_changed_candidate_identity(self):
+        for changed in ("head", "base"):
+            with self.subTest(changed=changed):
+                client = ScriptedClient()
+                _add_pr_states(client, _pr(), _pr())
+                _add_snapshot(client, [_run(101, 10, mode="full")], copies=2)
+                _add_edit_transaction(client, body="new body")
+                observed = _pr()
+                observed[changed]["sha"] = NEW_HEAD
+                client.routes[("POST", "graphql")][1] = _response(
+                    _graphql_payload(observed, _metadata_version())
+                )
+                decision = pr_metadata.edit_metadata(
+                    client,
+                    repository=REPOSITORY,
+                    pr_number=PR_NUMBER,
+                    head_sha=HEAD,
+                    base_sha=BASE,
+                    title=None,
+                    body="new body",
+                    essential_reason=None,
+                )
+                self.assertEqual(decision.action, "deferred")
+                posts = [
+                    call[2]["body"] for call in client.calls
+                    if call[:2] == ("POST", _endpoint(f"issues/{PR_NUMBER}/comments"))
+                ]
+                abort = pr_metadata._parse_abort_comment_body(posts[-1])
+                self.assertEqual(abort.reason, "candidate-drift")
+                self.assertEqual(abort.intent_head_sha, HEAD)
+                self.assertEqual(abort.intent_base_sha, BASE)
+                self.assertEqual(abort.observed_head_sha, observed["head"]["sha"])
+                self.assertEqual(abort.observed_base_sha, observed["base"]["sha"])
+                self.assertFalse(any(call[0] == "PATCH" for call in client.calls))
+
+    def test_unvalidated_final_observation_never_creates_cached_abort_evidence(self):
+        for failure in ("repository", "updatedAt", "head", "body-version"):
+            with self.subTest(failure=failure):
+                client = ScriptedClient()
+                _add_pr_states(client, _pr(), _pr())
+                _add_snapshot(client, [_run(101, 10, mode="full")], copies=2)
+                _add_edit_transaction(client, body="new body")
+                payload = _graphql_payload(_pr(), _metadata_version())
+                repository = payload["data"]["repository"]
+                pull = repository["pullRequest"]
+                if failure == "repository":
+                    repository["databaseId"] += 1
+                elif failure == "updatedAt":
+                    pull.pop("updatedAt")
+                elif failure == "head":
+                    pull["headRefOid"] = "invalid"
+                else:
+                    pull["body"] = "does not match the observed edit node"
+                client.routes[("POST", "graphql")][1] = _response(payload)
+                with self.assertRaises(pr_metadata.MetadataEditError):
+                    pr_metadata.edit_metadata(
+                        client,
+                        repository=REPOSITORY,
+                        pr_number=PR_NUMBER,
+                        head_sha=HEAD,
+                        base_sha=BASE,
+                        title=None,
+                        body="new body",
+                        essential_reason=None,
+                    )
+                posts = [
+                    call[2]["body"] for call in client.calls
+                    if call[:2] == ("POST", _endpoint(f"issues/{PR_NUMBER}/comments"))
+                ]
+                self.assertEqual(len(posts), 1)
+                self.assertTrue(posts[0].startswith(pr_metadata.INTENT_MARKER))
+                self.assertFalse(any(call[0] == "PATCH" for call in client.calls))
 
     def test_no_op_requires_and_returns_authoritative_pair(self):
         receipt = _receipt()

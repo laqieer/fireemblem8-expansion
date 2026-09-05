@@ -83,6 +83,7 @@ METADATA_VERSION_QUERY = """query($owner:String!,$name:String!,$number:Int!){
       lastEditedAt
       number
       title
+      updatedAt
       url
       editor{__typename login ... on User{databaseId}}
       userContentEdits(first:2){
@@ -1738,10 +1739,10 @@ def _body_edit_version(
     )
 
 
-def fetch_metadata_version(
+def _fetch_metadata_observation(
     client: GitHubClient,
     state: PullRequestState,
-) -> MetadataVersion:
+) -> tuple[PullRequestState, MetadataVersion]:
     owner, name = state.repository.split("/", 1)
     response = client.request(
         "POST",
@@ -1785,15 +1786,19 @@ def fetch_metadata_version(
         or pull.get("number") != state.number
         or pull.get("url")
         != f"https://github.com/{state.repository}/pull/{state.number}"
-        or pull.get("headRefOid") != state.head_sha
-        or pull.get("headRefName") != state.head_ref
-        or pull.get("baseRefOid") != state.base_sha
-        or pull.get("baseRefName") != state.base_ref
-        or pull.get("title") != state.title
         or not isinstance(pull.get("body"), str)
-        or pull.get("body") != state.body
     ):
         raise MetadataEditError("metadata version pull request identity drifted")
+    observed = replace(
+        state,
+        head_sha=_sha(pull.get("headRefOid"), "metadata head"),
+        head_ref=_text(pull.get("headRefName"), "metadata head ref"),
+        base_sha=_sha(pull.get("baseRefOid"), "metadata base"),
+        base_ref=_text(pull.get("baseRefName"), "metadata base ref"),
+        title=_text(pull.get("title"), "metadata title"),
+        body=pull["body"],
+        updated_at=_github_timestamp(pull.get("updatedAt"), "metadata updatedAt"),
+    )
     (
         body_edit_total_count,
         body_edit_id,
@@ -1802,7 +1807,7 @@ def fetch_metadata_version(
         body_edit_updated_at,
         body_editor_id,
         body_editor_login,
-    ) = _body_edit_version(pull, state)
+    ) = _body_edit_version(pull, observed)
     timeline = pull.get("timelineItems")
     nodes = timeline.get("nodes") if isinstance(timeline, dict) else None
     if not isinstance(nodes, list) or len(nodes) > 100:
@@ -1837,7 +1842,7 @@ def fetch_metadata_version(
             )
         )
     if not events:
-        return MetadataVersion(
+        return observed, MetadataVersion(
             None,
             None,
             None,
@@ -1865,9 +1870,9 @@ def fetch_metadata_version(
         actor_id,
         actor_login,
     ) = newest[0]
-    if current_title != state.title:
+    if current_title != observed.title:
         raise MetadataEditError("latest title event does not attest current title")
-    return MetadataVersion(
+    return observed, MetadataVersion(
         event_id,
         created_at,
         previous_title,
@@ -1883,6 +1888,20 @@ def fetch_metadata_version(
         body_last_edited_at,
         body_edit_updated_at,
     )
+
+
+def fetch_metadata_version(
+    client: GitHubClient,
+    state: PullRequestState,
+) -> MetadataVersion:
+    observed, version = _fetch_metadata_observation(client, state)
+    if (
+        not _same_pr_contract(observed, state)
+        or observed.title != state.title
+        or observed.body != state.body
+    ):
+        raise MetadataEditError("metadata version pull request identity drifted")
+    return version
 
 
 def _page_count(total_count: int) -> int:
@@ -3114,6 +3133,7 @@ def _same_pr_contract(
         and left.head_sha == right.head_sha
         and left.head_ref == right.head_ref
         and left.base_sha == right.base_sha
+        and left.base_ref == right.base_ref
     )
 
 
@@ -3534,34 +3554,24 @@ def edit_metadata(
             reason = "transaction-drift"
         elif essential_reason is None and _blocking_active_runs(fresh_runs):
             reason = "run-authority-drift"
-        final_version = None
+        observed, final_version = _fetch_metadata_observation(client, current)
         if reason is None:
-            try:
-                final_version = fetch_metadata_version(client, current)
-            except MetadataEditError:
+            if not _same_pr_contract(observed, current):
                 reason = "candidate-drift"
-        if (
-            reason is None
-            and final_version is not None
-            and not _receipt_matches_pre_state(
-                intent,
-                current,
-                final_version,
-            )
-        ):
-            reason = (
-                "metadata-version-drift"
-                if _metadata_digest(current.title, current.body)
-                == intent.pre_metadata_sha256
-                else "pre-state-drift"
-            )
+            elif not _receipt_matches_pre_state(intent, observed, final_version):
+                reason = (
+                    "metadata-version-drift"
+                    if _metadata_digest(observed.title, observed.body)
+                    == intent.pre_metadata_sha256
+                    else "pre-state-drift"
+                )
         if reason is not None:
             abort_comment = _create_abort_comment(
                 client,
-                current,
+                observed,
                 latest_intent_comment,
                 intent,
-                observed_version=final_version or current_version,
+                observed_version=final_version,
                 reason=reason,
             )
             return Decision(
@@ -3578,6 +3588,7 @@ def edit_metadata(
                 abort_comment_id=abort_comment.comment_id,
                 abort_comment_url=abort_comment.html_url,
             )
+        current = observed
     mutation: dict[str, object] = {}
     changed = set(_changed_fields(intent))
     if "title" in changed:

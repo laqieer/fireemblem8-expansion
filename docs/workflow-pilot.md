@@ -753,7 +753,7 @@ semantics apply.
 
 Immediately before PATCH, the helper refetches complete PR, run, metadata
 and transaction-comment authority, then makes one final complete
-repository/owner/PR/ref/title/body/editor/title-event/UserContentEdit GraphQL
+repository/owner/PR/ref/title/body/updatedAt/editor/title-event/UserContentEdit GraphQL
 request as the last network operation before PATCH. For a selected intent that
 is still active, candidate, pre-state, provided-field, version, run-snapshot,
 or active-intent drift creates an immutable owner-authored abort comment and
@@ -765,6 +765,15 @@ or safely attempts the same abort again; malformed, duplicate, forged, or
 contradictory aborts are fatal. This still cannot make the final GET and PATCH
 atomic. The authoritative PATCH response's exact head/base and complete
 title/body attestation detects drift occurring in that irreducible window.
+
+Observed abort identity, metadata digest, and version come from the same
+validated final GraphQL response, including when run or transaction authority
+has already drifted. The response is first validated as an observation of the
+same repository/PR, then compared with the immutable intent. A new head/base
+or changed body is recorded as actually observed rather than replaced with the
+cached pre-intent state. Malformed, inconsistent, or unavailable final authority
+raises an error before abort creation; cached state/version is never relabeled
+as a fresh observation.
 
 A valid abort closes only its referenced intent. On a later invocation, an
 unchanged target follows ordinary authoritative-pair/no-op/refusal behavior;
