@@ -991,6 +991,7 @@ class TesterCaseRegistryTests(unittest.TestCase):
                         "commands": {
                             "python3 -m unittest scripts.workflow_pilot.tests."
                             "test_git_broker scripts.workflow_pilot.tests."
+                            "test_git_broker_credentials scripts.workflow_pilot.tests."
                             "test_signed_records -v",
                             "/usr/bin/python3 -I scripts/workflow_pilot/tests/"
                             "protected_broker_fixture.py --broker-uid 65534 "

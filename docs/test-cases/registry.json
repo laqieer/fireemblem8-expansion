@@ -2363,7 +2363,7 @@
       "limitations": "Same-UID unit exchanges are deterministic protocol evidence, not deployment acceptance. Missing protected principals or real GitHub credentials is an explicit failing/blocked acceptance criterion, never a simulated pass or manual-review requirement. Uncertain operations cannot be cleared through a generic recovery API.",
       "automation": [
         {
-          "command": "python3 -m unittest scripts.workflow_pilot.tests.test_git_broker scripts.workflow_pilot.tests.test_signed_records -v",
+          "command": "python3 -m unittest scripts.workflow_pilot.tests.test_git_broker scripts.workflow_pilot.tests.test_git_broker_credentials scripts.workflow_pilot.tests.test_signed_records -v",
           "evidence": "scripts/workflow_pilot/tests/test_git_broker.py"
         },
         {
