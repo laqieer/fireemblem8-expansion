@@ -1240,7 +1240,8 @@ the exact branch and head; timeout or ambiguity fails before `gh run watch`.
    PR_METADATA_LIVE_PR=202 python3 -m unittest
    scripts.workflow_pilot.tests.test_pr_metadata.LivePullRequestMetadataQueryTests
    -v`. This sends only REST/GraphQL reads and executes the exact production
-   metadata-version query against the existing PR.
+   metadata-version query against the existing no-body-edit PR. Repeat with
+   `PR_METADATA_LIVE_PR=189` to parse a nonempty body-edit connection.
 2. Exercise a same-head/same-base full Build whose complete exact Build job
    shape is queued. Attempt a default body edit with exact repository, PR,
    head, and base arguments, and confirm the initially active Build takes one
@@ -1253,8 +1254,10 @@ the exact branch and head; timeout or ambiguity fails before `gh run watch`.
    multiple/contradictory binding shapes.
 3. Repeat with a nonempty essential-contract reason, keep the same full run
    active, validate the pre-PATCH immutable intent comment, PATCH response,
-   title `RenamedTitleEvent` and body `lastEditedAt`/editor authority, and
-   immutable confirmation comment. Then present a
+   title `RenamedTitleEvent` and body `userContentEdits(first: 2)` authority,
+   including count, newest node identity/timestamps/editor/deletion/diff,
+   pageInfo, and `lastEditedAt` consistency, plus the immutable confirmation
+   comment. Then present a
    successful runner-backed full Build followed by its failed metadata-only
    continuity run and invoke `pr-metadata reconcile
    --confirmation-comment-id <confirmation-comment-id>`.
@@ -1342,6 +1345,12 @@ The GraphQL `Actor` selections request `__typename` and `login` on the
 interface, and request `databaseId` only through `... on User` inline
 fragments. User actors retain exact numeric-ID/login binding; bot, deleted,
 null, and wrong-ID actors fail wherever owner edit authority is required.
+Body authority requires a canonical newest-first `UserContentEdit` connection.
+No-edit state is explicit. A body edit increases `totalCount` by exactly one
+and introduces a new latest node. Missing/permission-omitted connections,
+count rollback, count jump, reused/duplicate nodes, deleted nodes, malformed
+pageInfo, wrong editor, diff/body mismatch, and multiple same-second nodes fail
+closed.
 Exact-head runs use typed `explicit-same`, `explicit-other`, and `unbound`
 binding states. Active unbound runs block; terminal unbound runs cannot provide
 evidence; explicit-other runs are ignored only after full validation; multiple
@@ -1392,8 +1401,8 @@ at or below the receipt watermark, accepting a rerun attempt at the watermark,
 comparing Actions and comment timestamps causally, accepting an old pair after
 a newer intent, or accepting deleted/edited/non-owner/bot/wrong-ID/
 cross-repository/duplicate/ambiguous intent or confirmation comments, later
-direct metadata edit, title/body edit-and-revert, same-second body version
-ambiguity, malformed transaction schema/identity/field/digest/version/
+direct metadata edit, title/body edit-and-revert, same-second body edit/revert,
+malformed transaction schema/identity/field/digest/version/
 workflow/watermark, or unreconciled unmatched intent, and
 repository/command injection all fail
 closed. No tested path calls a

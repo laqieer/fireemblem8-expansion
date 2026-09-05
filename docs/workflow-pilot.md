@@ -520,9 +520,10 @@ owner-authored GitHub comments rather than a local receipt:
    ID/number/creation-time watermark.
 2. The helper PATCHes and strictly validates the complete title/body response.
    It then queries metadata-specific GitHub authority: the latest exact
-   `RenamedTitleEvent` for title changes and GraphQL `lastEditedAt` plus editor
-   for body changes. Same-second body authority that cannot distinguish the
-   edit from the pre-intent state fails closed.
+   `RenamedTitleEvent` for title changes and the latest immutable GraphQL
+   `UserContentEdit` node for body changes. Body authority binds connection
+   `totalCount`, newest node ID, timestamps, deletion state, owner editor,
+   `diff`, and `pageInfo`; PR `lastEditedAt` is only a consistency field.
 3. An immutable **confirmation** comment references the exact intent comment
    ID/nonce and binds the complete target state plus that metadata-version
    authority.
@@ -536,6 +537,16 @@ GitHub's GraphQL `Actor` interface exposes `__typename` and `login`, but not
 for `RenamedTitleEvent.actor`. Owner authority requires the `User` fragment's
 exact numeric ID and login; bots and deleted/null actors cannot authorize the
 requested edit.
+
+`userContentEdits(first: 2)` is newest-first. The helper requires exact
+0/1/2-node cardinality from `totalCount`, canonical page flags and cursors, a
+unique newest node, strict timestamp chronology, distinct IDs, null
+`deletedAt`, and newest-node `diff` equal to the current body. No-edit state
+requires zero count plus empty nodes, cursors, `lastEditedAt`, and editor. A
+body PATCH must increase the count by exactly one and introduce a new latest
+node. Reconciliation binds the exact count/node identity, so a later
+same-second edit/revert invalidates confirmation even when body text and
+`lastEditedAt` return to prior values.
 
 ```json
 {
@@ -595,7 +606,8 @@ comments, duplicate nonces, duplicate confirmations, and ambiguous latest
 intents, and requires the selected confirmation to reference the unique latest
 intent. It refetches the metadata-specific version and complete current
 title/body state; later direct edits and edit-and-revert change
-`RenamedTitleEvent` or body `lastEditedAt` authority and invalidate the pair.
+`RenamedTitleEvent` or body `UserContentEdit` count/node authority and
+invalidate the pair.
 Transaction comments are never edited or deleted by reconciliation and their
 `issue_comment` creation does not trigger Build CI.
 The separately marked canonical evidence comment may continue to be updated;

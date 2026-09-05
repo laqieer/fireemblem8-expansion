@@ -9,6 +9,7 @@ import os
 import subprocess
 import tempfile
 import unittest
+from dataclasses import replace
 from pathlib import Path
 
 from scripts.workflow_pilot import candidate_evidence, pr_metadata
@@ -53,7 +54,36 @@ def _metadata_version(
     body_last_edited_at: str | None = "2026-09-04T00:00:00Z",
     body_editor_id: int | None = OWNER_ID,
     body_editor_login: str | None = "owner",
+    body_edit_total_count: int | None = None,
+    body_edit_id: str | None = None,
+    body_edit_created_at: str | None = None,
+    body_edit_edited_at: str | None = None,
+    body_edit_updated_at: str | None = None,
 ) -> pr_metadata.MetadataVersion:
+    if body_last_edited_at is None:
+        body_edit_total_count = 0
+        body_edit_id = None
+        body_edit_created_at = None
+        body_edit_edited_at = None
+        body_edit_updated_at = None
+        body_editor_id = None
+        body_editor_login = None
+    else:
+        if body_edit_total_count is None:
+            body_edit_total_count = (
+                1
+                if body_last_edited_at
+                in {
+                    "2026-09-03T00:00:00Z",
+                    "2026-09-04T00:00:00Z",
+                }
+                else 2
+            )
+        if body_edit_id is None:
+            body_edit_id = f"UCE_{body_edit_total_count}"
+        body_edit_created_at = body_edit_created_at or body_last_edited_at
+        body_edit_edited_at = body_edit_edited_at or body_last_edited_at
+        body_edit_updated_at = body_edit_updated_at or body_last_edited_at
     return pr_metadata.MetadataVersion(
         title_event_id,
         title_event_created_at,
@@ -64,6 +94,11 @@ def _metadata_version(
         body_last_edited_at,
         body_editor_id,
         body_editor_login,
+        body_edit_total_count,
+        body_edit_id,
+        body_edit_created_at,
+        body_edit_edited_at,
+        body_edit_updated_at,
     )
 
 
@@ -104,6 +139,36 @@ def _graphql_payload(
         if version.body_last_edited_at is not None
         else None
     )
+    edit_nodes = []
+    if version.body_edit_total_count:
+        edit_nodes.append(
+            {
+                "createdAt": version.body_edit_created_at,
+                "deletedAt": None,
+                "diff": state["body"] or "",
+                "editedAt": version.body_edit_edited_at,
+                "editor": editor,
+                "id": version.body_edit_id,
+                "updatedAt": version.body_edit_updated_at,
+            }
+        )
+        if version.body_edit_total_count > 1:
+            edit_nodes.append(
+                {
+                    "createdAt": "2026-09-03T00:00:00Z",
+                    "deletedAt": None,
+                    "diff": "prior body",
+                    "editedAt": "2026-09-03T00:00:00Z",
+                    "editor": {
+                        "__typename": "User",
+                        "databaseId": OWNER_ID,
+                        "login": owner,
+                    },
+                    "id": "UCE_previous",
+                    "updatedAt": "2026-09-03T00:00:00Z",
+                }
+            )
+    total_count = version.body_edit_total_count
     return {
         "data": {
             "repository": {
@@ -121,6 +186,20 @@ def _graphql_payload(
                     "url": (
                         f"https://github.com/{REPOSITORY}/pull/{PR_NUMBER}"
                     ),
+                    "userContentEdits": {
+                        "nodes": edit_nodes,
+                        "pageInfo": {
+                            "endCursor": (
+                                f"cursor-{min(total_count, 2)}"
+                                if total_count
+                                else None
+                            ),
+                            "hasNextPage": total_count > 2,
+                            "hasPreviousPage": False,
+                            "startCursor": "cursor-1" if total_count else None,
+                        },
+                        "totalCount": total_count,
+                    },
                 },
             }
         }
@@ -865,6 +944,21 @@ def _confirmation(
     intent_comment_id: int = 401,
     version: pr_metadata.MetadataVersion | None = None,
 ) -> pr_metadata.EditConfirmation:
+    if version is None:
+        if "body" in {field.field for field in receipt.requested_fields}:
+            version = replace(
+                receipt.pre_version,
+                body_last_edited_at="2026-09-04T00:00:00Z",
+                body_editor_id=OWNER_ID,
+                body_editor_login="owner",
+                body_edit_total_count=receipt.pre_version.body_edit_total_count + 1,
+                body_edit_id="UCE_target",
+                body_edit_created_at="2026-09-04T00:00:00Z",
+                body_edit_edited_at="2026-09-04T00:00:00Z",
+                body_edit_updated_at="2026-09-04T00:00:00Z",
+            )
+        else:
+            version = receipt.pre_version
     return pr_metadata.EditConfirmation(
         schema_version=1,
         repository=receipt.repository,
@@ -875,7 +969,7 @@ def _confirmation(
         intent_comment_id=intent_comment_id,
         intent_nonce=receipt.nonce,
         metadata_sha256=receipt.target_metadata_sha256,
-        metadata_version=version or _metadata_version(),
+        metadata_version=version,
     )
 
 
@@ -957,7 +1051,21 @@ def _reconcile(
     state: dict | None = None,
 ) -> pr_metadata.Decision:
     receipt = receipt or _receipt()
-    version = version or _metadata_version()
+    if version is None:
+        if "body" in {field.field for field in receipt.requested_fields}:
+            version = replace(
+                receipt.pre_version,
+                body_last_edited_at="2026-09-04T00:00:00Z",
+                body_editor_id=OWNER_ID,
+                body_editor_login="owner",
+                body_edit_total_count=receipt.pre_version.body_edit_total_count + 1,
+                body_edit_id="UCE_target",
+                body_edit_created_at="2026-09-04T00:00:00Z",
+                body_edit_edited_at="2026-09-04T00:00:00Z",
+                body_edit_updated_at="2026-09-04T00:00:00Z",
+            )
+        else:
+            version = receipt.pre_version
     confirmation = confirmation or _confirmation(receipt, version=version)
     _add_transaction_comments(
         client,
@@ -1494,7 +1602,10 @@ class PullRequestMetadataTests(unittest.TestCase):
             ],
             copies=2,
         )
-        _add_metadata_versions(client, (_pr(), _metadata_version()))
+        _add_metadata_versions(
+            client,
+            (_pr(), _metadata_version()),
+        )
         client.add(
             "GET",
             _query(
@@ -2240,7 +2351,10 @@ class PullRequestMetadataTests(unittest.TestCase):
             ],
             copies=2,
         )
-        _add_metadata_versions(client, (_pr(), _metadata_version()))
+        _add_metadata_versions(
+            client,
+            (_pr(), confirmation.metadata_version),
+        )
         client.add(
             "GET",
             _query(
@@ -2273,7 +2387,10 @@ class PullRequestMetadataTests(unittest.TestCase):
         client = ScriptedClient()
         _add_pr_states(client, _pr(), _pr())
         _add_snapshot(client, [_run(101, 10, mode="full")], copies=2)
-        _add_metadata_versions(client, (_pr(), _metadata_version()))
+        _add_metadata_versions(
+            client,
+            (_pr(), confirmation.metadata_version),
+        )
         client.add(
             "GET",
             _query(
@@ -3080,6 +3197,174 @@ class PullRequestMetadataTests(unittest.TestCase):
                 ),
                 version=version,
             )
+
+    def test_body_edit_connection_contract_fails_closed(self):
+        state = _pr()
+        base = _graphql_payload(
+            state,
+            _metadata_version(
+                body_edit_total_count=2,
+                body_edit_id="UCE_latest",
+            ),
+        )
+        cases = {}
+        missing = copy.deepcopy(base)
+        del missing["data"]["repository"]["pullRequest"]["userContentEdits"]
+        cases["missing-connection"] = missing
+        omitted = copy.deepcopy(base)
+        omitted["data"]["repository"]["pullRequest"]["userContentEdits"] = None
+        cases["permission-omission"] = omitted
+        count_rollback = copy.deepcopy(base)
+        count_rollback["data"]["repository"]["pullRequest"][
+            "userContentEdits"
+        ]["totalCount"] = 1
+        cases["count-cardinality"] = count_rollback
+        bad_page = copy.deepcopy(base)
+        bad_page["data"]["repository"]["pullRequest"]["userContentEdits"][
+            "pageInfo"
+        ]["hasPreviousPage"] = True
+        cases["page-info"] = bad_page
+        bad_cursor = copy.deepcopy(base)
+        bad_cursor["data"]["repository"]["pullRequest"]["userContentEdits"][
+            "pageInfo"
+        ]["endCursor"] = "cursor-1"
+        cases["cursor-range"] = bad_cursor
+        deleted = copy.deepcopy(base)
+        deleted["data"]["repository"]["pullRequest"]["userContentEdits"][
+            "nodes"
+        ][0]["deletedAt"] = "2026-09-04T00:00:01Z"
+        cases["deleted-latest"] = deleted
+        diff = copy.deepcopy(base)
+        diff["data"]["repository"]["pullRequest"]["userContentEdits"][
+            "nodes"
+        ][0]["diff"] = "different body"
+        cases["diff-inconsistent"] = diff
+        same_second = copy.deepcopy(base)
+        nodes = same_second["data"]["repository"]["pullRequest"][
+            "userContentEdits"
+        ]["nodes"]
+        nodes[1]["editedAt"] = nodes[0]["editedAt"]
+        nodes[1]["createdAt"] = nodes[0]["createdAt"]
+        nodes[1]["updatedAt"] = nodes[0]["updatedAt"]
+        cases["same-second-multiple"] = same_second
+        reused = copy.deepcopy(base)
+        reused["data"]["repository"]["pullRequest"]["userContentEdits"][
+            "nodes"
+        ][1]["id"] = "UCE_latest"
+        cases["node-reuse"] = reused
+        for name, payload in cases.items():
+            with self.subTest(case=name):
+                client = ScriptedClient()
+                client.add("POST", "graphql", _response(payload))
+                with self.assertRaises(pr_metadata.MetadataEditError):
+                    pr_metadata.fetch_metadata_version(
+                        client,
+                        pr_metadata._parse_pull_request_payload(
+                            state,
+                            REPOSITORY,
+                            PR_NUMBER,
+                        ),
+                    )
+
+    def test_body_no_edit_to_first_edit_has_unique_node_authority(self):
+        pre = _metadata_version(body_last_edited_at=None)
+        post = _metadata_version(
+            body_last_edited_at="2026-09-04T00:00:01Z",
+            body_edit_total_count=1,
+            body_edit_id="UCE_first",
+        )
+        receipt = _receipt(
+            pre_version=pre,
+            pre_body=None,
+            pre_metadata_sha256=_metadata_sha256("Stable title", None),
+            target_metadata_sha256=_metadata_sha256(
+                "Stable title",
+                "Stable body",
+            ),
+        )
+        state = pr_metadata._parse_pull_request_payload(
+            _pr(),
+            REPOSITORY,
+            PR_NUMBER,
+        )
+        confirmation = pr_metadata._confirmation_for_target(
+            receipt,
+            intent_comment_id=401,
+            state=state,
+            version=post,
+        )
+        self.assertEqual(confirmation.metadata_version.body_edit_total_count, 1)
+        self.assertEqual(confirmation.metadata_version.body_edit_id, "UCE_first")
+
+    def test_same_second_post_confirmation_body_revert_invalidates_pair(self):
+        receipt = _receipt()
+        confirmed_version = _confirmation(receipt).metadata_version
+        reverted_version = replace(
+            confirmed_version,
+            body_edit_total_count=confirmed_version.body_edit_total_count + 1,
+            body_edit_id="UCE_revert",
+        )
+        client = ScriptedClient()
+        _add_pr_states(client, _pr())
+        hidden_record, _hidden_jobs = _run(
+            203,
+            12,
+            mode="metadata-only",
+            active=True,
+        )
+        hidden_record["pull_requests"] = []
+        _add_snapshot(
+            client,
+            [(hidden_record, []), _run(101, 10, mode="full")],
+        )
+        with self.assertRaises(pr_metadata.MetadataEditError):
+            _reconcile(
+                client,
+                receipt=receipt,
+                confirmation=_confirmation(
+                    receipt,
+                    version=confirmed_version,
+                ),
+                version=reverted_version,
+            )
+
+    def test_body_edit_count_and_node_must_advance_monotonically(self):
+        pre = _metadata_version()
+        receipt = _receipt(pre_version=pre)
+        state = pr_metadata._parse_pull_request_payload(
+            _pr(),
+            REPOSITORY,
+            PR_NUMBER,
+        )
+        for name, version in (
+            (
+                "count-rollback",
+                replace(pre, body_edit_total_count=0),
+            ),
+            (
+                "node-reuse",
+                replace(
+                    pre,
+                    body_edit_total_count=pre.body_edit_total_count + 1,
+                ),
+            ),
+            (
+                "count-jump",
+                replace(
+                    pre,
+                    body_edit_total_count=pre.body_edit_total_count + 2,
+                    body_edit_id="UCE_jump",
+                ),
+            ),
+        ):
+            with self.subTest(case=name):
+                with self.assertRaises(pr_metadata.MetadataEditError):
+                    pr_metadata._confirmation_for_target(
+                        receipt,
+                        intent_comment_id=401,
+                        state=state,
+                        version=version,
+                    )
 
     def test_same_second_body_version_ambiguity_fails_closed(self):
         client = ScriptedClient()
@@ -4735,6 +5020,15 @@ class PullRequestMetadataTests(unittest.TestCase):
             "actor{__typenamelogin...onUser{databaseId}}",
             query,
         )
+        self.assertIn(
+            "userContentEdits(first:2){totalCountpageInfo{"
+            "hasNextPagehasPreviousPagestartCursorendCursor}",
+            query,
+        )
+        self.assertIn(
+            "editor{__typenamelogin...onUser{databaseId}}",
+            query,
+        )
         self.assertNotIn("editor{__typenamedatabaseId", query)
         self.assertNotIn("actor{__typenamedatabaseId", query)
 
@@ -4756,6 +5050,16 @@ class LivePullRequestMetadataQueryTests(unittest.TestCase):
         )
         version = pr_metadata.fetch_metadata_version(client, state)
         self.assertIsInstance(version, pr_metadata.MetadataVersion)
+        self.assertGreaterEqual(version.body_edit_total_count, 0)
+        if version.body_edit_total_count == 0:
+            self.assertIsNone(version.body_edit_id)
+            self.assertIsNone(version.body_last_edited_at)
+        else:
+            self.assertTrue(version.body_edit_id)
+            self.assertEqual(
+                version.body_edit_edited_at,
+                version.body_last_edited_at,
+            )
         if version.title_actor_id is not None:
             self.assertGreater(version.title_actor_id, 0)
             self.assertTrue(version.title_actor_login)
@@ -4902,7 +5206,10 @@ class PullRequestMetadataLauncherTests(unittest.TestCase):
                 payload=_pr(),
             ),
             *_cli_snapshot_calls([successful_full]),
-            _cli_metadata_version_call(_pr(), _metadata_version()),
+            _cli_metadata_version_call(
+                _pr(),
+                _metadata_version(),
+            ),
             _cli_api_call(
                 "GET",
                 _query(
@@ -5071,7 +5378,10 @@ class PullRequestMetadataLauncherTests(unittest.TestCase):
                     _confirmation_comment(old_confirmation),
                 ],
             ),
-            _cli_metadata_version_call(_pr(), _metadata_version()),
+            _cli_metadata_version_call(
+                _pr(),
+                old_confirmation.metadata_version,
+            ),
             *_cli_snapshot_calls([old_success, successful_full]),
         ]
         completed, records = self.sandbox.run(
@@ -5139,7 +5449,10 @@ class PullRequestMetadataLauncherTests(unittest.TestCase):
                     _confirmation_comment(confirmation),
                 ],
             ),
-            _cli_metadata_version_call(_pr(), _metadata_version()),
+            _cli_metadata_version_call(
+                _pr(),
+                confirmation.metadata_version,
+            ),
             *_cli_snapshot_calls(runs),
             _cli_api_call(
                 "GET",
@@ -5157,7 +5470,10 @@ class PullRequestMetadataLauncherTests(unittest.TestCase):
                     _confirmation_comment(confirmation),
                 ],
             ),
-            _cli_metadata_version_call(_pr(), _metadata_version()),
+            _cli_metadata_version_call(
+                _pr(),
+                confirmation.metadata_version,
+            ),
             *_cli_snapshot_calls(runs),
             _cli_api_call(
                 "POST",

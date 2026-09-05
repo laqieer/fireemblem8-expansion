@@ -4619,10 +4619,13 @@ printf '%s\t%s\t%s\n' "$result" \
             "--confirmation-comment-id <confirmation-comment-id>",
             "RenamedTitleEvent",
             "lastEditedAt",
+            "userContentEdits(first: 2)",
+            "newest-node `diff` equal to the current body",
+            "increase the count by exactly one",
             '"body_editor_login": "owner"',
             '"title_actor_login": "owner"',
             "two append-only",
-            "same-second body authority",
+            "same-second edit/revert invalidates confirmation",
             "editor { __typename login ... on User { databaseId } }",
             "RenamedTitleEvent.actor",
         ):
@@ -4717,10 +4720,11 @@ printf '%s\t%s\t%s\n' "$result" \
         )
         for requirement in (
             "isolated launcher with deterministic fake gh",
-            "pre-PATCH owner-authored intent creation",
+            "two-phase comments",
             "title RenamedTitleEvent",
-            "body GraphQL lastEditedAt/editor authority",
-            "cross-subsystem timestamp assumptions",
+            "body userContentEdits(first:2)",
+            "same-second edit-revert with hidden runs",
+            "without cross-subsystem timestamp comparison",
         ):
             with self.subTest(registry_requirement=requirement):
                 self.assertIn(normalize_policy(requirement), indexed_contract)
