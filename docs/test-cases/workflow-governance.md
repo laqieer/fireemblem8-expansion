@@ -75,17 +75,21 @@ workflow, using credentials, or changing ROM behavior.
    remove your own bootstrap environment with
    `rm -r -- build/host-python`, or retain it for subsequent host checks.
 
-### Expected result and negative control
+### Expected result
 
 Every schema dependency comes from the committed pinned/hash-verified closure
 in a fresh environment, with no system/user-site reliance. Required optional
-formats really validate adversarial data. The pre-fix clean import fails,
-while the bootstrapped import and reporter discovery pass. Damaged, missing,
+formats really validate adversarial data. The bootstrapped import and reporter
+discovery pass.
+
+### Negative control
+
+The pre-fix clean import fails. Damaged, missing,
 incompatible, unpinned, unhashed and redirected inputs cannot produce a
 successful environment check. Reordering/commenting the same lock records
 stays valid; preserving words while bypassing validation does not.
 
-### Interactions, automation, and limitations
+### Interactions and save compatibility
 
 Dependents are #178/#191 handoff and #205/#211 broker schema tests, not new
 protocol implementations in this case. Dependencies are OS Python/venv,
@@ -95,12 +99,20 @@ coverage. Other interpreters, architectures and libc profiles are unsupported.
 There are no game, save/config, ROM/RAM, localization, generated-game-data,
 modern profile or archival compiler interactions. No feature gate is needed.
 
+### Automation
+
 Automation is `scripts/workflow_pilot/tests/test_host_python.py` plus the
 existing parsed workflow topology/argv mirror suites; real pip installs,
 metadata closure and schema execution are the evidence, not raw source text.
 Full/metadata routing, required contexts, permissions, checkout authority and
-every candidate/master gate are unchanged. No visual/audio/manual-only
-criterion applies. This setup cannot supply missing Git authority or discharge
+every candidate/master gate are unchanged.
+
+### Cleanup and limitations
+
+Tests remove only their UUID-owned fixtures. Retain an explicitly owned
+`build/host-python` environment for later checks or remove only that environment
+afterward as described in step 6. No visual/audio/manual-only criterion applies.
+This setup cannot supply missing Git authority or discharge
 the consumers' independent protected-principal/deployment requirements.
 
 ## TC-WORKFLOW-WORKTREE-CLEANUP-001: Remove only proven completed worktrees
