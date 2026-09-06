@@ -13,10 +13,12 @@ ROOT = Path(__file__).resolve().parents[2]
 MODES = frozenset(
     {
         "anchor-refs",
+        "attest-metadata-event",
         "baseline",
         "classify-event",
         "hydrate",
         "lifecycle-check",
+        "pr-metadata",
         "reporter-tests",
     }
 )
@@ -112,6 +114,14 @@ def dispatch(mode: str, arguments: list[str]) -> int:
         from scripts.workflow_pilot import event_classifier
 
         return event_classifier.main(arguments)
+    if mode == "attest-metadata-event":
+        from scripts.workflow_pilot import metadata_event
+
+        return metadata_event.main(arguments)
+    if mode == "pr-metadata":
+        from scripts.workflow_pilot import pr_metadata
+
+        return pr_metadata.main(arguments)
 
     controlled_repository_root(arguments)
     if mode == "anchor-refs":

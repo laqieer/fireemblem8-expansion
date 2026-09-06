@@ -1053,6 +1053,23 @@ class TesterCaseRegistryTests(unittest.TestCase):
                             "test_development_workflow_skill -v",
                         },
                     },
+                    "TC-WORKFLOW-METADATA-EDIT-RACE-001": {
+                        "document": "docs/test-cases/workflow-governance.md",
+                        "commands": {
+                            "python3 -m unittest "
+                            "scripts.workflow_pilot.tests."
+                            "test_pr_metadata -v",
+                            "python3 -m unittest tests.workflows.test_build_ci_topology."
+                            "ConsolidatedBuildTopologyTests."
+                            "test_metadata_event_producer_publishes_only_immutable_trigger_binding -v",
+                            "python3 -m unittest tests.upstream_port.test_verify."
+                            "VerifyCliCwdTests."
+                            "test_metadata_event_setup_is_closed_and_not_a_local_gate -v",
+                            "python3 -m unittest "
+                            "scripts.docs_check_tests."
+                            "test_development_workflow_skill -v",
+                        },
+                    },
                     "TC-WORKFLOW-PILOT-BASELINE-001": {
                         "document": "docs/test-cases/workflow-governance.md",
                         "commands": {

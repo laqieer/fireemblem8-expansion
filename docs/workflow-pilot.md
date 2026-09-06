@@ -561,6 +561,553 @@ decision record, fixture, or another tracked/current-state ledger. Comment
 edits emit no `pull_request: edited` event, while Git, GitHub, and Actions
 remain authoritative for every value.
 
+### Safe pull-request metadata ordering
+
+**Architecture disposition after the third consecutive finding round:
+accepted in place.** One standards-based typed HTTP header/media policy and
+one exact job-status/timing state model cover the findings without widening
+issue #199 or introducing another subsystem; no split is required.
+
+Finalize the stable PR title/body before pushing the candidate, push the
+candidate, then freeze the title/body while its exact-head full Build is queued
+or in progress. Put every evolving command, result, SHA, run, review, preflight,
+budget, and completion update in the canonical evidence comment instead.
+
+Use the isolated metadata helper for title/body changes after a candidate
+exists. Every invocation binds the repository, PR number, current head SHA,
+current base SHA, active Build workflow, complete exact-head run pages, and
+complete job pages. Every response includes an exact HTTP status and canonical
+Link-header proof; redirects, duplicate/malformed/looping relations, page/body
+contradictions, stale identity, incomplete pagination, unknown or mixed run
+shapes, or a noncanonical workflow fail closed:
+
+HTTP response headers accept only visible ASCII plus the explicitly parsed
+SP separator. Bare CR/LF, NUL, tab, vertical tab, form feed, DEL, non-ASCII,
+folded/obs-fold lines, mixed line endings, and controls embedded in
+Content-Type, Link, Location, or any other value fail before interpretation.
+CRLF and LF header blocks are accepted only when internally consistent.
+The real `gh` subprocess is captured as bytes, bounded before decoding, and
+decoded explicitly as UTF-8 without universal-newline translation. Request
+JSON is likewise encoded explicitly as UTF-8. Invalid UTF-8 fails before
+authority parsing, and the isolated-launcher fake-`gh` controls exercise raw
+LF, CRLF, bare-CR, and mixed-line-ending responses through this production path.
+The `gh api --include` envelope has one explicitly recognized rendering form:
+an LF-terminated status line followed by uniformly CRLF-terminated header
+fields and separator. Only that first status separator is special; mixed
+endings or bare CR inside the header fields still reject. The plain HTTP
+parser remains strict unless its caller explicitly identifies the `gh`
+transport envelope. This matches the real GitHub CLI output without changing
+or normalizing any received bytes.
+Singleton headers, including Content-Type and security/identity fields, cannot
+repeat. The explicitly RFC-combinable `Vary`, `Cache-Control`, and `Link`
+fields may repeat and are SP/comma-normalized before typed interpretation;
+unsupported repeated fields fail closed. Multiple Link fields feed the same
+canonical relation parser, so duplicate relations and loops still fail.
+Content-Type requires case-insensitive exact `application/json`, followed only
+by syntactically valid, uniquely named optional parameters; prefix forms such
+as `application/jsonp` are rejected. Parameter names are tokens and split from
+their values at the first unquoted equals. Token values are accepted; the
+closed quoted subset may contain literal equals and semicolons but no
+backslash/escape or embedded quote. Extra unquoted equals, empty names/values,
+duplicate names, trailing junk, unterminated quotes, and noncanonical
+whitespace are rejected.
+
+The current PR's fully validated base-repository payload binds both
+`owner/repository` and its positive numeric repository ID. Pagination accepts
+only GitHub's canonical `/repos/<owner>/<repository>/...` and
+`/repositories/<numeric-id>/...` Link path families when they resolve to that
+same repository, endpoint suffix, query, and page. Other numeric IDs,
+owner/repository drift, percent-encoded or ambiguous paths, and cross-form
+loops fail closed. The workflow payload must also bind its ID, node, name,
+path, active state, timestamps, API URL, HTML URL, and badge URL to that exact
+repository.
+
+Every job is bound to the requested run and attempt before its result can
+classify a run. Job IDs are unique, and each job's run ID/URL, optional exposed
+attempt/event, head SHA, head branch, workflow name, node, job API URL, HTML
+URL, check-run URL, runner identity, and completion state must agree with the
+parent exact-candidate run and repository. Mixed run/attempt/repository/head
+pages and identityless jobs fail closed.
+
+Completed runs are refreshed through their exact run API identity before job
+classification and retain the exact full/metadata job-set requirement.
+Queued and in-progress runs may expose no jobs or only a partial graph.
+After repository/workflow/event/head/base/run/attempt validation, an active run
+is harmless only when a successful `metadata-classifier` and the observed
+known-job subset prove metadata-only mode. An active `event-classifier`, an
+unknown/partial graph, zero jobs, or any other unproven active shape is a
+blocking active candidate and makes the default edit defer rather than error
+or mutate. Materialization changes across the initial, pre-intent, and
+post-intent run/job snapshots also defer.
+
+Each exact-head run has one typed PR-binding state after its repository,
+workflow, event, and head identity is validated: `explicit-same`,
+`explicit-other`, or `unbound`. Missing, null, or empty `pull_requests` is
+unbound. An active unbound run blocks because GitHub may not have materialized
+its PR binding yet. A terminal unbound run cannot authorize full-Build or
+metadata-continuity evidence. One explicit binding to another PR/base is
+ignored only after its complete run and job authority validates. Multiple
+bindings, a binding head that contradicts the run head, or malformed binding
+content fails closed.
+
+Run and job times use a manual canonical
+`YYYY-MM-DDTHH:MM:SSZ` GitHub-RFC3339 parser; timezone offsets, fractional or
+24:00 times, malformed dates, and missing required fields are rejected.
+Runner-backed completed jobs require
+`run-created <= job-created <= job-started <= job-completed <= run-updated`
+after the exact terminal refresh.
+Queued jobs have null start/completion, and in-progress jobs have a valid start
+but null completion. An active run's `updated_at` is not a live job-completion
+upper bound; active jobs retain strict intrinsic chronology, while the upper
+bound is applied only after terminal run refresh. Canonical unassigned skipped jobs preserve GitHub's live
+timestamp quirk: created and started must be equal, while completion may equal
+them or precede them by exactly one second. Positive skipped duration,
+including one or 28 seconds, is rejected. These unassigned skipped jobs never
+satisfy a runner-backed success requirement. No wider chronology exception is
+accepted.
+
+```bash
+repo=laqieer/fireemblem8-expansion
+pr=123
+head_sha="$(gh api "repos/$repo/pulls/$pr" --jq .head.sha)"
+base_sha="$(gh api "repos/$repo/pulls/$pr" --jq .base.sha)"
+
+/usr/bin/python3 -I scripts/workflow_pilot/isolated_launcher.py pr-metadata edit \
+  --repository "$repo" --pr "$pr" \
+  --head-sha "$head_sha" --base-sha "$base_sha" \
+  --body-file /path/to/stable-pr-body.md
+```
+
+An initially active same-head/same-base full or unproven Build takes one
+complete run/job snapshot and immediately returns `deferred` without changing
+metadata. A mutation-eligible default edit takes three complete exact-candidate
+run/job snapshots: initial, pre-intent, and post-intent immediately before
+PATCH. It returns `deferred` when a later snapshot differs from its predecessor
+or no longer proves the same successful full Build. If the pre-intent snapshot
+already requires deferral, the helper stops there without creating an intent
+or taking the third snapshot.
+Its structured guidance points to the canonical comment route:
+
+```bash
+/usr/bin/python3 -I scripts/workflow_pilot/isolated_launcher.py \
+  pr-metadata evidence-comment \
+  --repository "$repo" --pr "$pr" \
+  --head-sha "$head_sha" --base-sha "$base_sha" \
+  --comment-file /path/to/canonical-evidence.md
+```
+
+An urgent frozen-contract correction may use `--essential-reason` with
+non-whitespace text. The helper revalidates current head/base immediately
+before the title/body PATCH, refreshes complete run authority, never cancels
+the still-valid full Build, and returns the exact reconciliation command. A
+successful edit requires the PATCH response itself to attest the exact
+repository, PR, head, base, requested title, and requested body; a stale
+read-after-write GET is not accepted as mutation evidence. Record the essential
+reason in the canonical evidence comment. No tracked or local pending-state
+ledger is created: GitHub's run number, attempt, event, workflow, PR, head,
+base, mode, status, conclusion, and job identities derive whether
+reconciliation remains pending. The helper uses two append-only,
+owner-authored GitHub comments rather than a local receipt:
+
+1. Before PATCH, an immutable **intent** comment records a unique nonce,
+   repository/PR/head/base/workflow identity, complete pre-state and target
+   title/body digests, `provided_fields` digests for every supplied file,
+   `changed_fields` digests only for values differing from pre-state, the exact pre-edit
+   metadata-version authority, and the highest fully observed pre-PATCH run
+   ID/number/creation-time watermark.
+2. The helper PATCHes only `changed_fields` and strictly validates the complete
+   title/body response. A provided-but-unchanged field is never PATCHed and
+   requires no metadata-version advance, but remains bound by its provided
+   digest, the pre-state, target digest, response, recovery, and current state.
+   It then queries metadata-specific GitHub authority: the latest exact
+   `RenamedTitleEvent` for title changes and the latest immutable GraphQL
+   `UserContentEdit` node for body changes. Body authority binds connection
+   `totalCount`, newest node ID, timestamps, deletion state, owner editor,
+   `diff`, and `pageInfo`; PR `lastEditedAt` is only a consistency field.
+3. An immutable **confirmation** comment references the exact intent comment
+   ID/nonce and binds the complete target state plus that metadata-version
+   authority.
+
+Successful updates and target-state recovery return validated intent and
+confirmation comment IDs/URLs. A read-only ambiguous-outcome hold may return
+only its authenticated intent ID/URL; that deferred result is not an
+authoritative pair and cannot authorize no-op or reconciliation. No
+caller-authored receipt file or mutable local ledger exists.
+
+The REST `body` field is required but nullable; GraphQL's `PullRequest.body`
+is a non-null string. The helper normalizes REST null to the canonical empty
+string when constructing observed PR state. Body comparisons, digests, changed
+fields, PATCH-response attestation, and reconciliation therefore agree on an
+empty body without conflating an absent or malformed field with valid empty
+content. GraphQL must still supply a string. Nonempty bodies and their digests
+are unchanged. Omitting `--body-file` still means no body request; supplying an
+empty file for an already empty body does not fabricate a body-edit version,
+while clearing nonempty content requires the real new edit node.
+
+GitHub's GraphQL `Actor` interface exposes `__typename` and `login`, but not
+`databaseId` directly. The production query therefore selects
+`editor { __typename login ... on User { databaseId } }` and the same shape
+for `RenamedTitleEvent.actor`. Owner authority requires the `User` fragment's
+exact numeric ID and login; bots and deleted/null actors cannot authorize the
+requested edit.
+
+`userContentEdits(first: 2)` is newest-first. The helper requires exact
+0/2-node cardinality from `totalCount`, canonical page flags and cursors, a
+unique newest node, strict timestamp chronology, distinct IDs, null
+`deletedAt`, and newest-node `diff` equal to the current body. No-edit state
+requires zero count plus empty nodes, cursors, `lastEditedAt`, and editor.
+The first body PATCH must advance `totalCount` from **0 to 2**: GitHub
+materializes both the original snapshot and the first edited revision.
+This is not permission for two intervening edits. The older node's `editedAt`
+must equal the same PR's `createdAt` and strictly precede the latest edit; its
+editor must match the PR's original `User` author by numeric ID and login.
+Both nodes must have distinct IDs and share their immutable `createdAt` /
+`updatedAt` materialization time. The original `diff` must have the same
+canonical body digest as the intent's `pre_fields.body`, including an empty
+original body. The latest revision still requires the repository-owner editor
+and exact current body. A subsequent body PATCH must increase the count by
+exactly one and introduce a new latest node.
+
+The metadata version's required `body_original` field preserves that proof
+when `totalCount` is 2: `edit_id`, `body_sha256`, `author_id`, `author_login`,
+`authored_at`, and `materialized_at`. It is explicitly null for no-edit state
+and for later histories whose bounded newest-two query no longer includes
+the original. Confirmation, recovery, and reconciliation bind the complete
+proof, not only the count. A single-revision history, two real intervening
+edits, forged original content/identity/timing, deleted or malformed nodes,
+and creation/first-edit timestamps in the same ambiguous second fail closed.
+Missing proof is never synthesized from a cached body or silently upgraded.
+Reconciliation binds the exact count/node/original identity, so a later
+same-second edit/revert invalidates confirmation even when body text and
+`lastEditedAt` return to prior values.
+
+```json
+{
+  "base_sha": "<40-lowercase-hex>",
+  "head_sha": "<40-lowercase-hex>",
+  "nonce": "<64-lowercase-hex>",
+  "pre_fields": {"body": "<sha256>", "title": "<sha256>"},
+  "pre_metadata_sha256": "<sha256>",
+  "pre_version": {
+    "body_editor_id": 123,
+    "body_editor_login": "owner",
+    "body_edit_total_count": 3,
+    "body_edit_id": "UCE_node",
+    "body_edit_created_at": "YYYY-MM-DDTHH:MM:SSZ",
+    "body_edit_edited_at": "YYYY-MM-DDTHH:MM:SSZ",
+    "body_edit_updated_at": "YYYY-MM-DDTHH:MM:SSZ",
+    "body_last_edited_at": "YYYY-MM-DDTHH:MM:SSZ",
+    "body_original": null,
+    "title_actor_id": 123,
+    "title_actor_login": "owner",
+    "title_current": "Current title",
+    "title_event_created_at": "YYYY-MM-DDTHH:MM:SSZ",
+    "title_event_id": "RTE_node",
+    "title_previous": "Previous title"
+  },
+  "pr_number": 123,
+  "repository": "owner/name",
+  "repository_id": 123,
+  "provided_fields": {"body": "<sha256>", "title": "<sha256>"},
+  "changed_fields": {"title": "<sha256>"},
+  "schema_version": 1,
+  "target_metadata_sha256": "<sha256>",
+  "watermark": {
+    "created_at": "YYYY-MM-DDTHH:MM:SSZ",
+    "run_id": 123,
+    "run_number": 45
+  },
+  "workflow": {"id": 678, "path": ".github/workflows/build.yml"}
+}
+```
+
+Every issue comment receives exact comment ID/body and API/HTML
+repository/PR/issue validation. Ordinary unmarked contributor, bot, and
+deleted-author comments remain permitted and cannot disable the helper.
+A successful authority read performs two complete bounded page walks and
+requires the same ordered parsed comment records in both, including ordinary
+comments whose deletion can shift protected records across page boundaries.
+Each pass retains canonical Link and page/cardinality/identity checks; an
+invalid or differing pass raises before its result is used. There is no retry
+loop or fallback to the first incomplete observation. Transaction selection
+and canonical evidence updates share this stabilized reader. This does not
+make a later GitHub mutation atomic or replace the single-writer contract.
+At each subsequent transaction refresh, the selected intent must still be
+present as the same complete owner-authenticated parsed comment, including
+its canonical receipt and timestamps. Matching only its comment ID or
+equal-second creation/update timestamps is insufficient. Missing, changed,
+unmarked, or no-longer-owner intents raise before any further PATCH or terminal
+comment; cached receipt data cannot authorize an abort. The helper rebinds to
+the fresh record before using it. After a validated PATCH, and on target-state
+recovery without PATCH, it refreshes the transaction graph again before the
+final metadata-version read and confirmation. An existing confirmation or
+abort instead defers without writing another terminal. Reconciliation likewise
+compares the complete selected intent and confirmation across its refreshes.
+The one marked canonical evidence comment must be the repository owner's
+owner-associated `User` comment with the exact owner numeric user ID from the
+validated PR repository payload and exactly one standalone marker.
+Marked missing/deleted authors, bots, non-owner associations, cross-repository
+IDs, duplicate or embedded markers, and a PATCH response that does not attest
+the same author/comment plus the requested body are rejected.
+Response author identity includes the numeric ID, login, user type,
+`site_admin: false`, and owner association; matching only a subset cannot
+authorize a canonical update.
+One shared protected-marker classifier validates both outbound bodies and
+owner-authenticated responses. A canonical evidence replacement must contain
+only its one standalone evidence marker and no intent, confirmation, or abort
+marker, even embedded in quoted text. Transaction creation also validates its
+single marker and complete canonical typed body before POST. Invalid bodies
+therefore fail before any write rather than poisoning future comment scans.
+Structured results reserve `run_id` exclusively for an Actions workflow run
+and `comment_id` exclusively for the canonical issue comment. Both fields are
+optional and serialized in every result, but they are mutually exclusive;
+`comment-updated` requires only `comment_id`.
+The isolated CLI writes exactly one canonical JSON line for a decision: exit
+status `0` means successful, no-op, or already complete; `3` means deferred or
+refused; and `2` reports invalid arguments, unreadable files, or malformed API
+authority without decision JSON on stdout.
+The intent/confirmation pair is not a secret, signature, or authentication
+token. Reconciliation refetches every transaction comment, parses both closed
+canonical schemas, requires exact repository/PR/comment URLs and
+repository-owner numeric ID/login/`User`/`OWNER` authority, rejects edited
+comments, duplicate nonces, duplicate confirmations, and contradictory pairs.
+All protected comments are validated before selection, so malformed historical
+records remain fatal. Well-formed records are then grouped by repository, PR,
+head, base, and workflow; superseded candidate groups are ignored. Recovery
+first links every confirmation and abort to an exact intent ID/nonce/candidate,
+rejecting duplicate or conflicting terminal edges. Confirmed and aborted
+intents are terminal and excluded before active-intent selection. Recovery
+uses the unique latest active intent only within the exact current candidate
+group. Multiple unclosed active intents sharing a `createdAt` second remain
+ambiguous. Historical/automatic-recovery ordering uses `(createdAt, comment ID)` only
+after proving terminal comments do not predate their intent. Thus an
+equal-second aborted predecessor followed by a higher-ID successor is valid.
+Post-intent revalidation checks the selected intent's terminal state before
+classifying active-intent drift. An observed confirmation returns `deferred`
+with that exact confirmation's reconciliation command, never a conflicting
+abort or a second PATCH. An observed abort returns `deferred` without another
+terminal comment. A concurrently observed terminal is not continuity success:
+reconciliation must still validate the current metadata version and exact
+Build evidence. The `mutated` result records any intent created by this
+invocation or PATCH already applied, even when another invocation subsequently
+terminates the intent.
+Every confirmation/abort edge independently requires both
+`terminal.createdAt >= intent.createdAt` and
+`terminal.comment_id > intent.comment_id`; a later timestamp never excuses an
+equal or lower ID.
+Explicit reconciliation resolves the requested confirmation comment to its
+referenced intent within the exact candidate and workflow. A later unconfirmed
+intent, even one in the same timestamp second, does not supersede a valid
+confirmed pair. The selected pair must still match current title/body,
+metadata-version, run, and watermark authority; a later actual edit or
+edit-and-revert remains invalidating. Automatic edit recovery retains its
+separate latest-active-intent rule.
+Intent and confirmation may share a second because exact comment ID and nonce
+provide linkage; confirmation may not predate intent. It refetches the metadata-specific version and complete current
+title/body state; later direct edits and edit-and-revert change
+`RenamedTitleEvent` or body `UserContentEdit` count/node authority and
+invalidate the pair.
+Transaction comments are never edited or deleted by reconciliation and their
+`issue_comment` creation does not trigger Build CI.
+The separately marked canonical evidence comment may continue to be updated;
+it never becomes a receipt and does not supersede the latest receipt marker.
+
+The live metadata-history probe uses the separate read-only
+`inspect_metadata_history()` entrypoint. It validates the same repository,
+owner, PR, head/base, and metadata-version identities for either an open or a
+closed PR, so its documented fixture remains usable after merge. It performs
+only a REST GET and the metadata GraphQL query, returning
+history rather than mutation authority. Every edit, reconciliation, and
+evidence-comment mode still requires an open PR; unknown PR states fail closed
+even in the history probe.
+
+After the newest exact full Build succeeds, use confirmation-comment-bound
+`pr-metadata reconcile`:
+
+```bash
+/usr/bin/python3 -I scripts/workflow_pilot/isolated_launcher.py \
+  pr-metadata reconcile \
+  --repository "$repo" --pr "$pr" \
+  --head-sha "$head_sha" --base-sha "$base_sha" \
+  --confirmation-comment-id <confirmation-comment-id>
+```
+
+Reconciliation revalidates head/base and all exact run authority twice, then
+uses two independent run identities. The newest exact-head/base full run is
+only the current authorization gate: active defers, noncanonical/failure
+holds, and canonical success permits processing. Explicit-same metadata runs
+strictly above the intent watermark are only candidates, not proof of an edit's
+cause. An earlier direct edit's run can be absent from every pre-PATCH listing
+and appear later above that watermark. Neither its run number nor its creation
+time can authorize reconciliation or an authoritative no-op.
+
+The existing trusted-base `event-router` now runs the isolated
+`attest-metadata-event` producer against the **immutable original**
+`GITHUB_EVENT_PATH`, never a current PR query or cached receipt. Its canonical
+transition fingerprint binds repository/owner/PR numeric and node identities,
+head/base refs and SHAs, complete pre-field and target-state digests, the exact
+changed-field set/values, the event's native metadata `updated_at`, workflow
+path, and run ID/number/attempt. The `metadata-classifier` publishes it in one
+successful `workflow-pilot-metadata-event:v1:<sha256>` step name. The normal
+GitHub jobs API supplies this run-bound observation without an artifact,
+another job, extra permissions, or a mutable ledger. The consumer checks the
+step's number, uniqueness, success, digest format and job-bounded chronology.
+The upstream verifier independently validates both steps and their output link
+as closed CI setup; neither becomes one of its 28 locally executed gates.
+
+The fingerprint must match the authenticated intent/confirmation's exact
+transition. Its event metadata instant must identify the confirmed native
+history uniquely: every changed field has that same edit instant, and each
+field's pre-version strictly precedes it. First-body original-snapshot proof
+and subsequent count-plus-one validation remain required. Equal-second
+repeated revisions, disagreeing title/body edit instants, or unavailable native
+history cannot establish attribution. This is an exact raw-event/content/
+native-version join, not a timestamp-only ordering guess. Actions and
+issue-comment timestamps are never compared for causality.
+
+An attested unrelated transition is ignored even if its run arrived late above
+the watermark. Multiple distinct edit-attested metadata IDs are ambiguous and
+fail closed; an otherwise plausible run lacking attestation also holds rather
+than being guessed away. Only the unique matching stable ID/number survives
+rerun attempts, whose proof is bound to the new attempt of the same original
+event. Reconciliation refreshes that proof before rerun, and authoritative
+no-op uses the same selector. If the matching run is absent or attribution is
+unprovable, the result explicitly defers without rerun, `complete`, or `no-op`.
+Older trusted bases without the producer, invalid/unowned event payloads, and
+historical runs without the proof step remain unprovable: the router leaves
+the digest absent without changing the established Build classification.
+Do not reconstruct missing trigger evidence from today's PR state or
+retroactively invent an attestation.
+A later successful full run does not hide or replace the edit-bound metadata
+identity; the metadata run is never compared to that full run's number. The
+eligible run's identity/router/classifier and adapter jobs must be canonical
+successes, expensive jobs and the publisher must be canonical skips, and
+summary must be the canonical failure. Cancelled, timed-out, action-required,
+startup-failure, skipped, neutral, stale, active, unknown, unbound, or malformed
+runs are never rerun. It dispatches no full Build, edits or deletes no
+transaction comment, and exposes no cancellation operation. An already-active eligible
+metadata run is deferred, and an already-successful eligible one is complete.
+
+If PATCH succeeds but confirmation creation fails or its response is
+indeterminate, retry the same edit command. The helper refetches the latest
+unmatched immutable intent. If the exact target state and metadata-version
+authority match, it creates the missing confirmation without another PATCH.
+If the exact pre-state and pre-version remain, the helper refreshes complete
+authority and returns a read-only deferred intent hold: the first request
+might still apply. Neither a duplicate PATCH nor an abort is safe merely
+because a read still shows pre-state. Any third state fails closed. A no-op
+without an authoritative intent/confirmation pair is refused. With a pair, it
+returns no-op only when the exact confirmation-bound post-watermark metadata
+run is a canonical completed success. An absent or active run defers; a
+canonical failure defers with reconciliation/rerun guidance; malformed or
+unbound runs fail closed or remain ineligible.
+
+A definite PATCH rejection has a separate, bounded recovery path. The
+`GitHubClient` preserves the method, endpoint, and parsed HTTP response in a
+typed error even when `gh api` exits `1`. The same byte limits, strict UTF-8,
+raw HTTP framing, media type, headers, and JSON validation apply to error
+responses. Only a complete response with status **400, 401, 403, 404, 409, 422,
+or 429**, from the exact PR PATCH endpoint and a normally exiting `gh`
+(status `0` or `1`), counts as a definite rejection. Stderr text such as
+`HTTP 422` is not evidence. Timeout/network/start failures, HTTP 408, server
+errors, other statuses, malformed/absent responses, abnormal subprocess exits,
+and success-shaped HTTP responses with a nonzero exit remain ambiguous.
+
+After a definite rejection, the helper takes a fourth complete run/job
+snapshot and a fresh stable two-pass comment walk, rebinds every field of the
+selected intent, and honors any observed terminal before proceeding. One final
+complete authenticated GraphQL observation must still attest the exact
+candidate, pre-state, and metadata version. Only then does it append an
+immutable `patch-rejected` abort and return a **deferred**, not successful,
+decision. Correct the requested values and retry: the retained abort allows
+a strictly newer, independently validated successor intent and its normal
+PATCH/confirmation. No immutable record is edited or deleted.
+
+The fourth snapshot must equal the complete parsed run/job snapshot immediately
+before PATCH, not merely retain the intent's run watermark. Added or removed
+runs, changed attempts, bindings, status, conclusions, timestamps, or job
+authority leave the intent held, even when each individual response is valid.
+This also applies to normal progress of an essential edit's active Build.
+After terminal precedence, the selected intent must remain the unique latest
+active intent for its exact candidate/workflow; a newer active intent or
+equal-second ambiguity cannot authorize an abort. Ordinary comments and
+well-formed superseded-candidate intents do not change that selection.
+Unlike drift detected before a newly created intent's first PATCH, changed
+authority after a rejected PATCH is not a reason to append a drift abort.
+
+Missing, malformed, or changed fresh authority leaves the intent held without
+a fabricated abort. If rejection recovery crashes or abort delivery fails, a
+later invocation may consume an actually created terminal, or recover an
+authenticated applied target, but cannot retrospectively infer rejection from
+pre-state alone. Do not change request fields, blindly retry PATCH, or manually
+invent an abort to clear an ambiguous intent.
+
+This full authorization policy is intentionally narrower than mutation
+eligibility. A new title/body PATCH still uses `_blocking_active_runs` and
+defers for any concurrent exact/unproven active full run. Reconciliation and
+authoritative no-op collapse repeated attempts of the same run ID/number to the
+highest attempt, then evaluate only the newest distinct relevant full/
+unproven identity. Older active or failed full runs cannot override a newer
+terminal full success; a newer terminal failure cannot be masked by an older
+active run. Reused run numbers across distinct IDs and duplicate attempts fail
+closed.
+
+Field-set recovery is immutable. Retries must supply the same
+`provided_fields` values and target digest as the unmatched intent; the helper
+cannot add, remove, or reclassify fields. Version advancement and the PATCH
+payload always use the intent's `changed_fields`. If every provided field
+already equals pre-state, no intent is created and authoritative no-op
+semantics apply.
+
+Immediately before PATCH, the helper refetches complete PR, run, metadata
+and transaction-comment authority, then makes one final complete
+repository/owner/PR/ref/title/body/updatedAt/editor/title-event/UserContentEdit GraphQL
+request as the last network operation before PATCH. For a newly created intent
+that is still present, unchanged, and active, candidate, pre-state, provided-field,
+version, run-snapshot, or active-intent drift creates an immutable owner-authored
+abort comment and performs zero PATCH. An already observed confirmation or
+abort instead defers without appending another terminal. Abort comments
+reference the exact intent ID/nonce and observed state/version, are never
+edited/deleted, and close that intent. Retry recognizes a maybe-created abort;
+an unmatched intent without a terminal remains held if the prior outcome is
+unknown. Malformed, duplicate, forged, or contradictory aborts are fatal.
+This still cannot make the final GET and PATCH
+atomic. The authoritative PATCH response's exact head/base and complete
+title/body attestation detects drift occurring in that irreducible window.
+
+Observed abort identity, metadata digest, and version come from the same
+validated final GraphQL response, including when run or transaction authority
+has already drifted. The response is first validated as an observation of the
+same repository/PR, then compared with the immutable intent. A new head/base
+or changed body is recorded as actually observed rather than replaced with the
+cached pre-intent state. Malformed, inconsistent, or unavailable final authority
+raises an error before abort creation; cached state/version is never relabeled
+as a fresh observation.
+
+A valid abort closes only its referenced intent. On a later invocation, an
+unchanged target follows ordinary authoritative-pair/no-op/refusal behavior;
+a remaining real target change creates a strictly newer successor intent with
+a fresh nonce. The successor must order after the abort and is independently
+revalidated before PATCH. Repeated drift therefore produces bounded
+intent/abort generations rather than permanently blocking the candidate.
+
+Comment identity/body/timestamps are always validated. Protected transaction
+parsing is applied only after exact repository-owner numeric ID/login,
+`User`/`OWNER`, and non-site-admin authentication. Marker-like text from a
+contributor, bot, deleted account, or other non-owner is ordinary ignored
+comment content and cannot poison transaction history. An owner-authored
+malformed protected marker remains fatal.
+
+Every successful title/body update returns this reconciliation command. The
+third (post-intent) run snapshot closes the deterministic pre-PATCH run-state
+race; only an external same-SHA full rerun that starts after that final authority query is an
+irreducible API race. The authoritative PATCH response detects identity or
+result drift at mutation time, and the returned reconciliation command handles
+the remaining external race without weakening continuity.
+Only the existing coordinator may cancel full runs whose old head SHA was
+actually superseded; a title/body change never makes a same-SHA full run stale.
+The helper therefore never cancels or replaces a same-SHA full Build.
+
 The issue #176 reporter's duplicate unchanged-SHA formula needs no new state:
 capture the post-pilot Actions cohort with the same inclusive-window and
 identity rules, group Build runs by exact `head_sha`, and compare its
