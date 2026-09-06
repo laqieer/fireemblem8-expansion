@@ -1619,6 +1619,8 @@ the exact branch and head; timeout or ambiguity fails before `gh run watch`.
    ineligible for successful continuity. The corresponding nonessential edit
    must still reject. A later green metadata-only run must not turn the failed
    full run into merge evidence.
+   Make one job queued or in-progress while the run claims completion, at
+   either authorization snapshot; reject before creating an intent or PATCH.
    Return real-shaped HTTP 201 creation responses with canonical `Location`
    headers for intent, confirmation, and abort comments. Require acceptance
    only when the header matches the response's exact repository/comment API

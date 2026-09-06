@@ -2441,6 +2441,51 @@ class PullRequestMetadataTests(unittest.TestCase):
                         all(method == "GET" for method, _, _ in client.calls)
                     )
 
+    def test_essential_terminal_edit_rejects_active_jobs_at_both_snapshots(self):
+        for conclusion in ("failure", "cancelled"):
+            for job_status in ("queued", "in_progress"):
+                for snapshot in ("initial", "refreshed"):
+                    with self.subTest(
+                        conclusion=conclusion, job_status=job_status, snapshot=snapshot
+                    ):
+                        client = ScriptedClient()
+                        terminal = _run(101, 10, mode="full", success=False)
+                        terminal[0]["conclusion"] = conclusion
+                        next(
+                            job for job in terminal[1] if job["name"] == "summary"
+                        )["conclusion"] = "failure"
+                        inconsistent = copy.deepcopy(terminal)
+                        job = next(
+                            job for job in inconsistent[1] if job["name"] == "host-tests"
+                        )
+                        job.update(_job(
+                            "host-tests", job_id=job["id"], run_id=101,
+                            status=job_status, conclusion=None,
+                            runner_name=None if job_status == "queued" else "GitHub Actions 1",
+                            started_at=None if job_status == "queued" else job["started_at"],
+                        ))
+                        _add_pr_states(client, _pr(), _pr())
+                        _add_snapshot(
+                            client,
+                            [inconsistent if snapshot == "initial" else terminal],
+                        )
+                        _add_snapshot(client, [inconsistent])
+                        client.add(
+                            "PATCH", _endpoint(f"pulls/{PR_NUMBER}"),
+                            _pr(title="Corrected contract"),
+                        )
+                        _add_edit_transaction(client, title="Corrected contract")
+                        with self.assertRaises(pr_metadata.MetadataEditError):
+                            pr_metadata.edit_metadata(
+                                client, repository=REPOSITORY, pr_number=PR_NUMBER,
+                                head_sha=HEAD, base_sha=BASE,
+                                title="Corrected contract", body=None,
+                                essential_reason="Correct the contract",
+                            )
+                        self.assertTrue(
+                            all(method == "GET" for method, _, _ in client.calls)
+                        )
+
     def test_body_only_no_op_without_pair_is_refused(self):
         client = ScriptedClient()
         _add_pr_states(client, _pr(), _pr())
@@ -7709,6 +7754,25 @@ class PullRequestMetadataTests(unittest.TestCase):
                 client = pr_metadata.GitHubClient("/usr/bin/true", runner=runner)
                 with self.assertRaisesRegex(pr_metadata.MetadataEditError, "Location"):
                     client.request(method, endpoint, label="unexpected creation context")
+
+    def test_comment_post_location_requires_http_created_status(self):
+        payload = _comment(405, "not a creation response")
+        raw = (
+            "HTTP/2.0 200 OK\n"
+            "Content-Type: application/json\r\n"
+            f"Location: {payload['url']}\r\n\r\n"
+            + json.dumps(payload)
+        ).encode("utf-8")
+
+        def runner(arguments, **kwargs):
+            return subprocess.CompletedProcess(arguments, 0, stdout=raw, stderr=b"")
+
+        client = pr_metadata.GitHubClient("/usr/bin/true", runner=runner)
+        with self.assertRaisesRegex(pr_metadata.MetadataEditError, "Location"):
+            client.request(
+                "POST", _endpoint(f"issues/{PR_NUMBER}/comments"),
+                body={"body": payload["body"]}, label="comment status fixture",
+            )
 
     def test_duplicate_and_embedded_markers_are_rejected(self):
         cases = {

@@ -705,6 +705,8 @@ repository, PR, head, base, requested title, and requested body; a stale
 read-after-write GET is not accepted as mutation evidence. Record the essential
 reason in the canonical evidence comment. An essential edit may also correct
 the contract of a fully observed terminal failed or cancelled full Build.
+Every job in that terminal snapshot must also be terminal; an inconsistent
+run-completed/job-active response cannot authorize the edit.
 Permission to edit does not authorize successful CI continuity: that failed
 full run remains ineligible even if a later metadata-only run is green.
 Default nonessential edits still require successful full evidence, and an

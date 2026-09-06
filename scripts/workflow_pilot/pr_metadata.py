@@ -2911,6 +2911,10 @@ def _require_essential_full_outcome(run: RunState) -> None:
         run.mode == "full"
         and run.status == "completed"
         and run.conclusion in {"failure", "cancelled"}
+        and all(
+            job.status == "completed" and job.conclusion is not None
+            for job in run.jobs
+        )
     ):
         return
     require_full_success(run)
