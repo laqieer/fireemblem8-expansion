@@ -703,7 +703,22 @@ the still-valid full Build, and returns the exact reconciliation command. A
 successful edit requires the PATCH response itself to attest the exact
 repository, PR, head, base, requested title, and requested body; a stale
 read-after-write GET is not accepted as mutation evidence. Record the essential
-reason in the canonical evidence comment. No tracked or local pending-state
+reason in the canonical evidence comment. An essential edit may also correct
+the contract of a fully observed terminal failed or cancelled full Build.
+Every job in that terminal snapshot must also be terminal; an inconsistent
+run-completed/job-active response cannot authorize the edit.
+Permission to edit does not authorize successful CI continuity: that failed
+full run remains ineligible even if a later metadata-only run is green.
+Default nonessential edits still require successful full evidence, and an
+essential edit still needs an exact full-run identity to bind.
+
+Transaction-comment creation accepts HTTP 201 `Location` only when it names
+the same canonical API comment resource attested by the response body.
+Redirect statuses, unexpected `Location` on ordinary HTTP 200 responses,
+misbound resource URLs, and malformed creation responses remain rejected;
+the helper never follows a creation header as a redirect.
+
+No tracked or local pending-state
 ledger is created: GitHub's run number, attempt, event, workflow, PR, head,
 base, mode, status, conclusion, and job identities derive whether
 reconciliation remains pending. The helper uses two append-only,

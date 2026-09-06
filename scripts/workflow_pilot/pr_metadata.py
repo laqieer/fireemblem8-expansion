@@ -31,6 +31,9 @@ MAX_RUNS = 1000
 PAGE_SIZE = 100
 SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 REPOSITORY_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
+COMMENT_CREATION_RE = re.compile(
+    r"^repos/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/issues/[1-9][0-9]*/comments$"
+)
 WORKFLOW_PATH = ".github/workflows/build.yml"
 EVIDENCE_MARKER = "<!-- workflow-pilot-candidate-evidence -->"
 INTENT_MARKER = "<!-- workflow-pilot-metadata-edit-intent:v1 -->"
@@ -1330,6 +1333,7 @@ def _parse_http_response(
     label: str,
     allow_empty_body: bool,
     allow_gh_status_line: bool = False,
+    allow_comment_location: bool = False,
 ) -> ApiResponse:
     if len(raw.encode("utf-8")) > MAX_API_BYTES:
         raise MetadataEditError(f"{label} response exceeds 4 MiB")
@@ -1391,7 +1395,7 @@ def _parse_http_response(
     headers = _normalize_http_headers(lines[1:], label=label)
     if 300 <= status < 400:
         raise MetadataEditError(f"{label} request rejected redirect: HTTP {status}")
-    if "location" in headers:
+    if "location" in headers and not (status == 201 and allow_comment_location):
         raise MetadataEditError(f"{label} response unexpectedly contains Location")
     if not body_text:
         if allow_empty_body:
@@ -1490,6 +1494,9 @@ class GitHubClient:
             label=label,
             allow_empty_body=method == "POST",
             allow_gh_status_line=True,
+            allow_comment_location=(
+                method == "POST" and COMMENT_CREATION_RE.fullmatch(endpoint) is not None
+            ),
         )
         expected_status = (
             200 if endpoint == "graphql" else 201 if method == "POST" else 200
@@ -2899,6 +2906,20 @@ def require_full_success(run: RunState) -> None:
         raise MetadataEditError("newest exact full Build patch-release shape is invalid")
 
 
+def _require_essential_full_outcome(run: RunState) -> None:
+    if (
+        run.mode == "full"
+        and run.status == "completed"
+        and run.conclusion in {"failure", "cancelled"}
+        and all(
+            job.status == "completed" and job.conclusion is not None
+            for job in run.jobs
+        )
+    ):
+        return
+    require_full_success(run)
+
+
 def require_metadata_success(run: RunState) -> None:
     if (
         run.mode != "metadata-only"
@@ -3419,7 +3440,7 @@ def edit_metadata(
             raise MetadataEditError(
                 "essential edit has no exact-head full Build to reconcile"
             )
-        require_full_success(latest_full)
+        _require_essential_full_outcome(latest_full)
 
     current = fetch_pull_request(client, repository, pr_number)
     require_identity(current, head_sha=head_sha, base_sha=base_sha)
@@ -3486,7 +3507,7 @@ def edit_metadata(
                 raise MetadataEditError(
                     "essential edit has no exact-head full Build to reconcile"
                 )
-            require_full_success(latest_full)
+            _require_essential_full_outcome(latest_full)
 
     current_version = fetch_metadata_version(client, current)
     intents, confirmations, aborts = _transaction_comments(client, current)
@@ -4560,6 +4581,14 @@ def _create_transaction_comment(
         state.number,
         state.repository_owner_id,
     )
+    if "location" in response.headers:
+        if response.status != 201:
+            raise MetadataEditError(f"{label} creation Location requires HTTP 201")
+        _require_api_url(
+            response.headers["location"],
+            _endpoint(state.repository, f"issues/comments/{comment.comment_id}"),
+            field=f"{label} Location",
+        )
     if (
         comment.body != body
     ):
