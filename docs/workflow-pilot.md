@@ -966,11 +966,17 @@ Changing or restoring any former pathname cannot change those bytes.
 Ordinary Linux exec resets dumpability to 1: a Python or native bootstrap that
 calls `PR_SET_DUMPABLE` afterward leaves a same-UID access interval. This
 launcher instead requires the interpreter image to be unreadable under the
-launching credentials and the existing `fs.suid_dumpable=0` policy. Linux
-therefore enforces non-dumpability at exec itself, **before the dynamic loader
-or Python initializes**. The startup verifies that state; it never repairs an
-exposed ordinary exec. Parent/fork state remains non-dumpable throughout the
-transition. No setuid helper, privilege, executable disk copy or ordinary-exec
+launching credentials and an existing `fs.suid_dumpable` policy of `0`
+(disabled) or `2` (root-only). Both exclude same-UID FD/ptrace access at exec,
+**before the dynamic loader or Python initializes**; `1` is unsafe and rejected.
+Startup verifies the kernel-selected state, disables root-only dumping when
+needed, and verifies state `0` **before inspecting or reading capsule
+descriptors**. It never repairs an exposed ordinary exec.
+During root-only initialization, the new address space contains only the
+trusted platform/closed bootstrap and non-secret launch metadata, not capsule
+source/input bytes or the parent's signing key. Capsule bytes are not mapped
+or read until dumping is disabled. Parent/fork state remains non-dumpable.
+No sysctl change, setuid helper, privilege, executable disk copy or ordinary-exec
 fallback is used.
 
 The protected image is retained by each guardian, validated against its
@@ -1145,7 +1151,7 @@ mounted/readable `/proc/self/fd` and `/proc/self/exe`, fork, process groups,
 `waitid(WNOWAIT)`, POSIX signal-handler deferral, and the
 non-dumpable/subreaper/parent-death prctl facilities
 plus unprivileged seccomp-BPF. Executable memfds, enforceable execute-only
-permissions and a readable `/proc/sys/fs/suid_dumpable` already set to `0`
+permissions and a readable `/proc/sys/fs/suid_dumpable` already set to `0` or `2`
 are required. A caller whose credentials bypass image read permissions is
 unsupported. Admission changes no system policy or privileges. Neither execution nor the real
 parent-death regression requires pidfds. The regression observes saved
@@ -1175,6 +1181,21 @@ A changed system interpreter requires fresh preparation. Sealed descriptors
 do not spawn probes, and guardians reuse their inherited protected-image
 admission for nested calls. An unavailable procfs during guardian admission
 retains the same explicit disposition.
+
+The reporter-suite host regression retains the completed Build
+`33995240775`/job `101384581761` failure: the zero-only policy gate rejected
+capsule admission in both unit cases and fresh isolated-launcher subprocesses.
+That log did not record the actual policy bytes. The corrected admission
+distinguishes safe root-only mode `2` from unsafe mode `1`; rejection diagnostics
+now include the bounded observed value. Policy/transition fixtures cover `2`
+without modifying the host, while real kernel-entry tests exercise the host's
+actual mode without skipping protection checks. Native mode coverage must be
+reported separately from those fixtures.
+Runtime-instrumentation tests restore the disposable fixture's committed Git
+authority as well as its working file. Otherwise a subsequent isolated
+classifier correctly loads the still-instrumented `HEAD`, even though the
+pathname looks restored. A real-classifier regression rejects that file-only
+cleanup control; fixture commits remain confined to owned test repositories.
 
 ### PR #189 adoption and completion boundary
 

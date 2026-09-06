@@ -7,6 +7,7 @@ import errno
 import hashlib
 import hmac
 import inspect
+import io
 import json
 import mmap
 import os
@@ -422,6 +423,59 @@ class CapsuleInterpreterTests(unittest.TestCase):
     and capsule.ctypes.sizeof(capsule.ctypes.c_void_p) == 8,
     "Linux x86-64 protected exec contract")
 class CapsuleExecProtectionTests(unittest.TestCase):
+    def test_non_user_dump_policies_are_admitted_without_changing_host_policy(self):
+        path = Path("/proc/sys/fs/suid_dumpable")
+        before = path.read_bytes()
+        for policy in (b"0\n", b"2\n"):
+            with self.subTest(policy=policy), mock.patch("builtins.open", mock.mock_open(read_data=policy)):
+                self.assertEqual(capsule._exec_policy(), int(policy))
+        self.assertEqual(path.read_bytes(), before)
+
+    def test_startup_disables_root_only_dumps_before_any_descriptor_access(self):
+        for initial, refuse_disable in ((0, False), (2, False), (2, True),
+                                        (1, False), (3, False), (-1, False)):
+            state = {"dumpable": initial}
+
+            def prctl(option, value, *unused):
+                if option == 3:
+                    return state["dumpable"]
+                self.assertEqual((option, value), (4, 0))
+                if refuse_disable:
+                    return -1
+                state["dumpable"] = 0
+                return 0
+
+            def descriptor(fd):
+                self.assertEqual(state["dumpable"], 0)
+                return types.SimpleNamespace(st_dev=1, st_ino=2, st_mode=0o100111)
+
+            admitted = initial in (0, 2) and not refuse_disable
+            with (
+                self.subTest(initial=initial, refuse_disable=refuse_disable),
+                mock.patch.object(sys, "argv", ["-c", "200", "[0,0,0,0,0,0,0,0]", "[]"]),
+                mock.patch.object(capsule.ctypes, "CDLL",
+                                  return_value=types.SimpleNamespace(prctl=prctl)),
+                mock.patch.object(os, "fstat", side_effect=descriptor) as inspect_fd,
+                mock.patch.object(os, "stat", side_effect=descriptor),
+                mock.patch.object(capsule.fcntl, "fcntl", return_value=capsule.SEALS),
+                mock.patch.object(signal, "pthread_sigmask") as restore_mask,
+                mock.patch.object(os, "write") as diagnostic,
+            ):
+                if admitted:
+                    exec(compile(capsule.PYTHON_STARTUP, "sealed:startup-contract", "exec"), {})
+                    self.assertEqual(state["dumpable"], 0)
+                    inspect_fd.assert_called_once_with(200)
+                    restore_mask.assert_called_once()
+                    diagnostic.assert_not_called()
+                else:
+                    with self.assertRaises(SystemExit) as rejected:
+                        exec(compile(capsule.PYTHON_STARTUP, "sealed:startup-contract", "exec"), {})
+                    self.assertEqual(rejected.exception.code, 125)
+                    self.assertEqual(state["dumpable"], initial)
+                    inspect_fd.assert_not_called()
+                    restore_mask.assert_not_called()
+                    self.assertTrue(diagnostic.call_args.args[1].startswith(b"CapsuleUnavailable:"))
+
     def test_kernel_exec_stop_denies_fds_before_any_python_or_loader_instruction(self):
         source = ("import ctypes,json,os\n"
                   "print(json.dumps({'dumpable':ctypes.CDLL(None).prctl(3,0,0,0,0),"
@@ -526,7 +580,7 @@ class CapsuleExecProtectionTests(unittest.TestCase):
     def test_unavailable_exec_policy_or_memfd_permissions_prevent_capsule_launch(self):
         spec = capsule.CapsuleSpec(trees={"base": "a" * 40},
                                    programs={"checker": "checks/checker.py"})
-        for value in (b"1\n", b"2\n", b"", b"invalid\n"):
+        for value in (b"1\n", b"3\n", b"2", b"", b"invalid\n"):
             with (
                 self.subTest(policy=value),
                 mock.patch("builtins.open", mock.mock_open(read_data=value)),
@@ -778,6 +832,12 @@ class SealedCapsuleTests(unittest.TestCase):
     def descriptors(self):
         return {fd: capsule._descriptor_identity(fd) for fd in capsule._inherited_fds()}
 
+    def restore_runtime(self):
+        self.write(capsule.RUNTIME_PATH, self.runtime)
+        if self.git("diff", "--name-only", "HEAD", "--", capsule.RUNTIME_PATH):
+            self.git("add", capsule.RUNTIME_PATH)
+            self.git("commit", "-qm", "Restore exact fixture runtime", "--", capsule.RUNTIME_PATH)
+
     def test_launch_and_collection_boundaries_reap_real_guardians(self):
         for boundary in ("constructor-signal", "thread-signal", "launch-return",
                          "collection-entry", "deadline", "fileno", "stdin-close", "reused-pipe"):
@@ -1024,8 +1084,9 @@ _Child.__exit__=_observed_exit
                 self.assertTrue(records[0]["streams_closed"])
                 self.assertEqual(self.descriptors(), before)
             finally:
-                self.write(capsule.RUNTIME_PATH, self.runtime)
                 observation.unlink(missing_ok=True)
+                self.restore_runtime()
+            self.test_real_isolated_launcher_ignores_swapped_runtime_and_classifier_paths()
 
     def test_exact_checker_assertion_module_and_three_tree_data_execute(self):
         with capsule.Capsule(self.bundle, self.spec) as prepared:
@@ -1039,6 +1100,24 @@ _Child.__exit__=_observed_exit
         self.assertEqual(assertion["receipt"]["program"], "assertion")
         self.assertEqual(result.receipt["program"], "checker")
         self.assertEqual(assertion["receipt"]["artifact_sha256"], result.receipt["artifact_sha256"])
+
+    def test_root_only_policy_fixture_preserves_real_nested_execution_and_receipts(self):
+        real_open = open
+        actual_policy = Path("/proc/sys/fs/suid_dumpable").read_bytes()
+
+        def root_only(path, *args, **kwargs):
+            if path == "/proc/sys/fs/suid_dumpable":
+                return io.BytesIO(b"2\n")
+            return real_open(path, *args, **kwargs)
+
+        with mock.patch("builtins.open", new=root_only):
+            with capsule.Capsule(self.bundle, self.spec) as prepared:
+                result = prepared.execute("checker", {})
+        self.assertEqual(result.value["assertion"]["value"]["status"], "pass")
+        key = b"test-only-root-dump-policy-key-123"
+        self.assertEqual(capsule.verify_receipt(capsule.sign_receipt(result, key), key, result),
+                         result.receipt)
+        self.assertEqual(Path("/proc/sys/fs/suid_dumpable").read_bytes(), actual_policy)
 
     def test_outer_and_nested_guardians_deny_same_uid_access_at_kernel_exec_entry(self):
         observation_path = self.root / "exec-entry-observations.jsonl"
@@ -1080,8 +1159,18 @@ subprocess.Popen=_observed_popen
             self.assertEqual(capsule.verify_receipt(capsule.sign_receipt(result, key), key, result),
                              result.receipt)
         finally:
-            self.write(capsule.RUNTIME_PATH, self.runtime)
             observation_path.unlink(missing_ok=True)
+            self.restore_runtime()
+        self.test_real_isolated_launcher_ignores_swapped_runtime_and_classifier_paths()
+
+    def test_restored_runtime_fixture_is_the_classifier_git_authority(self):
+        self.write(capsule.RUNTIME_PATH, b"raise RuntimeError('instrumented fixture runtime')\n")
+        self.commit()
+        try:
+            self.restore_runtime()
+            self.test_real_isolated_launcher_ignores_swapped_runtime_and_classifier_paths()
+        finally:
+            self.restore_runtime()
 
     def test_preparation_probes_different_python_once_and_reuses_admission_for_execution(self):
         with (

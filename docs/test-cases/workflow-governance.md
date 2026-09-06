@@ -1687,7 +1687,7 @@ for both preparation and fixed root-owned `/usr/bin/python3` execution, includin
 `sys.stdlib_module_names`, `fcntl`, `resource` and required descriptor/process
 APIs; Git SHA-1, sealed memfd, readable `/proc/self/fd` and `/proc/self/exe`,
 executable memfds with enforceable execute-only permissions,
-`fs.suid_dumpable=0`, POSIX signal-handler deferral, fork, process groups,
+`fs.suid_dumpable` set to `0` or root-only `2`, POSIX signal-handler deferral, fork, process groups,
 `waitid(WNOWAIT)` and prctl;
 no ROM, emulator, token or
 remote mutation. The existing source build is sufficient; there is no
@@ -1837,7 +1837,9 @@ privileges. Every observed/signaled process is created and reaped by the test.
    the same UID and report dumpable `1` at Python entry. Execute the same
    trusted Python bytes from the sealed execute-only image: FD opens must
    report `EACCES` at that kernel stop, `/proc/<pid>/fd` ownership must be root,
-   and Python must report dumpable `0` without setting it. Repeat through the
+   and trusted Python code must report dumpable `0`. With kernel mode `2`,
+   startup must disable root-only dumping before touching capsule descriptors;
+   mode `1` must reject without repair. Repeat through the
    actual outer checker and nested assertion launch; every inherited protocol,
    artifact and interpreter FD must remain inaccessible, while exact receipts
    and parent-side signing still pass.
@@ -1850,6 +1852,18 @@ privileges. Every observed/signaled process is created and reaped by the test.
    execute-only mode, the 32 MiB image bound, descriptor reuse, denied memfd
    execute permission and unsupported/unreadable dumpability policy. These
    failures must precede capsule resources or launch and leave no owned leak.
+   Exercise policy `0` and root-only `2` fixtures, rejection of `1` and malformed
+   values, and failure to transition `2` to `0`. Execute the actual startup
+   logic with descriptor-access guards requiring state `0`; these transition
+   fixtures are not native mode-2 evidence. Run the focused failing capsule and
+   isolated-classifier cases under the CI entrypoint's `/usr/bin/python3 -I`
+   startup. Record the actual native host policy separately, without changing
+   a sysctl or skipping the real kernel-entry/ptrace controls.
+   Run the instrumented nested-interruption test immediately before the
+   isolated-classifier test. Restoring the runtime pathname alone is a
+   negative control: the classifier still executes the injected committed
+   runtime. Restore the fixture's Git authority too and require the real
+   classifier to pass; do not rely on a later unrelated fixture commit.
    Simulate missing, unreadable and non-directory `/proc/self/fd` facilities:
    preparation must raise `CapsuleUnavailable` before any Git/process or
    memfd creation, and guardian admission must preserve that error type.
@@ -1958,6 +1972,21 @@ exit but did not reap it. The regression inspects these states before any
 tester cleanup; a test that merely injects from `selector.select()` cannot
 cover that earlier gap. Collector setup failures and nested handoff errors
 now use the same already-active owner, with no admitted partial receipt.
+
+The host-admission regression preserves completed Build `33995240775`, job
+`101384581761`, reporter step 10: 218 tests produced 84 failures and 85 errors,
+with 84 traces rejecting the zero-only dump policy. Fresh isolated child
+launches also failed, so the evidence is not merely a retained in-process mock.
+The log omitted the actual policy bytes; a root-only `2` fixture reproduces
+that rejection. The corrected gate admits only kernel states that deny
+same-UID inspection, then requires state `0` before any capsule byte is read.
+Mode `1`, malformed policies and failed normalization remain negative controls;
+no assertion or host policy is weakened to manufacture a pass.
+The narrowed current-head sequence additionally exposed runtime-instrumentation
+cleanup that restored only the working file, leaving injected hooks in the
+fixture's committed `HEAD`. A standalone file-only restoration control fails
+through the real isolated classifier. Both instrumentation cases now restore
+their committed runtime authority before the next case executes.
 
 ### Automation
 

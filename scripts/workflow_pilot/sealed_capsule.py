@@ -116,11 +116,16 @@ GIT_ENVIRONMENT = {
     "GIT_TERMINAL_PROMPT": "0",
 }
 
-# Execute-only ELF permissions make the kernel deny dumping before userspace,
-# including ld.so and Python initialization. This check must never repair it.
+# Execute-only ELF permissions deny same-UID inspection before userspace.
+# Root-only dump mode 2 is cleared before reading any capsule bytes; mode 1
+# already exposed the process and must never be repaired into an admission.
 PYTHON_STARTUP = """import os,sys,fcntl,ctypes,json,signal
-if ctypes.CDLL(None).prctl(3,0,0,0,0)!=0:
-    os.write(2,b'CapsuleUnavailable: Python exec is not continuously non-dumpable')
+_capsule_libc=ctypes.CDLL(None)
+_capsule_entry_dumpable=_capsule_libc.prctl(3,0,0,0,0)
+if (_capsule_entry_dumpable not in (0,2)
+    or (_capsule_entry_dumpable==2 and _capsule_libc.prctl(4,0,0,0,0)!=0)
+    or _capsule_libc.prctl(3,0,0,0,0)!=0):
+    os.write(2,b'CapsuleUnavailable: Python exec permits user inspection or cannot disable dumping')
     raise SystemExit(125)
 _capsule_image_fd=int(sys.argv.pop(1))
 _capsule_python_identity=tuple(json.loads(sys.argv.pop(1)))
@@ -893,8 +898,11 @@ def _probe_python(interpreter=None):
 def _exec_policy():
     try:
         with open("/proc/sys/fs/suid_dumpable", "rb") as stream:
-            if stream.read(16) != b"0\n":
-                raise CapsuleUnavailable("protected Python exec requires fs.suid_dumpable=0")
+            policy = stream.read(16)
+        if policy not in (b"0\n", b"2\n"):
+            raise CapsuleUnavailable(
+                f"protected Python exec requires fs.suid_dumpable=0 or 2, got {policy!r}")
+        return int(policy)
     except OSError as error:
         raise CapsuleUnavailable("cannot establish the kernel exec dumpability policy") from error
 
