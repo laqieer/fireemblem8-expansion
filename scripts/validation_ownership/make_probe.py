@@ -475,6 +475,7 @@ class ProbeSession:
         self.runtime_inputs = ()
         self.serial = 0
         self.processes_used = 0
+        self.live_process_peak = 0
         self.syscalls_used = 0
         self.files_created = 0
         self.owner_thread = get_ident()
@@ -759,10 +760,8 @@ class ProbeSession:
             "deadline": self.budget.deadline,
             "file_limit": file_remaining,
             "memory_limit": self.budget.limits.address_space_bytes,
-            "process_limit": min(
-                self.budget.limits.processes,
-                self.budget.limits.descendants - self.processes_used,
-            ),
+            "process_limit": self.budget.limits.processes,
+            "descendant_limit": self.budget.limits.descendants - self.processes_used,
             "syscall_limit": self.budget.limits.syscalls - self.syscalls_used,
             "write_limit": self.budget.limits.sandbox_bytes - self.budget.bytes.get("sandbox", 0),
             "creation_limit": self.budget.limits.created_files - self.files_created,
@@ -772,7 +771,10 @@ class ProbeSession:
                 self.budget.limits.control_bytes - self.budget.bytes.get("control", 0),
             ),
         }
-        if config["process_limit"] < 1 or config["syscall_limit"] < 1 or config["write_limit"] < 1:
+        if (
+            config["process_limit"] < 1 or config["descendant_limit"] < 1
+            or config["syscall_limit"] < 1 or config["write_limit"] < 1
+        ):
             self.budget.reject("aggregate capsule resource budget exhausted")
         payload = encoded(config)
         self.budget.charge("control", len(payload))
@@ -791,10 +793,11 @@ class ProbeSession:
             if set(observed) != {
                 "ok", "returncode", "error", "consumed", "code_consumed", "accessed",
                 "processes", "syscalls", "written_bytes", "created_files",
-                "memory_peak", "observation_bytes",
+                "memory_peak", "observation_bytes", "live_process_peak",
             }:
                 raise MakeProbeError("malformed supervisor result")
             self.processes_used += observed["processes"]
+            self.live_process_peak = max(self.live_process_peak, observed["live_process_peak"])
             self.syscalls_used += observed["syscalls"]
             self.files_created += observed["created_files"]
             self.budget.charge("sandbox", observed["written_bytes"])

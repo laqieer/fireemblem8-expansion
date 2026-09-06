@@ -163,6 +163,7 @@ class Process:
     memory_group: int = 0
     memory_limit: int = 0
     clone_shares_vm: bool = False
+    process_reservation: bool = False
     pidfd: int = -1
     observations: list[tuple[str, str]] = field(default_factory=list)
     observation_needs_bytes: bool = False
@@ -200,6 +201,9 @@ class Policy:
         self.observation_bytes = 0
         self.memory_peak = 0
         self.processes = {}
+        self.newborn_stops = {}
+        self.total_processes = 0
+        self.live_process_peak = 0
         self.make_pid = 0
         self.make_restarts = 0
         self.published = {}
@@ -357,6 +361,30 @@ class Policy:
         self.created += 1
         if self.created > self.config["creation_limit"]:
             raise Violation("aggregate file-creation budget exhausted")
+
+    def account_processes(self):
+        live = len(self.processes) + len(self.newborn_stops)
+        self.live_process_peak = max(self.live_process_peak, live)
+        if live > self.config["process_limit"]:
+            raise Violation("live descendant-process capacity exhausted")
+        if self.total_processes > self.config["descendant_limit"]:
+            raise Violation("aggregate descendant-process budget exhausted")
+        if len(self.newborn_stops) > sum(
+            record.process_reservation for record in self.processes.values()
+        ):
+            raise Violation("unreserved newborn process")
+
+    def reserve_process(self, state):
+        if state.process_reservation:
+            raise Violation("overlapping process-creation reservation")
+        reserved = sum(record.process_reservation for record in self.processes.values())
+        if len(self.processes) + reserved >= self.config["process_limit"]:
+            raise Violation("live descendant-process capacity exhausted before creation")
+        # A newborn-first stop is already in total_processes, but still owns
+        # its parent's reservation until the fork event authenticates it.
+        if self.total_processes + reserved - len(self.newborn_stops) >= self.config["descendant_limit"]:
+            raise Violation("aggregate descendant-process budget exhausted before creation")
+        state.process_reservation = True
 
     def publish(self, key):
         mapping = Path(self.config["root"]) / "control/map"
@@ -827,6 +855,7 @@ class Policy:
                 if a & 0x100 and not a & 0x4000:
                     raise Violation("shared-memory candidate threads denied")
             state.clone_shares_vm = n == 58 or n == 56 and bool(a & 0x100)
+            self.reserve_process(state)
             self.reserve_memory(pid, state, 0, copies=1)
         elif n == 435:
             if b < 64 or b > 88:
@@ -840,6 +869,7 @@ class Policy:
             ):
                 raise Violation(f"clone3 outside trusted Make's suspended-parent spawn: {flags:#x}")
             state.clone_shares_vm = True
+            self.reserve_process(state)
             self.reserve_memory(pid, state, 0, copies=1)
         elif n in {22, 293}:
             state.pending = ("pipe", a)
@@ -958,6 +988,7 @@ class Policy:
     def leave(self, pid, state, r):
         result = signed(r.rax)
         state.memory_reservation = 0
+        state.process_reservation = False
         observations = state.observations
         state.observations = []
         pending, state.pending = state.pending, None
@@ -1019,12 +1050,14 @@ def supervise(config, drop_privileges):
     processes = {}
     policy.processes = processes
     newborn_stops = {}
+    policy.newborn_stops = newborn_stops
     vfork_waiters = {}
     error = None
     primary = None
     result = None
     main_status = None
-    total_processes = 0
+    if config["process_limit"] < 1 or config["descendant_limit"] < 1:
+        raise Violation("no remaining guest-process capacity")
     pid = os.fork()
     if pid == 0:
         try:
@@ -1048,6 +1081,8 @@ def supervise(config, drop_privileges):
         "make" if config["mode"] == "make" else "compiler" if config["mode"] == "compile" else "command",
         memory_group=pid, pidfd=os.pidfd_open(pid),
     )
+    policy.total_processes = 1
+    policy.account_processes()
 
     def release_vfork(child):
         for parent, waited_child in tuple(vfork_waiters.items()):
@@ -1066,7 +1101,6 @@ def supervise(config, drop_privileges):
         ptrace(SETOPTIONS, pid, 0, OPTIONS)
         policy.reserve_memory(pid, processes[pid], 0)
         ptrace(SYSCALL, pid)
-        total_processes = 1
         while processes:
             if time.monotonic() >= config["deadline"]:
                 raise Violation("aggregate probe deadline exhausted in syscall supervisor")
@@ -1081,9 +1115,9 @@ def supervise(config, drop_privileges):
                     # parent's fork event. Keep it stopped until that event
                     # authenticates the relationship; never guess its role.
                     if stopped not in newborn_stops:
+                        policy.total_processes += 1
                         newborn_stops[stopped] = os.pidfd_open(stopped)
-                    if len(newborn_stops) > config["process_limit"]:
-                        raise Violation("unresolved descendant count exceeds bound")
+                    policy.account_processes()
                     continue
                 raise Violation("unrecorded sandbox descendant")
             if os.WIFEXITED(status) or os.WIFSIGNALED(status):
@@ -1102,7 +1136,8 @@ def supervise(config, drop_privileges):
             if sig == signal.SIGTRAP and event in {1, 2, 3}:
                 child = ctypes.c_ulong()
                 ptrace(0x4201, stopped, 0, ctypes.byref(child))
-                total_processes += 1
+                if child.value not in newborn_stops:
+                    policy.total_processes += 1
                 record = state.clone()
                 if not state.clone_shares_vm:
                     record.memory_group = child.value
@@ -1111,9 +1146,11 @@ def supervise(config, drop_privileges):
                 if not already_stopped:
                     record.pidfd = os.pidfd_open(child.value)
                 processes[child.value] = record
+                if not state.process_reservation:
+                    raise Violation("unreserved process creation")
+                state.process_reservation = False
                 state.memory_reservation = 0
-                if total_processes > config["process_limit"]:
-                    raise Violation("aggregate descendant-process budget exhausted")
+                policy.account_processes()
                 if already_stopped:
                     ptrace(SYSCALL, child.value)
             elif sig == signal.SIGTRAP and event == 4:
@@ -1190,7 +1227,8 @@ def supervise(config, drop_privileges):
                 "consumed": sorted(policy.consumed),
                 "code_consumed": sorted(policy.code_consumed),
                 "accessed": sorted(policy.accessed),
-                "processes": total_processes,
+                "processes": policy.total_processes,
+                "live_process_peak": policy.live_process_peak,
                 "syscalls": policy.calls,
                 "written_bytes": policy.written,
                 "created_files": policy.created,

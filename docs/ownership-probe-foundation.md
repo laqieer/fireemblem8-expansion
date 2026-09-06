@@ -636,10 +636,34 @@ Python object mutation, and it does not implement #180's full ownership graph.
 
 The existing **3,600-second maximum is one monotonic deadline**, including
 snapshotting, compilation, all subprocesses and replay. Every subprocess gets
-the remaining lifetime. Defaults bound 4,096 states/launches, 32 descendants
-per capsule, 16,384 total descendants, 32 pending commands, two million
+the remaining lifetime. Defaults bound 4,096 states/launches, 32 simultaneously
+live traced guest processes, 16,384 total guest-process creations per report,
+32 pending commands, two million
 syscalls and 32,768 snapshot entries. There are no futures or hidden worker
 queues. Variant plans are checked before any variant launch.
+
+`Limits.processes` bounds live capacity, including the capsule root, stopped
+newborns and suspended vfork ancestors. `Limits.descendants` bounds cumulative
+actual creation across every capsule, command, replay and immutable view.
+The old extra 32-total-per-capsule restriction is explicitly replaced by the
+live-capacity bound; none of the numerical maxima is increased.
+
+The caller passes `process_limit` and the remaining `descendant_limit`
+separately. Each admitted fork/vfork/clone/clone3 reserves capacity before kernel
+creation alongside the existing memory reservation. Failed calls release the
+reservation without inventing a created process. Newborn-first stops remain
+held until their parent event authenticates them and are counted once, not
+again when transferred to the normal process map. A pending reservation cannot
+be spent by another tracee, and an excess child never gains execution authority.
+PIDFD, memory-credit, vfork-completion and sole-reaper handling remain intact.
+
+The closed supervisor report retains `processes` as total actual creation on
+success or failure and adds `live_process_peak`, measured from tracked live
+processes plus unresolved newborns. `ProbeSession.processes_used` accumulates
+the totals; `ProbeSession.live_process_peak` retains their maximum live peak
+across serialized capsules and views. Reservations/configured limits are not
+reported as live processes. `memory_peak` remains virtual-memory-credit
+evidence, not RSS. Failure and selection cannot reset any report allowance.
 
 Byte accounting is also aggregate: 768 MiB total, 384 MiB snapshot processing,
 64 MiB streamed output, 64 MiB capsule writes, 32 MiB each cache/mappings/control,
@@ -781,11 +805,13 @@ Required downstream #180/PR186 integration:
 
 In particular, the downstream 112-domain adoption is not established by the
 normal-context, interception or cleanup regressions here.
-The actual child root-Make prototype now observes the admitted newlib header
-and pinned mgfembp source/header wildcards. Its later dependency-remake scaninc
-commands still need a child-owned typed adapter, and the unchanged process
-bound can reject that unresolved remake pass. The input-seam success does not
-claim a complete default root observation or full graph acceptance.
+The actual child root-Make work now observes the admitted newlib header and
+pinned mgfembp source/header wildcards and has real scaninc/linker/asset adapters.
+Separating live capacity from cumulative work traverses its former 33-process
+cutoff; the measured next rejection is unadmitted `/bin/mkdir` metadata after
+620 processes in that Make capsule, with only two simultaneously live. That
+separate later boundary remains visible rather than broadening runtime authority
+or claiming a complete default root observation/full graph acceptance.
 
 Dependencies are the existing generated-registry schema and host tools above.
 Conflicts: PR186's probe/interceptor/reporter surfaces must be reconciled.

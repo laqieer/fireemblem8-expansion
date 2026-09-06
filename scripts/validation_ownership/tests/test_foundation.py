@@ -2994,7 +2994,7 @@ int main(int argc, char **argv) {
                     Path(config["report"]).write_text(json.dumps({
                         "ok": True, "returncode": 0, "error": None,
                         "consumed": [], "code_consumed": [], "accessed": [],
-                        "processes": 1, "syscalls": 1, "written_bytes": 0,
+                        "processes": 1, "live_process_peak": 1, "syscalls": 1, "written_bytes": 0,
                         "created_files": 0, "memory_peak": 1, "observation_bytes": 0,
                     }))
                 return subprocess.CompletedProcess(argv, 0, b"", b"")
@@ -4317,6 +4317,148 @@ int main(int argc, char **argv) {
                 finally:
                     timer.cancel()
                     timer.join()
+        self.assert_clean(session)
+
+    def test_process_sequential_make_exceeds_thirty_two_total_with_bounded_live_work(self):
+        self.add("Makefile", (
+            "VALUE := $(foreach n," + " ".join(map(str, range(40))) + ",$(shell printf %s real))\n"
+            "all: ;\n"
+        ))
+        with self.session() as session:
+            observation = session.make("all", variables=("VALUE",), commands={
+                "printf %s real": Command(("/usr/bin/printf", "%s", "real")),
+            })
+            self.assertEqual(observation.semantics["domains"]["VALUE"]["value"], " ".join(["real"]*40))
+            self.assertEqual(len(observation.events), 40)
+            self.assertEqual(len(observation.semantics["dynamic_commands"]), 1)
+            self.assertGreater(session.processes_used, 32)
+            self.assertLessEqual(session.processes_used, session.budget.limits.descendants)
+            self.assertGreaterEqual(session.live_process_peak, 2)
+            self.assertLessEqual(session.live_process_peak, session.budget.limits.processes)
+        self.assert_clean(session)
+
+    def test_process_live_capacity_rejects_before_excess_child_creation(self):
+        self.add("reader.py", (
+            "import os\npipes=[]\n"
+            "for n in range(5):\n"
+            " r,w=os.pipe()\n"
+            " if os.fork()==0:\n"
+            "  os.close(w); os.read(r,1); os._exit(0)\n"
+            " os.close(r); pipes.append(w)\n"
+            "for descriptor in pipes: os.close(descriptor)\n"
+            "for n in pipes: os.wait()\n"
+        ))
+        with self.session(processes=2, descendants=128) as session:
+            with self.assertRaisesRegex(MakeProbeError, "live .*process|live process"):
+                session.command(Command(("/usr/bin/python3", "/repo/reader.py"), code=("reader.py",)))
+            self.assertEqual(session.processes_used, 2)
+            self.assertEqual(session.live_process_peak, 2)
+            self.assertTrue(session.budget.closed)
+        self.assert_clean(session)
+
+    def test_process_total_allowance_exhausts_with_sequential_low_live_work(self):
+        self.add("reader.py", (
+            "import os\n"
+            "for n in range(10):\n"
+            " child=os.fork()\n"
+            " if child==0: os._exit(0)\n"
+            " os.waitpid(child,0)\n"
+        ))
+        with self.session(processes=8, descendants=4) as session:
+            with self.assertRaisesRegex(MakeProbeError, "descendant-process"):
+                session.command(Command(("/usr/bin/python3", "/repo/reader.py"), code=("reader.py",)))
+            self.assertEqual(session.processes_used, 4)
+            self.assertEqual(session.live_process_peak, 2)
+            self.assertTrue(session.budget.closed)
+        self.assert_clean(session)
+
+    def test_process_totals_cross_capsules_replay_views_and_failure_without_reset(self):
+        budget = ProbeBudget(Limits(processes=2, descendants=9))
+        self.add("Makefile", "VALUE := $(shell printf %s genuine)\nall: ;\n")
+        base = self.capture_view(budget)
+        self.add("unrelated.txt", "current")
+        current = self.capture_view(budget)
+        started, deadline = budget.started, budget.deadline
+        with ProbeSession(current, scratch_root=self.scratch, budget=budget) as session:
+            cached = Command(("/usr/bin/printf", "first"))
+            session.command(cached)
+            session.command(cached)
+            self.assertEqual(session.processes_used, 1)
+            session.make("all", commands={"printf %s genuine": Command(("/usr/bin/printf", "%s", "genuine"))})
+            self.assertEqual(session.processes_used, 6)
+            with self.assertRaisesRegex(MakeProbeError, "descendant-process"):
+                with session.select_view(base):
+                    session.command(Command(("/usr/bin/printf", "second")))
+                    self.assertEqual(session.processes_used, 7)
+                    session.command(Command((
+                        "/usr/bin/python3", "-c",
+                        "import os\nfor n in range(2):\n"
+                        " child=os.fork()\n if child==0: os._exit(0)\n os.waitpid(child,0)\n",
+                    )))
+            self.assertEqual(session.processes_used, 9)
+            self.assertEqual(session.live_process_peak, 2)
+            self.assertEqual((budget.started, budget.deadline), (started, deadline))
+            self.assertIs(session.loader, current)
+            self.assertTrue(budget.closed)
+            self.assertFalse(budget.children)
+            with self.assertRaisesRegex(MakeProbeError, "deadline/budget"):
+                session.command(cached)
+            self.assertEqual(session.processes_used, 9)
+        self.assert_clean(session)
+
+    def test_process_newborn_reservations_count_once_and_failures_release_capacity(self):
+        from scripts.validation_ownership.syscall_guard import Policy, Process, Registers, Violation
+        def policy(live, total):
+            return Policy({
+                "root": str(self.root), "mode": "make", "code": [], "sources": [],
+                "enumerations": [], "executables": [], "python_version": "3.12",
+                "argv": [], "process_limit": live, "descendant_limit": total,
+            })
+        for live, total, rejection in ((3, 128, "live descendant"), (32, 3, "aggregate descendant")):
+            with self.subTest(live=live, total=total):
+                observed = policy(live, total)
+                parent, child = Process("make", memory_group=1), Process("helper", memory_group=1)
+                observed.processes = {1: parent}
+                observed.total_processes = 1
+                observed.account_processes()
+                observed.reserve_process(parent)
+                self.assertEqual(observed.live_process_peak, 1)
+                observed.newborn_stops[2] = -1
+                observed.total_processes += 1
+                observed.account_processes()
+                self.assertEqual(observed.live_process_peak, 2)
+                self.assertEqual(observed.total_processes, 2)
+                observed.processes[2] = child
+                observed.newborn_stops.pop(2)
+                parent.process_reservation = False
+                observed.account_processes()
+                self.assertEqual(observed.live_process_peak, 2)
+                observed.reserve_process(parent)
+                with self.assertRaisesRegex(Violation, rejection):
+                    observed.reserve_process(child)
+                observed.leave(1, parent, Registers(orig_rax=435, rax=(-errno.ENOSYS) & ((1 << 64)-1)))
+                self.assertFalse(parent.process_reservation)
+                self.assertEqual(observed.total_processes, 2)
+                observed.reserve_process(child)
+                observed.leave(2, child, Registers(orig_rax=56, rax=(-errno.EAGAIN) & ((1 << 64)-1)))
+                self.assertFalse(child.process_reservation)
+                self.assertEqual(observed.live_process_peak, 2)
+                observed.newborn_stops[3] = -1
+                observed.total_processes += 1
+                with self.assertRaisesRegex(Violation, "unreserved newborn"):
+                    observed.account_processes()
+                self.assertEqual(observed.live_process_peak, 3)
+                self.assertEqual(observed.total_processes, 3)
+
+    def test_process_root_failure_retains_actual_creation_and_measured_peak(self):
+        self.add("Makefile", "all: ;\n")
+        with self.session() as session:
+            with self.assertRaisesRegex(MakeProbeError, "unsuccessfully: 7"):
+                session.command(Command(("/usr/bin/python3", "-c", "import os; os._exit(7)")))
+            self.assertEqual(session.processes_used, 1)
+            self.assertEqual(session.live_process_peak, 1)
+            self.assertTrue(session.budget.closed)
+            self.assertFalse(session.budget.children)
         self.assert_clean(session)
 
     def test_strict_named_protocols_reject_binary_and_truncated_frames(self):

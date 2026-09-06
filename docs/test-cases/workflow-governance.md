@@ -3127,11 +3127,43 @@ At exact `0a832d4`, thirteen real registered commands preceded rejection of
 diagnostic reached the unadmitted `mgfembp/src` gitlink; that diagnostic was
 never default acceptance. With both inputs captured, the real default trace
 successfully observes the header and the pinned src/include files, then reaches
-later unresolved scaninc dependency-remake events and the unchanged process cap.
-The child prototype reports its missing `banim-scaninc-inputs` adapter separately;
-an arm-compressing-linker permission diagnostic is also retained. Do not raise
-limits or broaden source execution here, invent outputs, or claim a full
-root/112-domain result from these two input boundaries.
+later unresolved scaninc dependency-remake events and the former total-per-
+capsule process restriction. That historical prototype's missing adapter and
+arm-compressing-linker permission diagnostics are retained as such. The later
+child work implements those producers; neither historical input-seam success
+nor the process-accounting correction below claims a full root/112-domain result.
+
+### Live process capacity and total work
+
+`Limits.processes=32` is the simultaneous live traced guest capacity, including
+root, newborn/unresolved and vfork states. `Limits.descendants=16384` is total
+actual process creation for the entire report across capsules/retries/views.
+The former extra 32-total-per-capsule restriction is withdrawn explicitly; all
+numeric, deadline, run/state/syscall/memory/byte/source/execution/cleanup limits
+stay unchanged.
+
+Run the existing suite's `test_process_*` methods:
+
+1. Execute forty sequential actual Make shell expansions. Require all native
+   values/events, total creation greater than32 and live peak within32.
+2. Hold children live under a small live cap with ample total allowance.
+   Reject the next creation before excess child progress; verify actual totals,
+   live peak, closed budget and owned teardown.
+3. Reap children sequentially under a small total allowance. Reject cumulative
+   exhaustion while live usage remains low. Spend additional work across
+   command caching, Make replay and selected views without reset/refund.
+4. Exercise reserved/newborn-first/normal process states without double credit,
+   failed clone3/fork returns, actual native/compiler vfork/exec, root failure,
+   normal exit and interruption cleanup. Total creation includes real failures;
+   live peak comes from tracked state, not the configured cap. Memory credits
+   are not RSS.
+5. Run the frozen child's actual current adapters and unchanged default root.
+   All33 recorded producers are real successes; no variable override or fake
+   output is permitted. The old supervisor stopped at33 with153 report
+   creations used. The corrected trace reaches620 creations in that Make
+   capsule (live peak2),740 report creations (peak3), then honestly rejects
+   unadmitted `/bin/mkdir` metadata. This is measured progress, not full112
+   acceptance or permission for another limit/authority expansion.
 
 ### Interactions and save compatibility
 
