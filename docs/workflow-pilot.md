@@ -118,11 +118,10 @@ risk classification. A high-risk or large candidate gets one fresh bounded
 read-only review before its first remote review. The existing task runtime
 owns task identity, owner, role, completion and observed tool actions. The
 reviewer's response is findings data, not an authentication token. Keep its
-owner distinct from implementation and coordination; reject duplicate or
-overlapping reviewer scope.
+owner distinct from implementation and coordination.
 Share one `ReviewOwnership` index across the coordinator's sessions; it blocks
-overlapping active scopes and duplicate reviews of the same candidate before
-another task can start.
+another active reviewer for the same repository/PR or the same candidate head,
+regardless of scope, before another task can start.
 
 `ReviewSession.begin` forwards the closed `code-review` role, exact head/scope,
 allowed read/report actions and duration/file/finding bounds to the
@@ -220,10 +219,12 @@ The coordinator supplies existing tool adapters through the in-process API;
 they are never deserialized from a file. This API does not authenticate an
 arbitrary Python caller. Its trust boundary is the existing coordinator/tool
 role, not a new platform.
-The existing ownership index permits only one active reviewer for a
-repository/PR/candidate head, even for disjoint scopes. Different PRs or heads
-remain independent; completion releases that head for a subsequent bounded
-session.
+The existing ownership index enforces repository/PR and candidate-head
+exclusion independently, even for disjoint scopes. A new head does not permit
+a second active reviewer on the same PR; another PR does not permit duplicate
+active review of the same candidate head. Only work with both a different
+repository/PR identity and a different head remains independent. Completion
+releases both exclusions for a subsequent bounded session.
 
 `ReviewSession.finish` captures the runtime's typed `Finding` records at the
 reviewed task/head. Before handoff, call

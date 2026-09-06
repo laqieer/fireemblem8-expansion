@@ -201,8 +201,11 @@ the consumers' independent protected-principal/deployment requirements.
    tool; duplicate/overlapping owners, wrong/stale/incomplete task results and
    excessive duration reject. This proves the operational interface, not
    same-UID OS containment or that a synthetic test launched a live agent.
-   Disjoint scopes cannot create two active reviewers for the same PR/head;
-   different PRs/heads remain independent and completed sessions release ownership.
+   Disjoint scopes cannot create a second active reviewer for the same
+   repository/PR even at a different head, or for the same candidate head even
+   on another PR. Work with both a different repository/PR identity and a
+   different head remains independent, even with overlapping scope. Completed
+   sessions release both exclusions; denied starts never reach the runtime.
    Both runtime `completed` and `read_only` must be Boolean `True`; repeat with
    false, truthy strings/numbers, containers and missing fields. Request a
    ten-file lease, return ten files, then eleven; only the first completes.

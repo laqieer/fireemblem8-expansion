@@ -391,24 +391,45 @@ class RoleTests(unittest.TestCase):
         second.begin(Runtime("b" * 40, self.scope), "second-reviewer")
 
     def test_one_active_pr_head_owner_ignores_scope_but_releases_completed_work(self):
-        owners = model.ReviewOwnership()
         identity = ("owner/repo", 1, "a" * 40)
+        disjoint = frozenset({"TC-CORE-004/generated-eventlists"})
+        for next_identity, head in (
+            (identity, "b" * 40), (identity, "c" * 40),
+            (("owner/repo", 2, "a" * 40), "b" * 40),
+            (("other/repo", 1, "a" * 40), "b" * 40),
+            (("owner/repo", 1, "d" * 40), "c" * 40),
+        ):
+            with self.subTest(identity=next_identity, head=head):
+                owners = model.ReviewOwnership()
+                first = model.ReviewSession(
+                    "coordinator", "implementer", self.scope, "b" * 40,
+                    identity=identity, owners=owners)
+                runtime = Runtime(first.head, self.scope)
+                first.begin(runtime, "reviewer")
+                second = model.ReviewSession(
+                    "coordinator", "other-implementer", disjoint, head,
+                    identity=next_identity, owners=owners)
+                next_runtime = Runtime(head, disjoint)
+                with self.assertRaises(model.ReviewError):
+                    second.begin(next_runtime, "reviewer")
+                self.assertEqual(next_runtime.calls, [])
+                self.assertIsNone(second.lease)
+                first.finish(runtime)
+                second.begin(next_runtime, "reviewer")
+                second.finish(next_runtime)
+        owners = model.ReviewOwnership()
         first = model.ReviewSession("coordinator", "implementer", self.scope, "b" * 40,
                                     identity=identity, owners=owners)
         first.begin(self.runtime, "reviewer")
-        disjoint = frozenset({"TC-CORE-004/generated-eventlists"})
-        second = model.ReviewSession("coordinator", "other-implementer", disjoint, "b" * 40,
-                                     identity=identity, owners=owners)
-        with self.assertRaises(ValueError):
-            second.begin(Runtime("b" * 40, disjoint), "reviewer")
-        for other_identity, head in ((identity, "c" * 40),
-                                     (("owner/repo", 2, "a" * 40), "b" * 40)):
+        for other_identity, head in ((("owner/repo", 2, "a" * 40), "c" * 40),
+                                     (("other/repo", 1, "a" * 40), "d" * 40)):
             independent = model.ReviewSession(
                 "coordinator", "other-implementer", self.scope, head,
                 identity=other_identity, owners=owners)
-            independent.begin(Runtime(head, self.scope), "reviewer")
+            runtime = Runtime(head, self.scope)
+            independent.begin(runtime, "reviewer")
+            independent.finish(runtime)
         first.finish(self.runtime)
-        second.begin(Runtime("b" * 40, disjoint), "reviewer")
 
 
 class MemberTests(unittest.TestCase):

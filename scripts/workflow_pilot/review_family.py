@@ -371,7 +371,8 @@ class ReviewOwnership:
     def reserve(self, session):
         require(session.identity is not None, "ownership requires frozen PR identity")
         for identity, head, scope, active in self.records.values():
-            require(not (active and identity[:2] == session.identity[:2] and head == session.head),
+            require(not (active and
+                         (identity[:2] == session.identity[:2] or head == session.head)),
                     "duplicate/overlapping review ownership")
         self.records[id(session)] = session.identity, session.head, session.scope, True
 
