@@ -201,11 +201,41 @@ the consumers' independent protected-principal/deployment requirements.
     retain with a reason rather than crashing or silently ignoring mounts.
     Report a retained non-UTF-8 ignored filename through strict ASCII JSON
     without losing either its name or file content.
-12. For actual delivery, the coordinator first merges the task's PR, verifies
-   all relevant exact-master CI and `make remote-completion-check`, then runs
-   the [documented planner/apply commands](../workflow-pilot.md#completed-worktree-cleanup).
-   Preserve all assigned workspaces throughout apply. Record removed paths,
-   observed pre-removal allocated sizes, proof identities, and retained reasons.
+12. In the owned completed fixture, commit `.gitmodules` and multiple gitlinks
+    with real commit IDs, leaving their directories present and empty.
+    Dry-run must preserve the index, shared/private metadata, files, and
+    registrations; apply must remove normally while retaining shared refs.
+    Repeat with a non-UTF-8 gitlink path containing spaces, tabs, and newlines.
+    Remove a directory or stage a gitlink ID, path-set, mode, or conflict-stage
+    change: each must retain, without creating paths or repairing the index.
+    Put local/hidden/ignored data or even an empty child directory inside a
+    gitlink; replace it with a file, symlink, or symlinked parent; inject fixture
+    mount records. None qualifies, including names otherwise used for generated
+    output. Existing locks and active/preserved paths still block.
+    Repeat with actual initialized, separated, bare, and nested Git repositories.
+    A test-owned submodule fsmonitor hook writes a marker under ordinary nested
+    status as the negative control. Cleanup must neither execute that hook nor
+    spawn nested Git, as observed through real Git Trace2 events, even if the
+    initialized repository arrives between the empty observation and status.
+    Introduce local data or replace the empty directory on both apply
+    revalidation passes. Also introduce data during the empty scan and a
+    zero-byte file before the final size scan: the data and registration remain.
+    Replace a gitlink ancestor with a symlink while preserving the total
+    allocated block count; an unvisited gitlink must still retain the target.
+    Observe stat/open/scandir calls against a real test-owned external target.
+    Existing symlink parents, replacements immediately before/after directory
+    open, and replacements after scan entries are queued must cause retention
+    without any external-target access. Keep ordinary and byte-path positives.
+    Incomplete/duplicate index/tree observations and excessive gitlink counts
+    must retain rather than treating an ambiguous inventory as empty.
+13. For actual delivery, the coordinator first merges the task's PR, verifies
+    all relevant exact-master CI and `make remote-completion-check`, then runs
+    the [documented planner/apply commands](../workflow-pilot.md#completed-worktree-cleanup).
+    Select only known released, quiescent task workspaces; a green inventory
+    does not establish release or exclude writers. Preserve all assigned or
+    uncertain workspaces, including other active sessions, throughout apply.
+    Record removed paths, observed pre-removal allocated sizes, proof identities,
+    and retained reasons.
 
 ### Expected result
 
@@ -224,6 +254,12 @@ of clean current status. Unique private configuration, recovery/index
 snapshots, edit buffers and unfamiliar index extensions are not build output.
 Filesystem byte paths remain lossless through Git, mount/backlink checks and
 JSON. Fresh checks still cover non-UTF-8 path and private-metadata drift.
+Present real empty unpopulated gitlinks qualify only with exact live
+index/HEAD identity agreement; populated, missing, changed, or ambiguous
+gitlinks do not. Empty-directory observations are repeated by local checks
+and size scans, not inferred from ignored submodule status or allocated bytes.
+Relative components are observed from a held worktree-root descriptor without
+following symlink targets; entry/descriptor substitution retains the workspace.
 
 ### Negative control
 
@@ -240,6 +276,17 @@ Its first recovery fix still accepted REUC-only unreachable blobs, private
 configuration/backups and unrecognized index extensions, and text decoding
 crashed on valid non-UTF-8 target/backlink/mount names. The extended controls
 fail against that parent helper, including after-plan/final-check drift.
+The later blanket rejection of every `160000` index entry incorrectly holds
+clean empty-gitlink fixtures; the new dry-run and normal-removal positives fail
+against that helper. Ignoring submodule status without the index/HEAD comparison
+or empty-directory checks fails the staged/data controls. A size-only final
+check loses a late zero-byte file because ordinary Git removal does not protect
+data inside an uninitialized gitlink. None of these controls authorizes actual
+historical cleanup before this follow-up's own candidate and merged-master gates.
+The resolve-based observer still rejected symlinks only after accessing their
+external targets, and a queued full-path scan could do the same after a parent
+replacement. The no-target-access controls fail against that implementation
+even though it eventually reports retention.
 
 ### Interactions and save compatibility
 
@@ -271,6 +318,13 @@ judgment is required; actual service availability and active ownership remain
 live operational checks. Fixture process inventory includes only owned PIDs;
 the live helper retains its full same-owner visibility requirement. Mount
 records are simulated with byte files, never actual or privileged mounts.
+These controls prove rejection of observed changes, not an atomic transaction
+or writer lock. New content written inside a gitlink after its final empty
+observation but before Git deletes it can be lost because ordinary Git does
+not inspect that content. Apply is limited to explicitly known released,
+quiescent task workspaces with a complete preserved inventory and no reassignment.
+If that precondition cannot be established, retain the target regardless of
+otherwise green proof. No permission lock or arbitrary-writer guarantee is added.
 
 ## TC-WORKFLOW-IMMEDIATE-PUSH-001: Publish new commits immediately and expose WIP ownership
 
