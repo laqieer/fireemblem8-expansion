@@ -2325,6 +2325,82 @@ class PullRequestMetadataTests(unittest.TestCase):
             )
         self.assertFalse(any(method != "GET" for method, _endpoint, _body in client.calls))
 
+    def test_essential_edit_updates_terminal_failed_full_without_success_credit(self):
+        for conclusion in ("failure", "cancelled"):
+            with self.subTest(conclusion=conclusion):
+                client = ScriptedClient()
+                failed_full = _run(101, 10, mode="full", success=False)
+                failed_full[0]["conclusion"] = conclusion
+                summary = next(
+                    job for job in failed_full[1] if job["name"] == "summary"
+                )
+                summary["conclusion"] = "failure"
+                _add_pr_states(client, _pr(), _pr())
+                _add_snapshot(client, [failed_full], copies=2)
+                client.add(
+                    "PATCH",
+                    _endpoint(f"pulls/{PR_NUMBER}"),
+                    _pr(title="Corrected contract"),
+                )
+                _add_edit_transaction(client, title="Corrected contract")
+
+                decision = pr_metadata.edit_metadata(
+                    client,
+                    repository=REPOSITORY,
+                    pr_number=PR_NUMBER,
+                    head_sha=HEAD,
+                    base_sha=BASE,
+                    title="Corrected contract",
+                    body=None,
+                    essential_reason="Replace the invalid implementation contract",
+                )
+
+                self.assertEqual(decision.action, "updated")
+                self.assertTrue(decision.mutated)
+                self.assertIn("reconcile", decision.guidance[0])
+                self.assertEqual(
+                    [
+                        method for method, endpoint, _ in client.calls
+                        if endpoint != "graphql" and method != "GET"
+                    ],
+                    ["POST", "PATCH", "POST"],
+                )
+                self.assertFalse(
+                    any(
+                        "/cancel" in endpoint or "/dispatches" in endpoint
+                        for _, endpoint, _ in client.calls
+                    )
+                )
+                observed = ScriptedClient()
+                _add_snapshot(observed, [failed_full])
+                state = pr_metadata._parse_pull_request_payload(
+                    _pr(), REPOSITORY, PR_NUMBER
+                )
+                actual = pr_metadata.list_candidate_runs(observed, state)[0]
+                self.assertEqual(actual.conclusion, conclusion)
+                with self.assertRaisesRegex(
+                    pr_metadata.MetadataEditError, "not successful"
+                ):
+                    pr_metadata.require_full_success(actual)
+
+                default = ScriptedClient()
+                _add_pr_states(default, _pr())
+                _add_snapshot(default, [failed_full])
+                with self.assertRaisesRegex(
+                    pr_metadata.MetadataEditError, "not successful"
+                ):
+                    pr_metadata.edit_metadata(
+                        default,
+                        repository=REPOSITORY,
+                        pr_number=PR_NUMBER,
+                        head_sha=HEAD,
+                        base_sha=BASE,
+                        title="Corrected contract",
+                        body=None,
+                        essential_reason=None,
+                    )
+                self.assertTrue(all(method == "GET" for method, _, _ in default.calls))
+
     def test_body_only_no_op_without_pair_is_refused(self):
         client = ScriptedClient()
         _add_pr_states(client, _pr(), _pr())
@@ -4500,6 +4576,26 @@ class PullRequestMetadataTests(unittest.TestCase):
             any(
                 method not in {"GET", "POST"}
                 for method, _endpoint, _body in client.calls
+            )
+        )
+
+    def test_green_metadata_cannot_reconcile_terminal_failed_full(self):
+        client = ScriptedClient()
+        failed_full = _run(101, 10, mode="full", success=False)
+        summary = next(job for job in failed_full[1] if job["name"] == "summary")
+        summary["conclusion"] = "failure"
+        _add_pr_states(client, _pr())
+        _add_snapshot(
+            client,
+            [_run(202, 11, mode="metadata-only", success=True), failed_full],
+        )
+        with self.assertRaisesRegex(pr_metadata.MetadataEditError, "not successful"):
+            _reconcile(client)
+        self.assertFalse(
+            any(
+                method == "PATCH" or "/rerun" in endpoint
+                or method == "POST" and "/comments" in endpoint
+                for method, endpoint, _ in client.calls
             )
         )
 
@@ -7490,6 +7586,68 @@ class PullRequestMetadataTests(unittest.TestCase):
                             client, state, body=invalid, label="transaction fixture"
                         )
                     self.assertEqual(client.calls, [])
+
+    def test_created_transaction_location_matches_the_returned_comment(self):
+        receipt = _receipt()
+        state = pr_metadata._parse_pull_request_payload(_pr(), REPOSITORY, PR_NUMBER)
+        bodies = (
+            pr_metadata._intent_comment_body(receipt),
+            pr_metadata._confirmation_comment_body(_confirmation(receipt)),
+            pr_metadata._abort_comment_body(_abort(receipt)),
+        )
+        for body in bodies:
+            with self.subTest(marker=body.splitlines()[0]):
+                payload = _comment(
+                    405, body,
+                    created_at="2026-09-04T00:00:04Z",
+                    updated_at="2026-09-04T00:00:04Z",
+                )
+                raw = (
+                    "HTTP/2.0 201 Created\n"
+                    "Content-Type: application/json; charset=utf-8\r\n"
+                    f"Location: {payload['url']}\r\n\r\n"
+                    + json.dumps(payload)
+                ).encode("utf-8")
+
+                def runner(arguments, **kwargs):
+                    return subprocess.CompletedProcess(arguments, 0, stdout=raw, stderr=b"")
+
+                client = pr_metadata.GitHubClient("/usr/bin/true", runner=runner)
+                actual = pr_metadata._create_transaction_comment(
+                    client, state, body=body, label="created comment fixture"
+                )
+                self.assertEqual(actual.comment_id, 405)
+                self.assertEqual(actual.body, body)
+
+    def test_created_transaction_location_rejects_other_resources(self):
+        state = pr_metadata._parse_pull_request_payload(_pr(), REPOSITORY, PR_NUMBER)
+        body = pr_metadata._intent_comment_body(_receipt())
+        payload = _comment(
+            405, body,
+            created_at="2026-09-04T00:00:04Z",
+            updated_at="2026-09-04T00:00:04Z",
+        )
+        locations = (
+            "https://example.test/repos/owner/repo/issues/comments/405",
+            "https://api.github.com/repos/owner/other/issues/comments/405",
+            "https://api.github.com/repos/owner/repo/issues/comments/406",
+            "https://api.github.com/repos/owner/repo/pulls/405",
+            payload["url"] + "?redirect=1",
+            payload["url"] + "#fragment",
+            "",
+        )
+        for location in locations:
+            with self.subTest(location=location):
+                client = ScriptedClient()
+                client.add(
+                    "POST",
+                    _endpoint(f"issues/{PR_NUMBER}/comments"),
+                    _response(payload, status=201, headers={"location": location}),
+                )
+                with self.assertRaisesRegex(pr_metadata.MetadataEditError, "Location"):
+                    pr_metadata._create_transaction_comment(
+                        client, state, body=body, label="created comment fixture"
+                    )
 
     def test_duplicate_and_embedded_markers_are_rejected(self):
         cases = {

@@ -1391,7 +1391,7 @@ def _parse_http_response(
     headers = _normalize_http_headers(lines[1:], label=label)
     if 300 <= status < 400:
         raise MetadataEditError(f"{label} request rejected redirect: HTTP {status}")
-    if "location" in headers:
+    if "location" in headers and status != 201:
         raise MetadataEditError(f"{label} response unexpectedly contains Location")
     if not body_text:
         if allow_empty_body:
@@ -3419,7 +3419,7 @@ def edit_metadata(
             raise MetadataEditError(
                 "essential edit has no exact-head full Build to reconcile"
             )
-        require_full_success(latest_full)
+        # Essential metadata may describe a failed build; continuity still requires success.
 
     current = fetch_pull_request(client, repository, pr_number)
     require_identity(current, head_sha=head_sha, base_sha=base_sha)
@@ -3486,7 +3486,6 @@ def edit_metadata(
                 raise MetadataEditError(
                     "essential edit has no exact-head full Build to reconcile"
                 )
-            require_full_success(latest_full)
 
     current_version = fetch_metadata_version(client, current)
     intents, confirmations, aborts = _transaction_comments(client, current)
@@ -4560,6 +4559,14 @@ def _create_transaction_comment(
         state.number,
         state.repository_owner_id,
     )
+    if "location" in response.headers:
+        if response.status != 201:
+            raise MetadataEditError(f"{label} creation Location requires HTTP 201")
+        _require_api_url(
+            response.headers["location"],
+            _endpoint(state.repository, f"issues/comments/{comment.comment_id}"),
+            field=f"{label} Location",
+        )
     if (
         comment.body != body
     ):
