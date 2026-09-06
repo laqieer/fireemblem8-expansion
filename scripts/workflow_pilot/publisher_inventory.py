@@ -427,6 +427,8 @@ class Inventory:
             }
         ):
             raise InventoryError("publisher program staging order differs")
+        from . import publisher_phase
+        publisher_phase.validate_producer(analysis)
 
     def validate(self, source: str, *, entry_scope: str = "entry") -> Analysis:
         if entry_scope not in ENTRY_SCOPES:

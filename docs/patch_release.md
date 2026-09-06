@@ -286,6 +286,27 @@ owned-cgroup cleanup, output suppression, and pre-secret host post-checks are
 retained. No candidate-controlled output, PID, path, or free text is added to
 these diagnostics.
 
+Canonical payload equality alone does not prove this diagnostic contract.
+The child phase policy consumes the registered staging `Analysis` and its
+authenticated command/event frames, then parses the already-authorized
+candidate payload with the existing shell parser. It binds the ERR callback
+to its actual state variable, requires the six literal stage transitions, and
+compares each parsed exit arm with the registered host candidate-detail map.
+Preflight checks, venv creation, pip/working-directory setup, build-tools,
+make and handoff operations must execute in their assigned stages; moving a
+stage write or mandatory action into another control frame rejects.
+The wildcard fallback must remain last and executable, not a quoted literal.
+Connected handler/state renaming, equivalent quoting, disjoint candidate
+case-arm reordering and independent handoff install order remain valid.
+
+The same staging policy requires the host failure continuation to select its
+detail, emit the fixed diagnostic, then exit, in both the parsed control
+sequence and the bound event stream. Printing before the case map would read
+an unset variable under `set -u`; exiting early would silently lose the
+diagnostic. Both reorderings reject even with refreshed outer identities.
+This adds phase/dataflow checks, not another command permission list, parser,
+entry scope or source-loader authority. The candidate payload stays data-only.
+
 ### Dependencies, compatibility, and evidence boundary
 
 This is a genuine depth-one child of #200. While the parent PR is open the

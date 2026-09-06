@@ -149,6 +149,73 @@ class PublisherPhaseTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     verify._parse_workflow_structure_text(changed)
 
+    def test_candidate_and_host_diagnostic_mutations_reject_in_both_consumers(self):
+        cases = list(fixtures.diagnostic_workflows(self.workflow))
+        self.assertGreaterEqual(len(cases), 30)
+        for name, changed in cases:
+            with (
+                self.subTest(case=name), fixtures.captured_programs(changed),
+                inventory.refreshed_boundary_identities(changed),
+            ):
+                self.assertNotEqual(changed, self.workflow)
+                analysis = authority.reviewed_inventory().validate(
+                    inventory.contract.publisher_run_script(changed), entry_scope="staging",
+                )
+                with self.assertRaises(phase.PhaseError):
+                    phase.validate_producer(analysis)
+                self.assertTrue(publisher.publisher_boundary_errors(changed))
+                with self.assertRaises(ValueError):
+                    verify._parse_workflow_structure_text(changed)
+
+    def test_removing_only_diagnostic_phase_reproduces_the_review_bypasses(self):
+        selected = {
+            "candidate-exits-make-preflight", "candidate-assignments-make-preflight",
+            "late-assignment-make", "host-diagnostic-before-map",
+            "host-exit-before-map", "host-exit-before-diagnostic",
+        }
+        witnessed = set()
+        for name, changed in fixtures.diagnostic_workflows(self.workflow):
+            if name not in selected:
+                continue
+            with (
+                self.subTest(case=name), fixtures.captured_programs(changed),
+                inventory.refreshed_boundary_identities(changed),
+                mock.patch.object(phase, "validate_producer"),
+            ):
+                self.assertEqual(publisher.publisher_boundary_errors(changed), [])
+                verify._parse_workflow_structure_text(changed)
+                witnessed.add(name)
+        self.assertEqual(witnessed, selected)
+
+    def test_diagnostic_policy_accepts_connected_renaming_quoting_and_independent_order(self):
+        changed = fixtures.diagnostic_spelling_control(self.workflow)
+        self.assertNotEqual(changed, self.workflow)
+        with fixtures.captured_programs(changed), inventory.refreshed_boundary_identities(changed):
+            self.assertEqual(publisher.publisher_boundary_errors(changed), [])
+            verify._parse_workflow_structure_text(changed)
+
+    def test_diagnostic_events_cannot_hide_a_wrong_frame_or_reordered_mapping(self):
+        analysis = authority.reviewed_inventory().validate(
+            inventory.contract.publisher_run_script(self.workflow), entry_scope="staging",
+        )
+        diagnostic = next(event for event in analysis.events if event.signature == "staging.command-125")
+        variants = [
+            tuple(event for event in analysis.events if event is not diagnostic),
+            tuple(
+                replace(event, call_stack=("callback",)) if event is diagnostic else event
+                for event in analysis.events
+            ),
+        ]
+        first_map = next(event for event in analysis.events if event.signature.startswith("staging.isolated-"))
+        early = list(analysis.events)
+        early.remove(diagnostic)
+        early.insert(early.index(first_map), diagnostic)
+        variants.append(tuple(early))
+        for events in variants:
+            with self.subTest(events=events.index(diagnostic) if diagnostic in events else None):
+                with self.assertRaises(phase.PhaseError):
+                    phase.validate_producer(replace(analysis, events=events))
+
     def test_spelling_and_independent_work_preserve_semantic_phase_result(self):
         changed = self.source.replace(
             'builder_uid="$2"\nbuilder_gid="$3"',
@@ -542,6 +609,104 @@ isolated_stage=output-validate
         analysis = authority.reviewed_inventory().validate(changed)
         with self.assertRaises(phase.PhaseError):
             phase.validate(analysis)
+
+    def candidate_failure(self, workflow, stage, *, real_make=False):
+        body = fixtures.candidate_script(workflow)
+        commands = fixtures.root_commands(body)
+        actions = {
+            "preflight": lambda argv: argv[:4] == ("/usr/bin/python3", "-I", "-S", "-c"),
+            "venv": lambda argv: argv[:3] == ("/usr/bin/python3", "-m", "venv"),
+            "pip": lambda argv: argv[1:4] == ("-m", "pip", "install"),
+            "build-tools": lambda argv: argv[:1] == ("./build_tools.sh",),
+            "make": lambda argv: argv[:1] == ("make",),
+            "handoff": lambda argv: argv[:1] == ("/usr/bin/install",),
+        }
+        action = next(node for node in commands if actions[stage](tuple(word.literal for word in node.argv)))
+        assignment = [
+            node for node in commands if node.offset < action.offset
+            and len(node.environment) == 1 and not node.argv
+        ][-1]
+        trap = next(node for node in commands if node.argv and node.argv[0].literal == "trap")
+        start = body.index(trap.argv[1].literal + "() {")
+        end = body.index("\n}", start) + 2
+        script = (
+            body[commands[0].offset:commands[0].end] + "\n" + body[start:end] + "\n"
+            + body[trap.offset:trap.end] + "\n"
+            + body[assignment.offset:assignment.end] + "\n"
+        )
+        script += body[action.offset:action.end] if real_make else "/bin/false"
+        marker = self.directory / "make-ran"
+        if real_make:
+            (self.directory / "Makefile").write_text(
+                "expansion-modern-map-menu-presentation-check:\n"
+                "\t@printf invoked > make-ran\n\t@false\n"
+            )
+        result = subprocess.run(
+            ["/bin/bash", "--noprofile", "--norc", "-c", script],
+            cwd=self.directory, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            check=False, timeout=10,
+        )
+        if real_make:
+            self.assertEqual(marker.read_text(), "invoked")
+            marker.unlink()
+        return result.returncode
+
+    def host_failure(self, workflow, status):
+        return subprocess.run(
+            ["/bin/bash", "--noprofile", "--norc", "-euo", "pipefail", "-c",
+             'unset builder_isolated_detail\nbuilder_status="$1"\n'
+             + fixtures.host_failure_script(workflow), "--", str(status)],
+            env={"PATH": "/usr/bin:/bin", "LC_ALL": "C"},
+            text=True, capture_output=True, check=False, timeout=10,
+        )
+
+    def test_actual_err_trap_binds_every_candidate_stage_assignment(self):
+        mutations = dict(fixtures.diagnostic_workflows(self.workflow))
+        for stage, expected in (
+            ("preflight", 71), ("venv", 72), ("pip", 73),
+            ("build-tools", 74), ("make", 75), ("handoff", 76),
+        ):
+            with self.subTest(stage=stage):
+                self.assertEqual(self.candidate_failure(self.workflow, stage), expected)
+                changed = mutations["candidate-assignment-" + stage]
+                self.assertNotEqual(self.candidate_failure(changed, stage), expected)
+                with fixtures.captured_programs(changed), self.assertRaises(phase.PhaseError):
+                    authority.validate_workflow(changed)
+
+    def test_real_make_failure_and_host_diagnostic_expose_the_pre_fix_mutations(self):
+        mutations = dict(fixtures.diagnostic_workflows(self.workflow))
+        for name, workflow, expected in (
+            ("canonical", self.workflow, 75),
+            ("spelling", fixtures.diagnostic_spelling_control(self.workflow), 75),
+            ("codes", mutations["candidate-exits-make-preflight"], 71),
+            ("assignments", mutations["candidate-assignments-make-preflight"], 71),
+            ("late-assignment", mutations["late-assignment-make"], 74),
+        ):
+            with self.subTest(case=name):
+                status = self.candidate_failure(workflow, "make", real_make=True)
+                self.assertEqual(status, expected)
+                result = self.host_failure(workflow, status)
+                self.assertEqual(result.returncode, expected)
+                detail = {71: "preflight", 74: "build-tools", 75: "make"}[expected]
+                self.assertEqual(result.stdout, "")
+                self.assertEqual(result.stderr, (
+                    "candidate build failed: stage=isolated "
+                    f"detail=candidate-{detail} exit={expected}\n"
+                ))
+        for name in ("host-diagnostic-before-map", "host-exit-before-map", "host-exit-before-diagnostic"):
+            with self.subTest(case=name):
+                changed = mutations[name]
+                result = self.host_failure(changed, 75)
+                self.assertEqual(result.stdout, "")
+                self.assertNotIn("candidate build failed: stage=isolated", result.stderr)
+                if name == "host-diagnostic-before-map":
+                    self.assertEqual(result.returncode, 1)
+                    self.assertIn("unbound variable", result.stderr)
+                else:
+                    self.assertEqual(result.returncode, 75)
+                    self.assertEqual(result.stderr, "")
+                with fixtures.captured_programs(changed), self.assertRaises(phase.PhaseError):
+                    authority.validate_workflow(changed)
 
     def test_actual_candidate_and_host_failure_handlers_preserve_fixed_protocol(self):
         run = inventory.contract.publisher_run_script(self.workflow)

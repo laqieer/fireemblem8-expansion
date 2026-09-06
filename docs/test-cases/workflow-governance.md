@@ -62,6 +62,14 @@ behavior. Publisher runtime cases use disposable Linux namespaces.
    fixtures also delay or tail-duplicate launcher staging, change its Git ref,
    chmod or transport path, swap a reserved reported substage, and remove the
    failure detail. Both consumers and the exact-tree CLI reject those changes.
+   Also swap candidate exit codes or stage assignments, move each stage write
+   past its operation, quote or move the wildcard fallback, and hide build
+   actions in helpers, conditionals or background execution. These fixtures
+   bind the modified canonical payload to the selected source tree and refresh
+   outer identities: rejection must come from the diagnostic phase policy.
+   Move the host diagnostic before its case mapping, or its exit before the
+   mapping/diagnostic; each must also reject. Connected callback/state renaming,
+   equivalent quotes and disjoint candidate case-arm order remain accepted.
 5. Observe the live namespace scenario. The exact foreground candidate PID is
    absent from `/proc` before the checker; only wrapper/checker remain, and the
    actual sealed export contains `target.gba` (32 MiB) and `metadata.json`
@@ -75,6 +83,15 @@ behavior. Publisher runtime cases use disposable Linux namespaces.
    cleanup. The inherited-FD test preserves exit 37 with closure, then fails
    at 125 if closure alone is removed; ambient GitHub/Bash command-file
    variables never reach the candidate.
+7. Run the controlled diagnostic fixtures in the same phase module. A real
+   failing command at each extracted stage boundary triggers the actual ERR
+   callback with 71–76. A tiny fixture Makefile executes the production make
+   invocation and deliberately fails: the canonical path reports
+   `candidate-make`/75. The invalid preflight/make code and assignment swaps
+   reproduce `candidate-preflight`/71; a late make-stage write reproduces
+   `candidate-build-tools`/74. Moving the host diagnostic first reproduces an
+   unset-variable exit 1, while moving exit first suppresses the diagnostic.
+   These are deliberate pre-fix controls, not accepted publisher variants.
 
 ### Expected result
 
@@ -85,6 +102,8 @@ Namespace setup keeps diagnostic 81, the mount audit keeps 82, and failure-only
 branches cannot move to a different diagnostic substage.
 The extracted writable-mount audit includes the real isolated failure handler:
 allowed private mounts pass and an unexpected writable target returns 82.
+Candidate stage writes and exit arms agree with the registered host mapping;
+the host failure continuation always maps its detail before printing and exiting.
 
 ### Negative control
 
@@ -113,6 +132,11 @@ This pins failure attribution with actual execution, not only source ordering.
 Omitting the handler from the writable-mount fixture reproduces the old
 command-not-found exit 127; restoring the production handler returns its
 reserved mount-audit status 82 instead.
+Removing only the new diagnostic phase check reproduces the candidate
+code/assignment and host-order bypasses in both production consumers. Keeping
+it rejects those same canonical-payload mutations. The real make and ERR-trap
+controls above pin the observable wrong/missing diagnostic independently of
+source spelling, command counts or stored shell identities.
 
 The canonical post-check also rejects real file deletions, extra names,
 symlinks/hardlinks/directories, changed ownership/modes, short targets and

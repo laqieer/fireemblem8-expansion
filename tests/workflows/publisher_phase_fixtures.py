@@ -1,6 +1,10 @@
 """Shared phase mutations; edits select already-authorized parsed command spans."""
 
+from contextlib import contextmanager
+from unittest import mock
+
 from scripts.workflow_pilot import publisher_inventory as authority
+from scripts.workflow_pilot import publisher_shell as shell
 from scripts.workflow_pilot import publisher_shell_contract as contract
 from tests.workflows import publisher_inventory_fixtures as inventory
 
@@ -141,6 +145,170 @@ def producer_workflows(workflow):
          r"""printf 'candidate build failed: stage=isolated exit=%d\n' "$builder_status" >&2"""),
     ):
         yield case, inventory.replace_step(workflow, name, replace_statement(key, replacement))
+
+
+@contextmanager
+def captured_programs(workflow):
+    """Model a changed committed payload, not a dirty text/canonical mismatch."""
+    reader = authority.authority_source_bytes
+    with mock.patch.object(
+        authority, "authority_source_bytes",
+        side_effect=lambda path: workflow.encode() if path == authority.WORKFLOW_PATH else reader(path),
+    ):
+        yield
+
+
+def candidate_script(workflow):
+    source = contract.publisher_run_script(workflow)
+    bodies = [
+        redirect.body for chain in shell.parse(source).items for node in chain.nodes
+        if isinstance(node, shell.Command)
+        for redirect in node.redirects
+        if redirect.operator == "<<" and redirect.target.literal == "CANDIDATE_BUILD"
+    ]
+    body, = bodies
+    return body
+
+
+def replace_candidate(workflow, body):
+    source = contract.publisher_run_script(workflow)
+    original = candidate_script(workflow)
+    assert source.count(original) == 1
+    return inventory.replace_step(
+        workflow, "Build candidate in isolated namespace and stage public inputs",
+        source.replace(original, body, 1),
+    )
+
+
+def root_commands(source):
+    return [
+        node for chain in shell.parse(source).items for node in chain.nodes
+        if isinstance(node, shell.Command)
+    ]
+
+
+def move_lines(source, node, position):
+    start = source.rfind("\n", 0, node.offset) + 1
+    end = source.index("\n", node.end) + 1
+    edits = ((start, end, ""), (position, position, source[start:end]))
+    for left, right, replacement in sorted(edits, reverse=True):
+        source = source[:left] + replacement + source[right:]
+    return source
+
+
+def host_failure_script(workflow):
+    source = contract.publisher_run_script(workflow)
+    start = source.index('if [ "$builder_status" -ne 0 ]; then')
+    end = source.index("printf 'candidate build status: success", start)
+    return source[start:end]
+
+
+def diagnostic_workflows(workflow):
+    body = candidate_script(workflow)
+    stages = ("preflight", "venv", "pip", "build-tools", "make", "handoff")
+    commands = root_commands(body)
+    yield "candidate-exits-make-preflight", replace_candidate(
+        workflow, body.replace("preflight) exit 71", "preflight) exit 75").replace(
+            "make) exit 75", "make) exit 71",
+        ),
+    )
+    yield "candidate-assignments-make-preflight", replace_candidate(
+        workflow, body.replace("candidate_stage=preflight\n", "candidate_stage=placeholder\n").replace(
+            "candidate_stage=make\n", "candidate_stage=preflight\n",
+        ).replace("candidate_stage=placeholder\n", "candidate_stage=make\n"),
+    )
+    for index, stage in enumerate(stages):
+        following = stages[(index + 1) % len(stages)]
+        status, next_status = 71 + index, 71 + (index + 1) % len(stages)
+        changed = body.replace(f"{stage}) exit {status}", f"{stage}) exit {next_status}")
+        changed = changed.replace(f"{following}) exit {next_status}", f"{following}) exit {status}")
+        yield "candidate-exits-" + stage, replace_candidate(workflow, changed)
+        yield "candidate-assignment-" + stage, replace_candidate(
+            workflow, body.replace(f"candidate_stage={stage}\n", f"candidate_stage={following}\n"),
+        )
+        assignment = next(
+            node for node in commands
+            if any(word.literal == f"candidate_stage={stage}" for word in node.environment)
+        )
+        action = next(
+            node for node in commands if node.offset > assignment.offset and node.argv
+            and node.argv[0].literal != "trap"
+        )
+        yield "late-assignment-" + stage, replace_candidate(
+            workflow, move_lines(body, assignment, body.index("\n", action.end) + 1),
+        )
+    yield "candidate-default-exit", replace_candidate(workflow, body.replace("*) exit 77", "*) exit 71"))
+    yield "candidate-literal-default", replace_candidate(workflow, body.replace("*) exit 77", "'*') exit 77"))
+    first_arm = "    preflight) exit 71 ;;\n"
+    last_arm = "    *) exit 77 ;;\n"
+    yield "candidate-early-default", replace_candidate(
+        workflow, body.replace(last_arm, "").replace(first_arm, last_arm + first_arm),
+    )
+    yield "candidate-conditional-assignment", replace_candidate(
+        workflow, body.replace("candidate_stage=make\n", "if true; then candidate_stage=make; fi\n"),
+    )
+    yield "candidate-background-make", replace_candidate(
+        workflow, body.replace("make expansion-modern-map-menu-presentation-check -j1\n",
+                               "make expansion-modern-map-menu-presentation-check -j1 &\n"),
+    )
+    yield "candidate-conditional-make", replace_candidate(
+        workflow, body.replace("make expansion-modern-map-menu-presentation-check -j1\n",
+                               "if true; then make expansion-modern-map-menu-presentation-check -j1; fi\n"),
+    )
+    yield "candidate-hidden-make-helper", replace_candidate(
+        workflow, body.replace("candidate_stage=make\n",
+                               "hidden_build() { make expansion-modern-map-menu-presentation-check -j1; }\n"
+                               "hidden_build\ncandidate_stage=make\n"),
+    )
+    yield "candidate-wrong-trap", replace_candidate(
+        workflow, body.replace("trap candidate_stage_failure ERR", "trap candidate_stage_failure EXIT"),
+    )
+    yield "candidate-errexit-disabled", replace_candidate(
+        workflow, body.replace("set -Eeuo pipefail", "set -Euo pipefail"),
+    )
+    source = contract.publisher_run_script(workflow)
+    analysis = authority.reviewed_inventory().validate(source, entry_scope="staging")
+    root = [item for item in analysis.commands if not item.nested and item.scope == "staging"]
+    diagnostic = next(item.command for item in root if item.signature.name == "staging.command-125")
+    guard = next(item.command for item in root if item.signature.name == "staging.command-124")
+    exit_node = next(
+        item.command for item in root if item.signature.name == "staging.command-111"
+        and item.command.offset > guard.offset
+    )
+    mapping = source.rfind("\n", 0, source.index('case "$builder_status" in', guard.end)) + 1
+    diagnostic_start = source.rfind("\n", 0, diagnostic.offset) + 1
+    for name, node, position in (
+        ("host-diagnostic-before-map", diagnostic, mapping),
+        ("host-exit-before-map", exit_node, mapping),
+        ("host-exit-before-diagnostic", exit_node, diagnostic_start),
+    ):
+        yield name, inventory.replace_step(
+            workflow, "Build candidate in isolated namespace and stage public inputs",
+            move_lines(source, node, position),
+        )
+
+
+def diagnostic_spelling_control(workflow):
+    body = candidate_script(workflow)
+    body = body.replace("candidate_stage_failure", "report_candidate_failure")
+    body = body.replace("candidate_stage", "failure_phase")
+    for stage in ("preflight", "venv", "pip", "build-tools", "make", "handoff"):
+        body = body.replace("failure_phase=" + stage, "failure_phase='" + stage + "'")
+    body = body.replace("trap report_candidate_failure ERR", "trap 'report_candidate_failure' 'ERR'")
+    body = body.replace("trap 'report_candidate_failure' 'ERR'\n",
+                        "trap 'report_candidate_failure' 'ERR'\nprintf '%s\\n' failure_phase=debug\n")
+    body = body.replace('case "$failure_phase" in', 'case "${failure_phase}" in')
+    body = body.replace(
+        "    preflight) exit 71 ;;\n    venv) exit 72 ;;",
+        "    'venv') exit '72' ;;\n    'preflight') exit '71' ;;",
+    )
+    body = body.replace("make expansion-modern", "'make' expansion-modern")
+    installations = [
+        node for node in root_commands(body)
+        if node.argv and node.argv[0].literal == "/usr/bin/install"
+    ]
+    body = move_lines(body, installations[1], installations[0].offset)
+    return replace_candidate(workflow, body)
 
 
 INVENTORY_CONTEXT_CASES = frozenset({

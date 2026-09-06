@@ -9,7 +9,7 @@ authenticate their real parent/session and inspect kernel/filesystem state.
 from __future__ import annotations
 
 from collections import Counter
-from dataclasses import dataclass
+from dataclasses import dataclass, fields, is_dataclass
 from enum import Enum
 
 from . import publisher_shell as shell
@@ -20,6 +20,7 @@ from .publisher_inventory import (
 
 
 CASE_ID = "TC-WORKFLOW-PUBLISHER-PHASE-001"
+CANDIDATE_STAGES = ("preflight", "venv", "pip", "build-tools", "make", "handoff")
 
 
 class Phase(str, Enum):
@@ -50,6 +51,252 @@ def _require(condition: bool, reason: str) -> None:
 
 def _context(kind: str, identity: str, branch: str = "") -> Context:
     return Context(kind, "builder_main." + identity, branch)
+
+
+def _nodes(block: shell.Block) -> tuple:
+    _require(block is not None, "missing mandatory control body")
+    result = []
+    for chain in block.items:
+        _require(
+            not chain.background and not chain.operators and len(chain.nodes) == 1,
+            "mandatory block has an execution operator",
+        )
+        result.append(chain.nodes[0])
+    return tuple(result)
+
+
+def _walk(value):
+    yield value
+    if is_dataclass(value):
+        for field in fields(value):
+            yield from _walk(getattr(value, field.name))
+    elif isinstance(value, tuple):
+        for item in value:
+            yield from _walk(item)
+
+
+def _literal_command(node, *arguments):
+    return (
+        isinstance(node, shell.Command) and not node.environment
+        and not node.redirects and not node.conditional
+        and tuple(word.literal for word in node.argv) == arguments
+    )
+
+
+def _candidate_codes() -> dict[str, int]:
+    registry = reviewed_inventory()
+    control, = (c for c in registry.controls if c.name == "staging.isolated-result")
+    result = {}
+    for signature in registry.signatures:
+        if not signature.name.startswith("staging.isolated-candidate-"):
+            continue
+        placement, = signature.placements
+        context, = (c for c in placement.context if c.kind == "case" and c.identity == control.name)
+        pattern, = control.header[2][int(context.branch)]
+        result[signature.name.removeprefix("staging.isolated-candidate-")] = int(pattern.literal)
+    _require(set(result) == set(CANDIDATE_STAGES) | {"unknown"}, "incomplete candidate diagnostic contract")
+    return result
+
+
+def _candidate_operation(command: shell.Command) -> str | None:
+    """Identify phase effects, not a second command/argument permission list."""
+    if not command.argv:
+        return None
+    executable = command.argv[0].literal
+    arguments = tuple(word.literal for word in command.argv[1:])
+    if executable == "/usr/bin/python3":
+        if arguments[:2] == ("-m", "venv"):
+            return "venv"
+        if arguments[:3] == ("-I", "-S", "-c"):
+            return "fd-check"
+    if (
+        command.argv[0] == shell.command('run "$HOME/venv/bin/python3"').argv[1]
+        and arguments[:3] == ("-m", "pip", "install")
+    ):
+        return "pip"
+    return {
+        "test": "check", "cd": "chdir", "./build_tools.sh": "build-tools",
+        "make": "make", "/usr/bin/make": "make", "/usr/bin/install": "handoff",
+    }.get(executable)
+
+
+def _candidate_program(source: str) -> None:
+    """Prove stage dataflow within the authority's canonical, data-only payload."""
+    tree = shell.parse(source)
+    root = _nodes(tree)
+    commands = tuple(node for node in _walk(tree) if isinstance(node, shell.Command))
+    root_commands = tuple(node for node in root if isinstance(node, shell.Command))
+    traps = tuple(node for node in commands if node.argv and node.argv[0].literal == "trap")
+    armed = tuple(node for node in root_commands if node in traps)
+    _require(len(armed) == 1 and len(armed[0].argv) == 3, "candidate ERR callback is not unique")
+    trap = armed[0]
+    handler_name = trap.argv[1].literal
+    _require(_literal_command(trap, "trap", handler_name, "ERR"), "candidate ERR callback differs")
+    definitions = tuple(
+        node for node in _walk(tree) if isinstance(node, shell.Function) and node.name == handler_name
+    )
+    _require(len(definitions) == 1 and definitions[0] in root, "candidate callback is not a root definition")
+    handler = definitions[0]
+    body = _nodes(handler.body)
+    _require(
+        len(body) == 2 and _literal_command(body[0], "trap", "-", "ERR")
+        and isinstance(body[1], shell.Case) and len(traps) == 2,
+        "candidate callback must disable recursion and select one fixed exit",
+    )
+    case = body[1]
+    _require(
+        len(case.subject.parts) == 1 and case.subject.parts[0].kind == "parameter",
+        "candidate callback must read its stage variable",
+    )
+    variable = case.subject.parts[0].value
+    expected = _candidate_codes()
+    wildcard = shell.command("pattern *").argv[1]
+    labels = []
+    for arm in case.arms:
+        _require(len(arm.patterns) == 1, "candidate exit stages must be disjoint")
+        label = "*" if arm.patterns[0] == wildcard else arm.patterns[0].literal
+        _require(label in set(CANDIDATE_STAGES) | {"*"}, "unknown candidate exit stage")
+        labels.append(label)
+        exits = _nodes(arm.body)
+        _require(
+            len(exits) == 1 and _literal_command(
+                exits[0], "exit", str(expected["unknown" if label == "*" else label]),
+            ),
+            "candidate stage-to-exit mapping differs from the registered host diagnostic",
+        )
+    _require(
+        len(labels) == len(expected) and set(labels) == set(CANDIDATE_STAGES) | {"*"}
+        and labels[-1] == "*" and case.arms[-1].patterns[0] == wildcard,
+        "candidate unknown-stage exit must be the final unconditional fallback",
+    )
+    writes = []
+    for node in commands:
+        assignment_words = node.environment
+        if node.argv and node.argv[0].literal in {"declare", "export", "local", "readonly", "typeset"}:
+            assignment_words += node.argv[1:]
+        if any(word.assignment == variable for word in assignment_words):
+            writes.append(node)
+    root_writes = tuple(node for node in root_commands if any(node is item for item in writes))
+    _require(len(writes) == len(root_writes), "candidate stage write escaped its foreground root frame")
+    stages = {}
+    for node in root_writes:
+        _require(
+            len(node.environment) == 1 and not node.argv and not node.redirects
+            and not node.conditional and node.environment[0].literal is not None,
+            "candidate stage must be one literal standalone assignment",
+        )
+        stages[id(node)] = node.environment[0].literal.partition("=")[2]
+    _require(tuple(stages.values()) == CANDIDATE_STAGES, "candidate stage assignments are missing or reordered")
+    _require(
+        all(not isinstance(node, shell.For) or node.variable != variable for node in _walk(tree)),
+        "candidate loop overwrites the diagnostic stage",
+    )
+    _require(
+        len(root_commands) >= 4 and _literal_command(root_commands[0], "set", "-Eeuo", "pipefail")
+        and _literal_command(root_commands[1], "umask", "077")
+        and stages.get(id(root_commands[2])) == "preflight" and root_commands[3] is trap
+        and root.index(handler) < root.index(trap),
+        "candidate strict mode, initial stage and defined ERR callback must dominate execution",
+    )
+    _require(
+        sum(bool(node.argv and node.argv[0].literal == "set") for node in commands) == 1,
+        "candidate strict error handling changes during execution",
+    )
+    expected_stage = {
+        "fd-check": "preflight", "check": "preflight", "venv": "venv",
+        "pip": "pip", "chdir": "pip", "build-tools": "build-tools",
+        "make": "make", "handoff": "handoff",
+    }
+    observed = Counter()
+    accounted = set()
+    stage = None
+    for node in root:
+        if isinstance(node, shell.Function):
+            continue
+        if id(node) in stages:
+            stage = stages[id(node)]
+            continue
+        if any(node is prelude for prelude in root_commands[:4]):
+            continue
+        for command in (item for item in _walk(node) if isinstance(item, shell.Command)):
+            operation = _candidate_operation(command)
+            if operation is None:
+                _require(
+                    not command.argv or command.argv[0].literal not in {"exit", "return", "exec", "trap"},
+                    "candidate execution terminates or replaces its diagnostic callback early",
+                )
+                continue
+            _require(stage == expected_stage[operation], "candidate operation is outside its diagnostic stage")
+            _require(
+                operation == "check" or command is node,
+                "candidate phase operation is conditional, asynchronous or in the wrong frame",
+            )
+            observed[operation] += 1
+            accounted.add(id(command))
+    _require(
+        accounted == {id(node) for node in commands if _candidate_operation(node) is not None},
+        "candidate phase operation is hidden in a helper or callback",
+    )
+    _require(observed.pop("check", 0) > 0, "candidate preflight checks are missing")
+    _require(
+        observed == Counter({
+            "fd-check": 1, "venv": 1, "pip": 1, "chdir": 1,
+            "build-tools": 1, "make": 1, "handoff": 2,
+        }),
+        "candidate diagnostic operations are missing or duplicated",
+    )
+
+
+def validate_producer(analysis: Analysis) -> None:
+    """Bind canonical candidate diagnostics and the host failure continuation."""
+    commands = {
+        id(item.command): item for item in analysis.commands
+        if not item.nested and item.scope == "staging"
+    }
+    events = tuple(event for event in analysis.events if id(event.command) in commands)
+    for event in events:
+        item = commands[id(event.command)]
+        _require(
+            event.signature == item.signature.name and event.kind in item.signature.events
+            and event.context == item.context and event.scope == item.scope
+            and event.accesses == item.signature.accesses and event.call_stack == (),
+            "diagnostic event is not from the authorized staging frame",
+        )
+    _require(
+        Counter((id(event.command), event.kind) for event in events)
+        == Counter((identity, kind) for identity, item in commands.items() for kind in item.signature.events),
+        "missing or repeated staging diagnostic event",
+    )
+    payloads = [
+        redirect for item in commands.values()
+        if any(payload.delimiter == "CANDIDATE_BUILD" and payload.language == "shell"
+               for payload in item.signature.payloads)
+        for redirect in item.command.redirects if redirect.target.literal == "CANDIDATE_BUILD"
+    ]
+    _require(len(payloads) == 1 and isinstance(payloads[0].body, str), "missing canonical candidate phase payload")
+    _candidate_program(payloads[0].body)
+
+    controls = {control.name: control for control in reviewed_inventory().controls}
+    guards = [
+        node for chain in analysis.tree.items for node in chain.nodes
+        if isinstance(node, shell.If) and control_header(node) == controls["staging.control-19"].header
+    ]
+    _require(len(guards) == 1 and guards[0].failure is None, "host result guard differs")
+    sequence = _nodes(guards[0].success)
+    _require(
+        len(sequence) == 3 and isinstance(sequence[0], shell.Case)
+        and control_header(sequence[0]) == controls["staging.isolated-result"].header
+        and all(isinstance(node, shell.Command) and id(node) in commands for node in sequence[1:])
+        and tuple(commands[id(node)].signature.name for node in sequence[1:])
+        == ("staging.command-125", "staging.command-111"),
+        "host failure must map its detail, emit the fixed diagnostic, then exit",
+    )
+    positions = {id(event.command): index for index, event in enumerate(events)}
+    mapping = [positions[id(node)] for node in _walk(sequence[0]) if isinstance(node, shell.Command)]
+    _require(
+        mapping and max(mapping) < positions[id(sequence[1])] < positions[id(sequence[2])],
+        "host diagnostic events are reordered before mapping or after exit",
+    )
 
 
 def _frames(analysis: Analysis) -> None:
@@ -118,20 +365,9 @@ def _structure(analysis: Analysis) -> None:
     commands = {id(item.command): item for item in analysis.commands if not item.nested}
     controls = {(c.scope, c.header): c.name for c in reviewed_inventory().controls}
 
-    def nodes(block: shell.Block) -> tuple:
-        _require(block is not None, "missing mandatory control body")
-        result = []
-        for chain in block.items:
-            _require(
-                not chain.background and not chain.operators and len(chain.nodes) == 1,
-                "mandatory block has an execution operator",
-            )
-            result.append(chain.nodes[0])
-        return tuple(result)
-
     def names(block: shell.Block) -> tuple[str, ...]:
         result = []
-        for node in nodes(block):
+        for node in _nodes(block):
             _require(isinstance(node, shell.Command) and id(node) in commands, "expected exact foreground command")
             result.append(commands[id(node)].signature.name)
         return tuple(result)
@@ -141,7 +377,7 @@ def _structure(analysis: Analysis) -> None:
         _require(result is not None, "unregistered control frame")
         return result
 
-    entry = nodes(analysis.tree)
+    entry = _nodes(analysis.tree)
     _require(
         len(entry) == 2 and isinstance(entry[0], shell.Function)
         and entry[0].name == "builder_main"
@@ -149,7 +385,7 @@ def _structure(analysis: Analysis) -> None:
         and commands[id(entry[1])].signature.name == "entry.invoke",
         "builder must be called exactly once as a foreground entry, not as a condition",
     )
-    main_nodes = nodes(entry[0].body)
+    main_nodes = _nodes(entry[0].body)
     units = []
     definitions = {}
     for node in main_nodes:
@@ -192,7 +428,7 @@ def _structure(analysis: Analysis) -> None:
     result = units[launch_index + 1][1]
     _require(isinstance(result, shell.If) and result.failure is None, "candidate result guard differs")
     _require(names(result.condition) == ("builder_main.candidate-failed",), "wrong process result")
-    failed_nodes = nodes(result.success)
+    failed_nodes = _nodes(result.success)
     _require(
         len(failed_nodes) == 1 and isinstance(failed_nodes[0], shell.Case)
         and control_name(failed_nodes[0]) == "builder_main.candidate-failure",
@@ -205,7 +441,7 @@ def _structure(analysis: Analysis) -> None:
         ),
         "candidate failure exits are missing or reordered",
     )
-    stage_nodes = nodes(definitions["isolated_stage_failure"].body)
+    stage_nodes = _nodes(definitions["isolated_stage_failure"].body)
     _require(
         len(stage_nodes) == 1 and isinstance(stage_nodes[0], shell.Case)
         and control_name(stage_nodes[0], "isolated_stage_failure") == "isolated_stage_failure.result",

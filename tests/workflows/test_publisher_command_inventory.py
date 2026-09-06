@@ -659,6 +659,29 @@ class PublisherExactTreeTests(unittest.TestCase):
                 self.assertNotIn(b"authority differs from exact tree", completed.stderr)
                 self.assertNotIn(b"raw identity", completed.stderr)
 
+    def test_real_cli_rejects_candidate_and_host_diagnostic_mutations(self):
+        path = self.directory / authority.WORKFLOW_PATH
+        original = path.read_text()
+        selected = {
+            "candidate-exits-make-preflight", "candidate-assignments-make-preflight",
+            "late-assignment-handoff", "candidate-literal-default",
+            "host-diagnostic-before-map", "host-exit-before-map", "host-exit-before-diagnostic",
+        }
+        witnessed = set()
+        for name, changed in phase_fixtures.diagnostic_workflows(original):
+            if name not in selected:
+                continue
+            with self.subTest(mutation=name):
+                path.write_text(changed)
+                self.snapshot()
+                completed = self.cli()
+                self.assertEqual(completed.returncode, 1, completed.stderr)
+                self.assertIn(b"publisher phase:", completed.stderr)
+                self.assertNotIn(b"authority differs from exact tree", completed.stderr)
+                self.assertNotIn(b"canonical program differs", completed.stderr)
+                witnessed.add(name)
+        self.assertEqual(witnessed, selected)
+
     def test_real_cli_enforces_dynamic_import_set_not_call_spelling(self):
         package = self.directory / "scripts/workflow_pilot/__init__.py"
         original = package.read_text()
