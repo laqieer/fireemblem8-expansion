@@ -1000,6 +1000,8 @@ class TesterCaseRegistryTests(unittest.TestCase):
                         "commands": {
                             "build/host-python/bin/python3 -I -m unittest discover "
                             "-s scripts/workflow_pilot/tests -t . -p 'test_*review*.py' -v",
+                            "python3 -m unittest "
+                            "scripts.workflow_pilot.tests.arm_review_subjects -v",
                         },
                     },
                     "TC-WORKFLOW-WORKTREE-CLEANUP-001": {

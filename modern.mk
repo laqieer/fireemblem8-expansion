@@ -4737,6 +4737,7 @@ expansion-modern-linker-check: expansion-modern-budget-check \
 		expansion-modern-localization-runtime-prefs-check \
 		expansion-modern-localization-runtime-save-check \
 		expansion-modern-localization-runtime-shifted-check
+	"$(PYTHON)" -m unittest scripts.workflow_pilot.tests.arm_review_subjects -v
 	"$(PYTHON)" scripts/shiftcheck/scan_build_addrs.py \
 		--makefile Makefile \
 		--ldscript "$(MODERN_CLEAN_LDSCRIPT)" \

@@ -120,7 +120,8 @@ the consumers' independent protected-principal/deployment requirements.
 - **Feature / originating issue:** `workflow-governance` /
   [issue #179](https://github.com/laqieer/fireemblem8-expansion/issues/179).
 - **Supported configuration:** source checkout, the existing #216 locked
-  CPython 3.12 host environment, Git, native GCC and ARM GCC/binutils.
+  CPython 3.12 host environment, Git and native GCC for host coverage; the
+  existing modern Build lane's ARM GCC/binutils for mandatory object positives.
 - **Prerequisites and starting state:** run from the repository root. Follow
   the [existing host setup](../workflow-pilot.md#isolated-host-python-dependencies)
   if needed. Tests create only owned source copies/Git histories below
@@ -136,10 +137,24 @@ the consumers' independent protected-principal/deployment requirements.
      -s scripts/workflow_pilot/tests -t . -p 'test_*review*.py' -v
    ```
 
-2. Inspect the actual AoE controls: every public item phase, typed route checks,
+2. With `/usr/bin/arm-none-eabi-gcc`, `/usr/bin/arm-none-eabi-nm` and
+   `/usr/bin/arm-none-eabi-size` installed, run the separate ARM-positive selector:
+
+   ```bash
+   python3 -m unittest scripts.workflow_pilot.tests.arm_review_subjects -v
+   ```
+
+   The existing `expansion-modern-linker-check` recipe also runs this selector
+   in both modern Build configurations, without a new workflow job or verifier
+   gate. Missing tools fail rather than skip. The host reporter suite needs no
+   ARM installation and retains all native/source-backed family coverage;
+   its parsed Make contract verifies that both configurations retain the
+   mandatory ARM selector.
+   Inspect the actual AoE controls: every public item phase, typed route checks,
    each shape and bounded/stable target behavior runs its selected native
    driver group. Enabled and disabled reference drivers and ARM object
-   symbols/sections pass. Remove the real AI_NEVER rejection in an owned
+   symbols/sections pass in their respective profiles, including formatting-only
+   source changes. Remove the real AI_NEVER rejection in an owned
    origin commit; the same probe fails before and passes restored source.
 3. Inspect the unrelated generated-eventlist controls: resolve actual schema
    owners, validate authored references, generate and parse C output, compare
@@ -156,7 +171,13 @@ the consumers' independent protected-principal/deployment requirements.
    unknown cases/members/probes, wrong subjects/heads/tool revisions and
    unrelated all-pass evidence. Every incomplete handoff rejects.
 6. Make compilation/import unavailable and provide zero/skipped/unknown probe
-   results. None can count as an affected-fixed negative control. Preserve
+   results. The owned missing-compiler fixture changes only its private tool
+   revision's compiler path to a nonexistent file: native checks still pass,
+   enabled/disabled object observations are `unavailable` with zero checks,
+   and both those observations and their omission reject handoff. No system
+   compiler or global environment is changed. A passing host regression proves
+   honest unavailability, not satisfied ARM obligations.
+   None can count as an affected-fixed negative control. Preserve
    the distinction between actual native, parsed, host and ARM object evidence;
    no group or whole-suite result can masquerade as a ROM scenario.
 7. Exercise the existing task adapter's bounded read-only role and actual

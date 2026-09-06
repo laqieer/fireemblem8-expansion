@@ -9,15 +9,17 @@ if __package__ in (None, ""):
 import copy
 from dataclasses import replace
 import json
+import shlex
 import subprocess
 import unittest
 from unittest.mock import patch
 
+from scripts.modernize.tests.make_database import make_database_rule
 from scripts.workflow_pilot.trusted_review_gate import GitTree, ReviewTools
 from scripts.workflow_pilot.tests.review_support import ROOT, ENV, git, request, snapshot
 
 
-class SubjectTests(unittest.TestCase):
+class SubjectTestCase(unittest.TestCase):
     maxDiff = None
     @classmethod
     def setUpClass(cls):
@@ -53,18 +55,83 @@ class SubjectTests(unittest.TestCase):
         self.assertEqual(bad, [])
         self.assertTrue(all(item.checks > 0 for item in observations))
 
+
+class SubjectTests(SubjectTestCase):
+    @staticmethod
+    def host_members(members):
+        return tuple(item for item in members if not item.probe.startswith("aoe-arm:"))
+
     def test_two_unrelated_production_subjects_and_all_five_families(self):
         families = set()
         for kind in ("aoe", "generated", "session"):
             with self.subTest(subject=kind):
                 members = self.tools.members(self.scope(kind))
-                families.update(item.family for item in members)
-                observations = self.run_members(members, self.repo.base)
+                observations = self.run_members(self.host_members(members), self.repo.base)
                 self.assert_satisfied(observations)
+                families.update(item.obligation.family for item in observations)
                 self.assertEqual({item.kind for item in observations},
-                                 {"native", "arm-object"} if kind == "aoe"
+                                 {"native"} if kind == "aoe"
                                  else {"parsed"} if kind == "generated" else {"host"})
         self.assertEqual(families, set(self.model.FAMILIES))
+
+    def test_missing_arm_compiler_is_unavailable_and_cannot_admit_handoff(self):
+        path = "scripts/workflow_pilot/review_subjects.py"
+        source = (self.repo.root / path).read_text()
+        missing = self.repo.root / "build" / "uninstalled-arm-none-eabi-gcc"
+        self.assertFalse(missing.exists())
+        compiler = '"/usr/bin/arm-none-eabi-gcc"'
+        self.assertEqual(source.count(compiler), 1)
+        revision = self.repo.commit({path: source.replace(compiler, repr(str(missing)))})
+        tools = ReviewTools(GitTree(self.repo.root, revision), self.repo.root)
+        data = self.scope("aoe")
+        members = tools.members(data)
+        observations = tools.run_obligations(members, self.repo.base)
+        native = tuple(item for item in observations if item.kind == "native")
+        self.assert_satisfied(native)
+        self.assertEqual(len(native), len(self.host_members(members)))
+        arm = tuple(item for item in observations if item.kind == "arm-object")
+        self.assertEqual(
+            {(item.obligation.member, item.verdict, item.checks) for item in arm},
+            {("enabled:objects", "unavailable", 0), ("disabled:objects", "unavailable", 0)})
+        for item in arm:
+            self.assertIn("FileNotFoundError", item.detail)
+            self.assertIn(str(missing), item.detail)
+        model = tools.model
+        session = model.ReviewSession(
+            "coordinator", "implementer",
+            frozenset({model.subject_key(data["subjects"][0])}), self.repo.base,
+            identity=("owner/repo", 1, self.repo.base))
+        for evidence, error in (
+            (observations, "candidate obligation failed"),
+            (native, "missing or wrong member evidence"),
+        ):
+            with self.subTest(evidence_count=len(evidence)):
+                with self.assertRaisesRegex(ValueError, error):
+                    model.assess_handoff(
+                        data, members, evidence, session, tool_revision=revision,
+                        remote_reviews=(), triage=(), pre_review_required=False)
+
+    def test_modern_linker_recipe_runs_mandatory_arm_positives(self):
+        toolchain = self.repo.root / "uninstalled-arm-toolchain"
+        self.assertFalse(toolchain.exists())
+        for config in ("debug", "release"):
+            with self.subTest(config=config):
+                completed = subprocess.run(
+                    ["make", "--no-print-directory", "-rR", "-n", "-p",
+                     "MODERN_CONFIG=" + config, "MODERN_ABI=aapcs",
+                     "MODERN_TOOLCHAIN_ROOT=" + str(toolchain),
+                     "__issue179_review_profile_probe__"],
+                    cwd=ROOT, env=ENV, capture_output=True, text=True, timeout=60)
+                self.assertNotEqual(completed.returncode, 0)
+                rule = make_database_rule(completed.stdout, "expansion-modern-linker-check")
+                self.assertIsNotNone(rule, completed.stderr)
+                commands = [shlex.split(line.lstrip("\t").lstrip("@+"))
+                            for line in rule.replace("\\\n", " ").splitlines()
+                            if line.startswith("\t")]
+                self.assertIn(
+                    ["$(PYTHON)", "-m", "unittest",
+                     "scripts.workflow_pilot.tests.arm_review_subjects", "-v"],
+                    commands)
 
     def remediation(self, kind, path, broken, member):
         original = (self.repo.root / path).read_bytes()
@@ -221,7 +288,7 @@ class SubjectTests(unittest.TestCase):
         source = (self.repo.root / path).read_text()
         revision = self.repo.commit({path: "/* Formatting-only review control. */\n" + source})
         members = self.tools.members(self.scope("aoe", revision), (self.repo.base,))
-        self.assert_satisfied(self.run_members(members, revision))
+        self.assert_satisfied(self.run_members(self.host_members(members), revision))
 
     def test_selected_git_objects_modes_and_bytes_are_checked(self):
         path = "include/expansion_aoe.h"

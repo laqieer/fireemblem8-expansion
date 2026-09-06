@@ -2182,10 +2182,10 @@
       "issue_urls": ["https://github.com/laqieer/fireemblem8-expansion/issues/179"],
       "document": "docs/test-cases/workflow-governance.md",
       "anchor": "tc-workflow-review-family-001-expand-valid-findings-across-complete-sibling-families",
-      "profiles": ["Source checkout with the isolated #216 host interpreter, Git, native GCC and ARM binutils"],
+      "profiles": ["Host-only source checkout with the isolated #216 host interpreter, Git and native GCC", "Modern Build lane with ARM GCC/binutils for mandatory ARM-object positives"],
       "purpose": "Bind actual reviewed subjects to complete finite sibling obligations and trusted execution observations, preserving bounded remediation and sticky architecture holds.",
-      "prerequisites": "Use the existing locked host environment. Tests own source-backed Git fixtures under build/ and need no credentials, live PR, ROM, emulator or protected installation.",
-      "actions": "Run the focused review suites. Execute real AoE native/ARM and generated-eventlist controls, all five families, wrong-source/missing/unknown/stale evidence, existing runtime role boundaries, exact-source CLI loading and first/second/third-round transitions.",
+      "prerequisites": "Use the existing locked host environment for host tests; the separate ARM selector requires /usr/bin/arm-none-eabi-gcc, nm and size from the modern toolchain. Tests own source-backed Git fixtures under build/ and need no credentials, live PR, ROM or emulator.",
+      "actions": "Run the focused host review suites and explicit arm_review_subjects selector. Execute real AoE native/ARM and generated-eventlist controls, all five families, missing-compiler handoff rejection, wrong-source/missing/unknown/stale evidence, existing runtime role boundaries, exact-source CLI loading and first/second/third-round transitions.",
       "expected_result": "The same reviewed probes detect actual broken origin code/data and pass corrected subjects. Every expected member is recorded. Third-round holds survive later heads and clean reports until bound coordinator disposition.",
       "negative_control": "Missing siblings after the reported fix, added/deleted/unknown members, duplicate ownership, wrong task/head/source, fabricated pass labels, compile/import/zero/skipped tests, stale triage and undisposed holds cannot establish eligibility.",
       "interactions": "Depends on #176 metrics, existing Git/GitHub/task/test interfaces and #216 locked schema dependencies; #181 depends on it. #178 is independent. #204 is not a dependency. Preserve #207 immediate assigned-branch WIP persistence and #208 cleanup.",
@@ -2196,6 +2196,10 @@
         {
           "command": "build/host-python/bin/python3 -I -m unittest discover -s scripts/workflow_pilot/tests -t . -p 'test_*review*.py' -v",
           "evidence": "scripts/workflow_pilot/tests/test_review_subjects.py"
+        },
+        {
+          "command": "python3 -m unittest scripts.workflow_pilot.tests.arm_review_subjects -v",
+          "evidence": "scripts/workflow_pilot/tests/arm_review_subjects.py"
         }
       ]
     },
