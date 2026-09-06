@@ -28,7 +28,7 @@ LIBC = ctypes.CDLL(None, use_errno=True)
 LIBC.ptrace.restype = ctypes.c_long
 WALL = 0x40000000
 TRACEME, PEEKDATA, SYSCALL, GETREGS, SETREGS, SETOPTIONS = 0, 2, 24, 12, 13, 0x4200
-OPTIONS = 1 | 2 | 4 | 8 | 16 | 0x100000  # syscall/fork/vfork/clone/exec/exitkill
+OPTIONS = 1 | 2 | 4 | 8 | 16 | 32 | 0x100000  # syscall/fork/vfork/clone/exec/vforkdone/exitkill
 PROT_READ, PROT_WRITE, PROT_EXEC = 1, 2, 4
 MAP_SHARED, MAP_PRIVATE, MAP_SHARED_VALIDATE = 1, 2, 3
 MAP_ANONYMOUS = 0x20
@@ -39,6 +39,7 @@ VO_READY, VO_DISPATCH, VO_QUERY_KIND = (
     0x564F4D4B00000001, 0x564F4D4B00000002, 0x564F4D4B00000003,
 )
 VO_RECIPE, VO_VALUE = 0x564F4D4B00000011, 0x564F4D4B00000012
+STACK_LIMIT = 16 * 1024 * 1024
 
 
 class Violation(RuntimeError):
@@ -127,13 +128,23 @@ class Process:
     dispatch: tuple | None = None
     helper_kind: int = 0
     observer_ready: bool = False
+    memory_group: int = 0
+    memory_limit: int = 0
+    clone_shares_vm: bool = False
+    pidfd: int = -1
 
     def clone(self):
         return Process(
-            self.role, self.cwd, dict(self.fds), False, None,
-            self.observer_ranges, self.bootstrap, 0, self.break_end,
-            self.dispatch, 0, self.observer_ready,
+            role=self.role, cwd=self.cwd, fds=dict(self.fds), entering=False,
+            observer_ranges=self.observer_ranges, bootstrap=self.bootstrap,
+            break_end=self.break_end, dispatch=self.dispatch, observer_ready=self.observer_ready,
+            memory_group=self.memory_group, memory_limit=self.memory_limit,
         )
+
+    def close(self):
+        if self.pidfd >= 0:
+            os.close(self.pidfd)
+            self.pidfd = -1
 
 
 class Policy:
@@ -196,22 +207,81 @@ class Policy:
 
     @staticmethod
     def virtual_memory(pid):
-        try:
-            fields = Path(f"/proc/{pid}/statm").read_bytes().split()
-        except FileNotFoundError:
-            return 0
-        return int(fields[0]) * os.sysconf("SC_PAGE_SIZE")
+        with open(f"/proc/{pid}/statm", "rb") as source:
+            data = source.read(257)
+        fields = data.split()
+        if len(data) > 256 or len(fields) != 7 or not all(value.isdigit() for value in fields):
+            raise Violation("cannot account stopped address space")
+        size = int(fields[0]) * os.sysconf("SC_PAGE_SIZE")
+        if size <= 0:
+            raise Violation("stopped address space disappeared")
+        return size
 
-    def reserve_memory(self, pid, state, additional):
-        additional = (additional + 4095) & ~4095
+    def memory_members(self, state):
+        return [
+            (pid, record) for pid, record in self.processes.items()
+            if record.memory_group == state.memory_group
+        ]
+
+    def memory_available(self, state, copies=0):
+        members = self.memory_members(state)
+        outside = sum(
+            record.memory_limit for record in self.processes.values()
+            if record.memory_group != state.memory_group
+        ) + sum(record.memory_reservation for record in self.processes.values())
+        return (self.config["memory_limit"] - outside) // (len(members) + copies)
+
+    def assign_memory(self, state, limit, *, reservation=None):
+        # All members of a shared-mm group are suspended vfork ancestors except
+        # the stopped tracee. Other groups retain their kernel-enforced credits.
+        members = self.memory_members(state)
+        pending = state.memory_reservation if reservation is None else reservation
         used = sum(
-            self.virtual_memory(child) + record.memory_reservation
-            for child, record in self.processes.items()
-        )
-        self.memory_peak = max(self.memory_peak, used + additional)
-        if used + additional > self.config["memory_limit"]:
+            record.memory_limit for record in self.processes.values()
+            if record.memory_group != state.memory_group
+        ) + len(members) * limit + sum(
+            record.memory_reservation for record in self.processes.values() if record is not state
+        ) + pending
+        if not members or limit <= 0 or pending < 0 or used > self.config["memory_limit"]:
+            raise Violation("aggregate address-space credit invariant failed before kernel grant")
+        for pid, record in members:
+            resource.prlimit(pid, resource.RLIMIT_AS, (limit, self.config["memory_limit"]))
+            record.memory_limit = limit
+        state.memory_reservation = pending
+        self.memory_peak = max(self.memory_peak, used)
+
+    def reserve_memory(self, pid, state, additional, *, copies=0):
+        additional = (additional + 4095) & ~4095
+        needed = self.virtual_memory(pid) + additional
+        available = self.memory_available(state, copies)
+        if needed > available:
             raise Violation("aggregate address-space budget exhausted before allocation/fork")
-        state.memory_reservation = additional
+        limit = min(available, needed + STACK_LIMIT)
+        self.assign_memory(state, limit, reservation=copies * limit)
+
+    def reserve_exec(self, pid, state):
+        available = self.memory_available(state)
+        if self.virtual_memory(pid) > available:
+            raise Violation("aggregate address-space budget exhausted before exec")
+        # Kernel exec mappings and initial stack may grow without mmap stops.
+        # Fund that entire transition, including both sides of shared-mm exec.
+        self.assign_memory(state, available)
+
+    def finish_exec(self, pid, state):
+        previous_group = state.memory_group
+        state.memory_group = pid
+        self.assign_memory(
+            state, min(state.memory_limit, self.virtual_memory(pid) + STACK_LIMIT),
+        )
+        old = [
+            (parent, record) for parent, record in self.processes.items()
+            if parent != pid and record.memory_group == previous_group
+        ]
+        if old:
+            parent, record = old[0]
+            self.assign_memory(
+                record, min(record.memory_limit, self.virtual_memory(parent) + STACK_LIMIT),
+            )
 
     def reserve_creation(self):
         self.created += 1
@@ -543,6 +613,7 @@ class Policy:
                     raise Violation("Make execution escaped authenticated native dispatch")
             else:
                 role = "compiler" if self.mode == "compile" else "command"
+            self.reserve_exec(pid, state)
             state.pending = ("exec", role)
         elif n in {56, 57, 58}:
             if n == 56:
@@ -551,7 +622,8 @@ class Policy:
                     raise Violation("untraced/reparented/shared-state clone denied")
                 if a & 0x100 and not a & 0x4000:
                     raise Violation("shared-memory candidate threads denied")
-            self.reserve_memory(pid, state, self.virtual_memory(pid))
+            state.clone_shares_vm = n == 58 or n == 56 and bool(a & 0x100)
+            self.reserve_memory(pid, state, 0, copies=1)
         elif n == 435:
             if b < 64 or b > 88:
                 raise Violation("unknown clone3 structure")
@@ -563,7 +635,8 @@ class Policy:
                 or exit_signal != signal.SIGCHLD
             ):
                 raise Violation(f"clone3 outside trusted Make's suspended-parent spawn: {flags:#x}")
-            self.reserve_memory(pid, state, self.virtual_memory(pid))
+            state.clone_shares_vm = True
+            self.reserve_memory(pid, state, 0, copies=1)
         elif n in {22, 293}:
             state.pending = ("pipe", a)
         elif n in {32, 33, 292}:
@@ -658,7 +731,7 @@ class Policy:
                 limits = memory(pid, c, 16)
                 soft = int.from_bytes(limits[:8], "little")
                 hard = int.from_bytes(limits[8:], "little")
-                if self.mode != "compile" or b != resource.RLIMIT_STACK or not soft <= hard <= 16 * 1024 * 1024:
+                if self.mode != "compile" or b != resource.RLIMIT_STACK or not soft <= hard <= STACK_LIMIT:
                     raise Violation(f"resource limit changes denied: {b}")
         elif n == 157:
             if a not in {15, 16}:  # PR_SET_NAME/GET_NAME only
@@ -710,11 +783,30 @@ def observer_ranges(pid):
     return tuple(result)
 
 
+def signal_tracees(processes):
+    for record in processes.values():
+        try:
+            signal.pidfd_send_signal(record.pidfd, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+
+
 def supervise(config, drop_privileges):
+    if (
+        not hasattr(os, "pidfd_open") or not hasattr(signal, "pidfd_send_signal")
+        or not hasattr(resource, "prlimit")
+    ):
+        raise Violation("syscall supervisor requires pidfd and per-tracee prlimit support")
+    own_descriptor = os.pidfd_open(os.getpid())
+    try:
+        signal.pidfd_send_signal(own_descriptor, 0)
+    finally:
+        os.close(own_descriptor)
     policy = Policy(config)
     processes = {}
     policy.processes = processes
-    newborn_stops = set()
+    newborn_stops = {}
+    vfork_waiters = {}
     error = None
     main_status = None
     total_processes = 0
@@ -729,7 +821,7 @@ def supervise(config, drop_privileges):
             resource.setrlimit(resource.RLIMIT_NOFILE, (128, 128))
             resource.setrlimit(resource.RLIMIT_FSIZE, (config["file_limit"], config["file_limit"]))
             resource.setrlimit(resource.RLIMIT_AS, (config["memory_limit"], config["memory_limit"]))
-            resource.setrlimit(resource.RLIMIT_STACK, (16 * 1024 * 1024, 16 * 1024 * 1024))
+            resource.setrlimit(resource.RLIMIT_STACK, (STACK_LIMIT, STACK_LIMIT))
             cpu = max(1, math.ceil(config["deadline"] - time.monotonic()))
             resource.setrlimit(resource.RLIMIT_CPU, (cpu, cpu))
             trace_me(drop_privileges)
@@ -738,8 +830,17 @@ def supervise(config, drop_privileges):
             os.write(2, ("capsule exec failed: " + repr(failure)).encode("utf-8")[:4096])
             os._exit(125)
     processes[pid] = Process(
-        "make" if config["mode"] == "make" else "compiler" if config["mode"] == "compile" else "command"
+        "make" if config["mode"] == "make" else "compiler" if config["mode"] == "compile" else "command",
+        memory_group=pid, pidfd=os.pidfd_open(pid),
     )
+
+    def release_vfork(child):
+        for parent, waited_child in tuple(vfork_waiters.items()):
+            if waited_child == child:
+                del vfork_waiters[parent]
+                if parent in processes:
+                    ptrace(SYSCALL, parent)
+
     try:
         waited, status = os.waitpid(pid, 0)
         if waited != pid or not os.WIFSTOPPED(status):
@@ -748,6 +849,7 @@ def supervise(config, drop_privileges):
             if mapping.endswith("[heap]"):
                 processes[pid].break_end = int(mapping.split()[0].split("-")[1], 16)
         ptrace(SETOPTIONS, pid, 0, OPTIONS)
+        policy.reserve_memory(pid, processes[pid], 0)
         ptrace(SYSCALL, pid)
         total_processes = 1
         while processes:
@@ -763,7 +865,8 @@ def supervise(config, drop_privileges):
                     # Linux can report the child's initial stop before the
                     # parent's fork event. Keep it stopped until that event
                     # authenticates the relationship; never guess its role.
-                    newborn_stops.add(stopped)
+                    if stopped not in newborn_stops:
+                        newborn_stops[stopped] = os.pidfd_open(stopped)
                     if len(newborn_stops) > config["process_limit"]:
                         raise Violation("unresolved descendant count exceeds bound")
                     continue
@@ -771,6 +874,9 @@ def supervise(config, drop_privileges):
             if os.WIFEXITED(status) or os.WIFSIGNALED(status):
                 code = os.waitstatus_to_exitcode(status)
                 del processes[stopped]
+                state.close()
+                vfork_waiters.pop(stopped, None)
+                release_vfork(stopped)
                 if stopped == pid:
                     main_status = code
                 if code != 0 and not (stopped == pid and config["mode"] == "make"):
@@ -782,12 +888,18 @@ def supervise(config, drop_privileges):
                 child = ctypes.c_ulong()
                 ptrace(0x4201, stopped, 0, ctypes.byref(child))
                 total_processes += 1
-                processes[child.value] = state.clone()
+                record = state.clone()
+                if not state.clone_shares_vm:
+                    record.memory_group = child.value
+                record.pidfd = newborn_stops.pop(child.value, -1)
+                already_stopped = record.pidfd >= 0
+                if not already_stopped:
+                    record.pidfd = os.pidfd_open(child.value)
+                processes[child.value] = record
                 state.memory_reservation = 0
                 if total_processes > config["process_limit"]:
                     raise Violation("aggregate descendant-process budget exhausted")
-                if child.value in newborn_stops:
-                    newborn_stops.remove(child.value)
+                if already_stopped:
                     ptrace(SYSCALL, child.value)
             elif sig == signal.SIGTRAP and event == 4:
                 if state.pending is None or state.pending[0] != "exec":
@@ -798,6 +910,15 @@ def supervise(config, drop_privileges):
                 state.observer_ranges = ()
                 state.memory_reservation = 0
                 state.break_end = 0
+                policy.finish_exec(stopped, state)
+                release_vfork(stopped)
+            elif sig == signal.SIGTRAP and event == 5:
+                child = ctypes.c_ulong()
+                ptrace(0x4201, stopped, 0, ctypes.byref(child))
+                record = processes.get(child.value)
+                if record is not None and record.memory_group == state.memory_group:
+                    vfork_waiters[stopped] = child.value
+                    continue
             elif sig == (signal.SIGTRAP | 0x80):
                 registers = Registers()
                 ptrace(GETREGS, stopped, 0, ctypes.byref(registers))
@@ -823,24 +944,24 @@ def supervise(config, drop_privileges):
     except BaseException as failure:
         error = str(failure)
     finally:
-        for child in newborn_stops:
-            processes.setdefault(child, Process("unresolved"))
-        for child in tuple(processes):
-            try:
-                os.kill(child, signal.SIGKILL)
-            except ProcessLookupError:
-                pass
+        for child, descriptor in newborn_stops.items():
+            processes.setdefault(child, Process("unresolved", pidfd=descriptor))
+        signal_tracees(processes)
         while processes:
             try:
                 child, status = os.waitpid(-1, WALL)
                 if os.WIFEXITED(status) or os.WIFSIGNALED(status):
-                    processes.pop(child, None)
+                    record = processes.pop(child, None)
+                    if record is not None:
+                        record.close()
                 else:
                     try:
                         ptrace(SYSCALL, child, 0, signal.SIGKILL)
                     except OSError:
                         pass
             except ChildProcessError:
+                for record in processes.values():
+                    record.close()
                 processes.clear()
         result = {
             "ok": error is None,

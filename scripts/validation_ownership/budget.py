@@ -127,16 +127,10 @@ class ProbeBudget:
 
     @staticmethod
     def _terminate(child: subprocess.Popen, privileged=False):
-        if privileged:
-            # EOF asks the same-credential watchdog to kill/reap its own group.
-            # An unprivileged killpg cannot clean up sudo's root descendants.
+        # Every launch has a sole-reaper watchdog. This outer Popen may already
+        # be reaped: its numeric PID is never authority for a signal.
+        if child.stdin is not None:
             child.stdin.close()
-        else:
-            # Every child has its own session; never address another group.
-            try:
-                os.killpg(child.pid, signal.SIGKILL)
-            except ProcessLookupError:
-                pass
         child.wait()
 
     def close(self):
@@ -170,34 +164,53 @@ class ProbeBudget:
                 ordinary_executable(argv[len(NAMESPACE_LAUNCHER)])
             except (OSError, ValueError) as error:
                 self.reject(f"unsupported privileged namespace lifecycle: {error}")
-            argv = [
-                "/usr/bin/sudo", "-n", "--", "/usr/bin/python3", "-I", "-S", "-B",
-                str(Path(__file__).resolve().with_name("lifecycle.py")),
-                str(self.deadline), "--", *argv,
-            ]
-        self.charge("pending", sum(len(os.fsencode(arg)) + 1 for arg in argv))
         limit = self.limits.process_output_bytes if output_limit is None else output_limit
         if limit <= 0 or limit > getattr(self.limits, f"{category}_bytes", 0):
             self.reject("invalid process stream budget")
         if input_data is not None:
             self.charge("pending", len(input_data))
-        child = subprocess.Popen(
-            argv, cwd=cwd, env=env,
-            stdin=subprocess.PIPE if privileged or input_data is not None else subprocess.DEVNULL,
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-            close_fds=True, start_new_session=True,
-        )
-        self.children[child] = privileged
+        child = None
+        input_read = None
+        input_write = None
+        input_stream = None
         output = [bytearray(), bytearray()]
         try:
+            mask = signal.pthread_sigmask(signal.SIG_BLOCK, (signal.SIGINT, signal.SIGTERM))
+            try:
+                if input_data is not None:
+                    input_read, input_write = os.pipe()
+                    input_stream = os.fdopen(input_write, "wb", buffering=0)
+                    input_write = None
+                launcher = [
+                    "/usr/bin/python3", "-I", "-S", "-B",
+                    str(Path(__file__).resolve().with_name("lifecycle.py")),
+                    str(self.deadline),
+                    *(["--stdin-fd", str(input_read)] if input_read is not None else []),
+                    "--", *argv,
+                ]
+                if privileged:
+                    launcher = ["/usr/bin/sudo", "-n", "--", *launcher]
+                self.charge("pending", sum(len(os.fsencode(arg)) + 1 for arg in launcher))
+                child = subprocess.Popen(
+                    launcher, cwd=cwd, env=env, stdin=subprocess.PIPE,
+                    stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                    pass_fds=() if input_read is None else (input_read,),
+                    close_fds=True, start_new_session=True,
+                )
+                if input_read is not None:
+                    os.close(input_read)
+                    input_read = None
+                self.children[child] = privileged
+            finally:
+                signal.pthread_sigmask(signal.SIG_SETMASK, mask)
             with selectors.DefaultSelector() as selector:
                 for index, stream in enumerate((child.stdout, child.stderr)):
                     os.set_blocking(stream.fileno(), False)
                     selector.register(stream, selectors.EVENT_READ, index)
                 supplied = 0
                 if input_data is not None:
-                    os.set_blocking(child.stdin.fileno(), False)
-                    selector.register(child.stdin, selectors.EVENT_WRITE, 2)
+                    os.set_blocking(input_stream.fileno(), False)
+                    selector.register(input_stream, selectors.EVENT_WRITE, 2)
                 count = 0
                 while selector.get_map():
                     for key, _ in selector.select(min(self.remaining(), 0.05)):
@@ -206,7 +219,7 @@ class ProbeBudget:
                                 supplied += os.write(key.fd, input_data[supplied:supplied + 65536])
                             if supplied == len(input_data):
                                 selector.unregister(key.fileobj)
-                                child.stdin.close()
+                                input_stream.close()
                             continue
                         chunk = os.read(key.fd, min(65536, limit - count + 1))
                         if not chunk:
@@ -226,12 +239,18 @@ class ProbeBudget:
             self.failed = True
             raise
         finally:
-            self._terminate(child, privileged)
-            del self.children[child]
-            child.stdout.close()
-            child.stderr.close()
-            if child.stdin is not None:
+            if child is not None:
+                self._terminate(child, privileged)
+                self.children.pop(child, None)
+                child.stdout.close()
+                child.stderr.close()
                 child.stdin.close()
+            if input_read is not None:
+                os.close(input_read)
+            if input_write is not None:
+                os.close(input_write)
+            if input_stream is not None:
+                input_stream.close()
 
 
 def text(data: bytes, boundary: str, encoding: str = "utf-8") -> str:

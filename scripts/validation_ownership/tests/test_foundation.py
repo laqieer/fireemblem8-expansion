@@ -5,6 +5,7 @@ import errno
 import hashlib
 import json
 import os
+import resource
 import secrets
 import selectors
 import shutil
@@ -15,6 +16,7 @@ import threading
 import time
 import unittest
 from contextlib import contextmanager
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
@@ -63,6 +65,339 @@ class FoundationTests(unittest.TestCase):
         self.assertIsNone(session.snapshot)
         self.assertIsNone(session.base)
         self.assertFalse(self.scratch.exists())
+
+    @contextmanager
+    def owned_process(self, argv):
+        child = subprocess.Popen(
+            argv, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            start_new_session=True, env=ENVIRONMENT,
+        )
+        descriptor = os.pidfd_open(child.pid)
+        try:
+            yield child, descriptor
+        finally:
+            try:
+                signal.pidfd_send_signal(descriptor, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            child.wait()
+            os.close(descriptor)
+            for stream in (child.stdin, child.stdout, child.stderr):
+                stream.close()
+
+    def test_reaped_process_handles_never_signal_an_unrelated_owned_canary(self):
+        from scripts.validation_ownership import lifecycle
+        for terminate in (ProbeBudget._terminate, lifecycle.terminate):
+            with self.subTest(terminate=terminate):
+                with self.owned_process([
+                    "/usr/bin/python3", "-I", "-S", "-c",
+                    "import os; os.write(1,b'ready\\n'); os.read(0,1)",
+                ]) as (canary, descriptor):
+                    self.assertEqual(canary.stdout.readline(), b"ready\n")
+                    completed = subprocess.Popen(["/usr/bin/true"], start_new_session=True)
+                    completed.wait()
+                    # Model kernel reuse without exhausting PID space or
+                    # addressing anything except this test-owned canary.
+                    completed.pid = canary.pid
+                    terminate(completed)
+                    self.assertIsNone(canary.poll())
+                    canary.stdin.write(b"x")
+                    canary.stdin.flush()
+                    self.assertEqual(canary.wait(timeout=5), 0)
+
+    def test_tracee_cleanup_uses_pinned_identity_after_numeric_pid_reuse(self):
+        from scripts.validation_ownership.syscall_guard import Process, signal_tracees
+        with self.owned_process([
+            "/usr/bin/python3", "-I", "-S", "-c",
+            "import os; os.write(1,b'ready\\n'); os.read(0,1)",
+        ]) as (canary, descriptor):
+            self.assertEqual(canary.stdout.readline(), b"ready\n")
+            with self.owned_process(["/usr/bin/true"]) as (completed, dead_identity):
+                completed.wait()
+                signal_tracees({canary.pid: Process("command", pidfd=dead_identity)})
+                self.assertIsNone(canary.poll())
+                canary.stdin.write(b"x")
+                canary.stdin.flush()
+                self.assertEqual(canary.wait(timeout=5), 0)
+
+    def test_budget_normal_completion_reaps_group_and_escaped_descendants(self):
+        for escaped in (False, True):
+            with self.subTest(escaped=escaped):
+                natural = self.directory / ("natural-exit-" + str(escaped))
+                program = (
+                    "import os,time\nready=os.pipe()\nchild=os.fork()\n"
+                    "if child==0:\n"
+                    + (" os.setsid()\n" if escaped else "")
+                    + " os.write(ready[1],b'x')\n time.sleep(2)\n"
+                    f" open({str(natural)!r},'wb').write(b'not terminated')\n"
+                    " os._exit(0)\n"
+                    "os.read(ready[0],1)\nos.write(1,str(child).encode()+b'\\n')\nos._exit(0)\n"
+                )
+                budget = ProbeBudget(Limits(seconds=5))
+                result = budget.run(
+                    ["/usr/bin/python3", "-I", "-S", "-c", program], env=ENVIRONMENT,
+                )
+                self.assertEqual(result.returncode, 0, result.stderr)
+                descendant = int(result.stdout)
+                self.assertFalse(natural.exists())
+                self.assertFalse(Path(f"/proc/{descendant}").exists())
+                self.assertFalse(budget.children)
+
+    def test_watchdog_payload_stdin_is_binary_and_separate_from_lifetime(self):
+        data = bytes(range(256)) * 400
+        program = (
+            "import os\n"
+            "for descriptor in range(3,32):\n"
+            " try: os.fstat(descriptor)\n"
+            " except OSError: pass\n"
+            " else: raise SystemExit(7)\n"
+            "while True:\n"
+            " data=os.read(0,4096)\n"
+            " if not data: break\n"
+            " os.write(1,data)\n"
+        )
+        budget = ProbeBudget()
+        output = budget.run(
+            ["/usr/bin/python3", "-I", "-S", "-c", program],
+            env=ENVIRONMENT, input_data=data,
+        )
+        self.assertEqual(output.returncode, 0, output.stderr)
+        self.assertEqual(output.stdout, data)
+        self.assertFalse(budget.children)
+
+    def test_budget_launch_interruption_waits_for_handle_ownership(self):
+        original = subprocess.Popen
+        launched = []
+        def interrupted(signum, frame):
+            raise KeyboardInterrupt("owned launch interruption")
+        previous = signal.signal(signal.SIGTERM, interrupted)
+        try:
+            for payload in (None, b"bounded input"):
+                with self.subTest(payload=payload):
+                    budget = ProbeBudget(Limits(seconds=5))
+                    def starting(argv, **kwargs):
+                        child = original(argv, **kwargs)
+                        launched.append(child)
+                        os.kill(os.getpid(), signal.SIGTERM)
+                        return child
+                    with patch("subprocess.Popen", starting):
+                        with self.assertRaises(KeyboardInterrupt):
+                            budget.run(
+                                ["/usr/bin/python3", "-I", "-S", "-c", "import time; time.sleep(2)"],
+                                env=ENVIRONMENT, input_data=payload,
+                            )
+                    self.assertFalse(budget.children)
+                    self.assertIsNotNone(launched[-1].poll())
+        finally:
+            signal.signal(signal.SIGTERM, previous)
+            for child in launched:
+                child.stdin.close()
+                child.wait(timeout=5)
+                child.stdout.close()
+                child.stderr.close()
+
+    def test_missing_pidfd_support_rejects_before_payload_or_tracee_launch(self):
+        from scripts.validation_ownership import lifecycle, syscall_guard
+        read, write = os.pipe()
+        before = set(os.listdir("/proc/self/fd"))
+        try:
+            with patch("signal.pidfd_send_signal", side_effect=OSError(errno.ENOSYS, "unsupported")), patch(
+                "subprocess.Popen",
+            ) as launch, patch("os.fork") as fork:
+                with self.assertRaises(OSError):
+                    lifecycle.run(["/usr/bin/true"], time.monotonic() + 5, lifetime=read)
+                with self.assertRaises(OSError):
+                    syscall_guard.supervise({}, None)
+                launch.assert_not_called()
+                fork.assert_not_called()
+            self.assertEqual(set(os.listdir("/proc/self/fd")), before)
+        finally:
+            os.close(read)
+            os.close(write)
+
+    @staticmethod
+    def stack_growth_source():
+        return r'''
+#include <signal.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <sys/wait.h>
+static __attribute__((noinline)) void grow(int ready, int finish) {
+    volatile unsigned char stack[2*1024*1024];
+    unsigned i; char byte;
+    for (i=0;i<sizeof(stack);i+=4096) stack[i]=7;
+    if (ready<0) {
+        if (write(1,"STACKS_HELD\n",12)!=12) _exit(3);
+    } else {
+        if (write(ready,"G",1)!=1 || read(finish,&byte,1)!=1) _exit(3);
+    }
+    if (stack[4096]!=7) _exit(4);
+}
+int main(int argc, char **argv) {
+    int start[2], ready[2], finish[2], i, status, count; char byte;
+    if(argc!=2) return 1;
+    count=atoi(argv[1]);
+    if(count==0) { raise(SIGSTOP); grow(-1,-1); return 0; }
+    if(count<1 || count>8 || pipe(start)||pipe(ready)||pipe(finish)) return 1;
+    for (i=0;i<count;++i) {
+        pid_t child=fork();
+        if (child<0) return 2;
+        if (!child) { if(read(start[0],&byte,1)!=1) _exit(2); grow(ready[1],finish[0]); _exit(0); }
+    }
+    if(write(start[1],"XXXXXXXX",count)!=count) return 3;
+    for(i=0;i<count;++i) if(read(ready[0],&byte,1)!=1) return 4;
+    if(write(1,"STACKS_HELD\n",12)!=12) return 5;
+    if(write(finish[1],"XXXXXXXX",count)!=count) return 6;
+    for(i=0;i<count;++i) if(wait(&status)<0 || status) return 7;
+    return 0;
+}
+'''
+
+    def memory_policy(self, limit):
+        from scripts.validation_ownership.syscall_guard import Policy
+        return Policy({
+            "root": str(self.root), "mode": "command", "code": [], "sources": [],
+            "enumerations": [], "executables": [], "python_version": "3.12",
+            "argv": [], "memory_limit": limit,
+        })
+
+    def test_post_fork_stack_growth_is_funded_before_execution(self):
+        self.add("stack.c", self.stack_growth_source())
+        with self.session() as session:
+            tool = session.compile_native(("stack.c",))
+            session.budget.limits = replace(session.budget.limits, address_space_bytes=64*1024*1024)
+            self.assertEqual(session.native(tool, ("2",)).stdout, b"STACKS_HELD\n")
+        self.assert_clean(session)
+        session = self.session()
+        with session:
+            tool = session.compile_native(("stack.c",))
+            session.budget.limits = replace(session.budget.limits, address_space_bytes=32*1024*1024)
+            with self.assertRaisesRegex(MakeProbeError, "aggregate address-space"):
+                session.native(tool, ("8",))
+        self.assert_clean(session)
+
+    def test_kernel_virtual_credits_block_stack_faults_without_sampling(self):
+        from scripts.validation_ownership.syscall_guard import Process
+        self.add("stack.c", self.stack_growth_source())
+        with self.session() as session:
+            tool = session.compile_native(("stack.c",))
+            for funded in (False, True):
+                with self.subTest(funded=funded):
+                    with self.owned_process([str(tool.path), "0"]) as (child, descriptor):
+                        waited, status = os.waitpid(child.pid, os.WUNTRACED)
+                        self.assertEqual(waited, child.pid)
+                        self.assertTrue(os.WIFSTOPPED(status))
+                        resource.prlimit(child.pid, resource.RLIMIT_CORE, (0, 0))
+                        policy = self.memory_policy(64*1024*1024)
+                        baseline = {child.pid: policy.virtual_memory(child.pid) for child in (first, second)}
+                        policy.config["memory_limit"] = 2*baseline[first.pid] + baseline[second.pid] + 32*1024*1024
+                        size = policy.virtual_memory(child.pid)
+                        if funded:
+                            policy.config["memory_limit"] = size + 128*1024
+                            record = Process("command", memory_group=child.pid)
+                            policy.processes[child.pid] = record
+                            policy.reserve_memory(child.pid, record, 0)
+                            self.assertEqual(resource.prlimit(child.pid, resource.RLIMIT_AS)[0], record.memory_limit)
+                            self.assertLessEqual(record.memory_limit, policy.config["memory_limit"])
+                        signal.pidfd_send_signal(descriptor, signal.SIGCONT)
+                        child.wait(timeout=5)
+                        self.assertEqual(child.returncode, -signal.SIGSEGV if funded else 0)
+                        output = child.stdout.read()
+                        self.assertEqual(output, b"" if funded else b"STACKS_HELD\n")
+        self.assert_clean(session)
+
+    def test_kernel_limits_are_funded_by_one_aggregate_virtual_pool(self):
+        from scripts.validation_ownership.syscall_guard import Process, Violation
+        program = [
+            "/usr/bin/python3", "-I", "-S", "-c",
+            "import os,signal; os.kill(os.getpid(),signal.SIGSTOP); os.read(0,1)",
+        ]
+        with self.owned_process(program) as (first, first_fd), self.owned_process(program) as (second, second_fd):
+            for child in (first, second):
+                _, status = os.waitpid(child.pid, os.WUNTRACED)
+                self.assertTrue(os.WIFSTOPPED(status))
+            policy = self.memory_policy(64*1024*1024)
+            records = {
+                child.pid: Process("command", memory_group=child.pid)
+                for child in (first, second)
+            }
+            policy.processes = records
+            policy.reserve_memory(first.pid, records[first.pid], 4*1024*1024)
+            policy.reserve_memory(second.pid, records[second.pid], 0)
+            limits = {
+                pid: resource.prlimit(pid, resource.RLIMIT_AS)[0] for pid in records
+            }
+            self.assertEqual(limits, {pid: record.memory_limit for pid, record in records.items()})
+            self.assertLessEqual(sum(limits.values()), policy.config["memory_limit"])
+            with self.assertRaisesRegex(Violation, "aggregate address-space"):
+                policy.reserve_memory(second.pid, records[second.pid], policy.config["memory_limit"])
+            with self.assertRaisesRegex(Violation, "before kernel grant"):
+                policy.assign_memory(records[first.pid], policy.config["memory_limit"])
+            self.assertEqual(limits, {
+                pid: resource.prlimit(pid, resource.RLIMIT_AS)[0] for pid in records
+            })
+            policy.reserve_memory(first.pid, records[first.pid], 0, copies=1)
+            self.assertGreater(records[first.pid].memory_reservation, 0)
+            self.assertLessEqual(sum(
+                record.memory_limit + record.memory_reservation for record in records.values()
+            ), policy.config["memory_limit"])
+            records[first.pid].memory_reservation = 0
+            policy.reserve_exec(second.pid, records[second.pid])
+            self.assertLessEqual(sum(
+                resource.prlimit(pid, resource.RLIMIT_AS)[0] for pid in records
+            ), policy.config["memory_limit"])
+            policy.finish_exec(second.pid, records[second.pid])
+            self.assertLessEqual(policy.memory_peak, policy.config["memory_limit"])
+
+    def test_repeated_vfork_exec_preserves_virtual_credit_ownership(self):
+        self.add("exec.c", (
+            "#define _GNU_SOURCE\n#include <sys/wait.h>\n#include <unistd.h>\n"
+            "int main(int argc,char **argv) {\n"
+            " int i,status; (void)argv;\n"
+            " if(argc>1) return write(1,\"child\\n\",6)==6 ? 0 : 1;\n"
+            " for(i=0;i<4;++i) {\n"
+            "  pid_t child=vfork();\n"
+            "  if(child<0) return 2;\n"
+            "  if(!child) { execl(\"/native/tool\",\"/native/tool\",\"child\",(char *)0); _exit(3); }\n"
+            "  if(waitpid(child,&status,0)!=child || status) return 4;\n"
+            " }\n return write(1,\"parent\\n\",7)==7 ? 0 : 5;\n}\n"
+        ))
+        with self.session() as session:
+            tool = session.compile_native(("exec.c",))
+            session.budget.limits = replace(session.budget.limits, address_space_bytes=32*1024*1024)
+            self.assertEqual(session.native(tool).stdout, b"child\n"*4 + b"parent\n")
+        self.assert_clean(session)
+
+    def test_shared_vm_growth_counts_every_live_member(self):
+        self.add("shared.c", (
+            "#define _GNU_SOURCE\n#include <sched.h>\n#include <signal.h>\n"
+            "#include <stdlib.h>\n#include <sys/mman.h>\n#include <sys/wait.h>\n#include <unistd.h>\n"
+            "static int child(void *argument) {\n"
+            " size_t size=(size_t)argument;\n"
+            " void *area=mmap(0,size,PROT_READ|PROT_WRITE,MAP_PRIVATE|MAP_ANONYMOUS,-1,0);\n"
+            " if(area==MAP_FAILED) _exit(3);\n"
+            " if(write(1,\"shared\\n\",7)!=7 || munmap(area,size)) _exit(4);\n _exit(0);\n}\n"
+            "int main(int argc,char **argv) {\n"
+            " if(argc!=2) return 1;\n"
+            " void *stack=mmap(0,65536,PROT_READ|PROT_WRITE,MAP_PRIVATE|MAP_ANONYMOUS,-1,0);\n"
+            " if(stack==MAP_FAILED) return 2;\n"
+            " int status; size_t size=strtoul(argv[1],0,10)*1024*1024;\n"
+            " pid_t pid=clone(child,(char *)stack+65536,CLONE_VM|CLONE_VFORK|SIGCHLD,(void *)size);\n"
+            " if(pid<0 || waitpid(pid,&status,0)!=pid || status) return 3;\n"
+            " return munmap(stack,65536)!=0;\n}\n"
+        ))
+        for size in (4, 16):
+            with self.subTest(size=size):
+                session = self.session()
+                with session:
+                    tool = session.compile_native(("shared.c",))
+                    session.budget.limits = replace(session.budget.limits, address_space_bytes=32*1024*1024)
+                    if size == 4:
+                        self.assertEqual(session.native(tool, (str(size),)).stdout, b"shared\n")
+                    else:
+                        with self.assertRaisesRegex(MakeProbeError, "aggregate address-space"):
+                            session.native(tool, (str(size),))
+                self.assert_clean(session)
 
     def test_make_option_channels_cannot_inject_unrequested_evaluation(self):
         self.add("Makefile", (
@@ -387,22 +722,26 @@ class FoundationTests(unittest.TestCase):
         self.assertEqual((existing / "keep").read_bytes(), b"not allocator-owned")
 
     def test_privileged_cleanup_delegates_before_wait_and_never_hides_permission_errors(self):
-        child = SimpleNamespace(pid=999999999, stdin=Mock(), wait=Mock())
+        child = SimpleNamespace(pid=999999999, stdin=Mock(), wait=Mock(), returncode=None)
         with patch("os.killpg", side_effect=PermissionError("modeled root-owned group")) as kill:
-            with self.assertRaises(PermissionError):
-                ProbeBudget._terminate(child)
-            child.wait.assert_not_called()
-            kill.reset_mock()
+            ProbeBudget._terminate(child)
             ProbeBudget._terminate(child, privileged=True)
             kill.assert_not_called()
-            child.stdin.close.assert_called_once_with()
-            child.wait.assert_called_once_with()
+            self.assertEqual(child.stdin.close.call_count, 2)
+            self.assertEqual(child.wait.call_count, 2)
+        from scripts.validation_ownership import lifecycle
+        child.wait.reset_mock()
+        with patch("os.waitid", return_value=None), patch(
+            "os.killpg", side_effect=PermissionError("owned watchdog signal denied"),
+        ):
+            with self.assertRaises(PermissionError):
+                lifecycle.terminate(child)
+            child.wait.assert_not_called()
         for argv, supplied in ((["/usr/bin/true"], None), ([*NAMESPACE_LAUNCHER, "/usr/bin/true"], b"input")):
             with patch("subprocess.Popen") as launch:
                 with self.assertRaisesRegex(MakeProbeError, "guarded PID-namespace lifecycle"):
                     ProbeBudget().run(argv, env=ENVIRONMENT, privileged=True, input_data=supplied)
                 launch.assert_not_called()
-        from scripts.validation_ownership import lifecycle
         mode = os.stat("/usr/bin/unshare")
         elevated = list(mode)
         elevated[0] |= stat.S_ISUID

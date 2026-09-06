@@ -1789,6 +1789,24 @@ Start from a clean checkout; fixtures use only ignored `build/test-artifacts`.
     A modeled cleanup failure must preserve the primary setup exception; the
     fixture teardown, not production code, removes that deliberately retained
     test residue.
+15. Complete an ordinary budget command while an owned descendant still holds
+    its streams, including a descendant that first starts its own session.
+    Require prompt termination/reaping and preserved normal exit status.
+    Model PID reuse by assigning an already-reaped handle the numeric PID of
+    a live test-owned canary: budget, watchdog and tracee cleanup must leave
+    that unrelated canary alive. Tracee cleanup uses the old pidfd identity,
+    never a start-time check followed by a numeric signal. Binary stdin must
+    remain separate from the lifetime channel, with no extra payload FD.
+16. Fork small native processes, then grow their stacks using only page faults.
+    The old control's eight children touch only 16 MiB total yet hold
+    39,317,504 virtual bytes under a 33,554,432-byte aggregate limit.
+    Require the new admission to prevent that overspend while a smaller
+    supported stack-growth case succeeds. Directly exhaust a funded stopped
+    process's virtual credit and continue it without another supervisor
+    accounting call: kernel limits must block the stack fault. Verify the sum
+    of assigned kernel bounds plus pending fork credit, shared-VM growth, and
+    repeated vfork/exec accounting. No RSS, huge allocation, global setting or
+    unrelated process is part of these controls.
 
 ### Expected result
 
@@ -1830,6 +1848,13 @@ conditions. `GNUMAKEFLAGS --eval` also injected an unrequested definition.
 Partial setup rejected a tracked leaf but left newly created parents behind
 because ownership had not reached the session. These are behavioral negative
 controls, not source-spelling checks.
+
+The previous budget reaped its leader before calling `killpg`, and the owned
+PID-reuse model actually killed its unrelated test-owned canary. The previous
+memory guard only checked selected syscalls; held post-fork stacks exceeded
+the aggregate virtual limit without another checked allocation. The controls
+use exclusively owned process identities, disabled core dumps for the deliberate
+stack-fault case, and small bounded memory.
 
 ### Interactions and save compatibility
 

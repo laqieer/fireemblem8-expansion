@@ -37,6 +37,10 @@ launch, never by falling back to an unguarded privileged command. Other Make
 native ABIs/platforms reject, rather than falling back to unconfined evaluation.
 The native observer uses GNU Make's exported 4.3 data
 layout and the Linux syscall-entry/exit information API (kernel 5.3 or later).
+Kernel pidfds, Python's pidfd signal interface, per-tracee `prlimit`, private
+proc child visibility, and ptrace vfork-completion stops are also required.
+Missing lifecycle primitives reject before a payload runs; there is no
+numeric-PID generation-check or unconfined fallback.
 Native C++ tool consumers additionally need the existing host C++ compiler.
 The existing Build `tests/workflows` discovery imports this same process suite;
 there is no added workflow, job, duplicate gate or required-context name.
@@ -277,13 +281,31 @@ Byte accounting is also aggregate: 768 MiB total, 384 MiB snapshot processing,
 64 MiB streamed output, 64 MiB capsule writes, 32 MiB each cache/mappings/control,
 16 MiB events, and 1 MiB pending requests. Individual candidate output is
 streamed with a 1 MiB cap; bounded files/observations are at most 16 MiB.
-Capsules have a 512 MiB **aggregate** address-space ceiling (allocation/fork
-reservations are checked against the whole live process group), 16 MiB stack
-limits, 128 descriptors,
+Capsules have a 512 MiB **aggregate virtual-address-space** ceiling, 16 MiB
+maximum stack limits, 128 descriptors,
 no core dumps and a 4,096-creation aggregate cap. Limits may be lowered, not
 raised. Filesystem observations and serialized semantic results consume the
 same bounded control budget. Parallel calls to one session reject; a violation
 makes the entire session unusable.
+
+Virtual memory uses one funded credit pool, not independent per-process
+512 MiB limits or a sampled/RSS threshold. The supervisor assigns kernel
+`RLIMIT_AS` soft bounds whose sum, including pending fork copies, never exceeds
+the pool. It reserves stack headroom before resuming execution; if the pool
+cannot fund all potential stack growth, the tighter address-space bound limits
+it continuously on page faults. Multiple processes cannot each spend the same
+unreserved stack allowance.
+
+Only a stopped owned address space can reclaim or request credits for
+`mmap`, `brk`, `mremap`, fork or exec. Its virtual-page count informs admission;
+other running spaces retain their already funded bounds. Shared-VM vfork
+members have equal bounds and each counts in the aggregate. Exec transitions
+reserve the new image/initial-stack exposure, and a vfork-completion stop holds
+the released parent until the child's new address-space identity is accounted.
+Growing-stack splits, protection changes and automatic faults remain constrained
+by the same kernel-enforced bounds. `memory_peak` is the accepted virtual-credit
+watermark, including transition/headroom reservations, not physical memory or
+an assertion about the exact sampled live footprint.
 
 The creation quota reserves attempts **before kernel dispatch**, including
 `open`/`openat` with `O_CREAT` or `O_TMPFILE`, `creat`, `mkdir`/`mkdirat`, and
@@ -306,13 +328,24 @@ signals are delivered only after ownership is assigned. If the operating
 system also rejects cleanup, the primary setup failure remains the cause and
 cleanup diagnostics are attached rather than replacing it.
 
-In the sudo route, both the namespace availability probe and every capsule
-launch use the same privileged watchdog. The outer caller owns the sole write
+Every budget subprocess, including ordinary Git/compiler commands, namespace
+availability probes and capsules, uses a fresh exclusive-reaper watchdog.
+Its trusted executable must be root-owned, non-writable by other users, and
+free of set-ID bits/file capabilities; candidate native tools remain capsule-only.
+The outer budget may reap that watchdog but never uses its numeric PID to
+signal a process or group. The watchdog keeps its own leader waitable with
+`WNOWAIT` until group signaling is complete, then reaps it. Adopted descendants,
+including ones that left the original group, are signaled through pidfds and
+reaped before return. The syscall supervisor likewise retains pidfds across
+bootstrap/exit failures; stale numeric tracee records cannot signal a new
+process. Already-reaped handles are never group-signal authority.
+
+The outer caller owns the sole write
 end of a lifetime pipe; its closure (including process death), the original
 aggregate deadline, or a watchdog termination signal triggers privileged
-cleanup. The namespace process starts a separate session and never inherits
-the lifetime pipe. The watchdog pins the unreaped session leader until it has
-signaled its group, then reaps that leader and any adopted orphan descendants.
+cleanup where needed. Bounded raw command input uses a separate inherited pipe,
+not the lifetime channel; payloads inherit only their standard descriptors.
+The command starts a separate session and never inherits the lifetime pipe.
 It uses a kernel subreaper and parent-death signal, followed by unshare's
 `--kill-child` and the private PID namespace, so watchdog death also tears down
 the namespace. Set-ID, file-capability, non-root-owned or writable namespace

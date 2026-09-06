@@ -1,4 +1,4 @@
-"""Trusted same-credential watchdog for the privileged namespace launcher."""
+"""Trusted exclusive child reaper for every bounded probe launch."""
 
 from __future__ import annotations
 
@@ -12,6 +12,7 @@ import stat
 import subprocess
 import sys
 import time
+from pathlib import Path
 
 
 LIBC = ctypes.CDLL(None, use_errno=True)
@@ -51,19 +52,54 @@ def parent_death(parent, mask):
     signal.pthread_sigmask(signal.SIG_SETMASK, mask)
 
 
+def require_pidfds():
+    if not hasattr(os, "pidfd_open") or not hasattr(signal, "pidfd_send_signal"):
+        raise RuntimeError("namespace lifecycle requires pidfd support")
+    descriptor = os.pidfd_open(os.getpid())
+    try:
+        signal.pidfd_send_signal(descriptor, 0)
+    finally:
+        os.close(descriptor)
+
+
+def owned_children():
+    data = Path(f"/proc/self/task/{os.getpid()}/children").read_bytes()
+    values = data.split()
+    if any(not value.isdigit() or int(value) <= 0 for value in values):
+        raise RuntimeError("cannot identify watchdog-owned children")
+    return [int(value) for value in values]
+
+
 def terminate(child):
+    if child.returncode is not None:
+        return
     # The unreaped session leader pins its PID/group until the signal is sent.
-    # The watchdog has the launcher's credentials, unlike the outer caller.
+    # This fresh watchdog is the exclusive waiter, including for orphaned
+    # children. Never signal a group after releasing the leader's identity.
+    os.waitid(os.P_PID, child.pid, os.WEXITED | os.WNOHANG | os.WNOWAIT)
     try:
         os.killpg(child.pid, signal.SIGKILL)
     except ProcessLookupError:
         pass
     child.wait()
-    while True:
+    while owned_children():
+        descriptors = []
         try:
+            # Children remain waitable until this sole reaper consumes them.
+            # pidfds also cover descendants that left the original group.
+            for pid in owned_children():
+                descriptors.append(os.pidfd_open(pid))
+            for descriptor in descriptors:
+                try:
+                    signal.pidfd_send_signal(descriptor, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
             os.waitpid(-1, 0)
         except ChildProcessError:
             break
+        finally:
+            for descriptor in descriptors:
+                os.close(descriptor)
 
 
 def interrupted(signum, frame):
@@ -71,18 +107,27 @@ def interrupted(signum, frame):
     raise WatchdogInterrupted(f"namespace watchdog interrupted by signal {signum}")
 
 
-def run(argv, deadline, *, lifetime=0):
+def run(argv, deadline, *, lifetime=0, payload_input=None):
     if not argv or not math.isfinite(deadline) or deadline <= time.monotonic():
         raise ValueError("namespace watchdog requires a live aggregate deadline")
     if not stat.S_ISFIFO(os.fstat(lifetime).st_mode):
         raise ValueError("namespace watchdog requires a caller-owned lifetime pipe")
+    if payload_input is not None and (
+        payload_input < 3 or payload_input == lifetime
+        or not stat.S_ISFIFO(os.fstat(payload_input).st_mode)
+    ):
+        raise ValueError("watchdog payload input requires a separate pipe")
     ordinary_executable(argv[0])
+    require_pidfds()
+    if owned_children():
+        raise RuntimeError("watchdog requires an isolated child-reaper process")
     # Unsupported kernel lifecycle controls fail before launching anything.
     prctl(36, 1)  # PR_SET_CHILD_SUBREAPER; reap orphaned descendants as well.
     parent = os.getpid()
     child = None
     handlers = {}
     try:
+        handlers[signal.SIGCHLD] = signal.signal(signal.SIGCHLD, signal.SIG_DFL)
         for sig in TERMINATING:
             handlers[sig] = signal.signal(sig, interrupted)
         with selectors.DefaultSelector() as selector:
@@ -92,7 +137,8 @@ def run(argv, deadline, *, lifetime=0):
             mask = signal.pthread_sigmask(signal.SIG_BLOCK, TERMINATING)
             try:
                 child = subprocess.Popen(
-                    argv, stdin=subprocess.DEVNULL, close_fds=True,
+                    argv, stdin=subprocess.DEVNULL if payload_input is None else payload_input,
+                    close_fds=True,
                     start_new_session=True, preexec_fn=lambda: parent_death(parent, mask),
                 )
             finally:
@@ -119,14 +165,26 @@ def run(argv, deadline, *, lifetime=0):
 
 
 def main():
-    if not sys.flags.isolated or len(sys.argv) < 4 or sys.argv[2] != "--":
+    if not sys.flags.isolated or len(sys.argv) < 4:
         raise SystemExit("namespace watchdog requires isolated Python and trusted arguments")
     try:
-        status = run(sys.argv[3:], float(sys.argv[1]))
-    except (OSError, ValueError, subprocess.SubprocessError, WatchdogInterrupted) as error:
+        arguments = sys.argv[2:]
+        payload_input = None
+        if arguments[0] == "--stdin-fd":
+            payload_input = int(arguments[1])
+            arguments = arguments[2:]
+        if not arguments or arguments[0] != "--":
+            raise ValueError("watchdog command delimiter is missing")
+        status = run(arguments[1:], float(sys.argv[1]), payload_input=payload_input)
+    except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as error:
         print(f"namespace watchdog: {error}", file=sys.stderr)
         return 125
-    return status if status >= 0 else 128 - status
+    if status < 0:
+        if -status not in {signal.SIGKILL, signal.SIGSTOP}:
+            signal.signal(-status, signal.SIG_DFL)
+        os.kill(os.getpid(), -status)
+        os._exit(128 - status)
+    return status
 
 
 if __name__ == "__main__":
