@@ -43,7 +43,8 @@ OUTPUT_NAMES = (
 )
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 ASSET_BUILD_ROOT = os.path.abspath(os.path.join(REPO_ROOT, "build"))
-ASSET_BUILD_ROOT_REAL = os.path.realpath(ASSET_BUILD_ROOT)
+# Keep the source-root anchor without probing the mutable output tree on import.
+ASSET_BUILD_ROOT_REAL = os.path.join(os.path.realpath(REPO_ROOT), "build")
 ID_RE = re.compile(r"^[A-Z][A-Z0-9_]*$")
 
 
@@ -195,7 +196,18 @@ def load_manifest(path):
     return [_parse_record(node) for node in root.require("assets").as_list()]
 
 
-def load_discovery(path):
+def load_discovery(path, *, tracked_sources=None):
+    """Validate discovery using Git, or an already captured tracked-source set."""
+    if tracked_sources is not None and (
+        not isinstance(tracked_sources, (set, frozenset))
+        or any(
+            not isinstance(source, str) or not source or os.path.isabs(source)
+            or "\\" in source or any(part in ("", ".", "..") for part in source.split("/"))
+            or any(ord(character) < 32 or ord(character) == 127 for character in source)
+            for source in tracked_sources
+        )
+    ):
+        raise GeneratedDataError("captured tracked sources must be a set of canonical repository paths")
     records = load_manifest(path)
     diagnostics = DiagnosticCollector()
     tracked_paths = []
@@ -254,7 +266,7 @@ def load_discovery(path):
             tracked.add(source)
         except GeneratedDataError as error:
             diagnostics.add(error)
-    _validate_tracked_paths(tracked_paths, diagnostics)
+    _validate_tracked_paths(tracked_paths, diagnostics, tracked_sources=tracked_sources)
     diagnostics.raise_if_any()
     return records
 
@@ -347,10 +359,19 @@ def _validate_discovery_source_dependencies(kind, record, diagnostics, tracked_p
             diagnostics.add(error)
 
 
-def _validate_tracked_paths(paths, diagnostics):
+def _validate_tracked_paths(paths, diagnostics, *, tracked_sources=None):
     if not paths:
         return
     requested = sorted({path for path, _loc, _reference in paths})
+    if tracked_sources is not None:
+        for path, loc, reference in paths:
+            if path not in tracked_sources:
+                diagnostics.add(GeneratedDataError(
+                    "declared source '{}' is not a tracked committed source".format(path),
+                    loc,
+                    reference,
+                ))
+        return
     checkout = subprocess.run(
         ["git", "-C", REPO_ROOT, "rev-parse", "--show-toplevel"],
         stdout=subprocess.PIPE,

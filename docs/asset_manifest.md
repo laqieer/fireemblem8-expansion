@@ -134,6 +134,32 @@ owned by the generated-data platform. The TMX adapter deliberately reuses the
 ordinary map conversion path (`.mar` -> build-local `.bin` -> build-local
 `.lz`) after generating its canonical private inputs.
 
+### Captured-source discovery
+
+Source-archive and isolated report consumers can reuse the existing Python
+validation/rendering seam without starting Git inside their execution context:
+
+```python
+records = manifest.load_discovery(
+    manifest_path, tracked_sources=frozenset(captured_regular_git_paths))
+content = manifest.render_discovery_makefile(records)
+```
+
+The caller must obtain that set from its authoritative Git capture, not from
+the asset manifest's claims. This is an input to the existing membership
+check, not a skip-validation flag: every source still needs a valid path,
+existing nonsymlink file, required kind/ownership fields, and membership in
+the captured set. Malformed sets and missing members reject. Filesystem
+admission and actual source-consumption checks remain the isolated caller's
+responsibility; supplying a name grants no filesystem access.
+
+Omitting `tracked_sources` retains ordinary Git verification. No CLI option
+exposes this input. Normal generation still performs its existing output-root,
+symlink and atomic-write checks; a private-output caller writes the actual
+renderer result through its own declared output boundary. Importing the module
+anchors the build root to the real source root without probing a mutable output
+tree.
+
 The optional `custom-spell-effect` kind is documented in
 [`custom_spell_effects.md`](custom_spell_effects.md). It is the only kind whose
 presence is tied to `EXPANSION_CUSTOM_SPELL_EFFECTS`: a selected manifest
@@ -175,6 +201,12 @@ table/data or feature configuration changed. Host negative controls cover
 unknown schema/kind/options, duplicate ID/ownership, invalid source path,
 dangling dependency, malformed provenance, map capacity/selector conflict,
 and missing/stale/orphan outputs.
+For captured-source consumers, compare default and captured discovery rendering
+on the same real manifest, then remove a required captured source, supply
+malformed membership data, and introduce an escaping source path. The
+`test_captured_discovery_*` cases in
+`scripts/assets/tests/test_manifest.py` automate those positive/adversarial
+checks without replacing normal CLI verification or output safety.
 
 **TC-ASSET-TMX-064-POSITIVE** freezes the generated Chapter 2 15x15 payload
 and its map-load wiring. **TC-ASSET-TMX-064-DEFAULT** proves that the normal

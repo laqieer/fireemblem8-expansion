@@ -21,6 +21,14 @@ include outputs must reach that shared observer through admitted APIs before
 this acceptance can pass; an older duplicate sandbox or fabricated empty
 command output is not a substitute.
 
+Asset discovery reuses the existing
+[`load_discovery(..., tracked_sources=...)` and renderer](asset_manifest.md#captured-source-discovery)
+with the selected immutable capture's regular-file identities. The set is not
+read from candidate claims and is not a skip-validation switch. The shared
+executor must still enforce exact declared/consumed sources and declared
+private outputs. This consumer seam alone does not establish the full Make
+domain, graph, oracle or lifecycle acceptance.
+
 ## Authoritative files and public commands
 
 - [`.github/validation-ownership-graph.json`](../.github/validation-ownership-graph.json)

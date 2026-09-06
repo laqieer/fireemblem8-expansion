@@ -668,6 +668,50 @@ class AssetManifestTests(unittest.TestCase):
                 portrait_convert.assert_not_called()
                 write_output.assert_not_called()
 
+    def test_captured_discovery_matches_git_validated_rendering(self):
+        source = os.path.join(REPO_ROOT, "assets", "manifest.json")
+        ordinary = manifest.load_discovery(source)
+        expected = manifest.render_discovery_makefile(ordinary)
+        tracked = frozenset(subprocess.check_output(
+            ["git", "-C", REPO_ROOT, "ls-files", "-z"],
+        ).decode("utf-8").split("\0")) - {""}
+        with mock.patch.object(
+            manifest.subprocess, "run", side_effect=AssertionError("unexpected Git subprocess"),
+        ):
+            captured = manifest.load_discovery(source, tracked_sources=tracked)
+            self.assertEqual(manifest.render_discovery_makefile(captured), expected)
+        self.assertEqual(manifest.discovery_sources(captured), manifest.discovery_sources(ordinary))
+
+    def test_captured_discovery_rejects_missing_source_membership(self):
+        source = os.path.join(REPO_ROOT, "assets", "manifest.json")
+        records = manifest.load_discovery(source)
+        tracked = frozenset(manifest.discovery_sources(records))
+        with mock.patch.object(
+            manifest.subprocess, "run", side_effect=AssertionError("unexpected Git subprocess"),
+        ):
+            with self.assertRaisesRegex(GeneratedDataValidationError, "not a tracked committed source"):
+                manifest.load_discovery(
+                    source, tracked_sources=tracked - {"assets/portrait_registry.json"},
+                )
+
+    def test_captured_discovery_rejects_malformed_admission(self):
+        source = os.path.join(REPO_ROOT, "assets", "manifest.json")
+        for tracked in ("assets/portrait_registry.json", [1], {1}, {"../outside"}):
+            with self.subTest(tracked=tracked):
+                with self.assertRaises(GeneratedDataError):
+                    manifest.load_discovery(source, tracked_sources=tracked)
+
+    def test_captured_discovery_keeps_source_path_validation(self):
+        with open(os.path.join(REPO_ROOT, "assets", "manifest.json"), encoding="utf-8") as handle:
+            document = json.load(handle)
+        document["assets"][0]["sources"][0] = "../outside"
+        source = self.write_document(document)
+        with mock.patch.object(
+            manifest.subprocess, "run", side_effect=AssertionError("unexpected Git subprocess"),
+        ):
+            with self.assertRaisesRegex(GeneratedDataValidationError, "unsafe source path"):
+                manifest.load_discovery(source, tracked_sources=frozenset())
+
     def test_make_supports_isolated_output_override_with_portrait_incbin_consumer(self):
         result = self.run_assets_make(
             os.path.join(REPO_ROOT, "assets", "manifest.json"),
@@ -1366,9 +1410,7 @@ class AssetManifestTests(unittest.TestCase):
         os.symlink(TEST_ROOT, link_path)
         self.addCleanup(lambda: os.path.lexists(link_path) and os.unlink(link_path))
         with self.assertRaises(GeneratedDataError):
-            manifest_path = os.path.join(
-                "build", "generated", "assets", "test-work", "linked-output"
-            )
+            manifest_path = os.path.relpath(link_path, REPO_ROOT)
             manifest.safe_output_dir(manifest_path)
 
     def test_generate_and_check_reject_descendant_output_symlinks(self):
