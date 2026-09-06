@@ -10,6 +10,7 @@ import json
 import os
 from pathlib import Path, PurePosixPath
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
@@ -209,14 +210,6 @@ class GitHub:
         return identity, tuple(facts)
 
 
-def _kind(probe):
-    if probe.startswith("aoe-arm:"):
-        return "arm-object"
-    if probe.startswith("aoe-"):
-        return "native"
-    return "parsed" if probe.startswith("generated-") else "host"
-
-
 class ReviewTools:
     def __init__(self, tool_tree: GitTree, subject_root: Path, *, arm_tools=None):
         self.tool_tree = tool_tree
@@ -313,16 +306,18 @@ class ReviewTools:
                 model.require(completed.returncode == 0, "probe process failed: " +
                               completed.stderr.decode(errors="replace")[-2000:])
                 rows = model.parse_json(completed.stdout)
-                model.require(isinstance(rows, list) and len(rows) == len(probes),
-                              "missing/extra probe observations")
-                model.require([row["probe"] for row in rows] == probes,
-                              "wrong or duplicated probe observations")
             except (OSError, ValueError, subprocess.TimeoutExpired) as error:
                 rows = [{"probe": probe, "verdict": "unavailable", "checks": 0,
-                         "detail": str(error)} for probe in probes]
+                         "kind": None, "detail": str(error)[:model.MAX_DETAIL]} for probe in probes]
+        model.require(isinstance(rows, list) and len(rows) == len(probes),
+                      "missing/extra probe observations")
+        for row in rows:
+            model.keys(row, ("probe", "verdict", "checks", "kind", "detail"), "probe observation")
+        model.require([row["probe"] for row in rows] == probes,
+                      "wrong or duplicated probe observations")
         observations = tuple(model.Observation(
             member, revision, self.tool_tree.revision, objects[member.identity],
-            row["verdict"], member.evidence, row["detail"], row["checks"], _kind(member.probe))
+            row["verdict"], member.evidence, row["detail"], row["checks"], row["kind"])
             for member, row in zip(members, rows))
         for observation in observations:
             observation.validate()
@@ -391,7 +386,13 @@ def main(argv=None):
         if not sys.flags.isolated:
             raise ValueError("isolated startup is required")
         tools = ReviewTools(GitTree(args.repository_root, args.tool_revision), args.subject_root)
-        request = tools.model.validate_request(tools.model.parse_json(args.request.read_bytes()))
+        tools.model.require(stat.S_ISREG(args.request.lstat().st_mode),
+                            "review request must be a regular file")
+        with os.fdopen(os.open(args.request, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK), "rb") as source:
+            tools.model.require(stat.S_ISREG(os.fstat(source.fileno()).st_mode),
+                                "review request must be a regular file")
+            raw = source.read(tools.model.MAX_REQUEST_BYTES + 1)
+        request = tools.model.validate_request(tools.model.parse_json(raw))
         tools.model.require(args.candidate == request["candidate_sha"], "candidate argument mismatch")
         members = tools.members(request)
         report = {"schema_version": 1, "candidate_sha": args.candidate,
@@ -413,5 +414,5 @@ def main(argv=None):
         print(json.dumps(report, sort_keys=True))
         return 0 if args.mode == "plan" or report["source_audit_complete"] else 1
     except (OSError, ValueError, KeyError, TypeError) as error:
-        print("review-family: " + str(error), file=sys.stderr)
+        print("review-family: " + str(error)[:1000], file=sys.stderr)
         return 2

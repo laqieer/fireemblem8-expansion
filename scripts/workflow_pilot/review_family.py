@@ -24,7 +24,11 @@ CASE_PATTERN = r"TC-[A-Z0-9]+(?:-[A-Z0-9]+)+"
 MAX_SUBJECTS = 40
 MAX_FINDINGS = 50
 MAX_MEMBERS = 250
+MAX_REQUEST_BYTES = 1024 * 1024
+MAX_DETAIL = 2000
+MAX_REVIEW_FILES = 200
 MAX_REVIEW_SECONDS = 3600
+EVIDENCE_KINDS = frozenset({"native", "arm-object", "parsed", "host"})
 
 
 class ReviewError(ValueError):
@@ -79,10 +83,10 @@ def parse_json(raw: bytes) -> Any:
     def invalid(value):
         raise ReviewError(f"non-finite JSON value {value}")
 
-    require(len(raw) <= 1024 * 1024, "review request exceeds size bound")
+    require(len(raw) <= MAX_REQUEST_BYTES, "review request exceeds size bound")
     try:
         return json.loads(raw, object_pairs_hook=pairs, parse_constant=invalid)
-    except (UnicodeError, json.JSONDecodeError) as error:
+    except (UnicodeError, json.JSONDecodeError, RecursionError) as error:
         raise ReviewError(f"invalid review JSON: {error}") from error
 
 
@@ -120,7 +124,8 @@ def validate_request(value: Any) -> dict:
         identifier(finding["subject"], NAME_PATTERN, "subject")
         identifier(finding["reported_member"], NAME_PATTERN, "member ID")
         require(subject_key(finding) in scope, "finding is outside accepted subject scope")
-        require(finding["family"] in FAMILIES, "unknown family")
+        require(isinstance(finding["family"], str) and finding["family"] in FAMILIES,
+                "unknown family")
     unique([item["finding_id"] for item in findings], "findings")
     return {**value, "schema_version": 1, "pull_request": int(value["pull_request"])}
 
@@ -139,6 +144,7 @@ class Obligation:
     profile: str
     evidence: tuple[str, ...]
     inputs: tuple[str, ...]
+    kind: str = "host"
 
     @property
     def identity(self) -> tuple[str, str, str]:
@@ -147,16 +153,20 @@ class Obligation:
 
 def validate_members(members: tuple[Obligation, ...]) -> None:
     require(0 < len(members) <= MAX_MEMBERS, "finite member budget exceeded or empty")
-    unique([member.identity for member in members], "members")
     roles = {}
     for member in members:
+        require(isinstance(member, Obligation), "invalid obligation")
+        require(all(isinstance(value, str) and bool(value) for value in (
+            member.subject, member.family, member.member, member.role, member.producer,
+            member.consumer, member.representation, member.revalidation,
+            member.probe, member.profile, member.kind)),
+            "incomplete production/evidence mapping")
         require(member.family in FAMILIES and member.role in FAMILIES[member.family],
                 "unknown member role")
-        require(all((member.subject, member.member, member.producer, member.consumer,
-                     member.representation, member.revalidation, member.probe,
-                     member.profile, member.evidence, member.inputs)),
-                "incomplete production/evidence mapping")
+        require(member.kind in EVIDENCE_KINDS, "unknown obligation evidence kind")
+        require(member.evidence and member.inputs, "incomplete production/evidence mapping")
         roles.setdefault((member.subject, member.family), set()).add(member.role)
+    unique([member.identity for member in members], "members")
     for (_, family), found in roles.items():
         require(found == set(FAMILIES[family]), f"incomplete {family} roles")
 
@@ -171,26 +181,38 @@ class Observation:
     evidence: tuple[str, ...]
     detail: str
     checks: int
-    kind: str
+    kind: str | None
 
     def validate(self) -> None:
         sha(self.revision)
         sha(self.tool_revision)
-        require(self.verdict in {"satisfied", "contract-violation", "unavailable"},
+        require(isinstance(self.verdict, str)
+                and self.verdict in {"satisfied", "contract-violation", "unavailable"},
                 "unknown observation verdict")
         require(type(self.checks) is int and self.checks >= 0, "invalid check count")
-        require(self.kind in {"native", "arm-object", "parsed", "host"},
-                "unknown evidence kind; host results are not ROM observations")
+        require(isinstance(self.obligation, Obligation), "invalid observation obligation")
+        require((self.kind is None and self.verdict == "unavailable") or
+                (isinstance(self.kind, str) and self.kind in EVIDENCE_KINDS
+                 and self.kind == self.obligation.kind),
+                "wrong or unknown evidence kind for obligation")
+        require(isinstance(self.detail, str) and bool(self.detail.strip())
+                and len(self.detail) <= MAX_DETAIL, "invalid observation detail")
+        require(isinstance(self.evidence, (tuple, list))
+                and all(isinstance(item, str) for item in self.evidence),
+                "invalid evidence classes")
         unique(self.evidence, "evidence classes")
         require(set(self.evidence) == set(self.obligation.evidence),
                 "missing or unrelated evidence class")
+        require(isinstance(self.source_objects, (tuple, list)) and all(
+            isinstance(item, (tuple, list)) and len(item) == 2 and isinstance(item[0], str)
+            for item in self.source_objects), "invalid source objects")
         unique([path for path, _ in self.source_objects], "source objects")
         require(set(path for path, _ in self.source_objects) == set(self.obligation.inputs),
                 "missing or unrelated source evidence")
         for _, oid in self.source_objects:
             sha(oid)
-        require(self.verdict == "unavailable" or self.checks > 0,
-                "zero tests cannot establish a contract")
+        require(self.checks == 0 if self.verdict == "unavailable" else self.checks > 0,
+                "unavailable evidence requires zero checks; a contract requires executed checks")
 
 
 @dataclass(frozen=True)
@@ -336,6 +358,7 @@ class ReviewLease:
     scope: frozenset[str]
     started: float
     deadline: float
+    max_files: int
     finished: bool = False
 
 
@@ -367,10 +390,13 @@ class ReviewSession:
 
     def __init__(self, coordinator: str, implementer: str, scope: frozenset[str],
                  head: str, *, identity=None, owners=None, clock=time.monotonic, readers=None):
-        require(bool(coordinator) and bool(implementer) and coordinator != implementer,
+        require(all(isinstance(owner, str) and bool(owner.strip())
+                    for owner in (coordinator, implementer)) and coordinator != implementer,
                 "coordinator and implementer ownership overlap")
         sha(head)
-        require(0 < len(scope) <= MAX_SUBJECTS, "invalid accepted review scope")
+        require(isinstance(scope, (set, frozenset)) and 0 < len(scope) <= MAX_SUBJECTS
+                and all(isinstance(item, str) and bool(item.strip()) for item in scope),
+                "invalid accepted review scope")
         if identity is not None:
             require(isinstance(identity, tuple) and len(identity) == 3,
                     "invalid frozen PR identity")
@@ -379,7 +405,7 @@ class ReviewSession:
             sha(identity[2])
         self.coordinator = coordinator
         self.implementer = implementer
-        self.scope = scope
+        self.scope = frozenset(scope)
         self.head = head
         self.identity = identity
         self.owners = owners
@@ -393,12 +419,13 @@ class ReviewSession:
         self.rounds = RoundState()
         self.accepted: dict[str, Finding] = {}
 
-    def begin(self, runtime, owner: str, *, duration=1200, max_files=200):
+    def begin(self, runtime, owner: str, *, duration=1200, max_files=MAX_REVIEW_FILES):
         require(self.lease is None, "duplicate or overlapping reviewer ownership")
-        require(owner not in {self.coordinator, self.implementer} and bool(owner),
+        require(isinstance(owner, str) and bool(owner.strip())
+                and owner not in {self.coordinator, self.implementer},
                 "reviewer ownership overlaps")
         require(type(duration) is int and 0 < duration <= MAX_REVIEW_SECONDS
-                and type(max_files) is int and 0 < max_files <= 200,
+                and type(max_files) is int and 0 < max_files <= MAX_REVIEW_FILES,
                 "invalid review bounds")
         if self.owners is not None:
             self.owners.reserve(self)
@@ -414,11 +441,11 @@ class ReviewSession:
             raise
         started = self.clock()
         self.lease = ReviewLease(task, owner, self.head, self.scope,
-                                 started, started + duration)
+                                 started, started + duration, max_files)
         return task
 
     def read_action(self, action: str, *args):
-        require(action in READ_ACTIONS, "reviewer action is prohibited")
+        require(isinstance(action, str) and action in READ_ACTIONS, "reviewer action is prohibited")
         require(self.lease is not None and not self.lease.finished
                 and self.clock() <= self.lease.deadline, "review lease is not active")
         require(action in self.readers, "reviewer tool is not bound")
@@ -429,21 +456,36 @@ class ReviewSession:
         require(lease is not None and not lease.finished, "no active review task")
         require(self.clock() <= lease.deadline, "review exceeded duration bound")
         result = runtime.read(lease.task)
+        require(all(hasattr(result, field) for field in (
+            "task", "owner", "role", "head", "subjects", "completed", "read_only",
+            "actions", "files", "findings", "started_at", "completed_at")),
+            "incomplete runtime review record")
+        require(isinstance(result.subjects, (tuple, list, set, frozenset))
+                and len(result.subjects) == len(lease.scope)
+                and all(isinstance(item, str) for item in result.subjects),
+                "invalid runtime review scope")
         require(result.task == lease.task and result.owner == lease.owner
                 and result.role == "code-review" and result.head == lease.head
                 and frozenset(result.subjects) == lease.scope
-                and result.completed, "wrong, incomplete or stale task result")
-        require(set(result.actions) <= READ_ACTIONS and 0 <= result.files <= 200
+                and result.completed is True and result.read_only is True,
+                "wrong, incomplete, writable or stale task result")
+        require(isinstance(result.actions, (tuple, list, set, frozenset))
+                and all(isinstance(action, str) and action in READ_ACTIONS
+                        for action in result.actions)
+                and type(result.files) is int and 0 <= result.files <= lease.max_files <= MAX_REVIEW_FILES
+                and isinstance(result.findings, (tuple, list))
                 and len(result.findings) <= MAX_FINDINGS, "review action/budget violation")
         require(timestamp(result.started_at) <= timestamp(result.completed_at),
                 "review task chronology is invalid")
         findings = tuple(result.findings)
         for finding in findings:
-            require(isinstance(finding, Finding) and finding.subject in self.scope
+            require(isinstance(finding, Finding)
+                    and all(isinstance(value, str) and bool(value.strip()) for value in (
+                        finding.id, finding.subject, finding.family, finding.member,
+                        finding.origin, finding.source_path, finding.review_id))
+                    and finding.subject in self.scope
                     and finding.family in FAMILIES and finding.origin == lease.head
-                    and finding.review_id == "local:" + str(lease.task)
-                    and all(isinstance(value, str) and bool(value.strip())
-                            for value in (finding.id, finding.member, finding.source_path)),
+                    and finding.review_id == "local:" + str(lease.task),
                     "local finding has wrong task, head or scope")
         unique([finding.id for finding in findings], "local report findings")
         self.local_findings = {finding.id: finding for finding in findings}

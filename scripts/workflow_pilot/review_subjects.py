@@ -123,10 +123,10 @@ def _members(spec: SubjectSpec, tree) -> tuple[review.Obligation, ...]:
     result = []
 
     def add(family, role, name, producer, consumer, representation, revalidation,
-            probe, inputs, *, profile="host", evidence=("positive", "adversarial")):
+            probe, inputs, *, kind="host", profile="host", evidence=("positive", "adversarial")):
         result.append(review.Obligation(
             spec.key, family, role + ":" + name, role, producer, consumer,
-            representation, revalidation, probe, profile, evidence, tuple(sorted(inputs))))
+            representation, revalidation, probe, profile, evidence, tuple(sorted(inputs)), kind))
 
     if spec.model == "aoe":
         header = tree.read(AOE_HEADER)
@@ -139,30 +139,30 @@ def _members(spec: SubjectSpec, tree) -> tuple[review.Obligation, ...]:
         for phase in PHASES:
             add("action", "actions", phase, AOE_CORE + ":ExpansionAoE_DispatchItem",
                 "ExpansionAoEItemHandler(context)", "ExpansionAoEItemContext.phase",
-                "invalid phase and reentrant dispatch", "aoe-phase:" + phase, inputs)
+                "invalid phase and reentrant dispatch", "aoe-phase:" + phase, inputs, kind="native")
         add("action", "items", "routes", AOE_CORE + ":ExpansionAoE_ValidateItemRouteTable",
             "ExpansionAoE_DispatchItem", "ExpansionAoEItemRouteTable",
-            "key/item/policy/duplicate/capacity checks", "aoe-items", inputs)
+            "key/item/policy/duplicate/capacity checks", "aoe-items", inputs, kind="native")
         for shape in SHAPES:
             add("action", "targets", shape, AOE_CORE + ":ExpansionAoE_BuildTargetSet",
                 "ExpansionAoE_Execute", "ExpansionAoEShape/ExpansionAoETargetSet",
                 "invalid radius and incomplete target rejection",
-                "aoe-shape:" + shape, inputs)
+                "aoe-shape:" + shape, inputs, kind="native")
         for name, probe in (("capacity-filter", "aoe-targets"), ("stable-slots", "aoe-slots"),
                             ("execution", "aoe-execution")):
             add("action", "targets", name, AOE_CORE + ":ExpansionAoE_BuildTargetSet",
                 "ExpansionAoE_Execute", "stable unit IDs and bounded target set",
-                "capacity/invalid slots/hidden/stale placement", probe, inputs)
+                "capacity/invalid slots/hidden/stale placement", probe, inputs, kind="native")
         resources = (*inputs, AOE_REFERENCE, "include/expansion_aoe_reference.h")
         for role in ("enabled", "disabled"):
             add("resource", role, "reference", AOE_REFERENCE + ":ExpansionAoEReference_Apply",
                 "reference native driver", "FE8_EXPANSION_AOE_REFERENCE",
                 "default-off API is inert", "aoe-reference:" + role, resources,
-                profile=role, evidence=("positive", "adversarial") if role == "enabled"
+                kind="native", profile=role, evidence=("positive", "adversarial") if role == "enabled"
                 else ("default",))
             add("resource", role, "objects", AOE_REFERENCE, "AAPCS link and EWRAM",
                 "ELF symbols/sections", "disabled callback/probe omission",
-                "aoe-arm:" + role, resources, profile="aapcs-" + role,
+                "aoe-arm:" + role, resources, kind="arm-object", profile="aapcs-" + role,
                 evidence=("compile", "default") if role == "disabled" else ("compile",))
     elif spec.model == "eventlists":
         defaults, dependencies = schema_declaration(tree.read(EVENT_SCHEMA))
@@ -180,18 +180,19 @@ def _members(spec: SubjectSpec, tree) -> tuple[review.Obligation, ...]:
             inputs.update(paths)
             add("generated", "owners", name, relative, EVENT_SCHEMA, source,
                 "schema validation and malformed input rejection",
-                "generated-owner:" + name, paths)
+                "generated-owner:" + name, paths, kind="parsed")
         hand = defaults["default_hand_source"]
         inventory = defaults["default_inventory_path"]
         add("generated", "outputs", "eventlists", EVENT_SCHEMA + ":generate_c",
             hand, defaults["default_output_name"], "generated C parses and round-trips",
-            "generated-output", inputs | {hand}, evidence=("positive", "adversarial", "generated"))
+            "generated-output", inputs | {hand}, kind="parsed",
+            evidence=("positive", "adversarial", "generated"))
         add("generated", "consumers", "eventlists", EVENT_SOURCE, hand,
             "typed chapter event group", "all declared dependency references resolve",
-            "generated-consumer", inputs | {hand})
+            "generated-consumer", inputs | {hand}, kind="parsed")
         add("generated", "drift-checks", "eventlists", EVENT_SCHEMA + ":build_inventory",
             inventory, "committed generated inventory", "regenerate and compare",
-            "generated-drift", inputs | {inventory}, evidence=("positive", "generated"))
+            "generated-drift", inputs | {inventory}, kind="parsed", evidence=("positive", "generated"))
     elif spec.model == "review-session":
         predicates = {
             "entries": "ReviewSession.begin", "preservation": "RoundState.observe",
@@ -240,6 +241,23 @@ def command(argv, *, stdin=None):
     return result.stdout
 
 
+def probe_result(kind):
+    """Keep failure metadata with the executor that actually ran, not its route."""
+    def decorate(function):
+        def run(*args):
+            try:
+                return {"verdict": "satisfied", **function(*args)}
+            except ContractViolation as error:
+                return {"kind": kind, "verdict": "contract-violation", "checks": 1,
+                        "detail": f"{type(error).__name__}: {error}"[:review.MAX_DETAIL]}
+            except Exception as error:
+                return {"kind": kind, "verdict": "unavailable", "checks": 0,
+                        "detail": f"{type(error).__name__}: {error}"[:review.MAX_DETAIL]}
+        return run
+    return decorate
+
+
+@probe_result("native")
 def _native(probe: str) -> dict:
     enabled = probe != "aoe-reference:disabled"
     executable = Path("build/native-enabled" if enabled else "build/native-disabled")
@@ -272,6 +290,7 @@ def _native(probe: str) -> dict:
     return {"kind": "native", "checks": 1, "detail": "selected native assertions satisfied"}
 
 
+@probe_result("arm-object")
 def _arm(enabled: bool) -> dict:
     common = [os.environ["MODERN_CC"], "-mcpu=arm7tdmi", "-mthumb",
               "-mthumb-interwork", "-mabi=aapcs", "-std=gnu89", "-ffreestanding",
@@ -307,6 +326,7 @@ def _arm(enabled: bool) -> dict:
             "detail": "AAPCS object symbols/sections checked; not target-ROM execution"}
 
 
+@probe_result("parsed")
 def _generated(probe: str) -> dict:
     from scripts.generated_data import registry
     from scripts.generated_data import cli
@@ -368,6 +388,7 @@ def _generated(probe: str) -> dict:
             "detail": name + ": actual schema/producer/consumer contract checked"}
 
 
+@probe_result("host")
 def _session_probe(probe: str) -> dict:
     # This is a registered production subject, not an import-name trust test.
     source = Path("build/review-subject.py").read_bytes()
@@ -488,11 +509,9 @@ def worker(probes: list[str]) -> list[dict]:
     results = []
     for probe in probes:
         try:
-            result = {**run_probe(probe), "verdict": "satisfied"}
-        except ContractViolation as error:
-            result = {"verdict": "contract-violation", "checks": 1, "detail": str(error)}
+            result = run_probe(probe)
         except Exception as error:
-            result = {"verdict": "unavailable", "checks": 0,
-                      "detail": f"{type(error).__name__}: {error}"}
+            result = {"kind": None, "verdict": "unavailable", "checks": 0,
+                      "detail": f"{type(error).__name__}: {error}"[:review.MAX_DETAIL]}
         results.append({"probe": probe, **result})
     return results

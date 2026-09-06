@@ -143,6 +143,8 @@ class SubjectTests(SubjectTestCase):
         relevant = [item for item in prior if item.obligation.member == member]
         self.assertEqual(len(relevant), 1)
         self.assertEqual(relevant[0].verdict, "contract-violation", relevant[0].detail)
+        self.assertEqual(relevant[0].kind, relevant[0].obligation.kind)
+        self.assertGreater(relevant[0].checks, 0)
         model = self.model
         key = model.subject_key(data["subjects"][0])
         session = model.ReviewSession("coordinator", "implementer", frozenset({key}), after,
@@ -291,7 +293,9 @@ class SubjectTests(SubjectTestCase):
             observed = self.run_members(members, revision)
             self.assertTrue(any(item.verdict == "unavailable" for item in observed))
             self.assertFalse(any(item.verdict == "contract-violation" for item in observed))
-        self.assertEqual(self.tools.subjects.worker(["not-a-probe"])[0]["verdict"], "unavailable")
+        unknown = self.tools.subjects.worker(["not-a-probe"])[0]
+        self.assertEqual((unknown["verdict"], unknown["kind"], unknown["checks"]),
+                         ("unavailable", None, 0))
 
     def test_immutable_git_bytes_not_reopened_worktree_and_no_fsmonitor(self):
         tree = GitTree(self.repo.root, self.repo.base)
@@ -364,11 +368,133 @@ class SubjectTests(SubjectTestCase):
         good = self.run_members(members, self.repo.base)[0]
         for bad in (
             replace(good, checks=0), replace(good, verdict="skipped"),
+            replace(good, checks=True), replace(good, checks=1.0),
+            replace(good, verdict=[]), replace(good, kind={}),
             replace(good, source_objects=(("unrelated.py", self.repo.base),)),
-            replace(good, evidence=("runtime",)), replace(good, kind="rom"),
+            replace(good, source_objects=(("source",),)),
+            replace(good, source_objects=None), replace(good, evidence=([],)),
+            replace(good, evidence=None), replace(good, evidence=("runtime",)),
+            replace(good, detail=None), replace(good, kind="rom"),
+            *(replace(good, kind=kind) for kind in ("native", "parsed", "arm-object", None)),
         ):
-            with self.assertRaises(ValueError):
+            with self.subTest(observation=bad), self.assertRaises(ValueError):
                 bad.validate()
+
+    def test_worker_record_types_and_missing_fields_reject_before_admission(self):
+        members = self.tools.members(self.scope("session"))
+        payload = json.dumps([item.probe for item in members]).encode()
+        run = subprocess.run
+        captured = []
+
+        def capture(*args, **kwargs):
+            completed = run(*args, **kwargs)
+            if kwargs.get("input") == payload:
+                captured.append(json.loads(completed.stdout))
+            return completed
+
+        with patch.object(subprocess, "run", side_effect=capture):
+            observations = self.tools.run_obligations(members, self.repo.base)
+            self.assert_satisfied(observations)
+        self.assertEqual(len(captured), 1)
+        good = captured[0]
+        self.assertEqual(
+            [(item.kind, item.verdict, item.checks, item.detail) for item in observations],
+            [(row["kind"], row["verdict"], row["checks"], row["detail"]) for row in good])
+        malformed = [None, [], "row", {**good[0], "trusted": True}]
+        for field in good[0]:
+            row = dict(good[0])
+            del row[field]
+            malformed.append(row)
+        for field, value in (
+            ("kind", "native"), ("kind", "parsed"), ("kind", "arm-object"),
+            ("kind", None), ("kind", {}), ("kind", []),
+            ("checks", True), ("checks", 1.0), ("checks", "1"), ("checks", 0),
+            ("checks", -1), ("checks", None), ("verdict", []), ("verdict", "skipped"),
+            ("detail", None), ("detail", []), ("detail", "x" * 2001), ("detail", ""),
+            ("probe", None), ("probe", good[1]["probe"]),
+        ):
+            malformed.append({**good[0], field: value})
+        malformed.append({**good[0], "verdict": "unavailable", "checks": 1})
+        for row in malformed:
+            with self.subTest(row=row):
+                raw = json.dumps([row, *good[1:]]).encode()
+
+                def corrupt(*args, **kwargs):
+                    if kwargs.get("input") == payload:
+                        return subprocess.CompletedProcess(args[0], 0, raw, b"")
+                    return run(*args, **kwargs)
+
+                with patch.object(subprocess, "run", side_effect=corrupt):
+                    with self.assertRaises(ValueError):
+                        self.tools.run_obligations(members, self.repo.base)
+
+    def test_wrongly_routed_real_worker_success_failure_and_unavailability_keep_kind(self):
+        worker_path = "scripts/workflow_pilot/review_subjects.py"
+        worker_source = (self.repo.root / worker_path).read_text()
+        for kind, old, route, source_path, source in (
+            ("arm-object", 'return _arm(probe == "aoe-arm:enabled")',
+             'return _native("aoe-phase:AI_SELECT")', "src/expansion_aoe.c", "native"),
+            ("parsed", "return _generated(probe)",
+             'return _session_probe("lifecycle:resets")',
+             "scripts/workflow_pilot/review_family.py", "host"),
+        ):
+            original = (self.repo.root / source_path).read_text()
+            broken = (original.replace("&& route->aiPolicy == EXPANSION_AOE_AI_NEVER", "&& 0")
+                      if source == "native" else original.replace(
+                          "                consecutive = 0\n", "                consecutive += 0\n"))
+            unavailable = "not valid C;\n" if source == "native" else "import missing_review_module\n"
+            routed = worker_source.replace(old, route)
+            self.assertNotEqual(routed, worker_source)
+            self.assertNotEqual(original, broken)
+            for verdict, contents in (
+                ("satisfied", original), ("contract-violation", broken), ("unavailable", unavailable),
+            ):
+                with self.subTest(expected=kind, actual=source, verdict=verdict):
+                    revision = self.repo.commit({worker_path: routed})
+                    candidate = (revision if contents == original else
+                                 self.repo.commit({source_path: contents}, parent=revision))
+                    tools = ReviewTools(GitTree(self.repo.root, revision), self.repo.root)
+                    data = self.scope("aoe" if kind == "arm-object" else "generated", candidate)
+                    if kind == "parsed":
+                        data["subjects"].extend(self.scope("session")["subjects"])
+                    members = tools.members(data)
+                    if kind == "arm-object":
+                        members = tuple(item for item in members if item.family == "resource")
+                    probes = {item.probe for item in members
+                              if item.probe.startswith("aoe-arm:" if kind == "arm-object"
+                                                       else "generated-")}
+                    payload = json.dumps([item.probe for item in members]).encode()
+                    run = subprocess.run
+                    captured = []
+
+                    def capture(*args, **kwargs):
+                        completed = run(*args, **kwargs)
+                        if kwargs.get("input") == payload:
+                            captured.extend(json.loads(completed.stdout))
+                        return completed
+
+                    with patch.object(subprocess, "run", side_effect=capture):
+                        with self.assertRaisesRegex(ValueError, "kind"):
+                            tools.run_obligations(members, candidate)
+                    actual = [row for row in captured if row["probe"] in probes]
+                    self.assertEqual({row["probe"] for row in actual}, probes)
+                    self.assertEqual({(row["kind"], row["verdict"]) for row in actual},
+                                     {(source, verdict)})
+                    self.assertTrue(all(row["checks"] == 0 if verdict == "unavailable"
+                                        else row["checks"] > 0 for row in actual))
+
+    def test_worker_exit_without_rows_has_no_evidence_kind_or_checks(self):
+        path = "scripts/workflow_pilot/review_subjects.py"
+        source = (self.repo.root / path).read_text()
+        source = source.replace("def worker(probes: list[str]) -> list[dict]:",
+                                "def worker(probes: list[str]) -> list[dict]:\n    raise SystemExit(7)")
+        revision = self.repo.commit({path: source})
+        tools = ReviewTools(GitTree(self.repo.root, revision), self.repo.root)
+        members = tools.members(self.scope("session"))
+        observations = tools.run_obligations(members, self.repo.base)
+        self.assertEqual({(item.verdict, item.kind, item.checks) for item in observations},
+                         {("unavailable", None, 0)})
+        self.assertTrue(all("process failed" in item.detail for item in observations))
 
 
 if __name__ == "__main__":

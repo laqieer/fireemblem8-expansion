@@ -188,6 +188,14 @@ the consumers' independent protected-principal/deployment requirements.
    None can count as an affected-fixed negative control. Preserve
    the distinction between actual native, parsed, host and ARM object evidence;
    no group or whole-suite result can masquerade as a ROM scenario.
+   Route an ARM probe to the actual native executor and a generated probe to
+   the actual host reducer in owned tool commits. Repeat with passing, broken
+   and unavailable source. The returned kind stays native/host and the
+   mismatched obligation rejects in all three cases. Corrupt the actual
+   worker output's kind, verdict, count, detail, fields or row shape; missing,
+   wrong and malformed records reject rather than being relabeled.
+   Genuine executor failures retain their kind, while a worker exiting before
+   any result has `kind: null`; unavailable rows always have zero checks.
 7. Exercise the existing task adapter's bounded read-only role and actual
    returned task metadata. Denied mutation operations never reach the bound
    tool; duplicate/overlapping owners, wrong/stale/incomplete task results and
@@ -195,6 +203,13 @@ the consumers' independent protected-principal/deployment requirements.
    same-UID OS containment or that a synthetic test launched a live agent.
    Disjoint scopes cannot create two active reviewers for the same PR/head;
    different PRs/heads remain independent and completed sessions release ownership.
+   Both runtime `completed` and `read_only` must be Boolean `True`; repeat with
+   false, truthy strings/numbers, containers and missing fields. Request a
+   ten-file lease, return ten files, then eleven; only the first completes.
+   Repeat requested/returned bounds with Boolean, fractional/integral float,
+   string, negative and over-global-cap values. Only strict integer counts
+   within the requested bound (at most 200) pass. Malformed adjacent runtime
+   fields leave ownership active; a subsequent valid result can finish it.
    Every returned typed finding needs explicit accepted/rejected local triage
    with a reason. Omission rejects even on repaired source; acceptance enters
    the existing sibling sweep, and rejection never silently accepts a finding.
@@ -220,6 +235,12 @@ the consumers' independent protected-principal/deployment requirements.
    before that initializer executes.
    Missing candidate/base objects and invalid ancestry in both real direct
    and isolated CLI entrypoints fail nonzero with bounded diagnostics, not a traceback.
+   Test valid request JSON padded to exactly 1 MiB, one byte over, malformed
+   JSON/record types, missing files, directories, symlinks and a FIFO without
+   a writer. Only the exact-bound regular valid request succeeds. Both real
+   entrypoints also reject a 256 MiB sparse input under a 128 MiB child
+   address-space limit without allocation failure, blocking or a traceback.
+   Diagnostic detail remains bounded even for a very long duplicate JSON key.
 10. First/second request rounds produce bounded handoffs; the third remains
     held through later heads and clean reports until a valid coordinator
     disposition names the held round/head. Preserve already-created commits
@@ -241,6 +262,10 @@ repairs. The source mutations now fail those actual predicates. Missing
 siblings, wrong source/identity, untriaged content or an undisposed third
 request never pass. Formatting-only source changes remain green. A missing
 tool or failed import/compile is unavailable rather than proof of a fix.
+The pre-intake-fix implementation allocated oversized files before rejection,
+accepted truthy completion and over-lease counts, and relabeled wrong-routed
+worker kinds. The same deterministic inputs now reject without granting
+completion or evidence credit; actual correctly typed positive results pass.
 
 ### Interactions and save compatibility
 

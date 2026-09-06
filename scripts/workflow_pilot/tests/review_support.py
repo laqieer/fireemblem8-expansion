@@ -41,7 +41,8 @@ class Runtime:
         self.calls = []
         self.result = SimpleNamespace(
             task="task-1", owner="reviewer", role="code-review", head=head,
-            subjects=subjects, completed=True, actions=("read-candidate", "emit-report"),
+            subjects=subjects, completed=True, read_only=True,
+            actions=("read-candidate", "emit-report"),
             files=3, findings=(), started_at="2026-01-01T00:00:00Z",
             completed_at="2026-01-01T00:00:01Z")
 

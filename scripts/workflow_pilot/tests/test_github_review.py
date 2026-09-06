@@ -10,6 +10,7 @@ import copy
 from dataclasses import replace
 import io
 import json
+import os
 import subprocess
 import unittest
 from unittest.mock import patch
@@ -374,6 +375,94 @@ class GitHubReviewTests(unittest.TestCase):
                     self.assertTrue(completed.stderr.startswith("review-family:"), completed.stderr)
                     self.assertNotIn("Traceback", completed.stderr)
                     self.assertLessEqual(len(completed.stderr), 1200)
+
+    def request_cli(self, path, *, isolated, timeout=30):
+        bootstrap = (
+            "import resource, sys; "
+            "resource.setrlimit(resource.RLIMIT_AS, (128 * 1024 * 1024,) * 2); "
+        )
+        if isolated:
+            bootstrap += (
+                "import runpy; sys.argv = sys.argv[1:]; "
+                "runpy.run_path(sys.argv[0], run_name='__main__')"
+            )
+            entry = [str(self.repo.root / "scripts/workflow_pilot/isolated_launcher.py"),
+                     "review-family"]
+        else:
+            bootstrap += (
+                "sys.path.insert(0, sys.argv[1]); "
+                "from scripts.workflow_pilot.trusted_review_gate import main; "
+                "raise SystemExit(main(sys.argv[2:]))"
+            )
+            entry = [str(self.repo.root)]
+        return subprocess.run(
+            [sys.executable, "-I", "-c", bootstrap, *entry,
+             "--repository-root", str(self.repo.root), "--subject-root", str(self.repo.root),
+             "--tool-revision", self.repo.base, "--candidate", self.repo.base,
+             "--request", str(path), "--mode", "plan"],
+            env=ENV, capture_output=True, text=True, timeout=timeout)
+
+    def assert_request_rejected(self, result):
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(result.stdout, "")
+        self.assertTrue(result.stderr.startswith("review-family:"), result.stderr)
+        self.assertNotIn("Traceback", result.stderr)
+        self.assertLessEqual(len(result.stderr), 1200)
+
+    def test_real_cli_request_size_bound_precedes_allocation(self):
+        root = self.repo.root / "build/intake-size"
+        root.mkdir(parents=True, exist_ok=True)
+        raw = json.dumps(request(base=self.repo.base, head=self.repo.base)).encode()
+        exact = root / "exact.json"
+        exact.write_bytes(raw.ljust(1024 * 1024, b" "))
+        over = root / "over.json"
+        over.write_bytes(raw.ljust(1024 * 1024 + 1, b" "))
+        huge = root / "huge.json"
+        with huge.open("wb") as file:
+            file.truncate(256 * 1024 * 1024)
+        for isolated in (False, True):
+            with self.subTest(isolated=isolated, case="exact-bound"):
+                result = self.request_cli(exact, isolated=isolated)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                parsed = json.loads(result.stdout)
+                self.assertEqual(len(parsed["obligations"]), 9)
+                self.assertFalse(parsed["merge_permission"])
+            for path in (over, huge):
+                with self.subTest(isolated=isolated, case=path.name):
+                    result = self.request_cli(path, isolated=isolated)
+                    self.assert_request_rejected(result)
+                    self.assertIn("size bound", result.stderr)
+
+    def test_real_cli_invalid_and_nonregular_request_ingress_is_bounded(self):
+        root = self.repo.root / "build/intake-invalid"
+        root.mkdir(parents=True, exist_ok=True)
+        payloads = [b"", b"{", b"\xff", b"[" * 2000 + b"]" * 2000]
+        key = json.dumps("x" * 5000).encode()
+        payloads.append(b"{" + key + b":1," + key + b":2}")
+        for family in ([], {}, None):
+            data = request(base=self.repo.base, head=self.repo.base)
+            data["findings"] = [{
+                "finding_id": "finding", **data["subjects"][0],
+                "family": family, "reported_member": "validators:review-session",
+            }]
+            payloads.append(json.dumps(data).encode())
+        paths = []
+        for number, payload in enumerate(payloads):
+            path = root / f"malformed-{number}.json"
+            path.write_bytes(payload)
+            paths.append(path)
+        valid = root / "valid.json"
+        valid.write_text(json.dumps(request(base=self.repo.base, head=self.repo.base)))
+        symlink = root / "symlink.json"
+        symlink.symlink_to(valid)
+        fifo = root / "fifo.json"
+        os.mkfifo(fifo)
+        paths.extend((root, root / "missing.json", symlink, fifo))
+        for path in paths:
+            for isolated in (False, True):
+                with self.subTest(path=path.name, isolated=isolated):
+                    self.assert_request_rejected(
+                        self.request_cli(path, isolated=isolated, timeout=5))
 
     def test_read_only_api_command_and_exact_actor_before_content(self):
         github = gate.GitHub()

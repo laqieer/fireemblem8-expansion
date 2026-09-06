@@ -130,9 +130,17 @@ coordinator's existing task adapter. It returns immediately. After the
 existing task-completion notification, `finish` reads that task's actual
 result. There is no polling, new agent backend or JSON-selected runtime.
 The adapter's result exposes the actual `task`, `owner`, `role`, `head`,
-`subjects`, `completed`, `actions`, `files`, `findings`, `started_at` and
+`subjects`, `completed`, `read_only`, `actions`, `files`, `findings`, `started_at` and
 `completed_at`; these are runtime metadata, not fields copied from the
-reviewer's prose. Bound read tools through the coordinator's `readers` map.
+reviewer's prose. Both `completed` and `read_only` must be Boolean `True`;
+truthy strings/numbers or missing fields cannot complete a review. Requested
+duration (1–3,600 seconds) and files (1–200, default 200) are strict Python
+integers. The lease retains its requested file bound; returned `files` must
+be an integer from zero through that bound, never a Boolean, float or string.
+Scope/actions must be collections of strings and findings a list/tuple of
+typed records. Malformed or over-budget results do not accept a report or
+release ownership; only a valid result can finish the active lease.
+Bound read tools through the coordinator's `readers` map.
 `read_action` rejects mutation/arbitrary-command operations before dispatch.
 Ordinary test execution is a separate coordinator-owned test role, not a
 second overlapping reviewer.
@@ -150,7 +158,12 @@ store, capsule, import-capability proof or protected installation is required.
 The independently checked
 [`review_family.schema.json`](../scripts/workflow_pilot/review_family.schema.json)
 defines the closed wire shape. `validate_request` also checks identity joins,
-duplicates, bounds and subject membership. A request contains:
+duplicates, bounds and subject membership. The CLI accepts only a non-symlink
+regular request file, reads at most 1 MiB plus one EOF byte from its checked
+descriptor, and rejects overage before JSON parsing. Malformed JSON, invalid
+record types and nonregular inputs produce bounded nonzero diagnostics.
+These file/runtime limits do not add fields to the version-1 JSON schema.
+A request contains:
 
 ```json
 {
@@ -253,7 +266,8 @@ and isolated entrypoints, not tracebacks or successful fallback assessments.
 
 Roles are not the entire concrete member set. Every obligation identifies its
 actual producer/predicate, consumer, representation, revalidation, profile,
-source inputs and evidence classes. Parse the declared enum/schema/model;
+source inputs, evidence classes and expected `kind` (`host`, `native`,
+`parsed` or `arm-object`). Parse the declared enum/schema/model;
 never infer completeness from a filename alone. The trusted reviewer and
 coordinator must select the model that genuinely represents the finding.
 Unknown, ambiguous, added/deleted or remapped members need a reviewed model
@@ -298,6 +312,18 @@ errors, missing tools, zero/skipped tests and timeouts are **unavailable**,
 not useful failing controls. Native exit codes come from the selected trusted
 driver, not a candidate PASS label. Host, native, generated and ARM object
 results are explicitly typed; none is relabeled as target-ROM execution.
+The worker reports `probe`, `kind`, `verdict`, strict integer `checks` and a
+nonblank `detail` of at most 2,000 characters. The adapter preserves those
+fields together with the captured source objects, and validates the reported
+kind against the obligation instead of deriving a replacement from the probe
+name. Missing fields, wrong kinds/counts/types and unknown fields reject.
+Successful and contract-violation rows retain the actual executor's kind and
+positive check count (a failed semantic assertion counts as an executed check).
+Unavailable rows always have zero checks: they retain the attempted executor's
+kind when known, or use `null` when no executor/result was obtained. Neither
+form grants successful or affected-fixed evidence credit. A wrongly routed
+native/host executor cannot establish an ARM/parsed obligation, even when its
+own assertions pass or report a genuine violation.
 Actual gameplay changes still require their applicable existing ROM scenario.
 
 ### Review triage, holds, persistence and metrics

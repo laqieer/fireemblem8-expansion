@@ -72,6 +72,7 @@ class RequestTests(unittest.TestCase):
         }]
         model.validate_request(valid)
         for field, value in (("subject", "other"), ("family", "other"),
+                             ("family", []), ("family", {}), ("family", None),
                              ("reported_member", ""), ("case_id", "TC-OTHER-001")):
             data = copy.deepcopy(valid)
             data["findings"][0][field] = value
@@ -193,7 +194,8 @@ class RoleTests(unittest.TestCase):
     def test_existing_runtime_task_and_read_tool_boundary(self):
         self.session.begin(self.runtime, "reviewer", duration=30)
         self.session.read_action("read-candidate")
-        for action in ("write", "bash", "push", "comment", "request-review", "dispatch-CI", "merge"):
+        for action in ("write", "bash", "push", "comment", "request-review", "dispatch-CI",
+                       "merge", None, [], {}):
             with self.subTest(action=action), self.assertRaises(model.ReviewError):
                 self.session.read_action(action)
         self.assertEqual(self.effects, ["read"])
@@ -206,7 +208,15 @@ class RoleTests(unittest.TestCase):
             self.session.read_action("read-candidate")
 
     def test_overlap_bounds_and_no_waiting(self):
-        for owner in ("implementer", "coordinator"):
+        for coordinator, implementer, scope in (
+            (None, "implementer", self.scope), ("coordinator", [], self.scope),
+            (" ", "implementer", self.scope),
+            *(("coordinator", "implementer", scope)
+              for scope in (None, {}, "scope", ["scope"], frozenset({1}))),
+        ):
+            with self.subTest(scope=scope), self.assertRaises(model.ReviewError):
+                model.ReviewSession(coordinator, implementer, scope, "b" * 40)
+        for owner in ("implementer", "coordinator", None, True, 1, [], {}, "", " "):
             with self.assertRaises(model.ReviewError):
                 self.session.begin(self.runtime, owner)
         self.session.begin(self.runtime, "reviewer", duration=10)
@@ -228,6 +238,100 @@ class RoleTests(unittest.TestCase):
             setattr(runtime.result, field, wrong)
             with self.subTest(field=field), self.assertRaises(model.ReviewError):
                 session.finish(runtime)
+
+    def test_runtime_completion_requires_actual_true_flags(self):
+        missing = object()
+        for field in ("completed", "read_only"):
+            for value in (False, None, 0, 1, "", "incomplete", "true", [], {}, [True], missing):
+                with self.subTest(field=field, value=value):
+                    session = model.ReviewSession("coordinator", "implementer", self.scope, "b" * 40)
+                    runtime = Runtime(session.head, self.scope)
+                    session.begin(runtime, "reviewer")
+                    if value is missing:
+                        delattr(runtime.result, field)
+                    else:
+                        setattr(runtime.result, field, value)
+                    with self.assertRaises(model.ReviewError):
+                        session.finish(runtime)
+                    self.assertFalse(session.lease.finished)
+                    self.assertIsNone(session.report)
+                    setattr(runtime.result, field, True)
+                    session.finish(runtime)
+                    self.assertTrue(session.lease.finished)
+
+    def test_requested_and_returned_file_bounds_are_strict_and_retained(self):
+        for keyword, ceiling in (("duration", 3600), ("max_files", 200)):
+            for value in (-1, 0, ceiling + 1, True, False, 1.0, 1.5, "10", None, [], {}):
+                with self.subTest(requested=keyword, value=value):
+                    session = model.ReviewSession("coordinator", "implementer", self.scope, "b" * 40)
+                    runtime = Runtime(session.head, self.scope)
+                    with self.assertRaises(model.ReviewError):
+                        session.begin(runtime, "reviewer", **{keyword: value})
+                    self.assertEqual(runtime.calls, [])
+                    self.assertIsNone(session.lease)
+        for value in (-1, 11, 200, 201, True, False, 0.0, 3.0, 3.5, "3", None, [], {}):
+            with self.subTest(returned=value):
+                session = model.ReviewSession("coordinator", "implementer", self.scope, "b" * 40)
+                runtime = Runtime(session.head, self.scope)
+                session.begin(runtime, "reviewer", max_files=10)
+                self.assertEqual(runtime.calls[0][1]["max_files"], 10)
+                runtime.result.files = value
+                with self.assertRaises(model.ReviewError):
+                    session.finish(runtime)
+                self.assertFalse(session.lease.finished)
+        for bound, files in ((1, 0), (1, 1), (10, 10), (200, 200)):
+            with self.subTest(bound=bound, files=files):
+                session = model.ReviewSession("coordinator", "implementer", self.scope, "b" * 40)
+                runtime = Runtime(session.head, self.scope)
+                session.begin(runtime, "reviewer", max_files=bound)
+                runtime.result.files = files
+                session.finish(runtime)
+                self.assertEqual(session.lease.max_files, bound)
+
+    def test_malformed_runtime_reports_do_not_release_ownership(self):
+        finding = model.Finding(
+            "finding", next(iter(self.scope)), "wire", "validators:review-session",
+            "b" * 40, "scripts/workflow_pilot/review_family.py", "local:task-1")
+        malformed = [
+            ("subjects", None), ("subjects", next(iter(self.scope))), ("subjects", ([],)),
+            ("actions", None), ("actions", ""), ("actions", ([],)),
+            ("findings", None), ("findings", {}), ("findings", "none"),
+            ("findings", (replace(finding, family=[]),)),
+            ("findings", (replace(finding, subject=[]),)),
+            ("started_at", []), ("completed_at", "2025-01-01T00:00:00Z"),
+        ]
+        missing = object()
+        malformed.extend((field, missing) for field in vars(self.runtime.result))
+        malformed.extend((None, value) for value in (None, {}, "incomplete"))
+        for field, value in malformed:
+            with self.subTest(field=field, value=value):
+                owners = model.ReviewOwnership()
+                identity = ("owner/repo", 1, "a" * 40)
+                session = model.ReviewSession(
+                    "coordinator", "implementer", self.scope, "b" * 40,
+                    identity=identity, owners=owners)
+                other = model.ReviewSession(
+                    "coordinator", "implementer", self.scope, "b" * 40,
+                    identity=identity, owners=owners)
+                runtime = Runtime(session.head, self.scope)
+                valid = copy.copy(runtime.result)
+                session.begin(runtime, "reviewer")
+                if field is None:
+                    runtime.result = value
+                elif value is missing:
+                    delattr(runtime.result, field)
+                else:
+                    setattr(runtime.result, field, value)
+                with self.assertRaises(model.ReviewError):
+                    session.finish(runtime)
+                self.assertFalse(session.lease.finished)
+                self.assertIsNone(session.report)
+                self.assertEqual(session.local_findings, {})
+                with self.assertRaises(model.ReviewError):
+                    other.begin(runtime, "other-reviewer")
+                runtime.result = valid
+                session.finish(runtime)
+                other.begin(runtime, "other-reviewer")
 
     def test_local_report_findings_are_typed_unique_and_task_bound(self):
         finding = model.Finding(
