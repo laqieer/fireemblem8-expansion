@@ -295,19 +295,24 @@ def validate_state(value):
     text(value["coordinator_id"], maximum=128, pattern=ID_RE)
     validate_availability(value["availability"])
     validate_clock(value["clock"])
-    names, owners, sessions, owner_processes = set(), set(), set(), set()
+    at = now()
+    require(timestamp(value["clock"]["at"]) <= timestamp(at), "future clock observation")
+    names, owners, sessions, dispatches, owner_processes = set(), set(), set(), set(), set()
     active = []
     for entry in items(value["assignments"]):
         fields(entry, "assignment assigned_at git_identity events process checks result validation "
                "interruption cursors remote_actions closed_at coordination_turns")
         a = validate_assignment(entry["assignment"])
         require(a["repository"] == value["repository"], "assignment repository mismatch")
-        require(a["id"] not in names and a["owner_id"] not in owners and a["session_id"] not in sessions,
-                "duplicate/reused owner, session or assignment")
+        require(a["id"] not in names and a["owner_id"] not in owners
+                and a["session_id"] not in sessions and a["dispatch_id"] not in dispatches,
+                "duplicate/reused owner, session, assignment or dispatch")
         names.add(a["id"])
         owners.add(a["owner_id"])
         sessions.add(a["session_id"])
+        dispatches.add(a["dispatch_id"])
         timestamp(entry["assigned_at"])
+        owner_lifetime_ms(entry, at)
         integer(entry["coordination_turns"])
         fields(entry["git_identity"], "worktree git_dir common_dir device inode")
         for name in ("worktree", "git_dir", "common_dir"):
@@ -321,7 +326,7 @@ def validate_state(value):
             choice(event["state"], set(STATES))
             text(event["source_id"], maximum=128)
             current = timestamp(event["at"])
-            require(last <= current, "lifecycle observation order reversed")
+            require(last <= current <= timestamp(at), "lifecycle observation chronology invalid")
             event_names.append(event["state"])
             event_ids.append(event["source_id"])
             last = current
@@ -356,6 +361,9 @@ def validate_state(value):
                 path(name)
             text(interruption["lock_reason"], maximum=256)
             text(interruption["retained_data_sha256"], maximum=64, pattern=DIGEST_RE)
+            require(entry["closed_at"] is not None
+                    and timestamp(interruption["at"]) == timestamp(entry["closed_at"]),
+                    "interruption must match owner close")
         cursor_paths = set()
         for cursor in items(entry["cursors"], maximum=4):
             fields(cursor, "path device inode offset session_id")
@@ -584,14 +592,16 @@ def observe_cli(entry, log_path):
     a = entry["assignment"]
     cursor = next((item for item in entry["cursors"] if item["path"] == str(Path(log_path).absolute())), None)
     events, updated = observations.cli_event_batch(log_path, cursor)
-    for event in events:
+    for session_id, event in events:
         require(timestamp(event["timestamp"]) <= timestamp(now()), "future CLI event")
+        if timestamp(event["timestamp"]) < timestamp(entry["assigned_at"]):
+            continue
         data = event["data"]
         kind = event.get("type")
         if (kind == "tool.execution_start" and data.get("toolCallId") == a["dispatch_id"]
                 and data.get("toolName") in {"task", "write_agent", "bash"}):
             _event(entry, "assignment_sent", event["id"])
-        if updated["session_id"] != a["session_id"] or event.get("agentId", a["owner_id"]) != a["owner_id"]:
+        if session_id != a["session_id"] or event.get("agentId", a["owner_id"]) != a["owner_id"]:
             continue
         # Receipt binds the actual dispatched task as well as its prompt marker.
         # Subagent-start/transport success or opaque event data cannot substitute.
@@ -883,6 +893,26 @@ def owner_completion_errors(process):
     return codes
 
 
+def owner_lifetime_ms(entry, at):
+    start, cutoff = timestamp(entry["assigned_at"]), timestamp(at)
+    end = timestamp(entry["closed_at"]) if entry["closed_at"] is not None else cutoff
+    require(start <= end <= cutoff, "invalid owner lifetime chronology")
+    return math.ceil((end - start).total_seconds() * 1000)
+
+
+def owner_acceptance_errors(entry, at):
+    a, process = entry["assignment"], entry["process"]
+    codes = owner_completion_errors(process)
+    if owner_lifetime_ms(entry, at) > a["max_lifetime_seconds"] * 1000:
+        codes.append("owner-lifetime-exceeded")
+    if process is not None:
+        if process["age_ms"] > a["max_lifetime_seconds"] * 1000:
+            codes.append("owner-lifetime-exceeded")
+        if process["peak_rss_bytes"] is not None and process["peak_rss_bytes"] > a["max_peak_rss_bytes"]:
+            codes.append("owner-rss-exceeded")
+    return sorted(set(codes))
+
+
 def resource_evidence_errors(entry, result, at):
     """Recheck captured evidence without requiring a historical worktree."""
     a = entry["assignment"]
@@ -949,15 +979,8 @@ def validate_handoff(state, result, *, worktree, run_checks=True):
     reject(entry["result"] != result, "missing-handoff-observation")
     reject(tuple(event["state"] for event in entry["events"]) != STATES, "incomplete-lifecycle")
     reject(bool(entry["remote_actions"]), "implementation-owner-remote-action")
-    at = now()
-    lifetime = (timestamp(entry["closed_at"] or at) - timestamp(entry["assigned_at"])).total_seconds()
-    reject(lifetime > a["max_lifetime_seconds"], "owner-lifetime-exceeded")
     process = entry["process"]
-    codes.extend(owner_completion_errors(process))
-    if process is not None:
-        reject(process["age_ms"] > a["max_lifetime_seconds"] * 1000, "owner-lifetime-exceeded")
-        reject(process["peak_rss_bytes"] is not None
-               and process["peak_rss_bytes"] > a["max_peak_rss_bytes"], "owner-rss-exceeded")
+    codes.extend(owner_acceptance_errors(entry, now()))
     try:
         current = observe_git(a)
         reject(current["identity"] != entry["git_identity"], "wrong-worktree")
@@ -982,6 +1005,7 @@ def validate_handoff(state, result, *, worktree, run_checks=True):
         reason = {-9: "sigkill", 124: "timeout"}.get(process["exit_code"], "process-exit")
         preserve_interruption(entry, reason)
     at = now()
+    codes.extend(owner_acceptance_errors(entry, at))
     codes = sorted(set(codes))
     outcome = "rejected" if codes else "accepted"
     if entry["interruption"] is not None:
@@ -995,7 +1019,7 @@ def validate_handoff(state, result, *, worktree, run_checks=True):
     validate_verdict(verdict)
     entry["validation"] = verdict
     if len(entry["events"]) >= 4 and not owner_completion_errors(process):
-        entry["closed_at"] = entry["closed_at"] or now()
+        entry["closed_at"] = entry["closed_at"] or at
     return verdict
 
 
@@ -1055,10 +1079,9 @@ def summarize_handoffs(state):
                     and entry["closed_at"] is not None and len(entry["events"]) == 5
                     and not entry["remote_actions"] and entry["interruption"] is None,
                     "accepted report lacks its complete handoff observations")
-            require(not owner_completion_errors(process), "accepted report lacks observed zero owner completion")
-            require(process["age_ms"] <= a["max_lifetime_seconds"] * 1000
-                    and process["peak_rss_bytes"] <= a["max_peak_rss_bytes"]
-                    and verdict["changed_lines"] is not None
+            require(not owner_acceptance_errors(entry, entry["closed_at"]),
+                    "accepted report lacks budget-compliant zero owner completion")
+            require(verdict["changed_lines"] is not None
                     and verdict["changed_lines"] <= a["budgets"]["changed_lines"],
                     "accepted report lacks measured budget compliance")
             require(not resource_evidence_errors(entry, result, verdict["observed_at"]),
@@ -1070,7 +1093,7 @@ def summarize_handoffs(state):
             rejections.update(verdict["rejection_codes"])
             stale += "stale-result" in verdict["rejection_codes"]
         end = entry["closed_at"] or state["clock"]["at"]
-        lifetimes.append(max(0, math.ceil((timestamp(end) - timestamp(entry["assigned_at"])).total_seconds() * 1000)))
+        lifetimes.append(owner_lifetime_ms(entry, end))
         process = entry["process"]
         if process is None or not process["rss_complete"]:
             unknown_rss += 1

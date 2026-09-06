@@ -1563,6 +1563,11 @@ exercise structural/schema agreement. Git identity, cross-record correlation,
 chronology, ownership and evidence completeness require additional runtime
 checks, not a schema claim of authenticity.
 
+Assignment, owner, session and actual dispatch IDs are each unique across the
+retained state, including closed history. A successor or independent assignment
+needs a fresh dispatch identity; changing other IDs cannot reuse an old task
+correlation.
+
 Reusable text and path fields accept Unicode scalar values, including
 supplementary characters and valid JSON escapes. Escaped lone UTF-16
 surrogates reject in the independent schema and the byte API/CLI alike.
@@ -1652,6 +1657,12 @@ correlates the coordinator's task/write-agent/shell tool call and must equal
 the native receipt's `data.parentAgentTaskId`; `session_id` and `owner_id`
 identify the actual assigned session/runtime. A correlation marker alone is
 not receipt evidence. Missing, opaque or wrong task identity stays incomplete.
+Each event uses the session context established before it, starting from the
+previous cursor; a later `session.start` cannot retroactively attach earlier
+receipt, progress or delivery to that session. Incremental and bounded batches
+retain this context without storing another event history. An old session
+start may establish resumed context, but events predating the assignment do
+not acknowledge or count its work. Future-dated events reject.
 
 | State | Actual observation |
 | --- | --- |
@@ -1738,6 +1749,16 @@ exit observations remain valid state. A committed WIP checkpoint is retained and
 may still be published immediately by the existing #207 coordinator workflow;
 WIP publication and accepted handoff completion are separate decisions.
 
+One pure owner-acceptance predicate covers zero completion, assignment-to-close
+wall-clock lifetime, process age and RSS in both live validation and reporting.
+A small process age cannot override an exceeded wall-clock limit. Validation
+rechecks eligibility after focused checks and records a new close and verdict
+at the same observation instant, so time spent checking cannot evade the limit.
+Future or negative owner/lifecycle/clock chronology is invalid, not zero elapsed
+time. Closed history uses its captured interval without requiring its worktree;
+an open report whose recorded clock predates assignment is incomplete rather
+than silently clamped to zero.
+
 Register the existing direct shell watcher with `reserve_watcher`, binding
 repository/run/attempt/head and an actually running process. Boot/PID/start
 identity is unique across all owners and watchers regardless of runtime handle,
@@ -1773,6 +1794,12 @@ with a combined 4-MiB/30-second bound and at most 256 mutable paths. A bounded
 32,768-entry nofollow type scan catches special files that Git omits; it does
 not read clean content or follow symlink targets. Unsupported types, unsafe
 metadata, changed data or an observation overage hold without deleting work.
+
+An interruption has a non-null close at the same parsed timestamp, after its
+assignment and lifecycle observations and before any replacement assignment.
+Loaded contradictory/future times reject, so recovery cost cannot become
+negative. The schema requires the close field; timestamp comparison and
+replacement chronology remain runtime checks rather than authentication.
 
 Only after the owner is terminal and preservation succeeds may one fresh
 replacement reuse that same worktree and exact HEAD. Reassignment reobserves

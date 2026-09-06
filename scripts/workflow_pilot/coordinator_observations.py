@@ -338,7 +338,7 @@ def observe_owned_exit(process: subprocess.Popen, identity):
 
 
 def cli_event_batch(path, cursor=None):
-    """Read native Copilot events incrementally; no synthetic backend/exit parser."""
+    """Read bounded (session context, native event) pairs from the previous cursor."""
     path = Path(path).absolute()
     with raw_git._directory_fd(path.parent) as parent:
         fd = os.open(path.name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=parent)
@@ -376,7 +376,7 @@ def cli_event_batch(path, cursor=None):
                 require(isinstance(session, str) and session, "CLI session lacks ID")
                 require(current["session_id"] in (None, session), "CLI session changed")
                 current["session_id"] = session
-            events.append(event)
+            events.append((current["session_id"], event))
             consumed += len(line)
         current["offset"] = source.tell()
         return events, current

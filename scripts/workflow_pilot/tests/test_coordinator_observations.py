@@ -7,6 +7,7 @@ import subprocess
 import sys
 import time
 import unittest
+from datetime import timedelta
 from pathlib import Path
 from unittest import mock
 
@@ -15,8 +16,18 @@ from scripts.workflow_pilot import coordinator_observations as observations
 from scripts.workflow_pilot import raw_diff_check as raw
 from scripts.workflow_pilot import reporter
 from scripts.workflow_pilot.tests.test_agent_handoff import (
-    GitFixture, ROOT, git, native_event, write_json,
+    GitFixture, ROOT, at_offset, git, native_event, write_json,
 )
+
+
+def owner_events(fixture, result, prefix):
+    return [
+        native_event("user.message", prefix + "-receipt", content=f"[handoff:{fixture.assignment['id']}]",
+                     parentAgentTaskId=fixture.assignment["dispatch_id"]),
+        native_event("assistant.turn_start", prefix + "-turn"),
+        native_event("tool.execution_start", prefix + "-progress", toolCallId=prefix + "-edit", toolName="bash"),
+        native_event("assistant.message", prefix + "-delivery", content=json.dumps({"handoff_result": result})),
+    ]
 
 
 class NativeObservationTests(unittest.TestCase):
@@ -90,6 +101,74 @@ class NativeObservationTests(unittest.TestCase):
         self.assertEqual(f.entry["events"][-1]["source_id"], "actual-receipt")
         handoff.observe_cli(f.entry, f.owner_log)
         self.assertEqual(len(f.entry["events"]), 2)
+
+    def test_each_event_uses_prior_session_context_within_and_across_batches(self):
+        for mode in ("same-batch", "split", "bounded"):
+            with self.subTest(mode=mode):
+                f = GitFixture()
+                self.addCleanup(f.close)
+                process = f.owner_process()
+                f.append(f.parent_log, native_event("tool.execution_start", "dispatch",
+                                                    toolCallId=f.assignment["dispatch_id"], toolName="task"))
+                handoff.observe_cli(f.entry, f.parent_log)
+                result = {"schema_version": 3, "assignment_id": f.assignment["id"],
+                          "assigned_parent_sha": f.parent, "result_sha": f.commit(),
+                          "evidence_refs": ["raw-evidence"]}
+                early = owner_events(f, result, "early")
+                if mode == "bounded":
+                    early = [native_event("assistant.message", f"unbound-{index}", content="unbound")
+                             for index in range(124)] + early
+                f.append(f.owner_log, *early)
+                if mode == "split":
+                    handoff.observe_cli(f.entry, f.owner_log)
+                f.append(f.owner_log, native_event("session.start", "late-start",
+                                                  sessionId=f.assignment["session_id"]))
+                handoff.observe_cli(f.entry, f.owner_log)
+                if mode == "bounded":
+                    handoff.observe_cli(f.entry, f.owner_log)
+                self.assertEqual([event["state"] for event in f.entry["events"]], ["assignment_sent"])
+                self.assertIsNone(f.entry["result"])
+                self.assertEqual(f.entry["coordination_turns"], 0)
+                f.append(f.owner_log, *owner_events(f, result, "actual"))
+                handoff.observe_cli(f.entry, f.owner_log)
+                self.assertEqual([event["state"] for event in f.entry["events"]], list(handoff.STATES))
+                self.assertEqual(f.entry["events"][1]["source_id"], "actual-receipt")
+                self.assertEqual(f.entry["coordination_turns"], 1)
+                handoff.observe_cli(f.entry, f.owner_log)
+                self.assertEqual(f.entry["coordination_turns"], 1)
+                f.finish_owner(process)
+                self.assertTrue(f.validate(result)["handoff_ready"])
+
+    def test_stale_events_do_not_advance_assignment_but_old_session_context_can_resume(self):
+        f = self.fixture
+        process = f.owner_process()
+        old = at_offset(-3600)
+        dispatch = native_event("tool.execution_start", "old-dispatch",
+                                toolCallId=f.assignment["dispatch_id"], toolName="task")
+        dispatch["timestamp"] = old
+        f.append(f.parent_log, dispatch)
+        handoff.observe_cli(f.entry, f.parent_log)
+        self.assertEqual(f.entry["events"], [])
+        f.append(f.parent_log, native_event("tool.execution_start", "actual-dispatch",
+                                            toolCallId=f.assignment["dispatch_id"], toolName="task"))
+        handoff.observe_cli(f.entry, f.parent_log)
+        result = {"schema_version": 3, "assignment_id": f.assignment["id"],
+                  "assigned_parent_sha": f.parent, "result_sha": f.commit(),
+                  "evidence_refs": ["raw-evidence"]}
+        events = [native_event("session.start", "old-context", sessionId=f.assignment["session_id"]),
+                  *owner_events(f, result, "stale")]
+        for event in events:
+            event["timestamp"] = old
+        f.append(f.owner_log, *events)
+        handoff.observe_cli(f.entry, f.owner_log)
+        self.assertEqual([event["state"] for event in f.entry["events"]], ["assignment_sent"])
+        self.assertEqual(f.entry["coordination_turns"], 0)
+        self.assertIsNone(f.entry["result"])
+        f.append(f.owner_log, *owner_events(f, result, "current"))
+        handoff.observe_cli(f.entry, f.owner_log)
+        f.finish_owner(process)
+        self.assertTrue(f.validate(result)["handoff_ready"])
+        self.assertEqual(f.entry["events"][1]["source_id"], "current-receipt")
 
     def test_native_delivery_does_not_authorize_a_second_owner_cycle(self):
         f = self.fixture
@@ -585,6 +664,61 @@ class RecoveryObservationTests(unittest.TestCase):
             handoff.assign(f.state, {**replacement, "id": "second-replacement", "owner_id": "third-owner"})
         self.assertGreaterEqual(handoff.summarize_handoffs(f.state)["recovery_ms"], 0)
 
+    def test_interruption_chronology_cannot_precede_assignment_close_or_follow_replacement(self):
+        f = self.fixture
+        process = f.owner_process()
+        f.receive()
+        retained = f.worktree / "docs/retained"
+        retained.write_text("original mutable data\n")
+        f.finish_owner(process)
+        recovery = handoff.preserve_interruption(f.entry, "process-exit")
+        replacement = {**copy.deepcopy(f.assignment), "id": "replacement", "owner_id": "replacement-owner",
+                       "session_id": "replacement-session", "dispatch_id": "replacement-dispatch",
+                       "kind": "replacement", "predecessor_id": f.assignment["id"]}
+        baseline = {"schema_version": 1, "snapshot": {"repository": f.state["repository"]}}
+        index = Path(f.entry["git_identity"]["git_dir"]) / "index"
+        lock = index.parent / "locked"
+        before = (retained.read_bytes(), index.read_bytes(), lock.read_bytes())
+        for mutation in ("pre-assignment", "after-close", "missing-close", "future", "negative-lifetime"):
+            with self.subTest(mutation=mutation):
+                state = copy.deepcopy(f.state)
+                entry = state["assignments"][0]
+                if mutation in ("pre-assignment", "negative-lifetime"):
+                    entry["interruption"]["at"] = at_offset(-3600)
+                elif mutation == "after-close":
+                    entry["interruption"]["at"] = (
+                        observations.timestamp(entry["closed_at"]) + timedelta(microseconds=1)
+                    ).isoformat().replace("+00:00", "Z")
+                elif mutation == "missing-close":
+                    entry["closed_at"] = None
+                else:
+                    entry["interruption"]["at"] = at_offset(3600)
+                if mutation in ("future", "negative-lifetime"):
+                    entry["closed_at"] = entry["interruption"]["at"]
+                with self.subTest(boundary="load"):
+                    path = f.home / "chronology.json"
+                    write_json(path, state)
+                    with self.assertRaises(handoff.HandoffDataError):
+                        handoff.validate_state(observations.load_json(path))
+                with self.subTest(boundary="report"):
+                    with self.assertRaises(reporter.PilotDataError):
+                        reporter.with_handoff_metrics(baseline, observations.json_bytes(state))
+                with self.subTest(boundary="replacement"):
+                    with self.assertRaises(handoff.HandoffDataError):
+                        handoff.assign(state, replacement)
+                self.assertEqual(before, (retained.read_bytes(), index.read_bytes(), lock.read_bytes()))
+        child = handoff.assign(f.state, replacement)
+        expected = (observations.timestamp(child["assigned_at"]) - observations.timestamp(recovery["at"]))
+        self.assertGreater(expected.total_seconds(), 0)
+        self.assertGreater(handoff.summarize_handoffs(f.state)["recovery_ms"], 0)
+        state = copy.deepcopy(f.state)
+        state["assignments"][0]["interruption"]["at"] = (
+            observations.timestamp(child["assigned_at"]) + timedelta(seconds=1)
+        ).isoformat().replace("+00:00", "Z")
+        with self.assertRaises(reporter.PilotDataError):
+            reporter.with_handoff_metrics(baseline, observations.json_bytes(state))
+        self.assertEqual(before, (retained.read_bytes(), index.read_bytes(), lock.read_bytes()))
+
     def test_same_paths_do_not_hide_mutated_recovery_bytes_index_or_modes(self):
         f = self.fixture
         process = f.owner_process()
@@ -731,6 +865,38 @@ class RecoveryObservationTests(unittest.TestCase):
 
 
 class HandoffCliTests(unittest.TestCase):
+    def test_cli_session_context_and_clock_rejection_preserve_canonical_state(self):
+        f = GitFixture()
+        self.addCleanup(f.close)
+        process = f.owner_process()
+        result = {"schema_version": 3, "assignment_id": f.assignment["id"],
+                  "assigned_parent_sha": f.parent, "result_sha": f.commit(),
+                  "evidence_refs": ["raw-evidence"]}
+        f.append(f.owner_log, native_event("tool.execution_start", "dispatch",
+                                           toolCallId=f.assignment["dispatch_id"], toolName="task"),
+                 *owner_events(f, result, "unbound"),
+                 native_event("session.start", "late-start", sessionId=f.assignment["session_id"]))
+        path = f.home / "state.json"
+        write_json(path, f.state)
+        command = [str(ROOT / "build/host-python/bin/python3"), "-I",
+                   str(ROOT / "scripts/workflow_pilot/isolated_launcher.py"), "agent-handoff", "observe",
+                   "--state", str(path), "--assignment-id", f.assignment["id"],
+                   "--runtime-events", str(f.owner_log)]
+        actual = raw.run_process(command, cwd=ROOT, env=raw.git_environment())
+        self.assertEqual(actual.returncode, 0, actual.stderr.decode())
+        entry = observations.load_json(path)["assignments"][0]
+        with self.subTest(boundary="event-context"):
+            self.assertEqual([event["state"] for event in entry["events"]], ["assignment_sent"])
+            self.assertIsNone(entry["result"])
+        wrong = copy.deepcopy(f.state)
+        wrong["clock"]["at"] = at_offset(3600)
+        write_json(path, wrong)
+        before = path.read_bytes()
+        rejected = raw.run_process(command, cwd=ROOT, env=raw.git_environment())
+        self.assertEqual(rejected.returncode, 2)
+        self.assertEqual(path.read_bytes(), before)
+        f.finish_owner(process)
+
     def test_documented_isolated_cli_positive_negative_and_no_publication_entrypoint(self):
         f = GitFixture()
         self.addCleanup(f.close)

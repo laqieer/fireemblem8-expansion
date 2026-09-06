@@ -273,6 +273,7 @@
       "else": {"properties": {"handoff_ready": {"const": false}}}
     },
     "entry": {
+      "description": "Runtime compares assignment, lifecycle and close times; interruption must match close.",
       "type": "object", "additionalProperties": false,
       "required": ["assignment", "assigned_at", "git_identity", "events", "process", "checks",
                    "result", "validation", "interruption", "cursors", "remote_actions", "closed_at", "coordination_turns"],
@@ -289,7 +290,9 @@
         "remote_actions": {"type": "array", "maxItems": 128, "uniqueItems": true, "items": {"$ref": "#/$defs/action"}},
         "closed_at": {"anyOf": [{"$ref": "#/$defs/time"}, {"type": "null"}]},
         "coordination_turns": {"$ref": "#/$defs/integer"}
-      }
+      },
+      "if": {"properties": {"interruption": {"not": {"type": "null"}}}},
+      "then": {"properties": {"closed_at": {"$ref": "#/$defs/time"}}}
     },
     "run": {
       "type": "object", "additionalProperties": false,
@@ -335,7 +338,7 @@
         "coordinator_id": {"$ref": "#/$defs/id"}, "availability": {"$ref": "#/$defs/availability"},
         "clock": {"$ref": "#/$defs/clock"},
         "assignments": {
-          "description": "Runtime also enforces one initial root per issue/non-null PR and predecessor lineage.",
+          "description": "Runtime also enforces unique assignment/owner/session/dispatch identities, one initial root per issue/non-null PR and predecessor lineage.",
           "type": "array", "maxItems": 128, "uniqueItems": true, "items": {"$ref": "#/$defs/entry"}
         },
         "watchers": {

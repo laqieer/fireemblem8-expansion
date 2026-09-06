@@ -2399,6 +2399,13 @@ game behavior needs a compensating change.
    unrelated, absent or opaque identities/content leave receipt incomplete.
    `subagent.started`/transport success infer nothing; actual tool start
    advances progress once. Replayed event cursors cannot multiply metrics.
+   Put receipt, turn, progress and delivery before the first matching
+   `session.start`: none may acquire its later context. Repeat within a batch,
+   across incremental calls and at the 128-event boundary; valid subsequent
+   events with retained cursor context still complete normally. An old session
+   start may establish context, but stale pre-assignment task events must not
+   acknowledge or count the new assignment. Exercise the actual CLI and check
+   that a future-clock rejection leaves canonical state unchanged.
    Real process exit/RSS pass; opaque/reused identities, missing complete RSS,
    lifetime/RSS overage and repeated committed-owner work do not pass.
    Deliver a real committed checkpoint, then observe owner exit 7 or SIGKILL:
@@ -2406,12 +2413,24 @@ game behavior needs a compensating change.
    before retirement, and Git HEAD/index/check facts remain intact. A missing
    owned exit observation never becomes zero. Actual zero-exit completion
    still passes; immediate WIP publication is a separate coordinator decision.
+   Compare captured assignment-to-close lifetime just below, exactly at and
+   one microsecond beyond the limit while actual process age stays small.
+   Live admission and historical accepted reporting must agree; retained valid
+   history still reports after removing only its fixture worktree. Advance a
+   controlled clock past the limit after a successful real raw check: final
+   acceptance must reject, with close and verdict using one timestamp.
+   Missing/future/negative lifecycle times and an open report clock predating
+   assignment never become fabricated zero elapsed time.
 6. Reserve duplicate/overlapping owners/watchers and attempt a second state
    writer: each rejects. Try different watcher IDs/runs with the same actual
    boot/PID/start identity, both through reservation and loaded state: reject.
    Distinct live processes pass; an owned unreaped zombie cannot reserve a
    watcher. Running/ended records must agree with process state and exit data;
    completed observations with unknown exit/RSS remain valid and reconcilable.
+   Reuse a dispatch ID with otherwise fresh assignment/owner/session IDs in
+   a review or independent reservation, and mutate a loaded state similarly:
+   reject. A genuinely fresh dispatch remains valid, and the existing other
+   identity-uniqueness controls still reject duplicates.
    Record an implementation-owner prohibited remote
    action and confirm rejection. This is operational/role-policy checking,
    not authentication against a hostile same-UID process.
@@ -2432,6 +2451,12 @@ game behavior needs a compensating change.
    evidence. Preserve exact staged/unstaged/untracked bytes, mode and index;
    confirm the original linked worktree is locked and reused by one replacement,
    with the running check incomplete. Missing OOM authority stays unknown.
+   Move interruption time before assignment, after close or after replacement;
+   remove its close or put both close/interruption in the future: reject in
+   loaded state, reporting and replacement admission without changing retained
+   file/index/lock bytes. Actual interruption matches close and yields positive,
+   never negative, replacement recovery cost. Independent schema checks the
+   required close, while time ordering/equality remains a runtime contract.
    A live owner, lost retention state or second replacement rejects without
    resetting/deleting the worktree or copying it into a new recovery engine.
    After completion or interruption, try a fresh `initial` assignment for the

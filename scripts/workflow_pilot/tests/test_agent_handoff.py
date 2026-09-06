@@ -659,6 +659,30 @@ class ExactHandoffTests(unittest.TestCase):
         with self.assertRaises(handoff.HandoffDataError):
             handoff.assign(f.state, {**successor, "id": "review-three"})
 
+    def test_lifetime_crossing_during_real_checks_is_rechecked_at_retirement(self):
+        f = self.fixture
+        result = f.complete()
+        f.assignment["max_lifetime_seconds"] = 30
+        offset = 0
+        def clock():
+            return (observations.timestamp(observations.utc_now()) + timedelta(seconds=offset)).isoformat().replace(
+                "+00:00", "Z")
+        capture = handoff.capture_check
+        def finish_check(*args, **kwargs):
+            nonlocal offset
+            check = capture(*args, **kwargs)
+            self.assertEqual(check["exit_code"], 0)
+            self.assertGreater(check["pid"], 0)
+            offset = 31
+            return check
+        with mock.patch.object(handoff, "now", side_effect=clock), \
+                mock.patch.object(handoff, "capture_check", side_effect=finish_check):
+            verdict = f.validate(result)
+            self.assertFalse(verdict["handoff_ready"], verdict)
+            self.assertIn("owner-lifetime-exceeded", verdict["rejection_codes"])
+            self.assertEqual(f.entry["closed_at"], verdict["observed_at"])
+            self.assertEqual(handoff.summarize_handoffs(f.state)["rejected"], 1)
+
     def test_duplicate_owners_and_recorded_remote_actions_reject(self):
         f = self.fixture
         with self.assertRaises(handoff.HandoffDataError):
@@ -799,6 +823,84 @@ class HandoffSchemaTests(unittest.TestCase):
                 with self.assertRaisesRegex(handoff.HandoffDataError, "overlapping protocol inputs"):
                     handoff.assign(empty, assignment)
                 self.assertEqual(empty["assignments"], [])
+
+    def test_dispatch_identity_is_unique_in_reservations_and_loaded_history(self):
+        f = self.fixture
+        result = f.complete()
+        self.assertTrue(f.validate(result)["handoff_ready"])
+        for kind in ("review", "initial"):
+            with self.subTest(kind=kind):
+                assignment = {**copy.deepcopy(f.assignment), "id": "next", "owner_id": "next-owner",
+                              "session_id": "next-session", "kind": kind,
+                              "predecessor_id": f.assignment["id"] if kind == "review" else None,
+                              "issue": 178 if kind == "review" else 179,
+                              "pull_request": 191 if kind == "review" else 192,
+                              "assigned_parent_sha": result["result_sha"]}
+                state = copy.deepcopy(f.state)
+                before = observations.json_bytes(state)
+                with self.subTest(boundary="reservation"):
+                    with self.assertRaisesRegex(handoff.HandoffDataError, "dispatch"):
+                        handoff.assign(state, assignment)
+                    self.assertEqual(observations.json_bytes(state), before)
+                assignment["dispatch_id"] = "next-dispatch"
+                state = copy.deepcopy(f.state)
+                handoff.assign(state, assignment)
+                self.validator.validate(state)
+                for key in ("id", "owner_id", "session_id", "dispatch_id"):
+                    with self.subTest(boundary="loaded", identity=key):
+                        duplicate = copy.deepcopy(state)
+                        duplicate["assignments"][1]["assignment"][key] = f.assignment[key]
+                        self.validator.validate(duplicate)
+                        path = f.home / "duplicate-identity.json"
+                        write_json(path, duplicate)
+                        with self.assertRaises(handoff.HandoffDataError):
+                            handoff.validate_state(observations.load_json(path))
+
+    def test_interruption_requires_a_close_but_time_order_is_a_runtime_contract(self):
+        f = self.fixture
+        process = f.owner_process()
+        f.finish_owner(process)
+        handoff.preserve_interruption(f.entry, "process-exit")
+        self.validator.validate(f.state)
+        handoff.validate_state(f.state)
+        changed = copy.deepcopy(f.state)
+        changed["assignments"][0]["closed_at"] = None
+        self.reject_both(changed, handoff.validate_state)
+        for value in (at_offset(-3600), at_offset(3600)):
+            with self.subTest(at=value):
+                changed = copy.deepcopy(f.state)
+                changed["assignments"][0]["interruption"]["at"] = value
+                self.validator.validate(changed)
+                with self.assertRaises(handoff.HandoffDataError):
+                    handoff.validate_state(changed)
+
+    def test_invalid_or_stale_owner_clock_cannot_become_zero_elapsed_time(self):
+        f = self.fixture
+        f.receive()
+        for field in ("assigned_at", "closed_at", "clock", "event"):
+            with self.subTest(field=field):
+                changed = copy.deepcopy(f.state)
+                if field == "clock":
+                    changed["clock"]["at"] = at_offset(3600)
+                elif field == "event":
+                    changed["assignments"][0]["events"][-1]["at"] = at_offset(3600)
+                else:
+                    changed["assignments"][0][field] = at_offset(3600)
+                self.validator.validate(changed)
+                with self.assertRaises(handoff.HandoffDataError):
+                    handoff.validate_state(changed)
+                with self.assertRaises(handoff.HandoffDataError):
+                    handoff.summarize_handoffs(changed)
+        changed = copy.deepcopy(f.state)
+        changed["clock"]["at"] = (observations.timestamp(f.entry["assigned_at"])
+                                 - timedelta(microseconds=1)).isoformat().replace("+00:00", "Z")
+        self.validator.validate(changed)
+        with self.assertRaises(handoff.HandoffDataError):
+            handoff.summarize_handoffs(changed)
+        for value in (None, ""):
+            changed = copy.deepcopy(f.state)
+            changed["assignments"][0]["assigned_at"] = value
+            self.reject_both(changed, handoff.validate_state)
 
     def test_unicode_scalar_constraints_cover_reusable_text_and_wire_fields(self):
         f = self.fixture
@@ -1217,6 +1319,47 @@ class OptionalReporterTests(unittest.TestCase):
         self.assertEqual(handoff.summarize_handoffs(state)["accepted"], 1)
         second["measurements"]["rom_bytes"] = None
         self.reject_live_and_report(f, state, "missing-budget-measurement")
+
+    def test_wall_lifetime_boundaries_match_live_and_historical_acceptance(self):
+        f = GitFixture()
+        self.addCleanup(f.close)
+        result = f.complete()
+        self.assertTrue(f.validate(result)["handoff_ready"])
+        baseline = {"schema_version": 1, "snapshot": {"repository": f.state["repository"]}}
+        histories = []
+        for micros in (-1, 0, 1):
+            with self.subTest(microseconds_past_limit=micros):
+                state = copy.deepcopy(f.state)
+                entry = state["assignments"][0]
+                elapsed = timedelta(seconds=f.assignment["max_lifetime_seconds"], microseconds=micros)
+                entry["assigned_at"] = (observations.timestamp(entry["closed_at"]) - elapsed).isoformat().replace(
+                    "+00:00", "Z")
+                handoff.validate_state(state)
+                self.assertLess(entry["process"]["age_ms"], f.assignment["max_lifetime_seconds"] * 1000)
+                wire = observations.json_bytes(state)
+                histories.append((wire, micros <= 0))
+                with self.subTest(boundary="report"):
+                    if micros > 0:
+                        with self.assertRaises(reporter.PilotDataError):
+                            reporter.with_handoff_metrics(baseline, wire)
+                    else:
+                        metrics = reporter.with_handoff_metrics(baseline, wire)["implementation_handoffs"]
+                        self.assertEqual(metrics["accepted"], 1)
+                        self.assertEqual(metrics["max_lifetime_ms"], 300000)
+                verdict = handoff.validate_handoff(state, entry["result"], worktree=f.worktree, run_checks=False)
+                self.assertEqual(verdict["handoff_ready"], micros <= 0)
+                if micros > 0:
+                    self.assertIn("owner-lifetime-exceeded", verdict["rejection_codes"])
+        f.close()
+        self.assertFalse(f.worktree.exists())
+        for wire, valid in histories:
+            with self.subTest(worktree_absent=True, valid=valid):
+                if valid:
+                    self.assertEqual(reporter.with_handoff_metrics(baseline, wire)["implementation_handoffs"][
+                        "accepted"], 1)
+                else:
+                    with self.assertRaises(reporter.PilotDataError):
+                        reporter.with_handoff_metrics(baseline, wire)
 
     def test_accepted_resource_measurements_remain_complete_and_within_budgets(self):
         f = self.measured_handoff()
