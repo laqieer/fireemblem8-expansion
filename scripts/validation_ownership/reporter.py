@@ -2255,12 +2255,11 @@ def _validate_semantics(
                 f"surface {surface_id!r} has inapplicable owner edges {extra}"
             )
         if surface["surface_type"] == "manual":
+            # Runtime/build roles apply to observed ROM consumers, not every
+            # manual surface (for example, review-only TSA previews).
             deterministic = {
                 "owns-test",
                 "adversarial-control",
-                "compile-owner",
-                "link-owner",
-                "target-scenario",
             }
             missing_deterministic = sorted(deterministic - set(counts))
             if missing_deterministic:

@@ -1,13 +1,19 @@
 from __future__ import annotations
 
 import copy
+import importlib
+import io
 import json
 import os
+import re
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
+from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import redirect_stdout
 from pathlib import Path
 from unittest import mock
 
@@ -20,6 +26,364 @@ SCHEMA_PATH = ROOT / reporter.SCHEMA_PATH
 ORACLE_PATH = ROOT / reporter.PROBE_ORACLE_PATH
 SCRATCH_ROOT = ROOT / "build" / "test-artifacts" / "validation-ownership"
 
+
+class AssetOwnershipTests(unittest.TestCase):
+    """Exercise real graph selection independently of the expensive Make probe."""
+
+    @classmethod
+    def setUpClass(cls):
+        from scripts.generated_data.registry import REGISTRY
+
+        cls.graph = reporter.load_json(GRAPH_PATH)
+        cls.schema = reporter.load_json(SCHEMA_PATH)
+        cls.oracle = reporter.load_json(ORACLE_PATH)
+        cls.entries = reporter.git_tree_entries(ROOT)
+        cls.loader = reporter.AuthorityLoader(ROOT, cls.entries)
+        cls.generated_paths = {
+            path
+            for name in REGISTRY.all_names()
+            for schema in (REGISTRY.resolve(name),)
+            for path in (
+                schema.default_source,
+                schema.default_hand_source,
+                schema.default_inventory_path,
+            )
+            if path in cls.entries
+        }
+        with mock.patch.object(sys, "path", [str(ROOT / "tools/gba-playtest"), *sys.path]):
+            cls.playtest = importlib.import_module("gba_playtest")
+            cls.presentation = importlib.import_module("run_banim_presentation_checks")
+            cls.banim = importlib.import_module("run_banim_package_runtime_check")
+        cls.scratch = reporter.prepare_validation_scratch(ROOT)
+
+    @classmethod
+    def tearDownClass(cls):
+        reporter.cleanup_validation_scratch(cls.scratch)
+
+    def model(self, graph=None, entries=None):
+        graph = self.graph if graph is None else graph
+        # Only authority execution is substituted. Schema, applicability,
+        # lifecycle metadata, complete path partition and resolution are real.
+        authorities = {
+            node["id"]: {"display": json.dumps(node["authority"], sort_keys=True)}
+            for node in graph["nodes"]
+            if node["kind"] == "evidence"
+        }
+        with (
+            mock.patch.object(reporter, "_validate_authorities", return_value=authorities),
+            mock.patch.object(
+                reporter, "_generated_registry_records",
+                return_value=([], self.generated_paths),
+            ),
+        ):
+            reporter.validate_json_schema(graph, self.schema, self.schema)
+            return reporter._validate_semantics(
+                graph, self.loader, self.entries if entries is None else entries,
+            )
+
+    def resolve(self, path, graph=None, model=None):
+        graph = self.graph if graph is None else graph
+        return reporter._resolve_path(
+            path, graph, self.model(graph) if model is None else model,
+        )
+
+    def test_consumer_specific_asset_resolutions(self):
+        model = self.model()
+        for path, surface, target in (
+            ("graphics/titlescreen/title_main_background_1.png",
+             "surface.title-visual", "expansion-modern-title-check"),
+            ("assets/banim/lorm_sp1/script.txt",
+             "surface.banim-package", "expansion-modern-banim-package-runtime-check"),
+            ("graphics/banim/banim_lorm_sp1_sheet_0.png",
+             "surface.banim-package", "expansion-modern-banim-package-runtime-check"),
+            ("assets/portraits/eirika/metadata.json",
+             "surface.portrait-package", "expansion-modern-portrait-package-runtime-check"),
+            ("graphics/portrait/portrait_Eirika_chibi.png",
+             "surface.portrait-package", "expansion-modern-portrait-package-runtime-check"),
+        ):
+            with self.subTest(path=path):
+                result = self.resolve(path, model=model)
+                self.assertEqual(result["surface"], surface)
+                runtime = [
+                    model["evidence"][owner["evidence_id"]]["authority"]
+                    for owner in result["owners"]
+                    if owner["edge_type"] == "target-scenario"
+                ]
+                self.assertEqual(runtime, [{"kind": "make-target", "target": target}])
+                self.assertLessEqual(
+                    {"owns-test", "adversarial-control", "compile-owner",
+                     "link-owner", "manual-handoff"},
+                    {owner["edge_type"] for owner in result["owners"]},
+                )
+
+    def test_unobserved_and_non_rom_sources_have_no_runtime_owner(self):
+        model = self.model()
+        for path in (
+            "banim/banim_lorm_sp1_motion.s",
+            "graphics/titlescreen/title_demon_king.png",
+            "sound/direct_sound_data.s",
+            "assets/tmx/Ch2Map.tmx",
+            "preview/tsa/MANIFEST.tsv",
+            ".github/manual-testing-handoff.json",
+        ):
+            with self.subTest(path=path):
+                result = self.resolve(path, model=model)
+                kinds = {owner["edge_type"] for owner in result["owners"]}
+                self.assertNotIn("target-scenario", kinds)
+                if path.startswith("preview/") or path.startswith(".github/"):
+                    self.assertTrue({"compile-owner", "link-owner"}.isdisjoint(kinds))
+                else:
+                    self.assertLessEqual({"compile-owner", "link-owner"}, kinds)
+                if not path.startswith(".github/"):
+                    self.assertIn("manual-handoff", kinds)
+
+    def test_package_sources_retain_generated_and_runtime_consumers(self):
+        model = self.model()
+        manifest = reporter.load_json(ROOT / "assets/manifest.json")
+        for kind, surface in (
+            ("battle-animation-package", "surface.banim-package"),
+            ("formatted-portrait-package", "surface.portrait-package"),
+        ):
+            asset = next(item for item in manifest["assets"] if item["kind"] == kind)
+            for path in asset["sources"]:
+                with self.subTest(path=path):
+                    result = self.resolve(path, model=model)
+                    self.assertEqual(result["surface"], surface)
+                    self.assertLessEqual(
+                        {"generated-by", "drift-check", "generated-consumer",
+                         "target-scenario", "manual-handoff"},
+                        {owner["edge_type"] for owner in result["owners"]},
+                    )
+        source = self.resolve("assets/tmx/Ch2Map.tmx", model=model)
+        self.assertLessEqual(
+            {"generated-by", "drift-check", "generated-consumer"},
+            {owner["edge_type"] for owner in source["owners"]},
+        )
+
+    def test_exact_oracle_and_complete_partition_cover_new_surfaces(self):
+        model = self.model()
+        self.assertEqual(set(model["coverage"]), set(self.entries))
+        reporter.validate_probe_oracle(self.oracle, self.graph, self.entries)
+        measurement = reporter._measure(self.oracle, self.graph, model)
+        self.assertEqual(measurement["false_positive_selections"], 0)
+        self.assertEqual(measurement["false_negative_selections"], 0)
+        self.assertEqual(
+            {path for path, value in model["coverage"].items()
+             if value["kind"] == "excluded"},
+            {"mgfembp", ".github/CODEOWNERS"},
+        )
+        self.assertFalse(self.graph["policy"]["narrowing_authorized"])
+        self.assertEqual(self.graph["policy"]["validation_effect"], "report-only")
+        reordered = copy.deepcopy(self.oracle)
+        reordered["probes"].reverse()
+        for probe in reordered["probes"]:
+            probe.get("expected_owners", []).reverse()
+        reporter.validate_probe_oracle(reordered, self.graph, self.entries)
+
+    def test_wrong_runtime_owners_and_broad_selectors_fail_independent_oracle(self):
+        for surface in (
+            "surface.title-visual", "surface.banim-package", "surface.portrait-package",
+        ):
+            for wrong in ("owner.runtime-visual", "owner.runtime-modern"):
+                with self.subTest(surface=surface, wrong=wrong):
+                    graph = copy.deepcopy(self.graph)
+                    edge = next(
+                        edge for edge in graph["edges"]
+                        if edge["source"] == surface and edge["type"] == "target-scenario"
+                    )
+                    edge["target"] = wrong
+                    model = self.model(graph)
+                    with self.assertRaisesRegex(reporter.OwnershipError, "exact owned edges"):
+                        reporter.validate_probe_oracle(self.oracle, graph, self.entries)
+                    with self.assertRaisesRegex(reporter.OwnershipError, "selection mismatch"):
+                        reporter._measure(self.oracle, graph, model)
+        for path in ("sound/direct_sound_data.s", "assets/tmx/Ch2Map.tmx"):
+            with self.subTest(broad_runtime=path):
+                graph = copy.deepcopy(self.graph)
+                current = self.resolve(path)
+                selector = {"kind": "exact", "path": path}
+                next(rule for rule in graph["path_rules"]
+                     if rule["id"] == current["rule"])["exclude"].append(selector)
+                next(rule for rule in graph["path_rules"]
+                     if rule["surface"] == "surface.title-visual")["include"].append(selector)
+                with self.assertRaisesRegex(reporter.OwnershipError, "selection mismatch"):
+                    reporter._measure(self.oracle, graph, self.model(graph))
+
+    def test_applicable_roles_cannot_be_replaced_by_manual(self):
+        for surface in (
+            "surface.manual-av", "surface.title-visual", "surface.banim-package",
+            "surface.portrait-package", "surface.asset-source", "surface.preview",
+        ):
+            for edge in (item for item in self.graph["edges"] if item["source"] == surface):
+                with self.subTest(surface=surface, missing=edge["type"]):
+                    graph = copy.deepcopy(self.graph)
+                    graph["edges"] = [item for item in graph["edges"] if item["id"] != edge["id"]]
+                    with self.assertRaisesRegex(reporter.OwnershipError, "missing owner edges"):
+                        self.model(graph)
+            graph = copy.deepcopy(self.graph)
+            node = next(item for item in graph["nodes"] if item["id"] == surface)
+            removed = "runtime" if "runtime" in node["requirements"] else "positive"
+            node["requirements"].remove(removed)
+            graph["edges"] = [
+                edge for edge in graph["edges"]
+                if not (edge["source"] == surface
+                        and edge["type"] in reporter.REQUIREMENT_EDGES[removed])
+            ]
+            with self.assertRaises(reporter.OwnershipError):
+                model = self.model(graph)
+                reporter.validate_probe_oracle(self.oracle, graph, self.entries)
+                reporter._measure(self.oracle, graph, model)
+
+    def test_unknown_paths_namespace_boundaries_and_modes_fail_closed(self):
+        model = self.model()
+        for path in (
+            "graphics/titlescreen/untracked.png", "assets/banim/lorm_sp1/untracked.png",
+            "build/ignored.png", "../graphics/titlescreen/title_main_background_1.png",
+        ):
+            with self.subTest(path=path), self.assertRaises(reporter.OwnershipError):
+                self.resolve(path, model=model)
+        for path in (
+            "graphics/titlescreen/future.png", "graphics/titlescreen-extra/title.png",
+            "assets/banim/lorm_sp1-extra/script.txt",
+        ):
+            with self.subTest(classified_namespace_without_runtime=path):
+                entries = {**self.entries, path: reporter.GitTreeEntry(path, "100644", "blob", "0" * 40)}
+                result = self.resolve(path, model=self.model(entries=entries))
+                self.assertNotIn("target-scenario", {owner["edge_type"] for owner in result["owners"]})
+        path = "unclassified/title.png"
+        entries = {**self.entries, path: reporter.GitTreeEntry(path, "100644", "blob", "0" * 40)}
+        with self.assertRaisesRegex(reporter.OwnershipError, "no ownership contract"):
+            self.model(entries=entries)
+        path = "graphics/titlescreen/title_main_background_1.png"
+        for mode, object_type in (("120000", "blob"), ("160000", "commit")):
+            with self.subTest(mode=mode), self.assertRaises(reporter.OwnershipError):
+                self.model(entries={
+                    **self.entries, path: reporter.GitTreeEntry(path, mode, object_type, "0" * 40),
+                })
+        graph = copy.deepcopy(self.graph)
+        next(rule for rule in graph["path_rules"] if rule["id"] == "paths.manual-av")["include"].append(
+            {"kind": "exact", "path": "assets/banim/lorm_sp1/script.txt"},
+        )
+        with self.assertRaisesRegex(reporter.OwnershipError, "ambiguous ownership"):
+            self.model(graph)
+        for path in ("mgfembp", ".github/CODEOWNERS"):
+            with self.subTest(exclusion=path), self.assertRaisesRegex(reporter.OwnershipError, "fail-closed"):
+                self.resolve(path, model=model)
+
+    def test_title_check_has_asserted_framebuffer_behavior(self):
+        scenario = self.playtest.load_scenario(
+            ROOT / "tools/gba-playtest/scenarios/title-progression.json",
+        )
+        for config in ("debug", "release"):
+            expected = reporter.load_json(
+                ROOT / f"tools/gba-playtest/fingerprints/title-progression-modern-{config}.json",
+            )
+            self.assertEqual(len(scenario.checkpoints), len(expected["checkpoints"]))
+            for checkpoint, captured in zip(scenario.checkpoints, expected["checkpoints"]):
+                with self.subTest(config=config, checkpoint=checkpoint.name):
+                    self.assertTrue(checkpoint.framebuffer)
+                    self.assertEqual((checkpoint.name, checkpoint.frame), (captured["name"], captured["frame"]))
+                    self.assertIn("framebuffer_hash", captured)
+            self.assertEqual([], self.playtest.compare_fingerprints(expected, copy.deepcopy(expected), "behavior"))
+            for checkpoint in range(len(scenario.checkpoints)):
+                changed = copy.deepcopy(expected)
+                del changed["checkpoints"][checkpoint]["framebuffer_hash"]
+                self.assertTrue(self.playtest.compare_fingerprints(expected, changed, "behavior"))
+                changed["checkpoints"][checkpoint]["framebuffer_hash"] = "fnv1a64-rgb24:0000000000000000"
+                self.assertTrue(self.playtest.compare_fingerprints(expected, changed, "behavior"))
+
+    def test_presentation_capture_observes_policy_and_hp_not_asset_av(self):
+        with tempfile.TemporaryDirectory(dir=self.scratch.path) as directory:
+            output = Path(directory)
+            captured_scenarios = []
+
+            def capture(command, **_kwargs):
+                scenario = reporter.load_json(Path(command[command.index("--scenario") + 1]))
+                captured_scenarios.append(scenario)
+                values = []
+                for hp, hit in ((15, 0), (0, 1)):
+                    row = {name: 0 for name in self.presentation.CAPTURE_FIELDS}
+                    row.update(enemyMaxHp=15, enemyCurHp=hp, realHitPathObserved=hit)
+                    values.append({
+                        "name": str(hp),
+                        "probes": [{"value": hex(row[name])}
+                                   for name in self.presentation.CAPTURE_FIELDS],
+                    })
+                Path(command[command.index("--output") + 1]).write_text(
+                    json.dumps({"checkpoints": values}), encoding="utf-8",
+                )
+                return subprocess.CompletedProcess(command, 0, "", "")
+
+            with (
+                mock.patch.object(self.presentation, "resolve_probe", return_value=(0x02010000, 0x02020000)),
+                mock.patch.object(self.presentation.subprocess, "run", side_effect=capture),
+            ):
+                result = self.presentation.capture(output / "test.gba", output / "test.elf", "standard", output)
+            self.assertEqual(result["enemyCurHpBefore"], 15)
+            self.assertEqual(result["enemyCurHpAfter"], 0)
+            parsed = self.playtest.parse_scenario_data(captured_scenarios[0])
+            self.assertTrue(parsed.checkpoints)
+            for checkpoint in parsed.checkpoints:
+                self.assertFalse(checkpoint.framebuffer)
+                self.assertTrue(all(0x02000000 <= probe.address < 0x02040000 for probe in checkpoint.probes))
+
+    def test_banim_package_checker_requires_runtime_resource_consumption(self):
+        package = self.banim.banim.load_package(
+            str(ROOT), "assets/banim/lorm_sp1/package.json",
+            "assets/banim/lorm_sp1/script.txt",
+            {"assets/banim/lorm_sp1/package.json", "assets/banim/lorm_sp1/script.txt",
+             "graphics/banim/banim_lorm_sp1_sheet_0.png"},
+        )
+        values = {
+            "magic": 0x42505431, "selectionCount": 1, "originalIndex": 1,
+            "defaultClassId": 0x5F, "aliasIndex": 500, "modeCount": len(package.mode_durations),
+            "normalDuration": package.mode_durations["normal"],
+            "totalDuration": sum(package.mode_durations.values()), "resourcesReady": 0x1F,
+            "battleEntryCount": 1, "battleCompleteCount": 1, "selectedBattleIndex": 500,
+            "runtimeDataConsumeCount": 1,
+        }
+        with tempfile.TemporaryDirectory(dir=self.scratch.path) as directory:
+            output = Path(directory)
+            for changed_field in (None, "runtimeDataConsumeCount", "resourcesReady", "battleCompleteCount"):
+                observed = dict(values)
+                if changed_field:
+                    observed[changed_field] = 0
+                capture = {"checkpoints": [
+                    {"probes": [{"value": "0x0"} for _ in self.banim.PROBE_FIELDS]},
+                    {"probes": [{"value": hex(observed[name])} for name in self.banim.PROBE_FIELDS]},
+                ]}
+                with (
+                    self.subTest(changed=changed_field),
+                    mock.patch.object(sys, "argv", ["check", "--rom", str(output / "test.gba"),
+                        "--elf", str(output / "test.elf"), "--out-dir", str(output)]),
+                    mock.patch.object(self.banim, "resolve_probe", return_value=0x02010000),
+                    mock.patch.object(self.banim, "generated_define", return_value=500),
+                    mock.patch.object(self.banim.gba_playtest, "capture", return_value=capture),
+                    redirect_stdout(io.StringIO()),
+                ):
+                    if changed_field:
+                        with self.assertRaisesRegex(RuntimeError, changed_field):
+                            self.banim.main()
+                    else:
+                        self.assertEqual(self.banim.main(), 0)
+
+    def test_tester_case_domain_count_comes_from_parsed_admitted_model(self):
+        domains = reporter.load_make_prerequisite_domains(self.loader, required=True)
+        self.assertEqual(Counter(domain["kind"] for domain in domains.values()),
+                         {"tracked-fallback": 111, "explicit": 1})
+        self.assertEqual(domains["NODEP"]["values"], ["", "0", "1"])
+        registry = reporter.load_json(ROOT / reporter.TEST_CASE_REGISTRY_PATH)
+        case = next(case for case in registry["cases"]
+                    if case["id"] == "TC-WORKFLOW-GATE-OWNERSHIP-001")
+        procedure = (ROOT / case["document"]).read_text(encoding="utf-8").split(
+            "## TC-WORKFLOW-GATE-OWNERSHIP-001:", 1,
+        )[1].split("\n## ", 1)[0]
+        # Named public tester-format contract: the documented CLI domain count
+        # must describe the parsed admission model, not a smaller synthetic fixture.
+        for text in (case["actions"], procedure):
+            counts = [int(value) for value in re.findall(r"\ball (\d+) (?:live|sealed) CLI domains\b", text)]
+            self.assertTrue(counts)
+            self.assertEqual(set(counts), {len(domains)})
 
 
 class OwnershipGraphTests(unittest.TestCase):

@@ -144,9 +144,33 @@ ownership-test claim.
 Visual, audio, and UX source maps to the existing
 [manual-testing handoff](../.github/manual-testing-handoff.json). The reporter
 requires that contract to keep deterministic criteria false and semantic
-assertions primary. A manual surface must also retain positive, adversarial,
-compile, link, and deterministic runtime edges. Manual evidence cannot replace
-those owners, and this implementation has no manual-only acceptance criterion.
+assertions primary. A manual surface retains positive and adversarial host
+roles plus its **applicable** build, generated and observing runtime roles.
+An unrelated runtime scenario is not evidence merely because it boots a ROM.
+The independent oracle rejects missing or substituted owner pairs, including
+removing both an applicable requirement and its edge. Manual handoff cannot
+replace reliable deterministic automation; this source-only graph correction
+has no manual-only acceptance criterion.
+
+The A/V partition follows actual consumers, not directory-name similarity:
+
+| Inputs | Deterministic owner and observation |
+| --- | --- |
+| The eleven exact main-title inputs in `paths.title-visual` | `Title_SetupMainGraphics` in [`src/titlescreen.c`](../src/titlescreen.c) consumes these graphics, palettes and maps. `expansion-modern-title-check` compares four framebuffer checkpoints in the default debug/release title-progression profiles. Skipped intro artwork does not inherit this edge. |
+| Three `LORM_SP1_PROOF` package inputs from [`assets/manifest.json`](../assets/manifest.json) | `assets-test`, `assets-generate`, `assets-check` and the existing compiled consumers retain generated evidence. `expansion-modern-banim-package-runtime-check` observes alias selection, script/palette/OAM consumption and one battle entry/completion against a zero-state control. This is **not** an image or audible-sound oracle. |
+| Eirika's three formatted-package inputs and four existing component aliases | The same asset generation/build roles apply. `expansion-modern-portrait-package-runtime-check` observes the face/minimug ID, render count, palette/VRAM words and mouth activity. It does not verify every portrait or an entire framebuffer. |
+| Remaining `assets/` authoring inputs | Existing host, selected-manifest generation/drift and compile/link consumer roles remain. Arbitrary manifests have no single observing runtime scenario in this graph. |
+| Remaining `banim/`, `graphics/` and `sound/` inputs | Existing host and compile/link roles remain, with the canonical manual handoff for material A/V judgment. No runtime pixels or audio are claimed. |
+| `preview/` | Review-only TSA pairing/coherence material, as documented in [`preview/README.md`](../preview/README.md). Host tooling/documentation roles and manual handoff remain, but these files have no ROM compile/link/runtime consumer. |
+| `.github/manual-testing-handoff.json` | Governance host evidence, not a rendered/audio asset or a ROM scenario. |
+
+[`run_banim_presentation_checks.py`](../tools/gba-playtest/run_banim_presentation_checks.py)
+records HP transitions and presentation-policy counters with framebuffer
+capture disabled and no audio assertions. Its existing authority remains
+registered, but no asset path selects it. New tracked paths in the existing
+generic A/V namespaces cannot inherit an exact observed-consumer rule;
+untracked paths, unknown namespaces and named exclusions still fail closed.
+The graph remains report-only and does not reduce any broader validation.
 
 ## Artifact lifecycle, measurements, and seals
 
@@ -231,9 +255,16 @@ by an interrupted process.
 
 Schema version 5 seals each external selector as either a finite exact domain,
 an exact tracked fallback, or symbolic recipe/environment-only authority.
-Every one of the 112 prerequisite domains is run through a real command-line
-GNU Make invocation; environment-sensitive domains are also run through a
-clean process-environment origin. The baseline plus all variant traces are
+The parsed model admits 112 prerequisite domains: 111 tracked fallbacks and
+the explicit `NODEP` domain (`""`, `"0"`, `"1"`). Acceptance requires every
+domain to be observed through real command-line GNU Make, with
+environment-sensitive domains also observed through a clean process-environment
+origin. A count derived by `load_make_prerequisite_domains` proves the admitted
+scope, not live execution; a smaller synthetic fixture is not a substitute.
+Full-domain graph/oracle/lifecycle/public-gate adoption of the independent
+[issue #206 foundation](https://github.com/laqieer/fireemblem8-expansion/issues/206)
+is a separate acceptance requirement, not evidence supplied by the focused
+A/V correction. The baseline plus all variant traces are
 unioned per evidence target. An unclassified external input, stale symbolic
 classification, oversized domain, missing target, alternate active error, or
 failed variant rejects. Symbolic recipe inputs are retained in the fingerprint

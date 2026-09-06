@@ -2241,6 +2241,14 @@ game behavior needs a compensating change.
    `src/bm.c`, `include/global.h`, `scripts/check_docs.py`,
    `src/data/items.json`, `texts/expansion/catalog.en.json`, `config.mk`,
    `graphics/titlescreen/title_main_background_1.png`,
+   `assets/banim/lorm_sp1/script.txt`,
+   `graphics/banim/banim_lorm_sp1_sheet_0.png`,
+   `assets/portraits/eirika/metadata.json`,
+   `graphics/portrait/portrait_Eirika_chibi.png`,
+   `banim/banim_lorm_sp1_motion.s`,
+   `graphics/titlescreen/title_demon_king.png`,
+   `sound/direct_sound_data.s`, `assets/tmx/Ch2Map.tmx`,
+   `preview/tsa/MANIFEST.tsv`, `.github/manual-testing-handoff.json`,
    `.github/workflows/build.yml`, `.github/validation-ownership-graph.json`,
    `.github/CODEOWNERS`, and `.github/ISSUE_TEMPLATE/bug_report.yml`.
 4. Confirm each result identifies one surface, every applicable typed edge,
@@ -2254,8 +2262,10 @@ game behavior needs a compensating change.
    symlink, retarget an oracle owner to another live workflow step, and
    disconnect each lifecycle trigger. Confirm outside sentinels survive and no
    external directory is created. Confirm direct
-   GNU Make comparisons cover all 112 live CLI domains,
-   environment/fallback origins,
+   GNU Make comparisons cover all 112 live CLI domains from the parsed
+   `.github/validation-ownership-make-dynamics.json` prerequisite model
+   (`load_make_prerequisite_domains`: 111 tracked fallbacks plus explicit
+   `NODEP` values `""`, `"0"`, `"1"`), environment/fallback origins,
    `MODE=two`, `$(eval $(RULE))`, a concrete `%.out: %.in` recipe mutation,
    target-local/automatic/braced/one-character variables, literal missing
    prerequisites, active `$(error)`, unknown direct shell, and unused `!=`.
@@ -2265,6 +2275,13 @@ game behavior needs a compensating change.
    every execution-control alias/control variable, and
    `make -n validation-ownership-check compare`. Require a parse-time bootstrap
    failure before external includes or dependency suppression.
+7. For the focused A/V correction, run
+   `python3 -m unittest scripts.validation_ownership.tests.test_reporter.AssetOwnershipTests`.
+   Inspect positive title/package selections, incorrect runtime-owner and
+   broad-selector mutations, retained generated/build/manual pairs, and
+   unknown/mode/exclusion boundaries. The fixtures run the real selector,
+   oracle and consumer checkers with Make execution/emulator capture
+   substituted; they do not replace steps 1–2 or prove live ROM behavior.
 
 ### Expected result
 
@@ -2280,6 +2297,23 @@ the typed generated-data registry; gate commands derive from existing Make
 targets, workflow jobs/steps, and tester cases rather than a duplicate command
 list. Both ownership commands are required, scrubbed `host-tests` gates and
 members of the complete 30-gate upstream mirror.
+
+The exact main-title inputs select `expansion-modern-title-check`, whose
+title-progression scenario asserts four framebuffer checkpoints. Only the
+three imported LORM_SP1_PROOF inputs select
+`expansion-modern-banim-package-runtime-check`: its positive/control checks
+cover selection, script/palette/OAM consumption and battle lifecycle, not
+framebuffer pixels or audible sound. Eirika's three package inputs and four
+existing component aliases select
+`expansion-modern-portrait-package-runtime-check`, which observes palette/VRAM
+words and face/minimug/mouth state, not all portraits or a full framebuffer.
+Both packages retain asset generation, drift and compiled-consumer owners.
+Remaining manifest sources retain generated/build owners without inventing
+one scenario for arbitrary manifests. Remaining ROM A/V paths retain
+host/compile/link plus manual handoff; review-only `preview/` files claim no
+ROM compile/link/runtime observation. Handoff JSON itself selects governance
+host checks. No reliable deterministic automation is replaced by a manual
+criterion, and all broader checks remain mandatory.
 
 The canonical JSON report explains each selected gate, reports zero false
 positive and false negative exact `(edge_type, evidence_id)` owner-pair
@@ -2300,6 +2334,17 @@ Unknown paths or edge types, uncovered or overlapping path patterns, cycles,
 duplicate or ambiguous owners, stale Make/workflow/tester/generated/manual
 targets, missing profiles or negative controls, and every removed or
 redirected edge family fail with the missing contract named.
+
+The pre-fix graph assigned every A/V path, including title graphics, sound,
+review-only previews and handoff metadata, to
+`expansion-modern-banim-presentation-check`. That runner explicitly captures
+HP/policy probes with framebuffer disabled and no audio assertions. Replacing
+a corrected title/package runtime edge with that still-live owner, or widening
+the title selector to claim sound/unobserved manifest paths, must fail the
+independent owner oracle. Removing an applicable runtime requirement together
+with its edge must also fail; a manual handoff is not a substitute. Untracked
+files fail before prefix matching; newly tracked files in generic asset
+namespaces do not inherit exact observed-consumer ownership.
 
 Make authority is observed from confined `/usr/bin/make`, never from a
 handwritten parser. A fresh exact-tree + exact-gitlink scratch root, empty
@@ -2466,9 +2511,12 @@ nonblob authority entries reject. Only the actual `mgfembp` gitlink reaches
 the named exclusion.
 
 A manual visual/audio/UX edge must point to
-`.github/manual-testing-handoff.json` and remains supplementary. Removing any
-deterministic host, adversarial, compile, link, or runtime edge from that
-surface fails; manual handoff cannot replace deterministic evidence.
+`.github/manual-testing-handoff.json` and remains supplementary. Removing a
+required host, adversarial, compile, link, generated or observing runtime edge
+fails. Applicability follows the actual consumer: preview-only files have no
+ROM build/runtime roles, and unobserved art/audio cannot claim runtime
+evidence. The independently sealed oracle also rejects removing a requirement
+and its owner together.
 
 ### Interactions and save compatibility
 
@@ -2496,6 +2544,16 @@ reporting, mixed-goal rejection, bounded scratch symlink rejection, and
 unchanged source bytes/Git state across simulated fixture exceptions.
 `make validation-ownership-check` runs the same reporter through
 `/usr/bin/python3 -I`.
+
+The focused A/V fixtures also execute the title fingerprint comparator with
+missing/changed framebuffer controls, the actual presentation runner's
+scenario construction, and the package checker's successful/resource-failure
+inputs. The live parsed model, not the older 80-variable synthetic Make fixture,
+owns the tester procedure's 112-domain scope. Parsing that count is not
+complete domain execution: full112-domain graph/oracle/lifecycle/public-gate
+adoption of the independent
+[issue #206 foundation](https://github.com/laqieer/fireemblem8-expansion/issues/206)
+remains a separate acceptance requirement.
 
 ### Cleanup and limitations
 

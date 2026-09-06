@@ -99,26 +99,138 @@
     },
     {
       "path": "graphics/titlescreen/title_main_background_1.png",
-      "expected_surface": "surface.manual-av",
+      "expected_surface": "surface.title-visual",
       "expected_owners": [
         {"edge_type": "adversarial-control", "evidence_id": "owner.host-build"},
         {"edge_type": "compile-owner", "evidence_id": "owner.compile-modern"},
         {"edge_type": "link-owner", "evidence_id": "owner.link-modern"},
         {"edge_type": "manual-handoff", "evidence_id": "owner.manual-handoff"},
         {"edge_type": "owns-test", "evidence_id": "owner.host-runtime"},
-        {"edge_type": "target-scenario", "evidence_id": "owner.runtime-visual"}
+        {"edge_type": "target-scenario", "evidence_id": "owner.runtime-title"}
       ]
     },
     {
       "path": ".github/manual-testing-handoff.json",
+      "expected_surface": "surface.docs",
+      "expected_owners": [
+        {"edge_type": "adversarial-control", "evidence_id": "owner.host-build"},
+        {"edge_type": "owns-test", "evidence_id": "owner.host-docs"}
+      ]
+    },
+    {
+      "path": "banim/banim_lorm_sp1_motion.s",
       "expected_surface": "surface.manual-av",
       "expected_owners": [
         {"edge_type": "adversarial-control", "evidence_id": "owner.host-build"},
         {"edge_type": "compile-owner", "evidence_id": "owner.compile-modern"},
         {"edge_type": "link-owner", "evidence_id": "owner.link-modern"},
         {"edge_type": "manual-handoff", "evidence_id": "owner.manual-handoff"},
-        {"edge_type": "owns-test", "evidence_id": "owner.host-runtime"},
-        {"edge_type": "target-scenario", "evidence_id": "owner.runtime-visual"}
+        {"edge_type": "owns-test", "evidence_id": "owner.host-runtime"}
+      ]
+    },
+    {
+      "path": "graphics/titlescreen/title_demon_king.png",
+      "expected_surface": "surface.manual-av",
+      "expected_owners": [
+        {"edge_type": "adversarial-control", "evidence_id": "owner.host-build"},
+        {"edge_type": "compile-owner", "evidence_id": "owner.compile-modern"},
+        {"edge_type": "link-owner", "evidence_id": "owner.link-modern"},
+        {"edge_type": "manual-handoff", "evidence_id": "owner.manual-handoff"},
+        {"edge_type": "owns-test", "evidence_id": "owner.host-runtime"}
+      ]
+    },
+    {
+      "path": "sound/direct_sound_data.s",
+      "expected_surface": "surface.manual-av",
+      "expected_owners": [
+        {"edge_type": "adversarial-control", "evidence_id": "owner.host-build"},
+        {"edge_type": "compile-owner", "evidence_id": "owner.compile-modern"},
+        {"edge_type": "link-owner", "evidence_id": "owner.link-modern"},
+        {"edge_type": "manual-handoff", "evidence_id": "owner.manual-handoff"},
+        {"edge_type": "owns-test", "evidence_id": "owner.host-runtime"}
+      ]
+    },
+    {
+      "path": "assets/banim/lorm_sp1/script.txt",
+      "expected_surface": "surface.banim-package",
+      "expected_owners": [
+        {"edge_type": "adversarial-control", "evidence_id": "owner.host-build"},
+        {"edge_type": "compile-owner", "evidence_id": "owner.compile-modern"},
+        {"edge_type": "drift-check", "evidence_id": "owner.drift-assets"},
+        {"edge_type": "generated-by", "evidence_id": "owner.generator-assets"},
+        {"edge_type": "generated-consumer", "evidence_id": "owner.link-modern"},
+        {"edge_type": "link-owner", "evidence_id": "owner.link-modern"},
+        {"edge_type": "manual-handoff", "evidence_id": "owner.manual-handoff"},
+        {"edge_type": "owns-test", "evidence_id": "owner.host-assets"},
+        {"edge_type": "target-scenario", "evidence_id": "owner.runtime-banim-package"}
+      ]
+    },
+    {
+      "path": "graphics/banim/banim_lorm_sp1_sheet_0.png",
+      "expected_surface": "surface.banim-package",
+      "expected_owners": [
+        {"edge_type": "adversarial-control", "evidence_id": "owner.host-build"},
+        {"edge_type": "compile-owner", "evidence_id": "owner.compile-modern"},
+        {"edge_type": "drift-check", "evidence_id": "owner.drift-assets"},
+        {"edge_type": "generated-by", "evidence_id": "owner.generator-assets"},
+        {"edge_type": "generated-consumer", "evidence_id": "owner.link-modern"},
+        {"edge_type": "link-owner", "evidence_id": "owner.link-modern"},
+        {"edge_type": "manual-handoff", "evidence_id": "owner.manual-handoff"},
+        {"edge_type": "owns-test", "evidence_id": "owner.host-assets"},
+        {"edge_type": "target-scenario", "evidence_id": "owner.runtime-banim-package"}
+      ]
+    },
+    {
+      "path": "assets/portraits/eirika/metadata.json",
+      "expected_surface": "surface.portrait-package",
+      "expected_owners": [
+        {"edge_type": "adversarial-control", "evidence_id": "owner.host-build"},
+        {"edge_type": "compile-owner", "evidence_id": "owner.compile-modern"},
+        {"edge_type": "drift-check", "evidence_id": "owner.drift-assets"},
+        {"edge_type": "generated-by", "evidence_id": "owner.generator-assets"},
+        {"edge_type": "generated-consumer", "evidence_id": "owner.link-modern"},
+        {"edge_type": "link-owner", "evidence_id": "owner.link-modern"},
+        {"edge_type": "manual-handoff", "evidence_id": "owner.manual-handoff"},
+        {"edge_type": "owns-test", "evidence_id": "owner.host-assets"},
+        {"edge_type": "target-scenario", "evidence_id": "owner.runtime-portrait-package"}
+      ]
+    },
+    {
+      "path": "graphics/portrait/portrait_Eirika_chibi.png",
+      "expected_surface": "surface.portrait-package",
+      "expected_owners": [
+        {"edge_type": "adversarial-control", "evidence_id": "owner.host-build"},
+        {"edge_type": "compile-owner", "evidence_id": "owner.compile-modern"},
+        {"edge_type": "drift-check", "evidence_id": "owner.drift-assets"},
+        {"edge_type": "generated-by", "evidence_id": "owner.generator-assets"},
+        {"edge_type": "generated-consumer", "evidence_id": "owner.link-modern"},
+        {"edge_type": "link-owner", "evidence_id": "owner.link-modern"},
+        {"edge_type": "manual-handoff", "evidence_id": "owner.manual-handoff"},
+        {"edge_type": "owns-test", "evidence_id": "owner.host-assets"},
+        {"edge_type": "target-scenario", "evidence_id": "owner.runtime-portrait-package"}
+      ]
+    },
+    {
+      "path": "assets/tmx/Ch2Map.tmx",
+      "expected_surface": "surface.asset-source",
+      "expected_owners": [
+        {"edge_type": "adversarial-control", "evidence_id": "owner.host-build"},
+        {"edge_type": "compile-owner", "evidence_id": "owner.compile-modern"},
+        {"edge_type": "drift-check", "evidence_id": "owner.drift-assets"},
+        {"edge_type": "generated-by", "evidence_id": "owner.generator-assets"},
+        {"edge_type": "generated-consumer", "evidence_id": "owner.link-modern"},
+        {"edge_type": "link-owner", "evidence_id": "owner.link-modern"},
+        {"edge_type": "manual-handoff", "evidence_id": "owner.manual-handoff"},
+        {"edge_type": "owns-test", "evidence_id": "owner.host-assets"}
+      ]
+    },
+    {
+      "path": "preview/tsa/MANIFEST.tsv",
+      "expected_surface": "surface.preview",
+      "expected_owners": [
+        {"edge_type": "adversarial-control", "evidence_id": "owner.host-build"},
+        {"edge_type": "manual-handoff", "evidence_id": "owner.manual-handoff"},
+        {"edge_type": "owns-test", "evidence_id": "owner.host-docs"}
       ]
     },
     {
@@ -166,5 +278,5 @@
       ]
     }
   ],
-  "seal": "df5026c67c6e24f9e42526ab82ca6cd939b08c1a7a2e23f0e2339badc060e139"
+  "seal": "e647b3a2e545c81148486b346c19f3710ab975912d2a34a97cf48d529f78ab5e"
 }
