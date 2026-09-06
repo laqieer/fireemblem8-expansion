@@ -2700,6 +2700,53 @@ No new case ID, graph test matrix or CI job is introduced. The prior stdout-only
 Command/native/registry, argv-order, final-pass, no-site, syscall/channel,
 source-return accounting and sole-reaper controls remain applicable.
 
+### Same-report immutable BASE/current procedure
+
+The `test_immutable_view*` selectors extend this same case for the concrete
+#180 deleted-source adoption boundary:
+
+1. Capture BASE and current with one `ProbeBudget`. BASE registry code selects
+   `src/data/deleted_generated.json`; current deletes that path, changes its
+   registry and selects `src/data/current_generated.json`. Both native registry
+   implementations assert their original `/repo/...` paths.
+2. Enter one current `ProbeSession`, then `with probe.select_view(base_loader)`
+   to query BASE. Require both actual source sets/records, the same report owner,
+   and unchanged start/deadline. On exit require the prior current snapshot and
+   cache, not a recapture of subsequently changed worktree bytes. Nested views
+   must restore their immediate predecessor.
+3. Reject wrong captured root/revision, another repository with identical
+   objects, foreign budget, detached capture, mutable alternate and inactive or
+   closed authority. The existing wrong-loader helper rejection remains active
+   outside explicit selection; a second same-budget session remains forbidden.
+4. Run the same command/native/generated Make inputs in different views. Require
+   correct per-view output and original guest paths, isolated caches/tool files,
+   no borrowed native handles and no generated-file residue on restoration.
+   Equivalent truly consumed native/Make inputs retain the same semantic
+   identity across unrelated tree differences. Exact immutable Git entries may
+   share funded bytes/source inodes only when both views independently admit
+   the same original path, mode, type and object ID. Changed/mode-different or
+   absent entries stay independent; mutable/foreign authority cannot provide
+   reused bytes. Source-write attacks still reject and cleanup preserves the
+   prior immutable inode. Run the real HEAD/master foundation consumer pair
+   within one unchanged budget, not just tiny fixture trees.
+5. Consume capture/read/run/state/snapshot-byte/creation quotas across selections
+   and reject exhaustion without resets or refunds. Check the original
+   monotonic deadline, terminal setup/body/teardown errors and complete outer
+   cleanup; a late context exit cannot reactivate a closed report. Retain actual
+   0/1/2 Make restarts and publication ownership checks on supported routes.
+
+Exact `2e19091` before-fix evidence has independent BASE and current registry
+positives, but the one-report compositions reject: foreign loader, duplicate
+session lifetime and missing deleted source in current. Separate budgets or
+rewritten filesystem prefixes are not acceptable substitutes. The new selector
+uses the existing session/Snapshot/capsule only; full112-domain adoption remains
+#180's separate responsibility. Local user-namespace or same-UID route controls
+do not claim a real sudo credential-transition result.
+The first full-tree selector recaptured all unchanged blobs and exhausted the
+384MiB snapshot-processing cap after HEAD alone spent about289MB. Exact
+immutable-entry reuse removes those duplicate reads/copies without resetting
+the report budget or sharing command/native execution authority.
+
 ### Interactions and save compatibility
 
 This host-only contract changes no save, migration, config identity, generated

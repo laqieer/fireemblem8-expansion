@@ -17,6 +17,8 @@ import signal
 import stat
 import struct
 import sys
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from functools import wraps
 from pathlib import Path, PurePosixPath
@@ -385,7 +387,7 @@ def _scratch_directory(loader, requested):
 
 
 class ProbeSession:
-    """The only execution authority; one lifetime, deadline, cache and queue."""
+    """The only execution authority; one lifetime with explicitly selected views."""
 
     def __init__(self, loader: AuthorityLoader, *, scratch_root: Path, budget: ProbeBudget):
         if not isinstance(loader, AuthorityLoader):
@@ -447,6 +449,60 @@ class ProbeSession:
 
     def _interrupt(self, signum, frame):
         raise KeyboardInterrupt(f"ownership probe interrupted by signal {signum}")
+
+    @contextmanager
+    def select_view(self, loader: AuthorityLoader) -> Iterator[ProbeSession]:
+        """Select a captured immutable view without creating another report owner."""
+        if self.base is None or self.snapshot is None:
+            raise MakeProbeError("probe session is not active")
+        if get_ident() != self.owner_thread:
+            self.budget.failed = True
+            raise MakeProbeError("a probe session has one bounded execution worker")
+        self.budget.remaining()
+        if (
+            not isinstance(loader, AuthorityLoader) or loader.budget is not self.budget
+            or loader.entries.budget is not self.budget or loader.root != self.loader.root
+            or loader.revision is None or loader.entries.capture != (loader.root, loader.revision)
+        ):
+            raise MakeProbeError("view requires a same-report, same-repository immutable capture")
+        if self.budget.children:
+            raise MakeProbeError("cannot select a view during active report execution")
+        self.budget.plan(1)
+        self.serial += 1
+        root = self.base / f"view-{self.serial}"
+        previous = (self.loader, self.snapshot, self.tree, self.cache, self.native_tools)
+        cache, tools = {}, {}
+        def restore():
+            if self.base is not None:
+                self.loader, self.snapshot, self.tree, self.cache, self.native_tools = previous
+            else:
+                # An already closed outer session cannot be reactivated by a
+                # late context exit, nor retain its suspended execution handles.
+                previous[0].live_modes.clear()
+                previous[3].clear()
+                previous[4].clear()
+        try:
+            with cleanup_scope([
+                cache.clear, tools.clear, lambda: _remove_owned_tree(root), restore,
+            ]):
+                self.loader, self.snapshot, self.tree = loader, None, root / "tree"
+                self.cache, self.native_tools = cache, tools
+                root.mkdir()
+                self.tree.mkdir()
+                self.snapshot = Snapshot(loader, self.budget, reuse=previous[1])
+                for name in sorted(self.snapshot.reused_paths):
+                    self.budget.remaining()
+                    target = self.tree / name
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    os.link(previous[2] / name, target, follow_symlinks=False)
+                copied = self.snapshot.files.keys() - self.snapshot.reused_paths
+                self.budget.charge("snapshot", sum(len(self.snapshot.files[name]) for name in copied))
+                self.snapshot.materialize(self.tree, copied, self.budget)
+                yield self
+        except BaseException as error:
+            self.budget.failed = True
+            finish_cleanup([self.budget.close], primary=error)
+            raise
 
     def __exit__(self, kind, value, traceback):
         def clear_state():
@@ -721,7 +777,7 @@ class ProbeSession:
             if not isinstance(native, NativeTool) or not any(
                 native is issued for issued in self.native_tools.values()
             ):
-                raise MakeProbeError("native tool is not issued by this exact probe session")
+                raise MakeProbeError("native tool is not issued by this exact probe session view")
             if hashlib.sha256(self.budget.read_bytes(native.path, "control")).hexdigest() != native.digest:
                 raise MakeProbeError("sealed native tool changed after validation")
             if not command.argv or command.argv[0] != "/native/tool":
@@ -846,7 +902,7 @@ class ProbeSession:
         key = hashlib.sha256(encoded([digest, inputs])).hexdigest()
         if key not in self.native_tools:
             self.budget.charge("cache", len(encoded([digest, inputs])))
-            path = self.base / ("native-" + key)
+            path = self.tree.parent / ("native-" + key)
             path.write_bytes(binary)
             path.chmod(0o500)
             self.native_tools[key] = NativeTool(path, digest, inputs)

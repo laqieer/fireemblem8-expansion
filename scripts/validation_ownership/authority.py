@@ -93,6 +93,7 @@ class GitTreeEntries(dict[str, GitTreeEntry]):
         budget.remaining()
         super().__init__(entries)
         self.budget = budget
+        self.capture: tuple[Path, str] | None = None
 
 
 def git_tree_entries(root: Path, revision: str = "HEAD", *, budget: ProbeBudget):
@@ -110,7 +111,10 @@ def git_tree_entries(root: Path, revision: str = "HEAD", *, budget: ProbeBudget)
         result[name] = GitTreeEntry(name, mode, kind, oid)
     if not result:
         raise MakeProbeError("empty authority tree")
-    return GitTreeEntries(result, budget=budget)
+    captured = GitTreeEntries(result, budget=budget)
+    captured.capture = (Path(os.path.abspath(root)), revision)
+    budget.charge("control", len(encoded([str(captured.capture[0]), revision])))
+    return captured
 
 
 class AuthorityLoader:
@@ -124,6 +128,11 @@ class AuthorityLoader:
             raise MakeProbeError("authority loader requires its capture's report budget")
         budget.remaining()
         self.root = Path(os.path.abspath(root))
+        if entries.capture is not None and (
+            self.root != entries.capture[0]
+            or revision is not None and revision != entries.capture[1]
+        ):
+            raise MakeProbeError("authority loader differs from its captured repository/revision")
         self.entries = entries
         self.revision = revision
         self.scratch_root = scratch_root
@@ -205,16 +214,24 @@ class AuthorityLoader:
 class Snapshot:
     """An immutable in-memory execution view, not semantic owner identity."""
 
-    def __init__(self, loader: AuthorityLoader, budget: ProbeBudget):
+    def __init__(self, loader: AuthorityLoader, budget: ProbeBudget, *, reuse: Snapshot | None = None):
         if (
             not isinstance(budget, ProbeBudget) or budget is not loader.budget
             or budget is not loader.entries.budget
         ):
             raise MakeProbeError("snapshot requires its authority's report budget")
         budget.remaining()
+        if reuse is not None and (
+            not isinstance(reuse, Snapshot) or reuse.budget is not budget
+            or reuse.loader.root != loader.root
+            or loader.revision is None or loader.entries.capture != (loader.root, loader.revision)
+        ):
+            raise MakeProbeError("snapshot reuse requires same-report repository capture authority")
         self.budget = budget
+        self.loader = loader
         self.files = {}
         self.modes = {}
+        self.reused_paths = set()
         records = []
         if not 1 <= len(loader.entries) <= budget.limits.entries:
             budget.reject("snapshot entry count exceeds aggregate bound")
@@ -224,40 +241,56 @@ class Snapshot:
                 entry for _, entry in sorted(loader.entries.items())
                 if entry.mode in {"100644", "100755"} and entry.object_type == "blob"
             ]
-            result = budget.run(
-                ["/usr/bin/git", "--no-replace-objects", "-C", str(loader.root), "cat-file", "--batch"],
-                env=ENVIRONMENT,
-                input_data="".join(entry.object_id + "\n" for entry in entries).encode("ascii"),
-                output_limit=budget.limits.snapshot_bytes,
-                category="snapshot",
-            )
-            if result.returncode:
-                raise MakeProbeError(f"immutable blob stream failed: {result.stderr!r}")
+            if reuse is not None and reuse.loader.revision is not None and (
+                reuse.loader.entries.capture == (loader.root, reuse.loader.revision)
+            ):
+                for entry in entries:
+                    if reuse.loader.entries.get(entry.path) == entry and entry.path in reuse.files:
+                        if len(reuse.files[entry.path]) > budget.limits.file_bytes:
+                            raise MakeProbeError("reused immutable blob exceeds file bound")
+                        immutable[entry.path] = reuse.files[entry.path]
+                        self.reused_paths.add(entry.path)
+            entries = [entry for entry in entries if entry.path not in self.reused_paths]
+            payload = b""
+            if entries:
+                result = budget.run(
+                    ["/usr/bin/git", "--no-replace-objects", "-C", str(loader.root), "cat-file", "--batch"],
+                    env=ENVIRONMENT,
+                    input_data="".join(entry.object_id + "\n" for entry in entries).encode("ascii"),
+                    output_limit=budget.limits.snapshot_bytes,
+                    category="snapshot",
+                )
+                if result.returncode:
+                    raise MakeProbeError(f"immutable blob stream failed: {result.stderr!r}")
+                payload = result.stdout
             offset = 0
             for entry in entries:
-                end = result.stdout.find(b"\n", offset)
+                end = payload.find(b"\n", offset)
                 if end < 0:
                     raise MakeProbeError("truncated immutable blob header")
-                header = text(result.stdout[offset:end], "Git blob header", "ascii").split()
+                header = text(payload[offset:end], "Git blob header", "ascii").split()
                 if len(header) != 3 or header[:2] != [entry.object_id, "blob"] or not header[2].isdigit():
                     raise MakeProbeError("unexpected immutable blob identity/type")
                 size = int(header[2])
                 if size > budget.limits.file_bytes:
                     raise MakeProbeError("immutable blob exceeds file bound")
                 offset = end + 1
-                immutable[entry.path] = result.stdout[offset:offset + size]
+                immutable[entry.path] = payload[offset:offset + size]
                 offset += size
-                if result.stdout[offset:offset + 1] != b"\n":
+                if payload[offset:offset + 1] != b"\n":
                     raise MakeProbeError("truncated immutable blob payload")
                 offset += 1
-            if offset != len(result.stdout):
+            if offset != len(payload):
                 raise MakeProbeError("trailing immutable blob stream")
         for name, entry in sorted(loader.entries.items()):
             budget.remaining()
             relative_path(name)
             if entry.mode in {"100644", "100755"} and entry.object_type == "blob":
                 data = immutable[name] if loader.revision is not None else loader.read_blob(name, "execution snapshot")
-                budget.charge("snapshot", len(data) + len(name.encode("utf-8")) + 64)
+                budget.charge(
+                    "snapshot", (0 if name in self.reused_paths else len(data))
+                    + len(name.encode("utf-8")) + 64,
+                )
                 self.files[name] = data
                 self.modes[name] = entry.mode if loader.revision is not None else loader.live_modes[name]
                 identity = hashlib.sha256(data).hexdigest()

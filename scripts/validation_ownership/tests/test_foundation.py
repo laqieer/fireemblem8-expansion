@@ -254,6 +254,417 @@ class FoundationTests(unittest.TestCase):
         self.assertEqual((budget.started, budget.deadline, budget.runs, budget.bytes), before)
         self.assertFalse(self.scratch.exists())
 
+    def capture_view(self, budget):
+        def git(*args):
+            return subprocess.run(
+                ["/usr/bin/git", "-C", str(self.root), *args], env=ENVIRONMENT,
+                capture_output=True, check=True, timeout=10,
+            ).stdout.decode("ascii").strip()
+        git("init", "--quiet")
+        git("add", "--all")
+        revision = git("write-tree")
+        return AuthorityLoader(
+            self.root, git_tree_entries(self.root, revision, budget=budget), revision, budget=budget,
+        )
+
+    def deleted_source_views(self, budget):
+        code = ("scripts/__init__.py", "scripts/generated_data/__init__.py",
+                "scripts/generated_data/registry.py")
+        old, new = "src/data/deleted_generated.json", "src/data/current_generated.json"
+        driver = (TRUSTED_ROOT / "generated_registry_probe.py").read_text()
+        self.add(code[0], "")
+        self.add(code[1], "")
+        (self.root / new).unlink(missing_ok=True)
+        self.entries.pop(new, None)
+        def registry(source):
+            return (
+                "import json\nfrom pathlib import Path\n"
+                "class Schema:\n"
+                "    name = 'table'\n    version = 1\n"
+                f"    default_source = {source!r}\n"
+                "    def load_records(self, source):\n"
+                "        assert Path(source) == Path('/repo') / self.default_source\n"
+                "        return json.loads(Path(source).read_text())\n"
+                "class Registry:\n"
+                "    def resolve(self, name):\n"
+                "        assert name == 'table'\n"
+                "        return Schema()\n"
+                "REGISTRY = Registry()\n"
+            )
+        self.add(code[2], registry(old))
+        self.add(old, '[{"value":"base"}]\n')
+        base = self.capture_view(budget)
+        (self.root / old).unlink()
+        self.entries.pop(old)
+        self.add(code[2], registry(new))
+        self.add(new, '[{"value":"current"}]\n')
+        current = self.capture_view(budget)
+        commands = tuple(Command(
+            ("/usr/bin/python3", "-I", "-S", "-B", "-c", driver, "table", source),
+            code=code, sources=(source,),
+        ) for source in (old, new))
+        return base, current, commands
+
+    def test_immutable_view_selects_real_deleted_base_registry_in_one_report(self):
+        budget = ProbeBudget()
+        base, current, (old_command, new_command) = self.deleted_source_views(budget)
+        started, deadline = budget.started, budget.deadline
+        self.assertEqual(budget.runs, 2)
+        self.assertEqual(base.read_blob(old_command.sources[0], "deleted BASE"), b'[{"value":"base"}]\n')
+        with ProbeSession(current, scratch_root=self.scratch, budget=budget) as session:
+            report_root = session.base
+            original = session.snapshot, session.tree, session.cache
+            current_record = probe_generated_registry(current, command=new_command, session=session)
+            for loader in (base,):
+                with self.assertRaisesRegex(MakeProbeError, "loader/budget differs"):
+                    probe_generated_registry(loader, command=old_command, session=session)
+            before = budget.runs, budget.states, dict(budget.bytes), session.processes_used
+            with session.select_view(base) as selected:
+                self.assertIs(selected, session)
+                self.assertIs(session.base, report_root)
+                self.assertIs(session.loader, base)
+                self.assertIs(session.snapshot.budget, budget)
+                self.assertEqual((budget.started, budget.deadline), (started, deadline))
+                self.assertNotIn(new_command.sources[0], session.snapshot.files)
+                self.assertTrue((session.tree / old_command.sources[0]).is_file())
+                self.assertFalse((session.tree / new_command.sources[0]).exists())
+                old_record = probe_generated_registry(base, command=old_command, session=session)
+                self.assertEqual(old_record["source_paths"], list(old_command.sources))
+                with self.assertRaisesRegex(MakeProbeError, "loader/budget differs"):
+                    probe_generated_registry(current, command=new_command, session=session)
+                self.assertGreater(budget.runs, before[0])
+                self.assertEqual(budget.states, before[1] + 1)
+                self.assertGreater(budget.bytes["snapshot"], before[2]["snapshot"])
+                self.assertGreater(session.processes_used, before[3])
+                selected_root = session.tree.parent
+            self.assertEqual((session.snapshot, session.tree, session.cache), original)
+            self.assertIs(session.loader, current)
+            self.assertFalse(selected_root.exists())
+            runs = budget.runs
+            self.assertEqual(probe_generated_registry(current, command=new_command, session=session), current_record)
+            self.assertEqual(budget.runs, runs)
+            self.assertEqual(current_record["source_paths"], list(new_command.sources))
+            self.assertEqual((budget.started, budget.deadline), (started, deadline))
+            self.assertIs(base.budget, current.budget)
+            self.assertIs(base.entries.budget, budget)
+            with self.assertRaisesRegex(MakeProbeError, "already owns a probe session lifetime"):
+                with ProbeSession(base, scratch_root=self.scratch, budget=budget):
+                    self.fail("selection created another report lifetime")
+        self.assert_clean(session)
+
+    def test_immutable_view_rejects_wrong_foreign_mutable_and_closed_authority(self):
+        budget, other_budget = ProbeBudget(), ProbeBudget()
+        base, current, (_, command) = self.deleted_source_views(budget)
+        foreign_root = self.directory / "foreign"
+        shutil.copytree(self.root, foreign_root)
+        foreign = AuthorityLoader(
+            foreign_root, git_tree_entries(foreign_root, base.revision, budget=budget),
+            base.revision, budget=budget,
+        )
+        other = AuthorityLoader(
+            self.root, git_tree_entries(self.root, base.revision, budget=other_budget),
+            base.revision, budget=other_budget,
+        )
+        detached = AuthorityLoader(
+            self.root, GitTreeEntries(base.entries, budget=budget), base.revision, budget=budget,
+        )
+        mutable = AuthorityLoader(self.root, current.entries, budget=budget)
+        session = ProbeSession(current, scratch_root=self.scratch, budget=budget)
+        with self.assertRaisesRegex(MakeProbeError, "not active"):
+            with session.select_view(base):
+                self.fail("inactive selector ran")
+        with session:
+            foreign_snapshot = Snapshot(foreign, budget)
+            with self.assertRaisesRegex(MakeProbeError, "snapshot reuse"):
+                Snapshot(current, budget, reuse=foreign_snapshot)
+            for root, revision in ((foreign_root, base.revision), (self.root, current.revision)):
+                with self.assertRaisesRegex(MakeProbeError, "captured repository/revision"):
+                    AuthorityLoader(root, base.entries, revision, budget=budget)
+            before = budget.runs, budget.states, dict(budget.bytes)
+            for loader in (None, object(), foreign, other, detached, mutable):
+                with self.subTest(loader=type(loader).__name__):
+                    with self.assertRaisesRegex(MakeProbeError, "immutable capture"):
+                        with session.select_view(loader):
+                            self.fail("invalid view selected")
+                    self.assertIs(session.loader, current)
+                    self.assertFalse(budget.failed)
+                    self.assertEqual((budget.runs, budget.states, budget.bytes), before)
+            self.assertEqual(session.registry(command)["source_paths"], list(command.sources))
+            late = session.select_view(base)
+        with self.assertRaisesRegex(MakeProbeError, "not active"):
+            with late:
+                self.fail("closed selector reopened the report")
+        with self.assertRaisesRegex(MakeProbeError, "deadline/budget"):
+            base.read_blob(next(iter(base.entries)), "closed read")
+        other_budget.close()
+        self.assert_clean(session)
+
+    def test_immutable_view_nested_restoration_and_terminal_error_cleanup(self):
+        for failure in ("body", "snapshot"):
+            with self.subTest(failure=failure):
+                budget = ProbeBudget()
+                base, current, (old_command, new_command) = self.deleted_source_views(budget)
+                with ProbeSession(current, scratch_root=self.scratch, budget=budget) as session:
+                    previous = session.loader, session.snapshot, session.tree, session.cache
+                    with session.select_view(base):
+                        base_tree = session.tree
+                        with session.select_view(current):
+                            self.assertEqual(session.registry(new_command)["source_paths"], list(new_command.sources))
+                        self.assertIs(session.loader, base)
+                        self.assertIs(session.tree, base_tree)
+                        self.assertEqual(session.registry(old_command)["source_paths"], list(old_command.sources))
+                    self.assertEqual((session.loader, session.snapshot, session.tree, session.cache), previous)
+                    if failure == "snapshot":
+                        oid = base.entries[old_command.sources[0]].object_id
+                        (self.root / ".git/objects" / oid[:2] / oid[2:]).unlink()
+                    error_type = RuntimeError if failure == "body" else MakeProbeError
+                    with self.assertRaises(error_type):
+                        with session.select_view(base):
+                            raise RuntimeError("selected operation failed")
+                    self.assertEqual((session.loader, session.snapshot, session.tree, session.cache), previous)
+                    self.assertTrue(budget.failed)
+                    self.assertTrue(budget.closed)
+                    self.assertFalse(list(session.base.glob("view-*")))
+                    self.assertFalse(budget.children)
+                self.assert_clean(session)
+
+    def test_immutable_views_isolate_cache_native_files_and_generated_make_outputs(self):
+        budget = ProbeBudget()
+        self.add("value.txt", "base")
+        self.add("reader.py", "print(open('value.txt').read())\n")
+        self.add("native.c", '#include <stdio.h>\nint main(void) { puts("observed"); }\n')
+        self.add("stable.mk", "NATIVE := $(shell tools/native;)\nstable: ;\n")
+        self.add("producer.py", (
+            "from pathlib import Path\nvalue=Path('value.txt').read_text()\n"
+            "Path('/work/generated').mkdir()\n"
+            "Path('/work/generated/vars.mk').write_text('SELECTED := '+value+'\\n')\n"
+        ))
+        self.add("Makefile", (
+            "include generated/vars.mk\ngenerated/vars.mk:\n\t@python3 producer.py\n"
+            "all: $(SELECTED)\nbase current: ;\n"
+        ))
+        base = self.capture_view(budget)
+        self.add("value.txt", "current")
+        current = self.capture_view(budget)
+        reader = Command(("/usr/bin/python3", "/repo/reader.py"), code=("reader.py",), sources=("value.txt",))
+        producer = Command(
+            ("/usr/bin/python3", "/repo/producer.py"), code=("producer.py",), sources=("value.txt",),
+            outputs=("generated/vars.mk",),
+        )
+        def observe(session, tool, expected):
+            stable = session.make("stable", makefile="stable.mk", variables=("NATIVE",), commands={
+                "tools/native;": Command(("/native/tool",), native_tool=tool),
+            })
+            generated = session.make("all", variables=("MAKE_RESTARTS",), commands={"python3 producer.py": producer})
+            self.assertEqual(generated.semantics["files"][0]["prerequisites"], [
+                {"name": expected, "order_only": False},
+            ])
+            self.assertEqual(generated.semantics["domains"]["MAKE_RESTARTS"]["value"], "1")
+            self.assertFalse((session.tree / "generated").exists())
+            return stable, generated
+        with ProbeSession(current, scratch_root=self.scratch, budget=budget) as session:
+            original = session.tree, session.cache, session.native_tools
+            current_result = session.command(reader)
+            current_tool = session.compile_native(("native.c",))
+            current_stable, current_generated = observe(session, current_tool, "current")
+            counts = budget.runs, session.files_created, session.processes_used
+            with session.select_view(base):
+                self.assertFalse(session.cache)
+                self.assertFalse(session.native_tools)
+                self.assertEqual(session.command(reader).stdout, b"base\n")
+                base_tool = session.compile_native(("native.c",))
+                self.assertEqual(base_tool.digest, current_tool.digest)
+                self.assertNotEqual(base_tool.path, current_tool.path)
+                base_stable, base_generated = observe(session, base_tool, "base")
+                self.assertEqual(base_stable.semantic_digest, current_stable.semantic_digest)
+                self.assertNotEqual(base_stable.execution_digest, current_stable.execution_digest)
+                self.assertNotEqual(base_generated.semantic_digest, current_generated.semantic_digest)
+                self.assertGreater(budget.runs, counts[0])
+                self.assertGreater(session.files_created, counts[1])
+                self.assertGreater(session.processes_used, counts[2])
+            self.assertEqual((session.tree, session.cache, session.native_tools), original)
+            self.assertFalse(base_tool.path.exists())
+            self.assertTrue(current_tool.path.is_file())
+            self.assertEqual(current_result.stdout, b"current\n")
+            runs = budget.runs
+            self.assertIs(session.command(reader), current_result)
+            self.assertEqual(budget.runs, runs)
+            self.assertEqual(session.native(current_tool).stdout, b"observed\n")
+            with self.assertRaisesRegex(MakeProbeError, "not issued"):
+                session.native(base_tool)
+        self.assert_clean(session)
+
+    def test_immutable_view_rejects_a_suspended_native_handle_even_for_identical_bytes(self):
+        self.add("native.c", "int main(void) { return 0; }\n")
+        budget = ProbeBudget()
+        base = self.capture_view(budget)
+        self.add("unrelated.txt", "current")
+        current = self.capture_view(budget)
+        with ProbeSession(current, scratch_root=self.scratch, budget=budget) as session:
+            tool = session.compile_native(("native.c",))
+            with self.assertRaisesRegex(MakeProbeError, "not issued"):
+                with session.select_view(base):
+                    session.native(tool)
+            self.assertIs(session.loader, current)
+            self.assertFalse(list(session.base.glob("view-*")))
+        self.assert_clean(session)
+
+    def test_immutable_view_shares_make_state_and_snapshot_byte_limits(self):
+        for boundary in ("states", "snapshot"):
+            with self.subTest(boundary=boundary):
+                budget = ProbeBudget(Limits(**({"states": 2} if boundary == "states" else {"snapshot_bytes": 8192})))
+                self.add("Makefile", "all: ;\n")
+                base, current, _ = self.deleted_source_views(budget)
+                with ProbeSession(current, scratch_root=self.scratch, budget=budget) as session:
+                    session.make("all")
+                    if boundary == "states":
+                        with session.select_view(base):
+                            self.assertEqual(budget.states, 2)
+                        runs = budget.runs
+                        with self.assertRaisesRegex(MakeProbeError, "state budget"):
+                            with session.select_view(base):
+                                self.fail("view reset Make's state allowance")
+                        self.assertEqual(budget.runs, runs)
+                    else:
+                        before = budget.bytes["snapshot"]
+                        successful = 0
+                        with self.assertRaisesRegex(MakeProbeError, "snapshot byte"):
+                            for _ in range(16):
+                                with session.select_view(base):
+                                    self.assertGreater(budget.bytes["snapshot"], before)
+                                    before = budget.bytes["snapshot"]
+                                successful += 1
+                        self.assertGreater(successful, 0)
+                        self.assertLess(successful, 16)
+                    self.assertIs(session.loader, current)
+                    self.assertTrue(budget.failed)
+                    self.assertFalse(list(session.base.glob("view-*")))
+                self.assert_clean(session)
+
+    def test_immutable_view_shares_report_run_and_deadline_limits(self):
+        for boundary in ("runs", "deadline"):
+            with self.subTest(boundary=boundary):
+                budget = ProbeBudget(Limits(runs=16))
+                base, current, (old_command, _) = self.deleted_source_views(budget)
+                started, deadline = budget.started, budget.deadline
+                with ProbeSession(current, scratch_root=self.scratch, budget=budget) as session:
+                    with session.select_view(base):
+                        session.registry(old_command)
+                        self.assertEqual((budget.started, budget.deadline), (started, deadline))
+                    if boundary == "runs":
+                        while budget.runs < budget.limits.runs:
+                            budget.run(["/usr/bin/true"], env=ENVIRONMENT)
+                        with self.assertRaisesRegex(MakeProbeError, "process-launch budget"):
+                            with session.select_view(base):
+                                self.fail("view reset the capture/execution launch quota")
+                        self.assertEqual(budget.runs, budget.limits.runs + 1)
+                    else:
+                        runs = budget.runs
+                        with patch("scripts.validation_ownership.budget.time.monotonic", return_value=deadline + 1):
+                            with self.assertRaisesRegex(MakeProbeError, "deadline/budget"):
+                                with session.select_view(base):
+                                    self.fail("view restarted an expired deadline")
+                        self.assertEqual(budget.runs, runs)
+                    self.assertEqual((budget.started, budget.deadline), (started, deadline))
+                    self.assertIs(session.loader, current)
+                    self.assertFalse(list(session.base.glob("view-*")))
+                self.assert_clean(session)
+
+    def test_immutable_view_cannot_reset_creation_or_borrow_current_command_cache(self):
+        budget = ProbeBudget(Limits(created_files=1))
+        base, current, _ = self.deleted_source_views(budget)
+        command = Command(("/usr/bin/python3", "-c", "open('/work/once','w').write('owned')"))
+        with ProbeSession(current, scratch_root=self.scratch, budget=budget) as session:
+            session.command(command)
+            self.assertEqual(session.files_created, 1)
+            with self.assertRaisesRegex(MakeProbeError, "creation budget"):
+                with session.select_view(base):
+                    session.command(command)
+            self.assertGreater(session.files_created, 1)
+            self.assertIs(session.loader, current)
+            self.assertFalse(list(session.base.glob("view-*")))
+        self.assert_clean(session)
+
+    def test_immutable_view_restores_live_default_and_cannot_reactivate_closed_report(self):
+        budget = ProbeBudget()
+        base, current, (old_command, new_command) = self.deleted_source_views(budget)
+        live = AuthorityLoader(self.root, current.entries, budget=budget)
+        with ProbeSession(live, scratch_root=self.scratch, budget=budget) as session:
+            original = session.snapshot, session.cache
+            current_record = session.registry(new_command)
+            self.add(new_command.sources[0], '[{"mutated":"after capture"},{"value":"extra"}]\n')
+            with session.select_view(base):
+                self.assertFalse(session.snapshot.reused_paths)
+                self.assertEqual(session.registry(old_command)["source_paths"], list(old_command.sources))
+            self.assertIs(session.loader, live)
+            self.assertEqual((session.snapshot, session.cache), original)
+            self.assertEqual(session.registry(new_command), current_record)
+            late = session.select_view(base)
+            late.__enter__()
+        late.__exit__(None, None, None)
+        self.assertFalse(live.live_modes)
+        self.assertFalse(original[1])
+        self.assert_clean(session)
+
+    def test_immutable_view_teardown_error_is_terminal_and_outer_cleanup_finishes(self):
+        from scripts.validation_ownership import make_probe
+        budget = ProbeBudget()
+        base, current, _ = self.deleted_source_views(budget)
+        remove = make_probe._remove_owned_tree
+        failure = OSError(errno.EIO, "owned view teardown failure")
+        def failing(path):
+            if path.name.startswith("view-"):
+                raise failure
+            return remove(path)
+        with ProbeSession(current, scratch_root=self.scratch, budget=budget) as session:
+            with patch.object(make_probe, "_remove_owned_tree", failing):
+                with self.assertRaises(OSError) as caught:
+                    with session.select_view(base):
+                        selected_root = session.tree.parent
+            self.assertIs(caught.exception, failure)
+            self.assertIs(session.loader, current)
+            self.assertTrue(budget.failed)
+            self.assertTrue(budget.closed)
+            self.assertTrue(selected_root.exists())
+        self.assert_clean(session)
+
+    def test_immutable_view_reuses_only_identical_admitted_immutable_sources(self):
+        budget = ProbeBudget(Limits(snapshot_bytes=384*1024))
+        shared = b"x"*(128*1024)
+        self.add("shared.bin", shared)
+        self.add("changed.bin", b"base")
+        self.add("mode.bin", b"same bytes, different mode")
+        self.add("Makefile", "ATTACK := $(file >shared.bin,forged)\nall: ;\n")
+        base = self.capture_view(budget)
+        self.add("changed.bin", b"current")
+        (self.root / "mode.bin").chmod(0o755)
+        self.add("current-only.bin", b"current only")
+        current = self.capture_view(budget)
+        with ProbeSession(current, scratch_root=self.scratch, budget=budget) as session:
+            original_snapshot, original_tree = session.snapshot, session.tree
+            original_links = (original_tree / "shared.bin").stat().st_nlink
+            with self.assertRaisesRegex(MakeProbeError, "write outside"):
+                with session.select_view(base):
+                    self.assertEqual(session.snapshot.reused_paths, {"Makefile", "shared.bin"})
+                    self.assertIs(session.snapshot.files["shared.bin"], original_snapshot.files["shared.bin"])
+                    self.assertEqual(
+                        (session.tree / "shared.bin").stat().st_ino,
+                        (original_tree / "shared.bin").stat().st_ino,
+                    )
+                    for name in ("changed.bin", "mode.bin"):
+                        self.assertNotEqual(
+                            (session.tree / name).stat().st_ino, (original_tree / name).stat().st_ino,
+                        )
+                    self.assertEqual((session.tree / "changed.bin").read_bytes(), b"base")
+                    self.assertEqual(stat.S_IMODE((session.tree / "mode.bin").stat().st_mode), 0o644)
+                    self.assertEqual(stat.S_IMODE((original_tree / "mode.bin").stat().st_mode), 0o755)
+                    self.assertFalse((session.tree / "current-only.bin").exists())
+                    session.make("all")
+            self.assertEqual((original_tree / "shared.bin").read_bytes(), shared)
+            self.assertEqual((original_tree / "shared.bin").stat().st_nlink, original_links)
+            self.assertFalse(list(session.base.glob("view-*")))
+        self.assert_clean(session)
+
     def test_registered_python_reexec_rejects_before_replacement_startup(self):
         replacement = (
             "import json,sys\n"

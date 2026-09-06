@@ -257,12 +257,12 @@ flags/plugins are accepted. The output must be a bounded x86-64 ELF with valid
 program headers, no writable executable load segment and only the admitted
 dynamic loader. A session-issued `NativeTool` is sealed before `native` runs it
 in another channel-free capsule. It never becomes a Make-capsule executable.
-Changed or foreign-session ELF handles reject.
+Changed or foreign-session/view ELF handles reject.
 
 ### Native Make registrations and declared file results
 
 The existing typed `Command` also accepts `native_tool=tool` from that same
-active session. Its exact argv must begin with `/native/tool`; the rest is the
+active session view. Its exact argv must begin with `/native/tool`; the rest is the
 real native argv, including empty arguments. It executes through the same
 channel-free command path as `native`, never through Make's mount:
 
@@ -463,6 +463,86 @@ performed by Make. Even cached results cannot be reused after that report's
 deadline or a terminal budget failure. The production consumer passes the one
 budget used for tree capture through its Make session and registry helper.
 
+### Selecting immutable BASE/current views in one report
+
+Deleted generated inputs must be observed with their BASE registry and source
+bytes, not the current registry or a union of both filesystems. Use the existing
+session's explicit scoped selector:
+
+```python
+budget = ProbeBudget()
+current = AuthorityLoader(
+    root, git_tree_entries(root, current_revision, budget=budget),
+    current_revision, budget=budget)
+base = AuthorityLoader(
+    root, git_tree_entries(root, base_revision, budget=budget),
+    base_revision, budget=budget)
+with ProbeSession(current, scratch_root=root / "build/test-artifacts/probe",
+                  budget=budget) as probe:
+    current_record = probe_generated_registry(
+        current, command=current_command, session=probe)
+    with probe.select_view(base):
+        base_record = probe_generated_registry(
+            base, command=base_command, session=probe)
+    # The original current view and its cache are active again here.
+```
+
+The context yields that same `ProbeSession`, not a second report owner.
+`git_tree_entries` binds its captured entry map to the report budget,
+repository root and revision representation; loader construction rejects a
+different captured root/revision. The captured object IDs determine immutable
+bytes even if a ref or worktree later changes. Selection requires an immutable
+loader from that capture API with the same budget and exact repository root,
+not another clone/worktree that happens to contain the same objects. Detached
+entry maps, mutable alternate views, foreign budgets and inactive/closed
+sessions reject. Existing default worktree sessions remain supported, including
+restoration of their already captured live snapshot after an immutable selection.
+
+Guest paths stay `/repo/<original-path>`; no BASE/current prefixes or virtual
+filesystem simulation are introduced. The active loader's helper check is
+unchanged: using BASE outside its selection, or current inside BASE, is still a
+foreign-loader error. Nested selections restore their previous view.
+Invalid selection admission does not replace or tear down the active owner.
+Failures after admission, including setup, body or teardown failures, are
+terminal to the report; restoration never resets/reopens its budget. A late
+context exit cannot reactivate a closed outer session.
+
+Every selection reserves an existing report state and creates a distinct
+immutable `Snapshot`. Exact regular entries independently admitted by both
+immutable captures (same root, budget, original path, mode, type and Git object
+ID) can share already funded immutable bytes and hardlinked source storage.
+This avoids re-reading/copying an entire unchanged repository, not charging
+less for work actually performed. Changed, missing or mode-different entries
+must be captured/copied independently. Mutable snapshots do not certify Git
+object bytes and cannot supply that reuse. Every view's metadata, all new
+capture/read bytes and copied storage spend the same aggregate budget, without
+refunds. Captures and direct loader reads also share that budget.
+The deadline, launches, Make states, processes, memory limits, source/output
+bytes and file-creation counters never reset. The session's trusted Make runtime,
+interceptor, namespace route, signal ownership and sole-reaper cleanup are reused.
+
+Only view-dependent loader/snapshot/tree/cache/native state is scoped. The
+prior view is suspended, and its exact state is restored on normal exit.
+The selected tree, cache and native files are removed rather than retained
+in a view registry; unlinking shared immutable sources leaves the prior view
+intact. Group related BASE queries in one selection; re-entering creates another
+bounded snapshot and does not refund prior work. Large unrelated views, or
+views without certified immutable reuse, may legitimately exhaust the existing
+aggregate bound instead of increasing it.
+Native handles must be compiled and used in their active view: even identical
+ELF bytes do not grant cross-view execution. Default-view handles survive a
+selection; selected-view handles expire when it ends. Generated files publish
+only into the active read-only view and retain the existing dispatch/restart,
+ownership-transfer and cleanup contracts.
+
+Execution identities reflect each captured snapshot. Semantic identities do
+not include a view label, host prefix or other whole-view marker: genuinely
+equivalent consumed inputs/commands keep the same semantic identity despite
+unrelated tree differences. Different source bytes, generated results and
+native build inputs still invalidate their respective owners. This is the
+existing trusted-caller authority boundary, not protection against arbitrary
+Python object mutation, and it does not implement #180's full ownership graph.
+
 The existing **3,600-second maximum is one monotonic deadline**, including
 snapshotting, compilation, all subprocesses and replay. Every subprocess gets
 the remaining lifetime. Defaults bound 4,096 states/launches, 32 descendants
@@ -588,6 +668,9 @@ Required downstream #180/PR186 integration:
 2. Keep the complete finite-domain/context census, oracle, graph, lifecycle,
    workflow and exact-base policy above the execution boundary. Share one
    session/budget for the **entire** report; never restart it per owner/variant.
+   Use `select_view(base_loader)` for immutable BASE registry/source queries
+   needed by deleted paths; preserve original guest paths and restore current
+   on scope exit rather than mutating private fields or creating another report.
 3. Consume native `MakeObservation.semantics`/`semantic_digest`, not debug/trace
    stdout or an identity hash containing the full execution snapshot. Adapt
    registered exact command keys to the collision-free argv convention.
