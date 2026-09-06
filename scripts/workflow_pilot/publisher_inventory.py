@@ -8,7 +8,7 @@ import ast
 import builtins
 from collections import Counter
 from contextlib import contextmanager
-from dataclasses import dataclass, fields, is_dataclass
+from dataclasses import dataclass, field, fields, is_dataclass
 from enum import Enum
 from functools import lru_cache
 import importlib.abc
@@ -30,7 +30,7 @@ PROGRAM_PATH = "scripts/workflow_pilot/publisher_programs.py"
 PROGRAM_RUNTIME_PATH = "/mnt/control/publisher-programs.py"
 SOURCE_ROOT = Path(__file__).resolve().parents[2]
 MAX_AUTHORITY_BYTES = 1024 * 1024
-ENTRY_SCOPES = frozenset({"entry", "producer", "staging"})
+ENTRY_SCOPES = frozenset({"entry", "producer", "staging", "candidate"})
 STDLIB_ROOTS = tuple({
     Path(path).resolve() for path in (
         sysconfig.get_path("stdlib"), sysconfig.get_path("platstdlib"),
@@ -54,6 +54,12 @@ class Family(str, Enum):
     EXECUTABLE = "executable"
     HELPER = "helper"
     PYTHON = "python"
+
+
+class ProgramKind(str, Enum):
+    FILE = "file"
+    INLINE = "inline"
+    MODULE = "module"
 
 
 class Resource(str, Enum):
@@ -124,8 +130,10 @@ class Invocation:
     conditional: bool = False
 
 
-def normalize_invocation(command: shell.Command) -> Invocation:
-    """Normalize only explicit wrapper grammar; never discard a prefix."""
+def normalize_invocation(
+    command: shell.Command, *, executable: shell.Word | None = None,
+) -> Invocation:
+    """Normalize wrappers; a symbolic executable needs an exact registry-owned Word."""
     argv = list(command.argv)
     wrappers: list[Wrapper] = []
     while argv:
@@ -156,8 +164,26 @@ def normalize_invocation(command: shell.Command) -> Invocation:
             break
         if len(wrappers) > 8:
             raise InventoryError("publisher wrapper nesting exceeds bounds")
+    if executable is not None and (
+        not isinstance(executable, shell.Word)
+        or not executable.parts or executable.assignment
+        or not any(part.kind == "literal" and part.value for part in executable.parts)
+        or any(
+            part.kind != "literal" and not (
+                part.kind == "parameter" and part.quoted
+                and isinstance(part.value, str)
+                and re.fullmatch(r"[A-Za-z_][A-Za-z_0-9]*", part.value)
+            )
+            for part in executable.parts
+        )
+        or not argv or argv[0] != executable
+    ):
+        raise InventoryError("publisher executable differs from its registered Word")
     if command.argv and (
-        not argv or argv[0].literal is None or argv[0].literal.startswith("-")
+        not argv or (argv[0].literal is None and executable is None)
+        or (argv[0].literal is not None and (
+            not argv[0].literal or argv[0].literal.startswith("-")
+        ))
     ):
         raise InventoryError("dynamic or unmatched publisher executable")
     return Invocation(
@@ -183,6 +209,59 @@ class Program:
     outputs: tuple[ResourceAccess, ...]
     redirects: tuple[shell.Redirect, ...] = ()
     wrappers: tuple[Wrapper, ...] = ()
+    interpreter: shell.Word = field(
+        default_factory=lambda: shell.command("/usr/bin/python3").argv[0],
+    )
+    startup: tuple[str, ...] = ("-I", "-S")
+    kind: ProgramKind = ProgramKind.FILE
+    text: str | None = None
+    environment: tuple[shell.Word, ...] = ()
+
+    def invocation_prefix(self) -> tuple[shell.Word, ...]:
+        """Describe Python dispatch honestly, independently of a submitted command."""
+        if (
+            not isinstance(self.kind, ProgramKind)
+            or not isinstance(self.name, str) or not self.name
+            or not isinstance(self.source_path, str) or not self.source_path
+            or not isinstance(self.interpreter, shell.Word)
+            or not isinstance(self.startup, tuple)
+            or any(
+                not isinstance(flag, str) or flag not in {"-I", "-S", "-E", "-s", "-B", "-u", "-P"}
+                for flag in self.startup
+            )
+            or len(set(self.startup)) != len(self.startup)
+            or not isinstance(self.runtime_path, str) or not self.runtime_path
+            or (self.mode is not None and (not isinstance(self.mode, str) or not self.mode))
+        ):
+            raise InventoryError("incomplete Python program profile")
+        target = shell.command("program " + self.runtime_path)
+        if len(target.argv) != 2 or target.environment or target.redirects:
+            raise InventoryError("Python program requires one exact target Word")
+        selected = target.argv[1]
+        suffix = ()
+        if self.kind == ProgramKind.INLINE:
+            if (
+                selected.literal != "-c" or self.mode is not None
+                or not isinstance(self.text, str) or not self.text
+            ):
+                raise InventoryError("inline Python requires independently registered program text")
+            suffix = (shell.Word((shell.Part("literal", self.text),)),)
+        elif self.kind == ProgramKind.MODULE:
+            if (
+                selected.literal != "-m" or self.text is not None or self.mode is None
+                or re.fullmatch(r"[A-Za-z_][A-Za-z_0-9]*(?:\.[A-Za-z_][A-Za-z_0-9]*)*", self.mode) is None
+            ):
+                raise InventoryError("module Python requires an exact module identity")
+            suffix = (shell.Word((shell.Part("literal", self.mode),)),)
+        else:
+            if self.text is not None or (selected.literal is not None and (
+                not selected.literal or selected.literal.startswith("-")
+            )):
+                raise InventoryError("file Python requires an exact program path")
+            if self.mode is not None:
+                suffix = (shell.Word((shell.Part("literal", self.mode),)),)
+        startup = tuple(shell.Word((shell.Part("literal", flag),)) for flag in self.startup)
+        return startup + (selected,) + suffix
 
 
 @dataclass(frozen=True)
@@ -217,10 +296,14 @@ class Signature:
     evidence: str = CASE_ID
     placements: tuple[Placement, ...] = (Placement(),)
     payloads: tuple[Payload, ...] = ()
+    executable: shell.Word | None = None
 
     @property
     def invocation(self) -> Invocation:
-        return normalize_invocation(self.form)
+        executable = self.executable
+        if executable is None and isinstance(self.program, Program):
+            executable = self.program.interpreter
+        return normalize_invocation(self.form, executable=executable)
 
 
 @dataclass(frozen=True)
@@ -304,12 +387,16 @@ class Inventory:
         if (
             len(names) != len(set(names))
             or len(scope_names) != len(set(scope_names))
+            or set(scope_names) & ENTRY_SCOPES
             or len(control_names) != len(set(control_names))
             or len({(s.scope, s.invocation) for s in self.signatures}) != len(names)
             or len({(c.scope, c.header, c.context) for c in self.controls}) != len(control_names)
         ):
             raise InventoryError("duplicate command, helper or control signature")
         scope_set = set(scope_names) | ENTRY_SCOPES
+        python_interpreters = {
+            s.program.interpreter for s in self.signatures if isinstance(s.program, Program)
+        }
         for signature in self.signatures:
             if (
                 signature.scope not in scope_set
@@ -342,26 +429,30 @@ class Inventory:
                 )
             ):
                 raise InventoryError("incomplete command signature")
+            invocation = signature.invocation
             if signature.family == Family.PYTHON:
-                invocation = signature.invocation
                 argv = invocation.arguments
                 program = signature.program
+                prefix = program.invocation_prefix() if isinstance(program, Program) else ()
                 if (
                     not isinstance(program, Program)
                     or not program.inputs
-                    or invocation.executable.literal != "/usr/bin/python3"
-                    or tuple(word.literal for word in argv[:2]) != ("-I", "-S")
-                    or len(argv) < 3
-                    or argv[2] != shell.command("program " + program.runtime_path).argv[1]
-                    or invocation.environment
+                    or invocation.executable != program.interpreter
+                    or argv[:len(prefix)] != prefix
+                    or invocation.environment != program.environment
                     or invocation.redirects != program.redirects
                     or invocation.wrappers != program.wrappers
-                    or (program.mode is not None and (len(argv) <= 3 or argv[3].literal != program.mode))
                     or not set(program.inputs + program.outputs) <= set(signature.accesses)
                 ):
-                    raise InventoryError("Python signature must select an exact isolated program")
+                    raise InventoryError("Python signature must select its exact registered program profile")
             elif signature.program is not None:
                 raise InventoryError("program metadata on a non-Python signature")
+            elif invocation.executable is not None and (
+                invocation.executable.literal is None
+                or invocation.executable.literal == "/usr/bin/python3"
+                or invocation.executable in python_interpreters
+            ):
+                raise InventoryError("Python executables require a registered Program")
         if any(
             scope.parent not in scope_set
             or any(not isinstance(parameter, Resource) for parameter in scope.parameters)
@@ -376,10 +467,25 @@ class Inventory:
         ):
             raise InventoryError("incomplete control signature")
 
+    def _invocation(self, command: shell.Command, scope: str) -> Invocation:
+        try:
+            return normalize_invocation(command)
+        except InventoryError:
+            for signature in self.signatures:
+                if signature.scope != scope or signature.program is None:
+                    continue
+                executable = signature.program.interpreter
+                if executable.literal is None:
+                    try:
+                        return normalize_invocation(command, executable=executable)
+                    except InventoryError:
+                        pass
+            raise
+
     def authorize(
         self, command: shell.Command, scope: str, context: tuple[Context, ...] = (),
     ) -> Signature:
-        invocation = normalize_invocation(command)
+        invocation = self._invocation(command, scope)
         matches = [
             s for s in self.signatures
             if s.scope == scope and s.invocation == invocation
@@ -480,7 +586,7 @@ class Inventory:
                         raise InventoryError(f"publisher canonical program differs: {payload.delimiter}")
 
         def record(command: shell.Command, scope: str, context: tuple[Context, ...], visible: set[str]):
-            signature = command_index.get((scope, normalize_invocation(command), context))
+            signature = command_index.get((scope, self._invocation(command, scope), context))
             if signature is None:
                 return self.authorize(command, scope, context)
             check_payloads(command, signature)
@@ -496,7 +602,7 @@ class Inventory:
                 for nested, chain in nested_commands(command)
             ]
             for current, nested, extra in all_commands:
-                executable = normalize_invocation(current).executable
+                executable = self._invocation(current, scope).executable
                 if executable and executable.literal in scope_index:
                     callee = executable.literal
                     if callee not in visible:
@@ -614,7 +720,7 @@ class Inventory:
                     kind, item.signature.name, item.scope, context, stack,
                     item.signature.accesses, node,
                 ))
-            executable = normalize_invocation(node).executable
+            executable = self._invocation(node, item.scope).executable
             if executable and executable.literal in definitions:
                 callee = executable.literal
                 emit(definitions[callee].body, stack + (callee,), context)

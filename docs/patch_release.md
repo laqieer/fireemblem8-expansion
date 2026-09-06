@@ -45,7 +45,7 @@ not a gameplay option or a blacklist of sensitive filenames.
   pipeline/short-circuit, or moving a command into an existing branch does not
   preserve authorization. Main commands, nested data producers, and recursive
   helper expansion use the same inventory. Unknown commands, aliases,
-  dynamic executable paths, unmatched arguments or redirects, callbacks,
+  unregistered symbolic executable Words, unmatched arguments or redirects, callbacks,
   traps, and unregistered interpreter programs fail closed. A wrapper never
   hides its underlying command or loses its own arguments during normalization.
 - `publisher_shell_contract.validate_builder_command_inventory` is the shared
@@ -177,7 +177,8 @@ reader.
 records; `authorize(command, scope, context)` requires a registered placement.
 `Control.context` fixes its own nesting, and `Context.branch` identifies the
 operand position for operator chains. `validate(source, entry_scope=...)`
-selects the builder (`entry`), verification (`producer`), or staging domain;
+selects the builder (`entry`), verification (`producer`), staging (`staging`),
+or explicit candidate (`candidate`) domain;
 `Inventory.entry_scope(scope)` resolves helper domains. Program metadata
 includes exact wrapper and redirection forms for the producer's fixed programs.
 `CANDIDATE_LAUNCH`, `CANDIDATE_STATUS`, `LEGACY_MEMBERSHIP`,
@@ -191,6 +192,102 @@ remain separate; their hashes are not the behavioral oracle for this case.
 Every Python program's declared inputs and outputs must be represented in its
 signature's accesses; consequently the candidate-launch event includes both
 the launcher's control-file read and candidate execution.
+
+#### Exact candidate invocation profiles
+
+The candidate domain uses the **same** `Inventory`, `Signature`, `Scope`,
+`Control`, `Placement`, and `Analysis` types. It is not a second permission
+registry. The default registry has no candidate rows in this parent layer:
+nonempty candidate scripts reject until #201 independently registers every
+candidate command/helper/control and consumes
+`reviewed_inventory().validate(source, entry_scope="candidate")` before its
+phase policy. No candidate order or stage-exit policy is supplied here.
+Existing entry/producer/staging registrations and runtime bodies are unchanged.
+
+`Signature.executable` optionally binds an independently specified exact
+`publisher_shell.Word` as well as the complete `Signature.form`. Inside
+`publisher_signatures.inventory`, the existing `add` helper accepts the same
+`executable=` keyword for explicit literal executables:
+
+```python
+add("candidate", "make",
+    "make expansion-modern-map-menu-presentation-check -j1",
+    Resource.CANDIDATE, Access.EXECUTE,
+    executable=shell.command("make").argv[0])
+add("candidate", "tools", "./build_tools.sh",
+    Resource.CANDIDATE, Access.EXECUTE,
+    executable=shell.command("./build_tools.sh").argv[0])
+```
+
+These are examples of independent registry edits, not automatically installed
+permissions. There is no bare-name/path-prefix allowlist. A different
+executable, target, argument, environment, wrapper, redirection, context, or
+count still fails complete invocation equality.
+
+Python always uses `Family.PYTHON` and a `Program`. Its appended fields are:
+
+| Field | Contract |
+| --- | --- |
+| `interpreter` | Exact `Word`; defaults to literal `/usr/bin/python3`. |
+| `startup` | Exact tuple of literal flags, default `("-I", "-S")`. Supported flags are `-I`, `-S`, `-E`, `-s`, `-B`, `-u`, `-P`, one per word, without duplicates. Empty `()` honestly represents normal non-isolated startup. Dispatch switches, compound flags, and operand-taking options are not startup flags. |
+| `kind` | Typed `ProgramKind.FILE` (default), `INLINE`, or `MODULE`. |
+| `text` | Independently registered full literal program for `INLINE`; `None` otherwise. |
+| `environment` | Exact assignment-prefix Words, default empty; wrappers and redirects retain their existing exact fields. |
+
+For `FILE`, `runtime_path` is one shell-encoded path Word and `mode` is an
+optional first program argument, preserving the existing isolated file forms.
+For `INLINE`, use `runtime_path="-c"`, `mode=None`, and the full `text`;
+changing only the command's code without its independently reviewed program
+record rejects. For `MODULE`, use `runtime_path="-m"` and an exact dotted
+module name in `mode`. For example, the current pip invocation can be
+represented without pretending it is isolated or a generic executable:
+
+```python
+pip = Program(
+    "candidate-pip", WORKFLOW_PATH, "-m", "pip",
+    (ResourceAccess(Resource.CANDIDATE, Access.READ),),
+    (ResourceAccess(Resource.CANDIDATE, Access.WRITE),),
+    interpreter=shell.command('"$HOME/venv/bin/python3"').argv[0],
+    startup=(), kind=ProgramKind.MODULE,
+)
+add("candidate", "pip",
+    '"$HOME/venv/bin/python3" -m pip install --no-index '
+    '--find-links="$WHEELHOUSE" --require-hashes --only-binary=:all: '
+    '--no-deps -r "$GITHUB_WORKSPACE/.github/requirements/build.txt"',
+    Resource.CANDIDATE, Access.READ, program=pip, extra=pip.outputs)
+```
+
+The analogous venv profile uses the default interpreter, `startup=()`,
+`kind=ProgramKind.MODULE`, `runtime_path="-m"`, `mode="venv"`, and the complete
+`/usr/bin/python3 -m venv "$HOME/venv"` form. `Program.invocation_prefix()`
+cross-checks dispatch metadata only; it never authorizes argument suffixes.
+All argv Words, including module operands and inline program text, remain
+bound by complete `Signature.invocation` equality.
+
+`normalize_invocation(command, executable=word)` accepts a symbolic executable
+only when it equals that exact registry-owned Word. Its symbolic grammar
+permits quoted named parameters with fixed literal components, not bare
+variable dispatch, unquoted expansion, substitutions, arithmetic, or patterns.
+The inventory supplies this Word only from registered Python programs in the
+current scope; generic executables cannot use that escape. `$HOME` and
+`${HOME}` inside equivalent quoting normalize alike; changed variables,
+suffixes, or quoting do not. Normalization alone is **not authorization**.
+After validation, `Analysis.commands` provides each authorized command's
+`signature.invocation`, including symbolic executable Words. Phase consumers
+must use that exact registered result, not derive a permissive executable
+profile from the submitted command or retry an inventory rejection by prefix.
+
+`Program.source_path` identifies the captured launch/program source (the
+workflow for embedded programs and external module launches), not installed
+stdlib/venv/pip code. Program text and invocation records must be independently
+declared in the reviewed registry, never reconstructed from submitted workflow
+statements or their self-derived canonical payload. Changing that payload alone
+cannot authorize a candidate operation. Deliberately updating the independent
+registry can, subject to the same complete contract and tests.
+Non-isolated `-m` launch profiles do not prove module resolution or installed
+package integrity; runtime environment and phase containment remain downstream
+responsibilities. These descriptors neither import those modules into the
+validator nor alter the captured-data, cache, or direct-loader origin controls.
 
 Dependencies are the existing workflow parser, Git exact-tree verification,
 and Linux/Python standard-library tools. #201 depends on this API; #195 must be

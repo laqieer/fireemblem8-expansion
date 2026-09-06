@@ -3,7 +3,84 @@
 from contextlib import contextmanager
 from unittest import mock
 
+from scripts.workflow_pilot import publisher_inventory as authority
 from scripts.workflow_pilot import publisher_shell_contract as contract
+
+
+CANDIDATE_SOURCE = r'''candidate_root="$GITHUB_WORKSPACE"
+candidate_probe() {
+  if test -n "$HOME"; then
+    test ! -w /mnt/export
+  fi
+}
+candidate_probe
+test -z "$(/usr/bin/find / -xdev -type s -print -quit 2>/dev/null)"
+/usr/bin/python3 -I -S -c 'import errno,fcntl; bad=[]; exec("for fd in range(3, 1024):\n try: fcntl.fcntl(fd, fcntl.F_GETFD)\n except OSError as error:\n  if error.errno != errno.EBADF: raise\n else: bad.append(fd)"); raise SystemExit(125 if bad else 0)'
+/usr/bin/python3 -m venv "$HOME/venv"
+"$HOME/venv/bin/python3" -m pip install --no-index --find-links="$WHEELHOUSE" --require-hashes --only-binary=:all: --no-deps -r "$GITHUB_WORKSPACE/.github/requirements/build.txt"
+cd "$GITHUB_WORKSPACE"
+./build_tools.sh
+make expansion-modern-map-menu-presentation-check -j1
+'''
+
+
+def candidate_inventory(api=authority):
+    """Independent fixture registrations, never learned from CANDIDATE_SOURCE/workflow."""
+    read = (api.ResourceAccess(api.Resource.CANDIDATE, api.Access.READ),)
+    write = (api.ResourceAccess(api.Resource.CANDIDATE, api.Access.WRITE),)
+    inspect = (api.ResourceAccess(api.Resource.PROCESS, api.Access.INSPECT),)
+    declaration = api.WORKFLOW_PATH
+    programs = {
+        "venv": api.Program(
+            "candidate-venv", declaration, "-m", "venv", read, write,
+            startup=(), kind=api.ProgramKind.MODULE,
+        ),
+        "pip": api.Program(
+            "candidate-pip", declaration, "-m", "pip", read, write,
+            interpreter=api.shell.command('"$HOME/venv/bin/python3"').argv[0],
+            startup=(), kind=api.ProgramKind.MODULE,
+        ),
+        "fd-check": api.Program(
+            "candidate-fd-check", declaration, "-c", None, inspect, (),
+            kind=api.ProgramKind.INLINE,
+            text='import errno,fcntl; bad=[]; exec("for fd in range(3, 1024):\\n try: fcntl.fcntl(fd, fcntl.F_GETFD)\\n except OSError as error:\\n  if error.errno != errno.EBADF: raise\\n else: bad.append(fd)"); raise SystemExit(125 if bad else 0)',
+        ),
+    }
+    rows = []
+
+    def add(name, source, family, *, scope="candidate", context=(), program=None, executable=None):
+        rows.append(api.Signature(
+            scope + "." + name, scope, api.shell.command(source), family, 1,
+            program.inputs + program.outputs if program else read,
+            (api.EventKind.HELPER_CALL,) if family == api.Family.HELPER else (api.EventKind.COMMAND,),
+            program, placements=(api.Placement(context),), executable=executable,
+        ))
+
+    add("root", 'candidate_root="$GITHUB_WORKSPACE"', api.Family.ASSIGNMENT)
+    add("probe", "candidate_probe", api.Family.HELPER)
+    for name, source, branch in (
+        ("condition", 'test -n "$HOME"', "condition"),
+        ("export", "test ! -w /mnt/export", "success"),
+    ):
+        add(name, source, api.Family.BUILTIN, scope="candidate_probe", context=(
+            api.Context("if", "candidate_probe.home", branch),
+        ))
+    add("sockets", 'test -z "$(/usr/bin/find / -xdev -type s -print -quit 2>/dev/null)"', api.Family.BUILTIN)
+    add("fd-check", r'''/usr/bin/python3 -I -S -c 'import errno,fcntl; bad=[]; exec("for fd in range(3, 1024):\n try: fcntl.fcntl(fd, fcntl.F_GETFD)\n except OSError as error:\n  if error.errno != errno.EBADF: raise\n else: bad.append(fd)"); raise SystemExit(125 if bad else 0)' ''', api.Family.PYTHON, program=programs["fd-check"])
+    add("venv", '/usr/bin/python3 -m venv "$HOME/venv"', api.Family.PYTHON, program=programs["venv"])
+    add("pip", '"$HOME/venv/bin/python3" -m pip install --no-index --find-links="$WHEELHOUSE" --require-hashes --only-binary=:all: --no-deps -r "$GITHUB_WORKSPACE/.github/requirements/build.txt"', api.Family.PYTHON, program=programs["pip"])
+    add("directory", 'cd "$GITHUB_WORKSPACE"', api.Family.BUILTIN)
+    add("tools", "./build_tools.sh", api.Family.EXECUTABLE, executable=api.shell.command("./build_tools.sh").argv[0])
+    add("make", "make expansion-modern-map-menu-presentation-check -j1", api.Family.EXECUTABLE, executable=api.shell.command("make").argv[0])
+    registered = api.reviewed_inventory()
+    return api.Inventory(
+        registered.signatures + tuple(rows),
+        registered.scopes + (api.Scope("candidate_probe", "candidate", ()),),
+        registered.controls + (api.Control(
+            "candidate_probe.home", "candidate_probe",
+            api.control_header(api.shell.parse('if test -n "$HOME"; then :; fi').items[0].nodes[0]),
+        ),),
+    )
 
 
 COMPOSED_PYTHON_READER = (

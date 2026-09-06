@@ -6,7 +6,7 @@ heredocs select canonical programs; the builder payload uses the same inventory.
 
 from . import publisher_shell as shell
 from .publisher_inventory import (
-    Access, Context, EventKind, Payload, Placement, Program, Resource,
+    Access, Context, EventKind, Payload, Placement, Program, ProgramKind, Resource,
     ResourceAccess, Scope, WORKFLOW_PATH, normalize_invocation,
 )
 
@@ -46,6 +46,8 @@ def register(add, control, scopes):
         "metadata": Program(
             "metadata-commit", WORKFLOW_PATH, "-c", None,
             (ResourceAccess(Resource.HANDOFF, Access.READ),), (),
+            kind=ProgramKind.INLINE,
+            text='import json,sys; value=json.load(open(sys.argv[1], encoding="utf-8")); assert isinstance(value, dict); assert value.get("build_commit") == sys.argv[2]',
             wrappers=normalize_invocation(shell.command(
                 '/usr/bin/env -i HOME="$PATCH_RUNTIME_ROOT" PATH=/usr/bin:/bin LC_ALL=C true',
             )).wrappers,

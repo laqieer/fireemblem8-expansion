@@ -24,6 +24,7 @@ from scripts.workflow_pilot import publisher_inventory as authority
 from scripts.workflow_pilot import publisher_programs as programs
 from scripts.workflow_pilot import publisher_shell as shell
 from scripts.workflow_pilot import publisher_shell_contract as contract
+from scripts.workflow_pilot import publisher_signatures as registry
 from tests.workflows import publisher_inventory_fixtures as fixtures
 from tests.workflows import test_patch_release_workflow as publisher
 
@@ -492,6 +493,375 @@ class PublisherCommandInventoryTests(unittest.TestCase):
             "tests.upstream_port.test_verify.VerifyGatesMirrorWorkflowTests.test_publisher_command_inventory_uses_shared_closed_authority",
             selectors,
         )
+
+
+class PublisherCandidateProfileTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.source = fixtures.CANDIDATE_SOURCE
+        cls.inventory = fixtures.candidate_inventory()
+        cls.rows = {
+            row.name: row for row in cls.inventory.signatures
+            if cls.inventory.entry_scope(row.scope) == "candidate"
+        }
+
+    def updated(self, row):
+        return replace(self.inventory, signatures=tuple(
+            row if old.name == row.name else old for old in self.inventory.signatures
+        ))
+
+    def test_candidate_root_is_closed_and_independent_of_existing_domains(self):
+        result = self.inventory.validate(self.source, entry_scope="candidate")
+        self.assertEqual(set(result.signatures), set(self.rows))
+        self.assertTrue(any(command.nested for command in result.commands))
+        self.assertTrue(any(event.call_stack == ("candidate_probe",) for event in result.events))
+        self.assertEqual(self.rows["candidate.pip"].program.startup, ())
+        self.assertEqual(self.rows["candidate.venv"].program.kind, authority.ProgramKind.MODULE)
+        workflow = WORKFLOW.read_text()
+        for scope, source in (
+            ("entry", fixtures.builder(workflow)),
+            ("producer", contract.publisher_run_script(workflow, "Verify exact candidate and stage trusted producer")),
+            ("staging", contract.publisher_run_script(workflow)),
+        ):
+            with self.subTest(scope=scope):
+                self.assertEqual(
+                    self.inventory.validate(source, entry_scope=scope).signatures,
+                    authority.reviewed_inventory().validate(source, entry_scope=scope).signatures,
+                )
+                with self.assertRaises(ValueError):
+                    self.inventory.validate(self.source, entry_scope=scope)
+        with self.assertRaises(ValueError):
+            authority.reviewed_inventory().validate(self.source, entry_scope="candidate")
+        with self.assertRaises(ValueError):
+            self.inventory.validate("", entry_scope="candidate")
+        with self.assertRaises(ValueError):
+            self.inventory.validate(self.source, entry_scope="unregistered")
+        with self.assertRaises(ValueError):
+            replace(self.inventory, scopes=self.inventory.scopes + (
+                authority.Scope("candidate", "entry", ()),
+            ))
+
+    def test_shared_registrar_accepts_explicit_words_and_python_profiles(self):
+        original = registry.register_producer
+        venv_source = '/usr/bin/python3 -m venv "$HOME/venv"'
+        pip_source = '"$HOME/venv/bin/python3" -m pip install --no-index --find-links="$WHEELHOUSE" --require-hashes --only-binary=:all: --no-deps -r "$GITHUB_WORKSPACE/.github/requirements/build.txt"'
+
+        def register(add, control, scopes):
+            original(add, control, scopes)
+            for name, source in (("venv", venv_source), ("pip", pip_source)):
+                program = self.rows["candidate." + name].program
+                add(
+                    "candidate", name, source, authority.Resource.CANDIDATE, authority.Access.READ,
+                    program=program, extra=program.outputs,
+                )
+            for name, source, executable in (
+                ("make", "make expansion-modern-map-menu-presentation-check -j1", "make"),
+                ("tools", "./build_tools.sh", "./build_tools.sh"),
+            ):
+                add("candidate", name, source, executable=shell.command(executable).argv[0])
+
+        with mock.patch.object(registry, "register_producer", side_effect=register):
+            inventory = registry.inventory()
+        result = inventory.validate(
+            venv_source + "\n" + pip_source + "\n./build_tools.sh\n"
+            "make expansion-modern-map-menu-presentation-check -j1\n", entry_scope="candidate",
+        )
+        self.assertEqual(
+            {item.signature.name: item.signature.family for item in result.commands},
+            {name: self.rows[name].family for name in (
+                "candidate.venv", "candidate.pip", "candidate.make", "candidate.tools",
+            )},
+        )
+
+    def test_symbolic_executable_requires_the_exact_registry_owned_word(self):
+        row = self.rows["candidate.pip"]
+        word = row.program.interpreter
+        self.assertIsNone(word.literal)
+        with self.assertRaisesRegex(ValueError, "dynamic"):
+            authority.normalize_invocation(row.form)
+        self.assertEqual(authority.normalize_invocation(row.form, executable=word), row.invocation)
+        for source in (
+            '"$HOME/venv/bin/python3-other"', '"$HOME/venv/bin/python"',
+            '"$OTHER/venv/bin/python3"', '"$HOME/other/bin/python3"',
+            "'$HOME/venv/bin/python3'", '$HOME/venv/bin/python3',
+            '"$interpreter"', '"/usr/bin/$interpreter"',
+            '"$(printf /usr/bin/python3)"',
+        ):
+            changed = replace(row.form, argv=(shell.command(source).argv[0],) + row.form.argv[1:])
+            with self.subTest(executable=source), self.assertRaises(ValueError):
+                self.inventory.authorize(changed, "candidate")
+            with self.subTest(normalizer=source), self.assertRaises(ValueError):
+                authority.normalize_invocation(changed, executable=word)
+        for source in ('"$interpreter"', '$HOME/venv/bin/python3', '"$(printf /usr/bin/python3)"'):
+            executable = shell.command(source).argv[0]
+            with self.subTest(registration=source), self.assertRaises(ValueError):
+                authority.normalize_invocation(shell.command(source), executable=executable)
+        for name, source in (("make", "/usr/bin/make"), ("tools", "/candidate/build_tools.sh")):
+            row = self.rows["candidate." + name]
+            changed = replace(row.form, argv=(shell.command(source).argv[0],) + row.form.argv[1:])
+            with self.subTest(literal=source), self.assertRaises(ValueError):
+                self.inventory.authorize(changed, "candidate")
+            with self.assertRaises(ValueError):
+                self.updated(replace(row, executable=shell.command(source).argv[0]))
+
+    def test_every_candidate_argument_environment_redirect_wrapper_and_placement_is_exact(self):
+        for row in self.rows.values():
+            form = row.form
+            mutations = {
+                "extra-argument": replace(form, argv=form.argv + shell.command("unregistered").argv),
+                "environment": replace(form, environment=form.environment + shell.command("UNREGISTERED=yes").environment),
+                "redirect": replace(form, redirects=form.redirects + shell.command("true > /unregistered").redirects),
+                "conditional": replace(form, conditional=not form.conditional),
+            }
+            for index in range(len(form.argv)):
+                mutations[f"argument-{index}"] = replace(
+                    form, argv=form.argv[:index] + shell.command("unregistered").argv + form.argv[index + 1:],
+                )
+                mutations[f"delete-{index}"] = replace(form, argv=form.argv[:index] + form.argv[index + 1:])
+            if form.environment:
+                mutations["assignment"] = replace(form, environment=shell.command("candidate_root=/unregistered").environment)
+            for name, changed in mutations.items():
+                with self.subTest(signature=row.name, mutation=name), self.assertRaises(ValueError):
+                    self.inventory.authorize(changed, row.scope, row.placements[0].context)
+            with self.subTest(context=row.name), self.assertRaises(ValueError):
+                self.inventory.authorize(
+                    form, row.scope, row.placements[0].context + (authority.Context("background", "&"),),
+                )
+        row = self.rows["candidate.pip"]
+        source = next(line for line in self.source.splitlines() if line.startswith('"$HOME/venv/bin/python3"'))
+        for prefix in ("/usr/bin/env -i LC_ALL=C ", "command -- ", "time -p ", "! "):
+            with self.subTest(wrapper=prefix), self.assertRaises(ValueError):
+                self.inventory.authorize(shell.command(prefix + source), "candidate")
+        for flags in (("-I",), ("-S",), ("-I", "-S"), ("-c",)):
+            changed = replace(row.form, argv=row.form.argv[:1] + shell.command(" ".join(flags)).argv + row.form.argv[1:])
+            with self.subTest(startup=flags), self.assertRaises(ValueError):
+                self.inventory.authorize(changed, "candidate")
+
+    def test_program_metadata_cannot_lie_about_interpreter_dispatch_or_inline_text(self):
+        for row in (self.rows["candidate." + name] for name in ("pip", "venv", "fd-check")):
+            program = row.program
+            changes = (
+                replace(program, interpreter=shell.command("/other/python3").argv[0]),
+                replace(program, startup=("-I",)),
+                replace(program, startup=("-m", "unregistered")),
+                replace(program, startup=("-I", "-I")),
+                replace(program, startup=["-I", "-S"]),
+                replace(program, startup=(["-I"],)),
+                replace(program, kind="module"),
+                replace(program, source_path=""),
+                replace(program, inputs=()),
+                replace(program, runtime_path="-"),
+                replace(program, runtime_path="-m extra"),
+                replace(program, environment=shell.command("PYTHONPATH=/unregistered").environment),
+                replace(program, redirects=shell.command("true > /unregistered").redirects),
+                replace(program, wrappers=authority.normalize_invocation(shell.command("command true")).wrappers),
+            )
+            for changed in changes:
+                with self.subTest(program=program.name, changed=changed), self.assertRaises(ValueError):
+                    self.updated(replace(row, program=changed))
+            for changed in (
+                replace(row, program=None),
+                replace(row, family=authority.Family.EXECUTABLE, program=None, executable=program.interpreter),
+            ):
+                with self.subTest(program=program.name, metadata="missing"), self.assertRaises(ValueError):
+                    self.updated(changed)
+        row = self.rows["candidate.fd-check"]
+        for text in (None, "", "pass", "pass; " + row.program.text):
+            with self.subTest(text=text), self.assertRaises(ValueError):
+                self.updated(replace(row, program=replace(row.program, text=text)))
+        for name in ("pip", "venv"):
+            row = self.rows["candidate." + name]
+            for mode in (None, "other", "-c", "pip.__main__"):
+                with self.subTest(module=name, mode=mode), self.assertRaises(ValueError):
+                    self.updated(replace(row, program=replace(row.program, mode=mode)))
+            with self.assertRaises(ValueError):
+                self.updated(replace(row, program=replace(row.program, kind=authority.ProgramKind.FILE)))
+        row = next(row for row in self.inventory.signatures if row.program and row.program.name == "membership")
+        with self.assertRaises(ValueError):
+            self.updated(replace(row, program=replace(row.program, kind=authority.ProgramKind.MODULE)))
+
+    def test_python_environment_wrappers_and_redirects_need_matching_program_records(self):
+        row = self.rows["candidate.venv"]
+        source = 'LC_ALL=C /usr/bin/env -i HOME="$HOME" /usr/bin/python3 -m venv "$HOME/venv" > /dev/null'
+        form = shell.command(source)
+        invocation = authority.normalize_invocation(form)
+        with self.assertRaises(ValueError):
+            self.inventory.authorize(form, "candidate")
+        with self.assertRaises(ValueError):
+            self.updated(replace(row, form=form))
+        output = authority.ResourceAccess(authority.Resource.NULL, authority.Access.WRITE)
+        registered = replace(
+            row, form=form, accesses=row.accesses + (output,),
+            program=replace(
+                row.program, environment=invocation.environment,
+                wrappers=invocation.wrappers, redirects=invocation.redirects,
+                outputs=row.program.outputs + (output,),
+            ),
+        )
+        enabled = self.updated(registered)
+        self.assertEqual(enabled.authorize(form, "candidate"), registered)
+        enabled.validate(self.source.replace('/usr/bin/python3 -m venv "$HOME/venv"', source), entry_scope="candidate")
+        for changed in (
+            source.replace("LC_ALL=C", "LC_ALL=other"),
+            source.replace('HOME="$HOME"', 'HOME="$OTHER"'),
+            source.replace("/dev/null", "/unregistered"),
+        ):
+            with self.subTest(source=changed), self.assertRaises(ValueError):
+                enabled.authorize(shell.command(changed), "candidate")
+
+    def test_nested_preflight_controls_helpers_and_cardinalities_fail_closed(self):
+        for before, after in (
+            ("/usr/bin/find / -xdev", "/usr/bin/find /candidate -xdev"),
+            ("/usr/bin/find / -xdev", "/unregistered/find / -xdev"),
+            ("/usr/bin/find / -xdev", "LC_ALL=C /usr/bin/find / -xdev"),
+            ("-print -quit", "-print"),
+            ("2>/dev/null", "2>/unregistered"),
+            ("test ! -w /mnt/export", "test 1 = 1"),
+            ('if test -n "$HOME"', 'if test -n "$OTHER"'),
+            ("candidate_probe()", "unregistered_probe()"),
+            ("candidate_root=", "other_root="),
+        ):
+            with self.subTest(mutation=after), self.assertRaises(ValueError):
+                self.inventory.validate(self.source.replace(before, after, 1), entry_scope="candidate")
+        analysis = self.inventory.validate(self.source, entry_scope="candidate")
+        for item in analysis.commands:
+            if item.nested:
+                continue
+            command = self.source[item.command.offset:item.command.end]
+            for changed in ("", command + "; " + command):
+                source = self.source[:item.command.offset] + changed + self.source[item.command.end:]
+                with self.subTest(command=item.signature.name, changed=changed), self.assertRaises(ValueError):
+                    self.inventory.validate(source, entry_scope="candidate")
+            without = replace(self.inventory, signatures=tuple(
+                row for row in self.inventory.signatures if row != item.signature
+            ))
+            with self.subTest(deletion=item.signature.name), self.assertRaises(ValueError):
+                without.validate(self.source, entry_scope="candidate")
+        for changed in (
+            replace(self.inventory, controls=tuple(c for c in self.inventory.controls if c.scope != "candidate_probe")),
+            self.updated(replace(self.rows["candidate.pip"], occurrences=2)),
+            self.updated(replace(self.rows["candidate.pip"], placements=(authority.Placement(occurrences=2),))),
+        ):
+            with self.assertRaises(ValueError):
+                changed.validate(self.source, entry_scope="candidate")
+
+    def test_only_independent_registry_updates_authorize_new_behavior(self):
+        row = self.rows["candidate.make"]
+        changed = self.source.replace("make expansion-modern-map-menu-presentation-check -j1", "make reviewed-other-target -j1")
+        with mock.patch.object(authority, "authority_source_bytes", return_value=changed.encode()) as canonical:
+            with self.assertRaises(ValueError):
+                self.inventory.validate(changed, entry_scope="candidate")
+            enabled = self.updated(replace(row, form=shell.command("make reviewed-other-target -j1")))
+            enabled.validate(changed, entry_scope="candidate")
+            with self.assertRaises(ValueError):
+                enabled.validate(self.source, entry_scope="candidate")
+            canonical.assert_not_called()
+        row = self.rows["candidate.fd-check"]
+        changed = self.source.replace("import errno,fcntl;", "pass; import errno,fcntl;", 1)
+        form = shell.command("/usr/bin/python3 -I -S -c " + shlex.quote("pass; " + row.program.text))
+        with self.assertRaises(ValueError):
+            self.inventory.validate(changed, entry_scope="candidate")
+        with self.assertRaises(ValueError):
+            self.updated(replace(row, form=form))
+        self.updated(replace(
+            row, form=form, program=replace(row.program, text="pass; " + row.program.text),
+        )).validate(changed, entry_scope="candidate")
+        row = self.rows["candidate.venv"]
+        changed = self.source.replace('/usr/bin/python3 -m venv "$HOME/venv"', '/usr/bin/python3 -I -m venv "$HOME/venv"')
+        form = shell.command('/usr/bin/python3 -I -m venv "$HOME/venv"')
+        with self.assertRaises(ValueError):
+            self.updated(replace(row, form=form))
+        self.updated(replace(row, form=form, program=replace(row.program, startup=("-I",)))).validate(changed, entry_scope="candidate")
+        row = self.rows["candidate.pip"]
+        changed = self.source.replace("-m pip install", "-m pip.__main__ install")
+        form = replace(row.form, argv=row.form.argv[:2] + shell.command("pip.__main__").argv + row.form.argv[3:])
+        with self.assertRaises(ValueError):
+            self.updated(replace(row, form=form))
+        self.updated(replace(row, form=form, program=replace(row.program, mode="pip.__main__"))).validate(changed, entry_scope="candidate")
+
+    def test_safe_spelling_independent_order_and_source_only_types_are_preserved(self):
+        changed = self.source.replace("$HOME", "${HOME}").replace(
+            "./build_tools.sh\nmake expansion-modern-map-menu-presentation-check -j1",
+            "'make' expansion-modern-map-menu-presentation-check '-j1'\n'./build_tools.sh'",
+        )
+        expected = self.inventory.validate(self.source, entry_scope="candidate")
+        self.assertEqual(self.inventory.validate(changed, entry_scope="candidate").signatures, expected.signatures)
+        sources = {path: authority.authority_source_bytes(path) for path in authority.authority_paths()}
+        with authority._source_only_authority(sources):
+            from scripts.workflow_pilot import publisher_inventory as captured
+            actual = fixtures.candidate_inventory(captured).validate(changed, entry_scope="candidate")
+        result = authority._public_analysis(actual)
+        self.assertEqual(result.signatures, expected.signatures)
+        for item in result.commands:
+            self.assertIsInstance(item, authority.AuthorizedCommand)
+            if item.signature.program:
+                self.assertIsInstance(item.signature.program.kind, authority.ProgramKind)
+                self.assertIsInstance(item.signature.program.interpreter, shell.Word)
+
+    def test_bounded_runtime_keeps_module_startup_fd_checks_and_build_words_honest(self):
+        directory = ROOT / "build/test-artifacts" / ("candidate-profile-" + uuid.uuid4().hex)
+        directory.mkdir(parents=True)
+        self.addCleanup(shutil.rmtree, directory)
+        (directory / "home").mkdir()
+        environment = {
+            "PATH": "/usr/bin:/bin", "LC_ALL": "C", "HOME": str(directory / "home"),
+            "GITHUB_WORKSPACE": str(directory), "WHEELHOUSE": str(directory / "wheels"),
+        }
+
+        def run(source, **options):
+            return subprocess.run(
+                ["/bin/bash", "--noprofile", "--norc", "-c", source],
+                cwd=directory, env=environment, capture_output=True, timeout=30, check=False, **options,
+            )
+
+        fd_source = next(line for line in self.source.splitlines() if line.startswith("/usr/bin/python3 -I"))
+        self.inventory.authorize(shell.command(fd_source), "candidate")
+        completed = run(fd_source)
+        self.assertEqual((completed.returncode, completed.stdout, completed.stderr), (0, b"", b""))
+        with (directory / "inherited-fd").open("wb") as inherited:
+            self.assertLess(inherited.fileno(), 1024)
+            completed = run(fd_source, pass_fds=(inherited.fileno(),))
+        self.assertEqual((completed.returncode, completed.stdout, completed.stderr), (125, b"", b""))
+
+        # A registered no-pip fixture creates only an owned venv, never installs packages.
+        source = '/usr/bin/python3 -m venv --without-pip "$HOME/venv"'
+        row = self.rows["candidate.venv"]
+        self.updated(replace(row, form=shell.command(source))).authorize(shell.command(source), "candidate")
+        completed = run(source)
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertTrue((directory / "home/venv/pyvenv.cfg").is_file())
+        (directory / "pip").mkdir()
+        (directory / "pip/__init__.py").write_text("")
+        (directory / "pip/__main__.py").write_text(
+            'import json,sys\nprint(json.dumps({"argv":sys.argv[1:],'
+            '"isolated":sys.flags.isolated,"no_site":sys.flags.no_site,"prefix":sys.prefix}))\n'
+        )
+        pip_source = next(line for line in self.source.splitlines() if line.startswith('"$HOME/venv/bin/python3"'))
+        self.inventory.authorize(shell.command(pip_source), "candidate")
+        completed = run(pip_source)
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        output = json.loads(completed.stdout)
+        self.assertEqual(output, {
+            "argv": [
+                "install", "--no-index", "--find-links=" + environment["WHEELHOUSE"],
+                "--require-hashes", "--only-binary=:all:", "--no-deps", "-r",
+                environment["GITHUB_WORKSPACE"] + "/.github/requirements/build.txt",
+            ],
+            "isolated": 0, "no_site": 0, "prefix": str(directory / "home/venv"),
+        })
+        (directory / "build_tools.sh").write_text("#!/bin/sh\nprintf 'fixture-tools\\n'\n")
+        (directory / "build_tools.sh").chmod(0o755)
+        (directory / "Makefile").write_text(
+            ".PHONY: expansion-modern-map-menu-presentation-check\n"
+            "expansion-modern-map-menu-presentation-check:\n\t@printf 'fixture-make\\n'\n"
+        )
+        for source, output in (
+            ("./build_tools.sh", b"fixture-tools\n"),
+            ("make expansion-modern-map-menu-presentation-check -j1", b"fixture-make\n"),
+        ):
+            self.inventory.authorize(shell.command(source), "candidate")
+            completed = run(source)
+            self.assertEqual((completed.returncode, completed.stdout, completed.stderr), (0, output, b""))
 
 
 class PublisherProgramTests(unittest.TestCase):
