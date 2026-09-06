@@ -29,11 +29,17 @@ trap 'exit 130' INT
 trap 'exit 143' TERM
 
 if ! curl --fail --silent --location --proto '=https' --proto-redir '=https' \
-    --tlsv1.2 --output "$base_image" --url "$BASEROM_URL" >/dev/null 2>&1; then
+    --tlsv1.2 --max-filesize 16777216 --output "$base_image" \
+    --url "$BASEROM_URL" >/dev/null 2>&1; then
     echo "private patch input download failed" >&2
     exit 1
 fi
 unset BASEROM_URL
+if ! python3 -c 'import os,sys; sys.exit(os.stat(sys.argv[1]).st_size > 16777216)' \
+    "$base_image" >/dev/null 2>&1; then
+    echo "private patch input size invalid" >&2
+    exit 1
+fi
 chmod 0400 "$base_image"
 python3 -m scripts.modernize.patch_release create \
     --base "$base_image" --target "$release/fireemblem8.gba" \

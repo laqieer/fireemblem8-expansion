@@ -270,13 +270,14 @@ raise SystemExit(patch_release.main(sys.argv[3:]))
         path.write_text("#!" + sys.executable + "\n" + source)
         path.chmod(0o755)
 
-    def package(self, **environment):
+    def package(self, *, cleaned=True, **environment):
         completed = subprocess.run(
             ["bash", str(PACKAGER)], cwd=self.directory,
             env={**self.environment, **environment},
             capture_output=True, check=False, timeout=180,
         )
-        self.assertEqual(list(self.temporary.iterdir()), [])
+        if cleaned:
+            self.assertEqual(list(self.temporary.iterdir()), [])
         for stream in (completed.stdout, completed.stderr):
             self.assertNotIn(b"secret-marker", stream)
             self.assertNotIn(b"PRIVATE-BASE-CONTENT", stream)
@@ -302,6 +303,33 @@ raise SystemExit(patch_release.main(sys.argv[3:]))
         arguments = json.loads((self.directory / "download-arguments.json").read_text())
         self.assertEqual(arguments[arguments.index("--proto") + 1], "=https")
         self.assertEqual(arguments[arguments.index("--proto-redir") + 1], "=https")
+        self.assertEqual(arguments[arguments.index("--max-filesize") + 1], str(16 * 1024 * 1024))
+
+    def test_oversized_download_is_rejected_before_producer_reads_it(self):
+        with (self.directory / "base-fixture").open("wb") as fixture:
+            fixture.truncate(16 * 1024 * 1024 + 1)
+        result = self.package()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse((self.directory / "producer-calls").exists())
+        self.assertFalse(self.output.exists())
+
+    def test_private_file_cleanup_failure_is_visible(self):
+        self.tool("rm", "raise SystemExit(1)\n")
+        result = self.package(cleaned=False)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn(b"private patch input cleanup failed", result.stderr)
+        directories = list(self.temporary.iterdir())
+        self.assertEqual(len(directories), 1)
+        self.assertEqual((directories[0] / "base.gba").read_bytes(), self.base)
+
+    def test_private_directory_cleanup_failure_is_visible(self):
+        self.tool("rmdir", "raise SystemExit(1)\n")
+        result = self.package(cleaned=False)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn(b"private patch input cleanup failed", result.stderr)
+        directories = list(self.temporary.iterdir())
+        self.assertEqual(len(directories), 1)
+        self.assertEqual(list(directories[0].iterdir()), [])
 
     def test_download_failure_is_private_and_cleans_partial_input(self):
         result = self.package(FAIL_DOWNLOAD="1")

@@ -118,6 +118,11 @@ output file or substitutes for the explicit BPS apply command.
 3. Exercise wrong base, target, metadata and commit, failed partial download,
    unexpected artifact files and failed verification. Each must fail without
    private URL/base data in public output, and remove its private input.
+   Supply a download larger than 16 MiB and require rejection before producer
+   invocation. Confirm the transport receives the maximum-file-size bound.
+   Separately force private-file removal and directory-removal failures;
+   require the fixed cleanup diagnostic, a nonzero result and no private
+   URL/bytes in output. The owned test fixture removes any retained test input.
 4. On the resulting exact master Build, confirm packaging reuses the existing
    release/aapcs output, succeeds, cleans private input and uploads exactly
    BPS, `manifest.json` and `README.txt` under the existing SHA-named artifact

@@ -61,6 +61,10 @@ The existing producer checks the approved base hash/header, target header and
 embedded metadata, exact commit/profile, BPS round trip and three-file artifact.
 Private input uses a unique mode-0700 directory, mode-0400 base and failure/
 signal cleanup. Download diagnostics never disclose the URL or private bytes.
+The download uses curl's 16 MiB maximum-file-size bound, and an independent
+file-size check rejects an oversized result before Python reads its contents.
+The existing producer still validates the exact approved base size and identity.
+Cleanup command failures report a fixed diagnostic and fail the packaging step.
 Only verified BPS/manifest/README files are uploaded after private cleanup;
 the ROM stays inside the build job and is never an artifact/cache handoff.
 Packaging or cleanup failure fails `build` and therefore the required summary.
