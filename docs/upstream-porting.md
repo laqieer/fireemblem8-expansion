@@ -279,6 +279,15 @@ local gates: the mirror still executes exactly 28 gates. Their conditions,
 secret scope, existing-output packaging invocation and pinned patch-only
 upload remain parsed contracts.
 
+Dry-run validates that workflow wiring and describes the gates; it does not
+execute or certify the behavior of invoked helpers. Its results have
+`ran=False` and cannot count as passed gates. Full verification runs
+`workflow-contract-tests` in the selected target checkout, where
+`PackagingRuntimeTests` executes that checkout's packaging helper against
+synthetic inputs, including no-rebuild, artifact, and cleanup controls.
+This is behavioral evidence, not a static proof of arbitrary shell semantics
+or a source-content identity ledger.
+
 Patch packaging trusts reviewed, merged master source and pinned/declared
 tools, like ordinary CI. It is not a sandbox against malicious repository
 writers, hostile same-UID code, compromised dependencies, or runner compromise.

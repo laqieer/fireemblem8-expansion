@@ -2136,10 +2136,11 @@ def gates(jobs: int = 2) -> List[Gate]:
                 "-v",
             ],
             applicable_note=(
-                "fast host lane (same `host-tests` job): stdlib-only static "
-                "contracts for the consolidated Build CI job graph. No "
-                "compiler, ROM, linker, network, or subordinate runtime gate "
-                "is invoked"
+                "fast host lane (same `host-tests` job): stdlib-only parsed "
+                "contracts for the consolidated Build CI job graph and "
+                "synthetic-input behavior tests of the target checkout's "
+                "packaging helper. No game build, compiler, linker, private "
+                "base download, or network is invoked"
             ),
         ),
         Gate(
