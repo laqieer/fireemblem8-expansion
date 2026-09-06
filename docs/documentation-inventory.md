@@ -60,7 +60,7 @@ Markdown library, so it stays stdlib-parseable and diff-friendly.
 - docs/quickstart.md | laqieer | current | Setup guide: modern default build + archival --legacy path
 - docs/migration-from-decomp.md | laqieer | current | Bridge guide: old decomp-base/agbcc workflow -> modern framework
 - docs/archival-decomp.md | laqieer | current | Archival-lane decomp-matching workflow, setup, and asset-extraction references
-- docs/workflow-pilot.md | laqieer | current | Frozen workflow-efficiency baseline, parsed event selection, canonical evidence protocol, formulas, and lifecycle (issues #176/#177)
+- docs/workflow-pilot.md | laqieer | current | Frozen workflow-efficiency baseline, event/evidence protocol, lifecycle, and bounded exact-SHA handoffs (issues #176/#177/#178)
 - docs/ownership-probe-foundation.md | laqieer | current | Confined native Make/registry execution authority, aggregate bounds, source admission and downstream #180/PR186 seam (issue #206)
 - docs/release-migration-template.md | laqieer | template | Unfilled scaffolding for a future version-to-version migration guide
 - docs/config_identity.md | laqieer | current | Config surface + ROM identity fingerprint reference (issue #8)

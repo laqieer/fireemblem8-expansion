@@ -201,11 +201,41 @@ the consumers' independent protected-principal/deployment requirements.
     retain with a reason rather than crashing or silently ignoring mounts.
     Report a retained non-UTF-8 ignored filename through strict ASCII JSON
     without losing either its name or file content.
-12. For actual delivery, the coordinator first merges the task's PR, verifies
-   all relevant exact-master CI and `make remote-completion-check`, then runs
-   the [documented planner/apply commands](../workflow-pilot.md#completed-worktree-cleanup).
-   Preserve all assigned workspaces throughout apply. Record removed paths,
-   observed pre-removal allocated sizes, proof identities, and retained reasons.
+12. In the owned completed fixture, commit `.gitmodules` and multiple gitlinks
+    with real commit IDs, leaving their directories present and empty.
+    Dry-run must preserve the index, shared/private metadata, files, and
+    registrations; apply must remove normally while retaining shared refs.
+    Repeat with a non-UTF-8 gitlink path containing spaces, tabs, and newlines.
+    Remove a directory or stage a gitlink ID, path-set, mode, or conflict-stage
+    change: each must retain, without creating paths or repairing the index.
+    Put local/hidden/ignored data or even an empty child directory inside a
+    gitlink; replace it with a file, symlink, or symlinked parent; inject fixture
+    mount records. None qualifies, including names otherwise used for generated
+    output. Existing locks and active/preserved paths still block.
+    Repeat with actual initialized, separated, bare, and nested Git repositories.
+    A test-owned submodule fsmonitor hook writes a marker under ordinary nested
+    status as the negative control. Cleanup must neither execute that hook nor
+    spawn nested Git, as observed through real Git Trace2 events, even if the
+    initialized repository arrives between the empty observation and status.
+    Introduce local data or replace the empty directory on both apply
+    revalidation passes. Also introduce data during the empty scan and a
+    zero-byte file before the final size scan: the data and registration remain.
+    Replace a gitlink ancestor with a symlink while preserving the total
+    allocated block count; an unvisited gitlink must still retain the target.
+    Observe stat/open/scandir calls against a real test-owned external target.
+    Existing symlink parents, replacements immediately before/after directory
+    open, and replacements after scan entries are queued must cause retention
+    without any external-target access. Keep ordinary and byte-path positives.
+    Incomplete/duplicate index/tree observations and excessive gitlink counts
+    must retain rather than treating an ambiguous inventory as empty.
+13. For actual delivery, the coordinator first merges the task's PR, verifies
+    all relevant exact-master CI and `make remote-completion-check`, then runs
+    the [documented planner/apply commands](../workflow-pilot.md#completed-worktree-cleanup).
+    Select only known released, quiescent task workspaces; a green inventory
+    does not establish release or exclude writers. Preserve all assigned or
+    uncertain workspaces, including other active sessions, throughout apply.
+    Record removed paths, observed pre-removal allocated sizes, proof identities,
+    and retained reasons.
 
 ### Expected result
 
@@ -224,6 +254,12 @@ of clean current status. Unique private configuration, recovery/index
 snapshots, edit buffers and unfamiliar index extensions are not build output.
 Filesystem byte paths remain lossless through Git, mount/backlink checks and
 JSON. Fresh checks still cover non-UTF-8 path and private-metadata drift.
+Present real empty unpopulated gitlinks qualify only with exact live
+index/HEAD identity agreement; populated, missing, changed, or ambiguous
+gitlinks do not. Empty-directory observations are repeated by local checks
+and size scans, not inferred from ignored submodule status or allocated bytes.
+Relative components are observed from a held worktree-root descriptor without
+following symlink targets; entry/descriptor substitution retains the workspace.
 
 ### Negative control
 
@@ -240,6 +276,17 @@ Its first recovery fix still accepted REUC-only unreachable blobs, private
 configuration/backups and unrecognized index extensions, and text decoding
 crashed on valid non-UTF-8 target/backlink/mount names. The extended controls
 fail against that parent helper, including after-plan/final-check drift.
+The later blanket rejection of every `160000` index entry incorrectly holds
+clean empty-gitlink fixtures; the new dry-run and normal-removal positives fail
+against that helper. Ignoring submodule status without the index/HEAD comparison
+or empty-directory checks fails the staged/data controls. A size-only final
+check loses a late zero-byte file because ordinary Git removal does not protect
+data inside an uninitialized gitlink. None of these controls authorizes actual
+historical cleanup before this follow-up's own candidate and merged-master gates.
+The resolve-based observer still rejected symlinks only after accessing their
+external targets, and a queued full-path scan could do the same after a parent
+replacement. The no-target-access controls fail against that implementation
+even though it eventually reports retention.
 
 ### Interactions and save compatibility
 
@@ -271,6 +318,13 @@ judgment is required; actual service availability and active ownership remain
 live operational checks. Fixture process inventory includes only owned PIDs;
 the live helper retains its full same-owner visibility requirement. Mount
 records are simulated with byte files, never actual or privileged mounts.
+These controls prove rejection of observed changes, not an atomic transaction
+or writer lock. New content written inside a gitlink after its final empty
+observation but before Git deletes it can be lost because ordinary Git does
+not inspect that content. Apply is limited to explicitly known released,
+quiescent task workspaces with a complete preserved inventory and no reassignment.
+If that precondition cannot be established, retain the target regardless of
+otherwise green proof. No permission lock or arbitrary-writer guarantee is added.
 
 ## TC-WORKFLOW-IMMEDIATE-PUSH-001: Publish new commits immediately and expose WIP ownership
 
@@ -2773,3 +2827,212 @@ lifecycle or absent-on-master `validation-ownership-check` target. Those remain
 explicit downstream integration gates under #180. Unsupported native Make
 ABIs/platforms fail rather than running a weaker probe. Roll back by reverting
 this dedicated foundation; broader validation remains required.
+
+## TC-WORKFLOW-AGENT-HANDOFF-001: Validate bounded exact-SHA agent handoffs
+
+- **Feature / originating issue:** `workflow-governance` /
+  [issue #178](https://github.com/laqieer/fireemblem8-expansion/issues/178).
+- **Supported configuration or artifact:** source-only Linux checkout with the
+  [locked host Python environment](../workflow-pilot.md#isolated-host-python-dependencies),
+  Git and the reviewed v3 handoff tools. No token/live workflow, ROM or emulator.
+- **Prerequisites and clean starting state:** use the exact source root and
+  #176 baseline; create/probe #216's owned environment as documented. The
+  fixtures allocate only their own `build/test-artifacts/agent-handoff-*`
+  directories and harmless child processes. Do not clean another owner's data.
+
+### Actions
+
+1. From the source root, run the focused suite with the inherited interpreter:
+
+   ```bash
+   build/host-python/bin/python3 -I -c 'import sys, unittest; sys.path.insert(0, "."); unittest.main(module=None)' \
+     scripts.workflow_pilot.tests.test_agent_handoff \
+     scripts.workflow_pilot.tests.test_coordinator_observations -v
+   ```
+
+2. Inspect the real-Git positive fixture: exact clean strict descendant, named
+   evidence, real raw-check exit/PID, measured owner exit/RSS, distinct native
+   dispatch/receipt/progress/delivery and Git commit observations. One and
+   multiple task commits pass. Merge an authorized exact upstream input with
+   no task trailers, plus a task commit with trailers: imported paths/history
+   pass without consuming task scope/line budget. An unrecorded merge rejects.
+3. Apply stale/wrong-parent/non-HEAD/unrelated result, dirty/conflicting tree,
+   missing trailers/evidence/checks, out-of-scope path, hidden index flags,
+   whitespace/checker replacement, and incremental line-budget controls.
+   Remove only the failing condition and confirm success returns. Candidate
+   `passed` fields and printed `exit 0` cannot replace a failing OS exit.
+4. Exercise actual parsed protocol and resource inputs. Unknown/non-host
+   resources, unquantified binary changes and ROM/RAM/protocol overages reject.
+   Schema/runtime controls reject unknown fields, duplicate scope/keys,
+   bad timestamps/types/enums, oversize/deep input and nonregular/symlink
+   metadata. Equivalent JSON ordering stays equivalent.
+   Send integral decimal/exponent integers through the byte API and real
+   isolated CLI: schema and runtime agree, and a reloaded actual PID is an
+   integer usable by the process adapter. Boolean/fractional/nonfinite/
+   out-of-range values reject, including fractions that would round to an
+   integer. No custom schema validator or per-field float bypass is used.
+   Use actual non-host mode-only, regular-to-symlink and empty-file add/delete
+   commits whose numstat is zero: missing resource observations must reject.
+   Actual linker observations of zero pass; nonzero growth rejects an
+   insufficient budget and passes with sufficient limits. Host-only zero-line
+   changes and pure authorized imports with no task-owned paths still pass.
+   Create/delete a valid `null` protocol file: each consumes one change;
+   absent/absent and unchanged `null` consume zero. Preserve positives for
+   object key order, integral numeric spelling and equivalent Unicode escapes;
+   Boolean-to-number substitutions and changed array order must consume a
+   change. Valid Unicode input within the existing byte bound stays valid even
+   when escaped re-encoding would be larger.
+   Partition the same changed inputs among multiple disjoint protocol checks
+   and reorder their declarations: the assignment total stays the same.
+   Fully or partially overlapping input definitions reject through assignment,
+   loaded-state and CLI admission; ordinary schema validation does not claim
+   this runtime-only cross-record check. Missing/impossible per-check counts
+   cannot be hidden by other check measurements.
+   Send escaped lone high/low surrogates through text/path fields: independent
+   Draft 2020-12 and the actual byte API/CLI reject. Ordinary Unicode,
+   supplementary characters and valid escapes pass, including after a
+   CLI round trip. Rejected CLI input leaves canonical state unchanged.
+5. Exercise dispatch-only and received-only native event streams. Confirm
+   the matching session's receipt needs both the assignment marker and
+   `data.parentAgentTaskId` equal to the dispatched task ID. Wrong-task,
+   unrelated, absent or opaque identities/content leave receipt incomplete.
+   `subagent.started`/transport success infer nothing; actual tool start
+   advances progress once. Replayed event cursors cannot multiply metrics.
+   Put receipt, turn, progress and delivery before the first matching
+   `session.start`: none may acquire its later context. Repeat within a batch,
+   across incremental calls and at the 128-event boundary; valid subsequent
+   events with retained cursor context still complete normally. An old session
+   start may establish context, but stale pre-assignment task events must not
+   acknowledge or count the new assignment. Exercise the actual CLI and check
+   that a future-clock rejection leaves canonical state unchanged.
+   Real process exit/RSS pass; opaque/reused identities, missing complete RSS,
+   lifetime/RSS overage and repeated committed-owner work do not pass.
+   Deliver a real committed checkpoint, then observe owner exit 7 or SIGKILL:
+   local acceptance and an accepted report reject it, preservation happens
+   before retirement, and Git HEAD/index/check facts remain intact. A missing
+   owned exit observation never becomes zero. Actual zero-exit completion
+   still passes; immediate WIP publication is a separate coordinator decision.
+   Compare captured assignment-to-close lifetime just below, exactly at and
+   one microsecond beyond the limit while actual process age stays small.
+   Live admission and historical accepted reporting must agree; retained valid
+   history still reports after removing only its fixture worktree. Advance a
+   controlled clock past the limit after a successful real raw check: final
+   acceptance must reject, with close and verdict using one timestamp.
+   Missing/future/negative lifecycle times and an open report clock predating
+   assignment never become fabricated zero elapsed time.
+6. Reserve duplicate/overlapping owners/watchers and attempt a second state
+   writer: each rejects. Try different watcher IDs/runs with the same actual
+   boot/PID/start identity, both through reservation and loaded state: reject.
+   Distinct live processes pass; an owned unreaped zombie cannot reserve a
+   watcher. Running/ended records must agree with process state and exit data;
+   completed observations with unknown exit/RSS remain valid and reconcilable.
+   Reuse a dispatch ID with otherwise fresh assignment/owner/session IDs in
+   a review or independent reservation, and mutate a loaded state similarly:
+   reject. A genuinely fresh dispatch remains valid, and the existing other
+   identity-uniqueness controls still reject duplicates.
+   Record an implementation-owner prohibited remote
+   action and confirm rejection. This is operational/role-policy checking,
+   not authentication against a hostile same-UID process.
+   SIGKILL only an owned writer after partial and complete staging writes:
+   canonical bytes stay intact and repeated new transactions succeed without
+   promoting the interrupted state. Legacy staging, user files and symlinks
+   stay untouched; forced exclusive-create collisions fail safely and can be
+   retried with a fresh staging name. A failed replace preserves canonical
+   state and removes only the current transaction's staging.
+7. Use the exact GitHub run-response fixtures through the production query
+   adapter. Watcher timeout plus authoritative success stays success;
+   failure/cancellation stays failure, in-progress stays pending, API errors
+   and wrong run/attempt/head stay unknown. No watcher status substitutes for
+   the run. A replacement cannot overlap a still-live watcher. Report multiple
+   runs/attempts on one head: a later success must not erase earlier failures,
+   cancellations, pending work or a query error (even after an older success).
+8. Kill only the fixture's owned child and inspect inert matching kernel
+   evidence. Preserve exact staged/unstaged/untracked bytes, mode and index;
+   confirm the original linked worktree is locked and reused by one replacement,
+   with the running check incomplete. Missing OOM authority stays unknown.
+   Move interruption time before assignment, after close or after replacement;
+   remove its close or put both close/interruption in the future: reject in
+   loaded state, reporting and replacement admission without changing retained
+   file/index/lock bytes. Actual interruption matches close and yields positive,
+   never negative, replacement recovery cost. Independent schema checks the
+   required close, while time ordering/equality remains a runtime contract.
+   A live owner, lost retention state or second replacement rejects without
+   resetting/deleting the worktree or copying it into a new recovery engine.
+   After completion or interruption, try a fresh `initial` assignment for the
+   same issue or PR, including a different clean worktree: reject in live and
+   loaded state. The real review/replacement lineage and independent issue/PR
+   initial assignments still pass; a null PR does not merge unrelated issues.
+   Change staged, unstaged or untracked bytes, index or file/directory modes
+   while retaining the same HEAD/status pathnames: reassignment must reject.
+   Restore the exact data/modes in the owned fixture and genuine reuse passes.
+   Check the closed integrity field with independent schema/runtime mutations.
+   Large clean committed content and external symlink target bytes are not
+   read into recovery integrity; changing the link text itself rejects.
+   FIFO/over-budget input holds with the original work and retention lock
+   intact and the owner not closed; retry after restoring safe observability.
+9. Exercise explicit availability plans and always-on observations. Enabled
+   stop triggers without a plan, expired/future coverage and a detected
+   suspend/boot change reject. A declared plan is not an uptime guarantee.
+10. Execute the [documented production CLI](../workflow-pilot.md#coordinator-integration-and-commands)
+    against the generated state/result: clean positive exits 0; the dirty
+    negative exits 2. Removed publication verbs reject. Exercise optional
+    reporting, confirm stale/incomplete and unknown RSS remain visible, and
+    confirm baseline v1 without the option remains unchanged.
+    Starting from a genuinely accepted handoff, mutate captured ROM/RAM and
+    protocol measurements to missing, null, wrong types or over budget; also
+    remove checks/evidence or change identity, completion and times. Both live
+    validation without re-running checks and accepted reporting must reject.
+    Independent partial ROM/RAM observations may together cover one global
+    growth measure; repeated observations do not multiply that growth.
+    Honest rejected records with unknown resources still report as rejected.
+    Capture justified host-only/pure-import zeros, then remove only the owned
+    fixture worktree: complete historical host/import/non-host observations
+    still report without Git access. A missing captured zero must not be
+    reconstructed from a verdict label or allowed scope.
+
+### Expected result
+
+Only an exact, clean, scoped, measured local handoff is ready. Task-owned
+first-parent commits carry both Copilot trailers; authorized imported upstream
+history does not need this session's trailers. Each lifecycle state has a
+separate actual observation. Ownership and watcher reservations are exclusive,
+the implementation owner retires, and one interrupted-worktree replacement is
+bounded. GitHub remains CI authority. No validation result publishes anything
+or satisfies the separate full-PR/final delivery gates.
+
+### Negative control
+
+Each adversary above fails or remains explicitly unknown/incomplete.
+Runtime-check mutation must fail even if command/pass labels are preserved.
+Equivalent source/JSON wording or order does not affect semantic evidence.
+There is no disabled gameplay profile: omitting optional handoff reporting
+preserves the baseline v1 report. No manual-only criterion applies.
+
+### Interactions and save compatibility
+
+Depends on #176 and #216/#217's locked test environment; dependent #181.
+#179 is independent and #205/#211 is not required. Conflicts are stale/duplicate
+ownership and the removed broker format. Preserve #199 metadata events,
+#207 immediate publication, #208 cleanup and all original final gates.
+No ROM/RAM content, save/configuration, locale, generated game data, modern
+debug/release or archival behavior changes.
+
+### Automation
+
+The focused command above runs real Git/process/raw-check/CLI tests plus
+independent Draft 2020-12 positive/adversarial schema validation.
+`test_reporter.BaselineFixtureTests` and the existing isolated-lifecycle
+launcher test cover unchanged v1 neighbors. The existing development-workflow
+and catalog tests check both case mirrors and the public CLI mapping. Full
+Build CI remains the comprehensive integration gate; no ROM build or broad
+local suite is needed for this source-only change.
+
+### Cleanup and limitations
+
+Each fixture removes its own directories and reaps only its own children.
+No real OOM pressure, Dev Box setting, unrelated process or GitHub state is
+changed. Raw kernel/GitHub responses use inert fixtures at external boundaries;
+the production file/process/query adapters themselves run in the tests.
+Opaque runtime handles cannot certify exit/RSS; a missing real observation
+remains an explicit hold, never an authenticated label or invented backend.
+Revert the dedicated #178 change on regression.

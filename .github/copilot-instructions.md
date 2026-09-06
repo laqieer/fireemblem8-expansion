@@ -4,6 +4,17 @@ This is a ROM-hack base derived from the **Fire Emblem: The Sacred Stones**
 (GBA) decompilation. The expansion output is not required to be byte-identical
 to the original ROM.
 
+Before adding a prerequisite, gate or service in this repository, identify the
+original accepted requirement or concrete risk, accepted threat model, smallest
+existing mechanism, and why a simpler solution is insufficient. Review findings
+do not automatically expand requirements: fix accepted-contract bugs, simplify
+architecture-created problems, and separate optional hardening with honest
+claims. At the existing third-round/8K reconsideration point, compare a concrete
+simpler design and remove unnecessary machinery or split complete independent
+contracts when needed—not merely write another note. Measure the original
+end-to-end outcomes and total delivery cost; preserve real safety requirements
+and every final gate.
+
 ## Build
 
 This repository's default, supported path is the **modern
@@ -168,6 +179,37 @@ occupy a reasoning agent or stop with a waiting-only response. Cancel only a
 superseded candidate run after that candidate actually changes. A broken
 master Build requires an immediate fix-forward or revert and blocks that
 issue's closure and remote completion, but not unrelated independent PRs.
+
+### Bounded exact-SHA implementation handoffs
+
+Use the [version-3 handoff contract](../docs/workflow-pilot.md#bounded-exact-sha-implementation-handoffs)
+for bounded implementation cycles. The coordinator owns the assignment, real
+Git/check/process observations and one locked session-local coordination
+document; the implementation returns only the assignment ID, echoed parent,
+result SHA and named evidence references. These records are not authenticated
+data or publication capabilities.
+
+Keep assignment sent, received, progressing, committed and handed-off distinct.
+Use actual CLI events and OS exit observations, never tool-transport success or
+printed pass labels. Retire an owner after its committed handoff or lifetime
+limit and use a fresh owner for review. Permit explicitly recorded normal
+upstream merges; apply task trailers/scope to task-owned changes, not imported
+upstream history. Incremental assignment budgets do not replace full-PR
+review-size preflight.
+
+Keep one real direct watcher per exact GitHub run/attempt. Reconcile watcher
+errors through GitHub; a process timeout is not CI failure or success. On
+interruption, preserve and lock the original worktree before one bounded
+replacement reuses it. Unknown PID/RSS/OOM observations remain unknown.
+Record an always-on coordinator or an explicit availability plan before
+unattended delivery; a plan is not a guarantee of uptime.
+
+Only the existing coordinator publishes through Git/gh. Handoff tooling never
+pushes, modifies remote refs or supplies credentials to candidate execution.
+Use the existing reviewed-source/approved check route and platform role
+permissions, not an alleged Python or same-UID OS sandbox. Immediate checkpoint
+publication, metadata-event handling, final gates and completed-worktree
+cleanup remain unchanged.
 
 ### Completed-worktree cleanup
 

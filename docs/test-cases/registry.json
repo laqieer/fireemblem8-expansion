@@ -482,6 +482,7 @@
         "https://github.com/laqieer/fireemblem8-expansion/issues/171",
         "https://github.com/laqieer/fireemblem8-expansion/issues/176",
         "https://github.com/laqieer/fireemblem8-expansion/issues/177",
+        "https://github.com/laqieer/fireemblem8-expansion/issues/178",
         "https://github.com/laqieer/fireemblem8-expansion/issues/199",
         "https://github.com/laqieer/fireemblem8-expansion/issues/206",
         "https://github.com/laqieer/fireemblem8-expansion/issues/208",
@@ -499,6 +500,7 @@
         "TC-WORKFLOW-METADATA-EDIT-RACE-001",
         "TC-WORKFLOW-PILOT-BASELINE-001",
         "TC-WORKFLOW-OWNERSHIP-PROBE-SANDBOX-001",
+        "TC-WORKFLOW-AGENT-HANDOFF-001",
         "TC-WORKFLOW-WORKTREE-CLEANUP-001",
         "TC-WORKFLOW-HOST-PYTHON-DEPS-001"
       ]
@@ -2184,6 +2186,34 @@
       ]
     },
     {
+      "id": "TC-WORKFLOW-AGENT-HANDOFF-001",
+      "title": "Validate bounded exact-SHA agent handoffs",
+      "feature_id": "workflow-governance",
+      "issue_urls": ["https://github.com/laqieer/fireemblem8-expansion/issues/178"],
+      "document": "docs/test-cases/workflow-governance.md",
+      "anchor": "tc-workflow-agent-handoff-001-validate-bounded-exact-sha-agent-handoffs",
+      "profiles": ["Source-only Linux checkout with the issue #216 locked host Python environment and Git"],
+      "purpose": "Prove exact-SHA, bounded local handoffs using actual Git, native CLI events, owned process exits/checks, authoritative run reconciliation and retained original worktree recovery.",
+      "prerequisites": "Start at the exact source root with the unchanged #176 baseline and #216 environment; no token, live workflow, ROM or emulator is required.",
+      "actions": "Run the focused handoff/observation suite. Exercise clean single/multiple task commits and authorized upstream merges; stale/dirty/wrong-scope/missing-evidence controls; native lifecycle, real PID/exit/RSS, duplicate owners/watchers, exact GitHub responses, SIGKILL preservation and availability. Execute documented CLI positive/negative commands and optional reporting.",
+      "expected_result": "Only an exact clean measured descendant is locally ready. Task trailers exclude imported upstream history; incremental budgets remain separate from full-PR review size. Lifecycle states are independently observed, owners rotate, one watcher owns each exact run/attempt, GitHub success/failure remains authoritative, and one replacement reuses the retained locked original worktree.",
+      "negative_control": "Stale/wrong-parent/non-HEAD/unrelated results, dirty/conflicting/hidden-index trees, missing trailers/evidence, failed or incomplete checks, unknown/over-budget resources, oversized/duplicate/invalid JSON, candidate checker substitution, tool-success/printed-exit labels, reused/opaque PID, missing RSS, overlapping ownership/watchers, wrong run identities, unknown OOM, lost recovery locks and unavailable coordinators fail or remain explicitly unknown.",
+      "interactions": "Depends on #176 and #216/#217; dependent #181. #179 is independent and #205/#211 is not required. Preserve #199 metadata events, #207 immediate publication, #208 cleanup and original final gates; no broker or generic runtime is introduced.",
+      "save_compatibility": "No game/runtime, save/configuration, locale, generated data, ROM/RAM content, modern debug/release, archival or Build topology change.",
+      "cleanup": "Fixtures remove only their own build/test-artifacts/agent-handoff-* directories and reap their own children. No remote state, unrelated process or Dev Box setting changes.",
+      "limitations": "GitHub/kernel responses are inert fixtures at external boundaries; production adapters execute. Opaque runtime handles and absent OS/RSS/OOM authority remain unknown. Coordinator records are trusted operational input, not authenticated offline proof or publication authority. No manual-only criterion applies.",
+      "automation": [
+        {
+          "command": "build/host-python/bin/python3 -I -c 'import sys, unittest; sys.path.insert(0, \".\"); unittest.main(module=None)' scripts.workflow_pilot.tests.test_agent_handoff scripts.workflow_pilot.tests.test_coordinator_observations -v",
+          "evidence": "scripts/workflow_pilot/tests/test_agent_handoff.py"
+        },
+        {
+          "command": "python3 -m unittest scripts.docs_check_tests.test_development_workflow_skill.DevelopmentWorkflowSkillTests.test_bounded_exact_sha_agent_handoff_is_indexed -v",
+          "evidence": "scripts/docs_check_tests/test_development_workflow_skill.py"
+        }
+      ]
+    },
+    {
       "id": "TC-WORKFLOW-HOST-PYTHON-DEPS-001",
       "title": "Bootstrap isolated schema-test dependencies",
       "feature_id": "workflow-governance",
@@ -2229,13 +2259,13 @@
       ],
       "purpose": "Remove completed worktree residue only after merged work has successful automatic master Build and relevant exact-proof-commit CI.",
       "prerequisites": "Run from the source root; fixtures use exclusively owned build/worktree-cleanup-* directories, no credentials, network, ROM or emulator.",
-      "actions": "Run the focused real-Git suite; plan inertly and apply an eligible fixture. Exercise local ownership/work, bare/nested repositories, every private recovery/REUC stage, shared commit reachability, private configuration/edit buffers/index snapshots/locks, unknown or malformed index extensions and valid v2-v4 caches, local promisor fetching, source-backed generated paths, active paths/owned processes, remote identity/pagination/CI, non-UTF8 target/backlink/mount paths with lossless ASCII JSON, and both apply-pass drift controls. Mount records are ordinary fixture byte files, never real mounts.",
-      "expected_result": "Only the fresh eligible explicit target is removed normally; its branch and other work remain. Every REUC object is preserved by shared refs, unique private metadata stays byte-identical, and the report contains proof, observed allocated size and precise retention reasons with lossless filesystem byte paths.",
-      "negative_control": "The pre-fix workflow leaves completed fixtures; the initial helper deletes bare/private-recovery fixtures and lazy-fetches promisor objects. The first correction still accepts REUC-only blobs, private configuration/index backups and unknown extensions, and crashes decoding non-UTF8 backlink/mount paths. These and premature, implicit, dirty, active, foreign, unpushed, stale or missing-evidence deletion fail behavioral controls.",
+      "actions": "Run the focused real-Git suite; plan inertly and apply an eligible fixture, both without gitlinks and with present empty unpopulated gitlinks matching immutable HEAD. Exercise missing/populated/initialized/separated/bare/nested gitlinks, index/HEAD mode/ID/path-set or conflict changes, symlinks, untrusted submodule hooks and traced child Git commands, directory replacement and late data on both apply passes and the final size scan. Keep the equal-block-size unvisited-gitlink control; observe zero external-target stat/open/scandir access for existing symlink parents, before/after directory-open replacements and queued scan replacements. Also exercise local ownership/work, every private recovery/REUC stage, shared commit reachability, private configuration/edit buffers/index snapshots/locks, unknown or malformed index extensions and valid v2-v4 caches, local promisor fetching, source-backed generated paths, active paths/owned processes, remote identity/pagination/CI, and non-UTF8 gitlink/target/backlink/mount paths with lossless ASCII JSON. Mount records are ordinary fixture byte files, never real mounts.",
+      "expected_result": "Only the fresh eligible explicit target, known released and quiescent by the coordinator, is removed normally; its branch and other work remain. Empty gitlink directories need independent live index/HEAD equality and stable repeated empty-directory observations. Descriptor-relative no-follow traversal checks entry identities without accessing external symlink targets; submodule Git/hooks never execute during eligibility checks. Every REUC object is preserved by shared refs, unique private metadata stays byte-identical, and the report contains proof, observed allocated size and precise retention reasons with lossless filesystem byte paths.",
+      "negative_control": "The pre-fix workflow leaves completed fixtures; the initial helper deletes bare/private-recovery fixtures and lazy-fetches promisor objects. The first correction still accepts REUC-only blobs, private configuration/index backups and unknown extensions, and crashes decoding non-UTF8 backlink/mount paths. The blanket gitlink rejection fails the empty-directory positives; ignoring submodule status without independent identity/emptiness checks fails staged/data controls, and a size-only final check loses a late zero-byte file. A resolve-based rejection and queued full-path scan access external symlink targets before retaining. These and premature, implicit, dirty, active, foreign, unpushed, stale or missing-evidence deletion fail behavioral controls.",
       "interactions": "Depends on the existing completion gate, Git, gh for live reads, Linux process visibility and one coordinator's preserved-path inventory; conflicts with force/prune, premature deletion or unreported active assignments. Cleanup never delays immediate commit publication.",
       "save_compatibility": "Source-only workflow tooling; no ROM/RAM, save/config, generated-data, localization, modern or archival changes.",
       "cleanup": "Tests remove only their UUID-owned fixture roots; the coordinator alone applies real historical cleanup after merge/master gates and records retained blockers.",
-      "limitations": "Allocated blocks are not exact physical freed bytes. Ambiguous squash/rebase history, private-only recovery/REUC objects, private configuration or unfamiliar metadata/index formats, any promisor configuration, missing API/local objects and unknown ignored data stay held. Tests scope process inventory to owned PIDs and skip unsupported non-Linux/proc hosts; live use still fails closed on missing visibility or malformed byte-path records. No manual-only visual criterion.",
+      "limitations": "Allocated blocks are not exact physical freed bytes. Content arriving in a gitlink after its final empty observation but before Git deletes it can be lost; ordinary Git does not inspect that content. No atomic writer lock or permission platform is claimed. Apply only to explicitly known released, quiescent task workspaces, with complete preserved inventory and no reassignment; otherwise retain. Only present real empty unpopulated gitlinks can qualify; missing, populated, changed or ambiguous paths stay held. Ambiguous squash/rebase history, private-only recovery/REUC objects, private configuration or unfamiliar metadata/index formats, any promisor configuration, missing API/local objects and unknown ignored data stay held. Tests scope process inventory to owned PIDs and skip unsupported non-Linux/proc hosts; live use still fails closed on missing visibility or malformed byte-path records. No manual-only visual criterion.",
       "automation": [
         {
           "command": "python3 -m unittest scripts.workflow_pilot.tests.test_worktree_cleanup -v",
