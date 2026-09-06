@@ -1,6 +1,6 @@
 """TC-WORKFLOW-WORKTREE-CLEANUP-001: real Git, deterministic GitHub, no live deletion."""
 
-from contextlib import contextmanager, redirect_stdout
+from contextlib import ExitStack, contextmanager, redirect_stdout
 import copy
 import hashlib
 import io
@@ -8,6 +8,7 @@ import json
 import os
 from pathlib import Path
 import shutil
+import stat
 import subprocess
 import sys
 import unittest
@@ -237,6 +238,46 @@ class CleanupTests(unittest.TestCase):
                             *args, **kwargs)
 
         return patch.object(Path, "open", read_mounts)
+
+    @contextmanager
+    def external_target_accesses(self, alias, outside):
+        accesses = []
+        originals = {name: getattr(os, name) for name in ("stat", "lstat", "open", "scandir")}
+        readlink = os.readlink
+
+        def pathname(value, dir_fd=None):
+            if isinstance(value, int):
+                return Path(readlink(f"/proc/self/fd/{value}"))
+            value = Path(os.fsdecode(value))
+            if not value.is_absolute():
+                base = pathname(dir_fd) if dir_fd is not None else Path.cwd()
+                value = base / value
+            return value
+
+        def observe(name):
+            def call(value, *args, **kwargs):
+                path = pathname(value, kwargs.get("dir_fd"))
+                try:
+                    redirected = stat.S_ISLNK(originals["lstat"](alias).st_mode)
+                except FileNotFoundError:
+                    redirected = False
+                if path.is_relative_to(outside) or (
+                    redirected and path.is_relative_to(alias) and (
+                        path != alias or name == "scandir"
+                        or (name == "stat" and kwargs.get("follow_symlinks", True))
+                    )
+                ):
+                    accesses.append((name, str(path)))
+                result = originals[name](value, *args, **kwargs)
+                if name == "open" and pathname(result).is_relative_to(outside):
+                    accesses.append(("opened-external-target", str(pathname(result))))
+                return result
+            return call
+
+        with ExitStack() as stack:
+            for name in originals:
+                stack.enter_context(patch.object(os, name, side_effect=observe(name)))
+            yield accesses
 
     @staticmethod
     def snapshot(path):
@@ -1253,6 +1294,90 @@ class CleanupTests(unittest.TestCase):
         self.held("symlinked gitlink")
         self.assertTrue(link.parent.is_symlink())
         self.assertTrue((backup / link.name).is_dir())
+
+    def test_gitlink_symlink_observation_never_accesses_external_target(self):
+        link, = self.completed_empty_gitlinks("vendor/empty-submodule")
+        outside = self.sandbox / "external-target"
+        (outside / link.name).mkdir(parents=True)
+        (outside / "data").write_bytes(b"external data")
+        link.parent.rename(self.sandbox / "original-vendor")
+        link.parent.symlink_to(outside, target_is_directory=True)
+        with self.external_target_accesses(link.parent, outside) as accesses:
+            self.held("symlinked gitlink")
+        self.assertEqual(accesses, [], "rejection must not first traverse the external target")
+        self.assertEqual((outside / "data").read_bytes(), b"external data")
+
+    def test_gitlink_parent_replacement_during_open_never_accesses_external_target(self):
+        link, = self.completed_empty_gitlinks("vendor/empty-submodule")
+        parent = link.parent
+        retained = self.sandbox / "original-vendor"
+        outside = self.sandbox / "external-target"
+        (outside / link.name).mkdir(parents=True)
+        (outside / "data").write_bytes(b"external data")
+        for stage in ("before", "after"):
+            with self.subTest(stage=stage):
+                changed = False
+
+                def redirect():
+                    nonlocal changed
+                    changed = True
+                    parent.rename(retained)
+                    parent.symlink_to(outside, target_is_directory=True)
+
+                with self.external_target_accesses(parent, outside) as accesses:
+                    original = os.open
+
+                    def change(value, flags, *args, **kwargs):
+                        selected = not changed and (
+                            Path(value) == link or
+                            (kwargs.get("dir_fd") is not None and Path(value) == Path(parent.name))
+                        )
+                        if selected and stage == "before":
+                            redirect()
+                        result = original(value, flags, *args, **kwargs)
+                        if selected and stage == "after":
+                            redirect()
+                        return result
+
+                    with patch.object(os, "open", side_effect=change):
+                        self.held()
+                self.assertTrue(changed)
+                self.assertEqual(accesses, [], "a changing parent must never redirect observation")
+                self.assertEqual((outside / "data").read_bytes(), b"external data")
+            if changed:
+                parent.unlink()
+                retained.rename(parent)
+
+    def test_gitlink_scan_parent_replacement_never_accesses_external_target(self):
+        link, = self.completed_empty_gitlinks("vendor/empty-submodule")
+        gitlinks = cleanup.gitlink_state(self.target, self.head)
+        parent = link.parent
+        parent_inode = parent.stat().st_ino
+        outside = self.sandbox / "external-target"
+        (outside / link.name).mkdir(parents=True)
+        (outside / "data").write_bytes(b"external data")
+        changed = False
+        with self.external_target_accesses(parent, outside) as accesses:
+            original = os.scandir
+
+            @contextmanager
+            def change(value):
+                nonlocal changed
+                selected = (os.fstat(value).st_ino == parent_inode
+                            if isinstance(value, int) else Path(value) == parent)
+                with original(value) as entries:
+                    yield entries
+                if selected and not changed:
+                    changed = True
+                    parent.rename(self.sandbox / "original-vendor")
+                    parent.symlink_to(outside, target_is_directory=True)
+
+            with patch.object(os, "scandir", side_effect=change):
+                with self.assertRaises((cleanup.Retain, OSError)):
+                    cleanup.allocated_size(self.target, gitlinks)
+        self.assertTrue(changed)
+        self.assertEqual(accesses, [], "queued scan paths must not traverse a substituted parent")
+        self.assertEqual((outside / "data").read_bytes(), b"external data")
 
     def test_empty_gitlinks_do_not_bypass_mount_lock_or_active_workspace_guards(self):
         link, = self.completed_empty_gitlinks("vendor/empty-submodule")

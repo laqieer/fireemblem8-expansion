@@ -8,6 +8,7 @@ Only normal ``git worktree remove`` can mutate a selected workspace.
 from __future__ import annotations
 
 import argparse
+from contextlib import contextmanager
 from datetime import datetime
 import hashlib
 import json
@@ -211,73 +212,109 @@ def mount_paths():
     return result
 
 
-def empty_gitlink_directory(directory):
-    """Observe emptiness without opening any submodule Git/configuration or following links."""
-    def identity(info):
-        return info.st_dev, info.st_ino, info.st_mtime_ns, info.st_ctime_ns
+def directory_identity(info):
+    return info.st_dev, info.st_ino, info.st_mtime_ns, info.st_ctime_ns
 
+
+@contextmanager
+def directory_descriptor(root, relative):
+    """Walk only real directory entries from a held worktree descriptor."""
+    require(not relative.is_absolute() and ".." not in relative.parts,
+            "noncanonical relative directory")
+    require(len(relative.parts) <= MAX_RECORDS, "directory traversal exceeds safety bound")
+    opened, descriptor = [], root
+    root_identity = directory_identity(os.fstat(root))
     try:
-        require(directory == directory.resolve(), "symlinked gitlink directory")
-        info = directory.lstat()
-        require(stat.S_ISDIR(info.st_mode), "gitlink path is not a real directory")
-        before = identity(info)
-        descriptor = os.open(directory, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
-        try:
-            require(identity(os.fstat(descriptor)) == before, "gitlink directory changed")
+        for name in relative.parts:
+            info = os.stat(name, dir_fd=descriptor, follow_symlinks=False)
+            require(not stat.S_ISLNK(info.st_mode), "symlinked gitlink or scan directory")
+            require(stat.S_ISDIR(info.st_mode), "gitlink or scan path is not a real directory")
+            require(info.st_dev == root_identity[0], "nested filesystem requires preservation")
+            child = os.open(name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
+                            dir_fd=descriptor)
+            before = directory_identity(info)
+            opened.append((descriptor, name, child, before))
+            require(directory_identity(os.fstat(child)) == before,
+                    "gitlink or scan directory changed during open")
+            descriptor = child
+        yield descriptor
+        for parent, name, child, before in reversed(opened):
+            info = os.stat(name, dir_fd=parent, follow_symlinks=False)
+            require(stat.S_ISDIR(info.st_mode) and directory_identity(info) == before
+                    and directory_identity(os.fstat(child)) == before,
+                    "gitlink or scan directory changed during observation")
+        require(directory_identity(os.fstat(root)) == root_identity,
+                "gitlink or scan root changed during observation")
+    finally:
+        for _, _, child, _ in reversed(opened):
+            os.close(child)
+
+
+def empty_gitlink_directory(root, relative):
+    """Observe emptiness without resolving symlinks or opening submodule Git/configuration."""
+    try:
+        with directory_descriptor(root, relative) as descriptor:
+            before = directory_identity(os.fstat(descriptor))
             with os.scandir(descriptor) as entries:
                 require(next(entries, None) is None,
-                        f"nonempty submodule/gitlink directory requires preservation: {directory}")
-        finally:
-            os.close(descriptor)
-        require(directory == directory.resolve() and identity(directory.lstat()) == before,
-                "gitlink directory changed during observation")
-    except (FileNotFoundError, RuntimeError) as error:
-        raise Retain(f"missing or ambiguous gitlink directory: {directory}") from error
+                        f"nonempty submodule/gitlink directory requires preservation: {relative}")
+            require(directory_identity(os.fstat(descriptor)) == before,
+                    "gitlink directory changed during observation")
+    except FileNotFoundError as error:
+        raise Retain(f"missing or ambiguous gitlink directory: {relative}") from error
     return before
 
 
 def allocated_size(path, gitlinks=()):
     """Observe allocated blocks, not physical bytes freed; never follow links."""
-    seen, pending, size = set(), [path], 0
+    seen, pending, size = set(), [Path()], 0
     empty_directories = {path / row[0]: tuple(row[3:]) for row in gitlinks}
-    device = path.lstat().st_dev
-    while pending:
-        item = pending.pop()
-        info = item.lstat()
-        require(info.st_dev == device, "nested filesystem requires manual preservation")
-        require(stat.S_ISREG(info.st_mode) or stat.S_ISDIR(info.st_mode) or stat.S_ISLNK(info.st_mode),
-                "special file requires preservation")
-        identity = (info.st_dev, info.st_ino)
-        if identity in seen:
-            continue
-        seen.add(identity)
-        require(len(seen) <= 1_000_000, "workspace size scan exceeds safety bound")
-        size += info.st_blocks * 512
-        if item in empty_directories:
-            require(not item.is_mount(), "nested mount requires preservation")
-            require(empty_gitlink_directory(item) == empty_directories[item],
-                    "gitlink directory changed since observation")
-            del empty_directories[item]
-            continue
-        if stat.S_ISDIR(info.st_mode):
-            require(item == path or not item.is_mount(), "nested mount requires preservation")
-            with os.scandir(item) as entries:
-                entries = list(entries)
-                names = {entry.name for entry in entries}
-                require(".git" not in names or item == path,
-                        "nested Git repository/submodule requires preservation")
-                # Bare and separated Git directories need not contain a .git
-                # entry or have a .git suffix. Incomplete metadata is held too.
-                require(not (
-                    {"objects", "refs"} <= names
-                    or {"gitdir", "commondir"} <= names
-                    or ("HEAD" in names and names.intersection(
-                        {"objects", "refs", "packed-refs", "reftable", "config", "commondir", "gitdir"}
-                    ))
-                ), "nested Git repository/bare metadata requires preservation")
-                for entry in entries:
-                    pending.append(Path(entry.path))
-    require(not empty_directories, "gitlink directories were omitted from the workspace scan")
+    require(not any(inside(mount, path) for mount in mount_paths()),
+            "mounted workspace or nested bind mount requires preservation")
+    root = os.open(path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    try:
+        device = os.fstat(root).st_dev
+        while pending:
+            relative = pending.pop()
+            item = path / relative
+            with directory_descriptor(root, relative.parent) as parent:
+                info = (os.stat(relative.name, dir_fd=parent, follow_symlinks=False)
+                        if relative.parts else os.fstat(root))
+                require(info.st_dev == device, "nested filesystem requires manual preservation")
+                require(stat.S_ISREG(info.st_mode) or stat.S_ISDIR(info.st_mode)
+                        or stat.S_ISLNK(info.st_mode), "special file requires preservation")
+                identity = (info.st_dev, info.st_ino)
+                if identity in seen:
+                    continue
+                seen.add(identity)
+                require(len(seen) <= 1_000_000, "workspace size scan exceeds safety bound")
+                size += info.st_blocks * 512
+                if item in empty_directories:
+                    require(empty_gitlink_directory(root, relative) == empty_directories[item],
+                            "gitlink directory changed since observation")
+                    del empty_directories[item]
+                    continue
+                if stat.S_ISDIR(info.st_mode):
+                    with directory_descriptor(parent, Path(relative.name)) as descriptor:
+                        require(directory_identity(os.fstat(descriptor)) == directory_identity(info),
+                                "workspace directory changed before scan")
+                        with os.scandir(descriptor) as entries:
+                            names = {entry.name for entry in entries}
+                        require(".git" not in names or item == path,
+                                "nested Git repository/submodule requires preservation")
+                        # Bare and separated Git directories need not contain a .git
+                        # entry or have a .git suffix. Incomplete metadata is held too.
+                        require(not (
+                            {"objects", "refs"} <= names
+                            or {"gitdir", "commondir"} <= names
+                            or ("HEAD" in names and names.intersection(
+                                {"objects", "refs", "packed-refs", "reftable", "config", "commondir", "gitdir"}
+                            ))
+                        ), "nested Git repository/bare metadata requires preservation")
+                        pending.extend(relative / name for name in names)
+        require(not empty_directories, "gitlink directories were omitted from the workspace scan")
+    finally:
+        os.close(root)
     return size
 
 
@@ -565,12 +602,16 @@ def gitlink_state(path, head):
     require(len(inventories[0]) <= MAX_RECORDS, "gitlink inventory exceeds safety bound")
 
     observed = []
-    for name, (mode, oid) in sorted(inventories[0].items()):
-        relative = Path(name)
-        require(not relative.is_absolute() and str(relative) == name
-                and not any(part in {"..", ".git"} for part in relative.parts),
-                "noncanonical gitlink path")
-        observed.append((name, mode, oid, *empty_gitlink_directory(path / relative)))
+    root = os.open(path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    try:
+        for name, (mode, oid) in sorted(inventories[0].items()):
+            relative = Path(name)
+            require(not relative.is_absolute() and str(relative) == name
+                    and not any(part in {"..", ".git"} for part in relative.parts),
+                    "noncanonical gitlink path")
+            observed.append((name, mode, oid, *empty_gitlink_directory(root, relative)))
+    finally:
+        os.close(root)
     return observed
 
 

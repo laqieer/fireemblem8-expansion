@@ -132,6 +132,10 @@ python3 -m scripts.workflow_pilot.worktree_cleanup --repository-root . \
 `--apply` requires both explicit targets and a preserved-workspace inventory.
 There is no plan-import or caller-provided `eligible` authority. All paths are
 exact Git-registered roots; a similarly named directory is not enough.
+Apply only to task workspaces the coordinator explicitly knows are **released
+and quiescent**. A green inventory result does not establish that precondition.
+Retain uncertain registrations or workspaces with possible continuing writers;
+never guess that another active session's work is disposable.
 The helper keeps the invoking/source/main/master worktrees, broad
 home/repository/session roots and ancestors, other registered worktree
 ancestors, explicit preserved paths, and active process working directories.
@@ -150,6 +154,12 @@ deletions, renames, mode/ID changes, and unresolved stages remain held.
 Superproject status uses `--ignore-submodules=all` to avoid executing nested
 Git commands; that status is not a substitute for the independent identity
 comparison. The helper never runs Git in a submodule to establish emptiness.
+Filesystem observation starts from an opened worktree-root descriptor. Each
+relative directory component uses fd-relative `O_DIRECTORY|O_NOFOLLOW`, with
+entry/descriptor identity checks before and after observation. The size scan
+uses the same anchored traversal, not full-path resolution, stat or directory
+opening through a potentially substituted parent. Symlink targets are never
+traversed to decide whether to reject the link.
 Missing directories, symlinks (including parent components), mounts, any
 contained entry, and changing directory identities or modification times
 retain the workspace. Known generated-output names do not exempt contents
@@ -250,6 +260,8 @@ nested-Git/size scan immediately before normal `git worktree remove`.
 The size scans also recheck the same gitlink directory observations, including
 emptiness: a zero-byte file can leave the allocated size unchanged, and normal
 Git removal alone can delete ordinary files inside an uninitialized gitlink.
+Every expected gitlink must actually be visited and checked; a substituted
+ancestor cannot hide a gitlink even when the total allocated size is unchanged.
 There is no force, deinit, index rewrite, unlock, branch deletion, global prune,
 or recursive filesystem deletion fallback.
 
@@ -277,9 +289,14 @@ Supported live use is Linux with visible same-owner process CWDs and a
 coordinator-maintained complete preserved-path list. Other users' assignments
 must also be included explicitly; this is not an OS-wide process lock or an
 atomic GitHub/filesystem transaction. An uninspectable same-owner process
-blocks removal. Do not reassign targets while cleanup is running. API limits,
-unavailable history, ambiguous identities, and retained user data are precise
-operational holds, never reasons to broaden deletion.
+blocks removal. Do not reassign targets while cleanup is running.
+**Residual write window:** new gitlink content after its final empty-directory
+observation and before Git deletes the workspace can be lost; ordinary Git
+removal does not inspect that uninitialized gitlink content. Rechecking observed
+changes is not atomic exclusion of arbitrary writers. If the coordinator cannot
+establish a known released, quiescent target throughout apply, retain it.
+API limits, unavailable history, ambiguous identities, and retained user data
+are precise operational holds, never reasons to broaden deletion.
 The real-worktree tests explicitly skip hosts without Linux `/proc`; they
 scope process inventory to test-owned PIDs, including a real child with its
 CWD in the fixture, and exercise unreadable-CWD retention. Simulated mount
