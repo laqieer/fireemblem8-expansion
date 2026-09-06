@@ -55,13 +55,9 @@ def sha(character):
     return character * 40
 
 
-def review_bot_actor():
-    return copy.deepcopy(reporter.review_bot_actor())
-
-
 def minimal_fixture():
     return {
-        "schema_version": reporter.FIXTURE_SCHEMA_VERSION,
+        "schema_version": 1,
         "repository": "example/workflow",
         "base_sha": sha("d"),
         "captured_at": "2026-01-01T10:00:00Z",
@@ -105,7 +101,7 @@ def minimal_fixture():
             {
                 "id": 10,
                 "pr_number": 1,
-                "author": review_bot_actor(),
+                "author": reporter.REVIEW_BOT,
                 "submitted_at": "2026-01-01T04:00:00Z",
                 "commit_sha": sha("a"),
                 "state": "COMMENTED",
@@ -114,7 +110,7 @@ def minimal_fixture():
             {
                 "id": 11,
                 "pr_number": 1,
-                "author": review_bot_actor(),
+                "author": reporter.REVIEW_BOT,
                 "submitted_at": "2026-01-01T08:00:00Z",
                 "commit_sha": sha("c"),
                 "state": "COMMENTED",
@@ -127,7 +123,6 @@ def minimal_fixture():
                 "review_id": 10,
                 "thread_id": "thread:100",
                 "created_at": "2026-01-01T04:01:00Z",
-                "author": review_bot_actor(),
                 "is_resolved": True,
                 "outdated": True,
                 "path": "scripts/feature.py",
@@ -370,7 +365,7 @@ def minimal_fixture():
 
 def minimal_decisions():
     return {
-        "schema_version": reporter.SCHEMA_VERSION,
+        "schema_version": 1,
         "pull_requests": [
             {
                 "pull_request": 1,
@@ -1047,51 +1042,6 @@ class RepositoryAuthorityTests(unittest.TestCase):
                     decisions_path,
                 )
 
-    def test_hydrate_authority_rejects_legacy_or_drifted_historical_review_authors(self):
-        from scripts.workflow_pilot import hydrate_authority
-
-        cases = (
-            ("legacy-string", reporter.REVIEW_BOT, "must be an object"),
-            (
-                "wrong-login",
-                {
-                    "type": reporter.REVIEW_BOT_TYPE,
-                    "node_id": reporter.REVIEW_BOT_NODE_ID,
-                    "id": reporter.REVIEW_BOT_DATABASE_ID,
-                    "login": "copilot-pull-request-reviewer-bot",
-                },
-                "exact authoritative REST Copilot actor",
-            ),
-            (
-                "wrong-node-id",
-                {
-                    "type": reporter.REVIEW_BOT_TYPE,
-                    "node_id": "BOT_kgDOCnlnWB",
-                    "id": reporter.REVIEW_BOT_DATABASE_ID,
-                    "login": reporter.REVIEW_BOT,
-                },
-                "exact authoritative REST Copilot actor",
-            ),
-        )
-        for case_name, author, pattern in cases:
-            with self.subTest(case=case_name), tempfile.TemporaryDirectory(
-                prefix="workflow-pilot-author-inputs-",
-                dir=TEST_ARTIFACTS,
-            ) as temporary:
-                fixture = minimal_fixture()
-                decisions = minimal_decisions()
-                add_override(fixture, decisions)
-                fixture["reviews"][0]["author"] = author
-                fixture_path = Path(temporary) / "fixture.json"
-                decisions_path = Path(temporary) / "decisions.json"
-                fixture_path.write_bytes(reporter.normalized_json(fixture))
-                decisions_path.write_bytes(reporter.normalized_json(decisions))
-                with self.assertRaisesRegex(reporter.PilotDataError, pattern):
-                    hydrate_authority.required_override_decision_commits(
-                        fixture_path,
-                        decisions_path,
-                    )
-
     def test_repository_authority_uses_minimal_offline_git_environment(self):
         hostile = {
             "GIT_DIR": "/redirected",
@@ -1106,16 +1056,10 @@ class RepositoryAuthorityTests(unittest.TestCase):
         self.assertEqual(
             environment,
             {
-                "GIT_CONFIG_COUNT": "3",
+                "GIT_CONFIG_COUNT": "0",
                 "GIT_CONFIG_GLOBAL": "/dev/null",
-                "GIT_CONFIG_KEY_0": "gc.auto",
-                "GIT_CONFIG_KEY_1": "maintenance.auto",
-                "GIT_CONFIG_KEY_2": "maintenance.autoDetach",
                 "GIT_CONFIG_NOSYSTEM": "1",
                 "GIT_CONFIG_SYSTEM": "/dev/null",
-                "GIT_CONFIG_VALUE_0": "0",
-                "GIT_CONFIG_VALUE_1": "false",
-                "GIT_CONFIG_VALUE_2": "false",
                 "GIT_NO_LAZY_FETCH": "1",
                 "GIT_NO_REPLACE_OBJECTS": "1",
                 "GIT_TERMINAL_PROMPT": "0",
@@ -2618,81 +2562,6 @@ class FormulaAndClassificationTests(unittest.TestCase):
         fixture["reviews"][0]["submitted_at"] = "2026-01-01T09:00:02Z"
         self.assert_rejected(fixture=fixture, pattern="follows PR 1 closure")
 
-    def test_historical_review_authors_require_exact_rest_bot_tuple(self):
-        fixture = minimal_fixture()
-        authoritative_report(fixture, minimal_decisions())
-
-        cases = (
-            ("legacy-string", reporter.REVIEW_BOT, "must be an object"),
-            ("null", None, "must be an object"),
-            ("missing-login", {"type": reporter.REVIEW_BOT_TYPE, "node_id": reporter.REVIEW_BOT_NODE_ID, "id": reporter.REVIEW_BOT_DATABASE_ID}, "missing fields: login"),
-            (
-                "wrong-type",
-                {
-                    "type": "User",
-                    "node_id": reporter.REVIEW_BOT_NODE_ID,
-                    "id": reporter.REVIEW_BOT_DATABASE_ID,
-                    "login": reporter.REVIEW_BOT,
-                },
-                "exact authoritative REST Copilot actor",
-            ),
-            (
-                "wrong-node-id",
-                {
-                    "type": reporter.REVIEW_BOT_TYPE,
-                    "node_id": "BOT_kgDOCnlnWB",
-                    "id": reporter.REVIEW_BOT_DATABASE_ID,
-                    "login": reporter.REVIEW_BOT,
-                },
-                "exact authoritative REST Copilot actor",
-            ),
-            (
-                "wrong-database-id",
-                {
-                    "type": reporter.REVIEW_BOT_TYPE,
-                    "node_id": reporter.REVIEW_BOT_NODE_ID,
-                    "id": reporter.REVIEW_BOT_DATABASE_ID + 1,
-                    "login": reporter.REVIEW_BOT,
-                },
-                "exact authoritative REST Copilot actor",
-            ),
-            (
-                "wrong-login-suffix",
-                {
-                    "type": reporter.REVIEW_BOT_TYPE,
-                    "node_id": reporter.REVIEW_BOT_NODE_ID,
-                    "id": reporter.REVIEW_BOT_DATABASE_ID,
-                    "login": "copilot-pull-request-reviewer-bot",
-                },
-                "exact authoritative REST Copilot actor",
-            ),
-            (
-                "wrong-login-prefix",
-                {
-                    "type": reporter.REVIEW_BOT_TYPE,
-                    "node_id": reporter.REVIEW_BOT_NODE_ID,
-                    "id": reporter.REVIEW_BOT_DATABASE_ID,
-                    "login": "evil-copilot-pull-request-reviewer[bot]",
-                },
-                "exact authoritative REST Copilot actor",
-            ),
-            (
-                "wrong-login-unicode",
-                {
-                    "type": reporter.REVIEW_BOT_TYPE,
-                    "node_id": reporter.REVIEW_BOT_NODE_ID,
-                    "id": reporter.REVIEW_BOT_DATABASE_ID,
-                    "login": "copilot-pull-request-reviеwer[bot]",
-                },
-                "exact authoritative REST Copilot actor",
-            ),
-        )
-        for case_name, author, pattern in cases:
-            with self.subTest(case=case_name):
-                fixture = minimal_fixture()
-                fixture["reviews"][0]["author"] = author
-                self.assert_rejected(fixture=fixture, pattern=pattern)
-
     def test_finding_capture_boundary_and_temporal_binding(self):
         fixture = minimal_fixture()
         fixture["pull_requests"][0]["merged_at"] = fixture["captured_at"]
@@ -2730,44 +2599,6 @@ class FormulaAndClassificationTests(unittest.TestCase):
         }
         fixture["review_thread_events"] = []
         self.assert_rejected(fixture=fixture, pattern="follows PR 1 closure")
-
-    def test_historical_finding_authors_require_exact_rest_bot_tuple(self):
-        cases = (
-            ("missing-author", None, "missing fields: author"),
-            ("null-author", {"author": None}, "must be an object"),
-            (
-                "wrong-login",
-                {
-                    "author": {
-                        "type": reporter.REVIEW_BOT_TYPE,
-                        "node_id": reporter.REVIEW_BOT_NODE_ID,
-                        "id": reporter.REVIEW_BOT_DATABASE_ID,
-                        "login": "copilot-pull-request-reviewer-bot",
-                    }
-                },
-                "exact authoritative REST Copilot actor",
-            ),
-            (
-                "wrong-node-id",
-                {
-                    "author": {
-                        "type": reporter.REVIEW_BOT_TYPE,
-                        "node_id": "BOT_kgDOCnlnWB",
-                        "id": reporter.REVIEW_BOT_DATABASE_ID,
-                        "login": reporter.REVIEW_BOT,
-                    }
-                },
-                "exact authoritative REST Copilot actor",
-            ),
-        )
-        for case_name, override, pattern in cases:
-            with self.subTest(case=case_name):
-                fixture = minimal_fixture()
-                if override is None:
-                    del fixture["review_findings"][0]["author"]
-                else:
-                    fixture["review_findings"][0].update(override)
-                self.assert_rejected(fixture=fixture, pattern=pattern)
 
     def test_review_thread_events_cannot_change_state_after_capture(self):
         fixture = minimal_fixture()
@@ -3379,7 +3210,7 @@ class FailClosedDataTests(unittest.TestCase):
             {
                 "id": 12,
                 "pr_number": 1,
-                "author": review_bot_actor(),
+                "author": reporter.REVIEW_BOT,
                 "submitted_at": "2026-01-01T05:00:00Z",
                 "commit_sha": sha("b"),
                 "state": "COMMENTED",
@@ -3393,7 +3224,6 @@ class FailClosedDataTests(unittest.TestCase):
                 "review_id": 12,
                 "thread_id": "thread:101",
                 "created_at": "2026-01-01T05:01:00Z",
-                "author": review_bot_actor(),
                 "is_resolved": True,
                 "outdated": True,
                 "path": "scripts/feature.py",

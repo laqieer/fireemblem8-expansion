@@ -485,7 +485,8 @@
         "https://github.com/laqieer/fireemblem8-expansion/issues/179",
         "https://github.com/laqieer/fireemblem8-expansion/issues/199",
         "https://github.com/laqieer/fireemblem8-expansion/issues/208",
-        "https://github.com/laqieer/fireemblem8-expansion/issues/207"
+        "https://github.com/laqieer/fireemblem8-expansion/issues/207",
+        "https://github.com/laqieer/fireemblem8-expansion/issues/216"
       ],
       "reference": ".github/skills/development-workflow/SKILL.md",
       "status": "current",
@@ -498,7 +499,8 @@
         "TC-WORKFLOW-METADATA-EDIT-RACE-001",
         "TC-WORKFLOW-PILOT-BASELINE-001",
         "TC-WORKFLOW-REVIEW-FAMILY-001",
-        "TC-WORKFLOW-WORKTREE-CLEANUP-001"
+        "TC-WORKFLOW-WORKTREE-CLEANUP-001",
+        "TC-WORKFLOW-HOST-PYTHON-DEPS-001"
       ]
     },
     {
@@ -2174,6 +2176,62 @@
       ]
     },
     {
+      "id": "TC-WORKFLOW-REVIEW-FAMILY-001",
+      "title": "Expand valid findings across complete sibling families",
+      "feature_id": "workflow-governance",
+      "issue_urls": ["https://github.com/laqieer/fireemblem8-expansion/issues/179"],
+      "document": "docs/test-cases/workflow-governance.md",
+      "anchor": "tc-workflow-review-family-001-expand-valid-findings-across-complete-sibling-families",
+      "profiles": ["Source checkout with the isolated #216 host interpreter, Git, native GCC and ARM binutils"],
+      "purpose": "Bind actual reviewed subjects to complete finite sibling obligations and trusted execution observations, preserving bounded remediation and sticky architecture holds.",
+      "prerequisites": "Use the existing locked host environment. Tests own source-backed Git fixtures under build/ and need no credentials, live PR, ROM, emulator or protected installation.",
+      "actions": "Run the focused review suites. Execute real AoE native/ARM and generated-eventlist controls, all five families, wrong-source/missing/unknown/stale evidence, existing runtime role boundaries, exact-source CLI loading and first/second/third-round transitions.",
+      "expected_result": "The same reviewed probes detect actual broken origin code/data and pass corrected subjects. Every expected member is recorded. Third-round holds survive later heads and clean reports until bound coordinator disposition.",
+      "negative_control": "Missing siblings after the reported fix, added/deleted/unknown members, duplicate ownership, wrong task/head/source, fabricated pass labels, compile/import/zero/skipped tests, stale triage and undisposed holds cannot establish eligibility.",
+      "interactions": "Depends on #176 metrics, existing Git/GitHub/task/test interfaces and #216 locked schema dependencies; #181 depends on it. #178 is independent. #204 is not a dependency. Preserve #207 immediate assigned-branch WIP persistence and #208 cleanup.",
+      "save_compatibility": "No gameplay, save/config, generated-game-data, locale, ROM/RAM, modern/archival or required-context changes.",
+      "cleanup": "Tests remove only their owned build/review-family-* source copies and fixtures. Keep task work and diagnostic logs; no remote mutation occurs.",
+      "limitations": "Finite coverage is chosen by the trusted reviewer/coordinator, not discovered semantically from filenames. CLI JSON is an audit, never task provenance or merge authority. Host/native/object evidence is not target-ROM proof; no same-UID isolation claim or manual-only criterion.",
+      "automation": [
+        {
+          "command": "build/host-python/bin/python3 -I -m unittest discover -s scripts/workflow_pilot/tests -t . -p 'test_*review*.py' -v",
+          "evidence": "scripts/workflow_pilot/tests/test_review_subjects.py"
+        }
+      ]
+    },
+    {
+      "id": "TC-WORKFLOW-HOST-PYTHON-DEPS-001",
+      "title": "Bootstrap isolated schema-test dependencies",
+      "feature_id": "workflow-governance",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/216"
+      ],
+      "document": "docs/test-cases/workflow-governance.md",
+      "anchor": "tc-workflow-host-python-deps-001-bootstrap-isolated-schema-test-dependencies",
+      "profiles": [
+        "Source checkout; CPython 3.12, Linux x86_64, glibc >= 2.17"
+      ],
+      "purpose": "Supply the complete pinned, hash-verified isolated host dependency closure for Draft 2020-12 schema tests and their required date-time validator.",
+      "prerequisites": "OS python3-venv/ensurepip and trusted PyPI access for initial setup; new exclusively owned paths under build/, no system or user site packages.",
+      "actions": "Reproduce import failure in a --without-pip venv under -I. Run scripts/host_python.py create and the owned interpreter's check, focused dependency suite, existing reporter-tests entrypoint and parsed Build/verify argv contracts. Exercise valid/adversarial schemas, optional/transitive omissions, corrupt/missing/incompatible wheels, wrong platform, user-site-only installation, ambient pip configuration, and existing/symlink targets.",
+      "expected_result": "Exact locked versions and complete dependencies load in the owned interpreter; required date-time checks reject invalid inputs; actual reporter discovery and consistent parsed workflow/interpreter paths pass without global/user package mutation.",
+      "negative_control": "The fresh undeclared isolated import fails. Unpinned/unhashed input, damaged or absent wheels, unsupported profiles, optional format omission/silent acceptance, incomplete dependency closure and user-site-only installs all fail explicitly.",
+      "interactions": "Shared prerequisite for #178/#191 and #205/#211; their protocol semantics remain independent. Conflicts with ambient-only/unpinned installs, environment reuse and unsupported wheel profiles; all Build routing, authority and gates remain intact.",
+      "save_compatibility": "No save/config, ROM/RAM, generated-game-data, localization, modern profile or archival compiler changes.",
+      "cleanup": "Regression deletes only its UUID-owned fixtures. Remove only your own build/host-python-missing and, after use, build/host-python; failed setup paths remain for diagnosis.",
+      "limitations": "Only CPython 3.12 Linux x86_64 glibc >= 2.17 and the required optional date-time format are supported. Initial setup requires PyPI or an explicit complete local wheelhouse. Missing Git authority or consumer protected-principal criteria remain separate; no visual/audio/manual criterion.",
+      "automation": [
+        {
+          "command": "build/host-python/bin/python3 -I -m unittest discover -s scripts/workflow_pilot/tests -t . -p test_host_python.py -v",
+          "evidence": "scripts/workflow_pilot/tests/test_host_python.py"
+        },
+        {
+          "command": "python3 -m unittest tests.workflows.test_build_ci_topology tests.upstream_port.test_verify.VerifyGatesMirrorWorkflowTests -v",
+          "evidence": "tests/workflows/test_build_ci_topology.py"
+        }
+      ]
+    },
+    {
       "id": "TC-WORKFLOW-WORKTREE-CLEANUP-001",
       "title": "Remove only proven completed worktrees",
       "feature_id": "workflow-governance",
@@ -2440,42 +2498,6 @@
         {
           "command": "python3 -m unittest discover -s tests/workflows -p 'test_*.py' -v",
           "evidence": "tests/workflows/test_build_ci_topology.py"
-        },
-        {
-          "command": "python3 scripts/check_docs.py --check",
-          "evidence": "scripts/check_docs.py"
-        }
-      ]
-    },
-    {
-      "id": "TC-WORKFLOW-REVIEW-FAMILY-001",
-      "title": "Expand valid findings across complete sibling families",
-      "feature_id": "workflow-governance",
-      "issue_urls": [
-        "https://github.com/laqieer/fireemblem8-expansion/issues/179"
-      ],
-      "document": "docs/test-cases/workflow-governance.md",
-      "anchor": "tc-workflow-review-family-001-expand-valid-findings-across-complete-sibling-families",
-      "profiles": [
-        "Clean source checkout with Python 3, Git, candidate-pinned offline fixtures, mocked live GraphQL adapter, and exact-base bootstrap model"
-      ],
-      "purpose": "Prove one immutable A pre-review survives B/C remediation heads, every round/head gets trusted coverage and execution, and only base-owned member-specific assertions establish outcomes.",
-      "prerequisites": "Start at the repository root with the committed synthetic review-family fixtures and temporary exact Git histories available through the focused suites; no credential, ROM, emulator, active live PR, or candidate-ancestor trust substitution is required.",
-      "actions": "Run checker, structural, and trusted-gate suites; exercise clean imports, exact A receipt, integrated A-through-G rounds, per-head Git/assertion receipts, authoritative trigger decisions, impossible member-specific verified-unaffected selections, registry ID swaps, observed rejection, A/D/M/R/C blobs, PR183 markers, pre-push A->B hold binding, bounds, actors, and replay.",
-      "expected_result": "Core/bootstrap deny delivery; base-pinned mode preserves original A while every remote round/head has exact coverage and registry execution, prior findings are remediated on the next head, and the current exact head has clean Copilot review.",
-      "negative_control": "Re-signing or replaying A, missing/stale/swapped round receipts, missing/duplicate/mismatched authoritative trigger decisions, candidate paths/results/inputs, obsolete witness sidecars, shared-file member evidence, unsupported outcome/reason or unregistered member-specific verified-unaffected combinations, dirty imports, bad status blobs, spoofed markers, actor overlap, or undisposed heads fails.",
-      "interactions": "Depends on issue #176 hardened Git authority, strict JSON, risk/threshold decisions, and lifecycle discipline plus read-only GitHub collection and external key/replay authority; issue #181 depends on it; conflicts with candidate authority, dirty trusted roots, inferred push history, and bypassed held heads.",
-      "save_compatibility": "Source-only workflow governance; no game/runtime, save, generated game-data, localization, ROM/RAM, modern debug/release, or archival impact.",
-      "cleanup": "The suites remove ignored detached/synthetic worktrees, read-only checker sandboxes, and replay files; the collector uses only read-only gh api graphql and performs no remote mutation.",
-      "limitations": "Mocked adapters prove deterministic transforms; the committed fixtures remain synthetic and version-independent. Production authority requires clean exact-base execution, external key/replay authority, immutable pre-review receipt, authoritative trigger decisions, and live GitHub revalidation and does not replace Build gates.",
-      "automation": [
-        {
-          "command": "python3 -m unittest scripts.workflow_pilot.tests.test_review_base_checker scripts.workflow_pilot.tests.test_review_family scripts.workflow_pilot.tests.test_github_review -v",
-          "evidence": "scripts/workflow_pilot/tests/test_review_family.py"
-        },
-        {
-          "command": "python3 -m unittest scripts.docs_check_tests.test_development_workflow_skill -v",
-          "evidence": "scripts/docs_check_tests/test_development_workflow_skill.py"
         },
         {
           "command": "python3 scripts/check_docs.py --check",

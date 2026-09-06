@@ -4,6 +4,227 @@ These source-only procedures cover the repository's agent delivery policy.
 They exercise documented orchestration contracts without dispatching a
 workflow, using credentials, or changing ROM behavior.
 
+## TC-WORKFLOW-HOST-PYTHON-DEPS-001: Bootstrap isolated schema-test dependencies
+
+- **Feature / originating issue:** `workflow-governance` /
+  [issue #216](https://github.com/laqieer/fireemblem8-expansion/issues/216).
+- **Supported configuration or artifact:** source checkout, CPython 3.12,
+  Linux x86_64 with glibc >= 2.17, and the OS `python3-venv`/`ensurepip`
+  component. No ROM, emulator, ARM compiler or credential is needed.
+- **Prerequisites and clean starting state:** ordinary access to trusted PyPI
+  during initial setup; run from the source root. Ensure
+  `build/host-python-missing` and `build/host-python` do not already exist.
+  Never replace somebody else's environment. The bootstrap and regression
+  fixtures use exclusively owned paths under this checkout's `build/`.
+
+### Actions
+
+1. Reproduce the undeclared-dependency failure before setup:
+
+   ```bash
+   /usr/bin/python3 -I -m venv --without-pip build/host-python-missing
+   build/host-python-missing/bin/python3 -I -c 'import jsonschema'
+   ```
+
+   Expect exit 1 with `ModuleNotFoundError`, not an ambient-package success.
+   Remove only this owned probe: `rm -r -- build/host-python-missing`.
+2. Run the actual CI bootstrap and inspect its isolated result:
+
+   ```bash
+   /usr/bin/python3 -I scripts/host_python.py create
+   build/host-python/bin/python3 -I scripts/host_python.py check
+   ```
+
+   Expect exit 0 and a JSON report naming the owned environment, exact
+   committed package versions, draft `2020-12` and format `date-time`.
+3. Run the focused automated positive and adversarial replay:
+
+   ```bash
+   build/host-python/bin/python3 -I -m unittest discover \
+     -s scripts/workflow_pilot/tests -t . -p test_host_python.py -v
+   ```
+
+   Valid leap-day/offset/fractional RFC3339 timestamps pass. Non-leap dates,
+   invalid hours, malformed timestamps, wrong prefix-item types and surplus
+   items fail. Removing the optional format checker or making it accept
+   everything must fail the probe, not silently skip format validation.
+4. The same suite replays verified offline installs, corrupts an actual wheel,
+   removes a required wheel, supplies a CPython-3.11-only wheel to 3.12, and
+   omits optional or transitive dependencies from a fixture lock. Every
+   rejected input must fail explicitly. Unsupported platform profiles fail
+   before environment creation. Existing/symlink targets remain unchanged.
+   A real installation into a fixture-only user site is visible to ordinary
+   Python but cannot satisfy the fresh `-I` interpreter or dependency check.
+   Hostile pip configuration/install-target variables cannot redirect setup.
+5. Exercise the existing reporter entrypoint, then the parsed Build and local
+   argv mirror contracts:
+
+   ```bash
+   build/host-python/bin/python3 -I scripts/workflow_pilot/isolated_launcher.py reporter-tests
+   python3 -m unittest tests.workflows.test_build_ci_topology \
+     tests.upstream_port.test_verify.VerifyGatesMirrorWorkflowTests -v
+   ```
+
+   Reporter discovery uses the installed interpreter; its existing immutable
+   Git-authority requirements remain mandatory. A shallow/local clone missing
+   the baseline objects must restore the
+   [documented Git authority](../workflow-pilot.md#build-event-classification-and-candidate-evidence),
+   not weaken reporter checks. Parsed setup and reporter paths agree; removing
+   bootstrap/venv support or switching back to system Python is rejected.
+6. The regression removes only its own UUID-named fixtures. When finished,
+   remove your own bootstrap environment with
+   `rm -r -- build/host-python`, or retain it for subsequent host checks.
+
+### Expected result
+
+Every schema dependency comes from the committed pinned/hash-verified closure
+in a fresh environment, with no system/user-site reliance. Required optional
+formats really validate adversarial data. The bootstrapped import and reporter
+discovery pass.
+
+### Negative control
+
+The pre-fix clean import fails. Damaged, missing,
+incompatible, unpinned, unhashed and redirected inputs cannot produce a
+successful environment check. Reordering/commenting the same lock records
+stays valid; preserving words while bypassing validation does not.
+
+### Interactions and save compatibility
+
+Dependents are #178/#191 handoff and #205/#211 broker schema tests, not new
+protocol implementations in this case. Dependencies are OS Python/venv,
+trusted PyPI at setup time and the committed wheel closure. Only `date-time`
+is the shared required optional format; new formats need new closure/probe
+coverage. Other interpreters, architectures and libc profiles are unsupported.
+There are no game, save/config, ROM/RAM, localization, generated-game-data,
+modern profile or archival compiler interactions. No feature gate is needed.
+
+### Automation
+
+Automation is `scripts/workflow_pilot/tests/test_host_python.py` plus the
+existing parsed workflow topology/argv mirror suites; real pip installs,
+metadata closure and schema execution are the evidence, not raw source text.
+Full/metadata routing, required contexts, permissions, checkout authority and
+every candidate/master gate are unchanged.
+
+### Cleanup and limitations
+
+Tests remove only their UUID-owned fixtures. Retain an explicitly owned
+`build/host-python` environment for later checks or remove only that environment
+afterward as described in step 6. No visual/audio/manual-only criterion applies.
+This setup cannot supply missing Git authority or discharge
+the consumers' independent protected-principal/deployment requirements.
+
+## TC-WORKFLOW-REVIEW-FAMILY-001: Expand valid findings across complete sibling families
+
+- **Feature / originating issue:** `workflow-governance` /
+  [issue #179](https://github.com/laqieer/fireemblem8-expansion/issues/179).
+- **Supported configuration:** source checkout, the existing #216 locked
+  CPython 3.12 host environment, Git, native GCC and ARM GCC/binutils.
+- **Prerequisites and starting state:** run from the repository root. Follow
+  the [existing host setup](../workflow-pilot.md#isolated-host-python-dependencies)
+  if needed. Tests create only owned source copies/Git histories below
+  `build/review-family-*`. No live PR, credential, ROM, emulator, protected
+  installation or new agent backend is needed.
+
+### Actions
+
+1. Run the focused suite with the inherited locked interpreter:
+
+   ```bash
+   build/host-python/bin/python3 -I -m unittest discover \
+     -s scripts/workflow_pilot/tests -t . -p 'test_*review*.py' -v
+   ```
+
+2. Inspect the actual AoE controls: every public item phase, typed route checks,
+   each shape and bounded/stable target behavior runs its selected native
+   driver group. Enabled and disabled reference drivers and ARM object
+   symbols/sections pass. Remove the real AI_NEVER rejection in an owned
+   origin commit; the same probe fails before and passes restored source.
+3. Inspect the unrelated generated-eventlist controls: resolve actual schema
+   owners, validate authored references, generate and parse C output, compare
+   the consumer and inventory. Introduce a nonexistent event-script reference
+   in owned source; validation fails before and passes after restoration.
+   Optional owner checks cover their event-list contribution, not unrelated
+   chapter-map/runtime semantics.
+4. Execute the real review reducer as a source subject. The lifecycle and wire
+   probes cover entries/preservation/resets/terminals and
+   producers/consumers/validators/replay/stale bindings. Mutating the hold
+   behavior must fail both affected families, not just a string check.
+5. Drop a sibling observation after fixing the reported member. Repeat for
+   all family roles, duplicate observations, added/deleted enums or files,
+   unknown cases/members/probes, wrong subjects/heads/tool revisions and
+   unrelated all-pass evidence. Every incomplete handoff rejects.
+6. Make compilation/import unavailable and provide zero/skipped/unknown probe
+   results. None can count as an affected-fixed negative control. Preserve
+   the distinction between actual native, parsed, host and ARM object evidence;
+   no group or whole-suite result can masquerade as a ROM scenario.
+7. Exercise the existing task adapter's bounded read-only role and actual
+   returned task metadata. Denied mutation operations never reach the bound
+   tool; duplicate/overlapping owners, wrong/stale/incomplete task results and
+   excessive duration reject. This proves the operational interface, not
+   same-UID OS containment or that a synthetic test launched a live agent.
+8. Exercise exact GitHub actor/head/content collection and complete coordinator
+   triage. COMMENTED, approval phrases and zero inline findings remain
+   untriaged until that decision. Change content or the head and require
+   rejection. The live adapter's command is read-only GraphQL.
+9. Exercise the real isolated launcher against an explicitly reviewed tool
+   revision. Substitute working-copy validator/gate files and require the
+   intended captured Git bytes to execute instead. Wrong source, unsafe Git
+   modes, ambient hooks/import state, duplicate request fields and candidate
+   success/program/trust fields fail rather than enabling a fallback.
+10. First/second request rounds produce bounded handoffs; the third remains
+    held through later heads and clean reports until a valid coordinator
+    disposition names the held round/head. Preserve already-created commits
+    on their assigned branch as ineligible WIP; do not delay publication or
+    invent side branches.
+
+### Expected result
+
+Both unrelated production subjects have real positive and before/after
+negative controls. Every expected member and applicable evidence class is
+present. Actual execution observations determine outcomes. Source audit JSON
+is not task provenance, approval or merge permission. Even a zero-finding
+local review retains exact-head Copilot/security/Build and exact-master gates.
+
+### Negative control
+
+The original fixed #179 predicates could not detect unrelated gameplay
+repairs. The source mutations now fail those actual predicates. Missing
+siblings, wrong source/identity, untriaged content or an undisposed third
+request never pass. Formatting-only source changes remain green. A missing
+tool or failed import/compile is unavailable rather than proof of a fix.
+
+### Interactions and save compatibility
+
+Depends on #176 metrics/risk decisions, existing Git/GitHub/task/test tools and
+#216's locked schema dependencies. #181 depends on it; #178 is independent and
+#204 is not a dependency. Preserve #207's publication and #208's cleanup
+contracts. No gameplay/save/config, generated-game-data, locale,
+ROM/RAM, modern/archival, topology or required-context change occurs.
+
+### Automation
+
+The command in step 1 runs the existing unittest runner against only the three
+review test modules. They exercise actual native/ARM, generated-data and
+source-reducer observations, closed CLI behavior, independent schema parity
+and coordinator task/GitHub adapters. No live task, remote mutation or broad
+ROM/profile matrix is part of this deterministic test case.
+
+### Cleanup and limitations
+
+Tests remove only their owned fixtures; retain actual task work and diagnostic
+logs.
+
+The trusted reviewer/coordinator selects the authoritative finite model:
+filenames do not establish semantic completeness. Unknown or newly changed
+coverage requires a reviewed binding/model, which can be selected at an exact
+tool revision in the same feature PR. A model is not another canonical case
+catalog or an installation prerequisite. Read-only roles/minimal environments
+are not hostile same-UID isolation. Applicable real gameplay runtime evidence
+remains required for an actual gameplay change. No manual-only criterion
+applies to this workflow case.
+
 ## TC-WORKFLOW-WORKTREE-CLEANUP-001: Remove only proven completed worktrees
 
 - **Feature / originating issue:** `workflow-governance` /
@@ -2000,13 +2221,7 @@ is host-only delivery orchestration.
    metrics. Confirm first-push-to-clean-review is `unavailable`, its reason is
    `historical-review-thread-events-not-collected`, `pilot_ready` is false,
    and `median_hours` is null while 34 reviews, 101 findings, and zero current
-   unresolved findings remain reportable. Confirm the historical baseline
-   fixture now uses its version-2 REST actor schema so every review and
-   finding preserves the exact Copilot tuple `(type: Bot, node_id:
-   BOT_kgDOCnlnWA, id: 175728472, login:
-   copilot-pull-request-reviewer[bot])`, and only
-   `identities.seal` plus `decisions.seal` refresh while the frozen semantic
-   metrics and formulas remain unchanged.
+   unresolved findings remain reportable.
 4. Inspect the focused suite's positive classification fixture for inclusive
    boundaries, cancellation, supersession, unchanged-SHA duplication, stack
    ancestry, generated-only work, bulk deletion, reverts, still-running work,
@@ -2223,69 +2438,3 @@ criterion applies.
 
 Rollback is a normal revert of issue #176's dedicated commit; no workflow or
 game behavior needs a compensating change.
-
-## TC-WORKFLOW-REVIEW-FAMILY-001: Expand valid findings across complete sibling families
-
-- **Feature / originating issue:** `workflow-governance` / [issue #179](https://github.com/laqieer/fireemblem8-expansion/issues/179).
-- **Supported configuration or artifact:** clean source checkout with Python 3, Git, the issue #176 workflow-pilot reporter, candidate-pinned offline transform fixtures, a mocked live GraphQL adapter, and an exact-base bootstrap model; no GitHub token, live PR, workflow, ROM, or emulator is required.
-- **Prerequisites and clean starting state:** start at the repository root with `scripts/workflow_pilot/review_family.py`, `scripts/workflow_pilot/review_base_checker.py`, `scripts/workflow_pilot/trusted_review_gate.py`, `review_family_complete.json`, `review_family_complete_evidence.json`, their default counterparts, and `review_family_github_adapter.json` unchanged. The committed fixtures are synthetic and version-independent: they use temporary PR identities and temporary exact Git histories rather than pinning a live implementation PR or a self-referential candidate SHA.
-
-### Actions
-
-1. Run `python3 -m unittest scripts.workflow_pilot.tests.test_review_base_checker scripts.workflow_pilot.tests.test_review_family scripts.workflow_pilot.tests.test_github_review -v`.
-2. Run the module twice with explicit `--repository-root`, `--expected-candidate`, `--contract`, and offline `--evidence` over a detached local checkout whose actual `HEAD` matches the synthetic fixture candidate. Compare its canonical JSON bytes and confirm it cannot authorize push or merge.
-3. Confirm `github_review.py` and `isolated_review_gate.py` are absent, no signing helper or external-installation mode is exported, and the candidate root is never inserted into trusted `sys.path`. Before any package import, mutate untracked, tracked, and index state in an independent trusted-base repository and require rejection before credential access. Verify exact base-tree object identity for the initializer, gate, reporter, family validator, checker, and every transitive local import.
-4. Inspect the GraphQL query and fixture. Validate every polymorphic Actor ID through `... on Node { id }` plus exact `__typename`, exact `baseRefOid`/`headRefOid`, exact live-base `mergeable`, bounded pagination, review bodies/states/threads, and nullable `pushedDate`. Treat `baseRefOid` as the current live base tip, not the frozen merge base: the coordinator argument must match it exactly, while the contract base must remain the exact candidate merge base proven from local Git history against that live tip. The authoritative Copilot review/finding actor is the exact GraphQL Bot tuple `(__typename: Bot, id: BOT_kgDOCnlnWA, login: copilot-pull-request-reviewer)`. If a fixture explicitly models REST actor shape instead, require the exact REST tuple `(type: Bot, node_id: BOT_kgDOCnlnWA, id: 175728472, login: copilot-pull-request-reviewer[bot])` on both the owning review and each historical finding/comment record, with same-actor linkage fail-closed. Confirm only threads rooted in authenticated accepted Copilot findings count toward family evidence; human or other-bot threads must neither satisfy nor poison that coverage. Confirm review selection authenticates the exact Bot actor before parsing body markers or inline comments, so human and lookalike reviews are ignored instead of poisoning authority. When the exact base decision file lacks the current PR entry, require one immutable trusted coordinator comment with prefix `workflow-review-family-decision:v1 ` before the first remote review, and bind its canonical JSON to the exact repository ID/name, PR, base, initial head, preregistered initial remote head, and normalized decision entry. Later descendant remote heads may reuse that immutable preregistration only while current PR commit history and Git ancestry preserve it as a non-rewritten ancestor. That preregistration `candidate_sha` is the actual initial remote review head, never a later local descendant, and the exact local candidate decision record must still match it before trust. The top-level PR comment query must carry `createdAt` and `updatedAt`, and those timestamps must be strict RFC 3339 UTC strings with byte-identical values.
-5. Confirm a synthetic exact base without the trusted checker or decision consumer takes explicit `introduction` mode. Require false merge/push authority plus an external-coordinator requirement. Do not substitute a later candidate ancestor as the trusted base.
-6. Create an independent two-commit repository under `build/test-artifacts/`, place the checker in its actual base, and run the extracted base blob with fixed `/usr/bin/python3 -I` argv. Verify each registry result binds its candidate-referenced assertion ID to base-derived member/class inputs, implementation, observable output/status, exact base/head, full diff, review round, and HMAC receipt. Swap member/family/outcome/assertion/result identities, invent a finding ID, or reuse a valid finding ID with the wrong family and require failure. Replace the candidate registry/program and confirm the checker still extracts exact-base `review_assertions.py` with fixed isolated argv. Verify the child has no credentials or proxy/PYTHONPATH injection and receipts bind both tree OIDs, member artifact blobs, exit/status, canonical stdout digest, and semantic output over real production workflow-governance artifacts rather than standalone witness JSON. If any authority dependency blob in the exact-base transitive local import closure differs from the exact base, require the explicit `authority-dependency-changed` hold instead of executing candidate-owned authority code. Derive that closure from trusted base AST/import resolution over the actual exact-base modules the member executes, including package `__init__.py` files, shared modules such as `reporter.py`, and constant-path local scripts loaded dynamically. Missing or ambiguous local imports fail closed. Require both the exact base decision record entry and the candidate PR entry to exist for the same PR; removing, renaming, emptying, duplicating, or retargeting the candidate PR record fails closed before trust. Require exact candidate/base Git-tree regular-blob mode plus verified no-follow candidate-file access that still matches the candidate tree blob; parent or leaf symlinks, path escape, swap races, and tree/worktree mismatches fail closed before trust. Confirm the live gate pins the repository root and each relative parent with a dirfd/openat no-follow directory walk before opening the leaf. Treat every parent package initializer in that closure as authority-bearing presence/absence state, even when the exact base lacks the file; adding `scripts/__init__.py`, `scripts/docs_check_tests/__init__.py`, `tests/__init__.py`, or another in-closure initializer later must hold before execution.
-7. Sign canonical pre-review bytes with a test-only external key. Verify exact repository/PR/base/head, epoch, purpose, expiry, nonce, and atomic replay. Keep `LOCAL-` findings in that immutable receipt, separately collect later GitHub finding node IDs, and reject namespace overlap, backdating, or re-signing after remote review.
-8. Confirm the complete fixture retains all action, lifecycle, wire, generated, and resource family members and configured file, finding, duration, sibling, and handoff bounds. Confirm candidates provide assertion IDs only. Require `affected-fixed` to execute a member-specific failing before-probe and passing after-probe with the same base-owned predicate over the materialized origin and remediation roots; require `verified-unaffected` to compare a member-specific invariant over parsed production docs/tests/code rather than one shared file or a witness sidecar; permit `not-applicable` only for its explicit member/reason registry entry. Every accepted finding sweep must include at least one `affected-fixed` sibling; a sweep of only `verified-unaffected`/`not-applicable` members is not remediation. For action siblings, execute the reviewed `review_base_checker.py` in actual `__main__` script context with the production `--input checker-input.json` argv/home/path shape and reject package-only, argv-only, or cwd/HOME-only whitelists. For generated outputs, validate unchanged exact-base `candidate_evidence.py` and `event_classifier.py` behavior with authoritative current PR/base/head inputs and require a hold when either blob changed. The generated-consumer closure follows the exact-base workflow-topology imports too, so canonical `metadata_adapter_contract.py` and `summary_continuity_contract.py` drift also holds before execution. For wire siblings, replay a captured authoritative `live-gh-api` payload with no network, compare it to the offline transform payload, and require the current producer/consumer to preserve one shared wire schema across both modes. For remote findings, derive the trusted family mapping from immutable `workflow-review-family-classification:v1 ` coordinator comments rather than the candidate contract, reject `family-authority-drift`, and keep the trusted family authoritative even when the candidate's sibling assertions remain internally consistent. Ignore deleted-user `author: null` reviews before body/comment parsing, and let `author: null` thread roots fail by omission rather than satisfying authoritative coverage. Apply that same immutable top-level-comment contract to `workflow-review-family-disposition:v2`: exact trusted coordinator actor, canonical closed JSON body, strict RFC 3339 UTC `createdAt`/`updatedAt`, and byte-identical timestamps so chronology uses the unedited creation time. Reuse the current checkout or swap dirty materialized roots and require the authoritative origin/head Git-tree binding to fail before execution.
-9. Parse the captured clean PR #183 body and accept its first-line exact `### 🟢 Approval recommended` marker. Reject or classify non-clean exact yellow/blue markers, unknown/empty bodies, nested or conflicting green marker spoofs, inline findings, unresolved threads, and `CHANGES_REQUESTED`. Truncate a page, change the second live snapshot, or collide global node IDs and require failure.
-10. Create a round-3 hold at one exact head, then advance normally to a descendant head without disposition; require ineligibility. Add an independent authenticated disposition binding held round/head and next exact head, then require success. Replay it or overlap its actor with the implementer/PR author, pre-reviewer, remote reviewer, or finding author and require failure. Separately exercise the pre-push case where GitHub still reports held head A while clean local Git proves descendant B, and require the trusted gate to bind `--expected-remote-head A` separately from `--expected-candidate B`. Require an exact local remediation receipt for A→B in every descendant pre-push case, with first/second change-request rounds authorized by that receipt alone and the third-round hold additionally requiring the exact consumed disposition.
-11. Add a second independent round-6 hold and disposition. Confirm rounds 3 and 6 consume distinct receipts once and do not infer advancement from commit or push timestamps.
-12. Derive A/D/M/R/C records in a synthetic repository. Verify added head-blob/base-absence, deleted base-blob/head-absence, modified dual-blob, rename old/new, and copy retained-source contracts. Reject traversal, unknown status, malformed similarity, and mode surprise. Confirm the issue #179 deletion of `isolated_review_gate.py` carries its base blob and has no head path/blob.
-13. Run the integrated gate over heads A through G. Keep one immutable pre-review receipt bound to A and issued before remote round 1. Give every remote round/head separate exact Git coverage and an execution receipt, and remediate each prior round's findings on the next head. Confirm the round-3 and round-6 dispositions authorize their next exact heads, G has the final clean review, all seven receipt seals are distinct, stale round/head evidence fails, and replaying A's nonce fails. If any earlier round changed a still-authoritative member dependency, require the final report to surface `authority_hold.required: true` and deny merge/push even with the later clean review.
-
-### Expected result
-
-Candidate/offline inputs validate structure but cannot authorize delivery. Introducing mode fails closed against the real base. A later base-pinned gate can authorize only from the exact clean trusted base with two matching live snapshots, one preserved original A receipt, every chronological round/head receipt, member-specific base-owned assertion results, clean current-head Copilot review, and no unresolved thread, held head, or authority-dependency hold.
-
-### Negative control
-
-The suite rejects candidate credentials/import authority, public signing or external-installation helpers, dirty or object-mismatched trusted imports, ancestor-base substitution, bootstrap self-attestation, invalid Actor selection, base/head mismatch, re-signing A for B/C, stale/missing/replayed round receipts, fabricated outcome/class results, invented or wrong-family finding IDs, reused or swapped materialized roots, shared-file member evidence, fake origin/program blob/tree identities, unsupported dispositions or `verified-unaffected` member combinations without a registered invariant, incorrect status/blob coverage, local/remote finding overlap, backdating, exceeded bounds, incomplete pages, spoofed clean bodies, global identity collisions, undisposed heads, and actor overlap.
-
-### Interactions and save compatibility
-
-The contract depends on issue #176's hardened Git authority, strict JSON/full SHAs, risk/threshold enums, canonical representation, lifecycle discipline, and metric namespace. Issue #181 depends on it. It conflicts with candidate credential or merge authority, stale base/head evidence, inferred ref history, overlapping review/disposition actors, incomplete registry/family coverage, exceeded bounds, and advancement through an unresolved held head. Remote Copilot review, candidate Build, and post-merge Build remain mandatory. There is no game, runtime, save, generated game-data, localization, ROM/RAM, modern debug/release, or archival impact.
-
-### Automation
-
-`python3 -m unittest scripts.workflow_pilot.tests.test_review_base_checker scripts.workflow_pilot.tests.test_review_family scripts.workflow_pilot.tests.test_github_review -v` executes the independent checker, inert structural evaluator, trusted collector, receipt/replay, exact-base/head, local/remote chronology, closed registry, global-node, bound, semantic state, disjoint actor, normal-advance hold, and multi-hold reproducers.
-
-`python3 -m unittest scripts.docs_check_tests.test_development_workflow_skill -v` checks that the production review/merge policy retains the bounded read-only owner, complete sibling families, third-round hold, and mandatory remote review.
-
-`python3 scripts/check_docs.py --check` parses this procedure and its registry ownership and automation paths.
-
-### Cleanup and limitations
-
-The focused suites automatically remove ignored detached/synthetic authority worktrees, checker sandboxes, and replay files. The collector uses only read-only `gh api graphql`; no mode changes remote state. Offline fixtures and introducing mode never grant delivery. No manual-only criterion applies.
-
-Rollback is a normal revert of issue #179. The issue #176 baseline values and existing Build, Copilot review, merge, and post-merge gates remain unchanged.
-
-### External live evidence after push
-
-After a replacement push, the delivery coordinator runs the live read-only gate outside candidate authority with runtime-supplied exact identities. The committed fixtures above remain synthetic; they never claim to be the live PR.
-
-```bash
-/usr/bin/python3 -I \
-  <trusted-base>/scripts/workflow_pilot/trusted_review_gate.py \
-  --trusted-root <trusted-base> \
-  --candidate-root <clean-local-candidate-checkout> \
-  --expected-base <current-live-pr-base-sha> \
-  --expected-remote-head <current-github-pr-head-a> \
-  --expected-candidate <clean-local-candidate-b> \
-  --contract <candidate-contract.json> \
-  --review-receipt <independent-pre-review-receipt.json>
-```
-
-For a post-push exact-head recheck, `--expected-remote-head` and `--expected-candidate` are the same SHA. `--expected-base` is the current live PR base tip, while the contract and receipts stay bound to the older frozen merge base. For a held-head pre-push decision, they differ: GitHub must still report A while local Git proves descendant B. Missing or mismatched decision records, merge-base ancestry, mergeability, PR/base/head identities, candidate/authority shared-contract drift, or replay scope still fail closed.

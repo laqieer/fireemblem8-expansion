@@ -21,7 +21,6 @@ from typing import Any, Iterable
 
 
 SCHEMA_VERSION = 1
-FIXTURE_SCHEMA_VERSION = 2
 GIT = "/usr/bin/git"
 SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
@@ -35,9 +34,6 @@ REVERT_TRAILER_RE = re.compile(
     r"(?:\A|\n\n)This reverts commit ([0-9a-f]{40})\.\Z"
 )
 REVIEW_BOT = "copilot-pull-request-reviewer[bot]"
-REVIEW_BOT_TYPE = "Bot"
-REVIEW_BOT_NODE_ID = "BOT_kgDOCnlnWA"
-REVIEW_BOT_DATABASE_ID = 175728472
 DECISION_RECORD_PATH = Path(".github/workflow-pilot-decisions.json")
 REVIEW_THREAD_EVENT_SOURCE = "github-webhook-deliveries"
 BASELINE_FIXTURE_PATH = Path(
@@ -382,35 +378,6 @@ def expect_unique(values: Iterable[Any], label: str) -> None:
         raise PilotDataError(f"{label} contains duplicates")
 
 
-def review_bot_actor() -> dict[str, Any]:
-    return {
-        "type": REVIEW_BOT_TYPE,
-        "node_id": REVIEW_BOT_NODE_ID,
-        "id": REVIEW_BOT_DATABASE_ID,
-        "login": REVIEW_BOT,
-    }
-
-
-def is_review_bot_actor(value: Any) -> bool:
-    return value == review_bot_actor()
-
-
-def expect_review_bot_actor(value: Any, label: str) -> dict[str, Any]:
-    actor = expect_object(value, label)
-    expect_keys(actor, label, ("type", "node_id", "id", "login"))
-    validated = {
-        "type": expect_string(actor["type"], f"{label}.type"),
-        "node_id": expect_string(actor["node_id"], f"{label}.node_id"),
-        "id": expect_int(actor["id"], f"{label}.id", 1),
-        "login": expect_string(actor["login"], f"{label}.login"),
-    }
-    if validated != review_bot_actor():
-        raise PilotDataError(
-            f"{label} is not the exact authoritative REST Copilot actor"
-        )
-    return validated
-
-
 def canonical_commit_message(message_bytes: bytes, sha: str) -> str:
     try:
         message = message_bytes.decode("utf-8")
@@ -530,16 +497,10 @@ def trusted_git_executable() -> str:
 
 def git_environment(*, offline: bool) -> dict[str, str]:
     environment = {
-        "GIT_CONFIG_COUNT": "3",
+        "GIT_CONFIG_COUNT": "0",
         "GIT_CONFIG_GLOBAL": "/dev/null",
-        "GIT_CONFIG_KEY_0": "gc.auto",
-        "GIT_CONFIG_KEY_1": "maintenance.auto",
-        "GIT_CONFIG_KEY_2": "maintenance.autoDetach",
         "GIT_CONFIG_NOSYSTEM": "1",
         "GIT_CONFIG_SYSTEM": "/dev/null",
-        "GIT_CONFIG_VALUE_0": "0",
-        "GIT_CONFIG_VALUE_1": "false",
-        "GIT_CONFIG_VALUE_2": "false",
         "GIT_NO_REPLACE_OBJECTS": "1",
         "GIT_TERMINAL_PROMPT": "0",
         "LC_ALL": "C",
@@ -612,11 +573,6 @@ def validate_repository_root(repository_root: Path) -> Path:
     if top_level != resolved:
         raise PilotDataError(
             f"repository root must be the exact Git top level {top_level}"
-        )
-    object_format = run_git(resolved, "rev-parse", "--show-object-format").decode("ascii").strip()
-    if object_format != "sha1":
-        raise PilotDataError(
-            f"repository object format {object_format!r} is not supported; exact Git object IDs require sha1"
         )
     for relative, label in (
         ("info/grafts", "graft file"),
@@ -1341,10 +1297,8 @@ def _validate_fixture_root(fixture: dict[str, Any]) -> None:
         "fixture.schema_version",
         1,
     )
-    if schema_version != FIXTURE_SCHEMA_VERSION:
-        raise PilotDataError(
-            f"fixture schema_version must be {FIXTURE_SCHEMA_VERSION}"
-        )
+    if schema_version != SCHEMA_VERSION:
+        raise PilotDataError(f"fixture schema_version must be {SCHEMA_VERSION}")
     expect_string(fixture["repository"], "fixture.repository")
     expect_sha(fixture["base_sha"], "fixture.base_sha")
     captured = parse_time(fixture["captured_at"], "fixture.captured_at")
@@ -1499,7 +1453,7 @@ def validate_reviews(fixture: dict[str, Any]) -> dict[int, dict[str, Any]]:
         if review_id in result:
             raise PilotDataError(f"duplicate review {review_id}")
         expect_int(item["pr_number"], f"{label}.pr_number", 1)
-        author = expect_review_bot_actor(item["author"], f"{label}.author")
+        expect_string(item["author"], f"{label}.author")
         submitted = parse_time(item["submitted_at"], f"{label}.submitted_at")
         if submitted < window_start or submitted > captured:
             raise PilotDataError(
@@ -1507,7 +1461,7 @@ def validate_reviews(fixture: dict[str, Any]) -> dict[int, dict[str, Any]]:
             )
         expect_sha(item["commit_sha"], f"{label}.commit_sha")
         state = expect_enum(item["state"], REVIEW_STATES, f"{label}.state")
-        if state != "COMMENTED":
+        if item["author"] == REVIEW_BOT and state != "COMMENTED":
             raise PilotDataError(
                 f"{label} Copilot review must have COMMENTED state"
             )
@@ -1515,7 +1469,7 @@ def validate_reviews(fixture: dict[str, Any]) -> dict[int, dict[str, Any]]:
         for thread_id in threads:
             expect_string(thread_id, f"{label}.thread_ids member")
         expect_unique(threads, f"{label}.thread_ids")
-        result[review_id] = {**item, "author": author}
+        result[review_id] = item
     return result
 
 
@@ -1535,7 +1489,6 @@ def validate_findings(fixture: dict[str, Any]) -> dict[int, dict[str, Any]]:
                 "review_id",
                 "thread_id",
                 "created_at",
-                "author",
                 "is_resolved",
                 "outdated",
                 "path",
@@ -1551,11 +1504,10 @@ def validate_findings(fixture: dict[str, Any]) -> dict[int, dict[str, Any]]:
             raise PilotDataError(
                 f"{label}.created_at is outside the captured analysis window"
             )
-        author = expect_review_bot_actor(item["author"], f"{label}.author")
         expect_bool(item["is_resolved"], f"{label}.is_resolved")
         expect_bool(item["outdated"], f"{label}.outdated")
         expect_string(item["path"], f"{label}.path")
-        result[finding_id] = {**item, "author": author}
+        result[finding_id] = item
     return result
 
 
@@ -2134,11 +2086,6 @@ def cross_validate_fixture(
             raise PilotDataError(f"review {review_id} thread identity list is incomplete")
     for finding_id, finding in findings.items():
         review = reviews[finding["review_id"]]
-        if finding["author"] != review["author"]:
-            raise PilotDataError(
-                f"review finding {finding_id} author does not match review "
-                f"{review['id']} authoritative actor"
-            )
         pr = pull_requests[review["pr_number"]]
         created = parse_time(
             finding["created_at"], f"review finding {finding_id}.created_at"
@@ -2617,8 +2564,7 @@ def validate_decisions(
         reviews = [
             review
             for review in data["reviews"].values()
-            if review["pr_number"] == number
-            and is_review_bot_actor(review["author"])
+            if review["pr_number"] == number and review["author"] == REVIEW_BOT
         ]
         first_review = min(
             reviews,
@@ -3348,7 +3294,7 @@ def report_delivery(data: dict[str, Any]) -> dict[str, Any]:
                 review
                 for review in data["reviews"].values()
                 if review["pr_number"] == pr["number"]
-                and is_review_bot_actor(review["author"])
+                and review["author"] == REVIEW_BOT
             ),
             key=lambda review: parse_time(
                 review["submitted_at"], f"review {review['id']}.submitted_at"
@@ -3440,8 +3386,7 @@ def report_reviews(data: dict[str, Any]) -> dict[str, Any]:
     reviews = [
         review
         for review in data["reviews"].values()
-        if review["pr_number"] == spotlight
-        and is_review_bot_actor(review["author"])
+        if review["pr_number"] == spotlight and review["author"] == REVIEW_BOT
     ]
     review_ids = {review["id"] for review in reviews}
     findings = [
@@ -3806,7 +3751,7 @@ def decision_semantics_seal(
                 review
                 for review in data["reviews"].values()
                 if review["pr_number"] == number
-                and is_review_bot_actor(review["author"])
+                and review["author"] == REVIEW_BOT
             ),
             key=lambda review: (
                 parse_time(

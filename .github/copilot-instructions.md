@@ -119,37 +119,42 @@ or focused evidence cannot answer the acceptance criterion. Combined Build CI
 is the comprehensive final integration gate. Stop after focused checks pass,
 commit the candidate, and hand it off.
 
-For a high-risk or large candidate, run exactly one bounded fresh read-only
-adversarial pre-review, with an owner separate from the implementer, before the first
-remote review. Use the executable sibling-family contract: every valid finding
-expands across its complete action, lifecycle, wire, generated, or
-enabled/disabled resource family with evidence before the next push. Duplicate
-or overlapping review ownership fails. The fresh reviewer cannot edit, push,
-comment, request review, dispatch CI, or merge. Rounds one and two produce
-bounded family handoffs; a third consecutive change-request round blocks
-another push on an architecture/decomposition hold. Candidate code receives no
-GitHub/HMAC/push credentials and is never inserted into trusted `sys.path`;
-only the exact clean authoritative PR base checkout collects GitHub state,
-consumes replay, executes the closed base-owned assertion registry, or grants
-merge/push authority. Before imports, object-bind the entire local import graph
-to that base and reject tracked/index/untracked changes; no environment string
-attests an external install. The introducing PR fails closed because its base
-lacks that checker. Bind exact `baseRefOid`/`headRefOid`, the current live base
-tip's mergeability, `LOCAL-` findings, and status-aware A/D/M/R/C base/head
-blobs. Keep receipts and decisions bound to the frozen merge base proved from
-candidate history, and refresh only on real conflicts or shared-contract base
-changes. Distinct class/outcome checks must
-come from the base registry; candidates reference assertion IDs only and
-cannot choose paths/results/inputs. Require member-specific before-fail/
-after-pass or nonimpact probes and only explicitly registered not-applicable
-reasons. Preserve one receipt bound to original pre-review head A while B/C
-heads each receive separate chronological Git coverage, assertion receipt,
-and remote review evidence. Only exact
-top-level green approval (or legacy exact clean text) is clean; yellow, blue,
-unknown, nested, inline, unresolved, or `CHANGES_REQUESTED` shapes are not.
-Never use nullable `pushedDate` to reconstruct head history. Dispositions bind
-held and next exact heads with disjoint authenticated actors. Remote Copilot
-review remains mandatory for the exact candidate.
+## Sibling-family review convergence
+
+For a high-risk or large change, use one fresh bounded read-only reviewer
+before the first remote review. Keep implementer, reviewer and coordinator
+ownership distinct. Use the existing task/tool interfaces, not another agent
+backend. The reviewer can read the exact candidate and supplied evidence and
+return its report; it cannot edit, push, comment, request review, dispatch CI
+or merge. Enforce those actions at dispatch, not by accepting a claimed
+permission list from candidate JSON.
+
+The coordinator binds every accepted finding to its actual existing case,
+production predicate and finite source model. Expand actions/items/targets,
+lifecycle, wire/replay/stale bindings, generated owners/consumers/drift, and
+enabled/disabled resources completely. A missing sibling still blocks after
+the reported member is fixed. Use actual source-backed test observations,
+not arbitrary pass labels or a whole-suite result relabeled as member/ROM
+evidence. Select any new binding at an explicitly reviewed exact tool revision;
+it can land in the same feature PR and does not require base-first installation.
+
+First and second change requests produce bounded handoffs. The third creates
+a sticky architecture/decomposition hold; new heads and later clean reviews
+do not clear it without a coordinator disposition bound to the held round/head.
+Stop new narrow work, but immediately publish already-created commits on their
+assigned branch as explicitly ineligible WIP. Do not invent side branches or
+delay persistence. GitHub IDs/heads/actors are facts; complete-content triage is
+the coordinator's responsibility. COMMENTED or zero new inline comments is not
+approval. Local audits never replace exact-head Copilot/security/Build or
+exact-master completion.
+
+Follow the [executable API and tester procedure](../docs/workflow-pilot.md#sibling-family-review-convergence).
+The trusted coordinator and reviewed test tools are the authority. Read-only
+roles and minimal environments are operational controls, not hostile same-UID
+OS isolation. No broker, receipt/signature platform or protected installation
+is required.
+
+## CI waiting
 
 CI waiting must not occupy a reasoning subagent. The orchestrator that
 dispatches a workflow records its exact SHA and run ID, then returns

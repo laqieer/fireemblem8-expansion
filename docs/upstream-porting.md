@@ -345,6 +345,12 @@ subset switch and fails closed if the legacy toolchain is absent. Use
 `verify --dry-run` to inspect the complete 28-gate sequence without those
 local prerequisites.
 
+Also create the [locked host Python environment](workflow-pilot.md#isolated-host-python-dependencies)
+with `/usr/bin/python3 -I scripts/host_python.py create` in the target checkout
+before non-dry-run verification. The reporter suite uses that owned interpreter
+with `-I`; installing `jsonschema` into system or user site-packages is not a
+substitute. Setup is not another gate and `verify` remains network-independent.
+
 1. `GBA_PLAYTEST_HOST_ONLY=1 python3 -m unittest discover -s tools/gba-playtest/tests -v`
    (issue #13 host-only suite; the inline environment assignment applies only
    to this child process, so later runtime gates retain live-ROM coverage)
@@ -353,7 +359,7 @@ local prerequisites.
    rerun it for the current test count rather than trusting a written count)
 3. `python3 -m unittest discover -s tests/workflows -p "test_*.py" -v`
    (pure-stdlib consolidated Build CI topology and checkout contracts)
-4. `/usr/bin/python3 -I scripts/workflow_pilot/isolated_launcher.py reporter-tests`
+4. `"$GITHUB_WORKSPACE/build/host-python/bin/python3" -I scripts/workflow_pilot/isolated_launcher.py reporter-tests`
 5. `/usr/bin/python3 -I scripts/workflow_pilot/isolated_launcher.py baseline --repository-root "$GITHUB_WORKSPACE" --fixture scripts/workflow_pilot/tests/fixtures/baseline.json --decisions .github/workflow-pilot-decisions.json --expected scripts/workflow_pilot/tests/fixtures/baseline_expected.json > /dev/null`
 6. `python3 -m unittest discover -s scripts/localization/tests -p "test_*.py"`
    (issue #18 host-only localization schema/catalog/pseudo/generation/resolver

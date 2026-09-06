@@ -336,7 +336,7 @@ def required_override_decision_commits(
                 review
                 for review in data["reviews"].values()
                 if review["pr_number"] == number
-                and reporter.is_review_bot_actor(review["author"])
+                and review["author"] == reporter.REVIEW_BOT
             ]
             if reviews:
                 first_review = min(

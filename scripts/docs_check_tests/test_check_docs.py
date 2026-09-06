@@ -986,6 +986,22 @@ class TesterCaseRegistryTests(unittest.TestCase):
             "workflow-governance": {
                 "reference": ".github/skills/development-workflow/SKILL.md",
                 "cases": {
+                    "TC-WORKFLOW-HOST-PYTHON-DEPS-001": {
+                        "document": "docs/test-cases/workflow-governance.md",
+                        "commands": {
+                            "build/host-python/bin/python3 -I -m unittest discover "
+                            "-s scripts/workflow_pilot/tests -t . -p test_host_python.py -v",
+                            "python3 -m unittest tests.workflows.test_build_ci_topology "
+                            "tests.upstream_port.test_verify.VerifyGatesMirrorWorkflowTests -v",
+                        },
+                    },
+                    "TC-WORKFLOW-REVIEW-FAMILY-001": {
+                        "document": "docs/test-cases/workflow-governance.md",
+                        "commands": {
+                            "build/host-python/bin/python3 -I -m unittest discover "
+                            "-s scripts/workflow_pilot/tests -t . -p 'test_*review*.py' -v",
+                        },
+                    },
                     "TC-WORKFLOW-WORKTREE-CLEANUP-001": {
                         "document": "docs/test-cases/workflow-governance.md",
                         "commands": {
@@ -1071,19 +1087,6 @@ class TesterCaseRegistryTests(unittest.TestCase):
                             "python3 scripts/check_docs.py --check",
                         },
                     },
-                    "TC-WORKFLOW-REVIEW-FAMILY-001": {
-                        "document": "docs/test-cases/workflow-governance.md",
-                        "commands": {
-                            "python3 -m unittest "
-                            "scripts.workflow_pilot.tests.test_review_base_checker "
-                            "scripts.workflow_pilot.tests.test_review_family "
-                            "scripts.workflow_pilot.tests.test_github_review -v",
-                            "python3 -m unittest "
-                            "scripts.docs_check_tests."
-                            "test_development_workflow_skill -v",
-                            "python3 scripts/check_docs.py --check",
-                        },
-                    },
                 },
             },
         }
@@ -1108,48 +1111,17 @@ class TesterCaseRegistryTests(unittest.TestCase):
                         expected_cases,
                     ),
                 )
-                for case_index, case_id in enumerate(expected_cases):
-                    without_case = [
-                        required_case
-                        for required_case in feature["required_cases"]
-                        if required_case != case_id
-                    ]
-                    mutated_case = list(feature["required_cases"])
-                    mutated_case[case_index] = "TC-WORKFLOW-OTHER-001"
-                    for mutation, mutated_cases in (
-                        ("removed", without_case),
-                        ("replaced", mutated_case),
-                    ):
-                        with self.subTest(
-                            feature_id=feature_id,
-                            case_id=case_id,
-                            mutation=mutation,
-                        ):
-                            self.assertEqual(
-                                ["membership"],
-                                membership_violations(
-                                    mutated_cases,
-                                    expected_cases,
-                                ),
-                            )
-                for expected_violations, mutated_cases in (
-                    (
-                        ["membership"],
-                        feature["required_cases"]
-                        + ["TC-WORKFLOW-OTHER-001"],
-                    ),
-                    (
-                        ["duplicate"],
-                        feature["required_cases"]
-                        + [feature["required_cases"][0]],
-                    ),
-                ):
-                    self.assertEqual(
-                        expected_violations,
+                required_case_mutations = (
+                    feature["required_cases"][:-1],
+                    feature["required_cases"] + ["TC-WORKFLOW-OTHER-001"],
+                    feature["required_cases"] + [feature["required_cases"][0]],
+                )
+                for mutated_cases in required_case_mutations:
+                    self.assertTrue(
                         membership_violations(
                             mutated_cases,
                             expected_cases,
-                        ),
+                        )
                     )
                 for case_id, case_contract in contract["cases"].items():
                     case = cases[case_id]

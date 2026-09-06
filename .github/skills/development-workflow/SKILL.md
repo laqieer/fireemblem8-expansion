@@ -590,31 +590,49 @@ Triage every AI review finding. Fix valid findings, answer questions, and close
 false positives with a reasoned explanation. Do not implement review comments
 blindly.
 
-### Adversarial sibling-family review convergence
+No human code review or approval is required. A CODEOWNERS request is advisory
+unless an external GitHub ruleset enforces it; this workflow does not add such
+a gate.
 
-For a high-risk or large candidate derived from the workflow-pilot risk and threshold decisions, run exactly one bounded fresh adversarial pre-review before the first remote review. Its owner must be separate from the implementer and have no overlapping review owner. The fresh reviewer is read-only: it cannot edit, push, comment, request review, dispatch CI, or merge. It may only read the exact candidate and emit the local report consumed by the review-family contract. The importable report core and candidate artifacts never grant trust or delivery gates.
+### Sibling-family review convergence
 
-Candidate code receives no GitHub token, HMAC key, replay store, merge credential, or push credential and is never inserted into trusted `sys.path`. Run production validation only through `/usr/bin/python3 -I <trusted-base>/scripts/workflow_pilot/trusted_review_gate.py` from the exact clean authoritative PR base checkout. Before any package initializer or local module import, require empty tracked/index/untracked status and byte/object identity for the initializer, gate, reporter, family validator, checker, and every transitive local import against that exact base tree. Disable bytecode, reject preloaded/candidate paths, and recheck clean status after import. No arbitrary environment string may attest an external installation. Verify exact `baseRefOid` and `headRefOid`; an ancestor base is not equivalent. Treat `baseRefOid` as the current live base tip while receipts and decisions stay bound to the frozen merge base proved from candidate history; unrelated fast-forwards are acceptable only when mergeability, ancestry, and shared-contract checks still pass. The introducing PR uses explicit `introduction` mode and cannot self-attest or return `merge_allowed` because its actual base lacks the trusted checker.
+Before the first remote review of a high-risk or large change, the coordinator
+uses one fresh bounded read-only reviewer through the existing task/tool
+interfaces. Keep implementer/reviewer/coordinator identities distinct and
+reject overlapping reviewer ownership. Only reading the exact candidate,
+reading supplied evidence and returning the report are permitted; deny edit,
+push, comment, request-review, CI dispatch, merge and arbitrary commands at the
+tool dispatch boundary.
 
-The executable review-family contract has one exact frozen behavior-row inventory. It maps each row to its production predicate and producer, executor and consumer, representation, stale-state revalidation, host validation, and positive, adversarial, default, and runtime assertion IDs. Candidate artifacts reference assertion IDs only. They never choose result IDs, paths, inputs, outputs, callables, or pass status. The exact base closed assertion registry maps each row/class and family/member/disposition to one implementation, derives inputs from exact Git/GitHub evidence, and binds observable output plus status in the HMAC receipt. Adversarial probes must execute a rejected mutation. `affected-fixed` runs a member-specific before-failure/after-pass probe; `verified-unaffected` compares a member-specific nonimpact invariant, never a shared arbitrary file; `not-applicable` requires the one explicitly registered member/reason predicate. A valid finding expands to every member of exactly one closed sibling family:
+Use the [review-family API](../../../docs/workflow-pilot.md#sibling-family-review-convergence)
+to bind accepted findings to existing cases, actual production predicates and
+reviewed finite source models. Complete all applicable action/item/target,
+lifecycle, wire/replay/stale-binding, generated-owner/output/consumer/drift and
+enabled/disabled resource obligations. Evidence comes from actual task,
+Git/GitHub and test-tool observations. Do not accept candidate programs, pass
+records or trusted-status flags, or relabel a whole-suite pass as member/ROM
+evidence. Unknown coverage blocks honestly; a new binding can be reviewed and
+selected at an exact tool revision in the same feature PR, without an
+unrelated base-first installation.
 
-Before any sibling result is created, the checker rebinds the candidate finding request to the exact authoritative source collection for that round: local pre-review findings for round 1 and the immediately preceding remote review's finding set for later rounds. The finding ID must exist exactly once in that collection, match the asserted family/member registry entry, and carry the authoritative origin/head commit-tree identities for that remediation step.
+First/second change requests produce bounded complete family handoffs. A
+third creates a sticky architecture/decomposition hold bound to the held
+round/head. New heads and later clean reviews do not release it. Require the
+coordinator's bound redesign/decompose/retain-with-evidence disposition before
+resuming narrow work or eligibility. Preserve the publication protocol below:
+already-created commits are immediately owner-pushed on their assigned branch
+as ineligible WIP, never hidden on an invented side branch or held locally.
 
-High-risk/large pre-review requirement also comes from authoritative decision data, currently the reviewed `.github/workflow-pilot-decisions.json` entry for the exact PR. Candidate trigger lists are evidence only: they must match that decision record exactly, and missing, duplicate, stale-head, wrong-base, or mismatched trigger decisions fail closed.
+GitHub review identities and content are observations, not natural-language
+approval signals. The coordinator triages complete content, including
+suppressed findings; COMMENTED and zero new inline comments do not mean clean.
+Keep exact-head Copilot/security/Build and exact-master completion unchanged.
+Read-only tool roles/minimal environments are operational controls, not
+same-UID OS isolation. No broker, generic receipt/capability platform, new
+agent backend or protected installation is a prerequisite.
 
-Execute exact-base `review_assertions.py` with fixed isolated `--stdin` argv over registry-fixed, read-only production workflow-governance artifacts materialized from the exact finding-origin and remediation Git trees. Those allowlisted inputs are the reviewed decision record, workflow-governance docs and registry, docs-check tests, event-classifier/candidate-evidence contracts, and the trusted review-family Python modules themselves. Give the child a closed environment with no credentials, proxy/PYTHONPATH injection, network-capable candidate program, or inherited startup hooks. Bind program base blob/argv, both tree OIDs, artifact blobs, exit/status, canonical stdout digest, and semantic output to the receipt. Candidate-added registry/program code, arbitrary shared files, nonexistent callable names, standalone witness JSON sidecars, and self-authored success output are not evidence. Allow multiple affected siblings only when each referenced assertion independently fails on the finding-origin tree and passes on remediation. The checker independently re-derives the authoritative checker blob, assertion-program blob, finding-origin tree, remediation-head tree, and every materialized subject blob from trusted Git objects before execution. Reusing one checkout for differing origin/head claims, swapping roots, leaving extra or dirty files in a materialized root, inventing a blob/tree OID, or using a symlink/path escape fails before the child assertion program runs.
-
-- actions, items, and targets;
-- lifecycle entries, preservation, resets, and terminals;
-- wire producers, consumers, validators, replay, and stale bindings;
-- generated owners, outputs, consumers, and drift checks; or
-- enabled and disabled resource boundaries.
-
-The first and second consecutive change-request rounds emit bounded family handoffs containing every sibling and its evidence. A third consecutive change-request round creates an architecture/decomposition hold and blocks another push while the current head equals that held head. Any different head, including a normal fast-forward, is ineligible unless one authenticated single-use disposition binds the held round/head and authorized next exact head. Its actor must be disjoint from the implementer/PR author, pre-reviewer, remote reviewers, and finding authors; repository ownership never overrides an overlap. After disposition, a later sixth round can independently hold. For the held-head pre-push decision, the authoritative current remote head A and the proposed clean local descendant B are distinct identities: GitHub must still report A while local Git proves B, and only then may `trusted_push_allowed` become true.
-
-Keep immutable pre-review findings in the `LOCAL-` namespace and inside the pre-review receipt. Bind that receipt to `original_pre_review_head` A and issue it before remote round 1. Preserve it unchanged while current remediation heads advance through B/C; never require or re-sign it for those heads. Consume it once as `new`; later evaluations use only the byte-identical trusted-store `preserved` record. Reject a second new nonce for the same scope. Every remote round/head requires separate exact Git coverage, a chronological base-owned execution receipt, and its GitHub review evidence. Result IDs derive from round/head/assertion plus the authoritative finding/family/member/origin/head binding and cannot replay. Enforce configured file, duration, finding, sibling, and handoff bounds. Collect later GitHub finding IDs separately after they exist. Actor selections use valid Node fragments, `Commit.pushedDate` is nullable and never head authority, and normal ref advancement is not reconstructed from commit timestamps. Require globally unique node identities and semantic body parsing: only exact top-level `### 🟢 Approval recommended` or legacy exact `No issues found.` is clean; yellow, blue, unknown, empty, nested, conflicting, inline, `CHANGES_REQUESTED`, or unresolved-thread shapes are non-clean. Derive status-aware A/D/M/R/C review records: additions bind head blobs, deletions bind base blobs and head absence, modifications bind both, and rename/copy bind old/new paths without traversal or mode surprise. Immediately before merge the trusted process recollects base, head, reviews, findings, threads, actors, and dispositions and requires an exact match. Remote Copilot review remains mandatory.
-
-No human code review or approval is required. A CODEOWNERS request is advisory unless an external GitHub ruleset enforces it; this workflow does not add such a gate.
+The indexed case is
+[`TC-WORKFLOW-REVIEW-FAMILY-001`](../../../docs/test-cases/workflow-governance.md#tc-workflow-review-family-001-expand-valid-findings-across-complete-sibling-families).
 
 ### Immediate publication and visible work
 

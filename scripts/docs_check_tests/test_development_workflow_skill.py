@@ -28,7 +28,6 @@ CONTRIBUTING_PATH = ROOT / "CONTRIBUTING.md"
 PR_TEMPLATE_PATH = ROOT / ".github" / "PULL_REQUEST_TEMPLATE.md"
 ISSUE_RESOLUTION_POLICY_PATH = ROOT / "docs" / "issue-resolution-policy.md"
 WORKFLOW_PILOT_PATH = ROOT / "docs" / "workflow-pilot.md"
-DOCUMENTATION_INVENTORY_PATH = ROOT / "docs" / "documentation-inventory.md"
 FRAMEWORK_SUPPORT_PATH = ROOT / "docs" / "framework-support.md"
 COPILOT_INSTRUCTIONS_PATH = ROOT / ".github" / "copilot-instructions.md"
 WORKFLOW_GOVERNANCE_PATH = ROOT / "docs" / "test-cases" / "workflow-governance.md"
@@ -2686,99 +2685,6 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
             text,
         )
 
-    def test_adversarial_review_family_contract_is_mirrored(self):
-        _, skill = read_skill()
-        instructions = COPILOT_INSTRUCTIONS_PATH.read_text(encoding="utf-8")
-        shared = (
-            "high-risk or large candidate",
-            "bounded fresh",
-            "read-only",
-            "separate from the implementer",
-            "cannot edit, push, comment, request review, dispatch CI, or merge",
-            "third consecutive change-request round",
-            "architecture/decomposition hold",
-            "Remote",
-            "Copilot review",
-        )
-        for path, text in (
-            (SKILL_PATH, skill),
-            (COPILOT_INSTRUCTIONS_PATH, instructions),
-        ):
-            normalized = " ".join(text.split()).casefold()
-            for requirement in shared:
-                with self.subTest(path=path, requirement=requirement):
-                    self.assertIn(requirement.casefold(), normalized)
-
-        for requirement in (
-            "/usr/bin/python3 -I "
-            "<trusted-base>/scripts/workflow_pilot/trusted_review_gate.py",
-            "actions, items, and targets",
-            "lifecycle entries, preservation, resets, and terminals",
-            "wire producers, consumers, validators, replay, and stale bindings",
-            "generated owners, outputs, consumers, and drift checks",
-            "enabled and disabled resource boundaries",
-            "first and second consecutive change-request rounds",
-            "candidate code receives no GitHub token",
-            "never inserted into trusted `sys.path`",
-            "empty tracked/index/untracked status",
-            "every transitive local import",
-            "No arbitrary environment string",
-            "exact `baseRefOid` and `headRefOid`",
-            "current live base tip",
-            "frozen merge base",
-            "introducing PR uses explicit `introduction` mode",
-            "cannot self-attest or return `merge_allowed`",
-            "closed assertion registry",
-            "Candidate artifacts reference assertion IDs only",
-            "never choose result IDs, paths, inputs",
-            "`affected-fixed` runs a member-specific",
-            "`verified-unaffected` compares a member-specific",
-            "`not-applicable` requires the one explicitly registered",
-            "exact-base `review_assertions.py`",
-            "production workflow-governance artifacts",
-            "no credentials, proxy/PYTHONPATH injection",
-            "program base blob/argv, both tree OIDs, artifact blobs",
-            "nonexistent callable names",
-            "including a normal fast-forward",
-            "held round/head and authorized next exact head",
-            "repository ownership never overrides an overlap",
-            "immutable pre-review findings in the `LOCAL-` namespace",
-            "`original_pre_review_head` A",
-            "Preserve it unchanged while current remediation heads",
-            "Every remote round/head requires separate exact Git coverage",
-            "Result IDs derive from round/head/assertion plus the authoritative finding/family/member/origin/head binding",
-            "`Commit.pushedDate` is nullable",
-            "globally unique node identities",
-            "only exact top-level `### 🟢 Approval recommended`",
-            "yellow, blue, unknown, empty, nested, conflicting",
-            "status-aware A/D/M/R/C review records",
-            "deletions bind base blobs and head absence",
-            "recollects base, head, reviews, findings, threads",
-            "later sixth",
-            "configured file, duration, finding, sibling, and handoff bounds",
-        ):
-            with self.subTest(skill_requirement=requirement):
-                self.assertIn(
-                    requirement.casefold(),
-                    " ".join(skill.split()).casefold(),
-                )
-
-    def test_review_family_is_registered_in_documentation_inventory(self):
-        entries = [
-            line[2:].split(" | ")
-            for line in DOCUMENTATION_INVENTORY_PATH.read_text(
-                encoding="utf-8"
-            ).splitlines()
-            if line.startswith("- docs/test-cases/workflow-governance.md | ")
-        ]
-        self.assertEqual(len(entries), 1)
-        path, owner, status, scope = entries[0]
-        self.assertEqual(path, "docs/test-cases/workflow-governance.md")
-        self.assertEqual(owner, "laqieer")
-        self.assertEqual(status, "current")
-        self.assertIn("sibling-family review", scope)
-        self.assertIn("#179", scope)
-
     def test_ci_waiting_does_not_hold_reasoning_subagents(self):
         _, text = read_skill()
         project_instructions = (
@@ -4162,58 +4068,6 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
                 for fragment in forbidden_fragments:
                     self.assertNotIn(normalize_policy(fragment), normalized)
 
-    def test_workflow_pilot_docs_record_rest_actor_schema_migration_and_seal_refresh(self):
-        pilot = WORKFLOW_PILOT_PATH.read_text(encoding="utf-8")
-        governance = WORKFLOW_GOVERNANCE_PATH.read_text(encoding="utf-8")
-        pilot_normalized = normalize_policy(pilot)
-        governance_normalized = normalize_policy(governance)
-        for fragment in (
-            "historical REST author tuple",
-            "historical finding record preserves the same exact REST actor tuple",
-            "schema v2",
-            "identities.seal",
-            "decisions.seal",
-            "semantic metric values, formulas, and availability reasons remain unchanged",
-            "candidate PR record must exist",
-            "Only review threads rooted in accepted authoritative Copilot finding IDs participate in family evidence",
-            "Selection authenticates that exact Bot actor before any review body",
-            "no-follow regular-file read still matches the candidate tree blob",
-            "dirfd/openat",
-            "workflow-review-family-decision:v1",
-            "workflow-review-family-classification:v1",
-            "workflow-review-family-disposition:v2",
-            "the top-level `pullRequest.comments` selection must carry both `createdAt` and `updatedAt`",
-            "byte-identical timestamps so chronology binds to the unedited comment creation time",
-            "family-authority-drift",
-            "every accepted finding sweep must still include at least one `affected-fixed` sibling",
-            "deleted-user `author: null` comments, are ignored before actor parsing",
-            "current live base tip",
-            "frozen merge base",
-        ):
-            with self.subTest(fragment=fragment):
-                self.assertIn(normalize_policy(fragment), pilot_normalized)
-        for fragment in (
-            "version-2 REST actor schema",
-            "only `identities.seal` plus `decisions.seal` refresh",
-            "threads rooted in authenticated accepted Copilot findings count toward family evidence",
-            "removing, renaming, emptying, duplicating, or retargeting the candidate PR record fails closed before trust",
-            "review selection authenticates the exact Bot actor before parsing body markers or inline comments",
-            "verified no-follow candidate-file access that still matches the candidate tree blob",
-            "dirfd/openat no-follow directory walk",
-            "workflow-review-family-decision:v1",
-            "workflow-review-family-classification:v1",
-            "workflow-review-family-disposition:v2",
-            "The top-level PR comment query must carry `createdAt` and `updatedAt`",
-            "chronology uses the unedited creation time",
-            "family-authority-drift",
-            "Every accepted finding sweep must include at least one `affected-fixed` sibling",
-            "derive the trusted family mapping from immutable",
-            "current live base tip",
-            "frozen merge base",
-        ):
-            with self.subTest(fragment=fragment):
-                self.assertIn(normalize_policy(fragment), governance_normalized)
-
     def test_live_title_probe_contract_is_complete_and_fail_closed(self):
         governance = WORKFLOW_GOVERNANCE_PATH.read_text(encoding="utf-8")
         self.assertEqual(live_title_probe_violations(governance), [])
@@ -4770,6 +4624,7 @@ printf '%s\t%s\t%s\n' "$result" \
             if item["id"] == "workflow-governance"
         )
         expected_cases = [
+            "TC-WORKFLOW-HOST-PYTHON-DEPS-001",
             "TC-WORKFLOW-WORKTREE-CLEANUP-001",
             "TC-WORKFLOW-IMMEDIATE-PUSH-001",
             "TC-WORKFLOW-CI-WAIT-001",
@@ -4778,7 +4633,6 @@ printf '%s\t%s\t%s\n' "$result" \
             "TC-WORKFLOW-BODY-EDIT-001",
             "TC-WORKFLOW-METADATA-EDIT-RACE-001",
             "TC-WORKFLOW-PILOT-BASELINE-001",
-            "TC-WORKFLOW-REVIEW-FAMILY-001",
         ]
         self.assertEqual(
             [],

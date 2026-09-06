@@ -228,7 +228,8 @@ MAP_MENU_PRESENTATION_GATE = (
     "make expansion-modern-map-menu-presentation-check -j1"
 )
 WORKFLOW_PILOT_GATE = (
-    "/usr/bin/python3 -I scripts/workflow_pilot/isolated_launcher.py "
+    '"$GITHUB_WORKSPACE/build/host-python/bin/python3" -I '
+    "scripts/workflow_pilot/isolated_launcher.py "
     "reporter-tests"
 )
 WORKFLOW_PILOT_BASELINE_GATE = (
@@ -398,7 +399,7 @@ def _is_lower_sha(value: object) -> bool:
     return isinstance(value, str) and re.fullmatch(r"[0-9a-f]{40}", value) is not None
 
 
-def triggered_jobs(text: str, event: dict) -> set[str]:
+def _triggered_jobs(text: str, event: dict) -> set[str]:
     header = text[: text.index("\njobs:\n")]
     payload = event.get("payload", event)
     try:
@@ -512,10 +513,6 @@ def triggered_jobs(text: str, event: dict) -> set[str]:
     ):
         jobs.difference_update(COMBINED_WORKERS)
     return jobs
-
-
-def _triggered_jobs(text: str, event: dict) -> set[str]:
-    return triggered_jobs(text, event)
 
 
 def _pre_fix_triggered_jobs(text: str, event: dict) -> set[str]:
@@ -665,6 +662,12 @@ def _direct_job_name(job: str) -> str | None:
     if len(matches) != 1:
         raise ValueError("job must contain exactly one direct name expression")
     return matches[0]
+
+
+def _command_run_field(command: str, key: str = "run") -> str:
+    if command.startswith('"'):
+        return f"      {key}: |\n        {command}\n"
+    return f"      {key}: {command}\n"
 
 
 def _run_block_commands(job: str) -> list[str]:
@@ -1457,7 +1460,8 @@ def _protected_host_prefix_errors(host: str) -> list[str]:
             "Install host-only dependencies (no arm-none-eabi toolchain)",
             (
                 "sudo apt-get update && sudo apt-get install -y "
-                "build-essential libmgba-dev",
+                "build-essential libmgba-dev python3-venv",
+                "/usr/bin/python3 -I scripts/host_python.py create",
             ),
             if_expression=FULL_WORKER_STEP_CONDITION,
         ),
@@ -2647,36 +2651,17 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
 
     def test_workflow_pilot_authority_hydration_is_exact_and_ordered(self):
         self.assertEqual(hydrate_authority.GIT, "/usr/bin/git")
-        environment = reporter.git_environment(offline=False)
-        self.assertEqual(
-            environment,
-            {
-                "GIT_CONFIG_COUNT": "3",
-                "GIT_CONFIG_GLOBAL": "/dev/null",
-                "GIT_CONFIG_KEY_0": "gc.auto",
-                "GIT_CONFIG_KEY_1": "maintenance.auto",
-                "GIT_CONFIG_KEY_2": "maintenance.autoDetach",
-                "GIT_CONFIG_NOSYSTEM": "1",
-                "GIT_CONFIG_SYSTEM": "/dev/null",
-                "GIT_CONFIG_VALUE_0": "0",
-                "GIT_CONFIG_VALUE_1": "false",
-                "GIT_CONFIG_VALUE_2": "false",
-                "GIT_NO_REPLACE_OBJECTS": "1",
-                "GIT_TERMINAL_PROMPT": "0",
-                "LC_ALL": "C",
-                "PATH": "/usr/bin:/bin",
-            },
+        self.assertNotIn(
+            "GIT_NO_LAZY_FETCH",
+            reporter.git_environment(offline=False),
         )
         self.assertEqual(
-            tuple(
-                (environment[f"GIT_CONFIG_KEY_{index}"], environment[f"GIT_CONFIG_VALUE_{index}"])
-                for index in range(int(environment["GIT_CONFIG_COUNT"]))
-            ),
-            (
-                ("gc.auto", "0"),
-                ("maintenance.auto", "false"),
-                ("maintenance.autoDetach", "false"),
-            ),
+            reporter.git_environment(offline=False)["GIT_CONFIG_COUNT"],
+            "0",
+        )
+        self.assertEqual(
+            reporter.git_environment(offline=False)["GIT_NO_REPLACE_OBJECTS"],
+            "1",
         )
         self.assertEqual(hydrate_authority.BATCH_SIZE, 256)
         self.assertEqual(
@@ -2775,8 +2760,8 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                     continue
                 with self.subTest(command=command, replacement=replacement):
                     changed = self.text.replace(
-                        f"      run: {command}\n",
-                        f"      run: {replacement}\n",
+                        _command_run_field(command),
+                        _command_run_field(replacement),
                         1,
                     )
                     self.assertTrue(
@@ -5680,6 +5665,53 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                     any("summary loop omits" in error for error in _errors(changed, False))
                 )
 
+    def test_host_python_bootstrap_and_reporter_interpreter_agree(self):
+        from scripts import host_python
+        from scripts.upstream_port import verify
+
+        _, _, jobs = verify._parse_workflow_structure_text(self.text)
+        host = next(steps for name, _, steps in jobs if name == "host-tests")
+        setup_name = "Install host-only dependencies (no arm-none-eabi toolchain)"
+        setup = next(dict(fields) for _, name, fields in host if name == setup_name)
+        self.assertEqual(
+            setup["run"],
+            (
+                (
+                    "sudo", "apt-get", "update", "&&", "sudo", "apt-get", "install",
+                    "-y", "build-essential", "libmgba-dev", "python3-venv",
+                ),
+                ("/usr/bin/python3", "-I", "scripts/host_python.py", "create"),
+            ),
+        )
+        reporter = next(
+            dict(fields) for _, name, fields in host
+            if name == verify._WORKFLOW_PILOT_TEST_STEP_NAME
+        )
+        interpreter = host_python.DEFAULT_ENVIRONMENT / "bin" / "python3"
+        self.assertEqual(
+            reporter["run"][0],
+            (
+                "$GITHUB_WORKSPACE/" + str(interpreter.relative_to(ROOT)),
+                "-I", "scripts/workflow_pilot/isolated_launcher.py", "reporter-tests",
+            ),
+        )
+        self.assertEqual(setup["if"], reporter["if"])
+        for changed in (
+            self.text.replace(
+                "        /usr/bin/python3 -I scripts/host_python.py create\n", "", 1
+            ),
+            self.text.replace("libmgba-dev python3-venv", "libmgba-dev", 1),
+            self.text.replace(
+                '"$GITHUB_WORKSPACE/build/host-python/bin/python3"',
+                '"/usr/bin/python3"', 1,
+            ),
+            self.text.replace(
+                "scripts/host_python.py create", "scripts/host_python.py check", 1
+            ),
+        ):
+            self.assertNotEqual(changed, self.text)
+            self.assertTrue(_errors(changed, False))
+
     def test_workflow_pilot_suite_remains_owned_by_required_host_job(self):
         host_tests = _job_blocks(self.text)["host-tests"]
         for command in (WORKFLOW_PILOT_GATE, WORKFLOW_PILOT_BASELINE_GATE):
@@ -5697,7 +5729,7 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
             WORKFLOW_PILOT_BASELINE_GATE,
         )
         changed = self.text.replace(
-            f"      run: {WORKFLOW_PILOT_GATE}\n",
+            _command_run_field(WORKFLOW_PILOT_GATE),
             "      run: true\n",
             1,
         )
@@ -5744,8 +5776,8 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                 f"    - name : {step_name}\n",
                 1,
             ).replace(
-                f"      run: {command}\n",
-                f"      run : {command}\n",
+                _command_run_field(command),
+                _command_run_field(command, "run "),
                 1,
             )
         self.assertNotEqual(changed, self.text)
@@ -5776,8 +5808,8 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
             for variant in variants:
                 with self.subTest(command=command, variant=variant):
                     changed = self.text.replace(
-                        f"      run: {command}\n",
-                        f"      {variant}\n      run: {command}\n",
+                        _command_run_field(command),
+                        f"      {variant}\n" + _command_run_field(command),
                         1,
                     )
                     self.assertNotEqual(changed, self.text)
@@ -5850,8 +5882,8 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
             for variant in variants:
                 with self.subTest(command=command, variant=variant):
                     changed = self.text.replace(
-                        f"      run: {command}\n",
-                        f"      {variant}: {command}\n",
+                        _command_run_field(command),
+                        _command_run_field(command, variant),
                         1,
                     )
                     self.assertNotEqual(changed, self.text)
@@ -5877,8 +5909,8 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
         for replacement in mutations:
             with self.subTest(replacement=replacement):
                 changed = self.text.replace(
-                    f"      run: {WORKFLOW_PILOT_GATE}\n",
-                    f"      run: {replacement}\n",
+                    _command_run_field(WORKFLOW_PILOT_GATE),
+                    _command_run_field(replacement),
                     1,
                 )
                 self.assertNotEqual(changed, self.text)

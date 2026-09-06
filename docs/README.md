@@ -136,7 +136,7 @@ and
 | [`migration-from-decomp.md`](migration-from-decomp.md) | Current | Decomp-base/agbcc → modern framework bridge |
 | [`release-migration-template.md`](release-migration-template.md) | Template | Fill in for a real future version migration |
 | [`archival-decomp.md`](archival-decomp.md) | Current, archival scope | Unsupported-for-releases decomp-matching workflow |
-| [`workflow-pilot.md`](workflow-pilot.md) | Current | Frozen workflow-efficiency baseline, event classifier/evidence protocol, formulas, decision schema, artifact lifecycle, and executable sibling-family review convergence (issues #176/#177/#179) |
+| [`workflow-pilot.md`](workflow-pilot.md) | Current | Frozen workflow-efficiency baseline, event classifier/evidence protocol, formulas, decision schema, and artifact lifecycle (issues #176/#177) |
 | [`config_identity.md`](config_identity.md) | Current | Config surface + ROM identity fingerprint (issue #8) |
 | [`save_format.md`](save_format.md) | Current | Save format + compatibility gate (issue #2) |
 | [`id_space.md`](id_space.md) | Current | Typed-ID DEFAULT vs ACTIVE contract, cap switching (issue #10) |
@@ -163,7 +163,7 @@ and
 | [`test-cases/optional-gameplay.md`](test-cases/optional-gameplay.md) | Current | Optional gameplay procedures, profiles, controls, and automation (issue #55) |
 | [`test-cases/presentation-audio-utility.md`](test-cases/presentation-audio-utility.md) | Current | Presentation, audio, and utility procedures, profiles, controls, and automation (issue #58) |
 | [`test-cases/asset-authoring.md`](test-cases/asset-authoring.md) | Current | Source-asset adapter procedures, controls, runtime evidence, and cleanup (issue #62) |
-| [`test-cases/workflow-governance.md`](test-cases/workflow-governance.md) | Current | Trusted/immediate-push, WIP visibility, CI-wait, manual-handoff, stacked-CI, workflow-pilot, metadata-edit, sibling-family review, and safe completed-worktree cleanup procedures (issues #93/#169/#171/#176/#177/#179/#207/#208) |
+| [`test-cases/workflow-governance.md`](test-cases/workflow-governance.md) | Current | Trusted/immediate-push, WIP visibility, CI-wait, manual-handoff, stacked-CI, workflow-pilot, sibling-family review, metadata-edit, and safe completed-worktree cleanup procedures (issues #93/#169/#171/#176/#177/#179/#207/#208) |
 | [`test-cases/debugtools.md`](test-cases/debugtools.md) | Current | Cursor-unit editor and bounded music-preview procedures, teardown negatives, and save-neutral evidence (issues #125 and #126) |
 | [`test-cases/localization.md`](test-cases/localization.md) | Current | Localization and locale-persistence procedures, semantic runtime mappings, and negative controls (issue #56) |
 | [`test-cases/patch-release.md`](test-cases/patch-release.md) | Current | Trusted BPS artifact validation/application and malformed-input procedures (issue #49) |

@@ -75,6 +75,37 @@ libmGBA backend without `pkg-config` metadata) and fail actionably rather
 than silently in an incomplete environment — see each test's own
 diagnostic.
 
+Workflow-pilot schema tests additionally use an owned, locked CPython 3.12
+environment on Linux x86_64 (glibc >= 2.17). Install your distribution's
+`python3-venv` package if needed, then run from the source root:
+
+```bash
+/usr/bin/python3 -I scripts/host_python.py create
+build/host-python/bin/python3 -I scripts/workflow_pilot/isolated_launcher.py reporter-tests
+```
+
+The bootstrap refuses an existing target, hash-verifies every wheel, and
+installs only inside `build/host-python`; do not use system or `pip --user`
+installs as a substitute. The reporter retains `-I`, so user-site packages
+cannot satisfy its dependencies. See the
+[host Python setup and cleanup procedure](docs/workflow-pilot.md#isolated-host-python-dependencies)
+and [tester case](docs/test-cases/workflow-governance.md#tc-workflow-host-python-deps-001-bootstrap-isolated-schema-test-dependencies).
+
+### Bounded independent review
+
+High-risk/large changes receive one fresh read-only review before their first
+remote review, with ownership separate from implementation and coordination.
+Valid findings trigger complete source-backed sibling sweeps, not another
+one-line patch cycle. First/second request rounds produce bounded handoffs;
+the third holds new narrow work and eligibility until a held-round/head-bound
+architecture decision. Already-created commits still publish immediately on
+their assigned branch as ineligible WIP. All final gates remain mandatory.
+
+Use the [review-family contract](docs/workflow-pilot.md#sibling-family-review-convergence)
+and [tester case](docs/test-cases/workflow-governance.md#tc-workflow-review-family-001-expand-valid-findings-across-complete-sibling-families).
+Its existing-case bindings can be reviewed in the same feature PR. It requires
+no broker, receipt/signature service or protected installation.
+
 ## 4. Full validation policy
 
 During iteration, run only the focused fast checks and the one relevant ROM
@@ -82,34 +113,6 @@ profile for the code you changed. A pull-request candidate is gated by the
 required Build CI and Copilot review running concurrently. When those
 candidate gates are clean, merge directly; the merge automatically starts the
 expanded Build CI on `master`.
-
-High-risk or large candidates also run one bounded fresh read-only adversarial
-pre-review before their first remote review. The reviewer is separate from the
-implementer and cannot mutate repository or GitHub state. Evaluate its exact
-candidate report with `python3 -m scripts.workflow_pilot.review_family` using
-the offline report core only for structural diagnostics; it can never authorize
-delivery. Production credentials and authority stay outside the candidate:
-invoke `trusted_review_gate.py` only from the exact clean authoritative PR
-base, object-bind the complete local import graph before imports, and reject
-any tracked/index/untracked state or candidate path. The introducing PR uses
-fail-closed `introduction` mode because its actual base lacks the checker.
-Later PRs require exact `baseRefOid`/`headRefOid`, an authoritative trigger
-decision (currently the reviewed `.github/workflow-pilot-decisions.json`
-record) whose risk/threshold evidence exactly matches the candidate contract,
-status-aware base/head blob records, an immutable local-finding receipt issued
-before remote review, separately collected GitHub findings, and
-class/outcome-specific base-owned assertions. The original pre-review receipt
-remains bound to first-reviewed head A; every remediation head has separate
-chronological Git coverage, execution receipt, and remote review evidence.
-Held-head pre-push checks bind current remote head A separately from clean
-local candidate B, and B must descend from A before `trusted_push_allowed`
-can become true. Candidates reference member-specific registry assertion IDs
-only and cannot choose one arbitrary file or witness sidecar as unrelated
-evidence. The checker runs the exact-base assertion program with fixed
-isolated argv over read-only real production workflow-governance artifacts and
-binds program/input/output identities in each receipt. Only exact top-level
-green approval or legacy exact clean text is clean. `pushedDate` never
-reconstructs head history.
 
 Both PR and master Build runs execute `host-tests`, `build`,
 `extended-host-tests`, `legacy`, and the seconds-only fail-closed `summary` in

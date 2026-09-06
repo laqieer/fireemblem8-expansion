@@ -35,17 +35,13 @@ it. In summary:
 - Use the structured feature-request and bug-report forms under
   [`.github/ISSUE_TEMPLATE/`](../.github/ISSUE_TEMPLATE/); they require the
   review/triage evidence consumed by the development workflow.
-- High-risk or large candidates use the
-  [executable review-family contract](workflow-pilot.md#sibling-family-review-convergence)
-  for one fresh read-only pre-review, clean exact-base import/object identity,
-  separate local and remote finding chronology, outcome-specific base-owned
-  assertions, status-aware blob coverage, complete sibling expansion, exact
-  top-level Copilot markers, enforced bounds, global node identities,
-  disjoint dispositions, and exact held-head holds.
-  Candidate code receives no GitHub/HMAC/push credential or authority;
-  nullable push timestamps never attest ref history. The introducing PR fails
-  closed for external coordinator review. This is not a human approval gate
-  and does not replace remote Copilot review.
+
+High-risk/large changes also use the
+[bounded sibling-family review contract](workflow-pilot.md#sibling-family-review-convergence)
+and its [indexed case](test-cases/workflow-governance.md#tc-workflow-review-family-001-expand-valid-findings-across-complete-sibling-families).
+One fresh read-only reviewer precedes remote review; actual findings expand
+to complete finite source-backed obligations. Third-round architecture holds
+never hide existing commits or replace the mandatory final gates.
 
 ## Security reporting
 
