@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast
+import errno
 import http.server
 import io
 import itertools
@@ -35,6 +36,7 @@ PATCH_RELEASE_REGISTRY = ROOT / "docs" / "test-cases" / "registry.json"
 MERGED_MASTER_771 = "771d38c5a531f2d63b269220727b02aa820cc3d4"
 FAILING_MASTER_8D81 = "8d81c30b298ef6265ba9c5335c3ca8c8f94e60e6"
 FAILING_MASTER_0456 = "0456f181ad53645a7bc2b677abab05978ab9f35c"
+FAILING_MASTER_5779 = "5779c38e245d9a14f063338b53851a97bb92d0c0"
 REVIEWED_RUNTIME_3_6EE = "6ee4766e6204d01f76b334edd2085e965fac5a66"
 ARTIFACT_FILENAMES = (
     "README.txt",
@@ -3536,13 +3538,13 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
             1,
         )
         leaked_github_env = self.text.replace(
-            "if /usr/bin/python3 -I -S /mnt/control/candidate-launcher.py",
-            'if GITHUB_ENV="$GITHUB_ENV" /usr/bin/python3 -I -S /mnt/control/candidate-launcher.py',
+            "if /usr/bin/python3 -I -S /mnt/control/publisher-inventory.py",
+            'if GITHUB_ENV="$GITHUB_ENV" /usr/bin/python3 -I -S /mnt/control/publisher-inventory.py',
             1,
         )
         leaked_bash_env = self.text.replace(
-            "if /usr/bin/python3 -I -S /mnt/control/candidate-launcher.py",
-            'if BASH_ENV="$BASH_ENV" /usr/bin/python3 -I -S /mnt/control/candidate-launcher.py',
+            "if /usr/bin/python3 -I -S /mnt/control/publisher-inventory.py",
+            'if BASH_ENV="$BASH_ENV" /usr/bin/python3 -I -S /mnt/control/publisher-inventory.py',
             1,
         )
         inherited_actions_log = self.text.replace(
@@ -3551,7 +3553,7 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
             1,
         )
         disabled_child_fd_close = self.text.replace(
-            "if /usr/bin/python3 -I -S /mnt/control/candidate-launcher.py",
+            "if /usr/bin/python3 -I -S /mnt/control/publisher-inventory.py",
             "if /bin/bash",
             1,
         )
@@ -3582,8 +3584,8 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
             1,
         )
         hidden_sys_membership = self.text.replace(
-            '/usr/bin/python3 -I -S /mnt/control/publisher-programs.py membership "$$"',
-            '/usr/bin/python3 -I -S /mnt/control/publisher-programs.py membership "$$" "$cgroup_path/cgroup.procs"',
+            '/usr/bin/python3 -I -S /mnt/control/publisher-inventory.py --runtime-program membership "$$"',
+            '/usr/bin/python3 -I -S /mnt/control/publisher-inventory.py --runtime-program membership "$$" "$cgroup_path/cgroup.procs"',
             1,
         )
         exposed_supervisor_to_candidate = self.text.replace(
@@ -3594,13 +3596,13 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
             1,
         )
         leaked_github_output = self.text.replace(
-            "if /usr/bin/python3 -I -S /mnt/control/candidate-launcher.py",
-            'if GITHUB_OUTPUT="$GITHUB_OUTPUT" /usr/bin/python3 -I -S /mnt/control/candidate-launcher.py',
+            "if /usr/bin/python3 -I -S /mnt/control/publisher-inventory.py",
+            'if GITHUB_OUTPUT="$GITHUB_OUTPUT" /usr/bin/python3 -I -S /mnt/control/publisher-inventory.py',
             1,
         )
         leaked_step_summary = self.text.replace(
-            "if /usr/bin/python3 -I -S /mnt/control/candidate-launcher.py",
-            'if GITHUB_STEP_SUMMARY="$GITHUB_STEP_SUMMARY" /usr/bin/python3 -I -S /mnt/control/candidate-launcher.py',
+            "if /usr/bin/python3 -I -S /mnt/control/publisher-inventory.py",
+            'if GITHUB_STEP_SUMMARY="$GITHUB_STEP_SUMMARY" /usr/bin/python3 -I -S /mnt/control/publisher-inventory.py',
             1,
         )
         launch_stage_free_text = self.text.replace(
@@ -3742,13 +3744,13 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
             1,
         )
         structured_writable_mount_targets = self.text.replace(
-            "publisher-programs.py writable-mount-records",
-            "publisher-programs.py writable-mount-records --raw",
+            "--runtime-program writable-mount-records",
+            "--runtime-program writable-mount-records --raw",
             1,
         )
         nonuniq_writable_mount_targets = self.text.replace(
-            "publisher-programs.py writable-mount-records",
-            "publisher-programs.py writable-mount-records --no-uniq",
+            "--runtime-program writable-mount-records",
+            "--runtime-program writable-mount-records --no-uniq",
             1,
         )
         retained_dev_descendants = self.text.replace(
@@ -3757,8 +3759,8 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
             1,
         )
         escaped_dev_targets = self.text.replace(
-            "publisher-programs.py dev-mount-targets",
-            "publisher-programs.py dev-mount-targets --raw",
+            "--runtime-program dev-mount-targets",
+            "--runtime-program dev-mount-targets --raw",
             1,
         )
         unchecked_dev_process_substitution = self.text.replace(
@@ -5919,6 +5921,8 @@ exit 37
             launcher = sandbox / "candidate-launcher.py"
             launcher.write_text(rootless_launcher, encoding="ascii")
             launcher.chmod(0o400)
+            bootstrap = sandbox / "publisher-inventory.py"
+            bootstrap.write_bytes((ROOT / "scripts/workflow_pilot/publisher_inventory.py").read_bytes())
             candidate = sandbox / "candidate-build.sh"
             candidate.write_text(
                 'test -z "${GITHUB_ENV-}${GITHUB_OUTPUT-}${GITHUB_STEP_SUMMARY-}${BASH_ENV-}"\n'
@@ -5959,7 +5963,8 @@ exit 37
                         launcher.chmod(0o400)
                         result = subprocess.run(
                             [
-                                "/usr/bin/python3", "-I", "-S", str(launcher),
+                                "/usr/bin/python3", "-I", "-S", str(bootstrap),
+                                "--runtime-program", "candidate-launcher",
                                 str(os.getuid()), str(os.getgid()), str(candidate),
                                 "/home/runner/work/_temp",
                             ],
@@ -5983,6 +5988,123 @@ exit 37
         for snapshot in (b"1\n", b"1\n17\n29\n", b"1\n17\n17\n"):
             with self.subTest(snapshot=snapshot), self.assertRaises(programs.ProgramError):
                 programs.validate_membership_snapshot(snapshot, 1, 17)
+
+    def test_supervisor_membership_runtime_accepts_wrapper_and_checker_only(self):
+        from scripts.workflow_pilot import publisher_inventory as authority
+
+        artifact_root = ROOT / "build/test-artifacts"
+        artifact_root.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(prefix="membership-fifo-", dir=artifact_root) as directory:
+            directory = Path(directory)
+            fifo = directory / "cgroup.procs"
+            os.mkfifo(fifo, 0o600)
+            source = (ROOT / authority.PROGRAM_PATH).read_text()
+            assignment, = [
+                node for node in ast.parse(source).body if isinstance(node, ast.Assign)
+                and any(isinstance(target, ast.Name) and target.id == "MEMBERSHIP_PATH" for target in node.targets)
+            ]
+            lines = source.splitlines(keepends=True)
+            lines[assignment.lineno - 1:assignment.end_lineno] = [f"MEMBERSHIP_PATH = {str(fifo)!r}\n"]
+            (directory / "publisher-programs.py").write_text("".join(lines))
+            (directory / "publisher-inventory.py").write_bytes(
+                (ROOT / "scripts/workflow_pilot/publisher_inventory.py").read_bytes()
+            )
+
+            def feed(process, payload):
+                deadline = time.monotonic() + 5
+                while time.monotonic() < deadline and process.poll() is None:
+                    try:
+                        descriptor = os.open(fifo, os.O_WRONLY | os.O_NONBLOCK)
+                    except OSError as error:
+                        if error.errno != errno.ENXIO:
+                            raise
+                        time.sleep(0.01)
+                        continue
+                    with os.fdopen(descriptor, "wb", buffering=0) as stream:
+                        stream.write(payload)
+                    return process.communicate(timeout=5)
+                self.fail("owned membership reader did not open its FIFO")
+
+            def run(payload):
+                process = subprocess.Popen(
+                    ["/usr/bin/python3", "-I", "-S", str(directory / "publisher-inventory.py"),
+                     "--runtime-program", "membership", str(os.getpid())],
+                    stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                )
+                try:
+                    stdout, stderr = feed(process, payload(os.getpid(), process.pid))
+                    self.assertFalse(Path(f"/proc/{process.pid}").exists(), "checker was not reaped")
+                    return process.returncode, stdout, stderr
+                finally:
+                    if process.poll() is None:
+                        process.kill()
+                        process.wait(timeout=5)
+
+            for reverse in (False, True):
+                with self.subTest(reverse=reverse):
+                    result = run(lambda wrapper, checker: (
+                        f"{checker}\n{wrapper}\n" if reverse else f"{wrapper}\n{checker}\n"
+                    ).encode("ascii"))
+                    self.assertEqual(result, (0, b"", b""))
+            for name, payload in (
+                ("empty", lambda w, c: b""),
+                ("wrapper-only", lambda w, c: f"{w}\n".encode()),
+                ("checker-only", lambda w, c: f"{c}\n".encode()),
+                ("duplicate-wrapper", lambda w, c: f"{w}\n{w}\n".encode()),
+                ("duplicate-checker", lambda w, c: f"{c}\n{c}\n".encode()),
+                ("extra", lambda w, c: f"{w}\n{c}\n{os.getppid()}\n".encode()),
+                ("signed", lambda w, c: f"{w}\n+{c}\n".encode()),
+                ("whitespace", lambda w, c: f"{w}\n {c}\n".encode()),
+                ("missing-newline", lambda w, c: f"{w}\n{c}".encode()),
+                ("oversized", lambda w, c: b"1" * 4097),
+            ):
+                with self.subTest(snapshot=name):
+                    status, stdout, stderr = run(payload)
+                    self.assertEqual(status, 125, stderr)
+                    self.assertEqual(stdout, b"")
+
+            historical = subprocess.check_output(
+                ["git", "--no-pager", "show", f"{FAILING_MASTER_5779}:.github/workflows/build.yml"],
+                cwd=ROOT, text=True,
+            )
+            script = named_step_run_script(
+                historical, "Build candidate in isolated namespace and stage public inputs",
+            )
+            start = script.index('cgroup_members="$(LC_ALL=C /usr/bin/sort -n')
+            end_marker = 'test "$cgroup_members" = "$$"'
+            old_check = script[start:script.index(end_marker, start) + len(end_marker)]
+            wrapper = subprocess.Popen(
+                ["/bin/bash", "--noprofile", "--norc", "-c",
+                 'supervisor_cgroup="$1"\n' + old_check, "--", str(directory)],
+                stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                start_new_session=True,
+            )
+            reader = None
+            try:
+                deadline = time.monotonic() + 5
+                children = Path(f"/proc/{wrapper.pid}/task/{wrapper.pid}/children")
+                while time.monotonic() < deadline and wrapper.poll() is None:
+                    for child in children.read_text().split():
+                        if Path(f"/proc/{child}/comm").read_text().strip() == "sort":
+                            reader = int(child)
+                            break
+                    if reader is not None:
+                        break
+                    time.sleep(0.01)
+                self.assertIsNotNone(reader, "historical external reader did not start")
+                self.assertEqual(os.getsid(reader), wrapper.pid)
+                stdout, stderr = feed(wrapper, f"{wrapper.pid}\n{reader}\n".encode("ascii"))
+                self.assertEqual((wrapper.returncode, stdout, stderr), (1, b"", b""))
+                self.assertFalse(Path(f"/proc/{reader}").exists(), "sort was not reaped")
+            finally:
+                if wrapper.poll() is None:
+                    if reader is not None:
+                        try:
+                            os.kill(reader, signal.SIGKILL)
+                        except ProcessLookupError:
+                            pass
+                    wrapper.kill()
+                    wrapper.wait(timeout=5)
 
     def test_builder_cleanup_suppresses_utility_path_stderr(self):
         section = builder_cleanup_functions_source(self.text)
@@ -7583,29 +7705,24 @@ exit 37
             compact,
         )
 
-    def test_patch_release_docs_use_runtime_diagnostic_stage_enum(self):
-        overview = " ".join(PATCH_RELEASE_OVERVIEW.read_text(encoding="utf-8").split())
-        case = " ".join(PATCH_RELEASE_CASE.read_text(encoding="utf-8").split())
+    def test_patch_release_diagnostic_case_maps_to_runtime_evidence(self):
         registry = json.loads(PATCH_RELEASE_REGISTRY.read_text(encoding="utf-8"))
         entry = next(item for item in registry["cases"] if item["id"] == "TC-CI-PATCH-049-002")
-        expected_result = " ".join(entry["expected_result"].split())
-        for text in (overview, case, expected_result):
-            self.assertIn("post-spawn", text)
-            self.assertIn("launch", text)
-            self.assertIn("isolated", text)
-            self.assertIn("cleanup", text)
-            self.assertIn("pre-spawn", text)
-            self.assertIn("post-child handoff validation", text)
-            self.assertIn("only stage text", text)
-            self.assertNotIn("isolated-build", text)
-            self.assertIn("self-stop", text)
-            self.assertIn("exact stopped child", text)
-            self.assertIn("kernel process", text)
-            self.assertIn("start time", text)
-            self.assertIn("no PID or process-group signal", text)
-            self.assertIn("primary `launch` rejection", text)
-            self.assertIn("no cleanup diagnostic", text)
-            self.assertIn("residual cgroup", text)
+        selectors = {
+            word for row in entry["automation"] for word in shlex.split(row["command"])
+            if word.startswith("tests.")
+        }
+        self.assertIn("tests.workflows.test_publisher_phase", selectors)
+        self.assertIn(
+            __name__ + ".PatchReleaseWorkflowTests.test_supervisor_membership_runtime_accepts_wrapper_and_checker_only",
+            selectors,
+        )
+        for selector in selectors:
+            loader = unittest.TestLoader()
+            suite = loader.loadTestsFromName(selector)
+            self.assertEqual(loader.errors, [], selector)
+            self.assertGreater(suite.countTestCases(), 0, selector)
+        self.assertEqual((ROOT / entry["document"]).resolve(), PATCH_RELEASE_CASE.resolve())
 
     def test_redirecting_download_follows_redirects_and_rejects_wrong_content(self):
         download = patch_release_download_command(self.text)

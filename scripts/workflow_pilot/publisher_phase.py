@@ -394,6 +394,69 @@ class _Machine:
         })
         self.setup_required["readonly-export"] = 1
 
+    def prerequisites(self, event: Event) -> None:
+        name = event.signature.removeprefix("builder_main.")
+        required = {
+            "bind-host-root": {"private-propagation"},
+            "readonly-host-root": {"bind-host-root"},
+            "private-directories": {"mount-work"},
+            "supervisor-directory": {"mount-work"},
+            "mount-supervisor": {"supervisor-directory"},
+            "supervisor-view-directory": {"mount-supervisor"},
+            "supervisor-owner": {"mount-supervisor"},
+            "supervisor-mode": {"mount-supervisor"},
+            "cgroup-bind": {
+                "join-cgroup", "cgroup-owner", "supervisor-view-directory",
+                "supervisor-owner", "supervisor-mode",
+            },
+            "cgroup-readonly": {"cgroup-bind"},
+            "cgroup-inode": {"cgroup-view-name", "cgroup-readonly"},
+            "cgroup-options": {"cgroup-view-name", "cgroup-readonly"},
+            "readonly-control": {
+                "bind-control", "install-candidate-script", "install-candidate-launcher",
+                "install-publisher-programs", "install-publisher-authority",
+            },
+            "dev-create": {"mount-supervisor"},
+            "dev-produce": {"dev-create", "readonly-control"},
+            "dev-read": {"dev-produce", "dev-limit"},
+            "dev-remove": {"dev-read"},
+            "dev-target": {"dev-read"},
+            "dev-unmount": {"dev-target"},
+            "remaining-dev-create": {"mount-supervisor"},
+            "remaining-dev-produce": {"remaining-dev-create", "dev-unmount"},
+            "remaining-dev-read": {"remaining-dev-produce", "dev-limit"},
+            "remaining-dev-remove": {"remaining-dev-read"},
+            "dev-remaining-count": {"remaining-dev-read"},
+            "dev-remaining-root": {"remaining-dev-read"},
+            "mount-dev": {"dev-remaining-count", "dev-remaining-root"},
+            "runtime-create": {"mount-shm"},
+            "runtime-produce": {"runtime-create", "readonly-dev", "readonly-proc"},
+            "runtime-read": {"runtime-produce", "runtime-limit"},
+            "runtime-remove": {"runtime-read"},
+            "runtime-count": {"runtime-read"},
+            "runtime-target": {"runtime-read", "runtime-count"},
+            "runtime-options": {"runtime-read", "runtime-count"},
+            "runtime-rejection": {"runtime-target", "runtime-options"},
+        }.get(name, set()).copy()
+        # These are the already-parsed input bindings, including parameters in
+        # nested stat/findmnt commands and redirects, not another shell parser.
+        for part in _walk(event.command):
+            if isinstance(part, shell.Part) and part.kind == "parameter":
+                initializer = "initialize-" + part.value
+                if initializer in self.setup_required:
+                    required.add(initializer)
+        if name == "stage-failure":
+            if _context("loop", "required-cgroup-options") in event.context:
+                required.add("cgroup-options")
+            elif _context("loop", "dev-descendants") in event.context:
+                required.add("dev-target")
+            elif _context("loop", "runtime-records") in event.context:
+                required.update(("runtime-target", "runtime-options"))
+            elif _context("case", "host-temp-boundary", "1") in event.context:
+                required.add("initialize-host_runner_temp")
+        _require(required <= self.setup.keys(),
+                 f"{name} before prerequisites: {', '.join(sorted(required - self.setup.keys()))}")
+
     def advance(self, before: Phase, after: Phase, event: Event) -> None:
         _require(self.phase == before, "missing, early, late or duplicate phase event")
         self.transitions.append(Transition(before, after, event))
@@ -401,6 +464,7 @@ class _Machine:
 
     def consume(self, event: Event) -> None:
         name = event.signature.removeprefix("builder_main.")
+        self.prerequisites(event)
         if name in self.error_only:
             if name in {"candidate-exit", "candidate-unknown"}:
                 expected_stage = "candidate-preflight"
@@ -493,28 +557,96 @@ class _Machine:
             self.setup[name] += 1
 
 
+class _ExecutionFrame:
+    """One inventory-emitted call, with fresh local transport values per call."""
+
+    def __init__(self, scope, stack, context, commands):
+        self.scope, self.stack, self.context = scope, stack, context
+        self.expected = Counter({
+            identity: 1 if item.nested else len(item.signature.events)
+            for identity, item in commands.items() if item.scope == scope
+        })
+        self.observed = Counter()
+        self.seen = set()
+
+    def consume(self, event, item):
+        _require(
+            event.scope == self.scope and event.signature == item.signature.name
+            and event.context == self.context + item.context
+            and event.accesses == item.signature.accesses
+            and event.kind in ((EventKind.COMMAND,) if item.nested else item.signature.events),
+            "event is not from its authorized call/control frame",
+        )
+        self.observed[id(event.command)] += 1
+        if item.nested:
+            return
+        name = event.signature.removeprefix(self.scope + ".")
+        required = set()
+        creator = self.scope.startswith("create_") and self.scope.endswith("_transport_file")
+        checker = self.scope.startswith("checked_") and self.scope.endswith("_transport_signature")
+        reader = self.scope.startswith("read_checked_") and self.scope.endswith("_transport_file")
+        remover = self.scope.startswith("remove_") and self.scope.endswith("_transport_file")
+        if creator or checker:
+            if name in {"regular", "not-symlink", "file-type", "owner", "mode", "links", "size"}:
+                required.add("create" if creator else "local-path")
+            if name == "create":
+                required.add("local-path")
+            if name == "file-type":
+                required.add("local-type")
+            if name == "size":
+                required.add("local-size")
+            if name == "size-limit":
+                required.update(("size", "local-limit"))
+            if name == "reject" and any(
+                c.kind == "case" and c.identity == self.scope + ".regular-type"
+                for c in item.context
+            ):
+                required.add("file-type")
+                self.seen.add("type-checked")
+            if name in {"emit-path", "signature"}:
+                required.update(("regular", "not-symlink", "type-checked", "owner", "mode", "links"))
+                if checker:
+                    required.add("size-limit")
+        elif reader:
+            required.update({
+                "before": {"local-path", "local-limit", "local-signature"},
+                "read": {"before", "local-output"},
+                "after": {"read"},
+            }.get(name, ()))
+        elif remover:
+            required.update({"remove": {"local-path"}, "absent": {"remove"}}.get(name, ()))
+        _require(required <= self.seen,
+                 f"{self.scope}.{name} before local prerequisites: {', '.join(sorted(required - self.seen))}")
+        self.seen.add(name)
+
+    def finish(self):
+        _require(self.observed == self.expected, "missing or repeated helper execution event")
+
+
 def validate(analysis: Analysis) -> tuple[Transition, ...]:
     """Validate the mandatory runtime success path of inventory-authorized AST."""
     _frames(analysis)
     _structure(analysis)
-    primary = {
-        id(item.command): item for item in analysis.commands
-        if not item.nested and item.scope == "builder_main"
-    }
+    commands = {id(item.command): item for item in analysis.commands}
+    registry = reviewed_inventory()
+    scopes = {scope.name for scope in registry.scopes}
+    frames = [_ExecutionFrame("entry", (), (), commands)]
     machine = _Machine()
-    observed = Counter()
     for event in analysis.events:
-        item = primary.get(id(event.command))
-        if item is None:
-            continue
-        _require(
-            event.signature == item.signature.name and event.kind in item.signature.events
-            and event.context == item.context and event.scope == item.scope
-            and event.call_stack == ("builder_main",),
-            "event is not from the authorized builder control frame",
-        )
-        observed[id(event.command)] += 1
-        machine.consume(event)
-    _require(observed == Counter({identity: 1 for identity in primary}), "missing or repeated execution event")
+        item = commands.get(id(event.command))
+        _require(item is not None, "event has no authorized command")
+        while frames and frames[-1].stack != event.call_stack:
+            frames.pop().finish()
+        _require(bool(frames), "event escaped its authorized helper invocation")
+        frames[-1].consume(event, item)
+        if not item.nested and item.scope == "builder_main":
+            machine.consume(event)
+        executable = registry._invocation(item.command, item.scope).executable
+        if executable is not None and executable.literal in scopes:
+            frames.append(_ExecutionFrame(
+                executable.literal, event.call_stack + (executable.literal,), event.context, commands,
+            ))
+    for frame in reversed(frames):
+        frame.finish()
     _require(machine.success and machine.phase == Phase.POST_CHECKED, "publisher phase sequence is incomplete")
     return tuple(machine.transitions)

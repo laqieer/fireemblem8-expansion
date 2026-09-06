@@ -319,22 +319,23 @@ class PublisherCommandInventoryTests(unittest.TestCase):
         self.assertEqual(signature.occurrences, 1)
         self.assertEqual(signature.events, (authority.EventKind.MEMBERSHIP_VERIFIED,))
         self.assertEqual(signature.program.outputs, ())
-        self.assertEqual(signature.program.runtime_path, authority.PROGRAM_RUNTIME_PATH)
+        self.assertEqual(signature.program.runtime_path, authority.AUTHORITY_RUNTIME_PATH)
         for command in (
-            '/usr/bin/python3 -I -S /mnt/control/publisher-programs.py membership "$$"',
+            '/usr/bin/python3 -I -S /mnt/control/publisher-inventory.py --runtime-program membership "$$"',
         ):
             self.assertEqual(self.inventory.authorize(shell.command(command), "builder_main"), signature)
             with self.assertRaisesRegex(ValueError, "multiplicity"):
                 self.inventory.validate(self.source.replace("cd /\n", "cd /\n" + command + "\n", 1))
         for source in (
-            '/usr/bin/python -I -S /mnt/control/publisher-programs.py membership "$$"',
-            '/usr/bin/python3 -S /mnt/control/publisher-programs.py membership "$$"',
-            '/usr/bin/python3 -I -S /candidate/publisher-programs.py membership "$$"',
-            '/usr/bin/python3 -I -S /mnt/control/publisher-programs.py membership "$1"',
-            '/usr/bin/python3 -I -S /mnt/control/publisher-programs.py membership "$$" /another',
-            '/usr/bin/python3 -I -S /mnt/control/publisher-programs.py membership "$$" > /dev/null',
-            '/usr/bin/python3 -I -S /mnt/control/publisher-programs.py membership "$$" 2>&1',
-            '/usr/bin/python3 -I -S /mnt/control/publisher-programs.py membership "$$" < /unregistered',
+            '/usr/bin/python -I -S /mnt/control/publisher-inventory.py --runtime-program membership "$$"',
+            '/usr/bin/python3 -S /mnt/control/publisher-inventory.py --runtime-program membership "$$"',
+            '/usr/bin/python3 -I -S /candidate/publisher-inventory.py --runtime-program membership "$$"',
+            '/usr/bin/python3 -I -S /mnt/control/publisher-inventory.py --runtime-program membership "$1"',
+            '/usr/bin/python3 -I -S /mnt/control/publisher-inventory.py --runtime-program membership "$$" /another',
+            '/usr/bin/python3 -I -S /mnt/control/publisher-inventory.py --runtime-program membership "$$" > /dev/null',
+            '/usr/bin/python3 -I -S /mnt/control/publisher-inventory.py --runtime-program membership "$$" 2>&1',
+            '/usr/bin/python3 -I -S /mnt/control/publisher-inventory.py --runtime-program membership "$$" < /unregistered',
+            '/usr/bin/python3 -I -S /mnt/control/publisher-programs.py membership "$$"',
         ):
             with self.subTest(source=source), self.assertRaises(ValueError):
                 self.inventory.authorize(shell.command(source), "builder_main")
@@ -957,18 +958,48 @@ class PublisherProgramTests(unittest.TestCase):
                 opened.assert_not_called()
 
     def test_real_isolated_canonical_program_emits_decoded_mount_records(self):
-        completed = subprocess.run(
-            ["/usr/bin/python3", "-I", "-S", str(ROOT / authority.PROGRAM_PATH), "dev-mount-targets"],
-            env={"PATH": "/usr/bin:/bin", "PYTHONPATH": "/unregistered", "PYTHONSTARTUP": "/unregistered"},
-            capture_output=True, check=False,
-        )
-        self.assertEqual(completed.returncode, 0, completed.stderr)
-        self.assertEqual(completed.stderr, b"")
-        self.assertTrue(completed.stdout.endswith(b"\0"))
-        records = completed.stdout.split(b"\0")[:-1]
-        self.assertEqual(records[0], b"/dev")
-        self.assertEqual(len(records), len(set(records)))
-        self.assertTrue(all(record == b"/dev" or record.startswith(b"/dev/") for record in records))
+        directory = ROOT / "build/test-artifacts" / ("publisher-entry-" + uuid.uuid4().hex)
+        directory.mkdir(parents=True)
+        self.addCleanup(shutil.rmtree, directory)
+        for source, target in (
+            (authority.PROGRAM_PATH, "publisher-programs.py"),
+            ("scripts/workflow_pilot/publisher_inventory.py", "publisher-inventory.py"),
+        ):
+            shutil.copyfile(ROOT / source, directory / target)
+
+        def run(*arguments):
+            return subprocess.run(
+                ["/usr/bin/python3", "-I", "-S", str(directory / "publisher-inventory.py"),
+                 "--runtime-program", *arguments],
+                env={"PATH": "/usr/bin:/bin", "PYTHONPATH": "/unregistered", "PYTHONSTARTUP": "/unregistered"},
+                capture_output=True, check=False, timeout=10,
+            )
+
+        for mode in ("dev-mount-targets", "writable-mount-records"):
+            with self.subTest(mode=mode):
+                completed = run(mode)
+                self.assertEqual(completed.returncode, 0, completed.stderr)
+                self.assertEqual(completed.stderr, b"")
+                self.assertTrue(completed.stdout.endswith(b"\0"))
+                records = completed.stdout.split(b"\0")[:-1]
+                if mode == "dev-mount-targets":
+                    self.assertEqual(records[0], b"/dev")
+                    self.assertEqual(len(records), len(set(records)))
+                    self.assertTrue(all(record == b"/dev" or record.startswith(b"/dev/") for record in records))
+                else:
+                    self.assertEqual(len(records) % 2, 0)
+                    self.assertIn(b"/", records[::2])
+                    self.assertEqual(len(records[::2]), len(set(records[::2])))
+                    self.assertTrue(all(option for option in records[1::2]))
+        for arguments in (
+            (), ("../publisher-programs.py",), ("/mnt/source/other.py",),
+            ("dev-mount-targets", "/alternate"), ("membership",),
+            ("post-check",), ("candidate-launcher",),
+        ):
+            with self.subTest(arguments=arguments):
+                completed = run(*arguments)
+                self.assertEqual(completed.returncode, 125, completed.stderr)
+                self.assertEqual(completed.stdout, b"")
 
 
 class PublisherExactTreeTests(unittest.TestCase):
@@ -1343,7 +1374,7 @@ class PublisherExactTreeTests(unittest.TestCase):
         runtime.mkdir(parents=True)
         commands = contract.bash_logical_lines(step["run"], label="fresh staging")
         shell_argv = shlex.split(step["shell"])[:-1]
-        environment_line, *git_lines = commands[:3]
+        environment_line, *git_lines = commands[:4]
         for git_line in git_lines:
             completed = subprocess.run(
                 [*shell_argv, "-c", git_line],
@@ -1359,7 +1390,7 @@ class PublisherExactTreeTests(unittest.TestCase):
         self.assertEqual(completed.returncode, 0, completed.stderr)
         self.assertEqual(
             {path.name for path in runtime.iterdir()},
-            {"publisher-programs.py", "candidate-launcher.py"},
+            {"publisher-programs.py", "candidate-launcher.py", "publisher-inventory.py"},
         )
         transport_commands = []
         for line in commands:
@@ -1393,6 +1424,8 @@ class PublisherExactTreeTests(unittest.TestCase):
             (authority.PROGRAM_PATH, "publisher-programs.py", authority.PROGRAM_RUNTIME_PATH),
             ("scripts/workflow_pilot/publisher_candidate.py", "candidate-launcher.py",
              "/mnt/control/candidate-launcher.py"),
+            ("scripts/workflow_pilot/publisher_inventory.py", "publisher-inventory.py",
+             authority.AUTHORITY_RUNTIME_PATH),
         ):
             with self.subTest(program=name):
                 staged = runtime / name
@@ -1487,6 +1520,86 @@ class PublisherExactTreeTests(unittest.TestCase):
                 self.assertEqual(completed.returncode, 1, completed.stderr)
                 self.assertIn(b"standalone publisher program", completed.stderr)
                 self.assertNotIn(b"authority differs from exact tree", completed.stderr)
+
+    def test_standalone_runtime_closes_the_committed_foreign_loader_route(self):
+        from tests.workflows.test_publisher_phase import require_phase_namespace, run_phase_namespace
+
+        require_phase_namespace()
+        marker = self.directory / "foreign-code-executed"
+        entered = self.directory / "captured-entry-executed"
+        foreign_path = "scripts/workflow_pilot/launcher_support.py"
+        (self.directory / foreign_path).write_text(
+            f"from pathlib import Path\nPath({str(marker)!r}).write_text('owned foreign marker')\n"
+        )
+        self.paths = (*self.paths, foreign_path)
+        runtime = self.directory / "runtime"
+        runtime.mkdir()
+        bootstrap = "scripts/workflow_pilot/publisher_inventory.py"
+        shutil.copyfile(self.directory / bootstrap, runtime / "publisher-inventory.py")
+        setup = r'''
+/usr/bin/mount --make-rprivate /
+/usr/bin/mount -t tmpfs -o size=1m,nosuid,nodev fixture /mnt
+/usr/bin/mkdir /mnt/source
+/usr/bin/mount --bind "$1" /mnt/source
+/usr/bin/mount -o remount,bind,ro,nosuid,nodev,noexec /mnt/source
+shift
+exec "$@"
+'''
+        for signature_name, source_path, staged_name in (
+            ("builder_main.candidate-launch", "scripts/workflow_pilot/publisher_candidate.py", "candidate-launcher.py"),
+            ("builder_main.membership-check", authority.PROGRAM_PATH, "publisher-programs.py"),
+        ):
+            source = self.directory / source_path
+            original = source.read_text()
+            insertion = original.index("import os\n")
+            for operation in (
+                "loader.exec_module(types.ModuleType('owned_foreign'))",
+                "run = loader.exec_module\nrun(types.ModuleType('owned_foreign'))",
+            ):
+                with self.subTest(program=staged_name, operation=operation):
+                    marker.unlink(missing_ok=True)
+                    entered.unlink(missing_ok=True)
+                    payload = (
+                        "from pathlib import Path as OwnedPath\n"
+                        "import sys as startup\n"
+                        "assert startup.flags.isolated and startup.flags.no_site\n"
+                        f"OwnedPath({str(entered)!r}).write_text('captured entry')\n"
+                        "import importlib.machinery, types\n"
+                        f"loader = importlib.machinery.SourceFileLoader('owned_foreign', '/mnt/source/{foreign_path}')\n"
+                        + operation + "\n"
+                    )
+                    source.write_text(original[:insertion] + payload + original[insertion:])
+                    self.snapshot()
+                    preflight = self.cli()
+                    self.assertEqual(preflight.returncode, 0, preflight.stderr)
+                    self.assertFalse(marker.exists(), "preflight must keep program payloads DATA-only")
+                    self.assertFalse(entered.exists())
+                    staged = runtime / staged_name
+                    shutil.copyfile(source, staged)
+                    raw = run_phase_namespace(
+                        setup, str(self.directory), "/usr/bin/python3", "-I", "-S", str(staged),
+                    )
+                    self.assertEqual(raw.returncode, 125, raw.stderr)
+                    self.assertEqual(marker.read_text(), "owned foreign marker")
+                    marker.unlink()
+                    entered.unlink()
+                    signature = next(
+                        row for row in authority.reviewed_inventory().signatures
+                        if row.name == signature_name
+                    )
+                    argv = [
+                        word.literal for word in signature.form.argv
+                        if word.literal is not None
+                    ]
+                    argv = [
+                        str(runtime / Path(word).name) if word.startswith("/mnt/control/") else word
+                        for word in argv
+                    ]
+                    guarded = run_phase_namespace(setup, str(self.directory), *argv)
+                    self.assertEqual(guarded.returncode, 125, guarded.stderr)
+                    self.assertEqual(entered.read_text(), "captured entry")
+                    self.assertFalse(marker.exists(), "foreign code ran through the production entry")
+            source.write_text(original)
 
     def test_committed_candidate_import_and_loaders_cannot_execute_program_data(self):
         marker = self.directory / "candidate-data-executed"

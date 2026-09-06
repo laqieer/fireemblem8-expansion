@@ -109,6 +109,89 @@ def adversarial_workflows(workflow):
         yield name, inventory.replace_builder(workflow, source)
 
 
+def prerequisite_builders(source):
+    for name, moved, target in (
+        ("cgroup-use-before-input", "initialize-cgroup_path", "join-cgroup"),
+        ("cgroup-bind-before-owner", "cgroup-owner", "cgroup-bind"),
+        ("cgroup-readonly-before-bind", "cgroup-bind", "cgroup-readonly"),
+        ("cgroup-inode-before-readonly", "cgroup-readonly", "cgroup-inode"),
+        ("cgroup-inode-before-alias", "cgroup-view-name", "cgroup-inode"),
+        ("cgroup-options-before-readonly", "cgroup-readonly", "cgroup-options"),
+        ("cgroup-options-before-alias", "cgroup-view-name", "cgroup-options"),
+        ("dev-read-before-produce", "dev-produce", "dev-read"),
+        ("dev-produce-before-create", "dev-create", "dev-produce"),
+        ("dev-remove-before-read", "dev-read", "dev-remove"),
+        ("dev-read-before-limit", "dev-limit", "dev-read"),
+        ("remaining-read-before-produce", "remaining-dev-produce", "remaining-dev-read"),
+        ("remaining-produce-before-create", "remaining-dev-create", "remaining-dev-produce"),
+        ("remaining-remove-before-read", "remaining-dev-read", "remaining-dev-remove"),
+        ("remaining-count-before-read", "remaining-dev-read", "dev-remaining-count"),
+        ("remaining-root-before-read", "remaining-dev-read", "dev-remaining-root"),
+        ("runtime-read-before-produce", "runtime-produce", "runtime-read"),
+        ("runtime-produce-before-create", "runtime-create", "runtime-produce"),
+        ("runtime-remove-before-read", "runtime-read", "runtime-remove"),
+        ("runtime-count-before-read", "runtime-read", "runtime-count"),
+    ):
+        yield name, move_command(source, moved, target, after=True)
+
+    for kind in ("supervisor", "runtime"):
+        helper = f"read_checked_{kind}_transport_file"
+        analyzed = authority.reviewed_inventory().validate(source)
+        commands = {
+            item.signature.name.removeprefix(helper + "."): item.command
+            for item in analyzed.commands if not item.nested and item.scope == helper
+        }
+        for moved, target in (
+            ("before", "read"), ("after", "before"),
+            ("local-path", "before"), ("local-limit", "before"),
+            ("local-output", "read"), ("local-signature", "before"),
+        ):
+            item, destination = commands[moved], commands[target]
+            # Move the whole checked chain, not just one operand of ||.
+            start = source.rfind("\n", 0, item.offset) + 1
+            end = source.index("\n", item.end) + 1
+            position = source.index("\n", destination.end) + 1
+            edits = ((start, end, ""), (position, position, source[start:end]))
+            changed = source
+            for left, right, replacement in sorted(edits, reverse=True):
+                changed = changed[:left] + replacement + changed[right:]
+            yield f"{kind}-{moved}-after-{target}", changed
+
+    for name, initial, boundary in (
+        ("cgroup-options-after-check", "cgroup-options", 'for option in ro nosuid nodev noexec; do'),
+        ("dev-target-after-use", "dev-target", 'case "$dev_mount" in'),
+        ("runtime-target-after-use", "runtime-target", 'case ",$mount_options," in'),
+        ("runtime-options-after-use", "runtime-options", 'case ",$mount_options," in'),
+    ):
+        item = command(source, initial)
+        start = source.rfind("\n", 0, item.offset) + 1
+        end = source.index("\n", item.end) + 1
+        case_start = source.index(boundary)
+        closing = "done" if name.startswith("cgroup-") else "esac"
+        position = source.index("\n", source.index(closing, case_start)) + 1
+        if name.startswith("runtime-"):
+            position = source.index("\n", source.index("esac", position)) + 1
+        changed = source
+        for left, right, replacement in sorted(
+            ((start, end, ""), (position, position, source[start:end])), reverse=True,
+        ):
+            changed = changed[:left] + replacement + changed[right:]
+        yield name, changed
+
+    start = source.index('remaining_dev_mounts_file="$(create_supervisor_transport_file')
+    end_node = command(source, "remaining-dev-remove")
+    end = source.index("\n", end_node.end) + 1
+    position = source.index("for ((index=${#dev_mounts[@]}")
+    yield "remaining-snapshot-before-unmount", (
+        source[:position] + source[start:end] + source[position:start] + source[end:]
+    )
+
+
+def prerequisite_workflows(workflow):
+    for name, source in prerequisite_builders(inventory.builder(workflow)):
+        yield name, inventory.replace_builder(workflow, source)
+
+
 def producer_workflows(workflow):
     name = "Build candidate in isolated namespace and stage public inputs"
     source = contract.publisher_run_script(workflow, name)

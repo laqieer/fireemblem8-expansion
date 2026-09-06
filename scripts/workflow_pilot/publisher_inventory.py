@@ -28,6 +28,7 @@ CASE_ID = "TC-WORKFLOW-PUBLISHER-COMMAND-INVENTORY-001"
 WORKFLOW_PATH = ".github/workflows/build.yml"
 PROGRAM_PATH = "scripts/workflow_pilot/publisher_programs.py"
 PROGRAM_RUNTIME_PATH = "/mnt/control/publisher-programs.py"
+AUTHORITY_RUNTIME_PATH = "/mnt/control/publisher-inventory.py"
 STANDALONE_PROGRAM_PATHS = frozenset({
     PROGRAM_PATH, "scripts/workflow_pilot/publisher_candidate.py",
 })
@@ -528,8 +529,8 @@ class Inventory:
         commands = [item for item in analysis.commands if not item.nested]
         if (
             not commands or commands[0].signature.name != "staging.git-environment"
-            or {item.signature.name for item in commands[1:3]} != {
-                "staging.program-source", "staging.candidate-source",
+            or {item.signature.name for item in commands[1:4]} != {
+                "staging.program-source", "staging.candidate-source", "staging.authority-source",
             }
         ):
             raise InventoryError("publisher program staging order differs")
@@ -1120,10 +1121,13 @@ def _audit_source_execution(event, arguments):
 
 
 @contextmanager
-def _source_only_authority(sources):
+def _source_only_authority(sources, *, program=None):
     """Exclude both on-disk caches and previously imported repository modules."""
     global _ACTIVE_SOURCE_AUTHORITY, _EXECUTION_AUDIT_INSTALLED
     loader = _SourceOnlyAuthority(sources)
+    if program is not None:
+        filename, source = program
+        loader.executable_sources[filename] = source
     if not _EXECUTION_AUDIT_INSTALLED:
         sys.addaudithook(_audit_source_execution)
         _EXECUTION_AUDIT_INSTALLED = True
@@ -1235,7 +1239,47 @@ def _public_analysis(analysis) -> Analysis:
     return copy(analysis)
 
 
+def _runtime_program(arguments: list[str]) -> int:
+    """Run one fixed control-mount payload through the existing source guard.
+
+    This is an executable-source boundary, not a sandbox for hostile Python or
+    its OS/native APIs. The bootstrap and stdlib remain trusted. No repository
+    modules, caches or caller-selected program paths join the runtime closure.
+    """
+    if not arguments:
+        return 125
+    mode, *arguments = arguments
+    if mode == "candidate-launcher":
+        name = "candidate-launcher.py"
+    elif mode in {"dev-mount-targets", "writable-mount-records", "membership", "post-check"}:
+        name = "publisher-programs.py"
+        arguments.insert(0, mode)
+    else:
+        return 125
+    directory = Path(__file__).resolve().parent
+    filename = str(directory / name)
+    try:
+        source, _executable = _read_authority_file(directory, name)
+        previous_argv = sys.argv
+        try:
+            sys.argv = [filename, *arguments]
+            with _source_only_authority({}, program=(filename, source)):
+                namespace = {"__name__": "__main__", "__file__": filename, "__package__": None}
+                try:
+                    exec(compile(source, filename, "exec", dont_inherit=True), namespace)
+                except SystemExit as error:
+                    return error.code if type(error.code) is int else 125
+        finally:
+            sys.argv = previous_argv
+    except (OSError, ValueError):
+        return 125
+    return 0
+
+
 def main(arguments: list[str] | None = None) -> int:
+    arguments = list(sys.argv[1:] if arguments is None else arguments)
+    if arguments[:1] == ["--runtime-program"]:
+        return _runtime_program(arguments[1:])
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--repository-root", type=Path, required=True)
     parser.add_argument("--commit", required=True)

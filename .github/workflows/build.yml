@@ -1712,6 +1712,8 @@ jobs:
           > "$PATCH_RUNTIME_ROOT/publisher-programs.py"
         /usr/bin/git show "$PATCH_COMMIT:scripts/workflow_pilot/publisher_candidate.py" \
           > "$PATCH_RUNTIME_ROOT/candidate-launcher.py"
+        /usr/bin/git show "$PATCH_COMMIT:scripts/workflow_pilot/publisher_inventory.py" \
+          > "$PATCH_RUNTIME_ROOT/publisher-inventory.py"
         builder_user=ci-patch-builder
         builder_uid=""
         builder_gid=""
@@ -2150,6 +2152,8 @@ jobs:
           /mnt/control/candidate-launcher.py
         /usr/bin/install -m 0444 "$host_runner_temp/patch-runtime/publisher-programs.py" \
           /mnt/control/publisher-programs.py
+        /usr/bin/install -m 0444 "$host_runner_temp/patch-runtime/publisher-inventory.py" \
+          /mnt/control/publisher-inventory.py
         /usr/bin/chown -R "$builder_uid:$builder_gid" \
           /mnt/handoff /mnt/home /mnt/source /mnt/tmp
         /usr/bin/mount --bind /mnt/control /mnt/control
@@ -2177,7 +2181,7 @@ jobs:
           -o nosuid,nodev,noexec,mode=1777,size=256m \
           builder-tmp /tmp
         list_dev_mount_targets() {
-          /usr/bin/python3 -I -S /mnt/control/publisher-programs.py dev-mount-targets
+          /usr/bin/python3 -I -S /mnt/control/publisher-inventory.py --runtime-program dev-mount-targets
         }
         create_supervisor_transport_file() {
           local path
@@ -2269,7 +2273,7 @@ jobs:
         /usr/bin/mount -o remount,ro,nosuid /dev
         /usr/bin/mount -o remount,ro,nosuid,nodev,noexec,hidepid=2 /proc
         list_writable_mount_records() {
-          /usr/bin/python3 -I -S /mnt/control/publisher-programs.py writable-mount-records
+          /usr/bin/python3 -I -S /mnt/control/publisher-inventory.py --runtime-program writable-mount-records
         }
         create_runtime_transport_file() {
           local path
@@ -2350,7 +2354,7 @@ jobs:
         ulimit -u 512
         ulimit -v 8388608
         isolated_stage=candidate-preflight
-        if /usr/bin/python3 -I -S /mnt/control/candidate-launcher.py \
+        if /usr/bin/python3 -I -S /mnt/control/publisher-inventory.py --runtime-program candidate-launcher \
           "$builder_uid" "$builder_gid" \
           /mnt/control/candidate-build.sh "$host_runner_temp"
         then
@@ -2366,7 +2370,7 @@ jobs:
           esac
         fi
         isolated_stage=output-validate
-        /usr/bin/python3 -I -S /mnt/control/publisher-programs.py membership "$$"
+        /usr/bin/python3 -I -S /mnt/control/publisher-inventory.py --runtime-program membership "$$"
         handoff_names="$(/usr/bin/find /mnt/handoff -mindepth 1 \
           -maxdepth 1 -printf '%f\n' | LC_ALL=C /usr/bin/sort)"
         test "$handoff_names" = "$(printf 'metadata.json\ntarget.gba')"
@@ -2391,7 +2395,7 @@ jobs:
           /mnt/export/metadata.json
         isolated_stage=post-check
         /usr/bin/mount -o remount,bind,ro,nosuid,nodev,noexec /mnt/export
-        /usr/bin/python3 -I -S /mnt/control/publisher-programs.py post-check \
+        /usr/bin/python3 -I -S /mnt/control/publisher-inventory.py --runtime-program post-check \
           "$$" "$host_uid" "$host_gid"
         exit 0
         }

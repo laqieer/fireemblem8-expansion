@@ -1247,6 +1247,18 @@
         {
           "command": "python3 -m unittest tests.workflows.test_patch_release_workflow -v",
           "evidence": "tests/workflows/test_patch_release_workflow.py"
+        },
+        {
+          "command": "python3 -m unittest -v tests.workflows.test_publisher_phase",
+          "evidence": "tests/workflows/test_publisher_phase.py"
+        },
+        {
+          "command": "python3 -m unittest -v tests.workflows.test_publisher_command_inventory.PublisherExactTreeTests.test_standalone_runtime_closes_the_committed_foreign_loader_route",
+          "evidence": "tests/workflows/test_publisher_command_inventory.py"
+        },
+        {
+          "command": "python3 -m unittest -v tests.workflows.test_patch_release_workflow.PatchReleaseWorkflowTests.test_supervisor_membership_runtime_accepts_wrapper_and_checker_only",
+          "evidence": "tests/workflows/test_patch_release_workflow.py"
         }
       ]
     },

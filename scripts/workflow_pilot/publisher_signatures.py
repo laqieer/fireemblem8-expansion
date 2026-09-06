@@ -10,7 +10,7 @@ from __future__ import annotations
 from . import publisher_shell as shell
 from .publisher_inventory import (
     Access, Context, Control, EventKind, Family, Inventory, Placement, Program, Resource,
-    ResourceAccess, Scope, Signature, PROGRAM_PATH, PROGRAM_RUNTIME_PATH,
+    ResourceAccess, Scope, Signature, PROGRAM_PATH, PROGRAM_RUNTIME_PATH, AUTHORITY_RUNTIME_PATH,
     control_header, normalize_invocation,
 )
 from .publisher_producer_signatures import register as register_producer
@@ -219,6 +219,7 @@ def inventory() -> Inventory:
         ("candidate-script", "0555", '"$candidate_script"', "/mnt/control/candidate-build.sh"),
         ("candidate-launcher", "0444", '"$candidate_launcher"', "/mnt/control/candidate-launcher.py"),
         ("publisher-programs", "0444", '"$host_runner_temp/patch-runtime/publisher-programs.py"', PROGRAM_RUNTIME_PATH),
+        ("publisher-authority", "0444", '"$host_runner_temp/patch-runtime/publisher-inventory.py"', AUTHORITY_RUNTIME_PATH),
     ):
         main(f"install-{name}", f"/usr/bin/install -m {mode} {source} {target}", Resource.CONTROL, Access.CREATE)
     main(
@@ -247,11 +248,11 @@ def inventory() -> Inventory:
         ("list_writable_mount_records", "writable-mount-records", Resource.RUNTIME),
     ):
         program = Program(
-            mode, PROGRAM_PATH, PROGRAM_RUNTIME_PATH, mode, mount_program_input,
+            mode, PROGRAM_PATH, AUTHORITY_RUNTIME_PATH, "--runtime-program", mount_program_input,
             (ResourceAccess(resource, Access.WRITE),),
         )
         add(
-            helper, "program", f"/usr/bin/python3 -I -S {PROGRAM_RUNTIME_PATH} {mode}",
+            helper, "program", f"/usr/bin/python3 -I -S {AUTHORITY_RUNTIME_PATH} --runtime-program {mode}",
             Resource.MOUNT_GRAPH, Access.READ, program=program,
             event=EventKind.MOUNT_AUDIT, extra=program.outputs,
         )
@@ -342,11 +343,11 @@ def inventory() -> Inventory:
         main(f"limit-{option}", f"ulimit -{option} {limit}", Resource.PROCESS, Access.WRITE)
     launcher = Program(
         "candidate-launcher", "scripts/workflow_pilot/publisher_candidate.py",
-        "/mnt/control/candidate-launcher.py", None,
+        AUTHORITY_RUNTIME_PATH, "--runtime-program",
         (ResourceAccess(Resource.CONTROL, Access.READ),),
         (ResourceAccess(Resource.CANDIDATE, Access.EXECUTE),),
     )
-    launch = '/usr/bin/python3 -I -S /mnt/control/candidate-launcher.py "$builder_uid" "$builder_gid" /mnt/control/candidate-build.sh "$host_runner_temp"'
+    launch = f'/usr/bin/python3 -I -S {AUTHORITY_RUNTIME_PATH} --runtime-program candidate-launcher "$builder_uid" "$builder_gid" /mnt/control/candidate-build.sh "$host_runner_temp"'
     main(
         "candidate-launch", launch,
         Resource.CANDIDATE, Access.EXECUTE, event=EventKind.CANDIDATE_LAUNCH,
@@ -383,13 +384,13 @@ def inventory() -> Inventory:
         context=candidate_failure + case("candidate-failure", 2),
     )
     membership = Program(
-        "membership", PROGRAM_PATH, PROGRAM_RUNTIME_PATH, "membership",
+        "membership", PROGRAM_PATH, AUTHORITY_RUNTIME_PATH, "--runtime-program",
         (ResourceAccess(Resource.CGROUP_VIEW, Access.READ), ResourceAccess(Resource.PROCESS, Access.INSPECT)),
         (),
     )
     main(
         "membership-check",
-        f'/usr/bin/python3 -I -S {PROGRAM_RUNTIME_PATH} membership "$$"',
+        f'/usr/bin/python3 -I -S {AUTHORITY_RUNTIME_PATH} --runtime-program membership "$$"',
         Resource.CGROUP_VIEW, Access.READ,
         event=EventKind.MEMBERSHIP_VERIFIED, program=membership,
         extra=(ResourceAccess(Resource.PROCESS, Access.INSPECT),),
@@ -427,7 +428,7 @@ def inventory() -> Inventory:
         )
     main("export-owner", '/usr/bin/chown "$host_uid:$host_gid" /mnt/export/target.gba /mnt/export/metadata.json', Resource.EXPORT, Access.WRITE)
     post_check = Program(
-        "post-check", PROGRAM_PATH, PROGRAM_RUNTIME_PATH, "post-check",
+        "post-check", PROGRAM_PATH, AUTHORITY_RUNTIME_PATH, "--runtime-program",
         (
             ResourceAccess(Resource.EXPORT, Access.READ),
             ResourceAccess(Resource.MOUNT_GRAPH, Access.INSPECT),
@@ -437,7 +438,7 @@ def inventory() -> Inventory:
     )
     main(
         "post-check",
-        f'/usr/bin/python3 -I -S {PROGRAM_RUNTIME_PATH} post-check "$$" "$host_uid" "$host_gid"',
+        f'/usr/bin/python3 -I -S {AUTHORITY_RUNTIME_PATH} --runtime-program post-check "$$" "$host_uid" "$host_gid"',
         Resource.EXPORT, Access.READ, event=EventKind.POST_CHECK, program=post_check,
         extra=post_check.inputs[1:],
     )

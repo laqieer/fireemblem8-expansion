@@ -238,7 +238,7 @@ def adversarial_workflows(workflow: str):
         ),
     )
     yield "mutated-python-mode", replace_builder(
-        workflow, source.replace("publisher-programs.py dev-mount-targets", "publisher-programs.py membership", 1),
+        workflow, source.replace("--runtime-program dev-mount-targets", "--runtime-program membership", 1),
     )
     yield "mutated-python-program", replace_builder(
         workflow, source.replace("/mnt/control/publisher-programs.py", "/candidate/publisher-programs.py"),

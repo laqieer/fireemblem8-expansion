@@ -112,9 +112,10 @@ source hash pins.
 Before `/sys` is masked, the exact owned cgroup is bound read-only below a
 root-only `0700` `/mnt/supervisor`; the candidate cannot read, write, execute,
 or traverse that parent. The exact cgroup child there remains read-only. The
-wrapper reads that supervisor view after `/sys` is masked and permits handoff
-only when its own PID is the sole member. Host-side kill/removal still uses the
-actual cgroup path.
+fixed checker reads that supervisor view after `/sys` is masked and accepts
+exactly the wrapper plus its own transient PID, with no candidate descendant.
+The wrapper is alone after the synchronous checker is reaped and before
+handoff/export. Host-side kill/removal still uses the actual cgroup path.
 Unavailable mount/cgroup features fail closed, and cleanup sends no UID-wide
 signal.
 Before candidate code starts, a trusted child launcher closes inherited file descriptors

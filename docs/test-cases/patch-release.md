@@ -151,6 +151,23 @@ output file or substitutes for the explicit BPS apply command.
    python3 -m unittest tests.workflows.test_patch_release_workflow -v
    ```
 
+   For the coupled publisher ordering/source/observer regressions, run:
+
+   ```bash
+   python3 -m unittest -v \
+     tests.workflows.test_publisher_phase \
+     tests.workflows.test_publisher_command_inventory.PublisherExactTreeTests.test_standalone_runtime_closes_the_committed_foreign_loader_route \
+     tests.workflows.test_patch_release_workflow.PatchReleaseWorkflowTests.test_supervisor_membership_runtime_accepts_wrapper_and_checker_only
+   ```
+
+   The FIFO fixture uses the real checker with owned wrapper/checker PIDs in
+   either order; missing, duplicate, extra or malformed records reject. It
+   obtains the historical `5779c38e245d9a14f063338b53851a97bb92d0c0`
+   workflow from Git, observes its actual external `sort` reader, feeds that
+   wrapper/reader snapshot, and requires the old wrapper-only comparison to
+   fail. Retain the Git object when using a shallow source checkout. This
+   controlled FIFO is not privileged cgroup-deployment evidence.
+
 3. If a legal base is available locally, make a disposable one-byte-modified
    copy and run the `patch_release verify` and `bps_patch apply` commands from
    `TC-CI-PATCH-049-001` against that copy. Retain their nonzero status and do
@@ -217,7 +234,8 @@ The wrapper binds the exact owned cgroup read-only under root-only mode-`0700`
 execute, or traverse that parent, while the exact cgroup child remains
 read-only; the fixed post-build checker accepts exactly the wrapper and its
 own transient PID, rejecting every candidate descendant before ROM handoff.
-The checker is synchronously reaped before export. The full phase, actual
+The checker is synchronously reaped before export, leaving the wrapper alone.
+The full phase, actual
 completion/reap, export sealing, final post-check and fixed substage procedure
 is [TC-WORKFLOW-PUBLISHER-PHASE-001](workflow-governance.md#tc-workflow-publisher-phase-001-bind-verification-to-completed-candidate-execution).
 Decoded recursive `/dev` mount targets are

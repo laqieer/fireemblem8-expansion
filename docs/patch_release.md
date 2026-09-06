@@ -56,7 +56,9 @@ not a gameplay option or a blacklist of sensitive filenames.
   Python programs. The two mount readers retain their decoded JSON/NUL-record
   protocol. The workflow stages this file directly from the validated commit,
   into the trusted runtime directory, installs it into `/mnt/control`, and
-  makes that mount read-only before use.
+  makes that mount read-only before use. The same captured-source authority
+  bootstrap, also staged from the exact commit, guards each fixed runtime
+  entry; Python no longer executes an unguarded standalone payload.
   No arbitrary Python code string or heredoc is an approved substitute.
 
 Before staging candidate inputs, the producer runs the isolated authority CLI
@@ -73,8 +75,14 @@ workflow programs remain captured data for staging and AST inspection, not
 importable modules. Even a committed package initializer importing
 `publisher_programs` or `publisher_candidate` rejects before that program
 executes. Both standalone files reject repository-local imports during closure
-validation: production installs and executes single files under `/mnt/control`,
-not a package or a transitive module tree. The authority CLI is itself a registered
+validation. At runtime, the existing source-only loader captures the selected
+control-mount payload before execution and admits only that source plus trusted
+stdlib code. A stdlib `SourceFileLoader`, direct or aliased, cannot execute
+undeclared `/mnt/source` code before privilege drop. This closes the raw
+standalone entry route without an import-name blacklist or a new broker.
+It is not a general sandbox for hostile Python: the authority bootstrap,
+stdlib and native/OS APIs remain trusted. Production installs single payloads
+under `/mnt/control`, not a package or transitive module tree. The authority CLI is itself a registered
 `Program`, but remains an authority entry point, not a data-only payload.
 The source-only loader neither consults repository bytecode/extension caches
 nor reopens repository source paths after verification;
@@ -163,7 +171,7 @@ and rejects.
 The fixed checker is available only as:
 
 ```text
-/usr/bin/python3 -I -S /mnt/control/publisher-programs.py membership "$$"
+/usr/bin/python3 -I -S /mnt/control/publisher-inventory.py --runtime-program membership "$$"
 ```
 
 It reads only `/mnt/supervisor/cgroup/cgroup.procs`, reads at most 1,025 bytes
@@ -178,7 +186,11 @@ no-fork exec and inherited-FD closure. Its installed
 `/mnt/control/candidate-launcher.py` identity is unchanged; its source is now
 captured as standalone data in the same Git-derived exact-tree program closure,
 without executing it or the registry during discovery. Repository-local
-launcher imports reject because production installs one standalone file.
+launcher imports reject because production installs one standalone file. The
+fixed bootstrap dispatches `candidate-launcher` through the same source-only
+guard without adding a fork; the launcher's FD closure, setpriv transition,
+clean environment, `-I -S` startup and foreground wait/reap remain unchanged.
+No caller-supplied path or mode can select another payload.
 
 `validate_builder_script(source)` returns immutable `Analysis` records.
 `Analysis.commands` covers every authorized statement and nested producer;
@@ -205,7 +217,13 @@ exact-tree CLI all apply that phase consumer after inventory authorization.
 The inventory alone remains a parser/authorization API, not a production
 completion bypass. Authorization ignores harmless source spelling; the phase
 policy permits independent initializer/file-install reorderings but rejects
-changes to runtime prerequisites. The pre-existing raw host-shell boundary checks
+changes to runtime prerequisites. Cgroup input/ownership, bind/read-only setup
+and canonical aliases dominate their inode/options consumers. Each initial,
+remaining-device and runtime snapshot must be created, produced and checked
+before use; the remaining snapshot follows descendant removal. Helper call
+events are consumed in their exact invocation frames with fresh local
+bindings and before/read/after checks. Per-iteration values precede the
+corresponding case checks. The pre-existing raw host-shell boundary checks
 remain separate; their hashes are not the behavioral oracle for this case.
 Every Python program's declared inputs and outputs must be represented in its
 signature's accesses; consequently the candidate-launch event includes both
@@ -221,7 +239,8 @@ defined production rows to that same registry; no permission is learned from
 validator checks complete forms, placements and counts and returns typed
 `Analysis` before #201 applies its phase policy. Removing the phase policy
 does not remove candidate command authorization.
-Existing entry/producer/staging registrations and runtime bodies are unchanged.
+The candidate profile API and candidate build payload are unchanged by the
+bounded source-entry repair; only the trusted staging/runtime dispatch changes.
 
 `Signature.executable` optionally binds an independently specified exact
 `publisher_shell.Word` as well as the complete `Signature.form`. Inside

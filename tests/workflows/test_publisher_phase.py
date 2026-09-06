@@ -123,6 +123,63 @@ class PublisherPhaseTests(unittest.TestCase):
                 witnessed.add(name)
         self.assertEqual(witnessed, fixtures.PHASE_ONLY_CASES)
 
+    def test_preparation_and_transport_prerequisites_reject_in_both_consumers(self):
+        cases = list(fixtures.prerequisite_workflows(self.workflow))
+        self.assertGreaterEqual(len(cases), 35)
+        for name, changed in cases:
+            with self.subTest(case=name), inventory.refreshed_boundary_identities(changed):
+                analysis = authority.reviewed_inventory().validate(inventory.builder(changed))
+                # Exact forms/counts still authorize: the phase policy must be
+                # the rejection, not an outer raw-identity mismatch.
+                with self.assertRaises(phase.PhaseError):
+                    phase.validate(analysis)
+                self.assertTrue(publisher.publisher_boundary_errors(changed))
+                with self.assertRaises(ValueError):
+                    verify._parse_workflow_structure_text(changed)
+                with mock.patch.object(phase, "validate"):
+                    self.assertEqual(publisher.publisher_boundary_errors(changed), [])
+                    verify._parse_workflow_structure_text(changed)
+
+    def test_prerequisites_allow_independent_initializers_and_checks(self):
+        changed = fixtures.move_command(self.source, "cgroup-view-name", "cgroup-bind")
+        changed = fixtures.move_command(changed, "cgroup-options", "cgroup-inode")
+        changed = fixtures.move_command(changed, "remaining-dev-create", "dev-remove")
+        changed = changed.replace(
+            '  mount_target="${writable_mount_records[index]}"\n'
+            '  mount_options="${writable_mount_records[index + 1]}"',
+            '  mount_options="${writable_mount_records[index + 1]}"\n'
+            '  mount_target="${writable_mount_records[index]}"',
+        )
+        changed = changed.replace(
+            'local path="$1"\n  local size_limit="$2"',
+            'local size_limit="${2}"\n  local path="${1}"',
+        ).replace(
+            'builder_uid="$2"\nbuilder_gid="$3"',
+            'builder_gid="${3}"\nbuilder_uid="${2}"',
+        )
+        workflow = inventory.replace_builder(self.workflow, changed)
+        with inventory.refreshed_boundary_identities(workflow):
+            self.assertEqual(publisher.publisher_boundary_errors(workflow), [])
+            verify._parse_workflow_structure_text(workflow)
+        self.assertEqual(
+            [(step.before, step.after) for step in phase.validate(authority.validate_builder_script(changed))],
+            [(step.before, step.after) for step in phase.validate(authority.validate_builder_script(self.source))],
+        )
+
+    def test_helper_events_cannot_be_removed_duplicated_or_rebound(self):
+        analysis = authority.validate_builder_script(self.source)
+        event = next(e for e in analysis.events if e.kind == authority.EventKind.TRANSPORT_READ)
+        index = analysis.events.index(event)
+        variants = (
+            analysis.events[:index] + analysis.events[index + 1:],
+            analysis.events[:index] + (event,) + analysis.events[index:],
+            analysis.events[:index] + (replace(event, call_stack=("builder_main",)),) + analysis.events[index + 1:],
+            analysis.events[:index] + (replace(event, context=()),) + analysis.events[index + 1:],
+        )
+        for events in variants:
+            with self.subTest(events=len(events)), self.assertRaises(phase.PhaseError):
+                phase.validate(replace(analysis, events=events))
+
     def test_shared_context_authority_rejects_former_phase_only_bypasses(self):
         witnessed = set()
         for name, changed in fixtures.adversarial_workflows(self.workflow):
@@ -322,6 +379,7 @@ class PublisherPhaseTests(unittest.TestCase):
                 continue
             witnessed.add(stage)
             machine.stage = stage
+            machine.setup.update(machine.setup_required)
             machine.consume(event)
             self.assertEqual(machine.transitions, [])
             for wrong_stage in {"namespace", "mount-audit", "candidate-preflight"} - {stage}:
@@ -704,6 +762,7 @@ class PublisherPhaseRuntimeTests(unittest.TestCase):
         for path in (control, home, export):
             path.mkdir(parents=True)
         shutil.copyfile(ROOT / authority.PROGRAM_PATH, control / "publisher-programs.py")
+        shutil.copyfile(ROOT / "scripts/workflow_pilot/publisher_inventory.py", control / "publisher-inventory.py")
         launcher = (ROOT / "scripts/workflow_pilot/publisher_candidate.py").read_text()
         # A rootless single-ID user namespace denies setgroups even for UID 0.
         # Keep actual setpriv capability dropping, exec, FD closure and wait.
@@ -749,10 +808,10 @@ class PublisherPhaseRuntimeTests(unittest.TestCase):
             '               "candidate": pid, "candidate_reaped": pid is not None and not os.path.exists("/proc/" + str(pid)),\n'
             '               "session": os.getsid(0), "wrapper_session": os.getsid(os.getppid())}, output)\n'
             'os.execve("/usr/bin/python3", ["/usr/bin/python3", "-I", "-S",\n'
-            '    "/mnt/control/publisher-programs.py", *sys.argv[1:]], {"LC_ALL": "C", "PATH": "/usr/bin:/bin"})\n'
+            '    "/mnt/control/publisher-inventory.py", "--runtime-program", *sys.argv[1:]], {"LC_ALL": "C", "PATH": "/usr/bin:/bin"})\n'
         )
         tail = self.tail.replace(
-            "/mnt/control/publisher-programs.py membership",
+            "/mnt/control/publisher-inventory.py --runtime-program membership",
             "/mnt/control/membership-proc-adapter.py membership",
         )
         if export_failure:

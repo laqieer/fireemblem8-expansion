@@ -89,6 +89,16 @@ behavior. Publisher runtime cases use disposable Linux namespaces.
    CLIs must reject workflow-only changes. A separately updated registry form
    and matching `Program` text/startup metadata may authorize only the intended
    new operation; a form-only or workflow-only update cannot.
+   Also move cgroup initialization, ownership, bind/read-only setup or canonical
+   aliases after their dependent operations. Move a transport producer before
+   creation, a read before production, removal before reading, or a snapshot
+   consumer before its checked read. Move the remaining-device snapshot before
+   descendant removal; move helper-local bindings or the before/read/after
+   checks past their consumers; move per-iteration target/options after their
+   case checks. Both consumers reject these forms with refreshed raw identities.
+   Independent initializers/checks and connected quoting remain valid. Dropped,
+   duplicated or wrong-frame helper events also reject; each invocation has
+   fresh local transport state.
 5. Observe the live namespace scenario. The exact foreground candidate PID is
    absent from `/proc` before the checker; only wrapper/checker remain, and the
    actual sealed export contains `target.gba` (32 MiB) and `metadata.json`
@@ -204,11 +214,16 @@ or archival changes apply.
 
 The focused commands above exercise the real phase validator, both semantic
 consumers, the exact-tree CLI, candidate FD closure and authenticated supervisor
-lifecycle. The prerequisite command-inventory case additionally executes both
+lifecycle. The prerequisite command-inventory case additionally executes all
 fresh-step Git staging commands under the complete workflow environment and
 checks launcher source binding and rejects repository-local imports without
-eager execution or cache loading. Production installs a standalone launcher,
-not its transitive Python package.
+eager execution or cache loading. The committed dynamic-loader control keeps
+preflight DATA-only, then enters the captured standalone program under the
+existing source-only guard and rejects foreign `/mnt/source` execution. The
+unguarded interpreter writes the owned foreign marker; the guarded entry does
+not. Production installs the fixed authority bootstrap and standalone
+payloads, not their transitive Python packages. This is not a general hostile
+Python sandbox: authority/stdlib code and native/OS APIs remain trusted.
 It also runs the child producer mutations through isolated fixture-commit CLIs,
 with the new producer registration module in the captured import closure.
 All deterministic assertions are automated; no visual, audio, subjective, or
@@ -1136,9 +1151,10 @@ upload.
 Before `/sys` is masked, the exact owned cgroup is bound read-only below a
 root-only `0700` `/mnt/supervisor`; the candidate cannot read, write, execute,
 or traverse that parent. The exact cgroup child there remains read-only. The
-wrapper reads that supervisor view after `/sys` is masked and permits handoff
-only when its own PID is the sole member. Host-side kill/removal still uses the
-actual cgroup path.
+fixed checker reads that supervisor view after `/sys` is masked and accepts
+exactly the wrapper plus its own transient PID, with no candidate descendant.
+The wrapper is alone after the synchronous checker is reaped and before
+handoff/export. Host-side kill/removal still uses the actual cgroup path.
 All repository/candidate-controlled commands finish before private download.
 Cleanup is verified before upload.
 After that cleanup, an adjacent final check revalidates exactly regular,
