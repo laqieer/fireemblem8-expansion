@@ -222,12 +222,27 @@ The three responsibilities are:
 
 `ReviewTools` loads the two fixed validator modules from the coordinator's
 explicit **reviewed tool revision**, compiling the exact captured Git bytes.
-The isolated launcher similarly loads the gate's captured bytes, not a
-validate-then-reopen working-copy path. It rejects non-commit Git objects
-before executing any initializer or validator source. An existing case binding/model may be
+The existing fixed isolated launcher must itself run from a **separately
+trusted checkout or installation**, using a trusted interpreter. Its trust is
+established by the coordinator before invocation: a candidate launcher cannot
+authenticate itself by checking `--tool-revision` after it has already started.
+Do not run the candidate checkout's bootstrap or automatically copy it elsewhere
+and call that trust.
+
+For `review-family`, `--repository-root` identifies the candidate object-storage
+worktree, not the launcher's own root. The launcher requires separate locations
+and validates the exact candidate Git top level, commit type and captured
+regular-blob bytes before executing any reviewed initializer or validator.
+Other protected modes retain their original same-root checks. It loads the
+gate's captured bytes, not a validate-then-reopen working-copy path.
+An existing case binding/model may be
 reviewed in the same feature PR and selected at its exact tool revision.
 There is no required base-first installation or second canonical case catalog.
 The request cannot select that revision or register its own probe.
+This introducing PR supplies the fixed launcher mode too: the coordinator may
+independently review and trust that launcher from this PR in another checkout.
+This explicit introducing-PR boundary does not require a separate adapter PR,
+broker, source ledger or generic bootstrap service.
 
 `resolve_subject` joins an existing catalog case to the reviewed binding.
 `expand_members` derives the finite source-backed obligations at the finding
@@ -266,10 +281,13 @@ not authenticated provenance from a JSON author.
 For diagnostic planning/checking, use the closed launcher mode:
 
 ```bash
-python3 -I scripts/workflow_pilot/isolated_launcher.py review-family \
-  --repository-root "$PWD" --subject-root "$PWD" \
+TRUSTED_REVIEW_ROOT=/absolute/path/to/independently-trusted-checkout
+CANDIDATE_ROOT=/absolute/path/to/candidate-checkout
+"$TRUSTED_REVIEW_ROOT/build/host-python/bin/python3" -I \
+  "$TRUSTED_REVIEW_ROOT/scripts/workflow_pilot/isolated_launcher.py" review-family \
+  --repository-root "$CANDIDATE_ROOT" --subject-root "$CANDIDATE_ROOT" \
   --tool-revision "$REVIEWED_TOOL_SHA" --candidate "$CANDIDATE_SHA" \
-  --request build/review-request.json --mode plan
+  --request "$CANDIDATE_ROOT/build/review-request.json" --mode plan
 ```
 
 `plan` derives obligations from exact Git source without executing candidate
@@ -334,6 +352,12 @@ The shipped unrelated subject uses are:
   Direct coordinator calls use the same environment settings or the closed
   `ReviewTools(..., arm_tools={...})` mapping; defaults resolve through PATH.
   Missing selected tools remain unavailable, never a fallback to system tools.
+  The parsed phase/shape enum values must match the existing zero-based,
+  contiguous selector mapping and count sentinels: aliased or missing numeric
+  cases cannot masquerade as independent siblings. The finite parser supports
+  implicit increments and nonnegative decimal/octal/hex literal assignments,
+  not general C expression evaluation. Equivalent formatting or explicitly
+  reordered declarations preserving values remain valid.
   This binding does not claim every future
   downstream route provider or in-game UI path is covered.
 - **`TC-CORE-004 / generated-eventlists`:** the real event-list schema's

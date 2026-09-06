@@ -9,14 +9,16 @@ if __package__ in (None, ""):
 import copy
 from dataclasses import replace
 import json
+import re
 import shlex
 import subprocess
+import tempfile
 import unittest
 from unittest.mock import patch
 
 from scripts.modernize.tests.make_database import make_database_rule
 from scripts.workflow_pilot.trusted_review_gate import GitTree, ReviewTools
-from scripts.workflow_pilot.tests.review_support import ROOT, ENV, git, request, snapshot
+from scripts.workflow_pilot.tests.review_support import ROOT, ENV, TRUSTED_LAUNCHER, git, request, snapshot
 
 
 class SubjectTestCase(unittest.TestCase):
@@ -324,6 +326,64 @@ class SubjectTests(SubjectTestCase):
         with self.assertRaises(ValueError):
             self.tools.members(self.scope("generated", deleted), (self.repo.base,))
 
+    def test_finite_enum_values_match_native_compiler_and_reject_aliased_coverage(self):
+        path = "include/expansion_aoe.h"
+        original = (self.repo.root / path).read_text()
+        phase_names = ("CAN_USE", "BEGIN_USE", "EXECUTE", "AI_SELECT", "PHASE_COUNT")
+        shape_names = ("DIAMOND", "SQUARE", "CROSS", "COUNT")
+        symbols = (["EXPANSION_AOE_ITEM_" + name for name in phase_names] +
+                   ["EXPANSION_AOE_SHAPE_" + name for name in shape_names])
+        expected = (0, 1, 2, 3, 4, 0, 1, 2, 3)
+        reordered = re.sub(
+            r"enum ExpansionAoEItemPhase\s*\{[^}]*\}",
+            """enum ExpansionAoEItemPhase {
+    EXPANSION_AOE_ITEM_BEGIN_USE = 01, /* Same values, another declaration order. */
+    EXPANSION_AOE_ITEM_CAN_USE = 0x0,
+    EXPANSION_AOE_ITEM_EXECUTE = 0x2,
+    EXPANSION_AOE_ITEM_AI_SELECT = 03,
+    EXPANSION_AOE_ITEM_PHASE_COUNT = 4
+}""", original)
+        variants = (
+            ("original", original, True),
+            ("equivalent", reordered, True),
+            ("phase-alias", original.replace("EXPANSION_AOE_ITEM_BEGIN_USE,",
+                                             "EXPANSION_AOE_ITEM_BEGIN_USE = 0,"), False),
+            ("shape-alias", original.replace("EXPANSION_AOE_SHAPE_SQUARE,",
+                                             "EXPANSION_AOE_SHAPE_SQUARE = 0,"), False),
+            ("phase-gap", original.replace("EXPANSION_AOE_ITEM_BEGIN_USE,",
+                                           "EXPANSION_AOE_ITEM_BEGIN_USE = 2,"), False),
+            ("count", original.replace("    EXPANSION_AOE_ITEM_PHASE_COUNT\n",
+                                       "    EXPANSION_AOE_ITEM_PHASE_COUNT = 3\n"), False),
+        )
+        directory = Path(self.enterContext(tempfile.TemporaryDirectory(
+            prefix="review-enum-values-", dir=ROOT / "build")))
+        base = self.tools.tree(self.repo.base)
+        base.materialize(directory, base.under("include"))
+        executable = directory / "values"
+        code = ('#include "global.h"\n#include "expansion_aoe.h"\n#include <stdio.h>\n'
+                'int main(void) { printf("' + " ".join(["%d"] * len(symbols)) + '\\n", '
+                + ", ".join(symbols) + '); return 0; }\n')
+        for name, source, accepted in variants:
+            with self.subTest(variant=name):
+                revision = self.repo.base if name == "original" else self.repo.commit({path: source})
+                tree = self.tools.tree(revision)
+                (directory / path).write_bytes(tree.read(path))
+                compiled = subprocess.run(
+                    ["/usr/bin/gcc", "-std=gnu89", "-DFE8_EXPANSION_MODERN_BUILD=1",
+                     "-I", str(directory / "include"), "-x", "c", "-", "-o", str(executable)],
+                    input=code, env=ENV, capture_output=True, text=True, timeout=60)
+                self.assertEqual(compiled.returncode, 0, compiled.stderr)
+                actual = subprocess.run([str(executable)], env=ENV, capture_output=True,
+                                        text=True, check=True, timeout=10)
+                values = tuple(map(int, actual.stdout.split()))
+                if accepted:
+                    self.assertEqual(values, expected)
+                    self.assertTrue(self.tools.members(self.scope("aoe", revision)))
+                else:
+                    self.assertNotEqual(values, expected)
+                    with self.assertRaises(ValueError):
+                        self.tools.members(self.scope("aoe", revision))
+
     def test_wire_stale_binding_probe_reaches_production_head_predicate(self):
         path = "scripts/workflow_pilot/review_family.py"
         source = (self.repo.root / path).read_text()
@@ -415,6 +475,21 @@ class SubjectTests(SubjectTestCase):
         members = reviewed.members(data)
         self.assertTrue(members)
         self.assertTrue(all(item.subject.endswith("/new-reviewed-binding") for item in members))
+        request_path = self.repo.root / "build" / "new-binding-request.json"
+        request_path.parent.mkdir(exist_ok=True)
+        request_path.write_text(json.dumps(data))
+        planned = subprocess.run(
+            [sys.executable, "-I", str(TRUSTED_LAUNCHER), "review-family",
+             "--repository-root", str(self.repo.root), "--subject-root", str(self.repo.root),
+             "--tool-revision", revision, "--candidate", revision,
+             "--request", str(request_path), "--mode", "plan"],
+            env=ENV, capture_output=True, text=True, timeout=30)
+        self.assertEqual(planned.returncode, 0, planned.stderr)
+        plan = json.loads(planned.stdout)
+        self.assertEqual(plan["tool_revision"], revision)
+        self.assertTrue(all(item["subject"].endswith("/new-reviewed-binding")
+                            for item in plan["obligations"]))
+        self.assertFalse(plan["merge_permission"])
         # Subsequent tests continue using the explicitly selected original tool objects.
 
     def test_zero_skipped_and_wrong_source_observations_cannot_pass(self):

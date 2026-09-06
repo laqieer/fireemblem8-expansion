@@ -11,6 +11,7 @@ from types import SimpleNamespace
 
 
 ROOT = Path(__file__).resolve().parents[3]
+TRUSTED_LAUNCHER = ROOT / "scripts/workflow_pilot/isolated_launcher.py"
 ENV = {
     "PATH": "/usr/bin:/bin", "LC_ALL": "C.UTF-8",
     "GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": "/dev/null",

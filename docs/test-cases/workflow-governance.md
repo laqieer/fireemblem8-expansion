@@ -126,7 +126,9 @@ the consumers' independent protected-principal/deployment requirements.
   the [existing host setup](../workflow-pilot.md#isolated-host-python-dependencies)
   if needed. Tests create only owned source copies/Git histories below
   `build/review-family-*`. No live PR, credential, ROM, emulator, protected
-  installation or new agent backend is needed.
+  installation or new agent backend is needed. CLI fixtures invoke the
+  independently trusted test checkout's existing fixed launcher outside
+  the owned candidate repository; they do not execute a candidate bootstrap.
 
 ### Actions
 
@@ -160,6 +162,12 @@ the consumers' independent protected-principal/deployment requirements.
    symbols/sections pass in their respective profiles, including formatting-only
    source changes. Remove the real AI_NEVER rejection in an owned
    origin commit; the same probe fails before and passes restored source.
+   Compile and read the actual header's phase/shape enum values. Original and
+   equivalent explicitly valued/reordered declarations retain the same
+   zero-based mapping. Alias `BEGIN_USE` to `0`, alias the square shape, add
+   a numeric gap or change the count sentinel: compilation confirms the
+   numeric difference and the finite coverage model must reject before
+   advertising independent siblings. No general C interpreter is involved.
    Make the included `bmunit.h` unit-validity predicate reject valid units,
    then restore it. The native stable-slot member fails before and passes
    after; that actual header dependency is bound and its finding is admissible.
@@ -263,13 +271,23 @@ the consumers' independent protected-principal/deployment requirements.
    be false. Complete normal retriage and require both positive flags.
    Unrelated live-base fast-forwards preserve the actual candidate merge base;
    substituting an older ancestor or a base outside that lineage rejects.
-9. Exercise the real isolated launcher against an explicitly reviewed tool
-   revision. Substitute working-copy validator/gate files and require the
-   intended captured Git bytes to execute instead. Wrong source, unsafe Git
+9. Exercise the real isolated launcher from a separately trusted checkout or
+   installation, using the [documented command](../workflow-pilot.md#public-request-and-execution-api)
+   and explicitly reviewed tool revision stored in the candidate repository.
+   Substitute the candidate's bootstrap, initializers and validator/gate files;
+   the candidate marker must not run, and only intended captured Git bytes
+   may execute. This PR's launcher can be independently trusted in another
+   checkout; it is not authenticated by a candidate SHA or a fresh copied file.
+   A same-feature reviewed binding works through this external entrypoint
+   without a forced base-first adapter installation.
+   Wrong source, unsafe Git
    modes, ambient hooks/import state, duplicate request fields and candidate
    success/program/trust fields fail rather than enabling a fallback.
    A real unattached tree object containing an initializer must be rejected
    before that initializer executes.
+   A subdirectory supplied as candidate storage must likewise reject before a
+   reviewed initializer executes; retain exact top-level, commit and source
+   controls and the original same-root rules for other protected modes.
    Missing candidate/base objects and invalid ancestry in both real direct
    and isolated CLI entrypoints fail nonzero with bounded diagnostics, not a traceback.
    Test valid request JSON padded to exactly 1 MiB, one byte over, malformed

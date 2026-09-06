@@ -36,7 +36,7 @@ def clear_ambient_git_environment() -> None:
             del os.environ[name]
 
 
-def controlled_repository_root(arguments: list[str]) -> Path:
+def controlled_repository_root(arguments: list[str], *, external: bool = False) -> Path:
     positions = [
         index
         for index, argument in enumerate(arguments)
@@ -45,7 +45,10 @@ def controlled_repository_root(arguments: list[str]) -> Path:
     if len(positions) != 1 or positions[0] + 1 >= len(arguments):
         raise ValueError("mode requires exactly one --repository-root")
     root = Path(arguments[positions[0] + 1]).resolve(strict=True)
-    if root != ROOT:
+    if external:
+        if root == ROOT:
+            raise ValueError("review-family requires a trusted launcher outside candidate storage")
+    elif root != ROOT:
         raise ValueError(
             f"--repository-root must identify controlled source root {ROOT}"
         )
@@ -108,7 +111,7 @@ def run_lifecycle_check(arguments: list[str]) -> int:
 
 
 def run_review_family(arguments: list[str]) -> int:
-    root = controlled_repository_root(arguments)
+    root = controlled_repository_root(arguments, external=True)
     positions = [index for index, value in enumerate(arguments) if value == "--tool-revision"]
     if len(positions) != 1 or positions[0] + 1 >= len(arguments):
         raise ValueError("review-family requires exactly one --tool-revision")
@@ -135,6 +138,9 @@ def run_review_family(arguments: list[str]) -> int:
                              completed.stderr.decode(errors="replace")[-1000:])
         return completed.stdout
 
+    top = Path(git("rev-parse", "--show-toplevel").decode().strip()).resolve(strict=True)
+    if top != root:
+        raise ValueError("candidate storage must be the exact repository top level")
     if git("cat-file", "-t", revision).strip() != b"commit":
         raise ValueError("reviewed tool revision must identify a commit object")
 

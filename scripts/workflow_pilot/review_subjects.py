@@ -71,21 +71,30 @@ def resolve_subject(case_id: str, subject: str, catalog: dict) -> SubjectSpec:
     return matches[0]
 
 
-def enum_members(source: bytes, name: str, prefix: str) -> tuple[str, ...]:
+def enum_members(source: bytes, name: str, prefix: str) -> dict[str, int]:
     text = re.sub(r"/\*.*?\*/|//[^\n]*", "", source.decode(), flags=re.S)
     found = re.findall(r"\benum\s+" + re.escape(name) + r"\s*\{([^{}]*)\}", text)
     review.require(len(found) == 1, f"missing or ambiguous finite enum {name}")
-    names = []
+    values = {}
+    next_value = 0
     for entry in found[0].split(","):
         entry = entry.strip()
         if not entry:
             continue
-        parsed = re.fullmatch(r"([A-Za-z_][A-Za-z0-9_]*)(?:\s*=\s*(0x[0-9a-fA-F]+|\d+))?", entry)
+        parsed = re.fullmatch(
+            r"([A-Za-z_][A-Za-z0-9_]*)(?:\s*=\s*(0[xX][0-9a-fA-F]+|0[0-7]*|[1-9][0-9]*))?",
+            entry)
         review.require(parsed is not None and parsed[1].startswith(prefix),
                        f"unsupported finite enum entry in {name}")
-        names.append(parsed[1][len(prefix):])
-    review.unique(names, "enum entries")
-    return tuple(names)
+        member = parsed[1][len(prefix):]
+        review.require(member not in values, "duplicate enum entries")
+        if parsed[2] is not None:
+            literal = parsed[2]
+            base = 16 if literal.lower().startswith("0x") else 8 if literal.startswith("0") else 10
+            next_value = int(literal, base)
+        values[member] = next_value
+        next_value += 1
+    return values
 
 
 def schema_declaration(source: bytes, *, dependencies=True) -> tuple[dict, tuple[str, ...]]:
@@ -124,9 +133,9 @@ def _members(spec: SubjectSpec, tree) -> tuple[review.Obligation, ...]:
         header = tree.read(AOE_HEADER)
         phases = enum_members(header, "ExpansionAoEItemPhase", "EXPANSION_AOE_ITEM_")
         shapes = enum_members(header, "ExpansionAoEShapeKind", "EXPANSION_AOE_SHAPE_")
-        review.require(set(phases) == {*PHASES, "PHASE_COUNT"}
-                       and set(shapes) == {*SHAPES, "COUNT"},
-                       "added/deleted AoE enum member needs a reviewed probe")
+        review.require(phases == {name: index for index, name in enumerate((*PHASES, "PHASE_COUNT"))}
+                       and shapes == {name: index for index, name in enumerate((*SHAPES, "COUNT"))},
+                       "changed/aliased AoE enum names or values need a reviewed probe")
         inputs = tuple(sorted({AOE_CORE, AOE_REFERENCE, *tree.under("include")}))
         for phase in PHASES:
             add("action", "actions", phase, AOE_CORE + ":ExpansionAoE_DispatchItem",

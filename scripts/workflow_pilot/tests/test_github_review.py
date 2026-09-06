@@ -17,7 +17,7 @@ from unittest.mock import patch
 from contextlib import redirect_stdout, redirect_stderr
 
 from scripts.workflow_pilot import trusted_review_gate as gate
-from scripts.workflow_pilot.tests.review_support import ENV, Runtime, git, request, snapshot
+from scripts.workflow_pilot.tests.review_support import ENV, ROOT, TRUSTED_LAUNCHER, Runtime, git, request, snapshot
 
 
 def response(base, head, body="Complete review content", *, actor=None):
@@ -310,12 +310,13 @@ class GitHubReviewTests(unittest.TestCase):
         try:
             completed = subprocess.run(
                 [sys.executable, "-I", "-B",
-                 str(self.repo.root / "scripts/workflow_pilot/isolated_launcher.py"), "review-family",
+                 str(TRUSTED_LAUNCHER), "review-family",
                  "--repository-root", str(self.repo.root), "--subject-root", str(self.repo.root),
                  "--tool-revision", tree, "--candidate", self.repo.base,
                  "--request", str(request_path), "--mode", "plan"],
                 env=ENV, capture_output=True, timeout=30)
             self.assertNotEqual(completed.returncode, 0)
+            self.assertIn(b"commit object", completed.stderr)
             self.assertFalse(sentinel.exists(), "unattached tree code executed before rejection")
         finally:
             sentinel.unlink(missing_ok=True)
@@ -337,6 +338,31 @@ class GitHubReviewTests(unittest.TestCase):
             changed = {**data, key: value}
             with self.assertRaises(ValueError):
                 self.tools.assess(changed, session, github, (triage,), pre_review_required=False)
+
+    def test_external_launcher_checks_storage_root_before_reviewed_initializer(self):
+        sentinel = self.repo.root / "build" / "wrong-root-initializer-executed"
+        sentinel.parent.mkdir(exist_ok=True)
+        revision = self.repo.commit({"scripts/__init__.py":
+            "from pathlib import Path\nPath(" + repr(str(sentinel)) + ").write_text('ran')\n"})
+        path = self.repo.root / "request.json"
+        path.write_text(json.dumps(request(base=self.repo.base, head=self.repo.base)))
+        result = subprocess.run(
+            [sys.executable, "-I", str(TRUSTED_LAUNCHER), "review-family",
+             "--repository-root", str(self.repo.root / "scripts"), "--subject-root", str(self.repo.root),
+             "--tool-revision", revision, "--candidate", self.repo.base,
+             "--request", str(path), "--mode", "plan"],
+            env=ENV, capture_output=True, text=True, timeout=30)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(result.stdout, "")
+        self.assertIn("repository top level", result.stderr)
+        self.assertNotIn("Traceback", result.stderr)
+        self.assertFalse(sentinel.exists())
+        from scripts.workflow_pilot.isolated_launcher import controlled_repository_root
+        self.assertEqual(controlled_repository_root(["--repository-root", str(ROOT)]), ROOT)
+        with self.assertRaises(ValueError):
+            controlled_repository_root(["--repository-root", str(self.repo.root)])
+        with self.assertRaises(ValueError):
+            controlled_repository_root(["--repository-root", str(ROOT)], external=True)
 
     def test_actual_clean_review_edit_invalidates_then_accepts_fresh_triage(self):
         data, session, _, github, facts = self.setup_review()
@@ -428,7 +454,7 @@ class GitHubReviewTests(unittest.TestCase):
 
     def test_real_direct_and_isolated_cli_bound_expected_git_errors(self):
         descendant = self.repo.commit({"lineage-error-control": "descendant"})
-        launcher = self.repo.root / "scripts/workflow_pilot/isolated_launcher.py"
+        launcher = TRUSTED_LAUNCHER
         bootstrap = (
             "import sys; sys.path.insert(0, sys.argv[1]); "
             "from scripts.workflow_pilot.trusted_review_gate import main; "
@@ -444,7 +470,7 @@ class GitHubReviewTests(unittest.TestCase):
                 "--request", str(path), "--mode", "plan",
             ]
             for entrypoint in (
-                [sys.executable, "-I", "-c", bootstrap, str(self.repo.root)],
+                [sys.executable, "-I", "-c", bootstrap, str(ROOT)],
                 [sys.executable, "-I", str(launcher), "review-family"],
             ):
                 with self.subTest(base=base, head=head, entrypoint=entrypoint[2]):
@@ -462,8 +488,8 @@ class GitHubReviewTests(unittest.TestCase):
         bootstrap = """
 import runpy, subprocess, sys
 from pathlib import Path
-fault, entry, root = sys.argv[1:4]
-arguments = sys.argv[4:]
+fault, entry, root, trusted_root = sys.argv[1:5]
+arguments = sys.argv[5:]
 run = subprocess.run
 def bounded(command, **kwargs):
     if Path(command[0]).name == ("git" if fault == "git-timeout" else "gh"):
@@ -477,14 +503,14 @@ def bounded(command, **kwargs):
     return run(command, **kwargs)
 subprocess.run = bounded
 if entry == "direct":
-    sys.path.insert(0, root)
+    sys.path.insert(0, trusted_root)
     if fault == "git-timeout":
         from scripts.workflow_pilot.isolated_launcher import main
         arguments = ["review-family", *arguments]
     else:
         from scripts.workflow_pilot.trusted_review_gate import main
     raise SystemExit(main(arguments))
-sys.argv = [str(Path(root) / "scripts/workflow_pilot/isolated_launcher.py"),
+sys.argv = [str(Path(trusted_root) / "scripts/workflow_pilot/isolated_launcher.py"),
             "review-family", *arguments]
 runpy.run_path(sys.argv[0], run_name="__main__")
 """
@@ -492,7 +518,7 @@ runpy.run_path(sys.argv[0], run_name="__main__")
             for entry in ("direct", "isolated"):
                 with self.subTest(fault=fault, entry=entry):
                     result = subprocess.run(
-                        [sys.executable, "-I", "-c", bootstrap, fault, entry, str(self.repo.root),
+                        [sys.executable, "-I", "-c", bootstrap, fault, entry, str(self.repo.root), str(ROOT),
                          "--repository-root", str(self.repo.root), "--subject-root", str(self.repo.root),
                          "--tool-revision", self.repo.base, "--candidate", self.repo.base,
                          "--request", str(path), "--mode", "plan" if fault == "git-timeout" else "check"],
@@ -537,15 +563,14 @@ runpy.run_path(sys.argv[0], run_name="__main__")
                 "import runpy; sys.argv = sys.argv[1:]; "
                 "runpy.run_path(sys.argv[0], run_name='__main__')"
             )
-            entry = [str(self.repo.root / "scripts/workflow_pilot/isolated_launcher.py"),
-                     "review-family"]
+            entry = [str(TRUSTED_LAUNCHER), "review-family"]
         else:
             bootstrap += (
                 "sys.path.insert(0, sys.argv[1]); "
                 "from scripts.workflow_pilot.trusted_review_gate import main; "
                 "raise SystemExit(main(sys.argv[2:]))"
             )
-            entry = [str(self.repo.root)]
+            entry = [str(ROOT)]
         return subprocess.run(
             [sys.executable, "-I", "-c", bootstrap, *entry,
              "--repository-root", str(self.repo.root), "--subject-root", str(self.repo.root),
@@ -665,7 +690,8 @@ runpy.run_path(sys.argv[0], run_name="__main__")
         data = request(base=self.repo.base, head=self.repo.base)
         path = self.repo.root / "request.json"
         path.write_text(json.dumps(data))
-        launcher = self.repo.root / "scripts/workflow_pilot/isolated_launcher.py"
+        launcher = TRUSTED_LAUNCHER
+        self.assertFalse(launcher.is_relative_to(self.repo.root))
         command = [
             sys.executable, "-I", "-B", str(launcher), "review-family",
             "--repository-root", str(self.repo.root), "--subject-root", str(self.repo.root),
@@ -674,20 +700,29 @@ runpy.run_path(sys.argv[0], run_name="__main__")
         ]
         files = [self.repo.root / ("scripts/workflow_pilot/" + name + ".py")
                  for name in ("trusted_review_gate", "review_family", "review_subjects",
-                              "reporter", "__init__")]
-        intended = [item.read_bytes() for item in files]
+                              "reporter", "__init__", "isolated_launcher")]
+        files.append(self.repo.root / "scripts/__init__.py")
+        intended = [item.read_bytes() if item.exists() else None for item in files]
+        sentinel = self.repo.root / "build" / "candidate-bootstrap-executed"
+        sentinel.parent.mkdir(exist_ok=True)
         try:
             for item in files:
-                item.write_text("raise RuntimeError('wrong working copy executed')\n")
+                item.write_text(
+                    "from pathlib import Path\nPath(" + repr(str(sentinel)) + ").write_text('ran')\n"
+                    "raise RuntimeError('candidate bootstrap or working copy executed')\n")
             result = subprocess.run(command, env=ENV, capture_output=True, timeout=30)
             self.assertEqual(result.returncode, 0, result.stderr.decode())
             report = json.loads(result.stdout)
             self.assertEqual(report["tool_revision"], self.repo.base)
             self.assertEqual(len(report["obligations"]), 9)
             self.assertFalse(report["merge_permission"])
+            self.assertFalse(sentinel.exists())
         finally:
             for item, source in zip(files, intended):
-                item.write_bytes(source)
+                if source is None:
+                    item.unlink()
+                else:
+                    item.write_bytes(source)
         data["trusted"] = True
         path.write_text(json.dumps(data))
         result = subprocess.run(command, env=ENV, capture_output=True, timeout=30)
