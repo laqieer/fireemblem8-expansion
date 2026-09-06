@@ -257,6 +257,7 @@ def allocated_size(path, gitlinks=()):
             require(not item.is_mount(), "nested mount requires preservation")
             require(empty_gitlink_directory(item) == empty_directories[item],
                     "gitlink directory changed since observation")
+            del empty_directories[item]
             continue
         if stat.S_ISDIR(info.st_mode):
             require(item == path or not item.is_mount(), "nested mount requires preservation")
@@ -276,6 +277,7 @@ def allocated_size(path, gitlinks=()):
                 ), "nested Git repository/bare metadata requires preservation")
                 for entry in entries:
                     pending.append(Path(entry.path))
+    require(not empty_directories, "gitlink directories were omitted from the workspace scan")
     return size
 
 

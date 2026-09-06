@@ -1355,6 +1355,39 @@ class CleanupTests(unittest.TestCase):
         self.assertEqual(calls, 3)
         self.assertEqual(file.read_bytes(), b"")
 
+    def test_gitlink_parent_symlink_before_final_size_scan_is_preserved(self):
+        link, = self.completed_empty_gitlinks("vendor/empty-submodule")
+        parent = link.parent
+        retained = self.sandbox / "retained-vendor"
+        padding = self.target / "build" / "padding"
+        padding.parent.mkdir()
+        padding.touch()
+        original = cleanup.allocated_size
+        expected_size = original(self.target)
+        calls = 0
+
+        def change(path, *args):
+            nonlocal calls
+            calls += 1
+            if calls == 3:
+                parent.rename(retained)
+                parent.symlink_to(retained, target_is_directory=True)
+                difference = expected_size - original(path)
+                self.assertGreaterEqual(difference, 0)
+                self.assertLessEqual(difference, 1024 * 1024)
+                padding.write_bytes(os.urandom(difference))
+                self.assertEqual(original(path), expected_size)
+            return original(path, *args)
+
+        with patch.object(cleanup, "allocated_size", side_effect=change), \
+                patch.object(cleanup, "execute", wraps=cleanup.execute) as commands:
+            self.held("gitlink")
+        self.assertEqual(calls, 3)
+        self.assertTrue(parent.is_symlink())
+        self.assertTrue((retained / link.name).is_dir())
+        self.assertFalse(any("worktree" in call.args[0] and "remove" in call.args[0]
+                             for call in commands.call_args_list))
+
     def test_submodule_git_and_hooks_do_not_run_even_after_empty_gitlink_observation(self):
         link, = self.completed_empty_gitlinks("vendor/empty-submodule")
         prepared = self.sandbox / "prepared-submodule"
