@@ -145,6 +145,22 @@ records = manifest.load_discovery(
 content = manifest.render_discovery_makefile(records)
 ```
 
+For a declared private output, the compatible adapter combines those same
+validators and renderer with the ordinary logical build-root rule:
+
+```python
+relative_output, content = manifest.render_discovery_artifact(
+    manifest_path, "build/generated/asset-discovery/selected.mk",
+    tracked_sources=frozenset(captured_regular_git_paths))
+```
+
+The returned path is repository-relative and must identify a file below the
+build root; malformed paths, the root directory itself, and escaping paths
+reject. This logical check is shared with ordinary filesystem writing.
+The isolated executor must separately enforce the declared private output,
+source-ancestor/symlink restrictions, capture and publication. The adapter
+does not write into the source tree or redirect a guest path.
+
 The caller must obtain that set from its authoritative Git capture, not from
 the asset manifest's claims. This is an input to the existing membership
 check, not a skip-validation flag: every source still needs a valid path,
@@ -207,6 +223,12 @@ malformed membership data, and introduce an escaping source path. The
 `test_captured_discovery_*` cases in
 `scripts/assets/tests/test_manifest.py` automate those positive/adversarial
 checks without replacing normal CLI verification or output safety.
+The `test_discovery_artifact_*` cases additionally reject malformed/escaping
+logical outputs, require complete captured membership, and compare actual
+rendered Make-include behavior while verifying input metadata is unchanged.
+The immutable probe's copied file timestamps may differ from an ambient
+checkout: equivalence compares ordinary rendering and adapted rendering on
+the same captured inputs, not unrelated wall-clock/materialization times.
 
 **TC-ASSET-TMX-064-POSITIVE** freezes the generated Chapter 2 15x15 payload
 and its map-load wiring. **TC-ASSET-TMX-064-DEFAULT** proves that the normal

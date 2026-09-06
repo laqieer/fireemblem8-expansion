@@ -712,6 +712,107 @@ class AssetManifestTests(unittest.TestCase):
             with self.assertRaisesRegex(GeneratedDataValidationError, "unsafe source path"):
                 manifest.load_discovery(source, tracked_sources=frozenset())
 
+    def test_discovery_artifact_uses_same_validation_rendering_and_logical_path(self):
+        source = os.path.join(REPO_ROOT, "assets", "manifest.json")
+        ordinary = manifest.load_discovery(source)
+        expected = manifest.render_discovery_makefile(ordinary)
+        tracked = frozenset(manifest.discovery_sources(ordinary))
+        logical = "build/generated/asset-discovery/captured.mk"
+        with mock.patch.object(
+            manifest.subprocess, "run", side_effect=AssertionError("unexpected Git subprocess"),
+        ):
+            path, content = manifest.render_discovery_artifact(
+                source, logical, tracked_sources=tracked,
+            )
+        self.assertEqual(path, logical)
+        self.assertEqual(content, expected)
+        self.assertEqual(len(ordinary), 3)
+        self.assertFalse(os.path.exists(os.path.join(REPO_ROOT, logical)))
+
+    def test_discovery_artifact_rejects_malformed_or_escaping_outputs(self):
+        source = os.path.join(REPO_ROOT, "assets", "manifest.json")
+        tracked = frozenset(manifest.discovery_sources(manifest.load_discovery(source)))
+        for logical in (
+            "", "build", "src/forged.mk", "build/../../forged.mk",
+            "/work/build/generated/asset-discovery/forged.mk", "build/bad\0.mk",
+        ):
+            with self.subTest(logical=logical):
+                with self.assertRaises(GeneratedDataError):
+                    manifest.render_discovery_artifact(
+                        source, logical, tracked_sources=tracked,
+                    )
+
+    def test_discovery_artifact_requires_complete_captured_identity(self):
+        source = os.path.join(REPO_ROOT, "assets", "manifest.json")
+        tracked = frozenset(manifest.discovery_sources(manifest.load_discovery(source)))
+        with mock.patch.object(
+            manifest.subprocess, "run", side_effect=AssertionError("unexpected Git subprocess"),
+        ):
+            for admitted, error in (
+                (None, GeneratedDataError),
+                (tracked - {"assets/portrait_registry.json"}, GeneratedDataValidationError),
+            ):
+                with self.subTest(admitted=admitted):
+                    with self.assertRaises(error):
+                        manifest.render_discovery_artifact(
+                            source, "build/generated/asset-discovery/captured.mk",
+                            tracked_sources=admitted,
+                        )
+
+    def test_discovery_artifact_make_behavior_uses_equivalent_input_metadata(self):
+        source = os.path.join(REPO_ROOT, "assets", "manifest.json")
+        records = manifest.load_discovery(source)
+        sources = manifest.discovery_sources(records)
+        before = {path: os.stat(os.path.join(REPO_ROOT, path)).st_mtime_ns for path in sources}
+        ordinary = manifest.render_discovery_makefile(records)
+        _, adapted = manifest.render_discovery_artifact(
+            source, "build/generated/asset-discovery/captured.mk",
+            tracked_sources=frozenset(sources),
+        )
+        cli_output = os.path.join(TEST_ROOT, "ordinary-cli.mk")
+        with contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(cli.main([
+                "--item-id-cap", "0xCD", "--manifest", source,
+                "--discovery-makefile", cli_output, "discovery-makefile",
+            ]), 0)
+        with open(cli_output, encoding="utf-8") as handle:
+            self.assertEqual(handle.read(), ordinary)
+        self.assertEqual(
+            {path: os.stat(os.path.join(REPO_ROOT, path)).st_mtime_ns for path in sources},
+            before,
+        )
+        self.assertEqual(adapted, ordinary)
+        variables = (
+            "ASSET_MANIFEST_SOURCE_DIGEST", "ASSET_TMX_INCBIN_CONSUMERS",
+            "ASSET_PORTRAIT_INCBIN_CONSUMERS", "ASSET_BANIM_INCBIN_CONSUMERS",
+            "ASSET_CUSTOM_SPELL_INCBIN_CONSUMERS",
+        )
+        makefile = os.path.join(TEST_ROOT, "consumer.mk")
+        artifact = os.path.join(TEST_ROOT, "artifact.mk")
+        with open(makefile, "w", encoding="utf-8") as handle:
+            handle.write(
+                "include artifact.mk\n.PHONY: observe\nobserve:\n"
+                "\t@printf '%s\\n' " + " ".join("'$({})'".format(name) for name in variables) + "\n"
+            )
+
+        def observe(content):
+            with open(artifact, "w", encoding="utf-8") as handle:
+                handle.write(content)
+            completed = subprocess.run(
+                ["/usr/bin/make", "--no-print-directory", "-f", makefile, "observe"],
+                cwd=TEST_ROOT,
+                env={"PATH": "/usr/bin:/bin", "LC_ALL": "C"},
+                capture_output=True, text=True, check=True,
+            )
+            return dict(zip(variables, completed.stdout.splitlines()))
+
+        expected = observe(ordinary)
+        self.assertEqual(observe(adapted), expected)
+        self.assertEqual(observe("# Nonsemantic producer comment\n" + adapted), expected)
+        self.assertEqual(expected["ASSET_TMX_INCBIN_CONSUMERS"], "CH2_MAIN_MAP")
+        changed = observe(adapted + "ASSET_TMX_INCBIN_CONSUMERS := WRONG_CONSUMER\n")
+        self.assertNotEqual(changed, expected)
+
     def test_make_supports_isolated_output_override_with_portrait_incbin_consumer(self):
         result = self.run_assets_make(
             os.path.join(REPO_ROOT, "assets", "manifest.json"),

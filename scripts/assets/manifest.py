@@ -317,6 +317,14 @@ def render_discovery_makefile(records):
     return "".join(lines)
 
 
+def render_discovery_artifact(manifest_path, logical_path, *, tracked_sources):
+    """Validate an archive-backed discovery artifact without writing its destination."""
+    if tracked_sources is None:
+        raise GeneratedDataError("discovery artifact requires captured tracked-source identities")
+    destination = _output_path(logical_path, ASSET_BUILD_ROOT)
+    records = load_discovery(manifest_path, tracked_sources=tracked_sources)
+    return os.path.relpath(destination, REPO_ROOT), render_discovery_makefile(records)
+
 
 
 
@@ -515,12 +523,23 @@ def safe_output_dir(path):
     return requested
 
 
-def _safe_output_path(path, out_dir):
+def _output_path(path, out_dir):
+    try:
+        path = os.fspath(path)
+    except TypeError as error:
+        raise GeneratedDataError("generated output must be a nonempty path") from error
+    if not isinstance(path, str) or not path or "\0" in path:
+        raise GeneratedDataError("generated output must be a nonempty path without NUL bytes")
     requested = os.path.abspath(path)
-    if os.path.commonpath((out_dir, requested)) != out_dir:
+    if requested == out_dir or os.path.commonpath((out_dir, requested)) != out_dir:
         raise GeneratedDataError(
             "generated output '{}' must stay under {}".format(path, out_dir)
         )
+    return requested
+
+
+def _safe_output_path(path, out_dir):
+    requested = _output_path(path, out_dir)
     relative = os.path.relpath(requested, out_dir)
     current = out_dir
     for component in relative.split(os.sep):
