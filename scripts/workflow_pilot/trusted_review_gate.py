@@ -86,7 +86,7 @@ class GitTree:
             return reporter.run_git(
                 self.root, "--no-optional-locks", "-c", "core.fsmonitor=false",
                 "-c", "core.hooksPath=/dev/null", "-c", "diff.external=",
-                *arguments)
+                *arguments, timeout=60)
         except reporter.PilotDataError as error:
             raise ValueError("review Git unavailable: " + str(error)[-1000:]) from error
 

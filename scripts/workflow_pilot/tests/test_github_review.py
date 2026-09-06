@@ -494,7 +494,8 @@ run = subprocess.run
 def bounded(command, **kwargs):
     if Path(command[0]).name == ("git" if fault == "git-timeout" else "gh"):
         if fault == "git-timeout":
-            kwargs["timeout"] = 0
+            if kwargs.get("timeout") is not None:
+                kwargs["timeout"] = 0
         elif fault == "gh-timeout":
             command = [sys.executable, "-I", "-c", "import time; time.sleep(60)"]
             kwargs["timeout"] = 0.05
@@ -504,11 +505,7 @@ def bounded(command, **kwargs):
 subprocess.run = bounded
 if entry == "direct":
     sys.path.insert(0, trusted_root)
-    if fault == "git-timeout":
-        from scripts.workflow_pilot.isolated_launcher import main
-        arguments = ["review-family", *arguments]
-    else:
-        from scripts.workflow_pilot.trusted_review_gate import main
+    from scripts.workflow_pilot.trusted_review_gate import main
     raise SystemExit(main(arguments))
 sys.argv = [str(Path(trusted_root) / "scripts/workflow_pilot/isolated_launcher.py"),
             "review-family", *arguments]
@@ -526,10 +523,33 @@ runpy.run_path(sys.argv[0], run_name="__main__")
                     self.assertNotEqual(result.returncode, 0)
                     self.assertEqual(result.stdout, "")
                     self.assertTrue(result.stderr.startswith(
-                        "workflow-pilot-launcher:" if fault == "git-timeout" else "review-family:"),
+                        "workflow-pilot-launcher:" if fault == "git-timeout" and entry == "isolated"
+                        else "review-family:"),
                         result.stderr)
                     self.assertNotIn("Traceback", result.stderr)
                     self.assertLessEqual(len(result.stderr), 1200)
+
+    def test_direct_git_timeout_preserves_default_reporter_calls(self):
+        tree = gate.GitTree(self.repo.root, self.repo.base)
+        run = subprocess.run
+        limits = []
+
+        def bounded(command, **kwargs):
+            limits.append(kwargs.get("timeout"))
+            if kwargs.get("timeout") is not None:
+                kwargs["timeout"] = 0
+            return run(command, **kwargs)
+
+        with patch.object(gate.subprocess, "run", side_effect=bounded):
+            self.assertEqual(
+                gate.reporter.run_git(self.repo.root, "rev-parse", "HEAD").decode().strip(),
+                self.repo.base)
+            with self.assertRaisesRegex(ValueError, "timed out") as caught:
+                tree.git("rev-parse", "HEAD")
+        self.assertEqual(limits, [None, 60])
+        self.assertLessEqual(len(str(caught.exception)), 1200)
+        self.assertIsInstance(caught.exception.__cause__, gate.reporter.PilotDataError)
+        self.assertIsInstance(caught.exception.__cause__.__cause__, subprocess.TimeoutExpired)
 
     def test_github_api_translates_real_os_failures_but_not_programming_errors(self):
         run = subprocess.run

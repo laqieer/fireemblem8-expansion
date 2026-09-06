@@ -524,6 +524,7 @@ def git_command(repository_root: Path, *arguments: str) -> tuple[str, ...]:
 def run_git(
     repository_root: Path,
     *arguments: str,
+    timeout: float | None = None,
 ) -> bytes:
     try:
         completed = subprocess.run(
@@ -531,7 +532,10 @@ def run_git(
             env=git_environment(offline=True),
             check=False,
             capture_output=True,
+            **({"timeout": timeout} if timeout is not None else {}),
         )
+    except subprocess.TimeoutExpired as error:
+        raise PilotDataError("Git invocation timed out") from error
     except OSError as error:
         raise PilotDataError(f"cannot execute Git: {error}") from error
     if completed.returncode == 0:

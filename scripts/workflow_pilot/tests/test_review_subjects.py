@@ -190,6 +190,20 @@ class SubjectTests(SubjectTestCase):
         with self.assertRaises(ValueError):
             self.model.assess_handoff(wrong, members, (*prior, *current), session, **kwargs)
 
+    def test_cross_same_count_wrong_geometry_fails_its_selected_member(self):
+        path = "src/expansion_aoe.c"
+        source = (self.repo.root / path).read_text()
+        broken = source.replace(
+            """    case EXPANSION_AOE_SHAPE_CROSS:
+        if (dx != 0 && dy != 0)
+            return -1;
+
+        return dx + dy;""",
+            """    case EXPANSION_AOE_SHAPE_CROSS:
+        return 2 * (dx > dy ? dx : dy);""")
+        self.assertNotEqual(source, broken)
+        self.remediation("aoe", path, broken, "targets:CROSS")
+
     def test_real_generated_owner_before_after_missing_sibling(self):
         path = "src/data/ch2_eventlists.json"
         data = json.loads((self.repo.root / path).read_text())

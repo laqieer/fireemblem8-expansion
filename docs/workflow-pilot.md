@@ -300,6 +300,10 @@ it must not convert `source_audit_complete` into approval.
 Expected missing-object and ancestry failures are translated at the existing
 Git adapter into bounded, nonzero `review-family:` diagnostics in both direct
 and isolated entrypoints, not tracebacks or successful fallback assessments.
+The actual direct `GitTree.git` path supplies a 60-second deadline through the
+existing reporter Git runner's optional timeout seam; unrelated callers keep
+their original default behavior. Its timeout is translated through the same
+direct adapter boundary, independently of the launcher helper.
 The fixed launcher's Git helper also translates its expected subprocess
 timeout into a bounded `workflow-pilot-launcher:` failure. The GitHub adapter
 translates expected CLI timeout/launch errors once into its existing
@@ -345,6 +349,11 @@ The shipped unrelated subject uses are:
   target predicates in `src/expansion_aoe.c`. The existing C driver has closed
   per-phase/shape/route/target selectors, preserving its no-argument full run.
   It executes real functions with positive and adversarial inputs. Separate
+  shape selectors build the actual range map and compare every cell with
+  independent selected-shape bitmaps, not merely tile totals or another
+  production geometry helper. A same-nine-cell square cannot stand in for
+  the cross geometry.
+  Separate
   enabled/disabled native reference and ARM object symbol/section checks
   establish the resource boundary. The modern linker gate passes its resolved
   `MODERN_CC`, `MODERN_NM` and `MODERN_SIZE` paths, including

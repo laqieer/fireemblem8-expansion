@@ -158,7 +158,11 @@ the consumers' independent protected-principal/deployment requirements.
    execution; a system-only installation is not required.
    Inspect the actual AoE controls: every public item phase, typed route checks,
    each shape and bounded/stable target behavior runs its selected native
-   driver group. Enabled and disabled reference drivers and ARM object
+   driver group. Each shape requests the actual range map and checks every
+   cell against an independent radius-two selected-shape bitmap. Change CROSS
+   to a 3x3 square that still reports nine tiles and preserves the source
+   target: its own selector must fail on geometry, then pass restored source.
+   Enabled and disabled reference drivers and ARM object
    symbols/sections pass in their respective profiles, including formatting-only
    source changes. Remove the real AI_NEVER rejection in an owned
    origin commit; the same probe fails before and passes restored source.
@@ -302,6 +306,11 @@ the consumers' independent protected-principal/deployment requirements.
    successful fallback. The API must translate only the expected OS/timeout
    errors, not an unrelated programming exception. No remote API is contacted
    by these controlled error-path tests.
+   The direct Git timeout control must enter `trusted_review_gate.main` /
+   `GitTree.git`, not call the launcher under a direct label. Verify its
+   explicit bounded call raises a real local subprocess timeout while a
+   default reporter Git call retains its original behavior; exercise the
+   external launcher's existing timeout path separately.
 10. First/second request rounds produce bounded handoffs; the third remains
     held through later heads and clean reports until a valid coordinator
     disposition names the held round/head. Preserve already-created commits
