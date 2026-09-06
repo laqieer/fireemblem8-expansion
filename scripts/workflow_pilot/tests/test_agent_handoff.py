@@ -101,8 +101,7 @@ class GitFixture:
                     stream.close()
         self.directory.cleanup()
 
-    def owner_process(self, entry=None):
-        entry = entry or self.entry
+    def waiting_process(self):
         process = subprocess.Popen(
             ["/usr/bin/python3", "-I", "-c",
              "import sys; print('ready', flush=True); sys.stdin.readline()"],
@@ -111,6 +110,11 @@ class GitFixture:
         )
         self.processes.append(process)
         self.assert_ready(process)
+        return process
+
+    def owner_process(self, entry=None):
+        entry = entry or self.entry
+        process = self.waiting_process()
         handoff.bind_process(entry, process.pid)
         return process
 
@@ -407,6 +411,40 @@ class ExactHandoffTests(unittest.TestCase):
                 f.entry["remote_actions"] = [{"id": "remote-event", "action": action, "at": observations.utc_now()}]
                 self.assertIn("implementation-owner-remote-action", f.validate(result)["rejection_codes"])
 
+    def test_initial_root_cannot_restart_a_completed_issue_or_pr(self):
+        f = self.fixture
+        result = f.complete()
+        self.assertTrue(f.validate(result)["handoff_ready"])
+        fresh = {**copy.deepcopy(f.assignment), "id": "fresh", "owner_id": "fresh-owner",
+                 "session_id": "fresh-session", "dispatch_id": "fresh-dispatch",
+                 "assigned_parent_sha": result["result_sha"]}
+        for issue, pr in ((178, 191), (178, None), (178, 192), (179, 191)):
+            assignment = {**fresh, "issue": issue, "pull_request": pr}
+            with self.subTest(source="reservation", issue=issue, pr=pr):
+                candidate = copy.deepcopy(f.state)
+                before = observations.json_bytes(candidate)
+                with self.assertRaisesRegex(handoff.HandoffDataError, "initial"):
+                    handoff.assign(candidate, assignment)
+                self.assertEqual(observations.json_bytes(candidate), before)
+            with self.subTest(source="loaded", issue=issue, pr=pr):
+                standalone = {**f.state, "assignments": []}
+                entry = handoff.assign(standalone, assignment)
+                path = f.home / "duplicate-root.json"
+                write_json(path, {**f.state, "assignments": [*f.state["assignments"], entry]})
+                with self.assertRaisesRegex(handoff.HandoffDataError, "initial"):
+                    handoff.validate_state(observations.load_json(path))
+        independent = handoff.assign(f.state, {**fresh, "issue": 179, "pull_request": None})
+        self.assertEqual(independent["assignment"]["kind"], "initial")
+        other = f.home / "independent"
+        git(f.repository, "worktree", "add", "-b", "agent/independent", str(other), f.parent)
+        handoff.assign(f.state, {
+            **fresh, "id": "independent", "owner_id": "independent-owner",
+            "session_id": "independent-session", "dispatch_id": "independent-dispatch",
+            "issue": 180, "pull_request": None, "allowed_worktree": str(other),
+            "expected_branch": "agent/independent", "assigned_parent_sha": f.parent,
+        })
+        self.assertEqual(len(handoff.validate_state(f.state)["assignments"]), 3)
+
     def test_available_plan_and_unavailable_suspend_or_disconnect(self):
         f = self.fixture
         f.state["availability"]["autostop_enabled"] = True
@@ -519,6 +557,40 @@ class HandoffSchemaTests(unittest.TestCase):
             else:
                 with self.assertRaises(handoff.HandoffDataError):
                     handoff.validate_assignment(document)
+
+    def test_active_and_completed_watcher_process_schema_runtime_parity(self):
+        f = self.fixture
+        process = f.waiting_process()
+        watcher = handoff.reserve_watcher(f.state, "watch", 91, 1, f.parent, process.pid)
+        self.validator.validate(f.state)
+        handoff.validate_state(f.state)
+        for mutation in ("process-exited", "process-exit-code", "ended-running"):
+            with self.subTest(mutation=mutation):
+                candidate = copy.deepcopy(f.state)
+                changed = candidate["watchers"][0]
+                if mutation == "process-exited":
+                    changed["process"]["state"] = "exited"
+                elif mutation == "process-exit-code":
+                    changed["process"]["exit_code"] = 0
+                else:
+                    changed["ended_at"] = observations.utc_now()
+                self.reject_both(candidate, handoff.validate_state)
+        process.stdin.write(b"done\n")
+        process.stdin.flush()
+        os.waitid(os.P_PID, process.pid, os.WEXITED | os.WNOWAIT)
+        zombie = observations.sample_process(watcher["process"])
+        self.assertEqual(zombie["state"], "exited")
+        candidate = copy.deepcopy(f.state)
+        candidate["watchers"][0]["process"] = zombie
+        self.reject_both(candidate, handoff.validate_state)
+        handoff.finish_watcher(f.state, watcher["id"])
+        self.assertIsNone(watcher["exit_code"])
+        self.assertFalse(watcher["process"]["rss_complete"])
+        self.validator.validate(f.state)
+        handoff.validate_state(f.state)
+        owned = observations.observe_owned_exit(process, watcher["process"])
+        self.assertTrue(owned["rss_complete"])
+        self.assertEqual(owned["exit_code"], 0)
 
 
 class RawDiffBoundaryTests(unittest.TestCase):

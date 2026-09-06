@@ -201,6 +201,8 @@ def validate_process(value):
     require(not value["rss_complete"] or value["state"] == "exited"
             and value["exit_code"] is not None and value["peak_rss_bytes"] is not None,
             "complete RSS needs an owned OS wait result")
+    require(value["state"] != "running" or value["exit_code"] is None,
+            "running process cannot have an exit code")
 
 
 def validate_availability(value):
@@ -371,11 +373,17 @@ def validate_state(value):
             require(left["issue"] != right["issue"] and left["allowed_worktree"] != right["allowed_worktree"]
                     and (left["pull_request"] is None or left["pull_request"] != right["pull_request"]),
                     "overlapping active owners")
-    successors = set()
+    successors, initial_issues, initial_prs = set(), set(), set()
     by_id = {entry["assignment"]["id"]: entry for entry in value["assignments"]}
     for entry in value["assignments"]:
         a = entry["assignment"]
         if a["predecessor_id"] is None:
+            require(a["issue"] not in initial_issues
+                    and (a["pull_request"] is None or a["pull_request"] not in initial_prs),
+                    "duplicate initial issue/PR lineage")
+            initial_issues.add(a["issue"])
+            if a["pull_request"] is not None:
+                initial_prs.add(a["pull_request"])
             continue
         previous = by_id.get(a["predecessor_id"])
         require(previous is not None and a["predecessor_id"] not in successors,
@@ -397,7 +405,7 @@ def validate_state(value):
             require(previous["validation"] is not None and previous["validation"]["handoff_ready"]
                     and a["assigned_parent_sha"] == previous["validation"]["result_sha"],
                     "review successor needs the previous accepted result")
-    watcher_ids, active_runs = set(), set()
+    watcher_ids, watcher_processes, active_runs = set(), set(), set()
     for watcher in items(value["watchers"]):
         fields(watcher, "id coordinator_id run_id attempt head_sha process started_at ended_at "
                "exit_code run query_error")
@@ -410,13 +418,16 @@ def validate_state(value):
         sha(watcher["head_sha"])
         validate_process(watcher["process"])
         require(watcher["process"]["runtime_handle"] == watcher["id"], "watcher process handle mismatch")
-        require(tuple(watcher["process"][key] for key in ("boot_id", "pid", "start_ticks"))
-                not in owner_processes, "implementation owner cannot be the CI watcher")
+        identity = tuple(watcher["process"][key] for key in ("boot_id", "pid", "start_ticks"))
+        require(identity not in owner_processes, "implementation owner cannot be the CI watcher")
+        require(identity not in watcher_processes, "watcher process reused")
+        watcher_processes.add(identity)
         timestamp(watcher["started_at"])
         integer(watcher["exit_code"], minimum=-128, maximum=255, nullable=True)
         text(watcher["query_error"], nullable=True)
         if watcher["ended_at"] is None:
-            require(watcher["exit_code"] is None, "running watcher cannot have an exit code")
+            require(watcher["process"]["state"] == "running" and watcher["exit_code"] is None,
+                    "active watcher needs a running process and no exit code")
             identity = (watcher["run_id"], watcher["attempt"])
             require(identity not in active_runs, "duplicate active watcher")
             active_runs.add(identity)
@@ -566,9 +577,10 @@ def observe_cli(entry, log_path):
             _event(entry, "assignment_sent", event["id"])
         if updated["session_id"] != a["session_id"] or event.get("agentId", a["owner_id"]) != a["owner_id"]:
             continue
-        # A native input event with our explicit correlation marker is a receipt;
-        # subagent.started/tool transport success is deliberately not one.
-        if kind == "user.message" and f"[handoff:{a['id']}]" in data.get("content", ""):
+        # Receipt binds the actual dispatched task as well as its prompt marker.
+        # Subagent-start/transport success or opaque event data cannot substitute.
+        if (kind == "user.message" and data.get("parentAgentTaskId") == a["dispatch_id"]
+                and isinstance(data.get("content"), str) and f"[handoff:{a['id']}]" in data["content"]):
             _event(entry, "assignment_received", event["id"])
         elif kind == "assistant.turn_start":
             entry["coordination_turns"] += 1
@@ -795,18 +807,22 @@ def preserve_interruption(entry, reason):
     return entry["interruption"]
 
 
+def watcher_ci_state(watcher):
+    run = watcher["run"]
+    if run is None or watcher["query_error"] is not None:
+        return "unknown"
+    if run["status"] != "completed":
+        return "pending"
+    return "success" if run["conclusion"] == "success" else "failure"
+
+
 def ci_state(state, result_sha):
     matching = [watcher for watcher in state["watchers"] if watcher["head_sha"] == result_sha]
     if not matching:
         return "absent"
     latest = max(matching, key=lambda watcher: (watcher["run_id"], watcher["attempt"],
                                                watcher["started_at"]))
-    run = latest["run"]
-    if run is None or latest["query_error"] is not None:
-        return "unknown"
-    if run["status"] != "completed":
-        return "pending"
-    return "success" if run["conclusion"] == "success" else "failure"
+    return watcher_ci_state(latest)
 
 
 def validate_handoff(state, result, *, worktree, run_checks=True):
@@ -912,9 +928,11 @@ def reserve_watcher(state, watcher_id, run_id, attempt, head_sha, pid):
             require(previous["ended_at"] is not None
                     and observations.sample_process(previous["process"])["state"] == "exited",
                     "previous watcher has not terminated")
+    process = observations.process_identity(pid, watcher_id)
+    require(process["state"] == "running", "watcher process is not running")
     watcher = {"id": watcher_id, "coordinator_id": state["coordinator_id"], "run_id": run_id,
                "attempt": attempt, "head_sha": head_sha,
-               "process": observations.process_identity(pid, watcher_id), "started_at": now(),
+               "process": process, "started_at": now(),
                "ended_at": None, "exit_code": None, "run": None, "query_error": None}
     validate_state({**state, "watchers": [*state["watchers"], watcher]})
     state["watchers"].append(watcher)
@@ -1001,7 +1019,7 @@ def summarize_handoffs(state):
             "unknown_rss_records": unknown_rss, "coordination_turns": turns,
             "recovery_ms": recovery_ms, "rejection_codes": sorted(rejections),
             "runs": [{"run_id": item["run_id"], "attempt": item["attempt"],
-                      "ci_state": ci_state(state, item["head_sha"])} for item in state["watchers"]]}
+                      "ci_state": watcher_ci_state(item)} for item in state["watchers"]]}
 
 
 def parse_args(argv=None):

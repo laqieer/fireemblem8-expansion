@@ -13,8 +13,9 @@ from unittest import mock
 from scripts.workflow_pilot import agent_handoff as handoff
 from scripts.workflow_pilot import coordinator_observations as observations
 from scripts.workflow_pilot import raw_diff_check as raw
+from scripts.workflow_pilot import reporter
 from scripts.workflow_pilot.tests.test_agent_handoff import (
-    GitFixture, ROOT, native_event, write_json,
+    GitFixture, ROOT, git, native_event, write_json,
 )
 
 
@@ -47,13 +48,48 @@ class NativeObservationTests(unittest.TestCase):
         f.append(f.parent_log,
                  native_event("session.start", "session", sessionId="unrelated"),
                  native_event("tool.execution_start", "dispatch", toolCallId="dispatch-one", toolName="task"),
-                 native_event("user.message", "wrong-session", content="[handoff:assignment-one]"))
+                 native_event("user.message", "wrong-session", content="[handoff:assignment-one]",
+                              parentAgentTaskId=f.assignment["dispatch_id"]))
         handoff.observe_cli(f.entry, f.parent_log)
         self.assertEqual(len(f.entry["events"]), 1)
         f.append(f.owner_log, native_event("session.start", "owner-session", sessionId=f.assignment["session_id"]),
-                 native_event("user.message", "wrong-assignment", content="[handoff:different]"))
+                 native_event("user.message", "wrong-assignment", content="[handoff:different]",
+                              parentAgentTaskId=f.assignment["dispatch_id"]))
         handoff.observe_cli(f.entry, f.owner_log)
         self.assertEqual(len(f.entry["events"]), 1)
+
+    def test_native_receipt_requires_the_actual_dispatched_task_identity(self):
+        f = self.fixture
+        f.append(f.parent_log, native_event("tool.execution_start", "dispatch",
+                                           toolCallId=f.assignment["dispatch_id"], toolName="task"))
+        handoff.observe_cli(f.entry, f.parent_log)
+        marker = f"[handoff:{f.assignment['id']}]"
+        for event_id, data in (
+            ("wrong-task", {"content": marker, "parentAgentTaskId": "another-dispatch"}),
+            ("missing-task", {"content": marker}),
+            ("null-task", {"content": marker, "parentAgentTaskId": None}),
+            ("opaque-task", {"content": marker, "parentAgentTaskId": {"id": f.assignment["dispatch_id"]}}),
+            ("unrelated", {"content": "Different work", "parentAgentTaskId": f.assignment["dispatch_id"]}),
+            ("opaque-content", {"content": None, "parentAgentTaskId": f.assignment["dispatch_id"]}),
+        ):
+            with self.subTest(event=event_id):
+                candidate = copy.deepcopy(f.entry)
+                path = f.home / (event_id + ".jsonl")
+                f.append(path, native_event("session.start", "owner-session",
+                                            sessionId=f.assignment["session_id"]),
+                         native_event("user.message", event_id, **data))
+                handoff.observe_cli(candidate, path)
+                self.assertEqual([item["state"] for item in candidate["events"]], ["assignment_sent"])
+        f.append(f.owner_log, native_event("session.start", "owner-session",
+                                          sessionId=f.assignment["session_id"]),
+                 native_event("user.message", "actual-receipt", content=marker,
+                                          parentAgentTaskId=f.assignment["dispatch_id"]))
+        handoff.observe_cli(f.entry, f.owner_log)
+        self.assertEqual([item["state"] for item in f.entry["events"]],
+                         ["assignment_sent", "assignment_received"])
+        self.assertEqual(f.entry["events"][-1]["source_id"], "actual-receipt")
+        handoff.observe_cli(f.entry, f.owner_log)
+        self.assertEqual(len(f.entry["events"]), 2)
 
     def test_native_delivery_does_not_authorize_a_second_owner_cycle(self):
         f = self.fixture
@@ -153,8 +189,8 @@ class WatcherObservationTests(unittest.TestCase):
         self.fixture = GitFixture()
         self.addCleanup(self.fixture.close)
 
-    def response(self, head, conclusion="success", status="completed"):
-        return {"id": 91, "run_attempt": 2, "head_sha": head, "workflow_id": 17,
+    def response(self, head, conclusion="success", status="completed", *, run_id=91, attempt=2):
+        return {"id": run_id, "run_attempt": attempt, "head_sha": head, "workflow_id": 17,
                 "repository": {"full_name": "owner/repository"},
                 "status": status, "conclusion": conclusion}
 
@@ -225,6 +261,100 @@ class WatcherObservationTests(unittest.TestCase):
         with self.assertRaisesRegex(handoff.HandoffDataError, "coordinator"):
             handoff.validate_state(f.state)
 
+    def test_process_identity_is_unique_across_watcher_runs_and_loaded_state(self):
+        f = self.fixture
+        owner = f.owner_process()
+        process, control = f.waiting_process(), f.waiting_process()
+        watcher = handoff.reserve_watcher(f.state, "watch-one", 91, 1, f.parent, process.pid)
+        with self.subTest(source="reservation"):
+            candidate = copy.deepcopy(f.state)
+            with self.assertRaisesRegex(handoff.HandoffDataError, "process reused"):
+                handoff.reserve_watcher(candidate, "watch-alias", 92, 1, f.parent, process.pid)
+            self.assertEqual(len(candidate["watchers"]), 1)
+        for stage in ("active", "completed"):
+            with self.subTest(source="loaded", stage=stage):
+                alias = {**copy.deepcopy(watcher), "id": "watch-alias", "run_id": 92}
+                alias["process"]["runtime_handle"] = alias["id"]
+                path = f.home / "duplicate-process.json"
+                write_json(path, {**f.state, "watchers": [watcher, alias]})
+                with self.assertRaisesRegex(handoff.HandoffDataError, "process reused"):
+                    handoff.validate_state(observations.load_json(path))
+            if stage == "active":
+                process.stdin.write(b"done\n")
+                process.stdin.flush()
+                os.waitid(os.P_PID, process.pid, os.WEXITED | os.WNOWAIT)
+                handoff.finish_watcher(f.state, watcher["id"], process)
+        handoff.reserve_watcher(f.state, "watch-control", 92, 1, f.parent, control.pid)
+        with self.assertRaisesRegex(handoff.HandoffDataError, "implementation owner"):
+            handoff.reserve_watcher(f.state, "watch-owner", 93, 1, f.parent, owner.pid)
+        self.assertIsNone(control.poll())
+        self.assertIsNone(owner.poll())
+        handoff.validate_state(f.state)
+
+    def test_exited_zombie_cannot_be_reserved_but_completed_watchers_reconcile(self):
+        f = self.fixture
+        process, control = f.waiting_process(), f.waiting_process()
+        identity = observations.process_identity(process.pid, "unreserved")
+        process.stdin.write(b"done\n")
+        process.stdin.flush()
+        os.waitid(os.P_PID, process.pid, os.WEXITED | os.WNOWAIT)
+        zombie = observations.process_identity(process.pid, "unreserved")
+        self.assertEqual(zombie["state"], "exited")
+        self.assertIsNone(process.returncode)
+        self.assertIsNone(zombie["exit_code"])
+        with self.subTest(state="zombie"):
+            with self.assertRaisesRegex(handoff.HandoffDataError, "running"):
+                handoff.reserve_watcher(copy.deepcopy(f.state), "dead-watch", 91, 1, f.parent, process.pid)
+        owned = observations.observe_owned_exit(process, identity)
+        self.assertEqual(owned["exit_code"], 0)
+        self.assertTrue(owned["rss_complete"])
+        self.assertIsNone(control.poll())
+        watcher = handoff.reserve_watcher(f.state, "control", 91, 2, f.parent, control.pid)
+        control.stdin.write(b"done\n")
+        control.stdin.flush()
+        os.waitid(os.P_PID, control.pid, os.WEXITED | os.WNOWAIT)
+        handoff.finish_watcher(f.state, watcher["id"], control)
+        self.assertEqual(watcher["exit_code"], 0)
+        self.assertTrue(watcher["process"]["rss_complete"])
+        capture = raw.ProcessResult(0, observations.json_bytes(self.response(f.parent)), b"", 1, .1, 1)
+        with mock.patch.object(raw, "run_process", return_value=capture):
+            handoff.reconcile_run(f.state, 91)
+        self.assertEqual(handoff.ci_state(f.state, f.parent), "success")
+        handoff.validate_state(f.state)
+
+    def test_report_rows_preserve_each_run_attempt_and_query_error(self):
+        f = self.fixture
+        result = f.complete()
+        self.assertTrue(f.validate(result)["handoff_ready"])
+        expected = []
+        for run_id, attempt, conclusion, status, query_error, ci in (
+            (91, 1, "failure", "completed", False, "failure"),
+            (91, 2, "success", "completed", False, "success"),
+            (92, 1, "cancelled", "completed", False, "failure"),
+            (93, 1, None, "in_progress", False, "pending"),
+            (94, 1, "success", "completed", True, "unknown"),
+            (95, 1, None, None, True, "unknown"),
+            (96, 1, "success", "completed", False, "success"),
+        ):
+            process = f.waiting_process()
+            handoff.reserve_watcher(f.state, f"watch-{run_id}-{attempt}", run_id, attempt,
+                                    result["result_sha"], process.pid)
+            if status is not None:
+                response = self.response(result["result_sha"], conclusion, status, run_id=run_id, attempt=attempt)
+                capture = raw.ProcessResult(0, observations.json_bytes(response), b"", 1, .1, 1)
+                with mock.patch.object(raw, "run_process", return_value=capture):
+                    handoff.reconcile_run(f.state, run_id)
+            if query_error:
+                with mock.patch.object(raw, "run_process", side_effect=ValueError("query unavailable")):
+                    handoff.reconcile_run(f.state, run_id)
+            self.assertEqual(handoff.ci_state(f.state, result["result_sha"]), ci)
+            expected.append({"run_id": run_id, "attempt": attempt, "ci_state": ci})
+        baseline = {"schema_version": 1, "snapshot": {"repository": f.state["repository"]}}
+        envelope = reporter.with_handoff_metrics(baseline, observations.json_bytes(f.state))
+        self.assertEqual(envelope["baseline"], baseline)
+        self.assertEqual(envelope["implementation_handoffs"]["runs"], expected)
+        self.assertEqual(handoff.ci_state(f.state, result["result_sha"]), "success")
+
     def test_malformed_query_bodies_are_unknown_not_exceptions_or_success(self):
         f = self.fixture
         process = f.owner_process({**f.entry, "process": None})
@@ -249,7 +379,6 @@ class RecoveryObservationTests(unittest.TestCase):
         f.receive()
         tracked = f.worktree / "docs/base.txt"
         tracked.write_text("staged\n")
-        from scripts.workflow_pilot.tests.test_agent_handoff import git
         git(f.worktree, "add", "docs/base.txt")
         tracked.write_text("unstaged\n")
         untracked = f.worktree / "docs/recovery.txt"
@@ -297,6 +426,36 @@ class RecoveryObservationTests(unittest.TestCase):
         with mock.patch.object(raw, "run_process", side_effect=ValueError("permission denied")):
             identity = {**f.entry["process"], "exit_code": -9}
             self.assertIsNone(observations.kernel_oom_evidence(identity, f.entry["assigned_at"], observations.utc_now()))
+
+    def test_initial_cannot_bypass_retained_worktree_replacement(self):
+        f = self.fixture
+        process = f.owner_process()
+        f.finish_owner(process)
+        recovery = handoff.preserve_interruption(f.entry, "process-exit")
+        lock = Path(f.entry["git_identity"]["git_dir"]) / "locked"
+        locked_bytes = lock.read_bytes()
+        other = f.home / "fresh-worktree"
+        git(f.repository, "worktree", "add", "-b", "agent/fresh", str(other), f.parent)
+        fresh = {**copy.deepcopy(f.assignment), "id": "fresh-root", "owner_id": "fresh-owner",
+                 "session_id": "fresh-session", "dispatch_id": "fresh-dispatch",
+                 "expected_branch": "agent/fresh", "allowed_worktree": str(other)}
+        with self.subTest(source="reservation"):
+            with self.assertRaisesRegex(handoff.HandoffDataError, "initial"):
+                handoff.assign(copy.deepcopy(f.state), fresh)
+        with self.subTest(source="loaded"):
+            separate = {**f.state, "assignments": []}
+            entry = handoff.assign(separate, fresh)
+            path = f.home / "bypassed-retention.json"
+            write_json(path, {**f.state, "assignments": [*f.state["assignments"], entry]})
+            with self.assertRaisesRegex(handoff.HandoffDataError, "initial"):
+                handoff.validate_state(observations.load_json(path))
+        replacement = {**fresh, "kind": "replacement", "predecessor_id": f.assignment["id"],
+                       "expected_branch": f.assignment["expected_branch"],
+                       "allowed_worktree": str(f.worktree), "assigned_parent_sha": recovery["head"]}
+        handoff.assign(f.state, replacement)
+        self.assertEqual(lock.read_bytes(), locked_bytes)
+        self.assertEqual(git(f.worktree, "rev-parse", "HEAD"), recovery["head"])
+        self.assertEqual(git(other, "status", "--porcelain"), "")
 
 
 class HandoffCliTests(unittest.TestCase):

@@ -1623,14 +1623,15 @@ Set `REVIEWED_SOURCE`, `COORDINATOR_STATE`, `ASSIGNMENT`, `OWNER_EVENTS`,
 file identity/cursors. Pass the coordinator dispatch log, then the matching
 owner session log (repeat `observe` as actual runtime notifications arrive).
 Include `[handoff:review-178-1]` in the actual assigned prompt. `dispatch_id`
-correlates the coordinator's task/write-agent/shell tool call; `session_id`
-and `owner_id` identify the actual assigned session/runtime. A correlation
-marker alone is not receipt evidence.
+correlates the coordinator's task/write-agent/shell tool call and must equal
+the native receipt's `data.parentAgentTaskId`; `session_id` and `owner_id`
+identify the actual assigned session/runtime. A correlation marker alone is
+not receipt evidence. Missing, opaque or wrong task identity stays incomplete.
 
 | State | Actual observation |
 | --- | --- |
 | `assignment_sent` | Matching native `tool.execution_start` dispatch |
-| `assignment_received` | Matching session's native `user.message` with the assignment marker |
+| `assignment_received` | Matching session's native `user.message` with the assignment marker and matching `parentAgentTaskId` |
 | `progressing` | A separate post-receipt `tool.execution_start` |
 | `committed` | Git observes the delivered SHA as real worktree HEAD |
 | `handed_off` | Native `assistant.message` delivers `{"handoff_result": ...}` after the commit observation |
@@ -1680,14 +1681,23 @@ Combined stdout/stderr is bounded to 4 MiB and raw processes to 30 seconds.
 A completed handoff retires that owner; a review successor has a fresh
 owner/session and the accepted exact result as its assigned parent. Reservations
 reject duplicate/overlapping owners, reused retired owners and multiple
-successors. Only one coordinator manages the canonical state.
+successors. The state permits only one initial root per issue or non-null PR,
+including after retirement/interruption: later work must use the real lineage,
+not another `initial` assignment that bypasses retained-worktree recovery.
+Independent issue/PR roots remain separate. Only one coordinator manages the
+canonical state.
 
 Register the existing direct shell watcher with `reserve_watcher`, binding
-repository/run/attempt/head and real process identity. Use the established
+repository/run/attempt/head and an actually running process. Boot/PID/start
+identity is unique across all owners and watchers regardless of runtime handle,
+run or attempt; an exited or unreaped zombie cannot be reserved as active.
+Use the established
 `timeout 90m gh run watch <run-id> --interval 30 --exit-status` command through
 the shell runtime; no reasoning agent waits for it. `finish_watcher` consumes
 an owned exit observation or retains unknown exit status. A replacement watcher
-cannot overlap the old process. `reconcile-run` makes one bounded `gh api`
+cannot overlap the old process. Active records require a running observation
+without an exit code; completed records require an exited observation, whose
+exit/RSS may remain unknown. `reconcile-run` makes one bounded `gh api`
 query of that exact run/attempt: authoritative success survives watcher timeout,
 failure/cancellation remains failure, nonterminal remains pending and query or
 identity errors remain unknown. None changes Build topology or existing
@@ -1720,7 +1730,10 @@ proofs are unchanged. Counts include accepted/rejected/interrupted/in-progress,
 stale responses, lifetime, measured RSS, unknown RSS, native coordination turns,
 recovery cost and separate authoritative CI states. Missing observations never
 become zero measurements or authenticated offline delivery proof. A locally
-accepted handoff is not a merged/delivered PR.
+accepted handoff is not a merged/delivered PR. Each watcher row uses its own
+run/attempt observation and query error: a newer success on the same head does
+not relabel earlier failures, cancellations, pending or unknown observations.
+Current-head CI selection elsewhere still selects the latest run/attempt.
 
 Dependencies: #176 and #216's existing locked `jsonschema` test environment.
 While #217 is open, this is its genuine child; no #205/#211 dependency or #179

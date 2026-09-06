@@ -2368,25 +2368,39 @@ game behavior needs a compensating change.
    bad timestamps/types/enums, oversize/deep input and nonregular/symlink
    metadata. Equivalent JSON ordering stays equivalent.
 5. Exercise dispatch-only and received-only native event streams. Confirm
+   the matching session's receipt needs both the assignment marker and
+   `data.parentAgentTaskId` equal to the dispatched task ID. Wrong-task,
+   unrelated, absent or opaque identities/content leave receipt incomplete.
    `subagent.started`/transport success infer nothing; actual tool start
    advances progress once. Replayed event cursors cannot multiply metrics.
    Real process exit/RSS pass; opaque/reused identities, missing complete RSS,
    lifetime/RSS overage and repeated committed-owner work do not pass.
 6. Reserve duplicate/overlapping owners/watchers and attempt a second state
-   writer: each rejects. Record an implementation-owner prohibited remote
+   writer: each rejects. Try different watcher IDs/runs with the same actual
+   boot/PID/start identity, both through reservation and loaded state: reject.
+   Distinct live processes pass; an owned unreaped zombie cannot reserve a
+   watcher. Running/ended records must agree with process state and exit data;
+   completed observations with unknown exit/RSS remain valid and reconcilable.
+   Record an implementation-owner prohibited remote
    action and confirm rejection. This is operational/role-policy checking,
    not authentication against a hostile same-UID process.
 7. Use the exact GitHub run-response fixtures through the production query
    adapter. Watcher timeout plus authoritative success stays success;
    failure/cancellation stays failure, in-progress stays pending, API errors
    and wrong run/attempt/head stay unknown. No watcher status substitutes for
-   the run. A replacement cannot overlap a still-live watcher.
+   the run. A replacement cannot overlap a still-live watcher. Report multiple
+   runs/attempts on one head: a later success must not erase earlier failures,
+   cancellations, pending work or a query error (even after an older success).
 8. Kill only the fixture's owned child and inspect inert matching kernel
    evidence. Preserve exact staged/unstaged/untracked bytes, mode and index;
    confirm the original linked worktree is locked and reused by one replacement,
    with the running check incomplete. Missing OOM authority stays unknown.
    A live owner, lost retention state or second replacement rejects without
    resetting/deleting the worktree or copying it into a new recovery engine.
+   After completion or interruption, try a fresh `initial` assignment for the
+   same issue or PR, including a different clean worktree: reject in live and
+   loaded state. The real review/replacement lineage and independent issue/PR
+   initial assignments still pass; a null PR does not merge unrelated issues.
 9. Exercise explicit availability plans and always-on observations. Enabled
    stop triggers without a plan, expired/future coverage and a detected
    suspend/boot change reject. A declared plan is not an uptime guarantee.

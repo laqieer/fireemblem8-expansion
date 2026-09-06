@@ -148,11 +148,19 @@
         "peak_rss_bytes": {"$ref": "#/$defs/nullableInteger"}, "rss_complete": {"type": "boolean"},
         "exit_code": {"$ref": "#/$defs/exit"}, "age_ms": {"$ref": "#/$defs/integer"}
       },
-      "if": {"properties": {"rss_complete": {"const": true}}},
-      "then": {"properties": {
-        "state": {"const": "exited"}, "exit_code": {"type": "integer"},
-        "peak_rss_bytes": {"$ref": "#/$defs/integer"}
-      }}
+      "allOf": [
+        {
+          "if": {"properties": {"rss_complete": {"const": true}}},
+          "then": {"properties": {
+            "state": {"const": "exited"}, "exit_code": {"type": "integer"},
+            "peak_rss_bytes": {"$ref": "#/$defs/integer"}
+          }}
+        },
+        {
+          "if": {"properties": {"state": {"const": "running"}}},
+          "then": {"properties": {"exit_code": {"type": "null"}}}
+        }
+      ]
     },
     "availability": {
       "type": "object", "additionalProperties": false,
@@ -306,7 +314,9 @@
         "query_error": {"$ref": "#/$defs/nullableText"}
       },
       "if": {"properties": {"ended_at": {"type": "null"}}},
-      "then": {"properties": {"exit_code": {"type": "null"}}},
+      "then": {"properties": {
+        "exit_code": {"type": "null"}, "process": {"properties": {"state": {"const": "running"}}}
+      }},
       "else": {"properties": {"process": {"properties": {"state": {"const": "exited"}}}}}
     },
     "state": {
@@ -316,8 +326,14 @@
         "schema_version": {"type": "integer", "const": 3}, "repository": {"$ref": "#/$defs/repository"},
         "coordinator_id": {"$ref": "#/$defs/id"}, "availability": {"$ref": "#/$defs/availability"},
         "clock": {"$ref": "#/$defs/clock"},
-        "assignments": {"type": "array", "maxItems": 128, "uniqueItems": true, "items": {"$ref": "#/$defs/entry"}},
-        "watchers": {"type": "array", "maxItems": 128, "uniqueItems": true, "items": {"$ref": "#/$defs/watcher"}}
+        "assignments": {
+          "description": "Runtime also enforces one initial root per issue/non-null PR and predecessor lineage.",
+          "type": "array", "maxItems": 128, "uniqueItems": true, "items": {"$ref": "#/$defs/entry"}
+        },
+        "watchers": {
+          "description": "Runtime also enforces unique boot/PID/start identities across owners and all watchers.",
+          "type": "array", "maxItems": 128, "uniqueItems": true, "items": {"$ref": "#/$defs/watcher"}
+        }
       }
     }
   }
