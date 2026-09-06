@@ -73,6 +73,41 @@ class FoundationTests(unittest.TestCase):
         self.assertIsNone(session.base)
         self.assertFalse(self.scratch.exists())
 
+    def test_literal_source_selectors_are_repository_relative(self):
+        name = "linker_script_banim.txt"
+        nested = "scripts/modernize/tests/fixtures/repo/" + name
+        self.add(name, "root")
+        self.add(nested, "unrelated nested fixture")
+        self.add("nested/missing.txt", "not the missing root input")
+        self.add("reader.py", f"print(open({name!r}).read())\n")
+        with self.session() as session:
+            self.assertEqual(session.sources((name,)), (name,))
+            self.assertEqual(session.sources(("**/" + name,)), (nested,))
+            with self.assertRaisesRegex(MakeProbeError, "resolves no regular inputs"):
+                session.sources(("missing.txt",))
+            result = session.command(Command(
+                ("/usr/bin/python3", "-I", "-S", "-B", "/repo/reader.py"),
+                code=("reader.py",), sources=(name,),
+            ))
+            self.assertEqual(result.stdout, b"root\n")
+            self.assertEqual(result.consumed, (name,))
+        self.assert_clean(session)
+
+    def test_literal_source_selector_does_not_match_nested_unadmitted_input(self):
+        name = "linker_script_banim.txt"
+        nested = "nested/" + name
+        self.add(name, "root")
+        self.add(nested, "../" + name, mode="120000")
+        (self.root / nested).unlink()
+        (self.root / nested).symlink_to("../" + name)
+        with self.session() as session:
+            self.assertEqual(session.sources((name,)), (name,))
+            with self.assertRaisesRegex(MakeProbeError, "unadmitted symlink/gitlink"):
+                session.sources((nested,))
+            with self.assertRaisesRegex(MakeProbeError, "unadmitted symlink/gitlink"):
+                session.sources(("**/" + name,))
+        self.assert_clean(session)
+
     def capture_tree(self, budget):
         def git(*args):
             return subprocess.run(

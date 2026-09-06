@@ -350,6 +350,9 @@ part of the include/restart, binary-output and interruption regressions.
 directories permitted for enumeration. The supervisor resolves selectors
 against the selected snapshot and materializes only that view. A selector that
 matches a symlink/gitlink rejects; it does not silently drop that input.
+Literal selectors identify exact repository-relative paths, not matching
+basenames in unrelated directories. Explicit `*`, `?` or `[` glob selectors
+retain their pattern semantics.
 Undeclared data open, mmap, stat/access/readlink, directory/glob or dynamically
 constructed paths reject. Code imports have a separately admitted code set and
 bounded, absent import-cache probes.

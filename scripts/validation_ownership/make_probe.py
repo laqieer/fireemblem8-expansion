@@ -592,14 +592,19 @@ class ProbeSession:
                 self.budget.reject("source selector count exceeds bound")
             self.budget.remaining()
             relative_path(pattern)
+            is_glob = any(character in pattern for character in "*?[")
+
+            def matches(name):
+                return PurePosixPath(name).match(pattern) if is_glob else name == pattern
+
             if any(
-                path not in self.snapshot.files and PurePosixPath(path).match(pattern)
+                path not in self.snapshot.files and matches(path)
                 for path in self.loader.entries
             ):
                 raise MakeProbeError("source selector matches an unadmitted symlink/gitlink")
             matched = {
                 name for name in self.snapshot.files
-                if PurePosixPath(name).match(pattern)
+                if matches(name)
             }
             if not matched:
                 raise MakeProbeError(f"source declaration resolves no regular inputs: {pattern}")
