@@ -995,6 +995,15 @@ class TesterCaseRegistryTests(unittest.TestCase):
                             "tests.upstream_port.test_verify.VerifyGatesMirrorWorkflowTests -v",
                         },
                     },
+                    "TC-WORKFLOW-REVIEW-FAMILY-001": {
+                        "document": "docs/test-cases/workflow-governance.md",
+                        "commands": {
+                            "build/host-python/bin/python3 -I -m unittest discover "
+                            "-s scripts/workflow_pilot/tests -t . -p 'test_*review*.py' -v",
+                            "python3 -m unittest "
+                            "scripts.workflow_pilot.tests.arm_review_subjects -v",
+                        },
+                    },
                     "TC-WORKFLOW-WORKTREE-CLEANUP-001": {
                         "document": "docs/test-cases/workflow-governance.md",
                         "commands": {

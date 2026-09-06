@@ -4,7 +4,11 @@
 from __future__ import annotations
 
 import os
+import hashlib
+import re
+import subprocess
 import sys
+import types
 import unittest
 from pathlib import Path
 
@@ -21,6 +25,7 @@ MODES = frozenset(
         "lifecycle-check",
         "pr-metadata",
         "reporter-tests",
+        "review-family",
     }
 )
 LIFECYCLE_CHECKS = frozenset({"workflow-pilot-reporter", "workflow-pilot-tests"})
@@ -32,7 +37,7 @@ def clear_ambient_git_environment() -> None:
             del os.environ[name]
 
 
-def controlled_repository_root(arguments: list[str]) -> Path:
+def controlled_repository_root(arguments: list[str], *, external: bool = False) -> Path:
     positions = [
         index
         for index, argument in enumerate(arguments)
@@ -41,7 +46,10 @@ def controlled_repository_root(arguments: list[str]) -> Path:
     if len(positions) != 1 or positions[0] + 1 >= len(arguments):
         raise ValueError("mode requires exactly one --repository-root")
     root = Path(arguments[positions[0] + 1]).resolve(strict=True)
-    if root != ROOT:
+    if external:
+        if root == ROOT:
+            raise ValueError("review-family requires a trusted launcher outside candidate storage")
+    elif root != ROOT:
         raise ValueError(
             f"--repository-root must identify controlled source root {ROOT}"
         )
@@ -103,6 +111,79 @@ def run_lifecycle_check(arguments: list[str]) -> int:
     return 0 if result.wasSuccessful() else 1
 
 
+def run_review_family(arguments: list[str]) -> int:
+    root = controlled_repository_root(arguments, external=True)
+    positions = [index for index, value in enumerate(arguments) if value == "--tool-revision"]
+    if len(positions) != 1 or positions[0] + 1 >= len(arguments):
+        raise ValueError("review-family requires exactly one --tool-revision")
+    revision = arguments[positions[0] + 1]
+    if re.fullmatch(r"[0-9a-f]{40}", revision) is None:
+        raise ValueError("reviewed tool revision must be an exact lowercase SHA")
+    environment = {
+        "PATH": "/usr/bin:/bin", "LC_ALL": "C", "GIT_CONFIG_GLOBAL": os.devnull,
+        "GIT_CONFIG_SYSTEM": os.devnull, "GIT_CONFIG_NOSYSTEM": "1",
+        "GIT_CONFIG_COUNT": "0", "GIT_NO_REPLACE_OBJECTS": "1",
+        "GIT_NO_LAZY_FETCH": "1", "GIT_TERMINAL_PROMPT": "0",
+    }
+
+    def git(*args):
+        try:
+            completed = subprocess.run(
+                ["/usr/bin/git", "--no-optional-locks", "-c", "core.fsmonitor=false",
+                 "-c", "core.hooksPath=/dev/null", "-C", str(root), *args],
+                env=environment, capture_output=True, timeout=60)
+        except subprocess.TimeoutExpired as error:
+            raise ValueError("reviewed Git source timed out: " + str(error)[-1000:]) from error
+        if completed.returncode:
+            raise ValueError("reviewed Git source unavailable: " +
+                             completed.stderr.decode(errors="replace")[-1000:])
+        return completed.stdout
+
+    top = Path(git("rev-parse", "--show-toplevel").decode().strip()).resolve(strict=True)
+    if top != root:
+        raise ValueError("candidate storage must be the exact repository top level")
+    if git("cat-file", "-t", revision).strip() != b"commit":
+        raise ValueError("reviewed tool revision must identify a commit object")
+
+    def source(path, *, namespace=False):
+        records = [record for record in git("ls-tree", "-z", revision, "--", path).split(b"\0")
+                   if record]
+        if namespace and not records:
+            return b""
+        if len(records) != 1:
+            raise ValueError("reviewed source is missing or ambiguous: " + path)
+        metadata, actual_path = records[0].split(b"\t", 1)
+        mode, kind, oid = metadata.decode("ascii").split()
+        if kind != "blob" or mode not in {"100644", "100755"} or actual_path.decode() != path:
+            raise ValueError("reviewed source must be a regular Git blob: " + path)
+        raw = git("cat-file", "blob", oid)
+        if hashlib.sha1(f"blob {len(raw)}\0".encode() + raw).hexdigest() != oid:
+            raise ValueError("reviewed source object mismatch: " + path)
+        return raw
+
+    # Fixed source-loading seam, not a transitive import/capability analyzer.
+    # In particular, do not import a working-copy reporter/initializer to
+    # establish the very Git authority used to select its reviewed bytes.
+    for name, path, package in (
+        ("scripts", "scripts/__init__.py", True),
+        ("scripts.workflow_pilot", "scripts/workflow_pilot/__init__.py", True),
+        ("scripts.workflow_pilot.reporter", "scripts/workflow_pilot/reporter.py", False),
+        ("scripts.workflow_pilot.trusted_review_gate", "scripts/workflow_pilot/trusted_review_gate.py", False),
+    ):
+        raw = source(path, namespace=name == "scripts")
+        module = types.ModuleType(name)
+        module.__file__ = str(root / path)
+        module.__package__ = name if package else name.rpartition(".")[0]
+        if package:
+            module.__path__ = []
+        sys.modules[name] = module
+        if "." in name:
+            parent, _, child = name.rpartition(".")
+            setattr(sys.modules[parent], child, module)
+        exec(compile(raw, revision + ":" + path, "exec"), module.__dict__)
+    return module.main(arguments)
+
+
 def dispatch(mode: str, arguments: list[str]) -> int:
     if mode not in MODES:
         raise ValueError(f"mode must be one of {', '.join(sorted(MODES))}")
@@ -115,6 +196,8 @@ def dispatch(mode: str, arguments: list[str]) -> int:
         return run_reporter_tests(arguments)
     if mode == "lifecycle-check":
         return run_lifecycle_check(arguments)
+    if mode == "review-family":
+        return run_review_family(arguments)
     if mode == "classify-event":
         from scripts.workflow_pilot import event_classifier
 

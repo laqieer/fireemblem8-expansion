@@ -36,6 +36,13 @@ it. In summary:
   [`.github/ISSUE_TEMPLATE/`](../.github/ISSUE_TEMPLATE/); they require the
   review/triage evidence consumed by the development workflow.
 
+High-risk/large changes also use the
+[bounded sibling-family review contract](workflow-pilot.md#sibling-family-review-convergence)
+and its [indexed case](test-cases/workflow-governance.md#tc-workflow-review-family-001-expand-valid-findings-across-complete-sibling-families).
+One fresh read-only reviewer precedes remote review; actual findings expand
+to complete finite source-backed obligations. Third-round architecture holds
+never hide existing commits or replace the mandatory final gates.
+
 ## Security reporting
 
 This repository does not currently ship a `SECURITY.md`. Do not invent a
