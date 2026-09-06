@@ -1685,7 +1685,7 @@ game behavior needs a compensating change.
 Issue [#206](https://github.com/laqieer/fireemblem8-expansion/issues/206);
 supported Linux x86-64 source checkout, GNU Make 4.3, Python 3, a static-capable
 host C compiler, C++ compiler for native-tool controls, and working private
-namespaces. See the [foundation contract](../ownership-probe-foundation.md).
+namespaces on Linux 5.12 or later. See the [foundation contract](../ownership-probe-foundation.md).
 No ROM, emulator, credentials, remote workflow or feature flag is required.
 Start from a clean checkout; fixtures use only ignored `build/test-artifacts`.
 
@@ -1807,6 +1807,16 @@ Start from a clean checkout; fixtures use only ignored `build/test-artifacts`.
     of assigned kernel bounds plus pending fork credit, shared-VM growth, and
     repeated vfork/exec accounting. No RSS, huge allocation, global setting or
     unrelated process is part of these controls.
+17. In the selected production namespace route, create only owned, size-limited
+    1 MiB tmpfs fixtures with two submount levels. Recursively bind them into
+    read-only/noexec and read-only/executable views. Kernel mount flags must
+    include nosuid/nodev at every level; writes and disallowed executable
+    launches must fail, while explicit executable views work. Preserve a
+    source submount's stronger noexec flag and the original source mount flags.
+    Verify inherited root submounts are sealed before explicit writable
+    work/control and read-only executable helper exceptions. Simulated
+    `mount_setattr` unavailability must release its FD and reject before
+    supervision, never fall back to a top-only remount.
 
 ### Expected result
 
@@ -1855,6 +1865,11 @@ memory guard only checked selected syscalls; held post-fork stacks exceeded
 the aggregate virtual limit without another checked allocation. The controls
 use exclusively owned process identities, disabled core dumps for the deliberate
 stack-fault case, and small bounded memory.
+
+The previous recursive bind reported restricted top-level flags `4111` but
+left a copied tmpfs submount at `4096`: writes and executable launches through
+that supposedly read-only/noexec child really succeeded. The regression uses
+only private namespaces and bounded owned mounts, which disappear on exit.
 
 ### Interactions and save compatibility
 

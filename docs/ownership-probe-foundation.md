@@ -36,7 +36,8 @@ watchdog/lifetime pipe or kernel lifecycle primitive rejects before namespace
 launch, never by falling back to an unguarded privileged command. Other Make
 native ABIs/platforms reject, rather than falling back to unconfined evaluation.
 The native observer uses GNU Make's exported 4.3 data
-layout and the Linux syscall-entry/exit information API (kernel 5.3 or later).
+layout and the Linux syscall-entry/exit information API. Linux **5.12 or later**
+is required for atomic recursive mount attributes.
 Kernel pidfds, Python's pidfd signal interface, per-tracee `prlimit`, private
 proc child visibility, and ptrace vfork-completion stops are also required.
 Missing lifecycle primitives reject before a payload runs; there is no
@@ -58,6 +59,17 @@ no capabilities, `no_new_privs`, and no inherited descriptor beyond standard
 input/output/error. Candidate source mounts preserve observable Git executable
 bits but are **noexec**. No proc filesystem, device-FD aliases, host home,
 credentials, or service sockets are mounted inside the candidate root.
+
+Recursive bind mounts receive their restrictions through `mount_setattr` with
+`AT_RECURSIVE`, using an `O_PATH`-pinned mount root. Read-only, noexec, nosuid and
+nodev apply to every copied submount, not just the top bind. Attribute clearing
+is never requested, so stronger source restrictions remain intact. The initial
+root is recursively sealed before deliberate writable work/control mounts and
+the separate read-only executable interceptor are installed. These exceptions
+do not make inherited submounts writable or executable accidentally.
+An unavailable recursive-attribute operation rejects before candidate
+supervision; there is no top-level-remount fallback. All changes are confined
+to the launcher's private mount namespace, not the host's source mounts.
 
 The syscall supervisor remains outside the chroot. It follows every child,
 uses kernel-identified entry/exit stops, fails on unadmitted syscalls, and

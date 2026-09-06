@@ -13,6 +13,15 @@ from pathlib import Path
 
 MS_RDONLY, MS_NOSUID, MS_NODEV, MS_NOEXEC = 1, 2, 4, 8
 MS_REMOUNT, MS_BIND, MS_REC = 32, 4096, 16384
+AT_EMPTY_PATH, AT_RECURSIVE = 0x1000, 0x8000
+SYS_MOUNT_SETATTR = 442  # Linux x86-64; available since Linux 5.12.
+
+
+class MountAttributes(ctypes.Structure):
+    _fields_ = [
+        ("attr_set", ctypes.c_uint64), ("attr_clr", ctypes.c_uint64),
+        ("propagation", ctypes.c_uint64), ("userns_fd", ctypes.c_uint64),
+    ]
 
 
 def mount(source, target, flags, kind=None):
@@ -28,12 +37,34 @@ def mount(source, target, flags, kind=None):
 
 def bind(source, target, *, writable=False, executable=False):
     mount(source, target, MS_BIND | MS_REC)
-    flags = MS_BIND | MS_REMOUNT | MS_NOSUID | MS_NODEV
+    flags = MS_NOSUID | MS_NODEV
     if not writable:
         flags |= MS_RDONLY
     if not executable:
         flags |= MS_NOEXEC
-    mount(None, target, flags)
+    recursive_attributes(target, flags)
+
+
+def recursive_attributes(target, flags):
+    # A top-level MS_REMOUNT does not restrict copied submounts. Pin this
+    # namespace's bind and add restrictions atomically to the entire subtree.
+    descriptor = os.open(target, os.O_PATH | os.O_NOFOLLOW | os.O_CLOEXEC)
+    try:
+        attributes = MountAttributes(attr_set=flags)
+        libc = ctypes.CDLL(None, use_errno=True)
+        libc.syscall.restype = ctypes.c_long
+        if libc.syscall(
+            ctypes.c_long(SYS_MOUNT_SETATTR), ctypes.c_int(descriptor), ctypes.c_char_p(b""),
+            ctypes.c_uint(AT_EMPTY_PATH | AT_RECURSIVE), ctypes.byref(attributes),
+            ctypes.c_size_t(ctypes.sizeof(attributes)),
+        ):
+            error = ctypes.get_errno()
+            raise OSError(
+                error, f"recursive mount attributes require Linux 5.12+ and namespace authority: {os.strerror(error)}",
+                str(target),
+            )
+    finally:
+        os.close(descriptor)
 
 
 def drop_privileges(config):
@@ -68,13 +99,13 @@ def main():
         raise SystemExit("sandbox launcher requires isolated Python and trusted config")
     config = json.loads(Path(sys.argv[1]).read_bytes())
     root = Path(config["root"])
-    mount(root, root, MS_BIND | MS_REC)
+    # Seal inherited submounts before installing deliberate child exceptions.
+    bind(root, root, executable=True)
     # A private proc mount belongs to the supervisor, not the candidate chroot.
     mount("proc", "/proc", MS_NOSUID | MS_NODEV | MS_NOEXEC, "proc")
     for item in config["mounts"]:
         bind(item["source"], root / item["target"].lstrip("/"),
              writable=item["writable"], executable=item["executable"])
-    mount(None, root, MS_BIND | MS_REMOUNT | MS_RDONLY | MS_NOSUID | MS_NODEV)
     sys.path.insert(0, str(Path(__file__).resolve().parent))
     from syscall_guard import supervise
     return supervise(config, lambda: drop_privileges(config))

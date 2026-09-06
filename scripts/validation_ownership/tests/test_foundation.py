@@ -12,6 +12,7 @@ import shutil
 import signal
 import stat
 import subprocess
+import sys
 import threading
 import time
 import unittest
@@ -65,6 +66,133 @@ class FoundationTests(unittest.TestCase):
         self.assertIsNone(session.snapshot)
         self.assertIsNone(session.base)
         self.assertFalse(self.scratch.exists())
+
+    def test_recursive_bind_restricts_submounts_and_preserves_explicit_exceptions(self):
+        self.add("Makefile", "all: ;\n")
+        fixture = self.directory / "mount fixture"
+        for name in ("source/nested", "restricted", "runtime", "root/inherited", "root/repo", "root/control"):
+            (fixture / name).mkdir(parents=True, exist_ok=True)
+        (fixture / "source/value").write_bytes(b"owned")
+        (fixture / "source/helper").touch()
+        shutil.copyfile("/usr/bin/true", fixture / "source/program")
+        (fixture / "source/program").chmod(0o755)
+        program = r'''
+import ctypes,errno,json,os,shutil,subprocess,sys
+from pathlib import Path
+sys.path.insert(0,sys.argv[1])
+from sandbox_exec import bind
+fixture=Path(sys.argv[2])
+source=fixture/"source"
+root=fixture/"root"
+libc=ctypes.CDLL(None,use_errno=True)
+def tmpfs(path,flags=0):
+    assert libc.mount(b"tmpfs",os.fsencode(path),b"tmpfs",flags,b"size=1m,mode=0755")==0,ctypes.get_errno()
+    (path/"value").write_bytes(b"owned")
+    shutil.copyfile("/usr/bin/true",path/"program")
+    (path/"program").chmod(0o755)
+tmpfs(source/"nested")
+(source/"nested/deep").mkdir()
+tmpfs(source/"nested/deep",os.ST_NOEXEC)
+tmpfs(root/"inherited")
+relative=("", "nested", "nested/deep")
+original={name:os.statvfs(source/name).f_flag for name in relative}
+def readonly(path):
+    try: (path/"value").write_bytes(b"forged")
+    except OSError as error: assert error.errno==errno.EROFS,error
+    else: raise AssertionError("readonly mount accepted a write")
+def executable(path,allowed):
+    try: result=subprocess.run([str(path)],check=False)
+    except OSError as error:
+        assert not allowed and error.errno in (errno.EACCES,errno.EPERM),error
+    else: assert allowed and result.returncode==0,result
+restricted=fixture/"restricted"
+bind(source,restricted)
+for name in relative:
+    path=restricted/name
+    assert os.statvfs(path).f_flag & 15 == 15
+    readonly(path); executable(path/"program",False)
+runtime=fixture/"runtime"
+bind(source,runtime,executable=True)
+for name in relative:
+    path=runtime/name
+    assert os.statvfs(path).f_flag & 7 == 7
+    readonly(path)
+    executable(path/"program",not bool(original[name] & os.ST_NOEXEC))
+bind(root,root,executable=True)
+assert os.statvfs(root/"inherited").f_flag & 7 == 7
+readonly(root/"inherited")
+bind(source,root/"repo")
+bind(source,root/"control",writable=True)
+for name in relative:
+    assert os.statvfs(root/"repo"/name).f_flag & 15 == 15
+    path=root/"control"/name
+    assert os.statvfs(path).f_flag & 15 == 14
+    (path/"value").write_bytes(b"explicit writable exception")
+    executable(path/"program",False)
+bind(source/"nested/program",root/"control/helper",executable=True)
+assert os.statvfs(root/"control/helper").f_flag & 15 == 7
+executable(root/"control/helper",True)
+assert {name:os.statvfs(source/name).f_flag for name in relative} == original
+for name in relative: (source/name/"value").write_bytes(b"source remains writable")
+print(json.dumps({"submount_levels":3,"source_flags_unchanged":True,
+                  "root_sealed":True,"writable_exception":True,"executable_exception":True}))
+'''
+        with self.session() as session:
+            result = session.budget.run(
+                [*session.launcher, "/usr/bin/python3", "-I", "-S", "-c", program,
+                 str(TRUSTED_ROOT), str(fixture)],
+                env=ENVIRONMENT, privileged=session.sudo_drop,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(json.loads(result.stdout), {
+                "submount_levels": 3, "source_flags_unchanged": True,
+                "root_sealed": True, "writable_exception": True, "executable_exception": True,
+            })
+        self.assert_clean(session)
+        self.assertFalse((fixture / "source/nested/value").exists())
+        self.assertFalse((fixture / "root/inherited/value").exists())
+
+    def test_recursive_mount_attribute_failure_has_no_top_only_fallback(self):
+        from scripts.validation_ownership import sandbox_exec
+        target = self.directory / "attribute target"
+        target.mkdir()
+        calls = []
+        def unavailable(number, descriptor, path, flags, attributes, size):
+            value = ctypes.cast(attributes, ctypes.POINTER(sandbox_exec.MountAttributes)).contents
+            calls.append((number.value, path.value, flags.value, value.attr_set, value.attr_clr,
+                          value.propagation, value.userns_fd, size.value))
+            self.assertEqual(os.fstat(descriptor.value).st_ino, target.stat().st_ino)
+            ctypes.set_errno(errno.ENOSYS)
+            return -1
+        library = SimpleNamespace(syscall=unavailable)
+        descriptors = set(os.listdir("/proc/self/fd"))
+        with patch.object(sandbox_exec, "mount") as mount, patch.object(
+            sandbox_exec.ctypes, "CDLL", return_value=library,
+        ):
+            with self.assertRaises(OSError) as caught:
+                sandbox_exec.bind(self.root, target)
+        self.assertEqual(caught.exception.errno, errno.ENOSYS)
+        mount.assert_called_once_with(self.root, target, sandbox_exec.MS_BIND | sandbox_exec.MS_REC)
+        self.assertEqual(calls, [(442, b"", 0x9000, 15, 0, 0, 0, 32)])
+        self.assertEqual(set(os.listdir("/proc/self/fd")), descriptors)
+
+    def test_root_setup_rejects_unsupported_recursive_attributes_before_supervision(self):
+        from scripts.validation_ownership import sandbox_exec
+        config = self.directory / "mount-config.json"
+        config.write_text(json.dumps({"root": str(self.root), "mounts": []}))
+        supervise = Mock(return_value=0)
+        flags = Mock(wraps=sys.flags, isolated=True)
+        with patch.object(sys, "path", list(sys.path)), patch.object(
+            sys, "argv", ["sandbox_exec.py", str(config)],
+        ), patch.object(
+            sys, "flags", flags,
+        ), patch.object(sandbox_exec, "mount"), patch.object(
+            sandbox_exec, "recursive_attributes", side_effect=OSError(errno.ENOSYS, "unsupported"),
+        ), patch.dict(sys.modules, {"syscall_guard": SimpleNamespace(supervise=supervise)}):
+            with self.assertRaises(OSError) as caught:
+                sandbox_exec.main()
+        self.assertEqual(caught.exception.errno, errno.ENOSYS)
+        supervise.assert_not_called()
 
     @contextmanager
     def owned_process(self, argv):
