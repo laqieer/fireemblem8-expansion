@@ -1239,6 +1239,102 @@ class VerifyCliCwdTests(unittest.TestCase):
                     continue
                 self.assertNotEqual(changed_structure, structure)
 
+    def test_metadata_event_setup_is_closed_and_not_a_local_gate(self):
+        with open(BUILD_WORKFLOW_PATH, "r", encoding="utf-8") as handle:
+            original = handle.read()
+        structure = verify_mod._parse_workflow_structure_text(original)
+        jobs = {name: (dict(context), steps) for name, context, steps in structure[2]}
+        router, router_steps = jobs["event-router"]
+        marker_steps = jobs["event-classifier"][1]
+        self.assertEqual(
+            dict(router["outputs"])["metadata_event_digest"],
+            "${{ steps.metadata-event.outputs.digest }}",
+        )
+        self.assertEqual(router_steps[-1][:2], ("setup", "Bind immutable metadata event"))
+        self.assertEqual(marker_steps[-1][0], "setup")
+        self.assertEqual(
+            dict(marker_steps[-1][2])["env"],
+            (("METADATA_EVENT_DIGEST", "${{ needs.event-router.outputs.metadata_event_digest }}"),),
+        )
+        gate_jobs = {job for job, _, _ in verify_mod._workflow_gate_contract(structure)}
+        self.assertTrue({"event-router", "event-classifier"}.isdisjoint(gate_jobs))
+        self.assertEqual(len(verify_mod.run_gates(REPO_ROOT, dry_run=True)), 28)
+
+        blocks = topology_tests._job_blocks(original)
+        producer = topology_tests._step_blocks(blocks["event-router"])[-1]
+        marker = topology_tests._step_blocks(blocks["event-classifier"])[-1]
+        mutations = {
+            "wrong-output": original.replace(
+                "steps.metadata-event.outputs.digest", "steps.classify.outputs.expected_head"
+            ),
+            "missing-producer": original.replace(producer, "", 1),
+            "duplicate-producer": original.replace(producer, producer + producer, 1),
+            "missing-marker": original.replace(marker, "", 1),
+            "duplicate-marker": original.replace(marker, marker + marker, 1),
+        }
+        for label, old, new in (
+            ("producer-id", "id: metadata-event", "id: replacement"),
+            ("producer-condition", "${{ steps.classify.outputs.classification == 'metadata-only' }}",
+             "always()"),
+            ("mutable-event", '"$GITHUB_EVENT_PATH"', '"cached-event.json"'),
+            ("wrong-repository", '"$GITHUB_REPOSITORY"', '"$OTHER_REPOSITORY"'),
+            ("wrong-run", '"$GITHUB_RUN_ID"', '"$GITHUB_RUN_NUMBER"'),
+            ("wrong-number", '"$GITHUB_RUN_NUMBER"', '"$GITHUB_RUN_ID"'),
+            ("fixed-attempt", '"$GITHUB_RUN_ATTEMPT"', '"1"'),
+            ("unisolated-producer", "/usr/bin/python3 -I", "/usr/bin/python3"),
+            ("unsafe-path", "PATH: /usr/bin:/bin", "PATH: candidate/bin:/usr/bin:/bin"),
+            ("startup-hook", "BASH_ENV: ''", "BASH_ENV: candidate/hook"),
+            ("forged-error-proof",
+             'echo "Metadata event attribution unavailable; reconciliation must hold." >&2',
+             'echo digest=forged >> "$GITHUB_OUTPUT"'),
+            ("forged-bootstrap-proof",
+             'echo "Trusted base lacks metadata event attribution; reconciliation must hold."',
+             'echo digest=forged >> "$GITHUB_OUTPUT"'),
+            ("extra-producer-command", "\n        fi\n",
+             '\n        fi\n        echo digest=forged >> "$GITHUB_OUTPUT"\n'),
+        ):
+            changed = producer.replace(old, new, 1)
+            self.assertNotEqual(changed, producer, label)
+            mutations[label] = original.replace(producer, changed, 1)
+        for label, old, new in (
+            ("wrong-marker-protocol", "workflow-pilot-metadata-event:v1:", "other-event:v1:"),
+            ("wrong-marker-source", "needs.event-router.outputs.metadata_event_digest",
+             "github.event.pull_request.title"),
+            ("empty-marker-executes",
+             " && needs.event-router.outputs.metadata_event_digest != ''", ""),
+            ("marker-env-source",
+             "METADATA_EVENT_DIGEST: ${{ needs.event-router.outputs.metadata_event_digest }}",
+             "METADATA_EVENT_DIGEST: ${{ github.sha }}"),
+            ("weak-digest-shape", "^[0-9a-f]{64}$", ".+"),
+            ("extra-marker-command", '[[ "$METADATA_EVENT_DIGEST" =~ ^[0-9a-f]{64}$ ]]',
+             '[[ "$METADATA_EVENT_DIGEST" =~ ^[0-9a-f]{64}$ ]]\n        echo unreviewed'),
+        ):
+            changed = marker.replace(old, new, 1)
+            self.assertNotEqual(changed, marker, label)
+            mutations[label] = original.replace(marker, changed, 1)
+        for job in ("event-router", "event-classifier"):
+            extra = "\n    - name: Unreviewed setup\n      run: true\n"
+            mutations[f"extra-{job}-step"] = original.replace(
+                blocks[job], blocks[job] + extra, 1
+            )
+        for label, changed in mutations.items():
+            with self.subTest(mutation=label):
+                self.assertNotEqual(changed, original)
+                with self.assertRaises(ValueError):
+                    verify_mod._parse_workflow_structure_text(changed)
+
+        equivalent = producer.replace("/usr/bin/python3 -I", "/usr/bin/python3  -I")
+        equivalent = equivalent.replace(
+            "        BASH_ENV: ''\n        ENV: ''",
+            "        ENV: ''\n        BASH_ENV: ''",
+        )
+        self.assertEqual(
+            verify_mod._parse_workflow_structure_text(
+                original.replace(producer, equivalent, 1)
+            ),
+            structure,
+        )
+
     def test_patch_release_supervisor_parent_remount_variants_reject_structure_parse(self):
         with open(BUILD_WORKFLOW_PATH, "r", encoding="utf-8") as handle:
             original = handle.read()
@@ -1282,6 +1378,12 @@ class VerifyCliCwdTests(unittest.TestCase):
             ],
             cwd=REPO_ROOT,
             text=True,
+        )
+        # Keep the historical publisher control independent of later setup additions.
+        current_jobs = topology_tests._job_blocks(original)
+        historical_jobs = topology_tests._job_blocks(broken)
+        broken = original.replace(
+            current_jobs["patch-release"], historical_jobs["patch-release"], 1
         )
         with self.assertRaisesRegex(
             ValueError,
