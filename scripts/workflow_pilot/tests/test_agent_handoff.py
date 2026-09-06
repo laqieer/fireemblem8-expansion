@@ -353,6 +353,9 @@ def reporter_record(repository_root, document, result):
     )
 def validated_record(repository_root, document):
     return reporter_record(repository_root, document, agent_handoff.validate_document(document, repository_root))
+def refreshed_report(root, document, **observations):
+    refresh_coordinator_receipt(document, root, **observations)
+    return agent_handoff.validate_document(document, root)
 def reporter_fixture_trust(*bundles):
     return {
         "schema_version": 1,
@@ -3863,7 +3866,7 @@ class ExactHandoffTests(unittest.TestCase):
             second = copy.deepcopy(duplicate_owner["handoffs"][0])
             second["id"] = "issue-178-round-2"
             duplicate_owner["handoffs"].append(second)
-            owner_report = agent_handoff.validate_document(duplicate_owner, root)
+            owner_report = refreshed_report(root, duplicate_owner)
             self.assertIn(
                 "duplicate-owner",
                 owner_report["summary"]["rejection_codes"],
@@ -6175,7 +6178,7 @@ class ExactHandoffTests(unittest.TestCase):
                     "type": "code_contract",
                 }
             )
-            multiple_report = agent_handoff.validate_document(multiple, root)
+            multiple_report = refreshed_report(root, multiple)
             self.assertIn(
                 "replacement-owner-count",
                 multiple_report["summary"]["rejection_codes"],
@@ -6348,12 +6351,7 @@ class ExactHandoffTests(unittest.TestCase):
                             index % len(agent_handoff.REMOTE_COVERAGE_SOURCES)
                         ],
                     }
-                    refresh_coordinator_receipt(
-                        document,
-                        root,
-                        actions=[action],
-                    )
-                    report = agent_handoff.validate_document(document, root)
+                    report = refreshed_report(root, document, actions=[action])
                     self.assertIn(
                         "implementation-owner-remote-action",
                         report["summary"]["rejection_codes"],
