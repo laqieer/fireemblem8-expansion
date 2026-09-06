@@ -1444,6 +1444,10 @@
         {
           "kind": "prefix",
           "path": ".github/copilot/"
+        },
+        {
+          "kind": "exact",
+          "path": ".github/requirements/host-tests.txt"
         }
       ],
       "exclude": []
@@ -1604,6 +1608,90 @@
         {
           "kind": "prefix",
           "path": "tools/"
+        },
+        {
+          "kind": "exact",
+          "path": "scripts/host_python.py"
+        },
+        {
+          "kind": "exact",
+          "path": "scripts/modernize/package_ci_patch.sh"
+        },
+        {
+          "kind": "exact",
+          "path": "scripts/validation_ownership/tests/test_ci_verifier.py"
+        },
+        {
+          "kind": "exact",
+          "path": "scripts/validation_ownership/tests/test_launcher.py"
+        },
+        {
+          "kind": "exact",
+          "path": "scripts/validation_ownership/tests/test_make_probe.py"
+        },
+        {
+          "kind": "exact",
+          "path": "scripts/workflow_pilot/candidate_evidence.py"
+        },
+        {
+          "kind": "exact",
+          "path": "scripts/workflow_pilot/event_classifier.py"
+        },
+        {
+          "kind": "exact",
+          "path": "scripts/workflow_pilot/metadata_adapter_contract.py"
+        },
+        {
+          "kind": "exact",
+          "path": "scripts/workflow_pilot/metadata_event.py"
+        },
+        {
+          "kind": "exact",
+          "path": "scripts/workflow_pilot/pr_metadata.py"
+        },
+        {
+          "kind": "exact",
+          "path": "scripts/workflow_pilot/summary_continuity_contract.py"
+        },
+        {
+          "kind": "exact",
+          "path": "scripts/workflow_pilot/tests/fixtures/event_classification.json"
+        },
+        {
+          "kind": "exact",
+          "path": "scripts/workflow_pilot/tests/fixtures/pre_fix_build.yml"
+        },
+        {
+          "kind": "exact",
+          "path": "scripts/workflow_pilot/tests/test_metadata_adapter_contract.py"
+        },
+        {
+          "kind": "exact",
+          "path": "scripts/workflow_pilot/tests/test_candidate_evidence.py"
+        },
+        {
+          "kind": "exact",
+          "path": "scripts/workflow_pilot/tests/test_event_classifier.py"
+        },
+        {
+          "kind": "exact",
+          "path": "scripts/workflow_pilot/tests/test_host_python.py"
+        },
+        {
+          "kind": "exact",
+          "path": "scripts/workflow_pilot/tests/test_pr_metadata.py"
+        },
+        {
+          "kind": "exact",
+          "path": "scripts/workflow_pilot/tests/test_worktree_cleanup.py"
+        },
+        {
+          "kind": "exact",
+          "path": "scripts/workflow_pilot/tests/test_summary_continuity_contract.py"
+        },
+        {
+          "kind": "exact",
+          "path": "scripts/workflow_pilot/worktree_cleanup.py"
         }
       ],
       "exclude": [

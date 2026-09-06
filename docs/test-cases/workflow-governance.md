@@ -2410,6 +2410,16 @@ game behavior needs a compensating change.
    real BPS round trip, patch-only outputs, private cleanup and visible
    failures. This does not prove actual private-base publication or the still
    blocked full112-domain ownership acceptance.
+9. Exercise the new-path admission fixtures. They create immutable Git trees
+   with newly tracked `src/foo.c`, script, documentation and graphics paths
+   without writing those files into the source worktree. A matching broad
+   prefix must not admit them. Add an exact selector to the existing semantic
+   rule and require its complete owner set; renaming/reordering the prefix or
+   adding another prefix must still reject. Existing generated-source and
+   verifier-runtime registries remain valid semantic admissions. Coverage and
+   direct resolution must both reject unknown additions, before Make authority
+   executes. The initial admitted cohort comes from the unique graph-introduction
+   Git tree; no inventory, content hash or duplicate commit pin is stored.
 
 ### Expected result
 

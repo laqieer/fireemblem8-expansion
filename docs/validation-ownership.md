@@ -149,11 +149,26 @@ targets fail closed.
 ## Maintainable path coverage
 
 Coverage uses exact `HEAD` and optional base tree entries, including Git mode,
-object type, and identity. `100xxx` regular blobs enter typed exact and prefix selectors
-cover stable repository namespaces; the generated-data selector expands from
-the real schema registry. Includes and explicit excludes form a partition:
-zero matches are unknown, while multiple rule/exclusion matches are ambiguous.
-Either condition is an error.
+object type, and identity. Prefixes describe the initially admitted cohort,
+not permission to classify every future filename. That cohort is derived from
+the unique graph-introduction tree in the selected Git history; no path list,
+commit pin, blob list or content-hash ledger is stored beside Git. Missing or
+ambiguous introduction history fails closed.
+
+A later tracked path needs an exact selector in the existing ownership graph,
+actual generated-source registry membership, or the canonical verifier-runtime
+source registry. Thus a newly tracked `src/foo.c` fails despite `src/`, and
+renaming or rearranging the prefix rule does not admit it. An exact selector
+records the semantic owner choice and still requires the surface's complete
+positive/adversarial/build/runtime roles. Known post-introduction framework
+components have explicit entries in their existing semantic rules, not a
+second inventory registry.
+
+Includes and explicit excludes still form a partition: zero matches are
+unknown, multiple rule/exclusion matches are ambiguous, and a prefix-only
+new path lacks semantic admission. All three are errors. Admission is checked
+for whole-tree coverage before Make-authority execution and again when
+resolving a current path; successful resolutions report the admission kind.
 
 This avoids a hand-maintained list of more than ten thousand files while
 keeping overlap and unknown namespaces deterministic. Mode `120000` symlinks
@@ -219,7 +234,7 @@ The A/V partition follows actual consumers, not directory-name similarity:
 records HP transitions and presentation-policy counters with framebuffer
 capture disabled and no audio assertions. Its existing authority remains
 registered, but no asset path selects it. New tracked paths in the existing
-generic A/V namespaces cannot inherit an exact observed-consumer rule;
+generic A/V namespaces require semantic admission and cannot inherit an exact observed-consumer rule;
 untracked paths, unknown namespaces and named exclusions still fail closed.
 The graph remains report-only and does not reduce any broader validation.
 

@@ -2130,6 +2130,37 @@ def _required_edge_types(surface: dict[str, Any]) -> set[str]:
     return required
 
 
+def _path_admission_sources(loader: AuthorityLoader, generated_paths: set[str]) -> dict[str, set[str]]:
+    history = _git(
+        loader.root, "log", "--format=%H", "--diff-filter=A", "--max-count=2",
+        loader.revision or "HEAD", "--", GRAPH_PATH.as_posix(),
+    ).stdout.decode("ascii").splitlines()
+    if len(history) != 1:
+        raise OwnershipError("semantic admission requires one available graph-introduction tree")
+    initial_paths = set(git_tree_entries(loader.root, history[0]))
+    from scripts.validation_ownership.ci_verifier import BASE_AUTHORITY_PATHS
+
+    return {
+        "initial-graph-cohort": initial_paths,
+        "generated-source-registry": set(generated_paths),
+        "verifier-runtime-registry": set(BASE_AUTHORITY_PATHS),
+    }
+
+
+def _path_admission(path: str, rule: dict[str, Any], sources: dict[str, set[str]]) -> str:
+    if any(
+        selector["kind"] == "exact" and selector["path"] == path
+        for selector in rule["include"]
+    ):
+        return "exact-ownership-rule"
+    for kind in ("generated-source-registry", "verifier-runtime-registry", "initial-graph-cohort"):
+        if path in sources[kind]:
+            return kind
+    raise OwnershipError(
+        f"tracked path {path!r} lacks semantic admission; a prefix match does not admit a new path"
+    )
+
+
 def _validate_semantics(
     graph: dict[str, Any],
     loader: AuthorityLoader,
@@ -2275,12 +2306,7 @@ def _validate_semantics(
         edge_ids,
     )
     generated_records, generated_paths = _generated_registry_records(loader)
-    authorities = _validate_authorities(
-        loader,
-        evidence_nodes,
-        generated_records,
-        strict_workflow=True,
-    )
+    admission_sources = _path_admission_sources(loader, generated_paths)
 
     rule_ids = set()
     for rule in graph["path_rules"]:
@@ -2376,8 +2402,15 @@ def _validate_semantics(
             "mode": entry.mode,
             "rule": matches[0]["id"],
             "surface": matches[0]["surface"],
+            "admission": _path_admission(path, matches[0], admission_sources),
         }
 
+    authorities = _validate_authorities(
+        loader,
+        evidence_nodes,
+        generated_records,
+        strict_workflow=True,
+    )
     return {
         "nodes": nodes,
         "surfaces": surfaces,
@@ -2388,6 +2421,7 @@ def _validate_semantics(
         "generated_paths": generated_paths,
         "coverage": coverage,
         "entries": entries,
+        "admission_sources": admission_sources,
     }
 
 
@@ -2740,6 +2774,11 @@ def _resolve_path(
     if len(matches) > 1:
         raise OwnershipError(f"changed path {path!r} has ambiguous ownership")
     rule = matches[0]
+    admission = (
+        "selected-base-tree"
+        if current_entry is None
+        else _path_admission(path, rule, model["admission_sources"])
+    )
     surface = model["surfaces"][rule["surface"]]
     owners = []
     for edge in sorted(
@@ -2765,6 +2804,7 @@ def _resolve_path(
         "surface": surface["id"],
         "surface_type": surface["surface_type"],
         "git_mode": entry.mode,
+        "admission": admission,
         "owners": owners,
     }
 

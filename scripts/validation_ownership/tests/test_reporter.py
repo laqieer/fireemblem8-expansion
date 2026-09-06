@@ -242,13 +242,20 @@ class AssetOwnershipTests(unittest.TestCase):
         ):
             with self.subTest(path=path), self.assertRaises(reporter.OwnershipError):
                 self.resolve(path, model=model)
-        for path in (
-            "graphics/titlescreen/future.png", "graphics/titlescreen-extra/title.png",
-            "assets/banim/lorm_sp1-extra/script.txt",
+        for path, rule_id in (
+            ("graphics/titlescreen/future.png", "paths.manual-av"),
+            ("graphics/titlescreen-extra/title.png", "paths.manual-av"),
+            ("assets/banim/lorm_sp1-extra/script.txt", "paths.asset-source"),
         ):
             with self.subTest(classified_namespace_without_runtime=path):
                 entries = {**self.entries, path: reporter.GitTreeEntry(path, "100644", "blob", "0" * 40)}
-                result = self.resolve(path, model=self.model(entries=entries))
+                with self.assertRaisesRegex(reporter.OwnershipError, "semantic admission"):
+                    self.model(entries=entries)
+                admitted = copy.deepcopy(self.graph)
+                next(rule for rule in admitted["path_rules"] if rule["id"] == rule_id)[
+                    "include"
+                ].append({"kind": "exact", "path": path})
+                result = self.resolve(path, admitted, self.model(admitted, entries))
                 self.assertNotIn("target-scenario", {owner["edge_type"] for owner in result["owners"]})
         path = "unclassified/title.png"
         entries = {**self.entries, path: reporter.GitTreeEntry(path, "100644", "blob", "0" * 40)}
@@ -476,6 +483,90 @@ class AssetOwnershipTests(unittest.TestCase):
                     reporter.validate_probe_oracle(self.oracle, graph, self.entries)
                 with self.assertRaisesRegex(reporter.OwnershipError, "selection mismatch"):
                     reporter._measure(self.oracle, graph, self.model(graph))
+
+    def new_tracked_paths(self, paths):
+        with tempfile.TemporaryDirectory(dir=SCRATCH_ROOT) as directory:
+            environment = {
+                "PATH": "/usr/bin:/bin", "LC_ALL": "C",
+                "GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": "/dev/null",
+                "GIT_INDEX_FILE": str(Path(directory) / "index"),
+            }
+
+            def git(*arguments, data=None):
+                return subprocess.check_output(
+                    ["/usr/bin/git", "-C", str(ROOT), *arguments],
+                    input=data, env=environment,
+                ).decode("ascii").strip()
+
+            git("read-tree", "HEAD")
+            blob = git("hash-object", "-w", "--stdin", data=b"new unclassified source\n")
+            for path in paths:
+                git("update-index", "--add", "--cacheinfo", "100644", blob, path)
+            return reporter.git_tree_entries(ROOT, git("write-tree"))
+
+    def test_new_tracked_prefix_paths_require_semantic_admission(self):
+        before = reporter.repository_status(ROOT)
+        for path in ("src/foo.c", "scripts/unclassified.py", "docs/unclassified.md",
+                     "graphics/unclassified.png"):
+            with self.subTest(path=path):
+                entries = self.new_tracked_paths((path,))
+                self.assertIn(path, entries)
+                with self.assertRaisesRegex(reporter.OwnershipError, "semantic admission"):
+                    self.model(entries=entries)
+                model = self.model()
+                model["entries"] = entries
+                with self.assertRaisesRegex(reporter.OwnershipError, "semantic admission"):
+                    reporter._resolve_path(path, self.graph, model)
+        self.assertEqual(reporter.repository_status(ROOT), before)
+
+    def test_exact_rule_admits_new_tracked_path_with_complete_owners(self):
+        path = "src/foo.c"
+        entries = self.new_tracked_paths((path,))
+        graph = copy.deepcopy(self.graph)
+        rule = next(rule for rule in graph["path_rules"] if rule["id"] == "paths.runtime")
+        rule["include"].append({"kind": "exact", "path": path})
+        model = self.model(graph, entries)
+        resolution = reporter._resolve_path(path, graph, model)
+        self.assertEqual(resolution["surface"], "surface.runtime")
+        self.assertEqual({
+            owner["edge_type"] for owner in resolution["owners"]
+        }, {"owns-test", "adversarial-control", "compile-owner", "link-owner", "target-scenario"})
+        self.assertEqual(resolution["admission"], "exact-ownership-rule")
+
+    def test_prefix_rename_does_not_admit_a_new_source(self):
+        entries = self.new_tracked_paths(("src/foo/new.c",))
+        graph = copy.deepcopy(self.graph)
+        rule = next(rule for rule in graph["path_rules"] if rule["id"] == "paths.runtime")
+        rule["id"] = "paths.runtime-revised"
+        rule["include"].reverse()
+        rule["include"].append({"kind": "prefix", "path": "src/foo/"})
+        with self.assertRaisesRegex(reporter.OwnershipError, "semantic admission"):
+            self.model(graph, entries)
+
+    def test_existing_source_registries_remain_semantic_admission(self):
+        model = self.model()
+        self.assertEqual(
+            self.resolve("src/data/items.json", model=model)["admission"],
+            "generated-source-registry",
+        )
+        self.assertEqual(
+            self.resolve("scripts/validation_ownership/make_probe.py", model=model)["admission"],
+            "verifier-runtime-registry",
+        )
+
+    def test_unknown_source_rejects_before_make_authority_execution(self):
+        entries = self.new_tracked_paths(("src/foo.c",))
+        with (
+            mock.patch.object(
+                reporter, "_validate_authorities", side_effect=AssertionError("unexpected Make authority"),
+            ) as authorities,
+            mock.patch.object(
+                reporter, "_generated_registry_records", return_value=([], self.generated_paths),
+            ),
+        ):
+            with self.assertRaisesRegex(reporter.OwnershipError, "semantic admission"):
+                reporter._validate_semantics(self.graph, self.loader, entries)
+        authorities.assert_not_called()
 
 
 class OwnershipGraphTests(unittest.TestCase):
