@@ -26,7 +26,7 @@ from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 from scripts.validation_ownership.authority import (
-    AuthorityLoader, ENVIRONMENT, GitTreeEntries, GitTreeEntry, Snapshot, git_tree_entries,
+    AuthorityLoader, ENVIRONMENT, GitlinkSource, GitTreeEntries, GitTreeEntry, Snapshot, git_tree_entries,
 )
 from scripts.validation_ownership.budget import Limits, MakeProbeError, NAMESPACE_LAUNCHER, ProbeBudget
 from scripts.validation_ownership.make_probe import (
@@ -56,18 +56,20 @@ class FoundationTests(unittest.TestCase):
         destination.write_bytes(data)
         self.entries[path] = GitTreeEntry(path, mode, "blob", hashlib.sha1(data).hexdigest())
 
-    def session(self, **limits):
+    def session(self, *, runtime_files=(), **limits):
         budget = ProbeBudget(Limits(**limits))
         return ProbeSession(
             AuthorityLoader(self.root, GitTreeEntries(self.entries, budget=budget), budget=budget),
             scratch_root=self.scratch,
             budget=budget,
+            runtime_files=runtime_files,
         )
 
     def assert_clean(self, session):
         self.assertFalse(session.cache)
         self.assertFalse(session.mappings)
         self.assertFalse(session.make_runtime)
+        self.assertFalse(session.runtime_inputs)
         self.assertFalse(session.budget.children)
         self.assertIsNone(session.snapshot)
         self.assertIsNone(session.base)
@@ -132,6 +134,268 @@ class FoundationTests(unittest.TestCase):
                 with self.assertRaises(TypeError):
                     operation()
         self.assertFalse(self.scratch.exists())
+
+    def test_runtime_inputs_capture_real_present_absent_and_ancestor_search(self):
+        present = "/usr/include/stdio.h"
+        absent = "/usr/include/ownership-probe-" + secrets.token_hex(12)
+        self.assertTrue(Path(present).is_file())
+        self.assertFalse(Path(absent).exists())
+        self.add("Makefile", (
+            f"PRESENT := $(wildcard {present})\nABSENT := $(wildcard {absent}/child.h)\n"
+            "all:\n\t@printf '%s\\n' '$(PRESENT)' '$(ABSENT)'\n"
+        ))
+        ordinary = subprocess.run(
+            ["/usr/bin/make", "-f", "Makefile", "all"], cwd=self.root,
+            env=ENVIRONMENT, capture_output=True, check=True, timeout=10,
+        ).stdout.decode("ascii").splitlines()
+        with self.session(runtime_files=(present, absent)) as session:
+            captured = {item.path: item for item in session.runtime_inputs}
+            self.assertEqual(captured[present].data, Path(present).read_bytes())
+            self.assertEqual(captured[present].mode, stat.S_IMODE(Path(present).stat().st_mode))
+            self.assertIsNone(captured[absent].data)
+            self.assertIn(("/usr/include", True), captured[absent].parents)
+            output = session.make("all", variables=("PRESENT", "ABSENT"))
+            self.assertEqual(output.semantics["domains"]["PRESENT"]["value"], ordinary[0])
+            self.assertEqual(output.semantics["domains"]["ABSENT"]["value"], ordinary[1])
+            self.assertNotEqual(output.execution_digest, session.snapshot.digest)
+            self.assertFalse((session.tree / "usr/include").exists())
+        self.assert_clean(session)
+
+    def test_runtime_inputs_do_not_admit_unrequested_paths_writes_or_enumeration(self):
+        for expression, expected in (
+            ("$(wildcard /usr/include/stdlib.h)", "undeclared source"),
+            ("$(file </usr/include/stdlib.h)", "undeclared source"),
+            ("$(wildcard /usr/include/*)", "undeclared source read|directory enumeration"),
+            ("$(file >/usr/include/stdio.h,changed)", "write outside"),
+        ):
+            with self.subTest(expression=expression):
+                self.add("Makefile", f"VALUE := {expression}\nall: ;\n")
+                session = self.session(runtime_files=("/usr/include/stdio.h",))
+                with self.assertRaisesRegex(MakeProbeError, expected):
+                    with session:
+                        session.make("all")
+                self.assert_clean(session)
+        for paths in (
+            ("/usr/include/stdio.h", "/usr/include/stdio.h"), ("/etc/passwd",),
+            ("/usr/include/../include/stdio.h",), ("/usr/include/*",),
+            ("/usr/include",), ("/usr/bin/make",), ("relative",),
+        ):
+            with self.subTest(paths=paths):
+                with self.assertRaises((MakeProbeError, OSError)):
+                    with self.session(runtime_files=paths):
+                        self.fail("invalid runtime input accepted")
+                self.assertFalse(self.scratch.exists())
+
+    def test_runtime_inputs_share_capture_and_control_quota_across_views(self):
+        budget = ProbeBudget()
+        self.add("Makefile", "HEADER := $(wildcard /usr/include/stdio.h)\nall: ;\n")
+        base = self.capture_view(budget)
+        self.add("unrelated.txt", "current")
+        current = self.capture_view(budget)
+        with ProbeSession(
+            current, scratch_root=self.scratch, budget=budget,
+            runtime_files=("/usr/include/stdio.h",),
+        ) as session:
+            runtime = session.runtime_inputs
+            first = session.make("all", variables=("HEADER",))
+            charged = budget.bytes["control"]
+            with session.select_view(base):
+                self.assertIs(session.runtime_inputs, runtime)
+                second = session.make("all", variables=("HEADER",))
+                self.assertEqual(first.semantic_digest, second.semantic_digest)
+                self.assertGreater(budget.bytes["control"], charged)
+            self.assertIs(session.runtime_inputs, runtime)
+            remaining = budget.limits.control_bytes - budget.bytes["control"]
+            budget.charge("control", remaining - len(runtime[0].data) + 1)
+            runs = budget.runs
+            with self.assertRaisesRegex(MakeProbeError, "control byte"):
+                session.make("all")
+            self.assertEqual(budget.runs, runs)
+        self.assert_clean(session)
+
+    def gitlink_git(self, root, *args, input=None):
+        return subprocess.run(
+            ["/usr/bin/git", "-C", str(root), *args], env=ENVIRONMENT,
+            input=input, capture_output=True, check=True, timeout=10,
+        ).stdout.decode("ascii").strip()
+
+    def gitlink_fixture(self):
+        module = self.directory / "module"
+        (module / "src").mkdir(parents=True)
+        (module / "include").mkdir()
+        self.gitlink_git(module, "init", "--quiet")
+        self.gitlink_git(module, "config", "user.name", "Owned Fixture")
+        self.gitlink_git(module, "config", "user.email", "fixture@example.invalid")
+        (module / "src/tool.c").write_text(
+            '#include "../include/value.h"\n#include <stdio.h>\nint main(void) { puts(VALUE); }\n',
+        )
+        pins = []
+        for value in ("base", "current"):
+            (module / "include/value.h").write_text(f'#define VALUE "{value}"\n')
+            self.gitlink_git(module, "add", "--all")
+            self.gitlink_git(module, "-c", "commit.gpgsign=false", "commit", "--quiet", "-m", value)
+            pins.append(self.gitlink_git(module, "rev-parse", "HEAD"))
+        self.gitlink_git(self.root, "init", "--quiet")
+        self.add("Makefile", "FILES := $(sort $(wildcard module/src/*.c))\nall: ;\n")
+        self.gitlink_git(self.root, "add", "Makefile")
+        return module, pins
+
+    def gitlink_loader(self, budget, database, pin, *, path="module", admit=True):
+        self.gitlink_git(self.root, "update-index", "--add", "--cacheinfo", f"160000,{pin},{path}")
+        revision = self.gitlink_git(self.root, "write-tree")
+        entries = git_tree_entries(
+            self.root, revision, budget=budget,
+            gitlinks=(GitlinkSource(path, database),) if admit else (),
+        )
+        return AuthorityLoader(self.root, entries, revision, budget=budget)
+
+    def test_gitlink_sources_use_captured_commit_not_checkout_or_branch(self):
+        module, (base, current) = self.gitlink_fixture()
+        budget = ProbeBudget()
+        loader = self.gitlink_loader(budget, module / ".git", base)
+        (module / "include/value.h").write_text("substituted live checkout")
+        self.add("module/include/value.h", "substituted superproject directory")
+        source = "module/include/value.h"
+        self.assertEqual(loader.entries["module"].object_id, base)
+        self.assertNotEqual(base, current)
+        self.assertEqual(loader.read_blob(source, "captured pin"), b'#define VALUE "base"\n')
+        with ProbeSession(loader, scratch_root=self.scratch, budget=budget) as session:
+            observed = session.make("all", variables=("FILES",), owner_inputs=("module",))
+            self.assertEqual(observed.semantics["domains"]["FILES"]["value"], "module/src/tool.c")
+            self.assertIn(("module", "160000", base), observed.semantics["owner_inputs"])
+            self.assertEqual(session.sources((source,)), (source,))
+            output = session.command(Command(
+                ("/usr/bin/python3", "-c", f"print(open({source!r}).read(),end='')"), sources=(source,),
+            ))
+            self.assertEqual(output.stdout, b'#define VALUE "base"\n')
+            self.assertEqual(output.consumed, (source,))
+            tool = session.compile_native(("module/src/tool.c",), headers=(source,))
+            self.assertEqual(session.native(tool).stdout, b"base\n")
+        self.assert_clean(session)
+        self.assertEqual((module / "include/value.h").read_text(), "substituted live checkout")
+
+    def test_gitlink_sources_require_explicit_regular_exact_available_pin(self):
+        module, (base, current) = self.gitlink_fixture()
+        budget = ProbeBudget()
+        loader = self.gitlink_loader(budget, module / ".git", base, admit=False)
+        with ProbeSession(loader, scratch_root=self.scratch, budget=budget) as session:
+            with self.assertRaisesRegex(MakeProbeError, "nonregular candidate source"):
+                session.make("all")
+        self.assert_clean(session)
+        blob = self.gitlink_git(module, "rev-parse", current + ":include/value.h")
+        for path, database, pin, expected in (
+            ("module", module / ".git", "f"*40, "trusted Git failed"),
+            ("module", module / ".git", blob, "not a commit"),
+            ("module", self.directory / "missing", base, "unavailable"),
+            ("module", module, base, "trusted Git failed"),
+            ("../escape", module / ".git", base, "canonical"),
+            ("Makefile", module / ".git", base, "unique captured gitlink"),
+            ("unrequested", module / ".git", base, "unique captured gitlink"),
+        ):
+            with self.subTest(path=path, database=database, pin=pin):
+                budget = ProbeBudget()
+                self.gitlink_git(self.root, "update-index", "--cacheinfo", f"160000,{pin},module")
+                revision = self.gitlink_git(self.root, "write-tree")
+                with self.assertRaisesRegex(MakeProbeError, expected):
+                    git_tree_entries(self.root, revision, budget=budget, gitlinks=(GitlinkSource(path, database),))
+                budget.close()
+                self.assertFalse(budget.children)
+        budget = ProbeBudget()
+        loader = self.gitlink_loader(budget, module / ".git", base)
+        with self.assertRaisesRegex(MakeProbeError, "unique captured gitlink"):
+            git_tree_entries(self.root, loader.revision, budget=budget, gitlinks=(
+                GitlinkSource("module", module / ".git"), GitlinkSource("module", module / ".git"),
+            ))
+        with self.assertRaisesRegex(MakeProbeError, "immutable superproject"):
+            AuthorityLoader(self.root, loader.entries, budget=budget)
+        with self.assertRaisesRegex(MakeProbeError, "immutable superproject"):
+            AuthorityLoader(
+                self.root, GitTreeEntries(loader.entries, budget=budget), loader.revision, budget=budget,
+            )
+        budget.close()
+        alias = self.directory / "database-alias"
+        alias.symlink_to(module / ".git")
+        with self.assertRaisesRegex(MakeProbeError, "symlink"):
+            self.gitlink_loader(ProbeBudget(), alias, base)
+        (module / "escape").symlink_to("../../outside")
+        self.gitlink_git(module, "add", "escape")
+        self.gitlink_git(module, "-c", "commit.gpgsign=false", "commit", "--quiet", "-m", "nonregular")
+        nonregular = self.gitlink_git(module, "rev-parse", "HEAD")
+        with self.assertRaisesRegex(MakeProbeError, "nonregular/nested"):
+            self.gitlink_loader(ProbeBudget(), module / ".git", nonregular)
+        (module / "escape").unlink()
+        self.gitlink_git(module, "add", "--all")
+        self.gitlink_git(module, "update-index", "--add", "--cacheinfo", f"160000,{base},nested")
+        self.gitlink_git(module, "-c", "commit.gpgsign=false", "commit", "--quiet", "-m", "nested gitlink")
+        nested = self.gitlink_git(module, "rev-parse", "HEAD")
+        with self.assertRaisesRegex(MakeProbeError, "nonregular/nested"):
+            self.gitlink_loader(ProbeBudget(), module / ".git", nested)
+
+    def test_gitlink_sources_keep_two_pins_paths_views_and_cumulative_accounting(self):
+        module, (old_pin, new_pin) = self.gitlink_fixture()
+        budget = ProbeBudget()
+        base = self.gitlink_loader(budget, module / ".git", old_pin, path="oldlib")
+        self.gitlink_git(self.root, "update-index", "--force-remove", "oldlib")
+        current = self.gitlink_loader(budget, module / ".git", new_pin, path="newlib")
+        self.assertNotIn("oldlib", current.entries)
+        started, deadline = budget.started, budget.deadline
+        with ProbeSession(current, scratch_root=self.scratch, budget=budget) as session:
+            original = session.snapshot
+            self.assertEqual(session.snapshot.files["newlib/include/value.h"], b'#define VALUE "current"\n')
+            before = budget.runs, dict(budget.bytes), session.processes_used
+            with session.select_view(base):
+                self.assertNotIn("newlib/include/value.h", session.snapshot.files)
+                output = session.command(Command(
+                    ("/usr/bin/python3", "-c", "print(open('oldlib/include/value.h').read(),end='')"),
+                    sources=("oldlib/include/value.h",),
+                ))
+                self.assertEqual(output.stdout, b'#define VALUE "base"\n')
+                self.assertEqual(output.consumed, ("oldlib/include/value.h",))
+                self.assertEqual(session.snapshot.owners(("oldlib",)), [("oldlib", "160000", old_pin)])
+                self.assertGreater(budget.runs, before[0])
+                self.assertGreater(budget.bytes["snapshot"], before[1]["snapshot"])
+                self.assertGreater(session.processes_used, before[2])
+            self.assertIs(session.snapshot, original)
+            self.assertFalse((session.tree / "oldlib").exists())
+            self.assertEqual((budget.started, budget.deadline), (started, deadline))
+        self.assert_clean(session)
+
+    def test_gitlink_entries_and_bytes_spend_existing_capture_bounds(self):
+        module, (base, _) = self.gitlink_fixture()
+        budget = ProbeBudget(Limits(entries=3))
+        with self.assertRaisesRegex(MakeProbeError, "expanded source entry"):
+            self.gitlink_loader(budget, module / ".git", base)
+        budget.close()
+        (module / "large.bin").write_bytes(b"x"*8192)
+        self.gitlink_git(module, "add", "large.bin")
+        self.gitlink_git(module, "-c", "commit.gpgsign=false", "commit", "--quiet", "-m", "bounded blob")
+        pin = self.gitlink_git(module, "rev-parse", "HEAD")
+        budget = ProbeBudget(Limits(snapshot_bytes=4096))
+        loader = self.gitlink_loader(budget, module / ".git", pin)
+        with self.assertRaisesRegex(MakeProbeError, "snapshot byte"):
+            Snapshot(loader, budget)
+        self.assertFalse(budget.children)
+        budget.close()
+
+    def test_gitlink_empty_pin_is_a_make_directory_not_extra_command_authority(self):
+        module, _ = self.gitlink_fixture()
+        tree = self.gitlink_git(module, "mktree", input=b"")
+        pin = self.gitlink_git(module, "-c", "commit.gpgsign=false", "commit-tree", tree, "-m", "empty")
+        budget = ProbeBudget()
+        loader = self.gitlink_loader(budget, module / ".git", pin)
+        with ProbeSession(loader, scratch_root=self.scratch, budget=budget) as session:
+            self.assertTrue((session.tree / "module").is_dir())
+            result = session.make("all", variables=("FILES",), owner_inputs=("module",))
+            self.assertEqual(result.semantics["domains"]["FILES"]["value"], "")
+            self.assertIn(("module", "160000", pin), result.semantics["owner_inputs"])
+            output = session.command(Command(
+                ("/usr/bin/python3", "-c", "import os; print(' '.join(os.listdir('.')))"),
+                code=("Makefile",),
+            ))
+            self.assertEqual(output.stdout, b"Makefile\n")
+            with session.select_view(loader):
+                self.assertTrue((session.tree / "module").is_dir())
+        self.assert_clean(session)
 
     def test_authority_composition_rejects_foreign_and_detached_budgets(self):
         self.add("Makefile", "all: ;\n")

@@ -196,6 +196,49 @@ same GNU Make 4.3/glibc ABI requirement. No candidate ELF, `ldd` script, ambient
 preload/library path or repository cwd participates in runtime discovery.
 Later capsules reuse the immutable capture, not mutable aliases or host reads.
 
+### Explicit runtime discovery inputs
+
+The optional `ProbeSession(..., runtime_files=(... ,))` admits exact regular
+system files, or their actual absence, for Make's existing runtime discovery:
+
+```python
+with ProbeSession(
+    loader, scratch_root=scratch, budget=budget,
+    runtime_files=(
+        "/usr/include/newlib/stdlib.h",
+        "/usr/include/build",
+        "/usr/include/.dep",
+    ),
+) as probe:
+    observation = probe.make("assets-test", commands=commands)
+```
+
+The first path supports the real `modern.mk` newlib wildcard. Capturing its
+actual `/usr/include` ancestor also preserves GNU Make's standard include-search
+context. The other two declarations capture actual absent search prefixes for
+missing relative generated/dependency includes, not empty Make assignments.
+An explicitly captured absent path proves its descendants absent as well.
+If such a path instead names a directory or another nonregular object, capture
+rejects rather than fabricating that absence.
+
+Files must be canonical absolute paths below the existing trusted system
+tool/library roots or `/usr/include/`; root ownership and non-group/other-
+writability checks also apply to existing ancestors. Symlink/non-directory
+ancestors, special files, executable-image collisions, overlaps, duplicates and
+excess requests reject. Present files retain captured real bytes and modes;
+absent inputs are not created. No live include tree is mounted. Unrequested
+runtime files and directory enumeration remain forbidden, and declarations
+grant no new executable or write authority.
+
+`probe.runtime_inputs` exposes frozen `RuntimeInput(path, data, mode, parents)`
+records during the session; `data is None` denotes captured absence and
+`parents` records ancestor presence. Capture, copies and observations spend the
+existing control/report budgets. Runtime inputs remain fixed across BASE/current
+view selection, clear on session exit and bind Make's execution identity.
+Semantic identity still comes from actual native target/domain observations,
+not unrelated runtime bytes. Default callers that omit `runtime_files` retain
+their existing behavior.
+
 There is no candidate-readable generated probe program or writable domain
 file. The trusted observer reads GNU Make's actual target/dependency/recipe
 structures and evaluates requested global and target-scoped variables. It
@@ -382,6 +425,51 @@ Malformed UTF-8, duplicate/nonfinite JSON, stale/omitted/extra paths, malformed
 frames and unused source declarations reject. Directory source selectors must
 be explicit: the foundation does not infer a generator's ownership from a
 filename or arbitrarily treat every file under `src/data` as generated data.
+
+### Exact captured gitlink sources
+
+`git_tree_entries` optionally accepts typed `GitlinkSource(path, git_dir)`
+requests. Each names a gitlink already present in the captured superproject and
+an existing local Git object database, not a checked-out source directory:
+
+```python
+from scripts.validation_ownership.authority import GitlinkSource
+
+entries = git_tree_entries(
+    root, revision, budget=budget,
+    gitlinks=(GitlinkSource("mgfembp", module_object_database),))
+loader = AuthorityLoader(root, entries, revision, budget=budget)
+```
+
+The commit is derived only from the superproject's `160000` entry. There is no
+pin override, duplicated committed pin or automatic fetch. Git reads the exact
+commit's complete bounded source tree; original paths such as
+`mgfembp/src/main.c` and `mgfembp/include/proc.h` stay unchanged under `/repo`.
+`GitTreeEntry.git_dir` retains object-database origin for admitted link records
+and their blobs. Existing loader and Snapshot reads group those blobs by origin
+under the same report budget; no second loader/session/sandbox is constructed.
+
+The database must be an existing canonical absolute directory without symlink
+components. Unrequested links, wrong/unavailable/non-commit objects, a working
+checkout substituted for a database, escaping/conflicting names and nonregular
+or nested-gitlink source entries reject. Only regular files are expanded; there
+is no recursive submodule discovery. Explicit empty pins expose only their
+empty root. Git storage uses the same trusted local-object-database boundary as
+existing source capture, not a new hostile-Git parsing service.
+
+Admitted gitlink namespaces are read-only/noexec and remain protected against
+generated-output replacement. Source declarations still name actual regular
+files/globs; literal names keep their exact root-relative matching. Native and
+registry calls retain successful-return source accounting. Explicit
+`owner_inputs=("mgfembp",)` can name the whole captured pin; file owners continue
+to identify their actual path/mode/content. An unrequested pin is not an owner.
+
+Link admission requires a captured immutable superproject loader. Different
+BASE/current captures may request different pins and paths and use the existing
+`select_view` API. Checked-out submodule files and moving branch HEADs never
+substitute for the captured commit. New entry metadata, blob reads and
+materialization retain the original entry/byte/run/deadline bounds; no source
+inventory/hash ledger or live submodule mount is added.
 
 Two identities deliberately serve different purposes:
 
@@ -681,8 +769,8 @@ Required downstream #180/PR186 integration:
    native commands. `probe_generated_registry` requires a typed `Command`,
    matching loader and the active report-wide `ProbeSession`; its result is the
    verified typed record. It must not create a per-registry session or budget.
-   Gitlink-backed tools need exact pinned materialization/admission, not a
-   live submodule checkout or executable mounted into Make.
+   Gitlink-backed tools use explicit `GitlinkSource` capture of their exact
+   superproject pin, not a live checkout or executable mounted into Make.
    Bind issued native tools through `Command.native_tool` and declare generated
    include files with `Command.outputs`; do not discard file results, precreate
    includes before a new Make invocation, or substitute synthetic stdout.
@@ -693,6 +781,11 @@ Required downstream #180/PR186 integration:
 
 In particular, the downstream 112-domain adoption is not established by the
 normal-context, interception or cleanup regressions here.
+The actual child root-Make prototype now observes the admitted newlib header
+and pinned mgfembp source/header wildcards. Its later dependency-remake scaninc
+commands still need a child-owned typed adapter, and the unchanged process
+bound can reject that unresolved remake pass. The input-seam success does not
+claim a complete default root observation or full graph acceptance.
 
 Dependencies are the existing generated-registry schema and host tools above.
 Conflicts: PR186's probe/interceptor/reporter surfaces must be reconciled.

@@ -2801,6 +2801,44 @@ The first full-tree selector recaptured all unchanged blobs and exhausted the
 immutable-entry reuse removes those duplicate reads/copies without resetting
 the report budget or sharing command/native execution authority.
 
+### Root-Make runtime and pinned-source inputs
+
+The `test_runtime_inputs_*` and `test_gitlink_*` controls exercise the same
+case's explicit input seam. From an owned source fixture:
+
+1. Declare an actual system header and an actually absent runtime path with
+   `ProbeSession(runtime_files=...)`. Compare native ordinary/probed wildcard
+   values and captured bytes/modes/ancestor presence. A captured absent prefix
+   may answer only truthful missing descendants; unrelated paths, enumeration,
+   writes, overlaps and nonregular/runtime-image inputs reject.
+2. Use `git_tree_entries(..., gitlinks=(GitlinkSource(path, git_dir),))` for a
+   recorded `160000` entry. Require exact pinned bytes and original prefixed
+   guest paths, even after the database's checked-out branch and source
+   directories differ. Run source-accounted native/registry consumers; wrong,
+   unavailable/non-commit pins, unrequested links, substituted checkout paths,
+   symlink/escaping/nonregular/nested subtrees and detached admission reject.
+3. Capture two immutable pins/paths with one report and select BASE/current
+   normally. Require per-view source content, pin identity, restored state,
+   unchanged deadline and cumulative entry/read/byte/run/process charges.
+   Exhaust existing source-entry, snapshot-byte and runtime-copy quotas.
+4. Exercise the actual child root Make with real registered producers and no
+   dummy assignments. Its newlib header detection needs actual parent/search
+   metadata too: explicitly captured absence of `/usr/include/build` and
+   `/usr/include/.dep` supports the real include fallback probes. Compare the
+   original `modern.mk` detection/source-list clauses against ordinary GNU Make
+   over an independent exact-pin archive.
+
+At exact `0a832d4`, thirteen real registered commands preceded rejection of
+`/usr/include/newlib/stdlib.h`. The separately labelled explicit-empty-newlib
+diagnostic reached the unadmitted `mgfembp/src` gitlink; that diagnostic was
+never default acceptance. With both inputs captured, the real default trace
+successfully observes the header and the pinned src/include files, then reaches
+later unresolved scaninc dependency-remake events and the unchanged process cap.
+The child prototype reports its missing `banim-scaninc-inputs` adapter separately;
+an arm-compressing-linker permission diagnostic is also retained. Do not raise
+limits or broaden source execution here, invent outputs, or claim a full
+root/112-domain result from these two input boundaries.
+
 ### Interactions and save compatibility
 
 This host-only contract changes no save, migration, config identity, generated

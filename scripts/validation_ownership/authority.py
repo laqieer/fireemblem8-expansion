@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import stat
 from dataclasses import dataclass
 from pathlib import Path
@@ -66,9 +67,16 @@ def encoded(value) -> bytes:
     return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode("ascii")
 
 
-def git(root: Path, budget: ProbeBudget, *args: str):
+def git_command(root: Path, git_dir: Path | None = None):
+    return [
+        "/usr/bin/git", "--no-replace-objects",
+        *(["-C", str(root)] if git_dir is None else ["--git-dir", str(git_dir)]),
+    ]
+
+
+def git(root: Path, budget: ProbeBudget, *args: str, git_dir: Path | None = None):
     result = budget.run(
-        ["/usr/bin/git", "--no-replace-objects", "-C", str(root), *args],
+        [*git_command(root, git_dir), *args],
         env=ENVIRONMENT, output_limit=budget.limits.file_bytes,
     )
     if result.returncode:
@@ -82,6 +90,30 @@ class GitTreeEntry:
     mode: str
     object_type: str
     object_id: str
+    git_dir: Path | None = None
+
+
+@dataclass(frozen=True)
+class GitlinkSource:
+    """An explicitly requested gitlink and its local object database, not a pin override."""
+
+    path: str
+    git_dir: Path
+
+
+def _git_directory(path):
+    if not isinstance(path, (str, os.PathLike)):
+        raise MakeProbeError("gitlink database must be a pathname")
+    directory = Path(path)
+    if not directory.is_absolute() or ".." in directory.parts:
+        raise MakeProbeError("gitlink database must be an absolute canonical directory")
+    try:
+        for component in (directory, *directory.parents):
+            if not stat.S_ISDIR(component.lstat().st_mode):
+                raise MakeProbeError("gitlink database has a non-directory/symlink component")
+    except OSError as error:
+        raise MakeProbeError("gitlink object database is unavailable") from error
+    return directory
 
 
 class GitTreeEntries(dict[str, GitTreeEntry]):
@@ -96,11 +128,9 @@ class GitTreeEntries(dict[str, GitTreeEntry]):
         self.capture: tuple[Path, str] | None = None
 
 
-def git_tree_entries(root: Path, revision: str = "HEAD", *, budget: ProbeBudget):
-    if not isinstance(budget, ProbeBudget):
-        raise MakeProbeError("authority capture requires an explicit report budget")
+def _tree_entries(root, revision, budget, *, git_dir=None):
     result = {}
-    for row in git(root, budget, "ls-tree", "-rz", "--full-tree", revision).split(b"\0"):
+    for row in git(root, budget, "ls-tree", "-rz", "--full-tree", revision, git_dir=git_dir).split(b"\0"):
         if not row:
             continue
         header, path = row.split(b"\t", 1)
@@ -108,9 +138,50 @@ def git_tree_entries(root: Path, revision: str = "HEAD", *, budget: ProbeBudget)
         name = relative_path(text(path, "Git path"))
         if name in result:
             raise MakeProbeError("Git tree has a duplicate path")
-        result[name] = GitTreeEntry(name, mode, kind, oid)
+        if len(result) >= budget.limits.entries:
+            budget.reject("captured tree entry bound exceeded")
+        result[name] = GitTreeEntry(name, mode, kind, oid, git_dir)
+    return result
+
+
+def git_tree_entries(
+    root: Path, revision: str = "HEAD", *, budget: ProbeBudget,
+    gitlinks: tuple[GitlinkSource, ...] = (),
+):
+    if not isinstance(budget, ProbeBudget):
+        raise MakeProbeError("authority capture requires an explicit report budget")
+    result = _tree_entries(root, revision, budget)
     if not result:
         raise MakeProbeError("empty authority tree")
+    requested = set()
+    for index, source in enumerate(gitlinks):
+        budget.remaining()
+        if index >= budget.limits.pending:
+            budget.reject("gitlink admission count exceeds report bound")
+        if not isinstance(source, GitlinkSource):
+            raise MakeProbeError("gitlink admission requires a typed GitlinkSource")
+        name = relative_path(source.path)
+        entry = result.get(name)
+        if name in requested or entry is None or entry.mode != "160000" or entry.object_type != "commit":
+            raise MakeProbeError("requested source is not a unique captured gitlink")
+        if not re.fullmatch(r"(?:[0-9a-f]{40}|[0-9a-f]{64})", entry.object_id):
+            raise MakeProbeError("invalid captured gitlink pin")
+        requested.add(name)
+        directory = _git_directory(source.git_dir)
+        if git(root, budget, "cat-file", "-t", entry.object_id, git_dir=directory) != b"commit\n":
+            raise MakeProbeError("captured gitlink pin is not a commit")
+        children = _tree_entries(root, entry.object_id, budget, git_dir=directory)
+        if len(result) + len(children) > budget.limits.entries:
+            budget.reject("expanded source entry bound exceeded")
+        for child in children.values():
+            if child.mode not in {"100644", "100755"} or child.object_type != "blob":
+                raise MakeProbeError("gitlink source contains a nonregular/nested subtree")
+            path = relative_path(name + "/" + child.path)
+            if path in result:
+                raise MakeProbeError("gitlink source path conflicts with captured tree")
+            budget.charge("snapshot", len(path.encode("utf-8")) + 128)
+            result[path] = GitTreeEntry(path, child.mode, child.object_type, child.object_id, directory)
+        result[name] = GitTreeEntry(name, entry.mode, entry.object_type, entry.object_id, directory)
     captured = GitTreeEntries(result, budget=budget)
     captured.capture = (Path(os.path.abspath(root)), revision)
     budget.charge("control", len(encoded([str(captured.capture[0]), revision])))
@@ -138,6 +209,10 @@ class AuthorityLoader:
         self.scratch_root = scratch_root
         self.budget = budget
         self.live_modes = {}
+        if any(entry.git_dir is not None for entry in entries.values()) and (
+            revision is None or entries.capture != (self.root, revision)
+        ):
+            raise MakeProbeError("gitlink source admission requires a captured immutable superproject view")
         if self.root.is_symlink() or not self.root.is_dir():
             raise MakeProbeError("authority root must be a non-symlink directory")
 
@@ -152,7 +227,7 @@ class AuthorityLoader:
     def read_blob(self, relative, label):
         entry = self.entry(relative, label)
         if self.revision is not None:
-            return git(self.root, self.budget, "cat-file", "blob", entry.object_id)
+            return git(self.root, self.budget, "cat-file", "blob", entry.object_id, git_dir=entry.git_dir)
         descriptor = os.open(self.root, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
         try:
             parts = entry.path.split("/")
@@ -232,6 +307,10 @@ class Snapshot:
         self.files = {}
         self.modes = {}
         self.reused_paths = set()
+        self.gitlink_roots = {
+            name for name, entry in loader.entries.items()
+            if entry.mode == "160000" and entry.object_type == "commit" and entry.git_dir is not None
+        }
         records = []
         if not 1 <= len(loader.entries) <= budget.limits.entries:
             budget.reject("snapshot entry count exceeds aggregate bound")
@@ -251,37 +330,37 @@ class Snapshot:
                         immutable[entry.path] = reuse.files[entry.path]
                         self.reused_paths.add(entry.path)
             entries = [entry for entry in entries if entry.path not in self.reused_paths]
-            payload = b""
-            if entries:
+            for directory in dict.fromkeys(entry.git_dir for entry in entries):
+                batch = [entry for entry in entries if entry.git_dir == directory]
                 result = budget.run(
-                    ["/usr/bin/git", "--no-replace-objects", "-C", str(loader.root), "cat-file", "--batch"],
+                    [*git_command(loader.root, directory), "cat-file", "--batch"],
                     env=ENVIRONMENT,
-                    input_data="".join(entry.object_id + "\n" for entry in entries).encode("ascii"),
+                    input_data="".join(entry.object_id + "\n" for entry in batch).encode("ascii"),
                     output_limit=budget.limits.snapshot_bytes,
                     category="snapshot",
                 )
                 if result.returncode:
                     raise MakeProbeError(f"immutable blob stream failed: {result.stderr!r}")
                 payload = result.stdout
-            offset = 0
-            for entry in entries:
-                end = payload.find(b"\n", offset)
-                if end < 0:
-                    raise MakeProbeError("truncated immutable blob header")
-                header = text(payload[offset:end], "Git blob header", "ascii").split()
-                if len(header) != 3 or header[:2] != [entry.object_id, "blob"] or not header[2].isdigit():
-                    raise MakeProbeError("unexpected immutable blob identity/type")
-                size = int(header[2])
-                if size > budget.limits.file_bytes:
-                    raise MakeProbeError("immutable blob exceeds file bound")
-                offset = end + 1
-                immutable[entry.path] = payload[offset:offset + size]
-                offset += size
-                if payload[offset:offset + 1] != b"\n":
-                    raise MakeProbeError("truncated immutable blob payload")
-                offset += 1
-            if offset != len(payload):
-                raise MakeProbeError("trailing immutable blob stream")
+                offset = 0
+                for entry in batch:
+                    end = payload.find(b"\n", offset)
+                    if end < 0:
+                        raise MakeProbeError("truncated immutable blob header")
+                    header = text(payload[offset:end], "Git blob header", "ascii").split()
+                    if len(header) != 3 or header[:2] != [entry.object_id, "blob"] or not header[2].isdigit():
+                        raise MakeProbeError("unexpected immutable blob identity/type")
+                    size = int(header[2])
+                    if size > budget.limits.file_bytes:
+                        raise MakeProbeError("immutable blob exceeds file bound")
+                    offset = end + 1
+                    immutable[entry.path] = payload[offset:offset + size]
+                    offset += size
+                    if payload[offset:offset + 1] != b"\n":
+                        raise MakeProbeError("truncated immutable blob payload")
+                    offset += 1
+                if offset != len(payload):
+                    raise MakeProbeError("trailing immutable blob stream")
         for name, entry in sorted(loader.entries.items()):
             budget.remaining()
             relative_path(name)
@@ -301,7 +380,7 @@ class Snapshot:
             else:
                 # Gitlinks/symlinks participate in integrity but are not executable
                 # or silently dereferenced. A consumer must explicitly admit them.
-                identity = entry.object_id
+                identity = (entry.object_id, "admitted") if name in self.gitlink_roots else entry.object_id
             records.append((name, self.modes.get(name, entry.mode), entry.object_type, identity))
         self.digest = hashlib.sha256(encoded(records)).hexdigest()
 
@@ -309,7 +388,8 @@ class Snapshot:
         if budget is not self.budget:
             raise MakeProbeError("materialization requires its snapshot's report budget")
         budget.remaining()
-        for name in sorted(paths):
+        selected = set(paths)
+        for name in sorted(selected):
             budget.remaining()
             relative_path(name)
             if name not in self.files:
@@ -320,11 +400,13 @@ class Snapshot:
             # Preserve observable Git executable bits; the mount is still noexec
             # and all source writes/dispatch are independently denied.
             target.chmod(0o755 if self.modes[name] == "100755" else 0o644)
-
     def owners(self, paths):
         result = []
         for name in sorted(set(paths)):
             relative_path(name)
+            if name in self.gitlink_roots:
+                result.append((name, "160000", self.loader.entries[name].object_id))
+                continue
             if name not in self.files:
                 raise MakeProbeError(f"missing declared owner input {name!r}")
             result.append((name, self.modes[name], hashlib.sha256(self.files[name]).hexdigest()))

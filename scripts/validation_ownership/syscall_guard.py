@@ -571,6 +571,13 @@ class Policy:
             if self.mode in {"command", "compile"} and (path == "/work" or path.startswith("/work/")):
                 return
             raise Violation(f"write outside private command output: {path}")
+        if self.mode == "make" and (
+            path in self.config.get("runtime_files", ())
+            or operation == "metadata" and path in self.config.get("runtime_parents", ())
+            or any(path.startswith(absent + "/") for absent in self.config.get("runtime_absent", ()))
+        ):
+            self.defer_observation(state, "accessed", path)
+            return
         runtime = (
             path.startswith(("/usr/lib/python3.", "/usr/lib/x86_64-linux-gnu/",
                              "/lib/x86_64-linux-gnu/", "/lib64/"))

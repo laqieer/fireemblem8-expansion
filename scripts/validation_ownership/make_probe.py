@@ -80,6 +80,14 @@ class GeneratedFile:
 
 
 @dataclass(frozen=True)
+class RuntimeInput:
+    path: str
+    data: bytes | None
+    mode: int | None
+    parents: tuple[tuple[str, bool], ...]
+
+
+@dataclass(frozen=True)
 class ProcessOutput:
     stdout: bytes
     stderr: bytes
@@ -247,23 +255,67 @@ def _remove_owned_tree(path):
         pass
 
 
-def _trusted_runtime_bytes(path: str, budget: ProbeBudget):
+def _trusted_runtime_path(path: str, *, optional=False):
     requested = PurePosixPath(path)
     if not requested.is_absolute() or str(requested) != path or ".." in requested.parts:
         raise MakeProbeError("noncanonical trusted runtime path")
-    roots = ("/usr/bin/", "/usr/lib/", "/usr/lib64/", "/lib/", "/lib64/")
+    roots = (
+        "/usr/bin/", "/usr/lib/", "/usr/lib64/", "/lib/", "/lib64/",
+        *(("/usr/include/",) if optional else ()),
+    )
     if not path.startswith(roots):
         raise MakeProbeError(f"runtime is outside the trusted system tool/library roots: {path}")
-    resolved = Path(path).resolve(strict=True)
+    resolved = Path(path).resolve(strict=not optional)
     if not resolved.as_posix().startswith(roots):
         raise MakeProbeError(f"runtime is outside the trusted system tool/library roots: {path}")
     for entry in {Path(path), *Path(path).parents, resolved, *resolved.parents}:
-        mode = entry.lstat()
+        try:
+            mode = entry.lstat()
+        except FileNotFoundError:
+            if optional:
+                continue
+            raise
         if mode.st_uid != 0 or (
             not stat.S_ISLNK(mode.st_mode) and mode.st_mode & (stat.S_IWGRP | stat.S_IWOTH)
         ):
             raise MakeProbeError(f"mutable/untrusted runtime input: {path}")
-    return budget.read_bytes(resolved, "control")
+    return resolved
+
+
+def _trusted_runtime_bytes(path: str, budget: ProbeBudget):
+    return budget.read_bytes(_trusted_runtime_path(path), "control")
+
+
+def _capture_runtime_input(path, budget):
+    if (
+        not isinstance(path, str) or not path.startswith("/")
+        or any(character in path for character in "*?[")
+    ):
+        raise MakeProbeError("runtime input must be a bounded exact pathname")
+    relative_path(path[1:])
+    resolved = _trusted_runtime_path(path, optional=True)
+    parents = []
+    for parent in Path(path).parents:
+        budget.remaining()
+        try:
+            info = parent.lstat()
+        except FileNotFoundError:
+            parents.append((str(parent), False))
+        else:
+            if not stat.S_ISDIR(info.st_mode):
+                raise MakeProbeError("runtime input has a non-directory/symlink ancestor")
+            parents.append((str(parent), True))
+    try:
+        info = Path(path).lstat()
+    except FileNotFoundError:
+        data, mode = None, None
+    else:
+        if not stat.S_ISREG(info.st_mode) or info.st_mode & 0o7000:
+            raise MakeProbeError("runtime input is not an ordinary regular file")
+        data = budget.read_bytes(resolved, "control")
+        mode = stat.S_IMODE(info.st_mode)
+    budget.charge("control", len(encoded([path, mode, parents])))
+    return RuntimeInput(path, data, mode, tuple(parents))
 
 
 def _make_interpreter(binary: bytes):
@@ -389,7 +441,10 @@ def _scratch_directory(loader, requested):
 class ProbeSession:
     """The only execution authority; one lifetime with explicitly selected views."""
 
-    def __init__(self, loader: AuthorityLoader, *, scratch_root: Path, budget: ProbeBudget):
+    def __init__(
+        self, loader: AuthorityLoader, *, scratch_root: Path, budget: ProbeBudget,
+        runtime_files: tuple[str, ...] = (),
+    ):
         if not isinstance(loader, AuthorityLoader):
             raise MakeProbeError("probe requires its exact-tree authority loader")
         if (
@@ -409,6 +464,15 @@ class ProbeSession:
         self.handlers = {}
         self.snapshot = None
         self.make_runtime = ()
+        if (
+            not isinstance(runtime_files, (tuple, list))
+            or any(not isinstance(path, str) for path in runtime_files)
+            or len(runtime_files) > budget.limits.pending
+            or len(set(runtime_files)) != len(runtime_files)
+        ):
+            raise MakeProbeError("runtime input count/duplicates exceed admission contract")
+        self.runtime_paths = tuple(runtime_files)
+        self.runtime_inputs = ()
         self.serial = 0
         self.processes_used = 0
         self.syscalls_used = 0
@@ -441,6 +505,9 @@ class ProbeSession:
             self.tree = self.base / "tree"
             self.tree.mkdir()
             self.snapshot.materialize(self.tree, self.snapshot.files, self.budget)
+            for name in sorted(self.snapshot.gitlink_roots):
+                self.budget.remaining()
+                (self.tree / name).mkdir(parents=True, exist_ok=True)
             self._compile_interceptor()
             return self
         except BaseException:
@@ -498,6 +565,8 @@ class ProbeSession:
                 copied = self.snapshot.files.keys() - self.snapshot.reused_paths
                 self.budget.charge("snapshot", sum(len(self.snapshot.files[name]) for name in copied))
                 self.snapshot.materialize(self.tree, copied, self.budget)
+                for name in sorted(self.snapshot.gitlink_roots):
+                    (self.tree / name).mkdir(parents=True, exist_ok=True)
                 yield self
         except BaseException as error:
             self.budget.failed = True
@@ -510,6 +579,7 @@ class ProbeSession:
             self.mappings.clear()
             self.native_tools.clear()
             self.make_runtime = ()
+            self.runtime_inputs = ()
             self.snapshot = None
             self.loader.live_modes.clear()
         def remove_base():
@@ -543,6 +613,16 @@ class ProbeSession:
         if version.returncode or version.stdout.splitlines()[0] != b"GNU Make 4.3":
             raise MakeProbeError("native observation ABI requires GNU Make 4.3")
         self.make_runtime = _make_runtime(self.budget)
+        reserved = {path for path, _ in self.make_runtime} | set(ALIASES) | {"/lib/vo-observer.so"}
+        captured = []
+        for path in self.runtime_paths:
+            item = _capture_runtime_input(path, self.budget)
+            if any(path == other or path.startswith(other + "/") or other.startswith(path + "/")
+                   for other in reserved):
+                raise MakeProbeError("runtime input conflicts with trusted execution image")
+            captured.append(item)
+            reserved.add(path)
+        self.runtime_inputs = tuple(captured)
         python = self.budget.run(
             ["/usr/bin/python3", "-I", "-S", "-B", "-c",
              "import sys; print('%d.%d' % sys.version_info[:2])"],
@@ -626,6 +706,15 @@ class ProbeSession:
             for target in ALIASES:
                 shutil.copyfile(self.base / "interceptor", _mkdir_target(root, target))
                 (root / target.lstrip("/")).chmod(0o555)
+            for item in self.runtime_inputs:
+                for parent, present in reversed(item.parents):
+                    if present and parent != "/":
+                        _mkdir_target(root, parent, directory=True)
+                if item.data is not None:
+                    self.budget.charge("control", len(item.data))
+                    target = _mkdir_target(root, item.path)
+                    target.write_bytes(item.data)
+                    target.chmod(item.mode)
         else:
             for directory, target in (("bin", "usr/bin"), ("lib", "usr/lib"), ("lib64", "usr/lib64")):
                 (root / directory).rmdir()
@@ -658,8 +747,15 @@ class ProbeSession:
             "python_version": self.python_version,
             "sudo_drop": self.sudo_drop, "runner_uid": os.getuid(), "runner_gid": os.getgid(),
             "forbidden_paths": [
-                "/repo/" + path for path in self.loader.entries if path not in self.snapshot.files
+                "/repo/" + path for path in self.loader.entries
+                if path not in self.snapshot.files and path not in self.snapshot.gitlink_roots
             ],
+            "runtime_files": [item.path for item in self.runtime_inputs] if mode == "make" else [],
+            "runtime_absent": [item.path for item in self.runtime_inputs if item.data is None]
+            if mode == "make" else [],
+            "runtime_parents": sorted({
+                parent for item in self.runtime_inputs for parent, _ in item.parents
+            }) if mode == "make" else [],
             "deadline": self.budget.deadline,
             "file_limit": file_remaining,
             "memory_limit": self.budget.limits.address_space_bytes,
@@ -1087,8 +1183,17 @@ class ProbeSession:
                     )
                     semantic_bytes = encoded(semantics)
                     self.budget.charge("control", len(semantic_bytes))
+                    execution_digest = self.snapshot.digest
+                    if self.runtime_inputs:
+                        execution = encoded([self.snapshot.digest, [
+                            (item.path, item.mode, item.parents,
+                             None if item.data is None else hashlib.sha256(item.data).hexdigest())
+                            for item in self.runtime_inputs
+                        ]])
+                        self.budget.charge("control", len(execution))
+                        execution_digest = hashlib.sha256(execution).hexdigest()
                     return MakeObservation(
-                        target, semantics, self.snapshot.digest,
+                        target, semantics, execution_digest,
                         hashlib.sha256(semantic_bytes).hexdigest(),
                         completed.stdout, completed.stderr, tuple(events),
                     )
