@@ -311,7 +311,7 @@ expose `event-classifier`, `host-tests`, `build`,
 is the sole candidate attestation; it succeeds only after the same full run's
 classifier and all four workers succeed. Metadata-only runs expose the running
 `metadata-classifier` plus the same canonical worker checks `host-tests`,
-`build`, `extended-host-tests`, `legacy`, `patch-release`, and `summary`.
+`build`, `extended-host-tests`, `legacy`, and `summary`.
 Metadata-only mode requires runner-backed `success` for `host-tests`/`build`
 because those jobs run only the trusted continuity adapters, which
 independently revalidate the raw edited pull-request event and exact
@@ -416,7 +416,7 @@ metadata-only edit, `summary` succeeds only
 when classification succeeded, the classified head still equals the event
 head, the classified base still equals the event base, suppression is exactly
 false, `host-tests`/`build` succeed through the no-checkout continuity
-adapters, `extended-host-tests`/`legacy`/`patch-release` are exactly
+adapters, `extended-host-tests`/`legacy` are exactly
 `skipped`, and a trusted no-checkout Actions API query classifies exact prior
 runs newest-first so only the newest conclusively full run for the same
 repository, PR number, authoritative base SHA, and immutable head SHA can
@@ -439,8 +439,8 @@ it never becomes checkout authority. A missing, malformed, stale, or spoofed
 head sets no full fallback, runs no worker, and fails. Failure
 fallback workers check out only the trusted event setup's validated PR/push
 SHA. Both paths retain revision verification, commands, and environments.
-Summary now joins the publisher as well: PR and metadata paths require it to
-be skipped, while master-push paths require success.
+Master-only packaging is part of `build`; a packaging failure fails that
+required worker and summary. PR and metadata runs skip only those packaging steps.
 Default-branch ref validation is deferred until a missing/unusable PR base
 actually needs classifier bootstrap. Missing or malformed default-branch data
 does not abort an independently valid PR-head or push fallback. If classifier
@@ -461,54 +461,25 @@ short, nonhex,
 ref-name, ref-number-mismatched, malformed, or cross-event identities select
 no worker and cannot produce a successful summary. Classifier-failure workers
 also consume only that validated output. Workers consume only that validated
-SHA. The
-publisher consumes the same validated push SHA, verifies
-`/usr/bin/git rev-parse HEAD` immediately after checkout, and stages the
-three-file producer from that exact validated after commit without whole-file
-source hash pins. Before private download, the exact after tree builds as a
-dedicated unprivileged UID inside mount, PID, and network namespaces with no
-network, capabilities, secrets, `BASH_ENV`, or `GITHUB_ENV`. Private mount
-propagation, recursively read-only host root/system/tool paths, private
-`/tmp`/`run`/`proc`/`dev`, and masked D-Bus/container/service sockets leave only
-exact candidate source/home/tmp/handoff mounts writable. Every descendant stays
-in one exact cgroup v2. The trusted host stops the exact process group and
-cgroup, verifies `cgroup.procs` is empty, proves no builder-UID process remains,
-and removes the
-owned cgroup, then admits only the expected regular, nonsymlink, single-link
-32 MiB target and bounded metadata handoff; device, escaped, or unexpected
-outputs fail. It removes the builder user, tree, wheelhouse, and candidate
-checkout. No complete target ROM enters an Actions artifact, cache, release,
-or log.
-Before `/sys` is masked, the exact owned cgroup is bound read-only below a
-root-only `0700` `/mnt/supervisor`; the candidate cannot read, write, execute,
-or traverse that parent. The exact cgroup child there remains read-only. The
-wrapper reads that supervisor view after `/sys` is masked and permits handoff
-only when its own PID is the sole member. Host-side kill/removal still uses the
-actual cgroup path.
-Unavailable mount/cgroup features fail closed, and cleanup sends no UID-wide
-signal.
-Before candidate code starts, a trusted child launcher closes inherited file descriptors
-above 2, redirects stdin/stdout/stderr permanently to private `/dev/null`, and
-passes no GitHub workflow command-file paths.
-Candidate output is never replayed, logged, or uploaded; the trusted host emits
-only fixed status text with a numeric exit classification. Arbitrary output
-volume cannot change an otherwise successful build. All other writable roots
-and regular files retain tmpfs/ulimit bounds; no output sink exists.
-The minimal `BASEROM_URL` step then creates an unpredictable, mode-restricted
-private path and exposes only that path through trusted output. The immediately
-following step runs the staged producer with absolute isolated Python, an
-empty runtime CWD/environment, and no repository import path. No candidate
-command runs while the base exists. Traps delete the base on success or
-failure, cleanup is verified before upload, and later steps see only the patch
-artifact.
-After private cleanup, a final adjacent step revalidates exactly regular,
-single-link BPS/manifest/README outputs immediately before upload.
-All repository/candidate-controlled commands finish before private download.
-Cleanup is verified before upload.
-No whole-file source hash pins are used.
-Before the base exists, the fresh hosted publisher proves that no
-candidate-written `GITHUB_ENV`, `BASH_ENV`, background process, checkout, or
-executable state can survive the builder teardown.
+SHA.
+Patch packaging trusts reviewed, merged master source and pinned/declared
+tools, like ordinary CI. It is not a sandbox against malicious repository
+writers, hostile same-UID code, compromised dependencies, or runner compromise.
+The normal modern job builds/checks the named release profile once from its
+fresh exact checkout. Only an authenticated master push packages that existing
+ROM and metadata in the same job; PRs and forks neither receive the private
+base nor upload a patch. The packaging script invokes no Make target.
+The existing producer checks the approved base hash/header, target header and
+embedded metadata, exact commit/profile, BPS round trip and three-file artifact.
+Private input uses a unique mode-0700 directory, mode-0400 base and failure/
+signal cleanup. Download diagnostics never disclose the URL or private bytes.
+Only verified BPS/manifest/README files are uploaded after private cleanup;
+the ROM stays inside the build job and is never an artifact/cache handoff.
+Packaging or cleanup failure fails `build` and therefore the required summary.
+No custom UID, namespace, cgroup, supervisor, broker or capability platform is
+part of this contract. The retired isolation proposals are superseded, not
+claimed to have passed their tests.
+
 Build workflow preserves the live branch-protection contract directly: metadata
 body/title edits run the distinct `metadata-classifier` attestation plus
 canonical `host-tests`/`build` continuity adapters and a canonical continuity
@@ -703,7 +674,22 @@ the still-valid full Build, and returns the exact reconciliation command. A
 successful edit requires the PATCH response itself to attest the exact
 repository, PR, head, base, requested title, and requested body; a stale
 read-after-write GET is not accepted as mutation evidence. Record the essential
-reason in the canonical evidence comment. No tracked or local pending-state
+reason in the canonical evidence comment. An essential edit may also correct
+the contract of a fully observed terminal failed or cancelled full Build.
+Every job in that terminal snapshot must also be terminal; an inconsistent
+run-completed/job-active response cannot authorize the edit.
+Permission to edit does not authorize successful CI continuity: that failed
+full run remains ineligible even if a later metadata-only run is green.
+Default nonessential edits still require successful full evidence, and an
+essential edit still needs an exact full-run identity to bind.
+
+Transaction-comment creation accepts HTTP 201 `Location` only when it names
+the same canonical API comment resource attested by the response body.
+Redirect statuses, unexpected `Location` on ordinary HTTP 200 responses,
+misbound resource URLs, and malformed creation responses remain rejected;
+the helper never follows a creation header as a redirect.
+
+No tracked or local pending-state
 ledger is created: GitHub's run number, attempt, event, workflow, PR, head,
 base, mode, status, conclusion, and job identities derive whether
 reconciliation remains pending. The helper uses two append-only,
@@ -981,7 +967,7 @@ retroactively invent an attestation.
 A later successful full run does not hide or replace the edit-bound metadata
 identity; the metadata run is never compared to that full run's number. The
 eligible run's identity/router/classifier and adapter jobs must be canonical
-successes, expensive jobs and the publisher must be canonical skips, and
+successes, expensive jobs must be canonical skips; a historical extra publisher job must also be skipped, and
 summary must be the canonical failure. Cancelled, timed-out, action-required,
 startup-failure, skipped, neutral, stale, active, unknown, unbound, or malformed
 runs are never rerun. It dispatches no full Build, edits or deletes no
