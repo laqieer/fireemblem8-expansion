@@ -1126,7 +1126,7 @@ safety, and override references. A fixture-authored SHA, parent, timestamp, or
 message cannot replace Git authority. The fixture, decision, and expected
 paths must resolve to the committed baseline inputs, including
 `.github/workflow-pilot-decisions.json` in that tree. Build CI passes
-`"$GITHUB_WORKSPACE"` explicitly, runs both the same stdlib suite and the
+`"$GITHUB_WORKSPACE"` explicitly, runs both the reporter/schema suite and the
 baseline/expected invocation in its required `host-tests` job, and the parsed
 workflow topology regression requires both pilot commands exactly. Appended
 shell operators, wrappers, substitutions, or changed redirections cannot turn
@@ -1182,11 +1182,14 @@ derived mappings; it never creates or pushes refs.
 
 Checkout, exact-revision verification, hydration, host dependency setup, and
 the three preceding host suites are one exact ordered pre-pilot sequence with
-reviewed actions, commands, and fields. Hydration plus both reporter gates use
-`/usr/bin/python3 -I scripts/workflow_pilot/isolated_launcher.py`. Python
-therefore completes isolated startup before the launcher inserts only its
-resolved source root and dispatches its closed modes; it exposes no arbitrary
-module, command, or evaluation mode. The
+reviewed actions, commands, and fields. Hydration and the stdlib-only baseline
+gate use `/usr/bin/python3 -I scripts/workflow_pilot/isolated_launcher.py`.
+Reporter test discovery instead uses the absolute
+`"$GITHUB_WORKSPACE/build/host-python/bin/python3" -I` from the
+[locked setup below](#isolated-host-python-dependencies), followed by the same
+launcher and `reporter-tests` mode. Python completes isolated startup before
+the launcher inserts only its resolved source root and dispatches its closed
+modes; it exposes no arbitrary module, command, or evaluation mode. The
 hydration helper uses `/usr/bin/git`. Protected step environments set
 `BASH_ENV`, `ENV`, `PYTHONPATH`, and known Git redirection controls to reviewed
 safe values and pin `PATH=/usr/bin:/bin`; the isolated launcher removes every
@@ -1267,6 +1270,75 @@ authority, and the decision record stores no copied tree, blob, or commit hash.
 Every schema version, identity, count, duration input, attempt, index, depth,
 and cost uses exact-integer validation before bounds or equality checks; JSON
 booleans are accepted only by declared boolean fields.
+
+## Isolated host Python dependencies
+
+Issue #216 supplies the shared schema-test prerequisite for the handoff
+(#178) and authenticated broker (#205), without implementing either protocol.
+The supported profile is **CPython 3.12 on Linux x86_64 with glibc >= 2.17**.
+Other Python versions, architectures and libc implementations fail explicitly;
+review new wheel artifacts before extending this profile.
+
+From a source checkout, install the distribution's `python3-venv` package if
+necessary, then use the same setup as Build CI:
+
+```bash
+/usr/bin/python3 -I scripts/host_python.py create
+build/host-python/bin/python3 -I scripts/host_python.py check
+build/host-python/bin/python3 -I scripts/workflow_pilot/isolated_launcher.py reporter-tests
+```
+
+[`host-tests.txt`](../.github/requirements/host-tests.txt) records one exact
+version and SHA-256 wheel hash for every runtime dependency: `jsonschema`,
+`attrs`, `jsonschema-specifications`, `referencing`, `rpds-py`,
+`typing-extensions`, `rfc3339-validator`, and `six`. The two schema consumers
+use Draft 2020-12 and `FormatChecker` with **`date-time`**. That optional
+validator needs `rfc3339-validator` and `six`; merely importing `jsonschema`
+would silently leave this format unchecked. The bootstrap verifies format
+registration and actual valid/invalid draft and timestamp behavior. Other
+optional formats are not promised: a consumer adding one must extend the
+locked closure and its behavioral probes together.
+
+The stdlib bootstrap creates only a new path under this checkout's ignored
+`build/`, refusing an existing or symlinked target. OS-provided `venv`/`ensurepip`
+supplies pip; there is no pip self-upgrade or new package manager. Pip runs
+under that environment's isolated interpreter with a closed environment,
+disabled config/cache, and owned scratch/home directories. It downloads only
+the locked binary wheels from trusted PyPI using `--require-hashes` and
+`--no-deps`, then installs those wheels with `--no-index` and the same hash
+checks. The exact installed set, `pip check`, disabled system/user sites, and
+schema probes must all pass. Neither global nor user packages are modified.
+
+The verified wheels remain in `build/host-python/wheelhouse` so the regression
+suite can replay clean installs and damaged/missing/incompatible inputs
+**offline**. An explicit offline recreation is also available:
+
+```bash
+/usr/bin/python3 -I scripts/host_python.py create \
+  --environment build/host-python-replay \
+  --wheelhouse build/host-python/wheelhouse
+```
+
+Use `--environment` only for a fresh owned path within this checkout's
+`build/`. Failed setup leaves that path for diagnosis rather than erasing or
+reusing it. After tests finish, remove only environments you created, for
+example `rm -r -- build/host-python-replay`. To refresh the primary environment,
+first remove your own `build/host-python`, then rerun `create`.
+
+Only the full-build host dependency step and reporter-test interpreter change.
+Metadata-only attestation still performs no checkout/bootstrap; baseline,
+hydration, classifier and publisher authority retain their existing
+interpreters. Local `upstream_port verify` resolves the same absolute owned
+interpreter against its target checkout but never installs packages itself.
+Job IDs, required contexts, routing, permissions, checkout authority and every
+candidate/master gate remain unchanged. Conflicts are ambient-only/unpinned
+installation, environment reuse, or unsupported wheel profiles. There are no
+gameplay, save/configuration, ROM/RAM, generated-game-data, locale, modern
+debug/release or archival compiler interactions. Revert this dedicated
+bootstrap change on regression; never remove required consumer tests.
+
+The complete human procedure and deterministic negative controls are indexed
+as [TC-WORKFLOW-HOST-PYTHON-DEPS-001](test-cases/workflow-governance.md#tc-workflow-host-python-deps-001-bootstrap-isolated-schema-test-dependencies).
 
 ## Reproducible formulas
 
