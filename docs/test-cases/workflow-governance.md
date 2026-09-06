@@ -2399,6 +2399,17 @@ Start from a clean checkout; fixtures use only ignored `build/test-artifacts`.
     deferred signals must not disappear because one handler raises.
     Preserve a caller's already-blocked mask, and verify default SIGTERM in an
     owned subprocess takes effect only after its session scratch is removed.
+23. Let an unresolved `$(shell ...)` temporarily select another registered
+    command, then disappear once the real result is replayed. Repeat with a
+    branch reached only after a later expansion resolves. The semantic command
+    list must match only the final successful pass. Change the discarded
+    command's source, code and output: execution identity may change, but the
+    requested owner's digest must not. Changing a final command's actual
+    inputs/output must still change its identity. Repeated final events,
+    equivalent command aliases and reordered/equivalent source declarations
+    must not duplicate records or change the digest. An unregistered command,
+    failed source observation or exhausted mapping quota must still reject,
+    even when that speculative branch would later disappear.
 
 ### Expected result
 
@@ -2476,6 +2487,13 @@ The earlier teardown restored the caller handler before `rmtree`; a real
 SIGTERM then saw live scratch, interrupted its removal and masked an existing
 failure. The new executable startup and owned-signal controls retain those
 negative cases without changing global site or kernel policy.
+
+The earlier replay accumulator retained a discarded branch's command even
+though final native events contained only the selected command. Changing the
+discarded source/output or code changed the owner's digest while ordinary Make
+and the final prerequisite graph stayed identical. Real conditional Make
+fixtures preserve this control; final-pass filtering cannot excuse failed
+source accounting or speculative work that exceeds aggregate bounds.
 
 ### Interactions and save compatibility
 

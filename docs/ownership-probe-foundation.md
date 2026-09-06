@@ -282,6 +282,13 @@ Two identities deliberately serve different purposes:
 * **Semantic owner:** only the requested target's native observations, requested
   domain state, declared/recipe-owning inputs and relevant command output.
   Unrelated source/docs/symlink/mode changes cannot change every Make owner.
+  Dynamic command identity comes only from matched events in the final
+  successful Make pass. A branch visited while an unresolved expansion
+  temporarily returned empty cannot retain its discarded command's code,
+  source or output identity. Results remain indexed by canonical event command;
+  identical command/input/output records are emitted once even when aliases or
+  repeated events use them. Every speculative command still requires complete
+  authority, successful source accounting and the same aggregate charges/cache.
 
 Do not hash the whole `MakeObservation` when computing an owner identity:
 consume `semantic_digest`, not `execution_digest`. These are ephemeral

@@ -27,7 +27,7 @@ from unittest.mock import Mock, patch
 from scripts.validation_ownership.authority import AuthorityLoader, ENVIRONMENT, GitTreeEntry, git_tree_entries
 from scripts.validation_ownership.budget import Limits, MakeProbeError, NAMESPACE_LAUNCHER, ProbeBudget
 from scripts.validation_ownership.make_probe import (
-    Command, ProbeSession, TRUSTED_ROOT, _make_interpreter, _make_runtime,
+    Command, ProbeSession, TRUSTED_ROOT, _event_command, _make_interpreter, _make_runtime,
     _read_events, _read_observation, _trusted_runtime_bytes, probe_generated_registry,
 )
 
@@ -2400,6 +2400,178 @@ int main(int argc, char **argv) {
             self.assertTrue(all(event["match"] == 0 for event in result.events))
             self.assertEqual(len(session.cache), 1)
         self.assert_clean(session)
+
+    def test_make_identity_excludes_discarded_replay_inputs(self):
+        self.add("choice.txt", "genuine first")
+        self.add("choose.py", "import os\nos.write(1, open('choice.txt','rb').read().split()[0])\n")
+        self.add("discarded.txt", "first unused result")
+        self.add("discarded.py", "import os\nos.write(1, open('discarded.txt','rb').read())\n")
+        selected = "python3 -I -S -B choose.py"
+        discarded = "python3 -I -S -B discarded.py"
+        self.add("Makefile", (
+            f"SELECT := $(shell {selected})\nifeq ($(SELECT),)\n"
+            f"UNUSED := $(shell {discarded})\nendif\n"
+            "all: $(SELECT)\n\t@printf '%s' '$^'\ngenuine: ;\n"
+        ))
+        commands = {
+            selected: Command(
+                ("/usr/bin/python3", "/repo/choose.py"),
+                code=("choose.py",), sources=("choice.txt",),
+            ),
+            discarded: Command(
+                ("/usr/bin/python3", "/repo/discarded.py"),
+                code=("discarded.py",), sources=("discarded.txt",),
+            ),
+        }
+        observations = []
+        for label, path, value in (
+            ("baseline", None, None),
+            ("discarded-source-output", "discarded.txt", "second unused result"),
+            ("discarded-code", "discarded.py",
+             "import os\nos.write(1, open('discarded.txt','rb').read().upper())\n"),
+            ("selected-source", "choice.txt", "genuine second"),
+            ("selected-code-output", "choose.py",
+             "import os\nos.write(1, open('choice.txt','rb').read().split()[0] + b'\\n')\n"),
+        ):
+            with self.subTest(change=label):
+                if path:
+                    self.add(path, value)
+                normal = subprocess.run(
+                    ["/usr/bin/make", "-f", "Makefile", "all"], cwd=self.root,
+                    env=ENVIRONMENT, capture_output=True, check=True, timeout=10,
+                )
+                self.assertEqual(normal.stdout, b"genuine")
+                with self.session() as session:
+                    observed = session.make(
+                        "all", variables=("SELECT",), owner_inputs=("Makefile",), commands=commands,
+                    )
+                    observations.append(observed)
+                    self.assertEqual(observed.semantics["files"][0]["prerequisites"], [
+                        {"name": normal.stdout.decode("ascii"), "order_only": False},
+                    ])
+                    self.assertEqual([_event_command(event) for event in observed.events], [selected])
+                    dynamic = observed.semantics["dynamic_commands"]
+                    self.assertEqual(len(dynamic), 1)
+                    self.assertEqual(dynamic[0]["command"]["argv"], list(commands[selected].argv))
+                    self.assertEqual(
+                        {item[0] for item in dynamic[0]["command"]["inputs"]},
+                        {"choose.py", "choice.txt"},
+                    )
+                    self.assertEqual(
+                        {result.consumed for result in session.cache.values()},
+                        {("choice.txt",), ("discarded.txt",)},
+                    )
+                self.assert_clean(session)
+        self.assertEqual(len({item.semantic_digest for item in observations[:3]}), 1)
+        self.assertEqual(len({item.execution_digest for item in observations}), 5)
+        self.assertNotEqual(observations[2].semantic_digest, observations[3].semantic_digest)
+        self.assertNotEqual(observations[3].semantic_digest, observations[4].semantic_digest)
+        outputs = [item.semantics["dynamic_commands"][0]["output_sha256"] for item in observations]
+        self.assertEqual(len(set(outputs[:4])), 1)
+        self.assertNotEqual(outputs[3], outputs[4])
+
+    def test_make_identity_follows_the_last_late_resolved_branch(self):
+        outer = "printf %s enabled"
+        inner = "printf %s genuine"
+        discarded = "printf %s unused"
+        self.add("Makefile", (
+            f"OUTER := $(shell {outer})\nifeq ($(OUTER),enabled)\n"
+            f"INNER := $(shell {inner})\nifeq ($(INNER),)\n"
+            f"UNUSED := $(shell {discarded})\nendif\nendif\nall: $(INNER)\ngenuine: ;\n"
+        ))
+        commands = {
+            key: Command(("/usr/bin/printf", "%s", value))
+            for key, value in ((outer, "enabled"), (inner, "genuine"), (discarded, "unused"))
+        }
+        with self.session() as session:
+            observed = session.make(
+                "all", variables=("OUTER", "INNER"), owner_inputs=("Makefile",), commands=commands,
+            )
+            self.assertEqual({_event_command(event) for event in observed.events}, {outer, inner})
+            self.assertTrue(all(event["match"] == 0 for event in observed.events))
+            self.assertEqual(
+                {tuple(item["command"]["argv"]) for item in observed.semantics["dynamic_commands"]},
+                {commands[outer].argv, commands[inner].argv},
+            )
+            self.assertEqual({item.stdout for item in session.cache.values()}, {b"enabled", b"genuine", b"unused"})
+        self.assert_clean(session)
+
+    def test_make_final_command_identity_deduplicates_aliases_and_declarations(self):
+        self.add("left/value.txt", "left")
+        self.add("right/value.txt", "right")
+        self.add("reader.py", (
+            "import os\nfor path in ('left/value.txt','right/value.txt'):\n"
+            " os.write(1, open(path,'rb').read())\n"
+        ))
+        direct = "python3 -I -S -B reader.py"
+        compound = direct + "; printf ''"
+        self.add("Makefile", (
+            f"FIRST := $(shell {direct})\nSECOND := $(shell {compound})\n"
+            f"AGAIN := $(shell {direct})\nall: ;\n"
+        ))
+        original = Command(
+            ("/usr/bin/python3", "/repo/reader.py"), code=("reader.py",),
+            sources=("left/*.txt", "right/*.txt"), directories=("left", "right"),
+        )
+        equivalent = replace(
+            original, code=("reader.py", "reader.py"),
+            sources=("right/value.txt", "left/value.txt"), directories=("right", "left"),
+        )
+        observations = []
+        with self.session() as session:
+            for commands in (
+                {direct: original, compound: original},
+                {compound: equivalent, direct: original},
+            ):
+                observed = session.make(
+                    "all", variables=("FIRST", "SECOND", "AGAIN"),
+                    owner_inputs=("Makefile",), commands=commands,
+                )
+                observations.append(observed)
+                self.assertEqual(len(observed.events), 3)
+                self.assertEqual({_event_command(event) for event in observed.events}, {direct, compound})
+                self.assertEqual(len(observed.semantics["dynamic_commands"]), 1)
+                self.assertEqual(
+                    {item["value"] for item in observed.semantics["domains"].values()}, {"leftright"},
+                )
+            self.assertEqual(observations[0].semantic_digest, observations[1].semantic_digest)
+        self.assert_clean(session)
+
+    def test_discarded_replay_commands_remain_authorized_and_aggregate_charged(self):
+        selected = "printf %s genuine"
+        discarded = "python3 -I -S -B discarded.py"
+        self.add("declared.txt", "unused")
+        self.add("Makefile", (
+            f"SELECT := $(shell {selected})\nifeq ($(SELECT),)\n"
+            f"UNUSED := $(shell {discarded})\nendif\nall: $(SELECT)\ngenuine: ;\n"
+        ))
+        commands = {
+            selected: Command(("/usr/bin/printf", "%s", "genuine")),
+            discarded: Command(
+                ("/usr/bin/python3", "/repo/discarded.py"),
+                code=("discarded.py",), sources=("declared.txt",),
+            ),
+        }
+        for boundary, expected in (
+            ("unregistered", "unregistered eager/recursive"),
+            ("failed-source", "declared/consumed source mismatch"),
+            ("mapping-quota", "mapping"),
+        ):
+            with self.subTest(boundary=boundary):
+                self.add("discarded.py", (
+                    "import os\ntry: os.open('declared.txt', os.O_RDONLY | os.O_DIRECTORY)\n"
+                    "except OSError: pass\nprint('unused')\n"
+                    if boundary == "failed-source"
+                    else "print(open('declared.txt').read())\n"
+                ))
+                limits = {"mapping_bytes": len(selected.encode("utf-8")) + len(b"genuine") + 4}
+                session = self.session(**(limits if boundary == "mapping-quota" else {}))
+                with self.assertRaisesRegex(MakeProbeError, expected):
+                    with session:
+                        session.make("all", commands=(
+                            {selected: commands[selected]} if boundary == "unregistered" else commands
+                        ))
+                self.assert_clean(session)
 
     def test_registry_source_open_mmap_stat_and_directory_glob_are_real(self):
         self.add("data/a.bin", b"ab")

@@ -884,11 +884,14 @@ class ProbeSession:
                     self.budget.read_bytes(events_path, "event"), expected_mapping_count=len(mappings),
                 )
                 unknown = []
+                matched = set()
                 for event in events:
                     command = _event_command(event)
-                    if event["match"] == 0 and command not in mappings:
-                        raise MakeProbeError("interceptor matched an unknown mapping")
-                    if event["match"] == -1 and command not in unknown:
+                    if event["match"] == 0:
+                        if command not in mappings:
+                            raise MakeProbeError("interceptor matched an unknown mapping")
+                        matched.add(mappings[command])
+                    elif command not in unknown:
                         unknown.append(command)
                 if len(unknown) > self.budget.limits.pending:
                     self.budget.reject("registered-command pending count exceeds aggregate bound")
@@ -905,7 +908,9 @@ class ProbeSession:
                         record["source"] for record in semantics["files"] if record["source"]
                     }
                     semantics["owner_inputs"] = self.snapshot.owners(set(owner_inputs) | recipe_sources)
-                    semantics["dynamic_commands"] = sorted(command_results.values(), key=encoded)
+                    semantics["dynamic_commands"] = sorted(
+                        (command_results[key] for key in matched), key=encoded,
+                    )
                     semantic_bytes = encoded(semantics)
                     self.budget.charge("control", len(semantic_bytes))
                     return MakeObservation(
@@ -924,7 +929,6 @@ class ProbeSession:
                     self.budget.charge("mapping", len(command.encode("utf-8")) + len(output) + 4)
                     (mapping_path / (key + ".cmd")).write_bytes(command.encode("utf-8"))
                     (mapping_path / (key + ".out")).write_bytes(output)
-                    mappings[command] = output
                     command_identity = {
                         "argv": list(registration.argv),
                         "directories": sorted(registration.directories),
@@ -932,10 +936,13 @@ class ProbeSession:
                             set(registration.code) | set(self.sources(registration.sources))
                         ),
                     }
-                    command_results[hashlib.sha256(encoded(command_identity)).hexdigest()] = {
+                    command_result = {
                         "command": command_identity,
                         "output_sha256": hashlib.sha256(output).hexdigest(),
                     }
+                    identity = hashlib.sha256(encoded(command_result)).hexdigest()
+                    command_results.setdefault(identity, command_result)
+                    mappings[command] = identity
             raise MakeProbeError("Make dynamic replay exceeded the existing pass bound")
 
     @terminal_failure
