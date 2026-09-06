@@ -7,6 +7,7 @@ import argparse
 import math
 import os
 import re
+import stat
 import subprocess
 import sys
 from pathlib import Path
@@ -28,6 +29,7 @@ HOST_ONLY = ("docs/", "scripts/workflow_pilot/", "scripts/docs_check_tests/")
 HOST_FILES = {".github/copilot-instructions.md", ".github/skills/development-workflow/SKILL.md"}
 ID_RE = re.compile(r"^[A-Za-z0-9_.:-]{1,128}$")
 SHA_RE = re.compile(r"^[0-9a-f]{40}$")
+DIGEST_RE = re.compile(r"^[0-9a-f]{64}$")
 HandoffDataError = observations.ObservationError
 require = observations.require
 load_json = observations.load_json
@@ -341,7 +343,7 @@ def validate_state(value):
             require(entry["validation"]["assignment_id"] == a["id"], "verdict assignment mismatch")
         if entry["interruption"] is not None:
             interruption = fields(entry["interruption"], "at reason oom_evidence worktree head "
-                                  "dirty_paths lock_reason")
+                                  "dirty_paths lock_reason retained_data_sha256")
             timestamp(interruption["at"])
             choice(interruption["reason"], {"sigkill", "timeout", "rss", "process-exit"})
             text(interruption["oom_evidence"], nullable=True)
@@ -350,6 +352,7 @@ def validate_state(value):
             for name in items(interruption["dirty_paths"], maximum=256, unique=True):
                 path(name)
             text(interruption["lock_reason"], maximum=256)
+            text(interruption["retained_data_sha256"], maximum=64, pattern=DIGEST_RE)
         cursor_paths = set()
         for cursor in items(entry["cursors"], maximum=4):
             fields(cursor, "path device inode offset session_id")
@@ -472,6 +475,13 @@ def observe_git(assignment):
     info = common.stat()
     branch = _git(root, "symbolic-ref", "--short", "HEAD").decode().strip()
     head = _git(root, "rev-parse", "--verify", "HEAD^{commit}").decode().strip()
+    with git._directory_fd(private) as descriptor:
+        try:
+            index_mode = os.stat("index", dir_fd=descriptor, follow_symlinks=False).st_mode
+        except FileNotFoundError:
+            pass
+        else:
+            require(stat.S_ISREG(index_mode), "worktree index must be a nofollow regular file")
     flags = _git(root, "ls-files", "-v", "-z").split(b"\0")
     require(not any(record and (record[:1] == b"S" or record[:1].islower()) for record in flags),
             "worktree index hides tracked changes")
@@ -534,6 +544,9 @@ def assign(state, assignment):
         lock = Path(current["identity"]["git_dir"]) / "locked"
         require(observations.read_bytes(lock, limit=4096).decode().strip() == recovery["lock_reason"],
                 "recovery retention lock missing")
+        require(observations.retained_data_sha256(current["identity"], current["dirty_paths"])
+                == recovery["retained_data_sha256"], "retained recovery data changed")
+        require(observe_git(assignment) == current, "preserved worktree changed during reassignment")
     for upstream in assignment["upstream_inputs"]:
         require(_git(Path(assignment["allowed_worktree"]), "cat-file", "-t", upstream).strip() == b"commit",
                 "upstream input must name an existing exact commit")
@@ -792,7 +805,16 @@ def preserve_interruption(entry, reason):
             "recovery needs a lockable linked worktree; retain original unchanged")
     lock_reason = "handoff-recovery:" + a["id"]
     # Git's existing lock is also an explicit retention reason to issue #208.
-    _git(root, "worktree", "lock", "--reason", lock_reason, str(root))
+    try:
+        existing_lock = observations.read_bytes(Path(current_git["identity"]["git_dir"]) / "locked", limit=4096)
+    except FileNotFoundError:
+        _git(root, "worktree", "lock", "--reason", lock_reason, str(root))
+    else:
+        require(existing_lock.decode().strip() == lock_reason, "worktree has a different retention lock")
+    for name in items(current_git["dirty_paths"], maximum=256, unique=True):
+        path(name)
+    retained_data = observations.retained_data_sha256(current_git["identity"], current_git["dirty_paths"])
+    require(observe_git(a) == current_git, "recovery worktree changed during observation")
     at = now()
     for check in entry["checks"]:
         if check["completed_at"] is None:
@@ -802,6 +824,7 @@ def preserve_interruption(entry, reason):
         "oom_evidence": observations.kernel_oom_evidence(identity, entry["assigned_at"], at),
         "worktree": str(root), "head": current_git["head"],
         "dirty_paths": current_git["dirty_paths"], "lock_reason": lock_reason,
+        "retained_data_sha256": retained_data,
     }
     entry["closed_at"] = at
     return entry["interruption"]
@@ -825,6 +848,19 @@ def ci_state(state, result_sha):
     return watcher_ci_state(latest)
 
 
+def owner_completion_errors(process):
+    codes = []
+    if process is None or process["state"] != "exited":
+        codes.append("owner-not-retired")
+    if process is None or not process["rss_complete"]:
+        codes.append("owner-rss-unknown")
+    if process is None or process["exit_code"] is None:
+        codes.append("owner-exit-unknown")
+    elif process["exit_code"] != 0:
+        codes.append("owner-exit-failed")
+    return codes
+
+
 def validate_handoff(state, result, *, worktree, run_checks=True):
     validate_state(state)
     validate_result(result)
@@ -844,8 +880,7 @@ def validate_handoff(state, result, *, worktree, run_checks=True):
     lifetime = (timestamp(entry["closed_at"] or at) - timestamp(entry["assigned_at"])).total_seconds()
     reject(lifetime > a["max_lifetime_seconds"], "owner-lifetime-exceeded")
     process = entry["process"]
-    reject(process is None or process["state"] != "exited", "owner-not-retired")
-    reject(process is None or not process["rss_complete"], "owner-rss-unknown")
+    codes.extend(owner_completion_errors(process))
     if process is not None:
         reject(process["age_ms"] > a["max_lifetime_seconds"] * 1000, "owner-lifetime-exceeded")
         reject(process["peak_rss_bytes"] is not None
@@ -904,6 +939,11 @@ def validate_handoff(state, result, *, worktree, run_checks=True):
         reject(measured is None, "missing-budget-measurement")
         reject(measured is not None and measured > a["budgets"][metric],
                metric.replace("_", "-") + "-budget-exceeded")
+    if (process is not None and process["state"] == "exited" and process["exit_code"] not in (None, 0)
+            and entry["closed_at"] is None and entry["interruption"] is None):
+        reason = {-9: "sigkill", 124: "timeout"}.get(process["exit_code"], "process-exit")
+        preserve_interruption(entry, reason)
+    at = now()
     codes = sorted(set(codes))
     outcome = "rejected" if codes else "accepted"
     if entry["interruption"] is not None:
@@ -916,7 +956,7 @@ def validate_handoff(state, result, *, worktree, run_checks=True):
                "imported_paths": imported, "ci_state": ci_state(state, result["result_sha"])}
     validate_verdict(verdict)
     entry["validation"] = verdict
-    if len(entry["events"]) >= 4 and process is not None and process["state"] == "exited":
+    if len(entry["events"]) >= 4 and not owner_completion_errors(process):
         entry["closed_at"] = entry["closed_at"] or now()
     return verdict
 
@@ -977,8 +1017,8 @@ def summarize_handoffs(state):
                     and entry["closed_at"] is not None and len(entry["events"]) == 5
                     and not entry["remote_actions"] and entry["interruption"] is None,
                     "accepted report lacks its complete handoff observations")
-            require(process is not None and process["rss_complete"]
-                    and process["age_ms"] <= a["max_lifetime_seconds"] * 1000
+            require(not owner_completion_errors(process), "accepted report lacks observed zero owner completion")
+            require(process["age_ms"] <= a["max_lifetime_seconds"] * 1000
                     and process["peak_rss_bytes"] <= a["max_peak_rss_bytes"]
                     and verdict["changed_lines"] is not None
                     and verdict["changed_lines"] <= a["budgets"]["changed_lines"],

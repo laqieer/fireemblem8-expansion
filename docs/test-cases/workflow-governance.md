@@ -2367,6 +2367,11 @@ game behavior needs a compensating change.
    Schema/runtime controls reject unknown fields, duplicate scope/keys,
    bad timestamps/types/enums, oversize/deep input and nonregular/symlink
    metadata. Equivalent JSON ordering stays equivalent.
+   Send integral decimal/exponent integers through the byte API and real
+   isolated CLI: schema and runtime agree, and a reloaded actual PID is an
+   integer usable by the process adapter. Boolean/fractional/nonfinite/
+   out-of-range values reject, including fractions that would round to an
+   integer. No custom schema validator or per-field float bypass is used.
 5. Exercise dispatch-only and received-only native event streams. Confirm
    the matching session's receipt needs both the assignment marker and
    `data.parentAgentTaskId` equal to the dispatched task ID. Wrong-task,
@@ -2375,6 +2380,11 @@ game behavior needs a compensating change.
    advances progress once. Replayed event cursors cannot multiply metrics.
    Real process exit/RSS pass; opaque/reused identities, missing complete RSS,
    lifetime/RSS overage and repeated committed-owner work do not pass.
+   Deliver a real committed checkpoint, then observe owner exit 7 or SIGKILL:
+   local acceptance and an accepted report reject it, preservation happens
+   before retirement, and Git HEAD/index/check facts remain intact. A missing
+   owned exit observation never becomes zero. Actual zero-exit completion
+   still passes; immediate WIP publication is a separate coordinator decision.
 6. Reserve duplicate/overlapping owners/watchers and attempt a second state
    writer: each rejects. Try different watcher IDs/runs with the same actual
    boot/PID/start identity, both through reservation and loaded state: reject.
@@ -2401,6 +2411,14 @@ game behavior needs a compensating change.
    same issue or PR, including a different clean worktree: reject in live and
    loaded state. The real review/replacement lineage and independent issue/PR
    initial assignments still pass; a null PR does not merge unrelated issues.
+   Change staged, unstaged or untracked bytes, index or file/directory modes
+   while retaining the same HEAD/status pathnames: reassignment must reject.
+   Restore the exact data/modes in the owned fixture and genuine reuse passes.
+   Check the closed integrity field with independent schema/runtime mutations.
+   Large clean committed content and external symlink target bytes are not
+   read into recovery integrity; changing the link text itself rejects.
+   FIFO/over-budget input holds with the original work and retention lock
+   intact and the owner not closed; retry after restoring safe observability.
 9. Exercise explicit availability plans and always-on observations. Enabled
    stop triggers without a plan, expired/future coverage and a detected
    suspend/boot change reject. A declared plan is not an uptime guarantee.

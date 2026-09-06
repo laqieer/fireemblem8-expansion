@@ -1563,6 +1563,13 @@ exercise structural/schema agreement. Git identity, cross-record correlation,
 chronology, ownership and evidence completeness require additional runtime
 checks, not a schema claim of authenticity.
 
+The one bounded wire decoder normalizes mathematically integral JSON numbers
+(`178.0`, `17.8e1`) to native integers before validation or OS operations.
+Boolean, fractional, nonfinite and out-of-range integer inputs still reject;
+fractional tokens that would round or underflow to an integer also reject.
+Downstream typed APIs keep their strict integer contract. This uses the
+published Draft 2020-12 semantics, not a custom schema validator.
+
 Coordinator observations are trusted operational input, **not authenticated
 data**. The single canonical state path and its short nonblocking lock prevent
 accidental competing writers; unsigned JSON, modes, IDs and source labels do not
@@ -1687,6 +1694,15 @@ not another `initial` assignment that bypasses retained-worktree recovery.
 Independent issue/PR roots remain separate. Only one coordinator manages the
 canonical state.
 
+Accepted completion requires a genuinely observed zero owner exit and complete
+owned RSS, not merely an exited process. Unknown exit evidence stays incomplete.
+An observed nonzero or signal exit after delivery uses the existing interruption
+preservation path before closing the owner; it is never accepted completion.
+The same eligibility check guards optional accepted reporting. Honest abnormal
+exit observations remain valid state. A committed WIP checkpoint is retained and
+may still be published immediately by the existing #207 coordinator workflow;
+WIP publication and accepted handoff completion are separate decisions.
+
 Register the existing direct shell watcher with `reserve_watcher`, binding
 repository/run/attempt/head and an actually running process. Boot/PID/start
 identity is unique across all owners and watchers regardless of runtime handle,
@@ -1713,13 +1729,28 @@ Already finished failures remain failures; a registered running check stays
 incomplete. `begin_check` lets the existing executor register its real child
 before asynchronous execution.
 
+The existing interruption record carries one local-only
+`retained_data_sha256`: a bounded aggregate of the actual index, Git-enumerated
+dirty/untracked file bytes, symlink target text and relevant file/directory
+modes. Clean committed content still derives from Git and is not hashed into
+a source/blob ledger. The existing nofollow reader streams mutable content,
+with a combined 4-MiB/30-second bound and at most 256 mutable paths. A bounded
+32,768-entry nofollow type scan catches special files that Git omits; it does
+not read clean content or follow symlink targets. Unsupported types, unsafe
+metadata, changed data or an observation overage hold without deleting work.
+
 Only after the owner is terminal and preservation succeeds may one fresh
-replacement reuse that same worktree and exact HEAD. Changed/missing retention
+replacement reuse that same worktree and exact HEAD. Reassignment reobserves
+and compares mutable integrity, not just HEAD and status pathnames.
+Changed/missing retention
 state or an un-lockable primary worktree gives a precise hold without deleting
 anything. Repeated replacement is not automatic. The retained physical worktree
 is not an authenticated content snapshot; coordinator ownership prevents other
 writers while it is reassigned. Existing completed-worktree cleanup remains
 the sole cleanup mechanism.
+If observation fails after the retention lock is applied, the owner stays open
+and the lock protects the original worktree; retry may reuse that same reason
+after safe observation is possible. No second recovery store or copy is made.
 
 ### Optional operational report and compatibility
 

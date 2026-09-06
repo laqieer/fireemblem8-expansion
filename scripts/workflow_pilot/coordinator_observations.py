@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import contextlib
 import fcntl
+import hashlib
 import json
 import math
 import os
@@ -12,6 +13,7 @@ import stat
 import subprocess
 import time
 from datetime import datetime, timezone
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
 from scripts.workflow_pilot import raw_diff_check as raw_git
@@ -80,14 +82,27 @@ def check_tree(value, *, string_limit=MAX_STRING):
     return value
 
 
+def _wire_number(token):
+    if not any(char in "123456789" for char in token.lower().split("e", 1)[0]):
+        return 0
+    number = Decimal(token)
+    if number == number.to_integral_value():
+        require(-(2**63 - 1) <= number <= 2**63 - 1, "JSON integer limit exceeded")
+        return int(number)
+    value = float(number)
+    require(math.isfinite(value) and not value.is_integer(),
+            "JSON fraction loses finite fractional precision")
+    return value
+
+
 def _decode_bytes(raw, string_limit):
     require(type(raw) is bytes, "public JSON input must be bytes")
     require(len(raw) <= MAX_JSON_BYTES, "JSON input exceeds 1 MiB")
     try:
-        value = json.loads(raw, object_pairs_hook=_pairs,
+        value = json.loads(raw, object_pairs_hook=_pairs, parse_float=_wire_number,
                            parse_constant=lambda _value: require(False, "nonfinite JSON number"))
         return check_tree(value, string_limit=string_limit)
-    except (UnicodeError, ValueError, RecursionError) as error:
+    except (UnicodeError, ValueError, RecursionError, InvalidOperation) as error:
         raise ObservationError(f"invalid bounded JSON: {error}") from error
 
 
@@ -106,29 +121,103 @@ def json_bytes(value):
     return bytes(output) + b"\n"
 
 
-def read_bytes(path, *, limit=MAX_JSON_BYTES):
+def _file_signature(info):
+    return (info.st_dev, info.st_ino, info.st_mode, info.st_size, info.st_mtime_ns, info.st_ctime_ns)
+
+
+def _read_regular_file(path, *, limit, consume, deadline):
     path = Path(path).absolute()
     with raw_git._directory_fd(path.parent) as parent:
+        before = os.stat(path.name, dir_fd=parent, follow_symlinks=False)
+        require(stat.S_ISREG(before.st_mode), "input must be a nofollow regular file")
+        require(before.st_size <= limit, "input exceeds byte limit")
         fd = os.open(path.name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=parent)
         try:
-            before = os.fstat(fd)
-            require(stat.S_ISREG(before.st_mode), "input must be a nofollow regular file")
-            require(before.st_size <= limit, "input exceeds byte limit")
-            chunks = bytearray()
-            while len(chunks) <= limit:
-                part = os.read(fd, min(65536, limit + 1 - len(chunks)))
+            require(_file_signature(os.fstat(fd)) == _file_signature(before), "input changed before read")
+            size = 0
+            while size <= limit:
+                require(time.monotonic() <= deadline, "input read exceeded time limit")
+                part = os.read(fd, min(65536, limit + 1 - size))
                 if not part:
                     break
-                chunks.extend(part)
-            after = os.fstat(fd)
-            require(len(chunks) <= limit, "input exceeds byte limit")
-            require((before.st_ino, before.st_size, before.st_mtime_ns, before.st_ctime_ns)
-                    == (after.st_ino, after.st_size, after.st_mtime_ns, after.st_ctime_ns),
+                size += len(part)
+                require(size <= limit, "input exceeds byte limit")
+                consume(part)
+            after = os.stat(path.name, dir_fd=parent, follow_symlinks=False)
+            require(_file_signature(before) == _file_signature(os.fstat(fd)) == _file_signature(after),
                     "input changed during read")
-            require(len(chunks) == before.st_size, "incomplete input read")
-            return bytes(chunks)
+            require(size == before.st_size, "incomplete input read")
+            return before
         finally:
             os.close(fd)
+
+
+def read_bytes(path, *, limit=MAX_JSON_BYTES):
+    chunks = bytearray()
+    _read_regular_file(path, limit=limit, consume=chunks.extend,
+                       deadline=time.monotonic() + raw_git.GIT_TIMEOUT_SECONDS)
+    return bytes(chunks)
+
+
+def retained_data_sha256(identity, dirty_paths):
+    """Integrity of mutable Git-enumerated data, not a clean-source ledger or copy."""
+    require(len(dirty_paths) <= 256, "recovery exceeds 256 mutable paths")
+    root = Path(identity["worktree"])
+    files = [("index", Path(identity["git_dir"]) / "index")]
+    files.extend(("worktree:" + name, root / name) for name in sorted(dirty_paths))
+    aggregate = hashlib.sha256(b"handoff-mutable-recovery-v1\0")
+    remaining = raw_git.MAX_BYTES
+    deadline = time.monotonic() + raw_git.GIT_TIMEOUT_SECONDS
+    # Git omits untracked special files. Inspect types without reading clean
+    # content; bind only the directory modes needed to retain the mutable paths.
+    pending, count = [root], 0
+    while pending:
+        directory = pending.pop()
+        relative = str(directory.relative_to(root))
+        if directory == root or any(name.startswith(relative + "/") for name in dirty_paths):
+            files.append(("directory:" + relative, directory))
+        with raw_git._directory_fd(directory) as descriptor, os.scandir(descriptor) as entries:
+            for entry in entries:
+                count += 1
+                require(count <= MAX_NODES and time.monotonic() <= deadline, "recovery enumeration limit exceeded")
+                if entry.name == ".git":
+                    continue
+                mode = entry.stat(follow_symlinks=False).st_mode
+                require(stat.S_ISREG(mode) or stat.S_ISDIR(mode) or stat.S_ISLNK(mode),
+                        "recovery contains an unsupported special file")
+                if stat.S_ISDIR(mode):
+                    pending.append(directory / entry.name)
+    for label, file in sorted(files):
+        require(time.monotonic() <= deadline, "recovery observation exceeded time limit")
+        before = None
+        descriptor = {"path": label, "kind": "missing", "mode": None, "size": 0, "sha256": None}
+        try:
+            with raw_git._directory_fd(file.parent) as parent:
+                before = os.stat(file.name, dir_fd=parent, follow_symlinks=False)
+                digest = hashlib.sha256()
+                size = before.st_size
+                if stat.S_ISDIR(before.st_mode) and label.startswith("directory:"):
+                    kind, size = "directory", 0
+                elif stat.S_ISLNK(before.st_mode) and label != "index":
+                    require(before.st_size <= remaining, "recovery exceeds byte limit")
+                    target = os.readlink(os.fsencode(file.name), dir_fd=parent)
+                    require(len(target) == before.st_size and len(target) <= remaining,
+                            "recovery symlink changed during read")
+                    digest.update(target)
+                    kind = "symlink"
+                else:
+                    info = _read_regular_file(file, limit=remaining, consume=digest.update, deadline=deadline)
+                    require(_file_signature(info) == _file_signature(before), "recovery entry changed before read")
+                    kind = "file"
+                after = os.stat(file.name, dir_fd=parent, follow_symlinks=False)
+                require(_file_signature(before) == _file_signature(after), "recovery entry changed during read")
+                remaining -= size
+                descriptor.update(kind=kind, mode=stat.S_IMODE(before.st_mode), size=size,
+                                  sha256=None if kind == "directory" else digest.hexdigest())
+        except FileNotFoundError:
+            require(before is None and label != "index", f"recovery entry disappeared: {file}")
+        aggregate.update(json_bytes(descriptor))
+    return aggregate.hexdigest()
 
 
 def load_json(path):

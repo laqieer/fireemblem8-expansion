@@ -101,10 +101,10 @@ class GitFixture:
                     stream.close()
         self.directory.cleanup()
 
-    def waiting_process(self):
+    def waiting_process(self, *, exit_code=0):
         process = subprocess.Popen(
             ["/usr/bin/python3", "-I", "-c",
-             "import sys; print('ready', flush=True); sys.stdin.readline()"],
+             f"import sys; print('ready', flush=True); sys.stdin.readline(); sys.exit({exit_code})"],
             cwd=self.worktree, env=raw.git_environment(), stdin=subprocess.PIPE,
             stdout=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=True,
         )
@@ -112,9 +112,9 @@ class GitFixture:
         self.assert_ready(process)
         return process
 
-    def owner_process(self, entry=None):
+    def owner_process(self, entry=None, *, exit_code=0):
         entry = entry or self.entry
-        process = self.waiting_process()
+        process = self.waiting_process(exit_code=exit_code)
         handoff.bind_process(entry, process.pid)
         return process
 
@@ -213,6 +213,61 @@ class ExactHandoffTests(unittest.TestCase):
         self.assertGreater(f.entry["checks"][0]["pid"], 0)
         self.assertGreater(f.entry["process"]["peak_rss_bytes"], 0)
         self.assertEqual(f.entry["coordination_turns"], 1)
+
+    def test_abnormal_owner_exit_preserves_delivered_wip_before_retirement(self):
+        for exit_code, kill in ((7, False), (0, True)):
+            with self.subTest(exit_code=exit_code, kill=kill):
+                f = GitFixture()
+                self.addCleanup(f.close)
+                process = f.owner_process(exit_code=exit_code)
+                f.receive()
+                result = f.deliver(f.commit())
+                handoff.capture_check(f.entry, "raw", result["result_sha"])
+                checks = copy.deepcopy(f.entry["checks"])
+                f.finish_owner(process, kill=kill)
+                self.assertEqual(f.entry["process"]["exit_code"], -9 if kill else exit_code)
+                index = Path(f.entry["git_identity"]["git_dir"]) / "index"
+                original_index = index.read_bytes()
+                with mock.patch.object(observations, "kernel_oom_evidence", return_value=None):
+                    verdict = f.validate(result)
+                self.assertFalse(verdict["handoff_ready"], verdict)
+                self.assertEqual(verdict["local_outcome"], "interrupted")
+                self.assertIn("owner-exit-failed", verdict["rejection_codes"])
+                self.assertEqual(f.entry["closed_at"], f.entry["interruption"]["at"])
+                self.assertEqual(f.entry["interruption"]["head"], result["result_sha"])
+                self.assertEqual(git(f.worktree, "rev-parse", "HEAD"), result["result_sha"])
+                self.assertEqual(index.read_bytes(), original_index)
+                self.assertEqual(f.entry["checks"], checks)
+                handoff.validate_state(f.state)
+                metrics = handoff.summarize_handoffs(f.state)
+                self.assertEqual((metrics["accepted"], metrics["interrupted"]), (0, 1))
+                labelled = copy.deepcopy(f.state)
+                entry = labelled["assignments"][0]
+                entry["interruption"] = None
+                entry["validation"].update(local_outcome="accepted", handoff_ready=True, rejection_codes=[])
+                handoff.validate_state(labelled)
+                with self.assertRaisesRegex(handoff.HandoffDataError, "owner completion"):
+                    handoff.summarize_handoffs(labelled)
+
+    def test_unknown_owner_exit_is_not_zero_or_terminal_completion(self):
+        f = self.fixture
+        process = f.owner_process()
+        f.receive()
+        result = f.deliver(f.commit())
+        handoff.capture_check(f.entry, "raw", result["result_sha"])
+        process.stdin.write(b"done\n")
+        process.stdin.flush()
+        process.wait(timeout=5)
+        observed = observations.sample_process(f.entry["process"])
+        self.assertEqual(observed["state"], "exited")
+        self.assertIsNone(observed["exit_code"])
+        handoff.record_process(f.entry, observed)
+        verdict = f.validate(result)
+        self.assertFalse(verdict["handoff_ready"])
+        self.assertIn("owner-exit-unknown", verdict["rejection_codes"])
+        self.assertIsNone(f.entry["closed_at"])
+        self.assertEqual(git(f.worktree, "rev-parse", "HEAD"), result["result_sha"])
+        handoff.validate_state(f.state)
 
     def test_multiple_task_commits_are_strict_descendants(self):
         f = self.fixture
@@ -535,6 +590,111 @@ class HandoffSchemaTests(unittest.TestCase):
         with self.assertRaises(handoff.HandoffDataError):
             observations.load_json(file)
 
+    def test_integral_wire_numbers_have_schema_api_and_os_type_parity(self):
+        f = self.fixture
+        raw_assignment = observations.json_bytes(f.assignment)
+        for token in (b"178.0", b"17.8e1", b"178e0"):
+            with self.subTest(token=token):
+                wire = raw_assignment.replace(b'"issue":178', b'"issue":' + token)
+                self.validator.validate(json.loads(wire))
+                value = handoff.parse_assignment(wire)
+                self.assertEqual(value["issue"], 178)
+                self.assertIs(type(value["issue"]), int)
+                self.validator.validate(value)
+        for token in (b"true", b"178.5", b"1.785e2", b"NaN", b"Infinity",
+                      b"1e309", b"9223372036854775808.0"):
+            with self.subTest(token=token):
+                wire = raw_assignment.replace(b'"issue":178', b'"issue":' + token)
+                self.assertFalse(self.validator.is_valid(json.loads(wire)))
+                with self.assertRaises(handoff.HandoffDataError):
+                    handoff.parse_assignment(wire)
+        with self.subTest(maximum_integral=True):
+            maximum = handoff.parse_assignment(raw_assignment.replace(
+                b'"issue":178', b'"issue":9223372036854775807.0'))
+            self.assertEqual(maximum["issue"], 2**63 - 1)
+            self.validator.validate(maximum)
+        for token in (b"178.00000000000000001", b"1e-99999"):
+            with self.subTest(exact_fraction=token):
+                wire = raw_assignment.replace(b'"rom_bytes":0', b'"rom_bytes":' + token)
+                with self.assertRaises(handoff.HandoffDataError):
+                    handoff.parse_assignment(wire)
+        for token in (b"0.0", b"-0e9", b"0e999999999999999999999999999"):
+            with self.subTest(zero=token):
+                wire = raw_assignment.replace(b'"rom_bytes":0', b'"rom_bytes":' + token)
+                self.validator.validate(json.loads(wire))
+                value = handoff.parse_assignment(wire)["budgets"]["rom_bytes"]
+                self.assertEqual(value, 0)
+                self.assertIs(type(value), int)
+        process = f.owner_process()
+        wire = observations.json_bytes(f.state).replace(
+            f'"pid":{process.pid}'.encode(), f'"pid":{process.pid}.0'.encode())
+        self.validator.validate(json.loads(wire))
+        loaded = handoff.validate_state(observations.parse_bytes(wire))
+        identity = loaded["assignments"][0]["process"]
+        self.assertIs(type(identity["pid"]), int)
+        sampled = observations.sample_process(identity)
+        self.assertEqual((sampled["pid"], sampled["state"]), (process.pid, "running"))
+        self.assertIsNone(process.poll())
+
+    def test_retained_integrity_record_has_independent_schema_runtime_checks(self):
+        f = self.fixture
+        process = f.owner_process()
+        (f.worktree / "docs/recovery").write_text("preserved\n")
+        f.finish_owner(process)
+        handoff.preserve_interruption(f.entry, "process-exit")
+        self.validator.validate(f.state)
+        handoff.validate_state(f.state)
+        for value in (None, "f" * 63, "F" * 64, "f" * 65):
+            with self.subTest(digest=value):
+                changed = copy.deepcopy(f.state)
+                changed["assignments"][0]["interruption"]["retained_data_sha256"] = value
+                self.reject_both(changed, handoff.validate_state)
+        changed = copy.deepcopy(f.state)
+        del changed["assignments"][0]["interruption"]["retained_data_sha256"]
+        self.reject_both(changed, handoff.validate_state)
+
+    def test_integral_wire_numbers_work_through_the_real_cli(self):
+        f = GitFixture(assign=False)
+        self.addCleanup(f.close)
+        state_path, assignment_path = f.home / "state.json", f.home / "assignment.json"
+        write_json(state_path, f.state)
+        raw_assignment = observations.json_bytes(f.assignment)
+        wire = raw_assignment.replace(b'"issue":178', b'"issue":17.8e1').replace(
+            b'"schema_version":3', b'"schema_version":3.0')
+        self.validator.validate(json.loads(wire))
+        assignment_path.write_bytes(wire)
+        command = [str(ROOT / "build/host-python/bin/python3"), "-I",
+                   str(ROOT / "scripts/workflow_pilot/isolated_launcher.py"), "agent-handoff"]
+        assigned = raw.run_process(
+            [*command, "assign", "--state", str(state_path), "--assignment", str(assignment_path)],
+            cwd=ROOT, env=raw.git_environment(),
+        )
+        self.assertEqual(assigned.returncode, 0, assigned.stderr.decode())
+        loaded = observations.load_json(state_path)
+        self.assertIs(type(loaded["assignments"][0]["assignment"]["issue"]), int)
+        process = f.waiting_process()
+        observe = [*command, "observe", "--state", str(state_path),
+                   "--assignment-id", f.assignment["id"], "--pid", str(process.pid)]
+        self.assertEqual(raw.run_process(observe, cwd=ROOT, env=raw.git_environment()).returncode, 0)
+        wire = state_path.read_bytes().replace(
+            f'"pid":{process.pid}'.encode(), f'"pid":{process.pid}e0'.encode())
+        self.validator.validate(json.loads(wire))
+        state_path.write_bytes(wire)
+        sampled = raw.run_process(observe, cwd=ROOT, env=raw.git_environment())
+        self.assertEqual(sampled.returncode, 0, sampled.stderr.decode())
+        self.assertIs(type(observations.load_json(state_path)["assignments"][0]["process"]["pid"]), int)
+        for token in (b"true", b"178.5", b"NaN", b"1e309", b"9223372036854775808.0"):
+            with self.subTest(token=token):
+                assignment_path.write_bytes(raw_assignment.replace(b'"issue":178', b'"issue":' + token))
+                before = state_path.read_bytes()
+                rejected = raw.run_process(
+                    [*command, "assign", "--state", str(state_path), "--assignment", str(assignment_path)],
+                    cwd=ROOT, env=raw.git_environment(),
+                )
+                self.assertEqual(rejected.returncode, 2)
+                self.assertEqual(state_path.read_bytes(), before)
+        self.assertIsNone(process.poll())
+
     def test_timestamps_actual_calendar_and_fractional_lifetime(self):
         state = self.fixture.state
         for invalid in ("2025-02-29T00:00:00Z", "2026-09-06T00:00:00+00:00",
@@ -667,6 +827,19 @@ class RawDiffBoundaryTests(unittest.TestCase):
         with mock.patch.object(raw, "run_git", side_effect=AssertionError("must not dispatch Git")):
             with self.assertRaises(ValueError):
                 raw.exact_repository_root(str(f.worktree))
+
+    def test_symlinked_index_is_rejected_before_git_index_consumers(self):
+        f = self.fixture
+        index = Path(f.entry["git_identity"]["git_dir"]) / "index"
+        saved = f.home / "saved-index"
+        saved.write_bytes(index.read_bytes())
+        index.unlink()
+        index.symlink_to(saved)
+        with mock.patch.object(handoff, "_git", wraps=handoff._git) as observe:
+            with self.assertRaisesRegex(handoff.HandoffDataError, "index.*nofollow"):
+                handoff.observe_git(f.assignment)
+        self.assertFalse(any(call.args[1] in {"ls-files", "status"} for call in observe.call_args_list))
+        self.assertTrue(index.is_symlink())
 
 
 class OptionalReporterTests(unittest.TestCase):

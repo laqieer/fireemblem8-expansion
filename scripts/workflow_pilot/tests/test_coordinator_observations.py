@@ -415,6 +415,108 @@ class RecoveryObservationTests(unittest.TestCase):
             handoff.assign(f.state, {**replacement, "id": "second-replacement", "owner_id": "third-owner"})
         self.assertGreaterEqual(handoff.summarize_handoffs(f.state)["recovery_ms"], 0)
 
+    def test_same_paths_do_not_hide_mutated_recovery_bytes_index_or_modes(self):
+        f = self.fixture
+        process = f.owner_process()
+        tracked, untracked = f.worktree / "docs/base.txt", f.worktree / "docs/recovery.txt"
+        tracked.write_text("staged\n")
+        git(f.worktree, "add", "docs/base.txt")
+        tracked.write_text("unstaged\n")
+        untracked.write_text("preserved untracked\n")
+        untracked.chmod(0o755)
+        f.finish_owner(process)
+        handoff.preserve_interruption(f.entry, "process-exit")
+        index = Path(f.entry["git_identity"]["git_dir"]) / "index"
+        original = [(file, file.read_bytes(), file.stat().st_mode & 0o7777)
+                    for file in (tracked, untracked, index)]
+        directory = f.worktree / "docs"
+        directory_mode = directory.stat().st_mode & 0o7777
+        observed = handoff.observe_git(f.assignment)
+        replacement = {**copy.deepcopy(f.assignment), "id": "replacement", "owner_id": "replacement-owner",
+                       "session_id": "replacement-session", "dispatch_id": "replacement-dispatch",
+                       "kind": "replacement", "predecessor_id": f.assignment["id"]}
+        def change_index():
+            blob = git(f.worktree, "hash-object", "-w", "--stdin", input=b"different staged bytes\n")
+            git(f.worktree, "update-index", "--cacheinfo", "100644", blob, "docs/base.txt")
+        for label, mutate in (
+            ("unstaged-bytes", lambda: tracked.write_text("changed unstaged\n")),
+            ("untracked-bytes", lambda: untracked.write_text("changed untracked\n")),
+            ("staged-index", change_index),
+            ("worktree-mode", lambda: untracked.chmod(0o644)),
+            ("index-mode", lambda: index.chmod((index.stat().st_mode & 0o7777) ^ 0o100)),
+            ("directory-mode", lambda: directory.chmod(directory_mode ^ 0o020)),
+        ):
+            with self.subTest(mutation=label):
+                try:
+                    mutate()
+                    current = handoff.observe_git(f.assignment)
+                    self.assertEqual((current["head"], current["dirty_paths"]),
+                                     (observed["head"], observed["dirty_paths"]))
+                    with self.assertRaisesRegex(handoff.HandoffDataError, "retained recovery data changed"):
+                        handoff.assign(copy.deepcopy(f.state), replacement)
+                finally:
+                    for file, content, mode in original:
+                        file.write_bytes(content)
+                        file.chmod(mode)
+                    directory.chmod(directory_mode)
+        handoff.assign(f.state, replacement)
+        self.assertEqual([(file.read_bytes(), file.stat().st_mode & 0o7777) for file, _, _ in original],
+                         [(content, mode) for _, content, mode in original])
+
+    def test_unreadable_recovery_holds_without_closing_or_destroying_work(self):
+        for unsafe in ("fifo", "oversized"):
+            with self.subTest(unsafe=unsafe):
+                f = GitFixture()
+                self.addCleanup(f.close)
+                process = f.owner_process()
+                path = f.worktree / "docs/recovery"
+                if unsafe == "fifo":
+                    os.mkfifo(path)
+                else:
+                    path.write_bytes(b"x" * (raw.MAX_BYTES + 1))
+                f.finish_owner(process)
+                with self.assertRaisesRegex((handoff.HandoffDataError, OSError), "recovery|regular|byte"):
+                    handoff.preserve_interruption(f.entry, "process-exit")
+                self.assertTrue(path.exists())
+                self.assertIsNone(f.entry["closed_at"])
+                self.assertIsNone(f.entry["interruption"])
+                lock = Path(f.entry["git_identity"]["git_dir"]) / "locked"
+                self.assertEqual(lock.read_text().strip(), "handoff-recovery:" + f.assignment["id"])
+                path.unlink()
+                path.write_text("now safely observable\n")
+                handoff.preserve_interruption(f.entry, "process-exit")
+                handoff.validate_state(f.state)
+
+    def test_recovery_does_not_read_clean_content_or_follow_symlink_targets(self):
+        f = GitFixture(assign=False)
+        self.addCleanup(f.close)
+        f.parent = f.commit("x" * (raw.MAX_BYTES + 1), name="docs/committed-clean.txt")
+        f.assignment["assigned_parent_sha"] = f.parent
+        f.entry = handoff.assign(f.state, f.assignment)
+        process = f.owner_process()
+        target = f.home / "outside-target"
+        os.mkfifo(target)
+        link = f.worktree / "docs/recovery-link"
+        link.symlink_to(target)
+        (f.worktree / "docs/base.txt").unlink()
+        f.finish_owner(process)
+        handoff.preserve_interruption(f.entry, "process-exit")
+        replacement = {**copy.deepcopy(f.assignment), "id": "replacement", "owner_id": "replacement-owner",
+                       "session_id": "replacement-session", "dispatch_id": "replacement-dispatch",
+                       "kind": "replacement", "predecessor_id": f.assignment["id"]}
+        target.unlink()
+        target.write_bytes(b"x" * (raw.MAX_BYTES + 1))
+        handoff.assign(copy.deepcopy(f.state), replacement)
+        link.unlink()
+        link.symlink_to(f.home / "different-target")
+        with self.assertRaisesRegex(handoff.HandoffDataError, "retained recovery data changed"):
+            handoff.assign(copy.deepcopy(f.state), replacement)
+        link.unlink()
+        link.symlink_to(target)
+        handoff.assign(f.state, replacement)
+        self.assertTrue(link.is_symlink())
+        self.assertGreater(target.stat().st_size, raw.MAX_BYTES)
+
     def test_unproven_oom_and_live_process_cannot_be_called_confirmed(self):
         f = self.fixture
         process = f.owner_process()

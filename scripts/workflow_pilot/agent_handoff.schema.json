@@ -222,13 +222,18 @@
     },
     "interruption": {
       "type": "object", "additionalProperties": false,
-      "required": ["at", "reason", "oom_evidence", "worktree", "head", "dirty_paths", "lock_reason"],
+      "required": ["at", "reason", "oom_evidence", "worktree", "head", "dirty_paths", "lock_reason",
+                   "retained_data_sha256"],
       "properties": {
         "at": {"$ref": "#/$defs/time"}, "reason": {"enum": ["sigkill", "timeout", "rss", "process-exit"]},
         "oom_evidence": {"$ref": "#/$defs/nullableText"}, "worktree": {"$ref": "#/$defs/absolute"},
         "head": {"$ref": "#/$defs/sha"},
         "dirty_paths": {"type": "array", "maxItems": 256, "uniqueItems": true, "items": {"$ref": "#/$defs/path"}},
-        "lock_reason": {"type": "string", "minLength": 1, "maxLength": 256}
+        "lock_reason": {"type": "string", "minLength": 1, "maxLength": 256},
+        "retained_data_sha256": {
+          "description": "Local-only integrity of mutable index/dirty data and modes; no clean-source ledger.",
+          "type": "string", "pattern": "^[0-9a-f]{64}$", "maxLength": 64
+        }
       }
     },
     "cursor": {
