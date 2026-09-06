@@ -10,7 +10,6 @@ import json
 import os
 import re
 import shutil
-import stat
 import subprocess
 import sys
 import tempfile
@@ -20,17 +19,11 @@ from decimal import Decimal, ROUND_HALF_UP
 from pathlib import Path
 from typing import Any, Iterable
 
-from scripts.workflow_pilot.raw_diff_check import reject_git_metadata
-
 
 SCHEMA_VERSION = 1
-HANDOFF_FIXTURE_SCHEMA_VERSION = 2
 GIT = "/usr/bin/git"
 SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
-RFC3339_UTC_RE = re.compile(
-    r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?Z$"
-)
 EXPECTED_PATH_RE = re.compile(
     r"^[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)*$"
 )
@@ -57,14 +50,12 @@ REPORTER_TEST_PACKAGE_PATH = Path("scripts/workflow_pilot/tests/__init__.py")
 DELETION_PROOF_SUPPORT_PATHS = (
     BASELINE_EXPECTED_PATH,
     ISOLATED_LAUNCHER_PATH,
-    Path("scripts/workflow_pilot/raw_diff_check.py"),
     REPORTER_PACKAGE_PATH,
     REPORTER_TEST_PATH,
     REPORTER_TEST_PACKAGE_PATH,
 )
 DELETION_PROOF_REASON = "removal loses the issue #176 baseline decision invariant"
 DELETION_PROOF_TIMEOUT_SECONDS = 30
-TRUSTED_JSON_MAX_BYTES = 1024 * 1024
 EXECUTABLE_DELETION_PROOFS = {
     "workflow-pilot-decisions": {
         "path": DECISION_RECORD_PATH,
@@ -158,87 +149,6 @@ PR_OPEN_PHASE_EVENT_TYPES = {
 POST_MERGE_EVENT_TYPES = {
     "broken_master",
     "escaped_defect",
-}
-HANDOFF_OUTCOMES = {"accepted", "in_progress", "interrupted", "rejected"}
-HANDOFF_REJECTION_CODES = {
-    "authoritative-run-failed",
-    "authoritative-run-incomplete",
-    "authority-ruleset-bypass-mismatch",
-    "changed-lines-budget-exceeded",
-    "checker-bootstrap-not-trusted-push-eligible",
-    "code-contract-not-merged",
-    "closed-owner-reused",
-    "conflicting-worktree",
-    "coordinator-unavailable",
-    "coordinator-actor-unauthorized",
-    "dirty-worktree",
-    "duplicate-coordinator",
-    "duplicate-owner",
-    "duplicate-watcher",
-    "duplicate-handoff-code-contract",
-    "host-process-action-prohibited",
-    "implementation-not-terminated-before-collection",
-    "handoff-task-identity-mismatch",
-    "handoff-task-status-mismatch",
-    "implementation-owner-remote-action",
-    "incomplete-check",
-    "incomplete-evidence",
-    "incomplete-lifecycle",
-    "invalid-protocol-derivation",
-    "invalid-recovery-telemetry",
-    "invalid-runtime-telemetry",
-    "invalid-check-receipt",
-    "invalid-coordinator-attestation",
-    "invalid-lifecycle-successor",
-    "interrupted-check-not-incomplete",
-    "interruption-time-mismatch",
-    "missing-commit",
-    "missing-copilot-trailer",
-    "missing-evidence",
-    "missing-or-duplicate-watcher",
-    "missing-closed-resource-receipt",
-    "missing-runtime-telemetry",
-    "missing-required-code-contract-edge",
-    "missing-parent-post-merge-gate",
-    "missing-master-recovery",
-    "missing-handoff-code-contract",
-    "oom-worktree-not-preserved",
-    "overlapping-lifecycle-successor",
-    "orphan-replacement",
-    "owner-lifetime-exceeded",
-    "owner-rss-exceeded",
-    "protocol-changes-budget-exceeded",
-    "prior-handoff-history-fork",
-    "ram-bytes-budget-exceeded",
-    "replacement-context-mismatch",
-    "replacement-assignment-not-causal",
-    "replacement-owner-count",
-    "replacement-owner-reused",
-    "replacement-without-interruption",
-    "recovery-content-not-resolved",
-    "remote-coverage-incomplete",
-    "root-owner-count",
-    "required-check-failed",
-    "result-not-worktree-head",
-    "rom-bytes-budget-exceeded",
-    "review-successor-parent-mismatch",
-    "run-without-commit",
-    "scope-violation",
-    "stale-result",
-    "stale-run",
-    "task-status-dependency-mismatch",
-    "unquantified-diff",
-    "unexpected-resource-receipt",
-    "unresolved-actor-id",
-    "unrelated-branch",
-    "watcher-todo-dependency",
-    "watcher-authority-stale",
-    "watcher-owner-mismatch",
-    "watcher-run-mismatch",
-    "event-after-terminal-coverage",
-    "wrong-parent",
-    "wrong-code-contract-edge",
-    "wrong-worktree",
 }
 DELETION_TRIGGER_TYPES = {
     "artifact_checkpoint",
@@ -349,76 +259,11 @@ def _object_no_duplicates(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
     return result
 
 
-def _json_file_signature(metadata: os.stat_result) -> tuple[int, ...]:
-    return (
-        metadata.st_dev, metadata.st_ino, metadata.st_mode, metadata.st_uid,
-        metadata.st_size, metadata.st_nlink,
-        getattr(metadata, "st_mtime_ns", 0), getattr(metadata, "st_ctime_ns", 0),
-    )
-
-
-def _load_bounded_json(path: Path, *, label: str, max_bytes: int) -> Any:
-    absolute = Path(os.path.abspath(os.fspath(path)))
+def load_json(path: Path) -> Any:
     try:
-        metadata = absolute.lstat()
+        return parse_json(path.read_text(encoding="utf-8"), str(path))
     except OSError as error:
-        raise PilotDataError(f"cannot inspect {label}: {error}") from error
-    if not stat.S_ISREG(metadata.st_mode):
-        raise PilotDataError(f"{label} must be a regular file")
-    if metadata.st_size > max_bytes:
-        raise PilotDataError(f"{label} exceeds 1 MiB")
-    flags = (
-        os.O_RDONLY
-        | getattr(os, "O_CLOEXEC", 0)
-        | getattr(os, "O_NOFOLLOW", 0)
-        | getattr(os, "O_NONBLOCK", 0)
-    )
-    try:
-        descriptor = os.open(os.fspath(absolute), flags)
-    except OSError as error:
-        raise PilotDataError(f"cannot open {label}: {error}") from error
-    try:
-        opened = os.fstat(descriptor)
-        if not stat.S_ISREG(opened.st_mode):
-            raise PilotDataError(f"{label} must be a regular file")
-        if (
-            opened.st_size > max_bytes
-            or _json_file_signature(opened) != _json_file_signature(metadata)
-        ):
-            raise PilotDataError(f"{label} changed before read")
-        raw = bytearray()
-        while len(raw) <= max_bytes:
-            chunk = os.read(descriptor, min(65536, max_bytes + 1 - len(raw)))
-            if not chunk:
-                break
-            raw.extend(chunk)
-        final = os.fstat(descriptor)
-    except OSError as error:
-        raise PilotDataError(f"cannot read {label}: {error}") from error
-    finally:
-        os.close(descriptor)
-    if len(raw) > max_bytes:
-        raise PilotDataError(f"{label} exceeds 1 MiB")
-    if (
-        _json_file_signature(final) != _json_file_signature(metadata)
-        or len(raw) != metadata.st_size
-    ):
-        raise PilotDataError(f"{label} changed while being read")
-    try:
-        return parse_json(raw.decode("utf-8"), label)
-    except UnicodeError as error:
-        raise PilotDataError(f"{label} is not valid UTF-8") from error
-
-
-def load_json(
-    path: Path, *, label: str | None = None, max_bytes: int | None = None,
-) -> Any:
-    if max_bytes is not None:
-        return _load_bounded_json(path, label=label or str(path), max_bytes=max_bytes)
-    try:
-        return parse_json(path.read_text(encoding="utf-8"), label or str(path))
-    except OSError as error:
-        raise PilotDataError(f"cannot read {label or path}: {error}") from error
+        raise PilotDataError(f"cannot read {path}: {error}") from error
 
 
 def parse_json(text: str, label: str) -> Any:
@@ -516,7 +361,7 @@ def expect_sha(value: Any, label: str, nullable: bool = False) -> str | None:
 def parse_time(value: Any, label: str, nullable: bool = False) -> datetime | None:
     if value is None and nullable:
         return None
-    if not isinstance(value, str) or RFC3339_UTC_RE.fullmatch(value) is None:
+    if not isinstance(value, str) or not value.endswith("Z"):
         raise PilotDataError(f"{label} must be an RFC 3339 UTC timestamp")
     try:
         parsed = datetime.fromisoformat(value[:-1] + "+00:00")
@@ -720,15 +565,6 @@ def validate_repository_root(repository_root: Path) -> Path:
         ) from error
     if not resolved.is_dir():
         raise PilotDataError(f"repository root {resolved} is not a directory")
-    try:
-        reject_git_metadata(resolved, (
-            ("info/grafts", "graft file"),
-            ("info/attributes", "local attributes file"),
-            ("objects/info/alternates", "alternate object store"),
-            ("objects/info/http-alternates", "HTTP alternate object store"),
-        ))
-    except (OSError, ValueError) as error:
-        raise PilotDataError(str(error)) from error
     top_level = Path(
         run_git(resolved, "rev-parse", "--show-toplevel")
         .decode("utf-8")
@@ -738,6 +574,27 @@ def validate_repository_root(repository_root: Path) -> Path:
         raise PilotDataError(
             f"repository root must be the exact Git top level {top_level}"
         )
+    for relative, label in (
+        ("info/grafts", "graft file"),
+        ("objects/info/alternates", "alternate object store"),
+        ("objects/info/http-alternates", "HTTP alternate object store"),
+    ):
+        raw_path = (
+            run_git(resolved, "rev-parse", "--git-path", relative)
+            .decode("utf-8")
+            .strip()
+        )
+        metadata_path = Path(raw_path)
+        if not metadata_path.is_absolute():
+            metadata_path = resolved / metadata_path
+        try:
+            has_content = metadata_path.is_file() and metadata_path.stat().st_size > 0
+        except OSError as error:
+            raise PilotDataError(
+                f"cannot inspect repository {label}: {error}"
+            ) from error
+        if has_content:
+            raise PilotDataError(f"repository {label} is not permitted")
     replace_refs = run_git(
         resolved,
         "for-each-ref",
@@ -1408,46 +1265,40 @@ def validate_override_git_provenance(
 
 
 def _validate_fixture_root(fixture: dict[str, Any]) -> None:
-    schema_version = expect_int(
-        fixture.get("schema_version"),
-        "fixture.schema_version",
-        1,
-    )
-    if schema_version not in {SCHEMA_VERSION, HANDOFF_FIXTURE_SCHEMA_VERSION}:
-        raise PilotDataError(
-            "fixture schema_version must be "
-            f"{SCHEMA_VERSION} or {HANDOFF_FIXTURE_SCHEMA_VERSION}"
-        )
-    required = (
-        "schema_version",
-        "repository",
-        "base_sha",
-        "captured_at",
-        "lifecycle_as_of",
-        "window",
-        "default_branch",
-        "workflow_sample_size",
-        "build_workflow",
-        "spotlight_pr",
-        "pull_requests",
-        "issues",
-        "reviews",
-        "review_findings",
-        "review_thread_event_source",
-        "review_thread_events",
-        "workflow_runs",
-        "commits",
-        "events",
-        "artifacts",
-        "dependency_edges",
-    )
-    if schema_version == HANDOFF_FIXTURE_SCHEMA_VERSION:
-        required += ("implementation_handoffs",)
     expect_keys(
         fixture,
         "fixture",
-        required,
+        (
+            "schema_version",
+            "repository",
+            "base_sha",
+            "captured_at",
+            "lifecycle_as_of",
+            "window",
+            "default_branch",
+            "workflow_sample_size",
+            "build_workflow",
+            "spotlight_pr",
+            "pull_requests",
+            "issues",
+            "reviews",
+            "review_findings",
+            "review_thread_event_source",
+            "review_thread_events",
+            "workflow_runs",
+            "commits",
+            "events",
+            "artifacts",
+            "dependency_edges",
+        ),
     )
+    schema_version = expect_int(
+        fixture["schema_version"],
+        "fixture.schema_version",
+        1,
+    )
+    if schema_version != SCHEMA_VERSION:
+        raise PilotDataError(f"fixture schema_version must be {SCHEMA_VERSION}")
     expect_string(fixture["repository"], "fixture.repository")
     expect_sha(fixture["base_sha"], "fixture.base_sha")
     captured = parse_time(fixture["captured_at"], "fixture.captured_at")
@@ -1483,287 +1334,6 @@ def _validate_fixture_root(fixture: dict[str, Any]) -> None:
         "dependency_edges",
     ):
         expect_list(fixture[field], f"fixture.{field}")
-    if schema_version == HANDOFF_FIXTURE_SCHEMA_VERSION:
-        expect_list(
-            fixture["implementation_handoffs"],
-            "fixture.implementation_handoffs",
-        )
-
-
-def validate_implementation_handoff_trust(raw: Any) -> dict[str, dict[str, Any]]:
-    trust = expect_object(raw, "implementation_handoff_trust")
-    expect_keys(trust, "implementation_handoff_trust", ("schema_version", "anchors"))
-    if expect_int(trust["schema_version"], "implementation_handoff_trust.schema_version", 1) != 1:
-        raise PilotDataError("implementation_handoff_trust.schema_version must be 1")
-    anchors = {}
-    for index, raw_anchor in enumerate(expect_list(trust["anchors"], "implementation_handoff_trust.anchors")):
-        label = f"implementation_handoff_trust.anchors[{index}]"
-        anchor = copy.deepcopy(expect_object(raw_anchor, label))
-        input_seal = anchor.get("input_seal")
-        if not isinstance(input_seal, str) or SHA256_RE.fullmatch(input_seal) is None:
-            raise PilotDataError(f"{label}.input_seal must be a lowercase SHA-256")
-        if input_seal in anchors:
-            raise PilotDataError(f"duplicate implementation handoff trust {input_seal!r}")
-        anchors[input_seal] = anchor
-    return anchors
-
-
-def validate_implementation_handoffs(
-    fixture: dict[str, Any],
-    repository_root: Path | None = None,
-    implementation_handoff_trust: Any | None = None,
-    implementation_handoff_installation: Any | None = None,
-) -> dict[str, dict[str, dict[str, Any]]]:
-    if fixture["schema_version"] != HANDOFF_FIXTURE_SCHEMA_VERSION:
-        return {"bundles": {}, "handoffs": {}}
-    from scripts.workflow_pilot import agent_handoff
-    if implementation_handoff_trust is None:
-        raise PilotDataError(
-            "implementation_handoffs require external trusted anchor attestations"
-        )
-    if implementation_handoff_installation is None:
-        raise PilotDataError(
-            "implementation_handoffs require an external trusted installation"
-        )
-    lifecycle_as_of = parse_time(fixture["lifecycle_as_of"], "fixture.lifecycle_as_of")
-    bundles: dict[str, dict[str, Any]] = {}
-    handoffs: dict[str, dict[str, Any]] = {}
-    issue_timelines: dict[int, list[dict[str, Any]]] = defaultdict(list)
-    trusted_handoffs = validate_implementation_handoff_trust(implementation_handoff_trust)
-    for index, raw in enumerate(fixture["implementation_handoffs"]):
-        label = f"implementation_handoffs[{index}]"
-        raw_record = expect_object(raw, label)
-        input_seal = raw_record.get("input_seal")
-        try:
-            bundle = agent_handoff.verify_reporter_record(
-                raw,
-                revalidate_git=False,
-                trusted_anchor=trusted_handoffs.get(input_seal),
-                repository_root=repository_root,
-                trusted_installation=implementation_handoff_installation,
-                current_time=lifecycle_as_of,
-            )
-        except agent_handoff.HandoffDataError as error:
-            raise PilotDataError(f"{label}: {error}") from error
-        summary = expect_object(bundle["result"]["summary"], f"{label}.result.summary")
-        local_rejection_codes = {
-            code
-            for handoff in expect_list(
-                bundle["result"]["handoffs"],
-                f"{label}.result.handoffs",
-            )
-            for code in expect_list(
-                expect_object(
-                    handoff,
-                    f"{label}.result.handoffs item",
-                )["rejection_codes"],
-                f"{label}.result.handoffs.rejection_codes",
-            )
-        }
-        (
-            _derived_summary,
-            derived_bundle_rejection_codes,
-            _delivery_graph,
-            _watchers,
-        ) = agent_handoff.derive_reporter_result_summary(
-            bundle["document"],
-            bundle["result"],
-        )
-        bundle_rejection_codes = sorted(
-            set(derived_bundle_rejection_codes)
-            | (
-                set(
-                    expect_list(
-                        summary["rejection_codes"],
-                        f"{label}.result.summary.rejection_codes",
-                    )
-                )
-                - local_rejection_codes
-            )
-        )
-        bundle_trusted_push_eligible = expect_bool(
-            summary["trusted_push_eligible"],
-            f"{label}.result.summary.trusted_push_eligible",
-        )
-        identity = bundle["input_seal"]
-        if identity in bundles:
-            raise PilotDataError(
-                f"duplicate implementation handoff bundle {identity!r}"
-            )
-        bundles[identity] = bundle
-        document_handoffs = {
-            item["id"]: item for item in bundle["document"]["handoffs"]
-        }
-        for handoff_index, handoff in enumerate(copy.deepcopy(bundle["result"]["handoffs"])):
-            handoff_label = f"{label}.result.handoffs[{handoff_index}]"
-            expect_keys(
-                handoff,
-                handoff_label,
-                (
-                    "id",
-                    "owner_id",
-                    "issue",
-                    "pull_request",
-                    "assigned_at",
-                    "closed_at",
-                    "state",
-                    "outcome",
-                    "result_sha",
-                    "changed_lines",
-                    "changed_paths",
-                    "commit_message_sha256",
-                    "stale_response",
-                    "lifetime_seconds",
-                    "peak_rss_bytes",
-                    "coordination_turns",
-                    "recovery_minutes",
-                    "budget_usage",
-                    "interruption_snapshot",
-                    "rejection_codes",
-                ),
-            )
-            handoff_id = expect_string(handoff["id"], f"{handoff_label}.id")
-            if handoff_id in handoffs:
-                raise PilotDataError(
-                    f"duplicate implementation handoff {handoff_id!r}"
-                )
-            expect_string(handoff["owner_id"], f"{handoff_label}.owner_id")
-            assigned_at = parse_time(
-                handoff["assigned_at"],
-                f"{handoff_label}.assigned_at",
-            )
-            closed_at = parse_time(
-                handoff["closed_at"],
-                f"{handoff_label}.closed_at",
-                nullable=True,
-            )
-            if assigned_at > lifecycle_as_of:
-                raise PilotDataError(
-                    f"{handoff_label}.assigned_at follows lifecycle_as_of"
-                )
-            if closed_at is not None:
-                if closed_at <= assigned_at:
-                    raise PilotDataError(
-                        f"{handoff_label}.closed_at must strictly follow assigned_at"
-                    )
-                if closed_at > lifecycle_as_of:
-                    raise PilotDataError(
-                        f"{handoff_label}.closed_at follows lifecycle_as_of"
-                    )
-            outcome = expect_enum(
-                handoff["outcome"],
-                HANDOFF_OUTCOMES,
-                f"{handoff_label}.outcome",
-            )
-            rejection_codes = expect_list(
-                handoff["rejection_codes"],
-                f"{handoff_label}.rejection_codes",
-            )
-            for code_index, code in enumerate(rejection_codes):
-                expect_enum(
-                    code,
-                    HANDOFF_REJECTION_CODES,
-                    f"{handoff_label}.rejection_codes[{code_index}]",
-                )
-            expect_unique(rejection_codes, f"{handoff_label}.rejection_codes")
-            expect_bool(
-                handoff["stale_response"],
-                f"{handoff_label}.stale_response",
-            )
-            for field in (
-                "lifetime_seconds",
-                "peak_rss_bytes",
-                "coordination_turns",
-                "recovery_minutes",
-            ):
-                expect_int(
-                    handoff[field],
-                    f"{handoff_label}.{field}",
-                    0,
-                )
-            budget_usage = expect_object(
-                handoff["budget_usage"],
-                f"{handoff_label}.budget_usage",
-            )
-            expect_keys(
-                budget_usage,
-                f"{handoff_label}.budget_usage",
-                ("rom_bytes", "ram_bytes", "protocol_changes"),
-            )
-            for field in ("rom_bytes", "ram_bytes", "protocol_changes"):
-                expect_int(
-                    budget_usage[field],
-                    f"{handoff_label}.budget_usage.{field}",
-                    0,
-                )
-            if handoff["interruption_snapshot"] is not None:
-                expect_object(
-                    handoff["interruption_snapshot"],
-                    f"{handoff_label}.interruption_snapshot",
-                )
-            if outcome == "accepted":
-                if closed_at is None or rejection_codes:
-                    raise PilotDataError(
-                        f"{handoff_label} accepted outcome requires closure "
-                        "without rejections"
-                    )
-            elif outcome == "rejected":
-                if not rejection_codes:
-                    raise PilotDataError(
-                        f"{handoff_label} rejected outcome requires rejection_codes"
-                    )
-            elif outcome == "interrupted":
-                if closed_at is None:
-                    raise PilotDataError(
-                        f"{handoff_label} interrupted outcome requires closed_at"
-                    )
-            elif closed_at is not None:
-                raise PilotDataError(
-                    f"{handoff_label} in_progress outcome cannot have closed_at"
-                )
-            handoff["bundle_rejection_codes"] = copy.deepcopy(
-                bundle_rejection_codes
-            )
-            handoff["reported_outcome"] = (
-                "bundle_rejected"
-                if outcome == "accepted" and not bundle_trusted_push_eligible
-                else outcome
-            )
-            issue_timelines.setdefault(handoff["issue"], []).append(
-                {
-                    "id": handoff_id,
-                    "assigned_at": assigned_at,
-                    "closed_at": closed_at or lifecycle_as_of,
-                    "replaces_handoff_id": document_handoffs[handoff_id][
-                        "replaces_handoff_id"
-                    ],
-                    "reported_outcome": handoff["reported_outcome"],
-                }
-            )
-            handoffs[handoff_id] = handoff
-    for records in issue_timelines.values():
-        records.sort(key=lambda item: (item["assigned_at"], item["id"]))
-        has_bound_root = False
-        previous_end = None
-        for record in records:
-            if previous_end is not None and record["assigned_at"] <= previous_end:
-                raise PilotDataError(
-                    f"implementation handoff {record['id']!r} overlaps another same-issue handoff"
-                )
-            if record["replaces_handoff_id"] is None and has_bound_root:
-                raise PilotDataError(
-                    f"implementation handoff {record['id']!r} is an unrelated same-issue root"
-                )
-            has_bound_root = has_bound_root or record["reported_outcome"] not in {
-                "bundle_rejected",
-                "rejected",
-            }
-            previous_end = record["closed_at"]
-    if set(trusted_handoffs) != set(bundles):
-        raise PilotDataError(
-            "implementation_handoff_trust must match bundle input seals exactly"
-        )
-    return {"bundles": bundles, "handoffs": handoffs}
 
 
 def validate_pull_requests(fixture: dict[str, Any]) -> dict[int, dict[str, Any]]:
@@ -2872,12 +2442,7 @@ def cross_validate_fixture(
             )
 
 
-def validate_fixture(
-    fixture: Any,
-    repository_root: Path | None = None,
-    implementation_handoff_trust: Any | None = None,
-    implementation_handoff_installation: Any | None = None,
-) -> dict[str, Any]:
+def validate_fixture(fixture: Any) -> dict[str, Any]:
     fixture = expect_object(fixture, "fixture")
     _validate_fixture_root(fixture)
     pull_requests = validate_pull_requests(fixture)
@@ -2899,12 +2464,6 @@ def validate_fixture(
     events = validate_events(fixture, pull_requests)
     artifacts = validate_artifacts(fixture)
     edges = validate_edges(fixture)
-    implementation_handoffs = validate_implementation_handoffs(
-        fixture,
-        repository_root=repository_root,
-        implementation_handoff_trust=implementation_handoff_trust,
-        implementation_handoff_installation=implementation_handoff_installation,
-    )
     cross_validate_fixture(
         fixture,
         pull_requests,
@@ -2931,8 +2490,6 @@ def validate_fixture(
         "events": events,
         "artifacts": artifacts,
         "edges": edges,
-        "implementation_handoff_bundles": implementation_handoffs["bundles"],
-        "implementation_handoffs": implementation_handoffs["handoffs"],
     }
 
 
@@ -3997,59 +3554,6 @@ def report_efficiency(data: dict[str, Any]) -> dict[str, int]:
     }
 
 
-def report_implementation_handoffs(
-    data: dict[str, Any]
-) -> dict[str, int | list[str]]:
-    handoffs = list(data["implementation_handoffs"].values())
-    rejection_codes = sorted(
-        {
-            code
-            for item in handoffs
-            for code in [
-                *item["rejection_codes"],
-                *item["bundle_rejection_codes"],
-            ]
-        }
-    )
-    return {
-        "records": len(handoffs),
-        "accepted": sum(
-            item["reported_outcome"] == "accepted" for item in handoffs
-        ),
-        "bundle_rejected": sum(
-            item["reported_outcome"] == "bundle_rejected"
-            for item in handoffs
-        ),
-        "rejected": sum(
-            item["reported_outcome"] == "rejected" for item in handoffs
-        ),
-        "interrupted": sum(
-            item["reported_outcome"] == "interrupted" for item in handoffs
-        ),
-        "in_progress": sum(
-            item["reported_outcome"] == "in_progress" for item in handoffs
-        ),
-        "stale_responses": sum(
-            "stale-result" in item["rejection_codes"] for item in handoffs
-        ),
-        "max_lifetime_seconds": max(
-            (item["lifetime_seconds"] for item in handoffs),
-            default=0,
-        ),
-        "max_peak_rss_bytes": max(
-            (item["peak_rss_bytes"] for item in handoffs),
-            default=0,
-        ),
-        "coordination_turns": sum(
-            item["coordination_turns"] for item in handoffs
-        ),
-        "recovery_minutes": sum(
-            item["recovery_minutes"] for item in handoffs
-        ),
-        "rejection_codes": rejection_codes,
-    }
-
-
 def report_classifications(data: dict[str, Any]) -> list[dict[str, Any]]:
     runs_by_pr: dict[int, list[dict[str, Any]]] = defaultdict(list)
     for run in data["runs"].values():
@@ -4225,10 +3729,6 @@ def cohort_identity_seal(data: dict[str, Any]) -> str:
         },
         "workflow_runs": _sealed_records(data["runs"]),
     }
-    if data["fixture"]["schema_version"] == HANDOFF_FIXTURE_SCHEMA_VERSION:
-        cohort["implementation_handoffs"] = _sealed_records(
-            data["implementation_handoff_bundles"],
-        )
     return hashlib.sha256(
         IDENTITY_SEAL_DOMAIN + normalized_json(cohort)
     ).hexdigest()
@@ -4362,20 +3862,13 @@ def build_report(
     fixture: Any,
     raw_decisions: Any,
     repository_root: Path | None = None,
-    implementation_handoff_trust: Any | None = None,
-    implementation_handoff_installation: Any | None = None,
 ) -> dict[str, Any]:
     if repository_root is None:
         raise PilotDataError(
             "report construction requires an explicit repository authority root"
         )
     repository_root = validate_repository_root(repository_root)
-    data = validate_fixture(
-        fixture,
-        repository_root=repository_root,
-        implementation_handoff_trust=implementation_handoff_trust,
-        implementation_handoff_installation=implementation_handoff_installation,
-    )
+    data = validate_fixture(fixture)
     data["repository_authority"] = validate_repository_authority(
         repository_root,
         data,
@@ -4395,26 +3888,8 @@ def build_report(
         ),
         "artifacts": report_artifacts(data, decisions),
     }
-    if data["fixture"]["schema_version"] == HANDOFF_FIXTURE_SCHEMA_VERSION:
-        computed["implementation_handoffs"] = report_implementation_handoffs(
-            data
-        )
-    identities = {
-        "pull_requests": sorted(data["pull_requests"]),
-        "issues": sorted(data["issues"]),
-        "reviews": sorted(data["reviews"]),
-        "findings": sorted(data["findings"]),
-        "review_thread_deliveries": sorted(data["review_thread_events"]),
-        "workflow_runs": sorted(data["runs"]),
-        "commits": sorted(data["commits"]),
-        "seal": cohort_identity_seal(data),
-    }
-    if data["fixture"]["schema_version"] == HANDOFF_FIXTURE_SCHEMA_VERSION:
-        identities["implementation_handoffs"] = sorted(
-            data["implementation_handoffs"]
-        )
     return {
-        "schema_version": data["fixture"]["schema_version"],
+        "schema_version": SCHEMA_VERSION,
         "snapshot": {
             "repository": data["fixture"]["repository"],
             "base_sha": data["fixture"]["base_sha"],
@@ -4422,7 +3897,16 @@ def build_report(
             "lifecycle_as_of": data["fixture"]["lifecycle_as_of"],
             "window": data["fixture"]["window"],
         },
-        "identities": identities,
+        "identities": {
+            "pull_requests": sorted(data["pull_requests"]),
+            "issues": sorted(data["issues"]),
+            "reviews": sorted(data["reviews"]),
+            "findings": sorted(data["findings"]),
+            "review_thread_deliveries": sorted(data["review_thread_events"]),
+            "workflow_runs": sorted(data["runs"]),
+            "commits": sorted(data["commits"]),
+            "seal": cohort_identity_seal(data),
+        },
         "decisions": {
             "seal": decision_semantics_seal(data, decisions),
         },
@@ -4491,13 +3975,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument("--fixture", type=Path, required=True)
     parser.add_argument("--decisions", type=Path, required=True)
+    parser.add_argument("--expected", type=Path, required=True)
     parser.add_argument(
-        "--expected",
-        type=Path,
-        help=(
-            "required frozen expected values for schema version 1; version 2 "
-            "operational handoff fixtures are sealed and reported directly"
-        ),
+        "--handoffs", type=Path,
+        help="optional bounded coordinator observations; not authenticated delivery evidence",
     )
     parser.add_argument(
         "--repository-root",
@@ -4508,23 +3989,23 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             "authorize every fixture Git fact"
         ),
     )
-    parser.add_argument(
-        "--implementation-handoff-trust",
-        type=Path,
-        help=(
-            "schema version 2 only: signed trusted anchor attestations keyed "
-            "by input_seal, stored outside the handoff fixture"
-        ),
-    )
-    parser.add_argument(
-        "--implementation-handoff-installation",
-        type=Path,
-        help=(
-            "schema version 2 only: external trusted coordinator "
-            "installation root that authenticates the trust sidecar"
-        ),
-    )
     return parser.parse_args(argv)
+
+
+def with_handoff_metrics(baseline: dict, raw: bytes) -> dict:
+    from scripts.workflow_pilot import agent_handoff, coordinator_observations
+
+    try:
+        state = coordinator_observations.parse_bytes(raw)
+        metrics = agent_handoff.summarize_handoffs(state)
+        if (
+            baseline.get("schema_version") != 1
+            or baseline.get("snapshot", {}).get("repository") != state["repository"]
+        ):
+            raise PilotDataError("handoff observations must identify the baseline repository")
+    except agent_handoff.HandoffDataError as error:
+        raise PilotDataError(str(error)) from error
+    return {"schema_version": 2, "baseline": baseline, "implementation_handoffs": metrics}
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -4538,55 +4019,24 @@ def main(argv: list[str] | None = None) -> int:
             )
         fixture = load_json(args.fixture)
         decisions = load_json(args.decisions)
-        handoff_trust = None
-        handoff_installation = None
-        if fixture.get("schema_version") == HANDOFF_FIXTURE_SCHEMA_VERSION:
-            if (
-                args.implementation_handoff_trust is None
-                or args.implementation_handoff_installation is None
-            ):
-                raise PilotDataError(
-                    "schema version 2 requires --implementation-handoff-trust and "
-                    "--implementation-handoff-installation"
-                )
-            handoff_trust = load_json(
-                args.implementation_handoff_trust,
-                label="implementation handoff trust sidecar",
-                max_bytes=TRUSTED_JSON_MAX_BYTES,
-            )
-            handoff_installation = args.implementation_handoff_installation
-        elif (
-            args.implementation_handoff_trust is not None
-            or args.implementation_handoff_installation is not None
-        ):
-            raise PilotDataError(
-                "--implementation-handoff-* are reserved for schema version 2"
-            )
-        report = build_report(
+        report = build_report(fixture, decisions, repository_root)
+        check_expected(report, load_json(args.expected))
+        validate_executable_deletion_proofs(
+            repository_root,
+            args.fixture,
+            args.decisions,
+            args.expected,
             fixture,
             decisions,
-            repository_root,
-            implementation_handoff_trust=handoff_trust,
-            implementation_handoff_installation=handoff_installation,
         )
-        if fixture.get("schema_version") == SCHEMA_VERSION:
-            if args.expected is None:
-                raise PilotDataError(
-                    "--expected is required for frozen schema version 1"
-                )
-            check_expected(report, load_json(args.expected))
-            validate_executable_deletion_proofs(
-                repository_root,
-                args.fixture,
-                args.decisions,
-                args.expected,
-                fixture,
-                decisions,
-            )
-        elif args.expected is not None:
-            raise PilotDataError(
-                "--expected is reserved for frozen schema version 1"
-            )
+        if args.handoffs is not None:
+            from scripts.workflow_pilot import coordinator_observations
+
+            try:
+                raw = coordinator_observations.read_bytes(args.handoffs)
+            except (OSError, coordinator_observations.ObservationError) as error:
+                raise PilotDataError(f"cannot read handoff observations: {error}") from error
+            report = with_handoff_metrics(report, raw)
     except PilotDataError as error:
         print(f"workflow-pilot: {error}", file=sys.stderr)
         return 2

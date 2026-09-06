@@ -4,6 +4,117 @@ These source-only procedures cover the repository's agent delivery policy.
 They exercise documented orchestration contracts without dispatching a
 workflow, using credentials, or changing ROM behavior.
 
+## TC-WORKFLOW-HOST-PYTHON-DEPS-001: Bootstrap isolated schema-test dependencies
+
+- **Feature / originating issue:** `workflow-governance` /
+  [issue #216](https://github.com/laqieer/fireemblem8-expansion/issues/216).
+- **Supported configuration or artifact:** source checkout, CPython 3.12,
+  Linux x86_64 with glibc >= 2.17, and the OS `python3-venv`/`ensurepip`
+  component. No ROM, emulator, ARM compiler or credential is needed.
+- **Prerequisites and clean starting state:** ordinary access to trusted PyPI
+  during initial setup; run from the source root. Ensure
+  `build/host-python-missing` and `build/host-python` do not already exist.
+  Never replace somebody else's environment. The bootstrap and regression
+  fixtures use exclusively owned paths under this checkout's `build/`.
+
+### Actions
+
+1. Reproduce the undeclared-dependency failure before setup:
+
+   ```bash
+   /usr/bin/python3 -I -m venv --without-pip build/host-python-missing
+   build/host-python-missing/bin/python3 -I -c 'import jsonschema'
+   ```
+
+   Expect exit 1 with `ModuleNotFoundError`, not an ambient-package success.
+   Remove only this owned probe: `rm -r -- build/host-python-missing`.
+2. Run the actual CI bootstrap and inspect its isolated result:
+
+   ```bash
+   /usr/bin/python3 -I scripts/host_python.py create
+   build/host-python/bin/python3 -I scripts/host_python.py check
+   ```
+
+   Expect exit 0 and a JSON report naming the owned environment, exact
+   committed package versions, draft `2020-12` and format `date-time`.
+3. Run the focused automated positive and adversarial replay:
+
+   ```bash
+   build/host-python/bin/python3 -I -m unittest discover \
+     -s scripts/workflow_pilot/tests -t . -p test_host_python.py -v
+   ```
+
+   Valid leap-day/offset/fractional RFC3339 timestamps pass. Non-leap dates,
+   invalid hours, malformed timestamps, wrong prefix-item types and surplus
+   items fail. Removing the optional format checker or making it accept
+   everything must fail the probe, not silently skip format validation.
+4. The same suite replays verified offline installs, corrupts an actual wheel,
+   removes a required wheel, supplies a CPython-3.11-only wheel to 3.12, and
+   omits optional or transitive dependencies from a fixture lock. Every
+   rejected input must fail explicitly. Unsupported platform profiles fail
+   before environment creation. Existing/symlink targets remain unchanged.
+   A real installation into a fixture-only user site is visible to ordinary
+   Python but cannot satisfy the fresh `-I` interpreter or dependency check.
+   Hostile pip configuration/install-target variables cannot redirect setup.
+5. Exercise the existing reporter entrypoint, then the parsed Build and local
+   argv mirror contracts:
+
+   ```bash
+   build/host-python/bin/python3 -I scripts/workflow_pilot/isolated_launcher.py reporter-tests
+   python3 -m unittest tests.workflows.test_build_ci_topology \
+     tests.upstream_port.test_verify.VerifyGatesMirrorWorkflowTests -v
+   ```
+
+   Reporter discovery uses the installed interpreter; its existing immutable
+   Git-authority requirements remain mandatory. A shallow/local clone missing
+   the baseline objects must restore the
+   [documented Git authority](../workflow-pilot.md#build-event-classification-and-candidate-evidence),
+   not weaken reporter checks. Parsed setup and reporter paths agree; removing
+   bootstrap/venv support or switching back to system Python is rejected.
+6. The regression removes only its own UUID-named fixtures. When finished,
+   remove your own bootstrap environment with
+   `rm -r -- build/host-python`, or retain it for subsequent host checks.
+
+### Expected result
+
+Every schema dependency comes from the committed pinned/hash-verified closure
+in a fresh environment, with no system/user-site reliance. Required optional
+formats really validate adversarial data. The bootstrapped import and reporter
+discovery pass.
+
+### Negative control
+
+The pre-fix clean import fails. Damaged, missing,
+incompatible, unpinned, unhashed and redirected inputs cannot produce a
+successful environment check. Reordering/commenting the same lock records
+stays valid; preserving words while bypassing validation does not.
+
+### Interactions and save compatibility
+
+Dependents are #178/#191 handoff and #205/#211 broker schema tests, not new
+protocol implementations in this case. Dependencies are OS Python/venv,
+trusted PyPI at setup time and the committed wheel closure. Only `date-time`
+is the shared required optional format; new formats need new closure/probe
+coverage. Other interpreters, architectures and libc profiles are unsupported.
+There are no game, save/config, ROM/RAM, localization, generated-game-data,
+modern profile or archival compiler interactions. No feature gate is needed.
+
+### Automation
+
+Automation is `scripts/workflow_pilot/tests/test_host_python.py` plus the
+existing parsed workflow topology/argv mirror suites; real pip installs,
+metadata closure and schema execution are the evidence, not raw source text.
+Full/metadata routing, required contexts, permissions, checkout authority and
+every candidate/master gate are unchanged.
+
+### Cleanup and limitations
+
+Tests remove only their UUID-owned fixtures. Retain an explicitly owned
+`build/host-python` environment for later checks or remove only that environment
+afterward as described in step 6. No visual/audio/manual-only criterion applies.
+This setup cannot supply missing Git authority or discharge
+the consumers' independent protected-principal/deployment requirements.
+
 ## TC-WORKFLOW-WORKTREE-CLEANUP-001: Remove only proven completed worktrees
 
 - **Feature / originating issue:** `workflow-governance` /
@@ -226,6 +337,7 @@ The source-only checks create no remote state and need no cleanup. They do not
 grant credentials or make remote publication atomic; preserve failed-push
 evidence and all final quality gates. No manual-only criterion applies.
 ## TC-WORKFLOW-CI-WAIT-001: Keep CI waiting centralized and trusted pushes owner-scoped
+
 - **Feature / originating issue:** `workflow-governance` /
   [issue #93](https://github.com/laqieer/fireemblem8-expansion/issues/93).
 - **Supported configuration or artifact:** clean source checkout with
@@ -233,13 +345,16 @@ evidence and all final quality gates. No manual-only criterion applies.
   emulator is required.
 - **Prerequisites and clean starting state:** start at the repository root and
   leave the mirrored development-workflow policy files unchanged.
+
 ### Actions
+
 1. Inspect the trusted-push and CI-waiting sections in
    `.github/skills/development-workflow/SKILL.md`.
 2. Run
    `python3 -m unittest scripts.docs_check_tests.test_development_workflow_skill -v`.
 3. Confirm the focused suite exercises its required-policy, forbidden-policy,
    and deliberately unbounded watcher negative fixtures.
+
 ### Expected result
 
 The mirrored policy requires implementation subagents to validate and commit
@@ -250,6 +365,7 @@ reasoning inspection starts only after a terminal result; superseded runs are
 cancelled; and post-merge monitoring remains nonblocking. The former Full
 Matrix gate is absent because the combined Build owns the complete candidate
 gate.
+
 ### Negative control
 
 Removing a required dispatch-and-return, single-watcher, concurrent-review,
@@ -258,6 +374,7 @@ Build rule makes the focused suite fail. The suite also rejects stale
 implementation-agent push ownership, duplicate/unbounded watcher examples,
 privileged `pull_request_target`, weakened approvals, and any restored Full
 Matrix wording.
+
 ### Interactions and save compatibility
 
 The policy depends on GitHub CLI and the existing shell runtime when used for
@@ -265,18 +382,22 @@ real delivery. It conflicts with duplicate polling agents, repeated wakeups,
 stale candidate evidence, implementation-agent pushes, and unbounded watcher
 loops. The source-only case changes no save, generated data, localization,
 ROM/RAM, debug/release, or archival behavior and needs no feature gate.
+
 ### Automation
 
 `python3 -m unittest scripts.docs_check_tests.test_development_workflow_skill -v`
 validates the mirrored policy, bounded watcher example, trusted-push
 ownership, concurrent monitoring, stale cancellation, and combined-Build
 replacement of the retired Full Matrix.
+
 ### Cleanup and limitations
 
 No cleanup is required. The test validates repository policy text and its
 fail-closed fixtures; it does not dispatch or wait for a live GitHub workflow
 and does not grant push credentials.
+
 ## TC-WORKFLOW-MANUAL-HANDOFF-001: Surface actionable manual testing and resume automatically
+
 - **Feature / originating issue:** `workflow-governance` /
   [issue #169](https://github.com/laqieer/fireemblem8-expansion/issues/169).
 - **Supported configuration or artifact:** clean source checkout with Python
@@ -286,7 +407,9 @@ and does not grant push credentials.
   [the canonical JSON contract](../../.github/manual-testing-handoff.json),
   development-workflow skill, contributor guide, this case, and registry
   unchanged.
+
 ### Actions
+
 1. Parse `.github/manual-testing-handoff.json` and validate every required key,
    value, enum, boolean, target, comment field, and the separately identified
    positive/control artifact roles with deterministic emulator screenshot or
@@ -310,11 +433,14 @@ and does not grant push credentials.
 6. Open the documented queue:
    [`repo:laqieer/fireemblem8-expansion is:open assignee:laqieer label:"waiting-for-manual-testing"`](https://github.com/laqieer/fireemblem8-expansion/issues?q=repo%3Alaqieer%2Ffireemblem8-expansion+is%3Aopen+assignee%3Alaqieer+label%3A%22waiting-for-manual-testing%22).
    When it is empty, do not schedule notifications or comments.
+
 ### Expected result
 
 The focused suite accepts the canonical JSON and its supported queue shapes.
 Human guidance links to that file without duplicating machine behavior.
+
 ### Lifecycle summary
+
 - **Eligibility:** Require a material visual, audio, or UX criterion. Require
   automation to be unreliable for that criterion.
 - **Activation:** Apply `waiting-for-manual-testing` to the originating issue
@@ -327,6 +453,7 @@ Human guidance links to that file without duplicating machine behavior.
   implementation PR. Remove the temporary `laqieer` assignment unless
   independently owned. Resume exact-candidate gates and merge automatically.
   A rejected result retains both holds and remains actionable.
+
 ### Negative control
 
 Every leaf mutation in the structured contract fails, including a missing
@@ -341,6 +468,7 @@ exceptions without a reason, rejected cleanup/resumption, premature
 rejected-state cleanup, empty-queue notifications, and invalid independently
 discovered issue/PR relationships. Reversing any lifecycle summary action or
 removing this case's own subsection also fails locally.
+
 ### Interactions and save compatibility
 
 The protocol depends on GitHub issues, pull requests, relationships, labels,
@@ -349,17 +477,20 @@ remain release-time evidence rather than tracked state. Cleanup history includes
 every labeled PR after closure or supersession; independent ownership may retain
 an assignee but never the handoff label. It changes no save, generated data,
 localization, ROM/RAM, debug/release, or archival behavior.
+
 ### Automation
 
 `python3 -m unittest scripts.docs_check_tests.test_development_workflow_skill -v`
 parses the JSON contract and exercises its schema, every semantic leaf,
 supported queue shapes, and fail-closed controls.
+
 ### Cleanup and limitations
 
 This source-only case changes no remote item and cannot make the subjective
 judgment itself. Live queue state and evidence remain in the relevant PR and
 issue rather than this repository.
 ## TC-WORKFLOW-STACKED-CI-001: Run exact Build CI on a genuine stacked PR base
+
 - **Feature / originating issue:** `workflow-governance` /
   [issue #171](https://github.com/laqieer/fireemblem8-expansion/issues/171).
 - **Supported configuration or artifact:** clean source checkout with Python
@@ -367,7 +498,9 @@ issue rather than this repository.
   request, workflow dispatch, ROM, or emulator is required.
 - **Prerequisites and clean starting state:** start at the repository root
   with `.github/workflows/build.yml` and the stacked-PR guidance unchanged.
+
 ### Actions
+
 1. Run
    `python3 -m unittest discover -s tests/workflows -p "test_*.py" -v`.
 2. Run
@@ -375,12 +508,14 @@ issue rather than this repository.
 3. Inspect the synthetic `opened`, child-head `synchronize`, `reopened`, and
    base-change `edited` pull-request fixtures, plus inline and block
    `branches` and `branches-ignore` mutations.
+
 ### Expected result
 
 The synthetic non-master-base pull request selects the mandatory
 `event-identity` setup before `event-router`, `event-classifier`, the existing
 `host-tests`, `build`, `extended-host-tests`, `legacy`, and fail-closed
 `summary` jobs.
+
 - **Parsed full-PR job set:** {`event-identity`, `event-router`,
   `event-classifier`, `host-tests`, `build`, `extended-host-tests`, `legacy`,
   `summary`}.
@@ -404,6 +539,7 @@ also runs for `opened`, `synchronize`, and `reopened`, but not `closed`,
 sufficient evidence: Build remains bound to `pull_request.head.sha`, and the
 base/tree evidence, child-only diff, and fresh gate results must all be
 verified.
+
 ### Negative control
 
 Adding inline or block `branches` or `branches-ignore` filters under
@@ -414,6 +550,7 @@ pushes, exposing the patch publisher to pull requests, weakening exact-head
 checkout verification, accepting an old child run after its parent head
 changes, or documenting a temporary base flip solely to trigger CI makes the
 focused suites fail.
+
 ### Interactions and save compatibility
 
 This source-only contract depends on the existing combined Build jobs, exact
@@ -423,6 +560,7 @@ or parent-head change, unsynchronized child branches, duplicate workflows,
 duplicate matrices, weakened permissions, and PR publication. It changes no save,
 generated data, localization, ROM/RAM,
 debug/release, or archival behavior and needs no feature gate.
+
 ### Automation
 
 `python3 -m unittest discover -s tests/workflows -p "test_*.py" -v` parses the
@@ -435,12 +573,15 @@ summary and publisher boundary.
 `python3 -m unittest scripts.docs_check_tests.test_development_workflow_skill -v`
 validates the genuine-stack workflow and rejects guidance that relies on a
 temporary base flip solely to trigger CI.
+
 ### Cleanup and limitations
 
 No cleanup is required. The case evaluates committed workflow and governance
 contracts without dispatching GitHub Actions; it does not prove live service
 availability or grant credentials.
+
 ## TC-WORKFLOW-BODY-EDIT-001: Suppress metadata-only Build workers
+
 - **Feature / originating issue:** `workflow-governance` /
   [issue #177](https://github.com/laqieer/fireemblem8-expansion/issues/177).
 - **Supported configuration or artifact:** clean source checkout with Python
@@ -453,7 +594,9 @@ availability or grant credentials.
   preserved `pre_fix_build.yml` parsed graph unchanged.
   The fixture declares that the current workflow has no explicit final
   dispatch surface.
+
 ### Actions
+
 1. Run
    `python3 -m unittest scripts.workflow_pilot.tests.test_event_classifier -v`.
 2. Run
@@ -503,6 +646,7 @@ availability or grant credentials.
    keeps canonical skipped `extended-host-tests`/`legacy` plus canonical
    skipped patch publication, and uses only the running metadata classifier
    attestation beyond those existing required names.
+
 ### Expected result
 
 Body-only, title-only, and combined body/title edits emit
@@ -662,6 +806,7 @@ independently valid PR-head or push fallback. With no classifier authority,
 the router performs no checkout and fails safely, the classifier fails, exact
 fallback workers plus any guarded push publisher run, and summary remains
 fail-closed.
+
 ### Negative control
 
 The preserved parsed pre-fix workflow fixture selects `host-tests`, `build`,
@@ -689,6 +834,7 @@ PR/push head, cross-event fallback, worker/publisher execution after classifier
 failure with no event SHA, summary success after any classifier failure, weakened
 exact-head checkout, body/template evolving evidence or marker placement, and
 source/target workflow mirror drift.
+
 ### Interactions and save compatibility
 
 This confirmed workflow-efficiency fix depends on issue #176's immutable
@@ -700,6 +846,7 @@ classifier execution, success-shaped defaults, mutable metric ledgers, and
 suppression of genuine stacked-PR base edits. It has no feature flag and no
 game/runtime, modern debug/release output, save, generated-data, localization,
 ROM/RAM, or archival impact.
+
 ### Automation
 
 `python3 -m unittest scripts.workflow_pilot.tests.test_event_classifier -v`
@@ -727,6 +874,7 @@ setup-only jobs, never 29th/30th/31st local gates.
 parses the frozen PR template/body and comment collection, requiring exactly
 one standalone canonical marker while rejecting missing, duplicate, inline,
 or body markers and every evolving body field.
+
 ### Cleanup and limitations
 
 The disposable sandbox is removed automatically. No remote state is read or
@@ -734,6 +882,7 @@ changed. The local replay proves GitHub's documented event-file semantics and
 the exact workflow graph contract, not live service availability. No
 manual-only criterion applies. Rollback is a normal revert; the prior broad
 `edited` behavior then resumes.
+
 ### Planned live title-only exercise after push
 
 The owner performs this validation-only remote exercise only after the
@@ -747,6 +896,7 @@ Run all commands below in one Bash session. The discovery helper snapshots all
 prior run IDs, then makes at most 60 attempts five seconds apart. It accepts
 exactly one unseen `Build CI` pull-request run created after the mutation with
 the exact branch and head; timeout or ambiguity fails before `gh run watch`.
+
 1. From the issue worktree, choose unused temporary names and create a direct
    child of the exact candidate branch with one deterministic tracked probe.
    Install cleanup before the first remote mutation:
@@ -1097,6 +1247,7 @@ the exact branch and head; timeout or ambiguity fails before `gh run watch`.
    test "$base_ref" = "$candidate_branch"
    test "$base_sha" = "$candidate_sha"
    ```
+
    Never use `git commit --allow-empty`, an empty commit, or a merge commit.
    The tracked probe is deterministic for the candidate SHA and the direct
    parent assertion proves the head is a strict nonempty descendant.
@@ -1116,6 +1267,7 @@ the exact branch and head; timeout or ambiguity fails before `gh run watch`.
      "repos/$repo/actions/runs/$opened_run_id/jobs" -f per_page=100 \
      | jq -s '.' > "$evidence_dir/opened-jobs.json"
    ```
+
    - **Parsed live opened-run job set:** {`event-identity`, `event-router`,
      `event-classifier`, `host-tests`, `build`, `extended-host-tests`, `legacy`,
      `patch-release`, `summary`}.
@@ -1141,6 +1293,7 @@ the exact branch and head; timeout or ambiguity fails before `gh run watch`.
      | jq -s '.' > "$evidence_dir/title-jobs.json"
    gh pr checks "$pr" --required > "$evidence_dir/title-required-checks.txt"
    ```
+
    - **Parsed live title-edit job/check set:** {`event-identity`,
      `event-router`, `metadata-classifier`, `host-tests`, `build`,
      `extended-host-tests`, `legacy`, `patch-release`, `summary`}.
@@ -1181,6 +1334,7 @@ the exact branch and head; timeout or ambiguity fails before `gh run watch`.
      | jq -s '.' > "$evidence_dir/restore-jobs.json"
    gh pr checks "$pr" --required > "$evidence_dir/restore-required-checks.txt"
    ```
+
    - **Parsed live title-restore job/check set:** {`event-identity`,
      `event-router`, `metadata-classifier`, `host-tests`, `build`,
      `extended-host-tests`, `legacy`, `patch-release`, `summary`}.
@@ -1368,6 +1522,7 @@ the exact branch and head; timeout or ambiguity fails before `gh run watch`.
    assert not failed_restore_result.eligible
    PY
    ```
+
    The title-only and restore runs alone prove the missing-full negative; the
    copied failed summary proves the failed-full negative without inventing a
    success-shaped fallback.
@@ -1377,6 +1532,7 @@ the exact branch and head; timeout or ambiguity fails before `gh run watch`.
    ```bash
    exit 0
    ```
+
    Cleanup restores the original title if necessary, closes without merging,
    deletes the exact remote ref only through a SHA compare-and-swap lease,
    removes the exact isolated worktree/local ref only when their head/ref match
@@ -1928,6 +2084,7 @@ There is no manual-only criterion. No ARM runtime test is needed because this
 is host-only delivery orchestration.
 
 ## TC-WORKFLOW-PILOT-BASELINE-001: Freeze reproducible pilot baseline and decisions
+
 - **Feature / originating issue:** `workflow-governance` /
   [issue #176](https://github.com/laqieer/fireemblem8-expansion/issues/176).
 - **Supported configuration or artifact:** clean source checkout with Python
@@ -1938,7 +2095,9 @@ is host-only delivery orchestration.
   `scripts/workflow_pilot/tests/fixtures/baseline.json`, and
   `scripts/workflow_pilot/reporter.py` unchanged. Remove any prior
   `build/test-artifacts/workflow-pilot` directory.
+
 ### Actions
+
 1. Run
    `python3 -m unittest discover -s scripts/workflow_pilot/tests -p 'test_*.py' -v`.
 2. Create `build/test-artifacts/workflow-pilot`, then run the documented
@@ -1997,6 +2156,7 @@ is host-only delivery orchestration.
     `a\n        ` environment adversary and require bounded completion with
     the same accepted/rejected structural results.
 12. Run `python3 scripts/check_docs.py --check`.
+
 ### Expected result
 
 Both reporter outputs are byte-identical canonical JSON and match
@@ -2059,6 +2219,7 @@ Each child uses only `/usr/bin/python3 -I` and the copied closed launcher with
 explicit sandbox/authority/check arguments; repository and user-site
 `sitecustomize.py` exit hooks cannot run first, and root/mode/check/extra
 argument mutations reject.
+
 ### Negative control
 
 The suite rejects a boundary record outside the snapshot, terminal/active
@@ -2091,6 +2252,7 @@ mixed proof semantic/restoration/reason/identity/time/kind/disposition state,
 and any unallowlisted fixture command.
 Build topology mutations also reject pilot commands hidden by `|| true`, `; true`,
 `&& true`, wrappers, substitutions, or changed redirections.
+
 ### Interactions and save compatibility
 
 Dependencies are none. Dependents are issues #177, #178, #179, #180, and
@@ -2098,6 +2260,7 @@ Dependencies are none. Dependents are issues #177, #178, #179, #180, and
 runtime/gameplay, configuration, save, generated game data, localization, or
 archival output. Modern debug, modern release, and archival impact are all
 none; there is no feature flag and no ROM/RAM or save-format impact.
+
 ### Automation
 
 `python3 -m unittest discover -s scripts/workflow_pilot/tests -p 'test_*.py' -v`
@@ -2151,6 +2314,7 @@ drift rejects before dry-run.
 
 `python3 scripts/check_docs.py --check` validates this complete procedure,
 registry ownership, links, and automation evidence.
+
 ### Cleanup and limitations
 
 Remove `build/test-artifacts/workflow-pilot`. No remote state was read or
@@ -2164,210 +2328,117 @@ criterion applies.
 
 Rollback is a normal revert of issue #176's dedicated commit; no workflow or
 game behavior needs a compensating change.
+
 ## TC-WORKFLOW-AGENT-HANDOFF-001: Validate bounded exact-SHA agent handoffs
+
 - **Feature / originating issue:** `workflow-governance` /
   [issue #178](https://github.com/laqieer/fireemblem8-expansion/issues/178).
-- **Supported configuration or artifact:** clean source checkout with
-  Python 3, Git, and a coordinator installation outside the candidate
-  worktree; no GitHub token, live PR/run, ROM, or emulator is required.
-- **Prerequisites and clean starting state:** start at the exact repository
-  root with the issue #176 reporter and the agent-handoff module unchanged.
-  Remove prior `build/test-artifacts/agent-handoff-*` test directories.
+- **Supported configuration or artifact:** source-only Linux checkout with the
+  [locked host Python environment](../workflow-pilot.md#isolated-host-python-dependencies),
+  Git and the reviewed v3 handoff tools. No token/live workflow, ROM or emulator.
+- **Prerequisites and clean starting state:** use the exact source root and
+  #176 baseline; create/probe #216's owned environment as documented. The
+  fixtures allocate only their own `build/test-artifacts/agent-handoff-*`
+  directories and harmless child processes. Do not clean another owner's data.
+
 ### Actions
-1. Run
-   `python3 -m unittest scripts.workflow_pilot.tests.test_agent_handoff -v`.
-2. Parse `scripts/workflow_pilot/agent_handoff.schema.json` with a draft
-   2020-12 JSON Schema validator. Validate one real generated handoff
-   document, its `history_authority`, and a sealed `prior_handoffs` receipt.
-   Reject unknown, missing, and wrong-type authority/history adversaries, and
-   confirm no live protocol section leaves a generic open object or array
-   placeholder. The published schema must reject the same representative
-   structural defects as the runtime, including bare `{}`/`[123]` placeholders
-   in delivery-graph, handoff, run/watcher, and coordinator-receipt sections.
-3. Inspect the temporary real-Git success fixture. Confirm its result is the
-   clean worktree `HEAD`, has exactly the assigned direct parent and expected
-   branch, changes only allowlisted paths within the numeric line budget, ends
-   in the exact Copilot trailer, supplies every acceptance/check/budget
-   evidence ID, and structurally derives zero ROM/RAM/protocol usage.
-   Confirm required checks use the closed non-shell contract and a sealed
-   receipt bound to exact argv, check ID, parent/candidate, worktree,
-   timestamps, exit code, output digest, and parent-blob/external-bootstrap
-   trust identity. Replace the candidate checker and add trailing whitespace;
-   the immutable parent checker must still fail. Remove the checker from the
-   parent and confirm the external bootstrap validator runs but trusted push
-   remains ineligible.
-   Set local `core.whitespace=-trailing-space`, hostile diff/textconv/alias
-   config, ambient global/system/external-diff controls, and tracked diff
-   attributes; trailing whitespace must still fail under the pinned argv.
-   Confirm nonempty local `.git/info/attributes` rejects. Mutate valid
-   signature text through nonzero pad-bit base64 aliases and same-width
-   RSA `s + n` representatives whose byte width still fits; both must reject
-   before verification can accept them. Apply the same alias mutation to
-   interruption-snapshot `content_base64` bytes in coordinator telemetry,
-   prior handoff history, and reporter replay rows; canonical records,
-   including a zero-byte snapshot with `content_base64: ""`, pass and aliased
-   rows reject. Signature fields remain nonempty. Replace `.git/info/attributes`
-   with a FIFO and confirm both repository-root validators reject it by
-   no-follow `lstat` before any Git command can block on it.
-   Run the focused `test_agent_handoff.RawDiffBoundaryTests` class: clean LF
-   and unchanged trailing blanks pass; CRLF, a newly added one-LF file, and
-   added EOF blanks fail. Create 4 MiB-plus-one-byte text and NUL-containing
-   blobs incrementally; isolated checker processes bounded to 128 MiB/8 CPU
-   seconds must reject before text materialization. Exercise linked worktrees
-   with relative/absolute `.git` and `commondir` paths; shared/private
-   attributes, grafts and alternates allow only absent/empty regular files.
-   Replace metadata and directory components with symlinks, FIFOs, directories,
-   malformed or oversized control files; intercept Git dispatch to prove
-   preflight rejection without letting Git consume those entries.
-   Execute both documented handoff examples without an installation environment
-   fallback and the schema-v2 reporter example with external trust/installation;
-   removing either reporter flag must fail. Pre-fix controls accept oversized
-   blobs, CRLF and one-LF files, miss shared metadata, and fail the public CLIs.
-4. Exercise the repeated-parent/stale, wrong-parent, unrelated-branch, dirty,
-   incomplete, missing-evidence, missing-trailer, out-of-scope, line-budget,
-   lifetime, and RSS fixtures. Confirm script-only diffs derive zero ROM, RAM,
-   and protocol usage. Confirm a whole one-second lifetime is accepted even
-   when its RFC 3339 endpoints include one-to-six fractional digits, while
-   1.9-second and other non-whole-second telemetry deltas reject before
-   integer truncation. Confirm the same strict UTC `Z` timestamp grammar in
-   both the published schema and the runtime; `+00:00` offsets and 7+ digit
-   fractions remain invalid. Then change a resource path and require a closed
-   build/map/resource receipt. Prove `ldscript.txt`, Makefiles, assets,
-   configuration, fonts, text, generated data, and every unclassified input
-   cannot derive zero. Change the parsed schema and require a monotonic
-   protocol version. Tampering telemetry/resource claims must reject.
-5. Exercise reused-owner and duplicate-watcher fixtures. Add an
-   implementation-owner push, comment, review-request, and CI-dispatch event
-   in separate trusted sources and confirm each rejects. Remove each from the
-   normalized coverage index and confirm omission detection. Require numeric
-   IDs for every owner/coordinator/event and reject missing or mixed mappings.
-   With separate local-bare owner and implementation roles, protect the stable
-   issue authority and independent anchor branches against deletion and
-   non-fast-forward updates. Bootstrap before a PR, append a handoff, then
-   append only an externally signed GitHub PR API response with exact
-   repository, PR number, `OPEN`/unmerged state, base/head/OIDs/times/user.
-   Compare stable repository/base-branch/head invariants to protected frozen
-   delivery/root/publication inputs, bind the live current base OID
-   separately, and require the frozen base to remain an ancestor of both the
-   live current base and the candidate head. Reject invented, closed, merged,
-   self-consistent-but-wrong fields, stale current-base observations,
-   rebinding, same-owner reuse, non-descendant/rewritten base, rollback,
-   replay, and ABA. Confirm one
-   preflighted `git push --atomic` publishes both refs; split/two-coordinator
-   plans and servers without atomic capability reject without partial state.
-   Model the 2026 ruleset response with `actor_type: User`, equal frozen
-   `actor_id`/`database_id`, and `bypass_mode: always`; reject a
-   `RepositoryRole` masquerading as the user. Before trusting fetched
-   authority/anchor refs, replace both refs with a self-consistent forged
-   genesis whose signer identity, ruleset ID, or non-user bypass actor set
-   drift from the external installation and confirm the reader rejects that
-   history before any fetched publication signature or ruleset response can
-   self-attest it.
-   Manually publish a forged protected bind commit that stores an old signed PR
-   observation beside a newer signed publication attestation and confirm
-   history reads, reporter verification, and live eligibility all reject the
-   mixed record. Then advance the delivery branch out-of-band to a new head
-   without sealing a new handoff, publish an otherwise internally valid
-   protected bind for that new head, and confirm the historical reader ties
-   the bind to the immediately prior sealed handoff candidate rather than the
-   live branch tip. Replay an older legitimately signed observation whose
-   `authority_object_id`/`anchor_object_id` point at the pre-handoff state and
-   confirm the bind derives those identities from the canonical prior
-   authority/anchor chain instead of the stored observation fields.
-   Manually publish a direct authority advance that keeps the carried sealed
-   receipt but swaps in forged receipt-only fields such as `assigned_at`,
-   `input_seal`, `git_seal`, and `result_seal`, refreshes the publication
-   digests, and omits the separately authenticated `history_carrier`.
-   Confirm the historical reader rejects that forged record before a successor
-   document can read the authority or become eligible. Then mutate bytes
-   inside an otherwise signed carrier document/result, refresh the publication
-   `history_carrier_digest`, and confirm readback still rejects because the
-   original handoff signatures and recomputed `make_history_receipt()` no
-   longer verify. In `bare-remote-config`, set either protected-ref force-push
-   or deletion allowance true and confirm installation trust fails before
-   authority bootstrap or handoff validation begins.
-6. Repoint the protected authority remote through a stalling transport and prove both authority reads and atomic-push preflight exit under an explicit wall-clock timeout, kill the whole process group, and stop after one bounded attempt rather than spinning retries or leaving an orphan helper. Apply the same bounded timeout/process-group cleanup to trusted-parent and bootstrap checker execution plus receipt re-verification. Then perform a real post-snapshot remote push to the delivery branch and confirm terminal remote reconciliation marks coverage incomplete before trusted push while reporter aggregation preserves the bundle rejection.
-7. Reconcile a direct watcher timeout with an authoritative successful
-   `github-actions-api` run. Then use an authoritative failed run plus a
-   watcher process error and confirm delivery remains failed.
-8. Exercise the SIGKILL/OOM fixture. Confirm kernel evidence names signal 9,
-   the interrupted check remains incomplete, and protected authority stores
-   content bytes plus path/mode/hash/status and the complete original
-   assignment contract. Clean the old worktree and commit the restored
-   `recovery.py` itself. Prove each preserved change is restored or explicitly
-   resolved; unrelated commits and tampered/lost content reject. Confirm sent-only,
-   sent/received, and sent/received/progressing prefixes report `in_progress`
-   without trusted/delivery eligibility. Equal, predated, and multiple
-   replacement assignments reject.
-9. Exercise coordinator-sealed availability. Reject future, stale, or post-assignment observations, expired coverage, and either enabled stop trigger. Accept only a fresh observation made before assignment and valid through the validation/lifecycle cutoff and unattended interval. Validate a once-valid signed coordinator receipt after the freshness window and confirm it remains historically authentic but loses live eligibility. Re-sign the receipt with wrong self-consistent repository IDs and confirm the installation/frozen-authority identity check rejects it. Confirm no HMAC/private key exists in the implementation namespace and permission modes grant no trust. The external consume store must advance its sequence/anchor, spend the nonce before authority push, and reject the same nonce's second call. An after-sign push invalidates the decision; local receipt-age checking provides no eligibility. Mutating scope, graph, handoffs/successors, metrics, PR/ruleset data, runs, watchers, or coverage invalidates the external asymmetric attestation. Live authority planning must revalidate receipt freshness at the planner's authoritative current time; `issued_at` rewind remains historical replay only. Manually publish a second forged protected bind commit whose stored live base OID was signed after the base branch was rewritten behind the frozen base and confirm history reads, reporter verification, and live eligibility all reject the rewritten-base record. Also publish wrong `handoff_sequence`/`head_seal` bind variants and confirm copied or stale carried handoff identity cannot substitute for the last sealed handoff.
-10. Parse the typed delivery graph. Confirm a merged parent makes child implementation ready while its exact-master Build is in progress and remote completion is pending; an unmerged parent blocks the child; a healthy pending watcher never appears in todo dependencies; terminal master failure requires active fix-forward/revert without rewriting the prior pending result; `child-implement -> parent-remote` rejects and names `child-implement -> parent-merge`; and parent completion, closure, and remote completion retain their own post-merge-Build edges. Bind every handoff to one exact child relationship/task and bind the parent Build task to one authoritative run SHA/status/conclusion. Reject issue `999`, blocked or done status relabels, and missing/duplicate relationships/tasks.
-11. Exercise reporter fixture schema version 2 with sequential root and review-successor bundles. Confirm original asymmetric attestation plus authority/anchor ancestry and the external one-time finalize signature over canonical source, result, outcomes, summary, and verified metrics, accepted/bundle-rejected/rejected, stale-response, lifetime, RSS, coordination-turn, and recovery-minute metrics without requiring old HEAD. Change RSS/outcomes/summary, recompute every unkeyed hash, and require signature failure. Reject hand-authored, double-finalized, tampered, and nonancestor rows. Confirm duplicate watchers, watcher-owner mismatches, and rejected remote-coverage envelopes surface as bundle-global rejection codes while otherwise accepted handoff rows normalize to `bundle_rejected` instead of accepted delivery. Confirm offline or relocated verification succeeds from the sealed record alone, while explicit live revalidation with the original repository root still enforces current authority ancestry and live Git facts. A structurally stale row must retain typed stale rejection state and can never self-mark `accepted` or `trusted_push_eligible`. Offline verification must take a signed `--implementation-handoff-trust` sidecar from outside the repository plus the separate external `--implementation-handoff-installation` root, and the signed anchor must bind `input_seal`, canonical authority digest, repository/ref identity, signer, and validity bounds.
-   For signed in-progress assignment prefixes, move the reporting cutoff two
-   hours beyond the last observed state. Maximum owner lifetime must remain
-   the verified telemetry value; the handoff remains ineligible for delivery.
-   Omit, replace or add process handoff IDs under complete remote coverage;
-   live validation and sealed-result replay must both reject the altered set.
-12. Run
-   `python3 -m unittest discover -s scripts/workflow_pilot/tests -p 'test_*.py' -v`,
-   `python3 -m unittest scripts.docs_check_tests.test_development_workflow_skill -v`,
-   and `python3 scripts/check_docs.py --check`.
+
+1. From the source root, run the focused suite with the inherited interpreter:
+
+   ```bash
+   build/host-python/bin/python3 -I -c 'import sys, unittest; sys.path.insert(0, "."); unittest.main(module=None)' \
+     scripts.workflow_pilot.tests.test_agent_handoff \
+     scripts.workflow_pilot.tests.test_coordinator_observations -v
+   ```
+
+2. Inspect the real-Git positive fixture: exact clean strict descendant, named
+   evidence, real raw-check exit/PID, measured owner exit/RSS, distinct native
+   dispatch/receipt/progress/delivery and Git commit observations. One and
+   multiple task commits pass. Merge an authorized exact upstream input with
+   no task trailers, plus a task commit with trailers: imported paths/history
+   pass without consuming task scope/line budget. An unrecorded merge rejects.
+3. Apply stale/wrong-parent/non-HEAD/unrelated result, dirty/conflicting tree,
+   missing trailers/evidence/checks, out-of-scope path, hidden index flags,
+   whitespace/checker replacement, and incremental line-budget controls.
+   Remove only the failing condition and confirm success returns. Candidate
+   `passed` fields and printed `exit 0` cannot replace a failing OS exit.
+4. Exercise actual parsed protocol and resource inputs. Unknown/non-host
+   resources, unquantified binary changes and ROM/RAM/protocol overages reject.
+   Schema/runtime controls reject unknown fields, duplicate scope/keys,
+   bad timestamps/types/enums, oversize/deep input and nonregular/symlink
+   metadata. Equivalent JSON ordering stays equivalent.
+5. Exercise dispatch-only and received-only native event streams. Confirm
+   `subagent.started`/transport success infer nothing; actual tool start
+   advances progress once. Replayed event cursors cannot multiply metrics.
+   Real process exit/RSS pass; opaque/reused identities, missing complete RSS,
+   lifetime/RSS overage and repeated committed-owner work do not pass.
+6. Reserve duplicate/overlapping owners/watchers and attempt a second state
+   writer: each rejects. Record an implementation-owner prohibited remote
+   action and confirm rejection. This is operational/role-policy checking,
+   not authentication against a hostile same-UID process.
+7. Use the exact GitHub run-response fixtures through the production query
+   adapter. Watcher timeout plus authoritative success stays success;
+   failure/cancellation stays failure, in-progress stays pending, API errors
+   and wrong run/attempt/head stay unknown. No watcher status substitutes for
+   the run. A replacement cannot overlap a still-live watcher.
+8. Kill only the fixture's owned child and inspect inert matching kernel
+   evidence. Preserve exact staged/unstaged/untracked bytes, mode and index;
+   confirm the original linked worktree is locked and reused by one replacement,
+   with the running check incomplete. Missing OOM authority stays unknown.
+   A live owner, lost retention state or second replacement rejects without
+   resetting/deleting the worktree or copying it into a new recovery engine.
+9. Exercise explicit availability plans and always-on observations. Enabled
+   stop triggers without a plan, expired/future coverage and a detected
+   suspend/boot change reject. A declared plan is not an uptime guarantee.
+10. Execute the [documented production CLI](../workflow-pilot.md#coordinator-integration-and-commands)
+    against the generated state/result: clean positive exits 0; the dirty
+    negative exits 2. Removed publication verbs reject. Exercise optional
+    reporting, confirm stale/incomplete and unknown RSS remain visible, and
+    confirm baseline v1 without the option remains unchanged.
+
 ### Expected result
 
-Only the exact clean one-commit descendant with a parent-trusted checker, terminal external asymmetric attestation, complete through-eligibility coverage, exact live ruleset/PR responses, fresh current-time receipt validation, matching repository identity, and atomically protected monotonic authority reaches `trusted_push_eligible`. Assignment sent, received, progressing, committed, and handed-off remain distinct timestamped states. A committed result closes its implementation owner. Later review fixes use a linear, nonoverlapping `review_successor`; OOM uses a distinct `oom_replacement`. The normalized input, Git, and result seals are deterministic. Required checks execute only a closed structured contract; passed labels do not replace its exact receipt or rerun. The actual safe pass fixture succeeds, while the safe trailing-whitespace failure plus literal `false`, stale/wrong-command/SHA/worktree/timestamp receipts reject. Canonical base64 pad-bit aliases and same-width RSA representatives at or above the modulus also reject. Hostile local/global/system/env Git configuration cannot change that outcome.
+Only an exact, clean, scoped, measured local handoff is ready. Task-owned
+first-parent commits carry both Copilot trailers; authorized imported upstream
+history does not need this session's trailers. Each lifecycle state has a
+separate actual observation. Ownership and watcher reservations are exclusive,
+the implementation owner retires, and one interrupted-worktree replacement is
+bounded. GitHub remains CI authority. No validation result publishes anything
+or satisfies the separate full-PR/final delivery gates.
 
-The watcher timeout records process failure while preserving authoritative CI success. The true failed run records authoritative failure and cannot become delivery-eligible. The OOM fixture persists a sealed interruption snapshot and lets a later clean completed replacement validate only after content-bearing bytes/modes are restored or explicitly resolved. Exactly one issue root and one causal successor chain are allowed. All actor identities are numeric and authoritative.
-
-The issue-scoped authority exists before PR creation. Its immutable binding retains no-PR history and rejects owner reuse after binding. Frozen base provenance stays in `delivery_expectation.immediate_base_oid`, while the binding separately records the live current base OID and requires the frozen base to remain its ancestor. Authority and anchor branches advance in one atomic direct-parent push under an exact signed live ruleset response. A stable read requires equal authority/anchor OIDs around fetch and at the final eligibility check, plus an exact match between the fetched authority chain and the verified external installation for signer identity/public material digest, ruleset ID, bypass actors, and frozen delivery identities; rollback, replay, ABA, stale state, stale current-base observations, mixed signed observations/publications, non-descendant rewritten base, and unverified protection reject. The reader recomputes the stored PR binding digest and publication binding expectation from the stored binding plus frozen delivery/current-base fields before accepting the bind event, requires the stored bind head plus attested bind head to match the immediately prior sealed handoff candidate carried by the current `handoff_sequence`/`head_seal`, derives `pr_binding.authority_object_id` from the canonical `previous_object_id`, derives `pr_binding.anchor_object_id` from the exact prior canonical anchor record instead of copied observation fields, and detects omitted push/comment/review/dispatch events through the coordinator receipt's event-source union. Incomplete GitHub coverage succeeds only with a credentialless network-denied process interval. Timed-out authority `ls-remote`, fetch, and atomic-preflight Git transport commands exit through the bounded lifecycle budget, kill their process group, and surface typed timeout failures instead of retrying indefinitely. Final eligibility also rechecks the protected authority refs and the relevant live delivery/base refs, so a post-snapshot remote push cannot race past the signed collector snapshot.
-
-The typed dependency graph reports `child-implement` ready as soon as `parent-merge` is done, independently of a healthy running master watcher and pending parent completion/closure/remote tasks. An unmerged parent blocks the child. Terminal master failure activates `fix_forward_revert`, but does not retroactively make the earlier pending watcher a valid reason to idle. Completion, closure, and remote completion for the parent remain blocked by its own post-merge Build. Each handoff has exactly one issue/PR/candidate/status-matched relationship and implementation task. All task statuses obey their dependencies. The parent Build task's exact SHA, status, and conclusion come from its authoritative run; active or failed state keeps parent delivery ineligible while leaving an already merged child contract implementation-ready.
-
-The issue #176 reporter consumes version 2 normalized handoff evidence, validates the public handoff schema against real authority/history examples, rejects unsatisfied closed definitions, and reports accepted/bundle-rejected/rejected/interrupted/in-progress counts together with rejection codes, stale responses, maximum owner lifetime and RSS, coordination turns, and recovery cost only from coordinator telemetry. `verify_reporter_record()` replays canonical handoff rows before trusting the finalize signature. When a bundle-level watcher, remote-coverage, or authoritative-run defect accompanies a locally rejected handoff, the reporter retains both the local and bundle/global rejection codes without double-counting the outcome class, and an otherwise accepted row becomes `bundle_rejected` instead of accepted delivery. Git derives line usage, parsed schema derives protocol changes, and only exact proven host-only paths derive zero ROM/RAM; all other tracked inputs require closed dependency-bound build/map/resource evidence. Its frozen version 1 baseline, expected values, seals, lifecycle, trusted-push, and centralized-watcher contracts are unchanged. Historical version 2 accepts no hand-authored aggregate: offline or relocated verification replays the sealed record structure without consulting the old worktree HEAD, while explicit live revalidation with the original repository root still verifies current protected ancestry and live Git facts. Stale-response is itself one of those offline structural rejection facts, so a stored accepted/trusted summary cannot override it.
 ### Negative control
 
-Each stale/repeated SHA, non-direct or wrong parent, wrong branch/worktree, dirty/conflicted tree, missing commit/trailer/evidence, failed or interrupted required evidence, out-of-scope path, unquantified or over-limit lines, ROM/RAM/protocol overage, lifetime/RSS excess, duplicate owner/coordinator/watcher, stale run, implementation-owner remote action, missing/multiple OOM replacement, reused replacement owner, lost preserved path, completed interrupted test, host-process action, unavailable local coordinator, unknown field/enum/rejection, duplicate JSON key, and incoherent reporter record fails closed. Watcher process success cannot replace a nonterminal or failed authoritative run, and a watcher timeout cannot turn authoritative success into failure. A code/contract edge to parent remote completion, missing parent merge edge, watcher-as-todo dependency, missing parent post-merge gate, or terminal failure without active fix-forward/revert also rejects. Issue/task/status relabeling, arbitrary commands, forged or stale check receipts, hand-authored reporter rows, owner-history chain mutation, missing/mixed actor IDs, omitted remote events, incomplete source coverage, claim tampering, future/stale availability, stale live receipt timestamps, mismatched receipt repository IDs, local HMAC/self-attestation, post-coverage events, allowed-scope/run/watcher mutation, unrelated ruleset IDs, wrong patterns, unexpected or role-typed user bypasses, signer/ruleset/non-user-bypass installation drift, invented/closed/merged PR observations, replayed consume nonce, after-sign pushes, rehashed result metrics, split/non-atomic publication, overlapping review successors, lost recovery bytes, zero-impact linker claims, noncanonical base64 pad-bit aliases, same-width RSA `s + n`
-signature aliases, post-snapshot remote delivery/base ref moves, nonancestor
-history, and unverified protection reject
-independently. A missing/reset canonical authority or anchor branch, hostile
-Git config or local attributes, unbounded stalled transport retries, or an
-orphaned transport helper, incomplete-prefix rejection, and equal/predated/
-multiple OOM replacement also fail their dedicated controls. Mid-read
-movement retries, repeated movement fails `authority-moved`, and movement
-after the read but before eligibility
-invalidates the sealed dual-ref observation. Parentless checker bootstrap,
-authority rollback/replay/ABA, PR rebinding, swapped stored bind digests,
-replayed publication binding expectations, out-of-band bind heads, copied
-anchors/seals/sequences, stale signed authority observations, and a second
-issue root also fail. Historical reporter verification still requires the
-external finalize signature and never recreates live trusted-push eligibility
-from an old receipt; current ancestry and live Git facts return only when the
-original repository root is supplied for revalidation.
+Each adversary above fails or remains explicitly unknown/incomplete.
+Runtime-check mutation must fail even if command/pass labels are preserved.
+Equivalent source/JSON wording or order does not affect semantic evidence.
+There is no disabled gameplay profile: omitting optional handoff reporting
+preserves the baseline v1 report. No manual-only criterion applies.
+
 ### Interactions and save compatibility
 
-Dependency: issue #176. Dependent: issue #181. Conflicts: none with existing
-trusted owner pushes or one centralized direct watcher per exact run. This
-source-only contract changes no modern debug/release ROM, runtime/gameplay,
-save format, generated game data, localization, ROM/RAM content, or archival
-lane. No feature flag, migration, or manual criterion applies.
+Depends on #176 and #216/#217's locked test environment; dependent #181.
+#179 is independent and #205/#211 is not required. Conflicts are stale/duplicate
+ownership and the removed broker format. Preserve #199 metadata events,
+#207 immediate publication, #208 cleanup and all original final gates.
+No ROM/RAM content, save/configuration, locale, generated game data, modern
+debug/release or archival behavior changes.
+
 ### Automation
 
-`python3 -m unittest scripts.workflow_pilot.tests.test_agent_handoff -v`
-creates bounded temporary repositories below `build/test-artifacts/`, derives
-real ancestry/branch/diff/worktree/trailer facts with the issue #176 clean Git
-boundary, executes only the closed safe check runner, verifies receipts, and
-uses a protected local bare remote plus separate owner/implementation and
-coordinator-installation directories to exercise deterministic
-bootstrap/advance/bind plans, normal fast-forward updates, explicit fetch,
-rollback/replay/ABA, stable/moving read boundaries, bounded exhaustion, and
-eligibility-token revalidation. It performs no GitHub mutation. The complete
-`scripts/workflow_pilot/tests` discovery reruns the frozen issue #176 reporter
-regressions. Parsed task/dependency/watcher fixtures compute readiness and
-required edges rather than asserting policy wording. The workflow-governance
-and docs checks validate this indexed procedure and preserve the trusted-push
-and centralized-watcher policy.
+The focused command above runs real Git/process/raw-check/CLI tests plus
+independent Draft 2020-12 positive/adversarial schema validation.
+`test_reporter.BaselineFixtureTests` and the existing isolated-lifecycle
+launcher test cover unchanged v1 neighbors. The existing development-workflow
+and catalog tests check both case mirrors and the public CLI mapping. Full
+Build CI remains the comprehensive integration gate; no ROM build or broad
+local suite is needed for this source-only change.
+
 ### Cleanup and limitations
 
-Temporary repositories are removed automatically. The tests model complete
-GitHub source responses, SIGKILL/OOM kernel evidence, coordinator runtime
-telemetry, and availability as inert sealed fixtures; they
-do not mutate GitHub, allocate destructive memory, signal a process, change
-Dev Box settings, or kill any host process. No manual-only criterion applies.
+Each fixture removes its own directories and reaps only its own children.
+No real OOM pressure, Dev Box setting, unrelated process or GitHub state is
+changed. Raw kernel/GitHub responses use inert fixtures at external boundaries;
+the production file/process/query adapters themselves run in the tests.
+Opaque runtime handles cannot certify exit/RSS; a missing real observation
+remains an explicit hold, never an authenticated label or invented backend.
+Revert the dedicated #178 change on regression.

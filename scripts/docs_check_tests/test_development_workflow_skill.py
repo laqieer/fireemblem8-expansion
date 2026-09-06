@@ -46,10 +46,6 @@ MANUAL_HANDOFF_CASE_HEADING = (
     "TC-WORKFLOW-MANUAL-HANDOFF-001: "
     "Surface actionable manual testing and resume automatically"
 )
-AGENT_HANDOFF_CASE_HEADING = (
-    "TC-WORKFLOW-AGENT-HANDOFF-001: "
-    "Validate bounded exact-SHA agent handoffs"
-)
 STACKED_CI_CASE_HEADING = (
     "TC-WORKFLOW-STACKED-CI-001: "
     "Run exact Build CI on a genuine stacked PR base"
@@ -2735,170 +2731,27 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
         )
 
     def test_bounded_exact_sha_agent_handoff_is_indexed(self):
-        _, skill = read_skill()
-        for requirement in (
-            "Bounded exact-SHA implementation handoffs",
-            "scripts.workflow_pilot.agent_handoff",
-            "assignment_sent",
-            "assignment_received",
-            "progressing",
-            "committed",
-            "handed_off",
-            "sole direct parent is the assigned SHA",
-            "A committed handoff closes that owner",
-            "at most one direct watcher for an exact run identity",
-            "authoritative GitHub Actions run",
-            "SIGKILL/OOM",
-            "one `oom_replacement`",
-            "both stop triggers disabled",
-            "`code_contract` dependency",
-            "parent `merge` task is `done`",
-            "must never be a todo or dependency target",
-            "`child-implement -> parent-remote`",
-            "`child-implement -> parent-merge`",
-            "closed structured check contracts",
-            "never executes a caller-authored command",
-            "Every handoff maps to exactly one relationship",
-            "Every task state",
-            "authoritative GitHub run ID",
-            "immutable numeric GitHub IDs",
-            "Missing IDs",
-            "sealed hash chain",
-            "Exactly one root exists",
-            "one linear chain",
-            "isolated external asymmetric signer",
-            "credentialless, network-denied",
-            "observation must be fresh at validation",
-            "complete source handoff document",
-            "external finalize signature",
-            "pins the complete behavior-affecting `-c` policy",
-            "Local attributes are forbidden",
-            "assigned parent's exact raw-diff-checker blob",
-            "explicit bootstrap mode",
-            "stable issue-scoped protected branch",
-            "exact externally signed GitHub PR API response",
-            "`git push --atomic`",
-            "never emits a force-capable command",
-            "second protected branch",
-            "`actor_type: User`",
-            "`actor_id` and `database_id`",
-            "`bypass_mode: always`",
-            "`RepositoryRole`",
-            "independently frozen in protected genesis/root assignment",
-            "`delivery_expectation.immediate_base_oid` as frozen provenance",
-            "bind the live current base OID separately",
-            "frozen base to be an ancestor of both the live current base and the candidate head",
-            "monotonic consume sequence/anchor",
-            "second call with that nonce rejects",
-            "unkeyed `result_seal` is integrity-only",
-            "rollback and authority A-to-B-to-A ABA",
-            "bounded before/fetch/after transaction over both",
-            "retry from the new pair",
-            "fail `authority-moved`",
-            "Re-query the sealed dual-ref observation",
-            "recompute the stored PR binding digest",
-            "binding_expectation` to match the stored frozen delivery plus stored live current-base fields",
-            "re-check that the frozen base remains an ancestor of the stored live base OID",
-            "immediately prior sealed handoff candidate",
-            "current `handoff_sequence`/`head_seal`",
-            "stored observation's `authority_object_id` from the bind commit's canonical `previous_object_id`",
-            "stored observation's `anchor_object_id` from the exact prior canonical anchor record",
-            "stale signed observation replays",
-            "out-of-band branch advances",
-            "copied anchors/seals/sequences",
-            "same narrow freshness window as live PR/publication observations",
-            "receipt repository IDs/full names must match the installation manifest and frozen delivery expectation",
-            "requires closed build/map/resource evidence",
-            "from telemetry",
-            "Replacement lifecycle prefixes",
-            "strictly later than the interruption",
-            "TC-WORKFLOW-AGENT-HANDOFF-001",
-        ):
-            with self.subTest(requirement=requirement):
-                self.assertIn(normalize_policy(requirement), normalize_policy(skill))
-
-        project_instructions = COPILOT_INSTRUCTIONS_PATH.read_text(
-            encoding="utf-8"
-        )
-        for requirement in (
-            "Delivery dependencies are typed",
-            "parent merge is done",
-            "must not depend on the parent's post-merge Build",
-            "Async watcher state is orthogonal",
-            "must never be a todo dependency",
-            "terminal failed master run starts fix-forward/revert work",
-            "matching issue, PR, candidate, and lifecycle-derived status",
-            "closed structured non-shell contracts",
-            "One root owner exists for each issue authority",
-            "external finalize operation signs the complete canonical",
-            "asymmetric attestation signed by an isolated external service",
-            "issue-scoped protected authority branch",
-            "externally signed GitHub PR API response",
-            "`git push --atomic`",
-            "restricted updates/non-fast-forwards/deletion",
-            "dual-ref observation check",
-            "rollback, and ABA",
-            "exact checker blob from the assigned parent",
-            "external coordinator installation",
-            "credentialless, network-denied process",
-            "through the consume instant",
-            "GitHub `User` bypass records",
-            "`RepositoryRole` IDs are roles",
-            "independent delivery values frozen",
-            "recompute the stored PR binding digest",
-            "binding_expectation` to match the stored frozen delivery plus stored live current-base fields",
-            "re-check that the frozen base remains an ancestor of the stored live base OID",
-            "immediately prior sealed handoff candidate",
-            "current `handoff_sequence`/`head_seal`",
-            "stored observation's `authority_object_id` from the bind commit's canonical `previous_object_id`",
-            "stored observation's `anchor_object_id` from the exact prior canonical anchor record",
-            "stale signed observation replays",
-            "out-of-band branch advances",
-            "copied anchors/seals/sequences",
-            "`delivery_expectation.immediate_base_oid` as frozen provenance",
-            "bind the live current base OID separately",
-            "frozen base to be an ancestor of both the live current base and the candidate head",
-            "spent-nonce store",
-            "second call fails before authority publication",
-            "unkeyed result hash is integrity-only",
-            "same narrow freshness window as live PR/publication observations",
-            "receipt repository IDs/full names must match the installation manifest and frozen delivery expectation",
-            "checker pins whitespace/config behavior",
-            "sent/received/progressing prefixes",
-            "strictly later than interruption",
-        ):
-            with self.subTest(project_requirement=requirement):
-                self.assertIn(
-                    normalize_policy(requirement),
-                    normalize_policy(project_instructions),
-                )
-
-        governance = WORKFLOW_GOVERNANCE_PATH.read_text(encoding="utf-8")
-        case = "\n".join(
-            read_markdown_section(governance, AGENT_HANDOFF_CASE_HEADING)
-        )
-        for heading in (
-            "Actions",
-            "Expected result",
-            "Negative control",
-            "Interactions and save compatibility",
-            "Automation",
-            "Cleanup and limitations",
-        ):
-            with self.subTest(heading=heading):
-                self.assertTrue(read_markdown_section(case, heading))
-
         registry = json.loads(TEST_CASE_REGISTRY_PATH.read_text(encoding="utf-8"))
-        indexed_case = next(
-            item
-            for item in registry["cases"]
-            if item["id"] == "TC-WORKFLOW-AGENT-HANDOFF-001"
-        )
-        self.assertEqual(indexed_case["feature_id"], "workflow-governance")
-        self.assertEqual(
-            indexed_case["document"],
-            "docs/test-cases/workflow-governance.md",
-        )
+        case_id = "TC-WORKFLOW-AGENT-HANDOFF-001"
+        case = next(item for item in registry["cases"] if item["id"] == case_id)
+        feature = next(item for item in registry["features"] if item["id"] == case["feature_id"])
+        self.assertIn(case_id, feature["required_cases"])
+        self.assertEqual(case["feature_id"], "workflow-governance")
+        document = ROOT / case["document"]
+        section = "\n".join(read_markdown_section(
+            document.read_text(encoding="utf-8"),
+            "TC-WORKFLOW-AGENT-HANDOFF-001: Validate bounded exact-SHA agent handoffs",
+        ))
+        for heading in ("Actions", "Expected result", "Negative control", "Interactions and save compatibility",
+                        "Automation", "Cleanup and limitations"):
+            self.assertTrue(read_markdown_section(section, heading))
+        for evidence in case["automation"]:
+            self.assertTrue((ROOT / evidence["evidence"]).is_file())
+        _, skill = read_skill()
+        self.assertTrue(read_markdown_section(skill, "Bounded exact-SHA implementation handoffs"))
+        self.assertTrue(read_markdown_section(
+            COPILOT_INSTRUCTIONS_PATH.read_text(encoding="utf-8"), "Bounded exact-SHA implementation handoffs",
+        ))
 
     def test_immediate_publication_protocol(self):
         _, text = read_skill()
@@ -4794,6 +4647,7 @@ printf '%s\t%s\t%s\n' "$result" \
             if item["id"] == "workflow-governance"
         )
         expected_cases = [
+            "TC-WORKFLOW-HOST-PYTHON-DEPS-001",
             "TC-WORKFLOW-WORKTREE-CLEANUP-001",
             "TC-WORKFLOW-IMMEDIATE-PUSH-001",
             "TC-WORKFLOW-CI-WAIT-001",
@@ -4802,7 +4656,6 @@ printf '%s\t%s\t%s\n' "$result" \
             "TC-WORKFLOW-BODY-EDIT-001",
             "TC-WORKFLOW-METADATA-EDIT-RACE-001",
             "TC-WORKFLOW-PILOT-BASELINE-001",
-            "TC-WORKFLOW-AGENT-HANDOFF-001",
         ]
         self.assertEqual(
             [],

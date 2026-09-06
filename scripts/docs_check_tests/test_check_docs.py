@@ -986,6 +986,15 @@ class TesterCaseRegistryTests(unittest.TestCase):
             "workflow-governance": {
                 "reference": ".github/skills/development-workflow/SKILL.md",
                 "cases": {
+                    "TC-WORKFLOW-HOST-PYTHON-DEPS-001": {
+                        "document": "docs/test-cases/workflow-governance.md",
+                        "commands": {
+                            "build/host-python/bin/python3 -I -m unittest discover "
+                            "-s scripts/workflow_pilot/tests -t . -p test_host_python.py -v",
+                            "python3 -m unittest tests.workflows.test_build_ci_topology "
+                            "tests.upstream_port.test_verify.VerifyGatesMirrorWorkflowTests -v",
+                        },
+                    },
                     "TC-WORKFLOW-WORKTREE-CLEANUP-001": {
                         "document": "docs/test-cases/workflow-governance.md",
                         "commands": {
@@ -1061,6 +1070,17 @@ class TesterCaseRegistryTests(unittest.TestCase):
                             "test_development_workflow_skill -v",
                         },
                     },
+                    "TC-WORKFLOW-AGENT-HANDOFF-001": {
+                        "document": "docs/test-cases/workflow-governance.md",
+                        "commands": {
+                            "build/host-python/bin/python3 -I -c "
+                            "'import sys, unittest; sys.path.insert(0, \".\"); unittest.main(module=None)' "
+                            "scripts.workflow_pilot.tests.test_agent_handoff "
+                            "scripts.workflow_pilot.tests.test_coordinator_observations -v",
+                            "python3 -m unittest scripts.docs_check_tests.test_development_workflow_skill."
+                            "DevelopmentWorkflowSkillTests.test_bounded_exact_sha_agent_handoff_is_indexed -v",
+                        },
+                    },
                     "TC-WORKFLOW-PILOT-BASELINE-001": {
                         "document": "docs/test-cases/workflow-governance.md",
                         "commands": {
@@ -1068,20 +1088,6 @@ class TesterCaseRegistryTests(unittest.TestCase):
                             "scripts/workflow_pilot/tests -p 'test_*.py' -v",
                             "python3 -m unittest discover -s "
                             "tests/workflows -p 'test_*.py' -v",
-                            "python3 scripts/check_docs.py --check",
-                        },
-                    },
-                    "TC-WORKFLOW-AGENT-HANDOFF-001": {
-                        "document": "docs/test-cases/workflow-governance.md",
-                        "commands": {
-                            "python3 -m unittest "
-                            "scripts.workflow_pilot.tests."
-                            "test_agent_handoff -v",
-                            "python3 -m unittest discover -s "
-                            "scripts/workflow_pilot/tests -p 'test_*.py' -v",
-                            "python3 -m unittest "
-                            "scripts.docs_check_tests."
-                            "test_development_workflow_skill -v",
                             "python3 scripts/check_docs.py --check",
                         },
                     },

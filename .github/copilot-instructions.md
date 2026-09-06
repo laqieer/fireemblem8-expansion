@@ -4,6 +4,12 @@ This is a ROM-hack base derived from the **Fire Emblem: The Sacred Stones**
 (GBA) decompilation. The expansion output is not required to be byte-identical
 to the original ROM.
 
+In this repository, check new prerequisites against the original user goal and
+accepted threat model. Prefer existing mechanisms. Do not turn optional hardening
+or problems introduced by an implementation choice into mandatory blockers;
+simplify or separate them while preserving real safety requirements and final
+delivery gates.
+
 ## Build
 
 This repository's default, supported path is the **modern
@@ -79,113 +85,6 @@ dependent todos for commit, push, CI, and issue closure at the start of such a
 task. Memory is advisory context; these executable gates are the completion
 authority.
 
-Delivery dependencies are typed. A child issue's `code_contract`
-implementation dependency is satisfied when the parent merge is done and the
-target tree contains the contract; it must not depend on the parent's
-post-merge Build, evidence/closure, or remote-completion task. Those remain
-`delivery_gate` dependencies for completing and closing the parent itself.
-Async watcher state is orthogonal and must never be a todo dependency. While a
-healthy exact-master watcher is pending, immediately continue every
-dependency-ready child or independent task. A terminal failed master run
-starts fix-forward/revert work, but cannot retroactively justify idle waiting
-during its earlier pending state.
-
-Each bounded implementation handoff must map to exactly one typed child
-relationship and implementation task with matching issue, PR, candidate, and
-lifecycle-derived status. Bind parent post-merge Build state to its
-authoritative exact-SHA workflow run. Required checks use only closed
-structured non-shell contracts with sealed execution receipts; never execute
-a caller-authored command or trust a passed label without rerunning its safe
-contract.
-
-Use immutable numeric GitHub IDs for every owner, coordinator, and remote
-event. One root owner exists for each issue authority. A closed commit may
-have one nonoverlapping `review_successor`; an interrupted current owner may
-have one `oom_replacement`. Both edges are linear, causal, fresh-owner
-transitions. Reporter v2 separates live eligibility from historical metrics:
-an external finalize operation signs the complete canonical source document,
-validation result, summary, outcomes, and verified metrics. The unkeyed result
-hash is integrity-only. Historical verification requires that signature and
-authority/anchor ancestry without the old worktree HEAD.
-
-Create the issue-scoped protected authority branch before a PR exists and
-never rename or reset it at PR creation. Bind the eventual PR by appending an
-immutable, externally signed GitHub PR API response containing state `OPEN`,
-unmerged status, repository, number, base/head branches and OIDs, head
-repository, creation/observation times, and coordinator numeric ID. Compare it
-to independent delivery values frozen in protected genesis/root assignment
-and the pre-observation publication request, never to fields copied from the
-response itself. Keep `delivery_expectation.immediate_base_oid` as frozen
-provenance, bind the live current base OID separately, and require the frozen
-base to be an ancestor of both the live current base and the candidate head.
-Every authority and independent anchor
-update is one normal `git push --atomic` transaction after atomic-capability
-preflight; both commits directly parent the observed pair. Split or stale
-plans reject. A terminal signed GitHub ruleset API response must prove active
-exact-branch targeting, restricted updates/non-fast-forwards/deletion, and
-only expected GitHub `User` bypass records whose `actor_id` and `database_id`
-both equal the frozen coordinator user ID with exact `always` mode.
-`RepositoryRole` IDs are roles, not users; other types require a separately
-typed frozen authorization and default to rejection. Bounded
-remote-OID-before/fetch/remote-OID-after reads and a final dual-ref
-observation check reject replay, rollback, and ABA. Historical reads also
-recompute the stored PR binding digest and the exact canonical digest of each
-sealed history receipt. Every protected handoff commit also carries one
-bounded private `history_carrier` containing the exact signed handoff
-document, the canonical validation result, and the selected handoff ID;
-readback re-verifies the original coordinator, PR, and authority signatures,
-replays `make_history_receipt()` from that carrier, and requires the signed
-publication attestation's `history_carrier_digest` and
-`history_receipt_digest` to match the full carried carrier and receipt bytes
-rather than a projected event subset. Returned authority snapshots keep
-`history_carrier: null` so later handoff documents do not recursively embed
-older carriers. Historical reads also require the signed publication
-attestation's `binding_expectation` to match the stored frozen delivery plus
-stored live current-base fields, and re-check that the frozen base remains an
-ancestor of the stored live base OID. The stored `pr_binding.head_oid`, its
-digest, and `binding_expectation.head_oid` must all match the immediately
-prior sealed handoff candidate carried by the current
-`handoff_sequence`/`head_seal`. Derive the stored observation's
-`authority_object_id` from the bind commit's canonical `previous_object_id`.
-Derive the stored observation's `anchor_object_id` from the exact prior
-canonical anchor record, never from copied observation fields. Swapped signed observations/publications,
-stale signed observation replays, out-of-band branch advances, copied
-anchors/seals/sequences, and rewritten bases fail even when each record is
-individually valid.
-
-Allowed Git checks execute the exact checker blob from the assigned parent,
-not the candidate worktree. If that parent predates the checker, an external
-coordinator installation must supply it; this bootstrap result is explicitly
-ineligible for `trusted_push_eligible` until the checker is merged. The raw
-checker pins whitespace/config behavior and disables external diff, textconv,
-local attributes, and ambient configuration bypasses.
-
-Remote-action, availability, resource, OOM snapshot, RSS, lifetime,
-coordination-turn, dependency graph, handoff, run, and watcher evidence comes
-only from an asymmetric attestation signed by an isolated external service
-whose private key is absent from the implementation namespace. Local HMACs
-and permission modes establish no trust. The external service maintains a
-monotonic consume sequence/anchor and spent-nonce store. One atomic operation terminates
-the implementation process, performs final timeline/run/ref/audit collection
-through the consume instant, decides, spends the nonce, and returns the signed
-decision; a second call fails before authority publication. Local receipt-age
-checks cannot turn a preissued receipt into eligibility; the live receipt must
-satisfy the same narrow freshness window as live PR/publication observations,
-and receipt repository IDs/full names must match the installation manifest and
-frozen delivery expectation. Any after-sign remote mutation invalidates the
-decision. Incomplete coverage requires a credentialless, network-denied
-process.
-
-OOM history stores content-bearing file bytes, modes, hashes, original
-assignment/scope/criteria/checks/budgets, and status in the protected
-authority event. A completed replacement must restore every preserved change
-or carry an attested explicit resolution mapping. Only exact proven host-tool
-paths derive zero resource impact; linker scripts, Makefiles, assets, configs,
-fonts, text, generated data, and every unclassified tracked input require a
-closed build/map/resource receipt.
-Sent/received/progressing prefixes remain non-eligible replacement progress,
-and the replacement assignment must be strictly later than interruption.
-
 Every new task commit, including WIP/checkpoints, must be owner-pushed
 immediately. Do not wait for reviews, extra validation, CI, or batching after
 the commit exists. Implementation owners immediately return the exact commit
@@ -197,6 +96,7 @@ handoff acceptance, terminal publication, merge, or closure. A failed push is
 an explicit blocker, never a success claim. The canonical
 [publication protocol](skills/development-workflow/SKILL.md#immediate-publication-and-visible-work)
 retains every existing final gate.
+
 Implementation subagents validate and commit locally but do not push. The
 orchestrator pushes the exact commit under repository-owner context so Build
 does not become `action_required`. If an already-pushed run for that same SHA
@@ -274,6 +174,37 @@ occupy a reasoning agent or stop with a waiting-only response. Cancel only a
 superseded candidate run after that candidate actually changes. A broken
 master Build requires an immediate fix-forward or revert and blocks that
 issue's closure and remote completion, but not unrelated independent PRs.
+
+### Bounded exact-SHA implementation handoffs
+
+Use the [version-3 handoff contract](../docs/workflow-pilot.md#bounded-exact-sha-implementation-handoffs)
+for bounded implementation cycles. The coordinator owns the assignment, real
+Git/check/process observations and one locked session-local coordination
+document; the implementation returns only the assignment ID, echoed parent,
+result SHA and named evidence references. These records are not authenticated
+data or publication capabilities.
+
+Keep assignment sent, received, progressing, committed and handed-off distinct.
+Use actual CLI events and OS exit observations, never tool-transport success or
+printed pass labels. Retire an owner after its committed handoff or lifetime
+limit and use a fresh owner for review. Permit explicitly recorded normal
+upstream merges; apply task trailers/scope to task-owned changes, not imported
+upstream history. Incremental assignment budgets do not replace full-PR
+review-size preflight.
+
+Keep one real direct watcher per exact GitHub run/attempt. Reconcile watcher
+errors through GitHub; a process timeout is not CI failure or success. On
+interruption, preserve and lock the original worktree before one bounded
+replacement reuses it. Unknown PID/RSS/OOM observations remain unknown.
+Record an always-on coordinator or an explicit availability plan before
+unattended delivery; a plan is not a guarantee of uptime.
+
+Only the existing coordinator publishes through Git/gh. Handoff tooling never
+pushes, modifies remote refs or supplies credentials to candidate execution.
+Use the existing reviewed-source/approved check route and platform role
+permissions, not an alleged Python or same-UID OS sandbox. Immediate checkpoint
+publication, metadata-event handling, final gates and completed-worktree
+cleanup remain unchanged.
 
 ### Completed-worktree cleanup
 

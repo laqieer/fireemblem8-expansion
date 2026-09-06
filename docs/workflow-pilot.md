@@ -6,15 +6,18 @@ contract**. It freezes the pre-pilot evidence and supplies one fail-closed
 reporter before any dependent issue changes delivery behavior. It does not
 select CI, order review, alter a merge gate, or create a mutable delivery
 ledger.
+
 ## Frozen boundary and authoritative sources
 
 The immutable baseline fixture is
 [`scripts/workflow_pilot/tests/fixtures/baseline.json`](../scripts/workflow_pilot/tests/fixtures/baseline.json).
 Its inclusive UTC window is:
+
 ```text
 start = 2026-08-20T00:00:00Z
 end   = 2026-08-30T11:17:08Z
 ```
+
 The end is the timestamp of Discussion #174's original baseline measurement,
 not the later issue creation or this implementation commit. A timestamp equal
 to either boundary is inside the window. The fixture is expected input, not a
@@ -26,6 +29,7 @@ checkpoint/proof events and current disposition records without moving or
 reinterpreting the historical measurement window.
 
 The frozen source semantics are:
+
 - Pull requests are the 64 PR identities whose authoritative `merged_at` is
   inside the inclusive window.
 - Issue identities are the closing-issue relationships returned by GitHub for
@@ -70,9 +74,11 @@ fixture because mutable GitHub state now includes the formerly active run's
 completion. If an exact timestamp, identity, relationship, status, conclusion,
 or page needed by a formula is absent, the reporter exits nonzero instead of
 guessing.
+
 ## Public seam
 
 Run the stdlib-only reporter from the repository root:
+
 ```bash
 python3 -m scripts.workflow_pilot.reporter \
   --repository-root . \
@@ -80,6 +86,7 @@ python3 -m scripts.workflow_pilot.reporter \
   --decisions .github/workflow-pilot-decisions.json \
   --expected scripts/workflow_pilot/tests/fixtures/baseline_expected.json
 ```
+
 Successful output is canonical ASCII JSON: recursively sorted keys, compact
 separators, and one trailing newline. Running over identical immutable inputs
 is byte-identical. `baseline_expected.json` contains only immutable expected
@@ -356,6 +363,7 @@ The parsed tree receives a recursive finite-number check before
 classification, so an unused overflowing field cannot accompany an otherwise
 metadata-only event. An `edited` event suppresses `host-tests`, `build`,
 `extended-host-tests`, and `legacy` only when:
+
 - the event has a complete pull-request base and exact head identity;
 - the event head/base equal the direct event identities used by every
   expensive worker condition;
@@ -1118,7 +1126,7 @@ safety, and override references. A fixture-authored SHA, parent, timestamp, or
 message cannot replace Git authority. The fixture, decision, and expected
 paths must resolve to the committed baseline inputs, including
 `.github/workflow-pilot-decisions.json` in that tree. Build CI passes
-`"$GITHUB_WORKSPACE"` explicitly, runs both the same stdlib suite and the
+`"$GITHUB_WORKSPACE"` explicitly, runs both the reporter/schema suite and the
 baseline/expected invocation in its required `host-tests` job, and the parsed
 workflow topology regression requires both pilot commands exactly. Appended
 shell operators, wrappers, substitutions, or changed redirections cannot turn
@@ -1160,23 +1168,28 @@ that `HEAD` still equals `EXPECTED_BUILD_SHA`. This hydration is environment
 setup, not a 29th local semantic gate; local
 `scripts.upstream_port verify` remains network-independent.
 The deterministic read-only owner handoff is:
+
 ```bash
 /usr/bin/python3 -I scripts/workflow_pilot/isolated_launcher.py anchor-refs \
   --repository-root . \
   --fixture scripts/workflow_pilot/tests/fixtures/baseline.json \
   --decisions .github/workflow-pilot-decisions.json
 ```
+
 These remote refs are operational Git reachability, not committed provenance,
 a SHA ledger, an anchor commit, or an object snapshot. The command only prints
 derived mappings; it never creates or pushes refs.
 
 Checkout, exact-revision verification, hydration, host dependency setup, and
 the three preceding host suites are one exact ordered pre-pilot sequence with
-reviewed actions, commands, and fields. Hydration plus both reporter gates use
-`/usr/bin/python3 -I scripts/workflow_pilot/isolated_launcher.py`. Python
-therefore completes isolated startup before the launcher inserts only its
-resolved source root and dispatches its closed modes; it exposes no arbitrary
-module, command, or evaluation mode. The
+reviewed actions, commands, and fields. Hydration and the stdlib-only baseline
+gate use `/usr/bin/python3 -I scripts/workflow_pilot/isolated_launcher.py`.
+Reporter test discovery instead uses the absolute
+`"$GITHUB_WORKSPACE/build/host-python/bin/python3" -I` from the
+[locked setup below](#isolated-host-python-dependencies), followed by the same
+launcher and `reporter-tests` mode. Python completes isolated startup before
+the launcher inserts only its resolved source root and dispatches its closed
+modes; it exposes no arbitrary module, command, or evaluation mode. The
 hydration helper uses `/usr/bin/git`. Protected step environments set
 `BASH_ENV`, `ENV`, `PYTHONPATH`, and known Git redirection controls to reviewed
 safe values and pin `PATH=/usr/bin:/bin`; the isolated launcher removes every
@@ -1233,6 +1246,7 @@ The fixture carries derivable Git/GitHub/Actions facts. The single versioned
 decision record,
 [`.github/workflow-pilot-decisions.json`](../.github/workflow-pilot-decisions.json),
 contains only the decisions those systems cannot supply:
+
 | Record field | Contract |
 | --- | --- |
 | `risk_boundaries` | Closed enum; `none` must stand alone. |
@@ -1256,6 +1270,76 @@ authority, and the decision record stores no copied tree, blob, or commit hash.
 Every schema version, identity, count, duration input, attempt, index, depth,
 and cost uses exact-integer validation before bounds or equality checks; JSON
 booleans are accepted only by declared boolean fields.
+
+## Isolated host Python dependencies
+
+Issue #216 supplies the shared schema-test prerequisite for the handoff
+(#178) and authenticated broker (#205), without implementing either protocol.
+The supported profile is **CPython 3.12 on Linux x86_64 with glibc >= 2.17**.
+Other Python versions, architectures and libc implementations fail explicitly;
+review new wheel artifacts before extending this profile.
+
+From a source checkout, install the distribution's `python3-venv` package if
+necessary, then use the same setup as Build CI:
+
+```bash
+/usr/bin/python3 -I scripts/host_python.py create
+build/host-python/bin/python3 -I scripts/host_python.py check
+build/host-python/bin/python3 -I scripts/workflow_pilot/isolated_launcher.py reporter-tests
+```
+
+[`host-tests.txt`](../.github/requirements/host-tests.txt) records one exact
+version and SHA-256 wheel hash for every runtime dependency: `jsonschema`,
+`attrs`, `jsonschema-specifications`, `referencing`, `rpds-py`,
+`typing-extensions`, `rfc3339-validator`, and `six`. The two schema consumers
+use Draft 2020-12 and `FormatChecker` with **`date-time`**. That optional
+validator needs `rfc3339-validator` and `six`; merely importing `jsonschema`
+would silently leave this format unchecked. The bootstrap verifies format
+registration and actual valid/invalid draft and timestamp behavior. Other
+optional formats are not promised: a consumer adding one must extend the
+locked closure and its behavioral probes together.
+
+The stdlib bootstrap creates only a new path under this checkout's ignored
+`build/`, refusing an existing or symlinked target. OS-provided `venv`/`ensurepip`
+supplies pip; there is no pip self-upgrade or new package manager. Pip runs
+under that environment's isolated interpreter with a closed environment,
+disabled config/cache, and owned scratch/home directories. It downloads only
+the locked binary wheels from trusted PyPI using `--require-hashes` and
+`--no-deps`, then installs those wheels with `--no-index` and the same hash
+checks. The exact installed set, `pip check`, disabled system/user sites, and
+schema probes must all pass. Neither global nor user packages are modified.
+
+The verified wheels remain in `build/host-python/wheelhouse` so the regression
+suite can replay clean installs and damaged/missing/incompatible inputs
+**offline**. An explicit offline recreation is also available:
+
+```bash
+/usr/bin/python3 -I scripts/host_python.py create \
+  --environment build/host-python-replay \
+  --wheelhouse build/host-python/wheelhouse
+```
+
+Use `--environment` only for a fresh owned path within this checkout's
+`build/`. Failed setup leaves that path for diagnosis rather than erasing or
+reusing it. After tests finish, remove only environments you created, for
+example `rm -r -- build/host-python-replay`. To refresh the primary environment,
+first remove your own `build/host-python`, then rerun `create`.
+
+Only the full-build host dependency step and reporter-test interpreter change.
+Metadata-only attestation still performs no checkout/bootstrap; baseline,
+hydration, classifier and publisher authority retain their existing
+interpreters. Local `upstream_port verify` resolves the same absolute owned
+interpreter against its target checkout but never installs packages itself.
+Job IDs, required contexts, routing, permissions, checkout authority and every
+candidate/master gate remain unchanged. Conflicts are ambient-only/unpinned
+installation, environment reuse, or unsupported wheel profiles. There are no
+gameplay, save/configuration, ROM/RAM, generated-game-data, locale, modern
+debug/release or archival compiler interactions. Revert this dedicated
+bootstrap change on regression; never remove required consumer tests.
+
+The complete human procedure and deterministic negative controls are indexed
+as [TC-WORKFLOW-HOST-PYTHON-DEPS-001](test-cases/workflow-governance.md#tc-workflow-host-python-deps-001-bootstrap-isolated-schema-test-dependencies).
+
 ## Reproducible formulas
 
 All durations use exact UTC seconds. Subject durations are converted to decimal
@@ -1263,6 +1347,7 @@ hours and rounded half-up to one decimal. The frozen baseline uses the upper
 middle observation for an even-sized cohort; this explicitly preserves the
 already-published 9.4-hour value instead of silently changing its statistical
 convention.
+
 | Metric | Formula and inclusion |
 | --- | --- |
 | Issue-to-merge | For each in-window merged PR with closing issues: `merged_at - min(linked issue created_at)`. Report the eligible count and authoritative empty-link exclusions. |
@@ -1295,9 +1380,11 @@ that is what the original measurement could reproduce for all 64 PRs. It is
 not relabeled as issue-to-merge. The reporter additionally calculates
 issue-to-merge over the 57 PRs with authoritative closing-issue relationships
 and reports the seven exclusions.
+
 ## Work classification
 
 Classifications are derived and may coexist:
+
 | Class | Rule |
 | --- | --- |
 | Cancelled work | PR is closed without a merge; a cancelled Build is separately a terminal run conclusion. |
@@ -1309,6 +1396,7 @@ Classifications are derived and may coexist:
 | Reverted | A later fixture commit has the exact Git revert relation to the PR merge SHA. Both delivery and revert remain visible. |
 
 No class removes a run, review, finding, or cost from the identity history.
+
 ## Artifact lifecycle
 
 Every pilot artifact is admitted only when all six decisions exist: one owner,
@@ -1326,6 +1414,7 @@ Review invalidation is derived from `review_depends_on` edges and later
 and are rejected rather than ignored. Every checkpoint and pre-graduation
 event, plus every dependency-change event that occurs, requires exactly one
 strictly later non-destructive deletion proof:
+
 - if removal preserves semantics, restoration must pass and the current
   disposition must be `Delete`;
 - if removal loses a named invariant, the proof must name that reason,
@@ -1357,7 +1446,9 @@ follow `lifecycle_as_of`. Expiry is evaluated at that lifecycle boundary,
 rather than the older metric-capture timestamp. The committed baseline
 contract, fixture, and reporter currently derive to `Graduate` because
 removing any one loses a dependency required by issues #177 through #181.
+
 ## Frozen expected results
+
 | Baseline fact | Expected result |
 | --- | ---: |
 | In-window merged PRs | 64 |
@@ -1407,7 +1498,9 @@ capture GitHub's `pull_request_review_thread` `resolved` and `unresolved`
 deliveries as they occur, and normalize their delivery API identities and
 timestamps into a complete coverage interval before the reporter can emit a
 numeric clean-review duration.
+
 ## Relationships, impact, and rollback
+
 | Relationship | Contract |
 | --- | --- |
 | Dependencies | None |
@@ -1422,397 +1515,220 @@ Rollback is a normal revert of the dedicated issue #176 commit. Because no
 delivery behavior or final gate changes here, existing CI, review, merge,
 runtime, save, localization, generated-data, and archival behavior remains in
 place throughout rollback.
+
 ## Bounded exact-SHA implementation handoffs
 
-Issue [#178](https://github.com/laqieer/fireemblem8-expansion/issues/178)
-extends the issue #176 lifecycle and sealing seam with a bounded implementation
-handoff. It is an accepted **framework capability: bounded delivery
-coordination**. It changes who may own an implementation step and how the
-result is admitted to trusted push; it does not change trusted-push ownership,
-the final candidate/master gates, game code, or any build profile.
+Issue #178 implements Discussion #174's bounded coordination capability, not a
+credential or publication platform. Its
+[approved scope](https://github.com/laqieer/fireemblem8-expansion/issues/178#issuecomment-5556967123)
+replaces the unmerged signed/broker design. The supported host is Linux with
+Python 3, Git, native Copilot CLI events and existing process controls. Live
+run reconciliation uses the coordinator's existing `gh` authentication;
+deterministic tests need no token, live workflow, emulator or ROM.
 
-Validate a temporary immutable handoff document against its one allowed real
-worktree:
-```bash
-python3 -m scripts.workflow_pilot.agent_handoff \
-  --fixture build/test-artifacts/agent-handoff.json \
-  --worktree /absolute/path/to/the/exact/worktree \
-  --coordinator-installation /external/coordinator-installation
+### Assignment, result and trust boundary
+
+The closed [JSON Schema](../scripts/workflow_pilot/agent_handoff.schema.json)
+describes v3 assignments, candidate results, coordinator state and verdicts.
+V2 handoff documents and authority/broker flags are rejected, not migrated.
+There are no released v2 handoff consumers. Reporter v1 is a different,
+unchanged baseline contract.
+
+The coordinator retains one assignment with issue/PR, owner/session/dispatch
+IDs, exact parent SHA, branch/worktree, unique allowed paths/directory prefixes,
+exact permitted upstream inputs, findings, keyed acceptance criteria/checks,
+named evidence, line/ROM/RAM/protocol budgets, lifetime/RSS limits and the complete
+prohibited remote-action set. A successor names its predecessor. No executable
+or permission is accepted from an implementation result:
+
+```json
+{
+  "schema_version": 3,
+  "assignment_id": "review-178-1",
+  "assigned_parent_sha": "1111111111111111111111111111111111111111",
+  "result_sha": "2222222222222222222222222222222222222222",
+  "evidence_refs": ["raw-diff", "focused-case"]
+}
 ```
-The document is per-assignment input and evidence, not a live ledger or a
-manually synchronized Git snapshot. The coordinator may preserve it with
-delivery evidence, while Git remains authoritative for the checkout root,
-origin, branch, `HEAD`, direct parent, commit message/trailer, changed paths,
-numeric line count, and clean/conflict state. GitHub Actions response fixtures
-remain authoritative for run status and conclusion. Only non-derivable
-assignment decisions are authored: scope, acceptance/evidence names, budget
-caps, owner bounds, prohibited actions, and watcher ownership. Availability,
-remote observations, runtime metrics, resources, and interruption snapshots
-come from one coordinator-sealed receipt, not document claims.
-Duplicate JSON keys, unknown fields/enums, booleans in integer fields, and
-unquantified binary line changes fail before a success-shaped result.
-### Assignment and result contract
 
-Each handoff carries:
-- issue and optional eventual PR identity;
-- unique handoff and implementation-owner identities with mandatory numeric
-  GitHub database IDs;
-- exact assigned parent SHA, branch, absolute worktree, and repository-relative
-  file/directory allowlist;
-- finding IDs, itemized acceptance criteria, required focused-check contracts,
-  and the evidence IDs that discharge each item;
-- maximum changed lines, ROM bytes, RAM bytes, and protocol changes;
-- maximum owner lifetime and peak RSS;
-- the exact prohibited implementation-owner actions: push, remote-ref
-  creation, PR creation/update, comment, review request, CI dispatch, and
-  merge; and
-- timestamped lifecycle, evidence, optional commit result, or evidenced
-  interruption/recovery link.
+Those SHAs are illustrative, not executable evidence. `load_assignment`,
+`load_result`, `parse_assignment(bytes)` and `parse_result(bytes)` reject
+over-1-MiB input **before** decoding/copying; duplicate keys, nonfinite values,
+unknown fields, invalid Unicode, excessive depth/nodes/strings and unsupported
+versions reject. Collections are bounded: 128 assignments/watchers, 256 scope
+entries, 32 checks/criteria, 16 upstream/protocol inputs and five lifecycle
+states. Descriptive strings are at most 16 KiB. Keyed criteria/checks and unique
+arrays avoid duplicate wire identities. The independent Draft 2020-12 tests
+exercise structural/schema agreement. Git identity, cross-record correlation,
+chronology, ownership and evidence completeness require additional runtime
+checks, not a schema claim of authenticity.
 
-The top-level coordinator receipt is asymmetrically signed by an isolated
-external coordinator service. Its private key never enters the implementation
-namespace; protected authority history pins only public RSA verification
-material and the service isolation attestation. The signature covers the
-complete document: assignment/scope, delivery graph, handoffs and successor
-edges, interruptions, metrics, PR/ruleset observations, remote source events,
-runs, watchers, availability, process policy, and resource receipts. Every
-signature field is canonical standard-padded base64 text, and RSA verification
-rejects any same-width representative greater than or equal to the public
-modulus before exponentiation. The same canonical base64 rule also applies to
-sealed interruption-snapshot `content_base64` bytes anywhere they are replayed
-through coordinator telemetry, prior handoff history, or reporter records.
-Those snapshot bytes may be canonically empty (`""`) for a zero-byte file;
-signature fields remain nonempty.
+Coordinator observations are trusted operational input, **not authenticated
+data**. The single canonical state path and its short nonblocking lock prevent
+accidental competing writers; unsigned JSON, modes, IDs and source labels do not
+authenticate the caller. Existing platform role/tool permissions prohibit
+implementation-owner remote actions. Recorded prohibited requests/actions reject;
+this module does not prove that an arbitrary hostile same-UID process performed
+no hidden action. No signature, HMAC ledger, protected installation, daemon,
+remote ref mutation or publication endpoint is present.
 
-`--coordinator-installation` (or
-`WORKFLOW_PILOT_COORDINATOR_INSTALLATION`) points outside the candidate
-worktree to public configuration and the external bootstrap validator. Its
-`installation.json` contains repository IDs, authorized coordinator users,
-explicit separately typed non-user bypasses, frozen delivery/base branches,
-expected ruleset identities, and public signer material only. Same-UID
-HMAC secrets, candidate-authored digests, and permission modes do not establish
-trust. Authority reads reject any fetched authority chain whose signer
-identity/public material digest, ruleset ID, full bypass actor set, or frozen
-delivery repository/branch identity drift from that verified installation
-before any fetched publication signature or ruleset response can self-attest
-the substitute history. In `bare-remote-config` mode, the installation must
-also reject both force pushes and deletions for the protected refs before
-bootstrap or trust begins. Missing external asymmetric attestation fails
-closed.
+### Coordinator integration and commands
 
-`assignment_sent`, `assignment_received`, `progressing`, `committed`, and
-`handed_off` are distinct, unique, strictly ordered states. A result is
-accepted only when `HEAD` is one new commit whose sole direct parent is the
-assigned SHA, the current branch/worktree match the assignment, the worktree
-is clean and conflict-free, every changed path and budget is allowed, the
-required Copilot trailer is the final unique trailer, and all named checks and
-acceptance evidence passed. One root exists. A committed handoff can have one
-fresh-owner `review_successor` assigned from its exact result after closure; an
-interrupted handoff can have one `oom_replacement`. Successors form a causal,
-nonoverlapping linear chain with at most one active successor.
+Use a reviewed source checkout, not the implementation worktree, for the
+existing isolated launcher. Python `-I` avoids ambient imports; it is not an OS
+sandbox or permission to execute arbitrary candidate code with credentials.
+The only built-in process check runs the fixed reviewed raw-diff checker with
+a closed credential-free environment. Additional focused checks use
+`capture_check(entry, check_id, result_sha, trusted_executor)` from the existing
+approved coordinator test/CI route. That executor returns an actual owned
+process capture and its parsed measurements, never candidate command strings
+or displayed `passed` labels. Unregistered/missing executors remain incomplete.
+Use existing `linker_report.budget` map/ELF checks for runtime-resource measures;
+there is no new resource-closure or file-to-gate graph.
 
-Each required check names a closed contract rather than shell text. The
-current `git-diff-check` contract derives exact isolated-Python argv for the
-assigned parent's immutable raw-diff-checker blob, worktree, assigned parent,
-and candidate. It never executes the candidate worktree copy. When the parent
-predates the checker, `external-bootstrap` uses only the validator from the
-external coordinator installation. Bootstrap check evidence can validate the
-introducing PR but can never produce `trusted_push_eligible`; after merge,
-future candidates pin the exact base blob.
+The coordinator creates the initial document with
+`new_state(repository, coordinator_id, availability)` and `json_bytes`, in its
+session storage outside the implementation worktree. `availability` names
+`mode` (`always-on` or `plan`), UTC `observed_at`/`valid_until`, both Dev Box stop
+settings and nullable `plan` text. Inspect the actual host settings before
+recording them. A plan is a decision covering the unattended interval, not
+proof of perpetual availability. Boot/suspend observations invalidate stale
+coverage until the coordinator makes a fresh availability decision.
 
-Structured execution uses no shell and returns a receipt containing
-check/receipt IDs, argv, checker trust mode/object, parent/candidate SHAs,
-worktree identity, start/completion times, exit code, output digest, and
-receipt seal. Validation re-executes that exact
-allowlisted command and compares its result. Unknown contracts or a caller
-`command` field fail schema validation; passed prose/evidence cannot rescue
-literal `false`, a nonzero safe check, or a
-stale/wrong-command/SHA/worktree receipt. Checker execution and receipt
-re-verification run in their own process group with a bounded timeout, so a
-stalled helper tree is killed before it can orphan. The checker's exact Git argv pins
-`core.whitespace=blank-at-eol,blank-at-eof,space-before-tab`, attributes/color/
-quoting/diff policy, `--no-ext-diff`, `--no-textconv`, and `--text` under the
-minimal Git environment. It parses raw added lines and candidate EOF bytes
-itself, so root/nested/macro/negative tracked `whitespace` attributes cannot
-override the policy; benign unrelated attributes remain valid. CRLF adds
-trailing CR whitespace: `cr-at-eol` is not enabled. Blank-at-EOF counts actual
-blank lines, including a new file containing just one LF, but not a nonblank
-line's terminator or unchanged trailing blank lines. This deliberately rejects
-whitespace-only new files even where Git 2.43's `diff --check` overlooks them.
-Changed parent/candidate blobs total at most 4 MiB, preflighted before text
-diffing; each Git subprocess has a 30-second deadline and a streamed 4 MiB
-combined-output cap. At most 100 whitespace diagnostics are returned.
-Before any Git command, one shared no-follow preflight checks private and
-`commondir` metadata roots, including directory components. `.git` and
-`commondir` files use bounded nonblocking reads (4096 bytes). Local attributes,
-and the reporter's graft/alternate-object metadata, must be absent or empty
-regular files; symlinks, FIFOs, directories, and nonempty files reject. Repository-local
-`core.whitespace=-trailing-space`, diff drivers/textconv, aliases, hostile
-global/system files, or ambient `GIT_EXTERNAL_DIFF` therefore cannot change
-pass/fail or receipt output.
+Set `REVIEWED_SOURCE`, `COORDINATOR_STATE`, `ASSIGNMENT`, `OWNER_EVENTS`,
+`RESULT` and `WORKTREE` to those actual paths. The four operations are:
 
-The validator mechanically rejects repeated-parent/stale results, result/HEAD
-drift, missing or non-direct commits, wrong parent/worktree/branch, unrelated
-paths, dirty or conflicted state, missing trailer, missing/failed/incomplete
-evidence, line/ROM/RAM/protocol excess, lifetime/RSS excess, reused owners,
-and prohibited remote actions by an implementation owner. The implementation
-owner never pushes, opens or updates a PR, comments, creates a remote ref,
-requests review, dispatches CI, or merges; those remain coordinator actions.
-
-Every owner, coordinator, and remote actor requires an immutable numeric
-GitHub ID resolved by the collector. Missing IDs, one login mapped to multiple
-IDs, or one ID mapped to multiple logins reject. Each later document supplies
-prior closed handoffs as a domain-separated chain covering sequence, previous
-receipt, replacement edge, numeric owner, lifecycle, issue, optional PR,
-candidate, closure, interruption snapshot, input, Git, and result. Exactly one
-root handoff exists for an issue authority. Closed commits admit one
-`review_successor`; interruptions admit one `oom_replacement`. Two roots,
-overlap, wrong predecessor/result, branching successors, owner reuse across PR
-binding, gaps, replay, or tampering reject.
-
-The document cannot choose its history base. One stable protected branch at
-`refs/heads/workflow-pilot/authority/issue-<n>` exists from the first no-PR
-handoff. PR creation appends the exact externally signed GitHub PR API
-observation: repository ID/full name, PR number, `OPEN`/unmerged state,
-base/head branches and OIDs, head repository, creation/observation times,
-coordinator user ID, and authority/anchor state. Compare it to independent
-delivery/base values frozen in protected genesis, the root assignment
-branch/result, and the pre-observation publication request. Keep
-`delivery_expectation.immediate_base_oid` as frozen provenance, bind the live
-current base OID separately, and require the frozen base to be an ancestor of
-both the live current base and the candidate head. Never validate it against
-copied observation fields. Invented, closed, merged, stale, wrong-repo,
-wrong-branch, stale-current-base, non-descendant/rewritten-base, or wrong-OID
-binding rejects.
-
-Every authority commit directly parents the remotely observed head and
-advances its sequence. The independently protected branch
-`refs/heads/workflow-pilot/authority-anchor/issue-<n>` advances in lockstep
-and records the exact authority object and sequence. The signed live GitHub
-ruleset response must prove active enforcement, exact inclusion of both
-branches with no excludes, update/non-fast-forward/deletion restrictions, and
-exactly authorized bypass actors. A coordinator uses the 2026 REST user shape:
-`actor_type: User`, identical frozen `actor_id`/`database_id`, and
-`bypass_mode: always`. `RepositoryRole` numbers cannot represent users.
-Non-user types require explicit separately typed frozen authorization and
-default to rejection. An unrelated ruleset ID or unexpected bypass rejects.
-
-Publication is one normal `git push --atomic` containing both direct-parent
-commits. The coordinator first preflights remote atomic capability. A split
-push, a stale competing coordinator plan, or a server without atomic support
-rejects without moving either protected head; recovery requires a new plan
-from the common observed pair.
-
-Each fixed three-attempt read queries both remote OIDs, fetches their exact
-objects without writing `FETCH_HEAD` or local refs, and queries both again.
-The complete authority and anchor ancestries must reach matching genesis. One
-move retries from the new pair; repeated movement fails `authority-moved`.
-The dual-ref observation is checked again immediately before eligibility.
-Rollback or authority A-to-B-to-A replay cannot match the independent
-monotonic anchor. Historical reads also recompute the stored PR binding digest and the exact
-canonical digest of each sealed history receipt. Every protected handoff
-commit also carries one bounded private `history_carrier` containing the
-exact signed handoff document, the canonical validation result, and the
-selected handoff ID; readback re-verifies the original coordinator, PR, and
-authority signatures, replays `make_history_receipt()` from that carrier,
-and requires the signed publication attestation's `history_carrier_digest`
-and `history_receipt_digest` to match the full carried carrier and receipt
-bytes rather than a projected event subset. Returned authority snapshots keep
-`history_carrier: null` so later handoff documents do not recursively embed
-older carriers. Historical reads also require the signed publication
-attestation's `binding_expectation` to match the stored frozen delivery plus
-stored live current-base fields, and re-check that the frozen base remains an
-ancestor of the stored live base OID. The stored `pr_binding.head_oid`, its
-digest, and `publication_attestation.binding_expectation.head_oid` must all
-match the immediately prior sealed handoff candidate carried by the current
-`handoff_sequence`/`head_seal`. Derive the stored observation's
-`authority_object_id` from the bind commit's canonical `previous_object_id`.
-Derive the stored observation's `anchor_object_id` from the exact prior
-canonical anchor record, never from copied observation fields. Swapped signed
-observations/publications, stale signed observation replays, out-of-band
-branch advances, copied anchors/seals/sequences, and rewritten bases fail
-even when each record is individually valid.
-
-Bootstrap, advance, and PR binding plans are deterministic and read-only:
 ```bash
-python3 -m scripts.workflow_pilot.agent_handoff \
-  --authority-operation bootstrap \
-  --worktree . --repository laqieer/fireemblem8-expansion \
-  --issue 178 --publication-attestation <signed-json> \
-  --coordinator-installation <external-path>
-
-python3 -m scripts.workflow_pilot.agent_handoff \
-  --authority-operation advance \
-  --fixture <handoff-document-json> --handoff-id <closed-handoff-id> \
-  --worktree . --repository laqieer/fireemblem8-expansion \
-  --expected-object-id <remote-head> --expected-sequence <n> \
-  --publication-attestation <signed-json> \
-  --coordinator-installation <external-path>
-
-python3 -m scripts.workflow_pilot.agent_handoff \
-  --authority-operation bind \
-  --worktree . --repository laqieer/fireemblem8-expansion \
-  --issue 178 --pull-request <actual-pr> \
-  --expected-object-id <remote-head> --expected-sequence <n> \
-  --pull-request-observation <signed-github-response-json> \
-  --publication-attestation <signed-json> \
-  --coordinator-installation <external-path>
+/usr/bin/python3 -I "$REVIEWED_SOURCE/scripts/workflow_pilot/isolated_launcher.py" agent-handoff assign \
+  --state "$COORDINATOR_STATE" --assignment "$ASSIGNMENT"
 ```
-The output names normalized authority and anchor records, both expected remote
-objects, the single-use operation nonce, authorized numeric actors, and one
-atomic push template. It never emits separate or force-capable commands,
-creates an object, updates a ref, or pushes. Each advance/bind requires current
-objects, sequence, externally signed publication inputs, and a fresh atomic
-preflight.
-Normal clones fetch the authority explicitly during validation. Implementation
-owners remain prohibited from every bootstrap/advance/push action.
 
-This remote authority follows the issue #176 admission/lifecycle pattern:
-owner `delivery-coordinator`; executable consumer
-`scripts.workflow_pilot.agent_handoff`; unique decision
-`canonical-closed-handoff-head`; consistency check
-`test_agent_handoff`; bounded authority/anchor commits per close; deletion only
-after issues #178/#181 and every consumer retires the ownership invariant.
-The branches retain minimal canonical ancestry and do not duplicate the
-mutable delivery ledger.
-### Typed delivery dependencies
-
-The handoff's `delivery_graph` separates authored relationship semantics from
-normalized task and watcher facts:
-- `code_contract` is the only parent/child implementation relationship. Its
-  required edge is `child-implement -> parent-merge`.
-- `delivery_gate` links the parent's own completion, closure, and remote
-  completion to `parent-post-merge-build`.
-- task phases and states are normalized Git/GitHub/orchestration facts.
-  Watchers are separate records and cannot appear on either side of a todo
-  dependency.
-
-The evaluator derives pending-task readiness only from typed task edges. When
-the parent merge is `done`, the target tree contains the required contract, so
-child implementation is ready even while the healthy exact-master Build is
-`in_progress` and parent remote completion is pending. When parent merge is
-pending, the child is blocked by `parent-merge`. A graph that instead records
-`child-implement -> parent-remote` rejects with both the missing required
-merge edge and wrong code-contract edge, and reports the exact edge that must
-replace it.
-
-Every source handoff must have exactly one relationship and one implementation
-task with matching handoff ID, issue, PR, candidate SHA, and lifecycle-derived
-status. Missing/duplicate/relabelled relationships or tasks reject. Dependency
-validation applies to every task status, not only pending tasks: `done` or
-`in_progress` cannot have a non-done prerequisite, and blocked tasks carry a
-closed dependency, workflow-failure, or owner-interruption reason which must
-match their role and handoff.
-
-An in-progress master watcher is reported as `orthogonal_to_todos: true` and
-does not alter the ready set. A dependency that names its watcher ID rejects.
-If the authoritative run later completes with failure, the post-merge Build
-task becomes blocked and `fix_forward_revert` must be in progress. That
-terminal transition does not change the fact that dependency-ready work
-should have proceeded during the earlier healthy pending interval. Regardless
-of child readiness, the parent completion, closure, and remote-completion
-tasks retain direct `delivery_gate` edges to the parent's post-merge Build.
-That Build task names an exact target SHA and binds to one
-`github-actions-api` run with the same SHA/status/conclusion plus one direct
-watcher. Active and failed runs keep parent delivery eligibility false and
-prevent those parent tasks from becoming done. A successful terminal run is
-the only Build state that opens that parent gate.
-### Coordinator, watcher, and recovery contract
-
-One document admits exactly one coordinator. Each included exact run has one
-direct-shell watcher owned by that coordinator, bound to both run ID and head
-SHA. Duplicate watchers reject. A timeout or watcher process error is not
-treated as a workflow conclusion: the validator reconciles it with one
-authoritative `github-actions-api` observation. An authoritative successful
-run remains successful after a watcher timeout; an authoritative failure
-remains failed even when the watcher itself errored; an active run remains
-incomplete. The fixture path performs no GitHub mutation.
-
-Remote-action authority never comes from a caller-authored list. The
-coordinator collector seals the repository ID, actor resolutions, interval,
-and exact timeline, Actions-run, ref, and audit-log source responses. Its
-normalized action list must equal the complete union of source events, so an
-omitted push, comment, review request, or CI dispatch rejects. If any source
-is unavailable or incomplete, each implementation process needs a sealed
-credentialless, network-denied launcher interval covering its entire
-lifecycle. Every transport Git subprocess that reads or preflights protected
-authority (`ls-remote`, object fetches, and atomic push dry-runs) runs inside
-the same closed Git environment with an explicit wall-clock timeout; timeout
-kills the whole process group and returns a typed handoff error instead of
-retrying unboundedly or orphaning transport helpers. The external service owns
-a monotonic consume sequence/anchor and
-spent-nonce store. One atomic operation terminates that process, collects every
-source through the consume instant, decides, marks the nonce spent, and returns
-the signed decision. The same nonce's second call rejects before authority
-publication. Local validation cannot make a preissued receipt freshly
-eligible; the live receipt must satisfy the same narrow freshness window as
-live PR/publication observations, and receipt repository IDs/full names must
-match the installation manifest and frozen delivery expectation. Any after-sign
-event or document/run/watcher mutation invalidates it. Before trusted-push
-eligibility is granted, the validator also rechecks the protected authority
-refs and reconciles the bound delivery/base branch refs against the live
-remote so a post-snapshot push or base rewrite cannot race past eligibility.
-
-An interrupted owner has the exact `assignment_sent` ->
-`assignment_received` -> `progressing` -> `interrupted` sequence. SIGKILL/OOM
-recovery requires signal 9, nonempty kernel evidence, named interrupted checks
-whose evidence is explicitly incomplete, and content-bearing protected
-authority evidence containing each preserved file's bytes, path, Git mode,
-SHA-256, exact status, and the original scope, criteria, checks, and budgets.
-A later completed replacement may validate after the old worktree is clean
-only by restoring every file byte/mode or recording an externally attested
-explicit resolution mapping. Committing an unrelated file does not recover
-the interrupted work. Exactly one different owner receives the same context.
-Tests do not exhaust memory, signal a process, or kill any host process.
-The replacement may validly report only `assignment_sent`, then optionally
-`assignment_received` and `progressing`; these exact prefixes produce
-`in_progress` without an incomplete-lifecycle error and can never become
-trusted-push or delivery eligible. Its `assignment_sent` timestamp must be
-strictly later than the interruption. Equal, predated, missing, or multiple
-replacement assignments reject.
-
-Availability is another coordinator-sealed observation, not a literal mode
-claim. It must be issued near validation time, be observed before assignment,
-cover the complete unattended interval through the lifecycle cutoff, and show
-both autostop and stop-on-disconnect disabled. Future, stale, late, expired,
-ineffective, or unsealed observations reject.
-### Reporter extension and compatibility
-
-The unchanged frozen issue #176 baseline remains strict fixture/report schema version 1 and rejects a handoff field. Version 2 is an additive operational fixture schema that requires normalized `implementation_handoffs` records from the validator. The public handoff document format itself stays at protocol version 8 / `schema_version: 2`: the shipped JSON Schema now closes every live protocol section — `history_authority`, `prior_handoffs`, `delivery_graph`, handoff arrays/objects, top-level run/watcher receipts, and the full coordinator receipt surface — with standards-compliant field definitions that match the runtime parser's nested objects, enums, nullability, numeric bounds, and `additionalProperties: false` behavior. Every schema timestamp now follows the same exact runtime grammar: RFC 3339 UTC with a terminal `Z` and at most six fractional digits. Offset forms such as `+00:00` and over-precise fractions remain invalid because the runtime does not accept them.
-
-Each normalized record contains the complete source document, source handoff identities, and matching input/Git/check/coordinator/result seals. The reporter separates live eligibility from historical verification. The external service finalizes once and signs the complete canonical source-plus-result payload, including outcomes, reporter summary, RSS, and all verified metrics. The unkeyed result hash is integrity-only. Offline or relocated historical verification checks the finalize signature, document/result seals, structural row facts, and bundle-global semantics without consulting the old worktree. When a caller supplies the original repository root for live revalidation, the same verifier additionally proves current authority/anchor ancestry plus the live Git-derived handoff facts. Offline verification consumes a signed trusted anchor attestation, verified against the explicit external `--implementation-handoff-installation` root rather than any bundle-declared signer. The reporter takes that attestation from a separate `--implementation-handoff-trust` file keyed by `input_seal`, binds the canonical authority digest together with repository/ref/anchor-ref identity and signer material, and never carries or derives that trust inside a version 2 fixture. Neither mode restores current trusted-push eligibility from a stale receipt, and structurally stale rows cannot self-mark `accepted` or claim `trusted_push_eligible`. A hand-authored aggregate still rejects.
-
-Runtime lifetime telemetry remains owner-supplied evidence, not a rounding hint. The validator rejects any non-whole-second owner lifetime delta before integer conversion, even when the timestamps use one-to-six RFC 3339 fractional digits. Exact whole-second deltas remain valid.
-The reporter aggregates verified `lifetime_seconds` even for open handoffs;
-it does not extend observed owner lifetime to the report's `lifecycle_as_of`.
-Process telemetry must identify exactly every handoff, with no extra records,
-even when all remote event sources are complete.
-
-The reporter preserves handoff-local outcomes from sealed results, but its normalized aggregation treats an otherwise accepted handoff inside a trusted-ineligible bundle as `bundle_rejected` instead of counting it as accepted. The aggregate output therefore reports accepted/bundle-rejected/rejected/interrupted/in-progress counts plus the union of rejection codes, stale responses, maximum owner lifetime/RSS, coordination turns, and recovery minutes exclusively from verified results. Bundle/global rejection codes derived from sealed runs, watchers, and remote coverage stay present even when the affected handoff already has its own local rejection outcome, so aggregate failure reporting never loses duplicate watcher, watcher-owner-mismatch, remote-coverage, or authoritative-run defects and never double-counts the same handoff as both rejected and bundle-rejected. `verify_reporter_record()` re-derives the signed per-handoff rows, summary, and bundle-global rejection semantics from the sealed document/result payload instead of trusting mutable row or summary fields. Line usage remains Git-derived. Protocol changes come from the parsed, monotonically versioned
-`scripts/workflow_pilot/agent_handoff.schema.json`. ROM/RAM derives zero only
-for exact proven host-only path prefixes. Linker scripts, Makefiles, assets,
-configuration, fonts, text, generated data, and every unclassified tracked
-input require a closed build/map/resource receipt whose dependency inputs
-exactly equal the conservative Git-derived set. RSS, lifetime, turns, and
-recovery come from coordinator runtime telemetry. Claim-only tampering fails
-its seal. This adds no mutable decision record and does not alter version 1
-expected paths, values, or seals.
-Run a version 2 operational fixture without the version 1-only `--expected`
-argument:
 ```bash
-python3 -m scripts.workflow_pilot.reporter \
-  --repository-root . \
-  --fixture build/test-artifacts/workflow-pilot-operational.json \
-  --decisions .github/workflow-pilot-decisions.json \
-  --implementation-handoff-trust /external/workflow-pilot-operational-trust.json \
-  --implementation-handoff-installation /external/coordinator-installation
+/usr/bin/python3 -I "$REVIEWED_SOURCE/scripts/workflow_pilot/isolated_launcher.py" agent-handoff observe \
+  --state "$COORDINATOR_STATE" --assignment-id review-178-1 --runtime-events "$OWNER_EVENTS"
 ```
-Conversely, omitting `--expected` from a version 1 baseline run fails, so the
-new mode cannot bypass the frozen baseline comparison or executable lifecycle
-proof.
 
-Dependency: issue #176. Dependent: issue #181. Conflicts: none. Modern debug,
-modern release, save, generated data, localization, ROM, RAM, gameplay, and
-archival impact are all none; no feature flag or migration applies. Rollback
-is a normal revert of issue #178 while the issue #176 baseline and existing
-trusted-push/centralized-watcher rules remain in force.
+```bash
+/usr/bin/python3 -I "$REVIEWED_SOURCE/scripts/workflow_pilot/isolated_launcher.py" agent-handoff validate \
+  --state "$COORDINATOR_STATE" --result "$RESULT" --worktree "$WORKTREE"
+```
+
+```bash
+/usr/bin/python3 -I "$REVIEWED_SOURCE/scripts/workflow_pilot/isolated_launcher.py" agent-handoff reconcile-run \
+  --state "$COORDINATOR_STATE" --run-id 123456
+```
+
+`assign` reserves ownership before dispatch; it does not launch agents.
+`observe` reads the existing native JSONL producer incrementally with no-follow
+file identity/cursors. Pass the coordinator dispatch log, then the matching
+owner session log (repeat `observe` as actual runtime notifications arrive).
+Include `[handoff:review-178-1]` in the actual assigned prompt. `dispatch_id`
+correlates the coordinator's task/write-agent/shell tool call; `session_id`
+and `owner_id` identify the actual assigned session/runtime. A correlation
+marker alone is not receipt evidence.
+
+| State | Actual observation |
+| --- | --- |
+| `assignment_sent` | Matching native `tool.execution_start` dispatch |
+| `assignment_received` | Matching session's native `user.message` with the assignment marker |
+| `progressing` | A separate post-receipt `tool.execution_start` |
+| `committed` | Git observes the delivered SHA as real worktree HEAD |
+| `handed_off` | Native `assistant.message` delivers `{"handoff_result": ...}` after the commit observation |
+
+`subagent.started` does not imply receipt or progress.
+`tool.execution_complete.success` is transport status, not an OS exit code.
+The owner emits its final result as the JSON envelope shown in the last row,
+without Markdown fences; the inner object follows the result schema.
+The adapter records separate observation timestamps/source IDs, not inferred
+states from a single success response. A second committed handoff from the
+same owner is rejected.
+
+Bind a real owner PID using `observe --pid <pid>` or `bind_process`. Kernel
+boot ID/PID/start ticks and runtime handle identify the process; PID sampling
+alone cannot supply an exit status or complete peak RSS. The existing runtime
+that owns the `Popen` child calls the nonblocking
+`observe_owned_exit(process, identity)` and `record_process` at its completion
+notification. These consume `wait4` exit/RSS data. An opaque handle, already
+consumed wait status or inaccessible process remains unknown and cannot certify
+budget compliance. Do not parse printed exit labels, kill unrelated processes,
+or add a custom agent runtime to manufacture missing observations. Keep the
+existing runtime/timeout lifetime limit; validation also rejects elapsed/RSS
+overages and unretired owners.
+
+`validate` emits a bounded verdict and exits 0 only for a ready local handoff;
+rejected/incomplete handoffs exit 2. It is not merge or push authorization.
+It verifies exact Git/worktree identity, strict ancestry, clean status/index,
+the task-owned first-parent chain and both terminal Copilot trailers. Normal
+merges of recorded exact upstream inputs are allowed: imported history needs
+no task trailers, and unchanged upstream-owned paths are not task scope.
+Unrecorded merge inputs, arbitrary out-of-scope resolutions, hidden index flags,
+dirty/conflicting trees and stale/non-HEAD results reject.
+
+Incremental changed lines count task additions + deletions after excluding
+authorized unchanged upstream paths. This is **not** the full-PR 20K review
+gate; a specifically budgeted deletion/refactor may have a large incremental
+diff while reducing the final PR. Binary/unquantified changes do not become zero.
+Only known host-only paths derive zero ROM/RAM. Other paths need actual
+coordinator measurements. Protocol checks compare parsed immutable JSON inputs,
+not schema-version increments; missing measurements and overages reject.
+The raw checker pins whitespace/diff/config behavior, disables hooks/fsmonitor/
+textconv/external diff, bounds object/output bytes, and rechecks Git after checks.
+Combined stdout/stderr is bounded to 4 MiB and raw processes to 30 seconds.
+
+### Rotation, watchers and preserved recovery
+
+A completed handoff retires that owner; a review successor has a fresh
+owner/session and the accepted exact result as its assigned parent. Reservations
+reject duplicate/overlapping owners, reused retired owners and multiple
+successors. Only one coordinator manages the canonical state.
+
+Register the existing direct shell watcher with `reserve_watcher`, binding
+repository/run/attempt/head and real process identity. Use the established
+`timeout 90m gh run watch <run-id> --interval 30 --exit-status` command through
+the shell runtime; no reasoning agent waits for it. `finish_watcher` consumes
+an owned exit observation or retains unknown exit status. A replacement watcher
+cannot overlap the old process. `reconcile-run` makes one bounded `gh api`
+query of that exact run/attempt: authoritative success survives watcher timeout,
+failure/cancellation remains failure, nonterminal remains pending and query or
+identity errors remain unknown. None changes Build topology or existing
+candidate-evidence/metadata classification.
+
+On an owned interruption, use `observe --interruption` or
+`preserve_interruption`. SIGKILL needs an actual exit observation; call it OOM
+only when bounded kernel evidence matches boot/PID/time. Permission failures
+remain “OOM unconfirmed.” Retain the original linked worktree, index, staged/
+unstaged/untracked content and modes; apply Git's existing retention lock,
+which #208 cleanup respects. No reset, deletion or recovery-copy engine runs.
+Already finished failures remain failures; a registered running check stays
+incomplete. `begin_check` lets the existing executor register its real child
+before asynchronous execution.
+
+Only after the owner is terminal and preservation succeeds may one fresh
+replacement reuse that same worktree and exact HEAD. Changed/missing retention
+state or an un-lockable primary worktree gives a precise hold without deleting
+anything. Repeated replacement is not automatic. The retained physical worktree
+is not an authenticated content snapshot; coordinator ownership prevents other
+writers while it is reassigned. Existing completed-worktree cleanup remains
+the sole cleanup mechanism.
+
+### Optional operational report and compatibility
+
+Reporter `--handoffs <state.json>` first validates the unchanged v1 baseline,
+then emits `{schema_version: 2, baseline: <v1>, implementation_handoffs: <metrics>}`.
+Without the flag, v1 fixtures, arguments, expected values, seals and deletion
+proofs are unchanged. Counts include accepted/rejected/interrupted/in-progress,
+stale responses, lifetime, measured RSS, unknown RSS, native coordination turns,
+recovery cost and separate authoritative CI states. Missing observations never
+become zero measurements or authenticated offline delivery proof. A locally
+accepted handoff is not a merged/delivered PR.
+
+Dependencies: #176 and #216's existing locked `jsonschema` test environment.
+While #217 is open, this is its genuine child; no #205/#211 dependency or #179
+API is adopted. Dependent: #181. Conflicts: reused owners/watchers, arbitrary
+candidate execution or broker formats. No game/runtime, save, ROM/RAM content,
+locale, generated data, modern/archival profile, Build topology or final-gate
+change. Revert the dedicated #178 change if needed; owner publication,
+metadata-event handling, immediate checkpoint publication and #208 cleanup stay.
+
+The complete human/automated procedure is
+[TC-WORKFLOW-AGENT-HANDOFF-001](test-cases/workflow-governance.md#tc-workflow-agent-handoff-001-validate-bounded-exact-sha-agent-handoffs).

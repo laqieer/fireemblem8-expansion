@@ -485,7 +485,8 @@
         "https://github.com/laqieer/fireemblem8-expansion/issues/178",
         "https://github.com/laqieer/fireemblem8-expansion/issues/199",
         "https://github.com/laqieer/fireemblem8-expansion/issues/208",
-        "https://github.com/laqieer/fireemblem8-expansion/issues/207"
+        "https://github.com/laqieer/fireemblem8-expansion/issues/207",
+        "https://github.com/laqieer/fireemblem8-expansion/issues/216"
       ],
       "reference": ".github/skills/development-workflow/SKILL.md",
       "status": "current",
@@ -498,7 +499,8 @@
         "TC-WORKFLOW-METADATA-EDIT-RACE-001",
         "TC-WORKFLOW-PILOT-BASELINE-001",
         "TC-WORKFLOW-AGENT-HANDOFF-001",
-        "TC-WORKFLOW-WORKTREE-CLEANUP-001"
+        "TC-WORKFLOW-WORKTREE-CLEANUP-001",
+        "TC-WORKFLOW-HOST-PYTHON-DEPS-001"
       ]
     },
     {
@@ -2174,6 +2176,66 @@
       ]
     },
     {
+      "id": "TC-WORKFLOW-AGENT-HANDOFF-001",
+      "title": "Validate bounded exact-SHA agent handoffs",
+      "feature_id": "workflow-governance",
+      "issue_urls": ["https://github.com/laqieer/fireemblem8-expansion/issues/178"],
+      "document": "docs/test-cases/workflow-governance.md",
+      "anchor": "tc-workflow-agent-handoff-001-validate-bounded-exact-sha-agent-handoffs",
+      "profiles": ["Source-only Linux checkout with the issue #216 locked host Python environment and Git"],
+      "purpose": "Prove exact-SHA, bounded local handoffs using actual Git, native CLI events, owned process exits/checks, authoritative run reconciliation and retained original worktree recovery.",
+      "prerequisites": "Start at the exact source root with the unchanged #176 baseline and #216 environment; no token, live workflow, ROM or emulator is required.",
+      "actions": "Run the focused handoff/observation suite. Exercise clean single/multiple task commits and authorized upstream merges; stale/dirty/wrong-scope/missing-evidence controls; native lifecycle, real PID/exit/RSS, duplicate owners/watchers, exact GitHub responses, SIGKILL preservation and availability. Execute documented CLI positive/negative commands and optional reporting.",
+      "expected_result": "Only an exact clean measured descendant is locally ready. Task trailers exclude imported upstream history; incremental budgets remain separate from full-PR review size. Lifecycle states are independently observed, owners rotate, one watcher owns each exact run/attempt, GitHub success/failure remains authoritative, and one replacement reuses the retained locked original worktree.",
+      "negative_control": "Stale/wrong-parent/non-HEAD/unrelated results, dirty/conflicting/hidden-index trees, missing trailers/evidence, failed or incomplete checks, unknown/over-budget resources, oversized/duplicate/invalid JSON, candidate checker substitution, tool-success/printed-exit labels, reused/opaque PID, missing RSS, overlapping ownership/watchers, wrong run identities, unknown OOM, lost recovery locks and unavailable coordinators fail or remain explicitly unknown.",
+      "interactions": "Depends on #176 and #216/#217; dependent #181. #179 is independent and #205/#211 is not required. Preserve #199 metadata events, #207 immediate publication, #208 cleanup and original final gates; no broker or generic runtime is introduced.",
+      "save_compatibility": "No game/runtime, save/configuration, locale, generated data, ROM/RAM content, modern debug/release, archival or Build topology change.",
+      "cleanup": "Fixtures remove only their own build/test-artifacts/agent-handoff-* directories and reap their own children. No remote state, unrelated process or Dev Box setting changes.",
+      "limitations": "GitHub/kernel responses are inert fixtures at external boundaries; production adapters execute. Opaque runtime handles and absent OS/RSS/OOM authority remain unknown. Coordinator records are trusted operational input, not authenticated offline proof or publication authority. No manual-only criterion applies.",
+      "automation": [
+        {
+          "command": "build/host-python/bin/python3 -I -c 'import sys, unittest; sys.path.insert(0, \".\"); unittest.main(module=None)' scripts.workflow_pilot.tests.test_agent_handoff scripts.workflow_pilot.tests.test_coordinator_observations -v",
+          "evidence": "scripts/workflow_pilot/tests/test_agent_handoff.py"
+        },
+        {
+          "command": "python3 -m unittest scripts.docs_check_tests.test_development_workflow_skill.DevelopmentWorkflowSkillTests.test_bounded_exact_sha_agent_handoff_is_indexed -v",
+          "evidence": "scripts/docs_check_tests/test_development_workflow_skill.py"
+        }
+      ]
+    },
+    {
+      "id": "TC-WORKFLOW-HOST-PYTHON-DEPS-001",
+      "title": "Bootstrap isolated schema-test dependencies",
+      "feature_id": "workflow-governance",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/216"
+      ],
+      "document": "docs/test-cases/workflow-governance.md",
+      "anchor": "tc-workflow-host-python-deps-001-bootstrap-isolated-schema-test-dependencies",
+      "profiles": [
+        "Source checkout; CPython 3.12, Linux x86_64, glibc >= 2.17"
+      ],
+      "purpose": "Supply the complete pinned, hash-verified isolated host dependency closure for Draft 2020-12 schema tests and their required date-time validator.",
+      "prerequisites": "OS python3-venv/ensurepip and trusted PyPI access for initial setup; new exclusively owned paths under build/, no system or user site packages.",
+      "actions": "Reproduce import failure in a --without-pip venv under -I. Run scripts/host_python.py create and the owned interpreter's check, focused dependency suite, existing reporter-tests entrypoint and parsed Build/verify argv contracts. Exercise valid/adversarial schemas, optional/transitive omissions, corrupt/missing/incompatible wheels, wrong platform, user-site-only installation, ambient pip configuration, and existing/symlink targets.",
+      "expected_result": "Exact locked versions and complete dependencies load in the owned interpreter; required date-time checks reject invalid inputs; actual reporter discovery and consistent parsed workflow/interpreter paths pass without global/user package mutation.",
+      "negative_control": "The fresh undeclared isolated import fails. Unpinned/unhashed input, damaged or absent wheels, unsupported profiles, optional format omission/silent acceptance, incomplete dependency closure and user-site-only installs all fail explicitly.",
+      "interactions": "Shared prerequisite for #178/#191 and #205/#211; their protocol semantics remain independent. Conflicts with ambient-only/unpinned installs, environment reuse and unsupported wheel profiles; all Build routing, authority and gates remain intact.",
+      "save_compatibility": "No save/config, ROM/RAM, generated-game-data, localization, modern profile or archival compiler changes.",
+      "cleanup": "Regression deletes only its UUID-owned fixtures. Remove only your own build/host-python-missing and, after use, build/host-python; failed setup paths remain for diagnosis.",
+      "limitations": "Only CPython 3.12 Linux x86_64 glibc >= 2.17 and the required optional date-time format are supported. Initial setup requires PyPI or an explicit complete local wheelhouse. Missing Git authority or consumer protected-principal criteria remain separate; no visual/audio/manual criterion.",
+      "automation": [
+        {
+          "command": "build/host-python/bin/python3 -I -m unittest discover -s scripts/workflow_pilot/tests -t . -p test_host_python.py -v",
+          "evidence": "scripts/workflow_pilot/tests/test_host_python.py"
+        },
+        {
+          "command": "python3 -m unittest tests.workflows.test_build_ci_topology tests.upstream_port.test_verify.VerifyGatesMirrorWorkflowTests -v",
+          "evidence": "tests/workflows/test_build_ci_topology.py"
+        }
+      ]
+    },
+    {
       "id": "TC-WORKFLOW-WORKTREE-CLEANUP-001",
       "title": "Remove only proven completed worktrees",
       "feature_id": "workflow-governance",
@@ -2440,46 +2502,6 @@
         {
           "command": "python3 -m unittest discover -s tests/workflows -p 'test_*.py' -v",
           "evidence": "tests/workflows/test_build_ci_topology.py"
-        },
-        {
-          "command": "python3 scripts/check_docs.py --check",
-          "evidence": "scripts/check_docs.py"
-        }
-      ]
-    },
-    {
-      "id": "TC-WORKFLOW-AGENT-HANDOFF-001",
-      "title": "Validate bounded exact-SHA agent handoffs",
-      "feature_id": "workflow-governance",
-      "issue_urls": [
-        "https://github.com/laqieer/fireemblem8-expansion/issues/178"
-      ],
-      "document": "docs/test-cases/workflow-governance.md",
-      "anchor": "tc-workflow-agent-handoff-001-validate-bounded-exact-sha-agent-handoffs",
-      "profiles": [
-        "Clean source checkout with Python 3, Git, immutable handoff fixtures, and no live GitHub workflow"
-      ],
-      "purpose": "Prove exact-parent clean handoffs, canonical signature and interruption-snapshot base64 encodings, modulus-bounded RSA verification, installation-anchored signer/ruleset/bypass authority, frozen-base/live-base PR binding, bounded remote Git transport, current-time receipt freshness, stateful external nonce consumption, signed historical/offline reporter verification, atomic protected authority, linear successors, content recovery, and conservative resources.",
-      "prerequisites": "Start at the exact Git repository root with Python 3, Git, OpenSSL, the issue #176 reporter, agent-handoff schema/module, and an external signer/bootstrap installation containing public verification material only; no token, ROM, emulator, or game build is required.",
-      "actions": "Run the focused handoff suite and workflow-pilot discovery; use a protected bare origin plus isolated signer/consume store to exercise canonical standard-padded base64 signatures, same-width `s + n` RSA aliases, exact installation-anchored signer/ruleset/non-user-bypass checks, bare-remote-config force-push/deletion denial, frozen-base/live-base PR comparisons, bounded `ls-remote`/fetch/atomic-preflight transport timeouts, bounded trusted-parent/bootstrap checker timeouts with process-group cleanup, no-follow `.git/info/attributes` preflight, current-time receipt validation, real post-snapshot remote branch mutation, double nonce consumption, after-sign mutation, one-time canonical result finalization, atomic dual-ref publication, bundle-rejected reporter aggregation, and offline/relocated reporter verification from a signed `--implementation-handoff-trust` sidecar plus a separate trusted `--implementation-handoff-installation` root.",
-      "expected_result": "Trusted push requires canonical signature text, an RSA representative strictly below the public modulus, the exact installation-matched signer identity/public material digest, ruleset ID, bypass actor set, fresh live receipt whose repository identity matches the installation and frozen delivery expectation, a live PR response that records the current base separately while preserving the frozen base provenance, bounded remote Git transport that kills stalled helper trees, bounded checker subprocess teardown, terminal remote ref reconciliation at eligibility, and one statefully consumed external decision. Historical reads recompute the stored PR binding digest, publication binding expectation, and frozen-base ancestry, require the stored and attested bind head to match the immediately prior sealed handoff candidate, derive bind authority/anchor identities from the canonical prior authority/anchor state before accepting current authority, and preserve bundle-level duplicate-watcher/watcher-owner/remote-coverage rejection reporting while offline reporter verification takes a signed trusted anchor sidecar that binds `input_seal`, canonical authority digest, repository/ref identity, signer, and validity bounds and authenticates it against the separate trusted installation root. Zero-byte interruption snapshots remain valid only with canonical `content_base64: \"\"`, and a stale structural row can never self-claim accepted or trusted status offline.",
-      "negative_control": "Base64 pad-bit aliases on signatures or interruption-snapshot bytes, same-width `s + n` signatures, bare-remote-config force-push/deletion allowance, non-regular or nonempty Git metadata files, RepositoryRole-as-user, signer/ruleset/non-user-bypass installation drift, mismatched actor IDs/mode, invented/closed/merged PRs, self-consistent wrong receipt or delivery fields, stalled transport or checker hangs/orphans, post-snapshot remote branch/base mutation, stale rows forged as accepted/trusted, swapped old/new signed bind observations, stale signed authority observations, out-of-band bind heads, copied anchors/seals/sequences, stale current-base observations, non-descendant rewritten base, repeated nonce before authority push, after-sign push, preissued local freshness, recomputed RSS/outcome/summary hashes, self-key bundles without a matching trusted anchor, double finalization, missing attestation, split publication, nonancestor history, rollback/replay/ABA, checker replacement, omitted actions, mixed IDs, and forged resources reject.",
-      "interactions": "Depends on #176; dependent #181; conflicts none with trusted owner push, centralized direct watchers, final exact-head gates, game runtime, save, generated data, localization, ROM/RAM content, or archival behavior.",
-      "save_compatibility": "Source-only delivery coordination; no save field, epoch, migration, generated game data, localization, ROM/RAM, modern debug/release, gameplay, or archival impact.",
-      "cleanup": "Temporary Git repositories below build/test-artifacts are removed automatically; no remote state, process, memory pressure, or Dev Box setting is changed.",
-      "limitations": "GitHub PR/ruleset/source responses, process/network policy, runtime telemetry, SIGKILL/OOM evidence, and availability are inert externally signed local fixtures. The signer process loads then unlinks its private key before implementation validation. Live GitHub mutation is outside the test and owner contract. No manual-only criterion applies.",
-      "automation": [
-        {
-          "command": "python3 -m unittest scripts.workflow_pilot.tests.test_agent_handoff -v",
-          "evidence": "scripts/workflow_pilot/tests/test_agent_handoff.py"
-        },
-        {
-          "command": "python3 -m unittest discover -s scripts/workflow_pilot/tests -p 'test_*.py' -v",
-          "evidence": "scripts/workflow_pilot/tests/test_reporter.py"
-        },
-        {
-          "command": "python3 -m unittest scripts.docs_check_tests.test_development_workflow_skill -v",
-          "evidence": "scripts/docs_check_tests/test_development_workflow_skill.py"
         },
         {
           "command": "python3 scripts/check_docs.py --check",

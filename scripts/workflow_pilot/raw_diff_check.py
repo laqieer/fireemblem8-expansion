@@ -8,11 +8,13 @@ import io
 import os
 import re
 import selectors
+import signal
 import stat
 import subprocess
 import sys
 import time
 from contextlib import contextmanager
+from dataclasses import dataclass
 from pathlib import Path
 
 
@@ -36,6 +38,7 @@ def git_environment() -> dict[str, str]:
         "GIT_CONFIG_SYSTEM": "/dev/null",
         "GIT_NO_LAZY_FETCH": "1",
         "GIT_NO_REPLACE_OBJECTS": "1",
+        "GIT_OPTIONAL_LOCKS": "0",
         "GIT_TERMINAL_PROMPT": "0",
         "LC_ALL": "C",
         "PATH": "/usr/bin:/bin",
@@ -46,12 +49,23 @@ def git_command(repository_root: Path, *arguments: str) -> tuple[str, ...]:
     return (
         GIT,
         "--no-replace-objects",
+        "--literal-pathspecs",
         "-C",
         str(repository_root),
         "-c",
         f"core.whitespace={WHITESPACE_POLICY}",
         "-c",
         "core.attributesFile=/dev/null",
+        "-c",
+        "core.hooksPath=/dev/null",
+        "-c",
+        "core.fsmonitor=false",
+        "-c",
+        "core.ignorestat=false",
+        "-c",
+        "core.trustctime=true",
+        "-c",
+        "core.checkStat=default",
         "-c",
         "color.ui=false",
         "-c",
@@ -74,43 +88,75 @@ def git_command(repository_root: Path, *arguments: str) -> tuple[str, ...]:
     )
 
 
-def run_git(repository_root: Path, *arguments: str) -> bytes:
-    with subprocess.Popen(
-        git_command(repository_root, *arguments),
-        cwd=repository_root, env=git_environment(), stdin=subprocess.DEVNULL,
-        stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-    ) as process:
+@dataclass(frozen=True)
+class ProcessResult:
+    returncode: int
+    stdout: bytes
+    stderr: bytes
+    pid: int
+    elapsed_seconds: float
+    peak_rss_bytes: int
+
+
+def run_process(argv, *, cwd, env, timeout=GIT_TIMEOUT_SECONDS, max_bytes=MAX_BYTES):
+    """Capture an owned child, not printed exit labels or tool transport status."""
+    started = time.monotonic()
+    process = subprocess.Popen(
+        argv, cwd=cwd, env=env, stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=True,
+    )
+    try:
         output = {process.stdout: bytearray(), process.stderr: bytearray()}
-        remaining = MAX_BYTES
-        deadline = time.monotonic() + GIT_TIMEOUT_SECONDS
-        try:
-            with selectors.DefaultSelector() as selector:
-                for stream in output:
-                    selector.register(stream, selectors.EVENT_READ)
-                while selector.get_map():
-                    wait = deadline - time.monotonic()
-                    if wait <= 0:
-                        raise ValueError("Git timed out")
-                    for key, _ in selector.select(wait):
-                        chunk = os.read(key.fd, min(65536, remaining + 1))
-                        remaining -= len(chunk)
-                        if remaining < 0:
-                            raise ValueError("Git output exceeds 4 MiB")
-                        if chunk:
-                            output[key.fileobj].extend(chunk)
-                        else:
-                            selector.unregister(key.fileobj)
-            process.wait(timeout=max(0, deadline - time.monotonic()))
-        except subprocess.TimeoutExpired as error:
-            raise ValueError("Git timed out") from error
-        finally:
-            if process.poll() is None:
-                process.kill()
+        remaining = max_bytes
+        deadline = started + timeout
+        with selectors.DefaultSelector() as selector:
+            for stream in output:
+                selector.register(stream, selectors.EVENT_READ)
+            while selector.get_map():
+                wait = deadline - time.monotonic()
+                if wait <= 0:
+                    raise ValueError("process timed out")
+                for key, _ in selector.select(wait):
+                    chunk = os.read(key.fd, min(65536, remaining + 1))
+                    remaining -= len(chunk)
+                    if remaining < 0:
+                        raise ValueError(f"process output exceeds {max_bytes} bytes")
+                    if chunk:
+                        output[key.fileobj].extend(chunk)
+                    else:
+                        selector.unregister(key.fileobj)
+        while True:
+            pid, status, usage = os.wait4(process.pid, os.WNOHANG)
+            if pid:
+                process.returncode = os.waitstatus_to_exitcode(status)
+                break
+            if time.monotonic() >= deadline:
+                raise ValueError("process timed out")
+            time.sleep(0.01)
+        return ProcessResult(
+            process.returncode, bytes(output[process.stdout]), bytes(output[process.stderr]),
+            process.pid, time.monotonic() - started, usage.ru_maxrss * 1024,
+        )
+    finally:
+        if process.returncode is None:
+            # Only the session created above is ours. Never resolve a supplied PID/group.
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
             process.wait()
-        if process.returncode:
-            detail = output[process.stderr].decode("utf-8", errors="replace").strip()
-            raise ValueError(f"Git {' '.join(arguments)} failed: {detail}")
-        return bytes(output[process.stdout])
+        process.stdout.close()
+        process.stderr.close()
+
+
+def run_git(repository_root: Path, *arguments: str) -> bytes:
+    result = run_process(
+        git_command(repository_root, *arguments), cwd=repository_root, env=git_environment(),
+    )
+    if result.returncode:
+        detail = result.stderr.decode("utf-8", errors="replace").strip()
+        raise ValueError(f"Git {' '.join(arguments)} failed: {detail}")
+    return result.stdout
 
 
 @contextmanager
@@ -189,7 +235,12 @@ def exact_repository_root(value: str) -> Path:
     root = Path(value).resolve(strict=True)
     if not root.is_dir():
         raise ValueError("repository root is not a directory")
-    reject_git_metadata(root, (("info/attributes", "local attributes file"),))
+    reject_git_metadata(root, (
+        ("info/attributes", "local attributes file"),
+        ("info/grafts", "graft file"),
+        ("objects/info/alternates", "alternate object store"),
+        ("objects/info/http-alternates", "HTTP alternate object store"),
+    ))
     top = Path(run_git(root, "rev-parse", "--show-toplevel").decode("utf-8").strip()).resolve()
     if root != top:
         raise ValueError(f"repository root must be exact Git top level {top}")

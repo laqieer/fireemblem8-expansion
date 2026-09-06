@@ -36,7 +36,7 @@ the authoritative technical documentation and are checked by CI.
 | Build or verify the patch-only maximal profile artifact | [`patch_release.md`](patch_release.md) |
 | Generate or test localized full-game message catalogs | [`game_localization_catalog.md`](game_localization_catalog.md) |
 | Evaluate and deliver a feature request or bug fix with Copilot | [`development-workflow`](../.github/skills/development-workflow/SKILL.md) |
-| Reproduce the workflow-efficiency pilot baseline, event selection/evidence contract, or validate an exact-SHA agent handoff | [`workflow-pilot.md`](workflow-pilot.md) |
+| Reproduce the workflow-efficiency baseline, event selection, or bounded exact-SHA handoffs | [`workflow-pilot.md`](workflow-pilot.md) |
 | Contribute code/docs and know the review process | [`../CONTRIBUTING.md`](../CONTRIBUTING.md), [`project-governance.md`](project-governance.md) |
 | Come from the old decomp-base/agbcc workflow | [`migration-from-decomp.md`](migration-from-decomp.md) |
 | Do byte-for-byte decomp-matching work | [`archival-decomp.md`](archival-decomp.md) |
@@ -136,7 +136,7 @@ and
 | [`migration-from-decomp.md`](migration-from-decomp.md) | Current | Decomp-base/agbcc → modern framework bridge |
 | [`release-migration-template.md`](release-migration-template.md) | Template | Fill in for a real future version migration |
 | [`archival-decomp.md`](archival-decomp.md) | Current, archival scope | Unsupported-for-releases decomp-matching workflow |
-| [`workflow-pilot.md`](workflow-pilot.md) | Current | Frozen workflow-efficiency baseline, event classifier/evidence protocol, formulas, decision schema, artifact lifecycle, and bounded exact-SHA agent handoffs (issues #176/#177/#178) |
+| [`workflow-pilot.md`](workflow-pilot.md) | Current | Frozen workflow-efficiency baseline, event/evidence protocol, artifact lifecycle, and bounded exact-SHA handoffs (issues #176/#177/#178) |
 | [`config_identity.md`](config_identity.md) | Current | Config surface + ROM identity fingerprint (issue #8) |
 | [`save_format.md`](save_format.md) | Current | Save format + compatibility gate (issue #2) |
 | [`id_space.md`](id_space.md) | Current | Typed-ID DEFAULT vs ACTIVE contract, cap switching (issue #10) |

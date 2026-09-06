@@ -427,19 +427,31 @@ def _replace_commit_identities(value, replacements):
 
 
 @contextlib.contextmanager
-def git_authority(
-    fixture,
-    implementation_handoff_trust=None,
-    implementation_handoff_installation=None,
-):
+def git_authority(fixture):
     fixture = copy.deepcopy(fixture)
-    if implementation_handoff_installation is None:
-        reporter.validate_fixture(fixture, implementation_handoff_trust=implementation_handoff_trust, implementation_handoff_installation=implementation_handoff_installation)
-    with tempfile.TemporaryDirectory(prefix="workflow-pilot-authority-", dir=TEST_ARTIFACTS) as temporary:
+    reporter.validate_fixture(fixture)
+    with tempfile.TemporaryDirectory(
+        prefix="workflow-pilot-authority-",
+        dir=TEST_ARTIFACTS,
+    ) as temporary:
         repository_root = Path(temporary)
         git_run(repository_root, "init", "-q", "-b", "master")
-        git_run(repository_root, "remote", "add", "origin", f"https://github.com/{fixture['repository']}.git")
-        empty_tree = git_run(repository_root, "mktree", input=b"").stdout.decode("ascii").strip()
+        git_run(
+            repository_root,
+            "remote",
+            "add",
+            "origin",
+            f"https://github.com/{fixture['repository']}.git",
+        )
+        empty_tree = (
+            git_run(
+                repository_root,
+                "mktree",
+                input=b"",
+            )
+            .stdout.decode("ascii")
+            .strip()
+        )
         commits = {commit["sha"]: commit for commit in fixture["commits"]}
         replacements = {}
         pending = set(commits)
@@ -461,8 +473,14 @@ def git_authority(
                 raise AssertionError("test fixture commit graph is cyclic or incomplete")
             for old_sha in ready:
                 commit = commits[old_sha]
-                message = _replace_commit_identities(commit["message"], replacements)
-                command = ["commit-tree", empty_tree]
+                message = _replace_commit_identities(
+                    commit["message"],
+                    replacements,
+                )
+                command = [
+                    "commit-tree",
+                    empty_tree,
+                ]
                 for parent_sha in commit["parents"]:
                     command.extend(("-p", replacements[parent_sha]))
                 environment = {
@@ -473,27 +491,34 @@ def git_authority(
                     "GIT_AUTHOR_DATE": commit["committed_at"],
                     "GIT_COMMITTER_DATE": commit["committed_at"],
                 }
-                replacements[old_sha] = git_run(repository_root, *command, input=(message + "\n").encode("utf-8"), environment=environment).stdout.decode("ascii").strip()
+                replacements[old_sha] = (
+                    git_run(
+                        repository_root,
+                        *command,
+                        input=(message + "\n").encode("utf-8"),
+                        environment=environment,
+                    )
+                    .stdout.decode("ascii")
+                    .strip()
+                )
                 pending.remove(old_sha)
-        authoritative_fixture = _replace_commit_identities(fixture, replacements)
-        if "implementation_handoffs" in fixture:
-            authoritative_fixture["implementation_handoffs"] = copy.deepcopy(fixture["implementation_handoffs"])
-        yield authoritative_fixture, repository_root
+        yield (
+            _replace_commit_identities(fixture, replacements),
+            repository_root,
+        )
 
 
-def authoritative_report(
-    fixture,
-    decisions,
-    repository_root=None,
-    implementation_handoff_trust=None,
-    implementation_handoff_installation=None,
-):
+def authoritative_report(fixture, decisions, repository_root=None):
     if repository_root is not None:
-        return reporter.build_report(fixture, decisions, repository_root, implementation_handoff_trust=implementation_handoff_trust, implementation_handoff_installation=implementation_handoff_installation)
+        return reporter.build_report(fixture, decisions, repository_root)
     if fixture["repository"] == "laqieer/fireemblem8-expansion":
-        return reporter.build_report(fixture, decisions, BASELINE_AUTHORITY, implementation_handoff_trust=implementation_handoff_trust, implementation_handoff_installation=implementation_handoff_installation)
-    with git_authority(fixture, implementation_handoff_trust=implementation_handoff_trust, implementation_handoff_installation=implementation_handoff_installation) as (authoritative_fixture, authority_root):
-        return reporter.build_report(authoritative_fixture, decisions, authority_root, implementation_handoff_trust=implementation_handoff_trust, implementation_handoff_installation=implementation_handoff_installation)
+        return reporter.build_report(fixture, decisions, BASELINE_AUTHORITY)
+    with git_authority(fixture) as (authoritative_fixture, authority_root):
+        return reporter.build_report(
+            authoritative_fixture,
+            decisions,
+            authority_root,
+        )
 
 
 def expected_from_report(report):
@@ -919,10 +944,7 @@ class BaselineFixtureTests(unittest.TestCase):
             capture_output=True,
         )
         self.assertEqual(wrong_root.returncode, 2)
-        self.assertRegex(
-            wrong_root.stderr.decode("utf-8"),
-            r"(exact Git top level|repository \.git entry)",
-        )
+        self.assertIn(b"exact Git top level", wrong_root.stderr)
 
         wrong_decisions = subprocess.run(
             [
@@ -977,65 +999,6 @@ class BaselineFixtureTests(unittest.TestCase):
                         f"{option} must identify".encode("ascii"),
                         result.stderr,
                     )
-
-    def test_trusted_json_sidecar_reader_rejects_unsafe_inputs(self):
-        with tempfile.TemporaryDirectory(prefix="workflow-pilot-trust-sidecar-", dir=TEST_ARTIFACTS) as temporary:
-            root = Path(temporary)
-            valid = root / "trust.json"
-            valid.write_text('{"schema_version":1,"anchors":[]}\n', encoding="utf-8")
-            load = lambda path: reporter.load_json(
-                path,
-                label="implementation handoff trust sidecar",
-                max_bytes=reporter.TRUSTED_JSON_MAX_BYTES,
-            )
-            self.assertEqual(
-                load(valid),
-                {"schema_version": 1, "anchors": []},
-            )
-            symlink = root / "trust-link.json"
-            symlink.symlink_to(valid.name)
-            fifo = root / "trust-fifo.json"
-            os.mkfifo(fifo)
-            duplicate = root / "trust-duplicate.json"
-            duplicate.write_text('{"schema_version":1,"schema_version":2}', encoding="utf-8")
-            invalid_utf8 = root / "trust-invalid-utf8.json"
-            invalid_utf8.write_bytes(b'{"schema_version":1,"anchors":["\xff"]}')
-            oversized = root / "trust-oversized.json"
-            oversized.write_bytes(
-                b'{"schema_version":1,"anchors":["'
-                + (b"x" * reporter.TRUSTED_JSON_MAX_BYTES)
-                + b'"]}'
-            )
-            for path, message in (
-                (symlink, "must be a regular file"),
-                (fifo, "must be a regular file"),
-                (duplicate, "duplicate JSON key 'schema_version'"),
-                (invalid_utf8, "not valid UTF-8"),
-                (oversized, "exceeds 1 MiB"),
-            ):
-                with self.subTest(path=path.name):
-                    with self.assertRaisesRegex(reporter.PilotDataError, message):
-                        load(path)
-
-    def test_trusted_json_sidecar_reader_rejects_raced_path(self):
-        with tempfile.TemporaryDirectory(prefix="workflow-pilot-trust-sidecar-race-", dir=TEST_ARTIFACTS) as temporary:
-            path = Path(temporary) / "trust.json"
-            path.write_text('{"schema_version":1,"anchors":[]}\n', encoding="utf-8")
-            real_signature = reporter._json_file_signature
-            calls = 0
-            def raced_signature(metadata):
-                nonlocal calls
-                calls += 1
-                signature = real_signature(metadata)
-                if calls == 3:
-                    return (*signature[:-1], signature[-1] + 1)
-                return signature
-
-            with (
-                mock.patch.object(reporter, "_json_file_signature", side_effect=raced_signature),
-                self.assertRaisesRegex(reporter.PilotDataError, "changed while being read"),
-            ):
-                reporter.load_json(path, label="implementation handoff trust sidecar", max_bytes=reporter.TRUSTED_JSON_MAX_BYTES)
 
 
 class RepositoryAuthorityTests(unittest.TestCase):

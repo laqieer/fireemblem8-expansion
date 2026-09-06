@@ -22,6 +22,12 @@ For feature requests and bug fixes, this skill implements Discussion #30 and
 is authoritative over conflicting generic review or closure guidance elsewhere
 in the repository. Do not add a human code-review or approval gate.
 
+In this repository, check new prerequisites against the original user goal and
+accepted threat model. Prefer existing mechanisms. Do not turn optional hardening
+or problems introduced by an implementation choice into mandatory blockers;
+simplify or separate them while preserving real safety requirements and final
+delivery gates.
+
 ## Phase 1: establish state
 
 1. Read the complete issue or discussion, including comments and linked PRs.
@@ -596,209 +602,42 @@ a gate.
 
 ### Bounded exact-SHA implementation handoffs
 
-Before assigning implementation work, the coordinator creates one immutable
-handoff document for that bounded owner and validates the returned document
-with:
+Use the [version-3 contract](../../../docs/workflow-pilot.md#bounded-exact-sha-implementation-handoffs)
+and retain `TC-WORKFLOW-AGENT-HANDOFF-001`. One coordinator owns the assignment
+and a bounded, locked, atomically updated session-local state document. The
+implementation-submitted result cannot replace Git, focused-check, process or
+GitHub observations, or alter scope, budgets or permitted actions.
 
-```bash
-python3 -m scripts.workflow_pilot.agent_handoff \
-  --fixture <path> --worktree <exact-worktree> \
-  --coordinator-installation <external-path>
-```
+Observe dispatch, explicit receipt, progress, commit and result delivery
+separately. Native CLI event IDs correlate the first three and delivery; Git
+establishes the commit. A tool's transport success and displayed exit text are
+not OS process results. Run focused checks through reviewed coordinator tools
+or the existing approved test/CI route, never by importing a candidate-selected
+module into a credential-bearing collector.
 
-The assignment records the issue/PR, exact parent SHA, expected branch and
-worktree, allowed path scope, finding IDs, acceptance criteria, focused
-checks, line/ROM/RAM/protocol budgets, owner lifetime/RSS bounds, and the
-complete prohibited remote-action set. Every owner and coordinator has an
-authoritatively resolved numeric GitHub ID. Git supplies the worktree, branch,
-result commit, direct parent, diff, changed paths, line count, commit message,
-and clean/conflict state; do not persist a second mutable copy of those facts.
+Record exact authorized upstream merge inputs before assignment; verify the
+task's first-parent commits and apply their trailers without demanding task
+trailers from imported upstream history. Keep incremental handoff budgets
+separate from the full PR's review-size gate. Close the implementation owner
+after its committed handoff; a review successor needs a fresh runtime/session.
+Use existing runtime deadlines and process controls for bounded lifetime.
+Opaque handles and unavailable RSS or OOM authority remain unknown, not proven.
 
-Required checks use closed structured check contracts and sealed receipts
-bound to the check ID, exact argv, assigned parent, candidate SHA, worktree
-identity, execution timestamps, exit code, and output digest. The validator
-re-executes only the allowlisted non-shell command and compares the receipt.
-It never executes a caller-authored command. A passed label cannot make
-literal `false`, a failed safe check, or a stale/wrong-command/SHA/worktree
-receipt pass.
-The Git check runs the assigned parent's exact raw-diff-checker blob under the
-reporter's minimal environment, never the candidate worktree copy. A parent
-without that blob enters explicit bootstrap mode and requires the external
-coordinator-installed validator; bootstrap can produce check evidence but
-cannot become `trusted_push_eligible`. The checker's internal Git argv pins the
-complete
-behavior-affecting `-c` policy and disables external diff, textconv, and binary
-bypasses; the raw added-line policy ignores tracked whitespace attributes, and
-local attributes are forbidden. Local, global, system, alias, tracked
-attribute, and ambient `GIT_*` configuration cannot hide trailing whitespace.
+One coordinator owns one direct watcher per repository/run/attempt. A watcher
+failure triggers an exact GitHub run query; preserve real failure and incomplete
+states and re-arm only after the previous watcher has terminated. No reasoning
+agent waits for CI. Preserve/lock and reuse the original interrupted worktree
+before one bounded replacement; never reset/delete it or build a second recovery
+copy engine. Check unattended availability or document a covering availability
+plan, without treating that decision as a permanent uptime guarantee.
 
-Dependency edges have explicit semantics. A child issue with a
-`code_contract` dependency becomes implementation-ready when the parent
-`merge` task is `done` and the target tree contains that contract. Never point
-the child implementation task at the parent's post-merge Build, completion,
-evidence/closure, or remote-completion task. Those are `delivery_gate`
-dependencies for finishing the parent itself: the parent's completion,
-closure, and remote completion each remain blocked by its own post-merge
-Build. A direct async watcher is orthogonal execution state and must never be
-a todo or dependency target.
-
-Every handoff maps to exactly one relationship and one implementation task
-with the same handoff, issue, PR, candidate, and lifecycle-derived status.
-Missing, duplicate, or relabeled relationships/tasks reject. Every task state,
-including `done`, `in_progress`, and `blocked`, is checked against typed
-dependencies and its closed status reason. The parent's post-merge Build task
-is bound to one authoritative GitHub run ID, target SHA, status, and
-conclusion. An incomplete or failed run keeps parent completion, closure,
-remote completion, and delivery eligibility blocked without blocking a child
-whose merged code contract is already present.
-
-Therefore a merged parent with a healthy exact-master Build still in progress
-does not block dependency-ready child implementation; continue that work
-concurrently. A parent whose merge is still pending blocks the child. If the
-master run later becomes terminal-failed, enter immediate fix-forward/revert
-state, but do not reinterpret the earlier healthy pending interval as a reason
-the coordinator should have idled. The machine-readable delivery graph rejects
-`child-implement -> parent-remote` for a declared `code_contract` relationship
-and identifies `child-implement -> parent-merge` as the required edge.
-
-`assignment_sent`, `assignment_received`, `progressing`, `committed`, and
-`handed_off` are separate timestamped states. Only one clean result commit
-whose sole direct parent is the assigned SHA, whose final trailer is the
-required Copilot trailer, and whose named evidence and budgets pass may enter
-trusted owner push. Repeated-parent/stale results, wrong parents or branches,
-dirty/conflicting worktrees, missing commits/trailers/evidence, scope or
-budget violations, and any push/PR/comment/dispatch/ref/merge action by the
-implementation owner fail closed. A committed handoff closes that owner; a
-second root cannot be introduced. A closed committed handoff may have one
-causally later, nonoverlapping `review_successor` with a fresh owner and the
-closed result as assigned parent. An interrupted current owner may instead
-have one `oom_replacement`.
-
-Owner, coordinator, and remote-actor comparisons require immutable numeric
-GitHub IDs resolved authoritatively before validation. Missing IDs, one login
-mapped to multiple IDs, or one ID mapped to multiple logins reject.
-Each new document carries the prior closed handoffs as a sealed hash chain
-covering sequence, previous seal, handoff, replacement edge, owner, lifecycle,
-issue, optional PR binding, candidate, interruption snapshot, input, Git, and
-result identities. Exactly one root exists and successors form one linear
-chain. Two active successors, overlap, wrong causal parent, branches, gaps,
-replay, or owner reuse across PR binding reject.
-
-Create one stable issue-scoped protected branch under
-`refs/heads/workflow-pilot/authority/` before any PR exists. PR creation
-appends the exact externally signed GitHub PR API response: repository ID/full
-name, actual PR number, `OPEN`/unmerged state, base/head branches and OIDs,
-head repository, creation/observation times, and authorized numeric actor.
-Compare every field to delivery inputs independently frozen in protected
-genesis/root assignment and in the publication request before the observation
-is signed. Keep `delivery_expectation.immediate_base_oid` as frozen
-provenance, bind the live current base OID separately, and require the frozen
-base to be an ancestor of both the live current base and the candidate head.
-Never validate an observation against copies of its own fields.
-It never creates a new namespace or genesis. A second protected branch under
-`refs/heads/workflow-pilot/authority-anchor/` binds every authority head and
-sequence. One preflighted normal `git push --atomic` publishes both
-direct-parent commits or neither. Separate/split pushes, stale coordinator
-plans, and origins without atomic capability reject. The planner never emits
-a force-capable command.
-
-The terminal coordinator attestation includes the normalized live GitHub
-ruleset API response. It must name the authority's ruleset ID, active branch
-enforcement, the exact two included refs and no excludes, restricted updates,
-non-fast-forwards, and deletion, plus exactly the expected numeric bypass
-actors with no additional bypass. Each coordinator user is represented as
-GitHub REST `actor_type: User`, `actor_id` and `database_id` both equal to the
-frozen numeric user ID, and exact `bypass_mode: always`. A `RepositoryRole`
-number is a typed role, not a user ID. Non-user actors require an explicit
-separately typed frozen authorization; the default is rejection. Unrelated or
-incomplete rulesets fail closed.
-
-Every read is a bounded before/fetch/after transaction over both protected
-branches. It fetches exact objects without moving local refs or `FETCH_HEAD`,
-validates both complete single-parent monotonic chains, and requires the
-anchor's issue/sequence/authority object to match. On movement, retry from the
-new pair up to the fixed bound, then fail `authority-moved`. Re-query the
-sealed dual-ref observation immediately before eligibility. This independent
-anchor rejects rollback and authority A-to-B-to-A ABA even if a caller
-presents an old valid authority object. Historical reads also recompute the
-stored PR binding digest and the exact canonical digest of each sealed
-history receipt. Every protected handoff commit also carries one bounded
-private `history_carrier` containing the exact signed handoff document, the
-canonical validation result, and the selected handoff ID; readback
-re-verifies the original coordinator, PR, and authority signatures, replays
-`make_history_receipt()` from that carrier, and requires the signed
-publication attestation's `history_carrier_digest` and
-`history_receipt_digest` to match the full carried carrier and receipt bytes
-rather than a projected event subset. Returned authority snapshots keep
-`history_carrier: null` so later handoff documents do not recursively embed
-older carriers. Historical reads also require the signed publication
-attestation's `binding_expectation` to match the stored frozen delivery plus
-stored live current-base fields, and re-check that the frozen base remains an
-ancestor of the stored live base OID. The stored `pr_binding.head_oid`, its
-digest, and `binding_expectation.head_oid` must all match the immediately
-prior sealed handoff candidate carried by the current
-`handoff_sequence`/`head_seal`. Derive the stored observation's
-`authority_object_id` from the bind commit's canonical `previous_object_id`.
-Derive the stored observation's
-`anchor_object_id` from the exact prior canonical anchor record, never from
-fields copied inside the observation.
-Swapped signed observations/publications, stale signed observation replays,
-out-of-band branch advances, copied anchors/seals/sequences, and rewritten
-bases fail even when each record is individually valid.
-
-There is exactly one delivery coordinator and at most one direct watcher for
-an exact run identity. A watcher timeout or process error is transport
-evidence, not the workflow conclusion: query the authoritative GitHub Actions
-run once and preserve its exact success, failure, or active state. Duplicate
-owners, coordinators, or watchers reject.
-
-The trusted coordinator collector is an isolated external asymmetric signer;
-its private key is absent from the implementation namespace and only its
-public verification material is pinned in protected authority history.
-Same-UID HMAC keys, candidate digests, and filesystem permission modes provide
-no trust. The external service owns a monotonic consume sequence/anchor and
-spent-nonce store. One atomic consume terminates and attests the implementation
-process, collects GitHub timeline/Actions/ref/audit state through that exact
-instant, decides, marks the nonce spent, and returns a signed decision. A
-second call with that nonce rejects before any authority push. Local
-validation never treats a preissued receipt as freshly eligible; the live
-receipt must satisfy the same narrow freshness window as live PR/publication
-observations, and receipt repository IDs/full names must match the
-installation manifest and frozen delivery expectation. An after-sign remote
-mutation or document change invalidates the decision. Incomplete coverage
-requires a credentialless, network-denied process.
-
-After evidenced SIGKILL/OOM, protected authority history stores content-bearing
-bytes, path/mode/hash identities, exact status, and the full original
-assignment/scope/criteria/checks/budgets. A later completed replacement must
-restore every preserved change or carry a trusted explicit resolution mapping;
-committing an unrelated file does not recover the interrupted work. Never
-simulate OOM or kill unrelated processes. Coordinator availability is also
-sealed: its observation must be fresh at validation, precede assignment, and
-cover the full unattended interval with both stop triggers disabled.
-Replacement lifecycle prefixes containing only `assignment_sent`, then
-optional `assignment_received` and `progressing`, are valid `in_progress`
-states and are never trusted-push or delivery eligible. The replacement's
-first assignment timestamp must be strictly later than the interruption;
-equal, predated, or multiple replacements reject.
-
-Workflow-pilot reporter schema v2 carries the complete source handoff document
-and an external finalize signature over the byte-identical canonical
-validation result, outcomes, summary, and verified metrics. The unkeyed
-`result_seal` is integrity-only and never authenticates history. The reporter
-verifies the finalize signature and proves the original
-authority/anchor OIDs remain ancestors of current protected heads. Historical
-metrics do not require the old worktree HEAD or live-receipt freshness, so
-sequential successors remain aggregatable. Line usage comes from Git;
-protocol changes from the parsed schema; RSS/lifetime/coordination/recovery
-from telemetry. Only exact proven host-only paths derive zero ROM/RAM. Every
-other tracked input, including linker scripts, Makefiles, assets, config,
-fonts, text, and generated data, requires closed build/map/resource evidence.
-Frozen reporter baseline schema v1 remains unchanged; the protocol is specified by
-`scripts/workflow_pilot/agent_handoff.schema.json`.
-
-The indexed source-only regression is
-[`TC-WORKFLOW-AGENT-HANDOFF-001`](../../../docs/test-cases/workflow-governance.md#tc-workflow-agent-handoff-001-validate-bounded-exact-sha-agent-handoffs).
+These are operational observations, not authenticated records. Existing
+platform role/tool permissions enforce the implementation owner's remote-action
+prohibition; do not claim protection against arbitrary hostile same-UID
+processes. There is no handoff broker, signer, privileged publication API or
+new delivery graph. The coordinator still performs normal owner-context pushes,
+and immediate publication plus every final security/review/Build/merge/closure
+gate below remain mandatory.
 
 ### Immediate publication and visible work
 
@@ -831,6 +670,7 @@ values are fixed. Surrounding prose explains this protocol, not an override.
 - **Authority:** persistence-not-acceptance
 - **Final gates:** unchanged
 - **Push failure:** explicit-blocker-no-success-claim
+
 ### Trusted push ownership
 
 Implementation subagents validate and commit locally but do not push. The
