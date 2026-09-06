@@ -666,6 +666,40 @@ _MODE_COMMANDS = (
     ("exit", "1"),
     ("fi",),
 )
+_METADATA_EVENT_PRODUCER_COMMANDS = (
+    ("if", "test", "-f", "scripts/workflow_pilot/metadata_event.py;", "then"),
+    (
+        "if", "!", "/usr/bin/python3", "-I",
+        "scripts/workflow_pilot/isolated_launcher.py", "attest-metadata-event",
+        "--event-path", "$GITHUB_EVENT_PATH", "--repository", "$GITHUB_REPOSITORY",
+        "--run-id", "$GITHUB_RUN_ID", "--run-number", "$GITHUB_RUN_NUMBER",
+        "--run-attempt", "$GITHUB_RUN_ATTEMPT", "--output", "$GITHUB_OUTPUT;", "then",
+    ),
+    ("echo", "Metadata event attribution unavailable; reconciliation must hold.", ">&2"),
+    ("fi",),
+    ("else",),
+    ("echo", "Trusted base lacks metadata event attribution; reconciliation must hold."),
+    ("fi",),
+)
+_METADATA_EVENT_PRODUCER_ENV = (
+    ("BASH_ENV", "''"),
+    ("ENV", "''"),
+    ("PATH", "/usr/bin:/bin"),
+    ("PYTHONPATH", "''"),
+)
+_METADATA_EVENT_DIGEST_EXPRESSION = (
+    "${{ needs.event-router.outputs.metadata_event_digest }}"
+)
+_METADATA_EVENT_MARKER_NAME = (
+    "workflow-pilot-metadata-event:v1:" + _METADATA_EVENT_DIGEST_EXPRESSION
+)
+_METADATA_EVENT_MARKER_CONDITION = (
+    "${{ needs.event-router.outputs.classification == 'metadata-only' && "
+    "needs.event-router.outputs.metadata_event_digest != '' }}"
+)
+_METADATA_EVENT_MARKER_COMMANDS = (
+    ("[[", "$METADATA_EVENT_DIGEST", "=~", "^[0-9a-f]{64}$", "]]"),
+)
 _EXPECTED_JOB_OUTPUTS = {
     "event-identity": (
         (
@@ -687,6 +721,7 @@ _EXPECTED_JOB_OUTPUTS = {
         ("full_fallback", "${{ steps.classify.outputs.full_fallback }}"),
         ("head_valid", "${{ steps.classify.outputs.head_valid }}"),
         ("identity_valid", "${{ steps.classify.outputs.identity_valid }}"),
+        ("metadata_event_digest", "${{ steps.metadata-event.outputs.digest }}"),
         ("reason", "${{ steps.classify.outputs.reason }}"),
         ("run_expensive", "${{ steps.classify.outputs.run_expensive }}"),
     ),
@@ -982,9 +1017,11 @@ _EXPECTED_STEP_ROLES = {
         ("setup", None),
         ("setup", "Verify classifier authority revision"),
         ("setup", "Classify Build event"),
+        ("setup", "Bind immutable metadata event"),
     ),
     "event-classifier": (
         ("setup", "Verify authoritative Build event mode"),
+        ("setup", _METADATA_EVENT_MARKER_NAME),
     ),
     "host-tests": (
         ("setup", _METADATA_ADAPTER_STEP_NAME),
@@ -1756,15 +1793,40 @@ def _parse_step(block, job_name, index):
                 )
             ):
                 raise ValueError(f"{step_label} classifier mapping differs")
+        elif index == 4:
+            if (
+                name != "Bind immutable metadata event"
+                or set(values) != {"env", "id", "if", "name", "run"}
+                or values["id"] != "metadata-event"
+                or values["if"]
+                != "${{ steps.classify.outputs.classification == 'metadata-only' }}"
+                or values["run"] != _METADATA_EVENT_PRODUCER_COMMANDS
+                or values["env"] != _METADATA_EVENT_PRODUCER_ENV
+            ):
+                raise ValueError(f"{step_label} metadata event producer differs")
+        else:
+            raise ValueError(f"{step_label} unexpected classifier setup step")
         role = "setup"
     elif job_name == "event-classifier":
-        if (
-            index != 0
-            or name != "Verify authoritative Build event mode"
-            or set(values) != {"name", "run"}
-            or values["run"] != _MODE_COMMANDS
-        ):
-            raise ValueError(f"{step_label} mode verification differs")
+        if index == 0:
+            if (
+                name != "Verify authoritative Build event mode"
+                or set(values) != {"name", "run"}
+                or values["run"] != _MODE_COMMANDS
+            ):
+                raise ValueError(f"{step_label} mode verification differs")
+        elif index == 1:
+            if (
+                name != _METADATA_EVENT_MARKER_NAME
+                or set(values) != {"env", "if", "name", "run"}
+                or values["if"] != _METADATA_EVENT_MARKER_CONDITION
+                or values["run"] != _METADATA_EVENT_MARKER_COMMANDS
+                or values["env"]
+                != (("METADATA_EVENT_DIGEST", _METADATA_EVENT_DIGEST_EXPRESSION),)
+            ):
+                raise ValueError(f"{step_label} metadata event marker differs")
+        else:
+            raise ValueError(f"{step_label} unexpected mode setup step")
         role = "setup"
     elif job_name == "patch-release":
         expected_fields = (
