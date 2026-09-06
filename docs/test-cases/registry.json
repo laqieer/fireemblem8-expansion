@@ -485,7 +485,8 @@
         "https://github.com/laqieer/fireemblem8-expansion/issues/180",
         "https://github.com/laqieer/fireemblem8-expansion/issues/199",
         "https://github.com/laqieer/fireemblem8-expansion/issues/208",
-        "https://github.com/laqieer/fireemblem8-expansion/issues/207"
+        "https://github.com/laqieer/fireemblem8-expansion/issues/207",
+        "https://github.com/laqieer/fireemblem8-expansion/issues/216"
       ],
       "reference": ".github/skills/development-workflow/SKILL.md",
       "status": "current",
@@ -498,7 +499,8 @@
         "TC-WORKFLOW-METADATA-EDIT-RACE-001",
         "TC-WORKFLOW-PILOT-BASELINE-001",
         "TC-WORKFLOW-GATE-OWNERSHIP-001",
-        "TC-WORKFLOW-WORKTREE-CLEANUP-001"
+        "TC-WORKFLOW-WORKTREE-CLEANUP-001",
+        "TC-WORKFLOW-HOST-PYTHON-DEPS-001"
       ]
     },
     {
@@ -2170,6 +2172,38 @@
         {
           "command": "python3 -m unittest scripts.generated_data.tests.test_classes_schema scripts.generated_data.tests.test_units_schema scripts.generated_data.tests.test_eventlists_schema scripts.generated_data.tests.test_eventlists_roundtrip -v",
           "evidence": "scripts/generated_data/tests/test_eventlists_roundtrip.py"
+        }
+      ]
+    },
+    {
+      "id": "TC-WORKFLOW-HOST-PYTHON-DEPS-001",
+      "title": "Bootstrap isolated schema-test dependencies",
+      "feature_id": "workflow-governance",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/216"
+      ],
+      "document": "docs/test-cases/workflow-governance.md",
+      "anchor": "tc-workflow-host-python-deps-001-bootstrap-isolated-schema-test-dependencies",
+      "profiles": [
+        "Source checkout; CPython 3.12, Linux x86_64, glibc >= 2.17"
+      ],
+      "purpose": "Supply the complete pinned, hash-verified isolated host dependency closure for Draft 2020-12 schema tests and their required date-time validator.",
+      "prerequisites": "OS python3-venv/ensurepip and trusted PyPI access for initial setup; new exclusively owned paths under build/, no system or user site packages.",
+      "actions": "Reproduce import failure in a --without-pip venv under -I. Run scripts/host_python.py create and the owned interpreter's check, focused dependency suite, existing reporter-tests entrypoint and parsed Build/verify argv contracts. Exercise valid/adversarial schemas, optional/transitive omissions, corrupt/missing/incompatible wheels, wrong platform, user-site-only installation, ambient pip configuration, and existing/symlink targets.",
+      "expected_result": "Exact locked versions and complete dependencies load in the owned interpreter; required date-time checks reject invalid inputs; actual reporter discovery and consistent parsed workflow/interpreter paths pass without global/user package mutation.",
+      "negative_control": "The fresh undeclared isolated import fails. Unpinned/unhashed input, damaged or absent wheels, unsupported profiles, optional format omission/silent acceptance, incomplete dependency closure and user-site-only installs all fail explicitly.",
+      "interactions": "Shared prerequisite for #178/#191 and #205/#211; their protocol semantics remain independent. Conflicts with ambient-only/unpinned installs, environment reuse and unsupported wheel profiles; all Build routing, authority and gates remain intact.",
+      "save_compatibility": "No save/config, ROM/RAM, generated-game-data, localization, modern profile or archival compiler changes.",
+      "cleanup": "Regression deletes only its UUID-owned fixtures. Remove only your own build/host-python-missing and, after use, build/host-python; failed setup paths remain for diagnosis.",
+      "limitations": "Only CPython 3.12 Linux x86_64 glibc >= 2.17 and the required optional date-time format are supported. Initial setup requires PyPI or an explicit complete local wheelhouse. Missing Git authority or consumer protected-principal criteria remain separate; no visual/audio/manual criterion.",
+      "automation": [
+        {
+          "command": "build/host-python/bin/python3 -I -m unittest discover -s scripts/workflow_pilot/tests -t . -p test_host_python.py -v",
+          "evidence": "scripts/workflow_pilot/tests/test_host_python.py"
+        },
+        {
+          "command": "python3 -m unittest tests.workflows.test_build_ci_topology tests.upstream_port.test_verify.VerifyGatesMirrorWorkflowTests -v",
+          "evidence": "tests/workflows/test_build_ci_topology.py"
         }
       ]
     },

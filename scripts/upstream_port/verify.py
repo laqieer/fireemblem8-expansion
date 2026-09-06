@@ -1178,8 +1178,14 @@ def _resolve_repository_root(repository_root):
 
 
 def _expand_workspace(argv, repository_root):
+    substitutions = {
+        "$GITHUB_WORKSPACE": repository_root,
+        "$GITHUB_WORKSPACE/build/host-python/bin/python3": os.path.join(
+            repository_root, "build", "host-python", "bin", "python3"
+        ),
+    }
     return [
-        repository_root if argument == "$GITHUB_WORKSPACE" else argument
+        substitutions.get(argument, argument)
         for argument in argv
     ]
 
@@ -2521,14 +2527,17 @@ def gates(jobs: int = 2) -> List[Gate]:
         Gate(
             name="workflow-pilot-reporter-tests",
             command=[
-                "/usr/bin/python3",
+                "$GITHUB_WORKSPACE/build/host-python/bin/python3",
                 "-I",
                 "scripts/workflow_pilot/isolated_launcher.py",
                 "reporter-tests",
             ],
             applicable_note=(
-                "issue #176 host lane: pure-stdlib workflow-pilot reporter "
-                "regression suite, including immutable baseline validation"
+                "issues #176/#216 host lane: workflow-pilot reporter regression "
+                "suite, including immutable baseline validation. First create "
+                "the pinned owned environment with /usr/bin/python3 -I "
+                "scripts/host_python.py create; verification never installs "
+                "packages or relies on system/user-site jsonschema"
             ),
         ),
         Gate(

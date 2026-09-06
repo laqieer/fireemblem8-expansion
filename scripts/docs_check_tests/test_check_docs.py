@@ -986,6 +986,15 @@ class TesterCaseRegistryTests(unittest.TestCase):
             "workflow-governance": {
                 "reference": ".github/skills/development-workflow/SKILL.md",
                 "cases": {
+                    "TC-WORKFLOW-HOST-PYTHON-DEPS-001": {
+                        "document": "docs/test-cases/workflow-governance.md",
+                        "commands": {
+                            "build/host-python/bin/python3 -I -m unittest discover "
+                            "-s scripts/workflow_pilot/tests -t . -p test_host_python.py -v",
+                            "python3 -m unittest tests.workflows.test_build_ci_topology "
+                            "tests.upstream_port.test_verify.VerifyGatesMirrorWorkflowTests -v",
+                        },
+                    },
                     "TC-WORKFLOW-WORKTREE-CLEANUP-001": {
                         "document": "docs/test-cases/workflow-governance.md",
                         "commands": {
