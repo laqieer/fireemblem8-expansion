@@ -2576,12 +2576,22 @@ def _run_mode(
     status: str,
 ) -> str:
     legacy_patch = next((job for job in jobs if job.name == "patch-release"), None)
-    if legacy_patch is not None and (
-        legacy_patch.status != "completed"
-        or legacy_patch.conclusion != "skipped"
-        or legacy_patch.runner_name
-    ):
-        raise MetadataEditError("legacy publisher job must be canonical skipped")
+    if legacy_patch is not None:
+        skipped = (
+            legacy_patch.status == "completed"
+            and legacy_patch.conclusion == "skipped"
+            and not legacy_patch.runner_name
+        )
+        pending = (
+            status in ACTIVE_RUN_STATUSES
+            and legacy_patch.status in ACTIVE_RUN_STATUSES - {"in_progress"}
+            and legacy_patch.conclusion is None
+            and not legacy_patch.runner_name
+            and legacy_patch.started_at is None
+            and legacy_patch.completed_at is None
+        )
+        if not skipped and not pending:
+            raise MetadataEditError("legacy publisher job must be canonical skipped or pending")
     names = frozenset(job.name for job in jobs if job.name != "patch-release")
     if status == "completed":
         if names == FULL_JOB_NAMES:

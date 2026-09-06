@@ -1288,6 +1288,11 @@ the exact branch and head; timeout or ambiguity fails before `gh run watch`.
    `patch-release`, conclusion `skipped`, and no runner. The current graph
    omits that job. Successful, failed, renamed or duplicate legacy publisher
    records reject; every actual validation job is still mandatory.
+   While the enclosing old run is active, its legacy publisher may still be
+   non-runner pending with no conclusion or execution timestamps. This must
+   remain active full evidence and defer a default metadata edit, not fail as
+   malformed. Once the run completes, require the canonical skipped shape;
+   a running or runner-backed legacy publisher never satisfies compatibility.
 4. Snapshot IDs before restoring the original title through the owner REST
    endpoint. Discover, watch, and save the distinct restore metadata run:
 

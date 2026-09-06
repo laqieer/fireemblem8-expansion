@@ -1814,6 +1814,48 @@ class LauncherSandbox:
 
 
 class PullRequestMetadataTests(unittest.TestCase):
+    def test_active_legacy_publisher_is_pending_without_a_runner(self):
+        for pending_status in ("queued", "waiting", "pending", "requested"):
+            with self.subTest(pending_status=pending_status):
+                client = ScriptedClient()
+                active = _run(101, 10, mode="full", active=True)
+                active[1].append(_job(
+                    "patch-release", job_id=10199, run_id=101,
+                    status=pending_status, conclusion=None,
+                    runner_name=None, started_at=None,
+                ))
+                _add_pr_states(client, _pr())
+                _add_snapshot(client, [active])
+                decision = pr_metadata.edit_metadata(
+                    client, repository=REPOSITORY, pr_number=PR_NUMBER,
+                    head_sha=HEAD, base_sha=BASE,
+                    title="Updated contract", body=None, essential_reason=None,
+                )
+                self.assertEqual(decision.action, "deferred")
+                self.assertFalse(decision.mutated)
+                self.assertTrue(all(method == "GET" for method, _, _ in client.calls))
+
+    def test_legacy_publisher_cannot_execute_or_remain_pending_after_completion(self):
+        for active, runner, status in (
+            (False, None, "queued"),
+            (True, "GitHub Actions 1", "queued"),
+            (True, "GitHub Actions 1", "in_progress"),
+        ):
+            with self.subTest(active=active, runner=runner, status=status):
+                client = ScriptedClient()
+                record = _run(101, 10, mode="full", active=active)
+                record[1].append(_job(
+                    "patch-release", job_id=10199, run_id=101,
+                    status=status, conclusion=None, runner_name=runner,
+                    started_at=None if runner is None else "2026-09-04T00:00:01Z",
+                ))
+                _add_snapshot(client, [record])
+                state = pr_metadata._parse_pull_request_payload(
+                    _pr(), REPOSITORY, PR_NUMBER
+                )
+                with self.assertRaises(pr_metadata.MetadataEditError):
+                    pr_metadata.list_candidate_runs(client, state)
+
     def test_active_full_build_refuses_default_edit_without_mutation_or_cancel(self):
         client = ScriptedClient()
         active_full = _run(101, 10, mode="full", active=True)
