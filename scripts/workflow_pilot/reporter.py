@@ -1594,7 +1594,7 @@ def validate_implementation_handoffs(
         document_handoffs = {
             item["id"]: item for item in bundle["document"]["handoffs"]
         }
-        for handoff_index, handoff in enumerate(bundle["result"]["handoffs"]):
+        for handoff_index, handoff in enumerate(copy.deepcopy(bundle["result"]["handoffs"])):
             handoff_label = f"{label}.result.handoffs[{handoff_index}]"
             expect_keys(
                 handoff,
@@ -4380,17 +4380,6 @@ def build_report(
         repository_root,
         data,
     )
-    if data["fixture"]["schema_version"] == HANDOFF_FIXTURE_SCHEMA_VERSION:
-        implementation_handoffs = validate_implementation_handoffs(
-            data["fixture"],
-            repository_root,
-            implementation_handoff_trust,
-            implementation_handoff_installation,
-        )
-        data["implementation_handoff_bundles"] = implementation_handoffs[
-            "bundles"
-        ]
-        data["implementation_handoffs"] = implementation_handoffs["handoffs"]
     decisions = validate_decisions(raw_decisions, data, repository_root)
     workflow_sample(data)
     classifications = report_classifications(data)

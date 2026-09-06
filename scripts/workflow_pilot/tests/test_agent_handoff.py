@@ -7478,7 +7478,19 @@ class ReporterHandoffExtensionTests(unittest.TestCase):
             with test_reporter.git_authority(fixture, implementation_handoff_trust=trust, implementation_handoff_installation=installation) as (authoritative_fixture, authority_root):
                 for bundle in authoritative_fixture["implementation_handoffs"]:
                     self.assertEqual(bundle["input_seal"], hashlib.sha256(agent_handoff.INPUT_SEAL_DOMAIN + agent_handoff.normalized_json(bundle["document"])).hexdigest())
-                report = reporter.build_report(authoritative_fixture, decisions, authority_root, implementation_handoff_trust=trust, implementation_handoff_installation=installation)
+                observations, original_validation = [], reporter.validate_implementation_handoffs
+                def observe(*args, **kwargs):
+                    result = original_validation(*args, **kwargs)
+                    observations.append(result)
+                    return result
+                with mock.patch.object(reporter, "validate_implementation_handoffs", side_effect=observe):
+                    report = reporter.build_report(authoritative_fixture, decisions, authority_root, implementation_handoff_trust=trust, implementation_handoff_installation=installation)
+                with self.subTest(contract="one authenticated normalization pass"):
+                    self.assertEqual(len(observations), 1)
+                for normalized in observations:
+                    for original in authoritative_fixture["implementation_handoffs"]:
+                        with self.subTest(input_seal=original["input_seal"]):
+                            self.assertEqual(normalized["bundles"][original["input_seal"]], original)
                 decisions_path = authority_root / ".github" / "workflow-pilot-decisions.json"
                 decisions_path.parent.mkdir(parents=True)
                 decisions_path.write_text(json.dumps(decisions), encoding="utf-8")

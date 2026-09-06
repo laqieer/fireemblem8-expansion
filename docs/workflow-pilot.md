@@ -912,7 +912,7 @@ Each handoff carries:
   GitHub database IDs;
 - exact assigned parent SHA, branch, absolute worktree, and repository-relative
   file/directory allowlist;
-- finding IDs, itemized acceptance criteria, required focused-check commands,
+- finding IDs, itemized acceptance criteria, required focused-check contracts,
   and the evidence IDs that discharge each item;
 - maximum changed lines, ROM bytes, RAM bytes, and protocol changes;
 - maximum owner lifetime and peak RSS;
