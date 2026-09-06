@@ -12,7 +12,7 @@ import time
 from dataclasses import dataclass, field, fields
 from pathlib import Path
 
-from .lifecycle import ordinary_executable
+from .lifecycle import finish_cleanup, ordinary_executable
 
 
 class MakeProbeError(RuntimeError):
@@ -134,9 +134,13 @@ class ProbeBudget:
         child.wait()
 
     def close(self):
-        for child, privileged in tuple(self.children.items()):
+        def stop(child, privileged):
             self._terminate(child, privileged)
             del self.children[child]
+        finish_cleanup([
+            lambda child=child, privileged=privileged: stop(child, privileged)
+            for child, privileged in tuple(self.children.items())
+        ])
 
     def run(
         self,
@@ -174,6 +178,7 @@ class ProbeBudget:
         input_write = None
         input_stream = None
         output = [bytearray(), bytearray()]
+        primary = None
         try:
             mask = signal.pthread_sigmask(signal.SIG_BLOCK, (signal.SIGINT, signal.SIGTERM))
             try:
@@ -196,6 +201,7 @@ class ProbeBudget:
                     stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                     pass_fds=() if input_read is None else (input_read,),
                     close_fds=True, start_new_session=True,
+                    preexec_fn=lambda: signal.pthread_sigmask(signal.SIG_SETMASK, mask),
                 )
                 if input_read is not None:
                     os.close(input_read)
@@ -235,22 +241,28 @@ class ProbeBudget:
             return subprocess.CompletedProcess(
                 argv, child.returncode, bytes(output[0]), bytes(output[1]),
             )
-        except BaseException:
+        except BaseException as error:
+            primary = error
             self.failed = True
             raise
         finally:
+            actions = []
             if child is not None:
-                self._terminate(child, privileged)
-                self.children.pop(child, None)
-                child.stdout.close()
-                child.stderr.close()
-                child.stdin.close()
+                def stop():
+                    self._terminate(child, privileged)
+                    self.children.pop(child, None)
+                actions.extend((stop, child.stdout.close, child.stderr.close, child.stdin.close))
             if input_read is not None:
-                os.close(input_read)
+                actions.append(lambda: os.close(input_read))
             if input_write is not None:
-                os.close(input_write)
+                actions.append(lambda: os.close(input_write))
             if input_stream is not None:
-                input_stream.close()
+                actions.append(input_stream.close)
+            try:
+                finish_cleanup(actions, primary=primary)
+            except BaseException:
+                self.failed = True
+                raise
 
 
 def text(data: bytes, boundary: str, encoding: str = "utf-8") -> str:

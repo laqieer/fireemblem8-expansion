@@ -1847,6 +1847,18 @@ Start from a clean checkout; fixtures use only ignored `build/test-artifacts`.
     an earlier open masking failure. Test code and Make-path evidence too.
     Reuse stale directory-buffer bytes at EOF, corrupt actual returned records,
     and exceed buffer/observation bounds; none may forge consumption.
+21. Create an owned Python prefix containing a harmless `.pth`/`sitecustomize`
+    marker. Replay the actual public Make/direct, namespace, watchdog, version
+    query and registered-Python launch vectors with that interpreter. Removing
+    `-S` must execute the owned hooks; the real `-I -S` vectors must not. Never
+    install a hook in a global/user site directory.
+22. Send real SIGINT/SIGTERM only to owned test processes during partial setup,
+    report/config unlinking, command/Make directory deletion, session removal,
+    and process/pipe reaping. Prior Python handlers must observe complete
+    cleanup, and an original operation error must remain primary. Multiple
+    deferred signals must not disappear because one handler raises.
+    Preserve a caller's already-blocked mask, and verify default SIGTERM in an
+    owned subprocess takes effect only after its session scratch is removed.
 
 ### Expected result
 
@@ -1918,6 +1930,12 @@ declared regular file count as consumed. A getdents call returning `-1`, or just
 one 24-byte entry, credited both declared siblings and accepted forged registry
 JSON. The new regressions preserve those actual syscall failures/partial results,
 while legitimate successful metadata and content observations remain positive.
+
+The earlier `-I -B` public invocation executed an owned prefix's `.pth` hook.
+The earlier teardown restored the caller handler before `rmtree`; a real
+SIGTERM then saw live scratch, interrupted its removal and masked an existing
+failure. The new executable startup and owned-signal controls retain those
+negative cases without changing global site or kernel policy.
 
 ### Interactions and save compatibility
 

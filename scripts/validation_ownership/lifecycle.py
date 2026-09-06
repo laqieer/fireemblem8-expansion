@@ -12,6 +12,7 @@ import stat
 import subprocess
 import sys
 import time
+from contextlib import contextmanager
 from pathlib import Path
 
 
@@ -21,6 +22,62 @@ TERMINATING = (signal.SIGHUP, signal.SIGINT, signal.SIGTERM)
 
 class WatchdogInterrupted(RuntimeError):
     pass
+
+
+def finish_cleanup(actions, *, primary=None, handlers=None):
+    """Finish owned teardown before replaying terminating signals."""
+    previous_mask = signal.pthread_sigmask(signal.SIG_BLOCK, TERMINATING)
+    errors = []
+    pending = []
+    try:
+        for action in actions:
+            try:
+                action()
+            except BaseException as error:
+                errors.append(error)
+    finally:
+        if handlers is not None:
+            for signum, handler in tuple(handlers.items()):
+                try:
+                    signal.signal(signum, handler)
+                    del handlers[signum]
+                except BaseException as error:
+                    errors.append(error)
+        # Replay separately so one raising Python handler cannot hide another
+        # pending termination. Signals already blocked by the caller stay pending.
+        for signum in sorted(set(TERMINATING) & signal.sigpending() - previous_mask):
+            if signal.sigtimedwait({signum}, 0) is not None:
+                pending.append(signum)
+        try:
+            signal.pthread_sigmask(signal.SIG_SETMASK, previous_mask)
+        except BaseException as error:
+            errors.append(error)
+    for signum in pending:
+        try:
+            signal.raise_signal(signum)
+        except BaseException as error:
+            errors.append(error)
+    if errors:
+        failure = primary if primary is not None else errors.pop(0)
+        for error in errors:
+            message = f"after owned cleanup: {type(error).__name__}: {error}"
+            failure.cleanup_errors = (*getattr(failure, "cleanup_errors", ()), message)
+            if hasattr(failure, "add_note"):
+                failure.add_note(message)
+        if primary is None:
+            raise failure
+
+
+@contextmanager
+def cleanup_scope(actions):
+    primary = None
+    try:
+        yield
+    except BaseException as error:
+        primary = error
+        raise
+    finally:
+        finish_cleanup(actions, primary=primary)
 
 
 def ordinary_executable(path):
@@ -126,6 +183,7 @@ def run(argv, deadline, *, lifetime=0, payload_input=None):
     parent = os.getpid()
     child = None
     handlers = {}
+    primary = None
     try:
         handlers[signal.SIGCHLD] = signal.signal(signal.SIGCHLD, signal.SIG_DFL)
         for sig in TERMINATING:
@@ -152,21 +210,20 @@ def run(argv, deadline, *, lifetime=0, payload_input=None):
                     raise TimeoutError("aggregate probe deadline exhausted in namespace watchdog")
                 if selector.select(min(remaining, 0.05)):
                     raise BrokenPipeError("caller lifetime ended during namespace execution")
+    except BaseException as error:
+        primary = error
+        raise
     finally:
-        try:
-            if child is not None:
-                for sig in TERMINATING:
-                    signal.signal(sig, signal.SIG_IGN)
-                terminate(child)
-        finally:
-            for sig, handler in handlers.items():
-                signal.signal(sig, handler)
+        finish_cleanup(
+            [] if child is None else [lambda: terminate(child)],
+            primary=primary, handlers=handlers,
+        )
     return child.returncode
 
 
 def main():
-    if not sys.flags.isolated or len(sys.argv) < 4:
-        raise SystemExit("namespace watchdog requires isolated Python and trusted arguments")
+    if not sys.flags.isolated or not sys.flags.no_site or len(sys.argv) < 4:
+        raise SystemExit("namespace watchdog requires Python -I -S and trusted arguments")
     try:
         arguments = sys.argv[2:]
         payload_input = None

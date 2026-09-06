@@ -8,6 +8,7 @@ import os
 import resource
 import secrets
 import selectors
+import shlex
 import shutil
 import signal
 import stat
@@ -16,6 +17,7 @@ import sys
 import threading
 import time
 import unittest
+import venv
 from contextlib import contextmanager
 from dataclasses import replace
 from pathlib import Path
@@ -66,6 +68,382 @@ class FoundationTests(unittest.TestCase):
         self.assertIsNone(session.snapshot)
         self.assertIsNone(session.base)
         self.assertFalse(self.scratch.exists())
+
+    def test_trusted_startup_vectors_exclude_owned_prefix_hooks(self):
+        prefix = self.directory / "owned-python"
+        venv.EnvBuilder(with_pip=False, symlinks=True).create(prefix)
+        site = next(prefix.glob("lib/python*/site-packages"))
+        markers = [self.directory / "pth-ran", self.directory / "sitecustomize-ran"]
+        (site / "owned_hook.pth").write_text(
+            "import sys,builtins; builtins.open(" + repr(str(markers[0]))
+            + ",'w').write('owned pth'); sys.path.insert(0," + repr(str(site)) + ")\n"
+        )
+        (site / "sitecustomize.py").write_text(
+            "open(" + repr(str(markers[1])) + ",'w').write('owned sitecustomize')\n"
+        )
+        recipe = subprocess.check_output(
+            ["/usr/bin/make", "--no-print-directory", "-n", "-f",
+             "scripts/validation_ownership/foundation.mk", "ownership-probe-check"],
+            cwd=ROOT, env=ENVIRONMENT, text=True,
+        )
+        vectors = {"make-entry": shlex.split(recipe.strip())}
+        documentation = (ROOT / "docs/ownership-probe-foundation.md").read_text()
+        vectors["documented-entry"] = shlex.split(next(
+            line for line in documentation.splitlines()
+            if line.startswith("/usr/bin/python3 ") and "isolated_launcher.py" in line
+        ))
+        original = subprocess.Popen
+        launched = []
+        def recording(argv, *args, **kwargs):
+            launched.append(list(argv))
+            return original(argv, *args, **kwargs)
+        self.add("Makefile", "all: ;\n")
+        with patch("subprocess.Popen", recording):
+            with self.session() as session:
+                run = session._sandbox_run
+                def capsule(root, **kwargs):
+                    if kwargs["argv"][0] == "/usr/bin/python3":
+                        vectors["registered-python"] = list(kwargs["argv"])
+                    return run(root, **kwargs)
+                with patch.object(session, "_sandbox_run", capsule):
+                    session.command(Command(("/usr/bin/python3", "-c", "print('registered')")))
+        self.assert_clean(session)
+        for filename in ("lifecycle.py", "sandbox_exec.py"):
+            path = str(TRUSTED_ROOT / filename)
+            argv = next(argv for argv in launched if path in argv)
+            script = argv.index(path)
+            interpreter = max(index for index in range(script) if argv[index] == "/usr/bin/python3")
+            vectors[filename] = argv[interpreter:script + 1]
+        version = next(argv for argv in launched if any(
+            argument.startswith("import sys; print('%d.%d'") for argument in argv
+        ))
+        query = next(index for index, argument in enumerate(version) if argument.startswith("import sys; print('%d.%d'"))
+        interpreter = max(index for index in range(query) if version[index] == "/usr/bin/python3")
+        vectors["version-query"] = version[interpreter:query + 1]
+        for name, argv in vectors.items():
+            with self.subTest(entry=name):
+                tail = argv[1:] + (["--help"] if name in {"make-entry", "documented-entry"} else [])
+                for no_site in (False, True):
+                    for marker in markers:
+                        marker.unlink(missing_ok=True)
+                    options = tail if no_site else [argument for argument in tail if argument != "-S"]
+                    result = subprocess.run(
+                        [str(prefix / "bin/python"), *options], cwd=ROOT, env=ENVIRONMENT,
+                        capture_output=True, timeout=15,
+                    )
+                    self.assertEqual([marker.exists() for marker in markers], [not no_site]*2, result.stderr)
+                    if no_site and name not in {"lifecycle.py", "sandbox_exec.py"}:
+                        self.assertEqual(result.returncode, 0, result.stderr)
+                    if not no_site and name in {"make-entry", "documented-entry", "lifecycle.py", "sandbox_exec.py"}:
+                        self.assertNotEqual(result.returncode, 0)
+
+    def test_session_teardown_defers_signals_until_owned_state_is_removed(self):
+        self.add("Makefile", "all: ;\n")
+        for signum in (signal.SIGINT, signal.SIGTERM):
+            for has_primary in (False, True):
+                with self.subTest(signal=signum, primary=has_primary):
+                    session = self.session()
+                    primary = MakeProbeError("owned primary failure") if has_primary else None
+                    seen = []
+                    base = None
+                    previous_mask = signal.pthread_sigmask(signal.SIG_BLOCK, ())
+                    previous_handler = signal.getsignal(signum)
+                    def caller_handler(received, frame):
+                        seen.append((
+                            received, session.base is None, not self.scratch.exists(),
+                            not session.cache, not session.budget.children,
+                            signal.pthread_sigmask(signal.SIG_BLOCK, ()) == previous_mask,
+                        ))
+                        raise RuntimeError("owned deferred termination")
+                    signal.signal(signum, caller_handler)
+                    remove = shutil.rmtree
+                    def interrupted_remove(path, *args, **kwargs):
+                        if base is not None and Path(path) == base:
+                            os.kill(os.getpid(), signum)
+                        return remove(path, *args, **kwargs)
+                    try:
+                        with self.assertRaises(MakeProbeError if has_primary else RuntimeError) as caught:
+                            with patch("shutil.rmtree", interrupted_remove):
+                                with session:
+                                    base = session.base
+                                    session.command(Command(("/usr/bin/printf", "cached")))
+                                    if primary is not None:
+                                        raise primary
+                        if has_primary:
+                            self.assertIs(caught.exception, primary)
+                            self.assertTrue(primary.cleanup_errors)
+                        self.assertEqual(seen, [(signum, True, True, True, True, True)])
+                        self.assertIs(signal.getsignal(signum), caller_handler)
+                        self.assert_clean(session)
+                    finally:
+                        signal.signal(signum, previous_handler)
+
+    def test_cleanup_finishes_all_actions_and_replays_pending_signals_afterward(self):
+        from scripts.validation_ownership.lifecycle import finish_cleanup
+        files = [self.directory / "first", self.directory / "second"]
+        for path in files:
+            path.touch()
+        primary = MakeProbeError("original operation failure")
+        seen = []
+        previous = {signum: signal.getsignal(signum) for signum in (signal.SIGINT, signal.SIGTERM)}
+        previous_mask = signal.pthread_sigmask(signal.SIG_BLOCK, ())
+        def handler(signum, frame):
+            seen.append((signum, not any(path.exists() for path in files)))
+            raise KeyboardInterrupt("deferred handler")
+        for signum in previous:
+            signal.signal(signum, handler)
+        def first():
+            files[0].unlink()
+            for signum in previous:
+                os.kill(os.getpid(), signum)
+            raise OSError(errno.EIO, "owned cleanup diagnostic")
+        try:
+            finish_cleanup([first, files[1].unlink], primary=primary)
+            self.assertEqual(set(seen), {(signal.SIGINT, True), (signal.SIGTERM, True)})
+            self.assertEqual(len(primary.cleanup_errors), 3)
+            self.assertEqual(signal.pthread_sigmask(signal.SIG_BLOCK, ()), previous_mask)
+        finally:
+            for signum, value in previous.items():
+                signal.signal(signum, value)
+
+    def test_per_call_teardown_defers_signals_and_preserves_primary_errors(self):
+        self.add("Makefile", "all: ;\n")
+        for boundary in ("report", "command-tree", "make-tree"):
+            for failed in (False, True):
+                with self.subTest(boundary=boundary, failed=failed):
+                    self.add("Makefile", (
+                        "$(error owned primary failure)\nall: ;\n"
+                        if boundary == "make-tree" and failed else "all: ;\n"
+                    ))
+                    session = self.session()
+                    sent = False
+                    with session:
+                        base = session.base
+                        remove, unlink = shutil.rmtree, Path.unlink
+                        def signal_once():
+                            nonlocal sent
+                            if not sent:
+                                sent = True
+                                os.kill(os.getpid(), signal.SIGTERM)
+                        def removing(path, *args, **kwargs):
+                            name = Path(path).name
+                            if boundary == "command-tree" and name.startswith("command-"):
+                                signal_once()
+                            if boundary == "make-tree" and name.startswith("control-"):
+                                signal_once()
+                            return remove(path, *args, **kwargs)
+                        def unlinking(path, *args, **kwargs):
+                            if boundary == "report" and path.parent == base and path.name.startswith("report-"):
+                                signal_once()
+                            return unlink(path, *args, **kwargs)
+                        with patch("shutil.rmtree", removing), patch.object(Path, "unlink", unlinking):
+                            with self.assertRaises(MakeProbeError if failed else KeyboardInterrupt) as caught:
+                                if boundary == "make-tree":
+                                    session.make("all")
+                                else:
+                                    session.command(Command((
+                                        "/usr/bin/python3", "-c", "import os; os._exit(7)" if failed else "print('ok')",
+                                    )))
+                        self.assertTrue(sent)
+                        self.assertFalse(list(base.glob("report-*.json")))
+                        self.assertFalse(list(base.glob("launch-*.json")))
+                        self.assertFalse(list(base.glob("command-*")))
+                        self.assertFalse(list(base.glob("make-root-*")))
+                        self.assertFalse(list(base.glob("control-*")))
+                        self.assertFalse(session.budget.children)
+                        if failed:
+                            self.assertIn("confined", str(caught.exception))
+                            self.assertTrue(caught.exception.cleanup_errors)
+                    self.assert_clean(session)
+
+    def test_partial_call_setup_interruption_removes_preallocated_owned_paths(self):
+        self.add("Makefile", "all: ;\n")
+        for make in (False, True):
+            with self.subTest(make=make):
+                session = self.session()
+                with session:
+                    def partial(name, **kwargs):
+                        (session.base / name).mkdir()
+                        os.kill(os.getpid(), signal.SIGINT)
+                    with patch.object(session, "_new_root", partial):
+                        with self.assertRaises(KeyboardInterrupt):
+                            session.make("all") if make else session.command(Command(("/usr/bin/printf", "ok")))
+                    self.assertFalse(list(session.base.glob("*root-*")))
+                    self.assertFalse(list(session.base.glob("command-*")))
+                    self.assertFalse(list(session.base.glob("control-*")))
+                self.assert_clean(session)
+
+    def test_setup_failure_remains_primary_during_deferred_exit_signal(self):
+        self.add("Makefile", "all: ;\n")
+        session = self.session()
+        primary = MakeProbeError("owned setup failure")
+        seen = []
+        previous = signal.getsignal(signal.SIGTERM)
+        def handler(signum, frame):
+            seen.append(session.base is None and not self.scratch.exists())
+            raise KeyboardInterrupt("deferred setup exit")
+        signal.signal(signal.SIGTERM, handler)
+        remove = shutil.rmtree
+        def removing(path, *args, **kwargs):
+            if session.base is not None and Path(path) == session.base:
+                os.kill(os.getpid(), signal.SIGTERM)
+            return remove(path, *args, **kwargs)
+        try:
+            with patch.object(session, "_tools", side_effect=primary), patch("shutil.rmtree", removing):
+                with self.assertRaises(MakeProbeError) as caught:
+                    with session:
+                        self.fail("failed setup entered")
+            self.assertIs(caught.exception, primary)
+            self.assertEqual(seen, [True])
+            self.assertTrue(primary.cleanup_errors)
+            self.assert_clean(session)
+        finally:
+            signal.signal(signal.SIGTERM, previous)
+
+    def test_budget_cleanup_defers_signal_until_children_and_pipes_are_closed(self):
+        for has_primary in (False, True):
+            with self.subTest(primary=has_primary):
+                budget = ProbeBudget(Limits(process_output_bytes=8 if has_primary else 1024))
+                stopped = []
+                observed = []
+                descriptors = set(os.listdir("/proc/self/fd"))
+                previous = signal.getsignal(signal.SIGINT)
+                def handler(signum, frame):
+                    child = stopped[0]
+                    observed.append((
+                        not budget.children, child.returncode is not None,
+                        child.stdin.closed and child.stdout.closed and child.stderr.closed,
+                        set(os.listdir("/proc/self/fd")) == descriptors,
+                    ))
+                    raise KeyboardInterrupt("owned budget teardown signal")
+                signal.signal(signal.SIGINT, handler)
+                stop = budget._terminate
+                def stopping(child, privileged=False):
+                    stopped.append(child)
+                    os.kill(os.getpid(), signal.SIGINT)
+                    stop(child, privileged)
+                try:
+                    with patch.object(budget, "_terminate", stopping):
+                        with self.assertRaises(MakeProbeError if has_primary else KeyboardInterrupt) as caught:
+                            budget.run(
+                                ["/usr/bin/python3", "-I", "-S", "-c",
+                                 "import os; os.read(0,10); os.write(1,b'x'*100)"],
+                                env=ENVIRONMENT, input_data=b"owned",
+                            )
+                    self.assertEqual(observed, [(True, True, True, True)])
+                    self.assertTrue(budget.failed)
+                    if has_primary:
+                        self.assertIn("output exceeds", str(caught.exception))
+                        self.assertTrue(caught.exception.cleanup_errors)
+                finally:
+                    signal.signal(signal.SIGINT, previous)
+
+    def test_cleanup_preserves_a_callers_already_blocked_signal_mask(self):
+        from scripts.validation_ownership.lifecycle import finish_cleanup
+        previous_mask = signal.pthread_sigmask(signal.SIG_BLOCK, {signal.SIGTERM})
+        previous_handler = signal.getsignal(signal.SIGTERM)
+        seen = []
+        signal.signal(signal.SIGTERM, lambda signum, frame: seen.append(signum))
+        path = self.directory / "owned"
+        path.touch()
+        def removing():
+            os.kill(os.getpid(), signal.SIGTERM)
+            path.unlink()
+        try:
+            finish_cleanup([removing])
+            self.assertFalse(path.exists())
+            self.assertEqual(seen, [])
+            self.assertIn(signal.SIGTERM, signal.sigpending())
+            self.assertEqual(signal.pthread_sigmask(signal.SIG_BLOCK, ()), previous_mask | {signal.SIGTERM})
+        finally:
+            signal.sigtimedwait({signal.SIGTERM}, 0)
+            signal.signal(signal.SIGTERM, previous_handler)
+            signal.pthread_sigmask(signal.SIG_SETMASK, previous_mask)
+
+    def test_budget_payload_does_not_inherit_the_temporary_setup_mask(self):
+        previous_mask = signal.pthread_sigmask(signal.SIG_BLOCK, ())
+        try:
+            for added in (set(), {signal.SIGUSR1}):
+                expected = previous_mask | added
+                signal.pthread_sigmask(signal.SIG_SETMASK, expected)
+                budget = ProbeBudget()
+                result = budget.run(
+                    ["/usr/bin/python3", "-I", "-S", "-c",
+                     "import json,signal; print(json.dumps(sorted(signal.pthread_sigmask(signal.SIG_BLOCK,()))))"],
+                    env=ENVIRONMENT,
+                )
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(json.loads(result.stdout), sorted(expected))
+                self.assertEqual(signal.pthread_sigmask(signal.SIG_BLOCK, ()), expected)
+                self.assertFalse(budget.children)
+        finally:
+            signal.pthread_sigmask(signal.SIG_SETMASK, previous_mask)
+
+    def test_watchdog_teardown_delivers_signal_after_sole_reaping(self):
+        program = r'''
+import os,signal,sys,time
+sys.path.insert(0,sys.argv[1])
+from scripts.validation_ownership import lifecycle
+seen=[]
+state={}
+def handler(signum,frame):
+    assert state["child"].returncode == 0
+    seen.append(signum)
+    raise RuntimeError("deferred caller signal")
+signal.signal(signal.SIGTERM,handler)
+original=lifecycle.terminate
+def terminating(child):
+    state["child"]=child
+    os.kill(os.getpid(),signal.SIGTERM)
+    original(child)
+lifecycle.terminate=terminating
+try:
+    lifecycle.run(["/usr/bin/true"],time.monotonic()+5)
+except RuntimeError as error:
+    assert str(error) == "deferred caller signal"
+else:
+    raise AssertionError("termination was ignored")
+assert seen == [signal.SIGTERM]
+assert lifecycle.owned_children() == []
+print("delivered after reaping")
+'''
+        with self.owned_process(["/usr/bin/python3", "-I", "-S", "-c", program, str(ROOT)]) as (child, descriptor):
+            child.wait(timeout=10)
+            self.assertEqual(child.returncode, 0, child.stderr.read())
+            self.assertEqual(child.stdout.read(), b"delivered after reaping\n")
+
+    def test_default_termination_is_delivered_only_after_owned_session_removal(self):
+        self.add("Makefile", "all: ;\n")
+        program = r'''
+import os,shutil,signal,sys
+from pathlib import Path
+sys.path.insert(0,sys.argv[1])
+from scripts.validation_ownership.authority import AuthorityLoader,GitTreeEntry
+from scripts.validation_ownership.make_probe import ProbeSession
+root,scratch=map(Path,sys.argv[2:4])
+session=ProbeSession(AuthorityLoader(root,{"Makefile":GitTreeEntry("Makefile","100644","blob","0"*40)}),scratch_root=scratch)
+# This control targets real file/state teardown and the default OS signal
+# action; tool/namespace execution is exercised by the other process cases.
+session._tools=lambda:None
+session._compile_interceptor=lambda:None
+signal.signal(signal.SIGTERM,signal.SIG_DFL)
+original=shutil.rmtree
+def removing(path,*args,**kwargs):
+    if session.base is not None and Path(path)==session.base:
+        os.kill(os.getpid(),signal.SIGTERM)
+    return original(path,*args,**kwargs)
+shutil.rmtree=removing
+with session:
+    pass
+raise AssertionError("default termination was lost")
+'''
+        with self.owned_process([
+            "/usr/bin/python3", "-I", "-S", "-c", program, str(ROOT), str(self.root), str(self.scratch),
+        ]) as (child, descriptor):
+            child.wait(timeout=10)
+            self.assertEqual(child.returncode, -signal.SIGTERM, child.stderr.read())
+        self.assertFalse(self.scratch.exists())
+        self.assertEqual((self.root / "Makefile").read_text(), "all: ;\n")
 
     def traced_observation(
         self, number, arguments, descriptors, *, buffer=None, mode="command",
@@ -724,7 +1102,7 @@ print(json.dumps({"submount_levels":3,"source_flags_unchanged":True,
         config = self.directory / "mount-config.json"
         config.write_text(json.dumps({"root": str(self.root), "mounts": []}))
         supervise = Mock(return_value=0)
-        flags = Mock(wraps=sys.flags, isolated=True)
+        flags = Mock(wraps=sys.flags, isolated=True, no_site=True)
         with patch.object(sys, "path", list(sys.path)), patch.object(
             sys, "argv", ["sandbox_exec.py", str(config)],
         ), patch.object(

@@ -23,7 +23,7 @@ the localization recipes. `--revision COMMIT` selects another immutable tree;
 `--worktree` selects captured live bytes of paths admitted by `HEAD`:
 
 ```sh
-/usr/bin/python3 -I -B scripts/validation_ownership/isolated_launcher.py --worktree
+/usr/bin/python3 -I -S -B scripts/validation_ownership/isolated_launcher.py --worktree
 ```
 
 No ARM toolchain, ROM, credentials, GitHub request, or manual judgment is needed.
@@ -52,7 +52,12 @@ Candidate Makefiles are programs, including their parse-time `shell`, `file`,
 `eval`, include, recipe, and load behavior. Candidate registry modules and
 native tool sources are also untrusted. The caller must load this package from
 its trusted revision, **not import the candidate package into the supervisor**.
-The isolated launcher excludes ambient Python hooks.
+Trusted entrypoints use Python `-I -S -B`: isolated mode alone still imports
+system `site`, including `.pth` and `sitecustomize` hooks. The public Make/direct
+entry, namespace supervisor and watchdog also reject startup without `-I -S`.
+The trusted version query and confined Python commands likewise suppress site
+initialization. An owned-prefix hook regression exercises the actual launch
+vectors without modifying global site directories.
 
 Each capsule has a private mount, network and PID namespace, a read-only chroot,
 no capabilities, `no_new_privs`, and no inherited descriptor beyond standard
@@ -373,6 +378,19 @@ removing pre-existing directories or traversing an unsafe ancestor. Setup
 signals are delivered only after ownership is assigned. If the operating
 system also rejects cleanup, the primary setup failure remains the cause and
 cleanup diagnostics are attached rather than replacing it.
+The temporary setup mask is restored in a spawned child before its exec;
+payloads see the caller's intended mask, not the ownership-acquisition barrier.
+
+Terminating signals are blocked through the complete owned teardown: per-call
+reports/configs, command/Make directories, process/pipe cleanup, session state
+and scratch removal, and supervisor/watchdog finalization. All cleanup actions
+are attempted before prior handlers and the exact prior mask are restored.
+Signals that the caller already blocked remain pending; other queued terminating
+signals are delivered afterward rather than ignored. A raising Python handler
+or cleanup exception is recorded without replacing an existing operation
+failure. With no primary failure, the deferred exception propagates; default
+OS termination actions take effect only after owned resources are removed.
+Failed/interrupted cleanup never resets or extends the aggregate lifetime.
 
 Every budget subprocess, including ordinary Git/compiler commands, namespace
 availability probes and capsules, uses a fresh exclusive-reaper watchdog.

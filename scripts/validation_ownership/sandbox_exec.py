@@ -95,8 +95,8 @@ def drop_privileges(config):
 
 
 def main():
-    if not sys.flags.isolated or len(sys.argv) != 2:
-        raise SystemExit("sandbox launcher requires isolated Python and trusted config")
+    if not sys.flags.isolated or not sys.flags.no_site or len(sys.argv) != 2:
+        raise SystemExit("sandbox launcher requires Python -I -S and trusted config")
     config = json.loads(Path(sys.argv[1]).read_bytes())
     root = Path(config["root"])
     # Seal inherited submounts before installing deliberate child exceptions.

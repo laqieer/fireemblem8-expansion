@@ -26,7 +26,7 @@ def check(root: Path, revision: str | None):
             if path.endswith(".py") and path.startswith(("scripts/generated_data/", "scripts/assets/"))
         ))
         registry = probe_generated_registry(loader, session=session, command=Command(
-            ("/usr/bin/python3", "-I", "-B", "-c",
+            ("/usr/bin/python3", "-I", "-S", "-B", "-c",
              (TRUSTED_ROOT / "generated_registry_probe.py").read_text(encoding="utf-8"),
              "chapterbundle", "src/data"),
             code=code, sources=("src/data/*_bundle.json",), directories=("src/data",),

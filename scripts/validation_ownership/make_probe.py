@@ -6,6 +6,7 @@ Callers share one ProbeSession across every target, variant and registry probe.
 
 from __future__ import annotations
 
+import errno
 import hashlib
 import os
 import platform
@@ -15,6 +16,7 @@ import shutil
 import signal
 import stat
 import struct
+import sys
 from dataclasses import dataclass
 from functools import wraps
 from pathlib import Path, PurePosixPath
@@ -22,6 +24,7 @@ from threading import get_ident, main_thread
 
 from .authority import AuthorityLoader, ENVIRONMENT, Snapshot, encoded, parse_json, relative_path
 from .budget import Limits, MakeProbeError, NAMESPACE_LAUNCHER, ProbeBudget, text
+from .lifecycle import cleanup_scope, finish_cleanup
 
 
 TRUSTED_ROOT = Path(__file__).resolve().parent
@@ -48,9 +51,9 @@ def terminal_failure(method):
             raise MakeProbeError("a probe session has one bounded execution worker")
         try:
             return method(self, *args, **kwargs)
-        except BaseException:
+        except BaseException as error:
             self.budget.failed = True
-            self.budget.close()
+            finish_cleanup([self.budget.close], primary=error)
             raise
     return guarded
 
@@ -222,6 +225,13 @@ def _mkdir_target(root: Path, target: str, directory=False):
     else:
         destination.touch()
     return destination
+
+
+def _remove_owned_tree(path):
+    try:
+        shutil.rmtree(path)
+    except FileNotFoundError:
+        pass
 
 
 def _trusted_runtime_bytes(path: str, budget: ProbeBudget):
@@ -411,33 +421,43 @@ class ProbeSession:
             self._compile_interceptor()
             return self
         except BaseException:
-            self.__exit__(None, None, None)
+            self.__exit__(*sys.exc_info())
             raise
 
     def _interrupt(self, signum, frame):
         raise KeyboardInterrupt(f"ownership probe interrupted by signal {signum}")
 
     def __exit__(self, kind, value, traceback):
-        self.budget.close()
-        self.cache.clear()
-        self.mappings.clear()
-        self.native_tools.clear()
-        self.make_runtime = ()
-        self.snapshot = None
-        self.loader.budget = None
-        self.loader.live_modes.clear()
-        for sig, handler in self.handlers.items():
-            signal.signal(sig, handler)
-        self.handlers.clear()
-        if self.base is not None:
-            shutil.rmtree(self.base)
-            self.base = None
-        for path in reversed(self.created):
+        def clear_state():
+            self.cache.clear()
+            self.mappings.clear()
+            self.native_tools.clear()
+            self.make_runtime = ()
+            self.snapshot = None
+            self.loader.budget = None
+            self.loader.live_modes.clear()
+        def remove_base():
+            if self.base is not None:
+                _remove_owned_tree(self.base)
+                self.base = None
+        def remove_parent(path):
             try:
                 path.rmdir()
-            except OSError:
-                pass
-        self.created.clear()
+            except OSError as error:
+                if error.errno not in {errno.ENOENT, errno.EEXIST, errno.ENOTEMPTY}:
+                    raise
+        def release_parents():
+            if self.base is None:
+                self.created.clear()
+        try:
+            finish_cleanup([
+                self.budget.close, clear_state, remove_base,
+                *(lambda path=path: remove_parent(path) for path in reversed(self.created)),
+                release_parents,
+            ], primary=value, handlers=self.handlers)
+        except BaseException:
+            self.budget.failed = True
+            raise
 
     def _tools(self):
         for path in ("/usr/bin/make", "/usr/bin/unshare", "/usr/bin/python3", "/usr/bin/cc"):
@@ -448,7 +468,7 @@ class ProbeSession:
             raise MakeProbeError("native observation ABI requires GNU Make 4.3")
         self.make_runtime = _make_runtime(self.budget)
         python = self.budget.run(
-            ["/usr/bin/python3", "-I", "-S", "-c",
+            ["/usr/bin/python3", "-I", "-S", "-B", "-c",
              "import sys; print('%d.%d' % sys.version_info[:2])"],
             env=ENVIRONMENT,
         )
@@ -579,10 +599,12 @@ class ProbeSession:
             self.budget.reject("aggregate capsule resource budget exhausted")
         payload = encoded(config)
         self.budget.charge("control", len(payload))
-        config_path.write_bytes(payload)
-        try:
+        with cleanup_scope([
+            lambda: report.unlink(missing_ok=True), lambda: config_path.unlink(missing_ok=True),
+        ]):
+            config_path.write_bytes(payload)
             result = self.budget.run(
-                [*self.launcher, "/usr/bin/python3", "-I", "-B",
+                [*self.launcher, "/usr/bin/python3", "-I", "-S", "-B",
                  str(TRUSTED_ROOT / "sandbox_exec.py"), str(config_path)],
                 env=ENVIRONMENT, privileged=self.sudo_drop,
             )
@@ -606,9 +628,6 @@ class ProbeSession:
             if mode != "make" and result.returncode:
                 raise MakeProbeError(f"registered command failed: {result.returncode}")
             return result, observed
-        finally:
-            report.unlink(missing_ok=True)
-            config_path.unlink(missing_ok=True)
 
     @staticmethod
     def _mount(source, target, *, writable=False, executable=False):
@@ -658,17 +677,19 @@ class ProbeSession:
             if path not in self.snapshot.files:
                 raise MakeProbeError(f"unadmitted command code: {path}")
         work = self.base / f"command-{self.serial + 1}"
-        work.mkdir()
-        tree = work / "tree"
-        tree.mkdir()
-        self.snapshot.materialize(tree, set(code) | set(sources), self.budget)
-        output = work / "output"
-        output.mkdir()
-        root = self._new_root(f"command-root-{self.serial + 1}")
-        if native is not None:
-            shutil.copyfile(native.path, _mkdir_target(root, "/native/tool"))
-            (root / "native/tool").chmod(0o555)
-        try:
+        root_name = f"command-root-{self.serial + 1}"
+        root = self.base / root_name
+        with cleanup_scope([lambda: _remove_owned_tree(work), lambda: _remove_owned_tree(root)]):
+            work.mkdir()
+            tree = work / "tree"
+            tree.mkdir()
+            self.snapshot.materialize(tree, set(code) | set(sources), self.budget)
+            output = work / "output"
+            output.mkdir()
+            self._new_root(root_name)
+            if native is not None:
+                shutil.copyfile(native.path, _mkdir_target(root, "/native/tool"))
+                (root / "native/tool").chmod(0o555)
             argv = list(command.argv)
             if argv[0] == "/usr/bin/python3":
                 argv[1:1] = ["-I", "-S", "-B"]
@@ -697,9 +718,6 @@ class ProbeSession:
             )
             self.cache[key] = result
             return result
-        finally:
-            shutil.rmtree(work)
-            shutil.rmtree(root)
 
     @terminal_failure
     def compile_native(self, sources, *, headers=(), cxx=False, libraries=(), defines=()):
@@ -829,19 +847,21 @@ class ProbeSession:
                 environment[name] = value
             else:
                 cli.append(name + "=" + value)
-        root = self._new_root(f"make-root-{self.serial + 1}", make=True)
+        root_name = f"make-root-{self.serial + 1}"
+        root = self.base / root_name
         control = self.base / f"control-{self.serial + 1}"
-        control.mkdir(mode=0o700)
-        mapping_path = control / "map"
-        mapping_path.mkdir()
-        events_path, result_path = control / "events", control / "result"
-        events_path.touch()
-        result_path.touch()
-        (control / "interceptor").touch()
         mappings = {}
         command_results = {}
         commands = {} if commands is None else commands
-        try:
+        with cleanup_scope([mappings.clear, lambda: _remove_owned_tree(control), lambda: _remove_owned_tree(root)]):
+            self._new_root(root_name, make=True)
+            control.mkdir(mode=0o700)
+            mapping_path = control / "map"
+            mapping_path.mkdir()
+            events_path, result_path = control / "events", control / "result"
+            events_path.touch()
+            result_path.touch()
+            (control / "interceptor").touch()
             for _ in range(MAX_DYNAMIC_PASSES):
                 self.budget.remaining()
                 (mapping_path / "count").write_bytes(len(mappings).to_bytes(4, "little"))
@@ -917,10 +937,6 @@ class ProbeSession:
                         "output_sha256": hashlib.sha256(output).hexdigest(),
                     }
             raise MakeProbeError("Make dynamic replay exceeded the existing pass bound")
-        finally:
-            mappings.clear()
-            shutil.rmtree(control)
-            shutil.rmtree(root)
 
     @terminal_failure
     def variants(self, target, states, **kwargs):

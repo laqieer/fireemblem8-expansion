@@ -23,6 +23,11 @@ from collections import deque
 from dataclasses import dataclass, field
 from pathlib import Path
 
+if __package__:
+    from .lifecycle import finish_cleanup
+else:
+    from lifecycle import finish_cleanup
+
 
 LIBC = ctypes.CDLL(None, use_errno=True)
 LIBC.ptrace.restype = ctypes.c_long
@@ -889,6 +894,8 @@ def supervise(config, drop_privileges):
     newborn_stops = {}
     vfork_waiters = {}
     error = None
+    primary = None
+    result = None
     main_status = None
     total_processes = 0
     pid = os.fork()
@@ -1023,42 +1030,47 @@ def supervise(config, drop_privileges):
         if newborn_stops:
             raise Violation("unresolved descendant at completion")
     except BaseException as failure:
+        primary = failure
         error = str(failure)
     finally:
-        for child, descriptor in newborn_stops.items():
-            processes.setdefault(child, Process("unresolved", pidfd=descriptor))
-        signal_tracees(processes)
-        while processes:
-            try:
-                child, status = os.waitpid(-1, WALL)
-                if os.WIFEXITED(status) or os.WIFSIGNALED(status):
-                    record = processes.pop(child, None)
-                    if record is not None:
+        def reap_owned():
+            for child, descriptor in newborn_stops.items():
+                processes.setdefault(child, Process("unresolved", pidfd=descriptor))
+            signal_tracees(processes)
+            while processes:
+                try:
+                    child, status = os.waitpid(-1, WALL)
+                    if os.WIFEXITED(status) or os.WIFSIGNALED(status):
+                        record = processes.pop(child, None)
+                        if record is not None:
+                            record.close()
+                    else:
+                        try:
+                            ptrace(SYSCALL, child, 0, signal.SIGKILL)
+                        except OSError:
+                            pass
+                except ChildProcessError:
+                    for record in processes.values():
                         record.close()
-                else:
-                    try:
-                        ptrace(SYSCALL, child, 0, signal.SIGKILL)
-                    except OSError:
-                        pass
-            except ChildProcessError:
-                for record in processes.values():
-                    record.close()
-                processes.clear()
-        result = {
-            "ok": error is None,
-            "returncode": main_status,
-            "error": error,
-            "consumed": sorted(policy.consumed),
-            "code_consumed": sorted(policy.code_consumed),
-            "accessed": sorted(policy.accessed),
-            "processes": total_processes,
-            "syscalls": policy.calls,
-            "written_bytes": policy.written,
-            "created_files": policy.created,
-            "memory_peak": policy.memory_peak,
-            "observation_bytes": policy.observation_bytes,
-        }
-        Path(config["report"]).write_text(
-            json.dumps(result, sort_keys=True, separators=(",", ":")), encoding="ascii",
-        )
+                    processes.clear()
+        def write_report():
+            nonlocal result
+            result = {
+                "ok": error is None,
+                "returncode": main_status,
+                "error": error,
+                "consumed": sorted(policy.consumed),
+                "code_consumed": sorted(policy.code_consumed),
+                "accessed": sorted(policy.accessed),
+                "processes": total_processes,
+                "syscalls": policy.calls,
+                "written_bytes": policy.written,
+                "created_files": policy.created,
+                "memory_peak": policy.memory_peak,
+                "observation_bytes": policy.observation_bytes,
+            }
+            Path(config["report"]).write_text(
+                json.dumps(result, sort_keys=True, separators=(",", ":")), encoding="ascii",
+            )
+        finish_cleanup([reap_owned, write_report], primary=primary)
     return 0 if result["ok"] else 125
