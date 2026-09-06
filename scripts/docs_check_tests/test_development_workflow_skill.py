@@ -2673,6 +2673,29 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
             ),
         )
 
+    def test_bounded_exact_sha_agent_handoff_is_indexed(self):
+        registry = json.loads(TEST_CASE_REGISTRY_PATH.read_text(encoding="utf-8"))
+        case_id = "TC-WORKFLOW-AGENT-HANDOFF-001"
+        case = next(item for item in registry["cases"] if item["id"] == case_id)
+        feature = next(item for item in registry["features"] if item["id"] == case["feature_id"])
+        self.assertIn(case_id, feature["required_cases"])
+        self.assertEqual(case["feature_id"], "workflow-governance")
+        document = ROOT / case["document"]
+        section = "\n".join(read_markdown_section(
+            document.read_text(encoding="utf-8"),
+            "TC-WORKFLOW-AGENT-HANDOFF-001: Validate bounded exact-SHA agent handoffs",
+        ))
+        for heading in ("Actions", "Expected result", "Negative control", "Interactions and save compatibility",
+                        "Automation", "Cleanup and limitations"):
+            self.assertTrue(read_markdown_section(section, heading))
+        for evidence in case["automation"]:
+            self.assertTrue((ROOT / evidence["evidence"]).is_file())
+        _, skill = read_skill()
+        self.assertTrue(read_markdown_section(skill, "Bounded exact-SHA implementation handoffs"))
+        self.assertTrue(read_markdown_section(
+            COPILOT_INSTRUCTIONS_PATH.read_text(encoding="utf-8"), "Bounded exact-SHA implementation handoffs",
+        ))
+
     def test_immediate_publication_protocol(self):
         _, text = read_skill()
         self.assertEqual(publication_protocol_violations(text), [])
@@ -4453,6 +4476,7 @@ printf '%s\t%s\t%s\n' "$result" \
             if item["id"] == "workflow-governance"
         )
         expected_cases = [
+            "TC-WORKFLOW-AGENT-HANDOFF-001",
             "TC-WORKFLOW-HOST-PYTHON-DEPS-001",
             "TC-WORKFLOW-WORKTREE-CLEANUP-001",
             "TC-WORKFLOW-IMMEDIATE-PUSH-001",

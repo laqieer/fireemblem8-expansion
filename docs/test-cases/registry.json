@@ -482,6 +482,7 @@
         "https://github.com/laqieer/fireemblem8-expansion/issues/171",
         "https://github.com/laqieer/fireemblem8-expansion/issues/176",
         "https://github.com/laqieer/fireemblem8-expansion/issues/177",
+        "https://github.com/laqieer/fireemblem8-expansion/issues/178",
         "https://github.com/laqieer/fireemblem8-expansion/issues/199",
         "https://github.com/laqieer/fireemblem8-expansion/issues/208",
         "https://github.com/laqieer/fireemblem8-expansion/issues/207",
@@ -497,6 +498,7 @@
         "TC-WORKFLOW-BODY-EDIT-001",
         "TC-WORKFLOW-METADATA-EDIT-RACE-001",
         "TC-WORKFLOW-PILOT-BASELINE-001",
+        "TC-WORKFLOW-AGENT-HANDOFF-001",
         "TC-WORKFLOW-WORKTREE-CLEANUP-001",
         "TC-WORKFLOW-HOST-PYTHON-DEPS-001"
       ]
@@ -2178,6 +2180,34 @@
         {
           "command": "python3 -m unittest scripts.generated_data.tests.test_classes_schema scripts.generated_data.tests.test_units_schema scripts.generated_data.tests.test_eventlists_schema scripts.generated_data.tests.test_eventlists_roundtrip -v",
           "evidence": "scripts/generated_data/tests/test_eventlists_roundtrip.py"
+        }
+      ]
+    },
+    {
+      "id": "TC-WORKFLOW-AGENT-HANDOFF-001",
+      "title": "Validate bounded exact-SHA agent handoffs",
+      "feature_id": "workflow-governance",
+      "issue_urls": ["https://github.com/laqieer/fireemblem8-expansion/issues/178"],
+      "document": "docs/test-cases/workflow-governance.md",
+      "anchor": "tc-workflow-agent-handoff-001-validate-bounded-exact-sha-agent-handoffs",
+      "profiles": ["Source-only Linux checkout with the issue #216 locked host Python environment and Git"],
+      "purpose": "Prove exact-SHA, bounded local handoffs using actual Git, native CLI events, owned process exits/checks, authoritative run reconciliation and retained original worktree recovery.",
+      "prerequisites": "Start at the exact source root with the unchanged #176 baseline and #216 environment; no token, live workflow, ROM or emulator is required.",
+      "actions": "Run the focused handoff/observation suite. Exercise clean single/multiple task commits and authorized upstream merges; stale/dirty/wrong-scope/missing-evidence controls; native lifecycle, real PID/exit/RSS, duplicate owners/watchers, exact GitHub responses, SIGKILL preservation and availability. Execute documented CLI positive/negative commands and optional reporting.",
+      "expected_result": "Only an exact clean measured descendant is locally ready. Task trailers exclude imported upstream history; incremental budgets remain separate from full-PR review size. Lifecycle states are independently observed, owners rotate, one watcher owns each exact run/attempt, GitHub success/failure remains authoritative, and one replacement reuses the retained locked original worktree.",
+      "negative_control": "Stale/wrong-parent/non-HEAD/unrelated results, dirty/conflicting/hidden-index trees, missing trailers/evidence, failed or incomplete checks, unknown/over-budget resources, oversized/duplicate/invalid JSON, candidate checker substitution, tool-success/printed-exit labels, reused/opaque PID, missing RSS, overlapping ownership/watchers, wrong run identities, unknown OOM, lost recovery locks and unavailable coordinators fail or remain explicitly unknown.",
+      "interactions": "Depends on #176 and #216/#217; dependent #181. #179 is independent and #205/#211 is not required. Preserve #199 metadata events, #207 immediate publication, #208 cleanup and original final gates; no broker or generic runtime is introduced.",
+      "save_compatibility": "No game/runtime, save/configuration, locale, generated data, ROM/RAM content, modern debug/release, archival or Build topology change.",
+      "cleanup": "Fixtures remove only their own build/test-artifacts/agent-handoff-* directories and reap their own children. No remote state, unrelated process or Dev Box setting changes.",
+      "limitations": "GitHub/kernel responses are inert fixtures at external boundaries; production adapters execute. Opaque runtime handles and absent OS/RSS/OOM authority remain unknown. Coordinator records are trusted operational input, not authenticated offline proof or publication authority. No manual-only criterion applies.",
+      "automation": [
+        {
+          "command": "build/host-python/bin/python3 -I -c 'import sys, unittest; sys.path.insert(0, \".\"); unittest.main(module=None)' scripts.workflow_pilot.tests.test_agent_handoff scripts.workflow_pilot.tests.test_coordinator_observations -v",
+          "evidence": "scripts/workflow_pilot/tests/test_agent_handoff.py"
+        },
+        {
+          "command": "python3 -m unittest scripts.docs_check_tests.test_development_workflow_skill.DevelopmentWorkflowSkillTests.test_bounded_exact_sha_agent_handoff_is_indexed -v",
+          "evidence": "scripts/docs_check_tests/test_development_workflow_skill.py"
         }
       ]
     },

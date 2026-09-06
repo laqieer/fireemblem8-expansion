@@ -3977,6 +3977,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--decisions", type=Path, required=True)
     parser.add_argument("--expected", type=Path, required=True)
     parser.add_argument(
+        "--handoffs", type=Path,
+        help="optional bounded coordinator observations; not authenticated delivery evidence",
+    )
+    parser.add_argument(
         "--repository-root",
         type=Path,
         required=True,
@@ -3986,6 +3990,22 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         ),
     )
     return parser.parse_args(argv)
+
+
+def with_handoff_metrics(baseline: dict, raw: bytes) -> dict:
+    from scripts.workflow_pilot import agent_handoff, coordinator_observations
+
+    try:
+        state = coordinator_observations.parse_bytes(raw)
+        metrics = agent_handoff.summarize_handoffs(state)
+        if (
+            baseline.get("schema_version") != 1
+            or baseline.get("snapshot", {}).get("repository") != state["repository"]
+        ):
+            raise PilotDataError("handoff observations must identify the baseline repository")
+    except agent_handoff.HandoffDataError as error:
+        raise PilotDataError(str(error)) from error
+    return {"schema_version": 2, "baseline": baseline, "implementation_handoffs": metrics}
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -4009,6 +4029,14 @@ def main(argv: list[str] | None = None) -> int:
             fixture,
             decisions,
         )
+        if args.handoffs is not None:
+            from scripts.workflow_pilot import coordinator_observations
+
+            try:
+                raw = coordinator_observations.read_bytes(args.handoffs)
+            except (OSError, coordinator_observations.ObservationError) as error:
+                raise PilotDataError(f"cannot read handoff observations: {error}") from error
+            report = with_handoff_metrics(report, raw)
     except PilotDataError as error:
         print(f"workflow-pilot: {error}", file=sys.stderr)
         return 2
