@@ -1556,12 +1556,20 @@ Those SHAs are illustrative, not executable evidence. `load_assignment`,
 over-1-MiB input **before** decoding/copying; duplicate keys, nonfinite values,
 unknown fields, invalid Unicode, excessive depth/nodes/strings and unsupported
 versions reject. Collections are bounded: 128 assignments/watchers, 256 scope
-entries, 32 checks/criteria, 16 upstream/protocol inputs and five lifecycle
-states. Descriptive strings are at most 16 KiB. Keyed criteria/checks and unique
+entries, 32 checks/criteria, 16 upstream inputs and 16 inputs per protocol check.
+There are five lifecycle states; text is at most 16 KiB. Keyed criteria/checks and unique
 arrays avoid duplicate wire identities. The independent Draft 2020-12 tests
 exercise structural/schema agreement. Git identity, cross-record correlation,
 chronology, ownership and evidence completeness require additional runtime
 checks, not a schema claim of authenticity.
+
+Reusable text and path fields accept Unicode scalar values, including
+supplementary characters and valid JSON escapes. Escaped lone UTF-16
+surrogates reject in the independent schema and the byte API/CLI alike.
+Protocol paths must also be disjoint across required check definitions:
+duplicate or partially overlapping definitions reject at runtime. The ordinary
+schema checks each definition's shape/unique inputs, not this cross-record
+relationship or the resulting aggregate budget.
 
 The one bounded wire decoder normalizes mathematically integral JSON numbers
 (`178.0`, `17.8e1`) to native integers before validation or OS operations.
@@ -1690,9 +1698,22 @@ Known host-only task paths or an observed result with no task-owned paths
 (such as a pure authorized import) may derive zero task ROM/RAM. Zero numstat
 alone is not a resource observation: non-host mode/type changes and empty-file
 additions/deletions still need actual coordinator measurements. A measured zero
-is valid evidence; a missing measurement is not. Protocol checks compare parsed
-immutable JSON inputs,
-not schema-version increments; missing measurements and overages reject.
+is valid evidence; a missing measurement is not. The raw check captures any
+justified inferred zeros in its existing measurement fields, so later reporting
+does not guess from allowed scope, numstat or a removed worktree.
+Protocol checks compare presence and typed parsed immutable JSON values,
+not schema-version increments or source spelling. Creating/deleting a valid
+JSON `null` document consumes one change; absent/absent and unchanged `null`
+consume none. Key order, integral numeric spelling and valid Unicode escapes
+do not change a value, but Boolean/numeric substitutions and array order do.
+Comparison retains the original input bounds without re-encoding valid
+Unicode into a larger escaped document.
+Each declared input belongs to one protocol check. Multiple disjoint checks
+are supported, and their changed-input counts sum across the assignment.
+An unknown or impossible count cannot be masked by another check or by a
+coordinator's aggregate measure. ROM/RAM measures refer to the same whole-task
+growth and use the greatest observed value, not a sum of repeated measurements.
+Missing measurements and overages reject.
 The raw checker pins whitespace/diff/config behavior, disables hooks/fsmonitor/
 textconv/external diff, bounds object/output bytes, and rechecks Git after checks.
 Combined stdout/stderr is bounded to 4 MiB and raw processes to 30 seconds.
@@ -1779,6 +1800,19 @@ accepted handoff is not a merged/delivered PR. Each watcher row uses its own
 run/attempt observation and query error: a newer success on the same head does
 not relabel earlier failures, cancellations, pending or unknown observations.
 Current-head CI selection elsewhere still selects the latest run/attempt.
+
+Live handoff validation and accepted reporting use the same pure
+focused-check/resource evidence predicate: required evidence references,
+check identity, completion, observation times and ROM/RAM/protocol budgets
+must all agree. Reporting uses the recorded verdict's observation time rather
+than requiring historical Git/files or rerunning checks. Mutating an accepted
+record to missing/null/mistyped/over-budget observations cannot leave it
+counted accepted. Complete captured host-only, pure-import and measured
+non-host records remain reportable after their worktree is removed.
+An older accepted label without necessary captured measurements is incomplete,
+not permission to invent zeros; reobserve it only if the actual inputs remain
+available. Honest rejected/in-progress records with unknown measurements remain
+reportable. None of these consistency checks authenticates the stored data.
 
 Dependencies: #176 and #216's locked `jsonschema` test environment, delivered
 by merged PR #217. This work was a genuine child while that dependency was

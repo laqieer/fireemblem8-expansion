@@ -2377,6 +2377,22 @@ game behavior needs a compensating change.
    Actual linker observations of zero pass; nonzero growth rejects an
    insufficient budget and passes with sufficient limits. Host-only zero-line
    changes and pure authorized imports with no task-owned paths still pass.
+   Create/delete a valid `null` protocol file: each consumes one change;
+   absent/absent and unchanged `null` consume zero. Preserve positives for
+   object key order, integral numeric spelling and equivalent Unicode escapes;
+   Boolean-to-number substitutions and changed array order must consume a
+   change. Valid Unicode input within the existing byte bound stays valid even
+   when escaped re-encoding would be larger.
+   Partition the same changed inputs among multiple disjoint protocol checks
+   and reorder their declarations: the assignment total stays the same.
+   Fully or partially overlapping input definitions reject through assignment,
+   loaded-state and CLI admission; ordinary schema validation does not claim
+   this runtime-only cross-record check. Missing/impossible per-check counts
+   cannot be hidden by other check measurements.
+   Send escaped lone high/low surrogates through text/path fields: independent
+   Draft 2020-12 and the actual byte API/CLI reject. Ordinary Unicode,
+   supplementary characters and valid escapes pass, including after a
+   CLI round trip. Rejected CLI input leaves canonical state unchanged.
 5. Exercise dispatch-only and received-only native event streams. Confirm
    the matching session's receipt needs both the assignment marker and
    `data.parentAgentTaskId` equal to the dispatched task ID. Wrong-task,
@@ -2438,6 +2454,17 @@ game behavior needs a compensating change.
     negative exits 2. Removed publication verbs reject. Exercise optional
     reporting, confirm stale/incomplete and unknown RSS remain visible, and
     confirm baseline v1 without the option remains unchanged.
+    Starting from a genuinely accepted handoff, mutate captured ROM/RAM and
+    protocol measurements to missing, null, wrong types or over budget; also
+    remove checks/evidence or change identity, completion and times. Both live
+    validation without re-running checks and accepted reporting must reject.
+    Independent partial ROM/RAM observations may together cover one global
+    growth measure; repeated observations do not multiply that growth.
+    Honest rejected records with unknown resources still report as rejected.
+    Capture justified host-only/pure-import zeros, then remove only the owned
+    fixture worktree: complete historical host/import/non-host observations
+    still report without Git access. A missing captured zero must not be
+    reconstructed from a verdict label or allowed scope.
 
 ### Expected result
 

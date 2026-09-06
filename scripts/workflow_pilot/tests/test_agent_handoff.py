@@ -197,6 +197,21 @@ class GitFixture:
     def validate(self, result, **kwargs):
         return handoff.validate_handoff(self.state, result, worktree=self.worktree, **kwargs)
 
+    def capture_resources(self, revision, check_id="resource"):
+        parent_map, candidate_map = self.home / "parent.map", self.home / "candidate.map"
+        original = (ROOT / "scripts/linker_report/tests/fixtures/basic.map").read_text()
+        parent_map.write_text(original)
+        candidate_map.write_text(original.replace("0x100000", "0x100008")
+                                 .replace("0x2000", "0x2004").replace("0x03002000", "0x03002004"))
+        def executor(assignment, result_sha):
+            capture = raw.run_process(
+                ["/usr/bin/python3", "-I", str(ROOT / "scripts/linker_report/budget.py"),
+                 "--map", str(candidate_map), "--output", str(self.home / "resource-report.json")],
+                cwd=ROOT, env=raw.git_environment(),
+            )
+            return capture, observations.linker_growth(parent_map, candidate_map)
+        return handoff.capture_check(self.entry, check_id, revision, executor)
+
 
 class ExactHandoffTests(unittest.TestCase):
     def setUp(self):
@@ -518,6 +533,109 @@ class ExactHandoffTests(unittest.TestCase):
         parent_json = {"one": 1, "two": 2}
         self.assertEqual(observations.parse_bytes(b'{"two":2, "one":1}'), parent_json)
 
+    def test_protocol_presence_and_typed_values_not_source_spelling_determine_changes(self):
+        for before, after, changed in (
+            (None, "null\n", 1), ("null\n", None, 1), (None, None, 0), ("null\n", "null\n", 0),
+            (None, '{"type":"integer"}\n', 1), ('{"type":"integer"}\n', None, 1),
+            ('{"a":1,"b":2}\n', '{\n  "b":2,\n  "a":1e0\n}\n', 0),
+            ('{"value":"\\ud83d\\ude80"}\n', '{"value":"🚀"}\n', 0),
+            ('{"flag":true}\n', '{"flag":1}\n', 1),
+            ("false\n", "0.0\n", 1), ("[1,2]\n", "[2,1]\n", 1),
+            ('{"type":"integer"}\n', '{"type":"string"}\n', 1),
+        ):
+            with self.subTest(before=before, after=after):
+                f = GitFixture(assign=False)
+                self.addCleanup(f.close)
+                file = f.worktree / "docs/input.schema.json"
+                if before is not None:
+                    file.write_text(before)
+                    f.parent = f.commit_pending(trailers=False)
+                    f.assignment["assigned_parent_sha"] = f.parent
+                f.assignment["required_checks"]["protocol"] = {
+                    "contract": "protocol-json", "evidence_id": "protocol", "inputs": ["docs/input.schema.json"],
+                }
+                f.entry = handoff.assign(f.state, f.assignment)
+                process = f.owner_process()
+                f.receive()
+                if after is None:
+                    file.unlink(missing_ok=True)
+                else:
+                    file.write_text(after)
+                result = f.deliver(f.commit())
+                f.finish_owner(process)
+                verdict = f.validate(result)
+                check = next(item for item in f.entry["checks"] if item["id"] == "protocol")
+                self.assertEqual(check["measurements"]["protocol_changes"], changed)
+                self.assertEqual(verdict["handoff_ready"], changed == 0, verdict)
+                if changed:
+                    self.assertIn("protocol-changes-budget-exceeded", verdict["rejection_codes"])
+                    f.assignment["budgets"]["protocol_changes"] = changed
+                    self.assertTrue(f.validate(result)["handoff_ready"])
+                self.assertEqual(handoff.summarize_handoffs(f.state)["accepted"], 1)
+
+    def test_disjoint_protocol_checks_aggregate_independently_of_partition_and_order(self):
+        names = ["docs/one.schema.json", "docs/two.schema.json", "docs/three.schema.json"]
+        for groups in ((names,), (names[:1], names[1:]), (names[2:], names[1:2], names[:1])):
+            with self.subTest(groups=groups):
+                f = GitFixture()
+                self.addCleanup(f.close)
+                f.assignment["required_checks"].update({
+                    f"protocol-{index}": {"contract": "protocol-json", "evidence_id": f"protocol-{index}",
+                                         "inputs": group} for index, group in enumerate(groups)
+                })
+                for name in names:
+                    (f.worktree / name).write_text('{"type":"integer"}\n')
+                result = f.complete()
+                f.assignment["budgets"]["protocol_changes"] = 2
+                verdict = f.validate(result)
+                self.assertIn("protocol-changes-budget-exceeded", verdict["rejection_codes"])
+                self.assertEqual(sum(check["measurements"]["protocol_changes"] for check in f.entry["checks"]
+                                     if check["contract"] == "protocol-json"), 3)
+                f.assignment["budgets"]["protocol_changes"] = 3
+                self.assertTrue(f.validate(result)["handoff_ready"])
+                self.assertEqual(handoff.summarize_handoffs(f.state)["accepted"], 1)
+
+    def test_valid_unicode_protocol_uses_input_bounds_not_reencoded_escape_size(self):
+        f = GitFixture(assign=False)
+        self.addCleanup(f.close)
+        payload = {"wide": ["🚀" * 10000] * 20, "number": 1}
+        file = f.worktree / "docs/unicode.schema.json"
+        before = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+        self.assertLess(len(before.encode("utf-8")), observations.MAX_JSON_BYTES)
+        self.assertGreater(len(json.dumps(payload)), observations.MAX_JSON_BYTES)
+        file.write_text(before)
+        f.parent = f.commit_pending(trailers=False)
+        f.assignment["assigned_parent_sha"] = f.parent
+        f.assignment["required_checks"]["protocol"] = {
+            "contract": "protocol-json", "evidence_id": "protocol", "inputs": ["docs/unicode.schema.json"],
+        }
+        f.entry = handoff.assign(f.state, f.assignment)
+        file.write_text(json.dumps({"number": 1.0, "wide": payload["wide"]}, ensure_ascii=False))
+        result = f.complete()
+        verdict = f.validate(result)
+        self.assertTrue(verdict["handoff_ready"], verdict)
+        check = next(item for item in f.entry["checks"] if item["id"] == "protocol")
+        self.assertEqual(check["measurements"]["protocol_changes"], 0)
+
+    def test_protocol_invalid_documents_and_nonregular_inputs_stay_unobserved(self):
+        for content in ("", "{", '{"a":1,"a":2}\n', '"\\ud800"\n', None):
+            with self.subTest(content=content):
+                f = GitFixture()
+                self.addCleanup(f.close)
+                f.assignment["required_checks"]["protocol"] = {
+                    "contract": "protocol-json", "evidence_id": "protocol", "inputs": ["docs/input.schema.json"],
+                }
+                file = f.worktree / "docs/input.schema.json"
+                if content is None:
+                    file.symlink_to("base.txt")
+                else:
+                    file.write_text(content)
+                result = f.complete()
+                verdict = f.validate(result)
+                self.assertIn("git-or-check-observation-failed", verdict["rejection_codes"])
+                self.assertFalse(verdict["handoff_ready"])
+                self.assertFalse(any(check["id"] == "protocol" for check in f.entry["checks"]))
+
     def test_retirement_lifetime_rss_and_fresh_successor(self):
         f = self.fixture
         result = f.complete()
@@ -656,6 +774,117 @@ class HandoffSchemaTests(unittest.TestCase):
                 key = next(iter(changed[location]))
                 changed[location][key]["unknown"] = 0
             self.reject_both(changed, handoff.validate_assignment)
+
+    def test_protocol_input_overlap_is_an_explicit_runtime_cross_record_constraint(self):
+        f = GitFixture(assign=False)
+        self.addCleanup(f.close)
+        f.assignment["required_checks"].update({
+            "one": {"contract": "protocol-json", "evidence_id": "one", "inputs": ["docs/a.json", "docs/b.json"]},
+            "two": {"contract": "protocol-json", "evidence_id": "two", "inputs": ["docs/c.json"]},
+        })
+        self.validator.validate(f.assignment)
+        f.entry = handoff.assign(f.state, f.assignment)
+        for inputs in (["docs/a.json"], ["docs/b.json", "docs/a.json"], ["docs/c.json", "docs/b.json"]):
+            with self.subTest(inputs=inputs):
+                assignment = copy.deepcopy(f.assignment)
+                assignment["required_checks"]["two"]["inputs"] = inputs
+                self.validator.validate(assignment)
+                with self.assertRaisesRegex(handoff.HandoffDataError, "overlapping protocol inputs"):
+                    handoff.parse_assignment(observations.json_bytes(assignment))
+                state = copy.deepcopy(f.state)
+                state["assignments"][0]["assignment"] = assignment
+                with self.assertRaisesRegex(handoff.HandoffDataError, "overlapping protocol inputs"):
+                    handoff.validate_state(state)
+                empty = {**f.state, "assignments": []}
+                with self.assertRaisesRegex(handoff.HandoffDataError, "overlapping protocol inputs"):
+                    handoff.assign(empty, assignment)
+                self.assertEqual(empty["assignments"], [])
+
+    def test_unicode_scalar_constraints_cover_reusable_text_and_wire_fields(self):
+        f = self.fixture
+        self.assertTrue(f.validate(f.complete())["handoff_ready"])
+        watcher_process = f.waiting_process()
+        handoff.reserve_watcher(f.state, "watch", 91, 1, f.parent, watcher_process.pid)
+        cases = [
+            (f.assignment, handoff.validate_assignment, ("acceptance_criteria", "case-one", "text")),
+            (f.assignment, handoff.validate_assignment, ("expected_branch",)),
+            (f.assignment, handoff.validate_assignment, ("allowed_worktree",)),
+            (f.assignment, handoff.validate_assignment, ("allowed_scope", 0)),
+            (f.state, handoff.validate_state, ("availability", "plan")),
+            (f.state, handoff.validate_state, ("assignments", 0, "events", 0, "source_id")),
+            (f.state, handoff.validate_state, ("assignments", 0, "checks", 0, "detail")),
+            (f.state, handoff.validate_state, ("assignments", 0, "git_identity", "common_dir")),
+            (f.state, handoff.validate_state, ("assignments", 0, "cursors", 0, "session_id")),
+            (f.state, handoff.validate_state, ("watchers", 0, "query_error")),
+        ]
+        f.assignment["required_checks"]["protocol"] = {
+            "contract": "protocol-json", "evidence_id": "protocol", "inputs": ["docs/input.json"],
+        }
+        cases.append((f.assignment, handoff.validate_assignment, ("required_checks", "protocol", "inputs", 0)))
+        recovery = GitFixture()
+        self.addCleanup(recovery.close)
+        process = recovery.owner_process()
+        recovery.finish_owner(process)
+        handoff.preserve_interruption(recovery.entry, "process-exit")
+        for field in ("lock_reason", "oom_evidence"):
+            cases.append((recovery.state, handoff.validate_state, ("assignments", 0, "interruption", field)))
+        for base, parser, path in cases:
+            for scalar in ("\ud800", "\udfff", "x\udbffy", "é通信🚀", "\ud7ff\ue000"):
+                valid = not any(0xD800 <= ord(char) <= 0xDFFF for char in scalar)
+                document = copy.deepcopy(base)
+                target = document
+                for key in path[:-1]:
+                    target = target[key]
+                target[path[-1]] = (target[path[-1]] or "text") + scalar
+                wire = json.dumps(document, ensure_ascii=True).encode("ascii")
+                with self.subTest(path=path, scalar=ascii(scalar), boundary="schema"):
+                    self.assertEqual(self.validator.is_valid(json.loads(wire)), valid)
+                with self.subTest(path=path, scalar=ascii(scalar), boundary="api"):
+                    if valid:
+                        parser(observations.parse_bytes(wire))
+                        parser(observations.parse_bytes(json.dumps(document, ensure_ascii=False).encode("utf-8")))
+                    else:
+                        with self.assertRaises(handoff.HandoffDataError):
+                            parser(observations.parse_bytes(wire))
+                        with self.assertRaises(handoff.HandoffDataError):
+                            parser(document)
+
+    def test_unicode_scalar_and_protocol_overlap_controls_through_real_cli(self):
+        f = GitFixture(assign=False)
+        self.addCleanup(f.close)
+        state_path, assignment_path = f.home / "state.json", f.home / "assignment.json"
+        command = [str(ROOT / "build/host-python/bin/python3"), "-I",
+                   str(ROOT / "scripts/workflow_pilot/isolated_launcher.py"), "agent-handoff",
+                   "assign", "--state", str(state_path), "--assignment", str(assignment_path)]
+        for text, expected in (("\ud800", 2), ("\udfff", 2), ('通信 café 🚀\n"quoted"\\escaped', 0)):
+            for ascii_wire in (True, False) if expected == 0 else (True,):
+                with self.subTest(text=ascii(text), ascii_wire=ascii_wire):
+                    write_json(state_path, f.state)
+                    before = state_path.read_bytes()
+                    assignment = copy.deepcopy(f.assignment)
+                    assignment["acceptance_criteria"]["case-one"]["text"] = text
+                    wire = json.dumps(assignment, ensure_ascii=ascii_wire).encode("utf-8")
+                    assignment_path.write_bytes(wire)
+                    self.assertEqual(self.validator.is_valid(json.loads(wire)), expected == 0)
+                    observed = raw.run_process(command, cwd=ROOT, env=raw.git_environment())
+                    self.assertEqual(observed.returncode, expected, observed.stderr.decode())
+                    if expected:
+                        self.assertEqual(state_path.read_bytes(), before)
+                    else:
+                        loaded = observations.load_json(state_path)["assignments"][0]["assignment"]
+                        self.assertEqual(loaded["acceptance_criteria"]["case-one"]["text"], text)
+        assignment = copy.deepcopy(f.assignment)
+        assignment["required_checks"].update({
+            name: {"contract": "protocol-json", "evidence_id": name, "inputs": ["docs/input.json"]}
+            for name in ("one", "two")
+        })
+        write_json(state_path, f.state)
+        before = state_path.read_bytes()
+        write_json(assignment_path, assignment)
+        self.validator.validate(assignment)
+        rejected = raw.run_process(command, cwd=ROOT, env=raw.git_environment())
+        self.assertEqual(rejected.returncode, 2)
+        self.assertEqual(state_path.read_bytes(), before)
 
     def test_bounded_bytes_precede_decode_or_copy_and_nofollow_files(self):
         with mock.patch.object(observations.json, "loads", side_effect=AssertionError("must not parse")):
@@ -928,6 +1157,192 @@ class RawDiffBoundaryTests(unittest.TestCase):
 
 
 class OptionalReporterTests(unittest.TestCase):
+    def measured_handoff(self, *, repeated_resources=False):
+        f = GitFixture()
+        self.addCleanup(f.close)
+        f.assignment["allowed_scope"].append("src/")
+        f.assignment["budgets"].update(rom_bytes=8, ram_bytes=4, protocol_changes=2)
+        f.assignment["required_checks"]["resource"] = {
+            "contract": "coordinator-check", "evidence_id": "resource", "inputs": [],
+        }
+        if repeated_resources:
+            f.assignment["required_checks"]["resource-two"] = {
+                "contract": "coordinator-check", "evidence_id": "resource-two", "inputs": [],
+            }
+        for name in ("one", "two"):
+            file = f"docs/{name}.schema.json"
+            f.assignment["required_checks"][name] = {
+                "contract": "protocol-json", "evidence_id": name, "inputs": [file],
+            }
+            (f.worktree / file).write_text('{"type":"integer"}\n')
+        result = f.complete(name="src/resource.c", content="int resource;\n")
+        f.capture_resources(result["result_sha"])
+        if repeated_resources:
+            f.capture_resources(result["result_sha"], "resource-two")
+        self.assertTrue(f.validate(result)["handoff_ready"])
+        return f
+
+    def reject_live_and_report(self, f, state, code):
+        self.assertEqual(state["assignments"][0]["validation"]["local_outcome"], "accepted")
+        baseline = {"schema_version": 1, "snapshot": {"repository": f.state["repository"]}}
+        with self.subTest(boundary="report"):
+            with self.assertRaises(reporter.PilotDataError):
+                reporter.with_handoff_metrics(baseline, json.dumps(state).encode("ascii"))
+        with self.subTest(boundary="live"):
+            state = copy.deepcopy(state)
+            result = state["assignments"][0]["result"]
+            if code is None:
+                with self.assertRaises(handoff.HandoffDataError):
+                    handoff.validate_handoff(state, result, worktree=f.worktree, run_checks=False)
+            else:
+                verdict = handoff.validate_handoff(state, result, worktree=f.worktree, run_checks=False)
+                self.assertFalse(verdict["handoff_ready"])
+                self.assertIn(code, verdict["rejection_codes"])
+                metrics = reporter.with_handoff_metrics(baseline, observations.json_bytes(state))[
+                    "implementation_handoffs"]
+                self.assertEqual((metrics["accepted"], metrics["rejected"]), (0, 1))
+
+    def test_partial_and_repeated_resource_observations_measure_one_global_delta(self):
+        f = self.measured_handoff(repeated_resources=True)
+        self.assertEqual(handoff.summarize_handoffs(f.state)["accepted"], 1)
+        state = copy.deepcopy(f.state)
+        entry = state["assignments"][0]
+        first = next(check for check in entry["checks"] if check["id"] == "resource")
+        second = next(check for check in entry["checks"] if check["id"] == "resource-two")
+        self.assertEqual(first["measurements"], second["measurements"])
+        first["measurements"]["rom_bytes"] = None
+        second["measurements"]["ram_bytes"] = None
+        self.assertTrue(handoff.validate_handoff(
+            state, entry["result"], worktree=f.worktree, run_checks=False)["handoff_ready"])
+        self.assertEqual(handoff.summarize_handoffs(state)["accepted"], 1)
+        second["measurements"]["rom_bytes"] = None
+        self.reject_live_and_report(f, state, "missing-budget-measurement")
+
+    def test_accepted_resource_measurements_remain_complete_and_within_budgets(self):
+        f = self.measured_handoff()
+        for metric in ("rom_bytes", "ram_bytes", "protocol_changes"):
+            for mutation in ("missing", "unknown", "over-budget", "string", "boolean", "fraction", "negative"):
+                with self.subTest(metric=metric, mutation=mutation):
+                    state = copy.deepcopy(f.state)
+                    checks = state["assignments"][0]["checks"]
+                    check = next(item for item in checks if item["id"] == (
+                        "one" if metric == "protocol_changes" else "resource"))
+                    code = None
+                    if mutation == "missing":
+                        del check["measurements"][metric]
+                    elif mutation == "unknown":
+                        check["measurements"][metric] = None
+                        code = "missing-budget-measurement"
+                    elif mutation == "over-budget":
+                        if metric == "protocol_changes":
+                            state["assignments"][0]["assignment"]["budgets"][metric] -= 1
+                        else:
+                            check["measurements"][metric] = f.assignment["budgets"][metric] + 1
+                        code = metric.replace("_", "-") + "-budget-exceeded"
+                    else:
+                        check["measurements"][metric] = {
+                            "string": "1", "boolean": True, "fraction": 0.5, "negative": -1,
+                        }[mutation]
+                    self.reject_live_and_report(f, state, code)
+        for value in (None, 0):
+            state = copy.deepcopy(f.state)
+            check = next(item for item in state["assignments"][0]["checks"] if item["id"] == "resource")
+            check["measurements"] = value
+            self.reject_live_and_report(f, state, None)
+        self.assertEqual(handoff.summarize_handoffs(f.state)["accepted"], 1)
+
+    def test_accepted_protocol_partitions_cannot_be_masked_by_other_observations(self):
+        f = self.measured_handoff()
+        for mutation in ("unknown", "impossible", "missing-check", "overlap", "undeclared-rescue"):
+            with self.subTest(mutation=mutation):
+                state = copy.deepcopy(f.state)
+                entry = state["assignments"][0]
+                protocol = next(check for check in entry["checks"] if check["id"] == "one")
+                resource = next(check for check in entry["checks"] if check["id"] == "resource")
+                resource["measurements"]["protocol_changes"] = 0
+                code = "missing-budget-measurement"
+                if mutation == "unknown":
+                    protocol["measurements"]["protocol_changes"] = None
+                elif mutation == "impossible":
+                    protocol["measurements"]["protocol_changes"] = 2
+                    code = "invalid-protocol-measurement"
+                elif mutation == "missing-check":
+                    entry["checks"].remove(protocol)
+                    code = "missing-check"
+                elif mutation == "overlap":
+                    entry["assignment"]["required_checks"]["two"]["inputs"] = ["docs/one.schema.json"]
+                    code = None
+                else:
+                    extra = {**copy.deepcopy(resource), "id": "not-required"}
+                    resource["measurements"]["rom_bytes"] = None
+                    entry["checks"].append(extra)
+                self.reject_live_and_report(f, state, code)
+
+    def test_accepted_checks_retain_identity_completion_and_observation_times(self):
+        f = self.measured_handoff()
+        for field, value, code in (
+            ("result_sha", f.parent, "check-identity-mismatch"),
+            ("parent_sha", "f" * 40, "check-identity-mismatch"),
+            ("worktree", str(f.repository), "check-identity-mismatch"),
+            ("contract", "git-diff-check", "check-identity-mismatch"),
+            ("evidence_id", "wrong-evidence", "check-identity-mismatch"),
+            ("exit_code", 1, "required-check-failed"),
+            ("exit_code", None, "incomplete-check"),
+            ("started_at", at_offset(-3600), "check-time-mismatch"),
+            ("completed_at", at_offset(3600), "check-time-mismatch"),
+        ):
+            with self.subTest(field=field, value=value):
+                state = copy.deepcopy(f.state)
+                check = next(item for item in state["assignments"][0]["checks"] if item["id"] == "resource")
+                check[field] = value
+                self.reject_live_and_report(f, state, code)
+        for mutation in ("missing-check", "missing-evidence", "unfinished"):
+            with self.subTest(mutation=mutation):
+                state = copy.deepcopy(f.state)
+                entry = state["assignments"][0]
+                check = next(item for item in entry["checks"] if item["id"] == "resource")
+                if mutation == "missing-check":
+                    entry["checks"].remove(check)
+                    code = "missing-check"
+                elif mutation == "missing-evidence":
+                    entry["result"]["evidence_refs"].remove("resource")
+                    code = "missing-evidence"
+                else:
+                    check.update(completed_at=None, exit_code=None)
+                    code = "incomplete-check"
+                self.reject_live_and_report(f, state, code)
+
+    def test_captured_host_and_import_zeros_support_historical_reporting_without_worktree(self):
+        for kind in ("host", "import", "measured"):
+            with self.subTest(kind=kind):
+                if kind == "measured":
+                    f = self.measured_handoff()
+                else:
+                    f = GitFixture(upstream=kind == "import")
+                    self.addCleanup(f.close)
+                    if kind == "import":
+                        process = f.owner_process()
+                        f.receive()
+                        git(f.worktree, "merge", "--no-commit", "--no-ff", f.upstream)
+                        result = f.deliver(f.commit_pending())
+                        f.finish_owner(process)
+                    else:
+                        result = f.complete(name="docs/empty.txt", content="")
+                    self.assertTrue(f.validate(result)["handoff_ready"])
+                    raw_check = next(check for check in f.entry["checks"] if check["id"] == "raw")
+                    self.assertEqual(raw_check["measurements"], dict.fromkeys(handoff.METRICS, 0))
+                    for metric in handoff.METRICS:
+                        state = copy.deepcopy(f.state)
+                        state["assignments"][0]["checks"][0]["measurements"][metric] = None
+                        self.reject_live_and_report(f, state, "missing-budget-measurement")
+                baseline = {"schema_version": 1, "snapshot": {"repository": f.state["repository"]}}
+                wire = observations.json_bytes(f.state)
+                f.close()
+                self.assertFalse(f.worktree.exists())
+                envelope = reporter.with_handoff_metrics(baseline, wire)
+                self.assertEqual(envelope["implementation_handoffs"]["accepted"], 1)
+                self.assertEqual(envelope["baseline"], baseline)
+
     def test_optional_metrics_preserve_baseline_and_unknowns(self):
         f = GitFixture()
         self.addCleanup(f.close)

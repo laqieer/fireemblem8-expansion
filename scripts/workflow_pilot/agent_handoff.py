@@ -131,6 +131,7 @@ def validate_assignment(value):
         text(criterion["text"])
         ids(criterion["evidence_ids"], maximum=32, minimum=1)
         evidence.update(criterion["evidence_ids"])
+    protocol_inputs = set()
     for _check_id, check in named_records(value["required_checks"], minimum=1):
         fields(check, "contract evidence_id inputs")
         text(check["evidence_id"], maximum=128, pattern=ID_RE)
@@ -141,6 +142,8 @@ def validate_assignment(value):
                 "only a protocol-json check accepts repository input paths")
         require(check["contract"] != "protocol-json" or check["inputs"],
                 "protocol-json needs explicit inputs")
+        require(protocol_inputs.isdisjoint(check["inputs"]), "overlapping protocol inputs")
+        protocol_inputs.update(check["inputs"])
         evidence.discard(check["evidence_id"])
     require(not evidence, "criterion has no required evidence producer")
     require(any(check["contract"] == "git-diff-check" for check in value["required_checks"].values()),
@@ -716,14 +719,25 @@ def task_changes(assignment, result_sha):
 def _json_at(root, revision, path_name):
     entry = _git(root, "ls-tree", "-z", revision, "--", path_name).split(b"\0")[0]
     if not entry:
-        return None
+        return False, None
     header, actual_path = entry.split(b"\t", 1)
     mode, kind, oid = header.split()
     require(kind == b"blob" and mode in {b"100644", b"100755"}
             and os.fsdecode(actual_path) == path_name, "protocol input is not an exact regular blob")
     require(int(_git(root, "cat-file", "-s", oid.decode())) <= observations.MAX_JSON_BYTES,
             "protocol input exceeds 1 MiB")
-    return observations.parse_bytes(_git(root, "cat-file", "blob", oid.decode()))
+    return True, observations.parse_bytes(_git(root, "cat-file", "blob", oid.decode()))
+
+
+def _same_json_value(left, right):
+    """Compare bounded parsed values/presence without Boolean-to-number coercion."""
+    if type(left) is not type(right):
+        return False
+    if isinstance(left, dict):
+        return left.keys() == right.keys() and all(_same_json_value(left[key], right[key]) for key in left)
+    if isinstance(left, (list, tuple)):
+        return len(left) == len(right) and all(_same_json_value(a, b) for a, b in zip(left, right))
+    return left == right
 
 
 def capture_check(entry, check_id, result_sha, trusted_executor=None):
@@ -742,10 +756,18 @@ def capture_check(entry, check_id, result_sha, trusted_executor=None):
         actual, started, completed = observations.capture_raw_check(a, result_sha)
         code, pid, rss = actual.returncode, actual.pid, actual.peak_rss_bytes
         detail = (actual.stdout + actual.stderr)[:2048].decode("utf-8", errors="replace") or None
+        if code == 0:
+            owned, _, _, _ = task_changes(a, result_sha)
+            if not owned or all(name in HOST_FILES or name.startswith(HOST_ONLY) for name in owned):
+                measurements.update(rom_bytes=0, ram_bytes=0)
+            if (not any(check["contract"] == "protocol-json" for check in a["required_checks"].values())
+                    and not any(name.endswith(".schema.json") for name in owned)):
+                measurements["protocol_changes"] = 0
+        completed = now()
     elif definition["contract"] == "protocol-json":
         root = Path(a["allowed_worktree"])
         measurements["protocol_changes"] = sum(
-            _json_at(root, a["assigned_parent_sha"], name) != _json_at(root, result_sha, name)
+            not _same_json_value(_json_at(root, a["assigned_parent_sha"], name), _json_at(root, result_sha, name))
             for name in definition["inputs"]
         )
         code, completed = 0, now()
@@ -861,6 +883,57 @@ def owner_completion_errors(process):
     return codes
 
 
+def resource_evidence_errors(entry, result, at):
+    """Recheck captured evidence without requiring a historical worktree."""
+    a = entry["assignment"]
+    checks = {check["id"]: check for check in entry["checks"]}
+    evidence = set(result["evidence_refs"])
+    codes, protocol_counts = [], []
+    usage = dict.fromkeys(METRICS)
+    for check_id, definition in a["required_checks"].items():
+        check = checks.get(check_id)
+        if definition["evidence_id"] not in evidence:
+            codes.append("missing-evidence")
+        if check is None:
+            codes.append("missing-check")
+            continue
+        errors = [code for failed, code in (
+            (any(check[key] != expected for key, expected in (
+                ("contract", definition["contract"]), ("evidence_id", definition["evidence_id"]),
+                ("parent_sha", a["assigned_parent_sha"]), ("result_sha", result["result_sha"]),
+                ("worktree", a["allowed_worktree"]),
+            )), "check-identity-mismatch"),
+            (check["exit_code"] is None or check["completed_at"] is None, "incomplete-check"),
+            (check["exit_code"] is not None and check["exit_code"] != 0, "required-check-failed"),
+            (timestamp(check["started_at"]) < timestamp(entry["assigned_at"])
+             or check["completed_at"] is not None and timestamp(check["completed_at"]) > timestamp(at),
+             "check-time-mismatch"),
+        ) if failed]
+        codes.extend(errors)
+        if errors:
+            continue
+        for metric, measured in check["measurements"].items():
+            if metric == "protocol_changes" and definition["contract"] == "protocol-json":
+                if measured is not None:
+                    if measured > len(definition["inputs"]):
+                        codes.append("invalid-protocol-measurement")
+                    else:
+                        protocol_counts.append(measured)
+            elif measured is not None:
+                usage[metric] = max(usage[metric] or 0, measured)
+    protocol_checks = sum(check["contract"] == "protocol-json" for check in a["required_checks"].values())
+    if len(protocol_counts) != protocol_checks:
+        codes.append("missing-budget-measurement")
+    elif protocol_checks:
+        usage["protocol_changes"] = max(usage["protocol_changes"] or 0, sum(protocol_counts))
+    for metric, measured in usage.items():
+        if measured is None:
+            codes.append("missing-budget-measurement")
+        elif measured > a["budgets"][metric]:
+            codes.append(metric.replace("_", "-") + "-budget-exceeded")
+    return sorted(set(codes))
+
+
 def validate_handoff(state, result, *, worktree, run_checks=True):
     validate_state(state)
     validate_result(result)
@@ -885,7 +958,6 @@ def validate_handoff(state, result, *, worktree, run_checks=True):
         reject(process["age_ms"] > a["max_lifetime_seconds"] * 1000, "owner-lifetime-exceeded")
         reject(process["peak_rss_bytes"] is not None
                and process["peak_rss_bytes"] > a["max_peak_rss_bytes"], "owner-rss-exceeded")
-    owned = []
     try:
         current = observe_git(a)
         reject(current["identity"] != entry["git_identity"], "wrong-worktree")
@@ -893,7 +965,7 @@ def validate_handoff(state, result, *, worktree, run_checks=True):
         reject(current["head"] != result["result_sha"], "result-not-worktree-head")
         reject(bool(current["dirty_paths"]), "dirty-worktree")
         reject(current["conflicting"], "conflicting-worktree")
-        owned, total, task_commits, imported = task_changes(a, result["result_sha"])
+        _, total, task_commits, imported = task_changes(a, result["result_sha"])
         reject(total > a["budgets"]["changed_lines"], "changed-lines-budget-exceeded")
         if run_checks and not codes:
             for check_id, definition in a["required_checks"].items():
@@ -904,41 +976,7 @@ def validate_handoff(state, result, *, worktree, run_checks=True):
                  "missing-copilot-trailer", "missing-session-trailer", "scope-violation",
                  "task-commit-limit", "unquantified-diff"}
         codes.append(str(error) if str(error) in known else "git-or-check-observation-failed")
-    at = now()
-    evidence = set(result["evidence_refs"])
-    checks = {check["id"]: check for check in entry["checks"]}
-    usage = dict.fromkeys(METRICS)
-    if owned and all(name in HOST_FILES or name.startswith(HOST_ONLY) for name in owned):
-        usage.update(rom_bytes=0, ram_bytes=0)
-    elif total == 0 and not owned:
-        usage.update(rom_bytes=0, ram_bytes=0)
-    protocol_inputs = {name for definition in a["required_checks"].values() for name in definition["inputs"]}
-    if not protocol_inputs and not any(name.endswith(".schema.json") for name in owned):
-        usage["protocol_changes"] = 0
-    for check_id, definition in a["required_checks"].items():
-        check = checks.get(check_id)
-        reject(definition["evidence_id"] not in evidence, "missing-evidence")
-        if check is None:
-            codes.append("missing-check")
-            continue
-        reject(any(check[key] != expected for key, expected in (
-            ("contract", definition["contract"]), ("evidence_id", definition["evidence_id"]),
-            ("parent_sha", a["assigned_parent_sha"]), ("result_sha", result["result_sha"]),
-            ("worktree", a["allowed_worktree"]),
-        )), "check-identity-mismatch")
-        reject(check["exit_code"] is None, "incomplete-check")
-        reject(check["exit_code"] is not None and check["exit_code"] != 0, "required-check-failed")
-        reject(timestamp(check["started_at"]) < timestamp(entry["assigned_at"])
-               or check["completed_at"] is not None
-               and timestamp(check["completed_at"]) > timestamp(at), "check-time-mismatch")
-        if check["exit_code"] == 0:
-            for metric, measured in check["measurements"].items():
-                if measured is not None:
-                    usage[metric] = max(usage[metric] or 0, measured)
-    for metric, measured in usage.items():
-        reject(measured is None, "missing-budget-measurement")
-        reject(measured is not None and measured > a["budgets"][metric],
-               metric.replace("_", "-") + "-budget-exceeded")
+    codes.extend(resource_evidence_errors(entry, result, now()))
     if (process is not None and process["state"] == "exited" and process["exit_code"] not in (None, 0)
             and entry["closed_at"] is None and entry["interruption"] is None):
         reason = {-9: "sigkill", 124: "timeout"}.get(process["exit_code"], "process-exit")
@@ -1023,17 +1061,8 @@ def summarize_handoffs(state):
                     and verdict["changed_lines"] is not None
                     and verdict["changed_lines"] <= a["budgets"]["changed_lines"],
                     "accepted report lacks measured budget compliance")
-            checks = {check["id"]: check for check in entry["checks"]}
-            for check_id, definition in a["required_checks"].items():
-                check = checks.get(check_id)
-                require(check is not None and check["exit_code"] == 0 and check["completed_at"] is not None
-                        and check["result_sha"] == result["result_sha"]
-                        and check["parent_sha"] == a["assigned_parent_sha"]
-                        and check["worktree"] == a["allowed_worktree"]
-                        and check["contract"] == definition["contract"]
-                        and check["evidence_id"] == definition["evidence_id"]
-                        and check["evidence_id"] in result["evidence_refs"],
-                        "accepted report lacks actual focused-check observations")
+            require(not resource_evidence_errors(entry, result, verdict["observed_at"]),
+                    "accepted report lacks complete, budget-compliant focused-check observations")
         outcome = ("interrupted" if entry["interruption"] else
                    verdict["local_outcome"] if verdict else "in_progress")
         counts[outcome] += 1

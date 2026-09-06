@@ -12,7 +12,8 @@
     "id": {"type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[A-Za-z0-9_.:-]{1,128}$",
            "not": {"pattern": "[^A-Za-z0-9_.:-]"}},
     "sha": {"type": "string", "pattern": "^[0-9a-f]{40}$", "maxLength": 40},
-    "text": {"type": "string", "minLength": 1, "maxLength": 16384},
+    "text": {"type": "string", "minLength": 1, "maxLength": 16384,
+             "not": {"pattern": "[\\uD800-\\uDFFF]"}},
     "time": {
       "type": "string", "format": "date-time",
       "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,6})?Z$",
@@ -29,21 +30,21 @@
       "not": {"pattern": "[^A-Za-z0-9_./-]"}
     },
     "path": {
-      "type": "string", "minLength": 1, "maxLength": 4096,
+      "$ref": "#/$defs/text", "maxLength": 4096,
       "not": {"anyOf": [
         {"pattern": "^/"}, {"pattern": "\\\\|\\u0000|//"},
         {"pattern": "(^|/)\\.{1,2}(/|(?![\\s\\S]))"}, {"pattern": "/(?![\\s\\S])"}
       ]}
     },
     "scope": {
-      "type": "string", "minLength": 1, "maxLength": 4096,
+      "$ref": "#/$defs/text", "maxLength": 4096,
       "not": {"anyOf": [
         {"pattern": "^/"}, {"pattern": "\\\\|\\u0000|//"},
         {"pattern": "(^|/)\\.{1,2}(/|(?![\\s\\S]))"}
       ]}
     },
     "absolute": {
-      "type": "string", "minLength": 2, "maxLength": 4096, "pattern": "^/",
+      "$ref": "#/$defs/text", "minLength": 2, "maxLength": 4096, "pattern": "^/",
       "not": {"anyOf": [
         {"pattern": "\\u0000|//"}, {"pattern": "(^|/)\\.{1,2}(/|(?![\\s\\S]))"},
         {"pattern": "/(?![\\s\\S])"}
@@ -96,7 +97,7 @@
         "pull_request": {"$ref": "#/$defs/nullablePositive"},
         "owner_id": {"$ref": "#/$defs/id"}, "session_id": {"$ref": "#/$defs/id"},
         "dispatch_id": {"$ref": "#/$defs/id"}, "assigned_parent_sha": {"$ref": "#/$defs/sha"},
-        "expected_branch": {"type": "string", "minLength": 1, "maxLength": 256},
+        "expected_branch": {"$ref": "#/$defs/text", "maxLength": 256},
         "allowed_worktree": {"$ref": "#/$defs/absolute"},
         "allowed_scope": {
           "type": "array", "minItems": 1, "maxItems": 256, "uniqueItems": true,
@@ -111,6 +112,7 @@
           "propertyNames": {"$ref": "#/$defs/id"}, "additionalProperties": {"$ref": "#/$defs/criterion"}
         },
         "required_checks": {
+          "description": "Runtime also rejects protocol input paths repeated across check definitions.",
           "type": "object", "minProperties": 1, "maxProperties": 32,
           "propertyNames": {"$ref": "#/$defs/id"}, "additionalProperties": {"$ref": "#/$defs/requiredCheck"}
         },
@@ -192,10 +194,11 @@
       "type": "object", "additionalProperties": false, "required": ["state", "at", "source_id"],
       "properties": {
         "state": {"enum": ["assignment_sent", "assignment_received", "progressing", "committed", "handed_off"]},
-        "at": {"$ref": "#/$defs/time"}, "source_id": {"type": "string", "minLength": 1, "maxLength": 128}
+        "at": {"$ref": "#/$defs/time"}, "source_id": {"$ref": "#/$defs/text", "maxLength": 128}
       }
     },
     "measurements": {
+      "description": "Captured resource growth; null is unknown. Each protocol-json count covers its disjoint declared inputs. Runtime checks assignment-level completeness, identity, times and budgets.",
       "type": "object", "additionalProperties": false,
       "required": ["rom_bytes", "ram_bytes", "protocol_changes"],
       "properties": {
@@ -229,7 +232,7 @@
         "oom_evidence": {"$ref": "#/$defs/nullableText"}, "worktree": {"$ref": "#/$defs/absolute"},
         "head": {"$ref": "#/$defs/sha"},
         "dirty_paths": {"type": "array", "maxItems": 256, "uniqueItems": true, "items": {"$ref": "#/$defs/path"}},
-        "lock_reason": {"type": "string", "minLength": 1, "maxLength": 256},
+        "lock_reason": {"$ref": "#/$defs/text", "maxLength": 256},
         "retained_data_sha256": {
           "description": "Local-only integrity of mutable index/dirty data and modes; no clean-source ledger.",
           "type": "string", "pattern": "^[0-9a-f]{64}$", "maxLength": 64
@@ -242,7 +245,7 @@
       "properties": {
         "path": {"$ref": "#/$defs/absolute"}, "device": {"$ref": "#/$defs/integer"},
         "inode": {"$ref": "#/$defs/integer"}, "offset": {"$ref": "#/$defs/integer"},
-        "session_id": {"type": ["string", "null"], "minLength": 1, "maxLength": 128}
+        "session_id": {"$ref": "#/$defs/nullableText", "maxLength": 128}
       }
     },
     "action": {
