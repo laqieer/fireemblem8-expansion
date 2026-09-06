@@ -45,6 +45,7 @@ class PublisherCommandInventoryTests(unittest.TestCase):
             "entry": cls.source,
             "producer": contract.publisher_run_script(cls.workflow, "Verify exact candidate and stage trusted producer"),
             "staging": contract.publisher_run_script(cls.workflow),
+            "candidate": phase_fixtures.candidate_script(cls.workflow),
         }
 
     def test_actual_production_inventory_is_complete_and_typed(self):
@@ -581,7 +582,10 @@ class PublisherCandidateProfileTests(unittest.TestCase):
             ):
                 add("candidate", name, source, executable=shell.command(executable).argv[0])
 
-        with mock.patch.object(registry, "register_producer", side_effect=register):
+        with (
+            mock.patch.object(registry, "register_producer", side_effect=register),
+            mock.patch.object(registry, "register_candidate"),
+        ):
             inventory = registry.inventory()
         result = inventory.validate(
             venv_source + "\n" + pip_source + "\n./build_tools.sh\n"
@@ -1046,7 +1050,7 @@ class PublisherExactTreeTests(unittest.TestCase):
                 self.snapshot()
                 completed = self.cli()
                 self.assertEqual(completed.returncode, 1, completed.stderr)
-                self.assertIn(b"publisher phase:", completed.stderr)
+                self.assertIn(b"publisher command authority:", completed.stderr)
                 self.assertNotIn(b"authority differs from exact tree", completed.stderr)
                 self.assertNotIn(b"canonical program differs", completed.stderr)
                 witnessed.add(name)
@@ -1063,9 +1067,47 @@ class PublisherExactTreeTests(unittest.TestCase):
                 self.snapshot()
                 completed = self.cli()
                 self.assertEqual(completed.returncode, 1, completed.stderr)
-                self.assertIn(b"publisher phase:", completed.stderr)
+                self.assertIn(b"publisher command authority:", completed.stderr)
                 self.assertNotIn(b"authority differs from exact tree", completed.stderr)
                 self.assertNotIn(b"canonical program differs", completed.stderr)
+
+    def test_real_cli_rejects_workflow_only_full_candidate_invocation_mutations(self):
+        path = self.directory / authority.WORKFLOW_PATH
+        original = path.read_text()
+        for name, changed in phase_fixtures.exact_candidate_workflows(original):
+            with self.subTest(mutation=name):
+                path.write_text(changed)
+                self.snapshot()
+                completed = self.cli()
+                self.assertEqual(completed.returncode, 1, completed.stderr)
+                self.assertIn(b"publisher command authority:", completed.stderr)
+                self.assertNotIn(b"authority differs from exact tree", completed.stderr)
+                self.assertNotIn(b"canonical program differs", completed.stderr)
+
+    def test_real_cli_requires_an_independent_candidate_registry_update(self):
+        workflow_path = self.directory / authority.WORKFLOW_PATH
+        registry_path = self.directory / "scripts/workflow_pilot/publisher_candidate_signatures.py"
+        original_workflow = workflow_path.read_text()
+        original_registry = registry_path.read_text()
+        for name, old, new in (
+            ("make", "make expansion-modern-map-menu-presentation-check -j1", "make reviewed-target -j1"),
+            ("inline", "import errno,fcntl;", "pass; import errno,fcntl;"),
+        ):
+            with self.subTest(profile=name):
+                changed = original_workflow.replace(old, new)
+                self.assertNotEqual(changed, original_workflow)
+                workflow_path.write_text(changed)
+                registry_path.write_text(original_registry)
+                self.snapshot()
+                rejected = self.cli()
+                self.assertEqual(rejected.returncode, 1, rejected.stderr)
+                registration = original_registry.replace(old, new)
+                self.assertNotEqual(registration, original_registry)
+                registry_path.write_text(registration)
+                self.snapshot()
+                accepted = self.cli()
+                self.assertEqual(accepted.returncode, 0, accepted.stderr)
+                self.assertIn(b"reviewed commands", accepted.stdout)
 
     def test_real_cli_enforces_dynamic_import_set_not_call_spelling(self):
         package = self.directory / "scripts/workflow_pilot/__init__.py"
@@ -1262,6 +1304,7 @@ class PublisherExactTreeTests(unittest.TestCase):
         for path in (
             authority.PROGRAM_PATH, "scripts/workflow_pilot/publisher_signatures.py",
             "scripts/workflow_pilot/publisher_producer_signatures.py",
+            "scripts/workflow_pilot/publisher_candidate_signatures.py",
             "scripts/workflow_pilot/publisher_shell.py",
             "scripts/workflow_pilot/publisher_phase.py",
             "scripts/workflow_pilot/publisher_candidate.py",

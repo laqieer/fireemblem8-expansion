@@ -176,8 +176,9 @@ signature has exactly **one** occurrence; a missing or additional checker
 fails. The separate canonical `publisher_candidate.py` retains the reviewed
 no-fork exec and inherited-FD closure. Its installed
 `/mnt/control/candidate-launcher.py` identity is unchanged; its source is now
-included with its transitive imports in the same Git-derived exact-tree
-program closure, without executing the launcher or registry during discovery.
+captured as standalone data in the same Git-derived exact-tree program closure,
+without executing it or the registry during discovery. Repository-local
+launcher imports reject because production installs one standalone file.
 
 `validate_builder_script(source)` returns immutable `Analysis` records.
 `Analysis.commands` covers every authorized statement and nested producer;
@@ -214,11 +215,12 @@ the launcher's control-file read and candidate execution.
 
 The candidate domain uses the **same** `Inventory`, `Signature`, `Scope`,
 `Control`, `Placement`, and `Analysis` types. It is not a second permission
-registry. The default registry has no candidate rows in this parent layer:
-nonempty candidate scripts reject until #201 independently registers every
-candidate command/helper/control and consumes
-`reviewed_inventory().validate(source, entry_scope="candidate")` before its
-phase policy. No candidate order or stage-exit policy is supplied here.
+registry. `publisher_candidate_signatures.register` contributes independently
+defined production rows to that same registry; no permission is learned from
+`CANDIDATE_BUILD` or its canonical workflow copy. The shared candidate-root
+validator checks complete forms, placements and counts and returns typed
+`Analysis` before #201 applies its phase policy. Removing the phase policy
+does not remove candidate command authorization.
 Existing entry/producer/staging registrations and runtime bodies are unchanged.
 
 `Signature.executable` optionally binds an independently specified exact
@@ -236,10 +238,19 @@ add("candidate", "tools", "./build_tools.sh",
     executable=shell.command("./build_tools.sh").argv[0])
 ```
 
-These are examples of independent registry edits, not automatically installed
-permissions. There is no bare-name/path-prefix allowlist. A different
+These illustrate independent registry edits. Production uses the corresponding
+`candidate.make.run` and `candidate.build-tools.run` records. There is no
+bare-name/path-prefix allowlist. A different
 executable, target, argument, environment, wrapper, redirection, context, or
 count still fails complete invocation equality.
+
+A bounded view of those same records permits safe connected local binder
+renaming and disjoint candidate case-arm ordering. It changes only local
+identifier bindings and branch positions after matching the registered
+preflight headers and exit-pattern set; executable paths, free parameters,
+arguments, redirects and program text are never inferred from the submitted
+workflow. Binder names must be distinct and cannot capture executable roles.
+This is not another registry or parser.
 
 Python always uses `Family.PYTHON` and a `Program`. Its appended fields are:
 
@@ -384,9 +395,9 @@ retained. No candidate-controlled output, PID, path, or free text is added to
 these diagnostics.
 
 Canonical payload equality alone does not prove this diagnostic contract.
-The child phase policy consumes the registered staging `Analysis` and its
-authenticated command/event frames, then parses the already-authorized
-candidate payload with the existing shell parser. It binds the ERR callback
+The child phase policy consumes the registered staging and candidate `Analysis`
+and their authenticated command/event frames, after independent full
+invocation authorization by the shared registry. It binds the ERR callback
 to its actual state variable, requires the six literal stage transitions, and
 compares each parsed exit arm with the registered host candidate-detail map.
 Preflight checks, venv creation, pip/working-directory setup, build-tools,
@@ -404,17 +415,21 @@ diagnostic. Both reorderings reject even with refreshed outer identities.
 This adds phase/dataflow checks, not another command permission list, parser,
 entry scope or source-loader authority. The candidate payload stays data-only.
 
-Candidate statement coverage is fail-closed too: every parsed command must be
-accounted for by the checked prelude/callback, a literal stage write or a
-classified phase operation. Unclassified executables, helper definitions and
-calls, non-stage assignments and environment assignments on operations reject;
-keeping the known operation counts is not enough. The legitimate nested
-read-only `find` socket probe is explicitly classified and remains inside its
-preflight test, never an arbitrary root command. Only the existing preflight
-loop containers are admitted. Literal `%s\n` notices preserve harmless
-argument-text/refactor controls; `printf -v`, substitutions and redirections
-do not gain that classification. Canonical payload comparison still precedes
-this coverage check and cannot substitute for it. Callback renaming must not
+Candidate statement coverage is exact, not an executable/argument-prefix
+classifier. Every prelude, callback, assignment, nested producer and build
+operation matches its independently registered full form. The legitimate
+read-only `find` socket probe is bound inside the full preflight test Word;
+changed query arguments, redirects, environment, or surrounding predicates
+reject. The complete FD-check text and venv/pip launch profiles are separately
+registered `Program` data. Changing only the workflow's canonical payload
+cannot change any of these permissions.
+
+Even an additional literal notice needs an explicit registry record; it is a
+new command, not a free refactor exemption. Tests preserve safe local renaming,
+quoting and independent order separately, and prove that deliberately updating
+both a full form and its `Program` metadata authorizes only that new behavior.
+Canonical payload comparison cannot substitute for exact authorization.
+Callback renaming must not
 shadow an executed command; renaming the ERR helper to `make` would otherwise
 replace the build invocation rather than preserve its semantics.
 

@@ -66,7 +66,8 @@ behavior. Publisher runtime cases use disposable Linux namespaces.
    past its operation, quote or move the wildcard fallback, and hide build
    actions in helpers, conditionals or background execution. These fixtures
    bind the modified canonical payload to the selected source tree and refresh
-   outer identities: rejection must come from the diagnostic phase policy.
+   outer identities: rejection must come from the independent command
+   authority or diagnostic phase policy, not a canonical-text mismatch.
    Move the host diagnostic before its case mapping, or its exit before the
    mapping/diagnostic; each must also reject. Connected callback/state renaming,
    equivalent quotes and disjoint candidate case-arm order remain accepted.
@@ -76,9 +77,18 @@ behavior. Publisher runtime cases use disposable Linux namespaces.
    with all expected phase counts still present. The existing nested socket
    probe remains valid, but moving it to the root or changing its query does
    not grant another execution slot. Unknown helpers/controls and `printf -v`
-   also reject. Literal notice text and connected loop-variable renaming pass.
+   also reject. Connected loop-variable renaming passes. An additional
+   literal notice rejects until a deliberate independent registry record
+   authorizes it; literal argument text is not a stage-variable write.
    Renaming the ERR callback to `make` must reject rather than shadow the
    actual build command; the owned runtime control proves no recipe executes.
+   Finally alter each argument, environment, redirect, context and count of
+   every registered candidate invocation. Replace FD-check Python text while
+   preserving its prefix, change make targets, weaken pip flags and replace a
+   preflight predicate with inert `test 1 = 1`. Both consumers and committed
+   CLIs must reject workflow-only changes. A separately updated registry form
+   and matching `Program` text/startup metadata may authorize only the intended
+   new operation; a form-only or workflow-only update cannot.
 5. Observe the live namespace scenario. The exact foreground candidate PID is
    absent from `/proc` before the checker; only wrapper/checker remain, and the
    actual sealed export contains `target.gba` (32 MiB) and `metadata.json`
@@ -108,6 +118,14 @@ behavior. Publisher runtime cases use disposable Linux namespaces.
    Both semantic consumers and committed exact-tree CLI fixtures reject those
    payloads before execution. No production build, external file or live
    publisher process is used for these negative controls.
+9. Run the registered invocation runtime fixture in the same module: the
+   actual FD program returns 0 without extra descriptors and 125 with an owned
+   inherited descriptor; the production venv command creates an owned venv.
+   Its real interpreter invokes a deliberately inert local pip module that
+   reports the complete expanded arguments and normal startup flags. Registered
+   build-tools/make forms run only an owned script and tiny Makefile; registered
+   handoff installs preserve synthetic contents and mode 0400. No network,
+   requirements installation or game build occurs.
 
 ### Expected result
 
@@ -148,9 +166,11 @@ This pins failure attribution with actual execution, not only source ordering.
 Omitting the handler from the writable-mount fixture reproduces the old
 command-not-found exit 127; restoring the production handler returns its
 reserved mount-audit status 82 instead.
-Removing only the new diagnostic phase check reproduces the candidate
-code/assignment and host-order bypasses in both production consumers. Keeping
-it rejects those same canonical-payload mutations. The real make and ERR-trap
+Removing only the diagnostic phase check still reproduces the order-only
+candidate assignment and host-order bypasses in both production consumers.
+Candidate exit-code/argument/program changes remain rejected by the independent
+shared registry even with phase policy removed. Keeping both layers rejects
+all of those canonical-payload mutations. The real make and ERR-trap
 controls above pin the observable wrong/missing diagnostic independently of
 source spelling, command counts or stored shell identities.
 At pre-correction `18e242f57`, unclassified candidate commands/helpers and
@@ -158,6 +178,12 @@ non-stage assignments pass both consumers and committed CLI validation while
 the known operation counts remain unchanged. The owned marker/dry-run controls
 above show their real effects; complete command accounting now rejects them,
 including nested statements, without rejecting the legitimate preflight probe.
+At `e2b5db65`, full-invocation changes still passed an executable/prefix
+classifier: modified isolated Python text, a different make target, an inert
+preflight check and an added redirect were accepted by both consumers and
+committed CLIs. The same four controls now require independently updated
+registry records; no candidate permissions are derived from the changed
+workflow. Exact-root authorization runs before phase policy.
 
 The canonical post-check also rejects real file deletions, extra names,
 symlinks/hardlinks/directories, changed ownership/modes, short targets and
@@ -370,8 +396,8 @@ authority and agree. The exact membership-checker command is mandatory with
 one production occurrence after #201 integration; removing or adding one
 fails the closed inventory.
 The candidate API accepts only independently registered complete profiles;
-its existence alone does not adopt #201's production candidate signatures or
-phase policy.
+#201 now contributes its production candidate rows to the same registry and
+consumes the authorized typed analysis before phase policy.
 
 ### Negative control
 
@@ -412,8 +438,8 @@ successful publisher Build. Updating a production operation requires updating it
 signature and behavioral evidence together. Arbitrary Bash syntax,
 unregistered executables and caller-provided Python are unsupported, not
 silently analyzed as safe.
-The candidate API supplies representation and full-invocation authority, not
-production adoption or phase/order rules. Normal non-isolated module startup
+The candidate API supplies representation and full-invocation authority;
+#201 supplies the production records and phase/order integration. Normal non-isolated module startup
 does not assert installed module identity or containment. Those remain with
 #201's runtime/environment policy; source-only authority loading is unchanged.
 The source-only loader enforces code origin; it is not a sandbox for arbitrary

@@ -73,10 +73,12 @@ def candidate_inventory(api=authority):
     add("tools", "./build_tools.sh", api.Family.EXECUTABLE, executable=api.shell.command("./build_tools.sh").argv[0])
     add("make", "make expansion-modern-map-menu-presentation-check -j1", api.Family.EXECUTABLE, executable=api.shell.command("make").argv[0])
     registered = api.reviewed_inventory()
+    other = lambda scope: registered.entry_scope(scope) != "candidate"
     return api.Inventory(
-        registered.signatures + tuple(rows),
-        registered.scopes + (api.Scope("candidate_probe", "candidate", ()),),
-        registered.controls + (api.Control(
+        tuple(row for row in registered.signatures if other(row.scope)) + tuple(rows),
+        tuple(scope for scope in registered.scopes if other(scope.name))
+        + (api.Scope("candidate_probe", "candidate", ()),),
+        tuple(control for control in registered.controls if other(control.scope)) + (api.Control(
             "candidate_probe.home", "candidate_probe",
             api.control_header(api.shell.parse('if test -n "$HOME"; then :; fi').items[0].nodes[0]),
         ),),

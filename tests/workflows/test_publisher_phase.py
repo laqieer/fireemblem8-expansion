@@ -15,6 +15,8 @@ import uuid
 from scripts.upstream_port import verify
 from scripts.workflow_pilot import publisher_inventory as authority
 from scripts.workflow_pilot import publisher_phase as phase
+from scripts.workflow_pilot import publisher_candidate_signatures as candidate_registry
+from scripts.workflow_pilot import publisher_shell as shell
 from scripts.workflow_pilot import publisher_programs as programs
 from tests.workflows import publisher_inventory_fixtures as inventory
 from tests.workflows import publisher_phase_fixtures as fixtures
@@ -161,8 +163,9 @@ class PublisherPhaseTests(unittest.TestCase):
                 analysis = authority.reviewed_inventory().validate(
                     inventory.contract.publisher_run_script(changed), entry_scope="staging",
                 )
-                with self.assertRaises(phase.PhaseError):
-                    phase.validate_producer(analysis)
+                with self.assertRaises(authority.InventoryError):
+                    candidate = candidate_registry.analyze_payload(authority.reviewed_inventory(), analysis)
+                    phase.validate_producer(analysis, candidate)
                 self.assertTrue(publisher.publisher_boundary_errors(changed))
                 with self.assertRaises(ValueError):
                     verify._parse_workflow_structure_text(changed)
@@ -179,13 +182,14 @@ class PublisherPhaseTests(unittest.TestCase):
                 analysis = authority.reviewed_inventory().validate(
                     inventory.contract.publisher_run_script(changed), entry_scope="staging",
                 )
-                with self.assertRaises(phase.PhaseError):
-                    phase.validate_producer(analysis)
+                with self.assertRaises(authority.InventoryError):
+                    candidate = candidate_registry.analyze_payload(authority.reviewed_inventory(), analysis)
+                    phase.validate_producer(analysis, candidate)
                 self.assertTrue(publisher.publisher_boundary_errors(changed))
                 with self.assertRaises(ValueError):
                     verify._parse_workflow_structure_text(changed)
 
-    def test_legitimate_nested_preflight_and_literal_notice_remain_classified(self):
+    def test_legitimate_nested_preflight_and_connected_local_bindings_remain_registered(self):
         changed = fixtures.diagnostic_spelling_control(self.workflow)
         body = fixtures.candidate_script(changed).replace("readonly_path", "readonly_directory")
         changed = fixtures.replace_candidate(changed, body)
@@ -197,7 +201,7 @@ class PublisherPhaseTests(unittest.TestCase):
 
     def test_removing_only_diagnostic_phase_reproduces_the_review_bypasses(self):
         selected = {
-            "candidate-exits-make-preflight", "candidate-assignments-make-preflight",
+            "candidate-assignments-make-preflight",
             "late-assignment-make", "host-diagnostic-before-map",
             "host-exit-before-map", "host-exit-before-diagnostic",
         }
@@ -226,6 +230,7 @@ class PublisherPhaseTests(unittest.TestCase):
         analysis = authority.reviewed_inventory().validate(
             inventory.contract.publisher_run_script(self.workflow), entry_scope="staging",
         )
+        candidate = candidate_registry.analyze_payload(authority.reviewed_inventory(), analysis)
         diagnostic = next(event for event in analysis.events if event.signature == "staging.command-125")
         variants = [
             tuple(event for event in analysis.events if event is not diagnostic),
@@ -242,7 +247,7 @@ class PublisherPhaseTests(unittest.TestCase):
         for events in variants:
             with self.subTest(events=events.index(diagnostic) if diagnostic in events else None):
                 with self.assertRaises(phase.PhaseError):
-                    phase.validate_producer(replace(analysis, events=events))
+                    phase.validate_producer(replace(analysis, events=events), candidate)
 
     def test_spelling_and_independent_work_preserve_semantic_phase_result(self):
         changed = self.source.replace(
@@ -428,6 +433,236 @@ class PublisherPhaseTests(unittest.TestCase):
                 loader = unittest.TestLoader()
                 self.assertGreater(loader.loadTestsFromName(selector).countTestCases(), 0)
                 self.assertEqual(loader.errors, [])
+
+
+class PublisherCandidateRegistryTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.workflow = (ROOT / authority.WORKFLOW_PATH).read_text()
+        cls.source = fixtures.candidate_script(cls.workflow)
+        cls.registry = authority.reviewed_inventory()
+        cls.bound = candidate_registry.bind_names(cls.registry, cls.source)
+        cls.analysis = cls.bound.validate(cls.source, entry_scope="candidate")
+        cls.rows = {
+            row.name: row for row in cls.registry.signatures
+            if cls.registry.entry_scope(row.scope) == "candidate"
+        }
+
+    def updated(self, row):
+        return replace(self.registry, signatures=tuple(
+            row if previous.name == row.name else previous for previous in self.registry.signatures
+        ))
+
+    def test_every_actual_invocation_and_each_full_form_dimension_is_exact(self):
+        self.assertEqual(len(self.analysis.signatures), len(self.rows))
+        self.assertGreaterEqual(len(self.rows), 50)
+        self.assertTrue(any(item.nested for item in self.analysis.commands))
+        for row in self.rows.values():
+            for placement in row.placements:
+                self.assertEqual(self.registry.authorize(row.form, row.scope, placement.context), row)
+            mutations = [
+                replace(row.form, argv=row.form.argv + shell.command("unregistered").argv),
+                replace(row.form, environment=row.form.environment + shell.command("UNREGISTERED=yes").environment),
+                replace(row.form, redirects=row.form.redirects + shell.command("true > unregistered-output").redirects),
+                replace(row.form, conditional=not row.form.conditional),
+            ]
+            for index in range(len(row.form.argv)):
+                mutations.extend((
+                    replace(row.form, argv=row.form.argv[:index] + shell.command("unregistered").argv + row.form.argv[index + 1:]),
+                    replace(row.form, argv=row.form.argv[:index] + row.form.argv[index + 1:]),
+                ))
+            for index in range(len(row.form.environment)):
+                mutations.append(replace(
+                    row.form, environment=row.form.environment[:index]
+                    + shell.command("UNREGISTERED=yes").environment + row.form.environment[index + 1:],
+                ))
+            for index, changed in enumerate(mutations):
+                with self.subTest(signature=row.name, mutation=index), self.assertRaises(authority.InventoryError):
+                    self.registry.authorize(changed, row.scope, row.placements[0].context)
+            with self.subTest(context=row.name), self.assertRaises(authority.InventoryError):
+                self.registry.authorize(
+                    row.form, row.scope, row.placements[0].context + (authority.Context("background", "&"),),
+                )
+            without = replace(self.registry, signatures=tuple(item for item in self.registry.signatures if item is not row))
+            with self.subTest(deleted=row.name), self.assertRaises(authority.InventoryError):
+                without.validate(self.source, entry_scope="candidate")
+
+    def test_workflow_only_argument_program_and_redirection_changes_reject(self):
+        for name, changed in fixtures.exact_candidate_workflows(self.workflow):
+            with (
+                self.subTest(case=name), fixtures.captured_programs(changed),
+                inventory.refreshed_boundary_identities(changed),
+            ):
+                self.assertNotEqual(changed, self.workflow)
+                with self.assertRaises(authority.InventoryError):
+                    candidate_registry.bind_names(self.registry, fixtures.candidate_script(changed)).validate(
+                        fixtures.candidate_script(changed), entry_scope="candidate",
+                    )
+                self.assertTrue(publisher.publisher_boundary_errors(changed))
+                with self.assertRaises(ValueError):
+                    verify._parse_workflow_structure_text(changed)
+
+    def test_candidate_controls_and_statement_cardinalities_are_independently_registered(self):
+        for item in self.analysis.commands:
+            if item.nested:
+                continue
+            node = item.command
+            text = self.source[node.offset:node.end]
+            for label, replacement in (("missing", ""), ("duplicate", text + "\n" + text)):
+                changed = self.source[:node.offset] + replacement + self.source[node.end:]
+                with self.subTest(signature=item.signature.name, mutation=label), self.assertRaises(ValueError):
+                    self.bound.validate(changed, entry_scope="candidate")
+        for control in self.registry.controls:
+            if self.registry.entry_scope(control.scope) != "candidate":
+                continue
+            changed = replace(self.registry, controls=tuple(item for item in self.registry.controls if item is not control))
+            with self.subTest(control=control.name), self.assertRaises(authority.InventoryError):
+                changed.validate(self.source, entry_scope="candidate")
+
+    def test_permissions_do_not_read_the_submitted_canonical_payload(self):
+        with mock.patch.object(authority, "authority_source_bytes", side_effect=AssertionError("self-derived permissions")):
+            result = self.bound.validate(self.source, entry_scope="candidate")
+            self.assertEqual(result.signatures, self.analysis.signatures)
+            changed = self.source.replace("make expansion-modern-map-menu-presentation-check -j1",
+                                          "make unregistered-target -j1")
+            with self.assertRaises(authority.InventoryError):
+                self.bound.validate(changed, entry_scope="candidate")
+
+    def test_independent_registry_updates_authorize_only_the_new_complete_forms(self):
+        make = self.rows["candidate.make.run"]
+        fd = self.rows["candidate.preflight.fd-check"]
+        venv = self.rows["candidate.venv.create"]
+        examples = (
+            (
+                self.source.replace("make expansion-modern-map-menu-presentation-check -j1", "make reviewed-target -j1"),
+                replace(make, form=shell.command("make reviewed-target -j1")),
+            ),
+            (
+                self.source.replace("import errno,fcntl;", "pass; import errno,fcntl;", 1),
+                replace(
+                    fd, form=shell.command("/usr/bin/python3 -I -S -c " + shlex.quote("pass; " + fd.program.text)),
+                    program=replace(fd.program, text="pass; " + fd.program.text),
+                ),
+            ),
+            (
+                self.source.replace('/usr/bin/python3 -m venv "$HOME/venv"', '/usr/bin/python3 -I -m venv "$HOME/venv"'),
+                replace(
+                    venv, form=shell.command('/usr/bin/python3 -I -m venv "$HOME/venv"'),
+                    program=replace(venv.program, startup=("-I",)),
+                ),
+            ),
+        )
+        for source, row in examples:
+            changed = fixtures.replace_candidate(self.workflow, source)
+            with fixtures.captured_programs(changed), inventory.refreshed_boundary_identities(changed):
+                self.assertTrue(publisher.publisher_boundary_errors(changed))
+                with self.assertRaises(ValueError):
+                    verify._parse_workflow_structure_text(changed)
+                enabled = self.updated(row)
+                with mock.patch.object(authority, "reviewed_inventory", return_value=enabled):
+                    self.assertEqual(publisher.publisher_boundary_errors(changed), [])
+                    verify._parse_workflow_structure_text(changed)
+                with self.assertRaises(authority.InventoryError):
+                    enabled.validate(self.source, entry_scope="candidate")
+        for row, form in (
+            (fd, examples[1][1].form), (venv, examples[2][1].form),
+        ):
+            with self.assertRaises(authority.InventoryError):
+                self.updated(replace(row, form=form))
+
+    def test_literal_notice_needs_an_explicit_registry_record(self):
+        changed = fixtures.diagnostic_spelling_control(self.workflow)
+        body = fixtures.candidate_script(changed).replace(
+            "trap 'report_candidate_failure' 'ERR'\n",
+            "trap 'report_candidate_failure' 'ERR'\nprintf '%s\\n' failure_phase=debug\n",
+        )
+        changed = fixtures.replace_candidate(changed, body)
+        form = shell.command("printf '%s\\n' failure_phase=debug")
+        row = authority.Signature(
+            "candidate.preflight.notice", "candidate", form, authority.Family.BUILTIN, 1,
+            (authority.ResourceAccess(authority.Resource.NULL, authority.Access.WRITE),),
+        )
+        enabled = replace(self.registry, signatures=self.registry.signatures + (row,))
+        with fixtures.captured_programs(changed), inventory.refreshed_boundary_identities(changed):
+            self.assertTrue(publisher.publisher_boundary_errors(changed))
+            with mock.patch.object(authority, "reviewed_inventory", return_value=enabled):
+                self.assertEqual(publisher.publisher_boundary_errors(changed), [])
+                verify._parse_workflow_structure_text(changed)
+
+    def test_removing_phase_policy_does_not_remove_exact_candidate_authority(self):
+        with mock.patch.object(phase, "validate_producer"):
+            for name, changed in fixtures.exact_candidate_workflows(self.workflow):
+                with (
+                    self.subTest(case=name), fixtures.captured_programs(changed),
+                    inventory.refreshed_boundary_identities(changed),
+                ):
+                    self.assertTrue(publisher.publisher_boundary_errors(changed))
+                    with self.assertRaises(ValueError):
+                        verify._parse_workflow_structure_text(changed)
+
+    def test_owned_runtime_uses_registered_fd_module_tools_make_and_handoff_forms(self):
+        directory = ROOT / "build/test-artifacts" / ("candidate-registered-" + uuid.uuid4().hex)
+        directory.mkdir(parents=True)
+        self.addCleanup(shutil.rmtree, directory)
+        for name in ("home", "handoff", "wheels"):
+            (directory / name).mkdir()
+        environment = {
+            "PATH": "/usr/bin:/bin", "LC_ALL": "C", "HOME": str(directory / "home"),
+            "GITHUB_WORKSPACE": str(directory), "WHEELHOUSE": str(directory / "wheels"),
+            "HANDOFF": str(directory / "handoff"),
+        }
+        commands = {item.signature.name: item.command for item in self.analysis.commands if not item.nested}
+
+        def run(name, **options):
+            node = commands[name]
+            self.registry.authorize(node, "candidate")
+            return subprocess.run(
+                ["/bin/bash", "--noprofile", "--norc", "-c", self.source[node.offset:node.end]],
+                cwd=directory, env=environment, capture_output=True, check=False, timeout=30, **options,
+            )
+
+        result = run("candidate.preflight.fd-check")
+        self.assertEqual((result.returncode, result.stdout, result.stderr), (0, b"", b""))
+        with (directory / "owned-fd").open("wb") as handle:
+            result = run("candidate.preflight.fd-check", pass_fds=(handle.fileno(),))
+        self.assertEqual((result.returncode, result.stdout, result.stderr), (125, b"", b""))
+        result = run("candidate.venv.create")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue((directory / "home/venv/pyvenv.cfg").is_file())
+        (directory / "pip").mkdir()
+        (directory / "pip/__init__.py").write_text("")
+        (directory / "pip/__main__.py").write_text(
+            'import json,sys\nprint(json.dumps({"argv":sys.argv[1:],'
+            '"prefix":sys.prefix,"isolated":sys.flags.isolated,"no_site":sys.flags.no_site}))\n'
+        )
+        result = run("candidate.pip.install")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout), {
+            "argv": [
+                "install", "--no-index", "--find-links=" + environment["WHEELHOUSE"],
+                "--require-hashes", "--only-binary=:all:", "--no-deps", "-r",
+                environment["GITHUB_WORKSPACE"] + "/.github/requirements/build.txt",
+            ],
+            "prefix": str(directory / "home/venv"), "isolated": 0, "no_site": 0,
+        })
+        (directory / "build_tools.sh").write_text("#!/bin/sh\nprintf 'owned-tools\\n'\n")
+        (directory / "build_tools.sh").chmod(0o755)
+        (directory / "Makefile").write_text(
+            "expansion-modern-map-menu-presentation-check:\n\t@printf 'owned-make\\n'\n"
+        )
+        for name, expected in (("candidate.build-tools.run", b"owned-tools\n"), ("candidate.make.run", b"owned-make\n")):
+            result = run(name)
+            self.assertEqual((result.returncode, result.stdout, result.stderr), (0, expected, b""))
+        source = directory / "build/expansion-modern-all-locales-all-features/release/aapcs"
+        (source / "generated").mkdir(parents=True)
+        (source / "fireemblem8.gba").write_bytes(b"owned synthetic test data")
+        (source / "generated/expansion_build_metadata.json").write_text('{"owned":true}\n')
+        for name in ("candidate.handoff.target", "candidate.handoff.metadata"):
+            result = run(name)
+            self.assertEqual((result.returncode, result.stdout, result.stderr), (0, b"", b""))
+        self.assertEqual((directory / "handoff/target.gba").read_bytes(), b"owned synthetic test data")
+        self.assertEqual(json.loads((directory / "handoff/metadata.json").read_text()), {"owned": True})
+        self.assertTrue(all(path.stat().st_mode & 0o777 == 0o400 for path in (directory / "handoff").iterdir()))
 
 
 class PublisherPhaseRuntimeTests(unittest.TestCase):
@@ -698,7 +933,7 @@ isolated_stage=output-validate
                 self.assertEqual(self.candidate_failure(self.workflow, stage), expected)
                 changed = mutations["candidate-assignment-" + stage]
                 self.assertNotEqual(self.candidate_failure(changed, stage), expected)
-                with fixtures.captured_programs(changed), self.assertRaises(phase.PhaseError):
+                with fixtures.captured_programs(changed), self.assertRaises(authority.InventoryError):
                     authority.validate_workflow(changed)
 
     def test_real_make_failure_and_host_diagnostic_expose_the_pre_fix_mutations(self):
@@ -733,7 +968,7 @@ isolated_stage=output-validate
                 else:
                     self.assertEqual(result.returncode, 75)
                     self.assertEqual(result.stderr, "")
-                with fixtures.captured_programs(changed), self.assertRaises(phase.PhaseError):
+                with fixtures.captured_programs(changed), self.assertRaises(authority.InventoryError):
                     authority.validate_workflow(changed)
 
     def test_unknown_runtime_effects_are_confined_controls_not_valid_candidate_statements(self):
@@ -747,7 +982,7 @@ isolated_stage=output-validate
         ):
             with self.subTest(case=name):
                 workflow = mutations[name]
-                with fixtures.captured_programs(workflow), self.assertRaises(phase.PhaseError):
+                with fixtures.captured_programs(workflow), self.assertRaises(authority.InventoryError):
                     authority.validate_workflow(workflow)
                 directory = self.directory / name
                 directory.mkdir()

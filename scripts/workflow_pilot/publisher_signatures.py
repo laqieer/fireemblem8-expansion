@@ -14,6 +14,7 @@ from .publisher_inventory import (
     control_header, normalize_invocation,
 )
 from .publisher_producer_signatures import register as register_producer
+from .publisher_candidate_signatures import register as register_candidate
 
 
 def inventory() -> Inventory:
@@ -37,7 +38,7 @@ def inventory() -> Inventory:
         ))
     signatures: list[Signature] = []
     controls: list[Control] = []
-    builtins = {":", "[", "[[", "break", "cd", "echo", "exec", "exit", "local", "mapfile", "printf", "return", "set", "test", "trap", "true", "ulimit", "unset", "wait"}
+    builtins = {":", "[", "[[", "break", "cd", "echo", "exec", "exit", "local", "mapfile", "printf", "return", "set", "test", "trap", "true", "ulimit", "umask", "unset", "wait"}
 
     def add(
         scope: str, name: str, source: str,
@@ -99,6 +100,7 @@ def inventory() -> Inventory:
     runtime_rejection = runtime_writable + case("runtime-write-boundary", 1)
 
     register_producer(add, control, scopes)
+    register_candidate(add, control, scopes)
     add("entry", "invoke", 'builder_main "$@"', Resource.CONTROL, Access.EXECUTE, event=EventKind.HELPER_CALL)
     main("strict-shell", "set -Eeuo pipefail", access=Access.WRITE)
     for stage in ("namespace", "mount-audit", "candidate-preflight", "output-validate", "export", "post-check"):

@@ -1,6 +1,7 @@
 """Shared phase mutations; edits select already-authorized parsed command spans."""
 
 from contextlib import contextmanager
+import shlex
 from unittest import mock
 
 from scripts.workflow_pilot import publisher_inventory as authority
@@ -295,8 +296,6 @@ def diagnostic_spelling_control(workflow):
     for stage in ("preflight", "venv", "pip", "build-tools", "make", "handoff"):
         body = body.replace("failure_phase=" + stage, "failure_phase='" + stage + "'")
     body = body.replace("trap report_candidate_failure ERR", "trap 'report_candidate_failure' 'ERR'")
-    body = body.replace("trap 'report_candidate_failure' 'ERR'\n",
-                        "trap 'report_candidate_failure' 'ERR'\nprintf '%s\\n' failure_phase=debug\n")
     body = body.replace('case "$failure_phase" in', 'case "${failure_phase}" in')
     body = body.replace(
         "    preflight) exit 71 ;;\n    venv) exit 72 ;;",
@@ -346,6 +345,35 @@ def unclassified_candidate_workflows(workflow):
         workflow, body.replace('  test -e "$readonly_path"',
                                '  MAKEFLAGS=-n\n  test -e "$readonly_path"'),
     )
+
+
+def exact_candidate_workflows(workflow):
+    body = candidate_script(workflow)
+    fd_check = next(
+        node for node in root_commands(body)
+        if tuple(word.literal for word in node.argv[:4]) == ("/usr/bin/python3", "-I", "-S", "-c")
+    )
+    program = 'open("candidate-marker", "w").write("unregistered"); ' + fd_check.argv[4].literal
+    changed = body[:fd_check.offset] + "/usr/bin/python3 -I -S -c " + shlex.quote(program) + body[fd_check.end:]
+    yield "unregistered-inline-program", replace_candidate(workflow, changed)
+    for name, original, changed in (
+        ("unregistered-make-target", "make expansion-modern-map-menu-presentation-check -j1", "make unregistered-target -j1"),
+        ("inert-export-preflight", "test ! -w /mnt/export", "test 1 = 1"),
+        ("unregistered-make-redirection", "make expansion-modern-map-menu-presentation-check -j1",
+         "make expansion-modern-map-menu-presentation-check -j1 > unregistered-output"),
+        ("unregistered-venv-startup", '/usr/bin/python3 -m venv "$HOME/venv"', '/usr/bin/python3 -I -m venv "$HOME/venv"'),
+        ("unregistered-pip-module", "-m pip install", "-m pip.__main__ install"),
+        ("unregistered-pip-interpreter", '"$HOME/venv/bin/python3"', '"$HOME/other/bin/python3"'),
+        ("unregistered-pip-variable", '"$HOME/venv/bin/python3"', '"$OTHER/venv/bin/python3"'),
+        ("unregistered-pip-hashes", "--require-hashes --only-binary", "--only-binary"),
+        ("unregistered-tools-argument", "./build_tools.sh\n", "./build_tools.sh unregistered\n"),
+        ("unregistered-handoff-mode", "/usr/bin/install -m 0400", "/usr/bin/install -m 0600"),
+        ("unregistered-readonly-header", "readonly_path in / /etc", "readonly_path in /unregistered /etc"),
+        ("capturing-loop-binding", "readonly_path", "PATH"),
+        ("unregistered-fd-environment", "/usr/bin/python3 -I -S -c", "UNREGISTERED=yes /usr/bin/python3 -I -S -c"),
+    ):
+        assert original in body
+        yield name, replace_candidate(workflow, body.replace(original, changed))
 
 
 INVENTORY_CONTEXT_CASES = frozenset({
