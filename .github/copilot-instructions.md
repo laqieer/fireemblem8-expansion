@@ -4,11 +4,16 @@ This is a ROM-hack base derived from the **Fire Emblem: The Sacred Stones**
 (GBA) decompilation. The expansion output is not required to be byte-identical
 to the original ROM.
 
-In this repository, check new prerequisites against the original user goal and
-accepted threat model. Prefer existing mechanisms. Do not turn optional hardening
-or problems introduced by an implementation choice into mandatory blockers;
-simplify or separate them while preserving real safety requirements and final
-delivery gates.
+Before adding a prerequisite, gate or service in this repository, identify the
+original accepted requirement or concrete risk, accepted threat model, smallest
+existing mechanism, and why a simpler solution is insufficient. Review findings
+do not automatically expand requirements: fix accepted-contract bugs, simplify
+architecture-created problems, and separate optional hardening with honest
+claims. At the existing third-round/8K reconsideration point, compare a concrete
+simpler design and remove unnecessary machinery or split complete independent
+contracts when needed—not merely write another note. Measure the original
+end-to-end outcomes and total delivery cost; preserve real safety requirements
+and every final gate.
 
 ## Build
 
