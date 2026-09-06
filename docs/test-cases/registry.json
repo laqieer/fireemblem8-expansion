@@ -3342,7 +3342,7 @@
       "negative_control": "Benign pre-fix Make load/SHELL processes actually forge an inherited test FD; unconfined source functions access undeclared files; per-process timeouts exceed the single global bound. Exact bc136 compiles/runs real scaninc but cannot register it in Make, and loses a /work generated include that ordinary Make loads to select observed.",
       "interactions": "Reuses GNU Make, exact-tree and generated-registry contracts; PR186 must integrate the authority and retain its complete domain/graph/oracle/lifecycle gates. No independent game/profile conflicts.",
       "save_compatibility": "Host-only foundation; no save, migration, configuration identity, generated game content, locale, ROM/RAM, modern debug/release or archival change.",
-      "cleanup": "Context exit, failure, timeout, overflow and SIGINT/SIGTERM reap recorded children, clear caches and remove only owned scratch; tests clean their disposable roots.",
+      "cleanup": "Context exit, failure, timeout, overflow and SIGINT/SIGTERM reap recorded children, clear caches and remove only owned scratch; tests clean their disposable roots. New sudo-drop publication directories/files belong to the runner for unprivileged cleanup; existing source/control ownership and user-namespace mappings remain unchanged.",
       "limitations": "This independent root does not claim the unmerged #180 graph, complete PR186 matrix or public validation-ownership-check target. Unsupported Make native ABIs/platforms reject; no manual-only criterion applies.",
       "automation": [
         {

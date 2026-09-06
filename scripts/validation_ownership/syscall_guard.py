@@ -414,6 +414,7 @@ class Policy:
                 try:
                     parts = name.split("/")
                     for part in parts[:-1]:
+                        created = False
                         try:
                             following = os.open(
                                 part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=directory,
@@ -424,8 +425,13 @@ class Policy:
                             following = os.open(
                                 part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=directory,
                             )
+                            created = True
                         os.close(directory)
                         directory = following
+                        if created and self.config["sudo_drop"]:
+                            # Transfer before adding children, so even failed publication
+                            # remains removable by the unprivileged report owner.
+                            os.fchown(directory, self.config["runner_uid"], self.config["runner_gid"])
                     if name in self.published:
                         if self.published[name] != producer:
                             raise Violation("conflicting generated output producers")
@@ -439,6 +445,8 @@ class Policy:
                     except FileExistsError as error:
                         raise Violation("generated output conflicts with immutable source") from error
                     with os.fdopen(output, "wb") as destination:
+                        if self.config["sudo_drop"]:
+                            os.fchown(destination.fileno(), self.config["runner_uid"], self.config["runner_gid"])
                         left = size
                         while left:
                             data = take(min(left, SYSCALL_MEMORY_LIMIT))

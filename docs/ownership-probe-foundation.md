@@ -334,6 +334,16 @@ still read only their declared snapshot code/sources and write fresh private
 feeding another producer undeclared previous outputs. The downstream graph
 and full-domain adoption remain #180's responsibility.
 
+On the sudo-drop route the supervisor transfers each newly created publication
+directory/file to the configured runner UID/GID through its nofollow-opened
+descriptor. Directories transfer before children are created; files transfer
+before content and their declared mode are applied. Existing source/view/control
+objects are never chowned. The user-namespace route performs no transfer: its
+UID mapping already gives the outer runner ownership. Transfer failure remains
+a visible publication failure, not permission to run privileged cleanup or
+ignore residue. Live owner/group/mode checks and ordinary runner cleanup are
+part of the include/restart, binary-output and interruption regressions.
+
 ## Source declaration and identity contracts
 
 `Command` declares argv, admitted code paths, candidate source paths/globs and

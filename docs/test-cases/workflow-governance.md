@@ -2678,6 +2678,23 @@ foundation suite cover these steps:
    with an owned SIGTERM; require per-call as well as session cleanup.
    Generated Make syntax still cannot read/write channels, overwrite immutable
    source or `load` native code after Make's genuine re-exec.
+5. Before the existing include/binary/interruption cases remove their outputs,
+   verify actual file and newly created directory UID/GID equal the outer
+   runner, directories retain `0755`, and files retain declared modes (including
+   binary `0444`). Require ordinary unprivileged unlink/rmdir cleanup. The
+   sudo-drop supervisor transfers only its newly created descriptors, never
+   existing source/control ancestors; the user-namespace route must not attempt
+   that transfer. Conditional-route controls call real `fchown` to the current
+   unprivileged identity and inject directory/file transfer denial: errors must
+   remain visible, descriptors close, and partial output remains removable.
+   Those controls do not claim a real sudo credential transition.
+
+The `07c35d9` hosted sudo-drop regression produced root-owned publication
+directories: outer unlink of `generated/nested.mk` failed with `PermissionError`,
+then directory removal and interrupted teardown left residue. The same Make
+case passed locally with user namespaces, whose mapping hid that ownership
+gap. A new exact-head hosted run is required for the real sudo-route positive;
+never use shared-host sudo credentials or change global policy to manufacture it.
 
 No new case ID, graph test matrix or CI job is introduced. The prior stdout-only
 Command/native/registry, argv-order, final-pass, no-site, syscall/channel,

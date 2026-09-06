@@ -12,6 +12,7 @@ import shlex
 import shutil
 import signal
 import stat
+import struct
 import subprocess
 import sys
 import threading
@@ -3801,6 +3802,121 @@ int main(int argc, char **argv) {
         )
         return names, command, registration
 
+    def assert_publication_owned(self, session, path, mode=0o644):
+        expected_owner = (os.getuid(), os.getgid())
+        published = session.tree / path
+        info = published.stat(follow_symlinks=False)
+        self.assertTrue(stat.S_ISREG(info.st_mode))
+        self.assertEqual((info.st_uid, info.st_gid), expected_owner)
+        self.assertEqual(stat.S_IMODE(info.st_mode), mode)
+        for parent in Path(path).parents:
+            if parent == Path("."):
+                continue
+            info = (session.tree / parent).stat(follow_symlinks=False)
+            self.assertTrue(stat.S_ISDIR(info.st_mode))
+            self.assertEqual((info.st_uid, info.st_gid), expected_owner)
+            self.assertEqual(stat.S_IMODE(info.st_mode), 0o755)
+
+    def publication_policy(self, privileged):
+        from scripts.validation_ownership.syscall_guard import Policy
+        root = self.directory / "publication-control"
+        mapping = root / "control/map"
+        mapping.mkdir(parents=True, exist_ok=True)
+        outputs = {
+            "generated/deeper/nested.mk": (b"SELECTED := observed\n", 0o644),
+            "source/binary.bin": (b"\0\xffproof", 0o444),
+        }
+        frame = bytearray(b"VOGEN1\0\0" + b"\x01"*32 + struct.pack("<I", len(outputs)))
+        for name, (data, mode) in outputs.items():
+            name = name.encode("utf-8")
+            frame.extend(struct.pack("<III", len(name), mode, len(data)) + name + data)
+        (mapping / "0000000000000001.files").write_bytes(frame)
+        return Policy({
+            "root": str(root), "mode": "make", "code": [], "sources": [],
+            "enumerations": [], "executables": [], "python_version": "3.12", "argv": [],
+            "mounts": [{"target": "/repo", "source": str(self.root)}],
+            "sudo_drop": privileged, "runner_uid": os.getuid(), "runner_gid": os.getgid(),
+            "creation_limit": 8, "file_limit": 4096, "observation_limit": 8192,
+            "write_limit": 4096, "deadline": time.monotonic() + 10,
+        }), outputs
+
+    @unittest.skipIf(os.geteuid() == 0, "requires an unprivileged cleanup runner")
+    def test_publication_transfers_only_new_objects_on_the_privileged_route(self):
+        self.add("source/owner", "immutable")
+        (self.root / "source").chmod(0o750)
+        for privileged in (False, True):
+            with self.subTest(privileged=privileged):
+                policy, outputs = self.publication_policy(privileged)
+                protected = (self.root, self.root / "source", self.root / "source/owner",
+                             Path(policy.config["root"]) / "control/map/0000000000000001.files")
+                def ownership(path):
+                    info = path.stat(follow_symlinks=False)
+                    return info.st_uid, info.st_gid, stat.S_IMODE(info.st_mode)
+                before = {path: ownership(path) for path in protected}
+                transferred = []
+                fchown = os.fchown
+                def transfer(descriptor, uid, gid):
+                    self.assertTrue(privileged, "user namespace must retain its existing UID mapping")
+                    info = os.fstat(descriptor)
+                    transferred.append((info.st_dev, info.st_ino, uid, gid))
+                    fchown(descriptor, uid, gid)
+                with patch.object(os, "fchown", transfer):
+                    policy.publish(1)
+                created = [self.root / name for name in outputs]
+                created.extend((self.root / "generated", self.root / "generated/deeper"))
+                expected = []
+                for path in created:
+                    info = path.stat(follow_symlinks=False)
+                    self.assertEqual((info.st_uid, info.st_gid), (os.getuid(), os.getgid()))
+                    mode = outputs[path.relative_to(self.root).as_posix()][1] if path.is_file() else 0o755
+                    self.assertEqual(stat.S_IMODE(info.st_mode), mode)
+                    expected.append((info.st_dev, info.st_ino, os.getuid(), os.getgid()))
+                self.assertCountEqual(transferred, expected if privileged else [])
+                self.assertEqual({path: ownership(path) for path in protected}, before)
+                self.assertEqual((self.root / "source/owner").read_bytes(), b"immutable")
+                self.assertEqual(policy.created, 4)
+                self.assertEqual(policy.written, sum(len(data) for data, _ in outputs.values()))
+                for name, (data, _) in outputs.items():
+                    self.assertEqual((self.root / name).read_bytes(), data)
+                    (self.root / name).unlink()
+                (self.root / "generated/deeper").rmdir()
+                (self.root / "generated").rmdir()
+                self.assertFalse((self.root / "generated").exists())
+                self.assertEqual({path: ownership(path) for path in protected}, before)
+
+    @unittest.skipIf(os.geteuid() == 0, "requires an unprivileged cleanup runner")
+    def test_publication_transfer_failure_preserves_error_descriptors_and_cleanup(self):
+        self.add("source/owner", "immutable")
+        for kind in ("directory", "file"):
+            for number in (errno.EPERM, errno.EOPNOTSUPP):
+                with self.subTest(kind=kind, error=number):
+                    policy, _ = self.publication_policy(True)
+                    failure = OSError(number, "publication ownership transfer unavailable")
+                    fchown = os.fchown
+                    def transfer(descriptor, uid, gid):
+                        mode = os.fstat(descriptor).st_mode
+                        if stat.S_ISDIR(mode) == (kind == "directory"):
+                            raise failure
+                        fchown(descriptor, uid, gid)
+                    descriptors = len(list(Path("/proc/self/fd").iterdir()))
+                    try:
+                        with patch.object(os, "fchown", transfer):
+                            with self.assertRaises(OSError) as caught:
+                                policy.publish(1)
+                        self.assertIs(caught.exception, failure)
+                        self.assertEqual(len(list(Path("/proc/self/fd").iterdir())), descriptors)
+                        self.assertFalse(policy.published)
+                        leaf = self.root / "generated/deeper/nested.mk"
+                        if leaf.exists():
+                            self.assertEqual(leaf.read_bytes(), b"")
+                        self.assertFalse((self.root / "source/binary.bin").exists())
+                    finally:
+                        if (self.root / "generated").exists():
+                            shutil.rmtree(self.root / "generated")
+                        (self.root / "source/binary.bin").unlink(missing_ok=True)
+                    self.assertFalse((self.root / "generated").exists())
+                    self.assertEqual((self.root / "source/owner").read_bytes(), b"immutable")
+
     def test_generated_include_publication_matches_ordinary_make_restart_context(self):
         for parse_time, path in ((False, "generated.mk"), (True, "generated/nested.mk")):
             with self.subTest(parse_time=parse_time):
@@ -3818,11 +3934,19 @@ int main(int argc, char **argv) {
                     file, = output.generated
                     self.assertEqual((file.path, file.data, file.mode), (path, generated, 0o644))
                     identities = []
+                    run, published = session._sandbox_run, []
+                    def observe_owner(root, **kwargs):
+                        result = run(root, **kwargs)
+                        if kwargs["mode"] == "make" and (session.tree / path).is_file():
+                            self.assert_publication_owned(session, path)
+                            published.append(path)
+                        return result
                     for _ in range(2):
-                        observed = session.make(
-                            "all", variables=names, assignments=assignments,
-                            commands={command: registration},
-                        )
+                        with patch.object(session, "_sandbox_run", observe_owner):
+                            observed = session.make(
+                                "all", variables=names, assignments=assignments,
+                                commands={command: registration},
+                            )
                         identities.append(observed.semantic_digest)
                         self.assertEqual(observed.semantics["domains"], normal[1])
                         self.assertEqual(observed.semantics["files"][0]["prerequisites"], normal[0])
@@ -3839,6 +3963,7 @@ int main(int argc, char **argv) {
                         if "/" in path:
                             self.assertFalse((session.tree / path).parent.exists())
                     self.assertEqual(identities[0], identities[1])
+                    self.assertGreaterEqual(len(published), 2)
                 self.assert_clean(session)
 
     def test_generated_native_output_uses_the_same_command_and_mapping_seam(self):
@@ -4061,6 +4186,7 @@ int main(int argc, char **argv) {
                     def interrupt_after_publication(root, **kwargs):
                         result = run(root, **kwargs)
                         if kwargs["mode"] == "make" and (session.tree / "generated/nested.mk").is_file():
+                            self.assert_publication_owned(session, "generated/nested.mk")
                             os.kill(os.getpid(), signal.SIGTERM)
                         return result
                     with patch.object(session, "_sandbox_run", interrupt_after_publication if case == "interrupt" else run):
@@ -4134,9 +4260,20 @@ int main(int argc, char **argv) {
             output = session.command(command)
             binary = next(item for item in output.generated if item.path == "proof.bin")
             self.assertEqual((binary.data, binary.mode), (b"\0\xffproof", 0o444))
-            result = session.make("all", commands={
-                direct: command, alias: replace(command, outputs=tuple(reversed(command.outputs))),
-            })
+            run, published = session._sandbox_run, set()
+            def observe_owner(root, **kwargs):
+                result = run(root, **kwargs)
+                if kwargs["mode"] == "make":
+                    for item in output.generated:
+                        if (session.tree / item.path).is_file():
+                            self.assert_publication_owned(session, item.path, item.mode)
+                            published.add(item.path)
+                return result
+            with patch.object(session, "_sandbox_run", observe_owner):
+                result = session.make("all", commands={
+                    direct: command, alias: replace(command, outputs=tuple(reversed(command.outputs))),
+                })
+            self.assertEqual(published, set(command.outputs))
             self.assertEqual(result.semantics["files"][0]["prerequisites"], normal[0])
             self.assertEqual(len(result.events), 2)
             dynamic, = result.semantics["dynamic_commands"]
