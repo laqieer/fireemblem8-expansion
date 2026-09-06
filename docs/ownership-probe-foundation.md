@@ -153,8 +153,8 @@ consumers exercise this policy without a compiler exception or untraced worker.
 
 ### Make, observer and interceptor
 
-Only the initial trusted Make and its privately mounted static interceptor can
-execute in the Make capsule. A native guard rejects **every** Make `load` before a module entry
+Only trusted Make (including its own include-remake re-exec) and its privately
+mounted static interceptor can execute in the Make capsule. A native guard rejects **every** Make `load` before a module entry
 point, including attempts to load an already-mapped host object. Candidate
 executables, alternate loaders/interpreters, nested native Make through
 `SHELL`, and noncontract `.SHELLFLAGS` are not execution authority.
@@ -217,6 +217,22 @@ Mappings contain actual results of registered, confined commands, not invented
 successful values. An initial Make parse error can be retried only when there
 is an observed, explicitly registered unresolved eager command; final success
 requires successful GNU Make completion and its authenticated observation.
+Declared file results extend those same mappings with a bounded typed sidecar.
+Only a value/remake interceptor with an exact matched command can request
+publication; Make and registered-command processes cannot call that private
+operation. The supervisor, outside the chroot, writes the captured bytes into
+the owned backing view at that dispatch, before the interceptor returns.
+Neither the candidate nor interceptor receives writable `/repo` authority.
+
+The observer preserves GNU Make's actual `execvp` restart after remaking an
+include, including argv order and native environment/`MAKE_RESTARTS` behavior.
+It restores only its private bootstrap values and preload, which disappear
+again before Make imports its environment. The syscall IP and original Make
+PID authenticate this transition; a job child or registered command cannot
+use it to execute native Make. Restarts retain the same supervisor, event
+stream, budgets and 64-pass bound. A fresh outer replay starts without any
+previous replay's generated files, rather than precreating an include and
+silently losing the native first-parse/remake/restart context.
 
 ### Registered commands and native tools
 
@@ -242,6 +258,81 @@ program headers, no writable executable load segment and only the admitted
 dynamic loader. A session-issued `NativeTool` is sealed before `native` runs it
 in another channel-free capsule. It never becomes a Make-capsule executable.
 Changed or foreign-session ELF handles reject.
+
+### Native Make registrations and declared file results
+
+The existing typed `Command` also accepts `native_tool=tool` from that same
+active session. Its exact argv must begin with `/native/tool`; the rest is the
+real native argv, including empty arguments. It executes through the same
+channel-free command path as `native`, never through Make's mount:
+
+```python
+tool = probe.compile_native(scaninc_sources, headers=scaninc_headers, cxx=True)
+registration = Command(
+    ("/native/tool", "-I", "include", "-I", "", "proof.s"),
+    native_tool=tool, sources=("proof.s",))
+observation = probe.make("all", commands={
+    'tools/scaninc/scaninc -I include -I "" proof.s': registration,
+})
+```
+
+Registrations describe commands actually dispatched by Make, not permission
+to install an executable or invent a successful missing-program result.
+The native result retains real stdout and successful source observations.
+Semantic command identity includes the sealed ELF and its declared build-input
+identities, not a guessed printf replacement. A copied/forged, changed or
+foreign-session tool is not an issued registration.
+
+For a producer, declare **all** surviving files to capture with
+`Command(..., outputs=("generated.mk",))`. Each name is exact, canonical and
+repository-relative: the producer writes `/work/generated.mk`, and the matched
+Make dispatch publishes it as `/repo/generated.mk`. For example:
+
+```python
+producer = Command(
+    ("/usr/bin/python3", "/repo/producer.py", "/work/generated.mk"),
+    code=("producer.py",), sources=("choice.txt",), outputs=("generated.mk",))
+observation = probe.make(
+    "all", variables=("SELECTED", "MAKEFILE_LIST", "MAKE_RESTARTS"),
+    commands={"python3 producer.py generated.mk": producer})
+```
+
+The candidate Makefile may `include generated.mk` and supply a remake rule
+whose recipe is the registered producer. GNU Make really sees the initially
+missing include, dispatches the remake, re-execs, loads it, and selects its
+prerequisites. Parse-time `shell` producers publish before the include instead;
+their native context does not acquire an invented restart. Chained includes
+can require multiple real restarts. Ordinary recipes remain metadata-only.
+
+`command` and `native(..., outputs=...)` return
+`ProcessOutput.generated`, a tuple of immutable `GeneratedFile(path, data, mode)`
+values, never live scratch paths. `outputs=()` preserves existing stdout-only
+callers and their disposable `/work` use. Opting into capture requires exact
+equality between the declaration and surviving regular files; only their
+ancestor directories may also remain. Extra, missing, nonregular, symlinked,
+escaping, oversized and overlapping outputs reject. Tracked blobs, symlinks,
+gitlinks and their path namespace cannot be replaced. Two distinct producers
+cannot publish one path in a pass, even if their bytes happen to agree;
+equivalent registrations/aliases share an identity. Repeated dispatch of that
+same producer republishes the result at the actual dispatch, not once before
+the pass.
+
+File modes and bytes participate in generated-result identity; Make's mount
+is still read-only/noexec/nosuid. Each file and the combined framed mapping
+(including its metadata) fit the existing file limit. Capture, retained cache,
+mapping/provenance, publication bytes and created files/directories spend the
+same report-wide quotas, including speculative producers. Publication streams
+bounded chunks under the original deadline, not an independent output copier.
+Only final successful outer-replay dispatches contribute dynamic identity;
+recipe-owning generated files bind to their actual output identities.
+
+Publication is Make-call/replay-local. Every next outer replay, return, failure
+or interruption removes only the declared generated files and new owned
+ancestors; snapshot inputs and unrelated worktrees are untouched. Producers
+still read only their declared snapshot code/sources and write fresh private
+`/work` output. This is not an incremental build filesystem or an API for
+feeding another producer undeclared previous outputs. The downstream graph
+and full-domain adoption remain #180's responsibility.
 
 ## Source declaration and identity contracts
 
@@ -496,6 +587,9 @@ Required downstream #180/PR186 integration:
    verified typed record. It must not create a per-registry session or budget.
    Gitlink-backed tools need exact pinned materialization/admission, not a
    live submodule checkout or executable mounted into Make.
+   Bind issued native tools through `Command.native_tool` and declare generated
+   include files with `Command.outputs`; do not discard file results, precreate
+   includes before a new Make invocation, or substitute synthetic stdout.
 5. Restore the full public `validation-ownership-check` Make target **in PR186** and
    exercise its entire current domain matrix, generated ownership, oracle and
    lifecycle under the unchanged bound. No such matrix/graph proof is claimed

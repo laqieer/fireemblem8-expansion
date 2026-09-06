@@ -8,6 +8,7 @@
  */
 #define _GNU_SOURCE
 #include <dlfcn.h>
+#include <errno.h>
 #include <fcntl.h>
 #include <spawn.h>
 #include <stdint.h>
@@ -61,6 +62,7 @@ extern void initialize_file_variables(struct FileView *, int);
 extern void set_file_variables(struct FileView *);
 extern void chop_commands(struct CommandsView *);
 extern int rebuilding_makefiles;
+extern char **environ;
 
 #define MAX_NODES 4096
 #define MAX_NAMES 512
@@ -68,12 +70,14 @@ extern int rebuilding_makefiles;
 
 static char *target;
 static char *names;
+static char *parsed_names;
 static char *name_list[MAX_NAMES];
 static size_t name_count;
 static unsigned char *result;
 static size_t used;
 static size_t capacity;
 static int finishing;
+static long make_pid;
 
 /* The syscall supervisor authorizes control I/O only at this trusted code IP,
  * not at libc IPs reachable from Make's file/include/eval builtins. */
@@ -109,13 +113,14 @@ __attribute__((constructor)) static void setup(void)
     capacity = bound;
     target = strdup(goal);
     names = strdup(variables);
+    parsed_names = strdup(variables);
     result = malloc(capacity);
-    if (!target || !names || !result)
+    if (!target || !names || !parsed_names || !result)
         fail();
     {
         char *state;
         char *name;
-        for (name = strtok_r(names, " ", &state); name; name = strtok_r(NULL, " ", &state))
+        for (name = strtok_r(parsed_names, " ", &state); name; name = strtok_r(NULL, " ", &state))
         {
             if (name_count == MAX_NAMES || strlen(name) > 128)
                 fail();
@@ -126,7 +131,25 @@ __attribute__((constructor)) static void setup(void)
     unsetenv("VO_OBSERVE_NAMES");
     unsetenv("VO_OBSERVE_BYTES");
     unsetenv("LD_PRELOAD");
-    raw_call(SYS_getpid, VO_READY, 0, 0);
+    make_pid = raw_call(SYS_getpid, VO_READY, 0, 0);
+}
+
+int execvp(const char *file, char *const argv[])
+{
+    char limit[32];
+    long status;
+
+    /* Preserve Make's own remake/restart argv and environment. Job children
+     * cannot use this boundary as an alternate native execution route. */
+    if (raw_call(SYS_getpid, 0, 0, 0) != make_pid || strcmp(file, "/usr/bin/make"))
+        fail();
+    snprintf(limit, sizeof(limit), "%zu", capacity);
+    if (setenv("VO_OBSERVE_TARGET", target, 1) || setenv("VO_OBSERVE_NAMES", names, 1)
+        || setenv("VO_OBSERVE_BYTES", limit, 1) || setenv("LD_PRELOAD", "/lib/vo-observer.so", 1))
+        fail();
+    status = raw_call(SYS_execve, (long)file, (long)argv, (long)environ);
+    errno = (int)-status;
+    return -1;
 }
 
 static int recursive_graph(void)

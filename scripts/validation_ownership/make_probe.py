@@ -66,6 +66,15 @@ class Command:
     code: tuple[str, ...] = ()
     sources: tuple[str, ...] = ()
     directories: tuple[str, ...] = ()
+    native_tool: NativeTool | None = None
+    outputs: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class GeneratedFile:
+    path: str
+    data: bytes
+    mode: int
 
 
 @dataclass(frozen=True)
@@ -75,6 +84,7 @@ class ProcessOutput:
     consumed: tuple[str, ...]
     code_consumed: tuple[str, ...]
     artifact: bytes | None = None
+    generated: tuple[GeneratedFile, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -83,6 +93,7 @@ class NativeTool:
 
     path: Path
     digest: str
+    inputs: tuple[tuple[str, str, str], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -649,19 +660,77 @@ class ProbeSession:
     def command(self, command: Command):
         return self._command(command)
 
-    def _command(self, command: Command, *, native=None, compiler=None):
+    def _output_paths(self, paths):
+        if len(paths) > 4096:
+            raise MakeProbeError("generated output count exceeds admission bound")
+        names = tuple(sorted(relative_path(path) for path in paths))
+        declared = set(names)
+        for index, name in enumerate(names):
+            self.budget.remaining()
+            if index and name == names[index - 1] or any(
+                parent.as_posix() in declared for parent in PurePosixPath(name).parents
+            ):
+                raise MakeProbeError("conflicting generated output declarations")
+            if any(
+                name == source or name.startswith(source + "/") or source.startswith(name + "/")
+                for source in self.loader.entries
+            ):
+                raise MakeProbeError("generated output conflicts with immutable source")
+        return names
+
+    def _capture_outputs(self, root, names):
+        if not names:
+            return ()
+        directories = {
+            parent.as_posix() for name in names for parent in PurePosixPath(name).parents
+            if parent.as_posix() != "."
+        }
+        pending, found = [root], {}
+        count = 0
+        while pending:
+            self.budget.remaining()
+            with os.scandir(pending.pop()) as entries:
+                for entry in entries:
+                    self.budget.remaining()
+                    count += 1
+                    if count > self.budget.limits.created_files:
+                        self.budget.reject("generated output tree exceeds creation bound")
+                    name = Path(entry.path).relative_to(root).as_posix()
+                    self.budget.charge("control", len(os.fsencode(name)) + 64)
+                    mode = entry.stat(follow_symlinks=False).st_mode
+                    if stat.S_ISDIR(mode) and name in directories:
+                        pending.append(Path(entry.path))
+                    elif stat.S_ISREG(mode) and name in names and not mode & 0o7000:
+                        found[name] = stat.S_IMODE(mode)
+                    else:
+                        raise MakeProbeError("undeclared or nonregular generated output")
+        if set(found) != set(names):
+            raise MakeProbeError("missing declared generated output")
+        return tuple(
+            GeneratedFile(name, self.budget.read_bytes(root / name, "output"), found[name])
+            for name in names
+        )
+
+    def _command(self, command: Command, *, compiler=None):
         self.budget.remaining()
+        if not isinstance(command, Command):
+            raise MakeProbeError("registered command requires a typed Command")
+        native = command.native_tool
         programs = {"/usr/bin/python3", "/usr/bin/uname", "/usr/bin/printf"}
         if native is not None:
-            if not isinstance(native, NativeTool) or self.native_tools.get(native.digest) is not native:
+            if not isinstance(native, NativeTool) or not any(
+                native is issued for issued in self.native_tools.values()
+            ):
                 raise MakeProbeError("native tool is not issued by this exact probe session")
             if hashlib.sha256(self.budget.read_bytes(native.path, "control")).hexdigest() != native.digest:
                 raise MakeProbeError("sealed native tool changed after validation")
+            if not command.argv or command.argv[0] != "/native/tool":
+                raise MakeProbeError("native registration requires exact /native/tool argv")
             programs.add("/native/tool")
         if compiler is not None:
             programs.update(compiler)
         if (
-            not isinstance(command, Command) or not command.argv
+            not command.argv
             or command.argv[0] not in programs
             or any(not isinstance(value, str) or "\0" in value for value in command.argv)
         ):
@@ -677,10 +746,11 @@ class ProbeSession:
         code = tuple(sorted(set(command.code)))
         sources = self.sources(command.sources) if command.sources else ()
         directories = tuple(sorted({relative_path(path) for path in command.directories}))
+        outputs = self._output_paths(command.outputs)
         key = (self.snapshot.digest, command, None if native is None else native.digest)
         if key in self.cache:
             return self.cache[key]
-        self.budget.charge("pending", len(encoded([command.argv, code, sources, directories])))
+        self.budget.charge("pending", len(encoded([command.argv, code, sources, directories, outputs])))
         for path in code:
             relative_path(path)
             if path not in self.snapshot.files:
@@ -719,11 +789,13 @@ class ProbeSession:
             result = ProcessOutput(
                 completed.stdout, completed.stderr, consumed, tuple(observed["code_consumed"]),
                 None if compiler is None else self.budget.read_bytes(output / "tool", "control"),
+                self._capture_outputs(output, outputs),
             )
             self.budget.charge(
                 "cache", len(completed.stdout) + len(completed.stderr)
                 + len(encoded([self.snapshot.digest, command.argv, code, sources, directories]))
-                + (0 if result.artifact is None else len(result.artifact)),
+                + (0 if result.artifact is None else len(result.artifact))
+                + sum(len(item.data) + len(os.fsencode(item.path)) + 64 for item in result.generated),
             )
             self.cache[key] = result
             return result
@@ -770,12 +842,15 @@ class ProbeSession:
         binary = result.artifact
         self._validate_native(binary)
         digest = hashlib.sha256(binary).hexdigest()
-        if digest not in self.native_tools:
-            path = self.base / ("native-" + digest)
+        inputs = tuple(self.snapshot.owners(command.code))
+        key = hashlib.sha256(encoded([digest, inputs])).hexdigest()
+        if key not in self.native_tools:
+            self.budget.charge("cache", len(encoded([digest, inputs])))
+            path = self.base / ("native-" + key)
             path.write_bytes(binary)
             path.chmod(0o500)
-            self.native_tools[digest] = NativeTool(path, digest)
-        return self.native_tools[digest]
+            self.native_tools[key] = NativeTool(path, digest, inputs)
+        return self.native_tools[key]
 
     @staticmethod
     def _validate_native(binary):
@@ -811,10 +886,12 @@ class ProbeSession:
             raise MakeProbeError("native ELF has no loadable program")
 
     @terminal_failure
-    def native(self, tool: NativeTool, arguments=(), *, sources=(), directories=()):
+    def native(self, tool: NativeTool, arguments=(), *, sources=(), directories=(), outputs=()):
         return self._command(
-            Command(("/native/tool", *arguments), sources=tuple(sources), directories=tuple(directories)),
-            native=tool,
+            Command(
+                ("/native/tool", *arguments), sources=tuple(sources), directories=tuple(directories),
+                native_tool=tool, outputs=tuple(outputs),
+            ),
         )
 
     @terminal_failure
@@ -861,8 +938,26 @@ class ProbeSession:
         control = self.base / f"control-{self.serial + 1}"
         mappings = {}
         command_results = {}
+        generated_paths = set()
+        generated_directories = set()
         commands = {} if commands is None else commands
-        with cleanup_scope([mappings.clear, lambda: _remove_owned_tree(control), lambda: _remove_owned_tree(root)]):
+        def clear_generated():
+            def remove_directory(name):
+                try:
+                    (self.tree / name).rmdir()
+                except FileNotFoundError:
+                    pass
+            finish_cleanup([
+                *(lambda name=name: (self.tree / name).unlink(missing_ok=True)
+                  for name in sorted(generated_paths)),
+                *(lambda name=name: remove_directory(name) for name in sorted(
+                    generated_directories, key=lambda value: (-value.count("/"), value),
+                )),
+            ])
+        with cleanup_scope([
+            clear_generated, mappings.clear,
+            lambda: _remove_owned_tree(control), lambda: _remove_owned_tree(root),
+        ]):
             self._new_root(root_name, make=True)
             control.mkdir(mode=0o700)
             mapping_path = control / "map"
@@ -873,6 +968,7 @@ class ProbeSession:
             (control / "interceptor").touch()
             for _ in range(MAX_DYNAMIC_PASSES):
                 self.budget.remaining()
+                clear_generated()
                 (mapping_path / "count").write_bytes(len(mappings).to_bytes(4, "little"))
                 events_path.write_bytes(b"")
                 result_path.write_bytes(b"")
@@ -916,7 +1012,15 @@ class ProbeSession:
                     recipe_sources = {
                         record["source"] for record in semantics["files"] if record["source"]
                     }
-                    semantics["owner_inputs"] = self.snapshot.owners(set(owner_inputs) | recipe_sources)
+                    generated_owners = {
+                        record[0]: record for key in matched
+                        for record in command_results[key].get("generated_outputs", ())
+                    }
+                    owners = set(owner_inputs) | recipe_sources
+                    semantics["owner_inputs"] = sorted(
+                        self.snapshot.owners(owners - generated_owners.keys())
+                        + [generated_owners[name] for name in sorted(owners & generated_owners.keys())],
+                    )
                     semantics["dynamic_commands"] = sorted(
                         (command_results[key] for key in matched), key=encoded,
                     )
@@ -931,7 +1035,8 @@ class ProbeSession:
                     if command not in commands:
                         raise MakeProbeError(f"unregistered eager/recursive Make command: {command!r}")
                     registration = commands[command]
-                    output = self.command(registration).stdout
+                    result = self.command(registration)
+                    output = result.stdout
                     key = _command_hash(command)
                     if (mapping_path / (key + ".cmd")).exists():
                         raise MakeProbeError("exact-command mapping collision")
@@ -945,11 +1050,48 @@ class ProbeSession:
                             set(registration.code) | set(self.sources(registration.sources))
                         ),
                     }
+                    if registration.native_tool is not None:
+                        tool = registration.native_tool
+                        command_identity["native_tool"] = {
+                            "sha256": tool.digest, "inputs": list(tool.inputs),
+                        }
                     command_result = {
                         "command": command_identity,
                         "output_sha256": hashlib.sha256(output).hexdigest(),
                     }
+                    if result.generated:
+                        command_result["generated_outputs"] = [
+                            (item.path, f"{stat.S_IFREG | item.mode:06o}", hashlib.sha256(item.data).hexdigest())
+                            for item in result.generated
+                        ]
+                    if registration.native_tool is not None or result.generated:
+                        self.budget.charge("mapping", len(encoded(command_result)))
                     identity = hashlib.sha256(encoded(command_result)).hexdigest()
+                    if result.generated:
+                        size = 44 + sum(
+                            12 + len(item.path.encode("utf-8")) + len(item.data) for item in result.generated
+                        )
+                        if size > self.budget.limits.file_bytes:
+                            self.budget.reject("generated mapping exceeds file byte bound")
+                        self.budget.charge("mapping", size)
+                        frame = bytearray(b"VOGEN1\0\0" + bytes.fromhex(identity))
+                        frame.extend(struct.pack("<I", len(result.generated)))
+                        for item in result.generated:
+                            if any(
+                                item.path.startswith(path + "/") or path.startswith(item.path + "/")
+                                for path in generated_paths
+                            ):
+                                raise MakeProbeError("conflicting generated output namespaces")
+                            name = item.path.encode("utf-8")
+                            frame.extend(struct.pack("<III", len(name), item.mode, len(item.data)))
+                            frame.extend(name)
+                            frame.extend(item.data)
+                            generated_paths.add(item.path)
+                            generated_directories.update(
+                                parent.as_posix() for parent in PurePosixPath(item.path).parents
+                                if parent.as_posix() != "." and not (self.tree / parent).exists()
+                            )
+                        (mapping_path / (key + ".files")).write_bytes(frame)
                     command_results.setdefault(identity, command_result)
                     mappings[command] = identity
             raise MakeProbeError("Make dynamic replay exceeded the existing pass bound")

@@ -40,8 +40,8 @@ MAP_ANONYMOUS = 0x20
 # Fixed placement, loader hints and stacks do not alias pages or change their
 # size. Growing/huge-page and unknown flags cannot bypass 4 KiB reservations.
 MMAP_FLAGS = 3 | 0x10 | MAP_ANONYMOUS | 0x800 | 0x1000 | 0x20000 | 0x100000
-VO_READY, VO_DISPATCH, VO_QUERY_KIND = (
-    0x564F4D4B00000001, 0x564F4D4B00000002, 0x564F4D4B00000003,
+VO_READY, VO_DISPATCH, VO_QUERY_KIND, VO_PUBLISH = (
+    0x564F4D4B00000001, 0x564F4D4B00000002, 0x564F4D4B00000003, 0x564F4D4B00000004,
 )
 VO_RECIPE, VO_VALUE = 0x564F4D4B00000011, 0x564F4D4B00000012
 STACK_LIMIT = 16 * 1024 * 1024
@@ -200,6 +200,9 @@ class Policy:
         self.observation_bytes = 0
         self.memory_peak = 0
         self.processes = {}
+        self.make_pid = 0
+        self.make_restarts = 0
+        self.published = {}
         self.executable = set(config["executables"])
         self.executable.update(self.resolve(path) for path in config["executables"])
         version = config["python_version"]
@@ -354,6 +357,99 @@ class Policy:
         self.created += 1
         if self.created > self.config["creation_limit"]:
             raise Violation("aggregate file-creation budget exhausted")
+
+    def publish(self, key):
+        mapping = Path(self.config["root"]) / "control/map"
+        path = mapping / f"{key:016x}.files"
+        try:
+            descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        except FileNotFoundError:
+            return
+        with os.fdopen(descriptor, "rb") as source:
+            status = os.fstat(source.fileno())
+            if not stat.S_ISREG(status.st_mode) or not 44 <= status.st_size <= self.config["file_limit"]:
+                raise Violation("invalid generated mapping file bound")
+            self.observation_bytes += status.st_size
+            if self.observation_bytes > self.config["observation_limit"]:
+                raise Violation("aggregate generated mapping observation budget exhausted")
+            remaining = status.st_size
+            def take(size):
+                nonlocal remaining
+                if time.monotonic() >= self.config["deadline"]:
+                    raise Violation("aggregate probe deadline exhausted during publication")
+                if size > remaining:
+                    raise Violation("truncated generated mapping")
+                data = source.read(size)
+                if len(data) != size:
+                    raise Violation("truncated generated mapping")
+                remaining -= size
+                return data
+            def integer():
+                return int.from_bytes(take(4), "little")
+            if take(8) != b"VOGEN1\0\0":
+                raise Violation("invalid generated mapping protocol")
+            producer = take(32)
+            count = integer()
+            if not 1 <= count <= self.config["creation_limit"]:
+                raise Violation("generated output count exceeds creation bound")
+            view = next(item["source"] for item in self.config["mounts"] if item["target"] == "/repo")
+            for _ in range(count):
+                length, mode, size = integer(), integer(), integer()
+                if not 1 <= length <= 4096 or mode & ~0o777 or size > self.config["file_limit"]:
+                    raise Violation("invalid generated output declaration")
+                try:
+                    name = take(length).decode("utf-8", "strict")
+                except UnicodeDecodeError as error:
+                    raise Violation("generated output path is not UTF-8") from error
+                if (
+                    name.startswith("/") or "\\" in name
+                    or any(ord(ch) < 32 or ord(ch) == 127 for ch in name)
+                    or any(part in {"", ".", ".."} for part in name.split("/"))
+                ):
+                    raise Violation("generated output path escapes the readonly view")
+                self.written += size
+                if self.written > self.config["write_limit"]:
+                    raise Violation("aggregate generated publication byte budget exhausted")
+                directory = os.open(view, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+                try:
+                    parts = name.split("/")
+                    for part in parts[:-1]:
+                        try:
+                            following = os.open(
+                                part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=directory,
+                            )
+                        except FileNotFoundError:
+                            self.reserve_creation()
+                            os.mkdir(part, 0o755, dir_fd=directory)
+                            following = os.open(
+                                part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=directory,
+                            )
+                        os.close(directory)
+                        directory = following
+                    if name in self.published:
+                        if self.published[name] != producer:
+                            raise Violation("conflicting generated output producers")
+                        os.unlink(parts[-1], dir_fd=directory)
+                    self.reserve_creation()
+                    try:
+                        output = os.open(
+                            parts[-1], os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
+                            0o600, dir_fd=directory,
+                        )
+                    except FileExistsError as error:
+                        raise Violation("generated output conflicts with immutable source") from error
+                    with os.fdopen(output, "wb") as destination:
+                        left = size
+                        while left:
+                            data = take(min(left, SYSCALL_MEMORY_LIMIT))
+                            destination.write(data)
+                            left -= len(data)
+                        os.fchmod(destination.fileno(), mode)
+                    self.published[name] = producer
+                finally:
+                    os.close(directory)
+            if remaining:
+                raise Violation("trailing generated mapping bytes")
 
     def observer(self, state, registers):
         return state.role == "make" and any(
@@ -565,11 +661,16 @@ class Policy:
         state.observations.clear()
         state.observation_needs_bytes = False
         trusted = self.observer(state, r)
-        if n == 39 and a in {VO_READY, VO_DISPATCH, VO_QUERY_KIND}:
+        if n == 39 and a in {VO_READY, VO_DISPATCH, VO_QUERY_KIND, VO_PUBLISH}:
             if a == VO_QUERY_KIND:
                 if state.role != "helper" or state.helper_kind not in {VO_RECIPE, VO_VALUE}:
                     raise Violation("unauthenticated interceptor kind query")
                 state.pending = ("helper_kind", state.helper_kind)
+            elif a == VO_PUBLISH:
+                if state.role != "helper" or state.helper_kind != VO_VALUE or c:
+                    raise Violation("unauthenticated generated output publication")
+                self.publish(b)
+                state.pending = ("helper_kind", 0)
             else:
                 if not trusted:
                     raise Violation("unauthenticated Make dispatch notification")
@@ -680,6 +781,15 @@ class Policy:
                 raise Violation(f"untrusted executable dispatch: {path}")
             if self.mode == "make":
                 if state.bootstrap and path == "/usr/bin/make":
+                    role = "make"
+                    self.make_pid = pid
+                elif (
+                    path == "/usr/bin/make" and trusted and state.observer_ready
+                    and pid == self.make_pid and not state.dispatch
+                ):
+                    self.make_restarts += 1
+                    if self.make_restarts > 64:
+                        raise Violation("Make restart exceeded the existing pass bound")
                     role = "make"
                 elif path == "/control/interceptor" and state.dispatch:
                     role = "helper"
@@ -998,6 +1108,7 @@ def supervise(config, drop_privileges):
                 state.bootstrap = False
                 state.fds = {0: "<stdin>", 1: "<stdout>", 2: "<stderr>"}
                 state.observer_ranges = ()
+                state.observer_ready = False
                 state.memory_reservation = 0
                 state.break_end = 0
                 policy.finish_exec(stopped, state)

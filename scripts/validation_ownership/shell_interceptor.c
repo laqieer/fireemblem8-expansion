@@ -214,6 +214,8 @@ int main(int argc, char **argv)
     close(events);
     if (match == 0)
     {
+        if (syscall(SYS_getpid, VO_PUBLISH, hash, 0))
+            return 125;
         snprintf(path, sizeof(path), "%016llx.out", (unsigned long long)hash);
         mapped = read_file_at(mapping, path, &size);
         if (!mapped || write_all(STDOUT_FILENO, mapped, size))

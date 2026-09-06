@@ -29,7 +29,7 @@ from scripts.validation_ownership.authority import (
 )
 from scripts.validation_ownership.budget import Limits, MakeProbeError, NAMESPACE_LAUNCHER, ProbeBudget
 from scripts.validation_ownership.make_probe import (
-    Command, ProbeSession, TRUSTED_ROOT, _event_command, _make_interpreter, _make_runtime,
+    Command, NativeTool, ProbeSession, TRUSTED_ROOT, _event_command, _make_interpreter, _make_runtime,
     _read_events, _read_observation, _trusted_runtime_bytes, probe_generated_registry,
 )
 
@@ -2079,8 +2079,8 @@ int main(int argc, char **argv) {
                     with session:
                         session.make("all")
                 self.assert_clean(session)
-        from scripts.validation_ownership.syscall_guard import VO_READY, VO_DISPATCH, VO_QUERY_KIND
-        for marker in (VO_READY, VO_DISPATCH, VO_QUERY_KIND):
+        from scripts.validation_ownership.syscall_guard import VO_READY, VO_DISPATCH, VO_QUERY_KIND, VO_PUBLISH
+        for marker in (VO_READY, VO_DISPATCH, VO_QUERY_KIND, VO_PUBLISH):
             with self.subTest(marker=marker):
                 session = self.session()
                 with self.assertRaisesRegex(MakeProbeError, "unauthenticated"):
@@ -3700,6 +3700,473 @@ int main(int argc, char **argv) {
             with self.assertRaisesRegex(MakeProbeError, "sealed native tool changed"):
                 session.native(tool, sources=("data/value",))
         self.assert_clean(session)
+
+    def test_native_registration_feeds_real_repository_scaninc_to_make(self):
+        files = []
+        for path in sorted((ROOT / "tools/scaninc").iterdir()):
+            if path.suffix in {".cpp", ".h"}:
+                name = path.relative_to(ROOT).as_posix()
+                self.add(name, path.read_bytes())
+                files.append(name)
+        self.add("proof.s", '.incbin "proof.bin"\n')
+        command = 'tools/scaninc/scaninc -I include -I "" proof.s'
+        self.add("Makefile", f"INPUTS := $(shell {command})\nall: $(INPUTS)\nproof.bin: ;\n")
+        with self.session() as session:
+            tool = session.compile_native(
+                tuple(path for path in files if path.endswith(".cpp")),
+                headers=tuple(path for path in files if path.endswith(".h")), cxx=True,
+            )
+            registration = Command(
+                ("/native/tool", "-I", "include", "-I", "", "proof.s"),
+                sources=("proof.s",), native_tool=tool,
+            )
+            actual = session.command(registration)
+            self.assertEqual(actual.stdout, b"proof.bin\n")
+            self.assertEqual(actual.consumed, ("proof.s",))
+            observed = session.make("all", variables=("INPUTS",), commands={command: registration})
+            self.assertEqual(observed.semantics["files"][0]["prerequisites"], [
+                {"name": "proof.bin", "order_only": False},
+            ])
+            dynamic, = observed.semantics["dynamic_commands"]
+            self.assertEqual(dynamic["command"]["argv"], list(registration.argv))
+            self.assertEqual(dynamic["command"]["native_tool"], {
+                "sha256": tool.digest, "inputs": session.snapshot.owners(files),
+            })
+            self.assertEqual(dynamic["command"]["inputs"], session.snapshot.owners(("proof.s",)))
+            self.assertEqual(dynamic["output_sha256"], hashlib.sha256(actual.stdout).hexdigest())
+            self.assertTrue(all(event["match"] == 0 for event in observed.events))
+            self.assertFalse((session.tree / "native/tool").exists())
+        self.assert_clean(session)
+
+    def test_native_registration_rejects_missing_forged_foreign_and_wrong_argv(self):
+        self.add("native.c", '#include <stdio.h>\nint main(void) { puts("observed"); }\n')
+        self.add("Makefile", "VALUE := $(shell tools/native;)\nall: ;\n")
+        with self.session() as session:
+            foreign = session.compile_native(("native.c",))
+        self.assert_clean(session)
+        for case in ("missing", "forged", "foreign", "wrong-argv", "changed"):
+            with self.subTest(case=case):
+                session = self.session()
+                with session:
+                    tool = session.compile_native(("native.c",))
+                    argv = ("/native/tool",)
+                    expected = "issued by this exact probe session"
+                    if case == "missing":
+                        tool, expected = None, "supported exact trusted argv"
+                    elif case == "forged":
+                        tool = NativeTool(tool.path, tool.digest, tool.inputs)
+                    elif case == "foreign":
+                        tool = foreign
+                    elif case == "wrong-argv":
+                        argv, expected = ("/usr/bin/printf", "fake"), "exact /native/tool argv"
+                    else:
+                        tool.path.chmod(0o700)
+                        tool.path.write_bytes(b"changed")
+                        expected = "sealed native tool changed"
+                    with self.assertRaisesRegex(MakeProbeError, expected):
+                        session.make("all", commands={"tools/native;": Command(argv, native_tool=tool)})
+                self.assert_clean(session)
+
+    def include_fixture(self, path, *, parse_time=False):
+        self.add("choice.txt", "observed")
+        self.add("producer.py", (
+            "from pathlib import Path\nimport sys\n"
+            "value=Path('choice.txt').read_text().split()[0]\n"
+            "output=Path(sys.argv[1]); output.parent.mkdir(parents=True,exist_ok=True)\n"
+            "output.write_text('SELECTED := '+value+'\\n'+value+': ;\\n')\n"
+        ))
+        names = (
+            "SELECTED", "MAKEFILE_LIST", "MAKE_RESTARTS", "MAKEFLAGS", "MAKEOVERRIDES",
+            "MAKECMDGOALS", "MAKE", "LD_PRELOAD", "VO_OBSERVE_TARGET", "FIRST",
+        )
+        command = f"python3 producer.py {path}"
+        aliases = "".join(
+            f"CTX_{index}_{field} = $({form}{name})\n"
+            for index, name in enumerate(names)
+            for field, form in (("value", ""), ("origin", "origin "), ("flavor", "flavor "))
+        )
+        recipe = " ".join(
+            f"'$(CTX_{index}_{field})'" for index in range(len(names))
+            for field in ("value", "origin", "flavor")
+        )
+        self.add("Makefile", (
+            aliases + "FIRST := $(if $(wildcard " + path + "),present,missing)\n"
+            + (f"$(shell {command})\n" if parse_time else "")
+            + f"include {path}\n{path}: choice.txt\n\t@{command}\n"
+            + f"all: $(SELECTED)\n\t@printf '%s\\n' '$^' {recipe}\n"
+        ))
+        registration = Command(
+            ("/usr/bin/python3", "/repo/producer.py", "/work/" + path),
+            code=("producer.py",), sources=("choice.txt",), outputs=(path,),
+        )
+        return names, command, registration
+
+    def test_generated_include_publication_matches_ordinary_make_restart_context(self):
+        for parse_time, path in ((False, "generated.mk"), (True, "generated/nested.mk")):
+            with self.subTest(parse_time=parse_time):
+                names, command, registration = self.include_fixture(path, parse_time=parse_time)
+                assignments = (("command-line", "A", "one"), ("command-line", "B", "$(A)-two"))
+                normal = self.ordinary_assignment_context(assignments, names)
+                generated = (self.root / path).read_bytes()
+                (self.root / path).unlink()
+                if "/" in path:
+                    (self.root / path).parent.rmdir()
+                with self.session() as session:
+                    output = session.command(registration)
+                    self.assertEqual(output.consumed, ("choice.txt",))
+                    self.assertEqual(output.stdout, b"")
+                    file, = output.generated
+                    self.assertEqual((file.path, file.data, file.mode), (path, generated, 0o644))
+                    identities = []
+                    for _ in range(2):
+                        observed = session.make(
+                            "all", variables=names, assignments=assignments,
+                            commands={command: registration},
+                        )
+                        identities.append(observed.semantic_digest)
+                        self.assertEqual(observed.semantics["domains"], normal[1])
+                        self.assertEqual(observed.semantics["files"][0]["prerequisites"], normal[0])
+                        self.assertEqual(
+                            observed.semantics["domains"]["MAKE_RESTARTS"]["value"],
+                            "" if parse_time else "1",
+                        )
+                        dynamic, = observed.semantics["dynamic_commands"]
+                        self.assertEqual(dynamic["generated_outputs"], [
+                            (path, "100644", hashlib.sha256(generated).hexdigest()),
+                        ])
+                        self.assertIn(dynamic["generated_outputs"][0], observed.semantics["owner_inputs"])
+                        self.assertFalse((session.tree / path).exists())
+                        if "/" in path:
+                            self.assertFalse((session.tree / path).parent.exists())
+                    self.assertEqual(identities[0], identities[1])
+                self.assert_clean(session)
+
+    def test_generated_native_output_uses_the_same_command_and_mapping_seam(self):
+        self.add("native.c", (
+            "#include <stdio.h>\nint main(void) { FILE *out=fopen(\"/work/generated.mk\",\"wb\");"
+            'if(!out) return 1; fputs("SELECTED := observed\\n",out); return fclose(out); }\n'
+        ))
+        self.add("Makefile", (
+            "include generated.mk\ngenerated.mk:\n\t@tools/native;\nall: $(SELECTED)\nobserved: ;\n"
+        ))
+        with self.session() as session:
+            tool = session.compile_native(("native.c",))
+            output = session.native(tool, outputs=("generated.mk",))
+            self.assertEqual(output.generated[0].data, b"SELECTED := observed\n")
+            observed = session.make("all", variables=("MAKE_RESTARTS",), commands={
+                "tools/native;": Command(("/native/tool",), native_tool=tool, outputs=("generated.mk",)),
+            })
+            self.assertEqual(observed.semantics["files"][0]["prerequisites"], [
+                {"name": "observed", "order_only": False},
+            ])
+            self.assertEqual(observed.semantics["domains"]["MAKE_RESTARTS"]["value"], "1")
+        self.assert_clean(session)
+
+    def test_generated_output_declarations_and_capture_fail_closed(self):
+        self.add("Makefile", "all: ;\n")
+        self.add("source/data", "immutable")
+        for paths in (
+            ("../escape",), ("/outside",), ("a/../escape",), ("source",), ("source/data",),
+            ("Makefile/child",), ("same", "same"), ("a", "a-b", "a/child"),
+        ):
+            with self.subTest(paths=paths):
+                with self.session() as session:
+                    runs = session.budget.runs
+                    with self.assertRaisesRegex(MakeProbeError, "path|conflict"):
+                        session.command(Command(("/usr/bin/printf", ""), outputs=paths))
+                    self.assertEqual(session.budget.runs, runs)
+                self.assert_clean(session)
+        write = "from pathlib import Path\nPath('/work/generated.mk').write_bytes(b'value')\n"
+        for case, code, limits, expected in (
+            ("missing", "pass", {}, "missing declared"),
+            ("extra", write + "Path('/work/extra').write_text('extra')", {}, "undeclared"),
+            ("extra-dir", write + "Path('/work/extra').mkdir()", {}, "undeclared"),
+            ("directory", "import os; os.mkdir('/work/generated.mk')", {}, "nonregular"),
+            ("symlink", "import os; os.symlink('/repo/Makefile','/work/generated.mk')", {}, "symlink"),
+            ("write-source", "open('/repo/Makefile','w').write('changed')", {}, "write outside"),
+            ("escape", "open('/work/../repo/Makefile','w').write('changed')", {}, "write outside"),
+            ("output-bytes", write, {"output_bytes": 1024*1024}, "output byte"),
+            ("file-bytes", "open('/work/generated.mk','wb').write(b'x'*(3*1024*1024+1))",
+             {"file_bytes": 3*1024*1024}, "signal|unsuccessfully"),
+        ):
+            with self.subTest(case=case):
+                session = self.session(**limits)
+                with session:
+                    if case == "output-bytes":
+                        session.budget.charge(
+                            "output", session.budget.limits.output_bytes - session.budget.bytes.get("output", 0),
+                        )
+                    with self.assertRaisesRegex(MakeProbeError, expected):
+                        session.command(Command(("/usr/bin/python3", "-c", code), outputs=("generated.mk",)))
+                self.assertEqual((self.root / "Makefile").read_text(), "all: ;\n")
+                self.assert_clean(session)
+
+    def test_generated_publication_conflicts_and_resource_charges_are_aggregate(self):
+        for case in ("conflict", "creation", "mapping"):
+            with self.subTest(case=case):
+                self.add("Makefile", "A := $(shell tools/first;)\nB := $(shell tools/second;)\nall: ;\n")
+                code = "open('/work/generated.mk','w').write('value')"
+                commands = {
+                    "tools/first;": Command(("/usr/bin/python3", "-c", code), outputs=("generated.mk",)),
+                    "tools/second;": Command(("/usr/bin/python3", "-c", code + "\npass"), outputs=("generated.mk",)),
+                }
+                limits = {"created_files": 2} if case == "creation" else {"mapping_bytes": 128} if case == "mapping" else {}
+                session = self.session(**limits)
+                with self.assertRaisesRegex(MakeProbeError, {
+                    "conflict": "conflicting generated", "creation": "creation bound|creation budget",
+                    "mapping": "mapping byte",
+                }[case]):
+                    with session:
+                        session.make("all", commands=commands)
+                self.assert_clean(session)
+
+    def test_generated_discarded_outputs_do_not_enter_final_owner_identity(self):
+        chosen, discarded = "python3 choose.py", "python3 producer.py"
+        self.add("choice.txt", "observed first")
+        self.add("choose.py", "print(open('choice.txt').read().split()[0])\n")
+        self.add("discarded.txt", "first")
+        self.add("producer.py", (
+            "from pathlib import Path\nPath('/work/generated').mkdir()\n"
+            "Path('/work/generated/discarded.mk').write_text(open('discarded.txt').read())\n"
+        ))
+        self.add("Makefile", (
+            f"SELECT := $(shell {chosen})\nifeq ($(SELECT),)\n"
+            f"UNUSED := $(shell {discarded})\nendif\nall: $(SELECT)\nobserved: ;\n"
+        ))
+        commands = {
+            chosen: Command(("/usr/bin/python3", "/repo/choose.py"),
+                            code=("choose.py",), sources=("choice.txt",)),
+            discarded: Command(
+                ("/usr/bin/python3", "/repo/producer.py"), code=("producer.py",),
+                sources=("discarded.txt",), outputs=("generated/discarded.mk",),
+            ),
+        }
+        results = []
+        for name, data in (
+            (None, None), ("discarded.txt", "second"),
+            ("producer.py", "from pathlib import Path\nPath('/work/generated').mkdir()\n"
+             "Path('/work/generated/discarded.mk').write_text(open('discarded.txt').read().upper())\n"),
+            ("choice.txt", "observed second"),
+        ):
+            with self.subTest(mutation=name):
+                if name:
+                    self.add(name, data)
+                with self.session() as session:
+                    result = session.make("all", commands=commands, owner_inputs=("Makefile",))
+                    results.append(result)
+                    self.assertEqual([_event_command(event) for event in result.events], [chosen])
+                    dynamic, = result.semantics["dynamic_commands"]
+                    self.assertNotIn("generated_outputs", dynamic)
+                    self.assertTrue(any(output.generated for output in session.cache.values()))
+                    self.assertGreater(session.files_created, 0)
+                    self.assertFalse((session.tree / "generated").exists())
+                self.assert_clean(session)
+        self.assertEqual(len({result.semantic_digest for result in results[:3]}), 1)
+        self.assertNotEqual(results[2].semantic_digest, results[3].semantic_digest)
+
+    def test_generated_sources_and_bytes_change_selected_identity_not_native_context(self):
+        names, command, registration = self.include_fixture("generated.mk")
+        results, contents = [], []
+        for name, data in (
+            (None, None), ("choice.txt", "observed new-source"),
+            ("producer.py", (self.root / "producer.py").read_text()
+             + "with output.open('a') as stream: stream.write('# changed generated bytes\\n')\n"),
+        ):
+            with self.subTest(mutation=name):
+                if name:
+                    self.add(name, data)
+                normal = self.ordinary_assignment_context((), names)
+                contents.append((self.root / "generated.mk").read_bytes())
+                (self.root / "generated.mk").unlink()
+                with self.session() as session:
+                    result = session.make("all", variables=names, commands={command: registration})
+                    results.append(result)
+                    self.assertEqual(result.semantics["domains"], normal[1])
+                    self.assertEqual(result.semantics["files"][0]["prerequisites"], normal[0])
+                self.assert_clean(session)
+        self.assertEqual(contents[0], contents[1])
+        self.assertNotEqual(contents[1], contents[2])
+        self.assertEqual(len({result.semantic_digest for result in results}), 3)
+        self.assertEqual(results[0].semantics["domains"], results[2].semantics["domains"])
+
+    def test_native_registration_identity_uses_only_final_tool_and_build_sources(self):
+        self.add("chosen.c", '#include <stdio.h>\nint main(void) { puts("observed"); }\n')
+        self.add("discarded.c", '#include <stdio.h>\nint main(void) { puts("unused"); }\n')
+        self.add("Makefile", (
+            "SELECT := $(shell tools/chosen;)\nifeq ($(SELECT),)\n"
+            "UNUSED := $(shell tools/discarded;)\nendif\nall: $(SELECT)\nobserved: ;\n"
+        ))
+        results, binaries = [], []
+        for name in (None, "discarded.c", "chosen.c"):
+            if name:
+                self.add(name, (self.root / name).read_text() + "/* build-input change */\n")
+            with self.session() as session:
+                chosen = session.compile_native(("chosen.c",))
+                discarded = session.compile_native(("discarded.c",))
+                binaries.append(chosen.digest)
+                result = session.make("all", commands={
+                    "tools/chosen;": Command(("/native/tool",), native_tool=chosen),
+                    "tools/discarded;": Command(("/native/tool",), native_tool=discarded),
+                })
+                results.append(result)
+                dynamic, = result.semantics["dynamic_commands"]
+                self.assertEqual(dynamic["command"]["native_tool"]["inputs"], list(chosen.inputs))
+                self.assertEqual([_event_command(event) for event in result.events], ["tools/chosen;"])
+                self.assertTrue(any(output.stdout == b"unused\n" for output in session.cache.values()))
+            self.assert_clean(session)
+        self.assertEqual(len(set(binaries)), 1)
+        self.assertEqual(results[0].semantic_digest, results[1].semantic_digest)
+        self.assertNotEqual(results[1].semantic_digest, results[2].semantic_digest)
+
+    def test_generated_commands_still_require_complete_source_and_registration_authority(self):
+        for case in ("missing-registration", "unused-source", "undeclared-source", "symlink-source"):
+            with self.subTest(case=case):
+                _, command, registration = self.include_fixture("generated.mk")
+                if case == "unused-source":
+                    self.add("unused.txt", "not consumed")
+                    registration = replace(registration, sources=("choice.txt", "unused.txt"))
+                elif case == "undeclared-source":
+                    registration = replace(registration, sources=())
+                elif case == "symlink-source":
+                    registration = replace(registration, outputs=("link/generated.mk",))
+                    (self.root / "link").symlink_to("source")
+                    self.entries["link"] = GitTreeEntry("link", "120000", "blob", "0"*40)
+                session = self.session()
+                with self.assertRaisesRegex(MakeProbeError, {
+                    "missing-registration": "unregistered eager/recursive",
+                    "unused-source": "declared/consumed", "undeclared-source": "undeclared source",
+                    "symlink-source": "conflicts with immutable",
+                }[case]):
+                    with session:
+                        session.make("all", commands={} if case == "missing-registration" else {command: registration})
+                self.assert_clean(session)
+
+    def test_generated_publication_bytes_cache_and_interruption_share_owned_cleanup(self):
+        for case in ("cache", "publication", "interrupt"):
+            with self.subTest(case=case):
+                _, command, registration = self.include_fixture("generated/nested.mk")
+                if case in {"cache", "publication"}:
+                    self.add("producer.py", (
+                        "from pathlib import Path\nimport sys\nopen('choice.txt').read()\n"
+                        "out=Path(sys.argv[1]); out.parent.mkdir(parents=True,exist_ok=True)\n"
+                        "out.write_bytes(b' '*(3*1024*1024))\n"
+                    ))
+                limits = (
+                    {"cache_bytes": 1024} if case == "cache" else
+                    {"sandbox_bytes": 3*1024*1024+1024} if case == "publication" else {}
+                )
+                session = self.session(**limits)
+                with session:
+                    run = session._sandbox_run
+                    def interrupt_after_publication(root, **kwargs):
+                        result = run(root, **kwargs)
+                        if kwargs["mode"] == "make" and (session.tree / "generated/nested.mk").is_file():
+                            os.kill(os.getpid(), signal.SIGTERM)
+                        return result
+                    with patch.object(session, "_sandbox_run", interrupt_after_publication if case == "interrupt" else run):
+                        with self.assertRaisesRegex(
+                            KeyboardInterrupt if case == "interrupt" else MakeProbeError,
+                            {"cache": "cache byte", "publication": "sandbox byte|publication byte", "interrupt": "interrupted"}[case],
+                        ):
+                            session.make("all", commands={command: registration})
+                    if case == "publication":
+                        self.assertTrue(any(
+                            output.generated and len(output.generated[0].data) == 3*1024*1024
+                            for output in session.cache.values()
+                        ))
+                    self.assertFalse((session.tree / "generated").exists())
+                    self.assertFalse(list(session.base.glob("make-root-*")))
+                    self.assertFalse(list(session.base.glob("control-*")))
+                self.assert_clean(session)
+
+    def test_generated_chained_remakes_preserve_two_native_restarts(self):
+        names = ("SELECTED", "MAKEFILE_LIST", "MAKE_RESTARTS")
+        recipe = " ".join(
+            f"'$({form}{name})'" for name in names for form in ("", "origin ", "flavor ")
+        )
+        self.add("first.in", "include second.mk\n")
+        self.add("second.in", "SELECTED := observed\nobserved: ;\n")
+        self.add("producer.py", "import sys\nopen(sys.argv[2],'wb').write(open(sys.argv[1],'rb').read())\n")
+        self.add("Makefile", (
+            "include first.mk\nfirst.mk: first.in\n\t@python3 producer.py first.in first.mk\n"
+            "second.mk: second.in\n\t@python3 producer.py second.in second.mk\n"
+            + f"all: $(SELECTED)\n\t@printf '%s\\n' '$^' {recipe}\n"
+        ))
+        normal = self.ordinary_assignment_context((), names)
+        for name in ("first.mk", "second.mk"):
+            (self.root / name).unlink()
+        with self.session() as session:
+            commands = {
+                f"python3 producer.py {name}.in {name}.mk": Command(
+                    ("/usr/bin/python3", "/repo/producer.py", name + ".in", "/work/" + name + ".mk"),
+                    code=("producer.py",), sources=(name + ".in",), outputs=(name + ".mk",),
+                ) for name in ("first", "second")
+            }
+            result = session.make("all", variables=names, commands=commands)
+            self.assertEqual(result.semantics["domains"], normal[1])
+            self.assertEqual(result.semantics["files"][0]["prerequisites"], normal[0])
+            self.assertEqual(result.semantics["domains"]["MAKE_RESTARTS"]["value"], "2")
+            self.assertEqual({_event_command(event) for event in result.events}, set(commands))
+            self.assertEqual(len(result.semantics["dynamic_commands"]), 2)
+        self.assert_clean(session)
+
+    def test_generated_multi_output_aliases_share_captured_bytes_and_identity(self):
+        self.add("producer.py", (
+            "from pathlib import Path\nimport os,sys\nroot=Path(sys.argv[1])\n"
+            "(root/'generated.mk').write_text('SELECTED := observed\\nobserved: ;\\n')\n"
+            "binary=root/'proof.bin'; binary.unlink(missing_ok=True)\n"
+            "with binary.open('wb') as out:\n out.write(b'\\x00\\xffproof'); os.fchmod(out.fileno(),0o444)\n"
+        ))
+        direct = "python3 producer.py ."
+        alias = direct + "; printf ''"
+        self.add("Makefile", (
+            f"FIRST := $(shell {direct})\nSECOND := $(shell {alias})\n"
+            "include generated.mk\nall: $(SELECTED) proof.bin\n\t@printf '%s\\n' '$^'\n"
+        ))
+        normal = self.ordinary_assignment_context((), ())
+        for name in ("generated.mk", "proof.bin"):
+            (self.root / name).unlink()
+        command = Command(
+            ("/usr/bin/python3", "/repo/producer.py", "/work"), code=("producer.py",),
+            outputs=("generated.mk", "proof.bin"),
+        )
+        with self.session() as session:
+            output = session.command(command)
+            binary = next(item for item in output.generated if item.path == "proof.bin")
+            self.assertEqual((binary.data, binary.mode), (b"\0\xffproof", 0o444))
+            result = session.make("all", commands={
+                direct: command, alias: replace(command, outputs=tuple(reversed(command.outputs))),
+            })
+            self.assertEqual(result.semantics["files"][0]["prerequisites"], normal[0])
+            self.assertEqual(len(result.events), 2)
+            dynamic, = result.semantics["dynamic_commands"]
+            self.assertEqual(dynamic["generated_outputs"], [
+                (item.path, f"{stat.S_IFREG | item.mode:06o}", hashlib.sha256(item.data).hexdigest())
+                for item in output.generated
+            ])
+            self.assertFalse((session.tree / "generated.mk").exists())
+            self.assertFalse((session.tree / "proof.bin").exists())
+        self.assert_clean(session)
+
+    def test_generated_includes_cannot_acquire_channels_after_native_restart(self):
+        for expression in (
+            "$(file >/control/result,forged)", "$(file >/repo/Makefile,changed)",
+            "$(file </control/map/count)", "load /lib/vo-observer.so",
+        ):
+            with self.subTest(expression=expression):
+                self.add("payload.txt", expression + "\nSELECTED := observed\n")
+                self.add("producer.py", "open('/work/generated.mk','wb').write(open('payload.txt','rb').read())\n")
+                makefile = "include generated.mk\ngenerated.mk:\n\t@python3 producer.py\nall: $(SELECTED)\nobserved: ;\n"
+                self.add("Makefile", makefile)
+                session = self.session()
+                with self.assertRaises(MakeProbeError):
+                    with session:
+                        session.make("all", commands={"python3 producer.py": Command(
+                            ("/usr/bin/python3", "/repo/producer.py"), code=("producer.py",),
+                            sources=("payload.txt",), outputs=("generated.mk",),
+                        )})
+                self.assertEqual((self.root / "Makefile").read_text(), makefile)
+                self.assert_clean(session)
 
     def test_native_candidate_cannot_write_channels_or_read_inherited_fds(self):
         for operation in (
