@@ -1132,6 +1132,16 @@ by another thread and dispatched on the main thread. Original caller handlers
 and masks are restored; protected Python children restore their original mask
 before running trusted code. Probe and Git-read processes also have an owner
 through their launch-to-collection handoff.
+The isolated launcher's pre-runtime Git bootstrap has the same ownership
+boundary implemented using only the already trusted launcher and stdlib:
+it cannot import a repository lifecycle helper before proving those bytes.
+Constructor-return SIGINT, output-descriptor/deadline setup, collection and
+nonzero-exit failures all reap their owned child and close its pipe streams.
+A process-group `ProcessLookupError` after exit does not skip the wait.
+Other cleanup errors are chained behind the original failure, never substituted
+for a timeout/output-limit error. Already reaped/unowned PIDs are not signaled
+or waited again; a still-owned live child remains terminable by its reserved
+PID if the group is unavailable.
 
 Cancellation closes the owned liveness writer, gives the guardian its bounded
 cleanup interval, then terminates and reaps only its still-owned child if

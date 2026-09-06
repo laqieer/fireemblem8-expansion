@@ -1715,6 +1715,9 @@ privileges. Every observed/signaled process is created and reaped by the test.
      scripts.workflow_pilot.tests.test_event_classifier -v
    ```
 
+   Also run the pre-runtime Git bootstrap lifecycle controls:
+   `/usr/bin/python3 -m unittest scripts.workflow_pilot.tests.test_isolated_bootstrap -v`.
+
 3. Observe the real isolated `classify-event` entrypoint and actual production
    classifier over the existing event fixture. Their decisions and GitHub
    output keys remain unchanged. A nested checker invokes its assertion over
@@ -1801,6 +1804,13 @@ privileges. Every observed/signaled process is created and reaped by the test.
    interruption cleanup must leave that replacement intact. Reaped/unowned
    PID controls must never receive signals or waits. A real owned worker
    lacking its own process group must still be killed and reaped safely.
+   Apply the constructor-return SIGINT and setup controls to the isolated
+   launcher's real Git bootstrap too. Force its actual timeout/output limit
+   while the owned Git process exits, then inject `ProcessLookupError` or a
+   secondary group-signal failure. The original failure must survive, with a
+   recorded child exit and closed streams before tester cleanup. A vanished
+   group must not prevent termination of a still-owned live child; an already
+   reaped child must not cause any new group/PID signal or wait.
    Disable both pidfd APIs, observe four live outer
    and nested guardian/worker generations, then kill the owned parent.
    `waitid(WNOWAIT)` must acknowledge adopted-child exits before reaping;
@@ -1972,6 +1982,12 @@ exit but did not reap it. The regression inspects these states before any
 tester cleanup; a test that merely injects from `selector.select()` cannot
 cover that earlier gap. Collector setup failures and nested handoff errors
 now use the same already-active owner, with no admitted partial receipt.
+The isolated launcher retained a separate pre-runtime gap: constructor SIGINT
+left a waitable Git child and two open pipe streams. A group-disappearance
+fault after a real owned exit also replaced the original timeout with
+`ProcessLookupError` and skipped reaping. Those controls now run against the
+actual bootstrap, including cleanup-error chaining and already-reaped PID
+negatives, without importing unproven repository helper paths.
 
 The host-admission regression preserves completed Build `33995240775`, job
 `101384581761`, reporter step 10: 218 tests produced 84 failures and 85 errors,

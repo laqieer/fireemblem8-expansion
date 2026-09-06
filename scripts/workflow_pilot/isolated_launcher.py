@@ -4,8 +4,14 @@
 from __future__ import annotations
 
 import os
+import selectors
+import signal
+import subprocess
 import sys
+import threading
+import time
 import unittest
+from contextlib import contextmanager
 from pathlib import Path
 
 
@@ -23,13 +29,149 @@ MODES = frozenset(
 LIFECYCLE_CHECKS = frozenset({"workflow-pilot-reporter", "workflow-pilot-tests"})
 
 
+@contextmanager
+def _bootstrap_signal_guard():
+    previous = signal.pthread_sigmask(signal.SIG_BLOCK, ())
+    missing, handlers, pending = object(), {}, {}
+    try:
+        handlers = {number: signal.getsignal(number) for number in signal.valid_signals()
+                    if callable(signal.getsignal(number))}
+        signal.pthread_sigmask(signal.SIG_BLOCK, handlers)
+        if threading.current_thread() is threading.main_thread():
+            pending = dict.fromkeys(handlers, missing)
+
+            def defer(number, frame):
+                pending[number] = frame
+
+            for number in handlers:
+                signal.signal(number, defer)
+        yield
+    finally:
+        if pending:
+            for number, handler in handlers.items():
+                signal.signal(number, handler)
+        signal.pthread_sigmask(signal.SIG_SETMASK, previous)
+        for number, frame in pending.items():
+            if frame is not missing:
+                handlers[number](number, frame)
+
+
+class _BootstrapGitChild:
+    """The trusted launcher cannot import the capsule owner before proving its Git bytes."""
+
+    def __init__(self):
+        self.process = None
+        self.active = False
+
+    def __enter__(self):
+        if not all(callable(getattr(signal, name, None)) for name in
+                   ("pthread_sigmask", "valid_signals", "getsignal", "signal")):
+            raise ValueError("sealed Git bootstrap requires POSIX signal supervision")
+        if not callable(getattr(os, "waitid", None)) or not hasattr(os, "WNOWAIT"):
+            raise ValueError("sealed Git bootstrap requires owned-child exit observation")
+        self.active = True
+        return self
+
+    def start(self, command, environment):
+        if not self.active or self.process is not None:
+            raise ValueError("Git bootstrap launch requires its active single owner")
+        with _bootstrap_signal_guard():
+            self.process = subprocess.Popen(
+                command, env=environment, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE, close_fds=True, start_new_session=True)
+        return self.process
+
+    def owns_child(self):
+        if self.process is None or self.process.returncode is not None:
+            return False
+        try:
+            os.waitid(os.P_PID, self.process.pid, os.WEXITED | os.WNOHANG | os.WNOWAIT)
+        except ChildProcessError:
+            return False
+        return True
+
+    def close(self):
+        process, failure = self.process, None
+        if process is None:
+            self.active = False
+            return
+        try:
+            if self.owns_child():
+                try:
+                    os.killpg(process.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+                except BaseException as error:
+                    failure = error
+                finally:
+                    if self.owns_child():
+                        try:
+                            process.wait(timeout=3)
+                        except subprocess.TimeoutExpired:
+                            if self.owns_child():
+                                try:
+                                    os.kill(process.pid, signal.SIGKILL)
+                                except ProcessLookupError:
+                                    pass
+                                finally:
+                                    if self.owns_child():
+                                        process.wait()
+        except BaseException as error:
+            if failure is None:
+                failure = error
+        finally:
+            for stream in (process.stdout, process.stderr):
+                if stream is not None and not stream.closed:
+                    try:
+                        stream.close()
+                    except BaseException as error:
+                        if failure is None:
+                            failure = error
+            self.active = False
+        if failure is not None:
+            raise failure
+
+    def __exit__(self, kind, value, traceback):
+        try:
+            with _bootstrap_signal_guard():
+                self.close()
+        except BaseException as cleanup_error:
+            if value is not None:
+                raise value.with_traceback(traceback) from cleanup_error
+            raise
+
+
+def _bootstrap_git(root, environment, *args, bound=2 * 1024 * 1024):
+    with _BootstrapGitChild() as owner:
+        process = owner.start(
+            ["/usr/bin/git", "--no-replace-objects", "-c", "core.fsmonitor=false",
+             "-C", str(root), *args], environment)
+        result = {process.stdout.fileno(): bytearray(), process.stderr.fileno(): bytearray()}
+        deadline = time.monotonic() + 15
+        with selectors.DefaultSelector() as selector:
+            for fd in result:
+                selector.register(fd, selectors.EVENT_READ)
+            while selector.get_map():
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise ValueError("sealed classifier Git bootstrap timed out")
+                for ready, _ in selector.select(remaining):
+                    raw = os.read(ready.fd, 65536)
+                    if not raw:
+                        selector.unregister(ready.fd)
+                    result[ready.fd].extend(raw)
+                    if len(result[ready.fd]) > bound:
+                        raise ValueError("sealed classifier Git bootstrap exceeds bound")
+        if process.returncode is None and not owner.owns_child():
+            raise ValueError("sealed classifier Git bootstrap lost child ownership")
+        if process.wait(timeout=max(0.001, deadline - time.monotonic())):
+            raise ValueError("sealed classifier requires locally available exact Git authority")
+        return bytes(result[process.stdout.fileno()])
+
+
 def run_sealed_classifier(arguments: list[str]) -> int:
     """Bootstrap the capsule runtime from Git bytes, not a validated pathname."""
     import hashlib
-    import selectors
-    import signal
-    import subprocess
-    import time
     import types
 
     environment = {
@@ -45,40 +187,7 @@ def run_sealed_classifier(arguments: list[str]) -> int:
     }
 
     def git(*args, bound=2 * 1024 * 1024):
-        process = subprocess.Popen(
-            ["/usr/bin/git", "--no-replace-objects", "-c", "core.fsmonitor=false",
-             "-C", str(ROOT), *args],
-            env=environment, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE, close_fds=True, start_new_session=True,
-        )
-        result = {process.stdout.fileno(): bytearray(), process.stderr.fileno(): bytearray()}
-        deadline = time.monotonic() + 15
-        try:
-            with selectors.DefaultSelector() as selector:
-                for fd in result:
-                    selector.register(fd, selectors.EVENT_READ)
-                while selector.get_map():
-                    remaining = deadline - time.monotonic()
-                    if remaining <= 0:
-                        raise ValueError("sealed classifier Git bootstrap timed out")
-                    for ready, _ in selector.select(remaining):
-                        raw = os.read(ready.fd, 65536)
-                        if not raw:
-                            selector.unregister(ready.fd)
-                        result[ready.fd].extend(raw)
-                        if len(result[ready.fd]) > bound:
-                            raise ValueError("sealed classifier Git bootstrap exceeds bound")
-            if process.wait(timeout=max(0.001, deadline - time.monotonic())):
-                raise ValueError("sealed classifier requires locally available exact Git authority")
-            return bytes(result[process.stdout.fileno()])
-        except BaseException:
-            if process.returncode is None:
-                os.killpg(process.pid, signal.SIGKILL)
-                process.wait()
-            raise
-        finally:
-            process.stdout.close()
-            process.stderr.close()
+        return _bootstrap_git(ROOT, environment, *args, bound=bound)
 
     def object_bytes(kind, oid):
         if len(oid) != 40 or any(c not in "0123456789abcdef" for c in oid):

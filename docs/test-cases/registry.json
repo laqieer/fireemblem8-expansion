@@ -2196,6 +2196,10 @@
         {
           "command": "/usr/bin/python3 -m unittest scripts.workflow_pilot.tests.test_sealed_capsule scripts.workflow_pilot.tests.test_event_classifier -v",
           "evidence": "scripts/workflow_pilot/tests/test_sealed_capsule.py"
+        },
+        {
+          "command": "/usr/bin/python3 -m unittest scripts.workflow_pilot.tests.test_isolated_bootstrap -v",
+          "evidence": "scripts/workflow_pilot/tests/test_isolated_bootstrap.py"
         }
       ]
     },
