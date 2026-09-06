@@ -268,6 +268,10 @@ a second active reviewer on the same PR; another PR does not permit duplicate
 active review of the same candidate head. Only work with both a different
 repository/PR identity and a different head remains independent. Completion
 releases both exclusions for a subsequent bounded session.
+`begin` requires `runtime.start` to return a nonblank string task identity,
+preserved unchanged. Missing, blank or wrong-type handles unwind the attempted
+reservation before any lease or local report can be created; a later valid
+acquisition remains possible.
 `advance` rejects while a lease is active, including after its deadline or
 a stop acknowledgment without terminal evidence. The existing observed
 completion/timeout/abort path must release it first. Subsequent head changes
@@ -368,7 +372,10 @@ The shipped unrelated subject uses are:
   the cross geometry.
   Separate
   enabled/disabled native reference and ARM object symbol/section checks
-  establish the resource boundary. The modern linker gate passes its resolved
+  establish the resource boundary. Each enabled core/reference object must
+  contain a nonempty `ewram_data` section; an absent placement is not zero
+  budget usage. The aggregate 128-byte EWRAM and 8-KiB text limits and disabled
+  symbol omission remain required. The modern linker gate passes its resolved
   `MODERN_CC`, `MODERN_NM` and `MODERN_SIZE` paths, including
   `MODERN_TOOLCHAIN_ROOT` and explicit compiler overrides, to the workers.
   Direct coordinator calls use the same environment settings or the closed

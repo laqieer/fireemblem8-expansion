@@ -164,7 +164,12 @@ the consumers' independent protected-principal/deployment requirements.
    target: its own selector must fail on geometry, then pass restored source.
    Enabled and disabled reference drivers and ARM object
    symbols/sections pass in their respective profiles, including formatting-only
-   source changes. Remove the real AI_NEVER rejection in an owned
+   source changes. Remove EWRAM placement from the core, reference, then both
+   in owned source revisions. Inspect the real compiled objects: each missing
+   section must reject the enabled ARM member even though total EWRAM is
+   below budget. Restored enabled placement, aggregate EWRAM/text budgets and
+   the supported disabled omission remain good.
+   Remove the real AI_NEVER rejection in an owned
    origin commit; the same probe fails before and passes restored source.
    Compile and read the actual header's phase/shape enum values. Original and
    equivalent explicitly valued/reordered declarations retain the same
@@ -235,7 +240,12 @@ the consumers' independent protected-principal/deployment requirements.
    Genuine executor failures retain their kind, while a worker exiting before
    any result has `kind: null`; unavailable rows always have zero checks.
 7. Exercise the existing task adapter's bounded read-only role and actual
-   returned task metadata. Denied mutation operations never reach the bound
+   returned task metadata. Make `runtime.start` return None, empty/whitespace
+   strings, Booleans, numbers, bytes and containers. Each must reject before
+   lease creation without retaining its reservation or admitting a local
+   finding. Retry with a valid opaque string ID: preserve it unchanged,
+   complete the review and allow subsequent acquisition.
+   Denied mutation operations never reach the bound
    tool; duplicate/overlapping owners, wrong/stale/incomplete task results and
    excessive duration reject. This proves the operational interface, not
    same-UID OS containment or that a synthetic test launched a live agent.

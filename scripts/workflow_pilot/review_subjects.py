@@ -318,10 +318,15 @@ def _arm(enabled: bool) -> dict:
         check("sItemRoutes" not in entries, "core retained an always-live route registry")
         check("sItemDispatchActive" in entries and entries["sItemDispatchActive"] <= 4,
               "dispatch reentrancy state budget violated")
-        sections = command([os.environ["MODERN_SIZE"], "-A", *objects]).decode()
-        sizes = [int(item) for item in re.findall(r"^ewram_data\s+(\d+)", sections, re.M)]
+        sizes, text = [], []
+        for obj in objects:
+            sections = command([os.environ["MODERN_SIZE"], "-A", obj]).decode()
+            ewram = [int(item) for item in re.findall(r"^ewram_data\s+(\d+)", sections, re.M)]
+            check(len(ewram) == 1 and ewram[0] > 0,
+                  "enabled AoE object lacks EWRAM placement: " + obj)
+            sizes.extend(ewram)
+            text.extend(int(item) for item in re.findall(r"^\.text\s+(\d+)", sections, re.M))
         check(sum(sizes) <= 128, "AoE EWRAM budget exceeded")
-        text = [int(item) for item in re.findall(r"^\.text\s+(\d+)", sections, re.M)]
         check(sum(text) <= 8 * 1024, "AoE text budget exceeded")
     return {"kind": "arm-object", "checks": len(objects),
             "detail": "AAPCS object symbols/sections checked; not target-ROM execution"}

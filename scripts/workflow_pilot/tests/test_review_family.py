@@ -239,6 +239,49 @@ class RoleTests(unittest.TestCase):
         self.assertEqual(self.session.lease.outcome, "timed-out")
         self.assertIsNone(self.session.report)
 
+    def test_invalid_started_task_identity_unwinds_without_admitting_a_local_report(self):
+        for task in (None, "", " \t\n", False, True, 0, 1, 1.0,
+                     b"task", [], ["task"], {}, {"task": "id"}, ("task",)):
+            with self.subTest(task=task):
+                owners = model.ReviewOwnership()
+                identity = ("owner/repo", 1, "a" * 40)
+                session = model.ReviewSession(
+                    "coordinator", "implementer", self.scope, "b" * 40,
+                    identity=identity, owners=owners, clock=lambda: self.time)
+                runtime = Runtime(session.head, session.scope)
+                runtime.result.task = task
+                finding = model.Finding(
+                    "finding", next(iter(self.scope)), "wire", "validators:review-session",
+                    session.head, "scripts/workflow_pilot/review_family.py", "local:" + str(task))
+                runtime.result.findings = (finding,)
+                try:
+                    session.begin(runtime, "reviewer")
+                except model.ReviewError:
+                    pass
+                else:
+                    session.finish(runtime)
+                    session.triage_local(finding.id, accepted=True, reason="Returned task finding")
+                    self.fail("invalid task identity admitted " + repr(session.accepted[finding.id].review_id))
+                self.assertEqual([call[0] for call in runtime.calls], ["start"])
+                self.assertIsNone(session.lease)
+                self.assertIsNone(session.report)
+                self.assertEqual(session.accepted, {})
+                self.assertEqual(owners.records, {})
+                actual_task = "actual-runtime-task:42 "
+                runtime.result.task = actual_task
+                runtime.result.findings = (replace(finding, review_id="local:" + actual_task),)
+                self.assertEqual(session.begin(runtime, "reviewer"), actual_task)
+                self.assertEqual(session.lease.task, actual_task)
+                self.assertEqual(session.finish(runtime).task, actual_task)
+                session.triage_local(finding.id, accepted=True, reason="Actual task finding")
+                session.validate_local_triage()
+                fresh = model.ReviewSession(
+                    "coordinator", "next-implementer", self.scope, session.head,
+                    identity=identity, owners=owners)
+                replacement = Runtime(fresh.head, fresh.scope)
+                fresh.begin(replacement, "reviewer")
+                fresh.finish(replacement)
+
     def owned_runtime(self, *, completed):
         self.time = 0
         owners = model.ReviewOwnership()

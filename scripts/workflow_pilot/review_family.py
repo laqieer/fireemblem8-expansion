@@ -389,7 +389,7 @@ class RoundState:
 
 @dataclass
 class ReviewLease:
-    task: Any
+    task: str
     owner: str
     head: str
     scope: frozenset[str]
@@ -474,6 +474,8 @@ class ReviewSession:
                 subjects=tuple(sorted(self.scope)), actions=tuple(sorted(READ_ACTIONS)),
                 duration=duration, max_files=max_files, max_findings=MAX_FINDINGS,
             )
+            require(isinstance(task, str) and bool(task.strip()),
+                    "runtime task identity must be a nonblank string")
         except Exception:
             if self.owners is not None:
                 self.owners.records.pop(id(self), None)
