@@ -376,6 +376,106 @@ class GateTests(unittest.TestCase):
         self.assertFalse(duplicate["merge_eligible"])
         self.assertIn("duplicate-full-run", duplicate["missing"])
 
+    def test_queued_pr_run_with_old_base_tip_stays_visible_until_marker(self):
+        from scripts.workflow_pilot.tests import test_pr_metadata as fixtures
+        root = self.fixture.repository
+        (root / "docs/unrelated.txt").write_text("Independent master work\n")
+        git(root, "add", ".")
+        git(root, "commit", "-m", "Advance unrelated base")
+        advanced = git(root, "rev-parse", "HEAD")
+        merge_bases = git(root, "merge-base", "--all", advanced, self.pr.head_sha).splitlines()
+        self.assertEqual(merge_bases, [self.fixture.parent])
+        self.pr = replace(self.pr, base_sha=advanced)
+        before_dispatch = copy.deepcopy(self.state)
+        self.dispatched()
+        preflight = self.runs[0]
+        start = datetime.now(timezone.utc).replace(microsecond=0)
+        end = (start + timedelta(seconds=3)).isoformat().replace("+00:00", "Z")
+        start = start.isoformat().replace("+00:00", "Z")
+
+        def read_pair(queued, *, foreign=False):
+            rows = []
+            for run_id in (3, 2):
+                waiting = run_id == 3 and queued
+                number = self.pr.number + int(run_id == 3 and foreign)
+                event = "workflow_dispatch" if run_id == 2 else "pull_request"
+                raw, jobs = fixtures._run(run_id, run_id, mode="full")
+                raw.update(
+                    event=event, head_sha=self.pr.head_sha, head_branch=self.pr.head_ref,
+                    pull_requests=[] if run_id == 2 else [{
+                        "number": number, "head": {"sha": self.pr.head_sha},
+                        "base": {"sha": self.fixture.parent}}],
+                    path=".github/workflows/build.yml@" + (
+                        "refs/heads/" + self.pr.head_ref if run_id == 2
+                        else f"refs/pull/{number}/merge"),
+                    created_at=start, run_started_at=None if waiting else start,
+                    updated_at=start if waiting else end,
+                    status="queued" if waiting else "completed",
+                    conclusion=None if waiting else "success")
+                raw["url"] = raw["url"].replace(fixtures.REPOSITORY, self.pr.repository)
+                jobs = [] if waiting else [job for job in jobs if job["name"] != "patch-release"]
+                for job in jobs:
+                    job.update(event=event, head_sha=self.pr.head_sha, head_branch=self.pr.head_ref,
+                               created_at=start, started_at=start, completed_at=end)
+                    for field in ("url", "run_url", "check_run_url", "html_url"):
+                        job[field] = job[field].replace(fixtures.REPOSITORY, self.pr.repository)
+                    if job["name"] == "event-classifier":
+                        job["steps"] = [{
+                            "name": gate.binding_name(number, self.pr.head_sha, merge_bases[0]),
+                            "status": "completed", "conclusion": "success"}]
+                rows.append((raw, jobs))
+            workflow = fixtures._workflow()
+            for field in ("url", "html_url", "badge_url"):
+                workflow[field] = workflow[field].replace(fixtures.REPOSITORY, self.pr.repository)
+            client = fixtures.ScriptedClient()
+            client.add("GET", github._endpoint(self.pr.repository, "actions/workflows/build.yml"), workflow)
+            client.add("GET", github._query_endpoint(
+                self.pr.repository, "actions/workflows/build.yml/runs",
+                [("head_sha", self.pr.head_sha), ("per_page", "100"), ("page", "1")]),
+                {"total_count": len(rows), "workflow_runs": [raw for raw, _ in rows]})
+            for raw, jobs in rows:
+                if raw["status"] == "completed":
+                    client.add("GET", github._endpoint(
+                        self.pr.repository, f"actions/runs/{raw['id']}"), raw)
+                client.add("GET", github._query_endpoint(
+                    self.pr.repository, f"actions/runs/{raw['id']}/attempts/1/jobs",
+                    [("per_page", "100"), ("page", "1")]),
+                    {"total_count": len(jobs), "jobs": jobs})
+            client.add("GET", github._endpoint(
+                self.pr.repository, f"compare/{advanced}...{self.pr.head_sha}"),
+                *({"base_commit": {"sha": advanced}, "merge_base_commit": {"sha": merge_bases[0]}}
+                  for _ in rows))
+            return github.list_candidate_runs(client, self.pr)
+
+        parsed = read_pair(True)
+        self.assertEqual({run.run_id for run in parsed}, {2, 3})
+        full = next(run for run in parsed if run.run_id == 2)
+        queued = next(run for run in parsed if run.run_id == 3)
+        self.assertEqual((full.binding, full.mode), ("explicit-same", "full"))
+        self.assertEqual((queued.binding, queued.mode, queued.candidate_binding),
+                         ("explicit-other", "active-unknown", None))
+        ready = self.assess(runs=(preflight, full))
+        self.assertTrue(ready["merge_eligible"], ready)
+        dispatch = self.assess(state=before_dispatch, record=before_dispatch["candidates"][0],
+                               runs=(preflight, queued))
+        merge = self.assess(runs=(preflight, full, queued))
+        classified = read_pair(False)
+        duplicate = self.assess(runs=(preflight, *classified))
+        unrelated = self.assess(runs=(preflight, *read_pair(False, foreign=True)))
+        self.boundary_evidence = {
+            "live_base": advanced, "merge_bases": merge_bases,
+            "parsed_runs": [asdict(full), asdict(queued)],
+            "dispatch": dispatch, "merge": merge, "duplicate": duplicate, "unrelated": unrelated,
+        }
+        for phase, report in (("dispatch", dispatch), ("merge", merge)):
+            with self.subTest(phase=phase):
+                self.assertFalse(report["dispatchable"])
+                self.assertFalse(report["merge_eligible"])
+                self.assertIn(queued.run_id, {item["run_id"] for item in report["runs"]})
+        self.assertIn("duplicate-full-run", duplicate["missing"])
+        self.assertFalse(duplicate["merge_eligible"])
+        self.assertTrue(unrelated["merge_eligible"], unrelated)
+
     def test_base_rebind_accepts_fresh_clean_after_complete_history_without_dropping_holds(self):
         old = self.fact
         self.pr = replace(self.pr, base_ref="retargeted-base")

@@ -167,6 +167,9 @@ the consumers' independent protected-principal/deployment requirements.
    full runs, changed attempts, early owner dispatch and duplicate watchers.
    All reject admission. Record dispatch before the simulated network call;
    a failed/unknown delivery must not retry into a second dispatch.
+   Combine unrelated base-tip movement with a queued same-head/branch PR run:
+   it remains visible and blocks dispatch/merge until its immutable candidate
+   marker establishes the binding. A confirmed different marker stays unrelated.
    Observe a real parsed queued same-head/branch dispatch with no jobs/binding,
    both alone and beside a completed full success: it must hold both dispatch
    and merge until classified. Compare a fractional native reservation with

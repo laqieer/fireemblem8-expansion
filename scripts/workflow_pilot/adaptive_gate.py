@@ -380,8 +380,10 @@ def assess_candidate(state, record, decision, pr, session, facts, triage, checks
     expected_binding = pr.number, pr.head_sha, record["base_sha"]
     matching = [run for run in runs if run.candidate_binding == expected_binding
                 and run.head_sha == pr.head_sha and run.head_branch == pr.head_ref]
+    # A raw base-tip mismatch cannot classify an unmarked run as unrelated.
     unknown = [run for run in runs if run.head_sha == pr.head_sha and run.head_branch == pr.head_ref
-               and run.status in github.ACTIVE_RUN_STATUSES and run.binding != "explicit-other"
+               and run.status in github.ACTIVE_RUN_STATUSES
+               and run.candidate_binding in (None, expected_binding)
                and (run.candidate_binding is None or run.mode == "active-unknown")]
     if unknown:
         missing.append("unclassified-active-run")
