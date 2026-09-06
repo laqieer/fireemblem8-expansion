@@ -353,8 +353,12 @@ def _defer_handlers():
 def _owns_child(process):
     if process.returncode is not None:
         return False
+    return _owns_pid(process.pid)
+
+
+def _owns_pid(pid):
     try:
-        os.waitid(os.P_PID, process.pid, os.WEXITED | os.WNOHANG | os.WNOWAIT)
+        os.waitid(os.P_PID, pid, os.WEXITED | os.WNOHANG | os.WNOWAIT)
     except ChildProcessError:
         return False
     return True
@@ -381,36 +385,70 @@ def _close_owned_fd(fd, identity):
         pass
 
 
-def _stop_worker(pid):
-    try:
-        os.waitid(os.P_PID, pid, os.WEXITED | os.WNOHANG | os.WNOWAIT)
-    except ChildProcessError:
+def _terminate_child(pid, reap):
+    if not _owns_pid(pid):
         return
-    _kill_group(pid)
+    failure = None
     try:
-        os.kill(pid, signal.SIGKILL)
+        _kill_group(pid)
     except ProcessLookupError:
         pass
-    os.waitpid(pid, 0)
+    except BaseException as error:
+        failure = error
+    finally:
+        if _owns_pid(pid):
+            try:
+                os.kill(pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            except BaseException as error:
+                if failure is None:
+                    failure = error
+            finally:
+                if _owns_pid(pid):
+                    try:
+                        reap()
+                    except BaseException as error:
+                        if failure is None:
+                            failure = error
+    if failure is not None:
+        raise failure
+
+
+def _stop_worker(pid):
+    _terminate_child(pid, lambda: os.waitpid(pid, 0))
 
 
 def _finish_child(process, abort=None):
+    failure = None
     try:
-        try:
-            if abort is not None:
+        if abort is not None:
+            try:
                 abort()
-        finally:
+            except BaseException as error:
+                failure = error
+        if _owns_child(process):
+            if abort is not None and failure is None:
+                try:
+                    process.wait(timeout=3)
+                except subprocess.TimeoutExpired:
+                    pass
+                except BaseException as error:
+                    failure = error
             if _owns_child(process):
                 try:
-                    if abort is not None:
-                        process.wait(timeout=3)
-                finally:
-                    # This sole waiter retains the child PID until group teardown.
-                    if _owns_child(process):
-                        _kill_group(process.pid)
-                        process.wait()
+                    _terminate_child(process.pid, process.wait)
+                except BaseException as error:
+                    if failure is None:
+                        failure = error
     finally:
-        _close_process_streams(process)
+        try:
+            _close_process_streams(process)
+        except BaseException as error:
+            if failure is None:
+                failure = error
+    if failure is not None:
+        raise failure
 
 
 class _Child:
@@ -456,18 +494,23 @@ class _Child:
             self.process = subprocess.Popen(self.command, **options)
         return self.process, self.command
 
-    def __exit__(self, *exc):
+    def __exit__(self, kind, value, traceback):
         if self.process is None and not self.fds:
             self.active = False
             return
-        with _defer_handlers():
-            try:
-                if self.process is not None:
-                    _finish_child(self.process, self.abort if self.fds else None)
-            finally:
-                for fd in self.fds:
-                    self.close_fd(fd)
-                self.active = False
+        try:
+            with _defer_handlers():
+                try:
+                    if self.process is not None:
+                        _finish_child(self.process, self.abort if self.fds else None)
+                finally:
+                    for fd in self.fds:
+                        self.close_fd(fd)
+                    self.active = False
+        except BaseException as cleanup_error:
+            if value is not None:
+                raise value.with_traceback(traceback) from cleanup_error
+            raise
 
 
 def _collect(process, timeout, limit, abort: Callable[[], None] | None = None,
@@ -501,13 +544,16 @@ def _collect(process, timeout, limit, abort: Callable[[], None] | None = None,
         if process.returncode is None and not _owns_child(process):
             raise CapsuleError("execution lost its exclusive child ownership")
         status = process.wait(timeout=remaining)
-        return status, bytes(chunks[stdout_fd]), bytes(chunks[stderr_fd])
-    except BaseException:
-        with _defer_handlers():
-            _finish_child(process, abort)
+        result = status, bytes(chunks[stdout_fd]), bytes(chunks[stderr_fd])
+    except BaseException as original:
+        try:
+            with _defer_handlers():
+                _finish_child(process, abort)
+        except BaseException as cleanup_error:
+            raise original.with_traceback(original.__traceback__) from cleanup_error
         raise
-    finally:
-        _close_process_streams(process)
+    _close_process_streams(process)
+    return result
 
 
 class _PreparationBudget:
@@ -1629,6 +1675,7 @@ def _supervise(arguments, image_fd=None, interpreter_identity=None):
     worker_pid = None
     open_fds = {}
     interpreter = None
+    failure = None
 
     def pipe():
         with _defer_handlers():
@@ -1770,9 +1817,11 @@ def _supervise(arguments, image_fd=None, interpreter_identity=None):
                     # Keep the leader unreaped until group cleanup to prevent
                     # PID reuse from targeting an unrelated process group.
                     with _defer_handlers():
-                        _kill_group(worker_pid)
-                        _, status = os.waitpid(worker_pid, 0)
-                        worker_pid = None
+                        try:
+                            _kill_group(worker_pid)
+                        finally:
+                            _, status = os.waitpid(worker_pid, 0)
+                            worker_pid = None
                     if status != 0:
                         if bytes(buffers[stderr_r]).startswith(b"CapsuleUnavailable:"):
                             raise CapsuleUnavailable(bytes(buffers[stderr_r])[:4096].decode("utf-8", "replace"))
@@ -1796,23 +1845,29 @@ def _supervise(arguments, image_fd=None, interpreter_identity=None):
                     _write_all(1, canonical(output))
                     return
     except BaseException as error:
+        failure = SystemExit(125)
         os.write(2, (type(error).__name__ + ": " + str(error))[:4096].encode("utf-8", "replace"))
-        raise SystemExit(125)
+        raise failure from error
     finally:
         if interpreter is not None or open_fds or worker_pid is not None:
-            with _defer_handlers():
-                try:
-                    if worker_pid is not None and worker_pid > 0:
-                        _stop_worker(worker_pid)
-                finally:
-                    for fd, identity in open_fds.items():
-                        _close_owned_fd(fd, identity)
-                    if interpreter is not None:
-                        interpreter.close()
-                    while True:
-                        try:
-                            child, _ = os.waitpid(-1, os.WNOHANG)
-                            if child == 0:
+            try:
+                with _defer_handlers():
+                    try:
+                        if worker_pid is not None and worker_pid > 0:
+                            _stop_worker(worker_pid)
+                    finally:
+                        for fd, identity in open_fds.items():
+                            _close_owned_fd(fd, identity)
+                        if interpreter is not None:
+                            interpreter.close()
+                        while True:
+                            try:
+                                child, _ = os.waitpid(-1, os.WNOHANG)
+                                if child == 0:
+                                    break
+                            except ChildProcessError:
                                 break
-                        except ChildProcessError:
-                            break
+            except BaseException as cleanup_error:
+                if failure is not None:
+                    raise failure from cleanup_error
+                raise

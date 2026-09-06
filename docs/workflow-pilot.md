@@ -946,6 +946,21 @@ Ordinary imports, cached `__import__` calls and `importlib.import_module()`
 check the same declaration even on cache hits. Direct cache lookup cannot
 recover an ambient module, and inserting an undeclared cache alias does not
 authorize an import. Declared package exports and module aliases remain usable.
+
+**Open acceptance gap for the module-name invariant:** the current Python
+object graph does not yet enforce that invariant against deliberate
+in-process tampering. A declared `sys`/`importlib` program can insert an alias
+and use `_bootstrap._find_and_load` to retrieve the declared `sys` object under
+an undeclared name, producing an admitted receipt. Replacing a read-only
+`sys.modules` view or mutating the exposed context guard also bypasses a
+wrapper-only policy. These are name-policy violations, not evidence that the
+program acquired the real `subprocess` module or escaped the kernel OS policy.
+The blanket alias criterion remains a **#204/PR210 merge/completion hold**;
+it is not reclassified as supported behavior. A finite private-entry-point
+patch list is not a capability boundary. Resolution needs an
+interpreter-enforced authority boundary or an explicitly accepted contract
+redesign; this implementation does not claim malicious-Python isolation.
+
 Programs/modules come only from the `base` tree. Other declared trees are
 inert data, not executable candidate imports. Missing data and symlink data
 are represented explicitly: `read()` returns `None` for absence and literal
@@ -1163,7 +1178,11 @@ PID if the group is unavailable.
 
 Cancellation closes the owned liveness writer, gives the guardian its bounded
 cleanup interval, then terminates and reaps only its still-owned child if
-necessary. `waitid(WNOWAIT)` preserves the PID until group teardown; already
+necessary. Grace `TimeoutExpired` is normal escalation, not a replacement
+execution error. A failed group signal still leads to owned-PID termination
+and reaping; other cleanup failures are chained behind the original timeout,
+interruption or output error. With no primary error, a real cleanup failure
+still rejects rather than returning success. `waitid(WNOWAIT)` preserves the PID until group teardown; already
 reaped or unowned PIDs are never signaled or reaped again. Worker registration,
 group establishment and reap-state updates are protected too; a worker
 interrupted before group establishment can still be terminated by its owned

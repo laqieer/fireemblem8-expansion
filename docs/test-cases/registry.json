@@ -2191,7 +2191,7 @@
       "interactions": "Depends on the existing isolated launcher, exact Git objects and Linux descriptor/process facilities. PR189 must separately adopt the API in every checker/behavior/member/remote/local path and rerun all five #179 families/dispositions; its old pathname interfaces conflict. No gameplay or profile interactions.",
       "save_compatibility": "Host-only execution boundary; save/config identity, generated game data, localization, ROM/RAM, modern debug/release, archival behavior and Build topology are unchanged.",
       "cleanup": "Owned disposable Git fixtures under build/test-artifacts and all owned descriptors/processes are cleaned automatically. Runtime instrumentation restores committed Git authority as well as working files before the next case; preserve unrelated worktrees and artifacts.",
-      "limitations": "Trusted system Python/Git/kernel and initial caller remain authority; this is not an arbitrary-Python sandbox. Preparation requires the fixed system executable plus matching version/implementation/stdlib roots; mixed/newer-preparer pairings are unsupported. A shared30-second/2048-process budget additionally bounds existing proof/path/byte limits, with owned-child teardown on expiry. Linux x86-64 executable memfds support policy0 or root-only2, with state0 before capsule access; fixture2 is not native2 evidence. AArch64 mappings are not runtime evidence. Image32MiB and probe5-second/4KiB bounds remain. Changed identity or unavailable protection fails closed without path/ordinary-exec fallback. Pidfds are not required. PR189/remote delivery remain dependent acceptance.",
+      "limitations": "Open deterministic #204/PR210 completion hold: private importlib cache hits, replacement of sys.modules and mutable context guard authority can admit program-inserted undeclared aliases. The blanket alias criterion remains required, not reclassified as supported behavior; an enforceable shared boundary or explicit contract redesign is needed. This is not an arbitrary-Python sandbox. Fixed executable/version/stdlib pairing, preparation30-second/2048-process budget, exact proof/path/byte limits, Linux x86-64 execute-only images, kernel policy0/root-only2 with state0 before capsule access, image32MiB/probe5-second/4KiB limits and owned cleanup remain. Fixture2 is not native2 evidence; AArch64 mappings are not runtime evidence. No path/ordinary-exec fallback or pidfd prerequisite. PR189/remote delivery remain dependent acceptance.",
       "automation": [
         {
           "command": "/usr/bin/python3 -m unittest scripts.workflow_pilot.tests.test_sealed_capsule scripts.workflow_pilot.tests.test_event_classifier -v",
@@ -2204,6 +2204,10 @@
         {
           "command": "/usr/bin/python3 -m unittest scripts.workflow_pilot.tests.test_capsule_preparation -v",
           "evidence": "scripts/workflow_pilot/tests/test_capsule_preparation.py"
+        },
+        {
+          "command": "/usr/bin/python3 -m unittest scripts.workflow_pilot.tests.test_capsule_cleanup -v",
+          "evidence": "scripts/workflow_pilot/tests/test_capsule_cleanup.py"
         }
       ]
     },

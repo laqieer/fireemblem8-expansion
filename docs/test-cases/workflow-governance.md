@@ -1720,6 +1720,8 @@ privileges. Every observed/signaled process is created and reaped by the test.
    `/usr/bin/python3 -m unittest scripts.workflow_pilot.tests.test_isolated_bootstrap -v`.
    Run the bounded preparation and interpreter-pairing controls:
    `/usr/bin/python3 -m unittest scripts.workflow_pilot.tests.test_capsule_preparation -v`.
+   Run cleanup escalation and primary-error preservation:
+   `/usr/bin/python3 -m unittest scripts.workflow_pilot.tests.test_capsule_cleanup -v`.
 
 3. Observe the real isolated `classify-event` entrypoint and actual production
    classifier over the existing event fixture. Their decisions and GitHub
@@ -1816,6 +1818,13 @@ privileges. Every observed/signaled process is created and reaped by the test.
    interruption cleanup must leave that replacement intact. Reaped/unowned
    PID controls must never receive signals or waits. A real owned worker
    lacking its own process group must still be killed and reaped safely.
+   Let a real child ignore liveness until the three-second grace expires.
+   Fallback termination/reaping must not surface that grace timeout in place
+   of the original execution timeout. Inject a group-signal error while the
+   child remains owned: PID termination and reaping must still occur, and
+   cleanup failure must be chained behind the original interruption/output
+   failure. Without a primary error, successful grace escalation returns
+   normally, while a genuine cleanup error still rejects.
    Apply the constructor-return SIGINT and setup controls to the isolated
    launcher's real Git bootstrap too. Force its actual timeout/output limit
    while the owned Git process exits, then inject `ProcessLookupError` or a
@@ -2016,6 +2025,10 @@ exit but did not reap it. The regression inspects these states before any
 tester cleanup; a test that merely injects from `selector.select()` cannot
 cover that earlier gap. Collector setup failures and nested handoff errors
 now use the same already-active owner, with no admitted partial receipt.
+Cleanup-error controls preserve a real grace expiry that formerly escaped
+after the child was killed/reaped, and a group-signal error that formerly
+skipped reaping. The original execution error now survives both paths;
+successful escalation and failing cleanup are tested separately.
 The isolated launcher retained a separate pre-runtime gap: constructor SIGINT
 left a waitable Git child and two open pipe streams. A group-disappearance
 fault after a real owned exit also replaced the original timeout with
@@ -2069,6 +2082,19 @@ requires child ownership before signaling, and restores the prior subreaper
 setting. After an interrupted test invocation, inspect only
 the owned `sealed-capsule-*` fixture directory before removing it; never
 delete unrelated artifacts by a broad path or process-name match.
+
+**Deterministic module-boundary design hold:** the blanket undeclared-alias
+criterion is not yet met for deliberately hostile Python object manipulation.
+The working route uses
+`importlib._bootstrap._find_and_load('subprocess', importlib._bootstrap._gcd_import)`
+after inserting a `sys` alias. It can return an admitted, signable result.
+Read-only-view replacement and mutation of `context._guard.imports` are also
+confirmed counterexamples. The review's shorter `importlib._gcd_import`
+spelling is absent on the tested Python 3.12 and is not the working route.
+These are not made passing acceptance assertions or hidden behind expected
+failures. Keep #204/PR210 merge/completion held until an enforceable shared
+authority boundary or explicit contract redesign resolves the criterion.
+The existing trusted-program/OS threat contract is not silently weakened.
 
 **Dependent acceptance, not claimed here:** PR189 must adopt the public API
 in its outer checker, behavior/member loop, remote-round validation, local
