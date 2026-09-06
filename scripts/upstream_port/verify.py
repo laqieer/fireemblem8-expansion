@@ -2236,6 +2236,8 @@ def gates(jobs: int = 2) -> List[Gate]:
             command=[
                 "/usr/bin/python3",
                 "-I",
+                "-S",
+                "-B",
                 "scripts/validation_ownership/isolated_launcher.py",
                 "tests",
             ],
@@ -2247,17 +2249,19 @@ def gates(jobs: int = 2) -> List[Gate]:
         Gate(
             name="validation-ownership-check",
             command=[
-                "MAKEFLAGS=",
-                "MFLAGS=",
-                "MAKEOVERRIDES=",
-                "GNUMAKEFLAGS=",
-                "make",
-                "validation-ownership-check",
+                "/usr/bin/python3",
+                "-I",
+                "-S",
+                "-B",
+                "scripts/validation_ownership/isolated_launcher.py",
+                "check",
+                "--repository-root",
+                "$GITHUB_WORKSPACE",
             ],
             applicable_note=(
                 "issue #180 host lane: validates exact Git-tree coverage, "
-                "independent probes, and executable lifecycle with Make "
-                "execution controls scrubbed before invocation, without "
+                "independent probes, and executable lifecycle through the "
+                "trusted standalone entry before any Make evaluation, without "
                 "narrowing or executing graph-selected gates"
             ),
         ),

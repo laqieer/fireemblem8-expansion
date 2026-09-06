@@ -1,3 +1,4 @@
+# Trusted-Make convenience only; CI enters ci_verifier.py directly before Make.
 ifneq (,$(filter-out default undefined,$(origin MAKECMDGOALS)))
 $(error MAKECMDGOALS must remain owned by GNU Make)
 endif
@@ -35,7 +36,7 @@ $(error VO_CANDIDATE_SHA is required)
 endif
 
 validation-ownership-check:
-	@/usr/bin/python3 -I -B \
+	@/usr/bin/python3 -I -S -B \
 		"$(VO_TRUSTED_ROOT)/scripts/validation_ownership/ci_verifier.py" \
 		--trusted-root "$(VO_TRUSTED_ROOT)" \
 		--repository-root "$(VO_REPOSITORY_ROOT)" \

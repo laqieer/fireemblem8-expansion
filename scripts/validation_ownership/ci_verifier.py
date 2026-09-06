@@ -14,9 +14,17 @@ from types import ModuleType
 from typing import Any
 
 
+if __name__ == "__main__" and (not sys.flags.isolated or not sys.flags.no_site):
+    raise SystemExit("validation-ownership-base-verifier: isolated no-site startup (-I -S) is required")
+
 TRUSTED_ROOT = Path(__file__).resolve().parents[2]
 if str(TRUSTED_ROOT) not in sys.path:
     sys.path.insert(0, str(TRUSTED_ROOT))
+
+from scripts.validation_ownership import isolated_launcher
+
+if __name__ == "__main__":
+    isolated_launcher._clear_ambient_execution_environment()
 
 from scripts.validation_ownership import reporter
 

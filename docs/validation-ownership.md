@@ -41,18 +41,20 @@ command output is not a substitute.
   emits canonical JSON, and verifies that execution did not change Git state.
 - [`scripts/validation_ownership/isolated_launcher.py`](../scripts/validation_ownership/isolated_launcher.py)
   admits only `check`, `resolve`, `tests`, and the closed lifecycle-check mode
-  after isolated Python startup and removes ambient `GIT_*` controls.
+  after isolated no-site Python startup and removes ambient `GIT_*`, Make
+  preload/flag/override, and shell-startup controls before entering its payload.
 
 Validate whole-repository coverage without selecting or running any owner:
 
 ```bash
-make validation-ownership-check
+/usr/bin/python3 -I -S -B scripts/validation_ownership/isolated_launcher.py \
+  check --repository-root "$PWD"
 ```
 
 Explain one or more changed or deleted paths:
 
 ```bash
-/usr/bin/python3 -I scripts/validation_ownership/isolated_launcher.py \
+/usr/bin/python3 -I -S -B scripts/validation_ownership/isolated_launcher.py \
   resolve --repository-root "$PWD" \
   --changed src/bm.c \
   --changed src/data/items.json
@@ -62,9 +64,13 @@ Add `--base-revision <revision>` to derive whether authoritative graph-edge
 changes invalidate review evidence. Output is recursively sorted canonical
 ASCII JSON with one trailing newline.
 
-`validation-ownership-check` must be the sole Make goal. A mixed invocation
+For a trusted Make invocation, `make validation-ownership-check` remains a
+convenience alias and must be the sole goal. A mixed invocation
 such as `make validation-ownership-check compare` fails before NODEP or
 generated-include suppression can affect `compare`.
+It is not a pre-evaluation boundary: GNU Make processes ambient `MAKEFILES`
+and command-line `--eval` before reading the root Makefile. Use the standalone
+entry above for untrusted evaluation; do not prepend a Make invocation.
 
 The host-only Build setup installs `build-essential`, `libmgba-dev`,
 `libpng-dev`, `python3-venv` and `pkg-config`. The ownership consumer compiles native
@@ -414,26 +420,28 @@ aliases, missing paths, and any symlink component reject. Generated asset
 discovery and manifest includes begin from an empty overlay and are rebuilt
 only through registered confined commands; no live source file is written.
 
-The public gate has a smaller independent bootstrap at the first byte of the
-root Makefile. Command-line ownership of `MAKECMDGOALS` rejects before goal
-selection. A trusted exact sole goal selects `validation-ownership-check`;
-mixed goals and `-n`/`-t`/`-q`/`-s`/`-i`, aliases, hostile control variables,
-or any command-line override reject before `AUTOTOOLS_CONFIG_MK`, generated
-includes, config fragments, shell expansions, or dependency remakes. The sole
-goal parses no normal build includes. Consequently `MAKECMDGOALS= -n` and
-`AUTOTOOLS_CONFIG_MK=/dev/stdin SHELL=...` cannot hide or replace the checker,
-while `make validation-ownership-check` either executes the isolated checker
-or fails during trusted bootstrap.
+The public boundary is the existing standalone Python entry, started with
+`-I -S -B` before any Make process. It strips `MAKEFILES`, `MAKEFLAGS`,
+`GNUMAKEFLAGS`, `MAKEOVERRIDES`, `MFLAGS`, `BASH_ENV`, `ENV` and `GIT_*`;
+GNU Make options such as `--eval` are not reporter arguments. The root
+Makefile retains only a convenience path for a trusted invocation. Its sole-goal,
+override and dry-run checks operate after Make startup and bypass normal build
+includes; they cannot undo a preload or an evaluation option already executed
+by GNU Make. The tests demonstrate that difference with real file/preload and
+dry-run effects, not a source-spelling assertion.
 
 Candidate CI does not use these candidate-authored modules as its own trust
 root. On pull requests, `host-tests` first checks the exact GitHub PR-base
-commit for `ci_verifier.py` and `ci_gate.mk`. When present, it creates an
+commit for the complete verifier package. When present, it creates an
 unpredictable mode-`0700` directory under the lstat-checked GitHub runner
 temporary root, records its device/inode identity, and archives the complete
 clean base tree there. It never removes or creates a verifier staging path
 through the candidate checkout; base and candidate Make/registry probes use a
 mode-`0700` runtime child under the same external trusted root, and cleanup
-removes only that unchanged external identity. The base gate verifies every
+removes only that unchanged external identity. CI starts the extracted
+`ci_verifier.py` directly with `-I -S -B`, not through `ci_gate.mk` or another
+Make invocation. The Make-based base gate remains a trusted-invocation
+convenience only. The standalone base verifier verifies every
 staged verifier package file and every loaded transitive `scripts.*` module against base Git objects,
 excludes the candidate checkout from `sys.path`, and overlays the base
 validation package/schema/oracle while reading all other graph and Make

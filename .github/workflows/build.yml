@@ -1007,13 +1007,12 @@ jobs:
             /usr/bin/tar -xf - -C "$trusted_root"
           BASH_ENV= ENV= GNUMAKEFLAGS= MAKEFLAGS= MAKEOVERRIDES= MFLAGS= \
             PYTHONPATH= \
-            VO_TRUSTED_ROOT="$trusted_root" \
-            VO_REPOSITORY_ROOT="$GITHUB_WORKSPACE" \
-            VO_BASE_SHA="$EXPECTED_BASE_SHA" \
-            VO_CANDIDATE_SHA="$EXPECTED_CANDIDATE_SHA" \
-            /usr/bin/make -f \
-              "$trusted_root/scripts/validation_ownership/ci_gate.mk" \
-              validation-ownership-check
+            /usr/bin/python3 -I -S -B \
+              "$trusted_root/scripts/validation_ownership/ci_verifier.py" \
+              --trusted-root "$trusted_root" \
+              --repository-root "$GITHUB_WORKSPACE" \
+              --base-sha "$EXPECTED_BASE_SHA" \
+              --candidate-sha "$EXPECTED_CANDIDATE_SHA"
         fi
 
     - name: Run validation ownership regression suite (issue #180)
@@ -1046,7 +1045,7 @@ jobs:
         MFLAGS: ''
         PATH: /usr/bin:/bin
         PYTHONPATH: ''
-      run: /usr/bin/python3 -I scripts/validation_ownership/isolated_launcher.py tests
+      run: /usr/bin/python3 -I -S -B scripts/validation_ownership/isolated_launcher.py tests
 
     - name: Validate validation ownership graph (issue #180)
       if: ${{ needs.event-classifier.result == 'failure' || needs.event-classifier.outputs.classification == 'full' }}
@@ -1081,7 +1080,7 @@ jobs:
         MFLAGS: ''
         PATH: /usr/bin:/bin
         PYTHONPATH: ''
-      run: MAKEFLAGS= MFLAGS= MAKEOVERRIDES= GNUMAKEFLAGS= make validation-ownership-check
+      run: /usr/bin/python3 -I -S -B scripts/validation_ownership/isolated_launcher.py check --repository-root "$GITHUB_WORKSPACE"
 
     # Issue #18 host-lane closure fix: the scripts/localization package's
     # own pure-stdlib unit test suite (schema/pseudo/catalog/generate/CLI/

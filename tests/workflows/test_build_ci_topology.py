@@ -242,11 +242,11 @@ WORKFLOW_PILOT_BASELINE_GATE = (
     "> /dev/null"
 )
 VALIDATION_OWNERSHIP_TEST_GATE = (
-    "/usr/bin/python3 -I scripts/validation_ownership/isolated_launcher.py tests"
+    "/usr/bin/python3 -I -S -B scripts/validation_ownership/isolated_launcher.py tests"
 )
 VALIDATION_OWNERSHIP_CHECK_GATE = (
-    "MAKEFLAGS= MFLAGS= MAKEOVERRIDES= GNUMAKEFLAGS= "
-    "make validation-ownership-check"
+    "/usr/bin/python3 -I -S -B scripts/validation_ownership/isolated_launcher.py "
+    'check --repository-root "$GITHUB_WORKSPACE"'
 )
 VALIDATION_OWNERSHIP_BASE_STEP = (
     "Validate ownership with exact PR-base verifier"
@@ -298,11 +298,12 @@ VALIDATION_OWNERSHIP_BASE_CONTRACT = (
     VALIDATION_OWNERSHIP_CANDIDATE_SHA_ENV,
     'if [ "$BUILD_EVENT_NAME" != pull_request ]; then',
     '/usr/bin/git archive --format=tar "$EXPECTED_BASE_SHA"',
-    '"$trusted_root/scripts/validation_ownership/ci_gate.mk"',
-    'VO_TRUSTED_ROOT="$trusted_root"',
-    'VO_REPOSITORY_ROOT="$GITHUB_WORKSPACE"',
-    'VO_BASE_SHA="$EXPECTED_BASE_SHA"',
-    'VO_CANDIDATE_SHA="$EXPECTED_CANDIDATE_SHA"',
+    "/usr/bin/python3 -I -S -B",
+    '"$trusted_root/scripts/validation_ownership/ci_verifier.py"',
+    '--trusted-root "$trusted_root"',
+    '--repository-root "$GITHUB_WORKSPACE"',
+    '--base-sha "$EXPECTED_BASE_SHA"',
+    '--candidate-sha "$EXPECTED_CANDIDATE_SHA"',
     'test ! -L "$VALIDATION_OWNERSHIP_TEMP"',
     "/usr/bin/mktemp --directory",
     'validation-ownership-base.XXXXXXXXXX',
@@ -5946,16 +5947,16 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
         )
         mutations = (
             (
-                '"$trusted_root/scripts/validation_ownership/ci_gate.mk"',
-                '"scripts/validation_ownership/ci_gate.mk"',
+                '"$trusted_root/scripts/validation_ownership/ci_verifier.py"',
+                '"scripts/validation_ownership/ci_verifier.py"',
             ),
             (
                 '/usr/bin/git archive --format=tar "$EXPECTED_BASE_SHA"',
                 '/usr/bin/git archive --format=tar "$EXPECTED_CANDIDATE_SHA"',
             ),
             (
-                'VO_BASE_SHA="$EXPECTED_BASE_SHA"',
-                'VO_BASE_SHA="$EXPECTED_CANDIDATE_SHA"',
+                '--base-sha "$EXPECTED_BASE_SHA"',
+                '--base-sha "$EXPECTED_CANDIDATE_SHA"',
             ),
             (
                 "validation-ownership: bootstrap-not-authoritative",

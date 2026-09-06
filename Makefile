@@ -1,5 +1,6 @@
-# The report-only ownership gate must be selected from GNU Make's own goal
-# state before any configurable include, shell expansion, or dependency remake.
+# This convenience target assumes a trusted Make invocation. MAKEFILES and
+# --eval run before this file; use the isolated Python entrypoint for a boundary
+# established before Make starts. The goal below bypasses normal build includes.
 ifneq (,$(filter-out default undefined,$(origin MAKECMDGOALS)))
 $(error MAKECMDGOALS must remain owned by GNU Make, got origin=$(origin MAKECMDGOALS) value='$(MAKECMDGOALS)')
 endif
@@ -24,7 +25,7 @@ $(error validation-ownership-check rejects Make command-line MAKEOVERRIDES)
 endif
 
 validation-ownership-check:
-	@/usr/bin/python3 -I scripts/validation_ownership/isolated_launcher.py \
+	@/usr/bin/python3 -I -S -B scripts/validation_ownership/isolated_launcher.py \
 		check --repository-root "$(CURDIR)" > /dev/null
 
 .PHONY: validation-ownership-check

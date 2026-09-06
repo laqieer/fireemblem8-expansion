@@ -13,9 +13,12 @@ ROOT = Path(__file__).resolve().parents[2]
 MODES = frozenset({"check", "resolve", "tests", "lifecycle-check"})
 
 
-def _clear_ambient_git_environment() -> None:
+def _clear_ambient_execution_environment() -> None:
     for name in tuple(os.environ):
-        if name.startswith("GIT_"):
+        if name.startswith("GIT_") or name in {
+            "MAKEFILES", "MAKEFLAGS", "GNUMAKEFLAGS", "MAKEOVERRIDES", "MFLAGS",
+            "BASH_ENV", "ENV",
+        }:
             del os.environ[name]
 
 
@@ -35,9 +38,9 @@ def _controlled_root(arguments: list[str]) -> None:
 
 
 def main(argv: list[str] | None = None) -> int:
-    if not sys.flags.isolated:
+    if not sys.flags.isolated or not sys.flags.no_site:
         print(
-            "validation-ownership-launcher: isolated Python startup (-I) is required",
+            "validation-ownership-launcher: isolated no-site startup (-I -S) is required",
             file=sys.stderr,
         )
         return 2
@@ -56,7 +59,7 @@ def main(argv: list[str] | None = None) -> int:
             raise ValueError("check mode does not accept --changed")
         if mode == "resolve" and "--changed" not in arguments:
             raise ValueError("resolve mode requires at least one --changed")
-        _clear_ambient_git_environment()
+        _clear_ambient_execution_environment()
         os.chdir(ROOT)
         sys.path.insert(0, str(ROOT))
         if mode == "tests":

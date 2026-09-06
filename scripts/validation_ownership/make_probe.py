@@ -2142,7 +2142,7 @@ def run_probe(
                     if (
                         len(public_commands) != 1
                         or re.fullmatch(
-                            r"/usr/bin/python3 -I "
+                            r"/usr/bin/python3 -I -S -B "
                             r"scripts/validation_ownership/isolated_launcher\.py "
                             r"\\\n\tcheck --repository-root \"/repo\" "
                             r"> /dev/null",

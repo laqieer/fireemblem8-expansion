@@ -2338,8 +2338,11 @@ game behavior needs a compensating change.
 ### Actions
 
 1. Run
-   `/usr/bin/python3 -I scripts/validation_ownership/isolated_launcher.py tests`.
-2. Run `make validation-ownership-check`.
+   `/usr/bin/python3 -I -S -B scripts/validation_ownership/isolated_launcher.py tests`.
+2. Run
+   `/usr/bin/python3 -I -S -B scripts/validation_ownership/isolated_launcher.py check --repository-root .`.
+   The Make alias is a convenience for a trusted invocation, not the boundary
+   against GNU Make's preloaded `MAKEFILES` or `--eval`.
 3. Use the isolated reporter's `resolve` mode with `--changed` for
    `src/bm.c`, `include/global.h`, `scripts/check_docs.py`,
    `src/data/items.json`, `texts/expansion/catalog.en.json`, `config.mk`,
@@ -2374,12 +2377,18 @@ game behavior needs a compensating change.
    `MODE=two`, `$(eval $(RULE))`, a concrete `%.out: %.in` recipe mutation,
    target-local/automatic/braced/one-character variables, literal missing
    prerequisites, active `$(error)`, unknown direct shell, and unused `!=`.
-6. Run the hostile public controls, including
+6. Exercise the standalone launcher with a controlled `MAKEFILES` preload and
+   ambient Make flags: its actual Make payload must run without the preload or
+   dry-run effect. Supplying `--eval` as a reporter argument must reject without
+   creating its marker. Compare directly invoked GNU Make, where those
+   pre-evaluation effects occur before a root Makefile could guard them.
+   Separately test the trusted-Make convenience controls, including
    `make MAKECMDGOALS= -n validation-ownership-check`,
    `make AUTOTOOLS_CONFIG_MK=/dev/stdin SHELL=/bin/false validation-ownership-check`,
    every execution-control alias/control variable, and
    `make -n validation-ownership-check compare`. Require a parse-time bootstrap
-   failure before external includes or dependency suppression.
+   failure before that convenience branch's configurable includes or dependency
+   suppression, not before Make's own startup evaluation.
 7. For the focused A/V correction, run
    `python3 -m unittest scripts.validation_ownership.tests.test_reporter.AssetOwnershipTests`.
    Inspect positive title/package selections, incorrect runtime-owner and
@@ -2575,8 +2584,9 @@ rejects.
 
 For pull requests whose exact base contains the verifier package, host CI
 archives the clean base into an unpredictable, inode-checked directory below
-the trusted runner temporary root and invokes its `ci_gate.mk`/`ci_verifier.py`
-against the exact candidate Git tree. It never creates or recursively removes
+the trusted runner temporary root and directly invokes its `ci_verifier.py`
+with `-I -S -B` against the exact candidate Git tree, without starting Make
+first. It never creates or recursively removes
 staging below candidate `build`; trusted Make and registry probes also use
 that external verifier runtime. Every trusted package and loaded module
 identity comes from base Git objects, and candidate paths never enter verifier

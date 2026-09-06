@@ -367,8 +367,8 @@ substitute. Setup is not another gate and `verify` remains network-independent.
    (pure-stdlib consolidated Build CI topology and checkout contracts)
 4. `"$GITHUB_WORKSPACE/build/host-python/bin/python3" -I scripts/workflow_pilot/isolated_launcher.py reporter-tests`
 5. `/usr/bin/python3 -I scripts/workflow_pilot/isolated_launcher.py baseline --repository-root "$GITHUB_WORKSPACE" --fixture scripts/workflow_pilot/tests/fixtures/baseline.json --decisions .github/workflow-pilot-decisions.json --expected scripts/workflow_pilot/tests/fixtures/baseline_expected.json > /dev/null`
-6. `/usr/bin/python3 -I scripts/validation_ownership/isolated_launcher.py tests`
-7. `make validation-ownership-check`
+6. `/usr/bin/python3 -I -S -B scripts/validation_ownership/isolated_launcher.py tests`
+7. `/usr/bin/python3 -I -S -B scripts/validation_ownership/isolated_launcher.py check --repository-root "$GITHUB_WORKSPACE"`
 8. `python3 -m unittest discover -s scripts/localization/tests -p "test_*.py"`
    (issue #18 host-only localization schema/catalog/pseudo/generation/resolver
    coverage)

@@ -1083,9 +1083,11 @@ class TesterCaseRegistryTests(unittest.TestCase):
                     "TC-WORKFLOW-GATE-OWNERSHIP-001": {
                         "document": "docs/test-cases/workflow-governance.md",
                         "commands": {
-                            "/usr/bin/python3 -I "
+                            "/usr/bin/python3 -I -S -B "
                             "scripts/validation_ownership/isolated_launcher.py tests",
-                            "make validation-ownership-check",
+                            "/usr/bin/python3 -I -S -B "
+                            "scripts/validation_ownership/isolated_launcher.py "
+                            "check --repository-root .",
                         },
                     },
                 },

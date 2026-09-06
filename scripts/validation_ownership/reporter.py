@@ -3135,6 +3135,8 @@ def _run_lifecycle_subprocess(
     command = (
         "/usr/bin/python3",
         "-I",
+        "-S",
+        "-B",
         str(authority_root / "scripts/validation_ownership/isolated_launcher.py"),
         "lifecycle-check",
         "--artifact-root",
