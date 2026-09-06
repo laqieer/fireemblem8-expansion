@@ -1726,6 +1726,7 @@ def _classifier_contract_errors(job: str) -> list[str]:
         "      identity_valid: ${{ steps.classify.outputs.identity_valid }}",
         "      reason: ${{ steps.classify.outputs.reason }}",
         "      run_expensive: ${{ steps.classify.outputs.run_expensive }}",
+        "      metadata_event_digest: ${{ steps.metadata-event.outputs.digest }}",
         "      CLASSIFIER_AVAILABLE: ${{ "
         "needs.event-identity.outputs.classifier_available }}",
         "      CLASSIFIER_EXPECTED_SHA: ${{ "
@@ -1797,13 +1798,14 @@ def _classifier_contract_errors(job: str) -> list[str]:
     if "        submodules:" in job:
         errors.append("event-router authority checkout must not load submodules")
     steps = _step_blocks(job)
-    if len(steps) != 4:
-        errors.append("event-router must have exactly four reviewed steps")
+    if len(steps) != 5:
+        errors.append("event-router must have exactly five reviewed steps")
     else:
         expected_fields = (
             ["name", "if", "run"],
             ["uses", "if", "with"],
             ["name", "if", "run"],
+            ["name", "id", "if", "env", "run"],
             ["name", "id", "if", "env", "run"],
         )
         if any(
@@ -1891,6 +1893,27 @@ def _classifier_contract_errors(job: str) -> list[str]:
             errors.append("event-router authority verification command differs")
         if tuple(_run_block_commands(steps[3])) != expected_classify:
             errors.append("event-router command or bootstrap differs")
+        expected_attribution = (
+            "if test -f scripts/workflow_pilot/metadata_event.py; then",
+            "if ! /usr/bin/python3 -I scripts/workflow_pilot/isolated_launcher.py attest-metadata-event \\",
+            '--event-path "$GITHUB_EVENT_PATH" --repository "$GITHUB_REPOSITORY" \\',
+            '--run-id "$GITHUB_RUN_ID" --run-number "$GITHUB_RUN_NUMBER" \\',
+            '--run-attempt "$GITHUB_RUN_ATTEMPT" --output "$GITHUB_OUTPUT"; then',
+            'echo "Metadata event attribution unavailable; reconciliation must hold." >&2',
+            "fi", "else",
+            'echo "Trusted base lacks metadata event attribution; reconciliation must hold."',
+            "fi",
+        )
+        if (
+            "      id: metadata-event" not in steps[4]
+            or "      if: ${{ steps.classify.outputs.classification == 'metadata-only' }}" not in steps[4]
+            or _step_env_entries(steps[4]) != (
+                "        BASH_ENV: ''", "        ENV: ''",
+                "        PATH: /usr/bin:/bin", "        PYTHONPATH: ''",
+            )
+            or tuple(_run_block_commands(steps[4])) != expected_attribution
+        ):
+            errors.append("event-router immutable event attribution differs")
     return errors
 
 
@@ -1945,11 +1968,19 @@ def _mode_contract_errors(job: str) -> list[str]:
         errors.append("event-classifier mode direct mapping differs")
     steps = _step_blocks(job)
     if (
-        len(steps) != 1
+        len(steps) != 2
         or _direct_step_mapping_fields(steps[0]) != ["name", "run"]
         or _step_name(steps[0]) != "Verify authoritative Build event mode"
     ):
         errors.append("event-classifier mode step differs")
+    elif not _run_step_is_exact(
+        steps[1],
+        "workflow-pilot-metadata-event:v1:${{ needs.event-router.outputs.metadata_event_digest }}",
+        ('[[ "$METADATA_EVENT_DIGEST" =~ ^[0-9a-f]{64}$ ]]',),
+        if_expression="${{ needs.event-router.outputs.classification == 'metadata-only' && needs.event-router.outputs.metadata_event_digest != '' }}",
+        env_lines=("        METADATA_EVENT_DIGEST: ${{ needs.event-router.outputs.metadata_event_digest }}",),
+    ):
+        errors.append("event-classifier immutable event attestation differs")
     return errors
 
 
@@ -4928,6 +4959,71 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                             for error in _errors(changed, False)
                         )
                     )
+
+    def test_metadata_event_producer_publishes_only_immutable_trigger_binding(self):
+        from scripts.workflow_pilot import metadata_event
+        from scripts.workflow_pilot.tests.test_metadata_capsule import make_source_fixture
+        from scripts.workflow_pilot.tests.test_pr_metadata import (
+            REPOSITORY, _metadata_event_payload,
+        )
+
+        jobs = _job_blocks(self.text)
+        producer = _literal_run_script(_step_blocks(jobs["event-router"])[4])
+        consumer = _literal_run_script(_step_blocks(jobs["event-classifier"])[1])
+        artifact_root = ROOT / "build" / "test-artifacts"
+        artifact_root.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=artifact_root) as directory:
+            root = Path(directory)
+            source_root = root / "source"
+            make_source_fixture(source_root)
+            event_path = root / "event.json"
+            output = root / "outputs"
+            event = _metadata_event_payload()
+            event_path.write_text(json.dumps(event), encoding="utf-8")
+            environment = {
+                "BASH_ENV": "", "ENV": "", "PATH": "/usr/bin:/bin", "PYTHONPATH": "",
+                "GITHUB_EVENT_PATH": str(event_path),
+                "GITHUB_REPOSITORY": REPOSITORY,
+                "GITHUB_RUN_ID": "202", "GITHUB_RUN_NUMBER": "11",
+                "GITHUB_RUN_ATTEMPT": "1", "GITHUB_OUTPUT": str(output),
+            }
+            def execute(script, cwd=source_root, **changes):
+                return subprocess.run(
+                    ["/bin/bash", "--noprofile", "--norc", "-e", "-o", "pipefail", "-c", script],
+                    cwd=cwd, env={**environment, **changes},
+                    capture_output=True, text=True, check=False, timeout=30,
+                )
+
+            result = execute(producer)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            expected = metadata_event.event_digest(
+                event, repository=REPOSITORY, run_id=202, run_number=11, run_attempt=1
+            )
+            self.assertEqual(output.read_text(), f"digest={expected}\n")
+            self.assertEqual(execute(consumer, METADATA_EVENT_DIGEST=expected).returncode, 0)
+            self.assertNotEqual(execute(consumer, METADATA_EVENT_DIGEST="invalid").returncode, 0)
+            output.unlink()
+            event["sender"]["id"] += 1
+            event_path.write_text(json.dumps(event), encoding="utf-8")
+            self.assertEqual(execute(producer).returncode, 0)
+            self.assertFalse(output.exists())
+            self.assertEqual(execute(producer, cwd=root).returncode, 0)
+            self.assertFalse(output.exists())
+
+        for old, new, job, validator in (
+            ("steps.metadata-event.outputs.digest", "steps.classify.outputs.expected_head",
+             "event-router", _classifier_contract_errors),
+            ('--event-path "$GITHUB_EVENT_PATH"', '--event-path "cached-event.json"',
+             "event-router", _classifier_contract_errors),
+            ("needs.event-router.outputs.metadata_event_digest", "github.event.pull_request.title",
+             "event-classifier", _mode_contract_errors),
+            ('[[ "$METADATA_EVENT_DIGEST" =~ ^[0-9a-f]{64}$ ]]', "true",
+             "event-classifier", _mode_contract_errors),
+        ):
+            with self.subTest(weakened_binding=old):
+                changed = jobs[job].replace(old, new)
+                self.assertNotEqual(changed, jobs[job])
+                self.assertTrue(validator(changed))
 
     def test_classifier_authority_and_outputs_fail_closed(self):
         mutations = (

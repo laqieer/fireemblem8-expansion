@@ -19,10 +19,12 @@ ROOT = Path(__file__).resolve().parents[2]
 MODES = frozenset(
     {
         "anchor-refs",
+        "attest-metadata-event",
         "baseline",
         "classify-event",
         "hydrate",
         "lifecycle-check",
+        "pr-metadata",
         "reporter-tests",
     }
 )
@@ -169,10 +171,17 @@ def _bootstrap_git(root, environment, *args, bound=2 * 1024 * 1024):
         return bytes(result[process.stdout.fileno()])
 
 
-def run_sealed_classifier(arguments: list[str]) -> int:
-    """Bootstrap the capsule runtime from Git bytes, not a validated pathname."""
+def run_sealed_classifier(arguments: list[str], *, mode: str = "classify-event") -> int:
+    """Run a closed event entrypoint and its complete exact-Git source closure."""
     import hashlib
     import types
+
+    programs = {
+        "classify-event": "scripts/workflow_pilot/event_classifier.py",
+        "attest-metadata-event": "scripts/workflow_pilot/metadata_event.py",
+    }
+    if mode not in programs:
+        raise ValueError("sealed event mode is not allowlisted")
 
     environment = {
         "GIT_CONFIG_COUNT": "0",
@@ -223,9 +232,9 @@ def run_sealed_classifier(arguments: list[str]) -> int:
             offset = end + 21
         if component.encode() not in entries:
             raise ValueError("sealed capsule runtime is missing from exact tree")
-        mode, oid = entries[component.encode()]
+        entry_mode, oid = entries[component.encode()]
         modes = {b"100644", b"100755"} if index == len(components) - 1 else {b"40000"}
-        if mode not in modes:
+        if entry_mode not in modes:
             raise ValueError("sealed capsule runtime has an unsafe tree entry")
     source = object_bytes("blob", oid)
     runtime = types.ModuleType("_workflow_capsule_transport")
@@ -233,7 +242,9 @@ def run_sealed_classifier(arguments: list[str]) -> int:
     exec(compile(source, "sealed:runtime-transport", "exec", dont_inherit=True), runtime.__dict__)
     spec = runtime.CapsuleSpec(
         trees={"base": revision},
-        programs={"classify-event": "scripts/workflow_pilot/event_classifier.py"},
+        programs={mode: programs[mode]},
+        # Metadata timestamp formatting uses datetime's lazy time import.
+        modules=("time",) if mode == "attest-metadata-event" else (),
     )
     with runtime.prepare(ROOT, spec) as prepared:
         bundle = runtime._Bundle(prepared.bundle_fd.read())
@@ -241,8 +252,26 @@ def run_sealed_classifier(arguments: list[str]) -> int:
         # Even this transport module is loaded from the sealed artifact bytes.
         classifier = types.ModuleType("_workflow_classifier_transport")
         sys.modules[classifier.__name__] = classifier
-        exec(compile(bundle.program("classify-event"), "sealed:classifier-transport",
+        exec(compile(bundle.content("base", programs["classify-event"]), "sealed:classifier-transport",
                      "exec", dont_inherit=True), classifier.__dict__)
+
+        if mode == "attest-metadata-event":
+            metadata = types.ModuleType("_workflow_metadata_event_transport")
+            sys.modules[metadata.__name__] = metadata
+            exec(compile(bundle.program(mode), "sealed:metadata-event-transport",
+                         "exec", dont_inherit=True), metadata.__dict__)
+
+            def attest(**request):
+                try:
+                    value = prepared.execute(mode, request).value
+                except runtime.CapsuleError as error:
+                    raise ValueError(str(error)) from error
+                if (not isinstance(value, str) or len(value) != 64
+                        or any(character not in "0123456789abcdef" for character in value)):
+                    raise ValueError("sealed metadata event returned an invalid digest")
+                return value
+
+            return metadata.main(arguments, attestor=attest, event_loader=classifier.load_event)
 
         def classify(**request):
             try:
@@ -341,6 +370,12 @@ def dispatch(mode: str, arguments: list[str]) -> int:
         return run_lifecycle_check(arguments)
     if mode == "classify-event":
         return run_sealed_classifier(arguments)
+    if mode == "attest-metadata-event":
+        return run_sealed_classifier(arguments, mode=mode)
+    if mode == "pr-metadata":
+        from scripts.workflow_pilot import pr_metadata
+
+        return pr_metadata.main(arguments)
 
     controlled_repository_root(arguments)
     if mode == "anchor-refs":
