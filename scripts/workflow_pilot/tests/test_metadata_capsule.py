@@ -9,7 +9,8 @@ import tempfile
 import unittest
 from unittest import mock
 
-from scripts.workflow_pilot import isolated_launcher, metadata_event, sealed_capsule
+from scripts.workflow_pilot import event_classifier, isolated_launcher, metadata_event, sealed_capsule
+from scripts.workflow_pilot.tests.test_event_classifier import _launcher_command, _load_fixture
 from scripts.workflow_pilot.tests.test_pr_metadata import REPOSITORY, _metadata_event_payload
 
 
@@ -90,6 +91,46 @@ class MetadataCapsuleTests(unittest.TestCase):
         expected = metadata_event.event_digest(
             self.event, repository=REPOSITORY, run_id=202, run_number=11, run_attempt=1)
         self.assertEqual(self.output.read_text(), f"digest={expected}\n")
+
+    def test_both_sealed_modes_ignore_checkout_hash_and_runtime_module_shadows(self):
+        marker = self.root / "shadow-executed"
+        case = _load_fixture()["cases"][0]
+        for module in ("hashlib", "hmac"):
+            for mode in ("classify-event", "attest-metadata-event"):
+                with self.subTest(module=module, mode=mode):
+                    shadow = self.root / (module + ".py")
+                    shadow.write_text(
+                        f"with open({str(marker)!r},'w') as output:\n    output.write({module!r})\n"
+                        "raise SystemExit(86)\n")
+                    marker.unlink(missing_ok=True)
+                    self.output.unlink(missing_ok=True)
+                    try:
+                        if mode == "attest-metadata-event":
+                            self.event_path.write_text(json.dumps(self.event))
+                            result = self.run_mode()
+                            expected = metadata_event.event_digest(
+                                self.event, repository=REPOSITORY, run_id=202,
+                                run_number=11, run_attempt=1)
+                            expected_output = f"digest={expected}\n"
+                        else:
+                            self.event_path.write_text(json.dumps(case["payload"]))
+                            command = _launcher_command(case, self.event_path, self.output)
+                            command[2] = str(self.root / SOURCES[1])
+                            result = subprocess.run(
+                                command, cwd=self.root,
+                                env={"PATH": "/usr/bin:/bin", "LC_ALL": "C"},
+                                capture_output=True, text=True, timeout=30)
+                            expected = event_classifier.classify_event(
+                                case["event_name"], case["payload"], **case["runner"])
+                            self.assertEqual(result.stdout, expected.canonical_json())
+                            expected_output = "classification=" + expected.classification
+                        self.assertEqual(result.returncode, 0,
+                                         f"shadow_executed={marker.exists()}: {result.stderr}")
+                        self.assertFalse(marker.exists(), f"{module} executed for {mode}")
+                        self.assertIn(expected_output, self.output.read_text())
+                    finally:
+                        shadow.unlink()
+                        marker.unlink(missing_ok=True)
 
     def test_missing_committed_helper_never_uses_a_worktree_or_legacy_proof(self):
         for name in SOURCES[2:]:

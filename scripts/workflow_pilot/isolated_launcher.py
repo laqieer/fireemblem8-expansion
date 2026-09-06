@@ -16,16 +16,19 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[2]
+SEALED_EVENT_PROGRAMS = {
+    "classify-event": "scripts/workflow_pilot/event_classifier.py",
+    "attest-metadata-event": "scripts/workflow_pilot/metadata_event.py",
+}
 MODES = frozenset(
     {
         "anchor-refs",
-        "attest-metadata-event",
         "baseline",
-        "classify-event",
         "hydrate",
         "lifecycle-check",
         "pr-metadata",
         "reporter-tests",
+        *SEALED_EVENT_PROGRAMS,
     }
 )
 LIFECYCLE_CHECKS = frozenset({"workflow-pilot-reporter", "workflow-pilot-tests"})
@@ -173,15 +176,12 @@ def _bootstrap_git(root, environment, *args, bound=2 * 1024 * 1024):
 
 def run_sealed_classifier(arguments: list[str], *, mode: str = "classify-event") -> int:
     """Run a closed event entrypoint and its complete exact-Git source closure."""
-    import hashlib
-    import types
-
-    programs = {
-        "classify-event": "scripts/workflow_pilot/event_classifier.py",
-        "attest-metadata-event": "scripts/workflow_pilot/metadata_event.py",
-    }
+    programs = SEALED_EVENT_PROGRAMS
     if mode not in programs:
         raise ValueError("sealed event mode is not allowlisted")
+
+    import hashlib
+    import types
 
     environment = {
         "GIT_CONFIG_COUNT": "0",
@@ -368,9 +368,7 @@ def dispatch(mode: str, arguments: list[str]) -> int:
         return run_reporter_tests(arguments)
     if mode == "lifecycle-check":
         return run_lifecycle_check(arguments)
-    if mode == "classify-event":
-        return run_sealed_classifier(arguments)
-    if mode == "attest-metadata-event":
+    if mode in SEALED_EVENT_PROGRAMS:
         return run_sealed_classifier(arguments, mode=mode)
     if mode == "pr-metadata":
         from scripts.workflow_pilot import pr_metadata
@@ -404,7 +402,7 @@ def main(argv: list[str] | None = None) -> int:
         print("workflow-pilot-launcher: mode is required", file=sys.stderr)
         return 2
     clear_ambient_git_environment()
-    if arguments[0] != "classify-event":
+    if arguments[0] not in SEALED_EVENT_PROGRAMS:
         sys.path.insert(0, str(ROOT))
     try:
         return dispatch(arguments[0], arguments[1:])

@@ -1583,6 +1583,12 @@ the exact branch and head; timeout or ambiguity fails before `gh run watch`.
    while restoring its working file: require failure and no output, not legacy
    proof fallback. The named metadata capsule declares only the known lazy
    `time` dependency; omitting it must reject instead of enabling arbitrary imports.
+   Add uncommitted root-level `hashlib.py` and `hmac.py` files that create an
+   owned execution marker. Run both sealed event modes: neither marker may be
+   created, and classification/transition outputs must remain exact. The
+   pre-fix metadata mode executes those shadows because it adds the checkout
+   to `sys.path`; the shared sealed-mode path rule must reject that negative
+   control while leaving `pr-metadata` operator dispatch available.
    Withhold the proof step, change it on the second reconciliation snapshot,
    duplicate matching IDs, or introduce an unproven competing run; require a
    hold without guessing. Replay an earlier identical transition at a different

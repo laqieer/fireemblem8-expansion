@@ -1661,6 +1661,11 @@ a size failure until its receipt is first used.
 The existing production `classify-event` mode bootstraps the runtime directly
 from hash-verified exact-HEAD Git object bytes, with no repository entry in
 `sys.path`. Its CLI transport also comes from the sealed classifier artifact.
+One closed sealed-event program table controls mode registration, dispatch and
+checkout-path exclusion for both `classify-event` and `attest-metadata-event`.
+Neither inserts the checkout before cold `hashlib` imports or sealed-runtime
+stdlib imports such as `hmac`. The separately authorized operator/project
+modes retain their intended repository imports.
 It captures the runner event once through a bounded no-follow same-owner
 regular-file descriptor, seals the canonical request, executes the actual
 classifier, and writes the existing GitHub output protocol only on success.
