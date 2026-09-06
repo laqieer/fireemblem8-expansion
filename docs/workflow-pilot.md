@@ -925,10 +925,19 @@ declared in `CapsuleSpec.modules`; undeclared imports cannot fall back.
 Static standard-library package imports also preload their named submodules:
 `from xml.etree import ElementTree` needs no dynamic declaration. Preparation
 inspects builtin/frozen specs and explicit platform-library package paths,
-not ambient `sys.path`, `sys.modules` parents or meta-path importers. Ordinary
+including the matched interpreter's `lib-dynload` root, not ambient `sys.path`,
+`sys.modules` parents or meta-path importers. A required module with no spec
+rejects during preparation: membership in `sys.stdlib_module_names` alone does
+not make platform-disabled modules such as Linux `winreg` available.
+The `os.path` alias resolves explicitly to Linux `posixpath`, without exposing
+an otherwise undeclared `posixpath` cache entry. Ordinary
 exports such as `collections.Counter` are not mistaken for submodules. The
 isolated worker completes these trusted imports before closing its importer;
 there is no post-validation pathname fallback.
+Runtime, program and trusted-module syntax is compiled with the admitted
+interpreter's execution settings, not merely parsed as AST. Invalid constructs
+such as a top-level `return` therefore reject before capsule descriptors or
+workers are created.
 Before program code runs, `sys.modules` retains only declared standard-library
 names and their package parents; execution adds modules loaded from the sealed
 base closure. Runtime/bootstrap modules and undeclared preload dependencies are
@@ -948,6 +957,15 @@ mode, blob ID, byte size, SHA-256 and role. Missing, extra, duplicated,
 wrong-mode, wrong-blob and wrong-role entries reject. These are ephemeral
 execution artifacts, not committed source snapshots or a source/ROM identity
 ledger. Git remains the source/history authority.
+
+Preparation has one **30-second aggregate deadline** and a **2,048 Git-process
+budget**, shared across format probing, uncached proof reads, assembly and
+independent bundle validation. A Git read gets at most the lesser of 15 seconds
+and the remaining aggregate time. Cache hits consume no process allowance but
+still enforce the deadline. Expiry never renews the budget for the next object
+or descriptor phase; the active child is stopped/reaped through its existing
+owner, including bounded teardown. Existing object-count, artifact-count,
+path, mode and aggregate byte limits remain independent enforced boundaries.
 
 Runtime, selected program, canonical request and artifact bundle are separate
 anonymous `memfd` descriptors. Write, grow, shrink and seal seals are applied
@@ -1154,7 +1172,12 @@ close an unrelated FD reusing an old integer.
 
 Supported execution is currently **Linux x86-64 with 64-bit Python 3.10+ only**,
 for both the trusted preparation interpreter and fixed, root-owned
-`/usr/bin/python3` execution interpreter. Both must provide
+`/usr/bin/python3` execution interpreter. Preparation must itself run from that
+same system executable inode; matching version/implementation and stdlib-root
+identity are confirmed by the protected execution probe. A newer preparer paired
+with an older executor, a different binary or redirected stdlib tree is not a
+supported pairing, even if both advertise Python 3.10+. Aliases to the same
+system executable and matching runtime remain valid. Both must provide
 `sys.stdlib_module_names`, the required `os` descriptor/process APIs and
 constants, `fcntl` seals and `resource` limits. It requires sealed memfd,
 mounted/readable `/proc/self/fd` and `/proc/self/exe`, fork, process groups,
@@ -1182,7 +1205,7 @@ resources. One fixed `-I -S` probe executes the protected system image before
 any capsule descriptors or Git collection, with no candidate code or ambient
 environment, a five-second deadline and a 4 KiB limit per output stream.
 It inherits only its trusted interpreter image, not capsule authority.
-An old or capability-incomplete interpreter, failed probe, unavailable protected
+An old, mismatched or capability-incomplete interpreter, failed probe, unavailable protected
 exec facility or malformed report raises `CapsuleUnavailable` before capsule
 resources, workers and programs are launched. There is no `sys.executable` or PATH fallback.
 Admission is per capsule, not a global cache: executable identity and metadata

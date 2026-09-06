@@ -371,8 +371,8 @@ class CapsuleInterpreterTests(unittest.TestCase):
                     self.assertEqual(descriptor.read(), b"current interpreter")
                 probe.assert_called_once_with(admitted)
 
-    def test_different_supported_interpreter_is_probed_once_without_path_fallback(self):
-        report = {**capsule._python_report(), "version": [3, 10]}
+    def test_matching_system_interpreter_is_probed_once_without_path_fallback(self):
+        report = capsule._python_report()
         with (
             mock.patch.object(sys, "executable", "/untrusted/python"),
             mock.patch.object(subprocess, "Popen") as launch,
@@ -1639,8 +1639,8 @@ subprocess.Popen=_observed_popen
 
         git = capsule._git
 
-        def read(root, *arguments):
-            raw = git(root, *arguments)
+        def read(root, *arguments, **kwargs):
+            raw = git(root, *arguments, **kwargs)
             if arguments[:2] == ("cat-file", "tree"):
                 tree_sizes[arguments[2]] = len(raw)
                 return CountedTree(raw)

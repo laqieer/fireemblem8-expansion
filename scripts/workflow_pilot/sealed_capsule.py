@@ -60,6 +60,8 @@ MAX_SECONDS = 120
 MAX_DEPTH = 4
 MAX_WORKER_FDS = 64
 MAX_WORKER_FILE_BYTES = 1024 * 1024
+MAX_PREPARATION_SECONDS = 30
+MAX_PREPARATION_GIT_PROCESSES = 2048
 MAX_PYTHON_IMAGE_BYTES = 32 * 1024 * 1024
 MAX_PYTHON_PROBE_BYTES = 4096
 PYTHON_PROBE_SECONDS = 5
@@ -95,6 +97,8 @@ print(json.dumps({
     'version':list(sys.version_info[:2]),'platform':sys.platform,
     'machine':os.uname().machine,'pointer_bytes':ctypes.sizeof(ctypes.c_void_p),
     'stdlib_module_names':isinstance(names,frozenset) and {'os','sys','fcntl','resource','signal'}<=names,
+    'runtime':{'implementation':sys.implementation.name,'version':list(sys.version_info[:3]),
+               'stdlib':os.path.realpath(os.path.dirname(os.__file__))},
     'capabilities':available},sort_keys=True,separators=(',',':')))
 """
 SEALS = 0x01 | 0x02 | 0x04 | 0x08
@@ -506,20 +510,43 @@ def _collect(process, timeout, limit, abort: Callable[[], None] | None = None,
         _close_process_streams(process)
 
 
-def _git(root, *arguments):
+class _PreparationBudget:
+    def __init__(self):
+        self.deadline = time.monotonic() + MAX_PREPARATION_SECONDS
+        self.processes = 0
+
+    def remaining(self, limit=MAX_PREPARATION_SECONDS):
+        remaining = self.deadline - time.monotonic()
+        if remaining <= 0:
+            raise CapsuleError("aggregate preparation deadline exceeded")
+        return min(limit, remaining)
+
+    def git_process(self):
+        self.remaining()
+        if self.processes >= MAX_PREPARATION_GIT_PROCESSES:
+            raise CapsuleError("aggregate preparation Git process budget exceeded")
+        self.processes += 1
+
+
+def _git(root, *arguments, budget=None):
     command = [GIT, "--no-replace-objects", "-c", "core.fsmonitor=false",
                "-c", "core.hooksPath=/dev/null", "-C", os.fspath(root), *arguments]
+    if budget is not None:
+        budget.git_process()
     try:
         with _Child() as owner:
             process, _ = owner.start(
                 command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                 env=GIT_ENVIRONMENT, start_new_session=True, close_fds=True)
             process.stdin.close()
-            status, stdout, stderr = _collect(process, 15, MAX_BUNDLE_BYTES)
+            status, stdout, stderr = _collect(
+                process, 15 if budget is None else budget.remaining(15), MAX_BUNDLE_BYTES)
     except (OSError, subprocess.SubprocessError) as error:
         raise CapsuleError(f"exact-tree Git read failed: {error}") from error
     if status:
         raise CapsuleError(f"exact-tree Git read rejected: {stderr[:4096]!r}")
+    if budget is not None:
+        budget.remaining()
     return stdout
 
 
@@ -533,12 +560,15 @@ def head_commit(root: Path) -> str:
 
 
 class _ObjectSource:
-    def __init__(self, objects=None):
+    def __init__(self, objects=None, budget=None):
         self.objects = {} if objects is None else objects
         self.used = set()
         self._parsed_trees = {}
+        self.budget = budget
 
     def get(self, kind, oid):
+        if self.budget is not None:
+            self.budget.remaining()
         self.used.add(oid)
         found = self.objects.get(oid)
         if found is None or found[0] != kind:
@@ -597,18 +627,19 @@ class _ObjectSource:
 
 
 class _GitSource(_ObjectSource):
-    def __init__(self, root):
-        super().__init__()
+    def __init__(self, root, budget=None):
+        super().__init__(budget=_PreparationBudget() if budget is None else budget)
         self.root = root
         self.byte_count = 0
-        if _git(root, "rev-parse", "--show-object-format") != b"sha1\n":
+        if _git(root, "rev-parse", "--show-object-format", budget=self.budget) != b"sha1\n":
             raise CapsuleUnavailable("sealed capsules require Git SHA-1 object format")
 
     def get(self, kind, oid):
+        self.budget.remaining()
         if oid not in self.objects:
             if len(self.objects) >= MAX_ENTRIES * 8:
                 raise CapsuleError("invalid bounded Git object closure")
-            raw = _git(self.root, "cat-file", kind, oid)
+            raw = _git(self.root, "cat-file", kind, oid, budget=self.budget)
             if _oid(kind, raw) != oid:
                 raise CapsuleError("Git object bytes do not match requested identity")
             self.byte_count += len(raw)
@@ -620,7 +651,10 @@ class _GitSource(_ObjectSource):
 
 def _stdlib_spec(name):
     """Inspect only platform roots, without importing a candidate-shadowed parent."""
-    search = [os.path.dirname(os.__file__)]
+    if name == "os.path":
+        name = "posixpath"
+    root = os.path.dirname(os.__file__)
+    search = [root, os.path.join(root, "lib-dynload")]
     parts = name.split(".")
     for index in range(len(parts)):
         fullname = ".".join(parts[:index + 1])
@@ -676,7 +710,9 @@ def _assemble(source, spec):
             raise CapsuleError(f"invalid import name: {name}")
         if name.split(".")[0] in sys.stdlib_module_names:
             module_spec = _stdlib_spec(name)
-            if module_spec is None and not required:
+            if module_spec is None:
+                if required:
+                    raise CapsuleError(f"required platform standard-library module is unavailable: {name}")
                 return False
             stdlib.add(name)
             return module_spec is not None and module_spec.submodule_search_locations is not None
@@ -707,6 +743,7 @@ def _assemble(source, spec):
         scanned.add(path)
         try:
             syntax = ast.parse(source.get("blob", entry["blob"]), filename=path)
+            compile(syntax, path, "exec", dont_inherit=True, optimize=0)
         except (SyntaxError, ValueError) as error:
             raise CapsuleError(f"invalid trusted Python source: {path}") from error
         for node in ast.walk(syntax):
@@ -732,6 +769,7 @@ def _assemble(source, spec):
     runtime = add("base", RUNTIME_PATH, "runtime")
     try:
         runtime_syntax = ast.parse(source.get("blob", runtime["blob"]), filename=RUNTIME_PATH)
+        compile(runtime_syntax, RUNTIME_PATH, "exec", dont_inherit=True, optimize=0)
     except (SyntaxError, ValueError) as error:
         raise CapsuleError("invalid self-contained capsule runtime") from error
     for node in ast.walk(runtime_syntax):
@@ -739,6 +777,8 @@ def _assemble(source, spec):
                  else [node.module or ""] if isinstance(node, ast.ImportFrom) else [])
         if any(name.split(".")[0] not in sys.stdlib_module_names for name in names):
             raise CapsuleError("capsule runtime must have only platform-stdlib imports")
+        if any(_stdlib_spec(name) is None for name in names):
+            raise CapsuleError("capsule runtime requires an unavailable platform module")
     for path in sorted(program_paths):
         if _module_name(path).split(".")[0] in sys.stdlib_module_names:
             raise CapsuleError("program cannot shadow a platform standard-library module")
@@ -751,17 +791,22 @@ def _assemble(source, spec):
     return ([artifacts[key] for key in sorted(artifacts)], modules, sorted(stdlib))
 
 
-def _make_bundle(root, spec):
-    source = _GitSource(root)
+def _make_bundle(root, spec, budget=None):
+    budget = _PreparationBudget() if budget is None else budget
+    source = _GitSource(root, budget)
     artifacts, modules, stdlib = _assemble(source, spec)
     objects = [{"oid": oid, "kind": kind, "bytes": base64.b64encode(raw).decode("ascii")}
                for oid, (kind, raw) in sorted(source.objects.items())]
-    return canonical({"version": VERSION, "spec": spec, "artifacts": artifacts,
-                      "modules": modules, "stdlib": stdlib, "objects": objects})
+    raw = canonical({"version": VERSION, "spec": spec, "artifacts": artifacts,
+                     "modules": modules, "stdlib": stdlib, "objects": objects})
+    budget.remaining()
+    return raw
 
 
 class _Bundle:
-    def __init__(self, raw, expected=None):
+    def __init__(self, raw, expected=None, budget=None):
+        if budget is not None:
+            budget.remaining()
         value = _keys(parse(raw, MAX_BUNDLE_BYTES),
                       {"version", "spec", "artifacts", "modules", "stdlib", "objects"}, "bundle")
         if type(value["version"]) is not int or value["version"] != VERSION:
@@ -773,6 +818,8 @@ class _Bundle:
             raise CapsuleError("invalid bounded Git object closure")
         objects = {}
         for record in value["objects"]:
+            if budget is not None:
+                budget.remaining()
             _keys(record, {"oid", "kind", "bytes"}, "Git proof")
             oid, kind = record["oid"], record["kind"]
             if (not isinstance(oid, str) or SHA1.fullmatch(oid) is None
@@ -785,7 +832,7 @@ class _Bundle:
             if _oid(kind, content) != oid:
                 raise CapsuleError("wrong Git object identity")
             objects[oid] = (kind, content)
-        source = _ObjectSource(objects)
+        source = _ObjectSource(objects, budget)
         artifacts, modules, stdlib = _assemble(source, spec)
         if (canonical(artifacts) != canonical(value["artifacts"])
                 or canonical(modules) != canonical(value["modules"])
@@ -794,6 +841,8 @@ class _Bundle:
         self.raw, self.spec, self.objects = raw, spec, objects
         self.artifacts = {(entry["tree"], entry["path"]): entry for entry in artifacts}
         self.modules, self.stdlib = modules, stdlib
+        if budget is not None:
+            budget.remaining()
 
     def content(self, slot, path):
         record = self.artifacts.get((slot, path))
@@ -834,13 +883,16 @@ def _python_report():
         "version": list(sys.version_info[:2]), "platform": sys.platform,
         "machine": os.uname().machine, "pointer_bytes": ctypes.sizeof(ctypes.c_void_p),
         "stdlib_module_names": isinstance(names, frozenset) and modules.keys() <= names,
+        "runtime": {"implementation": sys.implementation.name, "version": list(sys.version_info[:3]),
+                    "stdlib": os.path.realpath(os.path.dirname(os.__file__))},
         "capabilities": available,
     }
 
 
 def _require_python(report):
     _keys(report, {"version", "platform", "machine", "pointer_bytes",
-                   "stdlib_module_names", "capabilities"}, "Python capability report")
+                   "stdlib_module_names", "capabilities", "runtime"}, "Python capability report")
+    runtime = _keys(report["runtime"], {"implementation", "version", "stdlib"}, "Python runtime")
     version = report["version"]
     if (not isinstance(version, list) or len(version) != 2
             or any(type(number) is not int for number in version)
@@ -852,6 +904,12 @@ def _require_python(report):
         raise CapsuleUnavailable(
             "sealed capsules require Linux x86-64 Python 3.10+, sys.stdlib_module_names "
             "and the required process/descriptor APIs")
+    if (not isinstance(runtime["implementation"], str) or not runtime["implementation"]
+            or not isinstance(runtime["version"], list) or len(runtime["version"]) != 3
+            or any(type(number) is not int for number in runtime["version"])
+            or runtime["version"][:2] != version
+            or not isinstance(runtime["stdlib"], str) or not os.path.isabs(runtime["stdlib"])):
+        raise CapsuleUnavailable("invalid execution interpreter runtime identity")
 
 
 def _platform():
@@ -886,6 +944,8 @@ def _probe_python(interpreter=None):
             raise CapsuleError(f"Python capability probe failed ({status}): {stderr[:4096]!r}")
         report = parse(stdout, MAX_PYTHON_PROBE_BYTES)
         _require_python(report)
+        if report != _python_report():
+            raise CapsuleUnavailable("preparation and execution Python runtimes must match")
         interpreter.check()
         return report
     except (OSError, subprocess.SubprocessError, CapsuleError) as error:
@@ -914,6 +974,8 @@ class _ExecutionInterpreter:
         _platform()
         _exec_policy()
         self.identity = _interpreter_identity(PYTHON)
+        if _interpreter_identity("/proc/self/exe") != self.identity:
+            raise CapsuleUnavailable("preparation must use the fixed system Python executable")
         self.image = None
         try:
             with open(PYTHON, "rb") as source:
@@ -1144,14 +1206,17 @@ def verify_receipt(raw: bytes, key: bytes, expected: ExecutionResult) -> dict:
 
 
 class Capsule:
-    def __init__(self, raw: bytes, spec: CapsuleSpec, *, _interpreter=None):
+    def __init__(self, raw: bytes, spec: CapsuleSpec, *, _interpreter=None, _budget=None):
+        budget = _PreparationBudget() if _budget is None else _budget
+        budget.remaining()
         if _interpreter is None:
             _interpreter = _ExecutionInterpreter()
         else:
             _interpreter.check()
         self._interpreter = _interpreter
         try:
-            bundle = _Bundle(raw, spec.record())
+            bundle = _Bundle(raw, spec.record(), budget)
+            budget.remaining()
             self.bundle_fd = SealedBytes(raw, "artifacts", MAX_BUNDLE_BYTES)
             try:
                 self.runtime_fd = SealedBytes(bundle.content("base", RUNTIME_PATH),
@@ -1181,9 +1246,13 @@ class Capsule:
 
 def prepare(repository_root: Path, spec: CapsuleSpec) -> Capsule:
     """Read and prove the exact declared Git closure before any execution."""
+    budget = _PreparationBudget()
+    budget.remaining()
     interpreter = _ExecutionInterpreter()
     try:
-        return Capsule(_make_bundle(repository_root, spec.record()), spec, _interpreter=interpreter)
+        budget.remaining()
+        return Capsule(_make_bundle(repository_root, spec.record(), budget), spec,
+                       _interpreter=interpreter, _budget=budget)
     except BaseException:
         interpreter.close()
         raise

@@ -1683,7 +1683,8 @@ game behavior needs a compensating change.
 **Issue:** [#204](https://github.com/laqieer/fireemblem8-expansion/issues/204).
 **Contract:** [sealed execution API](../workflow-pilot.md#sealed-exact-tree-execution-capsules).
 **Profile:** committed source checkout on Linux x86-64 with 64-bit Python 3.10+
-for both preparation and fixed root-owned `/usr/bin/python3` execution, including
+using the fixed root-owned `/usr/bin/python3` for preparation and its protected
+execution image, with matching runtime/version/stdlib-root identity, including
 `sys.stdlib_module_names`, `fcntl`, `resource` and required descriptor/process
 APIs; Git SHA-1, sealed memfd, readable `/proc/self/fd` and `/proc/self/exe`,
 executable memfds with enforceable execute-only permissions,
@@ -1717,6 +1718,8 @@ privileges. Every observed/signaled process is created and reaped by the test.
 
    Also run the pre-runtime Git bootstrap lifecycle controls:
    `/usr/bin/python3 -m unittest scripts.workflow_pilot.tests.test_isolated_bootstrap -v`.
+   Run the bounded preparation and interpreter-pairing controls:
+   `/usr/bin/python3 -m unittest scripts.workflow_pilot.tests.test_capsule_preparation -v`.
 
 3. Observe the real isolated `classify-event` entrypoint and actual production
    classifier over the existing event fixture. Their decisions and GitHub
@@ -1737,6 +1740,15 @@ privileges. Every observed/signaled process is created and reaped by the test.
    closure allowance. Collection must stop at the proof-object limit before
    fetching another object or serializing an over-limit bundle; cached
    objects at that limit must remain readable.
+   Use a small process allowance with real Git objects: cache hits must not
+   consume it, and the next uncached object must reject before spawning.
+   Advance a controlled clock between two real proof reads past the shared
+   30-second deadline; another read, including a cache hit, must reject.
+   Give a real stalled owned child a short remaining deadline and require
+   bounded termination/reaping and closed streams, not a renewed 15-second wait.
+   Expire the budget between bundle assembly and descriptor creation; no capsule
+   resource or worker may be created. The production process ceiling is 2,048;
+   tests need no huge path/process stress.
    Declare many data paths with the same directory prefixes and count the
    actual tree bytes parsed. Preparation and independent bundle validation
    must each parse every distinct used tree exactly once while returning all
@@ -1835,12 +1847,24 @@ privileges. Every observed/signaled process is created and reaped by the test.
    it receives no capsule descriptors or candidate code. Verify real probe
    timeout/output-bound teardown with no owned process/descriptor leak.
    Run the actual current system interpreter as the positive control.
-   A different, capability-complete Python 3.10+ report is admissible, but
-   changing the executable identity during probing or after preparation must
+   A preparer/executor pairing must use the same fixed system executable and
+   matching version, implementation and stdlib-root identity. A different
+   version or redirected library report must reject before Git/capsule
+   resources. Launch a real protected copy as a would-be preparer and require
+   that different executable inode to reject too; the ordinary fixed-system
+   preparer remains positive. Changing identity during probing or after preparation must
    invalidate admission before new resources or launches. Check root ownership
    and non-writability before probing; never substitute a caller-controlled
    `sys.executable`. One preparation probe suffices across descriptor creation
    and repeated/nested execution; there is no global stale capability cache.
+   Import Linux `winreg` or a nonexistent required stdlib submodule and require
+   rejection before capsule descriptors/worker launch. Use top-level `return`
+   or invalid `nonlocal` in a program, imported helper or runtime: AST parsing
+   alone is insufficient, so compilation must reject during preparation.
+   Exercise static, `from` and dynamic `os.path` aliases plus a platform
+   extension; declared operations must execute while an undeclared
+   `posixpath` cache entry remains absent. On a matching Python 3.12+ pair,
+   compile and execute a real PEP 695 alias as a supported newer-syntax control.
    Stop a real Python child at `PTRACE_TRACEME`'s successful-exec trap, before
    the loader's first instruction. With a non-dumpable caller, ordinary exec
    must still expose the owned sealed fixture through `/proc/<pid>/fd` to
@@ -1964,6 +1988,16 @@ than installing older interpreters. Real current-interpreter probing,
 classifier execution, nested calls and receipts remain the positive evidence.
 Reverting the gate fails the before-resource controls; malformed reports never
 become successful execution or compatibility fallback.
+
+The preparation-boundary correction preserves two real Git reads separated
+by 600 simulated elapsed seconds: previously each received a fresh 15-second
+allowance and the second still ran. Small-budget and real-child timeout
+controls now enforce the shared deadline/process ceiling without stress loads.
+Linux `import winreg` and a top-level `return` previously produced prepared
+capsules and failed only in the actual worker; both now reject before capsule
+resources. A real `os.path` program remains positive. Different executable
+and version/library pairings reject explicitly rather than admitting syntax
+or modules based solely on a newer preparer's capabilities.
 
 The continuous-exec correction preserves the real pre-fix Linux counterexample:
 a dumpable-`0` parent launches ordinary `/usr/bin/python3`, but its child at the
