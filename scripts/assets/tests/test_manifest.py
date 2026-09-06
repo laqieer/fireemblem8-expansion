@@ -718,14 +718,15 @@ class AssetManifestTests(unittest.TestCase):
         expected = manifest.render_discovery_makefile(ordinary)
         tracked = frozenset(manifest.discovery_sources(ordinary))
         logical = "build/generated/asset-discovery/captured.mk"
-        with mock.patch.object(
-            manifest.subprocess, "run", side_effect=AssertionError("unexpected Git subprocess"),
-        ):
-            path, content = manifest.render_discovery_artifact(
-                source, logical, tracked_sources=tracked,
-            )
-        self.assertEqual(path, logical)
-        self.assertEqual(content, expected)
+        for directory in (REPO_ROOT, TEST_ROOT, os.path.dirname(REPO_ROOT)):
+            with self.subTest(directory=directory), contextlib.chdir(directory), mock.patch.object(
+                manifest.subprocess, "run", side_effect=AssertionError("unexpected Git subprocess"),
+            ):
+                path, content = manifest.render_discovery_artifact(
+                    source, logical, tracked_sources=tracked,
+                )
+                self.assertEqual(path, logical)
+                self.assertEqual(content, expected)
         self.assertEqual(len(ordinary), 3)
         self.assertFalse(os.path.exists(os.path.join(REPO_ROOT, logical)))
 
@@ -735,6 +736,8 @@ class AssetManifestTests(unittest.TestCase):
         for logical in (
             "", "build", "src/forged.mk", "build/../../forged.mk",
             "/work/build/generated/asset-discovery/forged.mk", "build/bad\0.mk",
+            os.path.join(REPO_ROOT, "build/generated/asset-discovery/forged.mk"),
+            None, 3, b"build/generated/asset-discovery/forged.mk",
         ):
             with self.subTest(logical=logical):
                 with self.assertRaises(GeneratedDataError):

@@ -154,9 +154,12 @@ relative_output, content = manifest.render_discovery_artifact(
     tracked_sources=frozenset(captured_regular_git_paths))
 ```
 
-The returned path is repository-relative and must identify a file below the
-build root; malformed paths, the root directory itself, and escaping paths
-reject. This logical check is shared with ordinary filesystem writing.
+The logical input and returned path are repository-relative and must identify
+a file below the build root, regardless of the caller's working directory.
+Absolute logical inputs, malformed paths, the root directory itself, and
+escaping paths reject. This adapter uses the shared output validator's
+repository-relative mode; ordinary CLI filesystem outputs retain their
+existing absolute-path and current-working-directory semantics.
 The isolated executor must separately enforce the declared private output,
 source-ancestor/symlink restrictions, capture and publication. The adapter
 does not write into the source tree or redirect a guest path.
@@ -223,9 +226,12 @@ malformed membership data, and introduce an escaping source path. The
 `test_captured_discovery_*` cases in
 `scripts/assets/tests/test_manifest.py` automate those positive/adversarial
 checks without replacing normal CLI verification or output safety.
-The `test_discovery_artifact_*` cases additionally reject malformed/escaping
-logical outputs, require complete captured membership, and compare actual
-rendered Make-include behavior while verifying input metadata is unchanged.
+The `test_discovery_artifact_*` cases additionally reject absolute,
+malformed/escaping logical outputs, require complete captured membership, and
+compare actual rendered Make-include behavior while verifying input metadata
+is unchanged. Repeat the same logical output from the repository root, a
+nested working directory, and outside the repository: both its normalized
+path and rendered content must remain identical.
 The immutable probe's copied file timestamps may differ from an ambient
 checkout: equivalence compares ordinary rendering and adapted rendering on
 the same captured inputs, not unrelated wall-clock/materialization times.
