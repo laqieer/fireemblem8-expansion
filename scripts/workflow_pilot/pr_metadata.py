@@ -31,6 +31,9 @@ MAX_RUNS = 1000
 PAGE_SIZE = 100
 SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 REPOSITORY_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
+COMMENT_CREATION_RE = re.compile(
+    r"^repos/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/issues/[1-9][0-9]*/comments$"
+)
 WORKFLOW_PATH = ".github/workflows/build.yml"
 EVIDENCE_MARKER = "<!-- workflow-pilot-candidate-evidence -->"
 INTENT_MARKER = "<!-- workflow-pilot-metadata-edit-intent:v1 -->"
@@ -50,7 +53,7 @@ FULL_JOB_NAMES = frozenset(candidate_evidence.KNOWN_JOB_IDS)
 METADATA_JOB_NAMES = (
     FULL_JOB_NAMES - {candidate_evidence.FULL_CLASSIFIER}
 ) | {candidate_evidence.METADATA_CLASSIFIER}
-FULL_SUCCESS_JOB_NAMES = FULL_JOB_NAMES - {"patch-release"}
+FULL_SUCCESS_JOB_NAMES = FULL_JOB_NAMES
 ACTIVE_RUN_STATUSES = frozenset(
     {"pending", "queued", "requested", "in_progress", "waiting"}
 )
@@ -1330,6 +1333,7 @@ def _parse_http_response(
     label: str,
     allow_empty_body: bool,
     allow_gh_status_line: bool = False,
+    allow_comment_location: bool = False,
 ) -> ApiResponse:
     if len(raw.encode("utf-8")) > MAX_API_BYTES:
         raise MetadataEditError(f"{label} response exceeds 4 MiB")
@@ -1391,7 +1395,7 @@ def _parse_http_response(
     headers = _normalize_http_headers(lines[1:], label=label)
     if 300 <= status < 400:
         raise MetadataEditError(f"{label} request rejected redirect: HTTP {status}")
-    if "location" in headers:
+    if "location" in headers and not (status == 201 and allow_comment_location):
         raise MetadataEditError(f"{label} response unexpectedly contains Location")
     if not body_text:
         if allow_empty_body:
@@ -1490,6 +1494,9 @@ class GitHubClient:
             label=label,
             allow_empty_body=method == "POST",
             allow_gh_status_line=True,
+            allow_comment_location=(
+                method == "POST" and COMMENT_CREATION_RE.fullmatch(endpoint) is not None
+            ),
         )
         expected_status = (
             200 if endpoint == "graphql" else 201 if method == "POST" else 200
@@ -2575,7 +2582,24 @@ def _run_mode(
     run_id: int,
     status: str,
 ) -> str:
-    names = frozenset(job.name for job in jobs)
+    legacy_patch = next((job for job in jobs if job.name == "patch-release"), None)
+    if legacy_patch is not None:
+        skipped = (
+            legacy_patch.status == "completed"
+            and legacy_patch.conclusion == "skipped"
+            and not legacy_patch.runner_name
+        )
+        pending = (
+            status in ACTIVE_RUN_STATUSES
+            and legacy_patch.status in ACTIVE_RUN_STATUSES - {"in_progress"}
+            and legacy_patch.conclusion is None
+            and not legacy_patch.runner_name
+            and legacy_patch.started_at is None
+            and legacy_patch.completed_at is None
+        )
+        if not skipped and not pending:
+            raise MetadataEditError("legacy publisher job must be canonical skipped or pending")
+    names = frozenset(job.name for job in jobs if job.name != "patch-release")
     if status == "completed":
         if names == FULL_JOB_NAMES:
             return "full"
@@ -2868,7 +2892,13 @@ def list_candidate_runs(
 
 
 def _jobs_by_name(run: RunState) -> dict[str, JobState]:
-    return {job.name: job for job in run.jobs}
+    jobs = {job.name: job for job in run.jobs}
+    legacy = jobs.pop("patch-release", None)
+    if legacy is not None and (
+        legacy.status != "completed" or legacy.conclusion != "skipped" or legacy.runner_name
+    ):
+        raise MetadataEditError("legacy publisher job must be canonical skipped")
+    return jobs
 
 
 def require_full_success(run: RunState) -> None:
@@ -2890,13 +2920,20 @@ def require_full_success(run: RunState) -> None:
             raise MetadataEditError(
                 f"newest exact full Build job {name} is not runner-backed success"
             )
-    patch = jobs["patch-release"]
+
+
+def _require_essential_full_outcome(run: RunState) -> None:
     if (
-        patch.status != "completed"
-        or patch.conclusion != "skipped"
-        or patch.runner_name
+        run.mode == "full"
+        and run.status == "completed"
+        and run.conclusion in {"failure", "cancelled"}
+        and all(
+            job.status == "completed" and job.conclusion is not None
+            for job in run.jobs
+        )
     ):
-        raise MetadataEditError("newest exact full Build patch-release shape is invalid")
+        return
+    require_full_success(run)
 
 
 def require_metadata_success(run: RunState) -> None:
@@ -2925,7 +2962,7 @@ def require_metadata_success(run: RunState) -> None:
             raise MetadataEditError(
                 f"metadata continuity job {name} is not runner-backed success"
             )
-    for name in ("extended-host-tests", "legacy", "patch-release"):
+    for name in ("extended-host-tests", "legacy"):
         job = jobs[name]
         if (
             job.status != "completed"
@@ -2964,7 +3001,7 @@ def require_metadata_failure(run: RunState) -> None:
             raise MetadataEditError(
                 f"failed metadata continuity job {name} is not canonical success"
             )
-    for name in ("extended-host-tests", "legacy", "patch-release"):
+    for name in ("extended-host-tests", "legacy"):
         job = jobs[name]
         if (
             job.status != "completed"
@@ -3419,7 +3456,7 @@ def edit_metadata(
             raise MetadataEditError(
                 "essential edit has no exact-head full Build to reconcile"
             )
-        require_full_success(latest_full)
+        _require_essential_full_outcome(latest_full)
 
     current = fetch_pull_request(client, repository, pr_number)
     require_identity(current, head_sha=head_sha, base_sha=base_sha)
@@ -3486,7 +3523,7 @@ def edit_metadata(
                 raise MetadataEditError(
                     "essential edit has no exact-head full Build to reconcile"
                 )
-            require_full_success(latest_full)
+            _require_essential_full_outcome(latest_full)
 
     current_version = fetch_metadata_version(client, current)
     intents, confirmations, aborts = _transaction_comments(client, current)
@@ -4560,6 +4597,14 @@ def _create_transaction_comment(
         state.number,
         state.repository_owner_id,
     )
+    if "location" in response.headers:
+        if response.status != 201:
+            raise MetadataEditError(f"{label} creation Location requires HTTP 201")
+        _require_api_url(
+            response.headers["location"],
+            _endpoint(state.repository, f"issues/comments/{comment.comment_id}"),
+            field=f"{label} Location",
+        )
     if (
         comment.body != body
     ):

@@ -16,6 +16,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 MODES = frozenset(
     {
+        "agent-handoff",
         "anchor-refs",
         "attest-metadata-event",
         "baseline",
@@ -187,6 +188,10 @@ def dispatch(mode: str, arguments: list[str]) -> int:
     if mode not in MODES:
         raise ValueError(f"mode must be one of {', '.join(sorted(MODES))}")
     os.chdir(ROOT)
+    if mode == "agent-handoff":
+        from scripts.workflow_pilot import agent_handoff
+
+        return agent_handoff.main(arguments)
     if mode == "reporter-tests":
         return run_reporter_tests(arguments)
     if mode == "lifecycle-check":

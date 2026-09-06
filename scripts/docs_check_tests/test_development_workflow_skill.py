@@ -651,7 +651,6 @@ def workflow_tester_topology_violations(text):
                 "event-identity",
                 "event-router",
                 "metadata-classifier",
-                "patch-release",
                 "summary",
             }
         ),
@@ -666,7 +665,6 @@ def workflow_tester_topology_violations(text):
                 "event-identity",
                 "event-router",
                 "metadata-classifier",
-                "patch-release",
                 "summary",
             }
         ),
@@ -679,7 +677,6 @@ def workflow_tester_topology_violations(text):
                 "event-identity",
                 "event-router",
                 "metadata-classifier",
-                "patch-release",
                 "summary",
             }
         ),
@@ -1117,60 +1114,6 @@ def classifier_bootstrap_contract_violations(text):
             "ref-number-mismatched",
             "malformed",
             "cross-event",
-        ),
-        "publisher-revision-verification": (
-            "verifies /usr/bin/git rev-parse HEAD immediately after checkout",
-        ),
-        "publisher-secret-boundary": (
-            "BASEROM_URL",
-            "All repository/candidate-controlled commands finish before "
-            "private download",
-            "exact validated after commit",
-            "no whole-file source hash pins",
-            "No complete target ROM enters an Actions artifact, cache, "
-            "release, or log",
-            "dedicated unprivileged UID",
-            "mount, PID, and network namespaces",
-            "no network",
-            "BASH_ENV",
-            "regular, nonsymlink, single-link",
-            "unexpected",
-            "exact process group",
-            "builder-UID process remains",
-            "private mount propagation",
-            "recursively read-only",
-            "D-Bus",
-            "cgroup v2",
-            "cgroup.procs",
-            "Unavailable mount/cgroup features fail closed",
-            "no UID-wide signal",
-            "closes inherited file descriptors above 2",
-            "stdin/stdout/stderr permanently to private /dev/null",
-            "no GitHub workflow command-file paths",
-            "Candidate output is never replayed, logged, or uploaded",
-            "fixed status text with a numeric exit classification",
-            "Arbitrary output volume cannot",
-            "tmpfs/ulimit bounds",
-            "no output sink exists",
-            "root-only 0700 /mnt/supervisor",
-            "candidate cannot read, write, execute, or traverse",
-            "exact cgroup child",
-            "read-only",
-            "after /sys is masked",
-            "sole member",
-            "builder user, tree, wheelhouse, and candidate checkout",
-            "unpredictable",
-            "mode-restricted",
-            "absolute isolated Python",
-            "runtime CWD/environment",
-            "No candidate command runs while the base exists",
-            "success/failure",
-            "Cleanup is verified before upload",
-            "BPS/manifest/README",
-            "immediately before upload",
-            "fresh hosted publisher",
-            "no candidate-written GITHUB_ENV",
-            "background process",
         ),
         "candidate-common-identity": (
             "canonical successful event-identity context",
@@ -2730,6 +2673,29 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
             ),
         )
 
+    def test_bounded_exact_sha_agent_handoff_is_indexed(self):
+        registry = json.loads(TEST_CASE_REGISTRY_PATH.read_text(encoding="utf-8"))
+        case_id = "TC-WORKFLOW-AGENT-HANDOFF-001"
+        case = next(item for item in registry["cases"] if item["id"] == case_id)
+        feature = next(item for item in registry["features"] if item["id"] == case["feature_id"])
+        self.assertIn(case_id, feature["required_cases"])
+        self.assertEqual(case["feature_id"], "workflow-governance")
+        document = ROOT / case["document"]
+        section = "\n".join(read_markdown_section(
+            document.read_text(encoding="utf-8"),
+            "TC-WORKFLOW-AGENT-HANDOFF-001: Validate bounded exact-SHA agent handoffs",
+        ))
+        for heading in ("Actions", "Expected result", "Negative control", "Interactions and save compatibility",
+                        "Automation", "Cleanup and limitations"):
+            self.assertTrue(read_markdown_section(section, heading))
+        for evidence in case["automation"]:
+            self.assertTrue((ROOT / evidence["evidence"]).is_file())
+        _, skill = read_skill()
+        self.assertTrue(read_markdown_section(skill, "Bounded exact-SHA implementation handoffs"))
+        self.assertTrue(read_markdown_section(
+            COPILOT_INSTRUCTIONS_PATH.read_text(encoding="utf-8"), "Bounded exact-SHA implementation handoffs",
+        ))
+
     def test_immediate_publication_protocol(self):
         _, text = read_skill()
         self.assertEqual(publication_protocol_violations(text), [])
@@ -3782,120 +3748,6 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
                 "any nonempty ref or identity",
             ),
             (
-                "remove-publisher-revision-check",
-                "publisher-revision-verification",
-                r"verifies\s+`/usr/bin/git rev-parse HEAD`\s+"
-                r"immediately after checkout",
-                "trusts the checkout action",
-            ),
-            (
-                "run-candidate-with-private-base",
-                "publisher-secret-boundary",
-                r"(?i:No\s+candidate\s+command\s+runs\s+while\s+the\s+"
-                r"base\s+exists)",
-                "A candidate command runs while the base exists",
-            ),
-            (
-                "download-before-candidate-work",
-                "publisher-secret-boundary",
-                r"All repository/candidate-controlled commands finish before "
-                r"private download",
-                "Private download happens before candidate-controlled commands",
-            ),
-            (
-                "lag-producer-one-revision",
-                "publisher-secret-boundary",
-                r"exact\s+validated\s+after\s+commit",
-                "previous protected-branch commit",
-            ),
-            (
-                "transfer-complete-rom",
-                "publisher-secret-boundary",
-                r"No\s+complete\s+target\s+ROM\s+enters\s+an\s+Actions\s+"
-                r"artifact,\s+cache,\s+release,\s+or\s+log",
-                "The complete target ROM enters an Actions artifact",
-            ),
-            (
-                "reuse-runner-user",
-                "publisher-secret-boundary",
-                r"dedicated\s+unprivileged\s+UID",
-                "runner account",
-            ),
-            (
-                "drop-builder-network-isolation",
-                "publisher-secret-boundary",
-                r"mount,\s+PID,\s+and\s+network\s+namespaces",
-                "mount and PID namespaces",
-            ),
-            (
-                "drop-builder-process-teardown",
-                "publisher-secret-boundary",
-                r"exact\s+process\s+group",
-                "best-effort process cleanup",
-            ),
-            (
-                "share-builder-mount-propagation",
-                "publisher-secret-boundary",
-                r"(?i:private\s+mount\s+propagation)",
-                "shared mount propagation",
-            ),
-            (
-                "make-host-paths-writable",
-                "publisher-secret-boundary",
-                r"recursively\s+read-only",
-                "writable",
-            ),
-            (
-                "allow-uid-wide-kill",
-                "publisher-secret-boundary",
-                r"no\s+UID-wide\s+signal",
-                "a UID-wide signal",
-            ),
-            (
-                "retain-candidate-log-fds",
-                "publisher-secret-boundary",
-                r"closes\s+inherited\s+file\s+descriptors\s+above\s+2",
-                "inherits workflow log descriptors",
-            ),
-            (
-                "replay-candidate-output",
-                "publisher-secret-boundary",
-                r"(?i:Candidate\s+output\s+is\s+never\s+replayed,\s+"
-                r"logged,\s+or\s+uploaded)",
-                "Candidate output is replayed to the workflow log",
-            ),
-            (
-                "restore-volume-dependent-output-file",
-                "publisher-secret-boundary",
-                r"stdin/stdout/stderr\s+permanently\s+to\s+private\s+"
-                r"`/dev/null`",
-                "stdin/stdout/stderr to a bounded regular sink",
-            ),
-            (
-                "drop-supervisor-cgroup-view",
-                "publisher-secret-boundary",
-                r"root-only\s+`0700`\s+`/mnt/supervisor`",
-                "candidate-visible supervisor path",
-            ),
-            (
-                "allow-unexpected-handoff",
-                "publisher-secret-boundary",
-                r"regular,\s+nonsymlink,\s+single-link",
-                "ordinary outputs",
-            ),
-            (
-                "add-source-hash-ledger",
-                "publisher-secret-boundary",
-                r"(?i:No\s+whole-file\s+source\s+hash\s+pins)",
-                "whole-file source hash pins",
-            ),
-            (
-                "reuse-candidate-runner",
-                "publisher-secret-boundary",
-                r"fresh\s+hosted\s+publisher",
-                "reused candidate runner",
-            ),
-            (
                 "drop-pr-number-coherence",
                 "fallback-pr-number",
                 r"numeric event number",
@@ -4624,6 +4476,7 @@ printf '%s\t%s\t%s\n' "$result" \
             if item["id"] == "workflow-governance"
         )
         expected_cases = [
+            "TC-WORKFLOW-AGENT-HANDOFF-001",
             "TC-WORKFLOW-HOST-PYTHON-DEPS-001",
             "TC-WORKFLOW-REVIEW-FAMILY-001",
             "TC-WORKFLOW-WORKTREE-CLEANUP-001",

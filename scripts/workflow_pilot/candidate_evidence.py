@@ -12,7 +12,6 @@ KNOWN_JOB_IDS = frozenset(WORKER_JOB_IDS) | {
     "event-identity",
     "event-router",
     "event-classifier",
-    "patch-release",
     "summary",
 }
 FULL_CLASSIFIER = "event-classifier"
@@ -71,7 +70,7 @@ def _contexts(run: dict) -> dict[str, tuple[str, str]]:
         job_id = raw["job_id"]
         name = raw["name"]
         conclusion = raw["conclusion"]
-        if job_id not in KNOWN_JOB_IDS:
+        if job_id not in KNOWN_JOB_IDS and job_id != "patch-release":
             raise CandidateEvidenceError(f"unknown Build job identity {job_id!r}")
         if job_id in contexts:
             raise CandidateEvidenceError(f"duplicate Build job identity {job_id!r}")
@@ -122,9 +121,9 @@ def _validate_mode_contexts(
         raise CandidateEvidenceError(
             "run lacks successful canonical event-router setup"
         )
-    if contexts.get("patch-release") != ("patch-release", "skipped"):
+    if "patch-release" in contexts and contexts["patch-release"] != ("patch-release", "skipped"):
         raise CandidateEvidenceError(
-            "run lacks canonical skipped patch-release context"
+            "legacy patch-release context must be canonical skipped"
         )
     if mode == "metadata-only":
         if contexts["event-classifier"][1] != "success":
