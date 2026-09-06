@@ -53,6 +53,10 @@ STACKED_CI_CASE_HEADING = (
 BODY_EDIT_CASE_HEADING = (
     "TC-WORKFLOW-BODY-EDIT-001: Suppress metadata-only Build workers"
 )
+METADATA_EDIT_RACE_CASE_HEADING = (
+    "TC-WORKFLOW-METADATA-EDIT-RACE-001: "
+    "Defer metadata edits and reconcile continuity"
+)
 CANDIDATE_EVIDENCE_MARKER = "<!-- workflow-pilot-candidate-evidence -->"
 EVOLVING_PR_BODY_FIELDS = (
     "## Validation commands",
@@ -4626,6 +4630,7 @@ printf '%s\t%s\t%s\n' "$result" \
             "TC-WORKFLOW-MANUAL-HANDOFF-001",
             "TC-WORKFLOW-STACKED-CI-001",
             "TC-WORKFLOW-BODY-EDIT-001",
+            "TC-WORKFLOW-METADATA-EDIT-RACE-001",
             "TC-WORKFLOW-PILOT-BASELINE-001",
             "TC-WORKFLOW-OWNERSHIP-PROBE-SANDBOX-001",
         ]
@@ -4671,6 +4676,171 @@ printf '%s\t%s\t%s\n' "$result" \
             "docs/test-cases/workflow-governance.md",
         )
         self.assertEqual(indexed_case["feature_id"], "workflow-governance")
+
+    def test_metadata_edit_race_guidance_and_registry(self):
+        skill = SKILL_PATH.read_text(encoding="utf-8")
+        contributing = CONTRIBUTING_PATH.read_text(encoding="utf-8")
+        pilot = WORKFLOW_PILOT_PATH.read_text(encoding="utf-8")
+        governance = WORKFLOW_GOVERNANCE_PATH.read_text(encoding="utf-8")
+        case = "\n".join(
+            read_markdown_section(governance, METADATA_EDIT_RACE_CASE_HEADING)
+        )
+
+        for text in (skill, contributing, pilot):
+            normalized = normalize_policy(text)
+            for requirement in (
+                "pr-metadata edit",
+                "canonical evidence comment",
+                "same-SHA full Build",
+                "intent and confirmation comment IDs",
+                "confirmation-comment-bound `pr-metadata reconcile`",
+                "owner-authored",
+                "mutable local ledger",
+            ):
+                with self.subTest(requirement=requirement):
+                    self.assertIn(normalize_policy(requirement), normalized)
+        for requirement in (
+            "initially active same-head/same-base full or unproven Build takes "
+            "one complete run/job snapshot",
+            "mutation-eligible default edit takes three complete exact-candidate "
+            "run/job snapshots",
+            "`run_id` exclusively for an Actions workflow run",
+            "`comment_id` exclusively for the canonical issue comment",
+            "mutually exclusive",
+            '"provided_fields": {"body": "<sha256>", "title": "<sha256>"}',
+            '"changed_fields": {"title": "<sha256>"}',
+            '"pre_metadata_sha256": "<sha256>"',
+            '"target_metadata_sha256": "<sha256>"',
+            '"nonce": "<64-lowercase-hex>"',
+            '"schema_version": 1',
+            '"watermark":',
+            "--confirmation-comment-id <confirmation-comment-id>",
+            "RenamedTitleEvent",
+            "lastEditedAt",
+            "userContentEdits(first: 2)",
+            "newest-node `diff` equal to the current body",
+            "increase the count by exactly one",
+            '"body_editor_login": "owner"',
+            '"title_actor_login": "owner"',
+            "two append-only",
+            "same-second edit/revert invalidates confirmation",
+            "editor { __typename login ... on User { databaseId } }",
+            "RenamedTitleEvent.actor",
+        ):
+            with self.subTest(pilot_requirement=requirement):
+                self.assertIn(
+                    normalize_policy(requirement),
+                    normalize_policy(pilot),
+                )
+        for requirement in (
+            "pr-metadata reconcile",
+            "performs no PR metadata mutation",
+            "initially active Build takes one complete run/job snapshot",
+            "mutation-eligible default edit with three complete run/job snapshots",
+            "completed failed metadata run",
+            "repository-owner comment",
+            "/repositories/<numeric-id>/",
+            "Unmarked contributor, bot, and deleted-author comments",
+            "check-run URL",
+            "SP-only value separation",
+            "exact owner numeric user ID",
+            "24:00",
+            "one-second unassigned-skip timestamp exception",
+            "Architecture disposition",
+            "accepted in place",
+            "Vary",
+            "Cache-Control",
+            "application/jsonp",
+            "literal `=` and `;`",
+            "every backslash",
+            "`-1` or `0` seconds",
+            "eight-job-without-summary",
+            "active `updated_at` is not a live completion bound",
+            "Completed runs refresh exact run authority",
+            "deterministic fake `gh`",
+            "`run_id` for Actions workflow runs",
+            "`comment_id`",
+            "strictly mutually exclusive",
+            "status `3` for deferred/refused",
+            "status `2` with no decision JSON",
+            "typed `explicit-same`, `explicit-other`, and `unbound`",
+            "Active unbound runs block",
+            "terminal unbound runs cannot provide evidence",
+            "highest fully observed pre-PATCH run ID/number/creation timestamp",
+            "immutable owner-authored intent comment",
+            "immutable confirmation comment",
+            "no split, new subsystem, cross-subsystem timestamp ordering, or mutable local ledger",
+            "not a secret, signature, or authentication token",
+            "intent and confirmation comment IDs/URLs",
+            "later direct metadata edit",
+            "edit-and-revert",
+            "PATCH success followed by failed/indeterminate confirmation",
+            "title-changed/body-provided-same",
+            "body-changed/title-provided-same",
+            "changed-only PATCH JSON",
+            "supplied unchanged field drifts concurrently",
+            "superseded candidate groups are ignored",
+            "malformed historical records remain fatal",
+            "confirmation may not predate intent",
+            "canonical completed success",
+            "Full authorization and transaction metadata selection are independent",
+            "need not be newer than a later full run",
+            "multiple distinct edit-attested metadata IDs are ambiguous",
+            "databaseId` only through `... on User` inline fragments",
+            "bot, deleted, null, and wrong-ID actors",
+            "LivePullRequestMetadataQueryTests",
+            "No ARM runtime test is needed",
+            "There is no manual-only criterion",
+        ):
+            with self.subTest(case_requirement=requirement):
+                self.assertIn(normalize_policy(requirement), normalize_policy(case))
+
+        registry = json.loads(
+            TEST_CASE_REGISTRY_PATH.read_text(encoding="utf-8")
+        )
+        feature = next(
+            item
+            for item in registry["features"]
+            if item["id"] == "workflow-governance"
+        )
+        self.assertIn(
+            "https://github.com/laqieer/fireemblem8-expansion/issues/199",
+            feature["issue_urls"],
+        )
+        self.assertIn(
+            "TC-WORKFLOW-METADATA-EDIT-RACE-001",
+            feature["required_cases"],
+        )
+        indexed = next(
+            item
+            for item in registry["cases"]
+            if item["id"] == "TC-WORKFLOW-METADATA-EDIT-RACE-001"
+        )
+        self.assertEqual(indexed["feature_id"], "workflow-governance")
+        self.assertEqual(
+            indexed["document"],
+            "docs/test-cases/workflow-governance.md",
+        )
+        indexed_contract = normalize_policy(
+            " ".join(
+                indexed[field]
+                for field in ("actions", "expected_result", "negative_control")
+            )
+        )
+        for requirement in (
+            "isolated launcher suites",
+            "linked transaction graph",
+            "equal-second aborted predecessor",
+            "active ambiguity",
+            "duplicate/conflicting terminal",
+            "later-time equal/lower IDs",
+            "earlier-time higher IDs",
+            "terminal intents are excluded before active selection",
+            "terminal comment ID > intent comment ID",
+            "terminal createdAt >= intent createdAt",
+        ):
+            with self.subTest(registry_requirement=requirement):
+                self.assertIn(normalize_policy(requirement), indexed_contract)
 
     def test_manual_handoff_human_lifecycle_mutations_fail_closed(self):
         surfaces = (

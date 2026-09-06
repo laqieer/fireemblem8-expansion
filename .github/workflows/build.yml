@@ -120,6 +120,7 @@ jobs:
       identity_valid: ${{ steps.classify.outputs.identity_valid }}
       reason: ${{ steps.classify.outputs.reason }}
       run_expensive: ${{ steps.classify.outputs.run_expensive }}
+      metadata_event_digest: ${{ steps.metadata-event.outputs.digest }}
     env:
       CLASSIFIER_AVAILABLE: ${{ needs.event-identity.outputs.classifier_available }}
       CLASSIFIER_EXPECTED_SHA: ${{ needs.event-identity.outputs.classifier_expected_sha }}
@@ -242,6 +243,26 @@ jobs:
           } >> "$GITHUB_OUTPUT"
         fi
 
+    - name: Bind immutable metadata event
+      id: metadata-event
+      if: ${{ steps.classify.outputs.classification == 'metadata-only' }}
+      env:
+        BASH_ENV: ''
+        ENV: ''
+        PATH: /usr/bin:/bin
+        PYTHONPATH: ''
+      run: |
+        if test -f scripts/workflow_pilot/metadata_event.py; then
+          if ! /usr/bin/python3 -I scripts/workflow_pilot/isolated_launcher.py attest-metadata-event \
+              --event-path "$GITHUB_EVENT_PATH" --repository "$GITHUB_REPOSITORY" \
+              --run-id "$GITHUB_RUN_ID" --run-number "$GITHUB_RUN_NUMBER" \
+              --run-attempt "$GITHUB_RUN_ATTEMPT" --output "$GITHUB_OUTPUT"; then
+            echo "Metadata event attribution unavailable; reconciliation must hold." >&2
+          fi
+        else
+          echo "Trusted base lacks metadata event attribution; reconciliation must hold."
+        fi
+
   event-classifier:
     name: ${{ needs.event-router.result == 'success' && needs.event-router.outputs.classification == 'metadata-only' && 'metadata-classifier' || 'event-classifier' }}
     if: always()
@@ -337,6 +358,13 @@ jobs:
           echo "full fallback mode is not authoritative" >&2
           exit 1
         fi
+
+    - name: workflow-pilot-metadata-event:v1:${{ needs.event-router.outputs.metadata_event_digest }}
+      if: ${{ needs.event-router.outputs.classification == 'metadata-only' && needs.event-router.outputs.metadata_event_digest != '' }}
+      env:
+        METADATA_EVENT_DIGEST: ${{ needs.event-router.outputs.metadata_event_digest }}
+      run: |
+        [[ "$METADATA_EVENT_DIGEST" =~ ^[0-9a-f]{64}$ ]]
 
   # Fast, host-only lane (issues #13 + #12/#15): exercises every
   # tools/gba-playtest host test -- scenario/schema parsing, generators,
