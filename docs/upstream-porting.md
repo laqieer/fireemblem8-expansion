@@ -215,6 +215,14 @@ commands are then checked against source `gates()`. An unnamed non-checkout
 step, duplicate setup/name, complex key form, or older, newer, missing, added,
 removed, reordered, or changed target step fails closed instead of running
 source-defined evidence against a different checkout contract.
+The immutable metadata-event producer and classifier fingerprint marker are
+also protected CI setup, not local gates. The verifier binds their exact
+digest-output connection, immutable event/run/attempt arguments, isolated
+environment, metadata-only/nonempty conditions, and reviewed command sequences.
+The producer's missing-base and failure branches leave no proof; the verifier
+does not replace those holds with a local invocation or fabricated fingerprint.
+Missing, duplicate, relinked, or unreviewed producer/marker steps fail before
+gate execution. The local gate count and argv remain exactly 28.
 The same structure closes execution context before step comparison:
 workflow-level keys are exactly reviewed `name`, triggers, read-only
 permissions, and jobs, with workflow `env`, `defaults`, and `concurrency`
