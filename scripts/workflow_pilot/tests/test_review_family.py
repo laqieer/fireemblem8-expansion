@@ -89,6 +89,44 @@ def fact(number, head="b" * 40):
 
 
 class RoundTests(unittest.TestCase):
+    def test_formal_provisional_review_can_finish_once_without_an_extra_round(self):
+        state = model.RoundState()
+        observed = replace(fact(1), state="CHANGES_REQUESTED")
+        finding = model.Finding(
+            "finding", "case/subject", "wire", "validators:member",
+            observed.head, "source.py", observed.id)
+        state.observe(model.Triage(observed, "untriaged"))
+        self.assertEqual(state.consecutive, 1)
+        final = model.Triage(observed, "changes-requested", (finding,))
+        state.observe(final)
+        self.assertEqual((len(state.events), len(state.seen), state.consecutive), (1, 1, 1))
+        self.assertEqual(state.handoffs[0]["findings"], ["finding"])
+        with self.assertRaises(ValueError):
+            state.observe(final)
+        for changed in (replace(observed, head="c" * 40), replace(observed, actor="other"),
+                        replace(observed, submitted_at="2026-01-01T00:00:59Z")):
+            with self.assertRaises(ValueError):
+                state.observe(model.Triage(changed, "untriaged"))
+
+    def test_refresh_preserves_hold_and_disposition_count_boundary(self):
+        state = model.RoundState()
+        for number in (1, 2, 3):
+            state.observe(model.Triage(fact(number), "changes-requested"))
+        state.observe(model.Triage(replace(fact(1), body="edited"), "untriaged"))
+        self.assertEqual(state.hold, ("3", "b" * 40))
+        self.assertNotIn("1", {item["review_id"] for item in state.handoffs})
+        state.observe(model.Triage(replace(fact(3), state="DISMISSED"), "dismissed"))
+        self.assertEqual(state.hold, ("3", "b" * 40))
+        state.observe(model.Triage(fact(4), "clean"))
+        state.dispose(model.Disposition("3", "b" * 40, "coordinator", "redesign", "new plan"),
+                      "coordinator")
+        state.observe(model.Triage(fact(5), "changes-requested"))
+        changed = replace(fact(2), body="historical edit")
+        state.observe(model.Triage(changed, "untriaged"))
+        state.observe(model.Triage(changed, "changes-requested"))
+        self.assertEqual(state.consecutive, 1)
+        self.assertIsNone(state.hold)
+
     def test_formal_change_requests_hold_even_before_full_content_triage(self):
         state = model.RoundState()
         for number in (1, 2, 3):
@@ -240,13 +278,33 @@ class RoleTests(unittest.TestCase):
         identity = ("owner/repo", 1, "a" * 40)
         first = model.ReviewSession("coordinator", "implementer", self.scope, "b" * 40,
                                     identity=identity, owners=owners)
-        second = model.ReviewSession("coordinator", "other-implementer", self.scope, "c" * 40,
+        second = model.ReviewSession("coordinator", "other-implementer", self.scope, "b" * 40,
                                      identity=identity, owners=owners)
         first.begin(self.runtime, "reviewer")
         with self.assertRaisesRegex(model.ReviewError, "overlapping"):
-            second.begin(Runtime("c" * 40, self.scope), "second-reviewer")
+            second.begin(Runtime("b" * 40, self.scope), "second-reviewer")
         first.finish(self.runtime)
-        second.begin(Runtime("c" * 40, self.scope), "second-reviewer")
+        second.begin(Runtime("b" * 40, self.scope), "second-reviewer")
+
+    def test_one_active_pr_head_owner_ignores_scope_but_releases_completed_work(self):
+        owners = model.ReviewOwnership()
+        identity = ("owner/repo", 1, "a" * 40)
+        first = model.ReviewSession("coordinator", "implementer", self.scope, "b" * 40,
+                                    identity=identity, owners=owners)
+        first.begin(self.runtime, "reviewer")
+        disjoint = frozenset({"TC-CORE-004/generated-eventlists"})
+        second = model.ReviewSession("coordinator", "other-implementer", disjoint, "b" * 40,
+                                     identity=identity, owners=owners)
+        with self.assertRaises(ValueError):
+            second.begin(Runtime("b" * 40, disjoint), "reviewer")
+        for other_identity, head in ((identity, "c" * 40),
+                                     (("owner/repo", 2, "a" * 40), "b" * 40)):
+            independent = model.ReviewSession(
+                "coordinator", "other-implementer", self.scope, head,
+                identity=other_identity, owners=owners)
+            independent.begin(Runtime(head, self.scope), "reviewer")
+        first.finish(self.runtime)
+        second.begin(Runtime("b" * 40, disjoint), "reviewer")
 
 
 class MemberTests(unittest.TestCase):

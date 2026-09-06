@@ -224,8 +224,9 @@ class Triage:
     findings: tuple[Finding, ...] = ()
 
     def validate(self) -> None:
-        require(self.outcome in {"clean", "changes-requested", "untriaged"},
+        require(self.outcome in {"clean", "changes-requested", "untriaged", "dismissed"},
                 "unknown coordinator triage")
+        require(len(self.findings) <= MAX_FINDINGS, "review finding budget exceeded")
         sha(self.fact.head)
         timestamp(self.fact.submitted_at)
         unique([item.id for item in self.findings], "accepted findings")
@@ -236,6 +237,8 @@ class Triage:
             require(not self.findings and not self.fact.unresolved_threads
                     and self.fact.state in {"COMMENTED", "APPROVED"},
                     "clean triage contradicts review facts")
+        if self.outcome == "dismissed":
+            require(self.fact.state == "DISMISSED", "dismissed triage requires an actual dismissal")
 
 
 @dataclass(frozen=True)
@@ -255,34 +258,57 @@ class RoundState:
     handoffs: list[dict] = field(default_factory=list)
     dispositions: set[tuple[str, str]] = field(default_factory=set)
     events: list[Triage] = field(default_factory=list)
+    count_from: int = 0
 
     def observe(self, review: Triage) -> None:
         review.validate()
-        require(review.fact.id not in self.seen, "duplicate review round")
-        if self.events:
-            previous = self.events[-1].fact
-            require((timestamp(review.fact.submitted_at), review.fact.id)
-                    >= (timestamp(previous.submitted_at), previous.id),
-                    "review chronology moved backwards")
-        self.events.append(review)
-        self.seen.add(review.fact.id)
-        requested = review.outcome == "changes-requested" or self.fact_requests(review)
-        if self.hold is not None or (review.outcome == "untriaged" and not requested):
-            return
-        if review.outcome == "clean":
-            self.consecutive = 0
-            return
-        self.consecutive += 1
-        if self.consecutive == 3:
-            self.hold = review.fact.id, review.fact.head
+        if review.fact.id in self.seen:
+            index = next(i for i, item in enumerate(self.events) if item.fact.id == review.fact.id)
+            previous = self.events[index]
+            require((review.fact.head, review.fact.actor, timestamp(review.fact.submitted_at))
+                    == (previous.fact.head, previous.fact.actor, timestamp(previous.fact.submitted_at)),
+                    "review identity changed")
+            require(review.fact != previous.fact or
+                    (previous.outcome == "untriaged" and review.outcome != "untriaged"),
+                    "duplicate finalized review or unchanged provisional replay")
+            self.events[index] = review
         else:
-            require(len(review.findings) <= MAX_FINDINGS, "review finding budget exceeded")
-            self.handoffs.append({
-                "review_id": review.fact.id,
-                "head": review.fact.head,
-                "consecutive": self.consecutive,
-                "findings": [item.id for item in review.findings],
-            })
+            if self.events:
+                previous = self.events[-1].fact
+                require((timestamp(review.fact.submitted_at), review.fact.id)
+                        >= (timestamp(previous.submitted_at), previous.id),
+                        "review chronology moved backwards")
+            self.events.append(review)
+            self.seen.add(review.fact.id)
+        self._refresh()
+
+    def _refresh(self) -> None:
+        prior = {item["review_id"]: item for item in self.handoffs}
+        self.handoffs[:] = [
+            {**prior[item.fact.id], "findings": [finding.id for finding in item.findings]}
+            for item in self.events[:self.count_from]
+            if item.fact.id in prior and item.outcome == "changes-requested"
+        ]
+        held = self.hold
+        consecutive = 0
+        for item in self.events[self.count_from:]:
+            if item.outcome == "clean":
+                consecutive = 0
+            elif item.outcome == "changes-requested" or self.fact_requests(item):
+                consecutive += 1
+                if consecutive == 3:
+                    if self.hold is None:
+                        self.hold = item.fact.id, item.fact.head
+                    break
+                if item.outcome != "untriaged":
+                    self.handoffs.append({
+                        "review_id": item.fact.id, "head": item.fact.head,
+                        "consecutive": consecutive,
+                        "findings": [finding.id for finding in item.findings],
+                    })
+            if held is not None and item.fact.id == held[0]:
+                break
+        self.consecutive = 3 if held is not None else consecutive
 
     @staticmethod
     def fact_requests(review):
@@ -299,6 +325,7 @@ class RoundState:
         self.dispositions.add(binding)
         self.hold = None
         self.consecutive = 0
+        self.count_from = len(self.events)
 
 
 @dataclass
@@ -321,8 +348,8 @@ class ReviewOwnership:
     def reserve(self, session):
         require(session.identity is not None, "ownership requires frozen PR identity")
         for identity, head, scope, active in self.records.values():
-            if identity[:2] == session.identity[:2] and scope & session.scope:
-                require(not active and head != session.head, "duplicate/overlapping review ownership")
+            require(not (active and identity[:2] == session.identity[:2] and head == session.head),
+                    "duplicate/overlapping review ownership")
         self.records[id(session)] = session.identity, session.head, session.scope, True
 
     def finish(self, session):
@@ -460,9 +487,24 @@ class ReviewSession:
         self.accepted[finding.id] = finding
 
     def triage(self, decision: Triage) -> None:
+        for finding in decision.findings:
+            require(finding.subject in self.scope and finding.family in FAMILIES,
+                    "finding is outside accepted scope")
+            require(finding.id not in self.accepted or self.accepted[finding.id] == finding,
+                    "accepted finding binding changed")
         self.rounds.observe(decision)
         for finding in decision.findings:
-            self.accept(finding)
+            if finding.id not in self.accepted:
+                self.accept(finding)
+        for handoff in self.rounds.handoffs:
+            handoff["findings"] = sorted(finding.id for finding in self.accepted.values()
+                                         if finding.review_id == handoff["review_id"])
+
+    def refresh_reviews(self, facts: tuple[ReviewFact, ...]) -> None:
+        current = {item.fact.id: item.fact for item in self.rounds.events}
+        for fact in facts:
+            if fact.id in current and current[fact.id] != fact:
+                self.triage(Triage(fact, "untriaged"))
 
 
 def assess_handoff(request: dict, members: tuple[Obligation, ...],
@@ -477,6 +519,9 @@ def assess_handoff(request: dict, members: tuple[Obligation, ...],
     require({subject_key(item) for item in request["subjects"]} == session.scope,
             "request omitted or added an accepted subject")
     require(request["candidate_sha"] == session.head, "stale candidate session")
+    require(len({fact.id for fact in remote_reviews}) == len(remote_reviews),
+            "duplicate remote review")
+    session.refresh_reviews(remote_reviews)
     session.validate_local_triage()
     proposed = {item["finding_id"]: item for item in request["findings"]}
     require(set(proposed) == set(session.accepted), "missing or invented accepted finding")
@@ -485,8 +530,6 @@ def assess_handoff(request: dict, members: tuple[Obligation, ...],
         require((subject_key(item), item["family"], item["reported_member"])
                 == (finding.subject, finding.family, finding.member),
                 "finding subject/member classification drift")
-    require(len({fact.id for fact in remote_reviews}) == len(remote_reviews),
-            "duplicate remote review")
     require(tuple(item.fact for item in triage) == remote_reviews,
             "missing triage or changed review content")
     require(tuple(session.rounds.events) == triage, "round state differs from observed triage")

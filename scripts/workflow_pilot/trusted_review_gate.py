@@ -81,10 +81,13 @@ class GitTree:
         self.captured = {}
 
     def git(self, *arguments):
-        return reporter.run_git(
-            self.root, "--no-optional-locks", "-c", "core.fsmonitor=false",
-            "-c", "core.hooksPath=/dev/null", "-c", "diff.external=",
-            *arguments)
+        try:
+            return reporter.run_git(
+                self.root, "--no-optional-locks", "-c", "core.fsmonitor=false",
+                "-c", "core.hooksPath=/dev/null", "-c", "diff.external=",
+                *arguments)
+        except reporter.PilotDataError as error:
+            raise ValueError("review Git unavailable: " + str(error)[-1000:]) from error
 
     def oid(self, path):
         if path not in self.entries:
@@ -328,9 +331,13 @@ class ReviewTools:
     def assess(self, request, session, github, triage, *, pre_review_required):
         model = self.model
         request = model.validate_request(request)
+        model.require(session.identity == (
+            request["repository"], request["pull_request"], request["base_sha"]),
+            "request repository/PR/base differs from the coordinator's frozen identity")
         identities, facts = github.snapshot(request["repository"], request["pull_request"], model)
         model.require(identities[1] == request["candidate_sha"], "stale remote candidate")
         self.validate_base(request, identities[0])
+        session.refresh_reviews(facts)
         session.validate_local_triage()
         model.require(set(session.rounds.seen) == {item.fact.id for item in triage},
                       "round state has not consumed actual triage")
@@ -361,6 +368,8 @@ class ReviewTools:
                           "wrong source objects")
         after_identities, after_facts = github.snapshot(
             request["repository"], request["pull_request"], model)
+        if after_identities == identities:
+            session.refresh_reviews(after_facts)
         model.require((after_identities, after_facts) == (identities, facts),
                       "GitHub evidence changed during execution")
         return model.assess_handoff(

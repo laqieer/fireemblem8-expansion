@@ -193,6 +193,8 @@ the consumers' independent protected-principal/deployment requirements.
    tool; duplicate/overlapping owners, wrong/stale/incomplete task results and
    excessive duration reject. This proves the operational interface, not
    same-UID OS containment or that a synthetic test launched a live agent.
+   Disjoint scopes cannot create two active reviewers for the same PR/head;
+   different PRs/heads remain independent and completed sessions release ownership.
    Every returned typed finding needs explicit accepted/rejected local triage
    with a reason. Omission rejects even on repaired source; acceptance enters
    the existing sibling sweep, and rejection never silently accepts a finding.
@@ -201,6 +203,12 @@ the consumers' independent protected-principal/deployment requirements.
    untriaged until that decision. Change content or the head and require
    rejection. The live adapter's command is read-only GraphQL.
    Dismissed exact-head facts remain visible but cannot be clean authority.
+   Promote a formal untriaged request to full triage without adding a round.
+   Edit an actually observed clean/requested review, require invalidation, then
+   retriage that same record; repeat with dismissal and a later active clean
+   review. Handoffs refresh, accepted findings remain required, unchanged final
+   replay and identity rebinding reject, and sticky holds survive retriage.
+   Finalized `dismissed` triage closes only actual historical dismissals.
    Unrelated live-base fast-forwards preserve the actual candidate merge base;
    substituting an older ancestor or a base outside that lineage rejects.
 9. Exercise the real isolated launcher against an explicitly reviewed tool
@@ -210,6 +218,8 @@ the consumers' independent protected-principal/deployment requirements.
    success/program/trust fields fail rather than enabling a fallback.
    A real unattached tree object containing an initializer must be rejected
    before that initializer executes.
+   Missing candidate/base objects and invalid ancestry in both real direct
+   and isolated CLI entrypoints fail nonzero with bounded diagnostics, not a traceback.
 10. First/second request rounds produce bounded handoffs; the third remains
     held through later heads and clean reports until a valid coordinator
     disposition names the held round/head. Preserve already-created commits

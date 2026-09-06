@@ -248,6 +248,7 @@ class GitHubReviewTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "triage|content"):
             self.tools.assess(data, session, github, (triage,), pre_review_required=True)
         pr["reviews"]["nodes"][0]["body"] = facts[0].body
+        session.triage(triage)
         session.report = None
         with self.assertRaisesRegex(ValueError, "task observation"):
             self.tools.assess(data, session, github, (triage,), pre_review_required=True)
@@ -255,6 +256,124 @@ class GitHubReviewTests(unittest.TestCase):
             changed = {**data, key: value}
             with self.assertRaises(ValueError):
                 self.tools.assess(changed, session, github, (triage,), pre_review_required=False)
+
+    def test_actual_clean_review_edit_invalidates_then_accepts_fresh_triage(self):
+        data, session, _, github, facts = self.setup_review()
+        clean = self.model.Triage(facts[0], "clean")
+        session.triage(clean)
+        self.assertTrue(self.tools.assess(
+            data, session, github, (clean,), pre_review_required=True)["exact_head_review_clean"])
+        github.payload["data"]["repository"]["pullRequest"]["reviews"]["nodes"][0]["body"] += " edited"
+        with self.assertRaises(ValueError):
+            self.tools.assess(data, session, github, (clean,), pre_review_required=True)
+        self.assertEqual(session.rounds.events[0].outcome, "untriaged")
+        self.assertEqual(len(session.rounds.events), 1)
+        _, refreshed = github.snapshot("owner/repo", 1, self.model)
+        final = self.model.Triage(refreshed[0], "clean")
+        session.triage(final)
+        self.assertTrue(self.tools.assess(
+            data, session, github, (final,), pre_review_required=True)["exact_head_review_clean"])
+        with self.assertRaises(ValueError):
+            session.triage(final)
+        query = github.query
+        change_after = github.calls + 1
+
+        def edit_during_probe(*arguments):
+            if github.calls == change_after:
+                github.payload["data"]["repository"]["pullRequest"]["reviews"]["nodes"][0]["body"] += " during probe"
+            return query(*arguments)
+
+        with patch.object(github, "query", side_effect=edit_during_probe):
+            with self.assertRaisesRegex(ValueError, "changed during execution"):
+                self.tools.assess(data, session, github, (final,), pre_review_required=True)
+        self.assertEqual(session.rounds.events[0].outcome, "untriaged")
+
+    def test_actual_formal_review_retriage_dismissal_and_later_handoff(self):
+        data, _, github, _, local = self.local_source_remediation()
+        session = self.model.ReviewSession(
+            "coordinator", "implementer", frozenset({local.subject}), data["candidate_sha"],
+            identity=("owner/repo", 1, self.repo.base))
+        node = github.payload["data"]["repository"]["pullRequest"]["reviews"]["nodes"][0]
+        node["state"] = "CHANGES_REQUESTED"
+        node["commit"]["oid"] = local.origin
+        _, facts = github.snapshot("owner/repo", 1, self.model)
+        session.triage(self.model.Triage(facts[0], "untriaged"))
+        finding = replace(local, id="remote-finding", review_id=facts[0].id)
+        complete = self.model.Triage(facts[0], "changes-requested", (finding,))
+        session.triage(complete)
+        data["findings"] = [{
+            "finding_id": finding.id, **data["subjects"][0],
+            "family": finding.family, "reported_member": finding.member,
+        }]
+        result = self.tools.assess(data, session, github, (complete,), pre_review_required=False)
+        self.assertTrue(result["handoff_eligible"])
+        self.assertEqual(session.rounds.consecutive, 1)
+        self.assertEqual(session.rounds.handoffs[0]["findings"], [finding.id])
+        node["body"] += " edited"
+        with self.assertRaises(ValueError):
+            self.tools.assess(data, session, github, (complete,), pre_review_required=False)
+        self.assertEqual(session.rounds.handoffs, [])
+        self.assertEqual(session.accepted[finding.id], finding)
+        _, facts = github.snapshot("owner/repo", 1, self.model)
+        complete = self.model.Triage(facts[0], "changes-requested", (finding,))
+        session.triage(complete)
+        self.assertEqual(session.rounds.consecutive, 1)
+        self.assertEqual(session.rounds.handoffs[0]["findings"], [finding.id])
+        node["body"] += " further context"
+        _, facts = github.snapshot("owner/repo", 1, self.model)
+        complete = self.model.Triage(facts[0], "changes-requested")
+        session.triage(complete)
+        self.assertEqual(session.rounds.handoffs[0]["findings"], [finding.id])
+        node["state"] = "DISMISSED"
+        with self.assertRaises(ValueError):
+            self.tools.assess(data, session, github, (complete,), pre_review_required=False)
+        _, facts = github.snapshot("owner/repo", 1, self.model)
+        dismissed = self.model.Triage(facts[0], "dismissed")
+        session.triage(dismissed)
+        with self.assertRaises(ValueError):
+            self.tools.assess({**data, "findings": []}, session, github,
+                              (dismissed,), pre_review_required=False)
+        later = copy.deepcopy(node)
+        later.update(id="review-2", state="APPROVED", submittedAt="2026-01-01T00:00:20Z")
+        later["commit"]["oid"] = data["candidate_sha"]
+        github.payload["data"]["repository"]["pullRequest"]["reviews"]["nodes"].append(later)
+        _, facts = github.snapshot("owner/repo", 1, self.model)
+        session.triage(self.model.Triage(facts[-1], "clean"))
+        result = self.tools.assess(
+            data, session, github, tuple(session.rounds.events), pre_review_required=False)
+        self.assertTrue(result["exact_head_review_clean"])
+        self.assertTrue(result["handoff_eligible"])
+        self.assertEqual(len(session.rounds.seen), 2)
+
+    def test_real_direct_and_isolated_cli_bound_expected_git_errors(self):
+        descendant = self.repo.commit({"lineage-error-control": "descendant"})
+        launcher = self.repo.root / "scripts/workflow_pilot/isolated_launcher.py"
+        bootstrap = (
+            "import sys; sys.path.insert(0, sys.argv[1]); "
+            "from scripts.workflow_pilot.trusted_review_gate import main; "
+            "raise SystemExit(main(sys.argv[2:]))"
+        )
+        for base, head in ((self.repo.base, "f" * 40), ("e" * 40, self.repo.base),
+                           (descendant, self.repo.base)):
+            path = self.repo.root / "request.json"
+            path.write_text(json.dumps(request(base=base, head=head)))
+            arguments = [
+                "--repository-root", str(self.repo.root), "--subject-root", str(self.repo.root),
+                "--tool-revision", self.repo.base, "--candidate", head,
+                "--request", str(path), "--mode", "plan",
+            ]
+            for entrypoint in (
+                [sys.executable, "-I", "-c", bootstrap, str(self.repo.root)],
+                [sys.executable, "-I", str(launcher), "review-family"],
+            ):
+                with self.subTest(base=base, head=head, entrypoint=entrypoint[2]):
+                    completed = subprocess.run(entrypoint + arguments, env=ENV,
+                                               capture_output=True, text=True, timeout=30)
+                    self.assertNotEqual(completed.returncode, 0)
+                    self.assertEqual(completed.stdout, "")
+                    self.assertTrue(completed.stderr.startswith("review-family:"), completed.stderr)
+                    self.assertNotIn("Traceback", completed.stderr)
+                    self.assertLessEqual(len(completed.stderr), 1200)
 
     def test_read_only_api_command_and_exact_actor_before_content(self):
         github = gate.GitHub()

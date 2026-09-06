@@ -207,6 +207,10 @@ The coordinator supplies existing tool adapters through the in-process API;
 they are never deserialized from a file. This API does not authenticate an
 arbitrary Python caller. Its trust boundary is the existing coordinator/tool
 role, not a new platform.
+The existing ownership index permits only one active reviewer for a
+repository/PR/candidate head, even for disjoint scopes. Different PRs or heads
+remain independent; completion releases that head for a subsequent bounded
+session.
 
 `ReviewSession.finish` captures the runtime's typed `Finding` records at the
 reviewed task/head. Before handoff, call
@@ -233,6 +237,9 @@ lists untriaged review IDs and leaves handoff eligibility false: a file
 argument cannot establish an independent task or complete coordinator
 triage. The coordinator consumes actual task results with the in-process API;
 it must not convert `source_audit_complete` into approval.
+Expected missing-object and ancestry failures are translated at the existing
+Git adapter into bounded, nonzero `review-family:` diagnostics in both direct
+and isolated entrypoints, not tracebacks or successful fallback assessments.
 
 ### Finite coverage and actual evidence
 
@@ -304,12 +311,27 @@ triage; missing/incomplete observations fail closed. Dismissed review facts are
 retained as history but never clean authority: only active COMMENTED/APPROVED
 facts can support clean triage on the exact head.
 
+Keep one current record per review ID, with immutable review head, actor and
+submission identity inside the frozen repository/PR session. An unchanged
+provisional `untriaged` observation can receive complete triage once; an
+unchanged finalized replay rejects. Fresh edited content, thread state or
+dismissal invalidates the previous decision and handoff, including changes
+observed during probe execution. Explicit coordinator retriage replaces the
+record instead of adding a round. Formal CHANGES_REQUESTED observations count
+before content triage, but do not emit actionable handoffs until triaged.
+The finalized `dismissed` outcome is permitted only for an actual DISMISSED
+fact; it completes historical triage without granting clean authority.
+Previously accepted finding bindings remain required, including when newer
+content omits them. Retriage refreshes handoffs from that accepted set.
+
 First and second consecutive change requests produce bounded handoffs.
 Before a hold, clean triage resets the sequence. The third request creates a
 sticky hold bound to its review ID and head. New heads and later clean
 reports cannot reset it. Only the coordinator's bound `redesign`, `decompose`
 or `retain-with-evidence` disposition, with a reason, permits resumption.
 Stale/wrong-head/reused dispositions fail.
+A valid disposition starts the next count window. Retriaging an older current
+record cannot recount completed rounds or silently reopen the old hold.
 
 Preserve #207: stop new narrow work and eligibility during the hold, but
 immediately publish already-created commits on their assigned branch as

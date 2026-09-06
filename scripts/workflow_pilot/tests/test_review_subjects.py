@@ -239,10 +239,8 @@ class SubjectTests(SubjectTestCase):
         path = "scripts/workflow_pilot/review_family.py"
         source = (self.repo.root / path).read_text()
         mutation = source.replace(
-            'if self.hold is not None or (review.outcome == "untriaged" and not requested):',
-            'if review.outcome == "untriaged":').replace(
-            'if review.outcome == "clean":\n            self.consecutive = 0',
-            'if review.outcome == "clean":\n            self.hold = None\n            self.consecutive = 0')
+            '        self._refresh()\n',
+            '        self._refresh()\n        if review.outcome == "clean":\n            self.hold = None\n')
         self.assertNotEqual(source, mutation)
         origin = self.repo.commit({path: mutation})
         members = self.tools.members(self.scope("session"), (origin,))
