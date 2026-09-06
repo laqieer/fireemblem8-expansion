@@ -485,6 +485,13 @@ class Policy:
         self.check(state, path, operation, observer=self.observer(state, registers))
         return path
 
+    @staticmethod
+    def signal_target(pid, *targets):
+        # Candidate threads are not admitted: its PID, TGID and TID are equal.
+        # Match the kernel's pid_t conversion, rejecting group/broadcast forms.
+        if any(ctypes.c_int(target).value != pid for target in targets):
+            raise Violation("cross-process signal target denied")
+
     def entry(self, pid, state, r):
         self.calls += 1
         if self.calls > self.config["syscall_limit"]:
@@ -708,12 +715,12 @@ class Policy:
             self.check(state, self.path(pid, state, b, signed(a), follow_final=bool(e & 0x400)), "write")
             self.check(state, self.path(pid, state, d, signed(c), follow_final=False), "write")
             self.reserve_creation()
-        elif n == 62:
-            if signed(a) != pid:
-                raise Violation("cross-process signal denied")
-        elif n == 234:
-            if a != pid or b != pid:
-                raise Violation("cross-process thread signal denied")
+        elif n in {62, 129, 200}:  # kill, rt_sigqueueinfo, tkill
+            self.signal_target(pid, a)
+        elif n in {234, 297}:  # tgkill, rt_tgsigqueueinfo
+            self.signal_target(pid, a, b)
+        elif n == 424:
+            raise Violation("candidate pidfd signal authority is not admitted")
         elif n in {105, 106, 113, 114, 117, 119}:
             identity = (
                 self.config["runner_gid"] if n in {106, 114, 119}
@@ -742,7 +749,7 @@ class Policy:
         elif n not in {
             7, 11, 13, 14, 15, 23, 24, 26, 27, 28, 35, 36, 37, 38,
             39, 60, 61, 63, 79, 96, 97, 98, 99, 100, 102, 104, 107, 108,
-            110, 111, 115, 118, 120, 121, 124, 127, 128, 129, 130, 131, 186, 202, 204,
+            110, 111, 115, 118, 120, 121, 124, 127, 128, 130, 131, 186, 202, 204,
             218, 219, 228, 229, 230, 231, 232, 233, 247, 270, 271,
             273, 281, 291, 292, 309, 318, 324, 334,
         }:

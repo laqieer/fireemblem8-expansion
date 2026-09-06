@@ -67,6 +67,132 @@ class FoundationTests(unittest.TestCase):
         self.assertIsNone(session.base)
         self.assertFalse(self.scratch.exists())
 
+    @staticmethod
+    def signal_sender_source():
+        return r'''
+#define _GNU_SOURCE
+#include <signal.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/syscall.h>
+#include <sys/wait.h>
+#include <time.h>
+#include <unistd.h>
+static long send_signal(int operation, pid_t target) {
+    siginfo_t info;
+    memset(&info,0,sizeof(info));
+    info.si_signo=SIGUSR1; info.si_code=SI_QUEUE;
+    info.si_pid=getpid(); info.si_uid=getuid(); info.si_value.sival_int=42;
+    switch(operation) {
+    case SYS_kill: return syscall(SYS_kill,target,SIGUSR1);
+    case SYS_tkill: return syscall(SYS_tkill,target,SIGUSR1);
+    case SYS_tgkill: return syscall(SYS_tgkill,target,target,SIGUSR1);
+    case SYS_rt_sigqueueinfo: return syscall(SYS_rt_sigqueueinfo,target,SIGUSR1,&info);
+    case SYS_rt_tgsigqueueinfo: return syscall(SYS_rt_tgsigqueueinfo,target,target,SIGUSR1,&info);
+    default: return -1;
+    }
+}
+static int receive_signal(int operation, const sigset_t *mask) {
+    siginfo_t info; struct timespec timeout={2,0};
+    if(sigtimedwait(mask,&info,&timeout)!=SIGUSR1) return 4;
+    if((operation==SYS_rt_sigqueueinfo || operation==SYS_rt_tgsigqueueinfo)
+       && info.si_value.sival_int!=42) return 5;
+    return write(1,"delivered\n",10)==10 ? 0 : 6;
+}
+int main(int argc,char **argv) {
+    int operation, ready[2], status; char byte; sigset_t mask;
+    if(argc!=3) return 1;
+    operation=atoi(argv[1]); sigemptyset(&mask); sigaddset(&mask,SIGUSR1);
+    if(sigprocmask(SIG_BLOCK,&mask,0)) return 2;
+    if(!strcmp(argv[2],"self")) {
+        if(send_signal(operation,getpid())) return 3;
+        return receive_signal(operation,&mask);
+    }
+    if(pipe(ready)) return 7;
+    pid_t child=fork(); if(child<0) return 8;
+    if(!child) {
+        if(write(ready[1],"R",1)!=1) _exit(9);
+        _exit(receive_signal(operation,&mask));
+    }
+    if(read(ready[0],&byte,1)!=1 || send_signal(operation,child)) return 10;
+    if(waitpid(child,&status,0)!=child || status) return 11;
+    return 0;
+}
+'''
+
+    def test_pid_signal_families_allow_self_delivery_but_reject_owned_siblings(self):
+        self.add("signals.c", self.signal_sender_source())
+        operations = (62, 129, 200, 234, 297)
+        with self.session() as session:
+            tool = session.compile_native(("signals.c",))
+            for operation in operations:
+                with self.subTest(operation=operation, target="self"):
+                    self.assertEqual(session.native(tool, (str(operation), "self")).stdout, b"delivered\n")
+        self.assert_clean(session)
+        for operation in operations:
+            with self.subTest(operation=operation, target="owned sibling"):
+                session = self.session()
+                with self.assertRaisesRegex(MakeProbeError, "cross-process signal target"):
+                    with session:
+                        tool = session.compile_native(("signals.c",))
+                        session.native(tool, (str(operation), "other"))
+                self.assert_clean(session)
+
+    def test_signal_policy_rejects_group_broadcast_and_mixed_thread_targets(self):
+        from scripts.validation_ownership.syscall_guard import Process, Registers, Violation
+        with self.owned_process([
+            "/usr/bin/python3", "-I", "-S", "-c", "import os; os.read(0,1)",
+        ]) as (recipient, descriptor):
+            sender = os.getpid()
+            policy = self.memory_policy(64*1024*1024)
+            policy.config.update(syscall_limit=100, write_limit=1024)
+            state = Process("command")
+            for operation in (62, 129, 200, 234, 297):
+                targets = [(target, target) for target in (0, -1, -recipient.pid, recipient.pid)]
+                if operation in (234, 297):
+                    targets += [(sender, recipient.pid), (recipient.pid, sender), (sender, 0), (0, sender)]
+                for group, thread in targets:
+                    with self.subTest(operation=operation, group=group, thread=thread):
+                        registers = Registers(
+                            orig_rax=operation, rdi=group & ((1 << 64)-1),
+                            rsi=thread & ((1 << 64)-1),
+                        )
+                        # Exercise real policy only; group/broadcast requests
+                        # never reach a kernel, even in the negative control.
+                        with self.assertRaisesRegex(Violation, "cross-process signal target"):
+                            policy.entry(sender, state, registers)
+            self.assertIsNone(recipient.poll())
+
+    def test_descriptor_async_and_timer_signal_routes_remain_unadmitted(self):
+        controls = [
+            ("libc.syscall(424,-1,signal.SIGUSR1,0,0)", "pidfd signal"),
+            ("libc.syscall(434,-1,0)", "unadmitted syscall"),
+            ("libc.syscall(438,-1,-1,0)", "unadmitted syscall"),
+            ("libc.syscall(222,-1,0,0)", "unadmitted syscall"),
+            ("libc.syscall(223,-1,0,0,0)", "unadmitted syscall"),
+            ("libc.syscall(244,-1,0)", "unadmitted syscall"),
+            ("fcntl.fcntl(pipe[0],fcntl.F_SETOWN,os.getpid())", "unknown fcntl"),
+            ("fcntl.fcntl(pipe[0],10,signal.SIGUSR1)", "unknown fcntl"),
+            ("fcntl.fcntl(pipe[0],15,struct.pack('ii',1,os.getpid()))", "unknown fcntl"),
+            ("fcntl.fcntl(pipe[0],1026,0)", "unknown fcntl"),
+            ("libc.syscall(16,pipe[0],0x40045436,signal.SIGUSR1)", "unknown ioctl"),
+        ]
+        for operation, expected in controls:
+            with self.subTest(operation=operation):
+                program = (
+                    "import ctypes,fcntl,os,signal,struct\nlibc=ctypes.CDLL(None)\npipe=os.pipe()\n"
+                    "try:\n " + operation + "\nexcept OSError:\n pass\n"
+                )
+                self.add("signal_route.py", program)
+                session = self.session()
+                with self.assertRaisesRegex(MakeProbeError, expected):
+                    with session:
+                        session.command(Command(
+                            ("/usr/bin/python3", "-I", "-S", "/repo/signal_route.py"),
+                            code=("signal_route.py",),
+                        ))
+                self.assert_clean(session)
+
     def registry_fixture(self, name):
         self.add("registry.py", (
             "import json,sys\nopen('/work/entry','wb').close()\n"
@@ -513,8 +639,6 @@ int main(int argc, char **argv) {
                         self.assertTrue(os.WIFSTOPPED(status))
                         resource.prlimit(child.pid, resource.RLIMIT_CORE, (0, 0))
                         policy = self.memory_policy(64*1024*1024)
-                        baseline = {child.pid: policy.virtual_memory(child.pid) for child in (first, second)}
-                        policy.config["memory_limit"] = 2*baseline[first.pid] + baseline[second.pid] + 32*1024*1024
                         size = policy.virtual_memory(child.pid)
                         if funded:
                             policy.config["memory_limit"] = size + 128*1024

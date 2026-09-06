@@ -78,6 +78,14 @@ threads, untraced/reparenting clones, anonymous executable mappings, ptrace,
 memfds and alternative executable dispatch reject. All failures remain failures
 even if candidate code would otherwise catch an exception.
 
+Signal-sending policy is shared across `kill`, `tkill`, `tgkill`,
+`rt_sigqueueinfo` and `rt_tgsigqueueinfo`: every PID/TGID/TID must identify the
+sender itself. Group, broadcast, sibling and mixed thread targets reject before
+kernel delivery. Candidate pidfd signaling/acquisition, asynchronous FD signal
+ownership, and POSIX timer/mqueue setup routes remain unadmitted. Self-local
+alarms/itimers and signal handler/mask/wait operations are distinct from external signal authority; the
+positive controls consume blocked, self-directed signals with `sigtimedwait`.
+
 After dropping privileges, the trusted child bootstrap restores dumpability
 before `TRACEME`; UID/GID, capabilities, `no_new_privs` and the zero core-file
 limit remain unchanged. This permits the parent to observe candidate memory

@@ -1826,6 +1826,16 @@ Start from a clean checkout; fixtures use only ignored `build/test-artifacts`.
     The actual consumer must create one session and use the same budget for
     tree capture, Make and registry discovery; there is no helper scratch-root
     or implicit fresh-owner path.
+19. Exercise all five PID-based signal senders (`kill`, `tkill`, `tgkill`,
+    `rt_sigqueueinfo`, `rt_tgsigqueueinfo`) against the sender and a forked,
+    exclusively test-owned sibling. Block SIGUSR1 and consume it synchronously:
+    self delivery must work, sibling delivery must be denied before dispatch.
+    Test group/broadcast and mixed thread selectors only through the policy
+    function, never by issuing those requests to the kernel. Keep pidfd,
+    asynchronous-owner, timer/mqueue and signal-generating ioctl alternatives
+    closed using owned pipes, self identities or invalid descriptors.
+    Run the complete foundation suite, including both unfunded and funded
+    stack-fault branches; the funded case uses only its current child's size.
 
 ### Expected result
 
@@ -1885,6 +1895,12 @@ each created one file while the active caller's one-file quota and process
 counter stayed unchanged. This is the per-registry multiplication the explicit
 report-session API rejects; sharing only a budget while resetting session-owned
 counters is not equivalent.
+
+The prior unconditional `rt_sigqueueinfo` allowance really delivered SIGUSR1
+and its queued value to an owned sibling. The old funded-stack fixture also
+raised `NameError` in both branches before checking the kernel bound because
+it referenced another test's `first`/`second` locals. Both failures are retained
+as negative controls; partial selections cannot stand in for running these paths.
 
 ### Interactions and save compatibility
 
