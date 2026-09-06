@@ -1050,6 +1050,9 @@ class TesterCaseRegistryTests(unittest.TestCase):
                             "python3 -m unittest "
                             "scripts.workflow_pilot.tests."
                             "test_pr_metadata -v",
+                            "python3 -m unittest tests.workflows.test_build_ci_topology."
+                            "ConsolidatedBuildTopologyTests."
+                            "test_metadata_event_producer_publishes_only_immutable_trigger_binding -v",
                             "python3 -m unittest "
                             "scripts.docs_check_tests."
                             "test_development_workflow_skill -v",

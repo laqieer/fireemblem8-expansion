@@ -935,15 +935,49 @@ After the newest exact full Build succeeds, use confirmation-comment-bound
 Reconciliation revalidates head/base and all exact run authority twice, then
 uses two independent run identities. The newest exact-head/base full run is
 only the current authorization gate: active defers, noncanonical/failure
-holds, and canonical success permits processing. The edit-bound metadata run
-is the unique explicit-same metadata identity whose run number is strictly
-above the intent watermark; it is never compared to the current full run
-number. The unique earliest stable metadata ID/number is retained across rerun
-attempts. Multiple distinct plausible post-watermark metadata IDs are
-ambiguous and fail closed. Actions and issue-comment timestamps are never
-compared for causality. If the edit-bound run is not visible yet,
-reconciliation defers. A later successful full run does not hide or replace
-the edit-bound metadata identity. The
+holds, and canonical success permits processing. Explicit-same metadata runs
+strictly above the intent watermark are only candidates, not proof of an edit's
+cause. An earlier direct edit's run can be absent from every pre-PATCH listing
+and appear later above that watermark. Neither its run number nor its creation
+time can authorize reconciliation or an authoritative no-op.
+
+The existing trusted-base `event-router` now runs the isolated
+`attest-metadata-event` producer against the **immutable original**
+`GITHUB_EVENT_PATH`, never a current PR query or cached receipt. Its canonical
+transition fingerprint binds repository/owner/PR numeric and node identities,
+head/base refs and SHAs, complete pre-field and target-state digests, the exact
+changed-field set/values, the event's native metadata `updated_at`, workflow
+path, and run ID/number/attempt. The `metadata-classifier` publishes it in one
+successful `workflow-pilot-metadata-event:v1:<sha256>` step name. The normal
+GitHub jobs API supplies this run-bound observation without an artifact,
+another job, extra permissions, or a mutable ledger. The consumer checks the
+step's number, uniqueness, success, digest format and job-bounded chronology.
+
+The fingerprint must match the authenticated intent/confirmation's exact
+transition. Its event metadata instant must identify the confirmed native
+history uniquely: every changed field has that same edit instant, and each
+field's pre-version strictly precedes it. First-body original-snapshot proof
+and subsequent count-plus-one validation remain required. Equal-second
+repeated revisions, disagreeing title/body edit instants, or unavailable native
+history cannot establish attribution. This is an exact raw-event/content/
+native-version join, not a timestamp-only ordering guess. Actions and
+issue-comment timestamps are never compared for causality.
+
+An attested unrelated transition is ignored even if its run arrived late above
+the watermark. Multiple distinct edit-attested metadata IDs are ambiguous and
+fail closed; an otherwise plausible run lacking attestation also holds rather
+than being guessed away. Only the unique matching stable ID/number survives
+rerun attempts, whose proof is bound to the new attempt of the same original
+event. Reconciliation refreshes that proof before rerun, and authoritative
+no-op uses the same selector. If the matching run is absent or attribution is
+unprovable, the result explicitly defers without rerun, `complete`, or `no-op`.
+Older trusted bases without the producer, invalid/unowned event payloads, and
+historical runs without the proof step remain unprovable: the router leaves
+the digest absent without changing the established Build classification.
+Do not reconstruct missing trigger evidence from today's PR state or
+retroactively invent an attestation.
+A later successful full run does not hide or replace the edit-bound metadata
+identity; the metadata run is never compared to that full run's number. The
 eligible run's identity/router/classifier and adapter jobs must be canonical
 successes, expensive jobs and the publisher must be canonical skips, and
 summary must be the canonical failure. Cancelled, timed-out, action-required,

@@ -12,7 +12,7 @@ import unittest
 from dataclasses import replace
 from pathlib import Path
 
-from scripts.workflow_pilot import candidate_evidence, pr_metadata
+from scripts.workflow_pilot import candidate_evidence, metadata_event, pr_metadata
 
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -27,6 +27,7 @@ NEW_HEAD = "3" * 40
 HEAD_REF = "feature/issue-199"
 WORKFLOW_ID = 1234
 PR_CREATED_AT = "2026-09-02T00:00:00Z"
+_DEFAULT_METADATA_EVENT = object()
 INTENT_DRIFTS = (
     "deleted", "unmarked", "nonce", "pre-version", "timestamp",
     "author-id", "author-login", "author-type", "site-admin", "association",
@@ -450,6 +451,23 @@ def _comment(
     }
 
 
+def _metadata_event_payload(pre_state: dict | None = None, target: dict | None = None) -> dict:
+    pre_state = _pr(body="Old body") if pre_state is None else pre_state
+    target = _pr() if target is None else target
+    return {
+        "action": "edited",
+        "number": target["number"],
+        "repository": copy.deepcopy(target["base"]["repo"]),
+        "sender": copy.deepcopy(target["base"]["repo"]["owner"]),
+        "pull_request": copy.deepcopy(target),
+        "changes": {
+            name: {"from": pre_state[name]}
+            for name in ("body", "title")
+            if (pre_state[name] or "") != (target[name] or "")
+        },
+    }
+
+
 def _response(
     payload: object,
     *,
@@ -640,6 +658,7 @@ def _run(
     active: bool = False,
     success: bool = True,
     attempt: int = 1,
+    metadata_event_payload: object = _DEFAULT_METADATA_EVENT,
 ) -> tuple[dict, list[dict]]:
     if active:
         status = "in_progress"
@@ -652,6 +671,23 @@ def _run(
         if mode == "full"
         else _metadata_jobs(run_id, attempt, success=success)
     )
+    if mode == "metadata-only" and metadata_event_payload is not None:
+        event = (
+            _metadata_event_payload()
+            if metadata_event_payload is _DEFAULT_METADATA_EVENT
+            else metadata_event_payload
+        )
+        digest = metadata_event.event_digest(
+            event, repository=REPOSITORY,
+            run_id=run_id, run_number=run_number, run_attempt=attempt,
+        )
+        classifier = next(job for job in jobs if job["name"] == "metadata-classifier")
+        classifier["steps"] = [{
+            "name": metadata_event.STEP_PREFIX + digest,
+            "number": 1, "status": "completed", "conclusion": "success",
+            "started_at": classifier["started_at"],
+            "completed_at": classifier["completed_at"],
+        }]
     return (
         {
             "id": run_id,
@@ -3249,10 +3285,12 @@ class PullRequestMetadataTests(unittest.TestCase):
             pre_version=pre_version,
             target_metadata_sha256=_metadata_sha256("Stable title", "new body"),
         )
-        confirmation = _confirmation(intent)
+        confirmation = _confirmation(
+            intent, version=_metadata_version(body_last_edited_at="2026-09-04T00:00:05Z")
+        )
         original_comments = [
             _intent_comment(intent),
-            _confirmation_comment(confirmation),
+            _confirmation_comment(confirmation, created_at="2026-09-04T00:00:06Z"),
         ]
         successful_full = _run(101, 10, mode="full")
         for run_drift, successor in ((False, False), (True, False), (False, True)):
@@ -3275,7 +3313,7 @@ class PullRequestMetadataTests(unittest.TestCase):
                         _intent_comment(
                             replace(intent, nonce="b" * 64),
                             comment_id=404,
-                            created_at="2026-09-04T00:00:03Z",
+                            created_at="2026-09-04T00:00:07Z",
                         )
                     )
                 client.add_stable_comment_pages(
@@ -3322,11 +3360,13 @@ class PullRequestMetadataTests(unittest.TestCase):
                 )
 
         client = ScriptedClient()
-        target_state = _pr(body="new body")
+        target_state = _pr(body="new body", updated_at="2026-09-04T00:00:05Z")
         _add_pr_states(client, target_state)
         _add_snapshot(
             client,
-            [_run(202, 11, mode="metadata-only", success=True), successful_full],
+            [_run(202, 11, mode="metadata-only", success=True,
+                  metadata_event_payload=_metadata_event_payload(pre_state, target_state)),
+             successful_full],
         )
         decision = _reconcile(
             client,
@@ -4575,6 +4615,9 @@ class PullRequestMetadataTests(unittest.TestCase):
             job["completed_at"] = "2026-09-04T00:00:05Z"
             if job["conclusion"] == "skipped":
                 job["completed_at"] = "2026-09-04T00:00:04Z"
+            for step in job.get("steps", []):
+                step["started_at"] = job["started_at"]
+                step["completed_at"] = job["completed_at"]
         _add_pr_states(client, _pr())
         _add_snapshot(
             client,
@@ -5892,7 +5935,11 @@ class PullRequestMetadataTests(unittest.TestCase):
                 reconcile = ScriptedClient()
                 _add_pr_states(reconcile, target, target)
                 _add_snapshot(reconcile, [
-                    _run(202, 11, mode="metadata-only", success=True),
+                    _run(202, 11, mode="metadata-only", success=True,
+                         metadata_event_payload=_metadata_event_payload(
+                             _pr(body=initial_body),
+                             _pr(body="new body", updated_at="2026-09-04T00:00:05Z"),
+                         )),
                     _run(101, 10, mode="full"),
                 ], copies=2)
                 result = _reconcile(
@@ -8070,6 +8117,289 @@ class PullRequestMetadataTests(unittest.TestCase):
         self.assertNotIn("author{__typenamedatabaseId", query)
 
 
+class MetadataEventAttributionTests(unittest.TestCase):
+    def test_producer_binds_raw_transition_and_exact_run_context(self):
+        event = _metadata_event_payload()
+        context = {"repository": REPOSITORY, "run_id": 202, "run_number": 11, "run_attempt": 1}
+        original = metadata_event.event_digest(event, **context)
+        reordered = dict(reversed(list(event.items())))
+        self.assertEqual(metadata_event.event_digest(reordered, **context), original)
+        for key in ("run_id", "run_number", "run_attempt"):
+            changed = {**context, key: context[key] + 1}
+            self.assertNotEqual(metadata_event.event_digest(event, **changed), original)
+        for field in ("previous-body", "target-body", "title", "updated-at", "head", "base"):
+            with self.subTest(field=field):
+                changed = copy.deepcopy(event)
+                pull = changed["pull_request"]
+                if field == "previous-body":
+                    changed["changes"]["body"]["from"] = "different previous body"
+                elif field == "target-body":
+                    pull["body"] = "different target body"
+                elif field == "title":
+                    pull["title"] = "changed supplied-unchanged title"
+                elif field == "updated-at":
+                    pull["updated_at"] = "2026-09-04T00:00:05Z"
+                else:
+                    pull[field]["sha"] = NEW_HEAD
+                self.assertNotEqual(metadata_event.event_digest(changed, **context), original)
+        empty = _metadata_event_payload(_pr(body="Old body"), _pr(body=None))
+        null_digest = metadata_event.event_digest(empty, **context)
+        empty["pull_request"]["body"] = ""
+        self.assertEqual(metadata_event.event_digest(empty, **context), null_digest)
+
+    def test_producer_rejects_unowned_malformed_or_nonmetadata_events(self):
+        for drift in ("action", "number", "repository", "owner", "sender", "admin", "body", "changes", "from", "unchanged"):
+            with self.subTest(drift=drift):
+                event = _metadata_event_payload()
+                if drift == "action":
+                    event["action"] = "synchronize"
+                elif drift == "number":
+                    event["number"] = True
+                elif drift == "repository":
+                    event["repository"]["id"] += 1
+                elif drift == "owner":
+                    event["repository"]["owner"]["id"] += 1
+                elif drift == "sender":
+                    event["sender"]["id"] += 1
+                elif drift == "admin":
+                    event["sender"]["site_admin"] = True
+                elif drift == "body":
+                    event["pull_request"].pop("body")
+                elif drift == "changes":
+                    event["changes"]["base"] = {"from": BASE}
+                elif drift == "from":
+                    event["changes"]["body"] = {}
+                else:
+                    event["changes"]["body"]["from"] = event["pull_request"]["body"]
+                with self.assertRaises(pr_metadata.MetadataEditError):
+                    metadata_event.event_digest(
+                        event, repository=REPOSITORY, run_id=202, run_number=11, run_attempt=1
+                    )
+
+    def pair(self, *, pre_version=None, title=None, body="new body"):
+        pre_state = _pr(updated_at=(
+            pre_version.body_last_edited_at if pre_version is not None
+            else "2026-09-04T00:00:00Z"
+        ))
+        client, posts = _mutation_client(
+            pre_state=pre_state, pre_version=pre_version, title=title,
+            body=pre_state["body"] if body is None else body,
+        )
+        result = pr_metadata.edit_metadata(
+            client, repository=REPOSITORY, pr_number=PR_NUMBER,
+            head_sha=HEAD, base_sha=BASE, title=title, body=body,
+            essential_reason=None,
+        )
+        self.assertEqual(result.action, "updated")
+        return (
+            pr_metadata._parse_intent_comment_body(posts[0]["body"]),
+            pr_metadata._parse_confirmation_comment_body(posts[1]["body"]),
+            posts,
+            _pr(title=title or "Stable title", body=pre_state["body"] if body is None else body,
+                updated_at="2026-09-04T00:00:05Z"),
+        )
+
+    def decide(self, pair, runs, *, mode="reconcile", refreshed_runs=None):
+        receipt, confirmation, posts, state = pair
+        if mode == "no-op":
+            client, new_posts = _mutation_client(
+                history=tuple(posts), pre_state=state,
+                pre_version=confirmation.metadata_version, runs=runs,
+            )
+            result = pr_metadata.edit_metadata(
+                client, repository=REPOSITORY, pr_number=PR_NUMBER,
+                head_sha=HEAD, base_sha=BASE, title=None, body="new body",
+                essential_reason=None,
+            )
+            self.assertEqual(new_posts, [])
+        else:
+            client = ScriptedClient()
+            _add_pr_states(client, state, state)
+            _add_snapshot(client, runs)
+            _add_snapshot(client, runs if refreshed_runs is None else refreshed_runs)
+            for run_id in (202, 303):
+                client.add("POST", _endpoint(f"actions/runs/{run_id}/rerun"),
+                           _response(None, status=201))
+            result = _reconcile(
+                client, receipt=receipt, confirmation=confirmation, comments=posts,
+                state=state, version=confirmation.metadata_version,
+            )
+        return result, client
+
+    def test_delayed_earlier_or_unattested_event_never_authorizes_the_edit(self):
+        pair = self.pair()
+        for mode in ("reconcile", "no-op"):
+            for success in (False, True):
+                for proof in ("absent", "skipped", "earlier"):
+                    with self.subTest(mode=mode, success=success, proof=proof):
+                        earlier = _run(
+                            202, 11, mode="metadata-only", success=success,
+                            metadata_event_payload=(
+                                _metadata_event_payload() if proof == "earlier" else None
+                            ),
+                        )
+                        if proof == "skipped":
+                            classifier = next(job for job in earlier[1]
+                                              if job["name"] == "metadata-classifier")
+                            classifier["steps"] = [{
+                                "name": metadata_event.STEP_PREFIX, "number": 1,
+                                "status": "completed", "conclusion": "skipped",
+                            }]
+                        result, client = self.decide(
+                            pair, [earlier, _run(101, 10, mode="full")], mode=mode
+                        )
+                        self.assertEqual(result.action, "deferred")
+                        self.assertEqual(result.run_id, 101)
+                        self.assertFalse(result.mutated)
+                        self.assertFalse(any(
+                            call[0] == "PATCH" or call[1].endswith("/rerun")
+                            for call in client.calls
+                        ))
+
+    def test_matching_event_survives_an_earlier_delayed_run_and_rerun_attempt(self):
+        pair = self.pair()
+        event = _metadata_event_payload(_pr(), pair[3])
+        for mode in ("reconcile", "no-op"):
+            for success in (False, True):
+                for attempt in (1, 2):
+                    with self.subTest(mode=mode, success=success, attempt=attempt):
+                        matching = _run(
+                            303, 12, mode="metadata-only", success=success, attempt=attempt,
+                            metadata_event_payload=event,
+                        )
+                        runs = [
+                            matching, _run(202, 11, mode="metadata-only"),
+                            _run(101, 10, mode="full"),
+                        ]
+                        result, client = self.decide(pair, runs, mode=mode)
+                        expected = (
+                            ("complete" if success else "rerun")
+                            if mode == "reconcile" else ("no-op" if success else "deferred")
+                        )
+                        self.assertEqual(result.action, expected)
+                        self.assertEqual(result.run_id, 303)
+                        reruns = [call[1] for call in client.calls if call[1].endswith("/rerun")]
+                        self.assertEqual(
+                            reruns, [_endpoint("actions/runs/303/rerun")]
+                            if mode == "reconcile" and not success else [],
+                        )
+
+    def test_native_version_ambiguity_and_event_instant_mismatch_hold(self):
+        ordinary = self.pair()
+        same_second = self.pair(pre_version=_metadata_version(
+            body_last_edited_at="2026-09-04T00:00:05Z", body_edit_total_count=2,
+        ))
+        for label, pair, event_time in (
+            ("same-second-revision", same_second, "2026-09-04T00:00:05Z"),
+            ("earlier-identical-transition", ordinary, "2026-09-04T00:00:04Z"),
+        ):
+            with self.subTest(case=label):
+                event = _metadata_event_payload(
+                    _pr(), {**pair[3], "updated_at": event_time}
+                )
+                runs = [
+                    _run(303, 12, mode="metadata-only", metadata_event_payload=event),
+                    _run(101, 10, mode="full"),
+                ]
+                for mode in ("reconcile", "no-op"):
+                    result, client = self.decide(pair, runs, mode=mode)
+                    self.assertEqual(result.action, "deferred")
+                    self.assertFalse(result.mutated)
+                    self.assertFalse(any(call[1].endswith("/rerun") for call in client.calls))
+
+    def test_title_and_combined_edits_require_one_attested_native_transition(self):
+        for body in (None, "new body"):
+            with self.subTest(body_changed=body is not None):
+                pair = self.pair(title="New title", body=body)
+                event = _metadata_event_payload(_pr(), pair[3])
+                runs = [
+                    _run(303, 12, mode="metadata-only", metadata_event_payload=event),
+                    _run(101, 10, mode="full"),
+                ]
+                result, _client = self.decide(pair, runs)
+                self.assertEqual(result.action, "complete")
+                self.assertEqual(result.run_id, 303)
+                if body is not None:
+                    receipt, confirmation, posts, state = pair
+                    confirmation = replace(
+                        confirmation,
+                        metadata_version=replace(
+                            confirmation.metadata_version,
+                            title_event_created_at="2026-09-04T00:00:04Z",
+                        ),
+                    )
+                    pair = (
+                        receipt, confirmation,
+                        [posts[0], _confirmation_comment(
+                            confirmation, created_at="2026-09-04T00:00:06Z"
+                        )], state,
+                    )
+                    result, client = self.decide(pair, runs)
+                    self.assertEqual(result.action, "deferred")
+                    self.assertFalse(any(call[1].endswith("/rerun") for call in client.calls))
+
+    def test_refreshed_event_proof_cannot_rebind_or_authorize_a_rerun(self):
+        pair = self.pair()
+        event = _metadata_event_payload(_pr(), pair[3])
+        matching = _run(303, 12, mode="metadata-only", success=False,
+                        metadata_event_payload=event)
+        for replacement in (None, _metadata_event_payload()):
+            with self.subTest(unavailable=replacement is None):
+                changed = _run(303, 12, mode="metadata-only", success=False,
+                               metadata_event_payload=replacement)
+                result, client = self.decide(
+                    pair, [matching, _run(101, 10, mode="full")],
+                    refreshed_runs=[changed, _run(101, 10, mode="full")],
+                )
+                self.assertEqual(result.action, "deferred")
+                self.assertFalse(any(call[1].endswith("/rerun") for call in client.calls))
+
+    def test_multiple_matching_runs_or_missing_competitor_do_not_guess(self):
+        pair = self.pair()
+        event = _metadata_event_payload(_pr(), pair[3])
+        matching = _run(303, 12, mode="metadata-only", metadata_event_payload=event)
+        for other in (event, None):
+            with self.subTest(matching_competitor=other is not None):
+                runs = [
+                    matching,
+                    _run(202, 11, mode="metadata-only", metadata_event_payload=other),
+                    _run(101, 10, mode="full"),
+                ]
+                if other is not None:
+                    with self.assertRaises(pr_metadata.MetadataEditError):
+                        self.decide(pair, runs)
+                else:
+                    result, client = self.decide(pair, runs)
+                    self.assertEqual(result.action, "deferred")
+                    self.assertFalse(any(call[1].endswith("/rerun") for call in client.calls))
+
+    def test_event_step_attestation_requires_a_unique_successful_bound_step(self):
+        for drift in ("digest", "empty-digest", "duplicate", "number", "status", "conclusion", "time"):
+            with self.subTest(drift=drift):
+                record, jobs = _run(202, 11, mode="metadata-only")
+                job = next(job for job in jobs if job["name"] == "metadata-classifier")
+                step = job["steps"][0]
+                if drift == "digest":
+                    step["name"] = metadata_event.STEP_PREFIX + "not-a-digest"
+                elif drift == "empty-digest":
+                    step["name"] = metadata_event.STEP_PREFIX
+                elif drift == "duplicate":
+                    job["steps"].append({**step, "number": 2})
+                elif drift == "number":
+                    step["number"] = True
+                elif drift == "status":
+                    step["status"] = "queued"
+                elif drift == "conclusion":
+                    step["conclusion"] = []
+                else:
+                    step["completed_at"] = "2026-09-04T00:00:03Z"
+                client = ScriptedClient()
+                _add_snapshot(client, [(record, jobs)])
+                state = pr_metadata._parse_pull_request_payload(_pr(), REPOSITORY, PR_NUMBER)
+                with self.assertRaises(pr_metadata.MetadataEditError):
+                    pr_metadata.list_candidate_runs(client, state)
+
+
 class PullRequestRejectedMutationTests(unittest.TestCase):
     def edit(self, client, *, title=None, body="new body", essential_reason=None):
         return pr_metadata.edit_metadata(
@@ -8613,7 +8943,8 @@ class PullRequestMetadataLauncherTests(unittest.TestCase):
                 calls = [
                     _cli_api_call("GET", _endpoint(f"pulls/{PR_NUMBER}"), payload=target),
                     *_cli_snapshot_calls([
-                        _run(202, 11, mode="metadata-only", success=True),
+                        _run(202, 11, mode="metadata-only", success=True,
+                             metadata_event_payload=_metadata_event_payload(state, target)),
                         _run(101, 10, mode="full"),
                     ]),
                     *_cli_stable_comment_walk(_cli_api_call(
@@ -8827,6 +9158,94 @@ class PullRequestMetadataLauncherTests(unittest.TestCase):
                 self.assertEqual(sum(record["method"] == "PATCH" for record in records), 1)
                 self.assertEqual(len(self.recorded_comments(calls, records)), 1)
                 self.assertEqual(records[-1]["method"], "GET")
+
+    def test_event_attested_cli_rejects_delayed_runs_and_reruns_only_matching_event(self):
+        body_path = self.sandbox.root / "body.txt"
+        body_path.write_text("new body", encoding="utf-8")
+        calls = _cli_rejection_calls("new body")
+        completed, records = self.sandbox.run(
+            "edit", [*self.common_arguments(), "--body-file", str(body_path)], calls
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        history = self.recorded_comments(calls, records)
+        confirmation = pr_metadata._parse_confirmation_comment_body(history[1]["body"])
+        state = _pr(body="new body", updated_at="2026-09-04T00:00:05Z")
+        event = _metadata_event_payload(_pr(), state)
+        event_path = self.sandbox.root / "event.json"
+        event_path.write_text(json.dumps(event), encoding="utf-8")
+        output = self.sandbox.root / "event-output"
+        before_log = self.sandbox.log.read_bytes()
+        producer = subprocess.run(
+            ["/usr/bin/python3", "-I", str(LAUNCHER), "attest-metadata-event",
+             "--event-path", str(event_path), "--repository", REPOSITORY,
+             "--run-id", "303", "--run-number", "12", "--run-attempt", "1",
+             "--output", str(output)],
+            cwd=ROOT, env=self.sandbox.environment, check=False,
+            capture_output=True, text=True, timeout=30,
+        )
+        self.assertEqual(producer.returncode, 0, producer.stderr)
+        self.assertEqual(self.sandbox.log.read_bytes(), before_log)
+        digest = output.read_text().strip().removeprefix("digest=")
+        self.assertRegex(digest, r"^[0-9a-f]{64}$")
+        comments = _cli_stable_comment_walk(_cli_api_call(
+            "GET", _query(f"issues/{PR_NUMBER}/comments", [("per_page", "100"), ("page", "1")]),
+            payload=list(history),
+        ))
+        full = _run(101, 10, mode="full")
+        earlier = _run(202, 11, mode="metadata-only")
+        arguments = [*self.common_arguments(), "--confirmation-comment-id", "402"]
+        for case in ("unattested", "skipped-proof", "earlier", "matching", "matching-rerun", "proof-drift"):
+            with self.subTest(case=case):
+                matching = _run(
+                    303, 12, mode="metadata-only", success=case == "matching",
+                    metadata_event_payload=event,
+                )
+                classifier = next(job for job in matching[1] if job["name"] == "metadata-classifier")
+                self.assertEqual(classifier["steps"][0]["name"], metadata_event.STEP_PREFIX + digest)
+                runs = (
+                    [_run(202, 11, mode="metadata-only", metadata_event_payload=None), full]
+                    if case in ("unattested", "skipped-proof") else [earlier, full]
+                    if case == "earlier" else [matching, earlier, full]
+                )
+                if case == "skipped-proof":
+                    classifier = next(job for job in runs[0][1]
+                                      if job["name"] == "metadata-classifier")
+                    classifier["steps"] = [{
+                        "name": metadata_event.STEP_PREFIX, "number": 1,
+                        "status": "completed", "conclusion": "skipped",
+                    }]
+                calls = [
+                    _cli_api_call("GET", _endpoint(f"pulls/{PR_NUMBER}"), payload=state),
+                    *_cli_snapshot_calls(runs), *copy.deepcopy(comments),
+                    _cli_metadata_version_call(state, confirmation.metadata_version),
+                ]
+                if case in ("matching-rerun", "proof-drift"):
+                    refreshed = (
+                        [_run(303, 12, mode="metadata-only", success=False), earlier, full]
+                        if case == "proof-drift" else runs
+                    )
+                    calls.extend([
+                        _cli_api_call("GET", _endpoint(f"pulls/{PR_NUMBER}"), payload=state),
+                        *copy.deepcopy(comments),
+                        _cli_metadata_version_call(state, confirmation.metadata_version),
+                        *_cli_snapshot_calls(refreshed),
+                    ])
+                    if case == "matching-rerun":
+                        calls.append(_cli_api_call(
+                            "POST", _endpoint("actions/runs/303/rerun"), status=201
+                        ))
+                completed, records = self.sandbox.run("reconcile", arguments, calls)
+                expected = (
+                    "complete" if case == "matching" else "rerun"
+                    if case == "matching-rerun" else "deferred"
+                )
+                self.assertEqual(completed.returncode, 0 if expected != "deferred" else 3,
+                                 completed.stderr)
+                self.assertEqual(json.loads(completed.stdout)["action"], expected)
+                self.assert_isolated_calls(records, len(calls))
+                reruns = [record["endpoint"] for record in records if record["endpoint"].endswith("/rerun")]
+                self.assertEqual(reruns, [_endpoint("actions/runs/303/rerun")]
+                                 if case == "matching-rerun" else [])
 
     def test_unhashable_run_conclusion_is_a_fail_closed_cli_error(self):
         body_path = self.sandbox.root / "body.md"
@@ -9259,7 +9678,7 @@ class PullRequestMetadataLauncherTests(unittest.TestCase):
                         "402",
                     ]
                 ],
-                reason="the exact metadata-only run is not visible yet",
+                reason="no uniquely event-attested metadata-only run is available",
                 run_id=101,
             ),
         )

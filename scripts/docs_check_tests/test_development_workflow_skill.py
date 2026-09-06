@@ -4784,7 +4784,7 @@ printf '%s\t%s\t%s\n' "$result" \
             "canonical completed success",
             "Full authorization and transaction metadata selection are independent",
             "need not be newer than a later full run",
-            "multiple distinct post-watermark metadata IDs are ambiguous",
+            "multiple distinct edit-attested metadata IDs are ambiguous",
             "databaseId` only through `... on User` inline fragments",
             "bot, deleted, null, and wrong-ID actors",
             "LivePullRequestMetadataQueryTests",

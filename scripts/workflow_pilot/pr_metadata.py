@@ -19,7 +19,7 @@ from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 from typing import Any, Callable, Literal
 
-from . import candidate_evidence
+from . import candidate_evidence, metadata_event
 
 
 MAX_API_BYTES = 4 * 1024 * 1024
@@ -159,6 +159,7 @@ class JobState:
     created_at: datetime.datetime
     started_at: datetime.datetime | None
     completed_at: datetime.datetime | None
+    metadata_event_sha256: str | None = None
 
 
 @dataclass(frozen=True)
@@ -2319,6 +2320,69 @@ def _validate_job_timing(
         )
 
 
+def _metadata_event_step(
+    raw: dict[str, object],
+    *,
+    status: str,
+    conclusion: str | None,
+    started_at: datetime.datetime | None,
+    completed_at: datetime.datetime | None,
+) -> str | None:
+    steps = raw.get("steps", [])
+    if not isinstance(steps, list) or len(steps) > 100:
+        raise MetadataEditError("metadata classifier steps are invalid")
+    selected = []
+    numbers = set()
+    for step in steps:
+        if not isinstance(step, dict):
+            raise MetadataEditError("metadata classifier step is invalid")
+        number = _positive_int(step.get("number"), "metadata step number")
+        if number in numbers:
+            raise MetadataEditError("metadata classifier repeats a step number")
+        numbers.add(number)
+        name = _text(step.get("name"), "metadata step name")
+        if name.startswith(metadata_event.STEP_PREFIX):
+            selected.append(step)
+    if not selected:
+        return None
+    if len(selected) != 1:
+        raise MetadataEditError("metadata classifier repeats event attestation")
+    step = selected[0]
+    digest = step["name"][len(metadata_event.STEP_PREFIX):]
+    step_status = _text(step.get("status"), "metadata step status")
+    step_conclusion = step.get("conclusion")
+    if (
+        step_status not in ACTIVE_RUN_STATUSES | {"completed"}
+        or (step_conclusion is not None and (
+            not isinstance(step_conclusion, str) or step_conclusion not in RUN_CONCLUSIONS
+        ))
+        or ((step_status == "completed") != (step_conclusion is not None))
+    ):
+        raise MetadataEditError("metadata event attestation step state is invalid")
+    if not digest and (
+        step_status in ACTIVE_RUN_STATUSES or step_conclusion == "skipped"
+    ):
+        return None
+    if DIGEST_RE.fullmatch(digest) is None:
+        raise MetadataEditError("metadata event attestation digest is invalid")
+    if status != "completed":
+        return None
+    if (
+        conclusion != "success"
+        or step_status != "completed"
+        or step_conclusion != "success"
+    ):
+        raise MetadataEditError("metadata event attestation step did not succeed")
+    step_started = _github_timestamp(step.get("started_at"), "metadata step start")
+    step_completed = _github_timestamp(step.get("completed_at"), "metadata step completion")
+    if (
+        started_at is None or completed_at is None
+        or not started_at <= step_started <= step_completed <= completed_at
+    ):
+        raise MetadataEditError("metadata event attestation step chronology is invalid")
+    return digest
+
+
 def _parse_job(
     raw: object,
     *,
@@ -2445,6 +2509,13 @@ def _parse_job(
         created_at,
         started_at,
         completed_at,
+        (
+            _metadata_event_step(
+                raw, status=status, conclusion=conclusion,
+                started_at=started_at, completed_at=completed_at,
+            )
+            if name == candidate_evidence.METADATA_CLASSIFIER else None
+        ),
     )
 
 
@@ -3553,12 +3624,15 @@ def edit_metadata(
             run_id = current_full.run_id
             reason = "an exact-head full or unproven Build is still active"
         else:
-            metadata = _transaction_metadata_run(current_runs, intent)
+            metadata = _transaction_metadata_run(
+                current_runs, intent, state=current,
+                confirmation=latest_confirmation_comment.confirmation,
+            )
             if metadata is None:
                 run_id = current_full.run_id
                 reason = (
                     "matching metadata has an authoritative pair but its "
-                    "continuity run is not visible yet"
+                    "continuity run lacks unique event attribution"
                 )
             elif metadata.status in ACTIVE_RUN_STATUSES:
                 run_id = metadata.run_id
@@ -3856,7 +3930,24 @@ def _current_full_authorization(
 def _transaction_metadata_run(
     runs: tuple[RunState, ...],
     receipt: EditReceipt,
+    *,
+    state: PullRequestState,
+    confirmation: EditConfirmation,
 ) -> RunState | None:
+    event_times = set()
+    for field in receipt.changed_fields:
+        name = (
+            "body_edit_edited_at" if field.field == "body"
+            else "title_event_created_at"
+        )
+        previous = getattr(receipt.pre_version, name)
+        edited = getattr(confirmation.metadata_version, name)
+        if edited is None or (previous is not None and previous >= edited):
+            return None
+        event_times.add(edited)
+    if len(event_times) != 1:
+        return None
+    event_updated_at = event_times.pop()
     candidates = [
         run
         for run in runs
@@ -3864,16 +3955,39 @@ def _transaction_metadata_run(
         and run.mode in {"metadata-only", "active-metadata-only"}
         and run.run_number > receipt.watermark_run_number
     ]
+    matching = []
+    unproven = False
+    for run in candidates:
+        if run.status == "completed":
+            if run.conclusion == "success":
+                require_metadata_success(run)
+            else:
+                require_metadata_failure(run)
+        classifier = _jobs_by_name(run)[candidate_evidence.METADATA_CLASSIFIER]
+        if classifier.metadata_event_sha256 is None:
+            unproven = True
+            continue
+        expected = metadata_event.transition_digest(
+            state,
+            run_id=run.run_id, run_number=run.run_number, run_attempt=run.run_attempt,
+            updated_at=event_updated_at,
+            pre_fields=_receipt_pre_fields(receipt),
+            changed_fields=_changed_fields(receipt),
+        )
+        if classifier.metadata_event_sha256 == expected:
+            matching.append(run)
+    if unproven:
+        return None
     identities = {
         (run.run_id, run.run_number)
-        for run in candidates
+        for run in matching
     }
     if len(identities) > 1:
         raise MetadataEditError(
-            "multiple post-watermark metadata run identities are ambiguous"
+            "multiple edit-attested metadata run identities are ambiguous"
         )
     return min(
-        candidates,
+        matching,
         key=lambda run: (run.run_number, run.run_id),
         default=None,
     )
@@ -3923,7 +4037,9 @@ def reconcile_metadata(
             pr_number=pr_number,
             run_id=first_full.run_id,
         )
-    first_metadata = _transaction_metadata_run(first_runs, receipt)
+    first_metadata = _transaction_metadata_run(
+        first_runs, receipt, state=initial, confirmation=confirmation
+    )
     if first_metadata is None:
         return Decision(
             action="deferred",
@@ -3931,7 +4047,7 @@ def reconcile_metadata(
             guidance=_reconcile_guidance(initial, confirmation_comment_id),
             head_sha=head_sha,
             mutated=False,
-            reason="the exact metadata-only run is not visible yet",
+            reason="no uniquely event-attested metadata-only run is available",
             repository=repository,
             pr_number=pr_number,
             run_id=first_full.run_id,
@@ -4021,7 +4137,9 @@ def reconcile_metadata(
             pr_number=pr_number,
             run_id=current_full.run_id,
         )
-    current_metadata = _transaction_metadata_run(current_runs, receipt)
+    current_metadata = _transaction_metadata_run(
+        current_runs, receipt, state=current, confirmation=current_confirmation
+    )
     if (
         current_runs != first_runs
         or current_metadata is None

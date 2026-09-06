@@ -1567,6 +1567,23 @@ the exact branch and head; timeout or ambiguity fails before `gh run watch`.
    For a maybe-created confirmation pair, exercise absent, active, failed, and
    canonical successful post-watermark metadata runs. Only the canonical
    completed success may return exit-0 no-op.
+   Hide an earlier direct edit's run from all pre-PATCH snapshots, then expose
+   it above the watermark before the actual edit's run exists. Replay both
+   successful and failed earlier runs through reconciliation and no-op:
+   neither may complete, rerun, or authorize no-op for the current edit.
+   Publish the original webhook transition through `attest-metadata-event`
+   and the workflow's successful fingerprint step. Bind its actual pre/target
+   fields, changed set, repository/PR/refs/owner, native metadata instant and
+   run ID/number/attempt. Expose a matching run alongside the earlier attested
+   unrelated run: require only the matching success or failed-run rerun.
+   Repeat with a later attempt of that same matching run.
+   Withhold the proof step, change it on the second reconciliation snapshot,
+   duplicate matching IDs, or introduce an unproven competing run; require a
+   hold without guessing. Replay an earlier identical transition at a different
+   native edit instant and a same-second repeated body revision whose raw
+   event fields otherwise match. Both must hold; a timestamp or watermark by
+   itself is not edit attribution. Ordinary Actions run materialization delay
+   still permits a real event-bound positive.
    Exercise edit-bound metadata success/failure followed by a later full Build,
    active/failed/successful newest full authorization, multiple later full
    successes, same-ID full attempts, metadata attempt 2 with the same ID/number,
@@ -1675,6 +1692,13 @@ the exact branch and head; timeout or ambiguity fails before `gh run watch`.
    partial active graph materialization across all three snapshots.
 6. Parse `docs/test-cases/registry.json` and run
    `python3 -m unittest scripts.docs_check_tests.test_development_workflow_skill -v`.
+   Run
+   `python3 -m unittest tests.workflows.test_build_ci_topology.ConsolidatedBuildTopologyTests.test_metadata_event_producer_publishes_only_immutable_trigger_binding -v`.
+   This executes the actual workflow producer/marker shell steps with local
+   event files. Require the digest only for an authenticated valid immutable
+   trigger, no digest for an invalid sender or older base without the producer,
+   unchanged metadata classification on that absence, and rejection of a
+   malformed marker digest.
 
 ### Expected result
 
@@ -1783,10 +1807,19 @@ predating edges have been rejected. Every terminal edge independently requires
 a strictly higher comment ID and a non-predating timestamp.
 Full authorization and transaction metadata selection are independent. The
 newest exact full run must be canonical success, but the transaction metadata
-run is selected solely by explicit-same metadata shape and run number above
-the intent watermark. It need not be newer than a later full run. The unique
-earliest stable metadata ID/number survives attempts; multiple distinct
-post-watermark metadata IDs are ambiguous and fail closed.
+run additionally needs an immutable run-emitted webhook transition attestation.
+Explicit-same shape and a number above the watermark are only filters.
+The attested pre/target metadata and changed set must match the authenticated
+pair. The event metadata instant must match every changed native field's edit
+instant, with strictly earlier pre-versions; same-second repetition or
+disagreeing field instants remain unprovable. This is not a comparison with
+Actions run or issue-comment clocks. The uniquely matching run need not be
+newer than a later full run. Its stable ID/number survives attempts; multiple
+distinct edit-attested metadata IDs are ambiguous and fail closed.
+Attested unrelated events are ignored; missing proof, an unproven competitor
+or proof drift cannot authorize completion, no-op or rerun. Older trusted bases
+and historical runs without the step explicitly hold rather than fabricating
+trigger evidence from current PR metadata.
 Mutation eligibility remains deliberately different: any concurrent active
 full blocks a new edit. Reconcile/no-op first collapse same run ID/number to
 the latest attempt, then evaluate only the newest distinct relevant full or
@@ -1819,6 +1852,14 @@ retain exact job sets plus terminal upper bounds; active `updated_at` is not a
 live completion bound.
 
 ### Negative control
+
+The pre-fix selector considered a unique higher run number causal evidence:
+an earlier direct edit's delayed successful run returned `complete`/`no-op`,
+and its failed run could be rerun while the confirmed edit's actual run was
+absent. The helper and isolated CLI now require matching immutable event
+evidence. An always-hold replacement must fail the real producer/matching-run
+positive, while a timestamp-only or watermark-only replacement must fail the
+delayed-earlier and same-second ambiguous-version controls.
 
 Before the rejection fix, a real HTTP 422/nonzero `gh` response lost its status,
 left an active intent, and permanently rejected corrected values. An unmatched
