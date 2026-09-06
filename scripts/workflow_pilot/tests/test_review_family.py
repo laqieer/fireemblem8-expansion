@@ -247,6 +247,34 @@ class RoleTests(unittest.TestCase):
             identity=identity, owners=owners, clock=lambda: self.time)
         return session, runtime, fresh
 
+    def test_completed_review_requires_candidate_read_and_report_observations(self):
+        for actions, accepted in (
+            ((), False), (("read-evidence",), False),
+            (("read-candidate",), False), (("emit-report",), False),
+            (("read-candidate", "read-evidence"), False),
+            (("emit-report", "read-evidence"), False),
+            (("read-candidate", "emit-report"), True),
+            (("emit-report", "read-evidence", "read-candidate"), True),
+        ):
+            with self.subTest(actions=actions):
+                session, runtime, fresh = self.owned_runtime(completed=True)
+                runtime.result.actions = actions
+                if accepted:
+                    self.assertIs(session.finish(runtime), runtime.result)
+                    self.assertEqual(session.lease.outcome, "completed")
+                else:
+                    with self.assertRaises(model.ReviewError):
+                        session.finish(runtime)
+                    self.assertFalse(session.lease.finished)
+                    self.assertIsNone(session.report)
+                    self.assertEqual(session.local_findings, {})
+                    session.abort(runtime)
+                    self.assertEqual(session.lease.outcome, "aborted")
+                    self.assertIsNone(session.report)
+                    replacement = Runtime(session.head, self.scope)
+                    fresh.begin(replacement, "reviewer")
+                    fresh.finish(replacement)
+
     def test_expired_lease_retires_only_after_observed_terminal_completion(self):
         session, runtime, fresh = self.owned_runtime(completed=False)
         self.time = 11

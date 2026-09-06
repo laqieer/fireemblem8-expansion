@@ -140,6 +140,9 @@ be an integer from zero through that bound, never a Boolean, float or string.
 Scope/actions must be collections of strings and findings a list/tuple of
 typed records. Malformed or over-budget reports do not grant review evidence
 or silently release ownership.
+Every admitted completed report must include actual runtime observations for
+both `read-candidate` and `emit-report`; `read-evidence` is optional.
+An empty or partial subset of the allowed actions is not sufficient.
 Bound read tools through the coordinator's `readers` map.
 `read_action` rejects mutation/arbitrary-command operations before dispatch.
 Ordinary test execution is a separate coordinator-owned test role, not a
@@ -383,11 +386,15 @@ untriaged status. COMMENTED, no inline comments and natural-language approval
 phrases never automatically mean clean. Changed content invalidates old
 triage; missing/incomplete observations fail closed. Dismissed review facts are
 retained as history but never clean authority: only active COMMENTED/APPROVED
-facts can support clean triage on the exact head. `exact_head_review_clean`
-also requires zero unresolved conversations across every collected fact,
-including earlier-head and historical reviews. A later clean review cannot
-hide an older unresolved thread. Resolution is observed from fresh GitHub
-facts and requires the normal changed-fact retriage before clean assessment.
+facts can support clean triage on the exact head. Handoff eligibility and
+`exact_head_review_clean` share one readiness condition: every collected fact
+has complete triage and zero unresolved conversations, including earlier-head
+and historical reviews. Exact clean additionally requires the latest
+current-head active clean triage; handoff readiness alone is not final remote
+approval and remains subject to the architecture hold. A later clean review
+cannot hide an older unresolved thread or untriaged record. Resolution is
+observed from fresh GitHub facts and requires the normal changed-fact retriage
+before either readiness or clean assessment.
 
 Keep one current record per review ID, with immutable review head, actor and
 submission identity inside the frozen repository/PR session. An unchanged

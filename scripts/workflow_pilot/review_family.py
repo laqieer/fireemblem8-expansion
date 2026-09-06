@@ -506,6 +506,7 @@ class ReviewSession:
         require(isinstance(result.actions, (tuple, list, set, frozenset))
                 and all(isinstance(action, str) and action in READ_ACTIONS
                         for action in result.actions)
+                and {"read-candidate", "emit-report"} <= set(result.actions)
                 and type(result.files) is int and 0 <= result.files <= lease.max_files <= MAX_REVIEW_FILES
                 and isinstance(result.findings, (tuple, list))
                 and len(result.findings) <= MAX_FINDINGS, "review action/budget violation")
@@ -654,9 +655,11 @@ def assess_handoff(request: dict, members: tuple[Obligation, ...],
         require(any(row["member"] == finding.member and row["outcome"] == "affected-fixed"
                     for row in matching),
                 "reported member has no affected-fixed origin evidence")
+    reviews_ready = all(item.outcome != "untriaged" and not item.fact.unresolved_threads
+                        for item in triage)
     latest = triage[-1] if triage else None
-    clean = bool(latest and latest.fact.head == session.head and latest.outcome == "clean"
-                 and not any(fact.unresolved_threads for fact in remote_reviews))
+    clean = bool(reviews_ready and latest and latest.fact.head == session.head
+                 and latest.outcome == "clean")
     held = session.rounds.hold
     return {
         "schema_version": 1,
@@ -668,7 +671,7 @@ def assess_handoff(request: dict, members: tuple[Obligation, ...],
         "round_handoffs": session.rounds.handoffs,
         "architecture_hold": None if held is None else {"review_id": held[0], "head": held[1]},
         "new_narrow_work_allowed": held is None,
-        "handoff_eligible": held is None and all(item.outcome != "untriaged" for item in triage),
+        "handoff_eligible": held is None and reviews_ready,
         "exact_head_review_clean": clean,
         "required_final_gates": ["copilot", "security", "candidate-Build", "master-Build",
                                  "remote-completion"],

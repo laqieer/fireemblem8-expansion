@@ -221,6 +221,11 @@ the consumers' independent protected-principal/deployment requirements.
    sessions release both exclusions; denied starts never reach the runtime.
    Both runtime `completed` and `read_only` must be Boolean `True`; repeat with
    false, truthy strings/numbers, containers and missing fields. Request a
+   completed report with empty/partial allowed actions: both `read-candidate`
+   and `emit-report` must have been observed. Their pair passes with or without
+   optional `read-evidence`; any subset missing either required action rejects.
+   A rejected but truly terminal task may still be explicitly aborted without
+   admitting its report. Request a
    ten-file lease, return ten files, then eleven; only the first completes.
    Repeat requested/returned bounds with Boolean, fractional/integral float,
    string, negative and over-global-cap values. Only strict integer counts
@@ -252,9 +257,10 @@ the consumers' independent protected-principal/deployment requirements.
    replay and identity rebinding reject, and sticky holds survive retriage.
    Finalized `dismissed` triage closes only actual historical dismissals.
    Leave an older-head review conversation unresolved while adding a clean
-   current-head review. Exact-head clean status stays false. Resolve the
-   conversation in the observed GitHub facts, reject stale triage, then
-   complete the normal retriage and require the clean positive.
+   current-head review. Both readiness and exact-head clean status stay false.
+   Resolve the conversation in the observed GitHub facts and reject stale
+   triage. While the earlier record remains untriaged, both flags must still
+   be false. Complete normal retriage and require both positive flags.
    Unrelated live-base fast-forwards preserve the actual candidate merge base;
    substituting an older ancestor or a base outside that lineage rejects.
 9. Exercise the real isolated launcher against an explicitly reviewed tool

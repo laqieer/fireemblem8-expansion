@@ -231,7 +231,9 @@ class GitHubReviewTests(unittest.TestCase):
         session.triage(self.model.Triage(facts[1], "clean"))
         report = self.tools.assess(
             data, session, github, tuple(session.rounds.events), pre_review_required=True)
-        self.assertFalse(report["exact_head_review_clean"])
+        with self.subTest(admission="unresolved conversation"):
+            self.assertFalse(report["exact_head_review_clean"])
+            self.assertFalse(report["handoff_eligible"])
         pr["reviewThreads"]["nodes"][0]["isResolved"] = True
         with self.assertRaises(ValueError):
             self.tools.assess(
@@ -239,10 +241,17 @@ class GitHubReviewTests(unittest.TestCase):
         self.assertEqual(session.rounds.events[0].outcome, "untriaged")
         _, resolved = github.snapshot("owner/repo", 1, self.model)
         self.assertTrue(all(not item.unresolved_threads for item in resolved))
+        report = self.tools.assess(
+            data, session, github, tuple(session.rounds.events), pre_review_required=True)
+        with self.subTest(admission="resolved but untriaged"):
+            self.assertFalse(report["handoff_eligible"])
+            self.assertFalse(report["exact_head_review_clean"])
         session.triage(self.model.Triage(resolved[0], "changes-requested"))
-        self.assertTrue(self.tools.assess(
+        report = self.tools.assess(
             data, session, github, tuple(session.rounds.events),
-            pre_review_required=True)["exact_head_review_clean"])
+            pre_review_required=True)
+        self.assertTrue(report["exact_head_review_clean"])
+        self.assertTrue(report["handoff_eligible"])
 
     def test_local_report_accepted_rejected_and_remediated_decisions(self):
         for accepted in (True, False):
