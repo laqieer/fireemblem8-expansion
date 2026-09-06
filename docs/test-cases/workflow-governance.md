@@ -638,7 +638,7 @@ availability or grant credentials.
      `extended-host-tests`, `legacy`, `summary`}.
    - **Parsed current metadata-only job/check set:** {`event-identity`,
      `event-router`, `metadata-classifier`, `host-tests`, `build`,
-     `extended-host-tests`, `legacy`, `patch-release`, `summary`}.
+     `extended-host-tests`, `legacy`, `summary`}.
    The pre-fix graph therefore starts all four expensive workers and summary;
    the current graph retains both mandatory setup contexts, preserves the live
    canonical `host-tests`/`build`/`summary` required contexts through trusted
@@ -652,7 +652,7 @@ availability or grant credentials.
 Body-only, title-only, and combined body/title edits emit
 `event-identity`, `event-router`, `metadata-classifier`, the canonical
 worker checks `host-tests`, `build`, `extended-host-tests`, and `legacy`,
-plus `patch-release` and canonical `summary`. The trusted metadata-only path
+plus canonical `summary`. The trusted metadata-only path
 starts runners for `host-tests` and `build`, but those two jobs execute only a
 fixed no-checkout continuity attestation that validates exact event identity,
 classifier, head, base, and the raw edited pull-request body/title-only
@@ -694,7 +694,7 @@ The summary succeeds only when classifier status is `success`, the classified
 SHA equals the event's validated exact `pull_request.head.sha`, event number
 matches the exact `refs/pull/<number>/merge` ref, suppression is exactly false,
 `host-tests`/`build` succeed through the trusted continuity adapters, and
-`extended-host-tests`/`legacy`/`patch-release` are exactly `skipped`, and the
+`extended-host-tests`/`legacy` are exactly `skipped`, and the
 trusted Actions API proof classifies exact prior runs newest-first so only the
 newest conclusively full run with the same repository, PR number,
 authoritative base SHA, and immutable head SHA can authorize continuity.
@@ -756,50 +756,27 @@ A canonical successful `event-router` context is mandatory in both modes.
 Metadata-only mode is accepted only for a coherently
 bound pull request. Push-shaped or cross-event metadata output fails the
 classifier, runs the validated full fallback workers/publisher, and leaves
-normal summary failed. Workers consume only that validated SHA. The publisher
-uses the same validated push SHA, verifies `/usr/bin/git rev-parse HEAD`
-immediately after checkout, and stages the three-file producer from that exact
-validated after commit without whole-file source hash pins. Before private
-download, the exact after tree builds as a dedicated unprivileged UID inside
-mount, PID, and network namespaces with no network, capabilities, secrets,
-`BASH_ENV`, or `GITHUB_ENV`. Private mount propagation, recursively read-only host
-root/system/tool paths, private `/tmp`/`run`/`proc`/`dev`, and masked host
-D-Bus/container/service sockets leave only exact candidate-owned mounts
-writable. Every descendant stays in one exact cgroup v2. The trusted host stops
-the exact process group and cgroup, verifies `cgroup.procs` is empty, proves no
-builder-UID process remains, removes only the owned cgroup, then admits the expected regular,
-nonsymlink, single-link 32 MiB target and bounded metadata handoff; device,
-escaped, and unexpected outputs fail. It removes the builder user, tree,
-wheelhouse, and candidate checkout. No complete target ROM enters an Actions
-artifact, cache, release, or log. The minimal `BASEROM_URL` step then creates an
-unpredictable mode-restricted path and exposes only its trusted output. The
-next step uses absolute isolated Python from an empty runtime CWD/environment;
-no candidate command runs while the base exists. Cleanup traps delete the base
-on success/failure, cleanup is verified, and only the patch artifact reaches
-upload.
-Before `/sys` is masked, the exact owned cgroup is bound read-only below a
-root-only `0700` `/mnt/supervisor`; the candidate cannot read, write, execute,
-or traverse that parent. The exact cgroup child there remains read-only. The
-wrapper reads that supervisor view after `/sys` is masked and permits handoff
-only when its own PID is the sole member. Host-side kill/removal still uses the
-actual cgroup path.
-All repository/candidate-controlled commands finish before private download.
-Cleanup is verified before upload.
-After that cleanup, an adjacent final check revalidates exactly regular,
-single-link BPS/manifest/README outputs immediately before upload.
-Unavailable mount/cgroup features fail closed, and cleanup sends no UID-wide
-signal.
-Before candidate code starts, a trusted child launcher closes inherited file descriptors
-above 2, redirects stdin/stdout/stderr permanently to private `/dev/null`, and
-passes no GitHub workflow command-file paths.
-Candidate output is never replayed, logged, or uploaded; the trusted host emits
-only fixed status text with a numeric exit classification. Arbitrary output
-volume cannot change an otherwise successful build. All other writable roots
-and regular files retain tmpfs/ulimit bounds; no output sink exists.
-No whole-file source hash pins are used.
-Before the base exists, the fresh hosted publisher proves that no
-candidate-written `GITHUB_ENV`, `BASH_ENV`, background process, checkout, or
-executable state can survive the builder teardown.
+normal summary failed. Workers consume only that validated SHA. Packaging
+checks the same validated push SHA and reuses the normal build's existing
+release outputs without a second build or a source-hash ledger.
+Patch packaging trusts reviewed, merged master source and pinned/declared
+tools, like ordinary CI. It is not a sandbox against malicious repository
+writers, hostile same-UID code, compromised dependencies, or runner compromise.
+The normal modern job builds/checks the named release profile once from its
+fresh exact checkout. Only an authenticated master push packages that existing
+ROM and metadata in the same job; PRs and forks neither receive the private
+base nor upload a patch. The packaging script invokes no Make target.
+The existing producer checks the approved base hash/header, target header and
+embedded metadata, exact commit/profile, BPS round trip and three-file artifact.
+Private input uses a unique mode-0700 directory, mode-0400 base and failure/
+signal cleanup. Download diagnostics never disclose the URL or private bytes.
+Only verified BPS/manifest/README files are uploaded after private cleanup;
+the ROM stays inside the build job and is never an artifact/cache handoff.
+Packaging or cleanup failure fails `build` and therefore the required summary.
+No custom UID, namespace, cgroup, supervisor, broker or capability platform is
+part of this contract. The retired isolation proposals are superseded, not
+claimed to have passed their tests.
+
 Default-branch validation is deferred until classifier bootstrap is actually
 needed. A missing or malformed default branch never invalidates an
 independently valid PR-head or push fallback. With no classifier authority,
@@ -866,7 +843,7 @@ workflow and asserts exact trigger, job, head, worker-condition, summary, setup,
 pin, and environment semantics, including the pre-fix negative selection.
 
 `python3 -m unittest tests.upstream_port.test_verify -v` preserves the 28 local
-gates while requiring complete nine-job source/target equivalence: the six
+gates while requiring complete eight-job source/target equivalence: the retained
 issue #176 jobs remain closed and the identity/router/classifier are closed
 setup-only jobs, never 29th/30th/31st local gates.
 
@@ -1270,7 +1247,7 @@ the exact branch and head; timeout or ambiguity fails before `gh run watch`.
 
    - **Parsed live opened-run job set:** {`event-identity`, `event-router`,
      `event-classifier`, `host-tests`, `build`, `extended-host-tests`, `legacy`,
-     `patch-release`, `summary`}.
+     `summary`}.
 3. Snapshot prior IDs, apply the title-only mutation through the owner REST
    endpoint, then discover, watch, and save its distinct metadata run:
 
@@ -1296,7 +1273,7 @@ the exact branch and head; timeout or ambiguity fails before `gh run watch`.
 
    - **Parsed live title-edit job/check set:** {`event-identity`,
      `event-router`, `metadata-classifier`, `host-tests`, `build`,
-     `extended-host-tests`, `legacy`, `patch-release`, `summary`}.
+     `extended-host-tests`, `legacy`, `summary`}.
 
    Every raw REST job record is scanned before normalization. Duplicate API
    IDs, duplicate names/stable IDs, unknown jobs, a metadata `host-tests` or
@@ -1307,10 +1284,15 @@ the exact branch and head; timeout or ambiguity fails before `gh run watch`.
    conclusion is exactly `skipped`. Every metadata worker record is included
    with its stable ID and canonical worker name rather than hidden behind the
    running metadata classifier/summary names.
-   `patch-release` is mandatory in every pull-request run and must have exact
-   stable ID/name `patch-release`, conclusion `skipped`, and no runner.
-   Missing, successful, failed, renamed, or duplicate publisher context
-   rejects both full and metadata evidence.
+   Historical runs may additionally contain exact stable ID/name
+   `patch-release`, conclusion `skipped`, and no runner. The current graph
+   omits that job. Successful, failed, renamed or duplicate legacy publisher
+   records reject; every actual validation job is still mandatory.
+   While the enclosing old run is active, its legacy publisher may still be
+   non-runner pending with no conclusion or execution timestamps. This must
+   remain active full evidence and defer a default metadata edit, not fail as
+   malformed. Once the run completes, require the canonical skipped shape;
+   a running or runner-backed legacy publisher never satisfies compatibility.
 4. Snapshot IDs before restoring the original title through the owner REST
    endpoint. Discover, watch, and save the distinct restore metadata run:
 
@@ -1337,7 +1319,7 @@ the exact branch and head; timeout or ambiguity fails before `gh run watch`.
 
    - **Parsed live title-restore job/check set:** {`event-identity`,
      `event-router`, `metadata-classifier`, `host-tests`, `build`,
-     `extended-host-tests`, `legacy`, `patch-release`, `summary`}.
+     `extended-host-tests`, `legacy`, `summary`}.
 5. Normalize all three real runs and execute the candidate evaluator's full,
    metadata-only, combined, failed-full, and missing-full assertions:
 
@@ -1402,7 +1384,6 @@ the exact branch and head; timeout or ambiguity fails before `gh run watch`.
                "build",
                "extended-host-tests",
                "legacy",
-               "patch-release",
                "summary",
            }
            if mode == "full"
@@ -1414,7 +1395,6 @@ the exact branch and head; timeout or ambiguity fails before `gh run watch`.
                "build",
                "extended-host-tests",
                "legacy",
-               "patch-release",
                "summary",
            }
        )
@@ -1436,7 +1416,7 @@ the exact branch and head; timeout or ambiguity fails before `gh run watch`.
            seen_api_ids.add(api_id)
            seen_names.add(name)
            seen_stable_ids.add(job_id)
-           assert name in required_names
+           assert name in required_names or name == "patch-release"
            if mode == "metadata-only" and job_id in metadata_adapter_ids:
                assert job["conclusion"] == "success"
                assert isinstance(job["runner_name"], str) and job["runner_name"]
@@ -1859,7 +1839,7 @@ twice, then POSTs only
 `actions/runs/<metadata-run-id>/rerun`. The rerun is the existing lightweight
 `pull_request: edited` path, so code is not rebuilt. Only a completed failed
 metadata run with canonical successful setup/adapters, canonical skipped
-expensive/publisher jobs, and failed summary is eligible. A successful or
+expensive jobs (plus any historical skipped publisher), and failed summary is eligible. A successful or
 active metadata run is respectively complete or deferred. Canonical comment
 PATCH uses only the exact repository-owner comment
 `issues/comments/<id>`, requires mutation-response identity/body attestation,
@@ -2305,22 +2285,17 @@ outputs/environment, and one trusted shell step. The router is exactly Ubuntu,
 five minutes, its outputs/environment, and three setup steps; the
 mode-classifier is a separate five-minute one-step check. The comprehensive
 `build` job has exact identity/classifier edges, Ubuntu, 90 minutes, its
-allowlisted env, and steps; host, extended-host, legacy, and patch publication
-remain 60 minutes, while identity/router/classifier and summary remain 5;
+allowlisted env, and steps, including master-only packaging; host,
+extended-host and legacy remain 60 minutes, while identity/router/classifier and summary remain 5;
 self-hosted/container/service/strategy/default shell or any other execution
 field fails before dry-run.
-Patch publication and summary are also complete semantic structures:
-validated master-only publication condition, pinned actions, immediate exact
-revision verification, exact-after producer, no target-ROM artifact transfer,
-dedicated-UID private-mount/PID/network isolation, read-only host paths, masked
-service sockets, offline dependencies, exact cgroup-v2/process teardown, exact
-regular/single-link two-file handoff, candidate-state removal before download,
-discarded non-replayed candidate output with fixed numeric status, unpredictable
-private path, immediate isolated patch tool, verified cleanup, late
-BPS/manifest/README revalidation, and nine fresh-job publisher steps;
-then `always()`, identity/classifier plus exact ordered
-worker/publisher needs/result env, dynamic full/metadata summary name, five-minute
-context, and one fail-closed summary step.
+Patch packaging and summary remain parsed structures: successful authenticated
+master-push-only steps, existing checked release output, expected commit/profile,
+the existing producer/verifier, private-input cleanup and pinned patch-only
+upload. No duplicate profile build or local gate is introduced. Summary retains
+`always()`, identity/classifier plus all four ordered worker dependencies,
+canonical name, five-minute context and fail-closed results. Historical prior PR
+runs may carry an extra canonical skipped publisher job, never a missing worker.
 Neither is locally executed, but any
 runner/condition/needs/permission/env/step/command/action/alternate-context
 drift rejects before dry-run.

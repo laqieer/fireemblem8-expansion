@@ -272,34 +272,40 @@ Containers, services, strategies/matrices, permissions, defaults, dependency
 or condition substitutions, deployment environment, concurrency, reusable-job
 `uses`/secrets, custom shell context, unknown fields, and complex, duplicate,
 or reordered keys fail before dry-run.
-The complete nine-job structure preserves the six closed issue #176 jobs and
-adds only the closed, non-mirrored identity/router/mode-classifier setup jobs.
-`patch-release` must retain its validated master-push-only condition,
-Ubuntu/60-minute context, exact commit env, nine ordered fresh-job publisher
-steps, pinned checkout/upload actions, exact-after producer without whole-file
-source hash pins, dedicated-UID private-mount/PID/network isolation, recursively
-read-only host paths, private runtime mounts, masked service sockets, offline
-hash-locked dependencies, exact cgroup-v2/process teardown, and an exact
-two-file regular/single-link handoff. Complete target ROM bytes never enter an
-Actions artifact, cache, release, or log. All candidate work finishes and its
-cgroup/user/tree/process state is removed before the unpredictable
-mode-restricted private download; immediate absolute isolated patch creation,
-guaranteed base cleanup, cleanup verification, post-cleanup BPS/manifest/README
-revalidation, and the exact patch-only upload mapping remain mandatory.
-Candidate stdin/stdout/stderr must permanently target private `/dev/null`, and
-an isolated trusted child launcher must close inherited descriptors above 2
-before executing `setpriv` with the candidate script held in Bash `-c` argv.
-GitHub workflow command-file paths
-stay absent, output is never replayed, arbitrary output volume cannot alter a
-successful exit, no output sink exists, and only fixed trusted status text plus
-a numeric exit classification reaches the workflow log. Other writable roots
-and regular files retain tmpfs/ulimit bounds.
-Before `/sys` masking, the exact owned cgroup must be bound read-only under
-root-only mode-`0700` `/mnt/supervisor`. The candidate must not read, write,
-execute, or traverse that parent or inherit an FD; the exact cgroup child must
-remain read-only, and the wrapper must use that surviving view to require
-itself as the sole post-build member while host kill/removal retains the actual
-cgroup path.
+The complete eight-job structure retains all four validation workers,
+identity/router/classifier and summary. The normal `build` job additionally
+contains two authenticated master-push-only packaging/upload steps, not new
+local gates: the mirror still executes exactly 28 gates. Their conditions,
+secret scope, existing-output packaging invocation and pinned patch-only
+upload remain parsed contracts.
+
+Dry-run validates that workflow wiring and describes the gates; it does not
+execute or certify the behavior of invoked helpers. Its results have
+`ran=False` and cannot count as passed gates. Full verification runs
+`workflow-contract-tests` in the selected target checkout, where
+`PackagingRuntimeTests` executes that checkout's packaging helper against
+synthetic inputs, including no-rebuild, artifact, and cleanup controls.
+This is behavioral evidence, not a static proof of arbitrary shell semantics
+or a source-content identity ledger.
+
+Patch packaging trusts reviewed, merged master source and pinned/declared
+tools, like ordinary CI. It is not a sandbox against malicious repository
+writers, hostile same-UID code, compromised dependencies, or runner compromise.
+The normal modern job builds/checks the named release profile once from its
+fresh exact checkout. Only an authenticated master push packages that existing
+ROM and metadata in the same job; PRs and forks neither receive the private
+base nor upload a patch. The packaging script invokes no Make target.
+The existing producer checks the approved base hash/header, target header and
+embedded metadata, exact commit/profile, BPS round trip and three-file artifact.
+Private input uses a unique mode-0700 directory, mode-0400 base and failure/
+signal cleanup. Download diagnostics never disclose the URL or private bytes.
+Only verified BPS/manifest/README files are uploaded after private cleanup;
+the ROM stays inside the build job and is never an artifact/cache handoff.
+Packaging or cleanup failure fails `build` and therefore the required summary.
+No custom UID, namespace, cgroup, supervisor, broker or capability platform is
+part of this contract. The retired isolation proposals are superseded, not
+claimed to have passed their tests.
+
 The larger `build` ceiling covers observed shared-runner compile variance
 without removing or weakening a gate. The delivery coordinator still uses
 `timeout 90m gh run watch <run-id> --interval 30 --exit-status`; because that
@@ -307,11 +313,11 @@ watch may expire near the job ceiling, it queries the exact run status once and
 re-arms one watcher once only when the run is still nonterminal.
 `summary` must retain
 `always()`, its reliably evaluated dynamic summary name, the classifier plus exact ordered
-worker/publisher needs, Ubuntu/five-minute context, exact classifier/result
+worker needs, Ubuntu/five-minute context, exact classifier/result
 env, metadata-skip and full-run validation, and missing/stale identity
 failure, plus its single fail-closed command. Runner, condition, needs,
 permission, env, step, command, action, container/default, or unknown-field
-drift in either job fails before local dry-run even though neither job becomes
+drift in these jobs or packaging steps fails before local dry-run even though neither job becomes
 one of the 28 locally executed gates.
 Candidate-evidence normalization independently requires one canonical
 successful `event-identity` job context in both full and metadata runs;
