@@ -138,10 +138,23 @@ ancestors, explicit preserved paths, and active process working directories.
 It checks exact Git common-directory and metadata-backlink ownership, branch
 and HEAD, ordinary and hidden-index changes, all untracked files, private
 worktree refs, incomplete Git operations, and upstream divergence.
-Detached, unassociated/reused branches, missing registrations, nested Git
-repositories/submodules (including bare or separated Git metadata without a
-`.git` child), mounts, special files, and unknown ignored local data remain
+Detached, unassociated/reused branches, missing registrations, populated
+submodules/nested Git repositories (including bare or separated Git metadata
+without a `.git` child), mounts, special files, and unknown ignored local data remain
 held, not guessed disposable.
+
+An **unpopulated gitlink** can qualify only when its directory is present,
+real, and completely empty. The parsed index and immutable HEAD tree must
+have identical gitlink path sets, modes, and object IDs. Staged additions,
+deletions, renames, mode/ID changes, and unresolved stages remain held.
+Superproject status uses `--ignore-submodules=all` to avoid executing nested
+Git commands; that status is not a substitute for the independent identity
+comparison. The helper never runs Git in a submodule to establish emptiness.
+Missing directories, symlinks (including parent components), mounts, any
+contained entry, and changing directory identities or modification times
+retain the workspace. Known generated-output names do not exempt contents
+inside a gitlink. Do not create missing directories, deinitialize submodules,
+or rewrite the index to make a retained real worktree qualify.
 
 Every private reflog's old **and** new object identities, every private
 pseudoref, and **every index resolve-undo object** are inspected, including
@@ -232,10 +245,13 @@ record IDs, and validated repository/commit identities. Missing, malformed,
 over-bound, stale, or changing evidence retains the target. The API cache is
 only an in-memory optimization for one pass. Apply clears it before each
 target and compares fresh Git/PR/CI proof with the plan, then repeats local
-identity/status/lock/process/private-recovery checks and the nested-Git/size
-scan immediately before normal
-`git worktree remove`. There is no force, unlock, branch deletion, global
-prune, or recursive filesystem deletion fallback.
+identity/status/lock/process/private-recovery/empty-gitlink checks and the
+nested-Git/size scan immediately before normal `git worktree remove`.
+The size scans also recheck the same gitlink directory observations, including
+emptiness: a zero-byte file can leave the allocated size unchanged, and normal
+Git removal alone can delete ordinary files inside an uninitialized gitlink.
+There is no force, deinit, index rewrite, unlock, branch deletion, global prune,
+or recursive filesystem deletion fallback.
 
 JSON reports `eligible`, `retained`, or `removed`, the evidence, and the first
 precise retention blocker. `allocated_bytes` measures observed allocated

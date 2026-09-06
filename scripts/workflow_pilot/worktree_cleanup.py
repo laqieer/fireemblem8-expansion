@@ -211,9 +211,35 @@ def mount_paths():
     return result
 
 
-def allocated_size(path):
+def empty_gitlink_directory(directory):
+    """Observe emptiness without opening any submodule Git/configuration or following links."""
+    def identity(info):
+        return info.st_dev, info.st_ino, info.st_mtime_ns, info.st_ctime_ns
+
+    try:
+        require(directory == directory.resolve(), "symlinked gitlink directory")
+        info = directory.lstat()
+        require(stat.S_ISDIR(info.st_mode), "gitlink path is not a real directory")
+        before = identity(info)
+        descriptor = os.open(directory, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+        try:
+            require(identity(os.fstat(descriptor)) == before, "gitlink directory changed")
+            with os.scandir(descriptor) as entries:
+                require(next(entries, None) is None,
+                        f"nonempty submodule/gitlink directory requires preservation: {directory}")
+        finally:
+            os.close(descriptor)
+        require(directory == directory.resolve() and identity(directory.lstat()) == before,
+                "gitlink directory changed during observation")
+    except (FileNotFoundError, RuntimeError) as error:
+        raise Retain(f"missing or ambiguous gitlink directory: {directory}") from error
+    return before
+
+
+def allocated_size(path, gitlinks=()):
     """Observe allocated blocks, not physical bytes freed; never follow links."""
     seen, pending, size = set(), [path], 0
+    empty_directories = {path / row[0]: tuple(row[3:]) for row in gitlinks}
     device = path.lstat().st_dev
     while pending:
         item = pending.pop()
@@ -227,6 +253,11 @@ def allocated_size(path):
         seen.add(identity)
         require(len(seen) <= 1_000_000, "workspace size scan exceeds safety bound")
         size += info.st_blocks * 512
+        if item in empty_directories:
+            require(not item.is_mount(), "nested mount requires preservation")
+            require(empty_gitlink_directory(item) == empty_directories[item],
+                    "gitlink directory changed since observation")
+            continue
         if stat.S_ISDIR(info.st_mode):
             require(item == path or not item.is_mount(), "nested mount requires preservation")
             with os.scandir(item) as entries:
@@ -498,6 +529,49 @@ def private_recovery(path, gitdir):
     return {"private_objects": sorted(objects), "index_resolve_undo": undo}
 
 
+def gitlink_state(path, head):
+    """Compare live index/HEAD identities and observe only empty, unpopulated directories."""
+    inventories = []
+    for indexed, arguments in (
+        (True, ("ls-files", "--stage", "-z")),
+        (False, ("ls-tree", "-r", "--full-tree", "-z", head)),
+    ):
+        raw = git(path, *arguments)
+        require(not raw or raw.endswith("\0"), "incomplete Git index/tree inventory")
+        links, seen = {}, set()
+        for record in raw.split("\0")[:-1]:
+            fields, separator, name = record.partition("\t")
+            fields = fields.split(" ")
+            require(separator and name and name not in seen and len(fields) == 3,
+                    "ambiguous Git index/tree entry")
+            seen.add(name)
+            mode = fields[0]
+            require(mode in {"100644", "100755", "120000", "160000"},
+                    "unsupported Git index/tree mode")
+            if indexed:
+                require(fields[2] == "0", "unmerged Git index entries require preservation")
+                oid = commit(fields[1])
+            else:
+                require(fields[1] == ("commit" if mode == "160000" else "blob"),
+                        "ambiguous Git tree object type")
+                oid = commit(fields[2])
+            if mode == "160000":
+                links[name] = (mode, oid)
+        inventories.append(links)
+    require(inventories[0] == inventories[1],
+            "gitlink index/HEAD identities differ; staged submodule work requires preservation")
+    require(len(inventories[0]) <= MAX_RECORDS, "gitlink inventory exceeds safety bound")
+
+    observed = []
+    for name, (mode, oid) in sorted(inventories[0].items()):
+        relative = Path(name)
+        require(not relative.is_absolute() and str(relative) == name
+                and not any(part in {"..", ".git"} for part in relative.parts),
+                "noncanonical gitlink path")
+        observed.append((name, mode, oid, *empty_gitlink_directory(path / relative)))
+    return observed
+
+
 class Repository:
     def __init__(self, root, preserve=()):
         self.root = Path(root).resolve(strict=True)
@@ -578,11 +652,9 @@ class Repository:
         flags = git(path, "ls-files", "-v", "-z").split("\0")
         require(all(not entry or (entry[0].isupper() and entry[0] != "S") for entry in flags),
                 "assume-unchanged or skip-worktree index entries hide local work")
-        require(not any(entry.startswith("160000 ") for entry in
-                        git(path, "ls-files", "--stage", "-z").split("\0")),
-                "submodule index entries require preservation")
+        gitlinks = gitlink_state(path, head)
         require(not git(path, "status", "--porcelain=v1", "-z", "--untracked-files=all",
-                        "--ignore-submodules=none"), "dirty tracked or untracked work")
+                        "--ignore-submodules=all"), "dirty tracked or untracked work")
         tracked = set(git(path, "ls-files", "-z").split("\0"))
         ignored = git(path, "ls-files", "--others", "--ignored", "--exclude-standard", "-z")
         unknown = next((name for name in ignored.split("\0")
@@ -599,7 +671,7 @@ class Repository:
         recovery = private_recovery(path, gitdir)
         info = path.stat()
         return {"head": head, "branch": branch, "device": info.st_dev, "inode": info.st_ino,
-                **recovery}
+                "gitlinks": gitlinks, **recovery}
 
     def ancestor(self, older, newer):
         # The live GitHub master ref anchors the proof; stale remote-tracking refs do not.
@@ -777,7 +849,7 @@ def assess(repo, api, target, proof_sha=None):
     try:
         row["local"] = repo.local_state(target)
         row["proof"] = remote_proof(repo, api, row["local"], proof_sha)
-        row["allocated_bytes"] = allocated_size(Path(target))
+        row["allocated_bytes"] = allocated_size(Path(target), row["local"]["gitlinks"])
         row["decision"] = "eligible"
     except (Retain, OSError, KeyError, TypeError) as error:
         row["reasons"] = [str(error) or type(error).__name__]
@@ -807,7 +879,8 @@ def cleanup(repo, api, targets=(), *, apply=False, proof_sha=None):
                         "local/PR/CI evidence changed since planning; run a fresh plan")
                 require(repo.local_state(fresh["path"]) == fresh["local"],
                         "last-moment local identity drift")
-                require(allocated_size(Path(fresh["path"])) == fresh["allocated_bytes"],
+                require(allocated_size(Path(fresh["path"]), fresh["local"]["gitlinks"])
+                        == fresh["allocated_bytes"],
                         "workspace contents changed immediately before removal")
                 git(repo.root, "worktree", "remove", "--", fresh["path"])
                 fresh["decision"] = "removed"
