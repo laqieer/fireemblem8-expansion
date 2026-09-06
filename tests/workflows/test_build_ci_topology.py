@@ -19,6 +19,7 @@ import unittest
 import urllib.parse
 from pathlib import Path
 from unittest import mock
+from scripts.upstream_port import verify
 
 from scripts.workflow_pilot import (
     candidate_evidence,
@@ -184,10 +185,13 @@ CANDIDATE_FULL_JOBS = set(COMBINED_WORKERS) | {
     "summary",
 }
 EMITTED_FULL_CHECKS = CANDIDATE_FULL_JOBS
+WORKER_CONDITION = verify._adaptive_worker_condition(WORKER_CONDITION)
+HOST_BUILD_CONDITION = verify._adaptive_worker_condition(HOST_BUILD_CONDITION, preflight=True)
 EVENT_CLASSIFIER_DYNAMIC_NAME = (
     "${{ needs.event-router.result == 'success' && "
     "needs.event-router.outputs.classification == 'metadata-only' && "
-    "'metadata-classifier' || 'event-classifier' }}"
+    "'metadata-classifier' || needs.event-router.outputs.classification == 'review-first' && "
+    "'review-first-classifier' || 'event-classifier' }}"
 )
 HASHED_PIP_INSTALL = (
     "python3 -m pip install --require-hashes --only-binary=:all: --no-deps "
@@ -715,7 +719,9 @@ def _literal_run_script(step: str) -> str:
 
 def _metadata_adapter_scripts(text: str) -> dict[str, str]:
     return {
-        job_name: _literal_run_script(_step_blocks(_job_blocks(text)[job_name])[0])
+        job_name: _literal_run_script(next(
+            step for step in _step_blocks(_job_blocks(text)[job_name])
+            if _step_name(step) == "Attest metadata-only branch-protection continuity"))
         for job_name in METADATA_ADAPTER_JOBS
     }
 
@@ -874,7 +880,6 @@ def _summary_runs_path(*, repo: str = SUMMARY_TEST_REPOSITORY, head_sha: str = S
         f"{urllib.parse.quote(name, safe='')}/actions/workflows/build.yml/runs?"
         + urllib.parse.urlencode(
             [
-                ("event", "pull_request"),
                 ("head_sha", head_sha),
                 ("per_page", "100"),
                 ("page", str(page)),
@@ -1426,8 +1431,19 @@ def _summary_step_is_reviewed(step: str) -> bool:
     return True
 
 
+def _preflight_step_is_reviewed(step: str, job: str) -> bool:
+    try:
+        role, name, _ = verify._parse_step(step, job, 0)
+        return role == "setup" and name == "Attest review-first preflight"
+    except ValueError:
+        return False
+
+
 def _protected_host_prefix_errors(host: str) -> list[str]:
     steps = _step_blocks(host)
+    if not steps or not _preflight_step_is_reviewed(steps[0], "host-tests"):
+        return ["host-tests review-first preflight differs"]
+    steps = steps[1:]
     if len(steps) < 10:
         return ["host-tests lacks the complete protected pre-pilot sequence"]
     expected = (
@@ -1614,6 +1630,9 @@ def _combined_job_contract_errors(job_name: str, job: str) -> list[str]:
 
     if job_name == "build":
         steps = _step_blocks(job)
+        if not steps or not _preflight_step_is_reviewed(steps[0], "build"):
+            errors.append("build review-first preflight differs")
+        steps = steps[1:]
         if len(steps) < 2:
             errors.append("build lacks the trusted metadata continuity adapter")
         else:
@@ -1707,8 +1726,7 @@ def _identity_contract_errors(job: str) -> list[str]:
     if "uses:" in job or "actions/checkout" in job:
         errors.append("event-identity must not read candidate-controlled repository content")
     if (
-        'classifier_ref="refs/heads/$DEFAULT_BRANCH"' in job
-        or '/usr/bin/git check-ref-format "$classifier_ref"' in job
+        '/usr/bin/git check-ref-format "$classifier_ref"' in job
     ):
         errors.append(
             "event-identity must defer optional default-branch validation"
@@ -1819,7 +1837,8 @@ def _classifier_contract_errors(job: str) -> list[str]:
             for step, fields in zip(steps, expected_fields)
         ):
             errors.append("event-router step mappings differ")
-        if not _step_has_scrubbed_environment(steps[3]):
+        if _step_env_entries(steps[3]) != tuple(sorted(
+                (*SCRUBBED_STEP_ENV, "        GH_TOKEN: ${{ github.token }}"))):
             errors.append(
                 "event-router must retain its scrubbed isolated environment"
             )
@@ -1834,13 +1853,17 @@ def _classifier_contract_errors(job: str) -> list[str]:
         )
         expected_classify = (
             "if test -f scripts/workflow_pilot/event_classifier.py; then",
+            "adaptive=()",
+            "if test -f scripts/workflow_pilot/adaptive_gate.py; then",
+            'adaptive=(--adaptive --repository "$GITHUB_REPOSITORY")',
+            "fi",
             "/usr/bin/python3 -I scripts/workflow_pilot/isolated_launcher.py "
             "classify-event \\",
             '--event-name "$GITHUB_EVENT_NAME" '
             '--event-path "$GITHUB_EVENT_PATH" \\',
             '--github-ref "$GITHUB_REF" --github-sha "$GITHUB_SHA" \\',
             '--pr-base-sha "$PR_BASE_SHA" --pr-head-sha "$PR_HEAD_SHA" \\',
-            '--push-sha "$PUSH_SHA" --output "$GITHUB_OUTPUT"',
+            '--push-sha "$PUSH_SHA" --output "$GITHUB_OUTPUT" "${adaptive[@]}"',
             "else",
             "base_ref_valid=false",
             'expected_base=""',
@@ -1872,6 +1895,11 @@ def _classifier_contract_errors(job: str) -> list[str]:
             'elif [[ "$head_valid" = true ]]; then',
             "full_fallback=true",
             "fi",
+            'elif [[ "$VALIDATED_FALLBACK_KIND" = "workflow_dispatch" && \\',
+            '"$VALIDATED_FALLBACK_SHA" = "$GITHUB_SHA" ]]; then',
+            'expected_head="$VALIDATED_FALLBACK_SHA"',
+            "head_valid=true",
+            "identity_valid=true",
             'elif [[ "$VALIDATED_FALLBACK_KIND" = "push" && \\',
             '"$VALIDATED_FALLBACK_SHA" = "$PUSH_SHA" ]]; then',
             'expected_head="$VALIDATED_FALLBACK_SHA"',
@@ -1974,7 +2002,7 @@ def _mode_contract_errors(job: str) -> list[str]:
         errors.append("event-classifier mode direct mapping differs")
     steps = _step_blocks(job)
     if (
-        len(steps) != 2
+        len(steps) != 3
         or _direct_step_mapping_fields(steps[0]) != ["name", "run"]
         or _step_name(steps[0]) != "Verify authoritative Build event mode"
     ):
@@ -2063,8 +2091,12 @@ def _errors(text: str, retired_workflow_exists: bool) -> list[str]:
     else:
         if push_branches != ("master",):
             errors.append("Build pushes must remain restricted to master")
-    if "workflow_dispatch" in header:
-        errors.append("Build must not expose a manual retired-workflow trigger")
+    try:
+        dispatch_block = _trigger_block(header.split("\npermissions:", 1)[0], "workflow_dispatch")
+        if dispatch_block.strip():
+            errors.append("Build must expose only an input-free full dispatch")
+    except ValueError:
+        errors.append("Build must expose only an input-free full dispatch")
     if retired_workflow_exists:
         errors.append("the retired standalone CI workflow must be deleted")
 
@@ -3782,7 +3814,8 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                 )
         with self.subTest(mutation="uniform-python-heredoc-indent"):
             host_job = _job_blocks(self.text)["host-tests"]
-            host_step = _step_blocks(host_job)[0]
+            host_step = next(step for step in _step_blocks(host_job)
+                             if _step_name(step) == "Attest metadata-only branch-protection continuity")
             changed = self.text.replace(
                 host_step,
                 _indent_metadata_adapter_heredoc_in_step(host_step),
@@ -3812,7 +3845,8 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
         ):
             with self.subTest(mutation=name):
                 host_job = _job_blocks(self.text)["host-tests"]
-                host_step = _step_blocks(host_job)[0]
+                host_step = next(step for step in _step_blocks(host_job)
+                                 if _step_name(step) == "Attest metadata-only branch-protection continuity")
                 changed = self.text.replace(host_step, mutator(host_step), 1)
                 self.assertNotEqual(changed, self.text)
                 self.assertTrue(
@@ -8078,10 +8112,12 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                                 _summary_workflow_run(8100, base_sha="3" * 40),
                             ],
                         )
-                    )
+                    ),
+                    _summary_jobs_path(8100): _summary_response(
+                        _summary_api_payload("jobs", _summary_full_jobs())),
                 },
                 1,
-                "metadata-only summary requires a prior successful complete full Build CI run",
+                "metadata-only summary full run lacks one candidate binding",
             ),
             (
                 "wrong-repository-url",

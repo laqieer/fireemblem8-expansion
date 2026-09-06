@@ -115,6 +115,200 @@ afterward as described in step 6. No visual/audio/manual-only criterion applies.
 This setup cannot supply missing Git authority or discharge
 the consumers' independent protected-principal/deployment requirements.
 
+## TC-WORKFLOW-REVIEW-FIRST-001: Gate expensive Builds after accepted review
+
+- **Feature / issue:** `workflow-governance` /
+  [#181](https://github.com/laqieer/fireemblem8-expansion/issues/181).
+- **Profile / prerequisites:** source checkout with the existing locked host
+  Python, Git and local process controls. Local cases own Git repositories,
+  real handoff processes and disposable HTTP responses below `build`.
+  Remote exercise is performed only by the delivery coordinator with normal
+  repository-owner credentials and existing review/runtime adapters.
+- **Compatibility:** no gameplay, save/config, locale, generated game-data,
+  ROM/RAM, compiler profile or archival change. Dependencies are #176–#179;
+  #180/#206 are independent and #196 extraction is out of scope.
+
+### Actions
+
+1. Run the existing runner:
+
+   ```bash
+   build/host-python/bin/python3 -I -c \
+     'import sys, unittest; sys.path.insert(0, "."); unittest.main(module=None)' \
+     scripts.workflow_pilot.tests.test_adaptive_gate -v
+   ```
+
+   An existing equivalent locked interpreter may be supplied instead; do not
+   create another dependency bootstrap.
+2. Select small/low-risk, exactly 2,000 lines, greater-than-2,000 lines and each
+   named high risk. Expect concurrent for the first two and review-first for
+   large/named-risk candidates. Missing/unknown records and paused decisions
+   keep the broader workflow with explicit reasons.
+3. Validate an override from its actual committed introduction and reviewed
+   Git trees using #176. A pre-review override can change timing; a late or
+   missing introduction is unknown/broader, never authenticated by a reason
+   string. Independent local review is not waived by the timing override.
+4. Execute the actual parsed Build job guards and preflight shell steps.
+   Initial review-first runs only the fast path, while concurrent, dispatched
+   full and master events retain all four comprehensive worker jobs and all
+   eight total jobs. Wrong head/base/decision identity fails preflight.
+5. Complete a real local #178 handoff, then consume typed #179 task and review
+   observations and exact security checks. Fully triaged zero-finding review,
+   zero unresolved conversations and clean exact security permit one full
+   dispatch. Observe its exact run/attempt and all full jobs before merge
+   eligibility. Missing local, review, security or objective/manual evidence
+   remains a hold.
+6. Accept a valid finding: record abandonment and deny full dispatch/merge.
+   Later clean or cancelled/successful Build results cannot revive that head.
+   Resolve a false positive before acceptance, refresh actual facts and
+   retriage; the same un-abandoned head can become clean. A failed security
+   check remains unclean until actual successful check evidence is observed.
+7. Exercise stale review/security/head/base, unresolved threads, duplicate
+   full runs, changed attempts, early owner dispatch and duplicate watchers.
+   All reject admission. Record dispatch before the simulated network call;
+   a failed/unknown delivery must not retry into a second dispatch.
+8. Compile actual Git ancestry for an unrelated master advance. The frozen
+   merge base remains valid and no candidate is cancelled. A changed head,
+   base ref or unique merge base supersedes the old binding.
+9. Execute the existing metadata summary against disposable local HTTP
+   responses for a full dispatch and its current merge base. It retains
+   complete eight-job success; missing/wrong/foreign marker or stale base
+   cannot stand in for full candidate evidence.
+10. Observe broken-master/security/escape events through #176 and pause the
+    existing decision record. New candidates return to concurrent timing;
+    final review/security/candidate/master/manual gates remain mandatory.
+
+### Actual disposable-PR exercise — coordinator only
+
+Do not run these remote mutations from an implementation agent. Never count
+these PRs as merged pilot samples.
+
+1. Publish the tested implementation checkpoint immediately and obtain its
+   required independent review before hosted review. Record its full SHA as
+   `CANDIDATE`. The introducing PR's base predates adaptive gating, so its
+   normal full Build remains required. Do not call that bootstrap run a
+   review-first observation.
+2. For a pre-merge exercise, create disposable child branches against the
+   actual introducing PR's dependency-ready head branch, not an invented
+   installed helper or a candidate bootstrap. Record the genuine parent PR
+   and depth-one stack. If external CodeQL/GHAS does not produce exact checks
+   for that non-default base, stop that exercise without fabricating them.
+   The safe alternative is deployment with no enrolled decisions (unknown
+   candidates stay full), followed by the same fixture on actual master
+   before enabling the pilot or closing #181.
+3. In an owned fixture worktree, make a real documentation change and open a
+   **draft** disposable PR with `gh pr create --draft --base "$EXERCISE_BASE"`.
+   Its first head may have no committed PR-number decision and correctly
+   receive the broader full workflow. Record that exact bootstrap head/run.
+4. Once the PR number exists, append its record to the existing decision file:
+   `risk_boundaries: ["lifecycle"]`, `gate_mode: "review-first"`, the actual
+   root/stack record, `threshold.triggers: ["risk-boundary"]`,
+   `override_history: []`, and
+   `pilot: {"included": false, "disposition": "excluded"}`. Commit and
+   owner-push a **new** head. The explicit historical-cohort projection keeps
+   baseline v1 unchanged. Observe the new head before marking the bootstrap
+   head superseded in the existing coordinator state; only then may its full
+   run be cancelled.
+5. Confirm the new exact-head Build has `review-first-classifier`, successful
+   fast `host-tests`/`build`, skipped extended/legacy, and the explicit pending
+   full `summary` failure. Register this candidate before requesting reviews.
+   Complete its real local handoff and independent review, and request
+   exact-head Copilot while the existing security checks run concurrently.
+   Inspect complete review content and all threads; do not infer clean from
+   COMMENTED, a heading or zero new inline comments.
+6. In the trusted coordinator, use the actual objects already collected:
+
+   ```python
+   from scripts.workflow_pilot import adaptive_gate as gate
+   from scripts.workflow_pilot import coordinator_observations as observations
+   from scripts.workflow_pilot import pr_metadata
+
+   client = pr_metadata.GitHubClient("/usr/bin/gh")
+   pr, changed_lines = gate.fetch_candidate(client, repository, pr_number)
+   decision = gate.fetch_decision(client, pr, changed_lines)
+   with observations.locked_state(state_path) as state:
+       gate.begin_candidate(state, pr, gate.frozen_base(client, pr), decision)
+
+   def assess_for_dispatch(state):
+       record = next(item for item in state["candidates"]
+                     if item["pr_number"] == pr_number and item["head_sha"] == pr.head_sha)
+       assessment, runs = gate.assess_observed(
+           client, state, record, review_session, tuple(review_session.rounds.events),
+           review_tools, family_evidence=validated_family_inputs,
+           accepted_security=accepted_security_findings,
+           criteria_ready=existing_objective_and_manual_gates_complete)
+       return record, assessment, runs
+
+   gate.dispatch_full(client, state_path, pr, assess_for_dispatch)
+   ```
+
+   `review_session`, `review_tools`, triage, family inputs, security findings
+   and criterion completion must be the real existing coordinator observations,
+   not success-shaped JSON fixtures. Use one locked state transaction for each
+   normal assessment and the existing canonical-comment updater for its result.
+7. Observe the actual dispatched run ID/attempt after the saved watermark.
+   Record one existing #178 watcher and run exactly
+   `timeout 90m gh run watch "$RUN_ID" --interval 30 --exit-status` as an
+   attached asynchronous shell. No reasoning agent waits. Verify exactly one
+   input-free full dispatch and all eight completed jobs, with no publisher
+   on the PR/dispatch. Reassess fresh review/security/criteria before eligibility.
+8. Owner-push a real second change. Observe supersession and prove that the
+   earlier full success and earlier review/security cannot authorize the new
+   head. Do not cancel any independent PR merely because master moved.
+   Exercise an accepted real local/remote finding on a separate negative head;
+   persist its abandonment before cancelling any associated full run. A known
+   negative/WIP head is not a successful local validation sample. Repair it
+   using #179's actual sibling-family evidence before another clean head.
+9. Repeat with a separate small/low-risk record in concurrent mode. Confirm
+   that the initial event runs the complete graph without waiting for review,
+   while merge eligibility still requires the same final gates. Test pause by
+   updating the existing record and observing the broader route on a new head.
+10. Save exact PR/head/base/decision/run/attempt/review/check identities and
+    actual commands/results in the canonical evidence comment. Close, do not
+    merge, disposable PRs; retire only their owned processes/worktrees through
+    existing cleanup after no active work remains. Main separately verifies
+    automatic full master Build and its real build-once publisher after the
+    implementation merge.
+
+### Expected result
+
+Adaptive timing saves only unneeded early comprehensive runs. A candidate can
+be merge-eligible only after actual clean review/security, complete local and
+objective/manual evidence and one exact full success. Master retains the
+complete automatic graph and real publisher.
+
+### Negative control
+
+The pre-feature workflow starts full Build concurrently for every code event.
+Missing/unknown decisions intentionally retain that broader behavior. Valid
+findings, stale or duplicate identities, missing observations and cancelled
+runs never become merge evidence in either timing mode.
+
+### Interactions and save compatibility
+
+Reuse #176 decisions/metrics/pause, #177 metadata continuity, #178 local
+handoffs/watchers and #179 review/family/hold authority. #180/#206 remain
+parallel. No gameplay, save/config, localization, resource allocation,
+modern/archival or manual audiovisual compatibility changes.
+
+### Automation
+
+`scripts.workflow_pilot.tests.test_adaptive_gate` runs real local Git/handoff,
+typed state, HTTP-response and actual preflight/summary shell controls. The
+existing topology, publisher, metadata, schema and review selectors cover
+their directly coupled integration contracts. The coordinator records the
+actual disposable-PR exercise separately; fixtures are never pilot samples.
+
+### Cleanup and limitations
+
+Local HTTP/task records are controlled fixtures, not actual GitHub reviewer
+launches or remote delivery evidence. The real exercise above remains required
+and is owned by main. There is no subjective manual-only criterion for this
+host orchestration feature, no owner-dispatch prevention guarantee, and no
+same-UID sandbox or authenticated receipt claim. Three weeks or 20 real
+post-deployment merged pilot PRs plus measured efficiency/non-inferiority are
+future promotion criteria; no fixture or baseline refresh substitutes for them.
+
 ## TC-WORKFLOW-REVIEW-FAMILY-001: Expand valid findings across complete sibling families
 
 - **Feature / originating issue:** `workflow-governance` /

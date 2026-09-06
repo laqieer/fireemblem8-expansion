@@ -93,7 +93,7 @@ def run_lifecycle_check(arguments: list[str]) -> int:
         try:
             fixture = reporter.load_json(ROOT / reporter.BASELINE_FIXTURE_PATH)
             decisions = reporter.load_json(ROOT / reporter.DECISION_RECORD_PATH)
-            report = reporter.build_report(fixture, decisions, authority_root)
+            report = reporter.build_report(fixture, decisions, authority_root, cohort_only=True)
             reporter.check_expected(
                 report,
                 reporter.load_json(ROOT / reporter.BASELINE_EXPECTED_PATH),
@@ -223,7 +223,7 @@ def dispatch(mode: str, arguments: list[str]) -> int:
 
     from scripts.workflow_pilot import reporter
 
-    return reporter.main(arguments)
+    return reporter.main(["--cohort-decisions", *arguments])
 
 
 def main(argv: list[str] | None = None) -> int:

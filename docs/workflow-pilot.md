@@ -84,7 +84,8 @@ python3 -m scripts.workflow_pilot.reporter \
   --repository-root . \
   --fixture scripts/workflow_pilot/tests/fixtures/baseline.json \
   --decisions .github/workflow-pilot-decisions.json \
-  --expected scripts/workflow_pilot/tests/fixtures/baseline_expected.json
+  --expected scripts/workflow_pilot/tests/fixtures/baseline_expected.json \
+  --cohort-decisions
 ```
 
 Successful output is canonical ASCII JSON: recursively sorted keys, compact
@@ -99,6 +100,145 @@ sets and set-like relationship fields are sorted before hashing. It is an
 input-format/cohort checksum: it detects identity, timestamp, PR/SHA
 association, and relationship substitution that preserves aggregate metrics,
 but does not hash source files, blobs, objects, ROMs, or the repository tree.
+`--cohort-decisions` explicitly projects the live decision collection onto the
+validated historical PR cohort. The existing isolated `baseline` and lifecycle
+baseline modes do this automatically; ordinary `build_report` remains strict.
+Adding a future pilot/fixture decision neither adds it to the frozen cohort nor
+changes baseline v1. Unknown fields, duplicate records and malformed decisions
+still reject.
+
+## Adaptive review-first candidate gates
+
+[Issue #181](https://github.com/laqieer/fireemblem8-expansion/issues/181) is an
+accepted framework capability that changes **when**, not **what**, is tested.
+Dependencies #176/#177/#178/#179 supply the existing decision/metric record,
+event and canonical-evidence identity, coordinator/watchers, and independent
+review/family/hold authority. #180/#206 remain parallel; #196 extraction is not
+a prerequisite. No gameplay, flag, save/config, locale, generated game-data,
+ROM/RAM allocation or archival behavior changes.
+
+### Decision and workflow
+
+Keep each decision in `.github/workflow-pilot-decisions.json`, not another
+policy file. `protocol`, `replay`, `transport`, `security`, `save`, `lifecycle`,
+`abi` and `migration` select review-first. More than 2,000 changed lines is
+also a review-first signal. Small low-risk records may select concurrent.
+Overrides use #176's immutable pre-review introduction validation; named high
+risk always wins. A timing override does not waive #179's independent local
+review. A missing/unknown record, unavailable override provenance, or existing
+`pilot.disposition: paused` uses the broader concurrent/full workflow and
+retains a visible reason.
+
+The trusted integration-base classifier reads the selected candidate's
+committed record as data through GitHub, checks its actual Git blob bytes,
+and binds the PR/head/merge base. It never imports candidate programs.
+The diagnostic classifier can select this path with `--adaptive --repository
+owner/repo`; the Build workflow enables it only when its trusted base contains
+the implementation. A base predating deployment retains the full bootstrap.
+
+There is still **one Build workflow and eight jobs**. A review-first PR event
+runs identity/router/classifier plus tiny `host-tests`/`build` continuity
+checks; `extended-host-tests` and `legacy` are platform-skipped. Its classifier
+is `review-first-classifier`, not full evidence. The canonical `summary`
+deliberately fails with a waiting-for-full explanation until the full run
+replaces it: green preflight is never merge permission. Concurrent candidates
+retain the full graph immediately. Exact-head security and Copilot are
+requested/observed concurrently by the existing delivery coordinator, not a
+new reviewer service.
+
+After accepted clean review and security, the coordinator uses one input-free
+`workflow_dispatch` on the actual candidate branch. All eight jobs run.
+Dispatching early manually remains possible for a repository owner, but that
+run is inadmissible; no impossible prevention guarantee is claimed.
+The normal modern job still builds once and publishes its existing patch only
+for the guarded automatic master push. Dispatches and PRs never publish.
+Every resulting master revision still runs the complete graph and remote
+completion remains mandatory.
+
+### Coordinator API and evidence
+
+`scripts.workflow_pilot.adaptive_gate` reuses #178's locked coordinator state
+with an optional bounded `candidates` list. It does not launch agents or
+watchers. The existing assignment/handoff and watcher schemas remain valid.
+
+1. `fetch_candidate`, `fetch_decision` and `frozen_base` collect existing PR,
+   decision and merge-base observations. In a short `locked_state` transaction,
+   `begin_candidate` records the exact head/base/ref/decision and supersedes
+   older candidates for that PR only.
+2. Supply the coordinator's actual #179 `ReviewSession` and complete `Triage`
+   records. `assess_observed` refreshes the real GitHub review facts, exact
+   check runs, and Build runs, and calls #179's shared `review_state` predicate.
+   Its `review_tools` uses the actual unique Git merge-base check. Prior
+   accepted findings additionally need the existing family handoff inputs:
+   `(request, members, observations, tool_revision)`.
+3. Security requires the complete exact-head check-run set: `CodeQL` from
+   GitHub Advanced Security app 57789 and `GitGuardian Security Checks` from
+   app 46505, with their expected slugs, terminal success and complete
+   pagination. A resolved false positive does not turn a failed check green:
+   observe the successful exact check. A coordinator-accepted valid security
+   or review finding permanently abandons that head.
+4. The existing exact local handoff must be accepted and closed. The
+   coordinator supplies `criteria_ready` only from the existing objective and
+   manual audiovisual completion gates. Its default is false. No human review
+   gate or audiovisual exception is introduced.
+5. `dispatch_full(client, state_path, pr, assess_callback)` calls the callback
+   to obtain `(record, assessment, observed_runs)`, refetches PR identity, and
+   **persists the reservation before POST**. It sends only `{"ref": head_ref}`.
+   Unknown delivery cannot be retried into a duplicate; it remains pending
+   reconciliation. Bind the unique actual run after the recorded watermark,
+   never a guessed run ID. Run ID and attempt are retained; a later mismatched
+   attempt or run is not silently promoted.
+6. When a run becomes visible, use the existing #178 `reserve_watcher` /
+   `finish_watcher` / `reconcile_run` interfaces and exactly one attached
+   bounded shell watcher per run/attempt. A reasoning agent never waits.
+7. `cancel_abandoned` reloads the persisted state before any remote action,
+   verifies actual repository/run/attempt/head/workflow identity, and refuses
+   cancellation without prior abandonment or for unrelated work.
+8. Render `evidence_comment(assessment, preserved_text)` and update the single
+   existing owner-authored canonical comment through
+   `pr_metadata.update_evidence_comment`. Preserve other local/runtime/manual
+   evidence; do not edit the stable PR body or create another evidence ledger.
+
+The assessment records decision identity/mode/reason, frozen and live bases,
+state/missing evidence, review IDs/rounds/current findings/unresolved count,
+actual security checks, and preflight/full run IDs and attempts.
+`merge_eligible` requires the one bound complete full success plus all current
+review/security/local/objective gates. Cancelled, abandoned, duplicate,
+wrong-head/base/decision or stale-attempt evidence cannot qualify.
+
+Live base tips and #179's **frozen unique merge base** are distinct. Unrelated
+master movement does not itself supersede or cancel a candidate. A changed
+head, base ref or unique merge base does. The workflow's candidate-binding step
+and #177's existing metadata continuity lookback preserve this distinction for
+both PR and input-free dispatch runs.
+Automatic exact-head security checks can legitimately start before the
+coordinator first registers a new head. Do not rewrite their timestamps.
+A same-head base rebind instead requires refreshed review/security after that
+binding, because the SHA alone cannot distinguish its prior base.
+
+These APIs consume trusted coordinator observations, not authenticated JSON
+receipts or arbitrary Python callers. They do not offer a broker, signer,
+capability service, source ledger or reviewer fleet. Missing evidence is a
+visible hold, not a pass label.
+
+### Pilot measurement and rollback
+
+Use #176's existing Build minutes, review rounds/time-to-clean, safety events
+and coordination overhead, plus #178's captured handoff observations.
+`pause_for_safety` updates the existing decision's paused disposition for
+observed `security_finding`, `escaped_defect` or `broken_master` events.
+Persist that decision normally; new candidates take the broader workflow.
+Pause and ordinary revert change timing only, never final gates.
+
+Disposable fixtures use `pilot.included: false` and `disposition: excluded`;
+they are not merged pilot samples. Three weeks or **20 actual post-deployment
+merged pilot PRs**, and measured efficiency improvement/non-inferiority, remain
+future Discussion #174 promotion criteria. Unit tests, synthetic history and
+the introducing PR cannot fabricate that checkpoint.
+
+The indexed [TC-WORKFLOW-REVIEW-FIRST-001](test-cases/workflow-governance.md#tc-workflow-review-first-001-gate-expensive-builds-after-accepted-review)
+contains local controls and the coordinator-only disposable-PR exercise,
+including the introducing-feature bootstrap boundary.
 
 ## Sibling-family review convergence
 

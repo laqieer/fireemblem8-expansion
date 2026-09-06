@@ -398,22 +398,45 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--pr-head-sha", required=True)
     parser.add_argument("--push-sha", required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--adaptive", action="store_true")
+    parser.add_argument("--repository", default="")
     return parser.parse_args(argv)
 
 
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     try:
+        payload = load_event(args.event_path)
         decision = classify_event(
             args.event_name,
-            load_event(args.event_path),
+            payload,
             github_ref=args.github_ref,
             github_sha=args.github_sha,
             pr_base_sha=args.pr_base_sha,
             pr_head_sha=args.pr_head_sha,
             push_sha=args.push_sha,
         )
+        selected, binding = None, None
+        if args.adaptive:
+            from scripts.workflow_pilot import adaptive_gate, pr_metadata
+            if not pr_metadata.REPOSITORY_RE.fullmatch(args.repository):
+                raise EventClassificationError("adaptive route requires exact repository")
+            client = pr_metadata.GitHubClient("/usr/bin/gh")
+            try:
+                if args.event_name == "pull_request":
+                    decision, selected, binding = adaptive_gate.route_event(
+                        client, decision, payload, args.repository)
+                elif args.event_name == "workflow_dispatch":
+                    decision, selected, binding = adaptive_gate.route_dispatch(
+                        client, decision, payload, args.repository, args.github_ref)
+            except (ValueError, pr_metadata.MetadataEditError) as error:
+                raise EventClassificationError(str(error)[:1000]) from error
         write_github_output(args.output, decision)
+        if selected is not None:
+            with args.output.open("a", encoding="ascii") as output:
+                output.write(f"candidate_binding={binding}\ndecision_oid={selected.decision_oid or ''}\n")
+                output.write(f"gate_mode={selected.mode}\n")
+                output.write("gate_reason=" + json.dumps(selected.reason, ensure_ascii=True) + "\n")
     except EventClassificationError as error:
         print(f"build-event-classifier: {error}", file=sys.stderr)
         return 2

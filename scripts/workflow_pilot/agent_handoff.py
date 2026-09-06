@@ -288,7 +288,11 @@ def validate_verdict(value):
 
 
 def validate_state(value):
-    fields(value, "schema_version repository coordinator_id availability clock assignments watchers")
+    fields(value, "schema_version repository coordinator_id availability clock assignments watchers"
+           + (" candidates" if isinstance(value, dict) and "candidates" in value else ""))
+    if "candidates" in value:
+        from .adaptive_gate import validate_candidate_records
+        validate_candidate_records(value["candidates"])
     require(type(value["schema_version"]) is int and value["schema_version"] == SCHEMA_VERSION,
             "state schema_version must be 3")
     text(value["repository"], maximum=256, pattern=observations.REPOSITORY_RE)

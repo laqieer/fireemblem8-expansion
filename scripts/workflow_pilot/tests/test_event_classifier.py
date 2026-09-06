@@ -144,7 +144,7 @@ class EventClassifierFixtureTests(unittest.TestCase):
     def test_all_fixture_decisions_are_exact_and_deterministic(self):
         fixture = _load_fixture()
         self.assertEqual(fixture["schema_version"], 3)
-        self.assertFalse(fixture["workflow_dispatch_supported"])
+        self.assertTrue(fixture["workflow_dispatch_supported"])
         self.assertEqual(
             [case["id"] for case in fixture["cases"]],
             [

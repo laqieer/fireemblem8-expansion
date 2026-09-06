@@ -330,6 +330,37 @@
       }},
       "else": {"properties": {"process": {"properties": {"state": {"const": "exited"}}}}}
     },
+    "candidate": {
+      "type": "object", "additionalProperties": false,
+      "required": ["pr_number", "head_sha", "base_sha", "base_ref", "decision_oid", "mode",
+                   "created_at", "abandoned_reason", "dispatch_requested_at", "dispatch_sent_at",
+                   "watermark", "full_run_id", "full_attempt"],
+      "properties": {
+        "pr_number": {"$ref": "#/$defs/positive"},
+        "head_sha": {"$ref": "#/$defs/sha"}, "base_sha": {"$ref": "#/$defs/sha"},
+        "base_ref": {"$ref": "#/$defs/text", "maxLength": 256},
+        "decision_oid": {"anyOf": [{"$ref": "#/$defs/sha"}, {"type": "null"}]},
+        "mode": {"enum": ["concurrent", "review-first"]},
+        "created_at": {"$ref": "#/$defs/time"},
+        "abandoned_reason": {"$ref": "#/$defs/nullableText", "maxLength": 2048},
+        "dispatch_requested_at": {"anyOf": [{"$ref": "#/$defs/time"}, {"type": "null"}]},
+        "dispatch_sent_at": {"anyOf": [{"$ref": "#/$defs/time"}, {"type": "null"}]},
+        "watermark": {"$ref": "#/$defs/integer"},
+        "full_run_id": {"$ref": "#/$defs/nullablePositive"},
+        "full_attempt": {"$ref": "#/$defs/nullablePositive"}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"full_run_id": {"type": "null"}}},
+          "then": {"properties": {"full_attempt": {"type": "null"}}},
+          "else": {"properties": {"full_attempt": {"$ref": "#/$defs/positive"}}}
+        },
+        {
+          "if": {"properties": {"dispatch_sent_at": {"type": "string"}}},
+          "then": {"properties": {"dispatch_requested_at": {"$ref": "#/$defs/time"}}}
+        }
+      ]
+    },
     "state": {
       "type": "object", "additionalProperties": false,
       "required": ["schema_version", "repository", "coordinator_id", "availability", "clock", "assignments", "watchers"],
@@ -337,6 +368,9 @@
         "schema_version": {"type": "integer", "const": 3}, "repository": {"$ref": "#/$defs/repository"},
         "coordinator_id": {"$ref": "#/$defs/id"}, "availability": {"$ref": "#/$defs/availability"},
         "clock": {"$ref": "#/$defs/clock"},
+        "candidates": {
+          "type": "array", "maxItems": 128, "items": {"$ref": "#/$defs/candidate"}
+        },
         "assignments": {
           "description": "Runtime also enforces unique assignment/owner/session/dispatch identities, one initial root per issue/non-null PR and predecessor lineage.",
           "type": "array", "maxItems": 128, "uniqueItems": true, "items": {"$ref": "#/$defs/entry"}
