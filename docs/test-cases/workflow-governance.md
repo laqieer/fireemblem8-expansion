@@ -1531,7 +1531,8 @@ for both preparation and fixed root-owned `/usr/bin/python3` execution, includin
 `sys.stdlib_module_names`, `fcntl`, `resource` and required descriptor/process
 APIs; Git SHA-1, sealed memfd, readable `/proc/self/fd` and `/proc/self/exe`,
 executable memfds with enforceable execute-only permissions,
-`fs.suid_dumpable=0`, fork, process groups, `waitid(WNOWAIT)` and prctl;
+`fs.suid_dumpable=0`, POSIX signal-handler deferral, fork, process groups,
+`waitid(WNOWAIT)` and prctl;
 no ROM, emulator, token or
 remote mutation. The existing source build is sufficient; there is no
 downloadable game artifact for this host-only case.
@@ -1629,7 +1630,22 @@ privileges. Every observed/signaled process is created and reaped by the test.
 8. Force a crash, empty/partial/malformed or oversized output, timeout,
    interruption and abrupt parent death during nested execution. The tests
    observe real processes/descriptors and require bounded teardown with no
-   admitted partial result. Disable both pidfd APIs, observe four live outer
+   admitted partial result.
+   Interrupt at a real guardian's launcher return before the caller receives
+   its handle. Also deliver a real SIGINT at `Popen` constructor return, both
+   directly and through another live thread, then fail stdin closure, collector
+   entry, deadline and `fileno()` setup. Repeat launch/collection interruption
+   inside a real nested guardian and at interpreter-probe/Git-read handoff.
+   Before tester cleanup, each child must have a recorded exit status and
+   no remaining `waitid(WNOWAIT)`-observable child, its pipe streams must be
+   closed, and the caller's signal handlers/mask and FD identities must match
+   their starting state. The same prepared capsule must still execute an
+   ordinary positive assertion afterward.
+   Reuse a just-closed liveness-reader integer for an unrelated sealed FD:
+   interruption cleanup must leave that replacement intact. Reaped/unowned
+   PID controls must never receive signals or waits. A real owned worker
+   lacking its own process group must still be killed and reaped safely.
+   Disable both pidfd APIs, observe four live outer
    and nested guardian/worker generations, then kill the owned parent.
    `waitid(WNOWAIT)` must acknowledge adopted-child exits before reaping;
    descendants already reaped by their guardians must lose their saved
@@ -1777,6 +1793,15 @@ late. The execute-only, sealed identical system image changes the kernel's
 exec decision itself. Separate real-process controls prove protection both
 before any loader/Python instruction and at initialized-Python ptrace access;
 the actual nested pipeline still produces exact signable receipts.
+
+The launch-ownership correction preserves two real pre-fix controls: interruption
+at launcher return and a SIGINT at `Popen` constructor return each left a
+`waitid(WNOWAIT)`-observable zombie in a long-lived caller, `returncode=None`,
+and three open pipe handles. Closing the liveness writer made the guardian
+exit but did not reap it. The regression inspects these states before any
+tester cleanup; a test that merely injects from `selector.select()` cannot
+cover that earlier gap. Collector setup failures and nested handoff errors
+now use the same already-active owner, with no admitted partial receipt.
 
 ### Automation
 

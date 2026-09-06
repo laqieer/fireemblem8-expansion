@@ -935,13 +935,34 @@ malformed messages, nonempty diagnostics and interrupted execution produce
 no admitted result or signature. Owned descriptors close on every path,
 without closing an unrelated FD reused at the same integer.
 
+The child owner is active **before** liveness-pipe creation and launch, and
+the launcher binds the new process to that owner before returning its handle.
+Cleanup covers every `BaseException` from launch handoff, stdin closure,
+deadline/`fileno()` setup, selector entry, collection and result validation,
+not just failures inside `select()`. Python signal handlers are deferred
+while process registration or cleanup is critical, including signals received
+by another thread and dispatched on the main thread. Original caller handlers
+and masks are restored; protected Python children restore their original mask
+before running trusted code. Probe and Git-read processes also have an owner
+through their launch-to-collection handoff.
+
+Cancellation closes the owned liveness writer, gives the guardian its bounded
+cleanup interval, then terminates and reaps only its still-owned child if
+necessary. `waitid(WNOWAIT)` preserves the PID until group teardown; already
+reaped or unowned PIDs are never signaled or reaped again. Worker registration,
+group establishment and reap-state updates are protected too; a worker
+interrupted before group establishment can still be terminated by its owned
+PID. Liveness and supervisor pipes retain inode identities so cleanup cannot
+close an unrelated FD reusing an old integer.
+
 Supported execution is currently **Linux x86-64 with 64-bit Python 3.10+ only**,
 for both the trusted preparation interpreter and fixed, root-owned
 `/usr/bin/python3` execution interpreter. Both must provide
 `sys.stdlib_module_names`, the required `os` descriptor/process APIs and
 constants, `fcntl` seals and `resource` limits. It requires sealed memfd,
 mounted/readable `/proc/self/fd` and `/proc/self/exe`, fork, process groups,
-`waitid(WNOWAIT)`, and the non-dumpable/subreaper/parent-death prctl facilities
+`waitid(WNOWAIT)`, POSIX signal-handler deferral, and the
+non-dumpable/subreaper/parent-death prctl facilities
 plus unprivileged seccomp-BPF. Executable memfds, enforceable execute-only
 permissions and a readable `/proc/sys/fs/suid_dumpable` already set to `0`
 are required. A caller whose credentials bypass image read permissions is

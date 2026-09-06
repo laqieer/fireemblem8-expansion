@@ -27,7 +27,9 @@ import signal
 import stat
 import subprocess
 import sys
+import threading
 import time
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable
@@ -68,6 +70,7 @@ PYTHON_APIS = {
         "sys": ["addaudithook"],
         "fcntl": ["fcntl"],
         "resource": ["setrlimit"],
+        "signal": ["pthread_sigmask", "valid_signals", "getsignal", "signal"],
     },
     "int": {
         "os": ["MFD_CLOEXEC", "MFD_ALLOW_SEALING", "O_CLOEXEC", "P_PID",
@@ -91,7 +94,7 @@ names=getattr(sys,'stdlib_module_names',None)
 print(json.dumps({
     'version':list(sys.version_info[:2]),'platform':sys.platform,
     'machine':os.uname().machine,'pointer_bytes':ctypes.sizeof(ctypes.c_void_p),
-    'stdlib_module_names':isinstance(names,frozenset) and {'os','sys','fcntl','resource'}<=names,
+    'stdlib_module_names':isinstance(names,frozenset) and {'os','sys','fcntl','resource','signal'}<=names,
     'capabilities':available},sort_keys=True,separators=(',',':')))
 """
 SEALS = 0x01 | 0x02 | 0x04 | 0x08
@@ -115,16 +118,18 @@ GIT_ENVIRONMENT = {
 
 # Execute-only ELF permissions make the kernel deny dumping before userspace,
 # including ld.so and Python initialization. This check must never repair it.
-PYTHON_STARTUP = """import os,sys,fcntl,ctypes,json
+PYTHON_STARTUP = """import os,sys,fcntl,ctypes,json,signal
 if ctypes.CDLL(None).prctl(3,0,0,0,0)!=0:
     os.write(2,b'CapsuleUnavailable: Python exec is not continuously non-dumpable')
     raise SystemExit(125)
 _capsule_image_fd=int(sys.argv.pop(1))
 _capsule_python_identity=tuple(json.loads(sys.argv.pop(1)))
+_capsule_signal_mask=json.loads(sys.argv.pop(1))
 _image=os.fstat(_capsule_image_fd); _running=os.stat('/proc/self/exe')
 if ((_image.st_dev,_image.st_ino)!=(_running.st_dev,_running.st_ino)
     or _image.st_mode&0o7777!=0o111 or fcntl.fcntl(_capsule_image_fd,1034)&15!=15):
     raise SystemExit(125)
+signal.pthread_sigmask(signal.SIG_SETMASK,_capsule_signal_mask)
 """
 
 # Only the trusted interpreter reads this constant. Capsule runtime/source
@@ -305,12 +310,163 @@ def _write_all(fd, raw):
         view = view[count:]
 
 
+@contextmanager
+def _defer_handlers():
+    previous = signal.pthread_sigmask(signal.SIG_BLOCK, ())
+    missing = object()
+    handlers = {}
+    pending = {}
+    try:
+        handlers = {number: signal.getsignal(number) for number in signal.valid_signals()
+                    if callable(signal.getsignal(number))}
+        signal.pthread_sigmask(signal.SIG_BLOCK, handlers)
+        if threading.current_thread() is threading.main_thread():
+            # Another thread may receive a signal and queue its Python handler
+            # for this thread even while our POSIX mask blocks that signal.
+            pending = dict.fromkeys(handlers, missing)
+
+            def defer(number, frame):
+                pending[number] = frame
+
+            for number in handlers:
+                signal.signal(number, defer)
+        yield previous
+    finally:
+        if pending:
+            for number, handler in handlers.items():
+                signal.signal(number, handler)
+        signal.pthread_sigmask(signal.SIG_SETMASK, previous)
+        for number, frame in pending.items():
+            if frame is not missing:
+                handlers[number](number, frame)
+
+
+def _owns_child(process):
+    if process.returncode is not None:
+        return False
+    try:
+        os.waitid(os.P_PID, process.pid, os.WEXITED | os.WNOHANG | os.WNOWAIT)
+    except ChildProcessError:
+        return False
+    return True
+
+
+def _close_process_streams(process):
+    error = None
+    for stream in (process.stdin, process.stdout, process.stderr):
+        if stream is not None and not stream.closed:
+            try:
+                stream.close()
+            except BaseException as failure:
+                if error is None:
+                    error = failure
+    if error is not None:
+        raise error
+
+
+def _close_owned_fd(fd, identity):
+    try:
+        if _descriptor_identity(fd) == identity:
+            os.close(fd)
+    except OSError:
+        pass
+
+
+def _stop_worker(pid):
+    try:
+        os.waitid(os.P_PID, pid, os.WEXITED | os.WNOHANG | os.WNOWAIT)
+    except ChildProcessError:
+        return
+    _kill_group(pid)
+    try:
+        os.kill(pid, signal.SIGKILL)
+    except ProcessLookupError:
+        pass
+    os.waitpid(pid, 0)
+
+
+def _finish_child(process, abort=None):
+    try:
+        try:
+            if abort is not None:
+                abort()
+        finally:
+            if _owns_child(process):
+                try:
+                    if abort is not None:
+                        process.wait(timeout=3)
+                finally:
+                    # This sole waiter retains the child PID until group teardown.
+                    if _owns_child(process):
+                        _kill_group(process.pid)
+                        process.wait()
+    finally:
+        _close_process_streams(process)
+
+
+class _Child:
+    """Own launch, liveness and collection before a child handle can escape."""
+
+    def __init__(self):
+        self.process, self.command = None, None
+        self.fds, self.identities = (), {}
+        self.active = False
+
+    def __enter__(self):
+        self.active = True
+        return self
+
+    def pipe(self):
+        if not self.active or self.fds:
+            raise CapsuleError("liveness pipe needs its active single owner")
+        with _defer_handlers():
+            self.fds = os.pipe2(os.O_CLOEXEC)
+            try:
+                self.identities = {fd: _descriptor_identity(fd) for fd in self.fds}
+            except BaseException:
+                for fd in self.fds:
+                    os.close(fd)
+                self.fds = ()
+                raise
+        return self.fds
+
+    def close_fd(self, fd):
+        expected = self.identities.get(fd)
+        if expected is not None:
+            _close_owned_fd(fd, expected)
+
+    def abort(self):
+        if self.fds:
+            self.close_fd(self.fds[1])
+
+    def start(self, command, **options):
+        if not self.active or self.process is not None:
+            raise CapsuleError("child launch needs its active single owner")
+        with _defer_handlers() as mask:
+            self.command = command(mask) if callable(command) else command
+            self.process = subprocess.Popen(self.command, **options)
+        return self.process, self.command
+
+    def __exit__(self, *exc):
+        if self.process is None and not self.fds:
+            self.active = False
+            return
+        with _defer_handlers():
+            try:
+                if self.process is not None:
+                    _finish_child(self.process, self.abort if self.fds else None)
+            finally:
+                for fd in self.fds:
+                    self.close_fd(fd)
+                self.active = False
+
+
 def _collect(process, timeout, limit, abort: Callable[[], None] | None = None,
              cancel_fd=None):
-    deadline = time.monotonic() + timeout
-    chunks = {process.stdout.fileno(): bytearray(), process.stderr.fileno(): bytearray()}
-    stdout_fd, stderr_fd = chunks
     try:
+        deadline = time.monotonic() + timeout
+        chunks = {process.stdout.fileno(): bytearray(), process.stderr.fileno(): bytearray()}
+        stdout_fd, stderr_fd = chunks
         with selectors.DefaultSelector() as selector:
             for fd in chunks:
                 selector.register(fd, selectors.EVENT_READ)
@@ -333,34 +489,28 @@ def _collect(process, timeout, limit, abort: Callable[[], None] | None = None,
         remaining = deadline - time.monotonic()
         if remaining <= 0:
             raise CapsuleError("process timeout")
+        if process.returncode is None and not _owns_child(process):
+            raise CapsuleError("execution lost its exclusive child ownership")
         status = process.wait(timeout=remaining)
         return status, bytes(chunks[stdout_fd]), bytes(chunks[stderr_fd])
     except BaseException:
-        if abort is not None:
-            abort()
-            try:
-                process.wait(timeout=3)
-            except subprocess.TimeoutExpired:
-                _kill_group(process.pid)
-                process.wait()
-        else:
-            _kill_group(process.pid)
-            process.wait()
+        with _defer_handlers():
+            _finish_child(process, abort)
         raise
     finally:
-        process.stdout.close()
-        process.stderr.close()
+        _close_process_streams(process)
 
 
 def _git(root, *arguments):
     command = [GIT, "--no-replace-objects", "-c", "core.fsmonitor=false",
                "-c", "core.hooksPath=/dev/null", "-C", os.fspath(root), *arguments]
     try:
-        process = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                                   stderr=subprocess.PIPE, env=GIT_ENVIRONMENT,
-                                   start_new_session=True, close_fds=True)
-        process.stdin.close()
-        status, stdout, stderr = _collect(process, 15, MAX_BUNDLE_BYTES)
+        with _Child() as owner:
+            process, _ = owner.start(
+                command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                env=GIT_ENVIRONMENT, start_new_session=True, close_fds=True)
+            process.stdin.close()
+            status, stdout, stderr = _collect(process, 15, MAX_BUNDLE_BYTES)
     except (OSError, subprocess.SubprocessError) as error:
         raise CapsuleError(f"exact-tree Git read failed: {error}") from error
     if status:
@@ -668,7 +818,7 @@ def _runtime_machine():
 
 
 def _python_report():
-    modules = {"os": os, "sys": sys, "fcntl": fcntl, "resource": resource}
+    modules = {"os": os, "sys": sys, "fcntl": fcntl, "resource": resource, "signal": signal}
     names = getattr(sys, "stdlib_module_names", None)
     available = all(
         callable(getattr(modules[name], attribute, None)) if kind == "callable"
@@ -723,8 +873,10 @@ def _probe_python(interpreter=None):
     if owned:
         interpreter = _ExecutionInterpreter(_probe=False)
     try:
-        process, _ = interpreter.launch(PYTHON_PROBE, [canonical(PYTHON_APIS).decode("ascii")])
-        status, stdout, stderr = _collect(process, PYTHON_PROBE_SECONDS, MAX_PYTHON_PROBE_BYTES)
+        with _Child() as owner:
+            process, _ = interpreter.launch(
+                PYTHON_PROBE, [canonical(PYTHON_APIS).decode("ascii")], owner=owner)
+            status, stdout, stderr = _collect(process, PYTHON_PROBE_SECONDS, MAX_PYTHON_PROBE_BYTES)
         if status != 0 or stderr:
             raise CapsuleError(f"Python capability probe failed ({status}): {stderr[:4096]!r}")
         report = parse(stdout, MAX_PYTHON_PROBE_BYTES)
@@ -822,19 +974,22 @@ class _ExecutionInterpreter:
             os.close(readable)
             raise CapsuleUnavailable("Python image read permissions are bypassable by this caller")
 
-    def launch(self, source, arguments, *, pass_fds=(), stdin=subprocess.DEVNULL):
+    def launch(self, source, arguments, *, owner, pass_fds=(), stdin=subprocess.DEVNULL):
         self.check()
-        command = [PYTHON, "-I", "-S", "-c", PYTHON_STARTUP + source, str(self.image.fd),
-                   canonical(list(self.identity)).decode("ascii"), *arguments]
+
+        def command(mask):
+            return [PYTHON, "-I", "-S", "-c", PYTHON_STARTUP + source, str(self.image.fd),
+                    canonical(list(self.identity)).decode("ascii"),
+                    canonical(sorted(int(number) for number in mask)).decode("ascii"), *arguments]
+
         try:
-            process = subprocess.Popen(
+            return owner.start(
                 command, executable=f"/proc/self/fd/{self.image.fd}",
                 stdin=stdin, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                 env=ENVIRONMENT, cwd="/", start_new_session=True, close_fds=True,
                 pass_fds=(*pass_fds, self.image.fd))
         except OSError as error:
             raise CapsuleUnavailable("host cannot execute the protected Python image") from error
-        return process, command
 
     def close(self):
         if self.image is not None:
@@ -1051,64 +1206,53 @@ def _execute(bundle_fd, runtime_fd, program, request, timeout, depth, cancel_fd=
             fds = [runtime_fd.fd, program_fd.fd, request_fd.fd, bundle_fd.fd]
             if len({_descriptor_identity(fd)[:2] for fd in fds}) != len(fds):
                 raise CapsuleError("descriptor aliasing is not permitted")
-            life_read, life_write = os.pipe2(os.O_CLOEXEC)
-            arguments = [str(runtime_fd.fd), str(len(runtime_raw)), digest(runtime_raw),
-                         *(str(fd) for fd in fds), str(life_read), digest(envelope),
-                         digest(bundle_raw), digest(program_fd.read())]
-            closed = False
-
-            def close_life():
-                nonlocal closed
-                if not closed:
-                    closed = True
-                    os.close(life_write)
-
-            try:
-                process, command = _interpreter.launch(
-                    BOOTSTRAP, arguments, stdin=subprocess.PIPE, pass_fds=(*fds, life_read))
-                process.stdin.close()
-                os.close(life_read)
-                life_read = -1
-                status, stdout, stderr = _collect(
-                    process, timeout + 5, MAX_OUTPUT_BYTES + MAX_DIAGNOSTIC_BYTES, close_life,
-                    cancel_fd)
-                if status != 0 or stderr:
-                    if stderr.startswith(b"CapsuleUnavailable:"):
-                        raise CapsuleUnavailable(stderr[:4096].decode("utf-8", "replace"))
-                    raise CapsuleError(f"capsule failed ({status}): {stderr[:4096]!r}")
-                output = _keys(parse(stdout), {"binding", "result", "loaded", "diagnostics"}, "execution")
-                binding = {"version": VERSION, "nonce": parse(envelope, MAX_REQUEST_BYTES)["nonce"],
-                           "program": program, "program_sha256": digest(program_fd.read()),
-                           "runtime_sha256": digest(runtime_fd.read()),
-                           "artifact_sha256": digest(bundle_fd.read()),
-                           "request_sha256": digest(request_fd.read()),
-                           "payload_sha256": digest(payload)}
-                if canonical(output["binding"]) != canonical(binding):
-                    raise CapsuleError("execution output has a forged authority binding")
-                if (not isinstance(output["loaded"], list)
-                        or len(output["loaded"]) > MAX_ENTRIES
-                        or output["diagnostics"] != {"stdout_sha256": digest(b""), "stderr_sha256": digest(b"")}):
-                    raise CapsuleError("invalid loaded-artifact/diagnostic receipt")
-                seen = set()
-                for entry in output["loaded"]:
-                    if not isinstance(entry, dict):
-                        raise CapsuleError("invalid loaded artifact")
-                    key = (entry.get("tree"), entry.get("path"))
-                    if (not all(isinstance(value, str) for value in key) or key in seen
-                            or canonical(bundle.artifacts.get(key)) != canonical(entry)):
-                        raise CapsuleError("loaded artifact differs from exact closure")
-                    seen.add(key)
-                raw_result = canonical(output["result"])
-                receipt = {**binding, "argv": command, "exit_code": status,
-                           "output_sha256": digest(raw_result), "stdout_sha256": digest(stdout),
-                           "loaded": output["loaded"], "diagnostics": output["diagnostics"]}
-                return ExecutionResult(canonical(receipt), raw_result, _VERIFIED_RESULT)
-            except (OSError, subprocess.SubprocessError) as error:
-                raise CapsuleError(f"capsule process failed: {error}") from error
-            finally:
-                close_life()
-                if life_read >= 0:
-                    os.close(life_read)
+            with _Child() as owner:
+                life_read, _ = owner.pipe()
+                arguments = [str(runtime_fd.fd), str(len(runtime_raw)), digest(runtime_raw),
+                             *(str(fd) for fd in fds), str(life_read), digest(envelope),
+                             digest(bundle_raw), digest(program_fd.read())]
+                try:
+                    process, command = _interpreter.launch(
+                        BOOTSTRAP, arguments, owner=owner, stdin=subprocess.PIPE,
+                        pass_fds=(*fds, life_read))
+                    process.stdin.close()
+                    owner.close_fd(life_read)
+                    status, stdout, stderr = _collect(
+                        process, timeout + 5, MAX_OUTPUT_BYTES + MAX_DIAGNOSTIC_BYTES,
+                        owner.abort, cancel_fd)
+                    if status != 0 or stderr:
+                        if stderr.startswith(b"CapsuleUnavailable:"):
+                            raise CapsuleUnavailable(stderr[:4096].decode("utf-8", "replace"))
+                        raise CapsuleError(f"capsule failed ({status}): {stderr[:4096]!r}")
+                    output = _keys(parse(stdout), {"binding", "result", "loaded", "diagnostics"}, "execution")
+                    binding = {"version": VERSION, "nonce": parse(envelope, MAX_REQUEST_BYTES)["nonce"],
+                               "program": program, "program_sha256": digest(program_fd.read()),
+                               "runtime_sha256": digest(runtime_fd.read()),
+                               "artifact_sha256": digest(bundle_fd.read()),
+                               "request_sha256": digest(request_fd.read()),
+                               "payload_sha256": digest(payload)}
+                    if canonical(output["binding"]) != canonical(binding):
+                        raise CapsuleError("execution output has a forged authority binding")
+                    if (not isinstance(output["loaded"], list)
+                            or len(output["loaded"]) > MAX_ENTRIES
+                            or output["diagnostics"] != {"stdout_sha256": digest(b""), "stderr_sha256": digest(b"")}):
+                        raise CapsuleError("invalid loaded-artifact/diagnostic receipt")
+                    seen = set()
+                    for entry in output["loaded"]:
+                        if not isinstance(entry, dict):
+                            raise CapsuleError("invalid loaded artifact")
+                        key = (entry.get("tree"), entry.get("path"))
+                        if (not all(isinstance(value, str) for value in key) or key in seen
+                                or canonical(bundle.artifacts.get(key)) != canonical(entry)):
+                            raise CapsuleError("loaded artifact differs from exact closure")
+                        seen.add(key)
+                    raw_result = canonical(output["result"])
+                    receipt = {**binding, "argv": command, "exit_code": status,
+                               "output_sha256": digest(raw_result), "stdout_sha256": digest(stdout),
+                               "loaded": output["loaded"], "diagnostics": output["diagnostics"]}
+                    return ExecutionResult(canonical(receipt), raw_result, _VERIFIED_RESULT)
+                except (OSError, subprocess.SubprocessError) as error:
+                    raise CapsuleError(f"capsule process failed: {error}") from error
 
 
 class _Guard(importlib.abc.MetaPathFinder, importlib.abc.Loader):
@@ -1406,8 +1550,21 @@ def _write_before_deadline(fd, raw, deadline, life_fd):
 
 def _supervise(arguments, image_fd=None, interpreter_identity=None):
     worker_pid = None
-    open_fds = []
+    open_fds = {}
     interpreter = None
+
+    def pipe():
+        with _defer_handlers():
+            pair = os.pipe()
+            try:
+                open_fds.update((fd, _descriptor_identity(fd)) for fd in pair)
+            except BaseException:
+                for fd in pair:
+                    os.close(fd)
+                    open_fds.pop(fd, None)
+                raise
+        return pair
+
     try:
         if len(arguments) != 8:
             raise CapsuleError("invalid descriptor bootstrap")
@@ -1445,15 +1602,16 @@ def _supervise(arguments, image_fd=None, interpreter_identity=None):
                    "program_sha256": digest(program_raw), "runtime_sha256": digest(runtime_raw),
                    "artifact_sha256": digest(bundle_raw), "request_sha256": digest(request_raw),
                    "payload_sha256": digest(canonical(envelope["request"]))}
-        reply_r, reply_w = os.pipe()
-        stdout_r, stdout_w = os.pipe()
-        stderr_r, stderr_w = os.pipe()
-        invoke_r, invoke_w = os.pipe()
-        invoke_reply_r, invoke_reply_w = os.pipe()
-        open_fds.extend([reply_r, reply_w, stdout_r, stdout_w, stderr_r, stderr_w,
-                         invoke_r, invoke_w, invoke_reply_r, invoke_reply_w])
+        reply_r, reply_w = pipe()
+        stdout_r, stdout_w = pipe()
+        stderr_r, stderr_w = pipe()
+        invoke_r, invoke_w = pipe()
+        invoke_reply_r, invoke_reply_w = pipe()
         guardian_pid = os.getpid()
-        worker_pid = os.fork()
+        with _defer_handlers():
+            worker_pid = os.fork()
+            if worker_pid:
+                os.setpgid(worker_pid, worker_pid)
         if worker_pid == 0:
             try:
                 os.setpgid(0, 0)
@@ -1478,10 +1636,10 @@ def _supervise(arguments, image_fd=None, interpreter_identity=None):
             except BaseException as error:
                 os.write(2, (type(error).__name__ + ": " + str(error))[:4096].encode("utf-8", "replace"))
                 os._exit(1)
-        os.setpgid(worker_pid, worker_pid)
         for fd in (reply_w, stdout_w, stderr_w, invoke_w, invoke_reply_r):
-            os.close(fd)
-            open_fds.remove(fd)
+            with _defer_handlers():
+                _close_owned_fd(fd, open_fds[fd])
+                del open_fds[fd]
         buffers = {reply_r: bytearray(), stdout_r: bytearray(), stderr_r: bytearray(),
                    invoke_r: bytearray()}
         deadline = time.monotonic() + timeout
@@ -1534,9 +1692,10 @@ def _supervise(arguments, image_fd=None, interpreter_identity=None):
                 if exited is not None:
                     # Keep the leader unreaped until group cleanup to prevent
                     # PID reuse from targeting an unrelated process group.
-                    _kill_group(worker_pid)
-                    _, status = os.waitpid(worker_pid, 0)
-                    worker_pid = None
+                    with _defer_handlers():
+                        _kill_group(worker_pid)
+                        _, status = os.waitpid(worker_pid, 0)
+                        worker_pid = None
                     if status != 0:
                         if bytes(buffers[stderr_r]).startswith(b"CapsuleUnavailable:"):
                             raise CapsuleUnavailable(bytes(buffers[stderr_r])[:4096].decode("utf-8", "replace"))
@@ -1563,23 +1722,20 @@ def _supervise(arguments, image_fd=None, interpreter_identity=None):
         os.write(2, (type(error).__name__ + ": " + str(error))[:4096].encode("utf-8", "replace"))
         raise SystemExit(125)
     finally:
-        if worker_pid is not None and worker_pid > 0:
-            _kill_group(worker_pid)
-            try:
-                os.waitpid(worker_pid, 0)
-            except ChildProcessError:
-                pass
-        for fd in open_fds:
-            try:
-                os.close(fd)
-            except OSError:
-                pass
-        if interpreter is not None:
-            interpreter.close()
-        while True:
-            try:
-                child, _ = os.waitpid(-1, os.WNOHANG)
-                if child == 0:
-                    break
-            except ChildProcessError:
-                break
+        if interpreter is not None or open_fds or worker_pid is not None:
+            with _defer_handlers():
+                try:
+                    if worker_pid is not None and worker_pid > 0:
+                        _stop_worker(worker_pid)
+                finally:
+                    for fd, identity in open_fds.items():
+                        _close_owned_fd(fd, identity)
+                    if interpreter is not None:
+                        interpreter.close()
+                    while True:
+                        try:
+                            child, _ = os.waitpid(-1, os.WNOHANG)
+                            if child == 0:
+                                break
+                        except ChildProcessError:
+                            break

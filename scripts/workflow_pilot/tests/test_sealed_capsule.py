@@ -15,10 +15,12 @@ import signal
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import types
 import unittest
 from pathlib import Path
+from contextlib import ExitStack
 from unittest import mock
 
 from scripts.workflow_pilot import event_classifier, sealed_capsule as capsule
@@ -178,6 +180,7 @@ class CapsulePlatformTests(unittest.TestCase):
             (sys, "stdlib_module_names"), (sys, "addaudithook"),
             (capsule, "fcntl"), (capsule, "resource"),
             (os, "fchmod"), (os, "waitid"), (os, "WNOWAIT"),
+            (signal, "pthread_sigmask"),
         ):
             with self.subTest(capability=name), mock.patch.object(module, name, None, create=True):
                 if name == "stdlib_module_names":
@@ -281,7 +284,9 @@ class CapsuleInterpreterTests(unittest.TestCase):
                 self.assertEqual(command[:5], [
                     capsule.PYTHON, "-I", "-S", "-c", capsule.PYTHON_STARTUP + capsule.PYTHON_PROBE])
                 self.assertEqual(tuple(json.loads(command[6])), capsule._interpreter_identity(capsule.PYTHON))
-                self.assertEqual(json.loads(command[7]), capsule.PYTHON_APIS)
+                self.assertEqual(json.loads(command[7]),
+                                 sorted(int(number) for number in signal.pthread_sigmask(signal.SIG_BLOCK, ())))
+                self.assertEqual(json.loads(command[8]), capsule.PYTHON_APIS)
                 self.assertEqual(launch.call_args.kwargs, {
                     "stdin": subprocess.DEVNULL, "stdout": subprocess.PIPE,
                     "stderr": subprocess.PIPE, "env": capsule.ENVIRONMENT, "cwd": "/",
@@ -431,8 +436,8 @@ class CapsuleExecProtectionTests(unittest.TestCase):
             def observe(command, **options):
                 return _observe_owned_exec(real_popen, command, options, observations)
 
-            with mock.patch.object(subprocess, "Popen", side_effect=observe):
-                process, _ = interpreter.launch(source, [], pass_fds=(fixture.fd,))
+            with mock.patch.object(subprocess, "Popen", side_effect=observe), capsule._Child() as owner:
+                process, _ = interpreter.launch(source, [], owner=owner, pass_fds=(fixture.fd,))
                 status, stdout, stderr = capsule._collect(process, 5, 4096)
             self.assertEqual((status, stderr), (0, b""))
             self.assertEqual(json.loads(stdout), {"dumpable": 0, "uid": os.geteuid()})
@@ -444,9 +449,9 @@ class CapsuleExecProtectionTests(unittest.TestCase):
                 options["executable"] = capsule.PYTHON
                 return _observe_owned_exec(real_popen, command, options, observations)
 
-            with mock.patch.object(subprocess, "Popen", side_effect=ordinary_exec):
+            with mock.patch.object(subprocess, "Popen", side_effect=ordinary_exec), capsule._Child() as owner:
                 with self.assertRaisesRegex(AssertionError, "kernel exec-entry exposed"):
-                    interpreter.launch(source, [], pass_fds=(fixture.fd,))
+                    interpreter.launch(source, [], owner=owner, pass_fds=(fixture.fd,))
             self.assertEqual(observations[-1]["fd_access_errno"][3], 0)
             self.assertEqual(observations[-1]["proc_fd_owner"], os.geteuid())
 
@@ -463,9 +468,9 @@ class CapsuleExecProtectionTests(unittest.TestCase):
             capsule._ExecutionInterpreter() as interpreter,
         ):
             for protected in (False, True):
-                with self.subTest(protected=protected):
+                with self.subTest(protected=protected), capsule._Child() as owner:
                     if protected:
-                        process, _ = interpreter.launch(source, [], pass_fds=(fixture.fd,))
+                        process, _ = interpreter.launch(source, [], owner=owner, pass_fds=(fixture.fd,))
                     else:
                         process = subprocess.Popen(
                             [capsule.PYTHON, "-I", "-S", "-c", source],
@@ -567,9 +572,10 @@ class CapsuleExecProtectionTests(unittest.TestCase):
             with (
                 mock.patch.object(os, "open", side_effect=bypass),
                 mock.patch.object(subprocess, "Popen", side_effect=AssertionError) as launch,
+                capsule._Child() as owner,
             ):
                 with self.assertRaises(capsule.CapsuleUnavailable):
-                    interpreter.launch("raise AssertionError", [])
+                    interpreter.launch("raise AssertionError", [], owner=owner)
                 launch.assert_not_called()
             self.assertEqual(capsule._inherited_fds(), before)
 
@@ -581,9 +587,10 @@ class CapsuleExecProtectionTests(unittest.TestCase):
             with self.assertRaises(OSError):
                 os.write(image.fd, b"substitution")
             os.fchmod(image.fd, 0o555)
-            with mock.patch.object(subprocess, "Popen", side_effect=AssertionError) as launch:
+            with (mock.patch.object(subprocess, "Popen", side_effect=AssertionError) as launch,
+                  capsule._Child() as owner):
                 with self.assertRaises(capsule.CapsuleUnavailable):
-                    interpreter.launch("raise AssertionError", [])
+                    interpreter.launch("raise AssertionError", [], owner=owner)
                 launch.assert_not_called()
         before = capsule._inherited_fds()
         with (
@@ -605,9 +612,10 @@ class CapsuleExecProtectionTests(unittest.TestCase):
             reused = interpreter.image.fd
             os.dup2(replacement.fd, reused)
             try:
-                with mock.patch.object(subprocess, "Popen", side_effect=AssertionError) as launch:
+                with (mock.patch.object(subprocess, "Popen", side_effect=AssertionError) as launch,
+                      capsule._Child() as owner):
                     with self.assertRaises(capsule.CapsuleUnavailable):
-                        interpreter.launch("raise AssertionError", [])
+                        interpreter.launch("raise AssertionError", [], owner=owner)
                     launch.assert_not_called()
                 interpreter.close()
                 self.assertEqual(os.pread(reused, 100, 0), replacement.read())
@@ -617,6 +625,45 @@ class CapsuleExecProtectionTests(unittest.TestCase):
 
 @unittest.skipUnless(sys.platform == "linux", "Linux child supervision")
 class CapsuleProcessObservationTests(unittest.TestCase):
+    def test_production_cleanup_never_signals_or_reaps_unowned_or_reaped_children(self):
+        for status in (None, 0, -9):
+            process = types.SimpleNamespace(
+                pid=12345, returncode=status, stdin=None, stdout=None, stderr=None,
+                wait=mock.Mock(side_effect=AssertionError))
+            with (
+                self.subTest(status=status),
+                mock.patch.object(os, "waitid", side_effect=ChildProcessError),
+                mock.patch.object(capsule, "_kill_group", side_effect=AssertionError) as group,
+                mock.patch.object(os, "kill", side_effect=AssertionError) as kill,
+                mock.patch.object(os, "waitpid", side_effect=AssertionError) as reap,
+            ):
+                capsule._finish_child(process)
+                capsule._stop_worker(process.pid)
+                for operation in (group, kill, reap, process.wait):
+                    operation.assert_not_called()
+
+    def test_worker_cleanup_reaps_a_real_child_before_its_group_is_established(self):
+        pid = os.fork()
+        if pid == 0:
+            try:
+                while True:
+                    signal.pause()
+            finally:
+                os._exit(0)
+        try:
+            self.assertNotEqual(os.getpgid(pid), pid)
+            capsule._stop_worker(pid)
+            with self.assertRaises(ChildProcessError):
+                os.waitid(os.P_PID, pid, os.WEXITED | os.WNOHANG | os.WNOWAIT)
+        finally:
+            try:
+                os.waitid(os.P_PID, pid, os.WEXITED | os.WNOHANG | os.WNOWAIT)
+            except ChildProcessError:
+                pass
+            else:
+                os.kill(pid, signal.SIGKILL)
+                os.waitpid(pid, 0)
+
     def test_cleanup_never_signals_or_reaps_unowned_or_reused_pids(self):
         pid, generation = 12345, 100
         for owned, current, complete in (
@@ -730,6 +777,255 @@ class SealedCapsuleTests(unittest.TestCase):
 
     def descriptors(self):
         return {fd: capsule._descriptor_identity(fd) for fd in capsule._inherited_fds()}
+
+    def test_launch_and_collection_boundaries_reap_real_guardians(self):
+        for boundary in ("constructor-signal", "thread-signal", "launch-return",
+                         "collection-entry", "deadline", "fileno", "stdin-close", "reused-pipe"):
+            with self.subTest(boundary=boundary), capsule.Capsule(self.bundle, self.spec) as prepared:
+                before, processes, foreign = self.descriptors(), [], []
+                previous_trace = sys.gettrace()
+                previous_handler = signal.getsignal(signal.SIGINT)
+                previous_mask = signal.pthread_sigmask(signal.SIG_BLOCK, ())
+                fired = False
+                ready, done = threading.Event(), threading.Event()
+                receiver = None
+
+                def receive():
+                    signal.pthread_sigmask(signal.SIG_UNBLOCK, {signal.SIGINT})
+                    ready.set()
+                    done.wait(5)
+
+                if boundary == "thread-signal":
+                    receiver = threading.Thread(target=receive)
+                    receiver.start()
+                    self.assertTrue(ready.wait(3))
+
+                class BrokenStream:
+                    def __init__(self, stream, operation):
+                        self.stream, self.operation, self.failed = stream, operation, False
+
+                    @property
+                    def closed(self):
+                        return self.stream.closed
+
+                    def fileno(self):
+                        if self.operation == "fileno" and not self.failed:
+                            self.failed = True
+                            raise RuntimeError("collector fileno setup failed")
+                        return self.stream.fileno()
+
+                    def close(self):
+                        if self.operation == "close" and not self.failed:
+                            self.failed = True
+                            raise RuntimeError("post-launch stdin close failed")
+                        self.stream.close()
+
+                def interrupt(frame, event, value):
+                    nonlocal fired
+                    if (not fired and boundary in ("constructor-signal", "thread-signal")
+                            and frame.f_code is subprocess.Popen.__init__.__code__ and event == "return"
+                            and frame.f_locals.get("args", [None] * 5)[4]
+                            == capsule.PYTHON_STARTUP + capsule.BOOTSTRAP):
+                        processes.append(frame.f_locals["self"])
+                        fired = True
+                        if receiver is None:
+                            os.kill(os.getpid(), signal.SIGINT)
+                        else:
+                            handled = threading.Event()
+                            installed = signal.getsignal(signal.SIGINT)
+
+                            def observe(number, interrupted_frame):
+                                installed(number, interrupted_frame)
+                                handled.set()
+
+                            signal.signal(signal.SIGINT, observe)
+                            signal.pthread_kill(receiver.ident, signal.SIGINT)
+                            deadline = time.monotonic() + 3
+                            while not handled.is_set() and time.monotonic() < deadline:
+                                time.sleep(0.005)
+                            if not handled.is_set():
+                                raise AssertionError("cross-thread SIGINT was not delivered")
+                    if (frame.f_code is capsule._ExecutionInterpreter.launch.__code__ and event == "return"
+                            and frame.f_locals.get("source") == capsule.BOOTSTRAP and value is not None):
+                        process = value[0]
+                        if not processes:
+                            processes.append(process)
+                        if boundary == "launch-return":
+                            fired = True
+                            raise KeyboardInterrupt("guardian handle handoff interrupted")
+                        if boundary == "fileno":
+                            process.stdout = BrokenStream(process.stdout, "fileno")
+                            fired = True
+                        if boundary == "stdin-close":
+                            process.stdin = BrokenStream(process.stdin, "close")
+                            fired = True
+                    if (boundary == "collection-entry" and frame.f_code is capsule._collect.__code__
+                            and event == "call" and not fired):
+                        fired = True
+                        raise KeyboardInterrupt("collector has not entered its body")
+                    if (boundary == "reused-pipe" and frame.f_code is capsule._Child.close_fd.__code__
+                            and event == "return" and not fired):
+                        owner, fd = frame.f_locals["self"], frame.f_locals["fd"]
+                        if owner.fds and fd == owner.fds[0]:
+                            fired = True
+                            replacement = capsule.SealedBytes(b"unrelated live fd", "foreign-pipe", 100)
+                            os.dup2(replacement.fd, fd)
+                            foreign.append((replacement, fd))
+                            raise KeyboardInterrupt("closed liveness reader integer was reused")
+                    return interrupt
+
+                real_clock = time.monotonic
+
+                def clock():
+                    nonlocal fired
+                    if inspect.currentframe().f_back.f_code is capsule._collect.__code__ and not fired:
+                        fired = True
+                        raise RuntimeError("collector deadline setup failed")
+                    return real_clock()
+
+                try:
+                    with ExitStack() as stack:
+                        if boundary == "deadline":
+                            stack.enter_context(mock.patch.object(time, "monotonic", new=clock))
+                        sys.settrace(interrupt)
+                        try:
+                            with self.assertRaises((KeyboardInterrupt, RuntimeError)):
+                                prepared.execute("checker", {}, timeout=3)
+                        finally:
+                            sys.settrace(previous_trace)
+                    self.assertTrue(fired)
+                    self.assertEqual(len(processes), 1)
+                    process = processes[0]
+                    self.assertIsNotNone(process.returncode)
+                    with self.assertRaises(ChildProcessError):
+                        os.waitid(os.P_PID, process.pid, os.WEXITED | os.WNOHANG | os.WNOWAIT)
+                    self.assertTrue(all(stream is None or stream.closed
+                                        for stream in (process.stdin, process.stdout, process.stderr)))
+                    for replacement, fd in foreign:
+                        self.assertEqual(os.pread(fd, 100, 0), replacement.read())
+                    self.assertEqual(signal.getsignal(signal.SIGINT), previous_handler)
+                    self.assertEqual(signal.pthread_sigmask(signal.SIG_BLOCK, ()), previous_mask)
+                finally:
+                    sys.settrace(previous_trace)
+                    signal.signal(signal.SIGINT, previous_handler)
+                    signal.pthread_sigmask(signal.SIG_SETMASK, previous_mask)
+                    done.set()
+                    if receiver is not None:
+                        receiver.join(3)
+                        self.assertFalse(receiver.is_alive())
+                    for process in processes:
+                        capsule._finish_child(process)
+                    for replacement, fd in foreign:
+                        capsule._close_owned_fd(fd, replacement.identity)
+                        replacement.close()
+                self.assertEqual(self.descriptors(), before)
+                self.assertEqual(prepared.execute("assertion", {}).value["status"], "pass")
+
+    def test_probe_and_git_launch_handoff_interruptions_are_reaped(self):
+        for kind in ("probe", "git"):
+            before, processes = self.descriptors(), []
+            previous_trace = sys.gettrace()
+
+            def interrupt(frame, event, value):
+                if (event == "return" and value is not None
+                        and ((kind == "probe" and frame.f_code is capsule._ExecutionInterpreter.launch.__code__
+                              and frame.f_locals.get("source") == capsule.PYTHON_PROBE)
+                             or (kind == "git" and frame.f_code is capsule._Child.start.__code__
+                                 and frame.f_locals["self"].command[0] == capsule.GIT))):
+                    processes.append(value[0])
+                    raise KeyboardInterrupt("launch handoff interrupted")
+                return interrupt
+
+            try:
+                with self.subTest(kind=kind), self.assertRaises(KeyboardInterrupt):
+                    sys.settrace(interrupt)
+                    if kind == "probe":
+                        capsule._probe_python()
+                    else:
+                        capsule.head_commit(self.root)
+                sys.settrace(previous_trace)
+                self.assertEqual(len(processes), 1)
+                self.assertIsNotNone(processes[0].returncode)
+                with self.assertRaises(ChildProcessError):
+                    os.waitid(os.P_PID, processes[0].pid, os.WEXITED | os.WNOHANG | os.WNOWAIT)
+                self.assertEqual(self.descriptors(), before)
+            finally:
+                sys.settrace(previous_trace)
+                for process in processes:
+                    capsule._finish_child(process)
+
+    def test_python_child_and_caller_retain_the_original_signal_mask(self):
+        previous = signal.pthread_sigmask(signal.SIG_BLOCK, {signal.SIGUSR1})
+        try:
+            expected = sorted(int(number) for number in signal.pthread_sigmask(signal.SIG_BLOCK, ()))
+            with self.attack(
+                "import signal\n"
+                "def capsule_main(request, context):\n"
+                "    return sorted(int(number) for number in signal.pthread_sigmask(signal.SIG_BLOCK, ()))\n"
+            ) as prepared:
+                self.assertEqual(prepared.execute("attack", {}).value, expected)
+            self.assertEqual(sorted(int(number) for number in signal.pthread_sigmask(signal.SIG_BLOCK, ())),
+                             expected)
+        finally:
+            signal.pthread_sigmask(signal.SIG_SETMASK, previous)
+
+    def test_nested_launch_and_collection_interruptions_reap_before_guardian_exit(self):
+        for boundary in ("launch", "collection"):
+            observation = self.root / "nested-interruption.jsonl"
+            shim = f"""
+_interrupted_child=None
+_original_launch=_ExecutionInterpreter.launch
+_original_collect=_collect
+_original_exit=_Child.__exit__
+def _interrupted_launch(self,*args,**kwargs):
+    global _interrupted_child
+    result=_original_launch(self,*args,**kwargs)
+    _interrupted_child=result[0]
+    if {boundary!r}=='launch':
+        raise KeyboardInterrupt('nested launch handoff interrupted')
+    return result
+def _interrupted_collect(process,*args,**kwargs):
+    if process is _interrupted_child:
+        raise RuntimeError('nested collection setup failed')
+    return _original_collect(process,*args,**kwargs)
+def _observed_exit(self,*args):
+    try:
+        return _original_exit(self,*args)
+    finally:
+        if self.process is not None and self.process is _interrupted_child:
+            try:
+                os.waitid(os.P_PID,self.process.pid,os.WEXITED|os.WNOHANG|os.WNOWAIT)
+                waitable=True
+            except ChildProcessError:
+                waitable=False
+            record={{'waitable':waitable,'returncode':self.process.returncode,
+                     'streams_closed':all(stream is None or stream.closed for stream in
+                         (self.process.stdin,self.process.stdout,self.process.stderr))}}
+            with open({str(observation)!r},'a') as stream:
+                stream.write(json.dumps(record)+'\\n')
+_ExecutionInterpreter.launch=_interrupted_launch
+_collect=_interrupted_collect
+_Child.__exit__=_observed_exit
+"""
+            self.write(capsule.RUNTIME_PATH, self.runtime + shim.encode("utf-8"))
+            try:
+                revision = self.commit()
+                spec = capsule.CapsuleSpec(
+                    trees={"base": revision, "origin": self.origin, "head": self.head},
+                    programs=self.spec.programs, data=self.spec.data)
+                before = self.descriptors()
+                with self.subTest(boundary=boundary), capsule.prepare(self.root, spec) as prepared:
+                    with self.assertRaises(capsule.CapsuleError):
+                        prepared.execute("checker", {}, timeout=3)
+                records = [json.loads(line) for line in observation.read_text().splitlines()]
+                self.assertEqual(len(records), 1)
+                self.assertFalse(records[0]["waitable"])
+                self.assertIsNotNone(records[0]["returncode"])
+                self.assertTrue(records[0]["streams_closed"])
+                self.assertEqual(self.descriptors(), before)
+            finally:
+                self.write(capsule.RUNTIME_PATH, self.runtime)
+                observation.unlink(missing_ok=True)
 
     def test_exact_checker_assertion_module_and_three_tree_data_execute(self):
         with capsule.Capsule(self.bundle, self.spec) as prepared:
