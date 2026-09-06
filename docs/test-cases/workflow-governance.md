@@ -1594,7 +1594,20 @@ the exact branch and head; timeout or ambiguity fails before `gh run watch`.
    title `RenamedTitleEvent` and body `userContentEdits(first: 2)` authority,
    including count, newest node identity/timestamps/editor/deletion/diff,
    pageInfo, and `lastEditedAt` consistency, plus the immutable confirmation
-   comment. Then present a
+   comment. Repeat the essential edit against a fully observed terminal failed
+   or cancelled full Build: the edit still completes, but that run remains
+   ineligible for successful continuity. The corresponding nonessential edit
+   must still reject. A later green metadata-only run must not turn the failed
+   full run into merge evidence.
+   Make one job queued or in-progress while the run claims completion, at
+   either authorization snapshot; reject before creating an intent or PATCH.
+   Return real-shaped HTTP 201 creation responses with canonical `Location`
+   headers for intent, confirmation, and abort comments. Require acceptance
+   only when the header matches the response's exact repository/comment API
+   resource. Wrong hosts, repositories, resource kinds, comment IDs, query or
+   fragment suffixes, duplicate/control-bearing headers, redirects and an
+   unexpected HTTP 200 `Location` must still reject.
+   Then present a
    successful runner-backed full Build followed by its failed metadata-only
    continuity run and invoke `pr-metadata reconcile
    --confirmation-comment-id <confirmation-comment-id>`.
