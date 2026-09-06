@@ -1764,6 +1764,8 @@ game behavior needs a compensating change.
    For signed in-progress assignment prefixes, move the reporting cutoff two
    hours beyond the last observed state. Maximum owner lifetime must remain
    the verified telemetry value; the handoff remains ineligible for delivery.
+   Omit, replace or add process handoff IDs under complete remote coverage;
+   live validation and sealed-result replay must both reject the altered set.
 12. Run
    `python3 -m unittest discover -s scripts/workflow_pilot/tests -p 'test_*.py' -v`,
    `python3 -m unittest scripts.docs_check_tests.test_development_workflow_skill -v`,

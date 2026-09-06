@@ -4620,6 +4620,10 @@ def _verified_reporter_git_authority(
             for index, (raw, handoff) in enumerate(zip(raw_handoffs, handoffs))
         ],
     }
+def _require_process_handoffs(processes, handoffs) -> None:
+    if {item["handoff_id"] for item in processes} != {item["id"] for item in handoffs}:
+        raise HandoffDataError("process handoff IDs must exactly match document handoffs")
+
 def _reporter_remote_coverage_rejections(
     document: dict[str, Any],
     document_handoffs: list[dict[str, Any]],
@@ -4694,8 +4698,6 @@ def _reporter_remote_coverage_rejections(
             "remote_coverage.sources",
         )
     )
-    if not incomplete_sources:
-        return rejections
     processes = {}
     for index, raw_process in enumerate(
         expect_list(
@@ -4740,11 +4742,11 @@ def _reporter_remote_coverage_rejections(
                 f"{label}.handoff_id duplicates an implementation process"
             )
         processes[handoff_id] = process
+    _require_process_handoffs(processes.values(), document_handoffs)
+    if not incomplete_sources:
+        return rejections
     for handoff in document_handoffs:
-        process = processes.get(handoff["id"])
-        if process is None:
-            rejections.add("remote-coverage-incomplete")
-            break
+        process = processes[handoff["id"]]
         if (
             process["credentials_available"]
             or process["network_mode"] != "denied"
@@ -7391,6 +7393,7 @@ def _parse_coordinator_receipt(
         (process["handoff_id"] for process in processes),
         "implementation process handoff IDs",
     )
+    _require_process_handoffs(processes, document["handoffs"])
     if not processes or max(
         parse_time(
             process["ended_at"],
@@ -8967,16 +8970,11 @@ def validate_document(
                 reject("invalid-runtime-telemetry", handoff_id)
         if coordinator_receipt["incomplete_sources"]:
             process = next(
-                (
-                    item
-                    for item in coordinator_receipt["processes"]
-                    if item["handoff_id"] == handoff_id
-                ),
-                None,
+                item for item in coordinator_receipt["processes"]
+                if item["handoff_id"] == handoff_id
             )
             if (
-                process is None
-                or process["credentials_available"]
+                process["credentials_available"]
                 or process["network_mode"] != "denied"
                 or parse_time(
                     process["started_at"],

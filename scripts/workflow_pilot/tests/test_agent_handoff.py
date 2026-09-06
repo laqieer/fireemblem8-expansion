@@ -6368,6 +6368,23 @@ class ExactHandoffTests(unittest.TestCase):
                         "omits or invents",
                     ):
                         agent_handoff.validate_document(omitted, root)
+            valid = handoff_document(root, parent, result)
+            valid_report = agent_handoff.validate_document(valid, root)
+            for process_ids in ([], ["unrelated"], ["issue-178-round-1", "extra"]):
+                changed = copy.deepcopy(valid)
+                coverage = changed["coordinator_receipt"]["remote_coverage"]
+                template = coverage["implementation_processes"][0]
+                coverage["implementation_processes"] = [
+                    {**template, "handoff_id": value} for value in process_ids
+                ]
+                sign_coordinator_document(changed, root)
+                for consumer, argument in (
+                    (agent_handoff.validate_document, root),
+                    (agent_handoff.derive_reporter_result_summary, valid_report),
+                ):
+                    with self.subTest(process_ids=process_ids, consumer=consumer.__name__):
+                        with self.assertRaisesRegex(agent_handoff.HandoffDataError, "process handoff IDs"):
+                            consumer(changed, argument)
             incomplete = handoff_document(root, parent, result)
             refresh_coordinator_receipt(
                 incomplete,
