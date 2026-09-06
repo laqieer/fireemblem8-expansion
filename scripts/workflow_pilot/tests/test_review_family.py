@@ -7,9 +7,10 @@ if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
 import copy
-from dataclasses import replace
+from dataclasses import FrozenInstanceError, replace
 import json
 import unittest
+from unittest.mock import patch
 
 from scripts.workflow_pilot import review_family as model
 from scripts.workflow_pilot.tests.review_support import ROOT, Runtime, request
@@ -19,7 +20,8 @@ class RequestTests(unittest.TestCase):
     def test_public_request_positive_and_closed_negative_controls(self):
         valid = request()
         self.assertEqual(model.validate_request(model.parse_json(json.dumps(valid).encode())), valid)
-        for key in ("pass", "program", "module", "members", "trusted", "receipt"):
+        for key in ("pass", "program", "module", "members", "trusted", "receipt",
+                    "execution_inputs", "blocked_by", "evidence"):
             with self.subTest(key=key), self.assertRaises(model.ReviewError):
                 model.validate_request({**valid, key: True})
         for key in valid:
@@ -52,7 +54,8 @@ class RequestTests(unittest.TestCase):
             ("candidate_sha", "b" * 40 + "\n"), ("repository", "owner/repo\n"),
         ):
             cases.append(({**request(), key: value}, False))
-        for extra in ("program", "expected_members", "pass", "trusted"):
+        for extra in ("program", "expected_members", "pass", "trusted",
+                      "execution_inputs", "blocked_by", "evidence"):
             cases.append(({**request(), extra: "injected"}, False))
         for data, expected in cases:
             with self.subTest(data=data):
@@ -202,7 +205,11 @@ class RoleTests(unittest.TestCase):
         self.assertEqual(self.runtime.calls[0][1]["role"], "code-review")
         self.assertEqual(set(self.runtime.calls[0][1]["actions"]),
                          {"read-candidate", "read-evidence", "emit-report"})
-        self.assertEqual(self.session.finish(self.runtime), self.runtime.result)
+        report = self.session.finish(self.runtime)
+        self.assertIs(report, self.session.report)
+        self.assertIsNot(report, self.runtime.result)
+        self.assertEqual((report.task, report.head, report.owner),
+                         (self.runtime.result.task, self.runtime.result.head, self.runtime.result.owner))
         self.assertEqual(self.session.lease.outcome, "completed")
         self.assertEqual([row[0] for row in self.runtime.calls], ["start", "read"])
         with self.assertRaises(model.ReviewError):
@@ -247,6 +254,107 @@ class RoleTests(unittest.TestCase):
             identity=identity, owners=owners, clock=lambda: self.time)
         return session, runtime, fresh
 
+    def test_finished_report_snapshots_runtime_values_and_nested_collections(self):
+        for mutate_on_release in (False, True):
+            with self.subTest(mutate_on_release=mutate_on_release):
+                session, runtime, fresh = self.owned_runtime(completed=True)
+                finding = model.Finding(
+                    "finding", next(iter(self.scope)), "wire", "validators:review-session",
+                    session.head, "scripts/workflow_pilot/review_family.py", "local:task-1")
+                runtime.result.subjects = set(self.scope)
+                runtime.result.actions = ["read-candidate", "emit-report"]
+                runtime.result.findings = [finding]
+                original = copy.deepcopy(runtime.result)
+
+                def mutate():
+                    runtime.result.subjects.clear()
+                    runtime.result.actions[:] = ["push"]
+                    runtime.result.findings[:] = [replace(finding, id="invented")]
+                    runtime.result.completed_at = "2026-01-01T00:00:59Z"
+                    runtime.result.started_at = "2026-01-01T00:00:58Z"
+                    runtime.result.head = "c" * 40
+                    runtime.result.owner = "implementer"
+                    runtime.result.completed = False
+                    runtime.result.read_only = False
+                    runtime.result.files = 999
+
+                release = session.owners.finish
+
+                def finish_owner(owner):
+                    release(owner)
+                    if mutate_on_release:
+                        mutate()
+
+                with patch.object(session.owners, "finish", side_effect=finish_owner):
+                    report = session.finish(runtime)
+                if not mutate_on_release:
+                    mutate()
+                self.assertEqual(report.completed_at, original.completed_at)
+                self.assertEqual(report.started_at, original.started_at)
+                self.assertEqual(report.head, original.head)
+                self.assertEqual(report.owner, original.owner)
+                self.assertIs(report.completed, True)
+                self.assertIs(report.read_only, True)
+                self.assertEqual(report.files, original.files)
+                self.assertEqual(report.subjects, frozenset(original.subjects))
+                self.assertEqual(report.actions, frozenset(original.actions))
+                self.assertEqual(report.findings, (finding,))
+                self.assertIsNot(report, runtime.result)
+                self.assertIs(report, session.report)
+                session.triage_local(finding.id, accepted=True, reason="Observed original finding")
+                session.validate_local_triage()
+                self.assertEqual(session.accepted, {finding.id: finding})
+                with self.assertRaises(FrozenInstanceError):
+                    report.completed_at = runtime.result.completed_at
+                with self.assertRaises(AttributeError):
+                    report.actions.add("write")
+                with self.assertRaises(AttributeError):
+                    report.subjects.clear()
+                with self.assertRaises(AttributeError):
+                    report.findings.append(finding)
+                with self.assertRaises(FrozenInstanceError):
+                    report.findings[0].id = "changed"
+                replacement = Runtime(fresh.head, fresh.scope)
+                fresh.begin(replacement, "reviewer")
+                fresh.finish(replacement)
+
+    def test_head_advance_requires_actual_terminal_lease_release(self):
+        for terminal in ("completed", "aborted", "timed-out"):
+            with self.subTest(terminal=terminal):
+                session, runtime, fresh = self.owned_runtime(completed=False)
+                old_head = session.head
+                for expired in (False, True):
+                    self.time = 11 if expired else 1
+                    with self.assertRaises(model.ReviewError):
+                        session.advance("c" * 40)
+                    self.assertEqual((session.head, session.lease.head), (old_head, old_head))
+                    with self.assertRaises(model.ReviewError):
+                        fresh.begin(Runtime(fresh.head, fresh.scope), "reviewer")
+                self.time = 11 if terminal == "timed-out" else 1
+                if terminal == "aborted":
+                    stop = runtime.stop
+                    runtime.stop = lambda task: runtime.calls.append(("stop", task)) or True
+                    with self.assertRaises(model.ReviewError):
+                        session.abort(runtime)
+                    with self.assertRaises(model.ReviewError):
+                        session.advance("c" * 40)
+                    runtime.stop = stop
+                    session.abort(runtime)
+                else:
+                    runtime.result.completed = True
+                    if terminal == "timed-out":
+                        with self.assertRaises(model.ReviewError):
+                            session.finish(runtime)
+                    else:
+                        session.finish(runtime)
+                self.assertEqual(session.lease.outcome, terminal)
+                session.advance("c" * 40)
+                self.assertEqual(session.head, "c" * 40)
+                self.assertEqual(session.lease.head, old_head)
+                replacement = Runtime(fresh.head, fresh.scope)
+                fresh.begin(replacement, "reviewer")
+                fresh.finish(replacement)
+
     def test_completed_review_requires_candidate_read_and_report_observations(self):
         for actions, accepted in (
             ((), False), (("read-evidence",), False),
@@ -260,7 +368,8 @@ class RoleTests(unittest.TestCase):
                 session, runtime, fresh = self.owned_runtime(completed=True)
                 runtime.result.actions = actions
                 if accepted:
-                    self.assertIs(session.finish(runtime), runtime.result)
+                    self.assertIs(session.finish(runtime), session.report)
+                    self.assertEqual(session.report.actions, frozenset(actions))
                     self.assertEqual(session.lease.outcome, "completed")
                 else:
                     with self.assertRaises(model.ReviewError):

@@ -145,10 +145,15 @@ class Obligation:
     evidence: tuple[str, ...]
     inputs: tuple[str, ...]
     kind: str = "host"
+    execution_inputs: tuple[str, ...] = ()
 
     @property
     def identity(self) -> tuple[str, str, str]:
         return self.subject, self.family, self.member
+
+    @property
+    def source_inputs(self) -> tuple[str, ...]:
+        return self.execution_inputs or self.inputs
 
 
 def validate_members(members: tuple[Obligation, ...]) -> None:
@@ -165,6 +170,12 @@ def validate_members(members: tuple[Obligation, ...]) -> None:
                 "unknown member role")
         require(member.kind in EVIDENCE_KINDS, "unknown obligation evidence kind")
         require(member.evidence and member.inputs, "incomplete production/evidence mapping")
+        require(all(isinstance(paths, tuple) and
+                    all(isinstance(path, str) and bool(path) for path in paths)
+                    for paths in (member.inputs, member.execution_inputs)),
+                "invalid immutable candidate inputs")
+        require(set(member.inputs) <= set(member.source_inputs),
+                "execution closure omits semantic candidate inputs")
         roles.setdefault((member.subject, member.family), set()).add(member.role)
     unique([member.identity for member in members], "members")
     for (_, family), found in roles.items():
@@ -182,6 +193,7 @@ class Observation:
     detail: str
     checks: int
     kind: str | None
+    blocked_by: tuple[str, ...] = ()
 
     def validate(self) -> None:
         sha(self.revision)
@@ -207,12 +219,20 @@ class Observation:
             isinstance(item, (tuple, list)) and len(item) == 2 and isinstance(item[0], str)
             for item in self.source_objects), "invalid source objects")
         unique([path for path, _ in self.source_objects], "source objects")
-        require(set(path for path, _ in self.source_objects) == set(self.obligation.inputs),
+        require(set(path for path, _ in self.source_objects) == set(self.obligation.source_inputs),
                 "missing or unrelated source evidence")
         for _, oid in self.source_objects:
             sha(oid)
         require(self.checks == 0 if self.verdict == "unavailable" else self.checks > 0,
                 "unavailable evidence requires zero checks; a contract requires executed checks")
+        require(isinstance(self.blocked_by, (tuple, list)) and len(self.blocked_by) <= MAX_MEMBERS
+                and all(isinstance(item, str) and bool(item.strip()) for item in self.blocked_by),
+                "invalid prerequisite members")
+        unique(self.blocked_by, "prerequisite members")
+        require(not self.blocked_by or
+                (self.verdict == "unavailable" and self.kind == "parsed"
+                 and self.obligation.family == "generated"),
+                "prerequisite failure must be an unavailable generated observation")
 
 
 @dataclass(frozen=True)
@@ -270,6 +290,23 @@ class Disposition:
     coordinator: str
     action: str
     reason: str
+
+
+@dataclass(frozen=True)
+class _ReviewReport:
+    """Validated local values, not a runtime-owned record or signed receipt."""
+    task: str
+    owner: str
+    role: str
+    head: str
+    subjects: frozenset[str]
+    completed: bool
+    read_only: bool
+    actions: frozenset[str]
+    files: int
+    findings: tuple[Finding, ...]
+    started_at: str
+    completed_at: str
 
 
 @dataclass
@@ -492,7 +529,7 @@ class ReviewSession:
             result = self._read_task(runtime)
         return self._retire(result, "aborted")
 
-    def finish(self, runtime) -> Any:
+    def finish(self, runtime) -> _ReviewReport:
         result = self._read_task(runtime)
         lease = self.lease
         require(result.completed is True, "runtime task is not terminal")
@@ -521,10 +558,16 @@ class ReviewSession:
                     and finding.review_id == "local:" + str(lease.task),
                     "local finding has wrong task, head or scope")
         unique([finding.id for finding in findings], "local report findings")
-        require(self._retire(result, "completed") == "completed", "review exceeded duration bound")
-        self.local_findings = {finding.id: finding for finding in findings}
-        self.report = result
-        return result
+        report = _ReviewReport(
+            str(lease.task), lease.owner, "code-review", lease.head, lease.scope, True, True,
+            frozenset(result.actions), result.files,
+            tuple(Finding(item.id, item.subject, item.family, item.member,
+                          item.origin, item.source_path, item.review_id) for item in findings),
+            getattr(result, "started_at", None), getattr(result, "completed_at", None))
+        require(self._retire(report, "completed") == "completed", "review exceeded duration bound")
+        self.local_findings = {finding.id: finding for finding in report.findings}
+        self.report = report
+        return report
 
     def triage_local(self, finding_id: str, *, accepted: bool, reason: str) -> None:
         require(self.report is not None and finding_id in self.local_findings
@@ -550,6 +593,8 @@ class ReviewSession:
 
     def advance(self, observed_head: str) -> None:
         """Preserve existing work without clearing a review or architecture hold."""
+        require(self.lease is None or self.lease.finished,
+                "cannot advance head during an active review lease")
         self.head = sha(observed_head)
 
     def accept(self, finding: Finding) -> None:
@@ -624,6 +669,7 @@ def assess_handoff(request: dict, members: tuple[Obligation, ...],
         require(key not in index, "duplicate member observation")
         require(observation.tool_revision == tool_revision, "wrong reviewed tool revision")
         index[key] = observation
+    evidence_refs = {key: number for number, key in enumerate(sorted(index))}
     required = set()
     outcomes = []
     for member in members:
@@ -638,14 +684,23 @@ def assess_handoff(request: dict, members: tuple[Obligation, ...],
         require(after.verdict == "satisfied", f"candidate obligation failed: {member.member}")
         for finding in relevant:
             before = index.get((member.identity, finding.origin))
-            require(before is not None and before.obligation == member
-                    and before.verdict != "unavailable", "origin evidence unavailable")
+            require(before is not None and before.obligation == member, "origin evidence unavailable")
+            if before.verdict == "unavailable":
+                require(bool(before.blocked_by), "origin evidence unavailable")
+                for blocker in before.blocked_by:
+                    prerequisite = index.get(((member.subject, member.family, blocker), finding.origin))
+                    require(prerequisite is not None and prerequisite.obligation.role == "owners"
+                            and prerequisite.verdict == "contract-violation",
+                            "origin prerequisite failure was not observed")
             require(finding.source_path in member.inputs or finding.member != member.member,
                     "reported finding has unrelated source evidence")
             outcomes.append({
-                "finding_id": finding.id, "member": member.member,
+                "finding_id": finding.id, "subject": member.subject,
+                "family": member.family, "member": member.member,
+                "origin_evidence": evidence_refs[(member.identity, finding.origin)],
+                "candidate_evidence": evidence_refs[(member.identity, request["candidate_sha"])],
                 "outcome": ("affected-fixed" if before.verdict == "contract-violation"
-                            else "verified-unaffected"),
+                            else "prerequisite-fixed" if before.blocked_by else "verified-unaffected"),
             })
     require(set(index) == required, "missing or unrelated test evidence")
     for finding in session.accepted.values():
@@ -661,6 +716,29 @@ def assess_handoff(request: dict, members: tuple[Obligation, ...],
     clean = bool(reviews_ready and latest and latest.fact.head == session.head
                  and latest.outcome == "clean")
     held = session.rounds.hold
+    source_refs, source_sets, evidence = {}, [], []
+    for key in evidence_refs:
+        item = index[key]
+        objects = tuple(sorted((path, oid) for path, oid in item.source_objects))
+        source_key = item.revision, item.tool_revision, objects
+        if source_key not in source_refs:
+            source_refs[source_key] = len(source_sets)
+            source_sets.append({"revision": item.revision, "tool_revision": item.tool_revision,
+                                "objects": objects})
+        evidence.append({
+            "subject": item.obligation.subject, "family": item.obligation.family,
+            "member": item.obligation.member, "probe": item.obligation.probe,
+            "profile": item.obligation.profile, "revision": item.revision,
+            "tool_revision": item.tool_revision, "source_set": source_refs[source_key],
+            "evidence": list(item.evidence), "kind": item.kind, "checks": item.checks,
+            "verdict": item.verdict, "detail": item.detail, "blocked_by": list(item.blocked_by),
+        })
+    handoffs = [{
+        **handoff, "findings": list(handoff["findings"]),
+        "candidate_sha": session.head, "tool_revision": tool_revision,
+        "outcome_refs": [number for number, row in enumerate(outcomes)
+                         if row["finding_id"] in handoff["findings"]],
+    } for handoff in session.rounds.handoffs]
     return {
         "schema_version": 1,
         "candidate_sha": session.head,
@@ -668,7 +746,9 @@ def assess_handoff(request: dict, members: tuple[Obligation, ...],
         "scope": sorted(session.scope),
         "members": len(members),
         "outcomes": outcomes,
-        "round_handoffs": session.rounds.handoffs,
+        "evidence": evidence,
+        "source_sets": source_sets,
+        "round_handoffs": handoffs,
         "architecture_hold": None if held is None else {"review_id": held[0], "head": held[1]},
         "new_narrow_work_allowed": held is None,
         "handoff_eligible": held is None and reviews_ready,

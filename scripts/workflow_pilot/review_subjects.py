@@ -336,15 +336,25 @@ def _generated(probe: str) -> dict:
 
     name = probe.partition(":")[2] if probe.startswith("generated-owner:") else "eventlists"
     schema = registry.REGISTRY.resolve(name)
-    try:
+
+    def validated(selected):
+        try:
+            records, diagnostics = cli._load_and_validate(selected, selected.default_source)
+            return records, diagnostics.errors
+        except GeneratedDataError as error:
+            return None, [error]
+
+    records, errors = validated(schema)
+    if probe.startswith("generated-owner:"):
+        check(not errors, "\n".join(str(item) for item in errors)[:review.MAX_DETAIL])
         event_schema = registry.REGISTRY.resolve("eventlists")
-        records, diagnostics = cli._load_and_validate(schema, schema.default_source)
         if name in event_schema.optional_dependency_tables():
-            _, event_diagnostics = cli._load_and_validate(event_schema, event_schema.default_source)
-            diagnostics.extend(event_diagnostics.errors)
-    except GeneratedDataError as error:
-        raise ContractViolation(str(error)) from error
-    check(not diagnostics.errors, "\n".join(str(item) for item in diagnostics.errors)[:2000])
+            _, errors = validated(event_schema)
+    if errors:
+        return {"kind": "parsed", "verdict": "unavailable", "checks": 0,
+                "blocked_by": ["owners:eventlists"],
+                "detail": ("eventlists prerequisite failed: " +
+                           "\n".join(str(item) for item in errors))[:review.MAX_DETAIL]}
     if probe.startswith("generated-owner:"):
         malformed = Path("build/malformed-owner.json")
         malformed.write_text('{"schema_version":null}', encoding="utf-8")
@@ -514,5 +524,5 @@ def worker(probes: list[str]) -> list[dict]:
         except Exception as error:
             result = {"kind": None, "verdict": "unavailable", "checks": 0,
                       "detail": f"{type(error).__name__}: {error}"[:review.MAX_DETAIL]}
-        results.append({"probe": probe, **result})
+        results.append({"probe": probe, "blocked_by": [], **result})
     return results

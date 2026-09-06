@@ -58,18 +58,38 @@ class GitHubReviewTests(unittest.TestCase):
     def tearDownClass(cls):
         cls.workspace.__exit__(None, None, None)
 
-    def setup_review(self, body="Complete review including suppressed findings"):
+    def setup_review(self, body="Complete review including suppressed findings",
+                     *, completed_at="2026-01-01T00:00:01Z"):
         data = request(base=self.repo.base, head=self.repo.base)
         scope = frozenset({self.model.subject_key(data["subjects"][0])})
         session = self.model.ReviewSession(
             "coordinator", "implementer", scope, self.repo.base,
             identity=("owner/repo", 1, self.repo.base), owners=self.model.ReviewOwnership())
         runtime = Runtime(self.repo.base, scope)
+        runtime.result.completed_at = completed_at
         session.begin(runtime, "reviewer")
         session.finish(runtime)
         github = ObservedGitHub(response(self.repo.base, self.repo.base, body))
         _, facts = github.snapshot("owner/repo", 1, self.model)
         return data, session, runtime, github, facts
+
+    def test_post_finish_runtime_mutation_cannot_rewrite_pre_review_chronology(self):
+        for recorded, changed, eligible in (("01", "59", True), ("20", "01", False)):
+            with self.subTest(recorded=recorded, changed=changed):
+                data, session, runtime, github, facts = self.setup_review(
+                    completed_at=f"2026-01-01T00:00:{recorded}Z")
+                triage = self.model.Triage(facts[0], "clean")
+                session.triage(triage)
+                runtime.result.completed_at = f"2026-01-01T00:00:{changed}Z"
+                if eligible:
+                    result = self.tools.assess(
+                        data, session, github, (triage,), pre_review_required=True)
+                    self.assertTrue(result["handoff_eligible"])
+                    self.assertTrue(result["exact_head_review_clean"])
+                else:
+                    with self.assertRaisesRegex(ValueError, "precede"):
+                        self.tools.assess(
+                            data, session, github, (triage,), pre_review_required=True)
 
     def test_real_execution_requires_actual_task_and_complete_coordinator_triage(self):
         data, session, runtime, github, facts = self.setup_review()

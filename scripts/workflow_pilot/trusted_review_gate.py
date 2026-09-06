@@ -253,12 +253,12 @@ class ReviewTools:
                     model.require(previous == member, "member mapping changed across finding origins")
         result = tuple(members[key] for key in sorted(members))
         inputs = tuple(sorted({path for member in result for path in member.inputs}))
-        result = tuple(replace(member, inputs=inputs) for member in result)
+        result = tuple(replace(member, execution_inputs=inputs) for member in result)
         model.validate_members(result)
         return result
 
     def _stage(self, tree, root, members):
-        paths = {path for member in members for path in member.inputs}
+        paths = {path for member in members for path in member.source_inputs}
         probes = {item.probe for item in members}
         tree.materialize(root, sorted(paths))
         tool_paths = ("scripts/workflow_pilot/__init__.py",
@@ -274,12 +274,12 @@ class ReviewTools:
         tree = self.tree(revision)
         members = tuple(members)
         model.validate_members(members)
-        inputs = {path for member in members for path in member.inputs}
-        model.require(all(set(member.inputs) == inputs for member in members),
+        inputs = {path for member in members for path in member.source_inputs}
+        model.require(all(set(member.source_inputs) == inputs for member in members),
                       "obligation omits shared worker candidate inputs")
         probes = [item.probe for item in members]
         model.unique(probes, "probe bindings")
-        objects = {item.identity: tuple((path, tree.oid(path)) for path in item.inputs)
+        objects = {item.identity: tuple((path, tree.oid(path)) for path in item.source_inputs)
                    for item in members}
         build = self.subject_root / "build"
         build.mkdir(exist_ok=True)
@@ -303,16 +303,20 @@ class ReviewTools:
                 rows = model.parse_json(completed.stdout)
             except (OSError, ValueError, subprocess.TimeoutExpired) as error:
                 rows = [{"probe": probe, "verdict": "unavailable", "checks": 0,
-                         "kind": None, "detail": str(error)[:model.MAX_DETAIL]} for probe in probes]
+                         "kind": None, "detail": str(error)[:model.MAX_DETAIL], "blocked_by": []}
+                        for probe in probes]
         model.require(isinstance(rows, list) and len(rows) == len(probes),
                       "missing/extra probe observations")
         for row in rows:
-            model.keys(row, ("probe", "verdict", "checks", "kind", "detail"), "probe observation")
+            model.keys(row, ("probe", "verdict", "checks", "kind", "detail", "blocked_by"),
+                       "probe observation")
+            model.require(isinstance(row["blocked_by"], list), "invalid prerequisite members")
         model.require([row["probe"] for row in rows] == probes,
                       "wrong or duplicated probe observations")
         observations = tuple(model.Observation(
             member, revision, self.tool_tree.revision, objects[member.identity],
-            row["verdict"], member.evidence, row["detail"], row["checks"], row["kind"])
+            row["verdict"], member.evidence, row["detail"], row["checks"], row["kind"],
+            tuple(row["blocked_by"]))
             for member, row in zip(members, rows))
         for observation in observations:
             observation.validate()
@@ -354,7 +358,7 @@ class ReviewTools:
         for item in observations:
             tree = self.tree(item.revision)
             model.require(item.source_objects == tuple((path, tree.oid(path))
-                                                       for path in item.obligation.inputs),
+                                                       for path in item.obligation.source_inputs),
                           "wrong source objects")
         after_identities, after_facts = github.snapshot(
             request["repository"], request["pull_request"], model)

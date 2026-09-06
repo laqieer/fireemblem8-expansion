@@ -180,6 +180,14 @@ the consumers' independent protected-principal/deployment requirements.
    owners, validate authored references, generate and parse C output, compare
    the consumer and inventory. Introduce a nonexistent event-script reference
    in owned source; validation fails before and passes after restoration.
+   Report an unchanged inventory or consumer as the defect instead: the
+   selected predicate never executed, so its unavailable/zero-check
+   prerequisite observation cannot claim an affected-fixed repair. The
+   owner repair remains admissible with those siblings explicitly
+   `prerequisite-fixed`, bound to the actually failed same-origin owner.
+   Remove, invent or substitute a satisfied prerequisite owner and reject.
+   Introduce real inventory drift and consumer output differences separately;
+   their own predicates fail and restoration passes.
    Optional owners also run their existing semantic validators: invalid
    callbacks on selected non-reference strategies and chapter bundle metadata
    fail. Default-off reference records remain inactive. Mutate the actual
@@ -187,10 +195,15 @@ the consumers' independent protected-principal/deployment requirements.
    formatting-only edits. Their source-bound findings must sweep the family
    and pass only after repair, without unrelated feature-wide ROM checks.
    Compare actual staged candidate bytes with every obligation's declared
-   inputs and observed Git objects for AoE, generated and mixed-subject
+   execution closure and observed Git objects for AoE, generated and mixed-subject
    workers. All staged headers, imported registry schemas and authored inputs
-   must be bound. Narrowing one member while another still stages those bytes
-   rejects before execution; fixed tool overlays retain their tool-revision binding.
+   must be bound. Narrowing one execution closure while another still stages
+   those bytes rejects before execution; fixed tool overlays retain their
+   tool-revision binding. Semantic `inputs` must match the corresponding
+   standalone subject's mapping, not the mixed staging union. Break real AoE,
+   generated drift and session predicates in the same origin, then repair
+   them. Their correctly attached findings pass; swapping each finding's
+   source path to a different subject's staged source rejects.
 4. Execute the real review reducer as a source subject. The lifecycle and wire
    probes cover entries/preservation/resets/terminals and
    producers/consumers/validators/replay/stale bindings. Mutating the hold
@@ -231,6 +244,10 @@ the consumers' independent protected-principal/deployment requirements.
    on another PR. Work with both a different repository/PR identity and a
    different head remains independent, even with overlapping scope. Completed
    sessions release both exclusions; denied starts never reach the runtime.
+   Attempt head advance during the lease, including after expiration or
+   a nonterminal stop acknowledgment: the session/head binding must remain
+   unchanged. Only actual completed/aborted/timed-out terminal release permits
+   normal head advance, while retaining the report's old origin.
    Both runtime `completed` and `read_only` must be Boolean `True`; repeat with
    false, truthy strings/numbers, containers and missing fields. Request a
    completed report with empty/partial allowed actions: both `read-candidate`
@@ -257,6 +274,12 @@ the consumers' independent protected-principal/deployment requirements.
    Every returned typed finding needs explicit accepted/rejected local triage
    with a reason. Omission rejects even on repaired source; acceptance enters
    the existing sibling sweep, and rejection never silently accepts a finding.
+   Mutate the runtime's timestamps, actions, scope, findings, bounds and
+   completion flags after finish, and during the ownership-release callback.
+   The returned internal report must retain its validated immutable values,
+   including nested collections and typed findings. A timely review remains
+   timely; changing a recorded late completion to an earlier time cannot
+   admit pre-review eligibility.
 8. Exercise exact GitHub actor/head/content collection and complete coordinator
    triage. COMMENTED, approval phrases and zero inline findings remain
    untriaged until that decision. Change content or the head and require
@@ -311,7 +334,16 @@ the consumers' independent protected-principal/deployment requirements.
    explicit bounded call raises a real local subprocess timeout while a
    default reporter Git call retains its original behavior; exercise the
    external launcher's existing timeout path separately.
-10. First/second request rounds produce bounded handoffs; the third remains
+10. For two consecutive generated-data remediation rounds, introduce actual
+    inventory drift, then a consumer mismatch, and repair both. Parse each
+    returned round's `outcome_refs`, then its outcomes' origin/candidate
+    evidence references. Every expected sibling must resolve to the actual
+    validated member identity, profile/probe, evidence classes, kind, checks,
+    verdict and revision-bound source-object set. Verify affected-fixed versus
+    unaffected states from those real worker observations; shared source sets
+    must not be duplicated per sibling. Later review-content refresh must not
+    rewrite the already returned assessment.
+    First/second request rounds produce bounded handoffs; the third remains
     held through later heads and clean reports until a valid coordinator
     disposition names the held round/head. Preserve already-created commits
     on their assigned branch as ineligible WIP; do not delay publication or

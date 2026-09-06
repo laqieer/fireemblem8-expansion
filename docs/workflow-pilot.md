@@ -268,9 +268,18 @@ a second active reviewer on the same PR; another PR does not permit duplicate
 active review of the same candidate head. Only work with both a different
 repository/PR identity and a different head remains independent. Completion
 releases both exclusions for a subsequent bounded session.
+`advance` rejects while a lease is active, including after its deadline or
+a stop acknowledgment without terminal evidence. The existing observed
+completion/timeout/abort path must release it first. Subsequent head changes
+preserve the old report's origin rather than rebinding it to the new head.
 
-`ReviewSession.finish` captures the runtime's typed `Finding` records at the
-reviewed task/head. Before handoff, call
+`ReviewSession.finish` snapshots validated runtime fields into an internal
+frozen report before releasing ownership. Scope/actions are immutable sets,
+findings are a tuple of frozen typed values, and timestamps and bounds are
+copied values. Later runtime-record mutations cannot change the accepted
+report or its pre-review chronology. This is a value snapshot, not a receipt,
+signature, history service or protection against arbitrary malicious Python
+mutation of the trusted coordinator. Before handoff, call
 `session.triage_local(finding_id, accepted=decision, reason=reason)` for every
 returned finding, with a Boolean decision. Accepted records enter the existing sibling sweep;
 rejected records retain a nonblank coordinator reason. Omitted, duplicate,
@@ -332,14 +341,18 @@ and explicit removal evidence; they cannot disappear silently. Current
 bindings reject such changes rather than manufacture not-applicable results.
 The total bound is 250 obligations, not five arbitrarily selected siblings.
 
-The immutable-tree input declaration is also the candidate staging allowlist;
-the adapter does not add undeclared candidate files. AoE inputs include the
+An obligation's immutable `inputs` retain its semantic subject attachment.
+Its separate `execution_inputs` bind the complete shared worker staging
+closure; the adapter does not add undeclared candidate files. AoE inputs include the
 compiled core/reference sources and the complete staged header set. Generated
 inputs include all schemas imported by the existing registry, the staged
 generated-data code/data/headers/inventories and declared authored resources.
-Every obligation in a shared worker binds the complete candidate input union,
-including mixed-subject requests; a narrowed member cannot borrow undeclared
-bytes staged for another member. The fixed reviewed tool overlays remain
+Every observation's `source_objects` bind the complete execution union,
+including mixed-subject requests; narrowing that closure cannot borrow
+undeclared bytes staged for another member. Adding another subject does not
+expand a member's semantic `inputs`: an unrelated generated/workflow source
+cannot attach to an AoE finding merely because it was staged or another
+subject failed. The fixed reviewed tool overlays remain
 bound by `tool_revision`, not a candidate-supplied program. This is the actual
 finite staging boundary, not a generic Python import/capability guarantee.
 
@@ -388,15 +401,27 @@ siblings must pass their own probes before and after. Each accepted defect
 requires an affected-fixed row for its **reported member itself**; an
 already-satisfied reported member cannot borrow a different sibling's failure.
 Both direct handoff assessment and the coordinator adapter use that same
-predicate. Being included in the staging closure establishes source binding,
-not semantic damage: unused inputs or unrelated all-pass tests cannot repair
-a finding.
+predicate. Being included in the execution closure establishes staged-byte
+binding, not semantic finding attachment or damage: unrelated inputs or
+all-pass tests cannot repair a finding.
 Missing/duplicated/wrong-subject/stale observations reject. Imports, compile
 errors, missing tools, zero/skipped tests and timeouts are **unavailable**,
 not useful failing controls. Native exit codes come from the selected trusted
 driver, not a candidate PASS label. Host, native, generated and ARM object
 results are explicitly typed; none is relabeled as target-ROM execution.
-The worker reports `probe`, `kind`, `verdict`, strict integer `checks` and a
+When common generated-source validation fails before an output, consumer or
+drift predicate, the selected member is `unavailable` with zero checks and
+`blocked_by: ["owners:eventlists"]`. Optional owners' additional event-list
+reference validation uses the same attribution, without hiding their own
+validation failures. The reducer requires an actually failed owner observation
+in that same subject/family/origin and a satisfied candidate, and reports the
+sibling as `prerequisite-fixed`, never `affected-fixed` or
+`verified-unaffected`. Missing or unobserved prerequisites still reject.
+Reporting that blocked drift/consumer as the defect cannot pass the mandatory
+reported-member check. Genuine owner defects and executed member failures
+retain their normal before/after evidence.
+The worker reports `probe`, `kind`, `verdict`, strict integer `checks`, a
+`blocked_by` member list (empty unless attributed as above) and a
 nonblank `detail` of at most 2,000 characters. The adapter preserves those
 fields together with the captured source objects, and validates the reported
 kind against the obligation instead of deriving a replacement from the probe
@@ -443,6 +468,20 @@ Previously accepted finding bindings remain required, including when newer
 content omits them. Retriage refreshes handoffs from that accepted set.
 
 First and second consecutive change requests produce bounded handoffs.
+Each returned `round_handoffs` entry binds `candidate_sha` and `tool_revision`
+and contains `outcome_refs`, indexes into that assessment's `outcomes`.
+Each outcome identifies the finding and full subject/family/member, with
+`origin_evidence` and `candidate_evidence` indexes into the same response's
+`evidence` array. Those validated records retain the member identity, probe,
+profile, evidence classes, actual kind/checks/verdict/detail and prerequisite
+attribution. Their `source_set` indexes address the response's `source_sets`,
+each containing the exact revision/tool binding and captured path/Git-object
+pairs. Source sets and member observations are emitted once, not copied into
+every finding/round; no source payload or external evidence registry is added.
+References are local to the enclosing assessment, not permission tokens or
+identities to reuse across candidates. An auditor can follow each round to
+every examined sibling's origin and candidate evidence without reconstructing
+discarded worker results. Later round refreshes do not mutate returned reports.
 Before a hold, clean triage resets the sequence. The third request creates a
 sticky hold bound to its review ID and head. New heads and later clean
 reports cannot reset it. Only the coordinator's bound `redesign`, `decompose`

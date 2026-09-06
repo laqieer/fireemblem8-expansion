@@ -216,6 +216,203 @@ class SubjectTests(SubjectTestCase):
                 request_data, members, (*prior, *missing), session, tool_revision=self.repo.base,
                 remote_reviews=(), triage=(), pre_review_required=False)
 
+    def test_invalid_generated_source_cannot_claim_drift_or_consumer_repairs(self):
+        path = "src/data/ch2_eventlists.json"
+        source = json.loads((self.repo.root / path).read_text())
+        source["lists"][0]["entries"][0]["args"][1] = "EventScr_UnknownReviewReference"
+        data, members, prior, current, session = self.remediation(
+            "generated", path, json.dumps(source), "owners:eventlists")
+        finding = next(iter(session.accepted.values()))
+        for member, unrelated_path in (
+            ("drift-checks:eventlists", "reports/generated_data_eventlists_inventory.md"),
+            ("consumers:eventlists", "src/events/ch2-eventinfo.h"),
+        ):
+            with self.subTest(reported=member):
+                self.assertEqual(self.tools.tree(finding.origin).oid(unrelated_path),
+                                 self.tools.tree(data["candidate_sha"]).oid(unrelated_path))
+                session.accepted[finding.id] = replace(
+                    finding, member=member, source_path=unrelated_path)
+                data["findings"][0]["reported_member"] = member
+                with self.assertRaisesRegex(ValueError, "reported member"):
+                    self.model.assess_handoff(
+                        data, members, (*prior, *current), session, tool_revision=self.repo.base,
+                        remote_reviews=(), triage=(), pre_review_required=False)
+        for member in ("outputs:eventlists", "consumers:eventlists", "drift-checks:eventlists"):
+            with self.subTest(prerequisite=member):
+                observation = next(item for item in prior if item.obligation.member == member)
+                self.assertEqual((observation.verdict, observation.checks), ("unavailable", 0))
+                self.assertEqual(observation.blocked_by, ("owners:eventlists",))
+        session.accepted[finding.id] = finding
+        data["findings"][0]["reported_member"] = finding.member
+        report = self.model.assess_handoff(
+            data, members, (*prior, *current), session, tool_revision=self.repo.base,
+            remote_reviews=(), triage=(), pre_review_required=False)
+        self.assertEqual({row["outcome"] for row in report["outcomes"]
+                          if row["member"] in {"outputs:eventlists", "consumers:eventlists",
+                                               "drift-checks:eventlists"}},
+                         {"prerequisite-fixed"})
+        blocked = next(item for item in prior if item.obligation.member == "outputs:eventlists")
+        for blockers in ((), ("owners:shops",), ("owners:unknown",), ("consumers:eventlists",)):
+            with self.subTest(unobserved_prerequisites=blockers):
+                altered = tuple(replace(item, blocked_by=blockers) if item is blocked else item
+                                for item in prior)
+                with self.assertRaisesRegex(ValueError, "origin (evidence|prerequisite)"):
+                    self.model.assess_handoff(
+                        data, members, (*altered, *current), session, tool_revision=self.repo.base,
+                        remote_reviews=(), triage=(), pre_review_required=False)
+
+    def test_real_inventory_and_consumer_repairs_execute_the_selected_predicates(self):
+        for path, member in (
+            ("reports/generated_data_eventlists_inventory.md", "drift-checks:eventlists"),
+            ("src/events/ch2-eventinfo.h", "consumers:eventlists"),
+        ):
+            with self.subTest(member=member):
+                source = (self.repo.root / path).read_text()
+                broken = (source + "\nUncommitted inventory change\n" if member.startswith("drift")
+                          else source.replace("FACTION_ID_BLUE", "FACTION_ID_RED"))
+                self.assertNotEqual(source, broken)
+                self.remediation("generated", path, broken, member)
+
+    def test_mixed_subject_findings_keep_semantic_inputs_separate_from_staged_bytes(self):
+        paths = ("src/expansion_aoe.c", "reports/generated_data_eventlists_inventory.md",
+                 "scripts/workflow_pilot/review_family.py")
+        originals = {path: (self.repo.root / path).read_text() for path in paths}
+        changes = {
+            paths[0]: originals[paths[0]].replace("&& route->aiPolicy == EXPANSION_AOE_AI_NEVER", "&& 0"),
+            paths[1]: originals[paths[1]] + "\nUncommitted inventory change\n",
+            paths[2]: originals[paths[2]].replace('require(request["candidate_sha"] == session.head,',
+                                                 'require(True,'),
+        }
+        self.assertTrue(all(changes[path] != originals[path] for path in paths))
+        origin = self.repo.commit(changes)
+        candidate = self.repo.commit(originals, parent=origin)
+        data = self.scope("aoe", candidate)
+        data["subjects"].extend(self.scope("generated", candidate)["subjects"])
+        data["subjects"].extend(self.scope("session", candidate)["subjects"])
+        members = self.host_members(self.tools.members(data, (origin,)))
+        current = self.run_members(members, candidate)
+        self.assert_satisfied(current)
+        selected = ("action", "generated", "wire")
+        prior = self.run_members(tuple(item for item in members if item.family in selected), origin)
+        model = self.model
+        scope = frozenset(model.subject_key(item) for item in data["subjects"])
+        session = model.ReviewSession("coordinator", "implementer", scope, candidate,
+                                      identity=("owner/repo", 1, self.repo.base))
+        findings = []
+        for index, (subject, family, member, path) in enumerate(zip(
+            data["subjects"], selected,
+            ("actions:AI_SELECT", "drift-checks:eventlists", "stale-bindings:review-session"), paths,
+        )):
+            finding = model.Finding(
+                "finding-" + str(index), model.subject_key(subject), family, member,
+                origin, path, "review-1")
+            findings.append(finding)
+            session.accept(finding)
+            data["findings"].append({
+                "finding_id": finding.id, **subject, "family": family, "reported_member": member,
+            })
+        arguments = dict(tool_revision=self.repo.base, remote_reviews=(), triage=(),
+                         pre_review_required=False)
+        good = model.assess_handoff(data, members, (*prior, *current), session, **arguments)
+        self.assertTrue(good["handoff_eligible"])
+        for finding, unrelated_path in zip(findings, (paths[1], paths[2], paths[0])):
+            with self.subTest(subject=finding.subject):
+                self.assertTrue(all(unrelated_path in dict(item.source_objects)
+                                    for item in (*prior, *current)))
+                session.accepted[finding.id] = replace(finding, source_path=unrelated_path)
+                with self.assertRaisesRegex(ValueError, "unrelated source"):
+                    model.assess_handoff(data, members, (*prior, *current), session, **arguments)
+                session.accepted[finding.id] = finding
+        for kind in ("aoe", "generated", "session"):
+            standalone = self.tools.members(self.scope(kind, candidate), (origin,))
+            expected = {item.identity: item.inputs for item in standalone}
+            for member in members:
+                if member.identity in expected:
+                    with self.subTest(semantic_inputs=member.identity):
+                        self.assertTrue(member.inputs == expected[member.identity],
+                                        "mixed request changed the member's semantic input mapping")
+
+    def test_two_round_handoffs_retain_bound_actual_origin_and_candidate_evidence(self):
+        inventory = "reports/generated_data_eventlists_inventory.md"
+        consumer = "src/events/ch2-eventinfo.h"
+        originals = {path: (self.repo.root / path).read_text() for path in (inventory, consumer)}
+        first = self.repo.commit({inventory: originals[inventory] + "\nInventory drift\n"})
+        second = self.repo.commit({
+            inventory: originals[inventory],
+            consumer: originals[consumer].replace("FACTION_ID_BLUE", "FACTION_ID_RED"),
+        }, parent=first)
+        candidate = self.repo.commit({consumer: originals[consumer]}, parent=second)
+        data = self.scope("generated", candidate)
+        members = self.tools.members(data, (first, second))
+        observations = tuple(item for revision in (first, second, candidate)
+                             for item in self.run_members(members, revision))
+        self.assert_satisfied(tuple(item for item in observations if item.revision == candidate))
+        model = self.model
+        key = model.subject_key(data["subjects"][0])
+        session = model.ReviewSession("coordinator", "implementer", frozenset({key}), candidate,
+                                      identity=("owner/repo", 1, self.repo.base))
+        for number, origin, member, path in (
+            (1, first, "drift-checks:eventlists", inventory),
+            (2, second, "consumers:eventlists", consumer),
+        ):
+            fact = model.ReviewFact(
+                "review-" + str(number), origin, "observed-copilot", "CHANGES_REQUESTED",
+                f"2026-01-01T00:00:{number:02d}Z", "Complete reviewed source defect",
+                (("comment-" + str(number), path, "Observed selected predicate failure"),))
+            finding = model.Finding(
+                "finding-" + str(number), key, "generated", member, origin, path, fact.id)
+            session.triage(model.Triage(fact, "changes-requested", (finding,)))
+            data["findings"].append({
+                "finding_id": finding.id, **data["subjects"][0],
+                "family": finding.family, "reported_member": member,
+            })
+        report = model.assess_handoff(
+            data, members, observations, session, tool_revision=self.repo.base,
+            remote_reviews=tuple(item.fact for item in session.rounds.events),
+            triage=tuple(session.rounds.events), pre_review_required=False)
+        self.assertTrue(report["handoff_eligible"])
+        wire = json.loads(json.dumps(report))
+        self.assertEqual(len(wire["round_handoffs"]), 2)
+        actual = {(item.obligation.identity, item.revision): item for item in observations}
+        for round_handoff in wire["round_handoffs"]:
+            with self.subTest(round=round_handoff["consecutive"]):
+                self.assertIn("outcome_refs", round_handoff)
+                self.assertEqual(round_handoff["candidate_sha"], candidate)
+                self.assertEqual(round_handoff["tool_revision"], self.repo.base)
+                rows = [wire["outcomes"][index] for index in round_handoff["outcome_refs"]]
+                self.assertEqual({(row["subject"], row["family"], row["member"]) for row in rows},
+                                 {item.identity for item in members})
+                self.assertEqual(len(rows), len(members))
+                self.assertEqual({row["finding_id"] for row in rows}, set(round_handoff["findings"]))
+                for row in rows:
+                    for field, revision in (("origin_evidence", round_handoff["head"]),
+                                            ("candidate_evidence", candidate)):
+                        evidence = wire["evidence"][row[field]]
+                        identity = tuple(evidence[name] for name in ("subject", "family", "member"))
+                        observed = actual[identity, revision]
+                        self.assertEqual(identity, (row["subject"], row["family"], row["member"]))
+                        self.assertEqual(evidence["revision"], revision)
+                        self.assertEqual(evidence["tool_revision"], observed.tool_revision)
+                        for name in ("verdict", "checks", "kind", "detail"):
+                            self.assertEqual(evidence[name], getattr(observed, name))
+                        self.assertEqual(evidence["profile"], observed.obligation.profile)
+                        self.assertEqual(evidence["probe"], observed.obligation.probe)
+                        self.assertEqual(evidence["evidence"], list(observed.evidence))
+                        source_set = wire["source_sets"][evidence["source_set"]]
+                        self.assertEqual(source_set["revision"], revision)
+                        self.assertEqual(source_set["tool_revision"], observed.tool_revision)
+                        self.assertEqual(dict(source_set["objects"]), dict(observed.source_objects))
+                    before = wire["evidence"][row["origin_evidence"]]
+                    expected = ("affected-fixed" if before["verdict"] == "contract-violation"
+                                else "verified-unaffected")
+                    self.assertEqual(row["outcome"], expected)
+        self.assertEqual(len(wire["source_sets"]), 3)
+        self.assertEqual(len(wire["evidence"]), len(observations))
+        saved = copy.deepcopy(report)
+        edited = replace(session.rounds.events[0].fact, body="Review content edited")
+        session.refresh_reviews((edited, session.rounds.events[1].fact))
+        self.assertEqual(report, saved, "later round refresh rewrote an already returned assessment")
+
     def test_compiled_header_dependency_finding_uses_actual_member_failure(self):
         path = "include/bmunit.h"
         source = (self.repo.root / path).read_text()
@@ -260,13 +457,14 @@ class SubjectTests(SubjectTestCase):
                     self.tools._stage(tree, root, members)
                 self.assertTrue(copied)
                 for member in members:
-                    self.assertEqual(set(member.inputs), copied, member.member)
+                    self.assertEqual(set(member.source_inputs), copied, member.member)
+                    self.assertTrue(set(member.inputs) <= copied)
                 observations = self.run_members(members, self.repo.base)
                 self.assert_satisfied(observations)
                 for item in observations:
                     self.assertEqual(dict(item.source_objects),
                                      {path: tree.oid(path) for path in copied})
-                narrowed = replace(members[0], inputs=members[0].inputs[1:])
+                narrowed = replace(members[0], execution_inputs=members[0].execution_inputs[1:])
                 with self.assertRaisesRegex(ValueError, "candidate inputs"):
                     self.tools.run_obligations((narrowed, *members[1:]), self.repo.base)
 
@@ -518,6 +716,8 @@ class SubjectTests(SubjectTestCase):
             replace(good, source_objects=None), replace(good, evidence=([],)),
             replace(good, evidence=None), replace(good, evidence=("runtime",)),
             replace(good, detail=None), replace(good, kind="rom"),
+            replace(good, blocked_by=None), replace(good, blocked_by=([],)),
+            replace(good, blocked_by=("owners:eventlists",)),
             *(replace(good, kind=kind) for kind in ("native", "parsed", "arm-object", None)),
         ):
             with self.subTest(observation=bad), self.assertRaises(ValueError):
@@ -555,6 +755,9 @@ class SubjectTests(SubjectTestCase):
             ("checks", -1), ("checks", None), ("verdict", []), ("verdict", "skipped"),
             ("detail", None), ("detail", []), ("detail", "x" * 2001), ("detail", ""),
             ("probe", None), ("probe", good[1]["probe"]),
+            ("blocked_by", None), ("blocked_by", "owners:eventlists"),
+            ("blocked_by", [None]), ("blocked_by", [[]]),
+            ("blocked_by", ["owners:eventlists"]), ("blocked_by", [True]),
         ):
             malformed.append({**good[0], field: value})
         malformed.append({**good[0], "verdict": "unavailable", "checks": 1})
