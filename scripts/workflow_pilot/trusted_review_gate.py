@@ -146,7 +146,10 @@ class GitHub:
                    "-f", "owner=" + owner, "-f", "name=" + name, "-F", f"number={number}"]
         if cursor is not None:
             command.extend(["-f", "cursor=" + cursor])
-        result = subprocess.run(command, capture_output=True, timeout=60)
+        try:
+            result = subprocess.run(command, capture_output=True, timeout=60)
+        except (OSError, subprocess.TimeoutExpired) as error:
+            raise ValueError("GitHub observation unavailable: " + str(error)[-1000:]) from error
         if result.returncode:
             raise ValueError("GitHub observation unavailable: " +
                              result.stderr.decode(errors="replace")[-1000:])

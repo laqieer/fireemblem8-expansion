@@ -226,6 +226,17 @@ the consumers' independent protected-principal/deployment requirements.
    string, negative and over-global-cap values. Only strict integer counts
    within the requested bound (at most 200) pass. Malformed adjacent runtime
    fields leave ownership active; a subsequent valid result can finish it.
+   Expire a lease while the runtime still reports it running: observe the
+   status, reject completion and keep fresh-reviewer admission blocked.
+   Then supply actual terminal completion; reject the late report but close
+   the lease as `timed-out` and allow a fresh reviewer. Repeat with the
+   deadline passing during the runtime read; no late report is admitted.
+   Exercise explicit abort through the runtime's existing stop capability.
+   A stop acknowledgment without terminal status, read/stop failure, unknown
+   status, missing capability, wrong identity or malformed terminal chronology
+   must not release ownership. Once terminal evidence is observed, close as
+   `aborted` without accepting a report; an already completed failed report
+   needs no second stop. Normal completion retains `outcome: completed`.
    Every returned typed finding needs explicit accepted/rejected local triage
    with a reason. Omission rejects even on repaired source; acceptance enters
    the existing sibling sweep, and rejection never silently accepts a finding.
@@ -261,6 +272,12 @@ the consumers' independent protected-principal/deployment requirements.
    entrypoints also reject a 256 MiB sparse input under a 128 MiB child
    address-space limit without allocation failure, blocking or a traceback.
    Diagnostic detail remains bounded even for a very long duplicate JSON key.
+   In both direct and isolated entrypoints, force an actual local Git process
+   timeout and route the GH adapter to a timed-out local child or missing
+   executable. Require bounded nonzero diagnostics and no traceback or
+   successful fallback. The API must translate only the expected OS/timeout
+   errors, not an unrelated programming exception. No remote API is contacted
+   by these controlled error-path tests.
 10. First/second request rounds produce bounded handoffs; the third remains
     held through later heads and clean reports until a valid coordinator
     disposition names the held round/head. Preserve already-created commits

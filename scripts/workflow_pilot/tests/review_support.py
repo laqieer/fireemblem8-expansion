@@ -54,6 +54,11 @@ class Runtime:
         self.calls.append(("read", task))
         return self.result
 
+    def stop(self, task):
+        self.calls.append(("stop", task))
+        self.result.completed = True
+        self.result.completed_at = "2026-01-01T00:00:02Z"
+
 
 class Snapshot:
     def __init__(self, root):

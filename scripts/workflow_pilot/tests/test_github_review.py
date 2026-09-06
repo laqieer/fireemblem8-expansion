@@ -447,6 +447,77 @@ class GitHubReviewTests(unittest.TestCase):
                     self.assertNotIn("Traceback", completed.stderr)
                     self.assertLessEqual(len(completed.stderr), 1200)
 
+    def test_real_direct_and_isolated_cli_translate_expected_tool_failures(self):
+        path = self.repo.root / "request.json"
+        path.write_text(json.dumps(request(base=self.repo.base, head=self.repo.base)))
+        bootstrap = """
+import runpy, subprocess, sys
+from pathlib import Path
+fault, entry, root = sys.argv[1:4]
+arguments = sys.argv[4:]
+run = subprocess.run
+def bounded(command, **kwargs):
+    if Path(command[0]).name == ("git" if fault == "git-timeout" else "gh"):
+        if fault == "git-timeout":
+            kwargs["timeout"] = 0
+        elif fault == "gh-timeout":
+            command = [sys.executable, "-I", "-c", "import time; time.sleep(60)"]
+            kwargs["timeout"] = 0.05
+        else:
+            command = [str(Path(root) / "build/not-installed-gh")]
+    return run(command, **kwargs)
+subprocess.run = bounded
+if entry == "direct":
+    sys.path.insert(0, root)
+    if fault == "git-timeout":
+        from scripts.workflow_pilot.isolated_launcher import main
+        arguments = ["review-family", *arguments]
+    else:
+        from scripts.workflow_pilot.trusted_review_gate import main
+    raise SystemExit(main(arguments))
+sys.argv = [str(Path(root) / "scripts/workflow_pilot/isolated_launcher.py"),
+            "review-family", *arguments]
+runpy.run_path(sys.argv[0], run_name="__main__")
+"""
+        for fault in ("git-timeout", "gh-timeout", "gh-launch"):
+            for entry in ("direct", "isolated"):
+                with self.subTest(fault=fault, entry=entry):
+                    result = subprocess.run(
+                        [sys.executable, "-I", "-c", bootstrap, fault, entry, str(self.repo.root),
+                         "--repository-root", str(self.repo.root), "--subject-root", str(self.repo.root),
+                         "--tool-revision", self.repo.base, "--candidate", self.repo.base,
+                         "--request", str(path), "--mode", "plan" if fault == "git-timeout" else "check"],
+                        env=ENV, capture_output=True, text=True, timeout=30)
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertEqual(result.stdout, "")
+                    self.assertTrue(result.stderr.startswith(
+                        "workflow-pilot-launcher:" if fault == "git-timeout" else "review-family:"),
+                        result.stderr)
+                    self.assertNotIn("Traceback", result.stderr)
+                    self.assertLessEqual(len(result.stderr), 1200)
+
+    def test_github_api_translates_real_os_failures_but_not_programming_errors(self):
+        run = subprocess.run
+        for fault in ("timeout", "launch"):
+            with self.subTest(fault=fault):
+                def unavailable(command, **kwargs):
+                    if fault == "timeout":
+                        command = [sys.executable, "-I", "-c", "import time; time.sleep(60)"]
+                        kwargs["timeout"] = 0.05
+                    else:
+                        command = [str(self.repo.root / "build/not-installed-gh")]
+                    return run(command, **kwargs)
+
+                with patch.object(gate.subprocess, "run", side_effect=unavailable):
+                    with self.assertRaisesRegex(ValueError, "GitHub observation unavailable") as caught:
+                        gate.GitHub().query("owner/repo", 1)
+                self.assertLessEqual(len(str(caught.exception)), 1200)
+                self.assertIsInstance(caught.exception.__cause__,
+                                      subprocess.TimeoutExpired if fault == "timeout" else OSError)
+        with patch.object(gate.subprocess, "run", side_effect=RuntimeError("programming defect")):
+            with self.assertRaisesRegex(RuntimeError, "programming defect"):
+                gate.GitHub().query("owner/repo", 1)
+
     def request_cli(self, path, *, isolated, timeout=30):
         bootstrap = (
             "import resource, sys; "

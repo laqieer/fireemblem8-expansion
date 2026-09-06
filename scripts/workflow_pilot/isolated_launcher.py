@@ -123,10 +123,13 @@ def run_review_family(arguments: list[str]) -> int:
     }
 
     def git(*args):
-        completed = subprocess.run(
-            ["/usr/bin/git", "--no-optional-locks", "-c", "core.fsmonitor=false",
-             "-c", "core.hooksPath=/dev/null", "-C", str(root), *args],
-            env=environment, capture_output=True, timeout=60)
+        try:
+            completed = subprocess.run(
+                ["/usr/bin/git", "--no-optional-locks", "-c", "core.fsmonitor=false",
+                 "-c", "core.hooksPath=/dev/null", "-C", str(root), *args],
+                env=environment, capture_output=True, timeout=60)
+        except subprocess.TimeoutExpired as error:
+            raise ValueError("reviewed Git source timed out: " + str(error)[-1000:]) from error
         if completed.returncode:
             raise ValueError("reviewed Git source unavailable: " +
                              completed.stderr.decode(errors="replace")[-1000:])

@@ -195,7 +195,7 @@ class RoleTests(unittest.TestCase):
         self.session.begin(self.runtime, "reviewer", duration=30)
         self.session.read_action("read-candidate")
         for action in ("write", "bash", "push", "comment", "request-review", "dispatch-CI",
-                       "merge", None, [], {}):
+                       "merge", "stop", "abort", None, [], {}):
             with self.subTest(action=action), self.assertRaises(model.ReviewError):
                 self.session.read_action(action)
         self.assertEqual(self.effects, ["read"])
@@ -203,6 +203,7 @@ class RoleTests(unittest.TestCase):
         self.assertEqual(set(self.runtime.calls[0][1]["actions"]),
                          {"read-candidate", "read-evidence", "emit-report"})
         self.assertEqual(self.session.finish(self.runtime), self.runtime.result)
+        self.assertEqual(self.session.lease.outcome, "completed")
         self.assertEqual([row[0] for row in self.runtime.calls], ["start", "read"])
         with self.assertRaises(model.ReviewError):
             self.session.read_action("read-candidate")
@@ -226,7 +227,121 @@ class RoleTests(unittest.TestCase):
         self.time = 11
         with self.assertRaises(model.ReviewError):
             self.session.finish(self.runtime)
-        self.assertEqual(len(self.runtime.calls), 1)
+        self.assertEqual(len(self.runtime.calls), 2)
+        self.assertTrue(self.session.lease.finished)
+        self.assertEqual(self.session.lease.outcome, "timed-out")
+        self.assertIsNone(self.session.report)
+
+    def owned_runtime(self, *, completed):
+        self.time = 0
+        owners = model.ReviewOwnership()
+        identity = ("owner/repo", 1, "a" * 40)
+        session = model.ReviewSession(
+            "coordinator", "implementer", self.scope, "b" * 40,
+            identity=identity, owners=owners, clock=lambda: self.time)
+        runtime = Runtime(session.head, self.scope)
+        runtime.result.completed = completed
+        session.begin(runtime, "reviewer", duration=10)
+        fresh = model.ReviewSession(
+            "coordinator", "next-implementer", self.scope, session.head,
+            identity=identity, owners=owners, clock=lambda: self.time)
+        return session, runtime, fresh
+
+    def test_expired_lease_retires_only_after_observed_terminal_completion(self):
+        session, runtime, fresh = self.owned_runtime(completed=False)
+        self.time = 11
+        with self.assertRaises(model.ReviewError):
+            session.finish(runtime)
+        self.assertFalse(session.lease.finished)
+        self.assertIsNone(session.report)
+        with self.assertRaises(model.ReviewError):
+            fresh.begin(runtime, "reviewer")
+        runtime.result.completed = True
+        with self.assertRaisesRegex(model.ReviewError, "duration bound"):
+            session.finish(runtime)
+        self.assertTrue(session.lease.finished)
+        self.assertEqual(session.lease.outcome, "timed-out")
+        self.assertIsNone(session.report)
+        self.assertEqual(session.local_findings, {})
+        self.assertEqual([row[0] for row in runtime.calls], ["start", "read", "read"])
+        replacement = Runtime(session.head, self.scope)
+        fresh.begin(replacement, "reviewer")
+        fresh.finish(replacement)
+        self.assertEqual(fresh.lease.outcome, "completed")
+
+    def test_deadline_crossing_during_runtime_read_cannot_accept_a_report(self):
+        session, runtime, _ = self.owned_runtime(completed=True)
+        self.time = 9
+        read = runtime.read
+
+        def late_read(task):
+            self.time = 11
+            return read(task)
+
+        runtime.read = late_read
+        with self.assertRaisesRegex(model.ReviewError, "duration bound"):
+            session.finish(runtime)
+        self.assertTrue(session.lease.finished)
+        self.assertEqual(session.lease.outcome, "timed-out")
+        self.assertIsNone(session.report)
+
+    def test_abort_requires_terminal_evidence_and_runtime_failures_retain_ownership(self):
+        for case in ("delayed-stop", "stop-failure", "read-failure", "missing-stop", "unknown",
+                     "wrong-head", "malformed-completion", "terminal-chronology", "failed-report"):
+            with self.subTest(case=case):
+                session, runtime, fresh = self.owned_runtime(completed=case == "failed-report")
+                original = copy.copy(runtime.result)
+                read, stop = runtime.read, runtime.stop
+                self.time = 11 if case != "failed-report" else 1
+                if case == "delayed-stop":
+                    runtime.stop = lambda task: runtime.calls.append(("stop", task)) or True
+                elif case == "stop-failure":
+                    def fail_stop(task):
+                        raise OSError("runtime stop failed")
+                    runtime.stop = fail_stop
+                elif case == "read-failure":
+                    def fail_read(task):
+                        raise OSError("runtime observation failed")
+                    runtime.read = fail_read
+                elif case == "missing-stop":
+                    runtime.stop = None
+                elif case == "unknown":
+                    runtime.result = None
+                elif case == "wrong-head":
+                    runtime.result.head = "c" * 40
+                    runtime.result.completed = True
+                elif case == "malformed-completion":
+                    runtime.result.completed = "stopped"
+                elif case == "terminal-chronology":
+                    runtime.result.completed = True
+                    runtime.result.completed_at = None
+                else:
+                    runtime.result.read_only = False
+                expected = OSError if case in {"stop-failure", "read-failure"} else model.ReviewError
+                with self.assertRaises(expected):
+                    session.finish(runtime) if case == "failed-report" else session.abort(runtime)
+                self.assertFalse(session.lease.finished)
+                self.assertIsNone(session.report)
+                with self.assertRaises(model.ReviewError):
+                    fresh.begin(Runtime(session.head, self.scope), "reviewer")
+                runtime.read, runtime.stop = read, stop
+                if case != "failed-report":
+                    runtime.result = original
+                    runtime.result.completed = case != "delayed-stop"
+                session.abort(runtime)
+                self.assertTrue(session.lease.finished)
+                self.assertEqual(session.lease.outcome, "aborted")
+                self.assertIsNone(session.report)
+                self.assertEqual(session.local_findings, {})
+                if case == "delayed-stop":
+                    self.assertEqual([row[0] for row in runtime.calls[-3:]], ["read", "stop", "read"])
+                if case == "failed-report":
+                    self.assertNotIn("stop", [row[0] for row in runtime.calls])
+                with self.assertRaises(model.ReviewError):
+                    session.abort(runtime)
+                with self.assertRaises(model.ReviewError):
+                    session.finish(runtime)
+                fresh.begin(Runtime(session.head, self.scope), "reviewer")
 
     def test_wrong_actual_task_results_are_rejected(self):
         for field, wrong in (("head", "c" * 40), ("task", "other"), ("owner", "implementer"),

@@ -131,18 +131,43 @@ result. There is no polling, new agent backend or JSON-selected runtime.
 The adapter's result exposes the actual `task`, `owner`, `role`, `head`,
 `subjects`, `completed`, `read_only`, `actions`, `files`, `findings`, `started_at` and
 `completed_at`; these are runtime metadata, not fields copied from the
-reviewer's prose. Both `completed` and `read_only` must be Boolean `True`;
-truthy strings/numbers or missing fields cannot complete a review. Requested
+reviewer's prose. Both `completed` and `read_only` must be Boolean `True`
+for report admission; truthy strings/numbers or missing fields cannot admit
+a completed review. Requested
 duration (1–3,600 seconds) and files (1–200, default 200) are strict Python
 integers. The lease retains its requested file bound; returned `files` must
 be an integer from zero through that bound, never a Boolean, float or string.
 Scope/actions must be collections of strings and findings a list/tuple of
-typed records. Malformed or over-budget results do not accept a report or
-release ownership; only a valid result can finish the active lease.
+typed records. Malformed or over-budget reports do not grant review evidence
+or silently release ownership.
 Bound read tools through the coordinator's `readers` map.
 `read_action` rejects mutation/arbitrary-command operations before dispatch.
 Ordinary test execution is a separate coordinator-owned test role, not a
 second overlapping reviewer.
+
+Lease retirement is distinct from report admission. `finish` reads actual
+task status even after the deadline. A still-running or unknown task retains
+ownership; a verified late terminal result closes the lease with
+`outcome: timed-out`, releases ownership and rejects the report. The deadline
+is checked after reading and again before admission, so completion observed
+across the deadline cannot supply review evidence.
+
+The explicit `session.abort(runtime)` operation uses the coordinator's
+optional existing `runtime.stop(task)` capability when the task is still
+running. It verifies the exact task/owner/role/head/scope, Boolean terminal
+`completed` state and terminal timestamp chronology. A stop request or
+acknowledgment alone never closes the lease: the operation reads the actual
+task again. Stop/read failure, missing stop capability, unknown status or
+malformed terminal metadata retains ownership until real terminal evidence
+is available. An already completed failed report can be abandoned without
+being accepted or stopping it again.
+
+Both paths use the same retirement helper. `finished` means the lease is
+closed, while `outcome` distinguishes an admitted `completed` review from
+`timed-out` or `aborted` work. Timeout/abort retains no report or local finding
+evidence and cannot satisfy independent pre-review admission. Completion
+releases the existing index for a fresh session; no polling loop, new task
+backend or cleanup service is added.
 
 The coordinator and reviewed validator/test tools are trusted. Candidate
 requests are data and cannot choose Python programs, imports, commands,
@@ -254,6 +279,12 @@ it must not convert `source_audit_complete` into approval.
 Expected missing-object and ancestry failures are translated at the existing
 Git adapter into bounded, nonzero `review-family:` diagnostics in both direct
 and isolated entrypoints, not tracebacks or successful fallback assessments.
+The fixed launcher's Git helper also translates its expected subprocess
+timeout into a bounded `workflow-pilot-launcher:` failure. The GitHub adapter
+translates expected CLI timeout/launch errors once into its existing
+`ValueError` boundary; both entrypoints report bounded `review-family:`
+diagnostics. Unexpected programming exceptions are not relabeled as ordinary
+tool unavailability.
 
 ### Finite coverage and actual evidence
 

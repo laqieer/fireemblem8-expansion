@@ -360,6 +360,7 @@ class ReviewLease:
     deadline: float
     max_files: int
     finished: bool = False
+    outcome: str | None = None
 
 
 class ReviewOwnership:
@@ -384,7 +385,7 @@ class ReviewOwnership:
 class ReviewSession:
     """Adapter around the coordinator's existing task/tool calls, not a backend.
 
-    runtime.start/read are the actual CLI task invocation/result operations.
+    runtime.start/read/stop are the actual CLI task operations.
     They are supplied by trusted orchestration code, never by request JSON.
     There is no polling: finish is called after the task-completion event.
     """
@@ -452,14 +453,12 @@ class ReviewSession:
         require(action in self.readers, "reviewer tool is not bound")
         return self.readers[action](*args)
 
-    def finish(self, runtime) -> Any:
+    def _read_task(self, runtime):
         lease = self.lease
         require(lease is not None and not lease.finished, "no active review task")
-        require(self.clock() <= lease.deadline, "review exceeded duration bound")
         result = runtime.read(lease.task)
         require(all(hasattr(result, field) for field in (
-            "task", "owner", "role", "head", "subjects", "completed", "read_only",
-            "actions", "files", "findings", "started_at", "completed_at")),
+            "task", "owner", "role", "head", "subjects", "completed")),
             "incomplete runtime review record")
         require(isinstance(result.subjects, (tuple, list, set, frozenset))
                 and len(result.subjects) == len(lease.scope)
@@ -468,16 +467,48 @@ class ReviewSession:
         require(result.task == lease.task and result.owner == lease.owner
                 and result.role == "code-review" and result.head == lease.head
                 and frozenset(result.subjects) == lease.scope
-                and result.completed is True and result.read_only is True,
-                "wrong, incomplete, writable or stale task result")
+                and type(result.completed) is bool, "wrong or stale runtime task observation")
+        return result
+
+    def _retire(self, result, outcome):
+        require(result.completed is True, "runtime task is not terminal")
+        require(timestamp(getattr(result, "started_at", None))
+                <= timestamp(getattr(result, "completed_at", None)),
+                "review task chronology is invalid")
+        if outcome == "completed" and self.clock() > self.lease.deadline:
+            outcome = "timed-out"
+        if self.owners is not None:
+            self.owners.finish(self)
+        self.lease.finished = True
+        self.lease.outcome = outcome
+        return outcome
+
+    def abort(self, runtime):
+        result = self._read_task(runtime)
+        if not result.completed:
+            stop = getattr(runtime, "stop", None)
+            require(callable(stop), "runtime stop capability is unavailable")
+            stop(self.lease.task)
+            result = self._read_task(runtime)
+        return self._retire(result, "aborted")
+
+    def finish(self, runtime) -> Any:
+        result = self._read_task(runtime)
+        lease = self.lease
+        require(result.completed is True, "runtime task is not terminal")
+        if self.clock() > lease.deadline:
+            self._retire(result, "timed-out")
+            raise ReviewError("review exceeded duration bound")
+        require(all(hasattr(result, field) for field in (
+            "read_only", "actions", "files", "findings")),
+            "incomplete runtime review record")
+        require(result.read_only is True, "writable task result")
         require(isinstance(result.actions, (tuple, list, set, frozenset))
                 and all(isinstance(action, str) and action in READ_ACTIONS
                         for action in result.actions)
                 and type(result.files) is int and 0 <= result.files <= lease.max_files <= MAX_REVIEW_FILES
                 and isinstance(result.findings, (tuple, list))
                 and len(result.findings) <= MAX_FINDINGS, "review action/budget violation")
-        require(timestamp(result.started_at) <= timestamp(result.completed_at),
-                "review task chronology is invalid")
         findings = tuple(result.findings)
         for finding in findings:
             require(isinstance(finding, Finding)
@@ -489,10 +520,8 @@ class ReviewSession:
                     and finding.review_id == "local:" + str(lease.task),
                     "local finding has wrong task, head or scope")
         unique([finding.id for finding in findings], "local report findings")
+        require(self._retire(result, "completed") == "completed", "review exceeded duration bound")
         self.local_findings = {finding.id: finding for finding in findings}
-        lease.finished = True
-        if self.owners is not None:
-            self.owners.finish(self)
         self.report = result
         return result
 
@@ -579,7 +608,8 @@ def assess_handoff(request: dict, members: tuple[Obligation, ...],
     for item in triage:
         item.validate()
     if pre_review_required:
-        require(session.report is not None and session.lease.finished,
+        require(session.report is not None and session.lease.finished
+                and session.lease.outcome == "completed",
                 "actual independent task observation required")
         require(session.owners is not None, "coordinator review ownership index required")
         if remote_reviews:
