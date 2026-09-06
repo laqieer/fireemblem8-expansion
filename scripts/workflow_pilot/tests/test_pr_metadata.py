@@ -2401,6 +2401,46 @@ class PullRequestMetadataTests(unittest.TestCase):
                     )
                 self.assertTrue(all(method == "GET" for method, _, _ in default.calls))
 
+    def test_essential_edit_rejects_other_terminal_outcomes_at_both_snapshots(self):
+        for conclusion in (
+            "action_required", "neutral", "skipped", "stale",
+            "startup_failure", "timed_out",
+        ):
+            for snapshot in ("initial", "refreshed"):
+                with self.subTest(conclusion=conclusion, snapshot=snapshot):
+                    client = ScriptedClient()
+                    allowed = _run(101, 10, mode="full", success=False)
+                    next(
+                        job for job in allowed[1] if job["name"] == "summary"
+                    )["conclusion"] = "failure"
+                    unsupported = copy.deepcopy(allowed)
+                    unsupported[0]["conclusion"] = conclusion
+                    _add_pr_states(client, _pr(), _pr())
+                    _add_snapshot(
+                        client,
+                        [unsupported if snapshot == "initial" else allowed],
+                    )
+                    _add_snapshot(client, [unsupported])
+                    client.add(
+                        "PATCH", _endpoint(f"pulls/{PR_NUMBER}"),
+                        _pr(title="Corrected contract"),
+                    )
+                    _add_edit_transaction(client, title="Corrected contract")
+                    with self.assertRaises(pr_metadata.MetadataEditError):
+                        pr_metadata.edit_metadata(
+                            client,
+                            repository=REPOSITORY,
+                            pr_number=PR_NUMBER,
+                            head_sha=HEAD,
+                            base_sha=BASE,
+                            title="Corrected contract",
+                            body=None,
+                            essential_reason="Correct the contract",
+                        )
+                    self.assertTrue(
+                        all(method == "GET" for method, _, _ in client.calls)
+                    )
+
     def test_body_only_no_op_without_pair_is_refused(self):
         client = ScriptedClient()
         _add_pr_states(client, _pr(), _pr())
@@ -7648,6 +7688,27 @@ class PullRequestMetadataTests(unittest.TestCase):
                     pr_metadata._create_transaction_comment(
                         client, state, body=body, label="created comment fixture"
                     )
+
+    def test_creation_location_is_not_enabled_for_other_request_contexts(self):
+        raw = (
+            "HTTP/2.0 201 Created\n"
+            "Content-Type: application/json\r\n"
+            "Location: https://api.github.com/repos/owner/repo/issues/comments/405\r\n\r\n"
+            "{}"
+        ).encode("utf-8")
+
+        def runner(arguments, **kwargs):
+            return subprocess.CompletedProcess(arguments, 0, stdout=raw, stderr=b"")
+
+        for method, endpoint in (
+            ("POST", _endpoint("actions/runs/101/rerun")),
+            ("PATCH", _endpoint("issues/comments/405")),
+            ("GET", _endpoint(f"issues/{PR_NUMBER}/comments")),
+        ):
+            with self.subTest(method=method, endpoint=endpoint):
+                client = pr_metadata.GitHubClient("/usr/bin/true", runner=runner)
+                with self.assertRaisesRegex(pr_metadata.MetadataEditError, "Location"):
+                    client.request(method, endpoint, label="unexpected creation context")
 
     def test_duplicate_and_embedded_markers_are_rejected(self):
         cases = {
