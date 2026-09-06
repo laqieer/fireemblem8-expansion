@@ -167,6 +167,34 @@ class PublisherPhaseTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     verify._parse_workflow_structure_text(changed)
 
+    def test_every_unclassified_candidate_statement_rejects_in_both_consumers(self):
+        cases = list(fixtures.unclassified_candidate_workflows(self.workflow))
+        self.assertGreaterEqual(len(cases), 16)
+        for name, changed in cases:
+            with (
+                self.subTest(case=name), fixtures.captured_programs(changed),
+                inventory.refreshed_boundary_identities(changed),
+            ):
+                self.assertNotEqual(changed, self.workflow)
+                analysis = authority.reviewed_inventory().validate(
+                    inventory.contract.publisher_run_script(changed), entry_scope="staging",
+                )
+                with self.assertRaises(phase.PhaseError):
+                    phase.validate_producer(analysis)
+                self.assertTrue(publisher.publisher_boundary_errors(changed))
+                with self.assertRaises(ValueError):
+                    verify._parse_workflow_structure_text(changed)
+
+    def test_legitimate_nested_preflight_and_literal_notice_remain_classified(self):
+        changed = fixtures.diagnostic_spelling_control(self.workflow)
+        body = fixtures.candidate_script(changed).replace("readonly_path", "readonly_directory")
+        changed = fixtures.replace_candidate(changed, body)
+        with fixtures.captured_programs(changed), inventory.refreshed_boundary_identities(changed):
+            analysis = authority.validate_workflow(changed)
+            self.assertEqual(tuple(step.after for step in phase.validate(analysis))[-1], phase.Phase.POST_CHECKED)
+            self.assertEqual(publisher.publisher_boundary_errors(changed), [])
+            verify._parse_workflow_structure_text(changed)
+
     def test_removing_only_diagnostic_phase_reproduces_the_review_bypasses(self):
         selected = {
             "candidate-exits-make-preflight", "candidate-assignments-make-preflight",
@@ -707,6 +735,61 @@ isolated_stage=output-validate
                     self.assertEqual(result.stderr, "")
                 with fixtures.captured_programs(changed), self.assertRaises(phase.PhaseError):
                     authority.validate_workflow(changed)
+
+    def test_unknown_runtime_effects_are_confined_controls_not_valid_candidate_statements(self):
+        mutations = dict(fixtures.unclassified_candidate_workflows(self.workflow))
+        for name, expected_status, python_marker, recipe_ran, flags in (
+            ("handler-shadows-make", 75, False, False, "unset"),
+            ("root-python", 75, True, True, "unset"),
+            ("called-python-helper", 75, True, True, "unset"),
+            ("makeflags-assignment", 75, False, True, "-n"),
+            ("exported-makeflags", 0, False, False, "-n"),
+        ):
+            with self.subTest(case=name):
+                workflow = mutations[name]
+                with fixtures.captured_programs(workflow), self.assertRaises(phase.PhaseError):
+                    authority.validate_workflow(workflow)
+                directory = self.directory / name
+                directory.mkdir()
+                marker = directory / "runtime-marker"
+                self.assertFalse(marker.exists())
+                (directory / "Makefile").write_text(
+                    "expansion-modern-map-menu-presentation-check:\n"
+                    "\t@printf ran > make-ran\n\t@false\n"
+                )
+                body = fixtures.candidate_script(workflow)
+                commands = fixtures.root_commands(body)
+                fd_check = next(
+                    command for command in commands
+                    if tuple(word.literal for word in command.argv[:4])
+                    == ("/usr/bin/python3", "-I", "-S", "-c")
+                )
+                make = next(
+                    command for command in commands
+                    if command.argv and command.argv[0].literal == "make"
+                )
+                stage = next(
+                    command for command in commands
+                    if any(word.literal == "candidate_stage=make" for word in command.environment)
+                )
+                script = (
+                    "unset MAKEFLAGS\n" + body[:fd_check.offset]
+                    + body[stage.offset:stage.end] + "\n"
+                    + 'printf "%s" "${MAKEFLAGS-unset}" > observed-flags\n'
+                    + body[make.offset:make.end] + "\n"
+                )
+                completed = subprocess.run(
+                    ["/bin/bash", "--noprofile", "--norc", "-c", script],
+                    cwd=directory, env={"PATH": "/usr/bin:/bin", "LC_ALL": "C"},
+                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                    check=False, timeout=10,
+                )
+                self.assertEqual(completed.returncode, expected_status)
+                self.assertEqual(marker.exists(), python_marker)
+                if python_marker:
+                    self.assertEqual(marker.read_text(), "executed")
+                self.assertEqual((directory / "make-ran").exists(), recipe_ran)
+                self.assertEqual((directory / "observed-flags").read_text(), flags)
 
     def test_actual_candidate_and_host_failure_handlers_preserve_fixed_protocol(self):
         run = inventory.contract.publisher_run_script(self.workflow)

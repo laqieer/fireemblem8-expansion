@@ -311,6 +311,43 @@ def diagnostic_spelling_control(workflow):
     return replace_candidate(workflow, body)
 
 
+def unclassified_candidate_workflows(workflow):
+    body = candidate_script(workflow)
+    yield "handler-shadows-make", replace_candidate(
+        workflow, body.replace("candidate_stage_failure", "make"),
+    )
+    python = """/usr/bin/python3 -c 'open("runtime-marker", "w").write("executed")'"""
+    for name, statement in (
+        ("root-python", python),
+        ("called-python-helper", "candidate_extension() { " + python + "; }\ncandidate_extension"),
+        ("uncalled-python-helper", "candidate_extension() { " + python + "; }"),
+        ("makeflags-assignment", "MAKEFLAGS=-n"),
+        ("exported-makeflags", "export MAKEFLAGS=-n"),
+        ("printf-variable-write", "printf -v MAKEFLAGS '%s' -n"),
+        ("unknown-executable", "/unregistered/candidate-command"),
+        ("root-socket-scan", "/usr/bin/find / -xdev -type s -print -quit 2>/dev/null"),
+        ("nested-python", 'test -z "$(' + python + ')"'),
+        ("nested-assignment", 'test -z "$(MAKEFLAGS=-n)"'),
+        ("nested-format-python", "printf '%s\\n' \"$(" + python + ")\""),
+        ("unclassified-if", "if test -z ''; then test -z ''; fi"),
+        ("extra-preflight-loop", "for extra_path in /; do test -d \"$extra_path\"; done"),
+    ):
+        yield name, replace_candidate(
+            workflow, body.replace("trap candidate_stage_failure ERR\n",
+                                   "trap candidate_stage_failure ERR\n" + statement + "\n"),
+        )
+    yield "environment-on-make", replace_candidate(
+        workflow, body.replace("make expansion-modern", "MAKEFLAGS=-n make expansion-modern"),
+    )
+    yield "altered-nested-socket-scan", replace_candidate(
+        workflow, body.replace("/usr/bin/find / -xdev -type s", "/usr/bin/find / -xdev -type f"),
+    )
+    yield "assignment-in-preflight-loop", replace_candidate(
+        workflow, body.replace('  test -e "$readonly_path"',
+                               '  MAKEFLAGS=-n\n  test -e "$readonly_path"'),
+    )
+
+
 INVENTORY_CONTEXT_CASES = frozenset({
     "skipped-failure-arm", "conditional-launch-arm", "background-checker", "pipeline-checker",
     "background-builder-frame", "conditional-initialization", "conditional-post-check",

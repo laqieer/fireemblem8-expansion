@@ -682,6 +682,21 @@ class PublisherExactTreeTests(unittest.TestCase):
                 witnessed.add(name)
         self.assertEqual(witnessed, selected)
 
+    def test_real_cli_rejects_every_unclassified_candidate_statement(self):
+        path = self.directory / authority.WORKFLOW_PATH
+        original = path.read_text()
+        cases = list(phase_fixtures.unclassified_candidate_workflows(original))
+        self.assertGreaterEqual(len(cases), 16)
+        for name, changed in cases:
+            with self.subTest(mutation=name):
+                path.write_text(changed)
+                self.snapshot()
+                completed = self.cli()
+                self.assertEqual(completed.returncode, 1, completed.stderr)
+                self.assertIn(b"publisher phase:", completed.stderr)
+                self.assertNotIn(b"authority differs from exact tree", completed.stderr)
+                self.assertNotIn(b"canonical program differs", completed.stderr)
+
     def test_real_cli_enforces_dynamic_import_set_not_call_spelling(self):
         package = self.directory / "scripts/workflow_pilot/__init__.py"
         original = package.read_text()

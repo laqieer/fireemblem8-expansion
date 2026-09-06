@@ -100,7 +100,7 @@ def _candidate_codes() -> dict[str, int]:
 
 def _candidate_operation(command: shell.Command) -> str | None:
     """Identify phase effects, not a second command/argument permission list."""
-    if not command.argv:
+    if not command.argv or command.environment:
         return None
     executable = command.argv[0].literal
     arguments = tuple(word.literal for word in command.argv[1:])
@@ -114,6 +114,13 @@ def _candidate_operation(command: shell.Command) -> str | None:
         and arguments[:3] == ("-m", "pip", "install")
     ):
         return "pip"
+    if command == shell.command("/usr/bin/find / -xdev -type s -print -quit 2>/dev/null"):
+        return "socket-scan"
+    if (
+        executable == "printf" and len(arguments) >= 2 and arguments[0] == r"%s\n"
+        and all(argument is not None for argument in arguments) and not command.redirects
+    ):
+        return "notice"
     return {
         "test": "check", "cd": "chdir", "./build_tools.sh": "build-tools",
         "make": "make", "/usr/bin/make": "make", "/usr/bin/install": "handoff",
@@ -132,6 +139,10 @@ def _candidate_program(source: str) -> None:
     trap = armed[0]
     handler_name = trap.argv[1].literal
     _require(_literal_command(trap, "trap", handler_name, "ERR"), "candidate ERR callback differs")
+    _require(
+        handler_name not in {node.argv[0].literal for node in commands if node.argv},
+        "candidate ERR callback shadows or replaces an executed command",
+    )
     definitions = tuple(
         node for node in _walk(tree) if isinstance(node, shell.Function) and node.name == handler_name
     )
@@ -205,43 +216,57 @@ def _candidate_program(source: str) -> None:
     expected_stage = {
         "fd-check": "preflight", "check": "preflight", "venv": "venv",
         "pip": "pip", "chdir": "pip", "build-tools": "build-tools",
-        "make": "make", "handoff": "handoff",
+        "make": "make", "handoff": "handoff", "socket-scan": "preflight",
+        "notice": "preflight",
     }
     observed = Counter()
-    accounted = set()
+    accounted = {
+        id(node) for node in _walk(handler) if isinstance(node, shell.Command)
+    } | set(stages) | {id(node) for node in root_commands[:4]}
     stage = None
     for node in root:
         if isinstance(node, shell.Function):
+            _require(node is handler, "unclassified candidate helper definition")
             continue
         if id(node) in stages:
             stage = stages[id(node)]
             continue
         if any(node is prelude for prelude in root_commands[:4]):
             continue
+        if not isinstance(node, shell.Command):
+            _require(
+                isinstance(node, shell.For) and stage == "preflight" and not node.arithmetic
+                and all(isinstance(item, shell.Command) for item in _nodes(node.body)),
+                "unclassified candidate control statement",
+            )
+            observed["preflight-loop"] += 1
         for command in (item for item in _walk(node) if isinstance(item, shell.Command)):
             operation = _candidate_operation(command)
-            if operation is None:
-                _require(
-                    not command.argv or command.argv[0].literal not in {"exit", "return", "exec", "trap"},
-                    "candidate execution terminates or replaces its diagnostic callback early",
-                )
-                continue
+            _require(operation is not None, "unclassified candidate command or assignment")
             _require(stage == expected_stage[operation], "candidate operation is outside its diagnostic stage")
             _require(
-                operation == "check" or command is node,
+                operation in {"check", "socket-scan"} or command is node,
                 "candidate phase operation is conditional, asynchronous or in the wrong frame",
             )
+            if operation == "socket-scan":
+                _require(
+                    isinstance(node, shell.Command) and command is not node
+                    and _candidate_operation(node) == "check",
+                    "candidate socket scan must stay in its preflight check",
+                )
             observed[operation] += 1
             accounted.add(id(command))
     _require(
-        accounted == {id(node) for node in commands if _candidate_operation(node) is not None},
-        "candidate phase operation is hidden in a helper or callback",
+        accounted == {id(node) for node in commands},
+        "candidate statement is not covered by phase validation",
     )
     _require(observed.pop("check", 0) > 0, "candidate preflight checks are missing")
+    observed.pop("notice", 0)
     _require(
         observed == Counter({
             "fd-check": 1, "venv": 1, "pip": 1, "chdir": 1,
-            "build-tools": 1, "make": 1, "handoff": 2,
+            "build-tools": 1, "make": 1, "handoff": 2, "socket-scan": 1,
+            "preflight-loop": 3,
         }),
         "candidate diagnostic operations are missing or duplicated",
     )

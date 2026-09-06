@@ -307,6 +307,20 @@ diagnostic. Both reorderings reject even with refreshed outer identities.
 This adds phase/dataflow checks, not another command permission list, parser,
 entry scope or source-loader authority. The candidate payload stays data-only.
 
+Candidate statement coverage is fail-closed too: every parsed command must be
+accounted for by the checked prelude/callback, a literal stage write or a
+classified phase operation. Unclassified executables, helper definitions and
+calls, non-stage assignments and environment assignments on operations reject;
+keeping the known operation counts is not enough. The legitimate nested
+read-only `find` socket probe is explicitly classified and remains inside its
+preflight test, never an arbitrary root command. Only the existing preflight
+loop containers are admitted. Literal `%s\n` notices preserve harmless
+argument-text/refactor controls; `printf -v`, substitutions and redirections
+do not gain that classification. Canonical payload comparison still precedes
+this coverage check and cannot substitute for it. Callback renaming must not
+shadow an executed command; renaming the ERR helper to `make` would otherwise
+replace the build invocation rather than preserve its semantics.
+
 ### Dependencies, compatibility, and evidence boundary
 
 This is a genuine depth-one child of #200. While the parent PR is open the

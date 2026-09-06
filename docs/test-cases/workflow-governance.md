@@ -70,6 +70,15 @@ behavior. Publisher runtime cases use disposable Linux namespaces.
    Move the host diagnostic before its case mapping, or its exit before the
    mapping/diagnostic; each must also reject. Connected callback/state renaming,
    equivalent quotes and disjoint candidate case-arm order remain accepted.
+   Add an unclassified executable, root or helper-contained Python, a plain or
+   exported `MAKEFLAGS` assignment, an environment prefix on make, or unknown
+   commands/assignments inside a preflight substitution or loop. Each rejects
+   with all expected phase counts still present. The existing nested socket
+   probe remains valid, but moving it to the root or changing its query does
+   not grant another execution slot. Unknown helpers/controls and `printf -v`
+   also reject. Literal notice text and connected loop-variable renaming pass.
+   Renaming the ERR callback to `make` must reject rather than shadow the
+   actual build command; the owned runtime control proves no recipe executes.
 5. Observe the live namespace scenario. The exact foreground candidate PID is
    absent from `/proc` before the checker; only wrapper/checker remain, and the
    actual sealed export contains `target.gba` (32 MiB) and `metadata.json`
@@ -92,6 +101,13 @@ behavior. Publisher runtime cases use disposable Linux namespaces.
    `candidate-build-tools`/74. Moving the host diagnostic first reproduces an
    unset-variable exit 1, while moving exit first suppresses the diagnostic.
    These are deliberate pre-fix controls, not accepted publisher variants.
+8. Observe the additional owned runtime controls: otherwise-unclassified root
+   and helper Python commands write an inert marker if executed directly;
+   `MAKEFLAGS=-n` changes shell state, and exporting it prevents the fixture
+   make recipe from running and changes the controlled failure from 75 to 0.
+   Both semantic consumers and committed exact-tree CLI fixtures reject those
+   payloads before execution. No production build, external file or live
+   publisher process is used for these negative controls.
 
 ### Expected result
 
@@ -137,6 +153,11 @@ code/assignment and host-order bypasses in both production consumers. Keeping
 it rejects those same canonical-payload mutations. The real make and ERR-trap
 controls above pin the observable wrong/missing diagnostic independently of
 source spelling, command counts or stored shell identities.
+At pre-correction `18e242f57`, unclassified candidate commands/helpers and
+non-stage assignments pass both consumers and committed CLI validation while
+the known operation counts remain unchanged. The owned marker/dry-run controls
+above show their real effects; complete command accounting now rejects them,
+including nested statements, without rejecting the legitimate preflight probe.
 
 The canonical post-check also rejects real file deletions, extra names,
 symlinks/hardlinks/directories, changed ownership/modes, short targets and
