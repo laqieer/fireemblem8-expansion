@@ -673,6 +673,8 @@ class Policy:
             if c & ~PROT_READ:
                 raise Violation("adding executable/unknown memory protection denied")
         elif n == 59:
+            if self.mode == "command" and not state.bootstrap:
+                raise Violation("registered command post-bootstrap exec denied")
             path = self.path(pid, state, a)
             if path not in self.executable:
                 raise Violation(f"untrusted executable dispatch: {path}")

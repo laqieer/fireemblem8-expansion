@@ -24,7 +24,9 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
-from scripts.validation_ownership.authority import AuthorityLoader, ENVIRONMENT, GitTreeEntry, git_tree_entries
+from scripts.validation_ownership.authority import (
+    AuthorityLoader, ENVIRONMENT, GitTreeEntries, GitTreeEntry, Snapshot, git_tree_entries,
+)
 from scripts.validation_ownership.budget import Limits, MakeProbeError, NAMESPACE_LAUNCHER, ProbeBudget
 from scripts.validation_ownership.make_probe import (
     Command, ProbeSession, TRUSTED_ROOT, _event_command, _make_interpreter, _make_runtime,
@@ -54,10 +56,11 @@ class FoundationTests(unittest.TestCase):
         self.entries[path] = GitTreeEntry(path, mode, "blob", hashlib.sha1(data).hexdigest())
 
     def session(self, **limits):
+        budget = ProbeBudget(Limits(**limits))
         return ProbeSession(
-            AuthorityLoader(self.root, dict(self.entries)),
+            AuthorityLoader(self.root, GitTreeEntries(self.entries, budget=budget), budget=budget),
             scratch_root=self.scratch,
-            budget=ProbeBudget(Limits(**limits)),
+            budget=budget,
         )
 
     def assert_clean(self, session):
@@ -68,6 +71,318 @@ class FoundationTests(unittest.TestCase):
         self.assertIsNone(session.snapshot)
         self.assertIsNone(session.base)
         self.assertFalse(self.scratch.exists())
+
+    def capture_tree(self, budget):
+        def git(*args):
+            return subprocess.run(
+                ["/usr/bin/git", "-C", str(self.root), *args],
+                env=ENVIRONMENT, capture_output=True, check=True, timeout=10,
+            ).stdout
+        git("init", "--quiet")
+        git("add", "--", *sorted(self.entries))
+        revision = git("write-tree").decode("ascii").strip()
+        return git_tree_entries(self.root, revision, budget=budget), revision
+
+    def test_authority_stages_require_an_explicit_report_budget(self):
+        self.add("Makefile", "all: ;\n")
+        entries, revision = self.capture_tree(ProbeBudget())
+        loader = self.session().loader
+        for stage, operation in (
+            ("capture", lambda: git_tree_entries(self.root, revision)),
+            ("loader", lambda: AuthorityLoader(self.root, entries, revision)),
+            ("session", lambda: ProbeSession(loader, scratch_root=self.scratch)),
+        ):
+            with self.subTest(stage=stage):
+                with self.assertRaises(TypeError):
+                    operation()
+        self.assertFalse(self.scratch.exists())
+
+    def test_authority_composition_rejects_foreign_and_detached_budgets(self):
+        self.add("Makefile", "all: ;\n")
+        budget = ProbeBudget()
+        entries, revision = self.capture_tree(budget)
+        loader = AuthorityLoader(self.root, entries, revision, budget=budget)
+        self.assertIs(entries.budget, budget)
+        self.assertIs(loader.budget, budget)
+        before = (budget.started, budget.deadline, budget.runs, dict(budget.bytes))
+        for wrong in (None, object(), ProbeBudget()):
+            for stage, operation in (
+                ("loader", lambda: AuthorityLoader(self.root, entries, revision, budget=wrong)),
+                ("snapshot", lambda: Snapshot(loader, wrong)),
+                ("session", lambda: ProbeSession(loader, scratch_root=self.scratch, budget=wrong)),
+            ):
+                with self.subTest(stage=stage, budget=wrong):
+                    with self.assertRaisesRegex(MakeProbeError, "report budget"):
+                        operation()
+        for wrong in (None, object()):
+            with self.subTest(capture_budget=wrong):
+                with self.assertRaisesRegex(MakeProbeError, "explicit report budget"):
+                    git_tree_entries(self.root, revision, budget=wrong)
+        for detached in (dict(entries), entries.copy()):
+            with self.assertRaisesRegex(MakeProbeError, "capture's report budget"):
+                AuthorityLoader(self.root, detached, revision, budget=budget)
+        self.assertEqual((budget.started, budget.deadline, budget.runs, budget.bytes), before)
+        self.assertFalse(budget.children)
+        self.assertFalse(self.scratch.exists())
+
+    def test_authority_chain_keeps_capture_reads_snapshot_and_execution_on_one_budget(self):
+        self.add("Makefile", "all: ;\n")
+        budget = ProbeBudget()
+        entries, revision = self.capture_tree(budget)
+        started, deadline = budget.started, budget.deadline
+        self.assertEqual(budget.runs, 1)
+        capture_bytes = dict(budget.bytes)
+        loader = AuthorityLoader(self.root, entries, revision, budget=budget)
+        self.assertEqual(loader.read_blob("Makefile", "owned input"), b"all: ;\n")
+        self.assertEqual(budget.runs, 2)
+        self.assertGreater(budget.bytes["output"], capture_bytes["output"])
+        with ProbeSession(loader, scratch_root=self.scratch, budget=budget) as session:
+            self.assertIs(session.budget, budget)
+            self.assertIs(session.snapshot.budget, budget)
+            self.assertIs(loader.budget, budget)
+            self.assertIs(entries.budget, budget)
+            self.assertEqual(session.snapshot.files["Makefile"], b"all: ;\n")
+            self.assertEqual((budget.started, budget.deadline), (started, deadline))
+            self.assertGreater(budget.runs, 2)
+            self.assertGreater(budget.bytes["snapshot"], len(b"all: ;\n"))
+            runs, charged = budget.runs, dict(budget.bytes)
+            with self.assertRaisesRegex(MakeProbeError, "snapshot's report budget"):
+                session.snapshot.materialize(self.directory / "unfunded", ["Makefile"], ProbeBudget())
+            self.assertEqual((budget.runs, budget.bytes), (runs, charged))
+            self.assertFalse((self.directory / "unfunded").exists())
+            observed = session.make("all")
+            self.assertEqual(observed.semantics["files"][0]["target"], "all")
+            self.assertGreater(budget.runs, runs)
+            self.assertGreater(session.processes_used, 0)
+        self.assert_clean(session)
+        self.assertIs(loader.budget, budget)
+        self.assertTrue(budget.closed)
+        self.assertEqual((budget.started, budget.deadline), (started, deadline))
+
+    def test_capture_run_quota_cannot_be_reset_by_reads_snapshot_or_session(self):
+        self.add("Makefile", "all: ;\n")
+        for stage in ("read", "snapshot", "session"):
+            with self.subTest(stage=stage):
+                budget = ProbeBudget(Limits(runs=1))
+                entries, revision = self.capture_tree(budget)
+                loader = AuthorityLoader(self.root, entries, revision, budget=budget)
+                session = ProbeSession(loader, scratch_root=self.scratch, budget=budget)
+                with self.assertRaisesRegex(MakeProbeError, "aggregate process-launch budget"):
+                    if stage == "read":
+                        loader.read_blob("Makefile", "owned input")
+                    elif stage == "snapshot":
+                        Snapshot(loader, budget)
+                    else:
+                        with session:
+                            self.fail("capture quota was reset")
+                budget.close()
+                self.assertEqual(budget.runs, 2)
+                self.assertTrue(budget.failed)
+                self.assert_clean(session)
+
+    def test_direct_live_and_immutable_authority_reads_share_the_byte_quota(self):
+        self.add("Makefile", "all: ;\n")
+        self.add("input.bin", b"x"*2048)
+        for immutable in (False, True):
+            with self.subTest(immutable=immutable):
+                budget = ProbeBudget(Limits(total_bytes=4096, file_bytes=4096))
+                entries, revision = self.capture_tree(budget)
+                loader = AuthorityLoader(
+                    self.root, entries, revision if immutable else None, budget=budget,
+                )
+                captured = sum(budget.bytes.values())
+                self.assertEqual(loader.read_blob("input.bin", "owned input"), b"x"*2048)
+                self.assertGreaterEqual(sum(budget.bytes.values()), captured + 2048)
+                with self.assertRaisesRegex(MakeProbeError, "aggregate .*byte budget"):
+                    loader.read_blob("input.bin", "owned repeated input")
+                budget.close()
+                self.assertTrue(budget.failed)
+                self.assertFalse(budget.children)
+                self.assertFalse(self.scratch.exists())
+
+    def test_expired_capture_cannot_start_another_authority_stage(self):
+        self.add("Makefile", "all: ;\n")
+        budget = ProbeBudget(Limits(seconds=1))
+        entries, revision = self.capture_tree(budget)
+        loader = AuthorityLoader(self.root, entries, revision, budget=budget)
+        before = (budget.started, budget.deadline, budget.runs, dict(budget.bytes))
+        time.sleep(max(0, budget.deadline - time.monotonic()) + 0.02)
+        for stage, operation in (
+            ("capture", lambda: git_tree_entries(self.root, revision, budget=budget)),
+            ("loader", lambda: AuthorityLoader(self.root, entries, revision, budget=budget)),
+            ("read", lambda: loader.read_blob("Makefile", "expired input")),
+            ("snapshot", lambda: Snapshot(loader, budget)),
+            ("session", lambda: ProbeSession(loader, scratch_root=self.scratch, budget=budget)),
+        ):
+            with self.subTest(stage=stage):
+                with self.assertRaisesRegex(MakeProbeError, "aggregate probe deadline/budget"):
+                    operation()
+        self.assertEqual((budget.started, budget.deadline, budget.runs, budget.bytes), before)
+        self.assertFalse(budget.children)
+        self.assertFalse(self.scratch.exists())
+
+    def test_report_budget_binds_one_terminal_session_lifetime(self):
+        self.add("Makefile", "all: ;\n")
+        budget = ProbeBudget()
+        entries, revision = self.capture_tree(budget)
+        loader = AuthorityLoader(self.root, entries, revision, budget=budget)
+        second_loader = AuthorityLoader(self.root, entries, revision, budget=budget)
+        second = ProbeSession(second_loader, scratch_root=self.scratch, budget=budget)
+        with ProbeSession(loader, scratch_root=self.scratch, budget=budget) as session:
+            for another in (session, second):
+                with self.subTest(owner=another.loader is loader):
+                    with self.assertRaisesRegex(MakeProbeError, "already owns a probe session lifetime"):
+                        with another:
+                            self.fail("report acquired a second session")
+            self.assertFalse(budget.closed)
+            self.assertEqual(session.command(Command(("/usr/bin/printf", "original owner"))).stdout, b"original owner")
+        self.assert_clean(session)
+        before = (budget.started, budget.deadline, budget.runs, dict(budget.bytes))
+        for stage, operation in (
+            ("capture", lambda: git_tree_entries(self.root, revision, budget=budget)),
+            ("loader", lambda: AuthorityLoader(self.root, entries, revision, budget=budget)),
+            ("read", lambda: loader.read_blob("Makefile", "closed input")),
+            ("snapshot", lambda: Snapshot(loader, budget)),
+            ("session", lambda: ProbeSession(loader, scratch_root=self.scratch, budget=budget)),
+        ):
+            with self.subTest(closed_stage=stage):
+                with self.assertRaisesRegex(MakeProbeError, "aggregate probe deadline/budget"):
+                    operation()
+        budget.close()
+        self.assertTrue(budget.closed)
+        self.assertEqual((budget.started, budget.deadline, budget.runs, budget.bytes), before)
+        self.assertFalse(self.scratch.exists())
+
+    def test_registered_python_reexec_rejects_before_replacement_startup(self):
+        replacement = (
+            "import json,sys\n"
+            "open('/work/reexecuted','w').write(json.dumps("
+            "[sys.flags.isolated,sys.flags.no_site,sys.flags.dont_write_bytecode]))\n"
+        )
+        operations = (
+            ("first-launch", "", None),
+            ("execve", "os.execve('/usr/bin/python3',argv,environment)", "post-bootstrap exec"),
+            ("no-startup-flags", "os.execve('/usr/bin/python3',argv[0:1]+argv[2:],environment)", "post-bootstrap exec"),
+            ("runtime-alias", "os.execve('/bin/python3',argv,environment)", "post-bootstrap exec"),
+            ("raw-execve", "libc.syscall(59,b'/usr/bin/python3',vector,envp)", "post-bootstrap exec"),
+            ("fork-execve",
+             "child=os.fork()\n"
+             "if child:\n"
+             " _,status=os.waitpid(child,0)\n"
+             " os._exit(os.waitstatus_to_exitcode(status))\n"
+             "os.execve('/usr/bin/python3',argv,environment)", "post-bootstrap exec"),
+            ("execveat-path", "libc.syscall(322,-100,b'/usr/bin/python3',vector,envp,0)", "unadmitted syscall 322"),
+            ("execveat-fd",
+             "descriptor=os.open('/usr/bin/python3',os.O_RDONLY)\n"
+             "libc.syscall(322,descriptor,b'',vector,envp,0x1000)", "unadmitted syscall 322"),
+        )
+        for name, operation, rejected in operations:
+            with self.subTest(entry=name):
+                self.add("launch.py", (
+                    "import ctypes,json,os,sys\n"
+                    "flags=[sys.flags.isolated,sys.flags.no_site,sys.flags.dont_write_bytecode]\n"
+                    "open('/work/initial','w').write(json.dumps(flags))\n"
+                    "environment={key:value for key,value in os.environ.items() if key!='PYTHONDONTWRITEBYTECODE'}\n"
+                    "argv=" + repr(["/usr/bin/python3", "-S", "-c", replacement]) + "\n"
+                    "vector=(ctypes.c_char_p*(len(argv)+1))(*(value.encode() for value in argv),None)\n"
+                    "envp=(ctypes.c_char_p*(len(environment)+1))("
+                    "*(f'{key}={value}'.encode() for key,value in environment.items()),None)\n"
+                    "libc=ctypes.CDLL(None)\n" + operation + "\n"
+                ))
+                markers = {}
+                session = self.session()
+                with session:
+                    run = session._sandbox_run
+                    def observing(root, **kwargs):
+                        try:
+                            return run(root, **kwargs)
+                        finally:
+                            for path in session.base.glob("command-*/output/*"):
+                                markers[path.name] = json.loads(path.read_bytes())
+                    with patch.object(session, "_sandbox_run", observing):
+                        command = Command(("/usr/bin/python3", "/repo/launch.py"), code=("launch.py",))
+                        if rejected is None:
+                            self.assertEqual(session.command(command).stdout, b"")
+                        else:
+                            with self.assertRaisesRegex(MakeProbeError, rejected):
+                                session.command(command)
+                    self.assertEqual(markers, {"initial": [1, 1, 1]})
+                self.assert_clean(session)
+
+    def test_registered_native_reexec_and_inherited_entry_paths_reject(self):
+        self.add("reexec.c", r'''
+#define _GNU_SOURCE
+#include <fcntl.h>
+#include <sched.h>
+#include <signal.h>
+#include <string.h>
+#include <sys/mman.h>
+#include <sys/syscall.h>
+#include <sys/wait.h>
+#include <unistd.h>
+extern char **environ;
+static int mark(const char *path) {
+    int fd=open(path,O_CREAT|O_WRONLY,0600);
+    if(fd<0) return 1;
+    return write(fd,"owned",5)!=5 || close(fd);
+}
+static int launch(void *unused) {
+    char *args[]={"/native/tool","child",0};
+    (void)unused;
+    execve(args[0],args,environ);
+    _exit(7);
+}
+int main(int argc,char **argv) {
+    int status,fd; pid_t child;
+    char *args[]={"/native/tool","child",0};
+    if(argc!=2) return 1;
+    if(!strcmp(argv[1],"child")) return mark("/work/reexecuted");
+    if(mark("/work/initial")) return 2;
+    if(!strcmp(argv[1],"initial")) return 0;
+    if(!strcmp(argv[1],"execve")) return launch(0);
+    if(!strcmp(argv[1],"execveat")) {
+        syscall(SYS_execveat,AT_FDCWD,args[0],args,environ,0); return 3;
+    }
+    if(!strcmp(argv[1],"execveat-fd")) {
+        fd=open(args[0],O_RDONLY);
+        if(fd<0) return 3;
+        syscall(SYS_execveat,fd,"",args,environ,AT_EMPTY_PATH); return 3;
+    }
+    if(!strcmp(argv[1],"fork")) child=fork();
+    else if(!strcmp(argv[1],"vfork")) child=vfork();
+    else if(!strcmp(argv[1],"clone-vfork")) {
+        void *stack=mmap(0,65536,PROT_READ|PROT_WRITE,MAP_PRIVATE|MAP_ANONYMOUS,-1,0);
+        if(stack==MAP_FAILED) return 4;
+        child=clone(launch,(char *)stack+65536,CLONE_VM|CLONE_VFORK|SIGCHLD,0);
+    } else return 4;
+    if(child<0) return 5;
+    if(!child) return launch(0);
+    if(waitpid(child,&status,0)!=child || status) return 6;
+    return 0;
+}
+''')
+        for entry in ("initial", "execve", "fork", "vfork", "clone-vfork", "execveat", "execveat-fd"):
+            with self.subTest(entry=entry):
+                markers = {}
+                session = self.session()
+                with session:
+                    tool = session.compile_native(("reexec.c",))
+                    run = session._sandbox_run
+                    def observing(root, **kwargs):
+                        try:
+                            return run(root, **kwargs)
+                        finally:
+                            for path in session.base.glob("command-*/output/*"):
+                                markers[path.name] = path.read_bytes()
+                    with patch.object(session, "_sandbox_run", observing):
+                        if entry == "initial":
+                            self.assertEqual(session.native(tool, (entry,)).stdout, b"")
+                        else:
+                            expected = "unadmitted syscall 322" if entry.startswith("execveat") else "post-bootstrap exec"
+                            with self.assertRaisesRegex(MakeProbeError, expected):
+                                session.native(tool, (entry,))
+                    self.assertEqual(markers, {"initial": b"owned"})
+                self.assert_clean(session)
 
     def test_trusted_startup_vectors_exclude_owned_prefix_hooks(self):
         prefix = self.directory / "owned-python"
@@ -418,10 +733,13 @@ print("delivered after reaping")
 import os,shutil,signal,sys
 from pathlib import Path
 sys.path.insert(0,sys.argv[1])
-from scripts.validation_ownership.authority import AuthorityLoader,GitTreeEntry
+from scripts.validation_ownership.authority import AuthorityLoader,GitTreeEntries,GitTreeEntry
+from scripts.validation_ownership.budget import ProbeBudget
 from scripts.validation_ownership.make_probe import ProbeSession
 root,scratch=map(Path,sys.argv[2:4])
-session=ProbeSession(AuthorityLoader(root,{"Makefile":GitTreeEntry("Makefile","100644","blob","0"*40)}),scratch_root=scratch)
+budget=ProbeBudget()
+entries=GitTreeEntries({"Makefile":GitTreeEntry("Makefile","100644","blob","0"*40)},budget=budget)
+session=ProbeSession(AuthorityLoader(root,entries,budget=budget),scratch_root=scratch,budget=budget)
 # This control targets real file/state teardown and the default OS signal
 # action; tool/namespace execution is exercised by the other process cases.
 session._tools=lambda:None
@@ -927,7 +1245,7 @@ int main(int argc,char **argv) {
         command = self.registry_fixture("first")
         with self.session() as session:
             runs = session.budget.runs
-            foreign = AuthorityLoader(self.root, dict(self.entries))
+            foreign = self.session().loader
             with self.assertRaisesRegex(MakeProbeError, "loader/budget differs"):
                 probe_generated_registry(foreign, command=command, session=session)
             with patch.object(session.loader, "budget", ProbeBudget()):
@@ -1412,7 +1730,16 @@ int main(int argc, char **argv) {
         with self.session() as session:
             tool = session.compile_native(("exec.c",))
             session.budget.limits = replace(session.budget.limits, address_space_bytes=32*1024*1024)
-            self.assertEqual(session.native(tool).stdout, b"child\n"*4 + b"parent\n")
+            run = session._sandbox_run
+            def compiler_driver(root, **kwargs):
+                # This owned driver exercises the compiler's supported repeated
+                # exec domain; registered commands now deliberately deny reexec.
+                self.assertEqual(kwargs["mode"], "command")
+                self.assertEqual(kwargs["argv"], ["/native/tool"])
+                kwargs["mode"] = "compile"
+                return run(root, **kwargs)
+            with patch.object(session, "_sandbox_run", compiler_driver):
+                self.assertEqual(session.native(tool).stdout, b"child\n"*4 + b"parent\n")
         self.assert_clean(session)
 
     def test_shared_vm_growth_counts_every_live_member(self):
@@ -1469,6 +1796,100 @@ int main(int argc, char **argv) {
                                 session.make("all", assignments=((origin, name, value),))
                             self.assertEqual(session.budget.runs, runs)
                         self.assert_clean(session)
+
+    def ordinary_assignment_context(self, assignments, names):
+        environment, cli = dict(ENVIRONMENT), []
+        for origin, name, value in assignments:
+            if origin == "environment":
+                environment[name] = value
+            else:
+                cli.append(name + "=" + value)
+        normal = subprocess.run(
+            ["/usr/bin/make", "-f", "Makefile", *cli, "all"],
+            cwd=self.root, env=environment, capture_output=True, check=True, timeout=10,
+        )
+        lines = normal.stdout.decode("utf-8").splitlines()
+        self.assertEqual(len(lines), 1 + 3*len(names), normal.stdout)
+        return (
+            [{"name": name, "order_only": False} for name in lines[0].split()],
+            {
+                name: dict(zip(("value", "origin", "flavor"), lines[1 + index*3:4 + index*3]))
+                for index, name in enumerate(names)
+            },
+        )
+
+    def test_equivalent_assignment_order_preserves_actual_make_identity(self):
+        self.add("Makefile", (
+            "all: $(B)\n"
+            "\t@printf '%s\\n' '$^' '$(A)' '$(origin A)' '$(flavor A)' "
+            "'$(B)' '$(origin B)' '$(flavor B)'\n"
+            "one-two: ;\n"
+        ))
+        for origins in (
+            ("environment", "environment"), ("command-line", "command-line"),
+            ("environment", "command-line"), ("command-line", "environment"),
+        ):
+            with self.subTest(origins=origins):
+                assignments = ((origins[0], "A", "one"), (origins[1], "B", "$(A)-two"))
+                normal, observed = [], []
+                with self.session() as session:
+                    for order in (assignments, tuple(reversed(assignments))):
+                        context = self.ordinary_assignment_context(order, ("A", "B"))
+                        result = session.make("all", variables=("A", "B"), assignments=order)
+                        self.assertEqual(result.semantics["files"][0]["prerequisites"], context[0])
+                        self.assertEqual(result.semantics["domains"], context[1])
+                        self.assertEqual(result.events, ())
+                        normal.append(context)
+                        observed.append(result)
+                self.assert_clean(session)
+                self.assertEqual(normal[0], normal[1])
+                self.assertEqual(observed[0].execution_digest, observed[1].execution_digest)
+                self.assertEqual(observed[0].semantic_digest, observed[1].semantic_digest)
+                self.assertEqual(observed[0].semantics, observed[1].semantics)
+
+    def test_assignment_identity_preserves_values_origins_and_observed_order(self):
+        names = ("A", "B", "STATE")
+        recipe = (
+            "\t@printf '%s\\n' '$^' '$(A)' '$(origin A)' '$(flavor A)' "
+            "'$(B)' '$(origin B)' '$(flavor B)' '$(STATE)' '$(origin STATE)' '$(flavor STATE)'\n"
+        )
+        self.add("Makefile", "all: $(B)\n" + recipe + "one-two other-two: ;\n")
+        states = (
+            (("command-line", "A", "one"), ("command-line", "B", "$(A)-two")),
+            (("command-line", "A", "other"), ("command-line", "B", "$(A)-two")),
+            (("environment", "A", "one"), ("command-line", "B", "$(A)-two")),
+        )
+        with self.session() as session:
+            results = []
+            for state in states:
+                normal = self.ordinary_assignment_context(state, names)
+                result = session.make("all", variables=names, assignments=state)
+                self.assertEqual(result.semantics["files"][0]["prerequisites"], normal[0])
+                self.assertEqual(result.semantics["domains"], normal[1])
+                results.append(result)
+            self.assertEqual(len({result.semantic_digest for result in results}), len(states))
+            self.assertEqual(len({result.execution_digest for result in results}), 1)
+        self.assert_clean(session)
+        self.add("Makefile", (
+            "STATE = $(MAKEOVERRIDES)\n"
+            "all: $(if $(filter B=%,$(firstword $(MAKEOVERRIDES))),right,left)\n"
+            + recipe + "right left: ;\n"
+        ))
+        with self.session() as session:
+            results = []
+            for state in (states[0], tuple(reversed(states[0]))):
+                normal = self.ordinary_assignment_context(state, names)
+                result = session.make("all", variables=names, assignments=state)
+                self.assertEqual(result.semantics["files"][0]["prerequisites"], normal[0])
+                self.assertEqual(result.semantics["domains"], normal[1])
+                results.append(result)
+            self.assertNotEqual(
+                results[0].semantics["files"][0]["prerequisites"],
+                results[1].semantics["files"][0]["prerequisites"],
+            )
+            self.assertNotEqual(results[0].semantics["domains"], results[1].semantics["domains"])
+            self.assertNotEqual(results[0].semantic_digest, results[1].semantic_digest)
+        self.assert_clean(session)
 
     def test_conditional_graphs_match_ordinary_make_not_probe_markers(self):
         controls = (
@@ -1701,7 +2122,11 @@ int main(int argc, char **argv) {
                         os.chmod(path, 0, dir_fd=dir_fd)
                     return result
                 descriptors = set(os.listdir("/proc/self/fd"))
-                session = ProbeSession(AuthorityLoader(self.root, entries), scratch_root=self.scratch)
+                budget = ProbeBudget()
+                session = ProbeSession(
+                    AuthorityLoader(self.root, GitTreeEntries(entries, budget=budget), budget=budget),
+                    scratch_root=self.scratch, budget=budget,
+                )
                 with patch("os.open", opening), patch("os.mkdir", making):
                     with self.assertRaises(KeyboardInterrupt if failure == "interrupt" else MakeProbeError) as caught:
                         with session:

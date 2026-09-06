@@ -2345,7 +2345,9 @@ Start from a clean checkout; fixtures use only ignored `build/test-artifacts`.
     process's virtual credit and continue it without another supervisor
     accounting call: kernel limits must block the stack fault. Verify the sum
     of assigned kernel bounds plus pending fork credit, shared-VM growth, and
-    repeated vfork/exec accounting. No RSS, huge allocation, global setting or
+    repeated vfork/exec accounting in the owned compiler-role driver.
+    Registered native command reexec is deliberately denied, not an exception
+    to that startup policy. No RSS, huge allocation, global setting or
     unrelated process is part of these controls.
 17. In the selected production namespace route, create only owned, size-limited
     1 MiB tmpfs fixtures with two submount levels. Recursively bind them into
@@ -2410,6 +2412,35 @@ Start from a clean checkout; fixtures use only ignored `build/test-artifacts`.
     must not duplicate records or change the digest. An unregistered command,
     failed source observation or exhausted mapping quota must still reject,
     even when that speculative branch would later disappear.
+24. Capture a real fixture Git tree with an explicit report budget. Omit the
+    budget from capture, loader or session construction; pass `None`, another
+    budget or a detached entries dictionary; attempt foreign-budget snapshot
+    materialization. All must reject before launching or writing anything.
+    A valid loader/read/snapshot/Make sequence must retain the capture's exact
+    budget, original deadline and increasing counters. With a one-launch
+    limit, tree capture must prevent any subsequent read, snapshot or session
+    launch. Repeated live and immutable reads must exhaust the same byte
+    quota. Expire the capture deadline and close a successful session: neither
+    may start another authority stage. A second session, even through another
+    loader, must reject without disrupting the still-active original owner.
+25. Run ordinary GNU Make and the probe with two unique assignments in both
+    orders, using each supported origin and both mixed-origin combinations.
+    Include a recursive `B=$(A)-two` value. Equivalent native prerequisites,
+    values, origins and flavors must produce the same semantic digest.
+    Changed values/origins must still change it. Then use `MAKEOVERRIDES` to
+    select a prerequisite from command-line order: both the ordinary result
+    and native observation must preserve that meaningful difference. Sorting
+    executed argv or discarding the order-sensitive observation must fail.
+26. Run a registered Python command that writes its initial startup flags to
+    an owned `/work/initial` marker. Require `[1,1,1]` for `-I/-S/-B`. Then
+    attempt reexec with changed argv/environment, no startup flags, a runtime
+    alias, a raw syscall and a forked child. Each must reject at exec entry,
+    before replacement startup can create `/work/reexecuted`.
+    Compile an owned native control and repeat direct, fork, vfork and
+    suspended-parent clone reexec. Its initial launch must still work.
+    Path-based and descriptor/empty-path `execveat` stay rejected in both
+    controls. Real compiler and Make dispatch positives must remain accepted;
+    every negative must remove owned children, channels, cache and scratch.
 
 ### Expected result
 
@@ -2494,6 +2525,17 @@ discarded source/output or code changed the owner's digest while ordinary Make
 and the final prerequisite graph stayed identical. Real conditional Make
 fixtures preserve this control; final-pass filtering cannot excuse failed
 source accounting or speculative work that exceeds aggregate bounds.
+
+The earlier reusable API spent a capture budget's single launch, discarded its
+identity at the loader and accepted a real command under a fresh session
+budget. Equivalent reordered environment/command-line assignment contexts
+also produced different digests despite matching ordinary Make observations.
+The new order control retains the genuinely different `MAKEOVERRIDES` graph.
+The earlier path-only exec guard let a registered Python command replace
+itself with only `-S` and write an owned marker with flags `[0,1,0]`. Omitting
+all isolation flags reached site-startup metadata before rejecting for an
+unrelated path violation. The corrected guard must reject the exec itself,
+not rely on that later error or an absent marker alone.
 
 ### Interactions and save compatibility
 

@@ -84,8 +84,20 @@ class GitTreeEntry:
     object_id: str
 
 
-def git_tree_entries(root: Path, revision: str = "HEAD", *, budget=None):
-    budget = ProbeBudget() if budget is None else budget
+class GitTreeEntries(dict[str, GitTreeEntry]):
+    """An entry map bound to the report budget that captured it."""
+
+    def __init__(self, entries, *, budget: ProbeBudget):
+        if not isinstance(budget, ProbeBudget):
+            raise MakeProbeError("authority capture requires an explicit report budget")
+        budget.remaining()
+        super().__init__(entries)
+        self.budget = budget
+
+
+def git_tree_entries(root: Path, revision: str = "HEAD", *, budget: ProbeBudget):
+    if not isinstance(budget, ProbeBudget):
+        raise MakeProbeError("authority capture requires an explicit report budget")
     result = {}
     for row in git(root, budget, "ls-tree", "-rz", "--full-tree", revision).split(b"\0"):
         if not row:
@@ -98,23 +110,30 @@ def git_tree_entries(root: Path, revision: str = "HEAD", *, budget=None):
         result[name] = GitTreeEntry(name, mode, kind, oid)
     if not result:
         raise MakeProbeError("empty authority tree")
-    return result
+    return GitTreeEntries(result, budget=budget)
 
 
 class AuthorityLoader:
-    """PR186-compatible entry/read API; live reads reject every symlink component."""
+    """Report-bound entry/read API; live reads reject every symlink component."""
 
-    def __init__(self, root, entries, revision=None, scratch_root=None):
+    def __init__(self, root, entries, revision=None, scratch_root=None, *, budget: ProbeBudget):
+        if (
+            not isinstance(entries, GitTreeEntries) or not isinstance(budget, ProbeBudget)
+            or entries.budget is not budget
+        ):
+            raise MakeProbeError("authority loader requires its capture's report budget")
+        budget.remaining()
         self.root = Path(os.path.abspath(root))
         self.entries = entries
         self.revision = revision
         self.scratch_root = scratch_root
-        self.budget = None
+        self.budget = budget
         self.live_modes = {}
         if self.root.is_symlink() or not self.root.is_dir():
             raise MakeProbeError("authority root must be a non-symlink directory")
 
     def entry(self, relative, label):
+        self.budget.remaining()
         name = relative_path(str(relative))
         entry = self.entries.get(name)
         if entry is None or entry.path != name or entry.mode not in {"100644", "100755"} or entry.object_type != "blob":
@@ -124,8 +143,6 @@ class AuthorityLoader:
     def read_blob(self, relative, label):
         entry = self.entry(relative, label)
         if self.revision is not None:
-            if self.budget is None:
-                raise MakeProbeError("immutable reads require the caller's aggregate budget")
             return git(self.root, self.budget, "cat-file", "blob", entry.object_id)
         descriptor = os.open(self.root, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
         try:
@@ -141,8 +158,9 @@ class AuthorityLoader:
                 before = os.fstat(fd)
                 if not stat.S_ISREG(before.st_mode):
                     raise MakeProbeError(f"{label}: nonregular live blob")
-                if self.budget and before.st_size > self.budget.limits.file_bytes:
+                if before.st_size > self.budget.limits.file_bytes:
                     self.budget.reject("authority blob exceeds byte bound")
+                self.budget.charge("snapshot", before.st_size)
                 with os.fdopen(fd, "rb", closefd=False) as stream:
                     data = stream.read(before.st_size + 1)
                 after = os.fstat(fd)
@@ -165,6 +183,7 @@ class AuthorityLoader:
         return parse_json(self.read_blob(relative, label), label)
 
     def read_link(self, relative):
+        self.budget.remaining()
         parts = relative_path(relative).split("/")
         descriptor = os.open(self.root, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
         try:
@@ -174,7 +193,9 @@ class AuthorityLoader:
                 )
                 os.close(descriptor)
                 descriptor = following
-            return os.fsencode(os.readlink(parts[-1], dir_fd=descriptor))
+            data = os.fsencode(os.readlink(parts[-1], dir_fd=descriptor))
+            self.budget.charge("snapshot", len(data))
+            return data
         except OSError as error:
             raise MakeProbeError("live symlink changed type or has an unsafe ancestor") from error
         finally:
@@ -185,10 +206,16 @@ class Snapshot:
     """An immutable in-memory execution view, not semantic owner identity."""
 
     def __init__(self, loader: AuthorityLoader, budget: ProbeBudget):
+        if (
+            not isinstance(budget, ProbeBudget) or budget is not loader.budget
+            or budget is not loader.entries.budget
+        ):
+            raise MakeProbeError("snapshot requires its authority's report budget")
+        budget.remaining()
+        self.budget = budget
         self.files = {}
         self.modes = {}
         records = []
-        loader.budget = budget
         if not 1 <= len(loader.entries) <= budget.limits.entries:
             budget.reject("snapshot entry count exceeds aggregate bound")
         immutable = {}
@@ -246,6 +273,9 @@ class Snapshot:
         self.digest = hashlib.sha256(encoded(records)).hexdigest()
 
     def materialize(self, destination: Path, paths, budget: ProbeBudget):
+        if budget is not self.budget:
+            raise MakeProbeError("materialization requires its snapshot's report budget")
+        budget.remaining()
         for name in sorted(paths):
             budget.remaining()
             relative_path(name)

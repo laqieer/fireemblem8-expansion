@@ -70,6 +70,8 @@ class ProbeBudget:
     states: int = field(default=0, init=False)
     children: dict[subprocess.Popen, bool] = field(default_factory=dict, init=False)
     failed: bool = field(default=False, init=False)
+    closed: bool = field(default=False, init=False)
+    session_started: bool = field(default=False, init=False)
 
     @property
     def deadline(self) -> float:
@@ -77,7 +79,7 @@ class ProbeBudget:
 
     def remaining(self) -> float:
         remaining = self.deadline - time.monotonic()
-        if self.failed or remaining <= 0:
+        if self.failed or self.closed or remaining <= 0:
             self.failed = True
             raise MakeProbeError("aggregate probe deadline/budget exhausted")
         return remaining
@@ -134,6 +136,7 @@ class ProbeBudget:
         child.wait()
 
     def close(self):
+        self.closed = True
         def stop(child, privileged):
             self._terminate(child, privileged)
             del self.children[child]

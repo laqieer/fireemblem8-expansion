@@ -376,12 +376,18 @@ def _scratch_directory(loader, requested):
 class ProbeSession:
     """The only execution authority; one lifetime, deadline, cache and queue."""
 
-    def __init__(self, loader: AuthorityLoader, *, scratch_root: Path, budget=None):
+    def __init__(self, loader: AuthorityLoader, *, scratch_root: Path, budget: ProbeBudget):
         if not isinstance(loader, AuthorityLoader):
             raise MakeProbeError("probe requires its exact-tree authority loader")
+        if (
+            not isinstance(budget, ProbeBudget) or budget is not loader.budget
+            or budget is not loader.entries.budget
+        ):
+            raise MakeProbeError("probe session requires its authority's report budget")
+        budget.remaining()
         self.loader = loader
         self.scratch_root = Path(scratch_root)
-        self.budget = ProbeBudget() if budget is None else budget
+        self.budget = budget
         self.base = None
         self.created = []
         self.cache = {}
@@ -397,6 +403,10 @@ class ProbeSession:
         self.owner_thread = get_ident()
 
     def __enter__(self):
+        if self.budget.session_started:
+            raise MakeProbeError("report budget already owns a probe session lifetime")
+        self.budget.remaining()
+        self.budget.session_started = True
         try:
             if get_ident() != main_thread().ident:
                 raise MakeProbeError("probe lifetime requires the main execution worker")
@@ -434,7 +444,6 @@ class ProbeSession:
             self.native_tools.clear()
             self.make_runtime = ()
             self.snapshot = None
-            self.loader.budget = None
             self.loader.live_modes.clear()
         def remove_base():
             if self.base is not None:
@@ -903,7 +912,7 @@ class ProbeSession:
                     semantics = _read_observation(
                         self.budget.read_bytes(result_path, "control"), target, variables,
                     )
-                    semantics["assignments"] = list(assignments)
+                    semantics["assignments"] = sorted(assignments, key=lambda item: item[1])
                     recipe_sources = {
                         record["source"] for record in semantics["files"] if record["source"]
                     }

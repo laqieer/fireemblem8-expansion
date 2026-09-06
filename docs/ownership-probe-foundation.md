@@ -222,6 +222,13 @@ requires successful GNU Make completion and its authenticated observation.
 
 Registered Python/printf/uname commands run in a distinct capsule with **no**
 Make event, mapping, observer or result mount. Python always receives `-I -S -B`.
+Only the trusted bootstrap may perform that capsule's initial exec. Subsequent
+`execve` attempts reject before kernel dispatch, even for the same executable,
+runtime alias or otherwise isolated argv. Fork/vfork/clone descendants inherit
+the spent bootstrap state; they cannot reacquire startup authority. `execveat`,
+including descriptor/empty-path dispatch, remains unadmitted. This also applies
+to session-issued native commands. Compiler subprocesses and authenticated
+Make/interceptor transitions retain their existing separate execution policy.
 The supported runtime admits its standard-library/shared-library paths and a
 small explicit set of runtime startup probes, not arbitrary `/usr/share` data.
 Runtime probes into absent proc/etc locations stay absent: they do not create
@@ -290,6 +297,16 @@ Two identities deliberately serve different purposes:
   repeated events use them. Every speculative command still requires complete
   authority, successful source accounting and the same aggregate charges/cache.
 
+Unique-name assignment metadata is canonicalized by name, retaining each
+origin and value. Environment and command-line assignments, including mixed
+origins and recursive references, therefore have the same semantic identity
+when reordering them leaves the native target/domain observations equivalent.
+The executed argv and environment application order are **not** reordered.
+Order-sensitive Make observations, such as a `MAKEOVERRIDES` value or a
+prerequisite selected from it, remain intact and continue to change the digest.
+This does not expand the metadata-only recipe contract into production recipe
+execution or artifact validation.
+
 Do not hash the whole `MakeObservation` when computing an owner identity:
 consume `semantic_digest`, not `execution_digest`. These are ephemeral
 execution/semantic boundaries, not committed source ledgers or ROM identity
@@ -309,7 +326,7 @@ from scripts.validation_ownership.make_probe import ProbeSession
 root = Path.cwd()
 budget = ProbeBudget()
 entries = git_tree_entries(root, "HEAD", budget=budget)
-loader = AuthorityLoader(root, entries, "HEAD")
+loader = AuthorityLoader(root, entries, "HEAD", budget=budget)
 with ProbeSession(loader, scratch_root=root / "build/test-artifacts/probe",
                   budget=budget) as probe:
     observation = probe.make(
@@ -317,6 +334,23 @@ with ProbeSession(loader, scratch_root=root / "build/test-artifacts/probe",
         variables=("LOCALIZATION_OUT_DIR",), owner_inputs=("localization.mk",))
     print(observation.semantic_digest)
 ```
+
+The capture, loader and session APIs all require an explicit `budget`;
+omission, `None` and foreign-budget composition reject. `git_tree_entries`
+returns a mapping-compatible `GitTreeEntries` carrying the capture budget.
+Detaching it into a plain dictionary does not create valid loader authority.
+The loader and snapshot retain that same budget instead of rebinding it at
+session entry or clearing it at exit. Direct live/immutable authority reads
+also spend the report's byte/run quota before any session starts.
+
+One budget may enter only one session lifetime, including through another
+loader or a second `with` on the same session. Rejected duplicate entry does
+not tear down the active owner. Closing the report budget is terminal:
+capture, reads, snapshotting, materialization and execution cannot restart
+after closure or expiry. The complete-operation CLI/`consumer.check` remains
+the convenience owner that constructs one budget and passes it through every
+stage. This is explicit trusted-caller API binding, not a global budget service
+or a defense against arbitrary Python object mutation.
 
 The registry helper requires that same active owner:
 `probe_generated_registry(loader, command=command, session=probe)`.

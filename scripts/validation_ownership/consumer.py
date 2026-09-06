@@ -13,7 +13,7 @@ from .make_probe import Command, ProbeSession, TRUSTED_ROOT, probe_generated_reg
 def check(root: Path, revision: str | None):
     budget = ProbeBudget()
     entries = git_tree_entries(root, revision or "HEAD", budget=budget)
-    loader = AuthorityLoader(root, entries, revision)
+    loader = AuthorityLoader(root, entries, revision, budget=budget)
     with ProbeSession(
         loader, scratch_root=root / "build/test-artifacts/ownership-probe", budget=budget,
     ) as session:
