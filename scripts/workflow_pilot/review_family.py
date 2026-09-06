@@ -621,10 +621,12 @@ def assess_handoff(request: dict, members: tuple[Obligation, ...],
         matching = [row for row in outcomes if row["finding_id"] == finding.id]
         require(any(row["member"] == finding.member for row in matching),
                 "unknown reported member")
-        require(any(row["outcome"] == "affected-fixed" for row in matching),
-                "no affected-fixed production obligation")
+        require(any(row["member"] == finding.member and row["outcome"] == "affected-fixed"
+                    for row in matching),
+                "reported member has no affected-fixed origin evidence")
     latest = triage[-1] if triage else None
-    clean = bool(latest and latest.fact.head == session.head and latest.outcome == "clean")
+    clean = bool(latest and latest.fact.head == session.head and latest.outcome == "clean"
+                 and not any(fact.unresolved_threads for fact in remote_reviews))
     held = session.rounds.hold
     return {
         "schema_version": 1,

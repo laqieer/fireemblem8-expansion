@@ -132,7 +132,7 @@ class GitHubReviewTests(unittest.TestCase):
                     with self.assertRaises(ValueError):
                         self.tools.assess(data, session, github, (triage,), pre_review_required=False)
 
-    def local_source_remediation(self, *, generated=False):
+    def local_source_remediation(self, *, generated=False, reported_member=None):
         path = ("scripts/generated_data/eventlists/generate.py" if generated
                 else "scripts/workflow_pilot/review_family.py")
         source = (self.repo.root / path).read_text()
@@ -148,7 +148,7 @@ class GitHubReviewTests(unittest.TestCase):
         key = self.model.subject_key(data["subjects"][0])
         finding = self.model.Finding(
             "local-finding", key, "generated" if generated else "wire",
-            "outputs:eventlists" if generated else "stale-bindings:review-session",
+            reported_member or ("outputs:eventlists" if generated else "stale-bindings:review-session"),
             before, path, "local:task-1")
         session = self.model.ReviewSession(
             "coordinator", "implementer", frozenset({key}), before,
@@ -172,6 +172,77 @@ class GitHubReviewTests(unittest.TestCase):
                               if item.obligation.member == finding.member), "contract-violation")
         with self.assertRaisesRegex(ValueError, "local.*triage"):
             self.tools.assess(data, session, github, (triage,), pre_review_required=True)
+
+    def test_reported_member_cannot_borrow_a_real_sibling_origin_failure(self):
+        data, session, github, triage, finding = self.local_source_remediation(
+            reported_member="validators:review-session")
+        session.triage_local(finding.id, accepted=True, reason="Reported validator defect")
+        data["findings"] = [{
+            "finding_id": finding.id, **data["subjects"][0],
+            "family": finding.family, "reported_member": finding.member,
+        }]
+        members = self.tools.members(data, (finding.origin,))
+        before = self.tools.run_obligations(
+            tuple(item for item in members if item.family == finding.family), finding.origin)
+        verdicts = {item.obligation.member: item.verdict for item in before}
+        self.assertEqual(verdicts[finding.member], "satisfied")
+        self.assertEqual(verdicts["stale-bindings:review-session"], "contract-violation")
+        current = self.tools.run_obligations(members, data["candidate_sha"])
+        self.assertTrue(all(item.verdict == "satisfied" for item in current))
+        for entrypoint in ("direct", "adapter"):
+            with self.subTest(entrypoint=entrypoint), self.assertRaisesRegex(ValueError, "reported member"):
+                if entrypoint == "direct":
+                    self.model.assess_handoff(
+                        data, members, (*before, *current), session, tool_revision=self.repo.base,
+                        remote_reviews=(triage.fact,), triage=(triage,), pre_review_required=True)
+                else:
+                    self.tools.assess(data, session, github, (triage,), pre_review_required=True)
+
+    def test_earlier_head_conversation_blocks_clean_until_observed_resolution(self):
+        head = self.repo.commit({"earlier-thread-candidate": "new candidate"})
+        data = request(base=self.repo.base, head=head)
+        scope = frozenset({self.model.subject_key(data["subjects"][0])})
+        session = self.model.ReviewSession(
+            "coordinator", "implementer", scope, head,
+            identity=("owner/repo", 1, self.repo.base), owners=self.model.ReviewOwnership())
+        runtime = Runtime(head, scope)
+        session.begin(runtime, "reviewer")
+        session.finish(runtime)
+        payload = response(self.repo.base, head)
+        pr = payload["data"]["repository"]["pullRequest"]
+        earlier = pr["reviews"]["nodes"][0]
+        earlier.update(state="CHANGES_REQUESTED", body="Earlier conversation remains unresolved")
+        earlier["commit"]["oid"] = self.repo.base
+        latest = copy.deepcopy(earlier)
+        latest.update(id="review-2", state="APPROVED", submittedAt="2026-01-01T00:00:20Z",
+                      body="Complete clean review of the new head")
+        latest["commit"]["oid"] = head
+        latest["comments"]["nodes"] = []
+        pr["reviews"]["nodes"].append(latest)
+        pr["reviewThreads"]["nodes"] = [{
+            "id": "earlier-thread", "isResolved": False,
+            "comments": {"nodes": [{"pullRequestReview": {"id": earlier["id"]}}]},
+        }]
+        github = ObservedGitHub(payload)
+        _, facts = github.snapshot("owner/repo", 1, self.model)
+        self.assertEqual(facts[0].head, self.repo.base)
+        self.assertEqual(facts[0].unresolved_threads, ("earlier-thread",))
+        session.triage(self.model.Triage(facts[0], "changes-requested"))
+        session.triage(self.model.Triage(facts[1], "clean"))
+        report = self.tools.assess(
+            data, session, github, tuple(session.rounds.events), pre_review_required=True)
+        self.assertFalse(report["exact_head_review_clean"])
+        pr["reviewThreads"]["nodes"][0]["isResolved"] = True
+        with self.assertRaises(ValueError):
+            self.tools.assess(
+                data, session, github, tuple(session.rounds.events), pre_review_required=True)
+        self.assertEqual(session.rounds.events[0].outcome, "untriaged")
+        _, resolved = github.snapshot("owner/repo", 1, self.model)
+        self.assertTrue(all(not item.unresolved_threads for item in resolved))
+        session.triage(self.model.Triage(resolved[0], "changes-requested"))
+        self.assertTrue(self.tools.assess(
+            data, session, github, tuple(session.rounds.events),
+            pre_review_required=True)["exact_head_review_clean"])
 
     def test_local_report_accepted_rejected_and_remediated_decisions(self):
         for accepted in (True, False):

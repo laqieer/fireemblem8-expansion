@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import argparse
-from dataclasses import asdict
+from dataclasses import asdict, replace
 import hashlib
 import importlib
 import json
@@ -249,26 +249,14 @@ class ReviewTools:
                     previous = members.setdefault(member.identity, member)
                     model.require(previous == member, "member mapping changed across finding origins")
         result = tuple(members[key] for key in sorted(members))
+        inputs = tuple(sorted({path for member in result for path in member.inputs}))
+        result = tuple(replace(member, inputs=inputs) for member in result)
         model.validate_members(result)
         return result
 
     def _stage(self, tree, root, members):
-        paths = set()
+        paths = {path for member in members for path in member.inputs}
         probes = {item.probe for item in members}
-        if any(probe.startswith("aoe-") for probe in probes):
-            paths.update(tree.under("include"))
-            paths.update((self.subjects.AOE_CORE, self.subjects.AOE_REFERENCE))
-        if any(probe.startswith("generated-") for probe in probes):
-            paths.update(path for member in members for path in member.inputs)
-            paths.update(tree.under("include"))
-            paths.update(tree.under("src/data"))
-            paths.update(tree.under("scripts/generated_data"))
-            paths.update(path for path in ("scripts/assets/__init__.py", "scripts/assets/tmx.py")
-                         if path in tree.entries)
-            paths.update(path for path in tree.entries if
-                         path.startswith("reports/generated_data_") or path in {
-                             "src/events/ch2-eventinfo.h", "src/events_udefs.c",
-                             "src/events_shoplist.c", "src/events_trapdata.c"})
         tree.materialize(root, sorted(paths))
         tool_paths = ("scripts/workflow_pilot/__init__.py",
                       self.subjects.REVIEW_SOURCE, "scripts/workflow_pilot/review_subjects.py",
@@ -281,7 +269,11 @@ class ReviewTools:
     def run_obligations(self, members, revision):
         model = self.model
         tree = self.tree(revision)
-        model.validate_members(tuple(members))
+        members = tuple(members)
+        model.validate_members(members)
+        inputs = {path for member in members for path in member.inputs}
+        model.require(all(set(member.inputs) == inputs for member in members),
+                      "obligation omits shared worker candidate inputs")
         probes = [item.probe for item in members]
         model.unique(probes, "probe bindings")
         objects = {item.identity: tuple((path, tree.oid(path)) for path in item.inputs)

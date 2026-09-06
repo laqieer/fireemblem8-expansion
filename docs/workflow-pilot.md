@@ -276,6 +276,17 @@ and explicit removal evidence; they cannot disappear silently. Current
 bindings reject such changes rather than manufacture not-applicable results.
 The total bound is 250 obligations, not five arbitrarily selected siblings.
 
+The immutable-tree input declaration is also the candidate staging allowlist;
+the adapter does not add undeclared candidate files. AoE inputs include the
+compiled core/reference sources and the complete staged header set. Generated
+inputs include all schemas imported by the existing registry, the staged
+generated-data code/data/headers/inventories and declared authored resources.
+Every obligation in a shared worker binds the complete candidate input union,
+including mixed-subject requests; a narrowed member cannot borrow undeclared
+bytes staged for another member. The fixed reviewed tool overlays remain
+bound by `tool_revision`, not a candidate-supplied program. This is the actual
+finite staging boundary, not a generic Python import/capability guarantee.
+
 The shipped unrelated subject uses are:
 
 - **`TC-GAMEPLAY-006 / aoe-item-dispatch`:** actual typed AoE phase, route and
@@ -307,7 +318,12 @@ The shipped unrelated subject uses are:
 `affected-fixed` requires the same reviewed semantic probe to find a contract
 violation at the actual finding origin and to pass the candidate. Unaffected
 siblings must pass their own probes before and after. Each accepted defect
-requires an affected-fixed member; unrelated all-pass tests cannot repair it.
+requires an affected-fixed row for its **reported member itself**; an
+already-satisfied reported member cannot borrow a different sibling's failure.
+Both direct handoff assessment and the coordinator adapter use that same
+predicate. Being included in the staging closure establishes source binding,
+not semantic damage: unused inputs or unrelated all-pass tests cannot repair
+a finding.
 Missing/duplicated/wrong-subject/stale observations reject. Imports, compile
 errors, missing tools, zero/skipped tests and timeouts are **unavailable**,
 not useful failing controls. Native exit codes come from the selected trusted
@@ -336,7 +352,11 @@ untriaged status. COMMENTED, no inline comments and natural-language approval
 phrases never automatically mean clean. Changed content invalidates old
 triage; missing/incomplete observations fail closed. Dismissed review facts are
 retained as history but never clean authority: only active COMMENTED/APPROVED
-facts can support clean triage on the exact head.
+facts can support clean triage on the exact head. `exact_head_review_clean`
+also requires zero unresolved conversations across every collected fact,
+including earlier-head and historical reviews. A later clean review cannot
+hide an older unresolved thread. Resolution is observed from fresh GitHub
+facts and requires the normal changed-fact retriage before clean assessment.
 
 Keep one current record per review ID, with immutable review head, actor and
 submission identity inside the frozen repository/PR session. An unchanged

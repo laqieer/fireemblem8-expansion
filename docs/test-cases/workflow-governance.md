@@ -160,6 +160,10 @@ the consumers' independent protected-principal/deployment requirements.
    symbols/sections pass in their respective profiles, including formatting-only
    source changes. Remove the real AI_NEVER rejection in an owned
    origin commit; the same probe fails before and passes restored source.
+   Make the included `bmunit.h` unit-validity predicate reject valid units,
+   then restore it. The native stable-slot member fails before and passes
+   after; that actual header dependency is bound and its finding is admissible.
+   Reporting an unaffected item-route member instead must still reject.
 3. Inspect the unrelated generated-eventlist controls: resolve actual schema
    owners, validate authored references, generate and parse C output, compare
    the consumer and inventory. Introduce a nonexistent event-script reference
@@ -170,6 +174,11 @@ the consumers' independent protected-principal/deployment requirements.
    generator, consumer parser and inventory producer, restore them and make
    formatting-only edits. Their source-bound findings must sweep the family
    and pass only after repair, without unrelated feature-wide ROM checks.
+   Compare actual staged candidate bytes with every obligation's declared
+   inputs and observed Git objects for AoE, generated and mixed-subject
+   workers. All staged headers, imported registry schemas and authored inputs
+   must be bound. Narrowing one member while another still stages those bytes
+   rejects before execution; fixed tool overlays retain their tool-revision binding.
 4. Execute the real review reducer as a source subject. The lifecycle and wire
    probes cover entries/preservation/resets/terminals and
    producers/consumers/validators/replay/stale bindings. Mutating the hold
@@ -178,6 +187,10 @@ the consumers' independent protected-principal/deployment requirements.
    all family roles, duplicate observations, added/deleted enums or files,
    unknown cases/members/probes, wrong subjects/heads/tool revisions and
    unrelated all-pass evidence. Every incomplete handoff rejects.
+   Report a wire validator that already passed at the origin while a different
+   stale-binding sibling actually failed. Both direct handoff assessment and
+   the coordinator adapter must reject the misclassified finding; only the
+   reported member's own affected-fixed row can satisfy it.
 6. Make compilation/import unavailable and provide zero/skipped/unknown probe
    results. The owned missing-compiler fixture changes only its
    coordinator-selected compiler path to a nonexistent file: native checks still pass,
@@ -227,6 +240,10 @@ the consumers' independent protected-principal/deployment requirements.
    review. Handoffs refresh, accepted findings remain required, unchanged final
    replay and identity rebinding reject, and sticky holds survive retriage.
    Finalized `dismissed` triage closes only actual historical dismissals.
+   Leave an older-head review conversation unresolved while adding a clean
+   current-head review. Exact-head clean status stays false. Resolve the
+   conversation in the observed GitHub facts, reject stale triage, then
+   complete the normal retriage and require the clean positive.
    Unrelated live-base fast-forwards preserve the actual candidate merge base;
    substituting an older ancestor or a base outside that lineage rejects.
 9. Exercise the real isolated launcher against an explicitly reviewed tool

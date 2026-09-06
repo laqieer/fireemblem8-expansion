@@ -200,6 +200,60 @@ class SubjectTests(SubjectTestCase):
                 request_data, members, (*prior, *missing), session, tool_revision=self.repo.base,
                 remote_reviews=(), triage=(), pre_review_required=False)
 
+    def test_compiled_header_dependency_finding_uses_actual_member_failure(self):
+        path = "include/bmunit.h"
+        source = (self.repo.root / path).read_text()
+        broken = source.replace("#define UNIT_IS_VALID(aUnit) ((aUnit) && (aUnit)->pCharacterData)",
+                                "#define UNIT_IS_VALID(aUnit) ((aUnit) && (aUnit)->pCharacterData && 0)")
+        self.assertNotEqual(source, broken)
+        data, members, prior, current, session = self.remediation(
+            "aoe", path, broken, "targets:stable-slots")
+        self.assertTrue(all(path in dict(item.source_objects) for item in (*prior, *current)))
+        finding = next(iter(session.accepted.values()))
+        unrelated = replace(finding, member="items:routes")
+        self.assertEqual(next(item.verdict for item in prior
+                              if item.obligation.member == unrelated.member), "satisfied")
+        session.accepted[finding.id] = unrelated
+        data["findings"][0]["reported_member"] = unrelated.member
+        with self.assertRaisesRegex(ValueError, "reported member"):
+            self.model.assess_handoff(
+                data, members, (*prior, *current), session, tool_revision=self.repo.base,
+                remote_reviews=(), triage=(), pre_review_required=False)
+
+    def test_every_shared_worker_binds_its_actual_staged_candidate_closure(self):
+        for kind in ("aoe", "generated", "mixed"):
+            with self.subTest(kind=kind):
+                data = self.scope("aoe" if kind == "mixed" else kind)
+                if kind == "mixed":
+                    for other in ("generated", "session"):
+                        data["subjects"].extend(self.scope(other)["subjects"])
+                members = self.host_members(self.tools.members(data))
+                tree = self.tools.tree(self.repo.base)
+                root = self.repo.root / "build" / ("staged-closure-" + kind)
+                root.mkdir(parents=True, exist_ok=True)
+                copied = set()
+                materialize = tree.materialize
+
+                def capture(destination, paths):
+                    materialize(destination, paths)
+                    copied.update(paths)
+                    for path in paths:
+                        self.assertEqual((destination / path).read_bytes(), tree.read(path))
+
+                with patch.object(tree, "materialize", side_effect=capture):
+                    self.tools._stage(tree, root, members)
+                self.assertTrue(copied)
+                for member in members:
+                    self.assertEqual(set(member.inputs), copied, member.member)
+                observations = self.run_members(members, self.repo.base)
+                self.assert_satisfied(observations)
+                for item in observations:
+                    self.assertEqual(dict(item.source_objects),
+                                     {path: tree.oid(path) for path in copied})
+                narrowed = replace(members[0], inputs=members[0].inputs[1:])
+                with self.assertRaisesRegex(ValueError, "candidate inputs"):
+                    self.tools.run_obligations((narrowed, *members[1:]), self.repo.base)
+
     def test_optional_owner_semantic_invalid_data_is_rejected(self):
         for path, owner in (
             ("src/data/autoplay_strategies.json", "autoplaystrategies"),

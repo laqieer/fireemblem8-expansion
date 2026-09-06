@@ -43,23 +43,15 @@ PHASES = ("CAN_USE", "BEGIN_USE", "EXECUTE", "AI_SELECT")
 SHAPES = ("DIAMOND", "SQUARE", "CROSS")
 
 
-def event_validation_inputs(tree, dependencies):
-    shared = {
-        "scripts/generated_data/" + name + ".py" for name in (
-            "__init__", "cli", "registry", "schema", "diagnostics", "json_loader",
-            "validators", "character_refs", "cparse", "cgen", "manifest", "idspace",
-        )
-    }
-    for name in {"eventlists", *dependencies, "chapterobjectives", "supports"}:
-        shared.update(path for path in tree.under("scripts/generated_data/" + name)
-                      if path.endswith(".py"))
+def event_validation_inputs(tree):
+    shared = {path for prefix in ("include", "src/data", "scripts/generated_data")
+              for path in tree.under(prefix)}
+    shared.update(path for path in tree.entries if path.startswith("reports/generated_data_"))
     shared.update({
         "scripts/assets/__init__.py", "scripts/assets/tmx.py", "assets/manifest.json",
-        "src/data/chapter_settings.json", "src/data/data_8B363C.c",
-        "include/bmunit.h", "include/bmtrick.h",
+        "src/events/ch2-eventinfo.h", "src/events_udefs.c",
+        "src/events_shoplist.c", "src/events_trapdata.c",
     })
-    shared.update("include/constants/" + name + ".h"
-                  for name in ("characters", "classes", "items", "chapters", "event-flags"))
     manifest = json.loads(tree.read("assets/manifest.json"))
     for asset in manifest["assets"]:
         if {"mapWidth", "mapHeight"} <= set(asset.get("resources", {})):
@@ -135,7 +127,7 @@ def _members(spec: SubjectSpec, tree) -> tuple[review.Obligation, ...]:
         review.require(set(phases) == {*PHASES, "PHASE_COUNT"}
                        and set(shapes) == {*SHAPES, "COUNT"},
                        "added/deleted AoE enum member needs a reviewed probe")
-        inputs = (AOE_CORE, AOE_HEADER)
+        inputs = tuple(sorted({AOE_CORE, AOE_REFERENCE, *tree.under("include")}))
         for phase in PHASES:
             add("action", "actions", phase, AOE_CORE + ":ExpansionAoE_DispatchItem",
                 "ExpansionAoEItemHandler(context)", "ExpansionAoEItemContext.phase",
@@ -153,7 +145,7 @@ def _members(spec: SubjectSpec, tree) -> tuple[review.Obligation, ...]:
             add("action", "targets", name, AOE_CORE + ":ExpansionAoE_BuildTargetSet",
                 "ExpansionAoE_Execute", "stable unit IDs and bounded target set",
                 "capacity/invalid slots/hidden/stale placement", probe, inputs, kind="native")
-        resources = (*inputs, AOE_REFERENCE, "include/expansion_aoe_reference.h")
+        resources = inputs
         for role in ("enabled", "disabled"):
             add("resource", role, "reference", AOE_REFERENCE + ":ExpansionAoEReference_Apply",
                 "reference native driver", "FE8_EXPANSION_AOE_REFERENCE",
@@ -168,7 +160,7 @@ def _members(spec: SubjectSpec, tree) -> tuple[review.Obligation, ...]:
         defaults, dependencies = schema_declaration(tree.read(EVENT_SCHEMA))
         review.require(defaults.get("default_source") == EVENT_SOURCE,
                        "changed owner needs an explicit reviewed binding")
-        validation_inputs = event_validation_inputs(tree, dependencies)
+        validation_inputs = event_validation_inputs(tree)
         inputs = {EVENT_SCHEMA, EVENT_SOURCE} | validation_inputs
         for name in ("eventlists", *dependencies):
             relative = "scripts/generated_data/" + name + "/schema.py"
