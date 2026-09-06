@@ -2372,6 +2372,11 @@ game behavior needs a compensating change.
    integer usable by the process adapter. Boolean/fractional/nonfinite/
    out-of-range values reject, including fractions that would round to an
    integer. No custom schema validator or per-field float bypass is used.
+   Use actual non-host mode-only, regular-to-symlink and empty-file add/delete
+   commits whose numstat is zero: missing resource observations must reject.
+   Actual linker observations of zero pass; nonzero growth rejects an
+   insufficient budget and passes with sufficient limits. Host-only zero-line
+   changes and pure authorized imports with no task-owned paths still pass.
 5. Exercise dispatch-only and received-only native event streams. Confirm
    the matching session's receipt needs both the assignment marker and
    `data.parentAgentTaskId` equal to the dispatched task ID. Wrong-task,
@@ -2394,6 +2399,12 @@ game behavior needs a compensating change.
    Record an implementation-owner prohibited remote
    action and confirm rejection. This is operational/role-policy checking,
    not authentication against a hostile same-UID process.
+   SIGKILL only an owned writer after partial and complete staging writes:
+   canonical bytes stay intact and repeated new transactions succeed without
+   promoting the interrupted state. Legacy staging, user files and symlinks
+   stay untouched; forced exclusive-create collisions fail safely and can be
+   retried with a fresh staging name. A failed replace preserves canonical
+   state and removes only the current transaction's staging.
 7. Use the exact GitHub run-response fixtures through the production query
    adapter. Watcher timeout plus authoritative success stays success;
    failure/cancellation stays failure, in-progress stays pending, API errors

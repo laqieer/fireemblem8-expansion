@@ -168,6 +168,9 @@ class GitFixture:
         file = self.worktree / name
         file.parent.mkdir(parents=True, exist_ok=True)
         file.write_text(content)
+        return self.commit_pending(trailers=trailers)
+
+    def commit_pending(self, *, trailers=True):
         git(self.worktree, "add", "-A")
         message = "Implement assigned change"
         if trailers:
@@ -419,6 +422,88 @@ class ExactHandoffTests(unittest.TestCase):
         self.assertIn("ram-bytes-budget-exceeded", rejected["rejection_codes"])
         f.assignment["budgets"].update(rom_bytes=8, ram_bytes=4)
         self.assertTrue(f.validate(result)["handoff_ready"])
+
+    def test_zero_line_non_host_changes_still_need_actual_resource_measurements(self):
+        for kind in ("mode", "symlink", "empty-add", "empty-delete"):
+            with self.subTest(kind=kind):
+                f = GitFixture(assign=False)
+                self.addCleanup(f.close)
+                source = f.worktree / "src/resource"
+                source.parent.mkdir()
+                source.write_text("target")
+                empty = f.worktree / "src/empty"
+                empty.write_bytes(b"")
+                f.parent = f.commit_pending(trailers=False)
+                f.assignment["assigned_parent_sha"] = f.parent
+                f.assignment["allowed_scope"].append("src/")
+                f.assignment["required_checks"]["resource"] = {
+                    "contract": "coordinator-check", "evidence_id": "resource-evidence", "inputs": [],
+                }
+                f.entry = handoff.assign(f.state, f.assignment)
+                process = f.owner_process()
+                f.receive()
+                if kind == "mode":
+                    source.chmod(0o755)
+                elif kind == "symlink":
+                    source.unlink()
+                    source.symlink_to("target")
+                elif kind == "empty-add":
+                    (f.worktree / "src/empty-new").write_bytes(b"")
+                else:
+                    empty.unlink()
+                result = f.deliver(f.commit_pending())
+                f.finish_owner(process)
+                owned, total, _, imported = handoff.task_changes(f.assignment, result["result_sha"])
+                self.assertEqual((len(owned), total, imported), (1, 0, []))
+                parent_map, candidate_map = f.home / "parent.map", f.home / "candidate.map"
+                original = (ROOT / "scripts/linker_report/tests/fixtures/basic.map").read_text()
+                parent_map.write_text(original)
+                candidate_map.write_text(original)
+                measured = False
+                def executor(assignment, revision):
+                    capture = raw.run_process(
+                        ["/usr/bin/python3", "-I", str(ROOT / "scripts/linker_report/budget.py"),
+                         "--map", str(candidate_map), "--output", str(f.home / "resource-report.json")],
+                        cwd=ROOT, env=raw.git_environment(),
+                    )
+                    return capture, (observations.linker_growth(parent_map, candidate_map)
+                                     if measured else dict.fromkeys(handoff.METRICS))
+                handoff.capture_check(f.entry, "resource", result["result_sha"], executor)
+                with self.subTest(observation="missing", kind=kind):
+                    missing = f.validate(result)
+                    self.assertFalse(missing["handoff_ready"])
+                    self.assertIn("missing-budget-measurement", missing["rejection_codes"])
+                measured = True
+                zero = handoff.capture_check(f.entry, "resource", result["result_sha"], executor)
+                self.assertEqual((zero["measurements"]["rom_bytes"], zero["measurements"]["ram_bytes"]), (0, 0))
+                self.assertGreater(zero["pid"], 0)
+                self.assertTrue(f.validate(result)["handoff_ready"])
+                candidate_map.write_text(original.replace("0x100000", "0x100008")
+                                         .replace("0x2000", "0x2004").replace("0x03002000", "0x03002004"))
+                handoff.capture_check(f.entry, "resource", result["result_sha"], executor)
+                over = f.validate(result)
+                self.assertIn("rom-bytes-budget-exceeded", over["rejection_codes"])
+                self.assertIn("ram-bytes-budget-exceeded", over["rejection_codes"])
+                f.assignment["budgets"].update(rom_bytes=8, ram_bytes=4)
+                self.assertTrue(f.validate(result)["handoff_ready"])
+
+    def test_zero_line_host_change_and_pure_authorized_import_need_no_resource_check(self):
+        f = self.fixture
+        host = f.validate(f.complete(content="", name="docs/empty.txt"))
+        self.assertEqual(host["changed_lines"], 0)
+        self.assertTrue(host["handoff_ready"])
+        imported = GitFixture(upstream=True)
+        self.addCleanup(imported.close)
+        process = imported.owner_process()
+        imported.receive()
+        git(imported.worktree, "merge", "--no-commit", "--no-ff", imported.upstream)
+        result = imported.deliver(imported.commit_pending())
+        imported.finish_owner(process)
+        paths, total, _, upstream_paths = handoff.task_changes(imported.assignment, result["result_sha"])
+        self.assertEqual((paths, total), ([], 0))
+        self.assertIn("imported.txt", upstream_paths)
+        self.assertTrue(imported.validate(result)["handoff_ready"])
+        self.assertEqual(set(imported.assignment["required_checks"]), {"raw"})
 
     def test_parsed_protocol_budget_ignores_spelling_order_but_not_behavior(self):
         f = self.fixture

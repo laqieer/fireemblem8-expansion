@@ -184,6 +184,176 @@ class NativeObservationTests(unittest.TestCase):
         self.assertFalse(path.with_name(path.name + ".new").exists())
 
 
+class StateStoreTests(unittest.TestCase):
+    def setUp(self):
+        self.fixture = GitFixture()
+        self.addCleanup(self.fixture.close)
+
+    def test_real_sigkill_leftovers_never_replace_or_block_canonical_state(self):
+        program = r"""
+import os, sys
+sys.path.insert(0, sys.argv[1])
+from scripts.workflow_pilot import coordinator_observations as observations
+path, phase = sys.argv[2:]
+def pause(staging):
+    print("ready", flush=True)
+    print(os.path.basename(staging), flush=True)
+    sys.stdin.readline()
+    raise RuntimeError("crash fixture unexpectedly resumed")
+fdopen = os.fdopen
+class PartialOutput:
+    def __init__(self, stream):
+        self.stream = stream
+    def __enter__(self):
+        return self
+    def __exit__(self, *args):
+        self.stream.close()
+    def write(self, data):
+        self.stream.write(data[:len(data) // 2])
+        self.stream.flush()
+        os.fsync(self.stream.fileno())
+        pause(os.readlink("/proc/self/fd/" + str(self.stream.fileno())))
+def open_output(fd, mode):
+    stream = fdopen(fd, mode)
+    return PartialOutput(stream) if phase == "partial" and mode == "wb" else stream
+def replace_output(source, destination, **kwargs):
+    pause(source)
+os.fdopen, os.replace = open_output, replace_output
+with observations.locked_state(path) as state:
+    state["coordinator_id"] = "crash-uncommitted"
+"""
+        for phase in ("partial", "complete"):
+            with self.subTest(phase=phase):
+                f = GitFixture()
+                self.addCleanup(f.close)
+                path = f.home / "coordination.json"
+                write_json(path, f.state)
+                before = path.read_bytes()
+                control = f.waiting_process()
+                process = subprocess.Popen(
+                    [str(ROOT / "build/host-python/bin/python3"), "-I", "-c", program, str(ROOT), str(path), phase],
+                    cwd=f.home, env=raw.git_environment(), stdin=subprocess.PIPE,
+                    stdout=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=True,
+                )
+                f.processes.append(process)
+                f.assert_ready(process)
+                staging = f.home / process.stdout.readline().decode().strip()
+                identity = observations.process_identity(process.pid, "store-writer")
+                process.kill()
+                os.waitid(os.P_PID, process.pid, os.WEXITED | os.WNOWAIT)
+                exited = observations.observe_owned_exit(process, identity)
+                self.assertEqual(exited["exit_code"], -9)
+                self.assertTrue(exited["rss_complete"])
+                self.assertIsNone(control.poll())
+                abandoned = staging.read_bytes()
+                if phase == "partial":
+                    with self.assertRaises(handoff.HandoffDataError):
+                        observations.parse_bytes(abandoned)
+                else:
+                    self.assertEqual(observations.parse_bytes(abandoned)["coordinator_id"], "crash-uncommitted")
+                self.assertEqual(path.read_bytes(), before)
+                with self.assertRaisesRegex(ValueError, "aborted"):
+                    with observations.locked_state(path) as state:
+                        self.assertEqual(state["coordinator_id"], "coordinator-one")
+                        raise ValueError("aborted")
+                self.assertEqual(path.read_bytes(), before)
+                names = set(f.home.iterdir())
+                for index in range(3):
+                    with observations.locked_state(path) as state:
+                        self.assertNotEqual(state["coordinator_id"], "crash-uncommitted")
+                        state["coordinator_id"] = f"after-{index}"
+                    self.assertEqual(observations.load_json(path)["coordinator_id"], f"after-{index}")
+                    self.assertEqual(staging.read_bytes(), abandoned)
+                    self.assertEqual(set(f.home.iterdir()), names)
+
+    def test_legacy_staging_is_not_promoted_or_overwritten(self):
+        f = self.fixture
+        path = f.home / "coordination.json"
+        write_json(path, f.state)
+        staging = path.with_name(path.name + ".new")
+        target = f.home / "user-data"
+        target.write_bytes(b"unrelated user data")
+        for kind in ("partial", "complete", "symlink", "fifo"):
+            with self.subTest(kind=kind):
+                if kind == "partial":
+                    staging.write_bytes(b'{"interrupted":')
+                elif kind == "complete":
+                    write_json(staging, {**f.state, "coordinator_id": "uncommitted"})
+                elif kind == "symlink":
+                    staging.symlink_to(target)
+                else:
+                    os.mkfifo(staging)
+                before = staging.lstat()
+                try:
+                    with observations.locked_state(path) as state:
+                        self.assertNotEqual(state["coordinator_id"], "uncommitted")
+                        state["coordinator_id"] = "current"
+                    after = staging.lstat()
+                    self.assertEqual((before.st_ino, before.st_mode, before.st_size, before.st_mtime_ns),
+                                     (after.st_ino, after.st_mode, after.st_size, after.st_mtime_ns))
+                    self.assertEqual(target.read_bytes(), b"unrelated user data")
+                finally:
+                    staging.unlink()
+
+    def test_staging_collisions_preserve_existing_file_or_symlink(self):
+        for kind in ("file", "symlink"):
+            with self.subTest(kind=kind):
+                f = GitFixture()
+                self.addCleanup(f.close)
+                path = f.home / "coordination.json"
+                write_json(path, f.state)
+                before = path.read_bytes()
+                target = f.home / "foreign-data"
+                target.write_bytes(b"do not change")
+                actual_open = observations.os.open
+                collision = []
+                def collide(name, flags, *args, **kwargs):
+                    if flags & os.O_EXCL:
+                        collision.append(f.home / name)
+                        if kind == "symlink":
+                            os.symlink(target, name, dir_fd=kwargs["dir_fd"])
+                        else:
+                            fd = actual_open(name, flags, *args, **kwargs)
+                            os.write(fd, b"preexisting data")
+                            os.close(fd)
+                    return actual_open(name, flags, *args, **kwargs)
+                with mock.patch.object(observations.os, "open", side_effect=collide):
+                    with self.assertRaises(FileExistsError):
+                        with observations.locked_state(path) as state:
+                            state["coordinator_id"] = "not-committed"
+                self.assertEqual(path.read_bytes(), before)
+                self.assertEqual(len(collision), 1)
+                existing = collision[0]
+                if kind == "symlink":
+                    self.assertTrue(existing.is_symlink())
+                    self.assertEqual(target.read_bytes(), b"do not change")
+                else:
+                    self.assertEqual(existing.read_bytes(), b"preexisting data")
+                with observations.locked_state(path) as state:
+                    state["coordinator_id"] = "retry"
+                self.assertEqual(observations.load_json(path)["coordinator_id"], "retry")
+                self.assertTrue(existing.exists())
+
+    def test_failed_replace_removes_only_current_staging_and_keeps_canonical(self):
+        f = self.fixture
+        path = f.home / "coordination.json"
+        write_json(path, f.state)
+        with observations.locked_state(path):
+            pass
+        before = path.read_bytes()
+        names = set(f.home.iterdir())
+        with mock.patch.object(observations.os, "replace", side_effect=OSError("replace unavailable")):
+            with self.assertRaisesRegex(OSError, "replace unavailable"):
+                with observations.locked_state(path) as state:
+                    state["coordinator_id"] = "not-committed"
+        self.assertEqual(path.read_bytes(), before)
+        self.assertEqual(set(f.home.iterdir()), names)
+        with observations.locked_state(path) as state:
+            state["coordinator_id"] = "retry"
+        self.assertEqual(observations.load_json(path)["coordinator_id"], "retry")
+        self.assertEqual(set(f.home.iterdir()), names)
+
+
 class WatcherObservationTests(unittest.TestCase):
     def setUp(self):
         self.fixture = GitFixture()

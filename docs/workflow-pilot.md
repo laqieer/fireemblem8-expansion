@@ -1579,6 +1579,16 @@ this module does not prove that an arbitrary hostile same-UID process performed
 no hidden action. No signature, HMAC ledger, protected installation, daemon,
 remote ref mutation or publication endpoint is present.
 
+State updates exclusively create a uniquely named sibling staging file, fsync
+its complete bytes and atomically replace the canonical document under the
+existing lock. Normal/error cleanup removes only the current transaction's
+created staging file. A crash can leave partial or complete staging, including
+the former fixed `.new` name; later transactions leave those files untouched
+and read only canonical state. No staging file is promoted as an allegedly
+completed operation. A name collision fails without modifying the existing
+file, and a retry uses a fresh name. No recovery journal or ownership layer is
+needed; a random filename is not authority.
+
 ### Coordinator integration and commands
 
 Use a reviewed source checkout, not the implementation worktree, for the
@@ -1676,8 +1686,12 @@ Incremental changed lines count task additions + deletions after excluding
 authorized unchanged upstream paths. This is **not** the full-PR 20K review
 gate; a specifically budgeted deletion/refactor may have a large incremental
 diff while reducing the final PR. Binary/unquantified changes do not become zero.
-Only known host-only paths derive zero ROM/RAM. Other paths need actual
-coordinator measurements. Protocol checks compare parsed immutable JSON inputs,
+Known host-only task paths or an observed result with no task-owned paths
+(such as a pure authorized import) may derive zero task ROM/RAM. Zero numstat
+alone is not a resource observation: non-host mode/type changes and empty-file
+additions/deletions still need actual coordinator measurements. A measured zero
+is valid evidence; a missing measurement is not. Protocol checks compare parsed
+immutable JSON inputs,
 not schema-version increments; missing measurements and overages reject.
 The raw checker pins whitespace/diff/config behavior, disables hooks/fsmonitor/
 textconv/external diff, bounds object/output bytes, and rechecks Git after checks.
@@ -1766,10 +1780,12 @@ run/attempt observation and query error: a newer success on the same head does
 not relabel earlier failures, cancellations, pending or unknown observations.
 Current-head CI selection elsewhere still selects the latest run/attempt.
 
-Dependencies: #176 and #216's existing locked `jsonschema` test environment.
-While #217 is open, this is its genuine child; no #205/#211 dependency or #179
-API is adopted. Dependent: #181. Conflicts: reused owners/watchers, arbitrary
-candidate execution or broker formats. No game/runtime, save, ROM/RAM content,
+Dependencies: #176 and #216's locked `jsonschema` test environment, delivered
+by merged PR #217. This work was a genuine child while that dependency was
+open; that stack is history and the current immediate base is `master`.
+No #205/#211 dependency or #179 API is adopted. Dependent: #181.
+Conflicts: reused owners/watchers, arbitrary candidate execution or broker
+formats. No game/runtime, save, ROM/RAM content,
 locale, generated data, modern/archival profile, Build topology or final-gate
 change. Revert the dedicated #178 change if needed; owner publication,
 metadata-event handling, immediate checkpoint publication and #208 cleanup stay.

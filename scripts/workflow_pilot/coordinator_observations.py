@@ -12,6 +12,7 @@ import re
 import stat
 import subprocess
 import time
+import uuid
 from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
@@ -244,7 +245,7 @@ def locked_state(path):
             yield state
             state["clock"]["at"] = utc_now()
             data = json_bytes(state)
-            staging = path.name + ".new"
+            staging = ".handoff-state." + uuid.uuid4().hex + ".new"
             fd = os.open(staging, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
                          0o600, dir_fd=parent)
             try:

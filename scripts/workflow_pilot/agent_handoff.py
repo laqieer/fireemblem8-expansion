@@ -910,7 +910,7 @@ def validate_handoff(state, result, *, worktree, run_checks=True):
     usage = dict.fromkeys(METRICS)
     if owned and all(name in HOST_FILES or name.startswith(HOST_ONLY) for name in owned):
         usage.update(rom_bytes=0, ram_bytes=0)
-    elif total == 0:
+    elif total == 0 and not owned:
         usage.update(rom_bytes=0, ram_bytes=0)
     protocol_inputs = {name for definition in a["required_checks"].values() for name in definition["inputs"]}
     if not protocol_inputs and not any(name.endswith(".schema.json") for name in owned):
