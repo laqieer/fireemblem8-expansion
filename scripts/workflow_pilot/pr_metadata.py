@@ -50,7 +50,7 @@ FULL_JOB_NAMES = frozenset(candidate_evidence.KNOWN_JOB_IDS)
 METADATA_JOB_NAMES = (
     FULL_JOB_NAMES - {candidate_evidence.FULL_CLASSIFIER}
 ) | {candidate_evidence.METADATA_CLASSIFIER}
-FULL_SUCCESS_JOB_NAMES = FULL_JOB_NAMES - {"patch-release"}
+FULL_SUCCESS_JOB_NAMES = FULL_JOB_NAMES
 ACTIVE_RUN_STATUSES = frozenset(
     {"pending", "queued", "requested", "in_progress", "waiting"}
 )
@@ -2575,7 +2575,14 @@ def _run_mode(
     run_id: int,
     status: str,
 ) -> str:
-    names = frozenset(job.name for job in jobs)
+    legacy_patch = next((job for job in jobs if job.name == "patch-release"), None)
+    if legacy_patch is not None and (
+        legacy_patch.status != "completed"
+        or legacy_patch.conclusion != "skipped"
+        or legacy_patch.runner_name
+    ):
+        raise MetadataEditError("legacy publisher job must be canonical skipped")
+    names = frozenset(job.name for job in jobs if job.name != "patch-release")
     if status == "completed":
         if names == FULL_JOB_NAMES:
             return "full"
@@ -2868,7 +2875,13 @@ def list_candidate_runs(
 
 
 def _jobs_by_name(run: RunState) -> dict[str, JobState]:
-    return {job.name: job for job in run.jobs}
+    jobs = {job.name: job for job in run.jobs}
+    legacy = jobs.pop("patch-release", None)
+    if legacy is not None and (
+        legacy.status != "completed" or legacy.conclusion != "skipped" or legacy.runner_name
+    ):
+        raise MetadataEditError("legacy publisher job must be canonical skipped")
+    return jobs
 
 
 def require_full_success(run: RunState) -> None:
@@ -2890,13 +2903,6 @@ def require_full_success(run: RunState) -> None:
             raise MetadataEditError(
                 f"newest exact full Build job {name} is not runner-backed success"
             )
-    patch = jobs["patch-release"]
-    if (
-        patch.status != "completed"
-        or patch.conclusion != "skipped"
-        or patch.runner_name
-    ):
-        raise MetadataEditError("newest exact full Build patch-release shape is invalid")
 
 
 def require_metadata_success(run: RunState) -> None:
@@ -2925,7 +2931,7 @@ def require_metadata_success(run: RunState) -> None:
             raise MetadataEditError(
                 f"metadata continuity job {name} is not runner-backed success"
             )
-    for name in ("extended-host-tests", "legacy", "patch-release"):
+    for name in ("extended-host-tests", "legacy"):
         job = jobs[name]
         if (
             job.status != "completed"
@@ -2964,7 +2970,7 @@ def require_metadata_failure(run: RunState) -> None:
             raise MetadataEditError(
                 f"failed metadata continuity job {name} is not canonical success"
             )
-    for name in ("extended-host-tests", "legacy", "patch-release"):
+    for name in ("extended-host-tests", "legacy"):
         job = jobs[name]
         if (
             job.status != "completed"

@@ -48,110 +48,44 @@ local input from a protected secret, but no URL, base bytes, or base image is
 published, cached, or logged. No complete target ROM is uploaded to or
 downloaded from an Actions artifact, cache, release, or log.
 
-The fresh publisher checks out and verifies the exact validated master-push
-after SHA. It stages the producer from that same immutable commit with no
-whole-file source hash ledger. Before any secret or base exists, the candidate
-tree is copied to a disposable workspace owned by a dedicated unprivileged
-UID and built inside mount, PID, network, IPC, and UTS namespaces with no
-network, capabilities, secrets, `BASH_ENV`, or `GITHUB_ENV`. Mount propagation
-is private and all recursively visible host root/system/tool mounts, including
-`/usr/share` and `/opt`, must be read-only. Only exact private source, home,
-temporary, and handoff mounts are writable by candidate code. The root-only
-supervisor mount remains inaccessible to the candidate. Private tmpfs `/tmp`,
-`/run`, `/dev`, and `/dev/shm` plus private `/proc` hide host D-Bus
-activation/service, Docker, containerd, systemd, snap, and other UNIX sockets
-and runtime paths.
-The trusted PID-1 wrapper is loaded into Bash `-c` memory before
-`/home/runner` is masked, so no open script descriptor pins the host mount.
-The private `/dev` is mounted over the host path without trying to unmount the
-trusted wrapper's already-open null descriptors. Before that overmount, the
-wrapper reads the recursive `/dev` mount tree as structured JSON, decodes and
-validates every target, writes the NUL-delimited result into checked root-owned
-regular temp files under `/mnt/supervisor`, and unmounts only descendants
-deepest-first. This removes inherited `/dev/pts`, `/dev/mqueue`, `/dev/shm`,
-and runner-specific child mounts without touching the root-owned mode-`0700`
-supervisor parent. The candidate's writable-mount audit also consumes only
-decoded structured JSON target records through checked NUL-delimited
-transport, so raw escaped or whitespace-delimited mount text can never be
-mistaken for an unapproved path. `/mnt/supervisor` is the sole mount-level
-`rw` exception that candidate code cannot read, write, execute, or traverse;
-its mode-`0700` root ownership and the candidate's negative access probes
-enforce that boundary while avoiding the invalid late parent remount over its
-read-only cgroup child.
-Hash-locked wheels are fetched by the trusted host before isolation and
-installed offline inside it. Every builder descendant is placed in one exact
-cgroup v2 that the candidate cannot see or leave. With shell monitor mode
-disabled, a trusted no-fork Python launcher calls `setsid()`, verifies its PID
-is both the session and process-group ID, and self-stops before it can execute
-`timeout`, `sudo`, `unshare`, or candidate code. The host authenticates that
-exact stopped child through the kernel process table before resuming it.
-The launcher also requests a parent-death `SIGKILL`, so a never-resumed child
-cannot outlive the trusted shell. Cleanup immediately rechecks the immutable
-shell-parent PID, PID/SID/PGID tuple, expected process state, and `/proc`
-start time before every group signal. A missing, forged, or parent-group
-identity during launch never records a session: the primary `launch` rejection
-already reports failure, while empty owned cgroup and builder-UID cleanup
-succeeds with no cleanup diagnostic. Cleanup reports its bounded summary only
-for residual cgroup/UID state or a failure after session authentication.
-Stale or reused authenticated identities cause no PID or process-group signal;
-cleanup marks failure and uses only the owned builder cgroup. After an
-authenticated group signal, cleanup either reauthenticates before escalation
-or observes exit, then uses the shell's exact child wait only for reaping. It
-kills the exact builder cgroup for namespace descendants that leave the group
-and proves the session, cgroup, and builder UID are empty. It removes only that
-owned cgroup before admitting a regular, nonsymlink, single-link 32 MiB ROM and
-bounded metadata from the exact two-file handoff.
-Devices, escaped paths, and unexpected outputs fail. It validates metadata
-against the after SHA, copies only those public inputs into runner-owned `0400`
-staging, and removes the builder user, tree, wheelhouse, and candidate
-checkout. Missing mount/cgroup-v2 capabilities fail before candidate execution;
-cleanup never uses `pkill`, `killall`, or a UID-wide signal.
-After descendants terminate, privileged cleanup removes only the exact
-owned builder root so builder-UID files cannot make teardown fail.
-Before hiding `/sys`, the wrapper bind-mounts only the exact owned cgroup
-read-only under the exact root-owned mode-`0700` `/mnt/supervisor` parent.
-The candidate cannot read, write, execute, or traverse that parent and cannot
-receive an FD for it. After candidate exit, the wrapper reads the exact
-read-only cgroup child there and exports the ROM only when the wrapper PID is
-the sole member; the host continues to use the actual cgroup path for kill and
-removal. After the isolated builder is spawned, trusted wrapper failures emit
-only fixed `launch`, `isolated`, or `cleanup` stage codes with numeric exits,
-never candidate-controlled output. `launch` covers only the bounded,
-kernel-derived stopped-session identity and exact resume operation; its detail
-is one fixed enum value, never a PID or process text. `isolated` reports the
-child exit, and `cleanup` reports teardown summary status whenever teardown
-fails. Earlier trusted pre-spawn setup and later post-child handoff validation
-still use normal shell failure output and are outside this diagnostic enum;
-cleanup may therefore be the only stage text even when the failure began
-before spawn.
+## Build once and package in CI
 
-Before candidate code starts, its PID-1 wrapper redirects inherited standard
-input/output/error permanently to private `/dev/null`. A trusted isolated
-Python child launcher closes every inherited descriptor above 2, loads the
-root-owned candidate script into Bash `-c` argv, and then executes `setpriv`.
-Thus
-`/proc/*/fd`, `/dev/stdout`, `tee`, shell xtrace, forks, and helper/logger pipes
-can reach only the null device, never the Actions log. `/dev/console` and `/dev/kmsg`
-are absent. `GITHUB_STEP_SUMMARY`, `GITHUB_OUTPUT`, `GITHUB_ENV`, and
-`GITHUB_PATH` are not passed. Candidate-writable source, home, temporary,
-handoff, `/tmp`, and shared-memory filesystems have explicit size limits; file
-size, open files, processes, virtual memory, and core dumps have ulimits.
-Candidate output is never replayed, logged, or uploaded, and arbitrary output
-volume cannot fail an otherwise successful build. No output sink exists. The
-trusted host reports only fixed success/failure text and a numeric exit
-classification for those post-spawn `launch`/`isolated`/`cleanup` outcomes; it
-does not claim path-free diagnostics for earlier trusted setup or later
-post-child handoff validation.
+Patch packaging trusts reviewed, merged master source and pinned/declared
+tools, like ordinary CI. It is not a sandbox against malicious repository
+writers, hostile same-UID code, compromised dependencies, or runner compromise.
+The normal modern job builds/checks the named release profile once from its
+fresh exact checkout. Only an authenticated master push packages that existing
+ROM and metadata in the same job; PRs and forks neither receive the private
+base nor upload a patch. The packaging script invokes no Make target.
+The existing producer checks the approved base hash/header, target header and
+embedded metadata, exact commit/profile, BPS round trip and three-file artifact.
+Private input uses a unique mode-0700 directory, mode-0400 base and failure/
+signal cleanup. Download diagnostics never disclose the URL or private bytes.
+Only verified BPS/manifest/README files are uploaded after private cleanup;
+the ROM stays inside the build job and is never an artifact/cache handoff.
+Packaging or cleanup failure fails `build` and therefore the required summary.
+No custom UID, namespace, cgroup, supervisor, broker or capability platform is
+part of this contract. The retired isolation proposals are superseded, not
+claimed to have passed their tests.
 
-Only after that teardown does the curl-only secret step create an
-unpredictable `0700` directory and `0400` regular 16 MiB file.
-The immediately following step runs only the staged tool through absolute
-isolated Python from an empty runtime CWD/environment. No repository command
-runs while the base exists. Success/failure traps remove the base and its
-directory, a separate step verifies absence, and only then may the three-file
-patch artifact be uploaded. A separate final step revalidates the exact regular,
-single-link BPS/manifest/README allowlist after private cleanup and immediately
-before upload, so no late candidate or process mutation can enter the artifact.
+The sole canonical invocation is
+`make expansion-modern-map-menu-presentation-check -j1` in the normal `build`
+job. Packaging consumes these existing outputs:
+
+```text
+build/expansion-modern-all-locales-all-features/release/aapcs/fireemblem8.gba
+build/expansion-modern-all-locales-all-features/release/aapcs/generated/expansion_build_metadata.json
+```
+
+The master-only step passes the existing `BASEROM_URL`, validated
+`PATCH_COMMIT`, and `PATCH_ARTIFACT_DIR` to
+`bash scripts/modernize/package_ci_patch.sh`. It runs the existing
+`python3 -m scripts.modernize.patch_release create` and `verify` commands;
+it does not rebuild, transfer a ROM between jobs, or create a GitHub Release.
+The step and upload require the canonical `laqieer/fireemblem8-expansion`
+repository as well as a successful authenticated master push, so fork pushes
+cannot enter the publication path even if a fork defines a similarly named secret.
+Other intentional debug/configuration/host/archival checks remain mandatory.
 
 ## Artifact contents and verification
 

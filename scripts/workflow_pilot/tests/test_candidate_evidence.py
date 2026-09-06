@@ -349,17 +349,14 @@ class CandidateEvidenceTests(unittest.TestCase):
             ("full", _full_run),
             ("metadata", _metadata_run),
         ):
-            for conclusion in ("missing", "success", "failure"):
+            for conclusion in ("success", "failure"):
                 patch = factory(run_id)
                 patch_context = next(
                     context
                     for context in patch["contexts"]
                     if context["job_id"] == "patch-release"
                 )
-                if conclusion == "missing":
-                    patch["contexts"].remove(patch_context)
-                else:
-                    patch_context["conclusion"] = conclusion
+                patch_context["conclusion"] = conclusion
                 mutations.append(patch)
                 run_id += 1
 

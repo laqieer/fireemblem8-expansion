@@ -4421,7 +4421,7 @@ class PullRequestMetadataTests(unittest.TestCase):
                 "conclusion"
             ] = "failure"
             mutations[f"{job_name}-failure"] = jobs
-        for job_name in ("extended-host-tests", "legacy", "patch-release"):
+        for job_name in ("extended-host-tests", "legacy"):
             jobs = copy.deepcopy(base_jobs)
             target = next(job for job in jobs if job["name"] == job_name)
             target["runner_name"] = "unexpected-runner"

@@ -10,12 +10,10 @@ from unittest import mock
 
 from scripts.upstream_port import cli, verify as verify_mod
 from tests.workflows import test_build_ci_topology as topology_tests
-from tests.workflows import test_patch_release_workflow as patch_workflow_tests
 
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 BUILD_WORKFLOW_PATH = os.path.join(REPO_ROOT, ".github", "workflows", "build.yml")
 UPSTREAM_PORTING_PATH = os.path.join(REPO_ROOT, "docs", "upstream-porting.md")
-BROKEN_PUBLISHER_INDENTATION_SHA = "77aae9df769aa87f2fd9bed13b767ff8e7dd171a"
 
 # Issues #7/#17 remediation: the documentation step is a genuine required
 # workflow gate, but it is the sole correctness step deliberately excluded
@@ -1103,7 +1101,6 @@ class VerifyCliCwdTests(unittest.TestCase):
                 "build",
                 "extended-host-tests",
                 "legacy",
-                "patch-release",
                 "summary",
             ),
         )
@@ -1291,61 +1288,8 @@ class VerifyCliCwdTests(unittest.TestCase):
             structure,
         )
 
-    def test_patch_release_supervisor_parent_remount_variants_reject_structure_parse(self):
-        with open(BUILD_WORKFLOW_PATH, "r", encoding="utf-8") as handle:
-            original = handle.read()
-        verify_mod._parse_workflow_structure_text(original)
-        for label, changed in patch_workflow_tests.generate_supervisor_parent_remount_mutations(
-            original
-        ):
-            with self.subTest(variant=label):
-                self.assertTrue(
-                    patch_workflow_tests.workflow_has_supervisor_parent_readonly_remount(
-                        changed
-                    )
-                )
-                with self.assertRaises(ValueError):
-                    verify_mod._parse_workflow_structure_text(changed)
 
-    def test_patch_release_raw_identity_variants_reject_structure_parse(self):
-        with open(BUILD_WORKFLOW_PATH, "r", encoding="utf-8") as handle:
-            original = handle.read()
-        verify_mod._parse_workflow_structure_text(original)
-        for label, changed in patch_workflow_tests.generate_publisher_raw_identity_mutations(
-            original
-        ):
-            with self.subTest(variant=label):
-                self.assertTrue(
-                    patch_workflow_tests.publisher_boundary_errors(changed)
-                )
-                with self.assertRaises(ValueError):
-                    verify_mod._parse_workflow_structure_text(changed)
 
-    def test_historical_patch_release_parser_indentation_is_rejected(self):
-        with open(BUILD_WORKFLOW_PATH, "r", encoding="utf-8") as handle:
-            original = handle.read()
-        verify_mod._parse_workflow_structure_text(original)
-        broken = subprocess.check_output(
-            [
-                "git",
-                "--no-pager",
-                "show",
-                f"{BROKEN_PUBLISHER_INDENTATION_SHA}:.github/workflows/build.yml",
-            ],
-            cwd=REPO_ROOT,
-            text=True,
-        )
-        # Keep the historical publisher control independent of later setup additions.
-        current_jobs = topology_tests._job_blocks(original)
-        historical_jobs = topology_tests._job_blocks(broken)
-        broken = original.replace(
-            current_jobs["patch-release"], historical_jobs["patch-release"], 1
-        )
-        with self.assertRaisesRegex(
-            ValueError,
-            "patch-release parser script differs|isolated candidate build differs",
-        ):
-            verify_mod._parse_workflow_structure_text(broken)
 
     def test_every_combined_worker_requires_the_fail_closed_classifier_edge(self):
         with open(BUILD_WORKFLOW_PATH, "r", encoding="utf-8") as handle:
@@ -1762,7 +1706,7 @@ class VerifyCliCwdTests(unittest.TestCase):
             with open(workflow_path, "r", encoding="utf-8") as handle:
                 original = handle.read()
             mutations = []
-            for job_name in ("patch-release", "summary"):
+            for job_name in ("build", "summary"):
                 for label, old, new in (
                         (
                             "runner",
@@ -1808,101 +1752,6 @@ class VerifyCliCwdTests(unittest.TestCase):
                         )
             for job_name, label, old, new in (
                 (
-                        "patch-release",
-                        "needs",
-                        "    needs: [event-identity]",
-                        "    needs: [event-classifier]",
-                ),
-                (
-                        "patch-release",
-                        "if",
-                        f"    if: {verify_mod._PUBLISHER_CONDITION}",
-                        "    if: always()",
-                ),
-                (
-                        "patch-release",
-                        "env",
-                        "      PATCH_COMMIT: ${{ "
-                        "needs.event-identity.outputs.fallback_sha }}",
-                        "      PATCH_COMMIT: attacker",
-                ),
-                (
-                        "patch-release",
-                        "revision",
-                        '        test "$ACTUAL_SHA" = "$PATCH_COMMIT"',
-                        "        true",
-                ),
-                (
-                        "patch-release",
-                        "secret",
-                        "        BASEROM_URL: ${{ secrets.BASEROM_URL }}",
-                        "        BASEROM_URL: ${{ secrets.OTHER }}",
-                ),
-                (
-                        "patch-release",
-                        "step",
-                        "    - name: Build candidate in isolated namespace "
-                        "and stage public inputs",
-                        "    - name: Skip isolated candidate build",
-                ),
-                (
-                        "patch-release",
-                        "command",
-                        "/usr/bin/python3 -I -S -c",
-                        "python3 -c",
-                ),
-                (
-                        "patch-release",
-                        "isolation",
-                        "        /usr/bin/mount --make-rprivate /",
-                        "        true",
-                ),
-                (
-                        "patch-release",
-                        "late-upload-revalidation",
-                        "    - name: Revalidate patch-only upload",
-                        "    - name: Skip patch-only upload revalidation",
-                ),
-                (
-                        "patch-release",
-                        "candidate-output-isolation",
-                        "          < /dev/null > /dev/null 2>&1 &",
-                        "          &",
-                ),
-                (
-                        "patch-release",
-                        "supervisor-cgroup-view",
-                        '        /usr/bin/mount --bind "$cgroup_path" '
-                        "/mnt/supervisor/cgroup",
-                        "        true",
-                ),
-                (
-                        "patch-release",
-                        "late-supervisor-parent-remount",
-                        "        /usr/bin/mount -t tmpfs \\\n"
-                        "          -o nosuid,mode=0755,size=4m builder-dev /dev",
-                        "        /usr/bin/mount -o remount,ro,nosuid,nodev,noexec "
-                        "/mnt/supervisor\n"
-                        "        /usr/bin/mount -t tmpfs \\\n"
-                        "          -o nosuid,mode=0755,size=4m builder-dev /dev",
-                ),
-                (
-                        "patch-release",
-                        "reordered-supervisor-parent-remount",
-                        "        /usr/bin/mount -t tmpfs \\\n"
-                        "          -o nosuid,mode=0755,size=4m builder-dev /dev",
-                        "        /usr/bin/mount -o nodev,ro,noexec,nosuid,remount "
-                        "/mnt/supervisor\n"
-                        "        /usr/bin/mount -t tmpfs \\\n"
-                        "          -o nosuid,mode=0755,size=4m builder-dev /dev",
-                ),
-                (
-                        "patch-release",
-                        "action",
-                        verify_mod._UPLOAD_USES,
-                        "actions/upload-artifact@" + "0" * 40,
-                ),
-                (
                         "summary",
                         "if",
                         "    if: always()",
@@ -1913,7 +1762,7 @@ class VerifyCliCwdTests(unittest.TestCase):
                         "needs",
                         "    needs: [event-identity, event-classifier, "
                         "host-tests, build, "
-                        "extended-host-tests, legacy, patch-release]",
+                        "extended-host-tests, legacy]",
                         "    needs: [build, host-tests, legacy]",
                 ),
                 (

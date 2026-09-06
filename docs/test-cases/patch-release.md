@@ -51,40 +51,11 @@ is no internal or final ROM artifact.
 
 ### Expected result
 
-`patch_release verify` reports `patch release artifact verified` after
-validating the exact legal base, canonical manifest, three-file allowlist,
-BPS checksums, reconstructed 32 MiB target digest, and embedded all-locales/
-all-features metadata; it writes no ROM. `bps_patch apply` succeeds only when
-the BPS source/target/patch CRCs match and writes the selected separate output
-path. The source target builds the same named release/AAPCS profile and
-round-trips the local artifact. The trusted publisher that produced that
-artifact decodes recursive `/dev` mount targets from structured `findmnt
---json --submounts --output TARGET /dev` output, writes those NUL-delimited
-targets into checked root-owned regular temp files under `/mnt/supervisor`,
-unmounts exact descendant paths deepest-first, removes the temp files, and
-verifies that only `/dev` remains before recreating the private device tree.
-The root-owned mode-`0700` `/mnt/supervisor` parent denies candidate read,
-write, execute, and traversal; its exact cgroup child remains read-only and is
-rechecked before ROM handoff.
-Before candidate code starts, the trusted wrapper also decodes structured
-`findmnt --json --list --uniq --output TARGET,OPTIONS -R /` output, writes
-checked NUL-framed mount target/option records through a root-owned regular
-temp file, and audits every effective writable mount in the isolated
-namespace. util-linux documents `--uniq` as "effectively skipping over-mounted
-mount points", so the audit sees the topmost visible layer for each target
-rather than failing on legitimate duplicate rows from hidden lower mounts.
-Only `/dev/shm`, `/mnt/handoff`, `/mnt/home`, `/mnt/source`,
-`/mnt/supervisor`, `/mnt/tmp`, and `/tmp` may carry an exact `rw` option token.
-`/mnt/supervisor` is the sole mount-level `rw` exception that candidate code
-cannot read, write, execute, or traverse: mode-`0700` root ownership and
-candidate negative access probes preserve the boundary without the invalid
-late parent remount over its read-only cgroup child. Spaces and backslashes in
-decoded target paths are handled losslessly, while control-character targets,
-malformed option-token grammar, duplicate or extra JSON rows, raw escaped or
-whitespace-delimited mount-target transport, and any unexpected writable
-effective mount fail closed. Hidden lower layers remain irrelevant unless the
-wrapper or candidate can expose them; this publisher denies that by keeping
-the candidate unprivileged and never granting mount or unmount capability.
+Validation succeeds without writing a ROM. The explicit BPS applier writes
+only the chosen output and verifies checksums. The reconstructed 32 MiB
+release/AAPCS image and embedded metadata match the named profile and commit.
+The base remains unchanged. CI's build-once packaging procedure is defined by
+`TC-CI-PATCH-049-002`; no hostile-build isolation is promised.
 
 ### Negative control
 
@@ -124,188 +95,88 @@ the profile artifacts are no longer needed. The artifact expires after 30
 days, and `patch_release verify` is validation only; it never writes an
 output file or substitutes for the explicit BPS apply command.
 
-## TC-CI-PATCH-049-002: Reject untrusted or malformed patch inputs
+## TC-CI-PATCH-049-002: Reject incorrect patch inputs and package one trusted build
 
-- **Feature / originating issue:** `patch-release-artifact` /
-  [issue #49](https://github.com/laqieer/fireemblem8-expansion/issues/49).
-- **Supported configuration or artifact:** a clean source checkout with
-  Python 3 and the synthetic contract fixtures; an optional disposable copy of
-  an independently acquired legal base may exercise the local command.
-- **Prerequisites and clean starting state:** run from the repository root.
-  Never alter, publish, upload, or commit a legal base; if testing a
-  one-byte mutation locally, use only a disposable local copy and a new output
-  path. No save, savestate, or emulator state is required.
+- **Feature:** patch-release-artifact; issues #49 and #177.
+- **Profile:** modern-release-all-locales-all-features-aapcs, from a clean
+  exact source checkout or the matching master Actions patch artifact.
+- **Prerequisites:** the declared build dependencies; synthetic owned inputs
+  for host automation. Real publication additionally requires the configured
+  private `BASEROM_URL`. Never provide a private base on a PR/fork.
+- **Starting state:** a fresh checkout, no artifact directory, and the normal
+  build's release ROM plus generated metadata. Reset only outputs you own.
 
 ### Actions
 
-1. Run the synthetic malformed-base, corrupted-BPS, artifact-allowlist, and
-   generated README/CLI tests:
-
-   ```bash
-   python3 -m unittest scripts.modernize.tests.test_patch_release -v
-   ```
-
-2. Run the trusted-event/no-PR-secret workflow contract:
-
-   ```bash
-   python3 -m unittest tests.workflows.test_patch_release_workflow -v
-   ```
-
-3. If a legal base is available locally, make a disposable one-byte-modified
-   copy and run the `patch_release verify` and `bps_patch apply` commands from
-   `TC-CI-PATCH-049-001` against that copy. Retain their nonzero status and do
-   not disclose the copied bytes, path, or resulting error context.
+1. Run `python3 -m unittest tests.workflows.test_patch_release_workflow -v`.
+   Its owned synthetic fixture executes the actual packaging script and
+   producer create/verify/round-trip path. It substitutes only the approved
+   base identity and download transport, not target or metadata validation.
+2. Confirm the parsed workflow invokes the canonical profile once, packaging
+   runs no Make target, and packaging/upload select only a successful,
+   authenticated master push. All four validation workers remain mandatory.
+3. Exercise wrong base, target, metadata and commit, failed partial download,
+   unexpected artifact files and failed verification. Each must fail without
+   private URL/base data in public output, and remove its private input.
+4. On the resulting exact master Build, confirm packaging reuses the existing
+   release/aapcs output, succeeds, cleans private input and uploads exactly
+   BPS, `manifest.json` and `README.txt` under the existing SHA-named artifact
+   with 30-day retention. A failed packaging/cleanup step must fail `build`
+   and the combined summary. Do not download or upload a full ROM for evidence.
+5. For local patch validation/application, follow `TC-CI-PATCH-049-001`.
 
 ### Expected result
 
-Missing, malformed, wrong-size, wrong-header, wrong-hash, modified-base,
-corrupted-BPS, noncanonical-manifest, extra-file, directory, and symlink
-inputs fail closed. A wrong source never writes the requested BPS output, the
-workflow is trusted `push` to `master` only, pull requests receive no base
-secret or artifact upload, and diagnostics expose no protected base content.
-The publisher finishes every repository-controlled command before download,
-builds the exact validated after tree as a dedicated unprivileged UID in
-mount/PID/network isolation with private propagation, recursively read-only
-host root/system/tool mounts, private `/tmp`/`run`/`proc`/`dev`, and masked host
-D-Bus/container/service sockets. Every builder descendant remains in one exact
-cgroup v2. It transfers no complete target ROM through an Actions artifact,
-cache, release, or log; rejects a device, symlink, hardlink, escaped path, or
-unexpected isolated handoff output. With shell monitor mode disabled, a
-trusted no-fork Python launcher calls `setsid()`, verifies its PID is both the
-session and process-group ID, and self-stops before it can execute `timeout`,
-`sudo`, `unshare`, or candidate code. The host authenticates that exact
-stopped child from the kernel process table before resuming it. Cleanup
-rechecks that PID/session before signaling the group, kills the exact builder
-cgroup for namespace descendants that leave it, terminates and waits for the
-exact launcher PID, proves the session, `cgroup.procs`, and builder UID are
-empty, removes only owned state, and uses no broad UID signal. It stages its
-producer from the same exact after commit without source hash pins, uses an
-unpredictable mode-restricted base path, invokes only that staged tool through
-absolute isolated Python while the base exists, removes it on success/failure,
-verifies cleanup, revalidates the BPS/manifest/README allowlist immediately
-before upload, and uploads only that patch artifact.
-The launcher's parent-death `SIGKILL` prevents an unresumed authenticated
-child from outliving the trusted shell. Before every cleanup signal, the host
-immediately rechecks the immutable shell-parent PID, PID/SID/PGID tuple,
-expected stopped/running state, and `/proc` start time. A missing, forged, or
-parent-group identity during launch never records a session. The primary
-`launch` rejection already reports failure; if the owned cgroup and builder
-UID are empty, cleanup succeeds with no cleanup diagnostic. A cleanup summary
-appears only for residual cgroup/UID state or an authenticated cleanup failure.
-Stale or reused authenticated identities cause no PID or process-group signal;
-only the owned cgroup kill remains available, and cleanup reports failure.
-After a valid group signal, escalation requires another exact tuple check,
-while the exact shell-child wait is used only to reap an observed exit.
-Before candidate code, a trusted child launcher closes inherited descriptors
-above 2, while stdin becomes private `/dev/null` and stdout/stderr permanently
-target that same null device.
-The candidate receives no GitHub workflow command-file paths and cannot recover
-the Actions log through proc FDs, `/dev/stdout`, console/kmsg, `tee`, xtrace,
-helpers, or forks. ROM-sized output is discarded and never replayed; arbitrary
-output volume cannot fail an otherwise successful build. No output sink exists.
-Fixed trusted text and a numeric exit classification preserve post-spawn build
-failure without exposing candidate bytes. After the isolated builder is
-spawned, `launch` covers only bounded stopped-session identity and exact resume
-validation and emits one fixed detail enum, never process text or an ID.
-`isolated` reports the child exit, and `cleanup` reports teardown summary
-status whenever teardown fails. Earlier trusted pre-spawn setup and later
-post-child handoff validation still use normal shell failure output and are
-outside this stage enum; cleanup may therefore be the only stage text even
-when the failure began before spawn.
-The wrapper binds the exact owned cgroup read-only under root-only mode-`0700`
-`/mnt/supervisor` before masking `/sys`. The candidate cannot read, write,
-execute, or traverse that parent, while the exact cgroup child remains
-read-only; the post-build check remains readable and rejects any member beyond
-the wrapper PID before ROM handoff. Decoded recursive `/dev` mount targets are
-emitted through NUL-delimited trusted JSON parsing, staged through checked
-root-owned regular temp files under `/mnt/supervisor`, unmounted deepest-first,
-and rechecked so only `/dev` remains before the private device tree is
-recreated. Retained descendants, raw escaped or whitespace-delimited
-mount-target transport, paths outside `/dev`, malformed JSON, duplicate
-targets, NUL-bearing targets, and unsafe transport files are rejected.
-After the private device tree is recreated and before candidate code starts,
-the trusted wrapper decodes structured `findmnt --json --list --uniq --output
-TARGET,OPTIONS -R /` output into checked NUL-framed mount target/option
-records, then audits every effective writable mount. util-linux documents
-`--uniq` as "effectively skipping over-mounted mount points", so legitimate
-duplicate target rows from hidden lower layers do not fail the audit and do
-not hide the topmost visible mount. Only `/dev/shm`, `/mnt/handoff`,
-`/mnt/home`, `/mnt/source`, `/mnt/supervisor`, `/mnt/tmp`, and `/tmp` may
-expose an exact `rw` option token. The root-owned mode-`0700`
-`/mnt/supervisor` is the sole mount-level `rw` exception that candidate code
-cannot read, write, execute, or traverse; this avoids the invalid late parent
-remount over its read-only cgroup child without granting candidate access.
-Decoded targets with spaces or backslashes remain lossless; control-character
-targets, malformed or ambiguous option-token grammar, duplicate or extra JSON
-rows, raw escaped or whitespace-delimited mount-target transport, parser
-failure, unchecked process substitution, and any unexpected writable
-effective mount fail closed. Hidden lower layers remain irrelevant unless the
-wrapper or candidate can expose them, and this publisher never grants that
-capability.
+Patch packaging trusts reviewed, merged master source and pinned/declared
+tools, like ordinary CI. It is not a sandbox against malicious repository
+writers, hostile same-UID code, compromised dependencies, or runner compromise.
+The normal modern job builds/checks the named release profile once from its
+fresh exact checkout. Only an authenticated master push packages that existing
+ROM and metadata in the same job; PRs and forks neither receive the private
+base nor upload a patch. The packaging script invokes no Make target.
+The existing producer checks the approved base hash/header, target header and
+embedded metadata, exact commit/profile, BPS round trip and three-file artifact.
+Private input uses a unique mode-0700 directory, mode-0400 base and failure/
+signal cleanup. Download diagnostics never disclose the URL or private bytes.
+Only verified BPS/manifest/README files are uploaded after private cleanup;
+the ROM stays inside the build job and is never an artifact/cache handoff.
+Packaging or cleanup failure fails `build` and therefore the required summary.
+No custom UID, namespace, cgroup, supervisor, broker or capability platform is
+part of this contract. The retired isolation proposals are superseded, not
+claimed to have passed their tests.
 
 ### Negative control
 
-A valid synthetic three-file artifact with the matching synthetic base
-round-trips successfully; it proves the rejection tests are not
-success-shaped. For issue #177's publisher regression, exact failing master
-`8d81c30b298ef6265ba9c5335c3ca8c8f94e60e6` rejects the root-only writable
-`/mnt/supervisor` during the effective-mount audit, while the fixed workflow
-accepts that path and still rejects every candidate access probe. Exact
-failing master `0456f181ad53645a7bc2b677abab05978ab9f35c` then rejects a valid
-asynchronous `setsid` wrapper because `$!` need not equal its observed process
-group. The fixed live namespace harness authenticates the self-stopped
-launcher, resumes it, terminates the exact session and cgroup, and leaves no
-orphan. Missing, forged, parent-process-group, and reused-start-time identities
-leave an unrelated live process untouched; valid owned identity terminates,
-and the cgroup path still removes namespace descendants. A disposable parent
-exits before `SIGCONT`; the stopped launcher's saved PID/start-time identity
-disappears promptly, its session has no descendant, and no orphan remains. The
-default bare `make` path remains 16 MiB/default-off and does not receive a base
-secret, patch artifact, or publish step.
+The pre-fix workflow at `c04724697757892a15fb53e59537e8f51e3de728`
+duplicates the canonical build in a separate publisher and fails the
+build-once topology requirement. Synthetic wrong-input/download/verification
+controls fail; the valid fixture reconstructs the exact owned target from
+its patch and base. Historical skipped publisher jobs remain admissible
+only as an extra canonical skipped record; removing any real validation job
+still invalidates full-run evidence.
 
 ### Interactions and save compatibility
 
-Dependencies and conflicts are the same as `TC-CI-PATCH-049-001`: trusted
-modern profile metadata and `preserve` BGM are required; untrusted events,
-incorrect bases, and output-root contamination are rejected. No save field,
-layout, migration, compatibility epoch, public C API, localization-ID, or
-archival-lane behavior changes.
+Dependencies: exact event identity, normal modern build/checks, existing
+metadata/profile and BPS producer contracts. No dependency on the retired
+#195/#200/#201 architecture. No save, locale, gameplay, generated-data,
+configuration fingerprint, ROM/RAM, or archival behavior change; other
+intentional profile checks remain. No new feature flag or runtime service.
 
 ### Automation
 
 - `python3 -m unittest scripts.modernize.tests.test_patch_release -v` —
-  `scripts/modernize/tests/test_patch_release.py` covers deterministic
-  malformed, allowlist, source-checksum, output-write, and no-path-disclosure
-  controls.
+  base/header/hash, BPS, artifact and metadata validation.
 - `python3 -m unittest tests.workflows.test_patch_release_workflow -v` —
-  `tests/workflows/test_patch_release_workflow.py` maps the trusted event,
-  secret scope, no-PR publication, candidate-before-download ordering,
-  exact-after isolated tool, no-ROM-transfer boundary, dedicated builder UID
-  and namespaces, read-only host/private-filesystem probes, exact cgroup-v2 and
-  process teardown, decoded recursive `/dev` target parsing and deepest-first
-  unmount order, the exact failing-master/current-workflow rootless namespace
-  regression for the root-only writable supervisor mount, the exact
-  failing-master PID/PGID mismatch and fixed self-stopped session-launcher
-  runtime with no orphan, the disposable-parent pre-resume parent-death
-  PID/start-time proof, missing/forged/parent-identity adversaries, and
-  residual-state-only cleanup diagnostics, recursive
-  command/process-substitution inspection for
-  `$()`/backticks/`<(...)`/`>(...)`, structured `env -S` shell-c evasions
-  through inline `else`/brace/case/loop forms, `setsid`-wrapped and common
-  outer-wrapper (`nohup`/`taskset`/`ionice`/`flock`) `env`/BusyBox command
-  slots, regular flock lockfile and command-string forms, clustered mount
-  short-option remount parsing (`-ro`, attached/separate `-o`, and `-w`/`rw`
-  override semantics), inline-function fail-closed behavior, literal
-  quoted/escaped non-execution controls, socket/daemon/cgroup-escape
-  adversaries, two-file handoff rejection controls, unpredictable private
-  path, cleanup-before-upload, late artifact revalidation, null/no-replay
-  candidate output adversaries, the old Bash-FD-255/memfd exit-125
-  reproducer, inherited pipe/memfd/socket closure in the child launcher, and
-  profile/verifier requirements.
+  actual packaging with owned synthetic inputs, cleanup and master/PR policy.
+- `python3 -m unittest tests.workflows.test_build_ci_topology -v` —
+  retained workers, fail-closed summary and historical job compatibility.
+- `python3 -m unittest tests.upstream_port.test_verify -v` —
+  the unchanged 28 local gates and parsed packaging-step contract.
 
 ### Cleanup and limitations
 
-Remove only disposable local copies and outputs created for the negative
-control. The legal-acquisition decision remains manual and private because no
-ROM can be published; every deterministic validation is automated, and the
-case does not test an unpublished base through CI.
+Host fixtures remove only their owned directories. The approved trust model
+does not cover malicious reviewed source or runner compromise. Host fixtures
+do not prove real publication: exact-master Build and remote completion
+remain required. No subjective/manual-only criterion applies.
