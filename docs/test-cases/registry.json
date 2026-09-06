@@ -2388,6 +2388,10 @@
           "evidence": "tests/workflows/test_build_ci_topology.py"
         },
         {
+          "command": "python3 -m unittest tests.upstream_port.test_verify.VerifyCliCwdTests.test_metadata_event_setup_is_closed_and_not_a_local_gate -v",
+          "evidence": "tests/upstream_port/test_verify.py"
+        },
+        {
           "command": "PR_METADATA_LIVE_REPOSITORY=laqieer/fireemblem8-expansion PR_METADATA_LIVE_PR=202 python3 -m unittest scripts.workflow_pilot.tests.test_pr_metadata.LivePullRequestMetadataQueryTests -v",
           "evidence": "scripts/workflow_pilot/tests/test_pr_metadata.py"
         },

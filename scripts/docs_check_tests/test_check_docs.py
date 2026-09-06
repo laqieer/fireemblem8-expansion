@@ -1053,6 +1053,9 @@ class TesterCaseRegistryTests(unittest.TestCase):
                             "python3 -m unittest tests.workflows.test_build_ci_topology."
                             "ConsolidatedBuildTopologyTests."
                             "test_metadata_event_producer_publishes_only_immutable_trigger_binding -v",
+                            "python3 -m unittest tests.upstream_port.test_verify."
+                            "VerifyCliCwdTests."
+                            "test_metadata_event_setup_is_closed_and_not_a_local_gate -v",
                             "python3 -m unittest "
                             "scripts.docs_check_tests."
                             "test_development_workflow_skill -v",

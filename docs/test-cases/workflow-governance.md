@@ -1699,6 +1699,14 @@ the exact branch and head; timeout or ambiguity fails before `gh run watch`.
    trigger, no digest for an invalid sender or older base without the producer,
    unchanged metadata classification on that absence, and rejection of a
    malformed marker digest.
+   Run
+   `python3 -m unittest tests.upstream_port.test_verify.VerifyCliCwdTests.test_metadata_event_setup_is_closed_and_not_a_local_gate -v`.
+   Require the upstream verifier to accept the complete producer/output/marker
+   setup while retaining exactly 28 local gate commands. Remove, duplicate,
+   relink or weaken either setup step, mutate event/run/attempt inputs, and
+   fabricate proof in either no-proof branch: each must reject before gates
+   execute. Equivalent command spacing and environment-mapping order must
+   preserve the parsed contract.
 
 ### Expected result
 
@@ -1860,6 +1868,11 @@ absent. The helper and isolated CLI now require matching immutable event
 evidence. An always-hold replacement must fail the real producer/matching-run
 positive, while a timestamp-only or watermark-only replacement must fail the
 delayed-earlier and same-second ambiguous-version controls.
+Before the coupled upstream integration fix, the verifier rejected the valid
+new router output before it could recognize the producer/marker setup, so the
+real `verify --dry-run` failed instead of listing its 28 gates. The regression
+must accept that complete setup without replacing the closed validator with an
+any-step or any-output allowance.
 
 Before the rejection fix, a real HTTP 422/nonzero `gh` response lost its status,
 left an active intent, and permanently rejected corrected values. An unmatched
