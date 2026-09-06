@@ -234,7 +234,7 @@ class Triage:
                     "finding has wrong review origin")
         if self.outcome == "clean":
             require(not self.findings and not self.fact.unresolved_threads
-                    and self.fact.state != "CHANGES_REQUESTED",
+                    and self.fact.state in {"COMMENTED", "APPROVED"},
                     "clean triage contradicts review facts")
 
 
@@ -361,6 +361,8 @@ class ReviewSession:
         require(set(self.readers) <= READ_ACTIONS, "unapproved reviewer tool binding")
         self.lease = None
         self.report = None
+        self.local_findings: dict[str, Finding] = {}
+        self.local_triage: dict[str, tuple[bool, str]] = {}
         self.rounds = RoundState()
         self.accepted: dict[str, Finding] = {}
 
@@ -408,11 +410,43 @@ class ReviewSession:
                 and len(result.findings) <= MAX_FINDINGS, "review action/budget violation")
         require(timestamp(result.started_at) <= timestamp(result.completed_at),
                 "review task chronology is invalid")
+        findings = tuple(result.findings)
+        for finding in findings:
+            require(isinstance(finding, Finding) and finding.subject in self.scope
+                    and finding.family in FAMILIES and finding.origin == lease.head
+                    and finding.review_id == "local:" + str(lease.task)
+                    and all(isinstance(value, str) and bool(value.strip())
+                            for value in (finding.id, finding.member, finding.source_path)),
+                    "local finding has wrong task, head or scope")
+        unique([finding.id for finding in findings], "local report findings")
+        self.local_findings = {finding.id: finding for finding in findings}
         lease.finished = True
         if self.owners is not None:
             self.owners.finish(self)
         self.report = result
         return result
+
+    def triage_local(self, finding_id: str, *, accepted: bool, reason: str) -> None:
+        require(self.report is not None and finding_id in self.local_findings
+                and finding_id not in self.local_triage, "unknown or duplicate local finding triage")
+        require(type(accepted) is bool and isinstance(reason, str) and bool(reason.strip()),
+                "local finding triage requires a decision and reason")
+        if accepted:
+            self.accept(self.local_findings[finding_id])
+        else:
+            require(finding_id not in self.accepted, "rejected local finding was accepted")
+        self.local_triage[finding_id] = accepted, reason
+
+    def validate_local_triage(self) -> None:
+        require(set(self.local_triage) == set(self.local_findings),
+                "local report findings require complete triage")
+        for finding_id, finding in self.local_findings.items():
+            accepted, reason = self.local_triage[finding_id]
+            require(type(accepted) is bool and isinstance(reason, str) and bool(reason.strip()),
+                    "local finding triage requires a decision and reason")
+            require(self.accepted.get(finding_id) == finding if accepted
+                    else finding_id not in self.accepted,
+                    "local finding triage differs from accepted sibling sweep")
 
     def advance(self, observed_head: str) -> None:
         """Preserve existing work without clearing a review or architecture hold."""
@@ -443,6 +477,7 @@ def assess_handoff(request: dict, members: tuple[Obligation, ...],
     require({subject_key(item) for item in request["subjects"]} == session.scope,
             "request omitted or added an accepted subject")
     require(request["candidate_sha"] == session.head, "stale candidate session")
+    session.validate_local_triage()
     proposed = {item["finding_id"]: item for item in request["findings"]}
     require(set(proposed) == set(session.accepted), "missing or invented accepted finding")
     for finding in session.accepted.values():

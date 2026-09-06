@@ -72,11 +72,13 @@ class Snapshot:
             "docs/test-cases/registry.json",
             "src/expansion_aoe.c", "src/expansion_aoe_reference.c",
             "src/events/ch2-eventinfo.h", "src/events_udefs.c",
+            "assets/manifest.json",
             "src/events_shoplist.c", "src/events_trapdata.c",
             "tools/gba-playtest/tests/c/expansion_aoe_driver.c",
             "tools/gba-playtest/tests/c/expansion_aoe_disabled_driver.c",
         }
-        prefixes = ("include/", "src/data/", "scripts/generated_data/", "reports/generated_data_")
+        prefixes = ("include/", "src/data/", "src/events/", "assets/tmx/",
+                    "scripts/generated_data/", "reports/generated_data_")
         for name in sorted(exact | {name for name in names if name.startswith(prefixes)}):
             source = ROOT / name
             if not source.is_file():

@@ -183,7 +183,8 @@ The three responsibilities are:
 `ReviewTools` loads the two fixed validator modules from the coordinator's
 explicit **reviewed tool revision**, compiling the exact captured Git bytes.
 The isolated launcher similarly loads the gate's captured bytes, not a
-validate-then-reopen working-copy path. An existing case binding/model may be
+validate-then-reopen working-copy path. It rejects non-commit Git objects
+before executing any initializer or validator source. An existing case binding/model may be
 reviewed in the same feature PR and selected at its exact tool revision.
 There is no required base-first installation or second canonical case catalog.
 The request cannot select that revision or register its own probe.
@@ -196,6 +197,9 @@ executes the actual origin/candidate probes, revalidates source identities and
 GitHub state, then calls `assess_handoff` with the coordinator's real review
 session and triage. The session's `identity` is the frozen
 `(repository, pull_request, base_sha)` tuple. The coordinator derives
+`base_sha` as the unique merge base of the candidate and the observed live base.
+Unrelated base fast-forwards preserve that identity; an arbitrary older
+ancestor is not an acceptable replacement. The coordinator derives
 `pre_review_required` from the existing #176 risk/threshold decision, not a
 candidate option.
 
@@ -203,6 +207,15 @@ The coordinator supplies existing tool adapters through the in-process API;
 they are never deserialized from a file. This API does not authenticate an
 arbitrary Python caller. Its trust boundary is the existing coordinator/tool
 role, not a new platform.
+
+`ReviewSession.finish` captures the runtime's typed `Finding` records at the
+reviewed task/head. Before handoff, call
+`session.triage_local(finding_id, accepted=decision, reason=reason)` for every
+returned finding, with a Boolean decision. Accepted records enter the existing sibling sweep;
+rejected records retain a nonblank coordinator reason. Omitted, duplicate,
+wrong-task or contradictory dispositions cannot establish eligibility, even
+after a later candidate passes its probes. This is coordinator-owned triage,
+not authenticated provenance from a JSON author.
 
 For diagnostic planning/checking, use the closed launcher mode:
 
@@ -248,13 +261,22 @@ The shipped unrelated subject uses are:
   per-phase/shape/route/target selectors, preserving its no-argument full run.
   It executes real functions with positive and adversarial inputs. Separate
   enabled/disabled native reference and ARM object symbol/section checks
-  establish the resource boundary. This binding does not claim every future
+  establish the resource boundary. The modern linker gate passes its resolved
+  `MODERN_CC`, `MODERN_NM` and `MODERN_SIZE` paths, including
+  `MODERN_TOOLCHAIN_ROOT` and explicit compiler overrides, to the workers.
+  Direct coordinator calls use the same environment settings or the closed
+  `ReviewTools(..., arm_tools={...})` mapping; defaults resolve through PATH.
+  Missing selected tools remain unavailable, never a fallback to system tools.
+  This binding does not claim every future
   downstream route provider or in-game UI path is covered.
 - **`TC-CORE-004 / generated-eventlists`:** the real event-list schema's
   required and optional owner declarations, authored source, generated C,
   typed consumer round trip and committed inventory. Optional chapter/strategy
-  owners are checked for their event-list contribution, not as substitutes
-  for those independent features' full map/runtime gates.
+  owners run their existing schema validation as well as event-list reference
+  checks, not those independent features' full ROM/runtime gates. Existing
+  observation inputs include the concrete producer/parser/inventory, shared
+  validation modules and authored resources consumed by this binding; valid
+  findings in those sources participate in actual before/after sibling sweeps.
 - **`TC-WORKFLOW-REVIEW-FAMILY-001 / review-session`:** actual reducer and
   request code executed as a registered subject with finite lifecycle/wire
   controls. This explicit binding never redirects unrelated findings to
@@ -278,7 +300,9 @@ complete bounded review content. IDs, heads, actor and timestamps are facts;
 the coordinator's complete-content triage determines clean/change-request/
 untriaged status. COMMENTED, no inline comments and natural-language approval
 phrases never automatically mean clean. Changed content invalidates old
-triage; missing/incomplete observations fail closed.
+triage; missing/incomplete observations fail closed. Dismissed review facts are
+retained as history but never clean authority: only active COMMENTED/APPROVED
+facts can support clean triage on the exact head.
 
 First and second consecutive change requests produce bounded handoffs.
 Before a hold, clean triage resets the sequence. The third request creates a

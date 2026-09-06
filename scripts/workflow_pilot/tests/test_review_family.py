@@ -128,6 +128,8 @@ class RoundTests(unittest.TestCase):
             state.observe(model.Triage(fact(3), "clean"))
 
     def test_no_natural_language_approval_inference(self):
+        for state in ("COMMENTED", "APPROVED"):
+            model.Triage(replace(fact(1), state=state), "clean").validate()
         for body in ("No issues found.", "### 🟢 Approval recommended",
                      "### 🔵 Needs a closer look", "", "zero new inline comments"):
             review = replace(fact(1), body=body)
@@ -188,6 +190,44 @@ class RoleTests(unittest.TestCase):
             setattr(runtime.result, field, wrong)
             with self.subTest(field=field), self.assertRaises(model.ReviewError):
                 session.finish(runtime)
+
+    def test_local_report_findings_are_typed_unique_and_task_bound(self):
+        finding = model.Finding(
+            "finding-1", next(iter(self.scope)), "wire", "validators:review-session",
+            "b" * 40, "scripts/workflow_pilot/review_family.py", "local:task-1")
+        for findings in (
+            ({},), (replace(finding, id=""),), (finding, finding),
+            (replace(finding, origin="c" * 40),),
+            (replace(finding, subject="other"),),
+            (replace(finding, review_id="other-task"),),
+        ):
+            with self.subTest(findings=findings):
+                session = model.ReviewSession("coordinator", "implementer", self.scope, "b" * 40)
+                runtime = Runtime("b" * 40, self.scope)
+                runtime.result.findings = findings
+                session.begin(runtime, "reviewer")
+                with self.assertRaises(ValueError):
+                    session.finish(runtime)
+
+    def test_local_decisions_are_complete_reasoned_and_preserve_observed_findings(self):
+        finding = model.Finding(
+            "finding-1", next(iter(self.scope)), "wire", "validators:review-session",
+            "b" * 40, "scripts/workflow_pilot/review_family.py", "local:task-1")
+        self.runtime.result.findings = (finding,)
+        self.session.begin(self.runtime, "reviewer")
+        self.session.finish(self.runtime)
+        self.runtime.result.findings = ()
+        with self.assertRaisesRegex(ValueError, "local.*triage"):
+            self.session.validate_local_triage()
+        for finding_id, accepted, reason in (
+            ("other", False, "unknown finding"), (finding.id, "yes", "not a boolean"),
+            (finding.id, False, " "),
+        ):
+            with self.assertRaises(ValueError):
+                self.session.triage_local(finding_id, accepted=accepted, reason=reason)
+        self.session.triage_local(finding.id, accepted=False, reason="Coordinator rejected the finding")
+        self.session.validate_local_triage()
+        self.assertEqual(self.session.accepted, {})
 
     def test_existing_commit_publication_does_not_clear_hold(self):
         self.session.rounds.hold = ("3", "b" * 40)

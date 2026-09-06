@@ -5,6 +5,7 @@ from __future__ import annotations
 import ast
 from dataclasses import dataclass
 import json
+import os
 from pathlib import Path
 import re
 import subprocess
@@ -40,6 +41,33 @@ EVENT_SCHEMA = "scripts/generated_data/eventlists/schema.py"
 EVENT_SOURCE = "src/data/ch2_eventlists.json"
 PHASES = ("CAN_USE", "BEGIN_USE", "EXECUTE", "AI_SELECT")
 SHAPES = ("DIAMOND", "SQUARE", "CROSS")
+
+
+def event_validation_inputs(tree, dependencies):
+    shared = {
+        "scripts/generated_data/" + name + ".py" for name in (
+            "__init__", "cli", "registry", "schema", "diagnostics", "json_loader",
+            "validators", "character_refs", "cparse", "cgen", "manifest", "idspace",
+        )
+    }
+    for name in {"eventlists", *dependencies, "chapterobjectives", "supports"}:
+        shared.update(path for path in tree.under("scripts/generated_data/" + name)
+                      if path.endswith(".py"))
+    shared.update({
+        "scripts/assets/__init__.py", "scripts/assets/tmx.py", "assets/manifest.json",
+        "src/data/chapter_settings.json", "src/data/data_8B363C.c",
+        "include/bmunit.h", "include/bmtrick.h",
+    })
+    shared.update("include/constants/" + name + ".h"
+                  for name in ("characters", "classes", "items", "chapters", "event-flags"))
+    manifest = json.loads(tree.read("assets/manifest.json"))
+    for asset in manifest["assets"]:
+        if {"mapWidth", "mapHeight"} <= set(asset.get("resources", {})):
+            shared.update(asset["sources"])
+    for path in tree.under("src/data"):
+        if path.endswith("_bundle.json"):
+            shared.update(item["file"] for item in json.loads(tree.read(path))["externalReferences"])
+    return shared
 
 
 def resolve_subject(case_id: str, subject: str, catalog: dict) -> SubjectSpec:
@@ -140,14 +168,15 @@ def _members(spec: SubjectSpec, tree) -> tuple[review.Obligation, ...]:
         defaults, dependencies = schema_declaration(tree.read(EVENT_SCHEMA))
         review.require(defaults.get("default_source") == EVENT_SOURCE,
                        "changed owner needs an explicit reviewed binding")
-        inputs = {EVENT_SCHEMA, EVENT_SOURCE}
+        validation_inputs = event_validation_inputs(tree, dependencies)
+        inputs = {EVENT_SCHEMA, EVENT_SOURCE} | validation_inputs
         for name in ("eventlists", *dependencies):
             relative = "scripts/generated_data/" + name + "/schema.py"
             values, _ = schema_declaration(tree.read(relative), dependencies=False)
             source = values.get("default_source")
             review.require(isinstance(source, str), "missing generated owner source")
             sources = tree.under(source) if source == "src/data" else (source,)
-            paths = {relative, *sources}
+            paths = {relative, *sources} | validation_inputs
             inputs.update(paths)
             add("generated", "owners", name, relative, EVENT_SCHEMA, source,
                 "schema validation and malformed input rejection",
@@ -244,7 +273,7 @@ def _native(probe: str) -> dict:
 
 
 def _arm(enabled: bool) -> dict:
-    common = ["/usr/bin/arm-none-eabi-gcc", "-mcpu=arm7tdmi", "-mthumb",
+    common = [os.environ["MODERN_CC"], "-mcpu=arm7tdmi", "-mthumb",
               "-mthumb-interwork", "-mabi=aapcs", "-std=gnu89", "-ffreestanding",
               "-fno-builtin", "-Iinclude", "-Iinclude/generated",
               "-DFE8_EXPANSION_MODERN_BUILD=1"]
@@ -256,20 +285,20 @@ def _arm(enabled: bool) -> dict:
         output = f"build/arm-{enabled}-{index}.o"
         command([*common, "-c", path, "-o", output])
         objects.append(output)
-    symbols = command(["/usr/bin/arm-none-eabi-nm", "-S", objects[-1]]).decode()
+    symbols = command([os.environ["MODERN_NM"], "-S", objects[-1]]).decode()
     defined = {line.split()[-1] for line in symbols.splitlines()
                if len(line.split()) >= 4 and line.split()[-2].upper() != "U"}
     required = {"gExpansionAoEReferenceProbe", "ExpansionAoEReference_Heal"}
     check(required <= defined if enabled else not (required & defined),
           "enabled/disabled reference ELF symbol contract violated")
     if enabled:
-        core_symbols = command(["/usr/bin/arm-none-eabi-nm", "-S", objects[0]]).decode()
+        core_symbols = command([os.environ["MODERN_NM"], "-S", objects[0]]).decode()
         entries = {line.split()[-1]: int(line.split()[1], 16)
                    for line in core_symbols.splitlines() if len(line.split()) == 4}
         check("sItemRoutes" not in entries, "core retained an always-live route registry")
         check("sItemDispatchActive" in entries and entries["sItemDispatchActive"] <= 4,
               "dispatch reentrancy state budget violated")
-        sections = command(["/usr/bin/arm-none-eabi-size", "-A", *objects]).decode()
+        sections = command([os.environ["MODERN_SIZE"], "-A", *objects]).decode()
         sizes = [int(item) for item in re.findall(r"^ewram_data\s+(\d+)", sections, re.M)]
         check(sum(sizes) <= 128, "AoE EWRAM budget exceeded")
         text = [int(item) for item in re.findall(r"^\.text\s+(\d+)", sections, re.M)]
@@ -288,13 +317,10 @@ def _generated(probe: str) -> dict:
     schema = registry.REGISTRY.resolve(name)
     try:
         event_schema = registry.REGISTRY.resolve("eventlists")
+        records, diagnostics = cli._load_and_validate(schema, schema.default_source)
         if name in event_schema.optional_dependency_tables():
-            # This binding owns the event-list contribution, not the separate
-            # chapter-map or strategy feature's complete validation gate.
-            records = schema.load_records(schema.default_source)
-            _, diagnostics = cli._load_and_validate(event_schema, event_schema.default_source)
-        else:
-            records, diagnostics = cli._load_and_validate(schema, schema.default_source)
+            _, event_diagnostics = cli._load_and_validate(event_schema, event_schema.default_source)
+            diagnostics.extend(event_diagnostics.errors)
     except GeneratedDataError as error:
         raise ContractViolation(str(error)) from error
     check(not diagnostics.errors, "\n".join(str(item) for item in diagnostics.errors)[:2000])

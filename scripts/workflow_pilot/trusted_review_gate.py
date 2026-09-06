@@ -9,6 +9,7 @@ import importlib
 import json
 import os
 from pathlib import Path, PurePosixPath
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -214,11 +215,26 @@ def _kind(probe):
 
 
 class ReviewTools:
-    def __init__(self, tool_tree: GitTree, subject_root: Path):
+    def __init__(self, tool_tree: GitTree, subject_root: Path, *, arm_tools=None):
         self.tool_tree = tool_tree
         self.subject_root = subject_root.resolve(strict=True)
         self.model, self.subjects = load_tools(tool_tree)
         self.catalog = json.loads(tool_tree.read("docs/test-cases/registry.json"))
+        selected = {
+            key: os.environ.get(key, "arm-none-eabi-" + tool)
+            for key, tool in (("MODERN_CC", "gcc"), ("MODERN_NM", "nm"), ("MODERN_SIZE", "size"))
+        }
+        if arm_tools is not None:
+            self.model.require(set(arm_tools) <= set(selected), "unknown ARM tool setting")
+            selected.update(arm_tools)
+        self.arm_tools = {key: os.path.abspath(shutil.which(value) or value)
+                          for key, value in selected.items()}
+
+    def validate_base(self, request, live_base):
+        head = self.tree(request["candidate_sha"])
+        bases = head.git("merge-base", "--all", live_base, head.revision).decode().splitlines()
+        self.model.require(bases == [request["base_sha"]],
+                           "frozen base differs from the unique candidate/live-base merge base")
 
     def tree(self, revision):
         return GitTree(self.subject_root, revision)
@@ -247,6 +263,7 @@ class ReviewTools:
             paths.update(tree.under("include"))
             paths.update((self.subjects.AOE_CORE, self.subjects.AOE_REFERENCE))
         if any(probe.startswith("generated-") for probe in probes):
+            paths.update(path for member in members for path in member.inputs)
             paths.update(tree.under("include"))
             paths.update(tree.under("src/data"))
             paths.update(tree.under("scripts/generated_data"))
@@ -283,6 +300,7 @@ class ReviewTools:
             environment = {
                 "HOME": str(home), "PATH": "/usr/bin:/bin", "LC_ALL": "C.UTF-8",
                 "TMPDIR": str(root / "build"), "PYTHONDONTWRITEBYTECODE": "1",
+                **self.arm_tools,
             }
             try:
                 completed = subprocess.run(
@@ -312,8 +330,8 @@ class ReviewTools:
         request = model.validate_request(request)
         identities, facts = github.snapshot(request["repository"], request["pull_request"], model)
         model.require(identities[1] == request["candidate_sha"], "stale remote candidate")
-        self.tree(identities[1]).git("merge-base", "--is-ancestor",
-                                   request["base_sha"], identities[0])
+        self.validate_base(request, identities[0])
+        session.validate_local_triage()
         model.require(set(session.rounds.seen) == {item.fact.id for item in triage},
                       "round state has not consumed actual triage")
         fact_origins = {fact.id: fact.head for fact in facts}
@@ -375,6 +393,7 @@ def main(argv=None):
             identity, facts = GitHub().snapshot(request["repository"], request["pull_request"],
                                                tools.model)
             tools.model.require(identity[1] == args.candidate, "wrong live GitHub head")
+            tools.validate_base(request, identity[0])
             observations = tools.run_obligations(members, args.candidate)
             report["observations"] = [asdict(item) for item in observations]
             report["untriaged_review_ids"] = [item.id for item in facts]

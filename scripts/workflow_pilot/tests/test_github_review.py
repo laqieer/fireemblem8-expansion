@@ -16,7 +16,7 @@ from unittest.mock import patch
 from contextlib import redirect_stdout, redirect_stderr
 
 from scripts.workflow_pilot import trusted_review_gate as gate
-from scripts.workflow_pilot.tests.review_support import ENV, Runtime, request, snapshot
+from scripts.workflow_pilot.tests.review_support import ENV, Runtime, git, request, snapshot
 
 
 def response(base, head, body="Complete review content", *, actor=None):
@@ -91,6 +91,153 @@ class GitHubReviewTests(unittest.TestCase):
             result = self.tools.assess(data, session, github, (triage,), pre_review_required=True)
             self.assertFalse(result["exact_head_review_clean"])
             self.assertFalse(result["handoff_eligible"])
+
+    def test_dismissed_review_is_retained_but_never_clean(self):
+        data, session, _, github, _ = self.setup_review()
+        github.payload["data"]["repository"]["pullRequest"]["reviews"]["nodes"][0]["state"] = "DISMISSED"
+        _, facts = github.snapshot("owner/repo", 1, self.model)
+        self.assertEqual(facts[0].state, "DISMISSED")
+        with self.assertRaisesRegex(ValueError, "clean triage"):
+            self.model.Triage(facts[0], "clean").validate()
+        triage = self.model.Triage(facts[0], "untriaged")
+        session.triage(triage)
+        result = self.tools.assess(data, session, github, (triage,), pre_review_required=True)
+        self.assertFalse(result["exact_head_review_clean"])
+        self.assertFalse(result["handoff_eligible"])
+
+    def test_exact_merge_base_allows_only_unrelated_base_fast_forward(self):
+        common = self.repo.commit({"lineage-common": "branch point"})
+        head = self.repo.commit({"lineage-candidate": "candidate"}, parent=common)
+        advanced = self.repo.commit({"lineage-live-base": "unrelated base advance"}, parent=common)
+        for frozen, live, accepted in (
+            (common, common, True), (common, advanced, True),
+            (self.repo.base, advanced, False), (common, self.repo.base, False),
+        ):
+            with self.subTest(frozen=frozen, live=live):
+                data = request(base=frozen, head=head)
+                scope = frozenset({self.model.subject_key(data["subjects"][0])})
+                session = self.model.ReviewSession(
+                    "coordinator", "implementer", scope, head,
+                    identity=("owner/repo", 1, frozen))
+                github = ObservedGitHub(response(live, head))
+                _, facts = github.snapshot("owner/repo", 1, self.model)
+                triage = self.model.Triage(facts[0], "clean")
+                session.triage(triage)
+                if accepted:
+                    result = self.tools.assess(
+                        data, session, github, (triage,), pre_review_required=False)
+                    self.assertTrue(result["exact_head_review_clean"])
+                else:
+                    with self.assertRaises(ValueError):
+                        self.tools.assess(data, session, github, (triage,), pre_review_required=False)
+
+    def local_source_remediation(self, *, generated=False):
+        path = ("scripts/generated_data/eventlists/generate.py" if generated
+                else "scripts/workflow_pilot/review_family.py")
+        source = (self.repo.root / path).read_text()
+        broken = (source.replace(
+            'return "".join(parts)',
+            'return "".join(parts).replace("FACTION_ID_BLUE", "FACTION_ID_RED")') if generated
+            else source.replace('require(request["candidate_sha"] == session.head,', 'require(True,'))
+        self.assertNotEqual(broken, source)
+        before = self.repo.commit({path: broken})
+        after = self.repo.commit({path: source}, parent=before)
+        data = (request("TC-CORE-004", "generated-eventlists", self.repo.base, after) if generated
+                else request(base=self.repo.base, head=after))
+        key = self.model.subject_key(data["subjects"][0])
+        finding = self.model.Finding(
+            "local-finding", key, "generated" if generated else "wire",
+            "outputs:eventlists" if generated else "stale-bindings:review-session",
+            before, path, "local:task-1")
+        session = self.model.ReviewSession(
+            "coordinator", "implementer", frozenset({key}), before,
+            identity=("owner/repo", 1, self.repo.base), owners=self.model.ReviewOwnership())
+        runtime = Runtime(before, session.scope)
+        runtime.result.findings = (finding,)
+        session.begin(runtime, "reviewer")
+        session.finish(runtime)
+        session.advance(after)
+        github = ObservedGitHub(response(self.repo.base, after))
+        _, facts = github.snapshot("owner/repo", 1, self.model)
+        triage = self.model.Triage(facts[0], "clean")
+        session.triage(triage)
+        return data, session, github, triage, finding
+
+    def test_omitted_local_report_finding_cannot_admit_handoff(self):
+        data, session, github, triage, finding = self.local_source_remediation()
+        members = self.tools.members(data, (finding.origin,))
+        before = self.tools.run_obligations(members, finding.origin)
+        self.assertEqual(next(item.verdict for item in before
+                              if item.obligation.member == finding.member), "contract-violation")
+        with self.assertRaisesRegex(ValueError, "local.*triage"):
+            self.tools.assess(data, session, github, (triage,), pre_review_required=True)
+
+    def test_local_report_accepted_rejected_and_remediated_decisions(self):
+        for accepted in (True, False):
+            with self.subTest(accepted=accepted):
+                data, session, github, triage, finding = self.local_source_remediation()
+                session.triage_local(finding.id, accepted=accepted, reason="Coordinator source review")
+                if accepted:
+                    self.assertEqual(session.accepted[finding.id], finding)
+                    data["findings"] = [{
+                        "finding_id": finding.id, **data["subjects"][0],
+                        "family": finding.family, "reported_member": finding.member,
+                    }]
+                else:
+                    self.assertNotIn(finding.id, session.accepted)
+                result = self.tools.assess(data, session, github, (triage,), pre_review_required=True)
+                self.assertTrue(result["handoff_eligible"])
+                self.assertEqual(bool(result["outcomes"]), accepted)
+                if accepted:
+                    self.assertTrue(any(row["outcome"] == "affected-fixed" for row in result["outcomes"]))
+                    session.accepted.clear()
+                    data["findings"] = []
+                    with self.assertRaisesRegex(ValueError, "local.*triage"):
+                        self.tools.assess(data, session, github, (triage,), pre_review_required=True)
+                with self.assertRaises(ValueError):
+                    session.triage_local(finding.id, accepted=accepted, reason="Duplicate decision")
+
+    def test_accepted_local_generated_finding_drives_the_actual_sibling_sweep(self):
+        data, session, github, triage, finding = self.local_source_remediation(generated=True)
+        session.triage_local(finding.id, accepted=True, reason="Generated output changed faction")
+        data["findings"] = [{
+            "finding_id": finding.id, **data["subjects"][0],
+            "family": finding.family, "reported_member": finding.member,
+        }]
+        result = self.tools.assess(data, session, github, (triage,), pre_review_required=True)
+        self.assertTrue(result["handoff_eligible"])
+        self.assertTrue(any(row["member"] == finding.member and row["outcome"] == "affected-fixed"
+                            for row in result["outcomes"]))
+        self.assertEqual({row["member"] for row in result["outcomes"]},
+                         {member.member for member in self.tools.members(data, (finding.origin,))})
+
+    def test_unattached_tool_tree_is_rejected_before_initializer_execution(self):
+        data = request(base=self.repo.base, head=self.repo.base)
+        request_path = self.repo.root / "request.json"
+        request_path.write_text(json.dumps(data))
+        sentinel = self.repo.root / "build" / "unattached-tree-executed"
+        payload = self.repo.root / "build" / "tree-initializer.py"
+        payload.parent.mkdir(exist_ok=True)
+        payload.write_text("from pathlib import Path\nPath(" + repr(str(sentinel)) + ").write_text('ran')\n")
+        git(self.repo.root, "read-tree", self.repo.base)
+        oid = git(self.repo.root, "hash-object", "-w", str(payload))
+        git(self.repo.root, "update-index", "--add", "--cacheinfo",
+            "100644," + oid + ",scripts/__init__.py")
+        tree = git(self.repo.root, "write-tree")
+        git(self.repo.root, "read-tree", self.repo.base)
+        self.assertEqual(git(self.repo.root, "cat-file", "-t", tree), "tree")
+        try:
+            completed = subprocess.run(
+                [sys.executable, "-I", "-B",
+                 str(self.repo.root / "scripts/workflow_pilot/isolated_launcher.py"), "review-family",
+                 "--repository-root", str(self.repo.root), "--subject-root", str(self.repo.root),
+                 "--tool-revision", tree, "--candidate", self.repo.base,
+                 "--request", str(request_path), "--mode", "plan"],
+                env=ENV, capture_output=True, timeout=30)
+            self.assertNotEqual(completed.returncode, 0)
+            self.assertFalse(sentinel.exists(), "unattached tree code executed before rejection")
+        finally:
+            sentinel.unlink(missing_ok=True)
 
     def test_changed_content_wrong_identity_and_missing_task_reject(self):
         data, session, _, github, facts = self.setup_review()

@@ -75,14 +75,10 @@ class SubjectTests(SubjectTestCase):
         self.assertEqual(families, set(self.model.FAMILIES))
 
     def test_missing_arm_compiler_is_unavailable_and_cannot_admit_handoff(self):
-        path = "scripts/workflow_pilot/review_subjects.py"
-        source = (self.repo.root / path).read_text()
         missing = self.repo.root / "build" / "uninstalled-arm-none-eabi-gcc"
         self.assertFalse(missing.exists())
-        compiler = '"/usr/bin/arm-none-eabi-gcc"'
-        self.assertEqual(source.count(compiler), 1)
-        revision = self.repo.commit({path: source.replace(compiler, repr(str(missing)))})
-        tools = ReviewTools(GitTree(self.repo.root, revision), self.repo.root)
+        tools = ReviewTools(GitTree(self.repo.root, self.repo.base), self.repo.root,
+                            arm_tools={"MODERN_CC": str(missing)})
         data = self.scope("aoe")
         members = tools.members(data)
         observations = tools.run_obligations(members, self.repo.base)
@@ -108,7 +104,7 @@ class SubjectTests(SubjectTestCase):
             with self.subTest(evidence_count=len(evidence)):
                 with self.assertRaisesRegex(ValueError, error):
                     model.assess_handoff(
-                        data, members, evidence, session, tool_revision=revision,
+                        data, members, evidence, session, tool_revision=self.repo.base,
                         remote_reviews=(), triage=(), pre_review_required=False)
 
     def test_modern_linker_recipe_runs_mandatory_arm_positives(self):
@@ -129,14 +125,15 @@ class SubjectTests(SubjectTestCase):
                             for line in rule.replace("\\\n", " ").splitlines()
                             if line.startswith("\t")]
                 self.assertIn(
-                    ["$(PYTHON)", "-m", "unittest",
+                    ["MODERN_CC=$(MODERN_CC)", "MODERN_NM=$(MODERN_NM)",
+                     "MODERN_SIZE=$(MODERN_SIZE)", "$(PYTHON)", "-m", "unittest",
                      "scripts.workflow_pilot.tests.arm_review_subjects", "-v"],
                     commands)
 
-    def remediation(self, kind, path, broken, member):
+    def remediation(self, kind, path, broken, member, *, fixed=None):
         original = (self.repo.root / path).read_bytes()
         before = self.repo.commit({path: broken})
-        after = self.repo.commit({path: original}, parent=before)
+        after = self.repo.commit({path: original if fixed is None else fixed}, parent=before)
         data = self.scope(kind, after)
         members = tuple(item for item in self.tools.members(data, (before,))
                         if item.family == ("action" if kind == "aoe" else "generated"))
@@ -200,6 +197,43 @@ class SubjectTests(SubjectTestCase):
             self.model.assess_handoff(
                 request_data, members, (*prior, *missing), session, tool_revision=self.repo.base,
                 remote_reviews=(), triage=(), pre_review_required=False)
+
+    def test_optional_owner_semantic_invalid_data_is_rejected(self):
+        for path, owner in (
+            ("src/data/autoplay_strategies.json", "autoplaystrategies"),
+            ("src/data/ch2_bundle.json", "chapterbundle"),
+        ):
+            with self.subTest(owner=owner):
+                data = json.loads((self.repo.root / path).read_text())
+                fixed = None
+                if owner == "autoplaystrategies":
+                    selected = copy.deepcopy(data["strategies"][0])
+                    selected["id"] = "AUTOPLAY_STRATEGY_REVIEW_SELECTED"
+                    data["strategies"].append(selected)
+                    fixed = json.dumps(data)
+                    selected["callback"] = "not a C callback"
+                else:
+                    data["chapter"]["mapEventDataId"] = 9999
+                self.remediation("generated", path, json.dumps(data), "owners:" + owner, fixed=fixed)
+
+    def test_generated_producer_consumer_and_inventory_findings_bind_executed_source(self):
+        cases = (
+            ("generate.py", "outputs:eventlists",
+             'return "".join(parts)', 'return "".join(parts).replace("FACTION_ID_BLUE", "FACTION_ID_RED")'),
+            ("parser.py", "consumers:eventlists",
+             "return errors", 'return errors + [GeneratedDataError("invalid parsed consumer")]'),
+            ("inventory.py", "drift-checks:eventlists",
+             'return "".join(lines)', 'return "".join(lines) + "unexpected inventory row\\n"'),
+        )
+        for name, member, old, new in cases:
+            with self.subTest(source=name):
+                path = "scripts/generated_data/eventlists/" + name
+                source = (self.repo.root / path).read_text()
+                self.assertIn(old, source)
+                self.remediation("generated", path, source.replace(old, new), member)
+                revision = self.repo.commit({path: "# Harmless formatting control.\n" + source})
+                members = self.tools.members(self.scope("generated", revision))
+                self.assert_satisfied(self.run_members(members, revision))
 
     def test_lifecycle_and_wire_execute_actual_origin_source(self):
         path = "scripts/workflow_pilot/review_family.py"
@@ -281,7 +315,11 @@ class SubjectTests(SubjectTestCase):
         subprocess.run(["/usr/bin/git", "-C", str(self.repo.root), "config",
                         "core.fsmonitor", str(hook)], env=ENV, check=True)
         GitTree(self.repo.root, self.repo.base).read(path)
+        GitTree(self.repo.root, self.repo.base).git("status", "--porcelain")
         self.assertFalse(sentinel.exists())
+        subprocess.run(["/usr/bin/git", "-C", str(self.repo.root), "status", "--porcelain"],
+                       env=ENV, capture_output=True, check=True)
+        self.assertTrue(sentinel.exists(), "raw Git did not exercise the configured fsmonitor hook")
 
     def test_semantics_preserving_source_refactor_remains_green(self):
         path = "src/expansion_aoe.c"

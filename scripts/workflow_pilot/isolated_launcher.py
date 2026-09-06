@@ -132,6 +132,9 @@ def run_review_family(arguments: list[str]) -> int:
                              completed.stderr.decode(errors="replace")[-1000:])
         return completed.stdout
 
+    if git("cat-file", "-t", revision).strip() != b"commit":
+        raise ValueError("reviewed tool revision must identify a commit object")
+
     def source(path, *, namespace=False):
         records = [record for record in git("ls-tree", "-z", revision, "--", path).split(b"\0")
                    if record]

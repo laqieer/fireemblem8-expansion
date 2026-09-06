@@ -137,8 +137,9 @@ the consumers' independent protected-principal/deployment requirements.
      -s scripts/workflow_pilot/tests -t . -p 'test_*review*.py' -v
    ```
 
-2. With `/usr/bin/arm-none-eabi-gcc`, `/usr/bin/arm-none-eabi-nm` and
-   `/usr/bin/arm-none-eabi-size` installed, run the separate ARM-positive selector:
+2. With the supported ARM compiler/binutils on PATH (or the resolved
+   `MODERN_CC`, `MODERN_NM` and `MODERN_SIZE` environment paths), run the
+   separate ARM-positive selector:
 
    ```bash
    python3 -m unittest scripts.workflow_pilot.tests.arm_review_subjects -v
@@ -149,7 +150,10 @@ the consumers' independent protected-principal/deployment requirements.
    gate. Missing tools fail rather than skip. The host reporter suite needs no
    ARM installation and retains all native/source-backed family coverage;
    its parsed Make contract verifies that both configurations retain the
-   mandatory ARM selector.
+   mandatory ARM selector and resolved tool paths. The owned non-system
+   toolchain control exercises both `MODERN_TOOLCHAIN_ROOT` and an explicit
+   compiler override through Make, then records actual compiler/nm/size
+   execution; a system-only installation is not required.
    Inspect the actual AoE controls: every public item phase, typed route checks,
    each shape and bounded/stable target behavior runs its selected native
    driver group. Enabled and disabled reference drivers and ARM object
@@ -160,8 +164,12 @@ the consumers' independent protected-principal/deployment requirements.
    owners, validate authored references, generate and parse C output, compare
    the consumer and inventory. Introduce a nonexistent event-script reference
    in owned source; validation fails before and passes after restoration.
-   Optional owner checks cover their event-list contribution, not unrelated
-   chapter-map/runtime semantics.
+   Optional owners also run their existing semantic validators: invalid
+   callbacks on selected non-reference strategies and chapter bundle metadata
+   fail. Default-off reference records remain inactive. Mutate the actual
+   generator, consumer parser and inventory producer, restore them and make
+   formatting-only edits. Their source-bound findings must sweep the family
+   and pass only after repair, without unrelated feature-wide ROM checks.
 4. Execute the real review reducer as a source subject. The lifecycle and wire
    probes cover entries/preservation/resets/terminals and
    producers/consumers/validators/replay/stale bindings. Mutating the hold
@@ -171,8 +179,8 @@ the consumers' independent protected-principal/deployment requirements.
    unknown cases/members/probes, wrong subjects/heads/tool revisions and
    unrelated all-pass evidence. Every incomplete handoff rejects.
 6. Make compilation/import unavailable and provide zero/skipped/unknown probe
-   results. The owned missing-compiler fixture changes only its private tool
-   revision's compiler path to a nonexistent file: native checks still pass,
+   results. The owned missing-compiler fixture changes only its
+   coordinator-selected compiler path to a nonexistent file: native checks still pass,
    enabled/disabled object observations are `unavailable` with zero checks,
    and both those observations and their omission reject handoff. No system
    compiler or global environment is changed. A passing host regression proves
@@ -185,15 +193,23 @@ the consumers' independent protected-principal/deployment requirements.
    tool; duplicate/overlapping owners, wrong/stale/incomplete task results and
    excessive duration reject. This proves the operational interface, not
    same-UID OS containment or that a synthetic test launched a live agent.
+   Every returned typed finding needs explicit accepted/rejected local triage
+   with a reason. Omission rejects even on repaired source; acceptance enters
+   the existing sibling sweep, and rejection never silently accepts a finding.
 8. Exercise exact GitHub actor/head/content collection and complete coordinator
    triage. COMMENTED, approval phrases and zero inline findings remain
    untriaged until that decision. Change content or the head and require
    rejection. The live adapter's command is read-only GraphQL.
+   Dismissed exact-head facts remain visible but cannot be clean authority.
+   Unrelated live-base fast-forwards preserve the actual candidate merge base;
+   substituting an older ancestor or a base outside that lineage rejects.
 9. Exercise the real isolated launcher against an explicitly reviewed tool
    revision. Substitute working-copy validator/gate files and require the
    intended captured Git bytes to execute instead. Wrong source, unsafe Git
    modes, ambient hooks/import state, duplicate request fields and candidate
    success/program/trust fields fail rather than enabling a fallback.
+   A real unattached tree object containing an initializer must be rejected
+   before that initializer executes.
 10. First/second request rounds produce bounded handoffs; the third remains
     held through later heads and clean reports until a valid coordinator
     disposition names the held round/head. Preserve already-created commits
