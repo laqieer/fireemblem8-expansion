@@ -1100,6 +1100,14 @@ class TesterCaseRegistryTests(unittest.TestCase):
                             "python3 scripts/check_docs.py --check",
                         },
                     },
+                    "TC-WORKFLOW-OWNERSHIP-PROBE-SANDBOX-001": {
+                        "document": "docs/test-cases/workflow-governance.md",
+                        "commands": {
+                            "python3 -m unittest "
+                            "scripts.validation_ownership.tests.test_foundation -v",
+                            "make -f scripts/validation_ownership/foundation.mk ownership-probe-check",
+                        },
+                    },
                 },
             },
         }
