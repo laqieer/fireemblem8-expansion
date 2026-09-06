@@ -187,7 +187,11 @@ watchers. The existing assignment/handoff and watcher schemas remain valid.
    Unknown delivery cannot be retried into a duplicate; it remains pending
    reconciliation. Bind the unique actual run after the recorded watermark,
    never a guessed run ID. Run ID and attempt are retained; a later mismatched
-   attempt or run is not silently promoted.
+   attempt or run is not silently promoted. Preserve native fractional
+   reservation times, but compare GitHub's second-granular creation time at
+   provider precision alongside the strict run-number watermark and identity.
+   A same-head/branch active run with unknown binding/mode remains a visible
+   hold before both dispatch and merge, even beside an earlier full success.
 6. When a run becomes visible, use the existing #178 `reserve_watcher` /
    `finish_watcher` / `reconcile_run` interfaces and exactly one attached
    bounded shell watcher per run/attempt. A reasoning agent never waits.
@@ -213,8 +217,10 @@ and #177's existing metadata continuity lookback preserve this distinction for
 both PR and input-free dispatch runs.
 Automatic exact-head security checks can legitimately start before the
 coordinator first registers a new head. Do not rewrite their timestamps.
-A same-head base rebind instead requires refreshed review/security after that
-binding, because the SHA alone cannot distinguish its prior base.
+A same-head base rebind instead requires the current eligible clean review
+and security to follow that binding, because the SHA alone cannot distinguish
+its prior base. Historical reviews stay in complete triage and unresolved/
+abandonment checks; their old timestamps do not invalidate a newer clean review.
 
 These APIs consume trusted coordinator observations, not authenticated JSON
 receipts or arbitrary Python callers. They do not offer a broker, signer,
@@ -1081,9 +1087,10 @@ authoritative base SHA, and immutable head SHA. The live required Build
 contexts therefore stay the canonical `host-tests`, `build`, and `summary`
 names, while metadata-only runs still remain ineligible candidate evidence by
 themselves even when those continuity attestations succeed.
-The current Build workflow has no explicit final-dispatch trigger; if that
-supported surface is introduced later, `workflow_dispatch` classifies as full
-and the trigger/topology contracts must be updated together.
+The current Build workflow also supports the input-free full
+`workflow_dispatch` described in [adaptive candidate gating](#adaptive-review-first-candidate-gates).
+That dispatch retains all eight jobs; preflight alone or an early/unbound run
+is not full candidate evidence, and publication remains master-push-only.
 
 A live metadata exercise must use a disposable validation-only PR whose base
 is the exact candidate branch containing the classifier and whose head is a

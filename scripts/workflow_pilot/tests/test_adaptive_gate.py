@@ -3,8 +3,8 @@
 import copy
 import ast
 import base64
-from dataclasses import replace
-from datetime import datetime, timezone
+from dataclasses import asdict, replace
+from datetime import datetime, timedelta, timezone
 import json
 import hashlib
 import os
@@ -170,6 +170,52 @@ class GateTests(unittest.TestCase):
                                                         else "workflow_dispatch"),
             self.pr.head_sha, (self.pr.number, self.pr.head_sha, self.fixture.parent))
 
+    def parsed_dispatch(self, run_id, *, queued=False, created=None, number=None, branch=None):
+        from scripts.workflow_pilot.tests import test_pr_metadata as fixtures
+        created = created or datetime.now(timezone.utc).replace(microsecond=0)
+        self.assertEqual(created.microsecond, 0, "fixture must retain the provider's actual precision")
+        start = created.isoformat().replace("+00:00", "Z")
+        end = (created + timedelta(seconds=3)).isoformat().replace("+00:00", "Z")
+        raw, jobs = fixtures._run(run_id, number or run_id, mode="full")
+        raw.update(event="workflow_dispatch", head_sha=self.pr.head_sha,
+                   head_branch=branch or self.pr.head_ref, pull_requests=[],
+                   path=".github/workflows/build.yml@refs/heads/" + (branch or self.pr.head_ref),
+                   created_at=start, run_started_at=None if queued else start,
+                   updated_at=start if queued else end,
+                   status="queued" if queued else "completed", conclusion=None if queued else "success")
+        raw["url"] = raw["url"].replace(fixtures.REPOSITORY, self.pr.repository)
+        jobs = [] if queued else [job for job in jobs if job["name"] != "patch-release"]
+        for job in jobs:
+            job.update(event="workflow_dispatch", head_sha=raw["head_sha"], head_branch=raw["head_branch"],
+                       created_at=start, started_at=start, completed_at=end)
+            for field in ("url", "run_url", "check_run_url", "html_url"):
+                job[field] = job[field].replace(fixtures.REPOSITORY, self.pr.repository)
+            if job["name"] == "event-classifier":
+                job["steps"] = [{
+                    "name": gate.binding_name(self.pr.number, self.pr.head_sha, self.record["base_sha"]),
+                    "status": "completed", "conclusion": "success"}]
+        workflow = fixtures._workflow()
+        for field in ("url", "html_url", "badge_url"):
+            workflow[field] = workflow[field].replace(fixtures.REPOSITORY, self.pr.repository)
+        client = fixtures.ScriptedClient()
+        client.add("GET", github._endpoint(self.pr.repository, "actions/workflows/build.yml"), workflow)
+        client.add("GET", github._query_endpoint(
+            self.pr.repository, "actions/workflows/build.yml/runs",
+            [("head_sha", self.pr.head_sha), ("per_page", "100"), ("page", "1")]),
+            {"total_count": 1, "workflow_runs": [raw]})
+        if not queued:
+            client.add("GET", github._endpoint(self.pr.repository, f"actions/runs/{run_id}"), raw)
+            client.add("GET", github._endpoint(
+                self.pr.repository, f"compare/{self.pr.base_sha}...{self.pr.head_sha}"),
+                {"base_commit": {"sha": self.pr.base_sha},
+                 "merge_base_commit": {"sha": self.record["base_sha"]}})
+        client.add("GET", github._query_endpoint(
+            self.pr.repository, f"actions/runs/{run_id}/attempts/1/jobs",
+            [("per_page", "100"), ("page", "1")]), {"total_count": len(jobs), "jobs": jobs})
+        parsed = github.list_candidate_runs(client, self.pr)
+        self.assertEqual(len(parsed), 1)
+        return parsed[0]
+
     def assess(self, **changes):
         args = dict(state=self.state, record=self.record, decision=self.decision, pr=self.pr,
                     session=self.session, facts=(self.fact,), triage=tuple(self.session.rounds.events),
@@ -301,6 +347,100 @@ class GateTests(unittest.TestCase):
         self.record["abandoned_reason"] = "accepted-review-or-security-finding"
         self.runs = [replace(run, conclusion="cancelled") for run in self.runs]
         self.assertFalse(self.assess()["merge_eligible"])
+
+    def test_real_queued_unbound_dispatch_blocks_both_dispatch_and_merge(self):
+        queued = self.parsed_dispatch(3, queued=True)
+        self.assertEqual((queued.mode, queued.binding, queued.candidate_binding, queued.jobs),
+                         ("active-unknown", "unbound", None, ()))
+        self.boundary_evidence = {"queued": asdict(queued), "assessments": []}
+        pending = self.assess(runs=(*self.runs, queued))
+        self.boundary_evidence["assessments"].append(pending)
+        with self.subTest(state="before dispatch"):
+            self.assertFalse(pending["dispatchable"])
+            self.assertFalse(pending["merge_eligible"])
+            self.assertIn(queued.run_id, {item["run_id"] for item in pending["runs"]})
+        self.dispatched()
+        self.runs[-1] = self.parsed_dispatch(2)
+        ready = self.assess()
+        self.assertTrue(ready["merge_eligible"], ready)
+        pending = self.assess(runs=(*self.runs, queued))
+        self.boundary_evidence["assessments"].append(pending)
+        with self.subTest(state="beside successful full"):
+            self.assertFalse(pending["merge_eligible"])
+            self.assertFalse(pending["dispatchable"])
+            self.assertIn(queued.run_id, {item["run_id"] for item in pending["runs"]})
+        unrelated = self.parsed_dispatch(4, queued=True, branch="other-pr")
+        self.assertTrue(self.assess(runs=(*self.runs, unrelated))["merge_eligible"])
+        resolved = self.parsed_dispatch(3)
+        duplicate = self.assess(runs=(*self.runs, resolved))
+        self.assertFalse(duplicate["merge_eligible"])
+        self.assertIn("duplicate-full-run", duplicate["missing"])
+
+    def test_base_rebind_accepts_fresh_clean_after_complete_history_without_dropping_holds(self):
+        old = self.fact
+        self.pr = replace(self.pr, base_ref="retargeted-base")
+        with patch.object(observations, "utc_now", return_value=at_offset(-30)):
+            self.record = gate.begin_candidate(
+                self.state, self.pr, self.fixture.parent, self.decision)
+        self.assertFalse(self.assess()["dispatchable"])
+        fresh = replace(old, id="review-2", submitted_at=at_offset(-10), body="Fresh complete clean review")
+        self.session.triage(review.Triage(fresh, "clean"))
+        self.checks = tuple(replace(check, created_at=at_offset(-20), completed_at=at_offset(-5))
+                            for check in self.checks)
+
+        def assess():
+            return self.assess(facts=tuple(item.fact for item in self.session.rounds.events))
+
+        current = assess()
+        self.boundary_evidence = {"fresh_after_history": current}
+        with self.subTest(history="fully triaged"):
+            self.assertTrue(current["dispatchable"], current["missing"])
+        self.assertFalse(self.assess(facts=(fresh,))["dispatchable"])
+        changed = replace(old, body="Historical content changed")
+        self.session.triage(review.Triage(changed, "untriaged"))
+        self.assertFalse(assess()["dispatchable"])
+        unresolved = replace(changed, unresolved_threads=("historical-thread",))
+        self.session.triage(review.Triage(unresolved, "changes-requested"))
+        self.assertFalse(assess()["dispatchable"])
+        explained = replace(unresolved, body="Resolved with source-backed explanation", unresolved_threads=())
+        self.session.triage(review.Triage(explained, "clean"))
+        with self.subTest(history="resolved and fully retriaged"):
+            self.assertTrue(assess()["dispatchable"])
+        finding = review.Finding(
+            "historical-valid", next(iter(self.scope)), "wire", "validators:review-session",
+            self.pr.head_sha, "scripts/workflow_pilot/review_family.py", old.id)
+        valid = replace(explained, body="Accepted real defect", state="CHANGES_REQUESTED")
+        self.session.triage(review.Triage(valid, "changes-requested", (finding,)))
+        self.assertEqual(assess()["state"], "review-abandoned")
+        self.session.triage(review.Triage(replace(valid, body="Later edit", state="APPROVED"), "clean"))
+        self.assertFalse(assess()["dispatchable"])
+
+    def test_native_fractional_reservation_correlates_with_actual_second_precision_runs(self):
+        second = datetime.now(timezone.utc).replace(microsecond=0) - timedelta(seconds=10)
+        reservation = second.replace(microsecond=250000).isoformat().replace("+00:00", "Z")
+        with patch.object(observations, "utc_now", return_value=reservation):
+            actual = gate.reserve_full_dispatch(self.state, self.record, self.assess(), self.runs)
+        self.assertEqual(actual, reservation)
+        self.record["dispatch_sent_at"] = second.replace(microsecond=750000).isoformat().replace("+00:00", "Z")
+        run = self.parsed_dispatch(2, created=second)
+        self.assertEqual(run.created_at, second)
+        current = self.assess(runs=(*self.runs, run))
+        self.boundary_evidence = {"reservation": reservation, "run": asdict(run), "assessment": current}
+        with self.subTest(ordering="legitimate same second"):
+            self.assertTrue(current["merge_eligible"], current["missing"])
+        self.assertEqual(self.record["dispatch_requested_at"], reservation)
+        for wrong in (
+            self.parsed_dispatch(2, created=second - timedelta(seconds=1)),
+            self.parsed_dispatch(2, created=second, number=self.record["watermark"]),
+            replace(run, run_attempt=2),
+        ):
+            with self.subTest(wrong=(wrong.created_at, wrong.run_number, wrong.run_attempt)):
+                self.assertFalse(self.assess(runs=(*self.runs, wrong))["merge_eligible"])
+        duplicate = self.parsed_dispatch(3, created=second)
+        self.assertFalse(self.assess(runs=(*self.runs, run, duplicate))["merge_eligible"])
+        with self.assertRaises(ValueError):
+            gate.reserve_full_dispatch(self.state, self.record, current, self.runs)
+        self.assertEqual(self.record["dispatch_requested_at"], reservation)
 
     def test_concurrent_and_paused_routes_keep_the_full_graph_and_every_final_gate(self):
         for paused in (False, True):
@@ -499,6 +639,74 @@ class AdapterTests(unittest.TestCase):
         result, selected, _ = gate.route_event(client, decision, payload, m.REPOSITORY)
         self.assertEqual(result.classification, "full")
         self.assertFalse(selected.known)
+
+    def test_route_preserves_event_identity_across_real_unrelated_base_advance(self):
+        m = self.m
+        fixture = GitFixture(assign=False)
+        self.addCleanup(fixture.close)
+        head = fixture.commit()
+        original_base = fixture.parent
+        (fixture.repository / "docs/upstream.txt").write_text("Independent upstream work\n")
+        git(fixture.repository, "add", ".")
+        git(fixture.repository, "commit", "-m", "Independent master change")
+        advanced_base = git(fixture.repository, "rev-parse", "HEAD")
+        raw_event_pr = m._pr(head=head, base=original_base)
+        payload = {"action": "synchronize", "number": m.PR_NUMBER, "pull_request": raw_event_pr}
+        classified = event_classifier.classify_event(
+            "pull_request", payload, github_ref=f"refs/pull/{m.PR_NUMBER}/merge",
+            github_sha="f" * 40, pr_base_sha=original_base, pr_head_sha=head, push_sha="")
+        self.boundary_evidence = {"event_base": original_base, "head": head, "cases": []}
+        for name, live_base, live_head, base_ref, authentic, accepted in (
+            ("unchanged", original_base, head, "master", True, True),
+            ("unrelated-tip", advanced_base, head, "master", True, True),
+            ("changed-merge-base", head, head, "master", True, False),
+            ("changed-head", original_base, original_base, "master", True, False),
+            ("changed-base-ref", original_base, head, "other-base", True, False),
+            ("changed-head-ref", original_base, head, "master", True, False),
+            ("changed-raw-event", original_base, head, "master", False, False),
+        ):
+            with self.subTest(case=name):
+                client = m.ScriptedClient()
+                current = {**m._pr(head=live_head, base=live_base), "additions": 10, "deletions": 0}
+                current["base"]["ref"] = base_ref
+                if name == "changed-head-ref":
+                    current["head"]["ref"] = "other-head-ref"
+                client.add("GET", m._endpoint(f"pulls/{m.PR_NUMBER}"), current)
+                client.add("GET", m._query(
+                    "contents/" + reporter.DECISION_RECORD_PATH.as_posix(), [("ref", live_head)]),
+                    self.content(decisions(m.PR_NUMBER, ("lifecycle",))))
+                bases = {}
+                for base in {original_base, live_base}:
+                    actual = git(fixture.repository, "merge-base", "--all", base, live_head).splitlines()
+                    self.assertEqual(len(actual), 1)
+                    bases[base] = actual[0]
+                    client.add("GET", m._endpoint(f"compare/{base}...{live_head}"),
+                               {"base_commit": {"sha": base}, "merge_base_commit": {"sha": actual[0]}})
+                entry = {"case": name, "live_base": live_base, "merge_bases": bases}
+                self.boundary_evidence["cases"].append(entry)
+                event = copy.deepcopy(payload)
+                if not authentic:
+                    event["pull_request"]["base"]["sha"] = head
+
+                def route():
+                    try:
+                        result = gate.route_event(client, classified, event, m.REPOSITORY)
+                    except ValueError as error:
+                        entry["error"] = str(error)
+                        raise
+                    entry["decision"] = asdict(result[0])
+                    entry["binding"] = result[2]
+                    return result
+
+                if accepted:
+                    result, _, binding = route()
+                    self.assertEqual(result.classification, "review-first")
+                    self.assertEqual(result.expected_base, original_base)
+                    self.assertEqual(result.expected_head, head)
+                    self.assertEqual(binding, gate.binding_name(m.PR_NUMBER, head, original_base))
+                else:
+                    with self.assertRaises(ValueError):
+                        route()
 
     def test_input_free_dispatch_resolves_actual_pr_branch_and_stays_full(self):
         m = self.m

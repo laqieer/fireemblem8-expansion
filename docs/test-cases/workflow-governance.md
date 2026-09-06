@@ -167,9 +167,20 @@ the consumers' independent protected-principal/deployment requirements.
    full runs, changed attempts, early owner dispatch and duplicate watchers.
    All reject admission. Record dispatch before the simulated network call;
    a failed/unknown delivery must not retry into a second dispatch.
+   Observe a real parsed queued same-head/branch dispatch with no jobs/binding,
+   both alone and beside a completed full success: it must hold both dispatch
+   and merge until classified. Compare a fractional native reservation with
+   the provider's same-second run creation: retain both actual values and
+   accept the legitimate correlation, while earlier seconds, old watermarks,
+   changed attempts and duplicate identities still reject.
 8. Compile actual Git ancestry for an unrelated master advance. The frozen
    merge base remains valid and no candidate is cancelled. A changed head,
    base ref or unique merge base supersedes the old binding.
+   Route the immutable raw event against that advanced live tip: preserve its
+   original base/head output and reject tampered event/ref data. After a real
+   same-head base rebind, fully triaged history plus a fresh clean review and
+   fresh security can proceed; old untriaged/unresolved content or accepted
+   valid findings must still hold or abandon the candidate.
 9. Execute the existing metadata summary against disposable local HTTP
    responses for a full dispatch and its current merge base. It retains
    complete eight-job success; missing/wrong/foreign marker or stale base

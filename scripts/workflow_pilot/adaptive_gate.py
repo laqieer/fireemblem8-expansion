@@ -164,10 +164,18 @@ def route_event(client, decision, payload, repository):
     number = payload.get("number")
     if type(number) is not int or number <= 0 or "pull_request" not in payload:
         return decision, None, None
+    event_pr, error = event_classifier._pull_request_identity(
+        payload["pull_request"], decision.expected_head, decision.expected_base)
+    require(error is None and event_pr is not None, "event/classifier identity changed")
     pr, lines = fetch_candidate(client, repository, number)
-    github.require_identity(pr, head_sha=decision.expected_head, base_sha=decision.expected_base)
+    require(pr.head_sha == decision.expected_head and pr.base_ref == event_pr["base"]["ref"]
+            and ("ref" not in event_pr["head"] or pr.head_ref == event_pr["head"]["ref"]),
+            "pull request head or ref changed")
+    # Keep the emitted event identity; compare rather than replace its base tip.
+    base = frozen_base(client, replace(pr, base_sha=decision.expected_base))
+    if pr.base_sha != decision.expected_base:
+        require(frozen_base(client, pr) == base, "event/live candidate merge base changed")
     selected = fetch_decision(client, pr, lines)
-    base = frozen_base(client, pr)
     if selected.mode == "review-first":
         decision = replace(decision, classification="review-first", run_expensive=False,
                            reason="review-first-" + selected.reason)
@@ -342,9 +350,8 @@ def assess_candidate(state, record, decision, pr, session, facts, triage, checks
         ready, clean = session.review_state(facts, triage, pre_review_required=decision.pre_review_required)
         if not ready or not clean:
             missing.append("exact-clean-review")
-        if rebound and any(reporter.parse_time(item.fact.submitted_at, "review") <
-               reporter.parse_time(record["created_at"], "candidate")
-               for item in triage if item.fact.head == pr.head_sha):
+        if (rebound and clean and reporter.parse_time(triage[-1].fact.submitted_at, "review") <
+                reporter.parse_time(record["created_at"], "candidate")):
             missing.append("review-predates-candidate-binding")
         if session.accepted and not current_findings:
             require(family_evidence is not None, "prior accepted findings need sibling evidence")
@@ -373,7 +380,13 @@ def assess_candidate(state, record, decision, pr, session, facts, triage, checks
     expected_binding = pr.number, pr.head_sha, record["base_sha"]
     matching = [run for run in runs if run.candidate_binding == expected_binding
                 and run.head_sha == pr.head_sha and run.head_branch == pr.head_ref]
-    full = [run for run in matching if run.mode in {"full", "active-full", "active-unknown"}]
+    unknown = [run for run in runs if run.head_sha == pr.head_sha and run.head_branch == pr.head_ref
+               and run.status in github.ACTIVE_RUN_STATUSES and run.binding != "explicit-other"
+               and (run.candidate_binding is None or run.mode == "active-unknown")]
+    if unknown:
+        missing.append("unclassified-active-run")
+    visible = [*matching, *(run for run in unknown if run not in matching)]
+    full = [run for run in matching if run.mode in {"full", "active-full"}]
     if any(run.head_sha != pr.head_sha for run in runs):
         missing.append("stale-run")
     if len({run.run_id for run in full}) != len(full) or len(full) > 1:
@@ -396,9 +409,11 @@ def assess_candidate(state, record, decision, pr, session, facts, triage, checks
         elif record["full_run_id"] not in (None, run.run_id):
             missing.append("wrong-full-run")
         elif decision.mode == "review-first":
+            # GitHub creation times have second precision; retain the native reservation.
             if (record["dispatch_sent_at"] is None or run.event != "workflow_dispatch"
                     or run.run_number <= record["watermark"]
-                    or run.created_at < reporter.parse_time(record["dispatch_requested_at"], "dispatch")):
+                    or run.created_at < reporter.parse_time(
+                        record["dispatch_requested_at"], "dispatch").replace(microsecond=0)):
                 missing.append("early-or-unbound-full-run")
             else:
                 record["full_run_id"], record["full_attempt"] = run.run_id, run.run_attempt
@@ -436,7 +451,7 @@ def assess_candidate(state, record, decision, pr, session, facts, triage, checks
         "rounds": session.rounds.consecutive, "findings": [item.id for item in current_findings],
         "unresolved": sum(len(fact.unresolved_threads) for fact in facts),
         "security": [asdict(item) for item in checks],
-        "runs": [{"run_id": run.run_id, "attempt": run.run_attempt, "mode": run.mode} for run in matching],
+        "runs": [{"run_id": run.run_id, "attempt": run.run_attempt, "mode": run.mode} for run in visible],
         "final_master_build_required": True, "remote_completion_required": True,
     }
 
