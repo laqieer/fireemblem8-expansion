@@ -163,7 +163,7 @@ and
 | [`test-cases/optional-gameplay.md`](test-cases/optional-gameplay.md) | Current | Optional gameplay procedures, profiles, controls, and automation (issue #55) |
 | [`test-cases/presentation-audio-utility.md`](test-cases/presentation-audio-utility.md) | Current | Presentation, audio, and utility procedures, profiles, controls, and automation (issue #58) |
 | [`test-cases/asset-authoring.md`](test-cases/asset-authoring.md) | Current | Source-asset adapter procedures, controls, runtime evidence, and cleanup (issue #62) |
-| [`test-cases/workflow-governance.md`](test-cases/workflow-governance.md) | Current | Trusted/immediate-push, WIP visibility, CI-wait, manual-handoff, stacked-CI, workflow-pilot, metadata-edit, and safe completed-worktree cleanup procedures (issues #93/#169/#171/#176/#177/#207/#208) |
+| [`test-cases/workflow-governance.md`](test-cases/workflow-governance.md) | Current | Trusted/immediate-push, WIP visibility, CI-wait, manual-handoff, stacked-CI, workflow-pilot, sibling-family review, metadata-edit, and safe completed-worktree cleanup procedures (issues #93/#169/#171/#176/#177/#179/#207/#208) |
 | [`test-cases/debugtools.md`](test-cases/debugtools.md) | Current | Cursor-unit editor and bounded music-preview procedures, teardown negatives, and save-neutral evidence (issues #125 and #126) |
 | [`test-cases/localization.md`](test-cases/localization.md) | Current | Localization and locale-persistence procedures, semantic runtime mappings, and negative controls (issue #56) |
 | [`test-cases/patch-release.md`](test-cases/patch-release.md) | Current | Trusted BPS artifact validation/application and malformed-input procedures (issue #49) |

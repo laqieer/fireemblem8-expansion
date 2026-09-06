@@ -100,6 +100,421 @@ input-format/cohort checksum: it detects identity, timestamp, PR/SHA
 association, and relationship substitution that preserves aggregate metrics,
 but does not hash source files, blobs, objects, ROMs, or the repository tree.
 
+## Sibling-family review convergence
+
+[Issue #179](https://github.com/laqieer/fireemblem8-expansion/issues/179) adds a
+bounded local review and executable sibling sweep, not another delivery or
+hostile-Python platform. It depends on #176's risk/metric contracts, the
+existing Git/GitHub/task/test interfaces, and #216's locked schema-test
+environment. #181 is a dependent; #178 is independent. #204 is not a
+prerequisite. The original
+[tester case](test-cases/workflow-governance.md#tc-workflow-review-family-001-expand-valid-findings-across-complete-sibling-families)
+remains the acceptance contract.
+
+### Trust and ownership
+
+The coordinator freezes repository/PR/base/head, accepted cases, findings and
+risk classification. A high-risk or large candidate gets one fresh bounded
+read-only review before its first remote review. The existing task runtime
+owns task identity, owner, role, completion and observed tool actions. The
+reviewer's response is findings data, not an authentication token. Keep its
+owner distinct from implementation and coordination.
+Share one `ReviewOwnership` index across the coordinator's sessions; it blocks
+another active reviewer for the same repository/PR or the same candidate head,
+regardless of scope, before another task can start.
+
+`ReviewSession.begin` forwards the closed `code-review` role, exact head/scope,
+allowed read/report actions and duration/file/finding bounds to the
+coordinator's existing task adapter. It returns immediately. After the
+existing task-completion notification, `finish` reads that task's actual
+result. There is no polling, new agent backend or JSON-selected runtime.
+The adapter's result exposes the actual `task`, `owner`, `role`, `head`,
+`subjects`, `completed`, `read_only`, `actions`, `files`, `findings`, `started_at` and
+`completed_at`; these are runtime metadata, not fields copied from the
+reviewer's prose. Both `completed` and `read_only` must be Boolean `True`
+for report admission; truthy strings/numbers or missing fields cannot admit
+a completed review. Requested
+duration (1–3,600 seconds) and files (1–200, default 200) are strict Python
+integers. The lease retains its requested file bound; returned `files` must
+be an integer from zero through that bound, never a Boolean, float or string.
+Scope/actions must be collections of strings and findings a list/tuple of
+typed records. Malformed or over-budget reports do not grant review evidence
+or silently release ownership.
+Every admitted completed report must include actual runtime observations for
+both `read-candidate` and `emit-report`; `read-evidence` is optional.
+An empty or partial subset of the allowed actions is not sufficient.
+Bound read tools through the coordinator's `readers` map.
+`read_action` rejects mutation/arbitrary-command operations before dispatch.
+Ordinary test execution is a separate coordinator-owned test role, not a
+second overlapping reviewer.
+
+Lease retirement is distinct from report admission. `finish` reads actual
+task status even after the deadline. A still-running or unknown task retains
+ownership; a verified late terminal result closes the lease with
+`outcome: timed-out`, releases ownership and rejects the report. The deadline
+is checked after reading and again before admission, so completion observed
+across the deadline cannot supply review evidence.
+
+The explicit `session.abort(runtime)` operation uses the coordinator's
+optional existing `runtime.stop(task)` capability when the task is still
+running. It verifies the exact task/owner/role/head/scope, Boolean terminal
+`completed` state and terminal timestamp chronology. A stop request or
+acknowledgment alone never closes the lease: the operation reads the actual
+task again. Stop/read failure, missing stop capability, unknown status or
+malformed terminal metadata retains ownership until real terminal evidence
+is available. An already completed failed report can be abandoned without
+being accepted or stopping it again.
+
+Both paths use the same retirement helper. `finished` means the lease is
+closed, while `outcome` distinguishes an admitted `completed` review from
+`timed-out` or `aborted` work. Timeout/abort retains no report or local finding
+evidence and cannot satisfy independent pre-review admission. Completion
+releases the existing index for a fresh session; no polling loop, new task
+backend or cleanup service is added.
+
+The coordinator and reviewed validator/test tools are trusted. Candidate
+requests are data and cannot choose Python programs, imports, commands,
+expected members, pass records or trusted-status flags. Test children receive
+captured source and a minimal environment without supplied GitHub/SSH
+credentials or coordinator configuration. These are operational controls,
+**not OS isolation from malicious same-UID code**. No broker, HMAC, receipt
+store, capsule, import-capability proof or protected installation is required.
+
+### Public request and execution API
+
+The independently checked
+[`review_family.schema.json`](../scripts/workflow_pilot/review_family.schema.json)
+defines the closed wire shape. `validate_request` also checks identity joins,
+duplicates, bounds and subject membership. The CLI accepts only a non-symlink
+regular request file, reads at most 1 MiB plus one EOF byte from its checked
+descriptor, and rejects overage before JSON parsing. Malformed JSON, invalid
+record types and nonregular inputs produce bounded nonzero diagnostics.
+These file/runtime limits do not add fields to the version-1 JSON schema.
+A request contains:
+
+```json
+{
+  "schema_version": 1,
+  "repository": "owner/repo",
+  "pull_request": 1,
+  "base_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "candidate_sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "subjects": [
+    {"case_id": "TC-GAMEPLAY-006", "subject": "aoe-item-dispatch"}
+  ],
+  "findings": []
+}
+```
+
+An accepted finding additionally names `finding_id`, `case_id`, `subject`,
+`family` and `reported_member`. Its actual review/task, origin and source
+location come from the coordinator's observation, not candidate JSON.
+The requested subjects/findings must equal the frozen accepted scope; omitting
+an entire finding is not a way to avoid its sibling obligations.
+
+The three responsibilities are:
+
+| Implementation | Contract |
+| --- | --- |
+| `review_family.py` | Strict data, ownership, coverage and round reducer |
+| `review_subjects.py` | Existing-case bindings, finite models and closed probes |
+| `trusted_review_gate.py` | Exact Git/GitHub collection and approved test-process execution |
+
+`ReviewTools` loads the two fixed validator modules from the coordinator's
+explicit **reviewed tool revision**, compiling the exact captured Git bytes.
+The existing fixed isolated launcher must itself run from a **separately
+trusted checkout or installation**, using a trusted interpreter. Its trust is
+established by the coordinator before invocation: a candidate launcher cannot
+authenticate itself by checking `--tool-revision` after it has already started.
+Do not run the candidate checkout's bootstrap or automatically copy it elsewhere
+and call that trust.
+
+For `review-family`, `--repository-root` identifies the candidate object-storage
+worktree, not the launcher's own root. The launcher requires separate locations
+and validates the exact candidate Git top level, commit type and captured
+regular-blob bytes before executing any reviewed initializer or validator.
+Other protected modes retain their original same-root checks. It loads the
+gate's captured bytes, not a validate-then-reopen working-copy path.
+An existing case binding/model may be
+reviewed in the same feature PR and selected at its exact tool revision.
+There is no required base-first installation or second canonical case catalog.
+The request cannot select that revision or register its own probe.
+This introducing PR supplies the fixed launcher mode too: the coordinator may
+independently review and trust that launcher from this PR in another checkout.
+This explicit introducing-PR boundary does not require a separate adapter PR,
+broker, source ledger or generic bootstrap service.
+
+`resolve_subject` joins an existing catalog case to the reviewed binding.
+`expand_members` derives the finite source-backed obligations at the finding
+origin and candidate. `run_obligations` executes their closed selectors and
+returns actual observations. `ReviewTools.assess` obtains fresh GitHub facts,
+executes the actual origin/candidate probes, revalidates source identities and
+GitHub state, then calls `assess_handoff` with the coordinator's real review
+session and triage. The session's `identity` is the frozen
+`(repository, pull_request, base_sha)` tuple. The coordinator derives
+`base_sha` as the unique merge base of the candidate and the observed live base.
+Unrelated base fast-forwards preserve that identity; an arbitrary older
+ancestor is not an acceptable replacement. The coordinator derives
+`pre_review_required` from the existing #176 risk/threshold decision, not a
+candidate option.
+
+The coordinator supplies existing tool adapters through the in-process API;
+they are never deserialized from a file. This API does not authenticate an
+arbitrary Python caller. Its trust boundary is the existing coordinator/tool
+role, not a new platform.
+The existing ownership index enforces repository/PR and candidate-head
+exclusion independently, even for disjoint scopes. A new head does not permit
+a second active reviewer on the same PR; another PR does not permit duplicate
+active review of the same candidate head. Only work with both a different
+repository/PR identity and a different head remains independent. Completion
+releases both exclusions for a subsequent bounded session.
+`begin` requires `runtime.start` to return a nonblank string task identity,
+preserved unchanged. Missing, blank or wrong-type handles unwind the attempted
+reservation before any lease or local report can be created; a later valid
+acquisition remains possible.
+`advance` rejects while a lease is active, including after its deadline or
+a stop acknowledgment without terminal evidence. The existing observed
+completion/timeout/abort path must release it first. Subsequent head changes
+preserve the old report's origin rather than rebinding it to the new head.
+
+`ReviewSession.finish` snapshots validated runtime fields into an internal
+frozen report before releasing ownership. Scope/actions are immutable sets,
+findings are a tuple of frozen typed values, and timestamps and bounds are
+copied values. Later runtime-record mutations cannot change the accepted
+report or its pre-review chronology. This is a value snapshot, not a receipt,
+signature, history service or protection against arbitrary malicious Python
+mutation of the trusted coordinator. Before handoff, call
+`session.triage_local(finding_id, accepted=decision, reason=reason)` for every
+returned finding, with a Boolean decision. Accepted records enter the existing sibling sweep;
+rejected records retain a nonblank coordinator reason. Omitted, duplicate,
+wrong-task or contradictory dispositions cannot establish eligibility, even
+after a later candidate passes its probes. This is coordinator-owned triage,
+not authenticated provenance from a JSON author.
+
+For diagnostic planning/checking, use the closed launcher mode:
+
+```bash
+TRUSTED_REVIEW_ROOT=/absolute/path/to/independently-trusted-checkout
+CANDIDATE_ROOT=/absolute/path/to/candidate-checkout
+"$TRUSTED_REVIEW_ROOT/build/host-python/bin/python3" -I \
+  "$TRUSTED_REVIEW_ROOT/scripts/workflow_pilot/isolated_launcher.py" review-family \
+  --repository-root "$CANDIDATE_ROOT" --subject-root "$CANDIDATE_ROOT" \
+  --tool-revision "$REVIEWED_TOOL_SHA" --candidate "$CANDIDATE_SHA" \
+  --request "$CANDIDATE_ROOT/build/review-request.json" --mode plan
+```
+
+`plan` derives obligations from exact Git source without executing candidate
+code. `check` also reads GitHub and runs the selected candidate probes.
+Both emit audit JSON, never a bearer credential or merge permission. `check`
+lists untriaged review IDs and leaves handoff eligibility false: a file
+argument cannot establish an independent task or complete coordinator
+triage. The coordinator consumes actual task results with the in-process API;
+it must not convert `source_audit_complete` into approval.
+Expected missing-object and ancestry failures are translated at the existing
+Git adapter into bounded, nonzero `review-family:` diagnostics in both direct
+and isolated entrypoints, not tracebacks or successful fallback assessments.
+The actual direct `GitTree.git` path supplies a 60-second deadline through the
+existing reporter Git runner's optional timeout seam; unrelated callers keep
+their original default behavior. Its timeout is translated through the same
+direct adapter boundary, independently of the launcher helper.
+The fixed launcher's Git helper also translates its expected subprocess
+timeout into a bounded `workflow-pilot-launcher:` failure. The GitHub adapter
+translates expected CLI timeout/launch errors once into its existing
+`ValueError` boundary; both entrypoints report bounded `review-family:`
+diagnostics. Unexpected programming exceptions are not relabeled as ordinary
+tool unavailability.
+
+### Finite coverage and actual evidence
+
+| Family | Required roles |
+| --- | --- |
+| action | actions, items, targets |
+| lifecycle | entries, preservation, resets, terminals |
+| wire | producers, consumers, validators, replay, stale-bindings |
+| generated | owners, outputs, consumers, drift-checks |
+| resource | enabled, disabled |
+
+Roles are not the entire concrete member set. Every obligation identifies its
+actual producer/predicate, consumer, representation, revalidation, profile,
+source inputs, evidence classes and expected `kind` (`host`, `native`,
+`parsed` or `arm-object`). Parse the declared enum/schema/model;
+never infer completeness from a filename alone. The trusted reviewer and
+coordinator must select the model that genuinely represents the finding.
+Unknown, ambiguous, added/deleted or remapped members need a reviewed model
+and explicit removal evidence; they cannot disappear silently. Current
+bindings reject such changes rather than manufacture not-applicable results.
+The total bound is 250 obligations, not five arbitrarily selected siblings.
+
+An obligation's immutable `inputs` retain its semantic subject attachment.
+Its separate `execution_inputs` bind the complete shared worker staging
+closure; the adapter does not add undeclared candidate files. AoE inputs include the
+compiled core/reference sources and the complete staged header set. Generated
+inputs include all schemas imported by the existing registry, the staged
+generated-data code/data/headers/inventories and declared authored resources.
+Every observation's `source_objects` bind the complete execution union,
+including mixed-subject requests; narrowing that closure cannot borrow
+undeclared bytes staged for another member. Adding another subject does not
+expand a member's semantic `inputs`: an unrelated generated/workflow source
+cannot attach to an AoE finding merely because it was staged or another
+subject failed. The fixed reviewed tool overlays remain
+bound by `tool_revision`, not a candidate-supplied program. This is the actual
+finite staging boundary, not a generic Python import/capability guarantee.
+
+The shipped unrelated subject uses are:
+
+- **`TC-GAMEPLAY-006 / aoe-item-dispatch`:** actual typed AoE phase, route and
+  target predicates in `src/expansion_aoe.c`. The existing C driver has closed
+  per-phase/shape/route/target selectors, preserving its no-argument full run.
+  It executes real functions with positive and adversarial inputs. Separate
+  shape selectors build the actual range map and compare every cell with
+  independent selected-shape bitmaps, not merely tile totals or another
+  production geometry helper. A same-nine-cell square cannot stand in for
+  the cross geometry.
+  Separate
+  enabled/disabled native reference and ARM object symbol/section checks
+  establish the resource boundary. Each enabled core/reference object must
+  contain a nonempty `ewram_data` section; an absent placement is not zero
+  budget usage. The aggregate 128-byte EWRAM and 8-KiB text limits and disabled
+  symbol omission remain required. The modern linker gate passes its resolved
+  `MODERN_CC`, `MODERN_NM` and `MODERN_SIZE` paths, including
+  `MODERN_TOOLCHAIN_ROOT` and explicit compiler overrides, to the workers.
+  Direct coordinator calls use the same environment settings or the closed
+  `ReviewTools(..., arm_tools={...})` mapping; defaults resolve through PATH.
+  Missing selected tools remain unavailable, never a fallback to system tools.
+  The parsed phase/shape enum values must match the existing zero-based,
+  contiguous selector mapping and count sentinels: aliased or missing numeric
+  cases cannot masquerade as independent siblings. The finite parser supports
+  implicit increments and nonnegative decimal/octal/hex literal assignments,
+  not general C expression evaluation. Equivalent formatting or explicitly
+  reordered declarations preserving values remain valid.
+  This binding does not claim every future
+  downstream route provider or in-game UI path is covered.
+- **`TC-CORE-004 / generated-eventlists`:** the real event-list schema's
+  required and optional owner declarations, authored source, generated C,
+  typed consumer round trip and committed inventory. Optional chapter/strategy
+  owners run their existing schema validation as well as event-list reference
+  checks, not those independent features' full ROM/runtime gates. Existing
+  observation inputs include the concrete producer/parser/inventory, shared
+  validation modules and authored resources consumed by this binding; valid
+  findings in those sources participate in actual before/after sibling sweeps.
+- **`TC-WORKFLOW-REVIEW-FAMILY-001 / review-session`:** actual reducer and
+  request code executed as a registered subject with finite lifecycle/wire
+  controls. This explicit binding never redirects unrelated findings to
+  workflow-governance code.
+
+`affected-fixed` requires the same reviewed semantic probe to find a contract
+violation at the actual finding origin and to pass the candidate. Unaffected
+siblings must pass their own probes before and after. Each accepted defect
+requires an affected-fixed row for its **reported member itself**; an
+already-satisfied reported member cannot borrow a different sibling's failure.
+Both direct handoff assessment and the coordinator adapter use that same
+predicate. Being included in the execution closure establishes staged-byte
+binding, not semantic finding attachment or damage: unrelated inputs or
+all-pass tests cannot repair a finding.
+Missing/duplicated/wrong-subject/stale observations reject. Imports, compile
+errors, missing tools, zero/skipped tests and timeouts are **unavailable**,
+not useful failing controls. Native exit codes come from the selected trusted
+driver, not a candidate PASS label. Host, native, generated and ARM object
+results are explicitly typed; none is relabeled as target-ROM execution.
+When common generated-source validation fails before an output, consumer or
+drift predicate, the selected member is `unavailable` with zero checks and
+`blocked_by: ["owners:eventlists"]`. Optional owners' additional event-list
+reference validation uses the same attribution, without hiding their own
+validation failures. The reducer requires an actually failed owner observation
+in that same subject/family/origin and a satisfied candidate, and reports the
+sibling as `prerequisite-fixed`, never `affected-fixed` or
+`verified-unaffected`. Missing or unobserved prerequisites still reject.
+Reporting that blocked drift/consumer as the defect cannot pass the mandatory
+reported-member check. Genuine owner defects and executed member failures
+retain their normal before/after evidence.
+The worker reports `probe`, `kind`, `verdict`, strict integer `checks`, a
+`blocked_by` member list (empty unless attributed as above) and a
+nonblank `detail` of at most 2,000 characters. The adapter preserves those
+fields together with the captured source objects, and validates the reported
+kind against the obligation instead of deriving a replacement from the probe
+name. Missing fields, wrong kinds/counts/types and unknown fields reject.
+Successful and contract-violation rows retain the actual executor's kind and
+positive check count (a failed semantic assertion counts as an executed check).
+Unavailable rows always have zero checks: they retain the attempted executor's
+kind when known, or use `null` when no executor/result was obtained. Neither
+form grants successful or affected-fixed evidence credit. A wrongly routed
+native/host executor cannot establish an ARM/parsed obligation, even when its
+own assertions pass or report a genuine violation.
+Actual gameplay changes still require their applicable existing ROM scenario.
+
+### Review triage, holds, persistence and metrics
+
+GitHub collection authenticates the actual Copilot Bot identity and retains
+complete bounded review content. IDs, heads, actor and timestamps are facts;
+the coordinator's complete-content triage determines clean/change-request/
+untriaged status. COMMENTED, no inline comments and natural-language approval
+phrases never automatically mean clean. Changed content invalidates old
+triage; missing/incomplete observations fail closed. Dismissed review facts are
+retained as history but never clean authority: only active COMMENTED/APPROVED
+facts can support clean triage on the exact head. Handoff eligibility and
+`exact_head_review_clean` share one readiness condition: every collected fact
+has complete triage and zero unresolved conversations, including earlier-head
+and historical reviews. Exact clean additionally requires the latest
+current-head active clean triage; handoff readiness alone is not final remote
+approval and remains subject to the architecture hold. A later clean review
+cannot hide an older unresolved thread or untriaged record. Resolution is
+observed from fresh GitHub facts and requires the normal changed-fact retriage
+before either readiness or clean assessment.
+
+Keep one current record per review ID, with immutable review head, actor and
+submission identity inside the frozen repository/PR session. An unchanged
+provisional `untriaged` observation can receive complete triage once; an
+unchanged finalized replay rejects. Fresh edited content, thread state or
+dismissal invalidates the previous decision and handoff, including changes
+observed during probe execution. Explicit coordinator retriage replaces the
+record instead of adding a round. Formal CHANGES_REQUESTED observations count
+before content triage, but do not emit actionable handoffs until triaged.
+The finalized `dismissed` outcome is permitted only for an actual DISMISSED
+fact; it completes historical triage without granting clean authority.
+Previously accepted finding bindings remain required, including when newer
+content omits them. Retriage refreshes handoffs from that accepted set.
+
+First and second consecutive change requests produce bounded handoffs.
+Each returned `round_handoffs` entry binds `candidate_sha` and `tool_revision`
+and contains `outcome_refs`, indexes into that assessment's `outcomes`.
+Each outcome identifies the finding and full subject/family/member, with
+`origin_evidence` and `candidate_evidence` indexes into the same response's
+`evidence` array. Those validated records retain the member identity, probe,
+profile, evidence classes, actual kind/checks/verdict/detail and prerequisite
+attribution. Their `source_set` indexes address the response's `source_sets`,
+each containing the exact revision/tool binding and captured path/Git-object
+pairs. Source sets and member observations are emitted once, not copied into
+every finding/round; no source payload or external evidence registry is added.
+References are local to the enclosing assessment, not permission tokens or
+identities to reuse across candidates. An auditor can follow each round to
+every examined sibling's origin and candidate evidence without reconstructing
+discarded worker results. Later round refreshes do not mutate returned reports.
+Before a hold, clean triage resets the sequence. The third request creates a
+sticky hold bound to its review ID and head. New heads and later clean
+reports cannot reset it. Only the coordinator's bound `redesign`, `decompose`
+or `retain-with-evidence` disposition, with a reason, permits resumption.
+Stale/wrong-head/reused dispositions fail.
+A valid disposition starts the next count window. Retriaging an older current
+record cannot recount completed rounds or silently reopen the old hold.
+
+Preserve #207: stop new narrow work and eligibility during the hold, but
+immediately publish already-created commits on their assigned branch as
+explicitly ineligible WIP. No side branch or post-commit persistence delay is
+introduced. Retain the decision in existing coordinator state/canonical
+evidence; saved audit JSON is not authorization.
+
+#176's historical baseline v1, fixtures and formulas remain unchanged.
+Use `reviews.rounds`, `reviews.valid_findings_per_kloc`,
+`delivery.first_push_to_clean_review` and the existing `pilot_coordination` /
+`metadata_maintenance` event fields. Record actual coordination work; do not
+invent saved minutes or a second metric ledger.
+
+All exact-head Copilot/security/Build, unresolved-review, exact-master Build
+and remote-completion gates remain mandatory. The audit never grants merge
+permission. There is no gameplay/save/config/locale/generated-game-data,
+ROM/RAM, modern/archival, Build topology or required-context change. Rollback
+is the dedicated #179 PR revert, with no manual-only criterion.
+
 ## Completed-worktree cleanup
 
 Issue [#208](https://github.com/laqieer/fireemblem8-expansion/issues/208)

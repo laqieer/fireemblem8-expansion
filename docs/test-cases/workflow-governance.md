@@ -115,6 +115,300 @@ afterward as described in step 6. No visual/audio/manual-only criterion applies.
 This setup cannot supply missing Git authority or discharge
 the consumers' independent protected-principal/deployment requirements.
 
+## TC-WORKFLOW-REVIEW-FAMILY-001: Expand valid findings across complete sibling families
+
+- **Feature / originating issue:** `workflow-governance` /
+  [issue #179](https://github.com/laqieer/fireemblem8-expansion/issues/179).
+- **Supported configuration:** source checkout, the existing #216 locked
+  CPython 3.12 host environment, Git and native GCC for host coverage; the
+  existing modern Build lane's ARM GCC/binutils for mandatory object positives.
+- **Prerequisites and starting state:** run from the repository root. Follow
+  the [existing host setup](../workflow-pilot.md#isolated-host-python-dependencies)
+  if needed. Tests create only owned source copies/Git histories below
+  `build/review-family-*`. No live PR, credential, ROM, emulator, protected
+  installation or new agent backend is needed. CLI fixtures invoke the
+  independently trusted test checkout's existing fixed launcher outside
+  the owned candidate repository; they do not execute a candidate bootstrap.
+
+### Actions
+
+1. Run the focused suite with the inherited locked interpreter:
+
+   ```bash
+   build/host-python/bin/python3 -I -m unittest discover \
+     -s scripts/workflow_pilot/tests -t . -p 'test_*review*.py' -v
+   ```
+
+2. With the supported ARM compiler/binutils on PATH (or the resolved
+   `MODERN_CC`, `MODERN_NM` and `MODERN_SIZE` environment paths), run the
+   separate ARM-positive selector:
+
+   ```bash
+   python3 -m unittest scripts.workflow_pilot.tests.arm_review_subjects -v
+   ```
+
+   The existing `expansion-modern-linker-check` recipe also runs this selector
+   in both modern Build configurations, without a new workflow job or verifier
+   gate. Missing tools fail rather than skip. The host reporter suite needs no
+   ARM installation and retains all native/source-backed family coverage;
+   its parsed Make contract verifies that both configurations retain the
+   mandatory ARM selector and resolved tool paths. The owned non-system
+   toolchain control exercises both `MODERN_TOOLCHAIN_ROOT` and an explicit
+   compiler override through Make, then records actual compiler/nm/size
+   execution; a system-only installation is not required.
+   Inspect the actual AoE controls: every public item phase, typed route checks,
+   each shape and bounded/stable target behavior runs its selected native
+   driver group. Each shape requests the actual range map and checks every
+   cell against an independent radius-two selected-shape bitmap. Change CROSS
+   to a 3x3 square that still reports nine tiles and preserves the source
+   target: its own selector must fail on geometry, then pass restored source.
+   Enabled and disabled reference drivers and ARM object
+   symbols/sections pass in their respective profiles, including formatting-only
+   source changes. Remove EWRAM placement from the core, reference, then both
+   in owned source revisions. Inspect the real compiled objects: each missing
+   section must reject the enabled ARM member even though total EWRAM is
+   below budget. Restored enabled placement, aggregate EWRAM/text budgets and
+   the supported disabled omission remain good.
+   Remove the real AI_NEVER rejection in an owned
+   origin commit; the same probe fails before and passes restored source.
+   Compile and read the actual header's phase/shape enum values. Original and
+   equivalent explicitly valued/reordered declarations retain the same
+   zero-based mapping. Alias `BEGIN_USE` to `0`, alias the square shape, add
+   a numeric gap or change the count sentinel: compilation confirms the
+   numeric difference and the finite coverage model must reject before
+   advertising independent siblings. No general C interpreter is involved.
+   Make the included `bmunit.h` unit-validity predicate reject valid units,
+   then restore it. The native stable-slot member fails before and passes
+   after; that actual header dependency is bound and its finding is admissible.
+   Reporting an unaffected item-route member instead must still reject.
+3. Inspect the unrelated generated-eventlist controls: resolve actual schema
+   owners, validate authored references, generate and parse C output, compare
+   the consumer and inventory. Introduce a nonexistent event-script reference
+   in owned source; validation fails before and passes after restoration.
+   Report an unchanged inventory or consumer as the defect instead: the
+   selected predicate never executed, so its unavailable/zero-check
+   prerequisite observation cannot claim an affected-fixed repair. The
+   owner repair remains admissible with those siblings explicitly
+   `prerequisite-fixed`, bound to the actually failed same-origin owner.
+   Remove, invent or substitute a satisfied prerequisite owner and reject.
+   Introduce real inventory drift and consumer output differences separately;
+   their own predicates fail and restoration passes.
+   Optional owners also run their existing semantic validators: invalid
+   callbacks on selected non-reference strategies and chapter bundle metadata
+   fail. Default-off reference records remain inactive. Mutate the actual
+   generator, consumer parser and inventory producer, restore them and make
+   formatting-only edits. Their source-bound findings must sweep the family
+   and pass only after repair, without unrelated feature-wide ROM checks.
+   Compare actual staged candidate bytes with every obligation's declared
+   execution closure and observed Git objects for AoE, generated and mixed-subject
+   workers. All staged headers, imported registry schemas and authored inputs
+   must be bound. Narrowing one execution closure while another still stages
+   those bytes rejects before execution; fixed tool overlays retain their
+   tool-revision binding. Semantic `inputs` must match the corresponding
+   standalone subject's mapping, not the mixed staging union. Break real AoE,
+   generated drift and session predicates in the same origin, then repair
+   them. Their correctly attached findings pass; swapping each finding's
+   source path to a different subject's staged source rejects.
+4. Execute the real review reducer as a source subject. The lifecycle and wire
+   probes cover entries/preservation/resets/terminals and
+   producers/consumers/validators/replay/stale bindings. Mutating the hold
+   behavior must fail both affected families, not just a string check.
+5. Drop a sibling observation after fixing the reported member. Repeat for
+   all family roles, duplicate observations, added/deleted enums or files,
+   unknown cases/members/probes, wrong subjects/heads/tool revisions and
+   unrelated all-pass evidence. Every incomplete handoff rejects.
+   Report a wire validator that already passed at the origin while a different
+   stale-binding sibling actually failed. Both direct handoff assessment and
+   the coordinator adapter must reject the misclassified finding; only the
+   reported member's own affected-fixed row can satisfy it.
+6. Make compilation/import unavailable and provide zero/skipped/unknown probe
+   results. The owned missing-compiler fixture changes only its
+   coordinator-selected compiler path to a nonexistent file: native checks still pass,
+   enabled/disabled object observations are `unavailable` with zero checks,
+   and both those observations and their omission reject handoff. No system
+   compiler or global environment is changed. A passing host regression proves
+   honest unavailability, not satisfied ARM obligations.
+   None can count as an affected-fixed negative control. Preserve
+   the distinction between actual native, parsed, host and ARM object evidence;
+   no group or whole-suite result can masquerade as a ROM scenario.
+   Route an ARM probe to the actual native executor and a generated probe to
+   the actual host reducer in owned tool commits. Repeat with passing, broken
+   and unavailable source. The returned kind stays native/host and the
+   mismatched obligation rejects in all three cases. Corrupt the actual
+   worker output's kind, verdict, count, detail, fields or row shape; missing,
+   wrong and malformed records reject rather than being relabeled.
+   Genuine executor failures retain their kind, while a worker exiting before
+   any result has `kind: null`; unavailable rows always have zero checks.
+7. Exercise the existing task adapter's bounded read-only role and actual
+   returned task metadata. Make `runtime.start` return None, empty/whitespace
+   strings, Booleans, numbers, bytes and containers. Each must reject before
+   lease creation without retaining its reservation or admitting a local
+   finding. Retry with a valid opaque string ID: preserve it unchanged,
+   complete the review and allow subsequent acquisition.
+   Denied mutation operations never reach the bound
+   tool; duplicate/overlapping owners, wrong/stale/incomplete task results and
+   excessive duration reject. This proves the operational interface, not
+   same-UID OS containment or that a synthetic test launched a live agent.
+   Disjoint scopes cannot create a second active reviewer for the same
+   repository/PR even at a different head, or for the same candidate head even
+   on another PR. Work with both a different repository/PR identity and a
+   different head remains independent, even with overlapping scope. Completed
+   sessions release both exclusions; denied starts never reach the runtime.
+   Attempt head advance during the lease, including after expiration or
+   a nonterminal stop acknowledgment: the session/head binding must remain
+   unchanged. Only actual completed/aborted/timed-out terminal release permits
+   normal head advance, while retaining the report's old origin.
+   Both runtime `completed` and `read_only` must be Boolean `True`; repeat with
+   false, truthy strings/numbers, containers and missing fields. Request a
+   completed report with empty/partial allowed actions: both `read-candidate`
+   and `emit-report` must have been observed. Their pair passes with or without
+   optional `read-evidence`; any subset missing either required action rejects.
+   A rejected but truly terminal task may still be explicitly aborted without
+   admitting its report. Request a
+   ten-file lease, return ten files, then eleven; only the first completes.
+   Repeat requested/returned bounds with Boolean, fractional/integral float,
+   string, negative and over-global-cap values. Only strict integer counts
+   within the requested bound (at most 200) pass. Malformed adjacent runtime
+   fields leave ownership active; a subsequent valid result can finish it.
+   Expire a lease while the runtime still reports it running: observe the
+   status, reject completion and keep fresh-reviewer admission blocked.
+   Then supply actual terminal completion; reject the late report but close
+   the lease as `timed-out` and allow a fresh reviewer. Repeat with the
+   deadline passing during the runtime read; no late report is admitted.
+   Exercise explicit abort through the runtime's existing stop capability.
+   A stop acknowledgment without terminal status, read/stop failure, unknown
+   status, missing capability, wrong identity or malformed terminal chronology
+   must not release ownership. Once terminal evidence is observed, close as
+   `aborted` without accepting a report; an already completed failed report
+   needs no second stop. Normal completion retains `outcome: completed`.
+   Every returned typed finding needs explicit accepted/rejected local triage
+   with a reason. Omission rejects even on repaired source; acceptance enters
+   the existing sibling sweep, and rejection never silently accepts a finding.
+   Mutate the runtime's timestamps, actions, scope, findings, bounds and
+   completion flags after finish, and during the ownership-release callback.
+   The returned internal report must retain its validated immutable values,
+   including nested collections and typed findings. A timely review remains
+   timely; changing a recorded late completion to an earlier time cannot
+   admit pre-review eligibility.
+8. Exercise exact GitHub actor/head/content collection and complete coordinator
+   triage. COMMENTED, approval phrases and zero inline findings remain
+   untriaged until that decision. Change content or the head and require
+   rejection. The live adapter's command is read-only GraphQL.
+   Dismissed exact-head facts remain visible but cannot be clean authority.
+   Promote a formal untriaged request to full triage without adding a round.
+   Edit an actually observed clean/requested review, require invalidation, then
+   retriage that same record; repeat with dismissal and a later active clean
+   review. Handoffs refresh, accepted findings remain required, unchanged final
+   replay and identity rebinding reject, and sticky holds survive retriage.
+   Finalized `dismissed` triage closes only actual historical dismissals.
+   Leave an older-head review conversation unresolved while adding a clean
+   current-head review. Both readiness and exact-head clean status stay false.
+   Resolve the conversation in the observed GitHub facts and reject stale
+   triage. While the earlier record remains untriaged, both flags must still
+   be false. Complete normal retriage and require both positive flags.
+   Unrelated live-base fast-forwards preserve the actual candidate merge base;
+   substituting an older ancestor or a base outside that lineage rejects.
+9. Exercise the real isolated launcher from a separately trusted checkout or
+   installation, using the [documented command](../workflow-pilot.md#public-request-and-execution-api)
+   and explicitly reviewed tool revision stored in the candidate repository.
+   Substitute the candidate's bootstrap, initializers and validator/gate files;
+   the candidate marker must not run, and only intended captured Git bytes
+   may execute. This PR's launcher can be independently trusted in another
+   checkout; it is not authenticated by a candidate SHA or a fresh copied file.
+   A same-feature reviewed binding works through this external entrypoint
+   without a forced base-first adapter installation.
+   Wrong source, unsafe Git
+   modes, ambient hooks/import state, duplicate request fields and candidate
+   success/program/trust fields fail rather than enabling a fallback.
+   A real unattached tree object containing an initializer must be rejected
+   before that initializer executes.
+   A subdirectory supplied as candidate storage must likewise reject before a
+   reviewed initializer executes; retain exact top-level, commit and source
+   controls and the original same-root rules for other protected modes.
+   Missing candidate/base objects and invalid ancestry in both real direct
+   and isolated CLI entrypoints fail nonzero with bounded diagnostics, not a traceback.
+   Test valid request JSON padded to exactly 1 MiB, one byte over, malformed
+   JSON/record types, missing files, directories, symlinks and a FIFO without
+   a writer. Only the exact-bound regular valid request succeeds. Both real
+   entrypoints also reject a 256 MiB sparse input under a 128 MiB child
+   address-space limit without allocation failure, blocking or a traceback.
+   Diagnostic detail remains bounded even for a very long duplicate JSON key.
+   In both direct and isolated entrypoints, force an actual local Git process
+   timeout and route the GH adapter to a timed-out local child or missing
+   executable. Require bounded nonzero diagnostics and no traceback or
+   successful fallback. The API must translate only the expected OS/timeout
+   errors, not an unrelated programming exception. No remote API is contacted
+   by these controlled error-path tests.
+   The direct Git timeout control must enter `trusted_review_gate.main` /
+   `GitTree.git`, not call the launcher under a direct label. Verify its
+   explicit bounded call raises a real local subprocess timeout while a
+   default reporter Git call retains its original behavior; exercise the
+   external launcher's existing timeout path separately.
+10. For two consecutive generated-data remediation rounds, introduce actual
+    inventory drift, then a consumer mismatch, and repair both. Parse each
+    returned round's `outcome_refs`, then its outcomes' origin/candidate
+    evidence references. Every expected sibling must resolve to the actual
+    validated member identity, profile/probe, evidence classes, kind, checks,
+    verdict and revision-bound source-object set. Verify affected-fixed versus
+    unaffected states from those real worker observations; shared source sets
+    must not be duplicated per sibling. Later review-content refresh must not
+    rewrite the already returned assessment.
+    First/second request rounds produce bounded handoffs; the third remains
+    held through later heads and clean reports until a valid coordinator
+    disposition names the held round/head. Preserve already-created commits
+    on their assigned branch as ineligible WIP; do not delay publication or
+    invent side branches.
+
+### Expected result
+
+Both unrelated production subjects have real positive and before/after
+negative controls. Every expected member and applicable evidence class is
+present. Actual execution observations determine outcomes. Source audit JSON
+is not task provenance, approval or merge permission. Even a zero-finding
+local review retains exact-head Copilot/security/Build and exact-master gates.
+
+### Negative control
+
+The original fixed #179 predicates could not detect unrelated gameplay
+repairs. The source mutations now fail those actual predicates. Missing
+siblings, wrong source/identity, untriaged content or an undisposed third
+request never pass. Formatting-only source changes remain green. A missing
+tool or failed import/compile is unavailable rather than proof of a fix.
+The pre-intake-fix implementation allocated oversized files before rejection,
+accepted truthy completion and over-lease counts, and relabeled wrong-routed
+worker kinds. The same deterministic inputs now reject without granting
+completion or evidence credit; actual correctly typed positive results pass.
+
+### Interactions and save compatibility
+
+Depends on #176 metrics/risk decisions, existing Git/GitHub/task/test tools and
+#216's locked schema dependencies. #181 depends on it; #178 is independent and
+#204 is not a dependency. Preserve #207's publication and #208's cleanup
+contracts. No gameplay/save/config, generated-game-data, locale,
+ROM/RAM, modern/archival, topology or required-context change occurs.
+
+### Automation
+
+The command in step 1 runs the existing unittest runner against only the three
+review test modules. They exercise actual native/ARM, generated-data and
+source-reducer observations, closed CLI behavior, independent schema parity
+and coordinator task/GitHub adapters. No live task, remote mutation or broad
+ROM/profile matrix is part of this deterministic test case.
+
+### Cleanup and limitations
+
+Tests remove only their owned fixtures; retain actual task work and diagnostic
+logs.
+
+The trusted reviewer/coordinator selects the authoritative finite model:
+filenames do not establish semantic completeness. Unknown or newly changed
+coverage requires a reviewed binding/model, which can be selected at an exact
+tool revision in the same feature PR. A model is not another canonical case
+catalog or an installation prerequisite. Read-only roles/minimal environments
+are not hostile same-UID isolation. Applicable real gameplay runtime evidence
+remains required for an actual gameplay change. No manual-only criterion
+applies to this workflow case.
+
 ## TC-WORKFLOW-WORKTREE-CLEANUP-001: Remove only proven completed worktrees
 
 - **Feature / originating issue:** `workflow-governance` /
