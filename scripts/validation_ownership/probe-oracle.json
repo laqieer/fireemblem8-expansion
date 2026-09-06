@@ -22,6 +22,22 @@
       ]
     },
     {
+      "path": "scripts/modernize/package_ci_patch.sh",
+      "expected_surface": "surface.host",
+      "expected_owners": [
+        {"edge_type": "adversarial-control", "evidence_id": "owner.host-workflow"},
+        {"edge_type": "owns-test", "evidence_id": "owner.host-build"}
+      ]
+    },
+    {
+      "path": "tests/workflows/test_patch_release_workflow.py",
+      "expected_surface": "surface.host",
+      "expected_owners": [
+        {"edge_type": "adversarial-control", "evidence_id": "owner.host-workflow"},
+        {"edge_type": "owns-test", "evidence_id": "owner.host-build"}
+      ]
+    },
+    {
       "path": "docs/validation-ownership.md",
       "expected_surface": "surface.docs",
       "expected_owners": [
@@ -278,5 +294,5 @@
       ]
     }
   ],
-  "seal": "e647b3a2e545c81148486b346c19f3710ab975912d2a34a97cf48d529f78ab5e"
+  "seal": "49afe18ac2260f65521964946185a0801aab23af3ac7fe4bc81f48100b393e12"
 }

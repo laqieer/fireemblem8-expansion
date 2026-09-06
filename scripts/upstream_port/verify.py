@@ -8,8 +8,8 @@ the four combined workers in `.github/workflows/build.yml`. Before execution,
 it parses the selected target checkout's workflow as data and requires exact
 semantic equivalence with both the source workflow and this module's reviewed
 gate list; target Python is never imported. The event identity, router,
-classifier, master-only publisher, and serial summary jobs have no local gate
-equivalent. The one DELIBERATE
+classifier and serial summary jobs, and master-only packaging steps, have no
+local gate equivalent. The one DELIBERATE
 command-level exception is build.yml's
 "Check documentation (issues #7/#17)" step, which remains a required
 standalone workflow gate outside this mirror. Run that standalone command pair
@@ -27,7 +27,6 @@ from typing import List
 
 from scripts.workflow_pilot import (
     metadata_adapter_contract,
-    publisher_shell_contract,
     summary_continuity_contract,
 )
 
@@ -51,7 +50,6 @@ _EXPECTED_JOBS = (
     _EVENT_ROUTER_JOB,
     _EVENT_CLASSIFIER_JOB,
 ) + _COMBINED_JOBS + (
-    "patch-release",
     "summary",
 )
 _CHECKOUT_USES = "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"
@@ -74,12 +72,6 @@ _CLASSIFIER_CHECKOUT_WITH = (
         "ref",
         "${{ needs.event-identity.outputs.classifier_ref }}",
     ),
-)
-_PATCH_CHECKOUT_WITH = (
-    ("fetch-depth", "0"),
-    ("persist-credentials", "false"),
-    ("ref", "${{ needs.event-identity.outputs.fallback_sha }}"),
-    ("submodules", "recursive"),
 )
 _UPLOAD_USES = (
     "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a"
@@ -202,8 +194,9 @@ _HOST_BUILD_CONDITION = (
     "needs.event-identity.outputs.fallback_sha == github.sha)))) }}"
 )
 _PUBLISHER_CONDITION = (
-    "${{ always() && needs.event-identity.result == 'success' && "
-    "github.event_name == 'push' && "
+    "${{ success() && github.event_name == 'push' && "
+    "github.repository == 'laqieer/fireemblem8-expansion' && "
+    "github.ref == 'refs/heads/master' && needs.event-identity.result == 'success' && "
     "needs.event-identity.outputs.fallback_kind == 'push' && "
     "needs.event-identity.outputs.fallback_sha == github.event.after && "
     "needs.event-identity.outputs.fallback_sha == github.sha }}"
@@ -813,9 +806,6 @@ _EXPECTED_JOB_ENV = {
             "63b22f3eb8a8051af30bd80c4795b355e439e7ef",
         ),
     ),
-    "patch-release": (
-        ("PATCH_COMMIT", "${{ needs.event-identity.outputs.fallback_sha }}"),
-    ),
     "summary": tuple(
         sorted(
             (
@@ -842,7 +832,6 @@ _EXPECTED_JOB_ENV = {
                 ("HOST_TESTS_RESULT", "${{ needs.host-tests.result }}"),
                 ("IDENTITY_VALID", "${{ needs.event-classifier.outputs.identity_valid }}"),
                 ("LEGACY_RESULT", "${{ needs.legacy.result }}"),
-                ("PATCH_RELEASE_RESULT", "${{ needs.patch-release.result }}"),
                 ("PR_BASE_SHA", "${{ github.event.pull_request.base.sha }}"),
                 ("PR_HEAD_SHA", "${{ github.event.pull_request.head.sha }}"),
                 ("PR_NUMBER", "${{ github.event.number }}"),
@@ -977,37 +966,6 @@ _BASE_VERIFIER_ENV = (
     "needs.event-identity.outputs.fallback_sha || '' }}",
     "VALIDATION_OWNERSHIP_TEMP: ${{ runner.temp }}",
 )
-_PRIVATE_STEP_ENV = (
-    ("BASH_ENV", "''"),
-    ("CDPATH", "''"),
-    ("ENV", "''"),
-    ("GLOBIGNORE", "''"),
-    ("GIT_ALTERNATE_OBJECT_DIRECTORIES", "''"),
-    ("GIT_CEILING_DIRECTORIES", "''"),
-    ("GIT_COMMON_DIR", "''"),
-    ("GIT_CONFIG_COUNT", "'0'"),
-    ("GIT_CONFIG_GLOBAL", "/dev/null"),
-    ("GIT_CONFIG_KEY_0", "''"),
-    ("GIT_CONFIG_NOSYSTEM", "'1'"),
-    ("GIT_CONFIG_PARAMETERS", "''"),
-    ("GIT_CONFIG_SYSTEM", "/dev/null"),
-    ("GIT_CONFIG_VALUE_0", "''"),
-    ("GIT_DIR", "''"),
-    ("GIT_EXEC_PATH", "''"),
-    ("GIT_INDEX_FILE", "''"),
-    ("GIT_NAMESPACE", "''"),
-    ("GIT_NO_LAZY_FETCH", "'1'"),
-    ("GIT_NO_REPLACE_OBJECTS", "'1'"),
-    ("GIT_OBJECT_DIRECTORY", "''"),
-    ("GIT_REPLACE_REF_BASE", "''"),
-    ("GIT_WORK_TREE", "''"),
-    ("HOME", "${{ runner.temp }}/patch-runtime"),
-    ("LD_LIBRARY_PATH", "''"),
-    ("LD_PRELOAD", "''"),
-    ("PATH", "/usr/bin:/bin"),
-    ("PYTHONPATH", "''"),
-    ("SHELLOPTS", "''"),
-)
 _EXPECTED_STEP_ROLES = {
     "event-identity": (
         ("setup", "Validate trusted event identities"),
@@ -1062,6 +1020,8 @@ _EXPECTED_STEP_ROLES = {
             "Build and verify all-locales/all-features map menu "
             "(issues #49/#168)",
         ),
+        ("publisher", "Create and verify patch artifact"),
+        ("publisher", "Upload patch-only artifact"),
     ),
     "extended-host-tests": (
         ("setup", None),
@@ -1080,20 +1040,6 @@ _EXPECTED_STEP_ROLES = {
         ("setup", "Build tools"),
         ("gate", "Build archival lane without a copyrighted baserom"),
         ("gate", "Validate pinned archival payload identities"),
-    ),
-    "patch-release": (
-        ("publisher", None),
-        ("publisher", "Verify exact candidate and stage trusted producer"),
-        ("publisher", "Install trusted isolated-build dependencies"),
-        (
-            "publisher",
-            "Build candidate in isolated namespace and stage public inputs",
-        ),
-        ("publisher", "Download private base image"),
-        ("publisher", "Create and verify patch artifact"),
-        ("publisher", "Cleanup and verify private base"),
-        ("publisher", "Revalidate patch-only upload"),
-        ("publisher", None),
     ),
     "summary": (("summary", "Render fail-closed combined Build summary"),),
 }
@@ -1420,14 +1366,6 @@ def _parse_job_context(job_name, body):
             ]
             for name in _COMBINED_JOBS
         },
-        "patch-release": [
-            "needs",
-            "if",
-            "runs-on",
-            "timeout-minutes",
-            "env",
-            "steps",
-        ],
         "summary": [
             "name",
             "if",
@@ -1477,7 +1415,6 @@ def _parse_job_context(job_name, body):
                         "needs.event-identity.result == 'success' }}"
                     ),
                     "event-classifier": "always()",
-                    "patch-release": _PUBLISHER_CONDITION,
                     "summary": "always()",
                 }[job_name]
             )
@@ -1487,13 +1424,13 @@ def _parse_job_context(job_name, body):
         elif name == "needs":
             expected = (
                 "[event-identity]"
-                if job_name in {"event-router", "patch-release"}
+                if job_name in {"event-router"}
                 else "[event-identity, event-router]"
                 if job_name == "event-classifier"
                 else "[event-identity, event-classifier]"
                 if job_name in _COMBINED_JOBS
                 else "[event-identity, event-classifier, host-tests, build, "
-                "extended-host-tests, legacy, patch-release]"
+                "extended-host-tests, legacy]"
             )
             if value != expected or nested:
                 raise ValueError(f"job {job_name!r} needs differs")
@@ -1604,18 +1541,71 @@ def _literal_run_script(lines, start, end, value, step_label):
     return "\n".join(script) + "\n"
 
 
+def _bash_line_state(line, state):
+    index = 0
+    word_start = state == "normal"
+    while index < len(line):
+        character = line[index]
+        if state == "normal":
+            if character in " \t":
+                word_start = True
+            elif character == "#" and word_start:
+                break
+            elif character == "'":
+                state = "single"
+                word_start = False
+            elif character == '"':
+                state = "double"
+                word_start = False
+            elif character == "\\":
+                if index == len(line) - 1:
+                    return state, True
+                index += 2
+                word_start = False
+                continue
+            elif character in "&|;":
+                if character in "&|" and index + 1 < len(line) and line[index + 1] == character:
+                    index += 1
+                word_start = True
+            else:
+                word_start = False
+        elif state == "single":
+            if character == "'":
+                state = "normal"
+        else:
+            if character == '"':
+                state = "normal"
+            elif character == "\\":
+                if index == len(line) - 1:
+                    return state, True
+                if line[index + 1] in '$`"\\':
+                    index += 2
+                    continue
+        index += 1
+    return state, False
+
+
 def _parse_bash_run_script_commands(script, step_label):
+    state = "normal"
+    current = ""
     parsed = []
-    for logical in publisher_shell_contract.bash_logical_lines(
-        script,
-        label=step_label,
-    ):
-        if not logical.strip() or logical.lstrip().startswith("#"):
+    for line in script.splitlines():
+        current += line
+        state, continued = _bash_line_state(line, state)
+        if continued:
+            current = current[:-1]
             continue
-        command = tuple(shlex.split(logical))
-        if not command:
-            raise ValueError(f"{step_label} run command is empty")
-        parsed.append(command)
+        if state != "normal":
+            current += "\n"
+            continue
+        if current.strip() and not current.lstrip().startswith("#"):
+            command = tuple(shlex.split(current))
+            if not command:
+                raise ValueError(f"{step_label} run command is empty")
+            parsed.append(command)
+        current = ""
+    if current:
+        raise ValueError(f"{step_label} has unterminated quoting or continuation")
     if not parsed:
         raise ValueError(f"{step_label} run command is empty")
     return tuple(parsed)
@@ -1834,349 +1824,26 @@ def _parse_step(block, job_name, index):
         else:
             raise ValueError(f"{step_label} unexpected mode setup step")
         role = "setup"
-    elif job_name == "patch-release":
-        expected_fields = (
-            {"uses", "with"}
-            if index in {0, 8}
-            else {"id", "name", "shell", "env", "run"}
-            if index == 4
-            else {"name", "shell", "env", "run"}
-            if index in {2, 3, 5, 7}
-            else {"if", "name", "shell", "env", "run"}
-            if index == 6
-            else {"name", "env", "run"}
-            if index == 1
-            else set()
-        )
-        expected_name = {
-            1: "Verify exact candidate and stage trusted producer",
-            2: "Install trusted isolated-build dependencies",
-            3: "Build candidate in isolated namespace and stage public inputs",
-            4: "Download private base image",
-            5: "Create and verify patch artifact",
-            6: "Cleanup and verify private base",
-            7: "Revalidate patch-only upload",
-        }.get(index)
-        if name != expected_name or set(values) != expected_fields:
-            raise ValueError(f"{step_label} publisher mapping differs")
-        if index == 0 and (
-            values["uses"] != _CHECKOUT_USES
-            or values["with"] != _PATCH_CHECKOUT_WITH
-        ):
-            raise ValueError(f"{step_label} checkout action differs")
-        if index == 1 and (
-            ("test", "$ACTUAL_SHA", "=", "$PATCH_COMMIT")
-            not in values["run"]
-            or "/usr/bin/git cat-file -t $PATCH_COMMIT"
-            not in " ".join(token for command in values["run"] for token in command)
-            or "PREVIOUS_MASTER_SHA"
-            in " ".join(token for command in values["run"] for token in command)
-            or "sha256sum"
-            in " ".join(token for command in values["run"] for token in command)
-        ):
-            raise ValueError(f"{step_label} trusted producer verification differs")
-        if index == 2 and (
-            values["shell"]
-            != "/bin/bash --noprofile --norc -euo pipefail {0}"
-            or values["env"]
-            != tuple(
-                sorted(
-                    _PRIVATE_STEP_ENV
-                    + (
-                        ("PATCH_RUNTIME_ROOT", "${{ runner.temp }}/patch-runtime"),
-                        (
-                            "PATCH_WHEELHOUSE",
-                            "${{ runner.temp }}/patch-wheelhouse",
-                        ),
-                    )
+    elif job_name == "build" and name in {"Create and verify patch artifact", "Upload patch-only artifact"}:
+        if values.get("if") != _PUBLISHER_CONDITION:
+            raise ValueError(f"{step_label} publisher condition differs")
+        if name == "Create and verify patch artifact":
+            if (
+                set(values) != {"name", "if", "env", "run"}
+                or values["env"] != (
+                    ("BASEROM_URL", "${{ secrets.BASEROM_URL }}"),
+                    ("PATCH_ARTIFACT_DIR", "${{ runner.temp }}/patch-artifact"),
+                    ("PATCH_COMMIT", "${{ needs.event-identity.outputs.fallback_sha }}"),
                 )
-            )
-            or "/usr/bin/env"
-            not in {token for command in values["run"] for token in command}
-            or "/usr/bin/python3"
-            not in {token for command in values["run"] for token in command}
-            or "PIP_CONFIG_FILE=/dev/null"
-            not in {token for command in values["run"] for token in command}
-        ):
-            raise ValueError(f"{step_label} isolated dependency setup differs")
-        if index == 3 and (
-            values["shell"]
-            != "/bin/bash --noprofile --norc -euo pipefail {0}"
-            or values["env"]
-            != tuple(
-                sorted(
-                    _PRIVATE_STEP_ENV
-                    + (
-                        ("BUILDER_ROOT", "${{ runner.temp }}/patch-builder"),
-                        ("GITHUB_WORKSPACE_PATH", "${{ github.workspace }}"),
-                        ("PATCH_INPUT_ROOT", "${{ runner.temp }}/patch-input"),
-                        ("PATCH_RUNTIME_ROOT", "${{ runner.temp }}/patch-runtime"),
-                        (
-                            "PATCH_WHEELHOUSE",
-                            "${{ runner.temp }}/patch-wheelhouse",
-                        ),
-                    )
-                )
-            )
-            or "/usr/bin/unshare"
-            not in {token for command in values["run"] for token in command}
-            or "--net"
-            not in {token for command in values["run"] for token in command}
-            or "--kill-child=KILL"
-            not in {token for command in values["run"] for token in command}
-            or "/usr/bin/mount"
-            not in {token for command in values["run"] for token in command}
-            or "--make-rprivate"
-            not in {token for command in values["run"] for token in command}
-            or "hidepid=2"
-            not in " ".join(token for command in values["run"] for token in command)
-            or ("/usr/bin/mkdir", "-m", "0700", "/mnt/supervisor")
-            not in values["run"]
-            or (
-                "/usr/bin/mount",
-                "--bind",
-                "$cgroup_path",
-                "/mnt/supervisor/cgroup",
-            )
-            not in values["run"]
-            or "supervisor_cgroup=/mnt/supervisor/cgroup"
-            not in {token for command in values["run"] for token in command}
-            or ("test", "!", "-r", "/mnt/supervisor") not in values["run"]
-            or not any(
-                command
-                and command[0].startswith("cgroup_members=")
-                and "$supervisor_cgroup/cgroup.procs" in command[0]
-                for command in values["run"]
-            )
-            or any(
-                command
-                and command[0].startswith("cgroup_members=")
-                and "$cgroup_path/cgroup.procs" in command[0]
-                for command in values["run"]
-            )
-            or "/sys/fs/cgroup/cgroup.controllers"
-            not in {token for command in values["run"] for token in command}
-            or "$builder_cgroup/cgroup.kill"
-            not in {token for command in values["run"] for token in command}
-            or "close_inherited_fds()"
-            in {token for command in values["run"] for token in command}
-            or "/proc/$$/fd"
-            in " ".join(token for command in values["run"] for token in command)
-            or "candidate-launcher.py"
-            not in " ".join(token for command in values["run"] for token in command)
-            or "supervisor-launcher.py"
-            not in " ".join(token for command in values["run"] for token in command)
-            or "os.closerange(3,"
-            not in " ".join(token for command in values["run"] for token in command)
-            or "os.execve(candidate_argv[0],"
-            not in " ".join(token for command in values["run"] for token in command)
-            or "MAX_FD = 1_048_576"
-            not in " ".join(token for command in values["run"] for token in command)
-            or "fcntl.F_GETFD"
-            not in " ".join(token for command in values["run"] for token in command)
-            or values["run"].count(
-                ("exec", "<", "/dev/null", ">", "/dev/null", "2>&1")
-            )
-            != 2
-            or "candidate-output.log"
-            in " ".join(token for command in values["run"] for token in command)
-            or ("ulimit", "-f", "131072") not in values["run"]
-            or ("test", "$cgroup_members", "=", "$$") not in values["run"]
-            or "candidate build failed: stage=launch detail=%s exit=%d"
-            not in " ".join(token for command in values["run"] for token in command)
-            or "candidate build failed: stage=isolated exit=%d"
-            not in " ".join(token for command in values["run"] for token in command)
-            or "candidate build cleanup failed: process=%d cgroup=%d state=%d primary=%d"
-            not in " ".join(token for command in values["run"] for token in command)
-            or "< /dev/null > /dev/null 2>&1 &"
-            not in " ".join(token for command in values["run"] for token in command)
-            or "GITHUB_STEP_SUMMARY-"
-            not in " ".join(token for command in values["run"] for token in command)
-            or ("builder_cgroup_is_empty",)
-            not in values["run"]
-            or ("builder_group_is_empty", "$builder_session_id")
-            not in values["run"]
-            or "builder_session_authenticated=1"
-            not in {token for command in values["run"] for token in command}
-            or "builder_launch_detail=session-ready"
-            not in {token for command in values["run"] for token in command}
-            or "os.setsid()"
-            not in " ".join(token for command in values["run"] for token in command)
-            or "signal.SIGSTOP"
-            not in " ".join(token for command in values["run"] for token in command)
-            or "libc.prctl(1,"
-            not in " ".join(token for command in values["run"] for token in command)
-            or '/bin/kill -TERM "$builder_supervisor_pid"'
-            in " ".join(token for command in values["run"] for token in command)
-            or '/bin/kill -KILL "$builder_supervisor_pid"'
-            in " ".join(token for command in values["run"] for token in command)
-            or "/usr/bin/setsid --wait /usr/bin/timeout"
-            in " ".join(token for command in values["run"] for token in command)
-            or ("builder_uid_is_empty", "$builder_uid")
-            not in values["run"]
-            or ("builder_passwd_entry_absent", "$builder_user")
-            not in values["run"]
-            or "builder_user_created=0"
-            not in {token for command in values["run"] for token in command}
-            or "builder_root_owned=0"
-            not in {token for command in values["run"] for token in command}
-            or ("test", "!", "-e", "$BUILDER_ROOT") not in values["run"]
-            or ("test", "!", "-e", "$PATCH_WHEELHOUSE") not in values["run"]
-            or "pkill"
-            in " ".join(token for command in values["run"] for token in command)
-            or "killall"
-            in " ".join(token for command in values["run"] for token in command)
-            or any(
-                token == "$pid"
-                for command in values["run"]
-                if "/bin/kill" in command
-                for token in command
-            )
-        ):
-            raise ValueError(f"{step_label} isolated candidate build differs")
-        if index == 3:
-            if literal_run_script is None:
-                raise ValueError(f"{step_label} patch-release parser script differs")
-            try:
-                publisher_run_script = publisher_shell_contract.literal_run_script_from_step_block(
-                    block,
-                    label=step_label,
-                )
-                publisher_shell_contract.assert_reviewed_patch_release_run_script_identity(
-                    publisher_run_script,
-                    label=step_label,
-                )
-                builder_shell = publisher_shell_contract.builder_isolation_shell_source(
-                    publisher_run_script,
-                    label=step_label,
-                )
-                publisher_shell_contract.assert_reviewed_builder_isolation_shell_identity(
-                    builder_shell,
-                    label=step_label,
-                )
-                publisher_shell_contract.validate_patch_release_parser_heredocs(
-                    builder_shell,
-                    label=step_label,
-                )
-            except ValueError as error:
-                raise ValueError(f"{step_label} patch-release parser script differs") from error
-            if publisher_shell_contract.has_forbidden_supervisor_parent_readonly_mount(
-                builder_shell,
-                label=step_label,
+                or values["run"] != (("bash", "scripts/modernize/package_ci_patch.sh"),)
             ):
-                raise ValueError(f"{step_label} isolated candidate build differs")
-        if index == 4 and (
-            values["id"] != "private-base"
-            or values["shell"]
-            != "/bin/bash --noprofile --norc -euo pipefail {0}"
-            or values["env"]
-            != tuple(
-                sorted(
-                    _PRIVATE_STEP_ENV
-                    + (("BASEROM_URL", "${{ secrets.BASEROM_URL }}"),)
-                )
-            )
-            or "/usr/bin/curl"
-            not in {token for command in values["run"] for token in command}
-            or "/usr/bin/mktemp"
-            not in " ".join(token for command in values["run"] for token in command)
-            or "scripts."
-            in " ".join(token for command in values["run"] for token in command)
+                raise ValueError(f"{step_label} packaging invocation differs")
+        elif (
+            set(values) != {"name", "if", "uses", "with"}
+            or values["uses"] != _UPLOAD_USES or values["with"] != _UPLOAD_WITH
         ):
-            raise ValueError(f"{step_label} secret download boundary differs")
-        if index == 5 and (
-            values["shell"]
-            != "/bin/bash --noprofile --norc -euo pipefail {0}"
-            or values["env"]
-            != tuple(
-                sorted(
-                    _PRIVATE_STEP_ENV
-                    + (
-                        (
-                            "BASE_IMAGE",
-                            "${{ steps.private-base.outputs.base_path }}",
-                        ),
-                        (
-                            "PATCH_ARTIFACT_DIR",
-                            "${{ runner.temp }}/patch-artifact",
-                        ),
-                        ("PATCH_INPUT_ROOT", "${{ runner.temp }}/patch-input"),
-                        ("PATCH_RUNTIME_ROOT", "${{ runner.temp }}/patch-runtime"),
-                        ("PATCH_TOOL_ROOT", "${{ runner.temp }}/patch-tool"),
-                    )
-                )
-            )
-            or "/usr/bin/python3"
-            not in {token for command in values["run"] for token in command}
-            or "-S" not in {token for command in values["run"] for token in command}
-            or "/usr/bin/env"
-            not in {token for command in values["run"] for token in command}
-            or "cleanup_private_base()"
-            not in {token for command in values["run"] for token in command}
-        ):
-            raise ValueError(f"{step_label} audited patch boundary differs")
-        if index == 6 and (
-            values["if"] != "always()"
-            or values["shell"]
-            != "/bin/bash --noprofile --norc -euo pipefail {0}"
-            or values["env"]
-            != tuple(
-                sorted(
-                    _PRIVATE_STEP_ENV
-                    + (
-                        (
-                            "BASE_IMAGE",
-                            "${{ steps.private-base.outputs.base_path }}",
-                        ),
-                    )
-                )
-            )
-            or "/bin/rm"
-            not in {token for command in values["run"] for token in command}
-            or ("test", "!", "-e", "$BASE_IMAGE") not in values["run"]
-            or ("test", "!", "-e", "$private_dir") not in values["run"]
-        ):
-            raise ValueError(f"{step_label} private cleanup verification differs")
-        if index == 7 and (
-            values["shell"]
-            != "/bin/bash --noprofile --norc -euo pipefail {0}"
-            or values["env"]
-            != tuple(
-                sorted(
-                    _PRIVATE_STEP_ENV
-                    + (
-                        (
-                            "PATCH_ARTIFACT_DIR",
-                            "${{ runner.temp }}/patch-artifact",
-                        ),
-                    )
-                )
-            )
-            or "artifact_names="
-            not in " ".join(token for command in values["run"] for token in command)
-            or ("test", "!", "-L", "$artifact") not in values["run"]
-            or (
-                "test",
-                "$(/usr/bin/stat -c %F $artifact)",
-                "=",
-                "regular file",
-            )
-            not in values["run"]
-        ):
-            raise ValueError(f"{step_label} upload revalidation differs")
-        if index == 8 and (
-            values["uses"] != _UPLOAD_USES
-            or values["with"] != _UPLOAD_WITH
-        ):
-            raise ValueError(f"{step_label} upload action differs")
+            raise ValueError(f"{step_label} patch-only upload differs")
         role = "publisher"
-    elif job_name == "summary":
-        if (
-            name != "Render fail-closed combined Build summary"
-            or set(values) != {"name", "run"}
-        ):
-            raise ValueError(f"{step_label} summary mapping differs")
-        role = "summary"
     elif name is None:
         expected_index = 1 if job_name in _METADATA_ADAPTER_JOBS else 0
         expected_fields = (
@@ -2274,7 +1941,9 @@ def _parse_step(block, job_name, index):
                 raise ValueError(
                     f"{step_label} changes its reviewed scrubbed environment"
                 )
-        if name in _NON_GATE_STEP_NAMES:
+        if job_name == "summary" and name == _SUMMARY_STEP_NAME:
+            role = "summary"
+        elif name in _NON_GATE_STEP_NAMES:
             role = "setup"
         elif name == _DOCS_GOVERNANCE_STEP_NAME:
             role = "standalone-gate"
@@ -2327,9 +1996,7 @@ def _parse_job_steps(job_name, body):
     if len(names) != len(set(names)):
         raise ValueError(f"job {job_name!r} contains duplicate step names")
     expected_unnamed = (
-        2
-        if job_name == "patch-release"
-        else 0
+        0
         if job_name in {"event-identity", "event-classifier", "summary"}
         else 1
     )
@@ -2518,10 +2185,11 @@ def gates(jobs: int = 2) -> List[Gate]:
                 "-v",
             ],
             applicable_note=(
-                "fast host lane (same `host-tests` job): stdlib-only static "
-                "contracts for the consolidated Build CI job graph. No "
-                "compiler, ROM, linker, network, or subordinate runtime gate "
-                "is invoked"
+                "fast host lane (same `host-tests` job): stdlib-only parsed "
+                "contracts for the consolidated Build CI job graph and "
+                "synthetic-input behavior tests of the target checkout's "
+                "packaging helper. No game build, compiler, linker, private "
+                "base download, or network is invoked"
             ),
         ),
         Gate(

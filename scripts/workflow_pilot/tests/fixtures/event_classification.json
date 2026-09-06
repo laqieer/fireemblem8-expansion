@@ -311,7 +311,6 @@
         "extended-host-tests",
         "host-tests",
         "legacy",
-        "patch-release",
         "summary"
       ],
       "expected_summary_success": false,
@@ -1001,7 +1000,6 @@
           "extended-host-tests",
           "host-tests",
           "legacy",
-          "patch-release",
           "summary"
         ],
         "reason": "master-push",

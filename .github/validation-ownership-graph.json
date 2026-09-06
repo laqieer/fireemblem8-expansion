@@ -357,7 +357,7 @@
     {
       "id": "owner.host-workflow",
       "kind": "evidence",
-      "label": "Workflow topology gate",
+      "label": "Workflow and patch-packaging contract gate",
       "evidence_type": "host",
       "authority": {
         "kind": "workflow-step",
@@ -999,14 +999,14 @@
       "type": "owns-test",
       "source": "surface.host",
       "target": "owner.host-build",
-      "reason": "Host tooling is owned by the combined host test job."
+      "reason": "Host tooling, including the build-once patch packager and its actual producer tests, is owned by the combined host test job."
     },
     {
       "id": "host.adversarial",
       "type": "adversarial-control",
       "source": "surface.host",
       "target": "owner.host-workflow",
-      "reason": "Workflow topology fixtures retain hostile host execution controls."
+      "reason": "Workflow and patch-packaging fixtures reject invalid host inputs and publication contexts."
     },
     {
       "id": "docs.owns-test",

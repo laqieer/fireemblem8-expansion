@@ -67,10 +67,11 @@ such as `make validation-ownership-check compare` fails before NODEP or
 generated-include suppression can affect `compare`.
 
 The host-only Build setup installs `build-essential`, `libmgba-dev`,
-`libpng-dev` and `python3-venv`. The ownership consumer compiles native
+`libpng-dev`, `python3-venv` and `pkg-config`. The ownership consumer compiles native
 `gbagfx` against `png.h`, libpng and zlib, so a compiler alone is insufficient;
 `libpng-dev` supplies its development dependency closure on the supported
-Ubuntu host. This does not require the ARM toolchain. Use the existing
+Ubuntu host, and its existing Makefile queries libpng through `pkg-config`.
+This does not require the ARM toolchain. Use the existing
 [pinned host Python environment](workflow-pilot.md) for local host tests.
 Both `user-namespace` and the supported `sudo-drop` launcher are valid
 observations. Missing native dependencies or unavailable confinement remain
@@ -158,6 +159,22 @@ tests, and `.github/PULL_REQUEST_TEMPLATE.md` to documentation governance.
 `.github/CODEOWNERS` has no deterministic repository consumer, so it is a
 named fail-closed external-GitHub-enforcement exclusion rather than a circular
 ownership-test claim.
+
+The eight-job Build retains both ownership host gates and all 30 mirrored
+local gates. Patch packaging is a master-only step in `build`, not a separate
+publisher job or local gate. The existing `surface.host` mapping covers
+`scripts/modernize/package_ci_patch.sh` and
+`tests/workflows/test_patch_release_workflow.py`: the host job runs the
+workflow suite's real packaging/producer checks, including invalid-input,
+wrong-context and cleanup-failure controls. Both paths have independent
+oracle probes; no new routing surface or copied command list is introduced.
+The removed `scripts/workflow_pilot/publisher_shell_contract.py` cannot resolve
+as a current path. With an explicitly selected base that contained it, a
+deletion still selects the complete host owner pair rather than an empty
+successful result. A `patch-release` workflow-job authority is stale and
+rejects; historical skipped-job compatibility is not a live graph owner.
+This is the [trusted build-once packaging contract](patch_release.md), not
+the withdrawn malicious-build namespace or supervisor proposal.
 
 ## Manual evidence boundary
 

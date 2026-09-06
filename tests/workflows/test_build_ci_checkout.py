@@ -8,6 +8,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
+from scripts.upstream_port import verify
+
 WORKFLOW = ROOT / ".github" / "workflows" / "build.yml"
 CHECKOUT_PIN = "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"
 EXPECTED_SHA = (
@@ -113,22 +115,29 @@ class BuildCiCheckoutContractTests(unittest.TestCase):
 
     def test_fallback_checkouts_never_consume_raw_event_refs(self):
         text = WORKFLOW.read_text(encoding="utf-8")
-        self.assertIn(
-            "ref: ${{ needs.event-identity.outputs.classifier_ref }}",
-            text,
-        )
+        _, _, jobs = verify._parse_workflow_structure_text(text)
+        checkouts = {
+            name: dict(dict(fields)["with"])["ref"]
+            for name, _, steps in jobs
+            for _, _, fields in steps
+            if dict(fields).get("uses") == CHECKOUT_PIN
+        }
         self.assertIn("needs.event-identity.outputs.fallback_sha", EXPECTED_SHA)
-        self.assertIn(
-            "ref: ${{ needs.event-identity.outputs.fallback_sha }}",
-            text,
-        )
+        self.assertEqual(checkouts, {
+            "event-router": "${{ needs.event-identity.outputs.classifier_ref }}",
+            **{name: EXPECTED_SHA for name in
+               ("host-tests", "build", "extended-host-tests", "legacy")},
+        })
         for raw_ref in (
-            "ref: ${{ github.sha }}",
-            "ref: ${{ github.event.after }}",
-            "ref: ${{ github.event.pull_request.head.sha }}",
+            "${{ github.sha }}",
+            "${{ github.event.after }}",
+            "${{ github.event.pull_request.head.sha }}",
         ):
             with self.subTest(raw_ref=raw_ref):
-                self.assertNotIn(raw_ref, text)
+                changed = text.replace(f"ref: {EXPECTED_SHA}", f"ref: {raw_ref}", 1)
+                self.assertNotEqual(changed, text)
+                with self.assertRaises(ValueError):
+                    verify._parse_workflow_structure_text(changed)
 
     def test_missing_checkout_verification_is_rejected(self):
         verification = (

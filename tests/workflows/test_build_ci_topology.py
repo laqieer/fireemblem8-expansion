@@ -71,20 +71,18 @@ METADATA_CHECK_CONTEXTS = set(COMBINED_WORKERS) | {
     "event-identity",
     "event-router",
     candidate_evidence.METADATA_CLASSIFIER,
-    "patch-release",
     candidate_evidence.METADATA_ATTESTATION,
 }
 METADATA_CLASSIFIER_FAILURE_CHECKS = set(COMBINED_WORKERS) | {
     "event-identity",
     "event-router",
     candidate_evidence.METADATA_CLASSIFIER,
-    "patch-release",
     "summary",
 }
 REQUIRED_BUILD_CONTEXTS = frozenset(candidate_evidence.REQUIRED_BUILD_CONTEXTS)
 SUMMARY_NEEDS = (
     "needs: [event-identity, event-classifier, host-tests, build, "
-    "extended-host-tests, legacy, patch-release]"
+    "extended-host-tests, legacy]"
 )
 WORKER_NEEDS = "needs: [event-identity, event-classifier]"
 FULL_WORKER_STEP_CONDITION = (
@@ -188,7 +186,7 @@ CANDIDATE_FULL_JOBS = set(COMBINED_WORKERS) | {
     CLASSIFIER_JOB,
     "summary",
 }
-EMITTED_FULL_CHECKS = CANDIDATE_FULL_JOBS | {"patch-release"}
+EMITTED_FULL_CHECKS = CANDIDATE_FULL_JOBS
 EVENT_CLASSIFIER_DYNAMIC_NAME = (
     "${{ needs.event-router.result == 'success' && "
     "needs.event-router.outputs.classification == 'metadata-only' && "
@@ -1592,7 +1590,7 @@ def _protected_host_prefix_errors(host: str) -> list[str]:
             "Install host-only dependencies (no arm-none-eabi toolchain)",
             (
                 "sudo apt-get update && sudo apt-get install -y "
-                "build-essential libmgba-dev libpng-dev python3-venv",
+                "build-essential libmgba-dev libpng-dev python3-venv pkg-config",
                 "/usr/bin/python3 -I scripts/host_python.py create",
             ),
             if_expression=FULL_WORKER_STEP_CONDITION,
@@ -2211,7 +2209,6 @@ def _errors(text: str, retired_workflow_exists: bool) -> list[str]:
         "build": 90,
         "extended-host-tests": 60,
         "legacy": 60,
-        "patch-release": 60,
         "summary": 5,
     }
     for job_name, timeout in expected_timeouts.items():
@@ -2234,7 +2231,6 @@ def _errors(text: str, retired_workflow_exists: bool) -> list[str]:
         "build",
         "extended-host-tests",
         "legacy",
-        "patch-release",
         "summary",
     }
     if set(jobs) != expected_jobs:
@@ -2264,50 +2260,6 @@ def _errors(text: str, retired_workflow_exists: bool) -> list[str]:
                 HASHED_PIP_INSTALL
             ):
                 errors.append(f"{job_name} must use the reviewed hash-locked Python requirements")
-        elif job_name == "patch-release":
-            run_commands = [_normalise(command) for command in _run_block_commands(job)]
-            downloads = [
-                invocation
-                for invocation in run_commands
-                if "-m pip download" in invocation
-            ]
-            installs = [
-                _normalise(line.strip())
-                for line in job.splitlines()
-                if "-m pip install" in line
-            ]
-            if len(downloads) != 1 or len(installs) != 1:
-                errors.append(
-                    f"{job_name} must use exactly one trusted wheel download and isolated install"
-                )
-            else:
-                download_required = (
-                    "-m pip download",
-                    "--require-hashes",
-                    "--only-binary=:all:",
-                    "--no-deps",
-                )
-                install_required = (
-                    "-m pip install",
-                    "--no-index",
-                    "--find-links=",
-                    "--require-hashes",
-                    "--only-binary=:all:",
-                    "--no-deps",
-                    ".github/requirements/build.txt",
-                )
-                if not all(fragment in downloads[0] for fragment in download_required):
-                    errors.append(
-                        f"{job_name} must download the reviewed hash-locked Python requirements"
-                    )
-                if ".github/requirements/build.txt" not in job:
-                    errors.append(
-                        f"{job_name} must use the reviewed hash-locked requirements file"
-                    )
-                if not all(fragment in installs[0] for fragment in install_required):
-                    errors.append(
-                        f"{job_name} must install only the staged hash-locked wheel set"
-                    )
         elif pip_invocations:
             errors.append(f"{job_name} adds an unreviewed Python package install")
 
@@ -2338,10 +2290,6 @@ def _errors(text: str, retired_workflow_exists: bool) -> list[str]:
     errors.extend(_host_environment_errors(jobs["host-tests"]))
     errors.extend(_protected_host_prefix_errors(jobs["host-tests"]))
 
-    if f"if: {MASTER_PUBLISHER_CONDITION}" not in jobs["patch-release"]:
-        errors.append("patch-release must remain master-push-only")
-    if "    needs: [event-identity]" not in jobs["patch-release"]:
-        errors.append("patch-release must depend only on trusted event identity")
     if (
         "github.event_name == 'pull_request' && "
         "github.event.pull_request.head.sha || github.sha"
@@ -2378,14 +2326,11 @@ def _errors(text: str, retired_workflow_exists: bool) -> list[str]:
         or '[ "$FALLBACK_SHA" = "$PUSH_SHA" ]' not in summary
         or '[ "$FALLBACK_SHA" = "$RAW_PUSH_SHA" ]' not in summary
         or "classifier-fallback Build worker did not succeed" not in summary
-        or "classifier-fallback publisher did not succeed" not in summary
         or "classifier failed after exact-head fallback workers completed"
         not in summary
         or "classifier failed after exact-push fallback jobs completed"
         not in summary
         or "classifier failure without an exact fallback SHA started a worker"
-        not in summary
-        or "classifier failure without a validated fallback SHA ran publisher"
         not in summary
     ):
         errors.append("summary must audit classifier-failure worker topology")
@@ -2394,7 +2339,6 @@ def _errors(text: str, retired_workflow_exists: bool) -> list[str]:
         or '[ "$IDENTITY_VALID" = "false" ]' not in summary
         or '[ "$FULL_FALLBACK" = "true" ]' not in summary
         or "incomplete-base Build worker did not succeed" not in summary
-        or "incomplete-base PR unexpectedly ran publisher" not in summary
         or "lacks authoritative PR base identity" not in summary
     ):
         errors.append("summary must audit incomplete-base exact-head workers")
@@ -2424,14 +2368,11 @@ def _errors(text: str, retired_workflow_exists: bool) -> list[str]:
         or metadata_section.count('[ "$result" != "skipped" ]') != 1
         or "metadata-only continuity adapter did not succeed" not in metadata_section
         or "metadata-only expensive Build worker was not skipped" not in metadata_section
-        or '"$PATCH_RELEASE_RESULT" != "skipped"' not in metadata_section
     ):
         errors.append("summary must accept only exact metadata-only continuity")
     if (
         '"$CLASSIFICATION" != "full"' not in summary
         or '"$RUN_EXPENSIVE" != "true"' not in summary
-        or '"$PATCH_RELEASE_RESULT" != "success"' not in summary
-        or "pull-request Build unexpectedly ran publisher" not in summary
     ):
         errors.append("summary must reject unknown full-build classifier output")
     loop_start = summary.rindex("for result")
@@ -4904,16 +4845,10 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                     }
                     if case["run_workers"]:
                         expected_jobs.update(COMBINED_WORKERS)
-                    if case["run_publisher"]:
-                        expected_jobs.add("patch-release")
                     self.assertEqual(selected, expected_jobs)
                     self.assertEqual(
                         set(COMBINED_WORKERS) <= selected,
                         case["run_workers"],
-                    )
-                    self.assertEqual(
-                        "patch-release" in selected,
-                        case["run_publisher"],
                     )
 
                     output = sandbox / f"{case['id']}.out"
@@ -5023,8 +4958,6 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                 }
                 if identity["run_workers"]:
                     expected.update(COMBINED_WORKERS)
-                if identity["run_publisher"]:
-                    expected.add("patch-release")
                 if (
                     identity["expected_classification"] == "metadata-only"
                     and identity["expected_summary_success"]
@@ -5118,7 +5051,7 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
         }
         self.assertEqual(
             _triggered_jobs(self.text, master_push),
-            CANDIDATE_FULL_JOBS | {"patch-release"},
+            CANDIDATE_FULL_JOBS,
         )
         self.assertEqual(_triggered_jobs(self.text, other_push), set())
 
@@ -5358,7 +5291,6 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
             "build": 90,
             "extended-host-tests": 60,
             "legacy": 60,
-            "patch-release": 60,
             "summary": 5,
         }
         jobs = _job_blocks(self.text)
@@ -5677,12 +5609,6 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
         changed = self.text.replace(PUSH_TRIGGER, 'push:\n    branches: [ "other" ]', 1)
         self.assertTrue(any("restricted to master" in error for error in _errors(changed, False)))
 
-    def test_publisher_depends_only_on_trusted_event_identity(self):
-        patch_release = _job_blocks(self.text)["patch-release"]
-        self.assertEqual(
-            re.findall(r"^    needs: (?P<value>.+)$", patch_release, re.MULTILINE),
-            ["[event-identity]"],
-        )
 
     def test_every_libpng_install_lane_declares_pkg_config(self):
         for job_name, job in _job_blocks(self.text).items():
@@ -5808,27 +5734,22 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
             (
                 "host-tests",
                 "needs: [event-identity, event-classifier, build, "
-                "extended-host-tests, legacy, patch-release]",
+                "extended-host-tests, legacy]",
             ),
             (
                 "build",
                 "needs: [event-identity, event-classifier, host-tests, "
-                "extended-host-tests, legacy, patch-release]",
+                "extended-host-tests, legacy]",
             ),
             (
                 "extended-host-tests",
                 "needs: [event-identity, event-classifier, host-tests, "
-                "build, legacy, patch-release]",
+                "build, legacy]",
             ),
             (
                 "legacy",
                 "needs: [event-identity, event-classifier, host-tests, "
-                "build, extended-host-tests, patch-release]",
-            ),
-            (
-                "patch-release",
-                "needs: [event-identity, event-classifier, host-tests, "
-                "build, extended-host-tests, legacy]",
+                "build, extended-host-tests]",
             ),
         ):
             with self.subTest(need=worker):
@@ -5883,6 +5804,7 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                 (
                     "sudo", "apt-get", "update", "&&", "sudo", "apt-get", "install",
                     "-y", "build-essential", "libmgba-dev", "libpng-dev", "python3-venv",
+                    "pkg-config",
                 ),
                 ("/usr/bin/python3", "-I", "scripts/host_python.py", "create"),
             ),
@@ -5906,6 +5828,7 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
             ),
             self.text.replace("libpng-dev python3-venv", "libpng-dev", 1),
             self.text.replace("libmgba-dev libpng-dev", "libmgba-dev", 1),
+            self.text.replace("python3-venv pkg-config", "python3-venv", 1),
             self.text.replace(
                 '"$GITHUB_WORKSPACE/build/host-python/bin/python3"',
                 '"/usr/bin/python3"', 1,
@@ -6812,6 +6735,12 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
             ("full-pr", full, 0, None),
             ("full-push", push, 0, None),
             (
+                "master-packaging-failed",
+                {**push, "BUILD_RESULT": "failure"},
+                1,
+                "required combined Build CI job did not succeed",
+            ),
+            (
                 "successful-full-incoherent-event-ref",
                 {
                     **skipped,
@@ -7110,6 +7039,32 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
             self.assertEqual(
                 headers.get("Accept"), "application/vnd.github+json"
             )
+
+    def test_summary_accepts_current_jobs_and_only_skipped_legacy_publisher(self):
+        script = _literal_run_script(_step_blocks(_job_blocks(self.text)["summary"])[0])
+        current_jobs = [job for job in _summary_full_jobs() if job["name"] != "patch-release"]
+        variants = [("current", current_jobs, 0), ("historical", _summary_full_jobs(), 0)]
+        for name in candidate_evidence.KNOWN_JOB_IDS:
+            variants.append(("missing-" + name, [job for job in current_jobs if job["name"] != name], 1))
+        for conclusion in ("success", "failure"):
+            jobs = _summary_full_jobs()
+            next(job for job in jobs if job["name"] == "patch-release")["conclusion"] = conclusion
+            variants.append(("legacy-" + conclusion, jobs, 1))
+        for name, jobs, expected in variants:
+            with self.subTest(shape=name):
+                routes = {
+                    _summary_runs_path(page=1): _summary_response(_summary_api_payload(
+                        "workflow_runs",
+                        [_summary_workflow_run(SUMMARY_TEST_RUN_ID),
+                         _summary_workflow_run(8100, created_at=_summary_timestamp(4),
+                                               run_started_at=_summary_timestamp(5))],
+                    )),
+                    _summary_jobs_path(8100): _summary_response(_summary_api_payload("jobs", jobs)),
+                }
+                completed, _ = _run_summary_with_api(
+                    script, environment=_summary_metadata_env(), routes=routes,
+                )
+                self.assertEqual(completed.returncode, expected, completed.stderr)
 
     def test_summary_runtime_metadata_only_requires_current_run_observation(self):
         script = _literal_run_script(_step_blocks(_job_blocks(self.text)["summary"])[0])
@@ -9309,7 +9264,7 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
         }
         self.assertEqual(
             _triggered_jobs(self.text, event),
-            CANDIDATE_FULL_JOBS | {"patch-release"},
+            CANDIDATE_FULL_JOBS,
         )
 
         summary_script = _literal_run_script(_step_blocks(jobs["summary"])[0])

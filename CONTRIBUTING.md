@@ -101,8 +101,8 @@ expanded Build CI on `master`.
 
 Both PR and master Build runs execute `host-tests`, `build`,
 `extended-host-tests`, `legacy`, and the seconds-only fail-closed `summary` in
-parallel. Master additionally runs the technically used `patch-release`
-publisher. Artifact, documentation, generated-data, localization, crosswalk,
+parallel. Master additionally packages the already-built release ROM in
+master-only steps of `build`. Artifact, documentation, generated-data, localization, crosswalk,
 raw-closure, and modern debug/release runtime evidence run only in their
 existing Build owners; no duplicate Matrix path or manual dispatch exists. The
 expected combined-gate wall clock is approximately 35–40 minutes because the

@@ -386,6 +386,98 @@ class AssetOwnershipTests(unittest.TestCase):
             self.assertEqual(set(counts), {len(domains)})
 
 
+    def test_packaging_paths_bind_existing_host_consumers_and_oracle(self):
+        evidence = {
+            node["id"]: node for node in self.graph["nodes"]
+            if node["id"] in {"owner.host-build", "owner.host-workflow"}
+        }
+        authorities = reporter._validate_authorities(
+            self.loader, evidence, [], strict_workflow=True,
+        )
+        self.assertEqual(set(authorities), set(evidence))
+        jobs, steps = reporter._workflow_authorities(self.loader, strict=True)
+        self.assertEqual(len(jobs), 8)
+        self.assertNotIn("patch-release", jobs)
+        self.assertIn(("build", "Create and verify patch artifact"), steps)
+        self.assertIn(("build", "Upload patch-only artifact"), steps)
+        self.assertEqual(evidence["owner.host-workflow"]["authority"], {
+            "kind": "workflow-step", "job": "host-tests",
+            "step": "Run workflow contract test suite",
+        })
+        model = self.model()
+        expected = {
+            ("owns-test", "owner.host-build"),
+            ("adversarial-control", "owner.host-workflow"),
+        }
+        probes = {probe["path"]: probe for probe in self.oracle["probes"]}
+        for path in (
+            "scripts/modernize/package_ci_patch.sh",
+            "tests/workflows/test_patch_release_workflow.py",
+        ):
+            with self.subTest(path=path):
+                result = self.resolve(path, model=model)
+                self.assertEqual(result["surface"], "surface.host")
+                self.assertEqual({
+                    (owner["edge_type"], owner["evidence_id"])
+                    for owner in result["owners"]
+                }, expected)
+                self.assertTrue(all(owner["reason"].strip() for owner in result["owners"]))
+                self.assertIn(path, probes)
+                self.assertEqual({
+                    (owner["edge_type"], owner["evidence_id"])
+                    for owner in probes[path]["expected_owners"]
+                }, expected)
+        reporter.validate_probe_oracle(self.oracle, self.graph, self.entries)
+        measurement = reporter._measure(self.oracle, self.graph, model)
+        self.assertEqual(measurement["false_positive_selections"], 0)
+        self.assertEqual(measurement["false_negative_selections"], 0)
+
+    def test_retired_publisher_requires_explicit_deletion_context(self):
+        path = "scripts/workflow_pilot/publisher_shell_contract.py"
+        model = self.model()
+        self.assertNotIn(path, self.entries)
+        with self.assertRaisesRegex(reporter.OwnershipError, "absent"):
+            self.resolve(path, model=model)
+        base = {path: reporter.GitTreeEntry(path, "100644", "blob", "0" * 40)}
+        deletion = reporter._resolve_path(path, self.graph, model, base)
+        self.assertEqual({
+            (owner["edge_type"], owner["evidence_id"])
+            for owner in deletion["owners"]
+        }, {
+            ("owns-test", "owner.host-build"),
+            ("adversarial-control", "owner.host-workflow"),
+        })
+        retired = {
+            "id": "retired.publisher", "kind": "evidence", "evidence_type": "host",
+            "authority": {"kind": "workflow-job", "job": "patch-release"},
+        }
+        with self.assertRaisesRegex(reporter.OwnershipError, "stale workflow job"):
+            reporter._validate_authorities(
+                self.loader, {retired["id"]: retired}, [], strict_workflow=True,
+            )
+
+    def test_packaging_owner_loss_or_redirection_fails(self):
+        for edge in (
+            item for item in self.graph["edges"] if item["source"] == "surface.host"
+        ):
+            with self.subTest(edge=edge["id"], mutation="removal"):
+                graph = copy.deepcopy(self.graph)
+                graph["edges"] = [
+                    item for item in graph["edges"] if item["id"] != edge["id"]
+                ]
+                with self.assertRaisesRegex(reporter.OwnershipError, "missing owner edges"):
+                    self.model(graph)
+            with self.subTest(edge=edge["id"], mutation="same-type redirection"):
+                graph = copy.deepcopy(self.graph)
+                next(item for item in graph["edges"] if item["id"] == edge["id"])[
+                    "target"
+                ] = "owner.host-docs"
+                with self.assertRaisesRegex(reporter.OwnershipError, "exact owned edges"):
+                    reporter.validate_probe_oracle(self.oracle, graph, self.entries)
+                with self.assertRaisesRegex(reporter.OwnershipError, "selection mismatch"):
+                    reporter._measure(self.oracle, graph, self.model(graph))
+
+
 class OwnershipGraphTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
