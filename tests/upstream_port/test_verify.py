@@ -298,7 +298,7 @@ class VerifyGatesMirrorWorkflowTests(unittest.TestCase):
                 (
                     _WORKFLOW_PILOT_TEST_STEP_NAME,
                     [
-                        "/usr/bin/python3", "-I",
+                        "$GITHUB_WORKSPACE/build/host-python/bin/python3", "-I",
                         "scripts/workflow_pilot/isolated_launcher.py",
                         "reporter-tests",
                     ],
@@ -336,6 +336,25 @@ class VerifyGatesMirrorWorkflowTests(unittest.TestCase):
         self.assertLess(
             ordered_steps.index(_WORKFLOW_PILOT_BASELINE_STEP_NAME),
             ordered_steps.index(_LOCALIZATION_HOST_STEP_NAME),
+        )
+
+    def test_host_python_workspace_expansion_is_exact_and_argument_safe(self):
+        root = "/owned/source checkout"
+        arguments = [
+            "$GITHUB_WORKSPACE/build/host-python/bin/python3",
+            "-I",
+            "scripts/workflow_pilot/isolated_launcher.py",
+            "reporter-tests",
+        ]
+        self.assertEqual(
+            verify_mod._expand_workspace(arguments, root),
+            [root + "/build/host-python/bin/python3", *arguments[1:]],
+        )
+        self.assertEqual(
+            verify_mod._expand_workspace(
+                ["$GITHUB_WORKSPACE", "$GITHUB_WORKSPACE/../other", "$(command)", "$HOME"], root
+            ),
+            [root, "$GITHUB_WORKSPACE/../other", "$(command)", "$HOME"],
         )
 
     def test_workflow_parser_is_linear_on_long_environment_adversary(self):

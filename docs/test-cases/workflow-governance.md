@@ -4,6 +4,117 @@ These source-only procedures cover the repository's agent delivery policy.
 They exercise documented orchestration contracts without dispatching a
 workflow, using credentials, or changing ROM behavior.
 
+## TC-WORKFLOW-HOST-PYTHON-DEPS-001: Bootstrap isolated schema-test dependencies
+
+- **Feature / originating issue:** `workflow-governance` /
+  [issue #216](https://github.com/laqieer/fireemblem8-expansion/issues/216).
+- **Supported configuration or artifact:** source checkout, CPython 3.12,
+  Linux x86_64 with glibc >= 2.17, and the OS `python3-venv`/`ensurepip`
+  component. No ROM, emulator, ARM compiler or credential is needed.
+- **Prerequisites and clean starting state:** ordinary access to trusted PyPI
+  during initial setup; run from the source root. Ensure
+  `build/host-python-missing` and `build/host-python` do not already exist.
+  Never replace somebody else's environment. The bootstrap and regression
+  fixtures use exclusively owned paths under this checkout's `build/`.
+
+### Actions
+
+1. Reproduce the undeclared-dependency failure before setup:
+
+   ```bash
+   /usr/bin/python3 -I -m venv --without-pip build/host-python-missing
+   build/host-python-missing/bin/python3 -I -c 'import jsonschema'
+   ```
+
+   Expect exit 1 with `ModuleNotFoundError`, not an ambient-package success.
+   Remove only this owned probe: `rm -r -- build/host-python-missing`.
+2. Run the actual CI bootstrap and inspect its isolated result:
+
+   ```bash
+   /usr/bin/python3 -I scripts/host_python.py create
+   build/host-python/bin/python3 -I scripts/host_python.py check
+   ```
+
+   Expect exit 0 and a JSON report naming the owned environment, exact
+   committed package versions, draft `2020-12` and format `date-time`.
+3. Run the focused automated positive and adversarial replay:
+
+   ```bash
+   build/host-python/bin/python3 -I -m unittest discover \
+     -s scripts/workflow_pilot/tests -t . -p test_host_python.py -v
+   ```
+
+   Valid leap-day/offset/fractional RFC3339 timestamps pass. Non-leap dates,
+   invalid hours, malformed timestamps, wrong prefix-item types and surplus
+   items fail. Removing the optional format checker or making it accept
+   everything must fail the probe, not silently skip format validation.
+4. The same suite replays verified offline installs, corrupts an actual wheel,
+   removes a required wheel, supplies a CPython-3.11-only wheel to 3.12, and
+   omits optional or transitive dependencies from a fixture lock. Every
+   rejected input must fail explicitly. Unsupported platform profiles fail
+   before environment creation. Existing/symlink targets remain unchanged.
+   A real installation into a fixture-only user site is visible to ordinary
+   Python but cannot satisfy the fresh `-I` interpreter or dependency check.
+   Hostile pip configuration/install-target variables cannot redirect setup.
+5. Exercise the existing reporter entrypoint, then the parsed Build and local
+   argv mirror contracts:
+
+   ```bash
+   build/host-python/bin/python3 -I scripts/workflow_pilot/isolated_launcher.py reporter-tests
+   python3 -m unittest tests.workflows.test_build_ci_topology \
+     tests.upstream_port.test_verify.VerifyGatesMirrorWorkflowTests -v
+   ```
+
+   Reporter discovery uses the installed interpreter; its existing immutable
+   Git-authority requirements remain mandatory. A shallow/local clone missing
+   the baseline objects must restore the
+   [documented Git authority](../workflow-pilot.md#build-event-classification-and-candidate-evidence),
+   not weaken reporter checks. Parsed setup and reporter paths agree; removing
+   bootstrap/venv support or switching back to system Python is rejected.
+6. The regression removes only its own UUID-named fixtures. When finished,
+   remove your own bootstrap environment with
+   `rm -r -- build/host-python`, or retain it for subsequent host checks.
+
+### Expected result
+
+Every schema dependency comes from the committed pinned/hash-verified closure
+in a fresh environment, with no system/user-site reliance. Required optional
+formats really validate adversarial data. The bootstrapped import and reporter
+discovery pass.
+
+### Negative control
+
+The pre-fix clean import fails. Damaged, missing,
+incompatible, unpinned, unhashed and redirected inputs cannot produce a
+successful environment check. Reordering/commenting the same lock records
+stays valid; preserving words while bypassing validation does not.
+
+### Interactions and save compatibility
+
+Dependents are #178/#191 handoff and #205/#211 broker schema tests, not new
+protocol implementations in this case. Dependencies are OS Python/venv,
+trusted PyPI at setup time and the committed wheel closure. Only `date-time`
+is the shared required optional format; new formats need new closure/probe
+coverage. Other interpreters, architectures and libc profiles are unsupported.
+There are no game, save/config, ROM/RAM, localization, generated-game-data,
+modern profile or archival compiler interactions. No feature gate is needed.
+
+### Automation
+
+Automation is `scripts/workflow_pilot/tests/test_host_python.py` plus the
+existing parsed workflow topology/argv mirror suites; real pip installs,
+metadata closure and schema execution are the evidence, not raw source text.
+Full/metadata routing, required contexts, permissions, checkout authority and
+every candidate/master gate are unchanged.
+
+### Cleanup and limitations
+
+Tests remove only their UUID-owned fixtures. Retain an explicitly owned
+`build/host-python` environment for later checks or remove only that environment
+afterward as described in step 6. No visual/audio/manual-only criterion applies.
+This setup cannot supply missing Git authority or discharge
+the consumers' independent protected-principal/deployment requirements.
+
 ## TC-WORKFLOW-WORKTREE-CLEANUP-001: Remove only proven completed worktrees
 
 - **Feature / originating issue:** `workflow-governance` /

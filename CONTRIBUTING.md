@@ -75,6 +75,22 @@ libmGBA backend without `pkg-config` metadata) and fail actionably rather
 than silently in an incomplete environment — see each test's own
 diagnostic.
 
+Workflow-pilot schema tests additionally use an owned, locked CPython 3.12
+environment on Linux x86_64 (glibc >= 2.17). Install your distribution's
+`python3-venv` package if needed, then run from the source root:
+
+```bash
+/usr/bin/python3 -I scripts/host_python.py create
+build/host-python/bin/python3 -I scripts/workflow_pilot/isolated_launcher.py reporter-tests
+```
+
+The bootstrap refuses an existing target, hash-verifies every wheel, and
+installs only inside `build/host-python`; do not use system or `pip --user`
+installs as a substitute. The reporter retains `-I`, so user-site packages
+cannot satisfy its dependencies. See the
+[host Python setup and cleanup procedure](docs/workflow-pilot.md#isolated-host-python-dependencies)
+and [tester case](docs/test-cases/workflow-governance.md#tc-workflow-host-python-deps-001-bootstrap-isolated-schema-test-dependencies).
+
 ## 4. Full validation policy
 
 During iteration, run only the focused fast checks and the one relevant ROM
