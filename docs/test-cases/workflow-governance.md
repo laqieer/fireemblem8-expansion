@@ -2340,7 +2340,9 @@ game behavior needs a compensating change.
   reporter, generated-data and tester-case registries, Build workflow,
   Makefiles, `/usr/bin/make`, `/usr/bin/unshare` with mount/network/PID
   namespaces plus either user namespaces or passwordless exact
-  `/usr/bin/sudo`, a static-capable `/usr/bin/cc`, and the manual-handoff
+  `/usr/bin/sudo`, a static-capable `/usr/bin/cc`, the host C++ compiler,
+  libpng/zlib development headers and libraries (`libpng-dev` on Ubuntu),
+  the existing pinned host Python environment, and the manual-handoff
   contract unchanged. No token, ROM, emulator, or remote workflow is required.
 
 ### Actions
@@ -2665,6 +2667,13 @@ complete domain execution: full112-domain graph/oracle/lifecycle/public-gate
 adoption of the independent
 [issue #206 foundation](https://github.com/laqieer/fireemblem8-expansion/issues/206)
 remains a separate acceptance requirement.
+This is a required dependency, including registered native-tool results and
+generated include outputs reaching the shared Make observer through admitted
+APIs. Do not accept an old duplicated probe or a successful command whose
+generated include never reached Make as that evidence. The existing host setup
+must supply `png.h` and libpng/zlib for actual native `gbagfx` compilation;
+either supported namespace mode is valid, while unavailable confinement or
+native dependencies must still fail.
 
 ### Cleanup and limitations
 

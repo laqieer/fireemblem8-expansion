@@ -267,9 +267,9 @@ class AuthoritativeMakeProbeTests(unittest.TestCase):
                 },
             )
             self.assertIn("printf 'two", self.actual_make(root, "MODE=two").stdout)
-            self.assertEqual(
+            self.assertIn(
                 authority["record"]["probe_tools"]["namespace_launcher"]["mode"],
-                "user-namespace",
+                {"user-namespace", "sudo-drop"},
             )
 
     def test_graph_only_database_drift_reuses_fallback_recipe_semantics(self):
@@ -595,6 +595,32 @@ class AuthoritativeMakeProbeTests(unittest.TestCase):
         setuid.assert_called_once_with(1001)
         self.assertEqual(libc.prctl.call_count, 65)
         libc.capset.assert_called_once()
+
+    def test_namespace_launcher_rejects_when_both_supported_routes_fail(self):
+        original = make_probe._NAMESPACE_LAUNCHER
+        calls = []
+
+        def unavailable(command, **kwargs):
+            del kwargs
+            calls.append(command)
+            return subprocess.CompletedProcess(command, 1, "", "unavailable")
+
+        try:
+            make_probe._NAMESPACE_LAUNCHER = None
+            with mock.patch.object(
+                make_probe, "SUDO", Path("/usr/bin/true"),
+            ), mock.patch.object(
+                make_probe.subprocess, "run", side_effect=unavailable,
+            ):
+                with self.assertRaises(make_probe.MakeProbeError):
+                    make_probe._select_namespace_launcher(refresh=True)
+                self.assertEqual(calls, [
+                    make_probe._namespace_probe_command(sudo=False),
+                    make_probe._namespace_probe_command(sudo=True),
+                ])
+                self.assertIsNone(make_probe._NAMESPACE_LAUNCHER)
+        finally:
+            make_probe._NAMESPACE_LAUNCHER = original
 
     def test_eval_patterns_automatic_and_variable_spellings(self):
         makefile = (

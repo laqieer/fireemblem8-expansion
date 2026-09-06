@@ -1592,7 +1592,7 @@ def _protected_host_prefix_errors(host: str) -> list[str]:
             "Install host-only dependencies (no arm-none-eabi toolchain)",
             (
                 "sudo apt-get update && sudo apt-get install -y "
-                "build-essential libmgba-dev python3-venv",
+                "build-essential libmgba-dev libpng-dev python3-venv",
                 "/usr/bin/python3 -I scripts/host_python.py create",
             ),
             if_expression=FULL_WORKER_STEP_CONDITION,
@@ -5882,7 +5882,7 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
             (
                 (
                     "sudo", "apt-get", "update", "&&", "sudo", "apt-get", "install",
-                    "-y", "build-essential", "libmgba-dev", "python3-venv",
+                    "-y", "build-essential", "libmgba-dev", "libpng-dev", "python3-venv",
                 ),
                 ("/usr/bin/python3", "-I", "scripts/host_python.py", "create"),
             ),
@@ -5904,7 +5904,8 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
             self.text.replace(
                 "        /usr/bin/python3 -I scripts/host_python.py create\n", "", 1
             ),
-            self.text.replace("libmgba-dev python3-venv", "libmgba-dev", 1),
+            self.text.replace("libpng-dev python3-venv", "libpng-dev", 1),
+            self.text.replace("libmgba-dev libpng-dev", "libmgba-dev", 1),
             self.text.replace(
                 '"$GITHUB_WORKSPACE/build/host-python/bin/python3"',
                 '"/usr/bin/python3"', 1,

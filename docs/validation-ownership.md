@@ -12,6 +12,15 @@ but those checks only validate this contract. Any use for narrower validation
 requires a later independently accepted issue with non-inferiority evidence.
 Issue #181 is parallel and does not consume or authorize this graph.
 
+Complete integration of the shared
+[issue #206 / PR #212 foundation](https://github.com/laqieer/fireemblem8-expansion/pull/212)
+is a required dependency, not optional hardening. Its small real consumer and
+the asset-specific host tests do not prove the full 112-domain graph, oracle,
+lifecycle or public command. Registered native-tool results and generated Make
+include outputs must reach that shared observer through admitted APIs before
+this acceptance can pass; an older duplicate sandbox or fabricated empty
+command output is not a substitute.
+
 ## Authoritative files and public commands
 
 - [`.github/validation-ownership-graph.json`](../.github/validation-ownership-graph.json)
@@ -56,6 +65,17 @@ ASCII JSON with one trailing newline.
 `validation-ownership-check` must be the sole Make goal. A mixed invocation
 such as `make validation-ownership-check compare` fails before NODEP or
 generated-include suppression can affect `compare`.
+
+The host-only Build setup installs `build-essential`, `libmgba-dev`,
+`libpng-dev` and `python3-venv`. The ownership consumer compiles native
+`gbagfx` against `png.h`, libpng and zlib, so a compiler alone is insufficient;
+`libpng-dev` supplies its development dependency closure on the supported
+Ubuntu host. This does not require the ARM toolchain. Use the existing
+[pinned host Python environment](workflow-pilot.md) for local host tests.
+Both `user-namespace` and the supported `sudo-drop` launcher are valid
+observations. Missing native dependencies or unavailable confinement remain
+errors; a platform-specific mode assertion must not turn a supported fallback
+into a failure.
 
 ## Typed contract
 

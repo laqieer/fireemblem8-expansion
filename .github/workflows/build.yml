@@ -795,7 +795,7 @@ jobs:
     - name: Install host-only dependencies (no arm-none-eabi toolchain)
       if: ${{ needs.event-classifier.result == 'failure' || needs.event-classifier.outputs.classification == 'full' }}
       run: |
-        sudo apt-get update && sudo apt-get install -y build-essential libmgba-dev python3-venv
+        sudo apt-get update && sudo apt-get install -y build-essential libmgba-dev libpng-dev python3-venv
         /usr/bin/python3 -I scripts/host_python.py create
 
     # GBA_PLAYTEST_HOST_ONLY=1 is the single public switch that makes this a
