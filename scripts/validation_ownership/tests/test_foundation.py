@@ -67,6 +67,327 @@ class FoundationTests(unittest.TestCase):
         self.assertIsNone(session.base)
         self.assertFalse(self.scratch.exists())
 
+    def traced_observation(
+        self, number, arguments, descriptors, *, buffer=None, mode="command",
+        observation_limit=1024*1024,
+    ):
+        from scripts.validation_ownership.syscall_guard import (
+            GETREGS, SETOPTIONS, SYSCALL, Policy, Process, Registers, memory, ptrace, signed, trace_me,
+        )
+        libc = ctypes.CDLL(None, use_errno=True)
+        libc.syscall.restype = ctypes.c_long
+        def operation():
+            os.chdir(self.root)
+            trace_me(lambda: None)
+            libc.syscall(ctypes.c_long(number), *(ctypes.c_ulong(value & ((1 << 64)-1)) for value in arguments))
+        with self.stopped_tracee(operation) as pid:
+            ptrace(SETOPTIONS, pid, 0, 0x100001)
+            policy = Policy({
+                "root": str(self.directory), "mode": mode, "code": ["code.bin"],
+                "sources": ["data/a", "data/b"], "enumerations": ["data"],
+                "executables": [], "python_version": "3.12", "argv": [],
+                "memory_limit": 256*1024*1024, "syscall_limit": 1024,
+                "write_limit": 1024*1024, "observation_count": 1024,
+                "observation_limit": observation_limit, "forbidden_paths": [],
+            })
+            state = Process("make" if mode == "make" else "command", memory_group=pid)
+            state.fds.update(descriptors)
+            policy.processes[pid] = state
+            entered = False
+            for _ in range(256):
+                ptrace(SYSCALL, pid)
+                waited, status = os.waitpid(pid, 0)
+                self.assertEqual(waited, pid)
+                self.assertTrue(os.WIFSTOPPED(status), status)
+                registers = Registers()
+                ptrace(GETREGS, pid, 0, ctypes.byref(registers))
+                information = (ctypes.c_ubyte * 128)()
+                ptrace(0x420E, pid, len(information), ctypes.byref(information))
+                actual = (registers.rdi, registers.rsi, registers.rdx, registers.r10, registers.r8, registers.r9)
+                expected = tuple(value & ((1 << 64)-1) for value in arguments)
+                if information[0] == 1 and registers.orig_rax == number and actual[:len(expected)] == expected:
+                    policy.entry(pid, state, registers)
+                    self.assertFalse(policy.consumed)
+                    self.assertFalse(policy.code_consumed)
+                    self.assertFalse(policy.accessed)
+                    entered = True
+                elif information[0] == 2 and entered:
+                    result = signed(registers.rax)
+                    policy.leave(pid, state, registers)
+                    return {
+                        "result": result, "consumed": set(policy.consumed),
+                        "code": set(policy.code_consumed), "accessed": set(policy.accessed),
+                        "data": memory(pid, buffer, result) if buffer is not None and result > 0 else b"",
+                        "fds": dict(state.fds),
+                    }
+            self.fail("owned syscall did not reach its exit")
+
+    def test_failed_open_and_metadata_cannot_forge_registry_consumption(self):
+        self.add("data/a", b"owned")
+        operations = (
+            "os.open('data/a',os.O_RDONLY|os.O_DIRECTORY)",
+            "libc.syscall(2,b'data/a',os.O_RDONLY|os.O_DIRECTORY,0)",
+            "libc.syscall(257,-100,b'data/a',os.O_RDONLY|os.O_DIRECTORY,0)",
+            "libc.syscall(4,b'data/a',ctypes.c_void_p(1))",
+            "libc.syscall(6,b'data/a',ctypes.c_void_p(1))",
+            "libc.syscall(262,-100,b'data/a',ctypes.c_void_p(1),0)",
+            "libc.syscall(332,-100,b'data/a',0,0x7ff,ctypes.c_void_p(1))",
+            "libc.syscall(21,b'data/a',os.W_OK)",
+            "libc.syscall(269,-100,b'data/a',os.W_OK)",
+            "libc.syscall(439,-100,b'data/a',os.W_OK,0)",
+            "os.readlink('data/a')",
+        )
+        for operation in operations:
+            with self.subTest(operation=operation):
+                self.add("reader.py", (
+                    "import ctypes,json,os\nlibc=ctypes.CDLL(None,use_errno=True)\n"
+                    "try:\n result=" + operation + "\n assert result == -1\nexcept OSError:\n pass\n"
+                    "print(json.dumps({'name':'forged','version':1,'record_count':1,'source_paths':['data/a']}))\n"
+                ))
+                session = self.session()
+                with self.assertRaisesRegex(MakeProbeError, "declared/consumed source mismatch"):
+                    with session:
+                        session.registry(Command(
+                            ("/usr/bin/python3", "-I", "-B", "/repo/reader.py"),
+                            code=("reader.py",), sources=("data/a",),
+                        ))
+                self.assert_clean(session)
+
+    def test_successful_metadata_open_and_content_remain_source_observations(self):
+        self.add("data/a", b"owned")
+        operations = (
+            "os.close(os.open('data/a',os.O_RDONLY))",
+            "os.close(os.open('data/a',os.O_PATH))",
+            "assert os.stat('data/a').st_size == 5",
+            "assert os.lstat('data/a').st_size == 5",
+            "assert os.access('data/a',os.R_OK)",
+            "assert open('data/a','rb').read(1) == b'o'",
+            "fd=os.open('data/a',os.O_RDONLY)\nassert os.fstat(fd).st_size == 5\nos.close(fd)",
+            "fd=os.open('data/a',os.O_RDONLY)\nview=mmap.mmap(fd,0,access=mmap.ACCESS_READ)\n"
+            "assert view[:1] == b'o'\nview.close()\nos.close(fd)",
+        )
+        for operation in operations:
+            with self.subTest(operation=operation):
+                self.add("reader.py", (
+                    "import json,mmap,os\n" + operation + "\n"
+                    "print(json.dumps({'name':'observed','version':1,'record_count':1,'source_paths':['data/a']}))\n"
+                ))
+                with self.session() as session:
+                    self.assertEqual(session.registry(Command(
+                        ("/usr/bin/python3", "-I", "-B", "/repo/reader.py"),
+                        code=("reader.py",), sources=("data/a",),
+                    ))["source_paths"], ["data/a"])
+                self.assert_clean(session)
+
+    def test_failed_and_partial_getdents_cannot_credit_unreturned_siblings(self):
+        self.add("data/a", b"a")
+        self.add("data/b", b"b")
+        for number in (78, 217):
+            for count in (1, 24):
+                with self.subTest(number=number, count=count):
+                    self.add("reader.py", (
+                        "import ctypes,json,os\nlibc=ctypes.CDLL(None)\n"
+                        "buffer=ctypes.create_string_buffer(24)\n"
+                        "directory=os.open('data',os.O_RDONLY|os.O_DIRECTORY)\n"
+                        f"size=libc.syscall({number},directory,buffer,{count})\n"
+                        "os.write(2,buffer.raw[:size].hex().encode() if size>0 else b'')\n"
+                        "os.close(directory)\n"
+                        "print(json.dumps({'name':'forged','version':1,'record_count':2,"
+                        "'source_paths':['data/a','data/b']}))\n"
+                    ))
+                    session = self.session()
+                    reports = []
+                    with session:
+                        original = session._sandbox_run
+                        def recording(root, **kwargs):
+                            result, observed = original(root, **kwargs)
+                            reports.append((result, observed))
+                            return result, observed
+                        with patch.object(session, "_sandbox_run", recording):
+                            with self.assertRaisesRegex(MakeProbeError, "declared/consumed source mismatch"):
+                                session.registry(Command(
+                                    ("/usr/bin/python3", "-I", "-B", "/repo/reader.py"),
+                                    code=("reader.py",), sources=("data/a", "data/b"), directories=("data",),
+                                ))
+                        raw = bytes.fromhex(reports[-1][0].stderr.decode())
+                        names = set()
+                        if raw:
+                            self.assertEqual(len(raw), 24)
+                            name = raw[19 if number == 217 else 18:].split(b"\0", 1)[0].decode()
+                            if name in {"a", "b"}:
+                                names.add("data/" + name)
+                        self.assertEqual(set(reports[-1][1]["consumed"]), names)
+                        self.assertLess(len(names), 2)
+                    self.assert_clean(session)
+
+    def test_fd_read_metadata_mmap_and_dup_credit_only_successful_exits(self):
+        self.add("data/a", b"alpha")
+        buffer = ctypes.create_string_buffer(256)
+        address = ctypes.addressof(buffer)
+        descriptor = os.open(self.root / "data/a", os.O_RDONLY)
+        try:
+            class Vector(ctypes.Structure):
+                _fields_ = [("address", ctypes.c_void_p), ("length", ctypes.c_size_t)]
+            vector = Vector(address, 1)
+            failures = (
+                (0, (descriptor, 1, 1)), (0, (descriptor, address, 0)),
+                (17, (descriptor, address, 1, 1000)), (19, (descriptor, 0, 1)),
+                (5, (descriptor, 1)), (138, (descriptor, 1)),
+                (8, (descriptor, -1, os.SEEK_SET)), (292, (descriptor, descriptor, 0)),
+                (72, (descriptor, 0, 0x7fffffff)),
+                (9, (0, 0, 1, 2, descriptor, 0)), (9, (0, 4096, 1, 2, descriptor, 1)),
+            )
+            for number, arguments in failures:
+                with self.subTest(number=number, arguments=arguments):
+                    os.lseek(descriptor, 0, os.SEEK_SET)
+                    observed = self.traced_observation(number, arguments, {descriptor: "/repo/data/a"})
+                    self.assertLessEqual(observed["result"], 0)
+                    self.assertEqual(observed["consumed"], set())
+            successes = (
+                (0, (descriptor, address, 1)), (17, (descriptor, address, 1, 0)),
+                (19, (descriptor, ctypes.addressof(vector), 1)),
+                (5, (descriptor, address)), (138, (descriptor, address)),
+                (8, (descriptor, 0, os.SEEK_END)), (32, (descriptor,)),
+                (72, (descriptor, 0, 10)), (9, (0, 4096, 1, 2, descriptor, 0)),
+            )
+            for number, arguments in successes:
+                with self.subTest(number=number, arguments=arguments):
+                    os.lseek(descriptor, 0, os.SEEK_SET)
+                    observed = self.traced_observation(number, arguments, {descriptor: "/repo/data/a"})
+                    self.assertGreaterEqual(observed["result"], 0)
+                    self.assertEqual(observed["consumed"], {"data/a"})
+            closed = self.traced_observation(3, (descriptor,), {descriptor: "/repo/data/a"})
+            self.assertEqual(closed["result"], 0)
+            self.assertNotIn(descriptor, closed["fds"])
+            self.assertEqual(closed["consumed"], set())
+        finally:
+            os.close(descriptor)
+
+    def test_getdents_credits_returned_names_and_not_failure_eof_or_tail(self):
+        from scripts.validation_ownership.syscall_guard import directory_entries
+        self.add("data/a", b"a")
+        self.add("data/b", b"b")
+        libc = ctypes.CDLL(None)
+        buffer = ctypes.create_string_buffer(4096)
+        address = ctypes.addressof(buffer)
+        for number in (78, 217):
+            descriptor = os.open(self.root / "data", os.O_RDONLY | os.O_DIRECTORY)
+            try:
+                failures = ((descriptor, address, 1), (descriptor, 1, 4096))
+                for arguments in failures:
+                    observed = self.traced_observation(number, arguments, {descriptor: "/repo/data"})
+                    self.assertLess(observed["result"], 0)
+                    self.assertEqual(observed["consumed"], set())
+                os.lseek(descriptor, 0, os.SEEK_SET)
+                partial = self.traced_observation(
+                    number, (descriptor, address, 24), {descriptor: "/repo/data"}, buffer=address,
+                )
+                expected = {"data/" + name for name in directory_entries(partial["data"], wide=number == 217)}
+                self.assertEqual(partial["consumed"], expected)
+                self.assertLess(len(expected), 2)
+                os.lseek(descriptor, 0, os.SEEK_SET)
+                complete = self.traced_observation(
+                    number, (descriptor, address, 4096), {descriptor: "/repo/data"}, buffer=address,
+                )
+                self.assertEqual(complete["consumed"], {"data/a", "data/b"})
+                # Populate the caller buffer with old valid records, but set the
+                # shared directory offset to EOF before observation begins.
+                ctypes.memmove(address, complete["data"], len(complete["data"]))
+                while libc.syscall(number, descriptor, buffer, 4096) > 0:
+                    pass
+                eof = self.traced_observation(
+                    number, (descriptor, address, 4096), {descriptor: "/repo/data"}, buffer=address,
+                )
+                self.assertEqual(eof["result"], 0)
+                self.assertEqual(eof["consumed"], set())
+            finally:
+                os.close(descriptor)
+
+    def test_code_and_make_path_observations_wait_for_success(self):
+        self.add("code.bin", b"code")
+        buffer = ctypes.create_string_buffer(256)
+        descriptor = os.open(self.root / "code.bin", os.O_RDONLY)
+        try:
+            for mode, collection, expected in (
+                ("command", "code", {"code.bin"}),
+                ("make", "accessed", {"/repo/code.bin"}),
+            ):
+                with self.subTest(mode=mode):
+                    failed = self.traced_observation(
+                        5, (descriptor, 1), {descriptor: "/repo/code.bin"}, mode=mode,
+                    )
+                    self.assertLess(failed["result"], 0)
+                    self.assertEqual(failed[collection], set())
+                    success = self.traced_observation(
+                        5, (descriptor, ctypes.addressof(buffer)), {descriptor: "/repo/code.bin"}, mode=mode,
+                    )
+                    self.assertEqual(success["result"], 0)
+                    self.assertEqual(success[collection], expected)
+        finally:
+            os.close(descriptor)
+
+    def test_directory_names_do_not_credit_nested_or_symlink_referents(self):
+        self.add("code.bin", b"code")
+        self.add("data/a", b"a")
+        self.add("data/b", b"b")
+        (self.root / "alias").symlink_to("data/a")
+        descriptor = os.open(self.root, os.O_RDONLY | os.O_DIRECTORY)
+        buffer = ctypes.create_string_buffer(4096)
+        try:
+            observed = self.traced_observation(
+                217, (descriptor, ctypes.addressof(buffer), 4096),
+                {descriptor: "/repo"}, buffer=ctypes.addressof(buffer),
+            )
+            self.assertGreater(observed["result"], 0)
+            self.assertEqual(observed["code"], {"code.bin"})
+            self.assertEqual(observed["consumed"], set())
+        finally:
+            os.close(descriptor)
+
+    def test_directory_observation_transfer_and_buffer_limits_are_bounded(self):
+        from scripts.validation_ownership.syscall_guard import SYSCALL_MEMORY_LIMIT, Violation
+        self.add("data/a", b"a")
+        self.add("data/b", b"b")
+        buffer = ctypes.create_string_buffer(SYSCALL_MEMORY_LIMIT + 1)
+        descriptor = os.open(self.root / "data", os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            with self.assertRaisesRegex(Violation, "syscall memory bound"):
+                self.traced_observation(
+                    217, (descriptor, ctypes.addressof(buffer), len(buffer)),
+                    {descriptor: "/repo/data"},
+                )
+            with self.assertRaisesRegex(Violation, "directory-observation byte budget"):
+                self.traced_observation(
+                    217, (descriptor, ctypes.addressof(buffer), 4096),
+                    {descriptor: "/repo/data"}, observation_limit=1,
+                )
+        finally:
+            os.close(descriptor)
+
+    def test_directory_parser_rejects_malformed_actual_records(self):
+        from scripts.validation_ownership.syscall_guard import Violation, directory_entries
+        self.add("data/a", b"a")
+        self.add("data/b", b"b")
+        buffer = ctypes.create_string_buffer(4096)
+        for number in (78, 217):
+            descriptor = os.open(self.root / "data", os.O_RDONLY | os.O_DIRECTORY)
+            try:
+                observed = self.traced_observation(
+                    number, (descriptor, ctypes.addressof(buffer), 4096),
+                    {descriptor: "/repo/data"}, buffer=ctypes.addressof(buffer),
+                )
+            finally:
+                os.close(descriptor)
+            data = observed["data"]
+            self.assertEqual(set(directory_entries(data, wide=number == 217)), {"a", "b"})
+            invalid_length = bytearray(data)
+            invalid_length[16:18] = b"\0\0"
+            invalid_name = bytearray(data)
+            invalid_name[19 if number == 217 else 18] = 0xff
+            for malformed in (data[:-1], bytes(invalid_length), bytes(invalid_name)):
+                with self.assertRaises(Violation):
+                    directory_entries(malformed, wide=number == 217)
+
     @staticmethod
     def signal_sender_source():
         return r'''

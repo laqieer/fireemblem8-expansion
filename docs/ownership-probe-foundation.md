@@ -241,8 +241,24 @@ Undeclared data open, mmap, stat/access/readlink, directory/glob or dynamically
 constructed paths reject. Code imports have a separately admitted code set and
 bounded, absent import-cache probes.
 
+Authorization remains entry-time and fail-closed, but source/code/Make-path
+evidence is committed only after a successful kernel return. A successful open
+is pathname/existence metadata; successful stat/access and file mappings also
+remain observations. Failed calls add no evidence, and read/pread/readv/readlink
+need positive returned bytes. A later failed operation does not erase a prior
+valid observation. FD duplication/state changes are applied only on success.
+
+Directory evidence comes from parsed `getdents`/`getdents64` bytes, not the
+declared sibling list. Only complete, actually returned names are credited;
+failed calls, EOF, dot entries, deleted inode slots and unused buffer tails do
+not credit unseen files. Returned symlink names do not observe their referents.
+The x86-64 record layout, UTF-8 names and record bounds are checked within the
+existing 64 KiB syscall-memory limit, and returned directory bytes spend the
+aggregate observation budget. Failed lookup attempts still spend bounded
+bookkeeping without becoming consumed-source evidence.
+
 Access observation includes metadata and enumeration, not merely byte reads.
-A directory observation consumes the declared names it exposes. Command
+A directory observation consumes only the declared names it exposes. Command
 success requires **declared = permitted = consumed** candidate sources.
 Registry success additionally requires the typed reported `source_paths` to
 equal that set. Reported JSON is candidate data, not supervisor evidence.

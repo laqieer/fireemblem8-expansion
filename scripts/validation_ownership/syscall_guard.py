@@ -40,6 +40,7 @@ VO_READY, VO_DISPATCH, VO_QUERY_KIND = (
 )
 VO_RECIPE, VO_VALUE = 0x564F4D4B00000011, 0x564F4D4B00000012
 STACK_LIMIT = 16 * 1024 * 1024
+SYSCALL_MEMORY_LIMIT = 65536
 
 
 class Violation(RuntimeError):
@@ -68,7 +69,7 @@ def ptrace(request, pid, address=0, data=0):
 
 
 def memory(pid, address, count):
-    if count < 0 or count > 65536 or not address:
+    if count < 0 or count > SYSCALL_MEMORY_LIMIT or not address:
         raise Violation("invalid syscall memory request")
     result = bytearray()
     start = address & ~7
@@ -95,6 +96,32 @@ def cstring(pid, address):
                 raise Violation("pathname is not strict UTF-8") from error
         result.extend(word)
     raise Violation("pathname exceeds bound")
+
+
+def directory_entries(data, *, wide):
+    names = []
+    offset = 0
+    while offset < len(data):
+        start = 19 if wide else 18
+        if len(data) - offset < 24:
+            raise Violation("truncated directory entry header")
+        length = int.from_bytes(data[offset + 16:offset + 18], "little")
+        if length < 24 or length % 8 or length > len(data) - offset:
+            raise Violation("invalid directory entry length")
+        # Legacy getdents stores d_type in the final byte; it is not name data.
+        value = data[offset + start:offset + length - (0 if wide else 1)]
+        end = value.find(b"\0")
+        if end < 1 or end > 255 or b"/" in value[:end]:
+            raise Violation("invalid directory entry name")
+        try:
+            name = value[:end].decode("utf-8", "strict")
+        except UnicodeDecodeError as error:
+            raise Violation("directory entry is not strict UTF-8") from error
+        inode = int.from_bytes(data[offset:offset + 8], "little")
+        if inode and name not in {".", ".."}:
+            names.append(name)
+        offset += length
+    return names
 
 
 def trace_me(drop_privileges):
@@ -132,6 +159,8 @@ class Process:
     memory_limit: int = 0
     clone_shares_vm: bool = False
     pidfd: int = -1
+    observations: list[tuple[str, str]] = field(default_factory=list)
+    observation_needs_bytes: bool = False
 
     def clone(self):
         return Process(
@@ -157,6 +186,9 @@ class Policy:
         self.consumed = set()
         self.code_consumed = set()
         self.accessed = set()
+        self.observation_attempts = {
+            name: set() for name in ("consumed", "code_consumed", "accessed")
+        }
         self.written = 0
         self.calls = 0
         self.created = 0
@@ -195,15 +227,45 @@ class Policy:
                     directories.add(parent)
                     parent = posixpath.dirname(parent)
 
-    def observe(self, collection, value):
-        if value not in collection:
+    def reserve_observation(self, name, value):
+        attempted = self.observation_attempts[name]
+        if value not in attempted:
             self.observation_bytes += len(value.encode("utf-8")) + 128
             if (
                 self.observation_bytes > self.config["observation_limit"]
-                or len(collection) >= self.config["observation_count"]
+                or len(attempted) >= self.config["observation_count"]
             ):
                 raise Violation("aggregate filesystem-observation budget exhausted")
-            collection.add(value)
+            attempted.add(value)
+
+    def observe(self, name, value):
+        self.reserve_observation(name, value)
+        getattr(self, name).add(value)
+
+    def defer_observation(self, state, collection, value):
+        # Failed attempts still spend bounded bookkeeping, not evidence credit.
+        self.reserve_observation(collection, value)
+        state.observations.append((collection, value))
+
+    def observe_directory(self, pid, state, value, returned):
+        path, address, requested, wide = value
+        if returned > requested or returned > SYSCALL_MEMORY_LIMIT:
+            raise Violation("directory result exceeds its observed buffer")
+        if returned == 0:
+            return
+        self.observation_bytes += returned
+        if self.observation_bytes > self.config["observation_limit"]:
+            raise Violation("aggregate directory-observation byte budget exhausted")
+        names = directory_entries(memory(pid, address, returned), wide=wide)
+        for name in names:
+            entry = path.rstrip("/") + "/" + name
+            # Enumeration observes this name/type, not a symlink's referent.
+            if self.mode == "make" and (entry == "/repo" or entry.startswith("/repo/")):
+                self.observe("accessed", entry)
+            elif entry in self.sources:
+                self.observe("consumed", entry.removeprefix("/repo/"))
+            elif entry in self.code:
+                self.observe("code_consumed", entry.removeprefix("/repo/"))
 
     @staticmethod
     def virtual_memory(pid):
@@ -437,13 +499,13 @@ class Policy:
                 for forbidden in self.config["forbidden_paths"]:
                     if path == forbidden or path.startswith(forbidden + "/"):
                         raise Violation(f"nonregular candidate source denied: {path}")
-                self.observe(self.accessed, path)
+                self.defer_observation(state, "accessed", path)
                 return
         elif path in self.sources:
-            self.observe(self.consumed, path.removeprefix("/repo/"))
+            self.defer_observation(state, "consumed", path.removeprefix("/repo/"))
             return
         elif path in self.code:
-            self.observe(self.code_consumed, path.removeprefix("/repo/"))
+            self.defer_observation(state, "code_consumed", path.removeprefix("/repo/"))
             return
         elif self.mode == "compile" and operation == "metadata" and path.endswith(".gch") and path[:-4] in self.code:
             return
@@ -451,10 +513,6 @@ class Policy:
             return
         elif path in self.code_dirs | self.source_dirs:
             if operation != "directory" or path in self.code_dirs | self.enumerations:
-                if operation == "directory":
-                    for name in self.sources:
-                        if posixpath.dirname(name) == path:
-                            self.observe(self.consumed, name.removeprefix("/repo/"))
                 return
         elif operation in {"metadata", "read"} and "__pycache__" in path.split("/"):
             # -B prevents cache writes; importlib may probe the absent cache
@@ -499,6 +557,8 @@ class Policy:
         n = r.orig_rax
         a, b, c, d, e = r.rdi, r.rsi, r.rdx, r.r10, r.r8
         state.pending = None
+        state.observations.clear()
+        state.observation_needs_bytes = False
         trusted = self.observer(state, r)
         if n == 39 and a in {VO_READY, VO_DISPATCH, VO_QUERY_KIND}:
             if a == VO_QUERY_KIND:
@@ -545,10 +605,12 @@ class Policy:
                 pid, state, b if at else a, signed(a) if at else -100, follow_final=follow,
             )
             self.check(state, path, "metadata", observer=trusted)
+            state.observation_needs_bytes = n in {89, 267}
         elif n in {5, 138}:  # fstat, fstatfs
             self.check_fd(state, a, "metadata", r)
         elif n in {0, 17, 19}:  # read/pread/readv
             self.check_fd(state, a, "read", r)
+            state.observation_needs_bytes = True
         elif n in {1, 18, 20}:  # write/pwrite/writev
             self.check_fd(state, a, "write", r)
             if n == 20:
@@ -566,7 +628,10 @@ class Policy:
         elif n in {8, 74, 75, 73}:
             self.check_fd(state, a, "read", r)
         elif n in {78, 217}:
-            self.check_fd(state, a, "directory", r)
+            path = self.check_fd(state, a, "directory", r)
+            if c > SYSCALL_MEMORY_LIMIT:
+                raise Violation("directory request exceeds the syscall memory bound")
+            state.pending = ("directory", (path, b, c, n == 217))
         elif n == 9:
             descriptor = signed(e)
             kind = d & 0xF
@@ -653,6 +718,7 @@ class Policy:
         elif n == 72:
             path = self.fd(state, a)
             if b in {0, 1030}:
+                self.check(state, path, "read", observer=trusted)
                 state.pending = ("dup", path)
             elif b not in {1, 2, 3, 4, 5, 6, 7, 1031, 1032}:
                 raise Violation("unknown fcntl operation")
@@ -760,11 +826,14 @@ class Policy:
     def leave(self, pid, state, r):
         result = signed(r.rax)
         state.memory_reservation = 0
+        observations = state.observations
+        state.observations = []
+        pending, state.pending = state.pending, None
         if r.orig_rax == 12 and result > 0:
             state.break_end = result
-        if result < 0 or state.pending is None:
+        if result < 0:
             return
-        operation, value = state.pending
+        operation, value = pending if pending is not None else (None, None)
         if operation in {"open", "dup"}:
             state.fds[result] = value
         elif operation == "close":
@@ -778,6 +847,11 @@ class Policy:
         elif operation == "helper_kind":
             r.rax = value
             ptrace(SETREGS, pid, 0, ctypes.byref(r))
+        elif operation == "directory":
+            self.observe_directory(pid, state, value, result)
+        if not state.observation_needs_bytes or result > 0:
+            for collection, path in observations:
+                self.observe(collection, path)
 
 
 def observer_ranges(pid):

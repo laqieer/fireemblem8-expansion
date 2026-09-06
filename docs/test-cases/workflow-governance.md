@@ -1836,6 +1836,17 @@ Start from a clean checkout; fixtures use only ignored `build/test-artifacts`.
     closed using owned pipes, self identities or invalid descriptors.
     Run the complete foundation suite, including both unfunded and funded
     stack-fault branches; the funded case uses only its current child's size.
+20. Declare a regular source, make an `O_DIRECTORY` open or metadata/readlink
+    operation fail, catch the error and report the declared name anyway.
+    Registry equality must reject it. Use real legacy/wide getdents with an
+    undersized buffer and a one-entry buffer: credit must match only the actual
+    returned names, independent of ordering, never all declared siblings.
+    Positive stat/access/open/read/mmap observations must still pass.
+    The owned stopped-syscall controls separately cover FD read/pread/readv,
+    fstat/fstatfs, seek, mmap, dup/fcntl, close, EOF and partial reads without
+    an earlier open masking failure. Test code and Make-path evidence too.
+    Reuse stale directory-buffer bytes at EOF, corrupt actual returned records,
+    and exceed buffer/observation bounds; none may forge consumption.
 
 ### Expected result
 
@@ -1901,6 +1912,12 @@ and its queued value to an owned sibling. The old funded-stack fixture also
 raised `NameError` in both branches before checking the kernel bound because
 it referenced another test's `first`/`second` locals. Both failures are retained
 as negative controls; partial selections cannot stand in for running these paths.
+
+Before exit-time credit, an `O_DIRECTORY` open returning `ENOTDIR` still made a
+declared regular file count as consumed. A getdents call returning `-1`, or just
+one 24-byte entry, credited both declared siblings and accepted forged registry
+JSON. The new regressions preserve those actual syscall failures/partial results,
+while legitimate successful metadata and content observations remain positive.
 
 ### Interactions and save compatibility
 
