@@ -177,7 +177,7 @@ intentional profile checks remain. No new feature flag or runtime service.
 - `python3 -m unittest tests.workflows.test_build_ci_topology -v` —
   retained workers, fail-closed summary and historical job compatibility.
 - `python3 -m unittest tests.upstream_port.test_verify -v` —
-  the unchanged 28 local gates and parsed packaging-step contract.
+  the complete 30 local gates (including both ownership checks) and parsed packaging-step contract.
 
 ### Cleanup and limitations
 

@@ -795,7 +795,7 @@ jobs:
     - name: Install host-only dependencies (no arm-none-eabi toolchain)
       if: ${{ needs.event-classifier.result == 'failure' || needs.event-classifier.outputs.classification == 'full' }}
       run: |
-        sudo apt-get update && sudo apt-get install -y build-essential libmgba-dev python3-venv
+        sudo apt-get update && sudo apt-get install -y build-essential libmgba-dev libpng-dev python3-venv pkg-config
         /usr/bin/python3 -I scripts/host_python.py create
 
     # GBA_PLAYTEST_HOST_ONLY=1 is the single public switch that makes this a
@@ -890,6 +890,197 @@ jobs:
         PATH: /usr/bin:/bin
         PYTHONPATH: ''
       run: /usr/bin/python3 -I scripts/workflow_pilot/isolated_launcher.py baseline --repository-root "$GITHUB_WORKSPACE" --fixture scripts/workflow_pilot/tests/fixtures/baseline.json --decisions .github/workflow-pilot-decisions.json --expected scripts/workflow_pilot/tests/fixtures/baseline_expected.json > /dev/null
+
+    # A candidate must not supply the verifier that authorizes its own graph.
+    # Once the exact PR base contains issue #180's base verifier, extract that
+    # complete tree and enter only its gate/package against the checked-out
+    # candidate commit. This introducing PR has no such base package, so it
+    # emits the explicit non-authoritative bootstrap state instead; the
+    # candidate regression/public checks below still run, and direct
+    # adversarial review is the introduction evidence.
+    - name: Validate ownership with exact PR-base verifier
+      if: ${{ needs.event-classifier.result == 'failure' || needs.event-classifier.outputs.classification == 'full' }}
+      env:
+        BASH_ENV: ''
+        BUILD_EVENT_NAME: ${{ github.event_name }}
+        ENV: ''
+        EXPECTED_BASE_SHA: ${{ (needs.event-classifier.result == 'success' && needs.event-classifier.outputs.expected_base) || (github.event_name == 'pull_request' && github.event.pull_request.base.sha) || '' }}
+        EXPECTED_CANDIDATE_SHA: ${{ (needs.event-classifier.result == 'success' && needs.event-classifier.outputs.expected_head) || needs.event-identity.outputs.fallback_sha || '' }}
+        GIT_ALTERNATE_OBJECT_DIRECTORIES: ''
+        GIT_CEILING_DIRECTORIES: ''
+        GIT_COMMON_DIR: ''
+        GIT_CONFIG_COUNT: '0'
+        GIT_CONFIG_GLOBAL: /dev/null
+        GIT_CONFIG_KEY_0: ''
+        GIT_CONFIG_NOSYSTEM: '1'
+        GIT_CONFIG_PARAMETERS: ''
+        GIT_CONFIG_SYSTEM: /dev/null
+        GIT_CONFIG_VALUE_0: ''
+        GIT_DIR: ''
+        GIT_EXEC_PATH: ''
+        GIT_INDEX_FILE: ''
+        GIT_NAMESPACE: ''
+        GIT_NO_LAZY_FETCH: '1'
+        GIT_NO_REPLACE_OBJECTS: '1'
+        GIT_OBJECT_DIRECTORY: ''
+        GIT_REPLACE_REF_BASE: ''
+        GIT_WORK_TREE: ''
+        GNUMAKEFLAGS: ''
+        MAKEFLAGS: ''
+        MAKEOVERRIDES: ''
+        MFLAGS: ''
+        PATH: /usr/bin:/bin
+        PYTHONPATH: ''
+        VALIDATION_OWNERSHIP_TEMP: ${{ runner.temp }}
+      run: |
+        set -euo pipefail
+        if [ "$BUILD_EVENT_NAME" != pull_request ]; then
+          printf 'validation-ownership: exact-base verifier not applicable to %s\n' \
+            "$BUILD_EVENT_NAME"
+          exit 0
+        fi
+        test -d "$VALIDATION_OWNERSHIP_TEMP"
+        test ! -L "$VALIDATION_OWNERSHIP_TEMP"
+        validation_temp="$(/usr/bin/realpath "$VALIDATION_OWNERSHIP_TEMP")"
+        test "$(/usr/bin/stat -c %u "$validation_temp")" = "$(/usr/bin/id -u)"
+        trusted_root="$(/usr/bin/mktemp --directory \
+          --tmpdir="$validation_temp" validation-ownership-base.XXXXXXXXXX)"
+        test -d "$trusted_root"
+        test ! -L "$trusted_root"
+        test "$(/usr/bin/dirname "$trusted_root")" = "$validation_temp"
+        test "$(/usr/bin/stat -c %a "$trusted_root")" = 700
+        trusted_root_identity="$(/usr/bin/stat -Lc %d:%i "$trusted_root")"
+        cleanup_trusted_root() {
+          status="$?"
+          trap - EXIT
+          cleanup_status=0
+          if [ ! -d "$trusted_root" ] ||
+             [ -L "$trusted_root" ] ||
+             [ "$(/usr/bin/realpath "$trusted_root")" != "$trusted_root" ] ||
+             [ "$(/usr/bin/stat -Lc %d:%i "$trusted_root")" != \
+               "$trusted_root_identity" ]; then
+            cleanup_status=1
+          elif ! /bin/rm -rf --one-file-system -- "$trusted_root"; then
+            cleanup_status=1
+          fi
+          if [ "$status" -ne 0 ]; then
+            exit "$status"
+          fi
+          exit "$cleanup_status"
+        }
+        trap cleanup_trusted_root EXIT
+        unset GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_CEILING_DIRECTORIES \
+          GIT_COMMON_DIR GIT_DIR GIT_EXEC_PATH GIT_INDEX_FILE GIT_NAMESPACE \
+          GIT_OBJECT_DIRECTORY GIT_REPLACE_REF_BASE GIT_WORK_TREE
+        test "$(/usr/bin/git rev-parse HEAD)" = "$EXPECTED_CANDIDATE_SHA"
+        /usr/bin/git cat-file -e "$EXPECTED_BASE_SHA^{commit}"
+        base_validation_present=0
+        base_validation_missing=0
+        for required in \
+          .github/validation-ownership-graph.json \
+          .github/validation-ownership-make-dynamics.json \
+          scripts/validation_ownership/ci_gate.mk \
+          scripts/validation_ownership/ci_verifier.py \
+          scripts/validation_ownership/generated_registry_probe.py \
+          scripts/validation_ownership/graph.schema.json \
+          scripts/validation_ownership/isolated_launcher.py \
+          scripts/validation_ownership/make_probe.py \
+          scripts/validation_ownership/probe-oracle.json \
+          scripts/validation_ownership/reporter.py \
+          scripts/validation_ownership/sandbox_exec.py \
+          scripts/validation_ownership/shell_interceptor.c
+        do
+          if /usr/bin/git cat-file -e "$EXPECTED_BASE_SHA:$required"; then
+            base_validation_present=$((base_validation_present + 1))
+          else
+            base_validation_missing=$((base_validation_missing + 1))
+          fi
+        done
+        if [ "$base_validation_present" -eq 0 ]; then
+          printf 'validation-ownership: bootstrap-not-authoritative base=%s candidate=%s\n' \
+            "$EXPECTED_BASE_SHA" "$EXPECTED_CANDIDATE_SHA"
+        elif [ "$base_validation_missing" -ne 0 ]; then
+          printf 'validation-ownership: incomplete exact-base authority\n' >&2
+          exit 1
+        else
+          /usr/bin/git archive --format=tar "$EXPECTED_BASE_SHA" |
+            /usr/bin/tar -xf - -C "$trusted_root"
+          BASH_ENV= ENV= GNUMAKEFLAGS= MAKEFLAGS= MAKEOVERRIDES= MFLAGS= \
+            PYTHONPATH= \
+            /usr/bin/python3 -I -S -B \
+              "$trusted_root/scripts/validation_ownership/ci_verifier.py" \
+              --trusted-root "$trusted_root" \
+              --repository-root "$GITHUB_WORKSPACE" \
+              --base-sha "$EXPECTED_BASE_SHA" \
+              --candidate-sha "$EXPECTED_CANDIDATE_SHA"
+        fi
+
+    - name: Run validation ownership regression suite (issue #180)
+      if: ${{ needs.event-classifier.result == 'failure' || needs.event-classifier.outputs.classification == 'full' }}
+      env:
+        BASH_ENV: ''
+        ENV: ''
+        GIT_ALTERNATE_OBJECT_DIRECTORIES: ''
+        GIT_CEILING_DIRECTORIES: ''
+        GIT_COMMON_DIR: ''
+        GIT_CONFIG_COUNT: '0'
+        GIT_CONFIG_GLOBAL: /dev/null
+        GIT_CONFIG_KEY_0: ''
+        GIT_CONFIG_NOSYSTEM: '1'
+        GIT_CONFIG_PARAMETERS: ''
+        GIT_CONFIG_SYSTEM: /dev/null
+        GIT_CONFIG_VALUE_0: ''
+        GIT_DIR: ''
+        GIT_EXEC_PATH: ''
+        GIT_INDEX_FILE: ''
+        GIT_NAMESPACE: ''
+        GIT_NO_LAZY_FETCH: '1'
+        GIT_NO_REPLACE_OBJECTS: '1'
+        GIT_OBJECT_DIRECTORY: ''
+        GIT_REPLACE_REF_BASE: ''
+        GIT_WORK_TREE: ''
+        GNUMAKEFLAGS: ''
+        MAKEFLAGS: ''
+        MAKEOVERRIDES: ''
+        MFLAGS: ''
+        PATH: /usr/bin:/bin
+        PYTHONPATH: ''
+      run: /usr/bin/python3 -I -S -B scripts/validation_ownership/isolated_launcher.py tests
+
+    - name: Validate validation ownership graph (issue #180)
+      if: ${{ needs.event-classifier.result == 'failure' || needs.event-classifier.outputs.classification == 'full' }}
+      # The Makefile independently rejects execution-control flags at parse
+      # time; this explicit scrub keeps the CI invocation and local mirror
+      # identical before make starts.
+      env:
+        BASH_ENV: ''
+        ENV: ''
+        GIT_ALTERNATE_OBJECT_DIRECTORIES: ''
+        GIT_CEILING_DIRECTORIES: ''
+        GIT_COMMON_DIR: ''
+        GIT_CONFIG_COUNT: '0'
+        GIT_CONFIG_GLOBAL: /dev/null
+        GIT_CONFIG_KEY_0: ''
+        GIT_CONFIG_NOSYSTEM: '1'
+        GIT_CONFIG_PARAMETERS: ''
+        GIT_CONFIG_SYSTEM: /dev/null
+        GIT_CONFIG_VALUE_0: ''
+        GIT_DIR: ''
+        GIT_EXEC_PATH: ''
+        GIT_INDEX_FILE: ''
+        GIT_NAMESPACE: ''
+        GIT_NO_LAZY_FETCH: '1'
+        GIT_NO_REPLACE_OBJECTS: '1'
+        GIT_OBJECT_DIRECTORY: ''
+        GIT_REPLACE_REF_BASE: ''
+        GIT_WORK_TREE: ''
+        GNUMAKEFLAGS: ''
+        MAKEFLAGS: ''
+        MAKEOVERRIDES: ''
+        MFLAGS: ''
+        PATH: /usr/bin:/bin
+        PYTHONPATH: ''
+      run: /usr/bin/python3 -I -S -B scripts/validation_ownership/isolated_launcher.py check --repository-root "$GITHUB_WORKSPACE"
 
     # Issue #18 host-lane closure fix: the scripts/localization package's
     # own pure-stdlib unit test suite (schema/pseudo/catalog/generate/CLI/

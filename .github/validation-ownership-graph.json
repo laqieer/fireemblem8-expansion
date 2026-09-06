@@ -1,0 +1,1922 @@
+{
+  "schema_version": 1,
+  "policy": {
+    "classification": "framework-capability",
+    "validation_effect": "report-only",
+    "narrowing_authorized": false,
+    "review_invalidation": "resolved-edge-authority"
+  },
+  "artifact": {
+    "artifact_id": "validation-ownership-graph",
+    "owner": "workflow-governance",
+    "executable_consumer": "validation-ownership-check",
+    "unique_decision": "single-fail-closed-validation-ownership-graph",
+    "consistency_check": "TC-WORKFLOW-GATE-OWNERSHIP-001",
+    "max_maintenance_minutes": 10,
+    "estimated_maintenance_minutes": 5,
+    "deletion_criterion": "Delete only after no validation or review decision consumes semantic ownership edges.",
+    "expires_at": null,
+    "history": [
+      {
+        "recorded_at": "2026-08-31T02:49:47Z",
+        "disposition": "Graduate",
+        "reason": "Dependent validation design requires one stable fail-closed ownership seam."
+      }
+    ]
+  },
+  "lifecycle_events": [
+    {
+      "id": "event.artifact-checkpoint",
+      "type": "artifact_checkpoint",
+      "occurred_at": "2026-08-31T02:43:00Z",
+      "artifact_id": "validation-ownership-graph",
+      "authority": "artifact:validation-ownership-graph"
+    },
+    {
+      "id": "proof.artifact-checkpoint",
+      "type": "deletion_proof",
+      "occurred_at": "2026-08-31T02:43:30Z",
+      "artifact_id": "validation-ownership-graph",
+      "trigger_event_id": "event.artifact-checkpoint",
+      "reason": "removal loses the issue #180 validation ownership invariant",
+      "semantic_result": "fail",
+      "restored_result": "pass"
+    },
+    {
+      "id": "event.dependency-change",
+      "type": "dependency_changed",
+      "occurred_at": "2026-08-31T02:44:00Z",
+      "artifact_id": "validation-ownership-graph",
+      "authority": "edge:generated-schema.depends"
+    },
+    {
+      "id": "proof.dependency-change",
+      "type": "deletion_proof",
+      "occurred_at": "2026-08-31T02:44:30Z",
+      "artifact_id": "validation-ownership-graph",
+      "trigger_event_id": "event.dependency-change",
+      "reason": "removal loses the issue #180 validation ownership invariant",
+      "semantic_result": "fail",
+      "restored_result": "pass"
+    },
+    {
+      "id": "event.pre-graduation",
+      "type": "pre_graduation",
+      "occurred_at": "2026-08-31T02:45:00Z",
+      "artifact_id": "validation-ownership-graph",
+      "authority": "decision:single-fail-closed-validation-ownership-graph"
+    },
+    {
+      "id": "proof.pre-graduation",
+      "type": "deletion_proof",
+      "occurred_at": "2026-08-31T02:45:30Z",
+      "artifact_id": "validation-ownership-graph",
+      "trigger_event_id": "event.pre-graduation",
+      "reason": "removal loses the issue #180 validation ownership invariant",
+      "semantic_result": "fail",
+      "restored_result": "pass"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "surface.runtime",
+      "kind": "surface",
+      "label": "Runtime and ABI source",
+      "surface_type": "source",
+      "requirements": [
+        "positive",
+        "adversarial",
+        "compile",
+        "link",
+        "runtime"
+      ],
+      "dependencies": []
+    },
+    {
+      "id": "surface.generated",
+      "kind": "surface",
+      "label": "Registered generated source",
+      "surface_type": "generated",
+      "requirements": [
+        "positive",
+        "adversarial",
+        "compile",
+        "link",
+        "runtime",
+        "generated"
+      ],
+      "dependencies": []
+    },
+    {
+      "id": "surface.generated-schema",
+      "kind": "surface",
+      "label": "Generated-data schema and generator",
+      "surface_type": "schema",
+      "requirements": [
+        "positive",
+        "adversarial",
+        "compile",
+        "link",
+        "runtime",
+        "generated"
+      ],
+      "dependencies": [
+        "surface.generated"
+      ]
+    },
+    {
+      "id": "surface.localization",
+      "kind": "surface",
+      "label": "Localization source and generated payload",
+      "surface_type": "generated",
+      "requirements": [
+        "positive",
+        "adversarial",
+        "default-disabled",
+        "compile",
+        "link",
+        "runtime",
+        "generated",
+        "shared-contract"
+      ],
+      "dependencies": []
+    },
+    {
+      "id": "surface.configuration",
+      "kind": "surface",
+      "label": "Build, workflow, and profile configuration",
+      "surface_type": "configuration",
+      "requirements": [
+        "positive",
+        "adversarial",
+        "default-disabled",
+        "compile",
+        "link",
+        "runtime",
+        "shared-contract"
+      ],
+      "dependencies": []
+    },
+    {
+      "id": "surface.workflow",
+      "kind": "surface",
+      "label": "GitHub Actions workflow",
+      "surface_type": "configuration",
+      "requirements": [
+        "positive",
+        "adversarial"
+      ],
+      "dependencies": []
+    },
+    {
+      "id": "surface.governance",
+      "kind": "surface",
+      "label": "Repository governance and validation schema",
+      "surface_type": "schema",
+      "requirements": [
+        "positive",
+        "adversarial"
+      ],
+      "dependencies": []
+    },
+    {
+      "id": "surface.repo-config",
+      "kind": "surface",
+      "label": "Repository host configuration",
+      "surface_type": "configuration",
+      "requirements": [
+        "positive",
+        "adversarial"
+      ],
+      "dependencies": []
+    },
+    {
+      "id": "surface.templates",
+      "kind": "surface",
+      "label": "GitHub issue and pull-request templates",
+      "surface_type": "schema",
+      "requirements": [
+        "positive",
+        "adversarial"
+      ],
+      "dependencies": []
+    },
+    {
+      "id": "surface.pr-template",
+      "kind": "surface",
+      "label": "GitHub pull-request template",
+      "surface_type": "schema",
+      "requirements": [
+        "positive",
+        "adversarial"
+      ],
+      "dependencies": []
+    },
+    {
+      "id": "surface.host",
+      "kind": "surface",
+      "label": "Host tooling and tests",
+      "surface_type": "source",
+      "requirements": [
+        "positive",
+        "adversarial"
+      ],
+      "dependencies": []
+    },
+    {
+      "id": "surface.docs",
+      "kind": "surface",
+      "label": "Documentation and governance schema",
+      "surface_type": "schema",
+      "requirements": [
+        "positive",
+        "adversarial"
+      ],
+      "dependencies": []
+    },
+    {
+      "id": "surface.manual-av",
+      "kind": "surface",
+      "label": "ROM A/V sources without an observing runtime scenario",
+      "surface_type": "manual",
+      "requirements": [
+        "positive",
+        "adversarial",
+        "compile",
+        "link",
+        "manual"
+      ],
+      "dependencies": []
+    },
+    {
+      "id": "surface.title-visual",
+      "kind": "surface",
+      "label": "Main title-screen graphics observed by title progression",
+      "surface_type": "manual",
+      "requirements": [
+        "positive",
+        "adversarial",
+        "compile",
+        "link",
+        "runtime",
+        "manual"
+      ],
+      "dependencies": []
+    },
+    {
+      "id": "surface.banim-package",
+      "kind": "surface",
+      "label": "Imported LORM_SP1_PROOF package and observed runtime resources",
+      "surface_type": "manual",
+      "requirements": [
+        "positive",
+        "adversarial",
+        "compile",
+        "link",
+        "runtime",
+        "generated",
+        "manual"
+      ],
+      "dependencies": []
+    },
+    {
+      "id": "surface.portrait-package",
+      "kind": "surface",
+      "label": "Eirika package and existing components observed by the portrait probe",
+      "surface_type": "manual",
+      "requirements": [
+        "positive",
+        "adversarial",
+        "compile",
+        "link",
+        "runtime",
+        "generated",
+        "manual"
+      ],
+      "dependencies": []
+    },
+    {
+      "id": "surface.asset-source",
+      "kind": "surface",
+      "label": "Manifest asset authoring with generated consumers but no single observing scenario",
+      "surface_type": "manual",
+      "requirements": [
+        "positive",
+        "adversarial",
+        "compile",
+        "link",
+        "generated",
+        "manual"
+      ],
+      "dependencies": []
+    },
+    {
+      "id": "surface.preview",
+      "kind": "surface",
+      "label": "Review-only TSA previews, not ROM build inputs",
+      "surface_type": "manual",
+      "requirements": [
+        "positive",
+        "adversarial",
+        "manual"
+      ],
+      "dependencies": []
+    },
+    {
+      "id": "owner.host-build",
+      "kind": "evidence",
+      "label": "Combined host test job",
+      "evidence_type": "host",
+      "authority": {
+        "kind": "workflow-job",
+        "job": "host-tests"
+      }
+    },
+    {
+      "id": "owner.host-runtime",
+      "kind": "evidence",
+      "label": "gba-playtest host contract",
+      "evidence_type": "host",
+      "authority": {
+        "kind": "workflow-step",
+        "job": "host-tests",
+        "step": "Run gba-playtest host test suite"
+      }
+    },
+    {
+      "id": "owner.host-docs",
+      "kind": "evidence",
+      "label": "Documentation governance gate",
+      "evidence_type": "host",
+      "authority": {
+        "kind": "workflow-step",
+        "job": "build",
+        "step": "Check documentation (issues #7/#17)"
+      }
+    },
+    {
+      "id": "owner.host-workflow",
+      "kind": "evidence",
+      "label": "Workflow and patch-packaging contract gate",
+      "evidence_type": "host",
+      "authority": {
+        "kind": "workflow-step",
+        "job": "host-tests",
+        "step": "Run workflow contract test suite"
+      }
+    },
+    {
+      "id": "owner.validation-suite",
+      "kind": "evidence",
+      "label": "Validation ownership regression suite",
+      "evidence_type": "host",
+      "authority": {
+        "kind": "workflow-step",
+        "job": "host-tests",
+        "step": "Run validation ownership regression suite (issue #180)"
+      }
+    },
+    {
+      "id": "owner.validation-check",
+      "kind": "evidence",
+      "label": "Validation ownership whole-tree gate",
+      "evidence_type": "host",
+      "authority": {
+        "kind": "workflow-step",
+        "job": "host-tests",
+        "step": "Validate validation ownership graph (issue #180)"
+      }
+    },
+    {
+      "id": "owner.host-config",
+      "kind": "evidence",
+      "label": "Configuration and linker-budget host gate",
+      "evidence_type": "host",
+      "authority": {
+        "kind": "workflow-step",
+        "job": "extended-host-tests",
+        "step": "Run configuration and linker-budget gates"
+      }
+    },
+    {
+      "id": "owner.host-generated",
+      "kind": "evidence",
+      "label": "Generated-data host tests",
+      "evidence_type": "host",
+      "authority": {
+        "kind": "make-target",
+        "target": "generated-data-test"
+      }
+    },
+    {
+      "id": "owner.host-localization",
+      "kind": "evidence",
+      "label": "Localization host tests",
+      "evidence_type": "host",
+      "authority": {
+        "kind": "make-target",
+        "target": "localization-test"
+      }
+    },
+    {
+      "id": "owner.case",
+      "kind": "evidence",
+      "label": "Indexed ownership tester case",
+      "evidence_type": "host",
+      "authority": {
+        "kind": "tester-case",
+        "case_id": "TC-WORKFLOW-GATE-OWNERSHIP-001"
+      }
+    },
+    {
+      "id": "owner.validation-graph",
+      "kind": "evidence",
+      "label": "Whole-repository validation ownership check",
+      "evidence_type": "host",
+      "authority": {
+        "kind": "make-target",
+        "target": "validation-ownership-check"
+      }
+    },
+    {
+      "id": "owner.compile-modern",
+      "kind": "evidence",
+      "label": "Modern compile cohort",
+      "evidence_type": "compile",
+      "authority": {
+        "kind": "make-target",
+        "target": "expansion-modern-all"
+      }
+    },
+    {
+      "id": "owner.link-modern",
+      "kind": "evidence",
+      "label": "Modern link and budget gate",
+      "evidence_type": "link",
+      "authority": {
+        "kind": "make-target",
+        "target": "expansion-modern-linker-check"
+      }
+    },
+    {
+      "id": "owner.runtime-modern",
+      "kind": "evidence",
+      "label": "Modern target boot scenario",
+      "evidence_type": "runtime",
+      "authority": {
+        "kind": "make-target",
+        "target": "expansion-modern-boot-check"
+      }
+    },
+    {
+      "id": "owner.runtime-visual",
+      "kind": "evidence",
+      "label": "Battle presentation HP/policy scenario, not asset framebuffer or audio evidence",
+      "evidence_type": "runtime",
+      "authority": {
+        "kind": "make-target",
+        "target": "expansion-modern-banim-presentation-check"
+      }
+    },
+    {
+      "id": "owner.runtime-title",
+      "kind": "evidence",
+      "label": "Title-progression framebuffer behavior",
+      "evidence_type": "runtime",
+      "authority": {
+        "kind": "make-target",
+        "target": "expansion-modern-title-check"
+      }
+    },
+    {
+      "id": "owner.runtime-banim-package",
+      "kind": "evidence",
+      "label": "Imported battle package selection, resources and lifecycle",
+      "evidence_type": "runtime",
+      "authority": {
+        "kind": "make-target",
+        "target": "expansion-modern-banim-package-runtime-check"
+      }
+    },
+    {
+      "id": "owner.runtime-portrait-package",
+      "kind": "evidence",
+      "label": "Eirika face/minimug palette and VRAM consumer",
+      "evidence_type": "runtime",
+      "authority": {
+        "kind": "make-target",
+        "target": "expansion-modern-portrait-package-runtime-check"
+      }
+    },
+    {
+      "id": "owner.host-assets",
+      "kind": "evidence",
+      "label": "Asset manifest and adapter host tests",
+      "evidence_type": "host",
+      "authority": {
+        "kind": "make-target",
+        "target": "assets-test"
+      }
+    },
+    {
+      "id": "owner.generator-assets",
+      "kind": "evidence",
+      "label": "Selected asset manifest generator",
+      "evidence_type": "host",
+      "authority": {
+        "kind": "make-target",
+        "target": "assets-generate"
+      }
+    },
+    {
+      "id": "owner.drift-assets",
+      "kind": "evidence",
+      "label": "Selected asset manifest drift check",
+      "evidence_type": "host",
+      "authority": {
+        "kind": "make-target",
+        "target": "assets-check"
+      }
+    },
+    {
+      "id": "owner.generator-generated",
+      "kind": "evidence",
+      "label": "Generated-data generator",
+      "evidence_type": "host",
+      "authority": {
+        "kind": "make-target",
+        "target": "generated-data-generate"
+      }
+    },
+    {
+      "id": "owner.drift-generated",
+      "kind": "evidence",
+      "label": "Generated-data drift gate",
+      "evidence_type": "host",
+      "authority": {
+        "kind": "make-target",
+        "target": "generated-data-check"
+      }
+    },
+    {
+      "id": "owner.consumer-generated",
+      "kind": "evidence",
+      "label": "Generated-data compiled consumer",
+      "evidence_type": "link",
+      "authority": {
+        "kind": "make-target",
+        "target": "generated-data-link-check"
+      }
+    },
+    {
+      "id": "owner.registry-generated",
+      "kind": "evidence",
+      "label": "Typed generated-data schema registry",
+      "evidence_type": "host",
+      "authority": {
+        "kind": "generated-data-registry"
+      }
+    },
+    {
+      "id": "owner.generator-localization",
+      "kind": "evidence",
+      "label": "Localization generator",
+      "evidence_type": "host",
+      "authority": {
+        "kind": "make-target",
+        "target": "localization-generate"
+      }
+    },
+    {
+      "id": "owner.drift-localization",
+      "kind": "evidence",
+      "label": "Localization drift gate",
+      "evidence_type": "host",
+      "authority": {
+        "kind": "make-target",
+        "target": "localization-check"
+      }
+    },
+    {
+      "id": "owner.runtime-localization",
+      "kind": "evidence",
+      "label": "Multi-locale target scenario",
+      "evidence_type": "runtime",
+      "authority": {
+        "kind": "make-target",
+        "target": "expansion-modern-localization-runtime-multi-check"
+      }
+    },
+    {
+      "id": "owner.negative-localization",
+      "kind": "evidence",
+      "label": "Default English release control",
+      "evidence_type": "runtime",
+      "authority": {
+        "kind": "make-target",
+        "target": "expansion-modern-localization-runtime-release-check"
+      }
+    },
+    {
+      "id": "owner.profile-modern",
+      "kind": "evidence",
+      "label": "Debug and release profile workflow gate",
+      "evidence_type": "compile",
+      "authority": {
+        "kind": "workflow-step",
+        "job": "build",
+        "step": "Build and verify modern target ROMs and linker"
+      }
+    },
+    {
+      "id": "owner.negative-config",
+      "kind": "evidence",
+      "label": "Default-lane negative control",
+      "evidence_type": "host",
+      "authority": {
+        "kind": "workflow-step",
+        "job": "build",
+        "step": "Check default build lane and quickstart legacy glue (issue #15)"
+      }
+    },
+    {
+      "id": "owner.manual-handoff",
+      "kind": "evidence",
+      "label": "Canonical visual/audio/UX handoff",
+      "evidence_type": "manual",
+      "authority": {
+        "kind": "manual-handoff",
+        "path": ".github/manual-testing-handoff.json"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "runtime.owns-test",
+      "type": "owns-test",
+      "source": "surface.runtime",
+      "target": "owner.host-runtime",
+      "reason": "Runtime source changes retain the existing gba-playtest host contract."
+    },
+    {
+      "id": "runtime.adversarial",
+      "type": "adversarial-control",
+      "source": "surface.runtime",
+      "target": "owner.host-build",
+      "reason": "The complete host job owns adversarial runtime harness fixtures."
+    },
+    {
+      "id": "runtime.compile",
+      "type": "compile-owner",
+      "source": "surface.runtime",
+      "target": "owner.compile-modern",
+      "reason": "Runtime and ABI source must compile in the modern object cohort."
+    },
+    {
+      "id": "runtime.link",
+      "type": "link-owner",
+      "source": "surface.runtime",
+      "target": "owner.link-modern",
+      "reason": "Runtime and ABI source must satisfy the modern link and budget contract."
+    },
+    {
+      "id": "runtime.target",
+      "type": "target-scenario",
+      "source": "surface.runtime",
+      "target": "owner.runtime-modern",
+      "reason": "Runtime and ABI ownership terminates in a real target boot scenario."
+    },
+    {
+      "id": "generated.owns-test",
+      "type": "owns-test",
+      "source": "surface.generated",
+      "target": "owner.host-generated",
+      "reason": "Registered generated source is owned by the generated-data host suite."
+    },
+    {
+      "id": "generated.adversarial",
+      "type": "adversarial-control",
+      "source": "surface.generated",
+      "target": "owner.registry-generated",
+      "reason": "The typed schema registry owns generated-source adversarial validation."
+    },
+    {
+      "id": "generated.compile",
+      "type": "compile-owner",
+      "source": "surface.generated",
+      "target": "owner.compile-modern",
+      "reason": "Generated consumers remain part of the modern compile cohort."
+    },
+    {
+      "id": "generated.link",
+      "type": "link-owner",
+      "source": "surface.generated",
+      "target": "owner.link-modern",
+      "reason": "Generated source must remain link-compatible with the modern ROM."
+    },
+    {
+      "id": "generated.target",
+      "type": "target-scenario",
+      "source": "surface.generated",
+      "target": "owner.runtime-modern",
+      "reason": "Generated source retains a real target boot consumer."
+    },
+    {
+      "id": "generated.generator",
+      "type": "generated-by",
+      "source": "surface.generated",
+      "target": "owner.generator-generated",
+      "reason": "The existing generated-data target is the sole generator command owner."
+    },
+    {
+      "id": "generated.drift",
+      "type": "drift-check",
+      "source": "surface.generated",
+      "target": "owner.drift-generated",
+      "reason": "The existing generated-data check owns schema, round-trip, and drift evidence."
+    },
+    {
+      "id": "generated.consumer",
+      "type": "generated-consumer",
+      "source": "surface.generated",
+      "target": "owner.consumer-generated",
+      "reason": "The existing generated-data link check identifies the compiled consumer."
+    },
+    {
+      "id": "generated-schema.depends",
+      "type": "depends-on",
+      "source": "surface.generated-schema",
+      "target": "surface.generated",
+      "reason": "Generator and schema ownership depends on the registered generated-source surface."
+    },
+    {
+      "id": "generated-schema.owns-test",
+      "type": "owns-test",
+      "source": "surface.generated-schema",
+      "target": "owner.host-generated",
+      "reason": "Generator and schema changes are owned by the generated-data host suite."
+    },
+    {
+      "id": "generated-schema.adversarial",
+      "type": "adversarial-control",
+      "source": "surface.generated-schema",
+      "target": "owner.registry-generated",
+      "reason": "The typed registry rejects duplicate and stale schema ownership."
+    },
+    {
+      "id": "generated-schema.compile",
+      "type": "compile-owner",
+      "source": "surface.generated-schema",
+      "target": "owner.compile-modern",
+      "reason": "Generator changes must preserve generated modern compilation."
+    },
+    {
+      "id": "generated-schema.link",
+      "type": "link-owner",
+      "source": "surface.generated-schema",
+      "target": "owner.link-modern",
+      "reason": "Generator changes must preserve generated modern linkage."
+    },
+    {
+      "id": "generated-schema.target",
+      "type": "target-scenario",
+      "source": "surface.generated-schema",
+      "target": "owner.runtime-modern",
+      "reason": "Generator changes retain the generated target-ROM consumer."
+    },
+    {
+      "id": "generated-schema.generator",
+      "type": "generated-by",
+      "source": "surface.generated-schema",
+      "target": "owner.generator-generated",
+      "reason": "Generator code resolves through the existing generated-data command."
+    },
+    {
+      "id": "generated-schema.drift",
+      "type": "drift-check",
+      "source": "surface.generated-schema",
+      "target": "owner.drift-generated",
+      "reason": "Generator code is checked by the existing drift target."
+    },
+    {
+      "id": "generated-schema.consumer",
+      "type": "generated-consumer",
+      "source": "surface.generated-schema",
+      "target": "owner.consumer-generated",
+      "reason": "Generator code retains the existing compiled consumer check."
+    },
+    {
+      "id": "localization.owns-test",
+      "type": "owns-test",
+      "source": "surface.localization",
+      "target": "owner.host-localization",
+      "reason": "Localization source and catalogs use the existing host suite."
+    },
+    {
+      "id": "localization.adversarial",
+      "type": "adversarial-control",
+      "source": "surface.localization",
+      "target": "owner.host-build",
+      "reason": "The host job retains malformed catalog and width controls."
+    },
+    {
+      "id": "localization.compile",
+      "type": "compile-owner",
+      "source": "surface.localization",
+      "target": "owner.compile-modern",
+      "reason": "Localized generated payloads compile in the modern cohort."
+    },
+    {
+      "id": "localization.link",
+      "type": "link-owner",
+      "source": "surface.localization",
+      "target": "owner.link-modern",
+      "reason": "Localized payloads remain subject to link and budget evidence."
+    },
+    {
+      "id": "localization.target",
+      "type": "target-scenario",
+      "source": "surface.localization",
+      "target": "owner.runtime-localization",
+      "reason": "Localization changes terminate in the existing multi-locale runtime scenario."
+    },
+    {
+      "id": "localization.generator",
+      "type": "generated-by",
+      "source": "surface.localization",
+      "target": "owner.generator-localization",
+      "reason": "The existing localization target is the generator owner."
+    },
+    {
+      "id": "localization.drift",
+      "type": "drift-check",
+      "source": "surface.localization",
+      "target": "owner.drift-localization",
+      "reason": "The existing localization check owns catalog drift."
+    },
+    {
+      "id": "localization.consumer",
+      "type": "generated-consumer",
+      "source": "surface.localization",
+      "target": "owner.link-modern",
+      "reason": "The modern linker is the authoritative localized payload consumer."
+    },
+    {
+      "id": "localization.profile",
+      "type": "dependent-profile",
+      "source": "surface.localization",
+      "target": "owner.profile-modern",
+      "reason": "Shared localization contracts retain both debug and release workflow profiles."
+    },
+    {
+      "id": "localization.negative",
+      "type": "negative-control",
+      "source": "surface.localization",
+      "target": "owner.negative-localization",
+      "reason": "The default English release scenario remains the disabled/control profile."
+    },
+    {
+      "id": "configuration.owns-test",
+      "type": "owns-test",
+      "source": "surface.configuration",
+      "target": "owner.validation-graph",
+      "reason": "The indexed ownership case is the machine-readable configuration contract."
+    },
+    {
+      "id": "configuration.adversarial",
+      "type": "adversarial-control",
+      "source": "surface.configuration",
+      "target": "owner.host-config",
+      "reason": "Configuration and linker-budget host fixtures own malformed settings."
+    },
+    {
+      "id": "configuration.compile",
+      "type": "compile-owner",
+      "source": "surface.configuration",
+      "target": "owner.compile-modern",
+      "reason": "Configuration changes must compile the supported modern cohort."
+    },
+    {
+      "id": "configuration.link",
+      "type": "link-owner",
+      "source": "surface.configuration",
+      "target": "owner.link-modern",
+      "reason": "Configuration changes must preserve modern link and budget properties."
+    },
+    {
+      "id": "configuration.target",
+      "type": "target-scenario",
+      "source": "surface.configuration",
+      "target": "owner.runtime-modern",
+      "reason": "Configuration and ABI changes retain a real target boot scenario."
+    },
+    {
+      "id": "configuration.profile",
+      "type": "dependent-profile",
+      "source": "surface.configuration",
+      "target": "owner.profile-modern",
+      "reason": "Shared configuration changes retain debug and release workflow profiles."
+    },
+    {
+      "id": "configuration.negative",
+      "type": "negative-control",
+      "source": "surface.configuration",
+      "target": "owner.negative-config",
+      "reason": "The default build lane remains the shared-contract negative control."
+    },
+    {
+      "id": "workflow.owns-test",
+      "type": "owns-test",
+      "source": "surface.workflow",
+      "target": "owner.host-workflow",
+      "reason": "Build workflows are owned by the exact workflow topology test step."
+    },
+    {
+      "id": "workflow.adversarial",
+      "type": "adversarial-control",
+      "source": "surface.workflow",
+      "target": "owner.validation-check",
+      "reason": "The ownership check rejects stale or redirected workflow authority."
+    },
+    {
+      "id": "governance.owns-test",
+      "type": "owns-test",
+      "source": "surface.governance",
+      "target": "owner.validation-suite",
+      "reason": "Governance and validation schemas are owned by the required ownership suite."
+    },
+    {
+      "id": "governance.adversarial",
+      "type": "adversarial-control",
+      "source": "surface.governance",
+      "target": "owner.validation-check",
+      "reason": "The required whole-tree check owns governance drift controls."
+    },
+    {
+      "id": "repo-config.owns-test",
+      "type": "owns-test",
+      "source": "surface.repo-config",
+      "target": "owner.host-build",
+      "reason": "Repository host configuration remains in the host-only combined job."
+    },
+    {
+      "id": "repo-config.adversarial",
+      "type": "adversarial-control",
+      "source": "surface.repo-config",
+      "target": "owner.validation-check",
+      "reason": "Repository configuration ownership is checked without target compilation."
+    },
+    {
+      "id": "templates.owns-test",
+      "type": "owns-test",
+      "source": "surface.templates",
+      "target": "owner.host-workflow",
+      "reason": "Issue and pull-request templates use the existing workflow contract tests."
+    },
+    {
+      "id": "templates.adversarial",
+      "type": "adversarial-control",
+      "source": "surface.templates",
+      "target": "owner.validation-check",
+      "reason": "Template ownership drift is checked by the required graph gate."
+    },
+    {
+      "id": "pr-template.owns-test",
+      "type": "owns-test",
+      "source": "surface.pr-template",
+      "target": "owner.host-docs",
+      "reason": "The pull-request template is consumed by documentation governance."
+    },
+    {
+      "id": "pr-template.adversarial",
+      "type": "adversarial-control",
+      "source": "surface.pr-template",
+      "target": "owner.validation-check",
+      "reason": "Pull-request template ownership drift is checked by the required graph gate."
+    },
+    {
+      "id": "host.owns-test",
+      "type": "owns-test",
+      "source": "surface.host",
+      "target": "owner.host-build",
+      "reason": "Host tooling, including the build-once patch packager and its actual producer tests, is owned by the combined host test job."
+    },
+    {
+      "id": "host.adversarial",
+      "type": "adversarial-control",
+      "source": "surface.host",
+      "target": "owner.host-workflow",
+      "reason": "Workflow and patch-packaging fixtures reject invalid host inputs and publication contexts."
+    },
+    {
+      "id": "docs.owns-test",
+      "type": "owns-test",
+      "source": "surface.docs",
+      "target": "owner.host-docs",
+      "reason": "Documentation and governance schema are owned by check_docs."
+    },
+    {
+      "id": "docs.adversarial",
+      "type": "adversarial-control",
+      "source": "surface.docs",
+      "target": "owner.host-build",
+      "reason": "The host job retains malformed registry and documentation fixtures."
+    },
+    {
+      "id": "manual.owns-test",
+      "type": "owns-test",
+      "source": "surface.manual-av",
+      "target": "owner.host-runtime",
+      "reason": "Visual/audio/UX sources retain deterministic harness evidence first."
+    },
+    {
+      "id": "manual.adversarial",
+      "type": "adversarial-control",
+      "source": "surface.manual-av",
+      "target": "owner.host-build",
+      "reason": "The host job retains malformed asset and presentation controls."
+    },
+    {
+      "id": "manual.compile",
+      "type": "compile-owner",
+      "source": "surface.manual-av",
+      "target": "owner.compile-modern",
+      "reason": "Presentation assets retain deterministic compile evidence."
+    },
+    {
+      "id": "manual.link",
+      "type": "link-owner",
+      "source": "surface.manual-av",
+      "target": "owner.link-modern",
+      "reason": "Presentation assets retain deterministic link and budget evidence."
+    },
+    {
+      "id": "manual.handoff",
+      "type": "manual-handoff",
+      "source": "surface.manual-av",
+      "target": "owner.manual-handoff",
+      "reason": "No observing runtime scenario is claimed. Material visual/audio/UX judgment uses the canonical handoff without replacing host, compile or link checks."
+    },
+    {
+      "id": "title.owns-test",
+      "type": "owns-test",
+      "source": "surface.title-visual",
+      "target": "owner.host-runtime",
+      "reason": "The playtest harness tests framebuffer capture and behavior-policy comparison."
+    },
+    {
+      "id": "title.adversarial",
+      "type": "adversarial-control",
+      "source": "surface.title-visual",
+      "target": "owner.host-build",
+      "reason": "Host controls reject malformed graphics and fingerprint mismatches."
+    },
+    {
+      "id": "title.compile",
+      "type": "compile-owner",
+      "source": "surface.title-visual",
+      "target": "owner.compile-modern",
+      "reason": "data_titlescreen.c compiles the main title graphics, palettes and tilemaps."
+    },
+    {
+      "id": "title.link",
+      "type": "link-owner",
+      "source": "surface.title-visual",
+      "target": "owner.link-modern",
+      "reason": "The modern linker consumes the title data and enforces resource budgets."
+    },
+    {
+      "id": "title.target",
+      "type": "target-scenario",
+      "source": "surface.title-visual",
+      "target": "owner.runtime-title",
+      "reason": "Title_SetupMainGraphics loads these exact inputs; title-progression compares four framebuffer checkpoints in default debug/release profiles, not audio or the skipped intro artwork."
+    },
+    {
+      "id": "title.handoff",
+      "type": "manual-handoff",
+      "source": "surface.title-visual",
+      "target": "owner.manual-handoff",
+      "reason": "Subjective title presentation remains supplementary to deterministic framebuffer checks."
+    },
+    {
+      "id": "banim-package.owns-test",
+      "type": "owns-test",
+      "source": "surface.banim-package",
+      "target": "owner.host-assets",
+      "reason": "The asset adapter tests the imported package metadata, script and PNG."
+    },
+    {
+      "id": "banim-package.adversarial",
+      "type": "adversarial-control",
+      "source": "surface.banim-package",
+      "target": "owner.host-build",
+      "reason": "Host package tests reject invalid scripts, frames and resource bounds."
+    },
+    {
+      "id": "banim-package.compile",
+      "type": "compile-owner",
+      "source": "surface.banim-package",
+      "target": "owner.compile-modern",
+      "reason": "The default manifest emits the imported battle-table alias and compiled resources."
+    },
+    {
+      "id": "banim-package.link",
+      "type": "link-owner",
+      "source": "surface.banim-package",
+      "target": "owner.link-modern",
+      "reason": "Generated battle resources participate in modern link and budget checks."
+    },
+    {
+      "id": "banim-package.target",
+      "type": "target-scenario",
+      "source": "surface.banim-package",
+      "target": "owner.runtime-banim-package",
+      "reason": "The package checker loads LORM_SP1_PROOF and asserts alias selection, script/palette/OAM consumption and one battle entry/completion against a zero-state control; it does not assert framebuffer pixels or audible sound."
+    },
+    {
+      "id": "banim-package.generator",
+      "type": "generated-by",
+      "source": "surface.banim-package",
+      "target": "owner.generator-assets",
+      "reason": "The default asset manifest generates this package through the battle-animation adapter."
+    },
+    {
+      "id": "banim-package.drift",
+      "type": "drift-check",
+      "source": "surface.banim-package",
+      "target": "owner.drift-assets",
+      "reason": "Asset drift checks compare the package's generated inventory and products."
+    },
+    {
+      "id": "banim-package.consumer",
+      "type": "generated-consumer",
+      "source": "surface.banim-package",
+      "target": "owner.link-modern",
+      "reason": "The modern link consumes banim_data.c and data_banimconf.c objects with generated package includes."
+    },
+    {
+      "id": "banim-package.handoff",
+      "type": "manual-handoff",
+      "source": "surface.banim-package",
+      "target": "owner.manual-handoff",
+      "reason": "Animation appearance and audible sound remain manual judgments, not claims made by the resource-state probe."
+    },
+    {
+      "id": "portrait-package.owns-test",
+      "type": "owns-test",
+      "source": "surface.portrait-package",
+      "target": "owner.host-assets",
+      "reason": "The formatted-portrait adapter tests metadata, image extraction and component aliases."
+    },
+    {
+      "id": "portrait-package.adversarial",
+      "type": "adversarial-control",
+      "source": "surface.portrait-package",
+      "target": "owner.host-build",
+      "reason": "Host portrait controls reject malformed palettes, geometry and aliases."
+    },
+    {
+      "id": "portrait-package.compile",
+      "type": "compile-owner",
+      "source": "surface.portrait-package",
+      "target": "owner.compile-modern",
+      "reason": "The default manifest generates Eirika's portrait table and component consumers."
+    },
+    {
+      "id": "portrait-package.link",
+      "type": "link-owner",
+      "source": "surface.portrait-package",
+      "target": "owner.link-modern",
+      "reason": "Portrait resources retain modern link and budget checks."
+    },
+    {
+      "id": "portrait-package.target",
+      "type": "target-scenario",
+      "source": "surface.portrait-package",
+      "target": "owner.runtime-portrait-package",
+      "reason": "The Eirika Unit Inspect probe checks face ID, render count, palette/VRAM words and mouth activity for these components; it does not verify every portrait or a full framebuffer."
+    },
+    {
+      "id": "portrait-package.generator",
+      "type": "generated-by",
+      "source": "surface.portrait-package",
+      "target": "owner.generator-assets",
+      "reason": "The default manifest generates the Eirika formatted-portrait package."
+    },
+    {
+      "id": "portrait-package.drift",
+      "type": "drift-check",
+      "source": "surface.portrait-package",
+      "target": "owner.drift-assets",
+      "reason": "Asset drift checks retain the formatted-sheet and existing-component alias contract."
+    },
+    {
+      "id": "portrait-package.consumer",
+      "type": "generated-consumer",
+      "source": "surface.portrait-package",
+      "target": "owner.link-modern",
+      "reason": "The modern link consumes portrait_data.c and its generated portrait/component records."
+    },
+    {
+      "id": "portrait-package.handoff",
+      "type": "manual-handoff",
+      "source": "surface.portrait-package",
+      "target": "owner.manual-handoff",
+      "reason": "Subjective portrait appearance remains supplementary to component and runtime-state checks."
+    },
+    {
+      "id": "asset-source.owns-test",
+      "type": "owns-test",
+      "source": "surface.asset-source",
+      "target": "owner.host-assets",
+      "reason": "The asset suite exercises supported manifests and their authoring adapters."
+    },
+    {
+      "id": "asset-source.adversarial",
+      "type": "adversarial-control",
+      "source": "surface.asset-source",
+      "target": "owner.host-build",
+      "reason": "Host asset tests retain malformed input and manifest boundary controls."
+    },
+    {
+      "id": "asset-source.compile",
+      "type": "compile-owner",
+      "source": "surface.asset-source",
+      "target": "owner.compile-modern",
+      "reason": "Modern builds compile the selected manifest's generated consumer includes."
+    },
+    {
+      "id": "asset-source.link",
+      "type": "link-owner",
+      "source": "surface.asset-source",
+      "target": "owner.link-modern",
+      "reason": "Selected manifest consumers retain modern link and resource-budget checks."
+    },
+    {
+      "id": "asset-source.generator",
+      "type": "generated-by",
+      "source": "surface.asset-source",
+      "target": "owner.generator-assets",
+      "reason": "The existing configured asset generator owns manifest authoring inputs."
+    },
+    {
+      "id": "asset-source.drift",
+      "type": "drift-check",
+      "source": "surface.asset-source",
+      "target": "owner.drift-assets",
+      "reason": "The selected manifest's deterministic products and inventory must remain current."
+    },
+    {
+      "id": "asset-source.consumer",
+      "type": "generated-consumer",
+      "source": "surface.asset-source",
+      "target": "owner.link-modern",
+      "reason": "The generated asset Make fragment attaches products to existing source-owned objects consumed by the modern link."
+    },
+    {
+      "id": "asset-source.handoff",
+      "type": "manual-handoff",
+      "source": "surface.asset-source",
+      "target": "owner.manual-handoff",
+      "reason": "No single runtime scenario observes arbitrary manifests; material A/V judgment uses the existing handoff in addition to generation and build checks."
+    },
+    {
+      "id": "preview.owns-test",
+      "type": "owns-test",
+      "source": "surface.preview",
+      "target": "owner.host-docs",
+      "reason": "Preview authoring instructions remain documentation; the previews are not ROM build inputs."
+    },
+    {
+      "id": "preview.adversarial",
+      "type": "adversarial-control",
+      "source": "surface.preview",
+      "target": "owner.host-build",
+      "reason": "Existing host image/tooling controls remain required; they do not claim a preview is displayed by a ROM scenario."
+    },
+    {
+      "id": "preview.handoff",
+      "type": "manual-handoff",
+      "source": "surface.preview",
+      "target": "owner.manual-handoff",
+      "reason": "TSA pairing/coherence is a review-only visual judgment under the canonical handoff; no compile, link or runtime observation is claimed."
+    }
+  ],
+  "path_rules": [
+    {
+      "id": "paths.runtime",
+      "surface": "surface.runtime",
+      "include": [
+        {
+          "kind": "prefix",
+          "path": "src/"
+        },
+        {
+          "kind": "prefix",
+          "path": "include/"
+        },
+        {
+          "kind": "prefix",
+          "path": "asm/"
+        },
+        {
+          "kind": "prefix",
+          "path": "linker/"
+        }
+      ],
+      "exclude": [
+        {
+          "kind": "generated-data-registry"
+        },
+        {
+          "kind": "exact",
+          "path": "src/data/items_expansion.json"
+        }
+      ]
+    },
+    {
+      "id": "paths.generated",
+      "surface": "surface.generated",
+      "include": [
+        {
+          "kind": "generated-data-registry"
+        },
+        {
+          "kind": "exact",
+          "path": "src/data/items_expansion.json"
+        }
+      ],
+      "exclude": []
+    },
+    {
+      "id": "paths.generated-schema",
+      "surface": "surface.generated-schema",
+      "include": [
+        {
+          "kind": "prefix",
+          "path": "scripts/generated_data/"
+        },
+        {
+          "kind": "exact",
+          "path": "generated_data.mk"
+        }
+      ],
+      "exclude": []
+    },
+    {
+      "id": "paths.localization",
+      "surface": "surface.localization",
+      "include": [
+        {
+          "kind": "prefix",
+          "path": "texts/"
+        },
+        {
+          "kind": "prefix",
+          "path": "scripts/localization/"
+        },
+        {
+          "kind": "prefix",
+          "path": "fonts/"
+        },
+        {
+          "kind": "exact",
+          "path": "localization.mk"
+        },
+        {
+          "kind": "exact",
+          "path": "game_localization.mk"
+        },
+        {
+          "kind": "exact",
+          "path": "cjk_fonts.mk"
+        }
+      ],
+      "exclude": []
+    },
+    {
+      "id": "paths.workflow",
+      "surface": "surface.workflow",
+      "include": [
+        {
+          "kind": "prefix",
+          "path": ".github/workflows/"
+        }
+      ],
+      "exclude": []
+    },
+    {
+      "id": "paths.governance",
+      "surface": "surface.governance",
+      "include": [
+        {
+          "kind": "prefix",
+          "path": ".github/skills/"
+        },
+        {
+          "kind": "exact",
+          "path": ".github/copilot-instructions.md"
+        },
+        {
+          "kind": "exact",
+          "path": ".github/validation-ownership-graph.json"
+        },
+        {
+          "kind": "exact",
+          "path": ".github/validation-ownership-make-dynamics.json"
+        },
+        {
+          "kind": "exact",
+          "path": ".github/workflow-pilot-decisions.json"
+        }
+      ],
+      "exclude": []
+    },
+    {
+      "id": "paths.repo-config",
+      "surface": "surface.repo-config",
+      "include": [
+        {
+          "kind": "prefix",
+          "path": ".github/requirements/"
+        },
+        {
+          "kind": "prefix",
+          "path": ".github/copilot/"
+        }
+      ],
+      "exclude": []
+    },
+    {
+      "id": "paths.templates",
+      "surface": "surface.templates",
+      "include": [
+        {
+          "kind": "prefix",
+          "path": ".github/ISSUE_TEMPLATE/"
+        }
+      ],
+      "exclude": []
+    },
+    {
+      "id": "paths.pr-template",
+      "surface": "surface.pr-template",
+      "include": [
+        {
+          "kind": "exact",
+          "path": ".github/PULL_REQUEST_TEMPLATE.md"
+        }
+      ],
+      "exclude": []
+    },
+    {
+      "id": "paths.configuration",
+      "surface": "surface.configuration",
+      "include": [
+        {
+          "kind": "prefix",
+          "path": "config/"
+        },
+        {
+          "kind": "prefix",
+          "path": "githooks/"
+        },
+        {
+          "kind": "exact",
+          "path": ".clang-format"
+        },
+        {
+          "kind": "exact",
+          "path": ".gitattributes"
+        },
+        {
+          "kind": "exact",
+          "path": ".gitignore"
+        },
+        {
+          "kind": "exact",
+          "path": ".gitmodules"
+        },
+        {
+          "kind": "exact",
+          "path": "GNUmakefile.in"
+        },
+        {
+          "kind": "exact",
+          "path": "Makefile"
+        },
+        {
+          "kind": "exact",
+          "path": "asmdiff.sh"
+        },
+        {
+          "kind": "exact",
+          "path": "assets.mk"
+        },
+        {
+          "kind": "exact",
+          "path": "buddy.yml"
+        },
+        {
+          "kind": "exact",
+          "path": "build_tools.sh"
+        },
+        {
+          "kind": "exact",
+          "path": "clean_tools.sh"
+        },
+        {
+          "kind": "exact",
+          "path": "compile_flags.txt"
+        },
+        {
+          "kind": "exact",
+          "path": "config.autotools.mk.in"
+        },
+        {
+          "kind": "exact",
+          "path": "config.mk"
+        },
+        {
+          "kind": "exact",
+          "path": "configure"
+        },
+        {
+          "kind": "exact",
+          "path": "configure.ac"
+        },
+        {
+          "kind": "exact",
+          "path": "graphics_file_rules.mk"
+        },
+        {
+          "kind": "exact",
+          "path": "json_data_rules.mk"
+        },
+        {
+          "kind": "exact",
+          "path": "ldscript.txt"
+        },
+        {
+          "kind": "exact",
+          "path": "linker_script_banim.txt"
+        },
+        {
+          "kind": "exact",
+          "path": "linker_script_sound.txt"
+        },
+        {
+          "kind": "exact",
+          "path": "make_tools.mk"
+        },
+        {
+          "kind": "exact",
+          "path": "modern.mk"
+        },
+        {
+          "kind": "exact",
+          "path": "release.mk"
+        },
+        {
+          "kind": "exact",
+          "path": "songs.mk"
+        },
+        {
+          "kind": "exact",
+          "path": "sym_iwram.txt"
+        }
+      ],
+      "exclude": []
+    },
+    {
+      "id": "paths.host",
+      "surface": "surface.host",
+      "include": [
+        {
+          "kind": "prefix",
+          "path": "scripts/"
+        },
+        {
+          "kind": "prefix",
+          "path": "tests/"
+        },
+        {
+          "kind": "prefix",
+          "path": "tools/"
+        }
+      ],
+      "exclude": [
+        {
+          "kind": "prefix",
+          "path": "scripts/generated_data/"
+        },
+        {
+          "kind": "prefix",
+          "path": "scripts/localization/"
+        }
+      ]
+    },
+    {
+      "id": "paths.docs",
+      "surface": "surface.docs",
+      "include": [
+        {
+          "kind": "prefix",
+          "path": "docs/"
+        },
+        {
+          "kind": "prefix",
+          "path": "reports/"
+        },
+        {
+          "kind": "prefix",
+          "path": "changelog_fragments/"
+        },
+        {
+          "kind": "prefix",
+          "path": "_site/"
+        },
+        {
+          "kind": "exact",
+          "path": "CHANGELOG.md"
+        },
+        {
+          "kind": "exact",
+          "path": "CONTRIBUTING.md"
+        },
+        {
+          "kind": "exact",
+          "path": "README.md"
+        },
+        {
+          "kind": "exact",
+          "path": ".github/manual-testing-handoff.json"
+        }
+      ],
+      "exclude": [
+        {
+          "kind": "generated-data-registry"
+        }
+      ]
+    },
+    {
+      "id": "paths.manual-av",
+      "surface": "surface.manual-av",
+      "include": [
+        {
+          "kind": "prefix",
+          "path": "banim/"
+        },
+        {
+          "kind": "prefix",
+          "path": "graphics/"
+        },
+        {
+          "kind": "prefix",
+          "path": "sound/"
+        }
+      ],
+      "exclude": [
+        {
+          "kind": "exact",
+          "path": "graphics/titlescreen/title_main_background_1.png"
+        },
+        {
+          "kind": "exact",
+          "path": "graphics/titlescreen/title_main_background_2.png"
+        },
+        {
+          "kind": "exact",
+          "path": "graphics/titlescreen/title_main_background.map.bin"
+        },
+        {
+          "kind": "exact",
+          "path": "graphics/titlescreen/title_main_background.pal"
+        },
+        {
+          "kind": "exact",
+          "path": "graphics/titlescreen/title_dragon_foreground.png"
+        },
+        {
+          "kind": "exact",
+          "path": "graphics/titlescreen/title_dragon_foreground.map.bin"
+        },
+        {
+          "kind": "exact",
+          "path": "graphics/titlescreen/title_fire_emblem_logo.png"
+        },
+        {
+          "kind": "exact",
+          "path": "graphics/titlescreen/title_logos.png"
+        },
+        {
+          "kind": "exact",
+          "path": "graphics/titlescreen/title_press_start.pal"
+        },
+        {
+          "kind": "exact",
+          "path": "graphics/titlescreen/title_copyright.pal"
+        },
+        {
+          "kind": "exact",
+          "path": "graphics/titlescreen/title_sacred_stones_banner.pal"
+        },
+        {
+          "kind": "exact",
+          "path": "graphics/banim/banim_lorm_sp1_sheet_0.png"
+        },
+        {
+          "kind": "exact",
+          "path": "graphics/portrait/portrait_Eirika_chibi.png"
+        },
+        {
+          "kind": "exact",
+          "path": "graphics/portrait/portrait_Eirika_mouth.png"
+        },
+        {
+          "kind": "exact",
+          "path": "graphics/portrait/portrait_Eirika_palette.agbpal"
+        },
+        {
+          "kind": "exact",
+          "path": "graphics/portrait/portrait_Eirika_tileset.png"
+        }
+      ]
+    },
+    {
+      "id": "paths.title-visual",
+      "surface": "surface.title-visual",
+      "include": [
+        {
+          "kind": "exact",
+          "path": "graphics/titlescreen/title_main_background_1.png"
+        },
+        {
+          "kind": "exact",
+          "path": "graphics/titlescreen/title_main_background_2.png"
+        },
+        {
+          "kind": "exact",
+          "path": "graphics/titlescreen/title_main_background.map.bin"
+        },
+        {
+          "kind": "exact",
+          "path": "graphics/titlescreen/title_main_background.pal"
+        },
+        {
+          "kind": "exact",
+          "path": "graphics/titlescreen/title_dragon_foreground.png"
+        },
+        {
+          "kind": "exact",
+          "path": "graphics/titlescreen/title_dragon_foreground.map.bin"
+        },
+        {
+          "kind": "exact",
+          "path": "graphics/titlescreen/title_fire_emblem_logo.png"
+        },
+        {
+          "kind": "exact",
+          "path": "graphics/titlescreen/title_logos.png"
+        },
+        {
+          "kind": "exact",
+          "path": "graphics/titlescreen/title_press_start.pal"
+        },
+        {
+          "kind": "exact",
+          "path": "graphics/titlescreen/title_copyright.pal"
+        },
+        {
+          "kind": "exact",
+          "path": "graphics/titlescreen/title_sacred_stones_banner.pal"
+        }
+      ],
+      "exclude": []
+    },
+    {
+      "id": "paths.banim-package",
+      "surface": "surface.banim-package",
+      "include": [
+        {
+          "kind": "exact",
+          "path": "assets/banim/lorm_sp1/package.json"
+        },
+        {
+          "kind": "exact",
+          "path": "assets/banim/lorm_sp1/script.txt"
+        },
+        {
+          "kind": "exact",
+          "path": "graphics/banim/banim_lorm_sp1_sheet_0.png"
+        }
+      ],
+      "exclude": []
+    },
+    {
+      "id": "paths.portrait-package",
+      "surface": "surface.portrait-package",
+      "include": [
+        {
+          "kind": "exact",
+          "path": "assets/portraits/eirika/eirika.png"
+        },
+        {
+          "kind": "exact",
+          "path": "assets/portraits/eirika/metadata.json"
+        },
+        {
+          "kind": "exact",
+          "path": "assets/portraits/eirika/eirika.pal"
+        },
+        {
+          "kind": "exact",
+          "path": "graphics/portrait/portrait_Eirika_chibi.png"
+        },
+        {
+          "kind": "exact",
+          "path": "graphics/portrait/portrait_Eirika_mouth.png"
+        },
+        {
+          "kind": "exact",
+          "path": "graphics/portrait/portrait_Eirika_palette.agbpal"
+        },
+        {
+          "kind": "exact",
+          "path": "graphics/portrait/portrait_Eirika_tileset.png"
+        }
+      ],
+      "exclude": []
+    },
+    {
+      "id": "paths.asset-source",
+      "surface": "surface.asset-source",
+      "include": [
+        {
+          "kind": "prefix",
+          "path": "assets/"
+        }
+      ],
+      "exclude": [
+        {
+          "kind": "exact",
+          "path": "assets/banim/lorm_sp1/package.json"
+        },
+        {
+          "kind": "exact",
+          "path": "assets/banim/lorm_sp1/script.txt"
+        },
+        {
+          "kind": "exact",
+          "path": "assets/portraits/eirika/eirika.png"
+        },
+        {
+          "kind": "exact",
+          "path": "assets/portraits/eirika/metadata.json"
+        },
+        {
+          "kind": "exact",
+          "path": "assets/portraits/eirika/eirika.pal"
+        }
+      ]
+    },
+    {
+      "id": "paths.preview",
+      "surface": "surface.preview",
+      "include": [
+        {
+          "kind": "prefix",
+          "path": "preview/"
+        }
+      ],
+      "exclude": []
+    }
+  ],
+  "exclusions": [
+    {
+      "id": "exclude.external-gitlink",
+      "include": [
+        {
+          "kind": "exact",
+          "path": "mgfembp"
+        }
+      ],
+      "reason": "A gitlink change requires explicit submodule provenance and the broader combined Build; this graph cannot infer nested ownership.",
+      "fail_closed": true,
+      "applies_to": "gitlink"
+    },
+    {
+      "id": "exclude.codeowners-external-enforcement",
+      "include": [
+        {
+          "kind": "exact",
+          "path": ".github/CODEOWNERS"
+        }
+      ],
+      "reason": "CODEOWNERS is consumed by GitHub external enforcement and has no deterministic in-repository validator.",
+      "fail_closed": true,
+      "applies_to": "external-enforcement"
+    }
+  ]
+}

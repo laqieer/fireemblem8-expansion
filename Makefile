@@ -1,3 +1,36 @@
+# This convenience target assumes a trusted Make invocation. MAKEFILES and
+# --eval run before this file; use the isolated Python entrypoint for a boundary
+# established before Make starts. The goal below bypasses normal build includes.
+ifneq (,$(filter-out default undefined,$(origin MAKECMDGOALS)))
+$(error MAKECMDGOALS must remain owned by GNU Make, got origin=$(origin MAKECMDGOALS) value='$(MAKECMDGOALS)')
+endif
+
+ifneq (,$(filter validation-ownership-check,$(MAKECMDGOALS)))
+ifneq ($(strip $(MAKECMDGOALS)),validation-ownership-check)
+$(error validation-ownership-check must be invoked as the sole Make goal)
+endif
+  override _VALIDATION_OWNERSHIP_FLAGS := \
+	$(strip $(MAKEFLAGS) $(MFLAGS) $(GNUMAKEFLAGS))
+  override _VALIDATION_OWNERSHIP_UNSAFE_FLAGS := \
+	$(filter-out j% -j% --jobserver-auth=% --jobserver-fds=% \
+		--no-print-directory,$(_VALIDATION_OWNERSHIP_FLAGS))
+ifneq ($(_VALIDATION_OWNERSHIP_UNSAFE_FLAGS),)
+$(error validation-ownership-check rejects Make execution controls: $(_VALIDATION_OWNERSHIP_UNSAFE_FLAGS))
+endif
+ifneq ($(strip $(MAKEOVERRIDES)),)
+$(error validation-ownership-check rejects Make variable overrides: $(MAKEOVERRIDES))
+endif
+ifeq ($(origin MAKEOVERRIDES),command line)
+$(error validation-ownership-check rejects Make command-line MAKEOVERRIDES)
+endif
+
+validation-ownership-check:
+	@/usr/bin/python3 -I -S -B scripts/validation_ownership/isolated_launcher.py \
+		check --repository-root "$(CURDIR)" > /dev/null
+
+.PHONY: validation-ownership-check
+else
+
 #### Tools ####
 
 ifeq ($(OS),Windows_NT)
@@ -754,7 +787,8 @@ codeql-fanalyzer-test:
 
 MAKEDEP = mkdir -p $(DEPS_DIR)/$(dir $*) && $(CPP) $(CPPFLAGS) $< -MM -MG -MT $*.o > $(DEPS_DIR)/$*.d
 
-MAKECMDGOALS_NODEP := clean tag codeql-alerts-test codeql-fanalyzer-test $(MODERN_GOALS) \
+MAKECMDGOALS_NODEP := clean tag codeql-alerts-test codeql-fanalyzer-test \
+	validation-ownership-check $(MODERN_GOALS) \
 	game-localization-validate game-localization-generate \
 	game-localization-check game-localization-test game-localization-budget \
 	game-localization-leakage-audit game-localization-leakage-check \
@@ -881,3 +915,5 @@ endif
 
 # debug print, to use, call "make print-(your label here)"
 print-% : ; $(info $* is a $(flavor $*) variable set to [$($*)]) @true
+
+endif

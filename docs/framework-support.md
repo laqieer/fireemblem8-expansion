@@ -282,13 +282,13 @@ surface remains bounded by its live reference and evidence report.
   `FE8_ITEM_ID_CAP>=0xCE`. The mechanics registry has typed callbacks, eight
   slots, copied key/label storage, deterministic order, explicit error codes,
   and a reentrancy guard. Debug and release both run enabled and default-disabled runtime negatives;
-  the content profile rides gates 20-21 of the current
+  the content profile rides gates 22-23 of the current
   `scripts/upstream_port/verify.py` sequence. See
   [`starter_features.md`](starter_features.md).
 - **#10 typed IDs:** DEFAULT committed and ACTIVE build-local contracts,
   consumer census, and modern-only item cap `0xCE` pilot are supported; its
-  debug/release runtime commands are gates 20-21 of the current-master
-  28-gate upstream-port verifier; gate 22 builds the all-locales/all-features
+  debug/release runtime commands are gates 22-23 of the current-master
+  30-gate upstream-port verifier; gate 24 builds the all-locales/all-features
   patch profile once and runs the required map-menu presentation scenario.
   There is no class/chapter/unit/character
   widening

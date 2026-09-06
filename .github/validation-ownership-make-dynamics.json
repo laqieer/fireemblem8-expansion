@@ -1,0 +1,1441 @@
+{
+  "schema_version": 5,
+  "contracts": [
+    {
+      "id": "host-uname",
+      "expression": "$(shell uname)",
+      "tool": "Makefile",
+      "input_files": [],
+      "input_variables": [],
+      "automatic_inputs": [],
+      "resolved_value": "Linux",
+      "command_regex": "^uname$",
+      "owning_evidence_ids": [
+        "owner.compile-modern",
+        "owner.link-modern",
+        "owner.negative-localization",
+        "owner.runtime-modern"
+      ]
+    },
+    {
+      "id": "generated-chapter-objectives-enablement",
+      "expression": "$(shell $(GENERATED_DATA_CHAPTEROBJECTIVES_ENABLE_DISCOVERY) --source \"$(GENERATED_DATA_CHAPTEROBJECTIVES_SOURCE)\" 2>&1)",
+      "tool": "scripts/generated_data/chapterobjectives/enabled.py",
+      "input_files": [
+        "src/data/chapter_objectives.json"
+      ],
+      "input_variables": [
+        "GENERATED_DATA_CHAPTEROBJECTIVES_ENABLE_DISCOVERY",
+        "GENERATED_DATA_CHAPTEROBJECTIVES_SOURCE",
+        "PYTHON"
+      ],
+      "automatic_inputs": [],
+      "resolved_value": "0",
+      "command_regex": "^python3 -m scripts\\.generated_data\\.chapterobjectives\\.enabled --source \"[^\"]+\" 2>&1$",
+      "owning_evidence_ids": [
+        "owner.compile-modern",
+        "owner.link-modern",
+        "owner.negative-localization",
+        "owner.runtime-modern"
+      ]
+    },
+    {
+      "id": "modern-libgcc-directory",
+      "expression": "$(shell p=$$(\"$(MODERN_CC)\" $(MODERN_BINUTILS_FLAG) $(MODERN_ARCH_FLAGS) -print-libgcc-file-name 2>/dev/null) && dirname \"$$p\")",
+      "tool": "scripts/shiftcheck/modern_toolchain.sh",
+      "input_files": [],
+      "input_variables": [
+        "MODERN_ARCH_FLAGS",
+        "MODERN_BINUTILS_FLAG",
+        "MODERN_CC"
+      ],
+      "automatic_inputs": [],
+      "resolved_value": null,
+      "command_regex": "^p=\\$\\(\"[^\"]+\" [^\\n]* -print-libgcc-file-name 2>/dev/null\\) && dirname \"\\$p\"$",
+      "owning_evidence_ids": [
+        "owner.link-modern",
+        "owner.negative-localization",
+        "owner.runtime-modern"
+      ]
+    },
+    {
+      "id": "modern-libc-directory",
+      "expression": "$(shell p=$$(\"$(MODERN_CC)\" $(MODERN_BINUTILS_FLAG) $(MODERN_ARCH_FLAGS) -print-file-name=libc.a 2>/dev/null) && dirname \"$$p\")",
+      "tool": "scripts/shiftcheck/modern_toolchain.sh",
+      "input_files": [],
+      "input_variables": [
+        "MODERN_ARCH_FLAGS",
+        "MODERN_BINUTILS_FLAG",
+        "MODERN_CC"
+      ],
+      "automatic_inputs": [],
+      "resolved_value": null,
+      "command_regex": "^p=\\$\\(\"[^\"]+\" [^\\n]* -print-file-name=libc\\.a 2>/dev/null\\) && dirname \"\\$p\"$",
+      "owning_evidence_ids": [
+        "owner.link-modern",
+        "owner.negative-localization",
+        "owner.runtime-modern"
+      ]
+    },
+    {
+      "id": "banim-scaninc-inputs",
+      "expression": "$(shell $(SCANINC) -I include -I \"\" $*.s)",
+      "tool": "tools/scaninc/scaninc.cpp",
+      "input_files": [
+        "tools/scaninc/Makefile"
+      ],
+      "input_variables": [
+        "SCANINC"
+      ],
+      "automatic_inputs": [
+        "$*.s"
+      ],
+      "resolved_value": null,
+      "command_regex": "^tools/scaninc/scaninc -I include -I \"\" [^\\n]+\\.[cs]$",
+      "owning_evidence_ids": [
+        "owner.link-modern",
+        "owner.negative-localization",
+        "owner.runtime-modern"
+      ]
+    },
+    {
+      "id": "scaninc-build-dry-run-recipe",
+      "expression": "$(shell <scaninc-build-dry-run-recipe>)",
+      "tool": "tools/scaninc/Makefile",
+      "input_files": [
+        "tools/scaninc/asm_file.cpp",
+        "tools/scaninc/c_file.cpp",
+        "tools/scaninc/scaninc.cpp",
+        "tools/scaninc/source_file.cpp"
+      ],
+      "input_variables": [
+        "MAKE"
+      ],
+      "automatic_inputs": [],
+      "resolved_value": "",
+      "command_regex": "^/usr/bin/make -C tools/scaninc$",
+      "owning_evidence_ids": [
+        "owner.compile-modern",
+        "owner.link-modern",
+        "owner.negative-localization",
+        "owner.runtime-modern"
+      ]
+    },
+    {
+      "id": "preproc-build-dry-run-recipe",
+      "expression": "$(shell <preproc-build-dry-run-recipe>)",
+      "tool": "tools/preproc/Makefile",
+      "input_files": [
+        "tools/preproc/preproc.cpp"
+      ],
+      "input_variables": [
+        "MAKE"
+      ],
+      "automatic_inputs": [],
+      "resolved_value": "",
+      "command_regex": "^/usr/bin/make -C tools/preproc$",
+      "owning_evidence_ids": [
+        "owner.compile-modern",
+        "owner.link-modern",
+        "owner.negative-localization",
+        "owner.runtime-modern"
+      ]
+    },
+    {
+      "id": "scaninc-check-dry-run-recipe",
+      "expression": "$(shell <scaninc-check-dry-run-recipe>)",
+      "tool": "tools/scaninc/Makefile",
+      "input_files": [],
+      "input_variables": [
+        "MODERN_SCANINC"
+      ],
+      "automatic_inputs": [],
+      "resolved_value": "",
+      "command_regex": "^if \\[ ! -x \"tools/scaninc/scaninc\" \\]; then[\\s\\S]+fi$",
+      "owning_evidence_ids": [
+        "owner.compile-modern",
+        "owner.link-modern",
+        "owner.negative-localization",
+        "owner.runtime-modern"
+      ]
+    },
+    {
+      "id": "generated-item-cap-resolution",
+      "expression": "$(shell FE8_ITEM_ID_CAP=$(GENERATED_DATA_ITEM_CAP_SHELL_ARG) $(PYTHON) -c \"import scripts.generated_data.idspace as i; print('0x%02X' % i.resolve_item_id_cap())\" 2>/dev/null)",
+      "tool": "scripts/generated_data/idspace.py",
+      "input_files": [
+        "config.mk"
+      ],
+      "input_variables": [
+        "FE8_ITEM_ID_CAP",
+        "GENERATED_DATA_ITEM_CAP_SHELL_ARG",
+        "PYTHON"
+      ],
+      "automatic_inputs": [],
+      "resolved_value": "0xCD",
+      "command_regex": "^FE8_ITEM_ID_CAP='[^'\\n]*' python3 -c \"import scripts\\.generated_data\\.idspace as i; print\\('0x%02X' % i\\.resolve_item_id_cap\\(\\)\\)\" 2>/dev/null$",
+      "owning_evidence_ids": [
+        "owner.compile-modern",
+        "owner.consumer-generated",
+        "owner.drift-generated",
+        "owner.link-modern",
+        "owner.negative-localization",
+        "owner.runtime-modern"
+      ]
+    },
+    {
+      "id": "generated-item-default-cap",
+      "expression": "$(shell $(PYTHON) -c \"import scripts.generated_data.idspace as i; print('0x%02X' % i.ITEM_DEFAULT_CAP)\" 2>/dev/null)",
+      "tool": "scripts/generated_data/idspace.py",
+      "input_files": [
+        "config.mk"
+      ],
+      "input_variables": [
+        "PYTHON"
+      ],
+      "automatic_inputs": [],
+      "resolved_value": "0xCD",
+      "command_regex": "^python3 -c \"import scripts\\.generated_data\\.idspace as i; print\\('0x%02X' % i\\.ITEM_DEFAULT_CAP\\)\" 2>/dev/null$",
+      "owning_evidence_ids": [
+        "owner.compile-modern",
+        "owner.consumer-generated",
+        "owner.drift-generated",
+        "owner.link-modern",
+        "owner.negative-localization",
+        "owner.runtime-modern"
+      ]
+    },
+    {
+      "id": "generated-support-symbols",
+      "expression": "$(shell $(PYTHON) -c \"import json; d = json.load(open('src/data/supports.json')); print(' '.join(sorted(r['symbol'] for r in d['records'])))\")",
+      "tool": "scripts/generated_data/supports/generate.py",
+      "input_files": [
+        "src/data/supports.json"
+      ],
+      "input_variables": [
+        "PYTHON"
+      ],
+      "automatic_inputs": [],
+      "resolved_value": null,
+      "command_regex": "^python3 -c \"import json; d = json\\.load\\(open\\('src/data/supports\\.json'\\)\\); print\\(' '\\.join\\(sorted\\(r\\['symbol'\\] for r in d\\['records'\\]\\)\\)\\)\"$",
+      "owning_evidence_ids": [
+        "owner.compile-modern",
+        "owner.consumer-generated",
+        "owner.drift-generated",
+        "owner.link-modern",
+        "owner.negative-localization",
+        "owner.runtime-modern"
+      ]
+    },
+    {
+      "id": "generated-ch2-unit-symbols",
+      "expression": "$(shell $(PYTHON) -c \"import json; d = json.load(open('src/data/ch2_units.json')); print(' '.join(g['symbol'] for g in d['groups']))\")",
+      "tool": "scripts/generated_data/units/generate.py",
+      "input_files": [
+        "src/data/ch2_units.json"
+      ],
+      "input_variables": [
+        "PYTHON"
+      ],
+      "automatic_inputs": [],
+      "resolved_value": null,
+      "command_regex": "^python3 -c \"import json; d = json\\.load\\(open\\('src/data/ch2_units\\.json'\\)\\); print\\(' '\\.join\\(g\\['symbol'\\] for g in d\\['groups'\\]\\)\\)\"$",
+      "owning_evidence_ids": [
+        "owner.compile-modern",
+        "owner.consumer-generated",
+        "owner.drift-generated",
+        "owner.link-modern",
+        "owner.negative-localization",
+        "owner.runtime-modern"
+      ]
+    },
+    {
+      "id": "generated-ch2-trap-symbols",
+      "expression": "$(shell $(PYTHON) -c \"import json; d = json.load(open('src/data/ch2_traps.json')); print(' '.join(t['symbol'] for t in d['traps']))\")",
+      "tool": "scripts/generated_data/traps/generate.py",
+      "input_files": [
+        "src/data/ch2_traps.json"
+      ],
+      "input_variables": [
+        "PYTHON"
+      ],
+      "automatic_inputs": [],
+      "resolved_value": null,
+      "command_regex": "^python3 -c \"import json; d = json\\.load\\(open\\('src/data/ch2_traps\\.json'\\)\\); print\\(' '\\.join\\(t\\['symbol'\\] for t in d\\['traps'\\]\\)\\)\"$",
+      "owning_evidence_ids": [
+        "owner.compile-modern",
+        "owner.consumer-generated",
+        "owner.drift-generated",
+        "owner.link-modern",
+        "owner.negative-localization",
+        "owner.runtime-modern"
+      ]
+    },
+    {
+      "id": "generated-ch2-shop-symbols",
+      "expression": "$(shell $(PYTHON) -c \"import json; d = json.load(open('src/data/ch2_shops.json')); print(' '.join(s['symbol'] for s in d['shops']))\")",
+      "tool": "scripts/generated_data/shops/generate.py",
+      "input_files": [
+        "src/data/ch2_shops.json"
+      ],
+      "input_variables": [
+        "PYTHON"
+      ],
+      "automatic_inputs": [],
+      "resolved_value": null,
+      "command_regex": "^python3 -c \"import json; d = json\\.load\\(open\\('src/data/ch2_shops\\.json'\\)\\); print\\(' '\\.join\\(s\\['symbol'\\] for s in d\\['shops'\\]\\)\\)\"$",
+      "owning_evidence_ids": [
+        "owner.compile-modern",
+        "owner.consumer-generated",
+        "owner.drift-generated",
+        "owner.link-modern",
+        "owner.negative-localization",
+        "owner.runtime-modern"
+      ]
+    },
+    {
+      "id": "generated-ch2-eventlist-symbols",
+      "expression": "$(shell $(PYTHON) -c \"import json; d = json.load(open('src/data/ch2_eventlists.json')); print(' '.join([l['symbol'] for l in d['lists']] + [d['tutorial']['symbol'], d['manifest']['symbol']]))\")",
+      "tool": "scripts/generated_data/eventlists/generate.py",
+      "input_files": [
+        "src/data/ch2_eventlists.json"
+      ],
+      "input_variables": [
+        "PYTHON"
+      ],
+      "automatic_inputs": [],
+      "resolved_value": null,
+      "command_regex": "^python3 -c \"import json; d = json\\.load\\(open\\('src/data/ch2_eventlists\\.json'\\)\\); print\\(' '\\.join\\(\\[l\\['symbol'\\] for l in d\\['lists'\\]\\] \\+ \\[d\\['tutorial'\\]\\['symbol'\\], d\\['manifest'\\]\\['symbol'\\]\\]\\)\\)\"$",
+      "owning_evidence_ids": [
+        "owner.compile-modern",
+        "owner.consumer-generated",
+        "owner.drift-generated",
+        "owner.link-modern",
+        "owner.negative-localization",
+        "owner.runtime-modern"
+      ]
+    },
+    {
+      "id": "generated-terrain-stat-symbols",
+      "expression": "$(shell $(PYTHON) -c \"import json; d = json.load(open('src/data/terrainstats.json')); print(' '.join(t['symbol'] for t in d['tables']))\")",
+      "tool": "scripts/generated_data/terrainstats/generate.py",
+      "input_files": [
+        "src/data/terrainstats.json"
+      ],
+      "input_variables": [
+        "PYTHON"
+      ],
+      "automatic_inputs": [],
+      "resolved_value": null,
+      "command_regex": "^python3 -c \"import json; d = json\\.load\\(open\\('src/data/terrainstats\\.json'\\)\\); print\\(' '\\.join\\(t\\['symbol'\\] for t in d\\['tables'\\]\\)\\)\"$",
+      "owning_evidence_ids": [
+        "owner.compile-modern",
+        "owner.consumer-generated",
+        "owner.drift-generated",
+        "owner.link-modern",
+        "owner.negative-localization",
+        "owner.runtime-modern"
+      ]
+    },
+    {
+      "id": "generated-movement-cost-symbols",
+      "expression": "$(shell $(PYTHON) -c \"import json; d = json.load(open('src/data/movecost.json')); print(' '.join(p[slot]['symbol'] for p in d['profiles'] for slot in ('normal', 'rain', 'snow') if p.get(slot)))\")",
+      "tool": "scripts/generated_data/movecost/generate.py",
+      "input_files": [
+        "src/data/movecost.json"
+      ],
+      "input_variables": [
+        "PYTHON"
+      ],
+      "automatic_inputs": [],
+      "resolved_value": null,
+      "command_regex": "^python3 -c \"import json; d = json\\.load\\(open\\('src/data/movecost\\.json'\\)\\);[ \\n]+print\\(' '\\.join\\(p\\[slot\\]\\['symbol'\\] for p in d\\['profiles'\\] for slot in \\('normal', 'rain', 'snow'\\) if p\\.get\\(slot\\)\\)\\)\"$",
+      "owning_evidence_ids": [
+        "owner.compile-modern",
+        "owner.consumer-generated",
+        "owner.drift-generated",
+        "owner.link-modern",
+        "owner.negative-localization",
+        "owner.runtime-modern"
+      ]
+    },
+    {
+      "id": "modern-text-shift-number-check",
+      "expression": "$(shell printf '%s\\n' '$(MODERN_TEXT_SHIFT)' | python3 -c \"import re, sys; v = sys.stdin.read().strip(); sys.stdout.write('ok' if re.fullmatch(r'(0x[0-9a-fA-F]+|[0-9]+)', v) else '')\")",
+      "tool": "modern.mk",
+      "input_files": [],
+      "input_variables": [
+        "MODERN_TEXT_SHIFT"
+      ],
+      "automatic_inputs": [],
+      "resolved_value": null,
+      "command_regex": "^printf '%s\\\\n' '[^'\\n]*' \\| python3 -c \"import re, sys; v = sys\\.stdin\\.read\\(\\)\\.strip\\(\\); sys\\.stdout\\.write\\('ok' if re\\.fullmatch\\(r'\\(0x\\[0-9a-fA-F\\]\\+\\|\\[0-9\\]\\+\\)', v\\) else ''\\)\"$",
+      "owning_evidence_ids": [
+        "owner.compile-modern",
+        "owner.link-modern",
+        "owner.negative-localization",
+        "owner.runtime-modern"
+      ]
+    },
+    {
+      "id": "modern-text-shift-alignment-check",
+      "expression": "$(shell printf '%s\\n' '$(MODERN_TEXT_SHIFT)' | python3 -c \"import sys; v = sys.stdin.read().strip(); sys.stdout.write('ok' if int(v, 0) % 4 == 0 else '')\")",
+      "tool": "modern.mk",
+      "input_files": [],
+      "input_variables": [
+        "MODERN_TEXT_SHIFT"
+      ],
+      "automatic_inputs": [],
+      "resolved_value": null,
+      "command_regex": "^printf '%s\\\\n' '[^'\\n]*' \\| python3 -c \"import sys; v = sys\\.stdin\\.read\\(\\)\\.strip\\(\\); sys\\.stdout\\.write\\('ok' if int\\(v, 0\\) % 4 == 0 else ''\\)\"$",
+      "owning_evidence_ids": [
+        "owner.compile-modern",
+        "owner.link-modern",
+        "owner.negative-localization",
+        "owner.runtime-modern"
+      ]
+    },
+    {
+      "id": "legacy-text-source-discovery",
+      "expression": "$(shell find $(TEXT_DIR) -type f -name \"*.txt\")",
+      "tool": "Makefile",
+      "input_files": [],
+      "input_variables": [
+        "TEXT_DIR"
+      ],
+      "automatic_inputs": [],
+      "resolved_value": null,
+      "command_regex": "^find texts -type f -name [\"']?\\*\\.txt[\"']?$",
+      "owning_evidence_ids": [
+        "owner.compile-modern",
+        "owner.link-modern",
+        "owner.negative-localization",
+        "owner.runtime-modern"
+      ]
+    },
+    {
+      "id": "legacy-text-dry-run-recipe",
+      "expression": "$(shell <legacy-text-dry-run-recipe>)",
+      "tool": "scripts/texttools/textprocess.py",
+      "input_files": [
+        "texts/textdefs.txt",
+        "texts/texts.txt"
+      ],
+      "input_variables": [
+        "PYTHON"
+      ],
+      "automatic_inputs": [],
+      "resolved_value": "",
+      "command_regex": "^python3 scripts/texttools/textprocess\\.py texts/texts\\.txt texts/textdefs\\.txt src/msg_data\\.c include/constants/msg\\.h utf8$",
+      "owning_evidence_ids": [
+        "owner.compile-modern",
+        "owner.link-modern",
+        "owner.negative-localization",
+        "owner.runtime-modern"
+      ]
+    },
+    {
+      "id": "asset-tool-source-discovery",
+      "expression": "$(shell find scripts/assets -type f -name '*.py' -print)",
+      "tool": "assets.mk",
+      "input_files": [],
+      "input_variables": [],
+      "automatic_inputs": [],
+      "resolved_value": null,
+      "command_regex": "^find scripts/assets -type f -name [\"']?\\*\\.py[\"']? -print$",
+      "owning_evidence_ids": [
+        "owner.compile-modern",
+        "owner.link-modern",
+        "owner.negative-localization",
+        "owner.runtime-modern"
+      ]
+    },
+    {
+      "id": "asset-include-remake-directory",
+      "expression": "$(shell <asset-include-remake-mkdir>)",
+      "tool": "assets.mk",
+      "input_files": [],
+      "input_variables": [
+        "ASSET_DISCOVERY_MK",
+        "ASSET_OUTPUT_DIR"
+      ],
+      "automatic_inputs": [],
+      "resolved_value": null,
+      "command_regex": "^mkdir -p \"build/[A-Za-z0-9_./-]+/\"$",
+      "owning_evidence_ids": [
+        "owner.compile-modern",
+        "owner.link-modern",
+        "owner.negative-localization",
+        "owner.runtime-modern"
+      ]
+    },
+    {
+      "id": "generated-include-remake-directory",
+      "expression": "$(shell <generated-include-remake-directory>)",
+      "tool": "generated_data.mk",
+      "input_files": [],
+      "input_variables": [
+        "GENERATED_DATA_OUT_DIR"
+      ],
+      "automatic_inputs": [
+        "$(@D)"
+      ],
+      "resolved_value": null,
+      "command_regex": "^mkdir -p build/[A-Za-z0-9_./-]+$",
+      "owning_evidence_ids": [
+        "owner.compile-modern",
+        "owner.consumer-generated",
+        "owner.drift-generated",
+        "owner.generator-generated",
+        "owner.host-generated",
+        "owner.link-modern",
+        "owner.negative-localization",
+        "owner.runtime-modern"
+      ]
+    },
+    {
+      "id": "generated-input-dependency-remakes",
+      "expression": "$(shell <generated-input-dependency-remakes>)",
+      "tool": "generated_data.mk",
+      "input_files": [
+        "scripts/generated_data/autoplaystrategies/deps.py",
+        "scripts/generated_data/chapterobjectives/deps.py",
+        "scripts/generated_data/eventlists/deps.py",
+        "src/data/autoplay_strategies.json",
+        "src/data/chapter_objectives.json"
+      ],
+      "input_variables": [
+        "GENERATED_DATA_OUT_DIR",
+        "PYTHON"
+      ],
+      "automatic_inputs": [
+        "$@"
+      ],
+      "resolved_value": null,
+      "command_regex": "^python3 -m scripts\\.generated_data\\.(?:autoplaystrategies|chapterobjectives|eventlists)\\.deps[\\s\\S]+--depfile \"build/generated/data/(?:autoplaystrategies|chapterobjectives|eventlists)\\.inputs\\.mk\"$",
+      "owning_evidence_ids": [
+        "owner.compile-modern",
+        "owner.consumer-generated",
+        "owner.drift-generated",
+        "owner.generator-generated",
+        "owner.host-generated",
+        "owner.link-modern",
+        "owner.negative-localization",
+        "owner.runtime-modern"
+      ]
+    },
+    {
+      "id": "generated-eventlist-validation-dry-run-recipe",
+      "expression": "$(shell <generated-eventlist-validation-dry-run-recipe>)",
+      "tool": "generated_data.mk",
+      "input_files": [
+        "scripts/generated_data/eventlists/generate.py"
+      ],
+      "input_variables": [
+        "GENERATED_DATA_CH2_EVENTLISTS_C",
+        "GENERATED_DATA_CH2_EVENTLISTS_VALIDATED_STAMP",
+        "MAKE"
+      ],
+      "automatic_inputs": [],
+      "resolved_value": "",
+      "command_regex": "^if \\[ ! -e \"build/generated/data/data_ch2_eventlists\\.c\" \\]; then[\\s\\S]+(?:/bin/vo-make|/usr/bin/make) --no-print-directory \"build/generated/data/\\.ch2-eventlists\\.validated\";[\\s\\S]+fi$",
+      "owning_evidence_ids": [
+        "owner.compile-modern",
+        "owner.consumer-generated",
+        "owner.drift-generated",
+        "owner.generator-generated",
+        "owner.host-generated",
+        "owner.link-modern",
+        "owner.negative-localization",
+        "owner.runtime-modern"
+      ]
+    },
+    {
+      "id": "generated-default-goal-dry-run-recipe",
+      "expression": "$(shell <generated-default-goal-dry-run-recipe>)",
+      "tool": "generated_data.mk",
+      "input_files": [
+        "Makefile"
+      ],
+      "input_variables": [
+        "MAKE"
+      ],
+      "automatic_inputs": [],
+      "resolved_value": "",
+      "command_regex": "^probe=\\$\\((?:/bin/vo-make|/usr/bin/make) --no-print-directory -rR -p __generated_data_link_check_default_goal_probe__[\\s\\S]+bare 'make -n'[\\s\\S]+fi$",
+      "owning_evidence_ids": [
+        "owner.consumer-generated",
+        "owner.link-modern",
+        "owner.negative-localization",
+        "owner.runtime-modern"
+      ]
+    },
+    {
+      "id": "generated-link-check-dry-run-recipe",
+      "expression": "$(shell <generated-link-check-dry-run-recipe>)",
+      "tool": "generated_data.mk",
+      "input_files": [
+        "ldscript.txt"
+      ],
+      "input_variables": [
+        "MAKE"
+      ],
+      "automatic_inputs": [],
+      "resolved_value": "",
+      "command_regex": "^(?:(?:backup=generated-data-link-check\\.objects_lst\\.backup\\.tmp;|rm -f build/generated/data/data_classes\\.c build/generated/data/data_items\\.c)[\\s\\S]+|(?:/bin/vo-make|/usr/bin/make) --no-print-directory -j4 build/generated/data/[\\s\\S]+)$",
+      "owning_evidence_ids": [
+        "owner.consumer-generated",
+        "owner.link-modern",
+        "owner.negative-localization",
+        "owner.runtime-modern"
+      ]
+    },
+    {
+      "id": "modern-output-dry-run-directory",
+      "expression": "$(shell <modern-output-dry-run-directory>)",
+      "tool": "modern.mk",
+      "input_files": [],
+      "input_variables": [
+        "MODERN_BUILD_ROOT",
+        "MODERN_OUTPUT_DIR"
+      ],
+      "automatic_inputs": [
+        "$(@D)"
+      ],
+      "resolved_value": "",
+      "command_regex": "^mkdir -p \"build/[A-Za-z0-9_./-]*[^/]\"$",
+      "owning_evidence_ids": [
+        "owner.compile-modern",
+        "owner.link-modern",
+        "owner.negative-localization",
+        "owner.runtime-modern"
+      ]
+    },
+    {
+      "id": "legacy-dependency-dry-run-recipes",
+      "expression": "$(shell <legacy-dependency-dry-run-recipes>)",
+      "tool": "Makefile",
+      "input_files": [],
+      "input_variables": [
+        "CPP",
+        "CPPFLAGS",
+        "DEPS_DIR"
+      ],
+      "automatic_inputs": [
+        "$*",
+        "$<"
+      ],
+      "resolved_value": "",
+      "command_regex": "^mkdir -p \\.dep/[A-Za-z0-9_./-]+/ && [A-Za-z0-9_./+-]+ -E [^\\n]+ -MM -MG -MT [A-Za-z0-9_./-]+\\.o > \\.dep/[A-Za-z0-9_./-]+\\.d$",
+      "owning_evidence_ids": [
+        "owner.compile-modern",
+        "owner.link-modern",
+        "owner.negative-localization",
+        "owner.runtime-modern"
+      ]
+    },
+    {
+      "id": "modern-header-scan-dry-run-recipes",
+      "expression": "$(shell <modern-header-scan-dry-run-recipes>)",
+      "tool": "modern.mk",
+      "input_files": [
+        "include/global.h"
+      ],
+      "input_variables": [
+        "MODERN_CC",
+        "MODERN_CFLAGS",
+        "MODERN_OUTPUT_DIR"
+      ],
+      "automatic_inputs": [
+        "$<",
+        "$@"
+      ],
+      "resolved_value": "",
+      "command_regex": "^\"arm-none-eabi-gcc\"[\\s\\S]+ -MM -MG -MT \"build/[^\"]+\\.o\" \"src/[^\"]+\\.c\" > \"build/[^\"]+\\.headers\\.d\\.tmp\" \\|\\| \\{[\\s\\S]+\\}$",
+      "owning_evidence_ids": [
+        "owner.compile-modern",
+        "owner.link-modern",
+        "owner.negative-localization",
+        "owner.runtime-modern"
+      ]
+    },
+    {
+      "id": "modern-header-filter-dry-run-recipes",
+      "expression": "$(shell <modern-header-filter-dry-run-recipes>)",
+      "tool": "modern.mk",
+      "input_files": [],
+      "input_variables": [
+        "MODERN_OUTPUT_DIR"
+      ],
+      "automatic_inputs": [
+        "$<",
+        "$@"
+      ],
+      "resolved_value": "",
+      "command_regex": "^sed -E '[^'\\n]+' \"build/[^\"]+\\.headers\\.d\\.tmp\" > \"build/[^\"]+\\.headers\\.d\\.tmp2\" \\|\\| \\{[\\s\\S]+\\}$",
+      "owning_evidence_ids": [
+        "owner.compile-modern",
+        "owner.link-modern",
+        "owner.negative-localization",
+        "owner.runtime-modern"
+      ]
+    },
+    {
+      "id": "modern-header-clean-dry-run-recipes",
+      "expression": "$(shell <modern-header-clean-dry-run-recipes>)",
+      "tool": "modern.mk",
+      "input_files": [],
+      "input_variables": [
+        "MODERN_OUTPUT_DIR"
+      ],
+      "automatic_inputs": [
+        "$@"
+      ],
+      "resolved_value": "",
+      "command_regex": "^rm -f \"build/[^\"]+\\.headers\\.d\\.tmp\"$",
+      "owning_evidence_ids": [
+        "owner.compile-modern",
+        "owner.link-modern",
+        "owner.negative-localization",
+        "owner.runtime-modern"
+      ]
+    },
+    {
+      "id": "modern-header-move-dry-run-recipes",
+      "expression": "$(shell <modern-header-move-dry-run-recipes>)",
+      "tool": "modern.mk",
+      "input_files": [],
+      "input_variables": [
+        "MODERN_OUTPUT_DIR"
+      ],
+      "automatic_inputs": [
+        "$@"
+      ],
+      "resolved_value": "",
+      "command_regex": "^mv -f \"build/[^\"]+\\.headers\\.d\\.tmp2\" \"build/[^\"]+\\.headers\\.d\"$",
+      "owning_evidence_ids": [
+        "owner.compile-modern",
+        "owner.link-modern",
+        "owner.negative-localization",
+        "owner.runtime-modern"
+      ]
+    },
+    {
+      "id": "modern-asset-dependency-dry-run-recipes",
+      "expression": "$(shell <modern-asset-dependency-dry-run-recipes>)",
+      "tool": "modern.mk",
+      "input_files": [
+        "tools/scaninc/Makefile"
+      ],
+      "input_variables": [
+        "MODERN_OUTPUT_DIR",
+        "MODERN_SCANINC"
+      ],
+      "automatic_inputs": [
+        "$<",
+        "$@"
+      ],
+      "resolved_value": "",
+      "command_regex": "^assets=\\$\\(\"tools/scaninc/scaninc\"[\\s\\S]+ > \"build/[^\"]+\\.assets\\.d\\.tmp\"$",
+      "owning_evidence_ids": [
+        "owner.compile-modern",
+        "owner.link-modern",
+        "owner.negative-localization",
+        "owner.runtime-modern"
+      ]
+    },
+    {
+      "id": "modern-asset-dependency-move-dry-run-recipes",
+      "expression": "$(shell <modern-asset-dependency-move-dry-run-recipes>)",
+      "tool": "modern.mk",
+      "input_files": [],
+      "input_variables": [
+        "MODERN_OUTPUT_DIR"
+      ],
+      "automatic_inputs": [
+        "$@"
+      ],
+      "resolved_value": "",
+      "command_regex": "^mv -f \"build/[^\"]+\\.assets\\.d\\.tmp\" \"build/[^\"]+\\.assets\\.d\"$",
+      "owning_evidence_ids": [
+        "owner.compile-modern",
+        "owner.link-modern",
+        "owner.negative-localization",
+        "owner.runtime-modern"
+      ]
+    },
+    {
+      "id": "asset-selection-stamp-remake",
+      "expression": "$(shell <asset-selection-stamp-remake>)",
+      "tool": "assets.mk",
+      "input_files": [
+        "assets/manifest.json"
+      ],
+      "input_variables": [
+        "ASSET_MANIFEST",
+        "ASSET_OUTPUT_DIR",
+        "EXPANSION_CUSTOM_SPELL_EFFECTS",
+        "FE8_ITEM_ID_CAP"
+      ],
+      "automatic_inputs": [],
+      "resolved_value": null,
+      "command_regex": "^tmp=\"build/[A-Za-z0-9_./-]+\\.manifest-selection\\.\\$\\$\\.tmp\";[\\s\\S]+mv -f \"\\$tmp\" \"build/[A-Za-z0-9_./-]+\\.manifest-selection\"; \\\\\\nfi$",
+      "owning_evidence_ids": [
+        "owner.compile-modern",
+        "owner.link-modern",
+        "owner.negative-localization",
+        "owner.runtime-modern"
+      ]
+    },
+    {
+      "id": "asset-discovery-include-remake",
+      "expression": "$(shell <asset-discovery-include-remake>)",
+      "tool": "scripts/assets/__main__.py",
+      "input_files": [
+        "assets/manifest.json",
+        "scripts/assets/banim.py",
+        "scripts/assets/cli.py",
+        "scripts/assets/custom_spell.py",
+        "scripts/assets/manifest.py",
+        "scripts/assets/tmx.py"
+      ],
+      "input_variables": [
+        "ASSET_DISCOVERY_MK",
+        "ASSET_MANIFEST",
+        "EXPANSION_CUSTOM_SPELL_EFFECTS",
+        "FE8_ITEM_ID_CAP",
+        "PYTHON"
+      ],
+      "automatic_inputs": [],
+      "resolved_value": null,
+      "command_regex": "^python3 -m scripts\\.assets --custom-spell-effects \"[01]\" --item-id-cap \"0x[0-9A-F]{2}\" --manifest \"assets/manifest\\.json\" --discovery-makefile \"build/[A-Za-z0-9_./-]+\\.mk\" discovery-makefile$",
+      "owning_evidence_ids": [
+        "owner.compile-modern",
+        "owner.link-modern",
+        "owner.negative-localization",
+        "owner.runtime-modern"
+      ]
+    },
+    {
+      "id": "asset-manifest-include-remake",
+      "expression": "$(shell <asset-manifest-include-remake>)",
+      "tool": "scripts/assets/__main__.py",
+      "input_files": [
+        "assets/manifest.json",
+        "scripts/assets/banim.py",
+        "scripts/assets/cli.py",
+        "scripts/assets/custom_spell.py",
+        "scripts/assets/manifest.py",
+        "scripts/assets/tmx.py"
+      ],
+      "input_variables": [
+        "ASSET_MANIFEST",
+        "ASSET_OUTPUT_DIR",
+        "ASSET_SELECTION_STAMP",
+        "EXPANSION_CUSTOM_SPELL_EFFECTS",
+        "FE8_ITEM_ID_CAP",
+        "PYTHON"
+      ],
+      "automatic_inputs": [],
+      "resolved_value": null,
+      "command_regex": "^python3 -m scripts\\.assets --custom-spell-effects \"[01]\" --item-id-cap \"0x[0-9A-F]{2}\" --selection-stamp \"build/[A-Za-z0-9_./-]+\\.manifest-selection\" --manifest \"assets/manifest\\.json\" --out-dir \"build/[A-Za-z0-9_./-]+\" generate$",
+      "owning_evidence_ids": [
+        "owner.compile-modern",
+        "owner.link-modern",
+        "owner.negative-localization",
+        "owner.runtime-modern"
+      ]
+    },
+    {
+      "id": "modern-expansion-config-resolution",
+      "expression": "$(shell $(MODERN_EXPANSION_CONFIG_RUNNER) resolve <sealed-config-arguments> 2>&1)",
+      "tool": "scripts/modernize/expansion_config.py",
+      "input_files": [
+        "config.mk"
+      ],
+      "input_variables": [
+        "ASSET_MANIFEST",
+        "EXPANSION_AOE_REFERENCE",
+        "EXPANSION_AUTOPLAY_PLANNER",
+        "EXPANSION_AUTOPLAY_STRATEGIES",
+        "EXPANSION_BGM_CONTINUATION_POLICY",
+        "EXPANSION_BLUE_PHASE_DELEGATE",
+        "EXPANSION_BUILD_ID",
+        "EXPANSION_CASUAL_MODE",
+        "EXPANSION_CUSTOM_SPELL_EFFECTS",
+        "EXPANSION_DANGER_OVERLAY_MENU",
+        "EXPANSION_DEFAULT_LOCALE",
+        "EXPANSION_ENABLED_LOCALES",
+        "EXPANSION_HQ_MIXER",
+        "EXPANSION_LOCALIZED_TEXT_AUTO_WRAP",
+        "EXPANSION_MECHANICS_HOOKS",
+        "EXPANSION_MECHANICS_SAMPLE",
+        "EXPANSION_PSEUDO_LOCALE",
+        "EXPANSION_ROM_GAME_CODE",
+        "EXPANSION_ROM_MAKER_CODE",
+        "EXPANSION_ROM_REVISION",
+        "EXPANSION_ROM_TITLE",
+        "EXPANSION_SAVE_COMPAT_EPOCH",
+        "EXPANSION_STARTER_CONTENT",
+        "EXPANSION_VERSION_MAJOR",
+        "EXPANSION_VERSION_MINOR",
+        "EXPANSION_VERSION_PATCH",
+        "FE8_ITEM_ID_CAP",
+        "MODERN_ABI",
+        "MODERN_CONFIG",
+        "MODERN_ROM_SIZE",
+        "MODERN_TEXT_SHIFT",
+        "PYTHON"
+      ],
+      "automatic_inputs": [],
+      "resolved_value": null,
+      "command_regex": "^python3 \"scripts/modernize/expansion_config\\.py\" resolve --config-mk config\\.mk(?: --[a-z-]+ \"[^\"\\n]*\")+ 2>&1$",
+      "owning_evidence_ids": [
+        "owner.compile-modern",
+        "owner.link-modern",
+        "owner.negative-localization",
+        "owner.runtime-modern"
+      ]
+    },
+    {
+      "id": "modern-banim-dry-run-guard",
+      "expression": "$(shell <modern-banim-dry-run-guard>)",
+      "tool": "modern.mk",
+      "input_files": [],
+      "input_variables": [
+        "BANIM_OBJECT",
+        "MAKE",
+        "MAKEFLAGS",
+        "MODERN_ELF_BANIM_SYM"
+      ],
+      "automatic_inputs": [],
+      "resolved_value": "",
+      "command_regex": "^dry_run=0;[\\s\\S]+for flag in [\\s\\S]+if \\[ ! -f \"[^\"]+\" \\] && \\[ \"\\$dry_run\" = 0 \\]; then[\\s\\S]+(?:/bin/vo-make|/usr/bin/make) -B \"[^\"]+\";[\\s\\S]+fi$",
+      "owning_evidence_ids": [
+        "owner.link-modern",
+        "owner.negative-localization",
+        "owner.runtime-modern"
+      ]
+    },
+    {
+      "id": "modern-recursive-dry-run-recipes",
+      "expression": "$(shell <modern-recursive-dry-run-recipes>)",
+      "tool": "modern.mk",
+      "input_files": [],
+      "input_variables": [
+        "MAKE",
+        "MAKEFLAGS"
+      ],
+      "automatic_inputs": [],
+      "resolved_value": "",
+      "command_regex": "^(?:/bin/vo-make|/usr/bin/make)(?: --no-print-directory)? expansion-modern-[a-z0-9-]+[\\s\\S]*$",
+      "owning_evidence_ids": [
+        "owner.compile-modern",
+        "owner.link-modern",
+        "owner.negative-localization",
+        "owner.runtime-localization",
+        "owner.runtime-modern",
+        "owner.runtime-visual"
+      ]
+    },
+    {
+      "id": "legacy-object-recursive-dry-run-recipe",
+      "expression": "$(shell <legacy-object-recursive-dry-run-recipe>)",
+      "tool": "modern.mk",
+      "input_files": [],
+      "input_variables": [
+        "MAKE",
+        "MAKEFLAGS"
+      ],
+      "automatic_inputs": [],
+      "resolved_value": "",
+      "command_regex": "^/usr/bin/make NODEP=0(?: [A-Za-z0-9_./-]+\\.o)+$",
+      "owning_evidence_ids": [
+        "owner.compile-modern",
+        "owner.link-modern",
+        "owner.negative-localization",
+        "owner.runtime-modern"
+      ]
+    },
+    {
+      "id": "modern-toolchain-dry-run-recipe",
+      "expression": "$(shell <modern-toolchain-dry-run-recipe>)",
+      "tool": "modern.mk",
+      "input_files": [
+        "include/global.h"
+      ],
+      "input_variables": [
+        "MAKEFLAGS",
+        "MODERN_ABI",
+        "MODERN_ARCH_FLAGS",
+        "MODERN_CC",
+        "MODERN_CONFIG",
+        "MODERN_DEFINE_FLAGS",
+        "MODERN_DRIVER_FLAGS",
+        "MODERN_INCLUDE_FLAGS",
+        "MODERN_LANGUAGE_FLAGS"
+      ],
+      "automatic_inputs": [],
+      "resolved_value": "",
+      "command_regex": "^set -eu;[\\s\\S]*Modern flags:[\\s\\S]*$",
+      "owning_evidence_ids": [
+        "owner.compile-modern",
+        "owner.link-modern",
+        "owner.negative-localization",
+        "owner.runtime-modern"
+      ]
+    },
+    {
+      "id": "banim-compressing-linker-inputs",
+      "expression": "$(shell ./scripts/arm_compressing_linker.py -t linker_script_banim.txt -m)",
+      "tool": "scripts/arm_compressing_linker.py",
+      "input_files": [
+        "linker_script_banim.txt"
+      ],
+      "input_variables": [],
+      "automatic_inputs": [],
+      "resolved_value": null,
+      "command_regex": "^\\./scripts/arm_compressing_linker\\.py -t linker_script_banim\\.txt -m$",
+      "owning_evidence_ids": [
+        "owner.link-modern",
+        "owner.negative-localization",
+        "owner.runtime-modern"
+      ]
+    }
+  ],
+  "ambient_inputs": {
+    "allowed_names": [
+      "ASSET_MANIFEST",
+      "ASSET_OUTPUT_DIR",
+      "AUTOTOOLS_BUILD_DIR",
+      "AUTOTOOLS_CONFIG_MK",
+      "CFILES",
+      "CODEQL_REQUIRE_FANALYZER",
+      "CPP",
+      "DEVKITARM",
+      "EU_LOCALIZATION_ROM",
+      "EXPANSION_AOE_REFERENCE",
+      "EXPANSION_AUTOPLAY_PLANNER",
+      "EXPANSION_AUTOPLAY_PLANNER_SCENARIO_ID",
+      "EXPANSION_AUTOPLAY_STRATEGIES",
+      "EXPANSION_BGM_CONTINUATION_POLICY",
+      "EXPANSION_BLUE_PHASE_DELEGATE",
+      "EXPANSION_BUILD_ID",
+      "EXPANSION_CASUAL_MODE",
+      "EXPANSION_CUSTOM_SPELL_EFFECTS",
+      "EXPANSION_DANGER_OVERLAY_MENU",
+      "EXPANSION_DEFAULT_LOCALE",
+      "EXPANSION_ENABLED_LOCALES",
+      "EXPANSION_HQ_MIXER",
+      "EXPANSION_LOCALIZED_TEXT_AUTO_WRAP",
+      "EXPANSION_MECHANICS_HOOKS",
+      "EXPANSION_MECHANICS_SAMPLE",
+      "EXPANSION_PSEUDO_LOCALE",
+      "EXPANSION_ROM_GAME_CODE",
+      "EXPANSION_ROM_MAKER_CODE",
+      "EXPANSION_ROM_REVISION",
+      "EXPANSION_ROM_TITLE",
+      "EXPANSION_SAVE_COMPAT_EPOCH",
+      "EXPANSION_STARTER_CONTENT",
+      "EXPANSION_VERSION_MAJOR",
+      "EXPANSION_VERSION_MINOR",
+      "EXPANSION_VERSION_PATCH",
+      "GAME_LOCALIZATION_ENABLED_LOCALES",
+      "GAME_LOCALIZATION_OUT_DIR",
+      "GENERATED_DATA_AUTOPLAYSTRATEGIES_CHAPTERBUNDLE_SOURCE",
+      "GENERATED_DATA_AUTOPLAYSTRATEGIES_CHAPTEROBJECTIVES_SOURCE",
+      "GENERATED_DATA_AUTOPLAYSTRATEGIES_INVENTORY",
+      "GENERATED_DATA_AUTOPLAYSTRATEGIES_REFERENCE_PROFILES",
+      "GENERATED_DATA_AUTOPLAYSTRATEGIES_SOURCE",
+      "GENERATED_DATA_CHAPTEROBJECTIVES_CHAPTERBUNDLE_SOURCE",
+      "GENERATED_DATA_CHAPTEROBJECTIVES_INVENTORY",
+      "GENERATED_DATA_CHAPTEROBJECTIVES_SOURCE",
+      "HOST_CC",
+      "LOCALIZED_UI_GRAPHICS_FE8CN_ROM",
+      "LOCALIZED_UI_GRAPHICS_FE8J_ROOT",
+      "MODERN_ABI",
+      "MODERN_ALL_ASM_SOURCES",
+      "MODERN_ALL_C_SOURCES",
+      "MODERN_ALL_DATA_C_SOURCES",
+      "MODERN_BANIM_PRESENTATION_RUNTIME_PROBE_POLICY",
+      "MODERN_BINUTILS_DIR",
+      "MODERN_BUDGET_REPORT",
+      "MODERN_BUILD_ROOT",
+      "MODERN_CC",
+      "MODERN_COHORT_ASM_SOURCES",
+      "MODERN_COHORT_SOURCES",
+      "MODERN_CONFIG",
+      "MODERN_GAME_LOCALIZATION_CATALOG_LOCALES",
+      "MODERN_INTERNAL_TEST_DEFINES",
+      "MODERN_LD",
+      "MODERN_LOCALIZATION_BUDGET_REPORT",
+      "MODERN_NEWLIB_LIB",
+      "MODERN_NM",
+      "MODERN_OBJCOPY",
+      "MODERN_OBJDUMP",
+      "MODERN_PREPROC",
+      "MODERN_PREPROC_FLAGS",
+      "MODERN_READELF",
+      "MODERN_ROM_SIZE",
+      "MODERN_SCANINC",
+      "MODERN_SHIFT_AMOUNT",
+      "MODERN_TEXT_SHIFT",
+      "MODERN_TOOLCHAIN_ROOT",
+      "PATH",
+      "PREFIX",
+      "PREPROC_FLAGS",
+      "PYTHON",
+      "PYTHON3",
+      "RELEASE_TARGET_SHA",
+      "SHIFT",
+      "SHIFT2",
+      "TOOLCHAIN",
+      "data_dep"
+    ],
+    "undefined_names": [
+      "FE8_BANIM_PACKAGE_RUNTIME_TEST",
+      "FE8_EXPANSION_CUSTOM_SPELL_TEST",
+      "FE8_EXPANSION_ITEMTEST",
+      "LZ_FLAGS",
+      "MODERN_BUILD_COMMIT",
+      "MODERN_INTERNAL_AUTOPLAY_STRATEGY_ROUTER_ABSENT",
+      "NODEP",
+      "OS"
+    ],
+    "trusted_builtins": [
+      {
+        "name": "CURDIR",
+        "authority": "repository-root",
+        "value": "<trusted-builtin:CURDIR>"
+      },
+      {
+        "name": "MAKE",
+        "authority": "recursive-make",
+        "value": "<trusted-builtin:MAKE>"
+      },
+      {
+        "name": "MAKEFLAGS",
+        "authority": "guarded-execution-flags",
+        "value": "<trusted-builtin:MAKEFLAGS>"
+      },
+      {
+        "name": "MAKECMDGOALS",
+        "authority": "requested-goals",
+        "value": "<trusted-builtin:MAKECMDGOALS>"
+      },
+      {
+        "name": "MAKE_RESTARTS",
+        "authority": "restart-count",
+        "value": "<trusted-builtin:MAKE_RESTARTS>"
+      }
+    ],
+    "scoped_variables": [
+      {
+        "name": "*",
+        "authority": "automatic-variable",
+        "value": "<automatic-variable:*>"
+      },
+      {
+        "name": "1",
+        "authority": "call-argument",
+        "value": "<call-argument:1>"
+      },
+      {
+        "name": "2",
+        "authority": "call-argument",
+        "value": "<call-argument:2>"
+      },
+      {
+        "name": "3",
+        "authority": "call-argument",
+        "value": "<call-argument:3>"
+      },
+      {
+        "name": "4",
+        "authority": "call-argument",
+        "value": "<call-argument:4>"
+      },
+      {
+        "name": "<",
+        "authority": "automatic-variable",
+        "value": "<automatic-variable:<>"
+      },
+      {
+        "name": "@",
+        "authority": "automatic-variable",
+        "value": "<automatic-variable:@>"
+      },
+      {
+        "name": "@D",
+        "authority": "automatic-variable",
+        "value": "<automatic-variable:@D>"
+      },
+      {
+        "name": "GENERATED_DATA_LINKED_SYMBOL_PREFIX_characters",
+        "authority": "computed-empty",
+        "value": "<computed-empty:GENERATED_DATA_LINKED_SYMBOL_PREFIX_characters>"
+      },
+      {
+        "name": "GENERATED_DATA_LINKED_SYMBOL_PREFIX_classes",
+        "authority": "computed-empty",
+        "value": "<computed-empty:GENERATED_DATA_LINKED_SYMBOL_PREFIX_classes>"
+      },
+      {
+        "name": "GENERATED_DATA_LINKED_SYMBOL_PREFIX_items",
+        "authority": "computed-empty",
+        "value": "<computed-empty:GENERATED_DATA_LINKED_SYMBOL_PREFIX_items>"
+      },
+      {
+        "name": "^",
+        "authority": "automatic-variable",
+        "value": "<automatic-variable:^>"
+      },
+      {
+        "name": "t",
+        "authority": "foreach-iteration",
+        "value": "<scoped-variable:t>"
+      }
+    ],
+    "escaped_literals": [
+      {
+        "name": "sort",
+        "authority": "escaped-shell-literal",
+        "value": "<escaped-shell-literal:sort>"
+      }
+    ],
+    "allowed_sources": [
+      "command-line",
+      "process-environment"
+    ],
+    "value_policy": "symbolic-no-host-value",
+    "provenance": "gnu-make-import-before-default",
+    "evidence_binding": "consuming-make-target"
+  },
+  "execution_controls": {
+    "scrubbed_variables": [
+      "GNUMAKEFLAGS",
+      "MAKEFLAGS",
+      "MAKEOVERRIDES",
+      "MFLAGS"
+    ],
+    "allowed_flag_patterns": [
+      "--jobserver-auth=*",
+      "--jobserver-fds=*",
+      "--no-print-directory",
+      "-j*",
+      "j*"
+    ],
+    "forbidden_modes": [
+      "dry-run",
+      "ignore-errors",
+      "question",
+      "silent",
+      "touch",
+      "unmodeled"
+    ],
+    "override_policy": "reject-nonempty"
+  },
+  "prerequisite_domains": {
+    "tracked_fallback_names": [
+      "ASSET_BANIM_COMBINED_LINKER_SCRIPT",
+      "ASSET_MANIFEST",
+      "ASSET_OUTPUT_DIR",
+      "ASSET_PROFILE_KEY",
+      "ASSET_PROFILE_ROOT",
+      "AUTOTOOLS_BUILD_DIR",
+      "AUTOTOOLS_CONFIG_MK",
+      "BANIM_OBJECT",
+      "CFILES",
+      "CODEQL_REQUIRE_FANALYZER",
+      "CPP",
+      "DEVKITARM",
+      "EXPANSION_CUSTOM_SPELL_EFFECTS",
+      "EXPANSION_ENABLED_LOCALES",
+      "EXPANSION_HQ_MIXER",
+      "EXPANSION_STARTER_CONTENT",
+      "FE8_BANIM_PACKAGE_RUNTIME_TEST",
+      "FE8_EXPANSION_CUSTOM_SPELL_TEST",
+      "FE8_EXPANSION_ITEMTEST",
+      "FE8_ITEM_ID_CAP",
+      "GBAGFX",
+      "GENERATED_DATA_AUTOPLAYSTRATEGIES_C",
+      "GENERATED_DATA_AUTOPLAYSTRATEGIES_CHAPTERBUNDLE_SOURCE",
+      "GENERATED_DATA_AUTOPLAYSTRATEGIES_DEPFILE",
+      "GENERATED_DATA_AUTOPLAYSTRATEGIES_SOURCE",
+      "GENERATED_DATA_AUTOPLAYSTRATEGIES_STAMP",
+      "GENERATED_DATA_CH2_EVENTLISTS_C",
+      "GENERATED_DATA_CH2_EVENTLISTS_CONFIG_STAMP",
+      "GENERATED_DATA_CH2_EVENTLISTS_DEPFILE",
+      "GENERATED_DATA_CH2_EVENTLISTS_VALIDATED_STAMP",
+      "GENERATED_DATA_CH2_SHOPS_C",
+      "GENERATED_DATA_CH2_TRAPS_C",
+      "GENERATED_DATA_CH2_UNITS_C",
+      "GENERATED_DATA_CHAPTEROBJECTIVES_C",
+      "GENERATED_DATA_CHAPTEROBJECTIVES_CHAPTERBUNDLE_SOURCE",
+      "GENERATED_DATA_CHAPTEROBJECTIVES_DEPFILE",
+      "GENERATED_DATA_CHAPTEROBJECTIVES_SOURCE",
+      "GENERATED_DATA_CONFIG_INPUTS_autoplaystrategies",
+      "GENERATED_DATA_CONFIG_INPUTS_chapterobjectives",
+      "GENERATED_DATA_CONFIG_INPUTS_eventlists",
+      "GENERATED_DATA_CONFIG_INPUTS_movecost",
+      "GENERATED_DATA_CONFIG_INPUTS_shops",
+      "GENERATED_DATA_CONFIG_INPUTS_terrainstats",
+      "GENERATED_DATA_CONFIG_INPUTS_traps",
+      "GENERATED_DATA_CONFIG_INPUTS_units",
+      "GENERATED_DATA_CONFIG_INPUTS_weapontriangle",
+      "GENERATED_DATA_ITEM_CAP_STAMP",
+      "GENERATED_DATA_LINKED_OBJECTS",
+      "GENERATED_DATA_MOVECOST_C",
+      "GENERATED_DATA_SHARED_PY_SOURCES",
+      "GENERATED_DATA_TERRAINSTATS_C",
+      "GENERATED_DATA_WEAPONTRIANGLE_C",
+      "HOST_CC",
+      "LZ_FLAGS",
+      "MAP_LAYOUT_SUBDIR",
+      "MODERN_ABI",
+      "MODERN_ALL_ASM_SOURCES",
+      "MODERN_ALL_C_SOURCES",
+      "MODERN_ALL_DATA_C_SOURCES",
+      "MODERN_ALL_OBJECTS",
+      "MODERN_BANIM_PRESENTATION_RUNTIME_PROBE_POLICY",
+      "MODERN_BGM_REGISTRY_C",
+      "MODERN_BGM_REGISTRY_JSON",
+      "MODERN_BGM_REGISTRY_SCRIPT",
+      "MODERN_BUILD_COMMIT",
+      "MODERN_BUILD_METADATA_JSON",
+      "MODERN_BUILD_ROOT",
+      "MODERN_CLEAN_IWRAM",
+      "MODERN_CLEAN_LDSCRIPT",
+      "MODERN_COHORT_ASM_SOURCES",
+      "MODERN_COHORT_SOURCES",
+      "MODERN_COMPILE_SETTINGS",
+      "MODERN_CONFIG",
+      "MODERN_DEBUGTOOLS_SRAM_FIXTURE",
+      "MODERN_DEBUGTOOLS_SRAM_FIXTURE_DEPS",
+      "MODERN_ELF",
+      "MODERN_ELF_EXTRA_ASM_OBJECTS",
+      "MODERN_ELF_FE6SIO",
+      "MODERN_ELF_LINK_SETTINGS",
+      "MODERN_ELF_OBJECTS_LST",
+      "MODERN_GAME_LOCALIZATION_CATALOG_LOCALES",
+      "MODERN_INTERNAL_AUTOPLAY_STRATEGY_ROUTER_ABSENT",
+      "MODERN_LINKER_CHECK_ACCELERATED_FIDELITY",
+      "MODERN_LOCALE_FIXTURE_DEPS",
+      "MODERN_LOCALE_FIXTURE_DIR",
+      "MODERN_LOCALIZATION_BUDGET_JSON",
+      "MODERN_LOCALIZATION_CATALOG_C",
+      "MODERN_LOCALIZATION_MSG_IDS_H",
+      "MODERN_MGFEMBP_C_SRCS",
+      "MODERN_MGFEMBP_EMBED_ASSETS",
+      "MODERN_MGFEMBP_HEADERS",
+      "MODERN_MGFEMBP_LDS",
+      "MODERN_MGFEMBP_PAYLOAD",
+      "MODERN_MGFEMBP_S_SRCS",
+      "MODERN_NEWLIB_LIB",
+      "MODERN_PREPROC",
+      "MODERN_RELINK_SCRIPT",
+      "MODERN_RELOCS_ELF",
+      "MODERN_ROM",
+      "MODERN_ROM_SIZE",
+      "MODERN_SCANINC",
+      "MODERN_TEXT_SHIFT",
+      "MODERN_TOOLCHAIN_ROOT",
+      "MODERN_UI_PRESENTATION_MANIFEST_C",
+      "OS",
+      "PREFIX",
+      "PYTHON",
+      "SHIFT",
+      "SHIFT2",
+      "TOOLCHAIN",
+      "data_dep"
+    ],
+    "symbolic_recipe_names": [
+      "EU_LOCALIZATION_ROM",
+      "EXPANSION_AOE_REFERENCE",
+      "EXPANSION_AUTOPLAY_PLANNER",
+      "EXPANSION_AUTOPLAY_PLANNER_SCENARIO_ID",
+      "EXPANSION_AUTOPLAY_STRATEGIES",
+      "EXPANSION_BGM_CONTINUATION_POLICY",
+      "EXPANSION_BLUE_PHASE_DELEGATE",
+      "EXPANSION_BUILD_ID",
+      "EXPANSION_CASUAL_MODE",
+      "EXPANSION_DANGER_OVERLAY_MENU",
+      "EXPANSION_DEFAULT_LOCALE",
+      "EXPANSION_LOCALIZED_TEXT_AUTO_WRAP",
+      "EXPANSION_MECHANICS_HOOKS",
+      "EXPANSION_MECHANICS_SAMPLE",
+      "EXPANSION_PSEUDO_LOCALE",
+      "EXPANSION_ROM_GAME_CODE",
+      "EXPANSION_ROM_MAKER_CODE",
+      "EXPANSION_ROM_REVISION",
+      "EXPANSION_ROM_TITLE",
+      "EXPANSION_SAVE_COMPAT_EPOCH",
+      "EXPANSION_VERSION_MAJOR",
+      "EXPANSION_VERSION_MINOR",
+      "EXPANSION_VERSION_PATCH",
+      "GAME_LOCALIZATION_ENABLED_LOCALES",
+      "GAME_LOCALIZATION_OUT_DIR",
+      "GENERATED_DATA_AUTOPLAYSTRATEGIES_CHAPTEROBJECTIVES_SOURCE",
+      "GENERATED_DATA_AUTOPLAYSTRATEGIES_INVENTORY",
+      "GENERATED_DATA_AUTOPLAYSTRATEGIES_REFERENCE_PROFILES",
+      "GENERATED_DATA_CHAPTEROBJECTIVES_INVENTORY",
+      "LOCALIZED_UI_GRAPHICS_FE8CN_ROM",
+      "LOCALIZED_UI_GRAPHICS_FE8J_ROOT",
+      "MODERN_BINUTILS_DIR",
+      "MODERN_BUDGET_REPORT",
+      "MODERN_CC",
+      "MODERN_INTERNAL_TEST_DEFINES",
+      "MODERN_LD",
+      "MODERN_LOCALIZATION_BUDGET_REPORT",
+      "MODERN_NM",
+      "MODERN_OBJCOPY",
+      "MODERN_OBJDUMP",
+      "MODERN_PREPROC_FLAGS",
+      "MODERN_READELF",
+      "MODERN_SHIFT_AMOUNT",
+      "PATH",
+      "PREPROC_FLAGS",
+      "PYTHON3",
+      "RELEASE_TARGET_SHA"
+    ],
+    "explicit": [
+      {
+        "name": "NODEP",
+        "values": [
+          "",
+          "0",
+          "1"
+        ]
+      }
+    ],
+    "generated_paths": [
+      {
+        "path": "tools/gbagfx/gbagfx",
+        "authority_files": [
+          "tools/gbagfx/Makefile",
+          "tools/gbagfx/convert_png.c",
+          "tools/gbagfx/convert_png.h",
+          "tools/gbagfx/font.c",
+          "tools/gbagfx/font.h",
+          "tools/gbagfx/gfx.c",
+          "tools/gbagfx/gfx.h",
+          "tools/gbagfx/global.h",
+          "tools/gbagfx/jasc_pal.c",
+          "tools/gbagfx/jasc_pal.h",
+          "tools/gbagfx/lz.c",
+          "tools/gbagfx/lz.h",
+          "tools/gbagfx/main.c",
+          "tools/gbagfx/rl.c",
+          "tools/gbagfx/rl.h",
+          "tools/gbagfx/util.c",
+          "tools/gbagfx/util.h"
+        ]
+      }
+    ],
+    "max_variants": 4096,
+    "max_words": 20000,
+    "value_policy": "finite-exact-or-tracked-fallback",
+    "target_policy": "defined-pattern-or-tracked-tree"
+  },
+  "seal": "ec89314259ff24f102d884e6604d08964fa9a429bfd481910bd25af01bf89a5c"
+}

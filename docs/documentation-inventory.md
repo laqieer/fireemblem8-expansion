@@ -61,6 +61,7 @@ Markdown library, so it stays stdlib-parseable and diff-friendly.
 - docs/migration-from-decomp.md | laqieer | current | Bridge guide: old decomp-base/agbcc workflow -> modern framework
 - docs/archival-decomp.md | laqieer | current | Archival-lane decomp-matching workflow, setup, and asset-extraction references
 - docs/workflow-pilot.md | laqieer | current | Frozen workflow-efficiency baseline, parsed event selection, canonical evidence protocol, formulas, and lifecycle (issues #176/#177)
+- docs/validation-ownership.md | laqieer | current | Fail-closed path-to-evidence ownership graph, reporter, lifecycle, and non-narrowing boundary (issue #180)
 - docs/release-migration-template.md | laqieer | template | Unfilled scaffolding for a future version-to-version migration guide
 - docs/config_identity.md | laqieer | current | Config surface + ROM identity fingerprint reference (issue #8)
 - docs/save_format.md | laqieer | current | Save format + compatibility gate reference (issue #2)
@@ -94,7 +95,7 @@ Markdown library, so it stays stdlib-parseable and diff-friendly.
 - docs/test-cases/patch-release.md | laqieer | current | Indexed BPS artifact validation/application and fail-closed input procedures (issue #49)
 - docs/test-cases/autoplay.md | laqieer | current | Controller smoke, bounded termination, Charge delegation, and accelerated-fidelity procedures (issues #85/#86/#87/#88)
 - docs/test-cases/asset-authoring.md | laqieer | current | Indexed source-asset adapter procedure, controls, runtime evidence, and cleanup (issue #62)
-- docs/test-cases/workflow-governance.md | laqieer | current | Indexed trusted/immediate-push, WIP visibility, CI-wait, manual-handoff, stacked-CI, pilot-baseline, metadata-edit, and safe completed-worktree cleanup procedures (issues #93/#169/#171/#176/#177/#207/#208)
+- docs/test-cases/workflow-governance.md | laqieer | current | Indexed trusted/immediate-push, WIP visibility, CI-wait, manual-handoff, stacked-CI, pilot-baseline, metadata-edit, validation-ownership, and safe completed-worktree cleanup procedures (issues #93/#169/#171/#176/#177/#180/#207/#208)
 - docs/test-cases/codeql-alerts.md | laqieer | current | Link Arena and confirmed CodeQL alert regression procedures (issue #84)
 - docs/test-cases/debug-save-fixtures.md | laqieer | current | Byte-level volatile save-fixture isolation and recovery procedure (issue #128)
 - docs/localization.md | laqieer | current | Stable locale/message IDs, catalog authoring, prefs/UI, budgets, and runtime matrices (issue #18)

@@ -1,0 +1,298 @@
+{
+  "schema_version": 1,
+  "source_case": "TC-WORKFLOW-GATE-OWNERSHIP-001",
+  "probes": [
+    {
+      "path": "src/bm.c",
+      "expected_surface": "surface.runtime",
+      "expected_owners": [
+        {"edge_type": "adversarial-control", "evidence_id": "owner.host-build"},
+        {"edge_type": "compile-owner", "evidence_id": "owner.compile-modern"},
+        {"edge_type": "link-owner", "evidence_id": "owner.link-modern"},
+        {"edge_type": "owns-test", "evidence_id": "owner.host-runtime"},
+        {"edge_type": "target-scenario", "evidence_id": "owner.runtime-modern"}
+      ]
+    },
+    {
+      "path": "scripts/check_docs.py",
+      "expected_surface": "surface.host",
+      "expected_owners": [
+        {"edge_type": "adversarial-control", "evidence_id": "owner.host-workflow"},
+        {"edge_type": "owns-test", "evidence_id": "owner.host-build"}
+      ]
+    },
+    {
+      "path": "scripts/modernize/package_ci_patch.sh",
+      "expected_surface": "surface.host",
+      "expected_owners": [
+        {"edge_type": "adversarial-control", "evidence_id": "owner.host-workflow"},
+        {"edge_type": "owns-test", "evidence_id": "owner.host-build"}
+      ]
+    },
+    {
+      "path": "tests/workflows/test_patch_release_workflow.py",
+      "expected_surface": "surface.host",
+      "expected_owners": [
+        {"edge_type": "adversarial-control", "evidence_id": "owner.host-workflow"},
+        {"edge_type": "owns-test", "evidence_id": "owner.host-build"}
+      ]
+    },
+    {
+      "path": "docs/validation-ownership.md",
+      "expected_surface": "surface.docs",
+      "expected_owners": [
+        {"edge_type": "adversarial-control", "evidence_id": "owner.host-build"},
+        {"edge_type": "owns-test", "evidence_id": "owner.host-docs"}
+      ]
+    },
+    {
+      "path": "scripts/generated_data/registry.py",
+      "expected_surface": "surface.generated-schema",
+      "expected_owners": [
+        {"edge_type": "adversarial-control", "evidence_id": "owner.registry-generated"},
+        {"edge_type": "compile-owner", "evidence_id": "owner.compile-modern"},
+        {"edge_type": "drift-check", "evidence_id": "owner.drift-generated"},
+        {"edge_type": "generated-by", "evidence_id": "owner.generator-generated"},
+        {"edge_type": "generated-consumer", "evidence_id": "owner.consumer-generated"},
+        {"edge_type": "link-owner", "evidence_id": "owner.link-modern"},
+        {"edge_type": "owns-test", "evidence_id": "owner.host-generated"},
+        {"edge_type": "target-scenario", "evidence_id": "owner.runtime-modern"}
+      ]
+    },
+    {
+      "path": "src/data/items.json",
+      "expected_surface": "surface.generated",
+      "expected_owners": [
+        {"edge_type": "adversarial-control", "evidence_id": "owner.registry-generated"},
+        {"edge_type": "compile-owner", "evidence_id": "owner.compile-modern"},
+        {"edge_type": "drift-check", "evidence_id": "owner.drift-generated"},
+        {"edge_type": "generated-by", "evidence_id": "owner.generator-generated"},
+        {"edge_type": "generated-consumer", "evidence_id": "owner.consumer-generated"},
+        {"edge_type": "link-owner", "evidence_id": "owner.link-modern"},
+        {"edge_type": "owns-test", "evidence_id": "owner.host-generated"},
+        {"edge_type": "target-scenario", "evidence_id": "owner.runtime-modern"}
+      ]
+    },
+    {
+      "path": "texts/expansion/catalog.en.json",
+      "expected_surface": "surface.localization",
+      "expected_owners": [
+        {"edge_type": "adversarial-control", "evidence_id": "owner.host-build"},
+        {"edge_type": "compile-owner", "evidence_id": "owner.compile-modern"},
+        {"edge_type": "dependent-profile", "evidence_id": "owner.profile-modern"},
+        {"edge_type": "drift-check", "evidence_id": "owner.drift-localization"},
+        {"edge_type": "generated-by", "evidence_id": "owner.generator-localization"},
+        {"edge_type": "generated-consumer", "evidence_id": "owner.link-modern"},
+        {"edge_type": "link-owner", "evidence_id": "owner.link-modern"},
+        {"edge_type": "negative-control", "evidence_id": "owner.negative-localization"},
+        {"edge_type": "owns-test", "evidence_id": "owner.host-localization"},
+        {"edge_type": "target-scenario", "evidence_id": "owner.runtime-localization"}
+      ]
+    },
+    {
+      "path": "config.mk",
+      "expected_surface": "surface.configuration",
+      "expected_owners": [
+        {"edge_type": "adversarial-control", "evidence_id": "owner.host-config"},
+        {"edge_type": "compile-owner", "evidence_id": "owner.compile-modern"},
+        {"edge_type": "dependent-profile", "evidence_id": "owner.profile-modern"},
+        {"edge_type": "link-owner", "evidence_id": "owner.link-modern"},
+        {"edge_type": "negative-control", "evidence_id": "owner.negative-config"},
+        {"edge_type": "owns-test", "evidence_id": "owner.validation-graph"},
+        {"edge_type": "target-scenario", "evidence_id": "owner.runtime-modern"}
+      ]
+    },
+    {
+      "path": "include/global.h",
+      "expected_surface": "surface.runtime",
+      "expected_owners": [
+        {"edge_type": "adversarial-control", "evidence_id": "owner.host-build"},
+        {"edge_type": "compile-owner", "evidence_id": "owner.compile-modern"},
+        {"edge_type": "link-owner", "evidence_id": "owner.link-modern"},
+        {"edge_type": "owns-test", "evidence_id": "owner.host-runtime"},
+        {"edge_type": "target-scenario", "evidence_id": "owner.runtime-modern"}
+      ]
+    },
+    {
+      "path": "graphics/titlescreen/title_main_background_1.png",
+      "expected_surface": "surface.title-visual",
+      "expected_owners": [
+        {"edge_type": "adversarial-control", "evidence_id": "owner.host-build"},
+        {"edge_type": "compile-owner", "evidence_id": "owner.compile-modern"},
+        {"edge_type": "link-owner", "evidence_id": "owner.link-modern"},
+        {"edge_type": "manual-handoff", "evidence_id": "owner.manual-handoff"},
+        {"edge_type": "owns-test", "evidence_id": "owner.host-runtime"},
+        {"edge_type": "target-scenario", "evidence_id": "owner.runtime-title"}
+      ]
+    },
+    {
+      "path": ".github/manual-testing-handoff.json",
+      "expected_surface": "surface.docs",
+      "expected_owners": [
+        {"edge_type": "adversarial-control", "evidence_id": "owner.host-build"},
+        {"edge_type": "owns-test", "evidence_id": "owner.host-docs"}
+      ]
+    },
+    {
+      "path": "banim/banim_lorm_sp1_motion.s",
+      "expected_surface": "surface.manual-av",
+      "expected_owners": [
+        {"edge_type": "adversarial-control", "evidence_id": "owner.host-build"},
+        {"edge_type": "compile-owner", "evidence_id": "owner.compile-modern"},
+        {"edge_type": "link-owner", "evidence_id": "owner.link-modern"},
+        {"edge_type": "manual-handoff", "evidence_id": "owner.manual-handoff"},
+        {"edge_type": "owns-test", "evidence_id": "owner.host-runtime"}
+      ]
+    },
+    {
+      "path": "graphics/titlescreen/title_demon_king.png",
+      "expected_surface": "surface.manual-av",
+      "expected_owners": [
+        {"edge_type": "adversarial-control", "evidence_id": "owner.host-build"},
+        {"edge_type": "compile-owner", "evidence_id": "owner.compile-modern"},
+        {"edge_type": "link-owner", "evidence_id": "owner.link-modern"},
+        {"edge_type": "manual-handoff", "evidence_id": "owner.manual-handoff"},
+        {"edge_type": "owns-test", "evidence_id": "owner.host-runtime"}
+      ]
+    },
+    {
+      "path": "sound/direct_sound_data.s",
+      "expected_surface": "surface.manual-av",
+      "expected_owners": [
+        {"edge_type": "adversarial-control", "evidence_id": "owner.host-build"},
+        {"edge_type": "compile-owner", "evidence_id": "owner.compile-modern"},
+        {"edge_type": "link-owner", "evidence_id": "owner.link-modern"},
+        {"edge_type": "manual-handoff", "evidence_id": "owner.manual-handoff"},
+        {"edge_type": "owns-test", "evidence_id": "owner.host-runtime"}
+      ]
+    },
+    {
+      "path": "assets/banim/lorm_sp1/script.txt",
+      "expected_surface": "surface.banim-package",
+      "expected_owners": [
+        {"edge_type": "adversarial-control", "evidence_id": "owner.host-build"},
+        {"edge_type": "compile-owner", "evidence_id": "owner.compile-modern"},
+        {"edge_type": "drift-check", "evidence_id": "owner.drift-assets"},
+        {"edge_type": "generated-by", "evidence_id": "owner.generator-assets"},
+        {"edge_type": "generated-consumer", "evidence_id": "owner.link-modern"},
+        {"edge_type": "link-owner", "evidence_id": "owner.link-modern"},
+        {"edge_type": "manual-handoff", "evidence_id": "owner.manual-handoff"},
+        {"edge_type": "owns-test", "evidence_id": "owner.host-assets"},
+        {"edge_type": "target-scenario", "evidence_id": "owner.runtime-banim-package"}
+      ]
+    },
+    {
+      "path": "graphics/banim/banim_lorm_sp1_sheet_0.png",
+      "expected_surface": "surface.banim-package",
+      "expected_owners": [
+        {"edge_type": "adversarial-control", "evidence_id": "owner.host-build"},
+        {"edge_type": "compile-owner", "evidence_id": "owner.compile-modern"},
+        {"edge_type": "drift-check", "evidence_id": "owner.drift-assets"},
+        {"edge_type": "generated-by", "evidence_id": "owner.generator-assets"},
+        {"edge_type": "generated-consumer", "evidence_id": "owner.link-modern"},
+        {"edge_type": "link-owner", "evidence_id": "owner.link-modern"},
+        {"edge_type": "manual-handoff", "evidence_id": "owner.manual-handoff"},
+        {"edge_type": "owns-test", "evidence_id": "owner.host-assets"},
+        {"edge_type": "target-scenario", "evidence_id": "owner.runtime-banim-package"}
+      ]
+    },
+    {
+      "path": "assets/portraits/eirika/metadata.json",
+      "expected_surface": "surface.portrait-package",
+      "expected_owners": [
+        {"edge_type": "adversarial-control", "evidence_id": "owner.host-build"},
+        {"edge_type": "compile-owner", "evidence_id": "owner.compile-modern"},
+        {"edge_type": "drift-check", "evidence_id": "owner.drift-assets"},
+        {"edge_type": "generated-by", "evidence_id": "owner.generator-assets"},
+        {"edge_type": "generated-consumer", "evidence_id": "owner.link-modern"},
+        {"edge_type": "link-owner", "evidence_id": "owner.link-modern"},
+        {"edge_type": "manual-handoff", "evidence_id": "owner.manual-handoff"},
+        {"edge_type": "owns-test", "evidence_id": "owner.host-assets"},
+        {"edge_type": "target-scenario", "evidence_id": "owner.runtime-portrait-package"}
+      ]
+    },
+    {
+      "path": "graphics/portrait/portrait_Eirika_chibi.png",
+      "expected_surface": "surface.portrait-package",
+      "expected_owners": [
+        {"edge_type": "adversarial-control", "evidence_id": "owner.host-build"},
+        {"edge_type": "compile-owner", "evidence_id": "owner.compile-modern"},
+        {"edge_type": "drift-check", "evidence_id": "owner.drift-assets"},
+        {"edge_type": "generated-by", "evidence_id": "owner.generator-assets"},
+        {"edge_type": "generated-consumer", "evidence_id": "owner.link-modern"},
+        {"edge_type": "link-owner", "evidence_id": "owner.link-modern"},
+        {"edge_type": "manual-handoff", "evidence_id": "owner.manual-handoff"},
+        {"edge_type": "owns-test", "evidence_id": "owner.host-assets"},
+        {"edge_type": "target-scenario", "evidence_id": "owner.runtime-portrait-package"}
+      ]
+    },
+    {
+      "path": "assets/tmx/Ch2Map.tmx",
+      "expected_surface": "surface.asset-source",
+      "expected_owners": [
+        {"edge_type": "adversarial-control", "evidence_id": "owner.host-build"},
+        {"edge_type": "compile-owner", "evidence_id": "owner.compile-modern"},
+        {"edge_type": "drift-check", "evidence_id": "owner.drift-assets"},
+        {"edge_type": "generated-by", "evidence_id": "owner.generator-assets"},
+        {"edge_type": "generated-consumer", "evidence_id": "owner.link-modern"},
+        {"edge_type": "link-owner", "evidence_id": "owner.link-modern"},
+        {"edge_type": "manual-handoff", "evidence_id": "owner.manual-handoff"},
+        {"edge_type": "owns-test", "evidence_id": "owner.host-assets"}
+      ]
+    },
+    {
+      "path": "preview/tsa/MANIFEST.tsv",
+      "expected_surface": "surface.preview",
+      "expected_owners": [
+        {"edge_type": "adversarial-control", "evidence_id": "owner.host-build"},
+        {"edge_type": "manual-handoff", "evidence_id": "owner.manual-handoff"},
+        {"edge_type": "owns-test", "evidence_id": "owner.host-docs"}
+      ]
+    },
+    {
+      "path": ".github/workflows/build.yml",
+      "expected_surface": "surface.workflow",
+      "expected_owners": [
+        {"edge_type": "adversarial-control", "evidence_id": "owner.validation-check"},
+        {"edge_type": "owns-test", "evidence_id": "owner.host-workflow"}
+      ]
+    },
+    {
+      "path": ".github/validation-ownership-graph.json",
+      "expected_surface": "surface.governance",
+      "expected_owners": [
+        {"edge_type": "adversarial-control", "evidence_id": "owner.validation-check"},
+        {"edge_type": "owns-test", "evidence_id": "owner.validation-suite"}
+      ]
+    },
+    {
+      "path": ".github/CODEOWNERS",
+      "expected_exclusion": "exclude.codeowners-external-enforcement"
+    },
+    {
+      "path": ".github/ISSUE_TEMPLATE/bug_report.yml",
+      "expected_surface": "surface.templates",
+      "expected_owners": [
+        {"edge_type": "adversarial-control", "evidence_id": "owner.validation-check"},
+        {"edge_type": "owns-test", "evidence_id": "owner.host-workflow"}
+      ]
+    },
+    {
+      "path": ".github/PULL_REQUEST_TEMPLATE.md",
+      "expected_surface": "surface.pr-template",
+      "expected_owners": [
+        {"edge_type": "adversarial-control", "evidence_id": "owner.validation-check"},
+        {"edge_type": "owns-test", "evidence_id": "owner.host-docs"}
+      ]
+    },
+    {
+      "path": ".github/requirements/build.txt",
+      "expected_surface": "surface.repo-config",
+      "expected_owners": [
+        {"edge_type": "adversarial-control", "evidence_id": "owner.validation-check"},
+        {"edge_type": "owns-test", "evidence_id": "owner.host-build"}
+      ]
+    }
+  ],
+  "seal": "49afe18ac2260f65521964946185a0801aab23af3ac7fe4bc81f48100b393e12"
+}

@@ -1,0 +1,650 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/laqieer/fireemblem8-expansion/blob/master/scripts/validation_ownership/graph.schema.json",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "policy",
+    "artifact",
+    "lifecycle_events",
+    "nodes",
+    "edges",
+    "path_rules",
+    "exclusions"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "policy": {
+      "$ref": "#/$defs/policy"
+    },
+    "artifact": {
+      "$ref": "#/$defs/artifact"
+    },
+    "lifecycle_events": {
+      "type": "array",
+      "minItems": 6,
+      "items": {
+        "oneOf": [
+          {
+            "$ref": "#/$defs/trigger"
+          },
+          {
+            "$ref": "#/$defs/proof"
+          }
+        ]
+      }
+    },
+    "nodes": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "oneOf": [
+          {
+            "$ref": "#/$defs/surfaceNode"
+          },
+          {
+            "$ref": "#/$defs/evidenceNode"
+          }
+        ]
+      }
+    },
+    "edges": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/edge"
+      }
+    },
+    "path_rules": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/pathRule"
+      }
+    },
+    "exclusions": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/exclusion"
+      }
+    }
+  },
+  "$defs": {
+    "identifier": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*$"
+    },
+    "nonempty": {
+      "type": "string",
+      "minLength": 1
+    },
+    "path": {
+      "type": "string",
+      "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$))[^\\u0000]+$"
+    },
+    "policy": {
+      "type": "object",
+      "required": [
+        "classification",
+        "validation_effect",
+        "narrowing_authorized",
+        "review_invalidation"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "classification": {
+          "const": "framework-capability"
+        },
+        "validation_effect": {
+          "const": "report-only"
+        },
+        "narrowing_authorized": {
+          "const": false
+        },
+        "review_invalidation": {
+          "const": "resolved-edge-authority"
+        }
+      }
+    },
+    "history": {
+      "type": "object",
+      "required": [
+        "recorded_at",
+        "disposition",
+        "reason"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "recorded_at": {
+          "$ref": "#/$defs/nonempty"
+        },
+        "disposition": {
+          "enum": [
+            "Delete",
+            "Derive",
+            "Consolidate",
+            "Graduate"
+          ]
+        },
+        "reason": {
+          "$ref": "#/$defs/nonempty"
+        }
+      }
+    },
+    "trigger": {
+      "type": "object",
+      "required": [
+        "id",
+        "type",
+        "occurred_at",
+        "artifact_id",
+        "authority"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/identifier"
+        },
+        "type": {
+          "enum": [
+            "artifact_checkpoint",
+            "dependency_changed",
+            "pre_graduation"
+          ]
+        },
+        "occurred_at": {
+          "$ref": "#/$defs/nonempty"
+        },
+        "artifact_id": {
+          "$ref": "#/$defs/identifier"
+        },
+        "authority": {
+          "$ref": "#/$defs/nonempty"
+        }
+      }
+    },
+    "proof": {
+      "type": "object",
+      "required": [
+        "id",
+        "type",
+        "occurred_at",
+        "artifact_id",
+        "trigger_event_id",
+        "reason",
+        "semantic_result",
+        "restored_result"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/identifier"
+        },
+        "type": {
+          "const": "deletion_proof"
+        },
+        "occurred_at": {
+          "$ref": "#/$defs/nonempty"
+        },
+        "artifact_id": {
+          "$ref": "#/$defs/identifier"
+        },
+        "trigger_event_id": {
+          "$ref": "#/$defs/identifier"
+        },
+        "reason": {
+          "$ref": "#/$defs/nonempty"
+        },
+        "semantic_result": {
+          "enum": [
+            "fail",
+            "pass"
+          ]
+        },
+        "restored_result": {
+          "enum": [
+            "fail",
+            "pass"
+          ]
+        }
+      }
+    },
+    "artifact": {
+      "type": "object",
+      "required": [
+        "artifact_id",
+        "owner",
+        "executable_consumer",
+        "unique_decision",
+        "consistency_check",
+        "max_maintenance_minutes",
+        "estimated_maintenance_minutes",
+        "deletion_criterion",
+        "expires_at",
+        "history"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "artifact_id": {
+          "$ref": "#/$defs/identifier"
+        },
+        "owner": {
+          "$ref": "#/$defs/identifier"
+        },
+        "executable_consumer": {
+          "$ref": "#/$defs/nonempty"
+        },
+        "unique_decision": {
+          "$ref": "#/$defs/identifier"
+        },
+        "consistency_check": {
+          "$ref": "#/$defs/nonempty"
+        },
+        "max_maintenance_minutes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "estimated_maintenance_minutes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "deletion_criterion": {
+          "$ref": "#/$defs/nonempty"
+        },
+        "expires_at": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "history": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/history"
+          }
+        }
+      }
+    },
+    "requirements": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "positive",
+          "adversarial",
+          "default-disabled",
+          "compile",
+          "link",
+          "runtime",
+          "generated",
+          "shared-contract",
+          "manual"
+        ]
+      }
+    },
+    "surfaceNode": {
+      "type": "object",
+      "required": [
+        "id",
+        "kind",
+        "label",
+        "surface_type",
+        "requirements",
+        "dependencies"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/identifier"
+        },
+        "kind": {
+          "const": "surface"
+        },
+        "label": {
+          "$ref": "#/$defs/nonempty"
+        },
+        "surface_type": {
+          "enum": [
+            "source",
+            "schema",
+            "configuration",
+            "generated",
+            "manual"
+          ]
+        },
+        "requirements": {
+          "$ref": "#/$defs/requirements"
+        },
+        "dependencies": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/identifier"
+          }
+        }
+      }
+    },
+    "authorityMake": {
+      "type": "object",
+      "required": [
+        "kind",
+        "target"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "make-target"
+        },
+        "target": {
+          "$ref": "#/$defs/nonempty"
+        }
+      }
+    },
+    "authorityWorkflowJob": {
+      "type": "object",
+      "required": [
+        "kind",
+        "job"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "workflow-job"
+        },
+        "job": {
+          "$ref": "#/$defs/nonempty"
+        }
+      }
+    },
+    "authorityWorkflowStep": {
+      "type": "object",
+      "required": [
+        "kind",
+        "job",
+        "step"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "workflow-step"
+        },
+        "job": {
+          "$ref": "#/$defs/nonempty"
+        },
+        "step": {
+          "$ref": "#/$defs/nonempty"
+        }
+      }
+    },
+    "authorityTesterCase": {
+      "type": "object",
+      "required": [
+        "kind",
+        "case_id"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "tester-case"
+        },
+        "case_id": {
+          "type": "string",
+          "pattern": "^TC-[A-Z][A-Z0-9]*(?:-[A-Z0-9]+)*-[0-9]{3}$"
+        }
+      }
+    },
+    "authorityManual": {
+      "type": "object",
+      "required": [
+        "kind",
+        "path"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "manual-handoff"
+        },
+        "path": {
+          "$ref": "#/$defs/path"
+        }
+      }
+    },
+    "authorityGenerated": {
+      "type": "object",
+      "required": [
+        "kind"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "generated-data-registry"
+        }
+      }
+    },
+    "authority": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/authorityMake"
+        },
+        {
+          "$ref": "#/$defs/authorityWorkflowJob"
+        },
+        {
+          "$ref": "#/$defs/authorityWorkflowStep"
+        },
+        {
+          "$ref": "#/$defs/authorityTesterCase"
+        },
+        {
+          "$ref": "#/$defs/authorityManual"
+        },
+        {
+          "$ref": "#/$defs/authorityGenerated"
+        }
+      ]
+    },
+    "evidenceNode": {
+      "type": "object",
+      "required": [
+        "id",
+        "kind",
+        "label",
+        "evidence_type",
+        "authority"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/identifier"
+        },
+        "kind": {
+          "const": "evidence"
+        },
+        "label": {
+          "$ref": "#/$defs/nonempty"
+        },
+        "evidence_type": {
+          "enum": [
+            "host",
+            "compile",
+            "link",
+            "runtime",
+            "manual"
+          ]
+        },
+        "authority": {
+          "$ref": "#/$defs/authority"
+        }
+      }
+    },
+    "edge": {
+      "type": "object",
+      "required": [
+        "id",
+        "type",
+        "source",
+        "target",
+        "reason"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/identifier"
+        },
+        "type": {
+          "enum": [
+            "owns-test",
+            "adversarial-control",
+            "compile-owner",
+            "link-owner",
+            "target-scenario",
+            "generated-by",
+            "drift-check",
+            "generated-consumer",
+            "dependent-profile",
+            "negative-control",
+            "manual-handoff",
+            "depends-on"
+          ]
+        },
+        "source": {
+          "$ref": "#/$defs/identifier"
+        },
+        "target": {
+          "$ref": "#/$defs/identifier"
+        },
+        "reason": {
+          "$ref": "#/$defs/nonempty"
+        }
+      }
+    },
+    "selectorExact": {
+      "type": "object",
+      "required": [
+        "kind",
+        "path"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "exact"
+        },
+        "path": {
+          "$ref": "#/$defs/path"
+        }
+      }
+    },
+    "selectorPrefix": {
+      "type": "object",
+      "required": [
+        "kind",
+        "path"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "prefix"
+        },
+        "path": {
+          "type": "string",
+          "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$)).+/$"
+        }
+      }
+    },
+    "selectorGenerated": {
+      "type": "object",
+      "required": [
+        "kind"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "generated-data-registry"
+        }
+      }
+    },
+    "selector": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/selectorExact"
+        },
+        {
+          "$ref": "#/$defs/selectorPrefix"
+        },
+        {
+          "$ref": "#/$defs/selectorGenerated"
+        }
+      ]
+    },
+    "selectors": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/selector"
+      }
+    },
+    "pathRule": {
+      "type": "object",
+      "required": [
+        "id",
+        "surface",
+        "include",
+        "exclude"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/identifier"
+        },
+        "surface": {
+          "$ref": "#/$defs/identifier"
+        },
+        "include": {
+          "$ref": "#/$defs/selectors"
+        },
+        "exclude": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/selector"
+          }
+        }
+      }
+    },
+    "exclusion": {
+      "type": "object",
+      "required": [
+        "id",
+        "include",
+        "reason",
+        "fail_closed",
+        "applies_to"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/identifier"
+        },
+        "include": {
+          "$ref": "#/$defs/selectors"
+        },
+        "reason": {
+          "$ref": "#/$defs/nonempty"
+        },
+        "fail_closed": {
+          "const": true
+        },
+        "applies_to": {
+          "enum": [
+            "gitlink",
+            "external-enforcement"
+          ]
+        }
+      }
+    }
+  }
+}
