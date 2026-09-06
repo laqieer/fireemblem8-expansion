@@ -7,7 +7,7 @@ from pathlib import Path
 
 from .authority import AuthorityLoader, encoded, git_tree_entries
 from .budget import MakeProbeError, ProbeBudget
-from .make_probe import Command, ProbeSession, TRUSTED_ROOT
+from .make_probe import Command, ProbeSession, TRUSTED_ROOT, probe_generated_registry
 
 
 def check(root: Path, revision: str | None):
@@ -25,7 +25,7 @@ def check(root: Path, revision: str | None):
             path for path in session.snapshot.files
             if path.endswith(".py") and path.startswith(("scripts/generated_data/", "scripts/assets/"))
         ))
-        registry = session.registry(Command(
+        registry = probe_generated_registry(loader, session=session, command=Command(
             ("/usr/bin/python3", "-I", "-B", "-c",
              (TRUSTED_ROOT / "generated_registry_probe.py").read_text(encoding="utf-8"),
              "chapterbundle", "src/data"),

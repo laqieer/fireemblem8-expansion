@@ -1817,6 +1817,15 @@ Start from a clean checkout; fixtures use only ignored `build/test-artifacts`.
     work/control and read-only executable helper exceptions. Simulated
     `mount_setattr` unavailability must release its FD and reject before
     supervision, never fall back to a top-only remount.
+18. Invoke `probe_generated_registry` repeatedly under one report session.
+    An identical request must reuse its cache without another process or file
+    creation; a distinct request must exhaust the same creation quota, including
+    a creation already performed for Make. Expire the original deadline and
+    require even a cached request to reject without another launch. Missing,
+    `None`, inactive, foreign-loader and mismatched-budget owners must reject.
+    The actual consumer must create one session and use the same budget for
+    tree capture, Make and registry discovery; there is no helper scratch-root
+    or implicit fresh-owner path.
 
 ### Expected result
 
@@ -1870,6 +1879,12 @@ The previous recursive bind reported restricted top-level flags `4111` but
 left a copied tmpfs submount at `4096`: writes and executable launches through
 that supposedly read-only/noexec child really succeeded. The regression uses
 only private namespaces and bounded owned mounts, which disappear on exit.
+
+The prior optional helper succeeded twice by creating two independent sessions:
+each created one file while the active caller's one-file quota and process
+counter stayed unchanged. This is the per-registry multiplication the explicit
+report-session API rejects; sharing only a budget while resetting session-owned
+counters is not equivalent.
 
 ### Interactions and save compatibility
 

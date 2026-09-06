@@ -26,7 +26,7 @@ from scripts.validation_ownership.authority import AuthorityLoader, ENVIRONMENT,
 from scripts.validation_ownership.budget import Limits, MakeProbeError, NAMESPACE_LAUNCHER, ProbeBudget
 from scripts.validation_ownership.make_probe import (
     Command, ProbeSession, TRUSTED_ROOT, _make_interpreter, _make_runtime,
-    _read_events, _read_observation, _trusted_runtime_bytes,
+    _read_events, _read_observation, _trusted_runtime_bytes, probe_generated_registry,
 )
 
 
@@ -66,6 +66,102 @@ class FoundationTests(unittest.TestCase):
         self.assertIsNone(session.snapshot)
         self.assertIsNone(session.base)
         self.assertFalse(self.scratch.exists())
+
+    def registry_fixture(self, name):
+        self.add("registry.py", (
+            "import json,sys\nopen('/work/entry','wb').close()\n"
+            "print(json.dumps({'name':sys.argv[1],'version':1,"
+            "'record_count':1,'source_paths':[]}))\n"
+        ))
+        return Command(
+            ("/usr/bin/python3", "-I", "-B", "/repo/registry.py", name), code=("registry.py",),
+        )
+
+    def test_registry_helper_requires_an_explicit_active_report_session(self):
+        command = self.registry_fixture("first")
+        inactive = self.session()
+        loader = inactive.loader
+        with patch.object(ProbeSession, "__enter__", side_effect=AssertionError("implicit session")) as enter:
+            with self.assertRaises(TypeError):
+                probe_generated_registry(loader, command=command)
+            with self.assertRaises(TypeError):
+                probe_generated_registry(loader, scratch_root=self.scratch, command=command)
+            for session in (None, object(), inactive):
+                with self.subTest(session=session):
+                    with self.assertRaisesRegex(MakeProbeError, "active ProbeSession"):
+                        probe_generated_registry(loader, command=command, session=session)
+            enter.assert_not_called()
+        self.assertFalse(self.scratch.exists())
+        with self.session() as closed:
+            pass
+        self.assert_clean(closed)
+        with self.assertRaisesRegex(MakeProbeError, "active ProbeSession"):
+            probe_generated_registry(closed.loader, command=command, session=closed)
+
+    def test_registry_helper_rejects_foreign_loader_or_budget_without_launch(self):
+        command = self.registry_fixture("first")
+        with self.session() as session:
+            runs = session.budget.runs
+            foreign = AuthorityLoader(self.root, dict(self.entries))
+            with self.assertRaisesRegex(MakeProbeError, "loader/budget differs"):
+                probe_generated_registry(foreign, command=command, session=session)
+            with patch.object(session.loader, "budget", ProbeBudget()):
+                with self.assertRaisesRegex(MakeProbeError, "loader/budget differs"):
+                    probe_generated_registry(session.loader, command=command, session=session)
+            self.assertEqual(session.budget.runs, runs)
+            self.assertFalse(session.cache)
+        self.assert_clean(session)
+
+    def test_registry_helper_calls_share_cache_deadline_and_creation_quota(self):
+        first = self.registry_fixture("first")
+        second = self.registry_fixture("second")
+        with self.session(created_files=1) as session:
+            budget, started, deadline = session.budget, session.budget.started, session.budget.deadline
+            observed = probe_generated_registry(session.loader, command=first, session=session)
+            self.assertEqual(observed["name"], "first")
+            runs, processes = budget.runs, session.processes_used
+            self.assertEqual(session.files_created, 1)
+            self.assertEqual(probe_generated_registry(session.loader, command=first, session=session), observed)
+            self.assertEqual((budget.runs, session.processes_used, session.files_created), (runs, processes, 1))
+            self.assertEqual(len(session.cache), 1)
+            self.assertIs(session.budget, budget)
+            self.assertEqual((budget.started, budget.deadline), (started, deadline))
+            with self.assertRaisesRegex(MakeProbeError, "file-creation budget"):
+                probe_generated_registry(session.loader, command=second, session=session)
+            with self.assertRaisesRegex(MakeProbeError, "aggregate probe deadline/budget"):
+                probe_generated_registry(session.loader, command=first, session=session)
+        self.assert_clean(session)
+
+    def test_registry_helper_cannot_reuse_cache_past_the_report_deadline(self):
+        command = self.registry_fixture("cached")
+        with self.session() as session:
+            probe_generated_registry(session.loader, command=command, session=session)
+            budget = session.budget
+            started, runs = budget.started, budget.runs
+            budget.limits = replace(budget.limits, seconds=time.monotonic() - started + 0.02)
+            deadline = budget.deadline
+            time.sleep(max(0, deadline - time.monotonic()) + 0.03)
+            with self.assertRaisesRegex(MakeProbeError, "aggregate probe deadline"):
+                probe_generated_registry(session.loader, command=command, session=session)
+            self.assertIs(session.budget, budget)
+            self.assertIs(session.loader.budget, budget)
+            self.assertEqual((budget.started, budget.deadline, budget.runs), (started, deadline, runs))
+        self.assert_clean(session)
+
+    def test_make_and_registry_helper_consume_the_same_creation_budget(self):
+        command = self.registry_fixture("registry")
+        self.add("make_data.py", "open('/work/make-entry','wb').close()\nprint('dep')\n")
+        self.add("Makefile", "VALUE := $(shell python3 -I -B make_data.py)\nall: $(VALUE)\ndep: ;\n")
+        with self.session(created_files=1) as session:
+            session.make("all", commands={
+                "python3 -I -B make_data.py": Command(
+                    ("/usr/bin/python3", "-I", "-B", "/repo/make_data.py"), code=("make_data.py",),
+                ),
+            })
+            self.assertEqual(session.files_created, 1)
+            with self.assertRaisesRegex(MakeProbeError, "file-creation budget"):
+                probe_generated_registry(session.loader, command=command, session=session)
+        self.assert_clean(session)
 
     def test_recursive_bind_restricts_submounts_and_preserves_explicit_exceptions(self):
         self.add("Makefile", "all: ;\n")
@@ -2203,8 +2299,29 @@ int main(int argc, char **argv) {
             self.assert_clean(session)
 
     def test_real_immutable_tree_consumer_reports_make_and_bundle_sources(self):
-        from scripts.validation_ownership.consumer import check
-        result = check(ROOT, "HEAD")
+        from scripts.validation_ownership import consumer
+        sessions, budgets, registry_sessions = [], [], []
+        initialize = consumer.ProbeSession.__init__
+        entries, registry = consumer.git_tree_entries, consumer.probe_generated_registry
+        def creating(session, *args, **kwargs):
+            initialize(session, *args, **kwargs)
+            sessions.append(session)
+        def loading(*args, **kwargs):
+            budgets.append(kwargs["budget"])
+            return entries(*args, **kwargs)
+        def discovering(loader, *, command, session):
+            self.assertIs(loader, session.loader)
+            self.assertIs(session.budget, budgets[0])
+            self.assertGreater(session.budget.states, 0)
+            registry_sessions.append(session)
+            return registry(loader, command=command, session=session)
+        with patch.object(consumer.ProbeSession, "__init__", creating), patch.object(
+            consumer, "git_tree_entries", loading,
+        ), patch.object(consumer, "probe_generated_registry", discovering):
+            result = consumer.check(ROOT, "HEAD")
+        self.assertEqual(len(sessions), 1)
+        self.assertEqual(registry_sessions, sessions)
+        self.assertEqual(budgets, [sessions[0].budget])
         self.assertEqual(result["scope"], "ownership-probe-foundation")
         self.assertEqual(result["make"]["target"], "localization-check")
         self.assertEqual(result["make"]["semantics"]["files"][0]["prerequisites"], [

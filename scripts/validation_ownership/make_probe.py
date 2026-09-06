@@ -954,11 +954,10 @@ class ProbeSession:
         return record
 
 
-def probe_generated_registry(loader, *, scratch_root, command: Command, session=None):
-    """PR186 seam: reuse the report-wide session, not a fresh per-table budget."""
-    if session is not None:
-        if session.loader is not loader:
-            raise MakeProbeError("registry loader differs from the session's exact tree")
-        return session.registry(command)
-    with ProbeSession(loader, scratch_root=scratch_root) as authority:
-        return authority.registry(command)
+def probe_generated_registry(loader, *, command: Command, session: ProbeSession):
+    """Use the caller's active report authority; never create a per-table owner."""
+    if not isinstance(session, ProbeSession) or session.base is None or session.snapshot is None:
+        raise MakeProbeError("registry requires the caller's active ProbeSession")
+    if session.loader is not loader or loader.budget is not session.budget:
+        raise MakeProbeError("registry loader/budget differs from the report session")
+    return session.registry(command)

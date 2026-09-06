@@ -282,6 +282,16 @@ with ProbeSession(loader, scratch_root=root / "build/test-artifacts/probe",
     print(observation.semantic_digest)
 ```
 
+The registry helper requires that same active owner:
+`probe_generated_registry(loader, command=command, session=probe)`.
+There is no optional/sessionless path or helper-level `scratch_root` argument.
+Missing, `None`, inactive, foreign-loader or mismatched-budget authority rejects
+without launching work. Repeated identical requests share the session cache;
+distinct requests consume the same counters and quotas, including work already
+performed by Make. Even cached results cannot be reused after that report's
+deadline or a terminal budget failure. The production consumer passes the one
+budget used for tree capture through its Make session and registry helper.
+
 The existing **3,600-second maximum is one monotonic deadline**, including
 snapshotting, compilation, all subprocesses and replay. Every subprocess gets
 the remaining lifetime. Defaults bound 4,096 states/launches, 32 descendants
@@ -398,8 +408,9 @@ Required downstream #180/PR186 integration:
    stdout or an identity hash containing the full execution snapshot. Adapt
    registered exact command keys to the collision-free argv convention.
 4. Supply complete typed code/source/enumeration declarations to registry and
-   native commands. `probe_generated_registry` accepts a typed `Command` and
-   optionally the existing session; its result is the verified typed record.
+   native commands. `probe_generated_registry` requires a typed `Command`,
+   matching loader and the active report-wide `ProbeSession`; its result is the
+   verified typed record. It must not create a per-registry session or budget.
    Gitlink-backed tools need exact pinned materialization/admission, not a
    live submodule checkout or executable mounted into Make.
 5. Restore the full public `validation-ownership-check` Make target **in PR186** and
