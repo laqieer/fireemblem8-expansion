@@ -45,20 +45,25 @@ def inventory() -> Inventory:
         *, count: int = 1, event: EventKind = EventKind.COMMAND,
         program: Program | None = None, extra: tuple[ResourceAccess, ...] = (),
         context: tuple[Context, ...] = (), placements: tuple[Placement, ...] | None = None,
-        payloads: tuple = (),
+        payloads: tuple = (), executable: shell.Word | None = None,
     ) -> None:
         form = shell.command(source)
-        invocation = normalize_invocation(form)
-        executable = invocation.executable.literal if invocation.executable else None
+        invocation = normalize_invocation(
+            form, executable=program.interpreter if program is not None else executable,
+        )
+        name_word = invocation.executable
+        literal = name_word.literal if name_word else None
         if not form.argv:
             family = Family.ASSIGNMENT
-        elif executable in {scope.name for scope in scopes}:
-            family = Family.HELPER
-        elif executable in builtins:
-            family = Family.BUILTIN
-        elif executable == "/usr/bin/python3":
+        elif program is not None:
             family = Family.PYTHON
-        elif executable is not None and executable.startswith("/"):
+        elif literal in {scope.name for scope in scopes}:
+            family = Family.HELPER
+        elif literal in builtins:
+            family = Family.BUILTIN
+        elif literal == "/usr/bin/python3":
+            family = Family.PYTHON
+        elif literal is not None and (literal.startswith("/") or executable == name_word):
             family = Family.EXECUTABLE
         else:
             raise ValueError("signature has no fixed executable")
@@ -66,7 +71,7 @@ def inventory() -> Inventory:
             f"{scope}.{name}", scope, form, family, count,
             (ResourceAccess(resource, access),) + extra, (event,), program,
             placements=placements if placements is not None else (Placement(context, count),),
-            payloads=payloads,
+            payloads=payloads, executable=executable,
         ))
 
     def control(scope: str, name: str, source: str, context: tuple[Context, ...] = (), count: int = 1) -> None:

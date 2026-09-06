@@ -219,7 +219,7 @@ authority.
   [issue #200](https://github.com/laqieer/fireemblem8-expansion/issues/200);
   prerequisite initiative [#177](https://github.com/laqieer/fireemblem8-expansion/issues/177).
 - **Configuration:** supported Linux source checkout, Python 3.10+, Git,
-  Bash, `/usr/bin/python3`, and `findmnt`. No ROM, secret, GitHub token,
+  Bash, `/usr/bin/python3` with stdlib `venv`, `make`, and `findmnt`. No ROM, secret, GitHub token,
   privileged namespace, live workflow, or download is required.
 - **Clean start:** use a disposable clean checkout of the exact candidate.
   The authority CLI requires its source/module modes and bytes to match that
@@ -335,6 +335,32 @@ authority.
     A direct system `_json` native loader works, but the same loader pointed
     at a fixture-local copy rejects. Exiting the guarded context restores
     ordinary controlled loading.
+13. Confirm the independent candidate fixture extends that same inventory
+    with literal `make` / `./build_tools.sh`, the exact symbolic Word
+    `"$HOME/venv/bin/python3"`, non-isolated `-m venv` / `-m pip` profiles,
+    and the isolated full FD-check program. Candidate rows do not authorize
+    anything in entry/producer/staging, and the default inventory still
+    rejects candidate commands until explicitly extended. Change every argv
+    Word (including module, startup, and program text), executable suffix or
+    variable/quoting, assignment/environment, redirect, wrapper, context,
+    helper/control, nested preflight call, or cardinality: each mutation
+    rejects. Python cannot be relabeled as generic execution. Equivalent
+    quoting/parameter spelling and independent order remain accepted.
+    Refreshing a submitted canonical payload alone must not affect the
+    decision. Explicit independent registry updates to the make target,
+    Python startup/module, and full inline text then authorize only their
+    newly reviewed forms; a form-only change without matching Program
+    metadata fails. Captured-source execution returns the same public typed
+    records for all new profiles.
+14. Confirm the bounded owned runtime fixture runs the actual FD-check text:
+    no inherited extra FD exits 0 with no output; a deliberately inherited
+    fixture FD exits 125 with no output. A separately registered
+    `venv --without-pip` fixture creates only a repository-local environment,
+    without installing packages. The exact symbolic pip command runs an inert
+    fixture-local module, returning its decoded full argv, venv prefix, and
+    `isolated=0` / `no_site=0`. The exact tools/make commands execute only an
+    owned script and tiny Makefile, emitting `fixture-tools` / `fixture-make`.
+    No real game build, network access, or real pip installation occurs.
 
 ### Expected result
 
@@ -343,6 +369,9 @@ fixture fails before publication. Both semantic suites consume the same
 authority and agree. The exact membership-checker command is mandatory with
 one production occurrence after #201 integration; removing or adding one
 fails the closed inventory.
+The candidate API accepts only independently registered complete profiles;
+its existence alone does not adopt #201's production candidate signatures or
+phase policy.
 
 ### Negative control
 
@@ -367,6 +396,12 @@ The earlier cache guard lets `importlib.__import__` accept a cached external
 module in the exact-tree API and lets prebound from-imports return a cached
 package shadow. These executable controls fail independently of source
 binding; quarantine closes both routes without disabling genuine stdlib use.
+At parent `1b62a5e1`, the explicit candidate root, symbolic interpreter, and
+honest module profile each fail as missing capabilities. The new positive
+fixtures fail if those capabilities are removed. Workflow-only executable,
+startup/module, inline-program, argument, preflight, and redirection changes
+remain negative controls; only an explicit independent registry update permits
+the changed operation.
 
 ### Interactions and save compatibility
 
@@ -377,6 +412,10 @@ successful publisher Build. Updating a production operation requires updating it
 signature and behavioral evidence together. Arbitrary Bash syntax,
 unregistered executables and caller-provided Python are unsupported, not
 silently analyzed as safe.
+The candidate API supplies representation and full-invocation authority, not
+production adoption or phase/order rules. Normal non-isolated module startup
+does not assert installed module identity or containment. Those remain with
+#201's runtime/environment policy; source-only authority loading is unchanged.
 The source-only loader enforces code origin; it is not a sandbox for arbitrary
 malicious reviewed Python. It trusts the bootstrap, interpreter and system
 stdlib, and does not contain in-process policy tampering or arbitrary
@@ -402,6 +441,9 @@ checks plus publisher/upstream decision parity. The upstream-specific method
 independently verifies its production call site against the shared corpus.
 The two existing mount-reader methods and syntax method retain the canonical
 programs' decoded-output and compile contracts.
+`PublisherCandidateProfileTests` in the first suite supplies steps 13–14,
+including the owned no-network/no-game runtime fixtures and the deliberate
+registry-update positive. No additional test runner or profile matrix is needed.
 
 ## TC-WORKFLOW-WORKTREE-CLEANUP-001: Remove only proven completed worktrees
 
