@@ -133,8 +133,9 @@ commit the candidate, and hand it off.
 ## Sibling-family review convergence
 
 For a high-risk or large change, use one fresh bounded read-only reviewer
-before the first remote review. Keep implementer, reviewer and coordinator
-ownership distinct. Use the existing task/tool interfaces, not another agent
+before the first remote review. The reviewer must differ from coordinator and
+implementer; those two may be one actual owner for coordinator-authored work.
+Do not create aliases or pretend delegation. Use the existing task/tool interfaces, not another agent
 backend. The reviewer can read the exact candidate and supplied evidence and
 return its report; it cannot edit, push, comment, request review, dispatch CI
 or merge. Enforce those actions at dispatch, not by accepting a claimed
@@ -164,6 +165,14 @@ The trusted coordinator and reviewed test tools are the authority. Read-only
 roles and minimal environments are operational controls, not hostile same-UID
 OS isolation. No broker, receipt/signature platform or protected installation
 is required.
+
+- **Reviewer:** distinct-from-coordinator, distinct-from-implementer, read-only, bounded
+- **Coordinator implementation:** same-actual-owner-permitted, no-aliases
+- **Delegated local proof:** terminal-owner-handoff, descendant-and-trailers, assigned-scope-and-resources
+- **Coordinator local proof:** exact-git-and-worktree, registered-complete-native-checks,
+  incomplete-delegate-blocks, no-fabricated-worker
+- **Final criteria:** independent-review, objective-and-manual, rom-ram-protocol-profile,
+  security, candidate-Build, master-Build, bound-architecture-disposition, remote-completion
 
 ## CI waiting
 
@@ -220,7 +229,7 @@ issue's closure and remote completion, but not unrelated independent PRs.
 ### Bounded exact-SHA implementation handoffs
 
 Use the [version-3 handoff contract](../docs/workflow-pilot.md#bounded-exact-sha-implementation-handoffs)
-for bounded implementation cycles. The coordinator owns the assignment, real
+for delegated bounded implementation cycles. The coordinator owns the assignment, real
 Git/check/process observations and one locked session-local coordination
 document; the implementation returns only the assignment ID, echoed parent,
 result SHA and named evidence references. These records are not authenticated
@@ -233,6 +242,15 @@ limit and use a fresh owner for review. Permit explicitly recorded normal
 upstream merges; apply task trailers/scope to task-owned changes, not imported
 upstream history. Incremental assignment budgets do not replace full-PR
 review-size preflight.
+
+Coordinator-authored work uses the existing explicit native local-check
+registration instead, bound to its actual owner and exact Git
+head/frozen-base/ref/worktree. Every registered criterion must complete;
+empty assignments, raw-only checks or an incomplete required delegation are
+not ready. Do not invent worker budgets or LLM process measurements.
+Independent review, global objective/manual/ROM/RAM/protocol/profile criteria,
+security and complete candidate/master Builds remain mandatory and separate
+from local proof.
 
 Keep one real direct watcher per exact GitHub run/attempt. Reconcile watcher
 errors through GitHub; a process timeout is not CI failure or success. On

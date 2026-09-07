@@ -2197,7 +2197,7 @@
       "profiles": ["Locked host Python and source checkout", "Coordinator-owned disposable PRs on a dependency-ready base"],
       "purpose": "Change expensive candidate Build timing without reducing review, security, complete candidate/master or manual quality gates.",
       "prerequisites": "Use existing #176 decisions, #178 coordinator/handoff state, #179 task/triage authority and the locked interpreter. Only the delivery coordinator performs remote exercises.",
-      "actions": "Run test_adaptive_gate and the directly affected topology/publisher/review/metadata controls, then execute the documented review-first and concurrent disposable PR procedure with actual GitHub run and check identities.",
+      "actions": "Run test_adaptive_gate, test_candidate_identity and test_coordinator_local with directly affected topology/publisher/review/metadata controls. Retain old/new full frozen identities and reservations across real same-head/base/ref transitions, then execute the documented disposable PR procedure with actual GitHub identities.",
       "expected_result": "Named-risk/large candidates defer the complete Build until accepted clean exact review/security. One bound full run plus every final criterion is necessary; master retains all eight jobs and its real publisher.",
       "negative_control": "Unknown decisions and pause retain broader timing. Accepted findings abandon heads; stale, duplicate, cancelled, unresolved, wrong-source and early-dispatch evidence cannot authorize merge.",
       "interactions": "Depends on #176/#177/#178/#179. #180/#206 remain parallel and #196 extraction is later. Preserve trusted pushes, one watcher per run/attempt and audiovisual holds.",
@@ -2212,6 +2212,10 @@
         {
           "command": "build/host-python/bin/python3 -I -c 'import sys, unittest; sys.path.insert(0, \".\"); unittest.main(module=None)' scripts.workflow_pilot.tests.test_coordinator_local -v",
           "evidence": "scripts/workflow_pilot/tests/test_coordinator_local.py"
+        },
+        {
+          "command": "build/host-python/bin/python3 -I -c 'import sys, unittest; sys.path.insert(0, \".\"); unittest.main(module=None)' scripts.workflow_pilot.tests.test_candidate_identity -v",
+          "evidence": "scripts/workflow_pilot/tests/test_candidate_identity.py"
         }
       ]
     },
@@ -2226,7 +2230,7 @@
       "purpose": "Bind actual reviewed subjects to complete finite sibling obligations and trusted execution observations, preserving bounded remediation and sticky architecture holds.",
       "prerequisites": "Use the existing locked host environment for host tests; the separate ARM selector uses the supported compiler/binutils via PATH or resolved MODERN_CC/MODERN_NM/MODERN_SIZE paths. Tests own source-backed Git and non-system toolchain fixtures under build/ and need no credentials, live PR, ROM or emulator.",
       "actions": "Run the focused host review suites and explicit arm_review_subjects selector. Exercise all five families, real optional-owner and generated-code mutations, Make-resolved tool overrides and missing-tool rejection, complete local report triage, current active/dismissed review retriage, one active PR/head owner, exact merge-base lineage, commit-only loading, bounded Git diagnostics and first/second/third-round transitions.",
-      "expected_result": "The same reviewed probes detect actual broken origin code/data and pass corrected subjects. Every expected member is recorded. Third-round holds survive later heads and clean reports until bound coordinator disposition.",
+      "expected_result": "The same reviewed probes detect actual broken origin code/data and pass corrected subjects. Every expected member is recorded. The reviewer differs from coordinator and implementer, which may be one actual owner for coordinator-authored work. Third-round holds survive later heads and clean reports until bound coordinator disposition.",
       "negative_control": "Missing siblings after the reported fix, added/deleted/unknown members, duplicate ownership, wrong task/head/source, fabricated pass labels, compile/import/zero/skipped tests, stale triage and undisposed holds cannot establish eligibility.",
       "interactions": "Depends on #176 metrics, existing Git/GitHub/task/test interfaces and #216 locked schema dependencies; #181 depends on it. #178 is independent. #204 is not a dependency. Preserve #207 immediate assigned-branch WIP persistence and #208 cleanup.",
       "save_compatibility": "No gameplay, save/config, generated-game-data, locale, ROM/RAM, modern/archival or required-context changes.",
@@ -2240,6 +2244,10 @@
         {
           "command": "python3 -m unittest scripts.workflow_pilot.tests.arm_review_subjects -v",
           "evidence": "scripts/workflow_pilot/tests/arm_review_subjects.py"
+        },
+        {
+          "command": "build/host-python/bin/python3 -I -c 'import sys, unittest; sys.path.insert(0, \".\"); unittest.main(module=None)' scripts.docs_check_tests.test_development_workflow_skill.DevelopmentWorkflowSkillTests.test_review_ownership_contract_and_actual_runtime_roles_agree -v",
+          "evidence": "scripts/docs_check_tests/test_development_workflow_skill.py"
         }
       ]
     },

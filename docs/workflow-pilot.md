@@ -206,7 +206,11 @@ watchers. The existing assignment/handoff and watcher schemas remain valid.
 1. `fetch_candidate`, `fetch_decision` and `frozen_base` collect existing PR,
    decision and merge-base observations. In a short `locked_state` transaction,
    `begin_candidate` records the exact head/base/ref/decision and supersedes
-   older candidates for that PR only.
+   older candidates for that PR only. `candidate_identity(record)` returns the
+   existing `(PR, head, frozen base, base ref)` tuple within that repository's
+   state. `find_candidate(state, identity)` requires this complete key and
+   returns exactly one record, including an abandoned one when explicitly
+   selected. Never look up by PR/head alone or select the newest record.
 2. Supply the coordinator's actual #179 `ReviewSession` and complete `Triage`
    records. `assess_observed` refreshes the real GitHub review facts, exact
    check runs, and Build runs, and calls #179's shared `review_state` predicate.
@@ -245,12 +249,21 @@ watchers. The existing assignment/handoff and watcher schemas remain valid.
    Zero, multiple, unclassified, stale or wrong-identity runs stay uncertain.
    Observations may support cleanup of abandoned heads but never revive them,
    and fresh review/local/security/criteria plus full-job success remain required.
+   Reconciliation derives the frozen base from the supplied immutable PR
+   snapshot before lookup. Retained old and new same-head/base-ref reservations
+   therefore remain distinct. A retained old snapshot can observe its own run
+   for cleanup; live drift marks it abandoned rather than rebinding it.
+   For a ref-only change whose wire marker is identical, use an already observed
+   historical run/attempt to establish that run's other complete identity.
+   Unknown ownership, modes or attempts stay visible holds, not guessed epochs.
 6. When a run becomes visible, use the existing #178 `reserve_watcher` /
    `finish_watcher` / `reconcile_run` interfaces and exactly one attached
    bounded shell watcher per run/attempt. A reasoning agent never waits.
 7. `cancel_abandoned` reloads the persisted state before any remote action,
    verifies actual repository/run/attempt/head/workflow identity, and refuses
-   cancellation without prior abandonment or for unrelated work.
+   cancellation without prior abandonment or for unrelated work. Bound run and
+   attempt must match. When multiple base refs share a marker, an unobserved
+   run cannot be guessed into one record for cancellation.
 8. Render `evidence_comment(assessment, preserved_text)` and update the single
    existing owner-authored canonical comment through
    `pr_metadata.update_evidence_comment`. Preserve other local/runtime/manual
@@ -309,13 +322,18 @@ missing native process data, stale clocks or unavailable coordinator coverage
 remain non-ready. Use the existing short locked-state transactions; no new
 scheduler or persistence service is needed.
 
-`coordinator_local_ready` validates this local proof only. `_local_ready` keeps
-the delegated path and checks applicable terminal lineage before considering
+`coordinator_local_ready` validates this local proof only.
+`_local_ready(state, pr, record)` takes the explicit complete candidate record,
+keeps the delegated path and checks applicable terminal lineage before considering
 direct evidence. An open, rejected or incomplete required delegate still holds.
 Conversely, once direct criteria are explicitly registered, an older accepted
 handoff cannot hide their missing or failed captures.
-Independent review/family evidence, exact security, full Build, objective/manual
-criteria and master gates remain separate; local readiness is not merge permission.
+Independent review/family evidence, global objective/manual/ROM/RAM/protocol/
+profile criteria, exact security, full Build and master gates remain separate;
+local readiness is not merge permission. Delegated owners retain descendant,
+trailer, assigned scope/resource and lifecycle obligations. A coordinator's
+check-process measurements never stand in for a nonexistent worker's budgets
+or LLM process measurements.
 
 When the coordinator also implements the candidate, pass that same actual owner
 to both `ReviewSession` roles. The reviewer must still differ from both roles;
@@ -365,7 +383,10 @@ risk classification. A high-risk or large candidate gets one fresh bounded
 read-only review before its first remote review. The existing task runtime
 owns task identity, owner, role, completion and observed tool actions. The
 reviewer's response is findings data, not an authentication token. Keep its
-owner distinct from implementation and coordination.
+owner distinct from implementation and coordination. Those latter roles may
+be the same actual owner for coordinator-authored work; no aliases or invented
+delegation are permitted. `ReviewSession` accepts that real ownership, while
+`begin` still rejects either owner as reviewer before task launch.
 Share one `ReviewOwnership` index across the coordinator's sessions; it blocks
 another active reviewer for the same repository/PR or the same candidate head,
 regardless of scope, before another task can start.

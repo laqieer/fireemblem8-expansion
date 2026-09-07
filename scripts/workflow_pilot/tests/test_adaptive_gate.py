@@ -397,6 +397,7 @@ class GateTests(unittest.TestCase):
         self.runs = [self.workflow_run(1, "review-first")]
 
     def workflow_run(self, run_id, mode="full", *, event=None, conclusion=None, attempt=1):
+        from scripts.workflow_pilot.tests.test_pr_metadata import WORKFLOW_ID
         created = reporter.parse_time(at_offset(-20), "run")
         classifier = (candidate_evidence.PREFLIGHT_CLASSIFIER if mode == "review-first"
                       else candidate_evidence.FULL_CLASSIFIER)
@@ -411,7 +412,7 @@ class GateTests(unittest.TestCase):
                 candidate_binding=(self.pr.number, self.pr.head_sha, self.fixture.parent)
                 if job_id == "event-classifier" else None))
         return github.RunState(
-            run_id, 10, run_id, attempt, self.pr.head_ref, created, created, created, "completed",
+            run_id, WORKFLOW_ID, run_id, attempt, self.pr.head_ref, created, created, created, "completed",
             conclusion or ("failure" if mode == "review-first" else "success"),
             "explicit-same", mode, tuple(jobs), event or ("pull_request" if mode == "review-first"
                                                         else "workflow_dispatch"),
@@ -493,12 +494,12 @@ class GateTests(unittest.TestCase):
         self.assertTrue(report["final_master_build_required"])
 
     def test_registered_local_criteria_are_not_hidden_by_an_accepted_delegate(self):
-        self.assertTrue(gate._local_ready(self.state, self.pr))
+        self.assertTrue(gate._local_ready(self.state, self.pr, self.record))
         gate.register_local_validation(self.state, self.record, self.pr, self.fixture.worktree, {
             "raw": {"contract": "git-diff-check", "evidence_id": "raw", "inputs": []},
             "extra": {"contract": "coordinator-check", "evidence_id": "extra", "inputs": []},
         })
-        self.assertFalse(gate._local_ready(self.state, self.pr))
+        self.assertFalse(gate._local_ready(self.state, self.pr, self.record))
         self.assertFalse(self.assess()["dispatchable"])
 
     def test_accepted_finding_abandons_even_if_an_early_or_later_build_passes(self):
@@ -837,6 +838,13 @@ class GateTests(unittest.TestCase):
 
         class Client:
             def request(inner, method, endpoint, **kwargs):
+                if method == "GET":
+                    self.assertEqual(endpoint, github._endpoint(
+                        pr.repository, f"compare/{pr.base_sha}...{pr.head_sha}"))
+                    return SimpleNamespace(payload={
+                        "base_commit": {"sha": pr.base_sha},
+                        "merge_base_commit": {"sha": git(self.fixture.worktree, "merge-base",
+                                                        pr.base_sha, pr.head_sha)}})
                 calls.append((method, endpoint, kwargs))
                 saved = observations.load_json(path)
                 self.assertIsNotNone(saved["candidates"][0]["dispatch_requested_at"])
@@ -863,6 +871,13 @@ class GateTests(unittest.TestCase):
         write_json(path, self.state)
         calls = []
         def accept_post(argv, **kwargs):
+            if argv[argv.index("--method") + 1] == "GET":
+                self.assertEqual(argv[-1], github._endpoint(
+                    self.pr.repository, f"compare/{self.pr.base_sha}...{self.pr.head_sha}"))
+                payload = {"base_commit": {"sha": self.pr.base_sha}, "merge_base_commit": {
+                    "sha": git(self.fixture.worktree, "merge-base", self.pr.base_sha, self.pr.head_sha)}}
+                wire = "HTTP/2.0 200 OK\r\nContent-Type: application/json\r\n\r\n" + json.dumps(payload)
+                return subprocess.CompletedProcess(argv, 0, wire.encode(), b"")
             calls.append((argv, kwargs))
             self.assertEqual(json.loads(kwargs["input"]), {"ref": self.pr.head_ref})
             return subprocess.CompletedProcess(argv, 0, b"HTTP/2.0 204 No Content\r\n\r\n", b"")
@@ -918,7 +933,13 @@ class GateTests(unittest.TestCase):
         other = self.parsed_dispatch(3)
         queued = self.parsed_dispatch(3, queued=True)
         path = self.fixture.home / "reconciliation.json"
-        client = SimpleNamespace(request=lambda *args, **kwargs: self.fail("unexpected remote mutation"))
+        def read_compare(method, endpoint, **kwargs):
+            self.assertEqual((method, endpoint), ("GET", github._endpoint(
+                self.pr.repository, f"compare/{self.pr.base_sha}...{self.pr.head_sha}")))
+            return SimpleNamespace(payload={"base_commit": {"sha": self.pr.base_sha}, "merge_base_commit": {
+                "sha": git(self.fixture.worktree, "merge-base", self.pr.base_sha, self.pr.head_sha)}})
+
+        client = SimpleNamespace(request=read_compare)
         cases = (
             (), (good, other), (good, queued),
             (replace(good, created_at=reporter.parse_time(at_offset(-60), "earlier")),),

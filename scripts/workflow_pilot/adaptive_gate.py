@@ -434,6 +434,22 @@ def security_checks(client, pr):
     return tuple(sorted(result, key=lambda item: item.name))
 
 
+def candidate_identity(record):
+    """The existing frozen identity, within its repository-scoped coordinator state."""
+    return tuple(record[key] for key in ("pr_number", "head_sha", "base_sha", "base_ref"))
+
+
+def find_candidate(state, identity):
+    require(isinstance(identity, tuple) and len(identity) == 4, "complete candidate identity required")
+    handoff.integer(identity[0], minimum=1)
+    for revision in identity[1:3]:
+        handoff.sha(revision)
+    handoff.text(identity[3], maximum=256)
+    records = [record for record in state.get("candidates", ()) if candidate_identity(record) == identity]
+    require(len(records) == 1, "candidate identity is missing or ambiguous")
+    return records[0]
+
+
 def validate_candidate_records(records):
     seen = set()
     for record in handoff.items(records, maximum=MAX_CANDIDATES):
@@ -475,7 +491,7 @@ def validate_candidate_records(records):
                     "observed dispatch lacks reservation/run binding")
             require(handoff.timestamp(record["dispatch_requested_at"]) <=
                     handoff.timestamp(record["dispatch_observed_at"]), "dispatch observation predates request")
-        identity = record["pr_number"], record["head_sha"], record["base_sha"], record["base_ref"]
+        identity = candidate_identity(record)
         require(identity not in seen, "duplicate candidate identity")
         seen.add(identity)
 
@@ -487,14 +503,14 @@ def begin_candidate(state, pr, base, decision):
     reporter.expect_sha(base, "candidate base")
     records = state.setdefault("candidates", [])
     key = pr.number, pr.head_sha, base, pr.base_ref
+    if any(candidate_identity(record) == key for record in records):
+        record = find_candidate(state, key)
+        require(record["decision_oid"] == decision.decision_oid, "decision identity changed")
+        return record
+    require(len(records) < MAX_CANDIDATES, "candidate history bound reached")
     for record in records:
-        identity = record["pr_number"], record["head_sha"], record["base_sha"], record["base_ref"]
-        if identity == key:
-            require(record["decision_oid"] == decision.decision_oid, "decision identity changed")
-            return record
         if record["pr_number"] == pr.number and record["abandoned_reason"] is None:
             record["abandoned_reason"] = "superseded-head-or-base"
-    require(len(records) < MAX_CANDIDATES, "candidate history bound reached")
     abandoned = next((item["abandoned_reason"] for item in records
                       if item["pr_number"] == pr.number and item["head_sha"] == pr.head_sha
                       and item["abandoned_reason"] not in (None, "superseded-head-or-base")), None)
@@ -560,9 +576,8 @@ def _delegation_incomplete(entries):
 def _coordinator_git(state, record, pr, worktree):
     handoff.summarize_handoffs(state)
     require(not handoff.availability_errors(state, observations.utc_now()), "coordinator availability unavailable")
-    require(record in state.get("candidates", ()) and state["repository"] == pr.repository
-            and (record["pr_number"], record["head_sha"], record["base_ref"]) ==
-            (pr.number, pr.head_sha, pr.base_ref), "local candidate identity changed")
+    require(find_candidate(state, candidate_identity(record)) == record and state["repository"] == pr.repository,
+            "local candidate identity changed")
     require(not _delegation_incomplete(_local_delegations(state, pr)),
             "applicable delegated handoff is incomplete or invalid")
     require(record["abandoned_reason"] is None, "candidate is abandoned")
@@ -570,7 +585,8 @@ def _coordinator_git(state, record, pr, worktree):
     require(current["head"] == pr.head_sha and current["branch"] == pr.head_ref
             and not current["dirty_paths"] and not current["conflicting"], "local worktree/head changed")
     bases = handoff._git(Path(worktree), "merge-base", "--all", pr.base_sha, pr.head_sha).decode().splitlines()
-    require(bases == [record["base_sha"]], "local candidate merge base changed")
+    require(len(bases) == 1 and candidate_identity(record) ==
+            (pr.number, pr.head_sha, bases[0], pr.base_ref), "local candidate merge base changed")
     return current
 
 
@@ -594,10 +610,9 @@ def _registered_local(state, record, pr):
     local = record.get("local_validation")
     require(local is not None, "coordinator local checks are not registered")
     validate_local_validation(local)
-    require((local["coordinator_id"], local["repository"], local["pr_number"], local["head_sha"],
-             local["base_sha"], local["base_ref"], local["branch"]) ==
-            (state["coordinator_id"], pr.repository, pr.number, pr.head_sha,
-             record["base_sha"], pr.base_ref, pr.head_ref), "registered local identity changed")
+    require(candidate_identity(local) == candidate_identity(record)
+            and (local["coordinator_id"], local["repository"], local["branch"]) ==
+            (state["coordinator_id"], pr.repository, pr.head_ref), "registered local identity changed")
     require(not handoff.availability_errors({**state, "clock": local["clock"]}, observations.utc_now()),
             "registered local clock is stale")
     current = _coordinator_git(state, record, pr, local["worktree"])
@@ -654,23 +669,40 @@ def coordinator_local_ready(state, record, pr):
         return False
 
 
-def _local_ready(state, pr):
+def _local_ready(state, pr, record):
     handoff.summarize_handoffs(state)
+    require(find_candidate(state, candidate_identity(record)) == record, "unrecorded local candidate")
     delegated = _local_delegations(state, pr)
-    if _delegation_incomplete(delegated):
+    if _delegation_incomplete(delegated) or record["abandoned_reason"] is not None:
         return False
-    registered = [record for record in state.get("candidates", ())
-                  if record["pr_number"] == pr.number and record["head_sha"] == pr.head_sha
-                  and record["base_ref"] == pr.base_ref and record["abandoned_reason"] is None
-                  and "local_validation" in record]
-    if registered:
-        return len(registered) == 1 and coordinator_local_ready(state, registered[0], pr)
-    return any(entry["validation"]["result_sha"] == pr.head_sha
-               and entry["assignment"]["expected_branch"] == pr.head_ref for entry in delegated)
+    if "local_validation" in record:
+        return coordinator_local_ready(state, record, pr)
+    for entry in delegated:
+        if (entry["validation"]["result_sha"] == pr.head_sha
+                and entry["assignment"]["expected_branch"] == pr.head_ref):
+            try:
+                bases = handoff._git(Path(entry["assignment"]["allowed_worktree"]), "merge-base", "--all",
+                                     pr.base_sha, pr.head_sha).decode().splitlines()
+                if len(bases) == 1 and candidate_identity(record) == (
+                        pr.number, pr.head_sha, bases[0], pr.base_ref):
+                    return True
+            except (OSError, ValueError):
+                pass
+    return False
 
 
-def _reserved_dispatch(record, pr, run):
-    return (record["dispatch_requested_at"] is not None and run.event == "workflow_dispatch"
+def _reserved_dispatch(record, pr, run, runs):
+    binding = run.candidate_binding
+    workflows = {prior.workflow_id for prior in runs if prior.mode == "review-first"
+                 and prior.head_sha == pr.head_sha and prior.head_branch == pr.head_ref
+                 and prior.run_number <= record["watermark"] and prior.candidate_binding == binding
+                 and candidate_evidence.preflight_success({
+                     job.name: (job.status, job.conclusion) for job in prior.jobs})}
+    return (isinstance(binding, tuple) and len(binding) == 3
+            and candidate_identity(record) == (*binding, pr.base_ref)
+            and binding[:2] == (pr.number, pr.head_sha)
+            and len(workflows) == 1 and run.workflow_id in workflows
+            and record["dispatch_requested_at"] is not None and run.event == "workflow_dispatch"
             and run.head_sha == pr.head_sha and run.head_branch == pr.head_ref
             and run.candidate_binding == (pr.number, pr.head_sha, record["base_sha"])
             and run.run_number > record["watermark"]
@@ -680,26 +712,45 @@ def _reserved_dispatch(record, pr, run):
             and record["full_attempt"] in (None, run.run_attempt))
 
 
+def _candidate_runs(state, record, pr, runs):
+    """Use observed run ownership for base refs not carried by the existing marker."""
+    identity = candidate_identity(record)
+    others = [item for item in state["candidates"] if candidate_identity(item)[:3] == identity[:3]
+              and candidate_identity(item) != identity and item["full_run_id"] is not None]
+    result = []
+    for run in runs:
+        if (run.head_sha != pr.head_sha or run.head_branch != pr.head_ref
+                or run.candidate_binding not in (None, identity[:3])):
+            continue
+        owned_elsewhere = (run.mode in {"full", "active-full"} and run.candidate_binding == identity[:3]
+                           and any((item["full_run_id"], item["full_attempt"]) ==
+                                   (run.run_id, run.run_attempt) for item in others))
+        if owned_elsewhere:
+            require((record["full_run_id"], record["full_attempt"]) != (run.run_id, run.run_attempt),
+                    "run observation belongs to multiple candidate identities")
+        else:
+            result.append(run)
+    return tuple(result)
+
+
 def assess_candidate(state, record, decision, pr, session, facts, triage, checks, runs,
                      *, family_evidence=None, accepted_security=(), criteria_ready=False):
     """Consume existing typed observations. Does not dispatch, merge or launch a watcher."""
     handoff.validate_state(state)
     require(type(criteria_ready) is bool, "objective/manual readiness must be an actual decision")
-    require(record in state.get("candidates", ()), "unrecorded candidate")
+    require(find_candidate(state, candidate_identity(record)) == record, "unrecorded candidate")
     require((pr.repository, pr.number, session.head, session.identity) ==
             (state["repository"], record["pr_number"], record["head_sha"],
              (pr.repository, pr.number, record["base_sha"])), "candidate/review identity mismatch")
-    require(pr.head_sha == record["head_sha"] and pr.base_ref == record["base_ref"]
+    require(candidate_identity(record) == (pr.number, pr.head_sha, session.identity[2], pr.base_ref)
             and decision.head_sha == pr.head_sha and decision.decision_oid == record["decision_oid"],
             "candidate head/base/decision changed")
     current_findings = tuple(item for item in session.accepted.values() if item.origin == pr.head_sha)
     require(all(item in checks for item in accepted_security), "stale accepted security finding")
     if current_findings or accepted_security:
         record["abandoned_reason"] = "accepted-review-or-security-finding"
-    rebound = any(item["pr_number"] == record["pr_number"]
-                  and item["head_sha"] == record["head_sha"]
-                  and (item["base_sha"], item["base_ref"]) !=
-                  (record["base_sha"], record["base_ref"])
+    rebound = any(candidate_identity(item)[:2] == candidate_identity(record)[:2]
+                  and candidate_identity(item) != candidate_identity(record)
                   for item in state["candidates"])
     missing = []
     try:
@@ -722,7 +773,7 @@ def assess_candidate(state, record, decision, pr, session, facts, triage, checks
         missing.append("review: " + str(error)[:512])
     if session.rounds.hold is not None:
         missing.append("architecture-hold")
-    if not _local_ready(state, pr):
+    if not _local_ready(state, pr, record):
         missing.append("exact-local-handoff")
     security_ready = (
         len(checks) == len(SECURITY_CHECKS)
@@ -733,18 +784,19 @@ def assess_candidate(state, record, decision, pr, session, facts, triage, checks
                      reporter.parse_time(record["created_at"], "candidate")) for item in checks))
     if not security_ready:
         missing.append("exact-clean-security")
-    expected_binding = pr.number, pr.head_sha, record["base_sha"]
-    matching = [run for run in runs if run.candidate_binding == expected_binding
+    expected_binding = candidate_identity(record)[:3]
+    current_runs = _candidate_runs(state, record, pr, runs)
+    matching = [run for run in current_runs if run.candidate_binding == expected_binding
                 and run.head_sha == pr.head_sha and run.head_branch == pr.head_ref]
     # A raw base-tip mismatch cannot classify an unmarked run as unrelated.
-    unknown = [run for run in runs if run.head_sha == pr.head_sha and run.head_branch == pr.head_ref
+    unknown = [run for run in current_runs if run.head_sha == pr.head_sha and run.head_branch == pr.head_ref
                and run.status in github.ACTIVE_RUN_STATUSES
                and run.candidate_binding in (None, expected_binding)
                and (run.candidate_binding is None or run.mode == "active-unknown")]
     if unknown:
         missing.append("unclassified-active-run")
-    visible = [*matching, *(run for run in unknown if run not in matching)]
-    full = [run for run in matching if run.mode in {"full", "active-full"}]
+    visible = current_runs
+    full = [run for run in current_runs if run.mode in {"full", "active-full"}]
     if any(run.head_sha != pr.head_sha for run in runs):
         missing.append("stale-run")
     if len({run.run_id for run in full}) != len(full) or len(full) > 1:
@@ -768,7 +820,7 @@ def assess_candidate(state, record, decision, pr, session, facts, triage, checks
             missing.append("wrong-full-run")
         elif decision.mode == "review-first":
             # GitHub creation times have second precision; retain the native reservation.
-            if (not _reserved_dispatch(record, pr, run)
+            if (not _reserved_dispatch(record, pr, run, matching)
                     or (record["dispatch_sent_at"] is None and record.get("dispatch_observed_at") is None)):
                 missing.append("early-or-unbound-full-run")
             else:
@@ -851,7 +903,7 @@ def assess_observed(client, state, record, session, triage, review_tools, *,
 
 def reserve_full_dispatch(state, record, assessment, runs):
     handoff.validate_state(state)
-    require(record in state.get("candidates", ()) and assessment["record"] == record
+    require(find_candidate(state, candidate_identity(record)) == record and assessment["record"] == record
             and assessment["dispatchable"], "candidate is not dispatchable")
     require(record["dispatch_requested_at"] is None and record["abandoned_reason"] is None,
             "duplicate or abandoned full dispatch")
@@ -864,18 +916,22 @@ def dispatch_full(client, state_path, pr, assess):
     """Persist reservation before POST. Unknown delivery never permits retry."""
     with observations.locked_state(state_path) as state:
         handoff.validate_state(state)
+        require(state["repository"] == pr.repository, "dispatch repository changed")
+        identity = pr.number, pr.head_sha, frozen_base(client, pr), pr.base_ref
         record, assessment, runs = assess(state)
+        require(find_candidate(state, identity) == record, "dispatch candidate identity changed")
         current = github.fetch_pull_request(client, pr.repository, pr.number)
-        github.require_identity(current, head_sha=pr.head_sha, base_sha=pr.base_sha)
-        require((current.head_ref, current.base_ref) == (pr.head_ref, pr.base_ref),
+        require((current.head_sha, current.head_ref, current.base_ref) ==
+                (pr.head_sha, pr.head_ref, pr.base_ref),
                 "dispatch branch identity changed")
+        if current.base_sha != pr.base_sha:
+            require(frozen_base(client, current) == identity[2], "dispatch frozen base changed")
         reservation = reserve_full_dispatch(state, record, assessment, runs)
-        identity = record["pr_number"], record["head_sha"], record["base_sha"], record["base_ref"]
     client.request("POST", github._endpoint(pr.repository, "actions/workflows/build.yml/dispatches"),
                    body={"ref": pr.head_ref}, label="one input-free full Build")
     with observations.locked_state(state_path) as state:
-        record = next(item for item in state["candidates"] if (
-            item["pr_number"], item["head_sha"], item["base_sha"], item["base_ref"]) == identity)
+        require(state["repository"] == pr.repository, "dispatch repository changed")
+        record = find_candidate(state, identity)
         require(record["dispatch_requested_at"] == reservation, "dispatch reservation changed")
         record["dispatch_sent_at"] = observations.utc_now()
     return {"state": "dispatch-observation-pending", "head_sha": pr.head_sha}
@@ -886,25 +942,14 @@ def reconcile_full_dispatch(client, state_path, pr):
     with observations.locked_state(state_path) as state:
         handoff.validate_state(state)
         require(state["repository"] == pr.repository, "reconciliation repository changed")
-        records = [item for item in state.get("candidates", ())
-                   if (item["pr_number"], item["head_sha"], item["base_ref"]) ==
-                   (pr.number, pr.head_sha, pr.base_ref)]
-        require(len(records) == 1, "reconciliation candidate is missing or ambiguous")
-        record = records[0]
+        identity = pr.number, pr.head_sha, frozen_base(client, pr), pr.base_ref
+        record = find_candidate(state, identity)
         require(record["dispatch_requested_at"] is not None, "no reserved full dispatch")
-        runs = github.list_candidate_runs(client, pr, include_dispatch=True)
-        binding = pr.number, pr.head_sha, record["base_sha"]
-        scoped = [run for run in runs if run.head_sha == pr.head_sha and run.head_branch == pr.head_ref
-                  and run.candidate_binding in (None, binding)]
+        scoped = _candidate_runs(state, record, pr, github.list_candidate_runs(client, pr, include_dispatch=True))
         unknown = any(run.status in github.ACTIVE_RUN_STATUSES
                       and (run.candidate_binding is None or run.mode == "active-unknown") for run in scoped)
         full = [run for run in scoped if run.mode in {"full", "active-full"}]
-        workflows = {run.workflow_id for run in scoped if run.mode == "review-first"
-                     and run.run_number <= record["watermark"] and run.candidate_binding == binding
-                     and candidate_evidence.preflight_success({
-                         job.name: (job.status, job.conclusion) for job in run.jobs})}
-        if (unknown or len(full) != 1 or len(workflows) != 1
-                or full[0].workflow_id not in workflows or not _reserved_dispatch(record, pr, full[0])):
+        if unknown or len(full) != 1 or not _reserved_dispatch(record, pr, full[0], scoped):
             return {"state": "dispatch-uncertain", "head_sha": pr.head_sha}
         current = github.fetch_pull_request(client, pr.repository, pr.number)
         if ((current.head_sha, current.head_ref, current.base_ref) !=
@@ -920,11 +965,16 @@ def reconcile_full_dispatch(client, state_path, pr):
 def cancel_abandoned(client, state_path, record, run):
     state = observations.load_json(state_path)
     handoff.validate_state(state)
-    require(record in state.get("candidates", ()) and record["abandoned_reason"] is not None,
+    require(find_candidate(state, candidate_identity(record)) == record and record["abandoned_reason"] is not None,
             "cancellation requires recorded abandonment")
     require(run.head_sha == record["head_sha"] and run.candidate_binding ==
-            (record["pr_number"], record["head_sha"], record["base_sha"]),
+            candidate_identity(record)[:3]
+            and record["full_run_id"] in (None, run.run_id)
+            and record["full_attempt"] in (None, run.run_attempt),
             "cancellation would affect unrelated work")
+    if sum(candidate_identity(item)[:3] == run.candidate_binding for item in state["candidates"]) > 1:
+        require((record["full_run_id"], record["full_attempt"]) == (run.run_id, run.run_attempt),
+                "cancellation base-ref ownership is ambiguous without its observed run")
     actual = observations.github_run(state["repository"], run.run_id, run.run_attempt, run.head_sha)
     require(actual["status"] != "completed" and actual["workflow_id"] == run.workflow_id,
             "run is terminal or belongs to another workflow")

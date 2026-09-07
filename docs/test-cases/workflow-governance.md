@@ -135,7 +135,9 @@ the consumers' independent protected-principal/deployment requirements.
    ```bash
    build/host-python/bin/python3 -I -c \
      'import sys, unittest; sys.path.insert(0, "."); unittest.main(module=None)' \
-     scripts.workflow_pilot.tests.test_adaptive_gate -v
+     scripts.workflow_pilot.tests.test_adaptive_gate \
+     scripts.workflow_pilot.tests.test_candidate_identity \
+     scripts.workflow_pilot.tests.test_coordinator_local -v
    ```
 
    An existing equivalent locked interpreter may be supplied instead; do not
@@ -230,6 +232,17 @@ the consumers' independent protected-principal/deployment requirements.
    same-head base rebind, fully triaged history plus a fresh clean review and
    fresh security can proceed; old untriaged/unresolved content or accepted
    valid findings must still hold or abandon the candidate.
+   Fast-forward a real integration base into an intermediate ancestor of an
+   unchanged candidate head, keeping both refs unchanged. Retain old/new
+   frozen-base records, reservations and parsed runs. Complete the new native
+   local checks and fresh clean-review/security evidence; reconcile only its
+   exact full identity. The old snapshot may record its own run for abandoned
+   cleanup, never admission. Also retarget a base ref with an unchanged marker:
+   only an actually observed old run/attempt establishes its separate ownership;
+   missing ownership stays uncertain. Zero/multiple/unclassified runs, wrong
+   head/base/ref/workflow/bound attempt, missing acknowledgement and partial
+   identity lookups cannot authorize a candidate. Unrelated base-tip movement
+   with the same unique merge base still permits normal dispatch.
 9. Execute the existing metadata summary against disposable local HTTP
    responses for a full dispatch and its current merge base. It retains
    complete eight-job success; missing/wrong/foreign marker or stale base
@@ -273,7 +286,11 @@ these PRs as merged pilot samples.
 5. Confirm the new exact-head Build has `review-first-classifier`, successful
    fast `host-tests`/`build`, skipped extended/legacy, and the explicit pending
    full `summary` failure. Register this candidate before requesting reviews.
-   Complete its real local handoff and independent review, and request
+   Complete its actual applicable local proof: a delegated terminal handoff,
+   or explicit registered native checks for coordinator-authored work. Never
+   manufacture an assignment, worker budget or process measurement. Complete
+   independent review with a reviewer different from coordinator and implementer
+   (who may be one actual owner), and request
    exact-head Copilot while the existing security checks run concurrently.
    Inspect complete review content and all threads; do not infer clean from
    COMMENTED, a heading or zero new inline comments.
@@ -291,8 +308,10 @@ these PRs as merged pilot samples.
        gate.begin_candidate(state, pr, gate.frozen_base(client, pr), decision)
 
    def assess_for_dispatch(state):
-       record = next(item for item in state["candidates"]
-                     if item["pr_number"] == pr_number and item["head_sha"] == pr.head_sha)
+       current, _ = gate.fetch_candidate(client, repository, pr_number)
+       identity = (current.number, current.head_sha,
+                   gate.frozen_base(client, current), current.base_ref)
+       record = gate.find_candidate(state, identity)
        assessment, runs = gate.assess_observed(
            client, state, record, review_session, tuple(review_session.rounds.events),
            review_tools, family_evidence=validated_family_inputs,
