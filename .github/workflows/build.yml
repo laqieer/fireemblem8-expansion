@@ -452,7 +452,7 @@ jobs:
       env:
         CANDIDATE_BINDING: ${{ needs.event-router.outputs.candidate_binding }}
       run: |
-        [[ "$CANDIDATE_BINDING" =~ ^workflow-pilot-candidate:v1:[1-9][0-9]*:[0-9a-f]{40}:[0-9a-f]{40}$ ]]
+        [[ "$CANDIDATE_BINDING" =~ ^workflow-pilot-candidate:v1:[1-9][0-9]*:[0-9a-f]{40}:[0-9a-f]{40}(:[A-Za-z0-9._%~-]+)?$ ]]
 
   # Fast, host-only lane (issues #13 + #12/#15): exercises every
   # tools/gba-playtest host test -- scenario/schema parsing, generators,
@@ -507,7 +507,7 @@ jobs:
         test "$CLASSIFIED_HEAD" = "$PR_HEAD_SHA"
         test "$CLASSIFIED_BASE" = "$PR_BASE_SHA"
         [[ "$DECISION_OID" =~ ^[0-9a-f]{40}$ ]]
-        [[ "$CANDIDATE_BINDING" =~ ^workflow-pilot-candidate:v1:${PR_NUMBER}:${PR_HEAD_SHA}:[0-9a-f]{40}$ ]]
+        [[ "$CANDIDATE_BINDING" =~ ^workflow-pilot-candidate:v1:${PR_NUMBER}:${PR_HEAD_SHA}:[0-9a-f]{40}(:[A-Za-z0-9._%~-]+)?$ ]]
     - name: Attest metadata-only branch-protection continuity
       if: ${{ needs.event-classifier.result == 'success' && needs.event-classifier.outputs.classification == 'metadata-only' }}
       env:
@@ -1066,7 +1066,7 @@ jobs:
         test "$CLASSIFIED_HEAD" = "$PR_HEAD_SHA"
         test "$CLASSIFIED_BASE" = "$PR_BASE_SHA"
         [[ "$DECISION_OID" =~ ^[0-9a-f]{40}$ ]]
-        [[ "$CANDIDATE_BINDING" =~ ^workflow-pilot-candidate:v1:${PR_NUMBER}:${PR_HEAD_SHA}:[0-9a-f]{40}$ ]]
+        [[ "$CANDIDATE_BINDING" =~ ^workflow-pilot-candidate:v1:${PR_NUMBER}:${PR_HEAD_SHA}:[0-9a-f]{40}(:[A-Za-z0-9._%~-]+)?$ ]]
     - name: Attest metadata-only branch-protection continuity
       if: ${{ needs.event-classifier.result == 'success' && needs.event-classifier.outputs.classification == 'metadata-only' }}
       env:
@@ -1698,6 +1698,7 @@ jobs:
       HEAD_VALID: ${{ needs.event-classifier.outputs.head_valid }}
       IDENTITY_VALID: ${{ needs.event-classifier.outputs.identity_valid }}
       RUN_EXPENSIVE: ${{ needs.event-classifier.outputs.run_expensive }}
+      PR_BASE_REF: ${{ github.event.pull_request.base.ref }}
       PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
       PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
       PUSH_SHA: ${{ github.event.after }}
@@ -2517,7 +2518,7 @@ jobs:
                       if len(candidate_markers) != 1:
                           fail("metadata-only summary full run lacks one candidate binding")
                       match = re.fullmatch(
-                          r"workflow-pilot-candidate:v1:([1-9][0-9]*):([0-9a-f]{40}):([0-9a-f]{40})",
+                          r"workflow-pilot-candidate:v1:([1-9][0-9]*):([0-9a-f]{40}):([0-9a-f]{40})(?::([^:\s]+))?",
                           candidate_markers[0],
                       )
                       if match is None:
@@ -2526,6 +2527,12 @@ jobs:
                           return "unbound", by_name
                       if match[2] != head_sha:
                           fail("metadata-only summary candidate binding head drifted")
+                      if match[4] is not None:
+                          ref = urllib.parse.unquote(match[4], errors="strict")
+                          if urllib.parse.quote(ref, safe="") != match[4]:
+                              fail("noncanonical candidate base ref")
+                          if ref != env("PR_BASE_REF", max_bytes=1024):
+                              return "unbound", by_name
                       compared, link, _ = request_json(
                           f"/repos/{quoted_owner}/{quoted_repo}/compare/{base_sha}...{head_sha}",
                           [], label="metadata-only summary current merge base")

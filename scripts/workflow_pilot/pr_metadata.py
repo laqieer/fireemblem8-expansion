@@ -166,6 +166,7 @@ class JobState:
     completed_at: datetime.datetime | None
     metadata_event_sha256: str | None = None
     candidate_binding: tuple[int, str, str] | None = None
+    candidate_base_ref: str | None = None
 
 
 @dataclass(frozen=True)
@@ -193,6 +194,7 @@ class RunState:
     event: str = "pull_request"
     head_sha: str = ""
     candidate_binding: tuple[int, str, str] | None = None
+    candidate_base_ref: str | None = None
 
 
 @dataclass(frozen=True)
@@ -2404,8 +2406,8 @@ def _metadata_event_step(
     return digest
 
 
-def _candidate_step(raw):
-    from .adaptive_gate import BINDING_PREFIX, parse_binding
+def _candidate_step_details(raw):
+    from .adaptive_gate import BINDING_PREFIX, parse_binding, binding_base_ref
     steps = raw.get("steps", ())
     if not isinstance(steps, (tuple, list)):
         raise MetadataEditError("candidate binding steps are malformed")
@@ -2413,14 +2415,18 @@ def _candidate_step(raw):
                 if isinstance(step, dict) and isinstance(step.get("name"), str)
                 and step["name"].startswith(BINDING_PREFIX)]
     if not matching:
-        return None
+        return None, None
     if len(matching) != 1:
         raise MetadataEditError("duplicate candidate binding step")
     step = matching[0]
     binding = parse_binding(step["name"])
     if binding is None or step.get("status") != "completed" or step.get("conclusion") != "success":
         raise MetadataEditError("candidate binding was not successfully observed")
-    return binding
+    return binding, binding_base_ref(step["name"])
+
+
+def _candidate_step(raw):
+    return _candidate_step_details(raw)[0]
 
 
 def _parse_job(
@@ -2540,6 +2546,8 @@ def _parse_job(
         run_started_at=run_started_at,
         run_updated_at=run_updated_at,
     )
+    binding, base_ref = (_candidate_step_details(raw) if name in {
+        candidate_evidence.FULL_CLASSIFIER, candidate_evidence.PREFLIGHT_CLASSIFIER} else (None, None))
     return JobState(
         job_id,
         run_id,
@@ -2557,8 +2565,8 @@ def _parse_job(
             )
             if name == candidate_evidence.METADATA_CLASSIFIER else None
         ),
-        _candidate_step(raw) if name in {
-            candidate_evidence.FULL_CLASSIFIER, candidate_evidence.PREFLIGHT_CLASSIFIER} else None,
+        binding,
+        base_ref,
     )
 
 
@@ -2856,12 +2864,17 @@ def _parse_run(
     if len(bindings) > 1 or any(item[1] != state.head_sha for item in bindings):
         raise MetadataEditError("Build run has contradictory candidate bindings")
     candidate_binding = next(iter(bindings), None)
+    base_refs = {job.candidate_base_ref for job in jobs if job.candidate_binding is not None}
+    if len(base_refs) > 1:
+        raise MetadataEditError("Build run has contradictory candidate base refs")
+    candidate_base_ref = next(iter(base_refs), None)
     if candidate_binding is not None:
         from .adaptive_gate import frozen_base
         raw_prs = raw.get("pull_requests") or []
         if raw_prs and raw_prs[0]["number"] != candidate_binding[0]:
             raise MetadataEditError("candidate marker contradicts PR binding")
-        if candidate_binding == (state.number, state.head_sha, frozen_base(client, state)):
+        if (candidate_binding == (state.number, state.head_sha, frozen_base(client, state))
+                and candidate_base_ref in (None, state.base_ref)):
             if head_branch != state.head_ref:
                 raise MetadataEditError("candidate branch binding changed")
             binding = "explicit-same"
@@ -2887,6 +2900,7 @@ def _parse_run(
             event=event,
             head_sha=state.head_sha,
             candidate_binding=candidate_binding,
+            candidate_base_ref=candidate_base_ref,
         ),
     )
 

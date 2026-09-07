@@ -272,6 +272,8 @@ class OverrideScopeTests(unittest.TestCase):
             }]}, "reviewThreads": {"pageInfo": {"hasNextPage": False}, "nodes": []},
         }}}}
         responses = {
+            ("GET", m._endpoint("").rstrip("/")): {
+                "id": m.REPOSITORY_ID, "full_name": m.REPOSITORY, "default_branch": "master"},
             ("GET", m._endpoint(f"pulls/{m.PR_NUMBER}")): pr,
             ("GET", endpoint): comparison,
             ("GET", m._endpoint(f"compare/{head}...{head}")): {
@@ -410,13 +412,14 @@ class GateTests(unittest.TestCase):
                 index + 1, run_id, name, "completed", verdict,
                 None if verdict == "skipped" else "hosted-runner", created, created, created,
                 candidate_binding=(self.pr.number, self.pr.head_sha, self.fixture.parent)
-                if job_id == "event-classifier" else None))
+                if job_id == "event-classifier" else None,
+                candidate_base_ref=self.pr.base_ref if job_id == "event-classifier" else None))
         return github.RunState(
             run_id, WORKFLOW_ID, run_id, attempt, self.pr.head_ref, created, created, created, "completed",
             conclusion or ("failure" if mode == "review-first" else "success"),
             "explicit-same", mode, tuple(jobs), event or ("pull_request" if mode == "review-first"
                                                         else "workflow_dispatch"),
-            self.pr.head_sha, (self.pr.number, self.pr.head_sha, self.fixture.parent))
+            self.pr.head_sha, (self.pr.number, self.pr.head_sha, self.fixture.parent), self.pr.base_ref)
 
     def parsed_dispatch(self, run_id, *, queued=False, created=None, number=None, branch=None):
         from scripts.workflow_pilot.tests import test_pr_metadata as fixtures
@@ -440,7 +443,7 @@ class GateTests(unittest.TestCase):
                 job[field] = job[field].replace(fixtures.REPOSITORY, self.pr.repository)
             if job["name"] == "event-classifier":
                 job["steps"] = [{
-                    "name": gate.binding_name(self.pr.number, self.pr.head_sha, self.record["base_sha"]),
+                    "name": gate.binding_name(self.pr.number, self.pr.head_sha, self.record["base_sha"], self.pr.base_ref),
                     "status": "completed", "conclusion": "success"}]
         workflow = fixtures._workflow()
         for field in ("url", "html_url", "badge_url"):
@@ -678,7 +681,7 @@ class GateTests(unittest.TestCase):
                         job[field] = job[field].replace(fixtures.REPOSITORY, self.pr.repository)
                     if job["name"] == "event-classifier":
                         job["steps"] = [{
-                            "name": gate.binding_name(number, self.pr.head_sha, merge_bases[0]),
+                            "name": gate.binding_name(number, self.pr.head_sha, merge_bases[0], self.pr.base_ref),
                             "status": "completed", "conclusion": "success"}]
                 rows.append((raw, jobs))
             workflow = fixtures._workflow()
@@ -739,6 +742,7 @@ class GateTests(unittest.TestCase):
         with patch.object(observations, "utc_now", return_value=at_offset(-30)):
             self.record = gate.begin_candidate(
                 self.state, self.pr, self.fixture.parent, self.decision)
+        self.runs.append(self.workflow_run(2, "review-first"))
         self.assertFalse(self.assess()["dispatchable"])
         fresh = replace(old, id="review-2", submitted_at=at_offset(-10), body="Fresh complete clean review")
         self.session.triage(review.Triage(fresh, "clean"))
@@ -1100,7 +1104,9 @@ class AdapterTests(unittest.TestCase):
         m = self.m
         client = m.ScriptedClient()
         pr = {**m._pr(), "additions": lines, "deletions": 0}
-        client.add("GET", m._endpoint(f"pulls/{m.PR_NUMBER}"), pr)
+        client.add("GET", m._endpoint(f"pulls/{m.PR_NUMBER}"), pr, pr)
+        repository = {"id": m.REPOSITORY_ID, "full_name": m.REPOSITORY, "default_branch": "master"}
+        client.add("GET", m._endpoint("").rstrip("/"), repository, repository)
         client.add("GET", m._query("contents/" + reporter.DECISION_RECORD_PATH.as_posix(),
                                   [("ref", m.HEAD)]), self.content(raw))
         client.add("GET", m._endpoint(f"compare/{m.BASE}...{m.HEAD}"),
@@ -1125,7 +1131,7 @@ class AdapterTests(unittest.TestCase):
                 result, selected, binding = gate.route_event(client, decision, payload, m.REPOSITORY)
                 self.assertEqual(result.classification, expected)
                 self.assertEqual(result.expected_head, m.HEAD)
-                self.assertEqual(binding, gate.binding_name(m.PR_NUMBER, m.HEAD, m.BASE))
+                self.assertEqual(binding, gate.binding_name(m.PR_NUMBER, m.HEAD, m.BASE, "master"))
                 self.assertEqual(selected.decision_oid, self.content(raw)["sha"])
                 self.assertTrue(all(method == "GET" for method, _, _ in client.calls))
         raw = decisions(m.PR_NUMBER, ("protocol",))
@@ -1168,7 +1174,9 @@ class AdapterTests(unittest.TestCase):
                     "pull_request", payload, github_ref="refs/pull/1/merge", github_sha="f" * 40,
                     pr_base_sha=base, pr_head_sha=head, push_sha="")
                 client = m.ScriptedClient()
-                client.add("GET", m._endpoint("pulls/1"), pr, pr, pr)
+                client.add("GET", m._endpoint("pulls/1"), pr, pr, pr, pr)
+                repository = {"id": m.REPOSITORY_ID, "full_name": m.REPOSITORY, "default_branch": "master"}
+                client.add("GET", m._endpoint("").rstrip("/"), repository, repository)
                 for revision in {head, first["commit_sha"]}:
                     endpoint = m._query("contents/" + str(reporter.DECISION_RECORD_PATH), [("ref", revision)])
                     try:
@@ -1248,7 +1256,9 @@ class AdapterTests(unittest.TestCase):
                 current["base"]["ref"] = base_ref
                 if name == "changed-head-ref":
                     current["head"]["ref"] = "other-head-ref"
-                client.add("GET", m._endpoint(f"pulls/{m.PR_NUMBER}"), current)
+                client.add("GET", m._endpoint(f"pulls/{m.PR_NUMBER}"), current, current)
+                repository = {"id": m.REPOSITORY_ID, "full_name": m.REPOSITORY, "default_branch": "master"}
+                client.add("GET", m._endpoint("").rstrip("/"), repository, repository)
                 client.add("GET", m._query(
                     "contents/" + reporter.DECISION_RECORD_PATH.as_posix(), [("ref", live_head)]),
                     self.content(decisions(m.PR_NUMBER, ("lifecycle",))))
@@ -1280,7 +1290,7 @@ class AdapterTests(unittest.TestCase):
                     self.assertEqual(result.classification, "review-first")
                     self.assertEqual(result.expected_base, original_base)
                     self.assertEqual(result.expected_head, head)
-                    self.assertEqual(binding, gate.binding_name(m.PR_NUMBER, head, original_base))
+                    self.assertEqual(binding, gate.binding_name(m.PR_NUMBER, head, original_base, "master"))
                 else:
                     with self.assertRaises(ValueError):
                         route()
@@ -1299,7 +1309,7 @@ class AdapterTests(unittest.TestCase):
         self.assertEqual(result.classification, "full")
         self.assertTrue(result.run_expensive)
         self.assertEqual(selected.mode, "review-first")
-        self.assertEqual(binding, gate.binding_name(m.PR_NUMBER, m.HEAD, m.BASE))
+        self.assertEqual(binding, gate.binding_name(m.PR_NUMBER, m.HEAD, m.BASE, "master"))
         for bad in ({"inputs": {"pass": True}}, {"inputs": "success"}):
             with self.assertRaises(ValueError):
                 gate.route_dispatch(client, decision, bad, m.REPOSITORY, "refs/heads/" + m.HEAD_REF,
@@ -1450,6 +1460,8 @@ class WorkflowTests(unittest.TestCase):
         current = t._summary_workflow_run(t.SUMMARY_TEST_RUN_ID)
         for marker, success in (
             (gate.binding_name(number, head, frozen), True),
+            (gate.binding_name(number, head, frozen, "master"), True),
+            (gate.binding_name(number, head, frozen, "different/base"), False),
             (gate.binding_name(number, "d" * 40, frozen), False),
             (gate.binding_name(number, head, "d" * 40), False),
             (gate.binding_name(number + 1, head, frozen), False),
@@ -1495,11 +1507,18 @@ class DispatchBootstrapTests(unittest.TestCase):
         git(self.root, "checkout", "-b", "integration")
         for source in (ROOT / "scripts/workflow_pilot").glob("*.py"):
             shutil.copyfile(source, sources / source.name)
+        self.parent_number = metadata.PR_NUMBER - 1
+        self.decision_path = self.root / reporter.DECISION_RECORD_PATH
+        self.decision_path.parent.mkdir(parents=True)
+        write_json(self.decision_path, decisions(self.parent_number))
         git(self.root, "add", ".")
         git(self.root, "commit", "-m", "Feature-containing integration base")
         self.base = git(self.root, "rev-parse", "HEAD")
         git(self.root, "checkout", "-b", metadata.HEAD_REF)
         (sources / "isolated_launcher.py").write_text("raise AssertionError('candidate executed')\n")
+        child = decisions(metadata.PR_NUMBER, ("lifecycle",), "review-first")
+        child["pull_requests"][0]["stack"].update(depth=1, parent_pr=self.parent_number)
+        write_json(self.decision_path, child)
         git(self.root, "add", ".")
         git(self.root, "commit", "-m", "Candidate must not supply classifier programs")
         self.head = git(self.root, "rev-parse", "HEAD")
@@ -1507,6 +1526,10 @@ class DispatchBootstrapTests(unittest.TestCase):
         self.pr["base"]["ref"] = "integration"
         self.pr["head"]["repo"] = copy.deepcopy(self.pr["base"]["repo"])
         self.pr.update(additions=1, deletions=1)
+        self.parent_pr = metadata._pr(head=self.base, base=self.default)
+        self.parent_pr.update(number=self.parent_number, id=9000, node_id="PR_parent",
+                              url=github._api_url(metadata._endpoint(f"pulls/{self.parent_number}")))
+        self.parent_pr["head"]["ref"] = "integration"
         self.query = {"data": {"repository": {
             "nameWithOwner": metadata.REPOSITORY, "pullRequests": {
                 "totalCount": 1, "pageInfo": {"hasNextPage": False}, "nodes": [{
@@ -1581,17 +1604,23 @@ class DispatchBootstrapTests(unittest.TestCase):
             VALIDATED_FALLBACK_SHA=identity["fallback_sha"])
         verified, _ = self.script("event-router", 2)
         self.assertEqual(verified.returncode, 0, verified.stderr)
-        raw = decisions(m.PR_NUMBER, ("lifecycle",), "review-first")
         routes = {
+            m._endpoint("").rstrip("/"): {
+                "id": m.REPOSITORY_ID, "full_name": m.REPOSITORY, "default_branch": "master"},
             m._query("pulls", [("state", "open"), ("head", "owner:" + m.HEAD_REF),
                                ("per_page", "100")]): [self.pr],
             m._endpoint(f"pulls/{m.PR_NUMBER}"): self.pr,
-            m._query("contents/" + reporter.DECISION_RECORD_PATH.as_posix(), [("ref", self.head)]):
-                AdapterTests().content(raw),
+            m._endpoint(f"pulls/{self.parent_number}"): self.parent_pr,
             m._endpoint(f"compare/{self.pr['base']['sha']}...{self.head}"): {
                 "base_commit": {"sha": self.pr["base"]["sha"]},
                 "merge_base_commit": {"sha": git(self.root, "merge-base", self.pr["base"]["sha"], self.head)}},
         }
+        for revision in (self.head, self.base):
+            content = reporter.run_git(self.root, "show", revision + ":" + str(reporter.DECISION_RECORD_PATH))
+            routes[m._query("contents/" + str(reporter.DECISION_RECORD_PATH), [("ref", revision)])] = {
+                "path": str(reporter.DECISION_RECORD_PATH), "type": "file", "encoding": "base64",
+                "sha": git(self.root, "rev-parse", revision + ":" + str(reporter.DECISION_RECORD_PATH)),
+                "content": base64.b64encode(content).decode()}
         routes.update(responses or {})
         write_json(self.owned / "api.json", routes)
         return self.script("event-router", 3)
@@ -1665,12 +1694,20 @@ class DispatchBootstrapTests(unittest.TestCase):
 
     def test_deployed_root_base_and_exact_checkout_verification(self):
         git(self.root, "update-ref", "refs/heads/master", self.base)
+        root_decision = decisions(self.m.PR_NUMBER, ("lifecycle",), "review-first")
+        write_json(self.decision_path, root_decision)
+        git(self.root, "add", ".")
+        git(self.root, "commit", "-m", "Actual root decision after base retarget")
+        self.head = git(self.root, "rev-parse", "HEAD")
+        self.pr["head"]["sha"] = self.head
+        self.environment.update(RAW_SHA=self.head, RAW_SHA_JSON=json.dumps(self.head), GITHUB_SHA=self.head)
+        self.query["data"]["repository"]["pullRequests"]["nodes"][0]["headRefOid"] = self.head
         self.query["data"]["repository"]["pullRequests"]["nodes"][0]["baseRefName"] = "master"
         self.pr["base"]["ref"] = "master"
         identity = self.identity(DEFAULT_BRANCH="")
         result, values = self.classify(identity)
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(values["candidate_binding"], gate.binding_name(self.m.PR_NUMBER, self.head, self.base))
+        self.assertEqual(values["candidate_binding"], gate.binding_name(self.m.PR_NUMBER, self.head, self.base, "master"))
         wrong, _ = self.script("event-router", 2, CLASSIFIER_EXPECTED_SHA=self.head)
         self.assertNotEqual(wrong.returncode, 0)
 

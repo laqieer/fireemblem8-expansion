@@ -800,7 +800,7 @@ _CANDIDATE_MARKER_NAME = "${{ needs.event-router.outputs.candidate_binding }}"
 _CANDIDATE_MARKER_CONDITION = "${{ needs.event-router.outputs.candidate_binding != '' }}"
 _CANDIDATE_MARKER_COMMANDS = (
     ("[[", "$CANDIDATE_BINDING", "=~",
-     "^workflow-pilot-candidate:v1:[1-9][0-9]*:[0-9a-f]{40}:[0-9a-f]{40}$", "]]"),
+     "^workflow-pilot-candidate:v1:[1-9][0-9]*:[0-9a-f]{40}:[0-9a-f]{40}(:[A-Za-z0-9._%~-]+)?$", "]]"),
 )
 _PREFLIGHT_STEP_NAME = "Attest review-first preflight"
 _PREFLIGHT_STEP_CONDITION = (
@@ -824,7 +824,7 @@ _PREFLIGHT_COMMANDS = (
     ("test", "$CLASSIFIED_BASE", "=", "$PR_BASE_SHA"),
     ("[[", "$DECISION_OID", "=~", "^[0-9a-f]{40}$", "]]"),
     ("[[", "$CANDIDATE_BINDING", "=~",
-     "^workflow-pilot-candidate:v1:${PR_NUMBER}:${PR_HEAD_SHA}:[0-9a-f]{40}$", "]]"),
+     "^workflow-pilot-candidate:v1:${PR_NUMBER}:${PR_HEAD_SHA}:[0-9a-f]{40}(:[A-Za-z0-9._%~-]+)?$", "]]"),
 )
 _EXPECTED_JOB_OUTPUTS = {
     "event-identity": (
@@ -978,6 +978,7 @@ _EXPECTED_JOB_ENV = {
                 ("HOST_TESTS_RESULT", "${{ needs.host-tests.result }}"),
                 ("IDENTITY_VALID", "${{ needs.event-classifier.outputs.identity_valid }}"),
                 ("LEGACY_RESULT", "${{ needs.legacy.result }}"),
+                ("PR_BASE_REF", "${{ github.event.pull_request.base.ref }}"),
                 ("PR_BASE_SHA", "${{ github.event.pull_request.base.sha }}"),
                 ("PR_HEAD_SHA", "${{ github.event.pull_request.head.sha }}"),
                 ("PR_NUMBER", "${{ github.event.number }}"),

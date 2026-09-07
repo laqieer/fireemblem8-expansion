@@ -18,7 +18,9 @@ from scripts.workflow_pilot.tests.test_agent_handoff import GitFixture, at_offse
 from scripts.workflow_pilot.tests import test_coordinator_local as local_tests
 
 
-class CandidateIdentityTests(unittest.TestCase):
+class CandidateIdentityFixture:
+    mode = "review-first"
+
     def setUp(self):
         self.fixture = GitFixture(assign=False)
         self.addCleanup(self.fixture.close)
@@ -34,7 +36,7 @@ class CandidateIdentityTests(unittest.TestCase):
         })
         self.path = self.fixture.home / "candidate-identities.json"
         self.decision = gate.select_mode(
-            decisions(api.PR_NUMBER, ("lifecycle",), "review-first"),
+            decisions(api.PR_NUMBER, ("lifecycle",) if self.mode == "review-first" else ("none",), self.mode),
             number=api.PR_NUMBER, head_sha=self.head, decision_oid="d" * 40, changed_lines=2)
         self.old = gate.begin_candidate(self.state, self.pr, self.fixture.parent, self.decision)
         self.owners = review.ReviewOwnership()
@@ -51,11 +53,14 @@ class CandidateIdentityTests(unittest.TestCase):
         self.posts = []
         self.allow_post = False
         self.client = github.GitHubClient("/usr/bin/gh", runner=self.transport)
-        self.add_run(1, self.fixture.parent, preflight=True)
-        runs = github.list_candidate_runs(self.client, self.pr)
-        gate.reserve_full_dispatch(self.state, self.old, self.assess(self.old, self.pr,
-                                   self.old_session, self.old_checks, runs), runs)
-        self.add_run(2, self.fixture.parent)
+        if self.mode == "review-first":
+            self.add_run(1, self.fixture.parent, preflight=True)
+            runs = github.list_candidate_runs(self.client, self.pr)
+            gate.reserve_full_dispatch(self.state, self.old, self.assess(self.old, self.pr,
+                                       self.old_session, self.old_checks, runs), runs)
+            self.add_run(2, self.fixture.parent)
+        else:
+            self.add_run(1, self.fixture.parent, event="pull_request")
 
     def payload(self, base):
         raw = api._pr(head=self.head, base=base)
@@ -99,16 +104,17 @@ class CandidateIdentityTests(unittest.TestCase):
             tuple(item.fact for item in session.rounds.events), tuple(session.rounds.events),
             checks, runs, criteria_ready=criteria)
 
-    def add_run(self, number, base, *, preflight=False, queued=False):
+    def add_run(self, number, base, *, preflight=False, queued=False, event=None):
         raw, _ = api._run(number, number, mode="full")
         now = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
-        event = "pull_request" if preflight else "workflow_dispatch"
+        event = event or ("pull_request" if preflight else "workflow_dispatch")
         raw.update(event=event, head_sha=self.head, head_branch="agent/test", created_at=now,
                    run_started_at=None if queued else now, updated_at=now,
                    status="queued" if queued else "completed",
                    conclusion=None if queued else "failure" if preflight else "success",
                    pull_requests=[{"number": api.PR_NUMBER, "head": {"sha": self.head},
-                                   "base": {"sha": base}}] if preflight else [])
+                                   "base": {"sha": base, "ref": self.live.base_ref}}]
+                   if event == "pull_request" else [])
         jobs = []
         for index, key in enumerate(sorted(candidate_evidence.KNOWN_JOB_IDS), 1):
             skipped = preflight and key in {"extended-host-tests", "legacy"}
@@ -121,7 +127,7 @@ class CandidateIdentityTests(unittest.TestCase):
                 conclusion="skipped" if skipped else "failure" if preflight and key == "summary" else "success")
             job["event"] = event
             if key == "event-classifier":
-                job["steps"] = [{"name": gate.binding_name(api.PR_NUMBER, self.head, base),
+                job["steps"] = [{"name": gate.binding_name(api.PR_NUMBER, self.head, base, self.live.base_ref),
                                  "status": "completed", "conclusion": "success"}]
             jobs.append(job)
         self.rows.append((raw, [] if queued else jobs))
@@ -177,6 +183,8 @@ class CandidateIdentityTests(unittest.TestCase):
             self.add_run(4, self.middle)
         write_json(self.path, self.state)
 
+
+class CandidateIdentityTests(CandidateIdentityFixture, unittest.TestCase):
     def test_same_head_ref_rebind_uses_exact_reservation_and_preserves_old_cleanup(self):
         self.rebind()
         old = copy.deepcopy(self.old)
@@ -264,11 +272,15 @@ class CandidateIdentityTests(unittest.TestCase):
         unknown = copy.deepcopy(saved)
         unknown["candidates"][0].update(full_run_id=None, full_attempt=None)
         unknown["candidates"][0].pop("dispatch_observed_at")
+        next(job for raw, jobs in self.rows if raw["id"] == 2 for job in jobs
+             if job["name"] == "event-classifier")["steps"][0]["name"] = gate.binding_name(
+                 api.PR_NUMBER, self.head, self.fixture.parent)
         write_json(self.path, unknown)
         self.assertEqual(gate.reconcile_full_dispatch(self.client, self.path, self.live)["state"],
                          "dispatch-uncertain")
+        unknown_runs = github.list_candidate_runs(self.client, self.live)
         self.assertFalse(self.assess(unknown["candidates"][1], self.live, self.old_session, checks,
-                                    runs, state=unknown)["merge_eligible"])
+                                    unknown_runs, state=unknown)["merge_eligible"])
         with patch.object(observations, "github_run", side_effect=AssertionError("unexpected run lookup")):
             with self.assertRaises(ValueError):
                 gate.cancel_abandoned(self.client, self.path, unknown["candidates"][0], old_run)
@@ -379,3 +391,104 @@ class CandidateIdentityTests(unittest.TestCase):
         self.assertIn(5, {item["run_id"] for item in report["runs"]})
         self.assertEqual(gate.reconcile_full_dispatch(self.client, self.path, self.live)["state"],
                          "dispatch-uncertain")
+
+
+class ConcurrentIdentityTests(CandidateIdentityFixture, unittest.TestCase):
+    mode = "concurrent"
+
+    def concurrent_rebind(self, field):
+        if field == "base":
+            git(self.fixture.repository, "merge", "--ff-only", self.middle)
+            self.live = replace(self.pr, base_sha=self.middle)
+            base = self.middle
+        else:
+            git(self.fixture.repository, "branch", "alternate-base", self.fixture.parent)
+            self.live = replace(self.pr, base_ref="alternate-base")
+            base = self.fixture.parent
+        new = gate.begin_candidate(self.state, self.live, base, self.decision)
+        self.complete_local(new, self.live)
+        session = self.new_session if field == "base" else self.old_session
+        session.triage(review.Triage(self.fact("review-current"), "clean"))
+        return new, session, self.security()
+
+    def assert_unmarked_old_held(self, field):
+        next(job for job in self.rows[0][1] if job["name"] == "event-classifier")["steps"] = []
+        self.assertIsNone(self.old["full_run_id"])
+        new, session, checks = self.concurrent_rebind(field)
+        runs = github.list_candidate_runs(self.client, self.live)
+        report = self.assess(new, self.live, session, checks, runs)
+        self.concurrent_evidence = {"transition": field, "report": report, "run": asdict(runs[0])}
+        self.assertFalse(report["merge_eligible"], report)
+        self.assertIsNone(new["full_run_id"])
+
+    def test_unmarked_old_concurrent_run_is_not_owned_after_frozen_base_rebind(self):
+        self.assert_unmarked_old_held("base")
+
+    def test_unmarked_old_concurrent_run_is_not_owned_after_base_ref_retarget(self):
+        self.assert_unmarked_old_held("ref")
+
+    def test_legacy_marked_old_concurrent_run_cannot_supply_a_retargeted_base_ref(self):
+        next(job for job in self.rows[0][1] if job["name"] == "event-classifier")["steps"][0]["name"] = (
+            gate.binding_name(api.PR_NUMBER, self.head, self.fixture.parent))
+        new, session, checks = self.concurrent_rebind("ref")
+        report = self.assess(new, self.live, session, checks,
+                             github.list_candidate_runs(self.client, self.live))
+        self.assertFalse(report["merge_eligible"], report)
+        self.assertIsNone(new["full_run_id"])
+
+    def test_unmarked_current_root_run_cannot_borrow_live_pr_ownership(self):
+        next(job for job in self.rows[0][1] if job["name"] == "event-classifier")["steps"] = []
+        report = self.assess(self.old, self.pr, self.old_session, self.old_checks,
+                             github.list_candidate_runs(self.client, self.pr))
+        self.assertFalse(report["merge_eligible"], report)
+        self.assertIsNone(self.old["full_run_id"])
+
+    def assert_marked_transition(self, field):
+        new, session, checks = self.concurrent_rebind(field)
+        # GitHub's mutable association is deliberately not the historical witness.
+        self.rows[0][0]["pull_requests"][0]["base"].update(
+            sha=self.live.base_sha, ref=self.live.base_ref)
+        old_runs = github.list_candidate_runs(self.client, self.live)
+        old_report = self.assess(new, self.live, session, checks, old_runs)
+        self.assertFalse(old_report["merge_eligible"], old_report)
+        self.assertIsNone(self.old["full_run_id"])
+        self.assertIsNone(new["full_run_id"])
+        base = self.middle if field == "base" else self.fixture.parent
+        self.add_run(2, base, event="pull_request")
+        runs = github.list_candidate_runs(self.client, self.live)
+        report = self.assess(new, self.live, session, checks, runs)
+        self.assertTrue(report["merge_eligible"], report)
+        self.assertEqual(new["full_run_id"], 2)
+        self.assertIsNone(self.old["full_run_id"])
+        self.concurrent_evidence = {"transition": field, "old": old_report, "current": report,
+                                    "runs": [asdict(run) for run in runs]}
+
+    def test_complete_marked_runs_keep_historical_ownership_across_frozen_bases(self):
+        self.assert_marked_transition("base")
+
+    def test_complete_marked_runs_keep_historical_ownership_across_same_base_refs(self):
+        self.assert_marked_transition("ref")
+
+    def test_complete_marked_current_root_is_admitted_without_a_dispatch_reservation(self):
+        report = self.assess(self.old, self.pr, self.old_session, self.old_checks,
+                             github.list_candidate_runs(self.client, self.pr))
+        self.assertTrue(report["merge_eligible"], report)
+        self.assertIsNone(self.old["dispatch_requested_at"])
+        self.assertEqual(self.old["full_run_id"], 1)
+
+
+class BindingWitnessTests(unittest.TestCase):
+    def test_existing_v1_witness_preserves_legacy_unknown_and_exact_encoded_refs(self):
+        legacy = gate.binding_name(199, "a" * 40, "b" * 40)
+        self.assertEqual(gate.parse_binding(legacy), (199, "a" * 40, "b" * 40))
+        self.assertIsNone(gate.binding_base_ref(legacy))
+        for ref in ("master", "feature/parent", "機能/親"):
+            marker = gate.binding_name(199, "a" * 40, "b" * 40, ref)
+            binding, actual = github._candidate_step_details({
+                "steps": [{"name": marker, "status": "completed", "conclusion": "success"}]})
+            self.assertEqual((binding, actual), ((199, "a" * 40, "b" * 40), ref))
+        for suffix in ("%6Daster", "%FF", "bad%20ref", "%ZZ", "feature/parent"):
+            with self.subTest(suffix=suffix), self.assertRaises(github.MetadataEditError):
+                github._candidate_step_details({
+                    "steps": [{"name": legacy + ":" + suffix,
+                               "status": "completed", "conclusion": "success"}]})

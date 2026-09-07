@@ -137,6 +137,7 @@ the consumers' independent protected-principal/deployment requirements.
      'import sys, unittest; sys.path.insert(0, "."); unittest.main(module=None)' \
      scripts.workflow_pilot.tests.test_adaptive_gate \
      scripts.workflow_pilot.tests.test_candidate_identity \
+     scripts.workflow_pilot.tests.test_live_stack \
      scripts.workflow_pilot.tests.test_coordinator_local -v
    ```
 
@@ -237,12 +238,22 @@ the consumers' independent protected-principal/deployment requirements.
    frozen-base records, reservations and parsed runs. Complete the new native
    local checks and fresh clean-review/security evidence; reconcile only its
    exact full identity. The old snapshot may record its own run for abandoned
-   cleanup, never admission. Also retarget a base ref with an unchanged marker:
-   only an actually observed old run/attempt establishes its separate ownership;
-   missing ownership stays uncertain. Zero/multiple/unclassified runs, wrong
+   cleanup, never admission. Retarget a base ref with the same frozen base.
+   Current v1 witnesses must include the actual historical ref; legacy ref-less
+   or unmarked runs remain unproven, regardless of today's mutable PR association
+   or whether the old record was assessed. Test both concurrent and reserved
+   marked/unmarked cases, admitting only the actual current complete witness.
+   Zero/multiple/unclassified runs, wrong
    head/base/ref/workflow/bound attempt, missing acknowledgement and partial
    identity lookups cannot authorize a candidate. Unrelated base-tip movement
    with the same unique merge base still permits normal dispatch.
+   Exercise actual root, depth-one, depth-two and exceptional depth-three
+   decision/parent chains through production routing. The shared #176 validator
+   must reject missing parents/exceptions, bad depths, self/multi-parent cycles,
+   branch mismatches, unavailable parent decisions and unsynced/moving parent
+   heads. Read each parent's own committed decision; never supply a fabricated
+   parent or use the child's copy as parent authority. Preserve the genuine
+   feature-parent bootstrap when the default tree predates adaptive gating.
 9. Execute the existing metadata summary against disposable local HTTP
    responses for a full dispatch and its current merge base. It retains
    complete eight-job success; missing/wrong/foreign marker or stale base
@@ -394,15 +405,18 @@ future promotion criteria; no fixture or baseline refresh substitutes for them.
 ## TC-WORKFLOW-REVIEW-FAMILY-001: Expand valid findings across complete sibling families
 
 - **Feature / originating issue:** `workflow-governance` /
-  [issue #179](https://github.com/laqieer/fireemblem8-expansion/issues/179).
-- **Supported configuration:** source checkout, the existing #216 locked
+  [issue #179](https://github.com/laqieer/fireemblem8-expansion/issues/179);
+  ordinary subprocess cleanup regression
+  [#223](https://github.com/laqieer/fireemblem8-expansion/issues/223).
+- **Supported configuration:** Linux source checkout, the existing #216 locked
   CPython 3.12 host environment, Git and native GCC for host coverage; the
   existing modern Build lane's ARM GCC/binutils for mandatory object positives.
 - **Prerequisites and starting state:** run from the repository root. Follow
   the [existing host setup](../workflow-pilot.md#isolated-host-python-dependencies)
   if needed. Tests create only owned source copies/Git histories below
-  `build/review-family-*`. No live PR, credential, ROM, emulator, protected
-  installation or new agent backend is needed. CLI fixtures invoke the
+  `build/review-family-*` and `build/review-process-tests-*`. No live PR,
+  credential, ROM, emulator, protected installation or new agent backend is
+  needed. CLI fixtures invoke the
   independently trusted test checkout's existing fixed launcher outside
   the owned candidate repository; they do not execute a candidate bootstrap.
 
@@ -414,6 +428,63 @@ future promotion criteria; no fixture or baseline refresh substitutes for them.
    build/host-python/bin/python3 -I -m unittest discover \
      -s scripts/workflow_pilot/tests -t . -p 'test_*review*.py' -v
    ```
+
+   For the #223 lifetime regression alone, select:
+
+   ```bash
+   build/host-python/bin/python3 -I -m unittest discover \
+     -s scripts/workflow_pilot/tests -t . -p 'test_review_process_cleanup.py' -v
+   ```
+
+   The preserved pre-fix control starts an ordinary sleeping grandchild through
+   the real command and staged `run_obligations` path: timeout used to leave it
+   live even as the staging directory was removed. The current fixtures shorten
+   only test deadlines and observe actual process identity/exit state before
+   directory cleanup. Repeat inner command/native and outer worker timeouts,
+   closed or inherited stdio, early leader exit, full or closed stdin, output
+   overage, `SIGINT` and normal `SIGTERM`. Every owned child must be terminated
+   and reaped before cleanup, while an unrelated process and the caller's group
+   remain alive. Positive byte input/output and real native 0/1/other exit
+   classifications must remain unchanged. An unavailable cleanup observation
+   retains staging and never supplies satisfied evidence.
+   At the real `Popen` boundary, deliver `SIGINT` and a handled `SIGTERM` after
+   successful creation but before the handle returns. Neither may bypass
+   cleanup protection: interruption propagates out of the runner only after
+   owned work is reaped, the caller's handler is restored, and the payload inherits no
+   unintended signal mask. Repeat with a real creation error. Deny the
+   kernel-handle termination operation after a real staged launch: pidfds must
+   show live owned work and the directory must remain until the test restores
+   termination and cleans its own processes.
+   Combine that real staged termination failure with a failed subreaper-state
+   restoration. Staging must still remain with nonterminal owned pidfds, and
+   its unavailable diagnostic must expose both failures. Restore-only failure
+   must still raise, while successful restoration returns the real output.
+   Force initial pidfd acquisition failure after a real staged launch, then
+   reject group termination. The pidfds held by the test must show live owned
+   work, staging must remain, and the unsafe diagnostic must retain its cause.
+   Repeat healthy fallback, `ESRCH`, timeout, failed wait and an already-reaped
+   leader; missing-leader evidence must not authorize a possibly reused group.
+   Exercise subsequent selector/descriptor/stream/mask/handler restoration
+   failures during unsafe cleanup. They must not erase the hold or the primary
+   diagnostic. Conversely, ordinary release errors after verified cleanup must
+   not retain staging. Restore fault injections before cleaning only owned
+   fixture processes and paths.
+   Run the complete operation-local timing matrix: after creation, during body
+   work, at normal/error cleanup entry, a second signal after the first
+   interruption, reaper/handler restoration and after positive cleanup
+   confirmation. Observe actual callback invocation, pidfd/exit state and the
+   directory cleanup boundary, not success-shaped labels. Nonraising caller
+   handlers must retain both successful output and ordinary timeout behavior;
+   unrelated processes, caller handlers and masks remain intact. Combine close
+   and restoration failures with genuinely unconfirmed termination.
+   Interrupt the actual cleanup transition with an ordinary error while real
+   children remain live: without the current runner's private positive cleanup
+   notification, staging must remain regardless of exception class. Verified
+   tool/timeout failures must still remove their owned staging.
+   Remove or corrupt the checkout helper and give the candidate a different
+   committed helper: both coordinator and staged worker must still execute the
+   exact selected tool-tree bytes. Overlapping tool module instances must also
+   restore the process-wide reaper setting after their owned work finishes.
 
 2. With the supported ARM compiler/binutils on PATH (or the resolved
    `MODERN_CC`, `MODERN_NM` and `MODERN_SIZE` environment paths), run the
@@ -440,7 +511,10 @@ future promotion criteria; no fixture or baseline refresh substitutes for them.
    target: its own selector must fail on geometry, then pass restored source.
    Enabled and disabled reference drivers and ARM object
    symbols/sections pass in their respective profiles, including formatting-only
-   source changes. Remove EWRAM placement from the core, reference, then both
+   source changes. The ARM selector also runs one mixed native/ARM/generated/host
+   staged scenario through the shared process runner; host-only discovery does
+   not acquire an ARM-tool installation requirement. Remove EWRAM placement
+   from the core, reference, then both
    in owned source revisions. Inspect the real compiled objects: each missing
    section must reject the enabled ARM member even though total EWRAM is
    below budget. Restored enabled placement, aggregate EWRAM/text budgets and
@@ -665,16 +739,17 @@ ROM/RAM, modern/archival, topology or required-context change occurs.
 
 ### Automation
 
-The command in step 1 runs the existing unittest runner against only the three
-review test modules. They exercise actual native/ARM, generated-data and
-source-reducer observations, closed CLI behavior, independent schema parity
+The commands in step 1 run the existing unittest runner against the host review
+test modules. Together with the ARM selector they exercise actual native/ARM,
+generated-data and source-reducer observations, closed CLI behavior, independent schema parity
 and coordinator task/GitHub adapters. No live task, remote mutation or broad
 ROM/profile matrix is part of this deterministic test case.
 
 ### Cleanup and limitations
 
 Tests remove only their owned fixtures; retain actual task work and diagnostic
-logs.
+logs. A reported unverified process cleanup retains its staged directory until
+owned work is confirmed terminal; never remove it merely to hide the diagnostic.
 
 The trusted reviewer/coordinator selects the authoritative finite model:
 filenames do not establish semantic completeness. Unknown or newly changed
@@ -683,7 +758,9 @@ tool revision in the same feature PR. A model is not another canonical case
 catalog or an installation prerequisite. Read-only roles/minimal environments
 are not hostile same-UID isolation. Applicable real gameplay runtime evidence
 remains required for an actual gameplay change. No manual-only criterion
-applies to this workflow case.
+applies to this workflow case. The ordinary cleanup regression does not promise
+containment of deliberately escaping descendants, abrupt coordinator `SIGKILL`
+or arbitrary concurrent host mutation, and does not reinstate #204/#210.
 
 ## TC-WORKFLOW-WORKTREE-CLEANUP-001: Remove only proven completed worktrees
 

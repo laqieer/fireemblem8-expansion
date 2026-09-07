@@ -1095,6 +1095,7 @@ def _summary_metadata_env(**overrides: str) -> dict[str, str]:
         "LEGACY_RESULT": "skipped",
         "PATCH_RELEASE_RESULT": "skipped",
         "PR_BASE_SHA": SUMMARY_TEST_BASE_SHA,
+        "PR_BASE_REF": "master",
         "PR_HEAD_SHA": SUMMARY_TEST_HEAD_SHA,
         "PR_NUMBER": str(SUMMARY_TEST_PR_NUMBER),
         "PUSH_SHA": "",

@@ -123,6 +123,15 @@ Keep each decision in `.github/workflow-pilot-decisions.json`, not another
 policy file. `protocol`, `replay`, `transport`, `security`, `save`, `lifecycle`,
 `abi` and `migration` select review-first. More than 2,000 changed lines is
 also a review-first signal. Small low-risk records may select concurrent.
+Operational callers use `fetch_decision`, which applies #176's existing
+authoritative stack validator to the observed repository default branch and
+the actual PR/parent chain. Parent decisions are read from each parent's own
+immutable head, not copied from the child or invented. Branch agreement,
+depth/parent/exception rules, cycle rejection and incorporation of each
+current parent head are mandatory. Refresh detects parent or relationship
+movement; unavailable or inconsistent authority remains unknown/broader.
+That fallback can run the full workflow, but live admission through
+`assess_observed` remains held until decision authority is available.
 Overrides reuse #176's record validation and immutable pre-review authority;
 named high risk always wins. Production routing reads the actual first-reviewed
 decision from its Git blob, verifies its commit date and ancestry against the
@@ -253,9 +262,9 @@ watchers. The existing assignment/handoff and watcher schemas remain valid.
    snapshot before lookup. Retained old and new same-head/base-ref reservations
    therefore remain distinct. A retained old snapshot can observe its own run
    for cleanup; live drift marks it abandoned rather than rebinding it.
-   For a ref-only change whose wire marker is identical, use an already observed
-   historical run/attempt to establish that run's other complete identity.
-   Unknown ownership, modes or attempts stay visible holds, not guessed epochs.
+   Stored run/attempt observations remain history, not substitutes for missing
+   historical ref evidence. Unknown ownership, modes or attempts stay visible
+   holds, not guessed epochs.
 6. When a run becomes visible, use the existing #178 `reserve_watcher` /
    `finish_watcher` / `reconcile_run` interfaces and exactly one attached
    bounded shell watcher per run/attempt. A reasoning agent never waits.
@@ -281,6 +290,15 @@ master movement does not itself supersede or cancel a candidate. A changed
 head, base ref or unique merge base does. The workflow's candidate-binding step
 and #177's existing metadata continuity lookback preserve this distinction for
 both PR and input-free dispatch runs.
+The existing `workflow-pilot-candidate:v1` step now carries the historical base
+ref as a canonical URL-encoded suffix after PR/head/frozen-base. PR events use
+their validated raw event ref; dispatch uses its checked integration-base
+observation. The parser preserves legacy three-field witnesses and exposes
+their missing ref as `None`, never a value borrowed from today's PR association.
+Both concurrent and reserved admission require the complete emitted witness.
+Old unmarked or ref-incomplete full runs cannot be assigned to a current
+same-head rebind/retarget, even if the previous record was never assessed.
+There is no new workflow input, protocol version or authored state schema.
 Automatic exact-head security checks can legitimately start before the
 coordinator first registers a new head. Do not rewrite their timestamps.
 A same-head base rebind instead requires the current eligible clean review
@@ -591,6 +609,74 @@ translates expected CLI timeout/launch errors once into its existing
 `ValueError` boundary; both entrypoints report bounded `review-family:`
 diagnostics. Unexpected programming exceptions are not relabeled as ordinary
 tool unavailability.
+
+### Owned review-process cleanup
+
+[Issue #223](https://github.com/laqieer/fireemblem8-expansion/issues/223) fixes
+ordinary subprocess lifetime, not the withdrawn #204 capsule. The current
+Linux runner in `raw_diff_check.py` is shared by the real command, native and
+staged-worker paths. Their execution deadlines remain **60, 20 and 240
+seconds**, respectively. It preserves real exit status and binary stdout/stderr,
+including successful diagnostics, and bounds combined output to 4 MiB.
+Its additive `input` option accepts at most 4 MiB of bytes, writes while draining
+output, delivers EOF, and handles a reader closing its pipe without deadlock.
+
+Each outer invocation creates its own session. Nested review commands use
+`new_session=False` to create a private child group inside that session, not a
+second session invisible to outer cancellation. The runner retains the
+waitable leader identity, signals only kernel handles whose session/group
+belongs to that invocation, and adopts/reaps ordinary descendants. Early leader
+exit and closed stdio are not proof that owned work has finished. Timeout,
+output overage and interruption finish this cleanup before returning or
+raising; the caller's group and unrelated processes remain untouched.
+Handled `SIGINT`/`SIGTERM` are recorded for the complete operation, not changed
+back to asynchronous exception-raising handlers during body work. The runner
+dispatches the caller's saved handler at explicit cleanup-protected checkpoints
+after creation and during bounded I/O/wait loops. A raising handler initiates
+cleanup; a nonraising handler keeps its normal behavior. Signals at success or
+error cleanup entry, second signals and restoration do not jump past owned
+cleanup. Pending delivery and caller-handler restoration occur after resource
+and subreaper cleanup attempts. The caller's mask is preserved, including in the
+payload; the runner never blocks creation-time signals across exec.
+Overlapping exact-tool module instances share only process-wide reaper resource
+accounting. These operational boundaries do not claim kernel-wide atomicity.
+
+Cleanup has a separate five-second confirmation bound. The staged adapter
+starts each dispatched operation unconfirmed. The exact trusted runner invokes
+one private `_on_cleanup` callback only after that invocation establishes no
+created child or successful owned termination and reaping. The callback is
+current in-process cooperation, not a candidate JSON Boolean, persisted receipt,
+authority service or changed public result schema. Staging deletion depends on
+this positive confirmation, never on the absence of a special exception type.
+Unknown cleanup retains staging and diagnostics even if an ordinary error or
+late interruption escapes. Verified cleanup still removes staging on tool,
+timeout or cancellation failure; ordinary timeouts remain unavailable/zero-check
+evidence and actual native assertion failures remain contract violations.
+If subreaper-state restoration also fails during unsafe process cleanup, the
+runner preserves `ProcessCleanupError`, includes both failures in the existing
+diagnostic, and chains the original cleanup error. Restoration failure alone
+still raises `OSError`; it is never converted into a successful result.
+Without a pidfd, the fallback first checks that the actual leader is still a
+waitable child before using its numeric group, then attempts group termination
+and the existing bounded wait. `ESRCH`, an unavailable wait status, a failed
+signal/wait, or even successful leader termination cannot prove the complete
+scope is empty: the result remains `ProcessCleanupError` with causal
+diagnostics. An already-reaped leader never authorizes a numeric group signal.
+The same unsafe error facts survive later selector, descriptor, stream,
+signal-mask, handler or subreaper-restoration errors. Remaining release steps
+are still attempted. Their diagnostics are retained even when a later cleanup
+attempt positively confirms termination. Once cleanup is verified, unrelated
+close/restoration failures do not force blanket staging retention.
+
+Both coordinator loading and worker staging obtain the shared runner from the
+selected exact **tool** Git tree. A missing, dirty or different candidate
+checkout helper cannot replace those bytes. There is no new JSON request field,
+case registry, package, job, publication control or #181 result contract.
+These are ordinary Linux process/session controls, not a PID registry, daemon,
+namespace/cgroup service, signer or hostile-code isolation system. Deliberate
+descendant escape, abrupt coordinator `SIGKILL` and arbitrary host mutation
+remain outside the contract. Game, save, generated-data, locale, ROM/RAM and
+modern/archival profiles are unaffected.
 
 ### Finite coverage and actual evidence
 

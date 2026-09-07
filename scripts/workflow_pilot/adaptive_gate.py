@@ -13,6 +13,7 @@ import hashlib
 import json
 from pathlib import Path
 import re
+from urllib.parse import quote, unquote_to_bytes
 
 from . import agent_handoff as handoff
 from . import candidate_evidence
@@ -310,9 +311,63 @@ def fetch_decision(client, pr, changed_lines):
         raw, oid = _decision_at(client, pr, pr.head_sha)
     except (KeyError, TypeError, ValueError, reporter.PilotDataError, github.MetadataEditError):
         pass
-    return select_mode(raw, number=pr.number, head_sha=pr.head_sha, decision_oid=oid,
-                       changed_lines=changed_lines,
-                       verify_override=lambda record: _verify_remote_override(client, pr, record, raw, changed_lines))
+    selected = select_mode(raw, number=pr.number, head_sha=pr.head_sha, decision_oid=oid,
+                           changed_lines=changed_lines,
+                           verify_override=lambda record: _verify_remote_override(client, pr, record, raw, changed_lines))
+    if selected.known:
+        try:
+            _validate_live_stack(client, pr, raw)
+        except (KeyError, TypeError, ValueError, reporter.PilotDataError, github.MetadataEditError) as error:
+            return replace(selected, mode="concurrent", known=False, pre_review_required=True,
+                           reason="unknown-decision: stack: " + str(error)[:480])
+    return selected
+
+
+def _validate_live_stack(client, pr, raw):
+    endpoint = github._endpoint(pr.repository, "").rstrip("/")
+
+    def repository():
+        value = client.request("GET", endpoint, label="stack repository").payload
+        require(value["full_name"] == pr.repository and
+                github._positive_int(value["id"], "stack repository ID") == pr.repository_id,
+                "stack repository identity changed")
+        require(event_classifier._is_git_branch_ref(value["default_branch"]), "stack default branch unavailable")
+        return value["default_branch"]
+
+    default = repository()
+    first = reporter.historical_decision_record(raw, pr.head_sha, pr.number)
+    records, observed = {}, {pr.number: pr}
+    current, contents = pr, raw
+    for _ in range(first["stack"]["depth"] + 1):
+        record = reporter.historical_decision_record(contents, current.head_sha, current.number)
+        records[current.number] = record
+        parent = record["stack"]["parent_pr"]
+        if parent is None or parent in records or len(records) > first["stack"]["depth"]:
+            break
+        current, _ = fetch_candidate(client, pr.repository, parent)
+        observed[parent] = current
+        contents, _ = _decision_at(client, current, current.head_sha)
+    reporter.validate_stack_decisions(records, {
+        "fixture": {"default_branch": default},
+        "pull_requests": {number: {"base_ref": item.base_ref, "head_branch": item.head_ref}
+                          for number, item in observed.items()},
+    })
+    for number, record in records.items():
+        parent = record["stack"]["parent_pr"]
+        if parent is not None:
+            child, upstream = observed[number], observed[parent]
+            require(child.base_sha == upstream.head_sha
+                    and frozen_base(client, child) == upstream.head_sha,
+                    "stack parent head is not incorporated into its child")
+    for number, before in observed.items():
+        after, _ = fetch_candidate(client, pr.repository, number)
+        require((after.head_sha, after.head_ref, after.base_ref) ==
+                (before.head_sha, before.head_ref, before.base_ref), "stack parent/candidate moved")
+        if after.base_sha != before.base_sha:
+            require(records[number]["stack"]["parent_pr"] is None
+                    and frozen_base(client, before) == frozen_base(client, after),
+                    "stack base changed during observation")
+    require(repository() == default, "stack default branch changed")
 
 
 def frozen_base(client, pr):
@@ -323,16 +378,39 @@ def frozen_base(client, pr):
     return reporter.expect_sha(response.payload["merge_base_commit"]["sha"], "candidate merge base")
 
 
-def binding_name(number, head, base):
+def binding_name(number, head, base, base_ref=None):
     reporter.expect_int(number, "PR number", 1)
     reporter.expect_sha(head, "binding head")
     reporter.expect_sha(base, "binding base")
-    return f"{BINDING_PREFIX}{number}:{head}:{base}"
+    name = f"{BINDING_PREFIX}{number}:{head}:{base}"
+    if base_ref is not None:
+        require(event_classifier._is_git_branch_ref(base_ref), "invalid binding base ref")
+        name += ":" + quote(base_ref, safe="")
+    return name
+
+
+def _binding_fields(name):
+    match = re.fullmatch(re.escape(BINDING_PREFIX) +
+                        r"([1-9][0-9]*):([0-9a-f]{40}):([0-9a-f]{40})(?::([^:\s]+))?", name)
+    if not match:
+        return None, None
+    base_ref = None
+    if match[4] is not None:
+        try:
+            base_ref = unquote_to_bytes(match[4]).decode("utf-8")
+        except UnicodeError:
+            return None, None
+        if not event_classifier._is_git_branch_ref(base_ref) or quote(base_ref, safe="") != match[4]:
+            return None, None
+    return (int(match[1]), match[2], match[3]), base_ref
 
 
 def parse_binding(name):
-    match = re.fullmatch(re.escape(BINDING_PREFIX) + r"([1-9][0-9]*):([0-9a-f]{40}):([0-9a-f]{40})", name)
-    return (int(match[1]), match[2], match[3]) if match else None
+    return _binding_fields(name)[0]
+
+
+def binding_base_ref(name):
+    return _binding_fields(name)[1]
 
 
 def route_event(client, decision, payload, repository):
@@ -357,7 +435,7 @@ def route_event(client, decision, payload, repository):
     if selected.mode == "review-first":
         decision = replace(decision, classification="review-first", run_expensive=False,
                            reason="review-first-" + selected.reason)
-    return decision, selected, binding_name(pr.number, pr.head_sha, base)
+    return decision, selected, binding_name(pr.number, pr.head_sha, base, event_pr["base"]["ref"])
 
 
 def route_dispatch(client, decision, payload, repository, ref, *, expected_candidate):
@@ -386,7 +464,7 @@ def route_dispatch(client, decision, payload, repository, ref, *, expected_candi
                 "dispatched candidate differs from the checked-out integration base")
     selected = fetch_decision(client, pr, lines)
     return (replace(decision, expected_base=pr.base_sha), selected,
-            binding_name(pr.number, pr.head_sha, frozen_base(client, pr)))
+            binding_name(pr.number, pr.head_sha, frozen_base(client, pr), pr.base_ref))
 
 
 @dataclass(frozen=True)
@@ -695,12 +773,14 @@ def _reserved_dispatch(record, pr, run, runs):
     binding = run.candidate_binding
     workflows = {prior.workflow_id for prior in runs if prior.mode == "review-first"
                  and prior.head_sha == pr.head_sha and prior.head_branch == pr.head_ref
+                 and prior.candidate_base_ref == pr.base_ref
                  and prior.run_number <= record["watermark"] and prior.candidate_binding == binding
                  and candidate_evidence.preflight_success({
                      job.name: (job.status, job.conclusion) for job in prior.jobs})}
     return (isinstance(binding, tuple) and len(binding) == 3
             and candidate_identity(record) == (*binding, pr.base_ref)
             and binding[:2] == (pr.number, pr.head_sha)
+            and run.candidate_base_ref == pr.base_ref
             and len(workflows) == 1 and run.workflow_id in workflows
             and record["dispatch_requested_at"] is not None and run.event == "workflow_dispatch"
             and run.head_sha == pr.head_sha and run.head_branch == pr.head_ref
@@ -713,23 +793,21 @@ def _reserved_dispatch(record, pr, run, runs):
 
 
 def _candidate_runs(state, record, pr, runs):
-    """Use observed run ownership for base refs not carried by the existing marker."""
+    """Historical ref witnesses are authoritative; missing witnesses stay unproven."""
     identity = candidate_identity(record)
     others = [item for item in state["candidates"] if candidate_identity(item)[:3] == identity[:3]
               and candidate_identity(item) != identity and item["full_run_id"] is not None]
     result = []
     for run in runs:
         if (run.head_sha != pr.head_sha or run.head_branch != pr.head_ref
-                or run.candidate_binding not in (None, identity[:3])):
+                or run.candidate_binding not in (None, identity[:3])
+                or run.candidate_base_ref not in (None, identity[3])):
             continue
-        owned_elsewhere = (run.mode in {"full", "active-full"} and run.candidate_binding == identity[:3]
-                           and any((item["full_run_id"], item["full_attempt"]) ==
-                                   (run.run_id, run.run_attempt) for item in others))
-        if owned_elsewhere:
-            require((record["full_run_id"], record["full_attempt"]) != (run.run_id, run.run_attempt),
-                    "run observation belongs to multiple candidate identities")
-        else:
-            result.append(run)
+        if run.candidate_base_ref is not None:
+            require(not any((item["full_run_id"], item["full_attempt"]) ==
+                            (run.run_id, run.run_attempt) for item in others),
+                    "run witness contradicts recorded candidate ownership")
+        result.append(run)
     return tuple(result)
 
 
@@ -787,12 +865,13 @@ def assess_candidate(state, record, decision, pr, session, facts, triage, checks
     expected_binding = candidate_identity(record)[:3]
     current_runs = _candidate_runs(state, record, pr, runs)
     matching = [run for run in current_runs if run.candidate_binding == expected_binding
+                and run.candidate_base_ref == record["base_ref"]
                 and run.head_sha == pr.head_sha and run.head_branch == pr.head_ref]
     # A raw base-tip mismatch cannot classify an unmarked run as unrelated.
     unknown = [run for run in current_runs if run.head_sha == pr.head_sha and run.head_branch == pr.head_ref
                and run.status in github.ACTIVE_RUN_STATUSES
                and run.candidate_binding in (None, expected_binding)
-               and (run.candidate_binding is None or run.mode == "active-unknown")]
+               and (run.candidate_binding is None or run.candidate_base_ref is None or run.mode == "active-unknown")]
     if unknown:
         missing.append("unclassified-active-run")
     visible = current_runs
@@ -826,11 +905,12 @@ def assess_candidate(state, record, decision, pr, session, facts, triage, checks
             else:
                 record["full_run_id"], record["full_attempt"] = run.run_id, run.run_attempt
                 admitted = run
-        elif run.event == "pull_request":
+        elif (run.event == "pull_request" and run.candidate_binding == expected_binding
+              and run.candidate_base_ref == record["base_ref"]):
             record["full_run_id"], record["full_attempt"] = run.run_id, run.run_attempt
             admitted = run
         else:
-            missing.append("unexpected-full-dispatch")
+            missing.append("unproven-full-run-ownership")
     complete = False
     if admitted is not None:
         try:
@@ -876,6 +956,7 @@ def assess_observed(client, state, record, session, triage, review_tools, *,
     """Refresh through #177/#179 and validate the unique actual Git merge base."""
     pr, lines = fetch_candidate(client, state["repository"], record["pr_number"])
     decision = fetch_decision(client, pr, lines)
+    require(decision.known, "live decision authority is unavailable")
     request = {"candidate_sha": pr.head_sha, "base_sha": record["base_sha"]}
     review_tools.validate_base(request, pr.base_sha)
     identity, facts = _review_snapshot(client, pr, review_tools.model)
@@ -947,7 +1028,8 @@ def reconcile_full_dispatch(client, state_path, pr):
         require(record["dispatch_requested_at"] is not None, "no reserved full dispatch")
         scoped = _candidate_runs(state, record, pr, github.list_candidate_runs(client, pr, include_dispatch=True))
         unknown = any(run.status in github.ACTIVE_RUN_STATUSES
-                      and (run.candidate_binding is None or run.mode == "active-unknown") for run in scoped)
+                      and (run.candidate_binding is None or run.candidate_base_ref is None
+                           or run.mode == "active-unknown") for run in scoped)
         full = [run for run in scoped if run.mode in {"full", "active-full"}]
         if unknown or len(full) != 1 or not _reserved_dispatch(record, pr, full[0], scoped):
             return {"state": "dispatch-uncertain", "head_sha": pr.head_sha}
@@ -969,6 +1051,7 @@ def cancel_abandoned(client, state_path, record, run):
             "cancellation requires recorded abandonment")
     require(run.head_sha == record["head_sha"] and run.candidate_binding ==
             candidate_identity(record)[:3]
+            and run.candidate_base_ref in (None, record["base_ref"])
             and record["full_run_id"] in (None, run.run_id)
             and record["full_attempt"] in (None, run.run_attempt),
             "cancellation would affect unrelated work")
