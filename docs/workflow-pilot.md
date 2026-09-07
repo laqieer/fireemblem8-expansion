@@ -132,6 +132,12 @@ current parent head are mandatory. Refresh detects parent or relationship
 movement; unavailable or inconsistent authority remains unknown/broader.
 That fallback can run the full workflow, but live admission through
 `assess_observed` remains held until decision authority is available.
+PR221's introducing implementation has an explicitly excluded root decision
+in the existing decision file. This is current protocol/lifecycle policy with
+no overrides, not a backdated claim about earlier reviews. Its pre-feature
+master classifier still selects the broad bootstrap, not review-first proof.
+The frozen PR150 baseline remains unchanged; a child must incorporate the
+actual new parent and refresh its observed stack before becoming known.
 Overrides reuse #176's record validation and immutable pre-review authority;
 named high risk always wins. Production routing reads the actual first-reviewed
 decision from its Git blob, verifies its commit date and ancestry against the
@@ -298,6 +304,10 @@ their missing ref as `None`, never a value borrowed from today's PR association.
 Both concurrent and reserved admission require the complete emitted witness.
 Old unmarked or ref-incomplete full runs cannot be assigned to a current
 same-head rebind/retarget, even if the previous record was never assessed.
+This also applies to metadata transactions and the inline metadata summary:
+legacy parsing is not `explicit-same` full ownership, and a newer unproven full
+run cannot be skipped in favor of an older complete one. Canonical witnesses
+for another ref remain other-candidate evidence; missing data remains unbound.
 There is no new workflow input, protocol version or authored state schema.
 Automatic exact-head security checks can legitimately start before the
 coordinator first registers a new head. Do not rewrite their timestamps.
@@ -1417,10 +1427,15 @@ post-intent run/job snapshots also defer.
 
 Each exact-head run has one typed PR-binding state after its repository,
 workflow, event, and head identity is validated: `explicit-same`,
-`explicit-other`, or `unbound`. Missing, null, or empty `pull_requests` is
-unbound. An active unbound run blocks because GitHub may not have materialized
+`explicit-other`, or `unbound`. A full run requires its canonical historical
+PR/head/frozen-base/base-ref step, including for PR events. Missing, null, or
+empty `pull_requests` cannot supply that proof; a complete immutable step can.
+Metadata-only observation retains its separate raw PR/event attestation, never
+full-run credit. An active unbound run blocks because GitHub may not have materialized
 its PR binding yet. A terminal unbound run cannot authorize full-Build or
-metadata-continuity evidence. One explicit binding to another PR/base is
+metadata-continuity evidence. A missing marker/ref remains unbound even if
+today's PR metadata matches, and blocks reuse past a newer unproven run.
+One complete historical binding to another PR/base/ref is
 ignored only after its complete run and job authority validates. Multiple
 bindings, a binding head that contradicts the run head, or malformed binding
 content fails closed.

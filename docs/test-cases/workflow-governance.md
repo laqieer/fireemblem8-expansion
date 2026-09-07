@@ -138,6 +138,7 @@ the consumers' independent protected-principal/deployment requirements.
      scripts.workflow_pilot.tests.test_adaptive_gate \
      scripts.workflow_pilot.tests.test_candidate_identity \
      scripts.workflow_pilot.tests.test_live_stack \
+     scripts.workflow_pilot.tests.test_refless_runs \
      scripts.workflow_pilot.tests.test_coordinator_local -v
    ```
 
@@ -243,6 +244,12 @@ the consumers' independent protected-principal/deployment requirements.
    or unmarked runs remain unproven, regardless of today's mutable PR association
    or whether the old record was assessed. Test both concurrent and reserved
    marked/unmarked cases, admitting only the actual current complete witness.
+   Send the same real Git head through metadata transaction parsing and the
+   actual inline summary after a ref-only retarget. Legacy ref-less and absent
+   markers must remain unbound; canonical exact-ref witnesses succeed, while
+   wrong/noncanonical/invalid-UTF-8 refs fail. Metadata-only results never
+   replace a full Build, and a newer unproven full run blocks reuse of older
+   success. Keep the 32768-byte source bound and behavior-backed raw/AST guards.
    Zero/multiple/unclassified runs, wrong
    head/base/ref/workflow/bound attempt, missing acknowledgement and partial
    identity lookups cannot authorize a candidate. Unrelated base-tip movement
@@ -272,6 +279,10 @@ these PRs as merged pilot samples.
    `CANDIDATE`. The introducing PR's base predates adaptive gating, so its
    normal full Build remains required. Do not call that bootstrap run a
    review-first observation.
+   The current PR221 root decision is explicitly pilot-excluded and has no
+   override. Its new presence is not historical pre-review proof. Validate
+   the existing schema/actual root relation and unchanged baseline before
+   syncing a genuine child to the committed parent.
 2. For a pre-merge exercise, create disposable child branches against the
    actual introducing PR's dependency-ready head branch, not an invented
    installed helper or a candidate bootstrap. Record the genuine parent PR

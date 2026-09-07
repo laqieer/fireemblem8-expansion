@@ -1051,7 +1051,7 @@ def cancel_abandoned(client, state_path, record, run):
             "cancellation requires recorded abandonment")
     require(run.head_sha == record["head_sha"] and run.candidate_binding ==
             candidate_identity(record)[:3]
-            and run.candidate_base_ref in (None, record["base_ref"])
+            and run.candidate_base_ref == record["base_ref"]
             and record["full_run_id"] in (None, run.run_id)
             and record["full_attempt"] in (None, run.run_attempt),
             "cancellation would affect unrelated work")

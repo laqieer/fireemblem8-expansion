@@ -2342,13 +2342,10 @@ jobs:
               split = urllib.parse.urlsplit(url)
               url_matches = split.path == f"{expected_run_url_prefix}/{run_id}"
               matches = 0
-              same_pr_head = 0
               for pull_request in pull_requests:
                   number, pull_head_sha, pull_base_sha = parse_pull_request_binding(
                       pull_request
                   )
-                  if number == pr_number and pull_head_sha == head_sha:
-                      same_pr_head += 1
                   if (
                       number == pr_number
                       and pull_head_sha == head_sha
@@ -2362,8 +2359,6 @@ jobs:
                   and run_head_sha == head_sha
                   and path_matches
                   and url_matches
-                  and (event == "workflow_dispatch" or matches == 1
-                       or (same_pr_head == 1 and len(pull_requests) == 1))
               )
               is_current = run_id == current_run_id
               if is_current and (event != "pull_request" or matches != 1):
@@ -2394,8 +2389,11 @@ jobs:
                       "status": status,
                       "workflow_id": workflow_id,
                   }
+              bound_pr = None
+              if len(pull_requests) == 1:
+                  bound_pr = number
               return {
-                  "binding_required": event == "workflow_dispatch" or matches != 1,
+                  "pr_number": bound_pr,
                   "conclusion": conclusion,
                   "created_at": created_at,
                   "exact_candidate": True,
@@ -2444,7 +2442,7 @@ jobs:
               )
               return name, status, conclusion, runner_name, started_at
 
-          def classify_prior_run(run_id, run_attempt, binding_required):
+          def classify_prior_run(run_id, run_attempt, bound_pr):
               payload, link, _request_url = request_json(
                   f"/repos/{quoted_owner}/{quoted_repo}/actions/runs/{run_id}/attempts/{run_attempt}/jobs",
                   [("per_page", str(MAX_PAGE_SIZE)), ("page", "1")],
@@ -2514,38 +2512,38 @@ jobs:
                           )
                   return "metadata-only", by_name
               if names == FULL_JOB_NAMES:
-                  if binding_required or candidate_markers:
-                      if len(candidate_markers) != 1:
-                          fail("metadata-only summary full run lacks one candidate binding")
-                      match = re.fullmatch(
-                          r"workflow-pilot-candidate:v1:([1-9][0-9]*):([0-9a-f]{40}):([0-9a-f]{40})(?::([^:\s]+))?",
-                          candidate_markers[0],
-                      )
-                      if match is None:
-                          fail("metadata-only summary candidate binding is malformed")
-                      if int(match[1]) != pr_number:
-                          return "unbound", by_name
-                      if match[2] != head_sha:
-                          fail("metadata-only summary candidate binding head drifted")
-                      if match[4] is not None:
-                          ref = urllib.parse.unquote(match[4], errors="strict")
-                          if urllib.parse.quote(ref, safe="") != match[4]:
-                              fail("noncanonical candidate base ref")
-                          if ref != env("PR_BASE_REF", max_bytes=1024):
-                              return "unbound", by_name
-                      compared, link, _ = request_json(
-                          f"/repos/{quoted_owner}/{quoted_repo}/compare/{base_sha}...{head_sha}",
-                          [], label="metadata-only summary current merge base")
-                      if (link or not isinstance(compared, dict)
-                          or not isinstance(compared.get("base_commit"), dict)
-                          or not isinstance(compared.get("merge_base_commit"), dict)):
-                          fail("metadata-only summary merge-base response is invalid")
-                      if compared.get("base_commit", {}).get("sha") != base_sha:
-                          fail("metadata-only summary compare base drifted")
-                      merge_base = parse_sha(compared.get("merge_base_commit", {}).get("sha"),
-                                             field="metadata-only summary merge base")
-                      if match[3] != merge_base:
-                          return "unbound", by_name
+                  if len(candidate_markers) != 1:
+                      fail("metadata-only summary full run lacks one candidate binding")
+                  match = re.fullmatch(
+                      r"workflow-pilot-candidate:v1:([1-9][0-9]*):([0-9a-f]{40}):([0-9a-f]{40})(?::([^:\s]+))?",
+                      candidate_markers[0],
+                  )
+                  if match is None or match[4] is None:
+                      fail("metadata-only summary historical base ref is unavailable")
+                  if bound_pr is not None and bound_pr != int(match[1]):
+                      fail("candidate marker contradicts PR binding")
+                  if int(match[1]) != pr_number:
+                      return "unbound", by_name
+                  if match[2] != head_sha:
+                      fail("metadata-only summary candidate binding head drifted")
+                  ref = urllib.parse.unquote(match[4], errors="strict")
+                  if urllib.parse.quote(ref, safe="") != match[4]:
+                      fail("noncanonical candidate base ref")
+                  if ref != env("PR_BASE_REF", max_bytes=1024):
+                      return "unbound", by_name
+                  compared, link, _ = request_json(
+                      f"/repos/{quoted_owner}/{quoted_repo}/compare/{base_sha}...{head_sha}",
+                      [], label="metadata-only summary current merge base")
+                  if (link or not isinstance(compared, dict)
+                      or not isinstance(compared.get("base_commit"), dict)
+                      or not isinstance(compared.get("merge_base_commit"), dict)):
+                      fail("metadata-only summary merge-base response is invalid")
+                  if compared.get("base_commit", {}).get("sha") != base_sha:
+                      fail("metadata-only summary compare base drifted")
+                  merge_base = parse_sha(compared.get("merge_base_commit", {}).get("sha"),
+                                         field="metadata-only summary merge base")
+                  if match[3] != merge_base:
+                      return "unbound", by_name
                   return "full", by_name
               fail(f"metadata-only summary prior run {run_id} jobs have unexpected mode shape")
 
@@ -2713,7 +2711,7 @@ jobs:
               mode, by_name = classify_prior_run(
                   prior_run["run_id"],
                   prior_run["run_attempt"],
-                  prior_run["binding_required"],
+                  prior_run["pr_number"],
               )
               if mode in {"metadata-only", "unbound"}:
                   continue

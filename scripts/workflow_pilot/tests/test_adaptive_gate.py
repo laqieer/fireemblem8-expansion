@@ -1328,12 +1328,10 @@ class AdapterTests(unittest.TestCase):
                     job["event"] = event
                     if job["name"] == "event-classifier":
                         job["steps"] = [{
-                            "name": gate.binding_name(m.PR_NUMBER, m.HEAD, "c" * 40),
+                            "name": gate.binding_name(m.PR_NUMBER, m.HEAD, "c" * 40, "master"),
                             "status": "completed", "conclusion": "success"}]
                 client = m.ScriptedClient()
-                m._add_snapshot(client, [(raw, jobs)])
-                client.add("GET", m._endpoint(f"compare/{m.BASE}...{m.HEAD}"),
-                           {"base_commit": {"sha": m.BASE}, "merge_base_commit": {"sha": "c" * 40}})
+                m._add_snapshot(client, [(raw, jobs)], merge_base="c" * 40)
                 observed = github.list_candidate_runs(client, pr)
                 self.assertEqual(len(observed), 1)
                 run = observed[0]
@@ -1459,7 +1457,7 @@ class WorkflowTests(unittest.TestCase):
             path=".github/workflows/build.yml@refs/heads/fixture")
         current = t._summary_workflow_run(t.SUMMARY_TEST_RUN_ID)
         for marker, success in (
-            (gate.binding_name(number, head, frozen), True),
+            (gate.binding_name(number, head, frozen), False),
             (gate.binding_name(number, head, frozen, "master"), True),
             (gate.binding_name(number, head, frozen, "different/base"), False),
             (gate.binding_name(number, "d" * 40, frozen), False),

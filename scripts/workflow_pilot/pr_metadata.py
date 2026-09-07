@@ -2835,7 +2835,8 @@ def _parse_run(
             or refreshed_number != run_number
             or refreshed.run_attempt != run_attempt
             or refreshed.head_branch != head_branch
-            or (refreshed.binding != binding and refreshed.candidate_binding is None)
+            or _run_binding(refreshed_response.payload, state=state, run_id=run_id,
+                            head_sha=state.head_sha, head_branch=head_branch) != binding
             or refreshed.event != event
             or refreshed.status != status
             or refreshed.conclusion != conclusion
@@ -2868,13 +2869,19 @@ def _parse_run(
     if len(base_refs) > 1:
         raise MetadataEditError("Build run has contradictory candidate base refs")
     candidate_base_ref = next(iter(base_refs), None)
+    mode = _run_mode(jobs, run_id=run_id, status=status)
+    if mode not in {"metadata-only", "active-metadata-only"}:
+        binding = "unbound"
     if candidate_binding is not None:
         from .adaptive_gate import frozen_base
         raw_prs = raw.get("pull_requests") or []
         if raw_prs and raw_prs[0]["number"] != candidate_binding[0]:
             raise MetadataEditError("candidate marker contradicts PR binding")
-        if (candidate_binding == (state.number, state.head_sha, frozen_base(client, state))
-                and candidate_base_ref in (None, state.base_ref)):
+        if candidate_base_ref is None:
+            binding = "unbound"
+        elif (candidate_base_ref == state.base_ref
+                and candidate_binding[:2] == (state.number, state.head_sha)
+                and candidate_binding[2] == frozen_base(client, state)):
             if head_branch != state.head_ref:
                 raise MetadataEditError("candidate branch binding changed")
             binding = "explicit-same"
@@ -2895,7 +2902,7 @@ def _parse_run(
             status=status,
             conclusion=conclusion,
             binding=binding,
-            mode=_run_mode(jobs, run_id=run_id, status=status),
+            mode=mode,
             jobs=jobs,
             event=event,
             head_sha=state.head_sha,
@@ -3106,14 +3113,12 @@ def require_metadata_failure(run: RunState) -> None:
 
 
 def _latest_full(runs: tuple[RunState, ...]) -> RunState | None:
-    return next(
-        (
-            run
-            for run in runs
-            if run.binding == "explicit-same" and run.mode == "full"
-        ),
-        None,
-    )
+    for run in runs:
+        if run.binding == "unbound":
+            return None
+        if run.binding == "explicit-same" and run.mode == "full":
+            return run if run.candidate_binding is not None and run.candidate_base_ref is not None else None
+    return None
 
 
 def _blocking_active_runs(runs: tuple[RunState, ...]) -> tuple[RunState, ...]:
@@ -4040,6 +4045,8 @@ def _current_full_authorization(
         run.binding == "unbound"
         or run.status in ACTIVE_RUN_STATUSES
         or run.mode != "full"
+        or run.candidate_binding is None
+        or run.candidate_base_ref is None
     ):
         return run, False
     require_full_success(run)

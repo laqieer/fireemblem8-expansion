@@ -2221,6 +2221,10 @@
         {
           "command": "build/host-python/bin/python3 -I -c 'import sys, unittest; sys.path.insert(0, \".\"); unittest.main(module=None)' scripts.workflow_pilot.tests.test_live_stack -v",
           "evidence": "scripts/workflow_pilot/tests/test_live_stack.py"
+        },
+        {
+          "command": "build/host-python/bin/python3 -I -c 'import sys, unittest; sys.path.insert(0, \".\"); unittest.main(module=None)' scripts.workflow_pilot.tests.test_refless_runs -v",
+          "evidence": "scripts/workflow_pilot/tests/test_refless_runs.py"
         }
       ]
     },
