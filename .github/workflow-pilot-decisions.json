@@ -27,6 +27,28 @@
         "included": false,
         "disposition": "baseline-only"
       }
+    },
+    {
+      "pull_request": 222,
+      "risk_boundaries": [
+        "lifecycle"
+      ],
+      "threshold": {
+        "triggers": [
+          "risk-boundary"
+        ],
+        "override_history": []
+      },
+      "gate_mode": "review-first",
+      "stack": {
+        "depth": 1,
+        "parent_pr": 221,
+        "exception_reason": null
+      },
+      "pilot": {
+        "included": false,
+        "disposition": "excluded"
+      }
     }
   ],
   "artifacts": [
