@@ -148,6 +148,10 @@ the consumers' independent protected-principal/deployment requirements.
    Git trees using #176. A pre-review override can change timing; a late or
    missing introduction is unknown/broader, never authenticated by a reason
    string. Independent local review is not waived by the timing override.
+   Exercise `route_event` itself with actual immutable decision/commit/review
+   responses: a valid override changes the large-change route, while late,
+   missing, changed or unavailable first-reviewed authority remains unknown
+   and uses the broader workflow.
 4. Execute the actual parsed Build job guards and preflight shell steps.
    Initial review-first runs only the fast path, while concurrent, dispatched
    full and master events retain all four comprehensive worker jobs and all
@@ -180,6 +184,11 @@ the consumers' independent protected-principal/deployment requirements.
    full runs, changed attempts, early owner dispatch and duplicate watchers.
    All reject admission. Record dispatch before the simulated network call;
    a failed/unknown delivery must not retry into a second dispatch.
+   Lose the second state write after an accepted POST. Reconcile through the
+   actual parsed unique full run and original watermark without repeating POST
+   or inventing an HTTP acknowledgement time. Zero/multiple/unclassified,
+   earlier and wrong identity/attempt/workflow observations remain uncertain;
+   abandoned/superseded heads may be recorded only for cleanup.
    Combine unrelated base-tip movement with a queued same-head/branch PR run:
    it remains visible and blocks dispatch/merge until its immutable candidate
    marker establishes the binding. A confirmed different marker stays unrelated.

@@ -50,7 +50,7 @@ class GateDecision:
 
 
 def select_mode(raw, *, number, head_sha, decision_oid, changed_lines,
-                data=None, repository_root=None):
+                data=None, repository_root=None, verify_override=None):
     reporter.expect_sha(head_sha, "decision head")
     if decision_oid is not None:
         reporter.expect_sha(decision_oid, "decision object")
@@ -63,7 +63,7 @@ def select_mode(raw, *, number, head_sha, decision_oid, changed_lines,
             return GateDecision(head_sha, decision_oid, "concurrent", "pilot-paused",
                                 required, True, True)
         history = record["threshold"]["override_history"]
-        if history:
+        if history and verify_override is None:
             require(data is not None and repository_root is not None,
                     "override provenance unavailable")
             require(reporter.load_decisions_from_commit(repository_root, head_sha) == raw,
@@ -81,6 +81,9 @@ def select_mode(raw, *, number, head_sha, decision_oid, changed_lines,
                 introduction = next(item for item in introductions if item["override_index"] == index)
                 reporter.validate_override_git_provenance(
                     repository_root, data, number, index, override, introduction, first)
+        if history:
+            if verify_override is not None:
+                verify_override(record)
             if history[-1]["enabled"] and not high_risk:
                 return GateDecision(head_sha, decision_oid, record["gate_mode"],
                                     "validated-pre-review-override", required, True, False)
@@ -114,28 +117,70 @@ def fetch_candidate(client, repository, number):
     return state, lines
 
 
+def _decision_at(client, pr, revision):
+    reporter.expect_sha(revision, "decision revision")
+    response = client.request(
+        "GET", github._query_endpoint(pr.repository, "contents/" + reporter.DECISION_RECORD_PATH.as_posix(),
+                                       [("ref", revision)]), label="committed adaptive decision")
+    item = response.payload
+    require(item.get("type") == "file" and item.get("encoding") == "base64"
+            and item.get("path") == reporter.DECISION_RECORD_PATH.as_posix(),
+            "decision is not the selected regular file")
+    oid = reporter.expect_sha(item["sha"], "decision object")
+    payload = base64.b64decode(item["content"], validate=False)
+    require(len(payload) <= observations.MAX_JSON_BYTES, "decision exceeds input bound")
+    require(hashlib.sha1(f"blob {len(payload)}\0".encode() + payload).hexdigest() == oid,
+            "decision bytes differ from the Git object")
+    return reporter.parse_json(payload.decode("utf-8"), "committed adaptive decision"), oid
+
+
+def _review_snapshot(client, pr, model):
+    from . import trusted_review_gate
+
+    class ReviewAPI(trusted_review_gate.GitHub):
+        def query(self, repository, number, cursor=None):
+            owner, name = repository.split("/")
+            return client.request(
+                "POST", "graphql", body={"query": trusted_review_gate.REVIEW_QUERY,
+                                         "variables": {"owner": owner, "name": name,
+                                                       "number": number, "cursor": cursor}},
+                label="actual review facts").payload
+
+    return ReviewAPI().snapshot(pr.repository, pr.number, model)
+
+
+def _verify_remote_override(client, pr, record):
+    """Validate the actual immutable decision as of the first submitted review."""
+    from . import review_family
+    identity, facts = _review_snapshot(client, pr, review_family)
+    require(identity[1] == pr.head_sha, "override review head changed")
+    first = facts[0] if facts else None
+    revision = first.head if first else pr.head_sha
+    if first:
+        historical, _ = _decision_at(client, pr, revision)
+        require(reporter.historical_decision_record(historical, revision, pr.number) == record,
+                "override decision was missing or changed at the first reviewed commit")
+        require(frozen_base(client, replace(pr, base_sha=revision)) == revision,
+                "override reviewed commit is not in candidate ancestry")
+    commit = client.request("GET", github._endpoint(pr.repository, f"git/commits/{revision}"),
+                            label="immutable override commit").payload
+    require(commit["sha"] == revision, "override commit identity changed")
+    committed = reporter.parse_time(commit["committer"]["date"], "override commit date")
+    cutoff = reporter.parse_time(first.submitted_at if first else observations.utc_now(), "override cutoff")
+    require(committed < cutoff if first else committed <= cutoff,
+            "override commit does not predate its first review")
+
+
 def fetch_decision(client, pr, changed_lines):
     oid = None
     raw = None
     try:
-        response = client.request(
-            "GET", github._query_endpoint(pr.repository, "contents/" + reporter.DECISION_RECORD_PATH.as_posix(),
-                                           [("ref", pr.head_sha)]),
-            label="committed adaptive decision")
-        item = response.payload
-        require(item.get("type") == "file" and item.get("encoding") == "base64"
-                and item.get("path") == reporter.DECISION_RECORD_PATH.as_posix(),
-                "decision is not the selected regular file")
-        oid = reporter.expect_sha(item["sha"], "decision object")
-        payload = base64.b64decode(item["content"], validate=False)
-        require(len(payload) <= observations.MAX_JSON_BYTES, "decision exceeds input bound")
-        require(hashlib.sha1(f"blob {len(payload)}\0".encode() + payload).hexdigest() == oid,
-                "decision bytes differ from the Git object")
-        raw = reporter.parse_json(payload.decode("utf-8"), "committed adaptive decision")
+        raw, oid = _decision_at(client, pr, pr.head_sha)
     except (KeyError, TypeError, ValueError, reporter.PilotDataError, github.MetadataEditError):
         pass
     return select_mode(raw, number=pr.number, head_sha=pr.head_sha, decision_oid=oid,
-                       changed_lines=changed_lines)
+                       changed_lines=changed_lines,
+                       verify_override=lambda record: _verify_remote_override(client, pr, record))
 
 
 def frozen_base(client, pr):
@@ -256,7 +301,8 @@ def validate_candidate_records(records):
         handoff.fields(record, "pr_number head_sha base_sha base_ref decision_oid mode created_at "
                        "abandoned_reason dispatch_requested_at dispatch_sent_at watermark "
                        "full_run_id full_attempt"
-                       + (" local_validation" if isinstance(record, dict) and "local_validation" in record else ""))
+                       + (" local_validation" if isinstance(record, dict) and "local_validation" in record else "")
+                       + (" dispatch_observed_at" if isinstance(record, dict) and "dispatch_observed_at" in record else ""))
         if "local_validation" in record:
             validate_local_validation(record["local_validation"])
         handoff.integer(record["pr_number"], minimum=1)
@@ -284,6 +330,12 @@ def validate_candidate_records(records):
         if record["dispatch_sent_at"] is not None:
             require(handoff.timestamp(record["dispatch_requested_at"]) <=
                     handoff.timestamp(record["dispatch_sent_at"]), "dispatch chronology reversed")
+        if "dispatch_observed_at" in record:
+            handoff.timestamp(record["dispatch_observed_at"])
+            require(record["dispatch_requested_at"] is not None and record["full_run_id"] is not None,
+                    "observed dispatch lacks reservation/run binding")
+            require(handoff.timestamp(record["dispatch_requested_at"]) <=
+                    handoff.timestamp(record["dispatch_observed_at"]), "dispatch observation predates request")
         identity = record["pr_number"], record["head_sha"], record["base_sha"], record["base_ref"]
         require(identity not in seen, "duplicate candidate identity")
         seen.add(identity)
@@ -478,6 +530,17 @@ def _local_ready(state, pr):
                and entry["assignment"]["expected_branch"] == pr.head_ref for entry in delegated)
 
 
+def _reserved_dispatch(record, pr, run):
+    return (record["dispatch_requested_at"] is not None and run.event == "workflow_dispatch"
+            and run.head_sha == pr.head_sha and run.head_branch == pr.head_ref
+            and run.candidate_binding == (pr.number, pr.head_sha, record["base_sha"])
+            and run.run_number > record["watermark"]
+            and run.created_at >= reporter.parse_time(
+                record["dispatch_requested_at"], "dispatch").replace(microsecond=0)
+            and record["full_run_id"] in (None, run.run_id)
+            and record["full_attempt"] in (None, run.run_attempt))
+
+
 def assess_candidate(state, record, decision, pr, session, facts, triage, checks, runs,
                      *, family_evidence=None, accepted_security=(), criteria_ready=False):
     """Consume existing typed observations. Does not dispatch, merge or launch a watcher."""
@@ -566,10 +629,8 @@ def assess_candidate(state, record, decision, pr, session, facts, triage, checks
             missing.append("wrong-full-run")
         elif decision.mode == "review-first":
             # GitHub creation times have second precision; retain the native reservation.
-            if (record["dispatch_sent_at"] is None or run.event != "workflow_dispatch"
-                    or run.run_number <= record["watermark"]
-                    or run.created_at < reporter.parse_time(
-                        record["dispatch_requested_at"], "dispatch").replace(microsecond=0)):
+            if (not _reserved_dispatch(record, pr, run)
+                    or (record["dispatch_sent_at"] is None and record.get("dispatch_observed_at") is None)):
                 missing.append("early-or-unbound-full-run")
             else:
                 record["full_run_id"], record["full_attempt"] = run.run_id, run.run_attempt
@@ -622,23 +683,11 @@ def evidence_comment(assessment, preserved_text=""):
 def assess_observed(client, state, record, session, triage, review_tools, *,
                     family_evidence=None, accepted_security=(), criteria_ready=False):
     """Refresh through #177/#179 and validate the unique actual Git merge base."""
-    from . import trusted_review_gate
-
-    class ReviewAPI(trusted_review_gate.GitHub):
-        def query(self, repository, number, cursor=None):
-            owner, name = repository.split("/")
-            return client.request(
-                "POST", "graphql", body={"query": trusted_review_gate.REVIEW_QUERY,
-                                         "variables": {"owner": owner, "name": name,
-                                                       "number": number, "cursor": cursor}},
-                label="actual review facts").payload
-
     pr, lines = fetch_candidate(client, state["repository"], record["pr_number"])
     decision = fetch_decision(client, pr, lines)
     request = {"candidate_sha": pr.head_sha, "base_sha": record["base_sha"]}
     review_tools.validate_base(request, pr.base_sha)
-    remote = ReviewAPI()
-    identity, facts = remote.snapshot(pr.repository, pr.number, review_tools.model)
+    identity, facts = _review_snapshot(client, pr, review_tools.model)
     require(identity == (pr.base_sha, pr.head_sha), "review/PR identity changed")
     checks = security_checks(client, pr)
     runs = github.list_candidate_runs(client, pr, include_dispatch=True)
@@ -646,7 +695,7 @@ def assess_observed(client, state, record, session, triage, review_tools, *,
     require((after.head_sha, after.head_ref, after.base_ref) ==
             (pr.head_sha, pr.head_ref, pr.base_ref), "candidate changed during assessment")
     review_tools.validate_base(request, after.base_sha)
-    after_identity, after_facts = remote.snapshot(pr.repository, pr.number, review_tools.model)
+    after_identity, after_facts = _review_snapshot(client, after, review_tools.model)
     if after_facts != facts:
         session.refresh_reviews(after_facts)
     require(after_identity == (after.base_sha, pr.head_sha) and after_facts == facts,
@@ -691,6 +740,42 @@ def dispatch_full(client, state_path, pr, assess):
         require(record["dispatch_requested_at"] == reservation, "dispatch reservation changed")
         record["dispatch_sent_at"] = observations.utc_now()
     return {"state": "dispatch-observation-pending", "head_sha": pr.head_sha}
+
+
+def reconcile_full_dispatch(client, state_path, pr):
+    """Observe the unique reserved run; never repeat POST or invent its HTTP ack."""
+    with observations.locked_state(state_path) as state:
+        handoff.validate_state(state)
+        require(state["repository"] == pr.repository, "reconciliation repository changed")
+        records = [item for item in state.get("candidates", ())
+                   if (item["pr_number"], item["head_sha"], item["base_ref"]) ==
+                   (pr.number, pr.head_sha, pr.base_ref)]
+        require(len(records) == 1, "reconciliation candidate is missing or ambiguous")
+        record = records[0]
+        require(record["dispatch_requested_at"] is not None, "no reserved full dispatch")
+        runs = github.list_candidate_runs(client, pr, include_dispatch=True)
+        binding = pr.number, pr.head_sha, record["base_sha"]
+        scoped = [run for run in runs if run.head_sha == pr.head_sha and run.head_branch == pr.head_ref
+                  and run.candidate_binding in (None, binding)]
+        unknown = any(run.status in github.ACTIVE_RUN_STATUSES
+                      and (run.candidate_binding is None or run.mode == "active-unknown") for run in scoped)
+        full = [run for run in scoped if run.mode in {"full", "active-full"}]
+        workflows = {run.workflow_id for run in scoped if run.mode == "review-first"
+                     and run.run_number <= record["watermark"] and run.candidate_binding == binding
+                     and candidate_evidence.preflight_success({
+                         job.name: (job.status, job.conclusion) for job in run.jobs})}
+        if (unknown or len(full) != 1 or len(workflows) != 1
+                or full[0].workflow_id not in workflows or not _reserved_dispatch(record, pr, full[0])):
+            return {"state": "dispatch-uncertain", "head_sha": pr.head_sha}
+        current = github.fetch_pull_request(client, pr.repository, pr.number)
+        if ((current.head_sha, current.head_ref, current.base_ref) !=
+                (pr.head_sha, pr.head_ref, pr.base_ref) or frozen_base(client, current) != record["base_sha"]):
+            record["abandoned_reason"] = record["abandoned_reason"] or "superseded-head-or-base"
+        run = full[0]
+        record["full_run_id"], record["full_attempt"] = run.run_id, run.run_attempt
+        record["dispatch_observed_at"] = observations.utc_now()
+        return {"state": "observed-abandoned" if record["abandoned_reason"] else "dispatch-observed",
+                "head_sha": pr.head_sha, "run_id": run.run_id, "attempt": run.run_attempt}
 
 
 def cancel_abandoned(client, state_path, record, run):

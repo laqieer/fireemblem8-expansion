@@ -382,12 +382,20 @@
         "abandoned_reason": {"$ref": "#/$defs/nullableText", "maxLength": 2048},
         "dispatch_requested_at": {"anyOf": [{"$ref": "#/$defs/time"}, {"type": "null"}]},
         "dispatch_sent_at": {"anyOf": [{"$ref": "#/$defs/time"}, {"type": "null"}]},
+        "dispatch_observed_at": {"$ref": "#/$defs/time"},
         "watermark": {"$ref": "#/$defs/integer"},
         "full_run_id": {"$ref": "#/$defs/nullablePositive"},
         "full_attempt": {"$ref": "#/$defs/nullablePositive"},
         "local_validation": {"$ref": "#/$defs/coordinatorLocal"}
       },
       "allOf": [
+        {
+          "if": {"required": ["dispatch_observed_at"]},
+          "then": {"properties": {
+            "dispatch_requested_at": {"$ref": "#/$defs/time"},
+            "full_run_id": {"$ref": "#/$defs/positive"}, "full_attempt": {"$ref": "#/$defs/positive"}
+          }}
+        },
         {
           "if": {"properties": {"full_run_id": {"type": "null"}}},
           "then": {"properties": {"full_attempt": {"type": "null"}}},
