@@ -77,7 +77,7 @@ guessing.
 
 ## Public seam
 
-Run the stdlib-only reporter from the repository root:
+Run the stdlib-only reporter from the source repository root:
 
 ```bash
 python3 -m scripts.workflow_pilot.reporter \
