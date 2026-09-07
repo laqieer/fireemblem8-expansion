@@ -139,6 +139,7 @@ the consumers' independent protected-principal/deployment requirements.
      scripts.workflow_pilot.tests.test_candidate_identity \
      scripts.workflow_pilot.tests.test_live_stack \
      scripts.workflow_pilot.tests.test_refless_runs \
+     scripts.workflow_pilot.tests.test_ref_bounds \
      scripts.workflow_pilot.tests.test_coordinator_local -v
    ```
 
@@ -250,6 +251,21 @@ the consumers' independent protected-principal/deployment requirements.
    wrong/noncanonical/invalid-UTF-8 refs fail. Metadata-only results never
    replace a full Build, and a newer unproven full run blocks reuse of older
    success. Keep the 32768-byte source bound and behavior-backed raw/AST guards.
+   Create real nested Git refs with components at most 120 UTF-8 bytes, using
+   ASCII and multibyte text at 256, 257, 1024 and 1025 bytes. Execute the actual
+   PR router and dispatch bootstrap: supported refs register and round-trip
+   through typed/persisted state; overlong or malformed refs reject or use
+   broader unbound routing before review-first preflight. Capture native local
+   checks on actual 1024-byte head/base refs. Schema validation must enable the
+   documented `git-branch-ref` format; demonstrate that `maxLength` alone is
+   not byte evidence. Exercise REST/GraphQL and full-run parsing, canonical
+   percent encoding, the derived 3202-byte marker/step envelope and one byte
+   beyond it. Keep same-head/same-base different-ref runs separate, preserve
+   old cleanup observations and reject wrong-ref/attempt cancellation.
+   Execute the real inline summary with complete exact-ref full evidence,
+   overlong decoded refs, oversized steps and another valid 1024-byte ref.
+   Pre-fix, an actual 257-byte review-first route reached candidate registration
+   and failed the old 256-character state validator.
    Zero/multiple/unclassified runs, wrong
    head/base/ref/workflow/bound attempt, missing acknowledgement and partial
    identity lookups cannot authorize a candidate. Unrelated base-tip movement
@@ -398,7 +414,10 @@ modern/archival or manual audiovisual compatibility changes.
 `scripts.workflow_pilot.tests.test_adaptive_gate` runs real local Git/handoff,
 typed state, HTTP-response and actual preflight/summary shell controls. The
 `scripts.workflow_pilot.tests.test_coordinator_local` selector exercises
-registered coordinator-owned native checks and their negative controls. The
+registered coordinator-owned native checks and their negative controls.
+`scripts.workflow_pilot.tests.test_ref_bounds` covers the same byte-aware
+branch contract across actual Git/shell/native state and controlled provider
+observations. The
 existing topology, publisher, metadata, schema and review selectors cover
 their directly coupled integration contracts. The coordinator records the
 actual disposable-PR exercise separately; fixtures are never pilot samples.
@@ -406,7 +425,10 @@ actual disposable-PR exercise separately; fixtures are never pilot samples.
 ### Cleanup and limitations
 
 Local HTTP/task records are controlled fixtures, not actual GitHub reviewer
-launches or remote delivery evidence. The real exercise above remains required
+launches or remote delivery evidence. The derived marker envelope is a local
+producer/reader bound, not an observed hosted step-name maximum; an actual
+hosted long-ref run must retain the full witness without truncation.
+The real exercise above remains required
 and is owned by main. There is no subjective manual-only criterion for this
 host orchestration feature, no owner-dispatch prevention guarantee, and no
 same-UID sandbox or authenticated receipt claim. Three weeks or 20 real

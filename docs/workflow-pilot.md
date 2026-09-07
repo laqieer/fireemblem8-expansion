@@ -309,6 +309,26 @@ legacy parsing is not `explicit-same` full ownership, and a newer unproven full
 run cannot be skipped in favor of an older complete one. Canonical witnesses
 for another ref remain other-candidate evidence; missing data remains unbound.
 There is no new workflow input, protocol version or authored state schema.
+
+Branch refs share the existing **1024 UTF-8 byte** Git-syntax boundary across
+event routing, authenticated PR/dispatch observations, candidate lookup/state,
+local captures and historical witnesses. The limit is not 256 characters.
+The same byte-aware predicate used by the event classifier validates typed
+coordinator records. Unsupported or malformed refs cannot enter a review-first
+preflight that cannot later register; they reject or retain the broader
+unbound route. A same-sized different ref still denotes a different candidate.
+
+Canonical percent encoding can expand a 1024-byte ref to 3072 ASCII bytes.
+The existing marker's prefix, bounded PR number and two SHAs give a derived
+**3202-byte step-name envelope**, enforced by its producer/readers and the
+marker/preflight shell steps. This is the repository's witness envelope, not
+a claim that a hosted provider preserves every possible long step name.
+Truncated or changed observed witnesses never provide full identity. The
+1-MiB state, API/process/time and 32768-byte inline-source budgets are unchanged.
+Local tests execute the real shell, isolated base classifier, native Git and
+summary with controlled HTTP responses; hosted long-ref delivery requires
+actual untruncated job-step observations, not these fixture results.
+
 Automatic exact-head security checks can legitimately start before the
 coordinator first registers a new head. Do not rewrite their timestamps.
 A same-head base rebind instead requires the current eligible clean review
@@ -2367,6 +2387,16 @@ arrays avoid duplicate wire identities. The independent Draft 2020-12 tests
 exercise structural/schema agreement. Git identity, cross-record correlation,
 chronology, ownership and evidence completeness require additional runtime
 checks, not a schema claim of authenticity.
+
+`expected_branch`, candidate `base_ref`, and local-validation `branch`/`base_ref`
+all use the same Git-ref syntax and 1024-UTF-8-byte contract.
+JSON Schema `maxLength: 1024` is only a **code-point prefilter**. Byte/syntax
+parity requires the schema's `git-branch-ref` format: use
+`Draft202012Validator(schema, format_checker=agent_handoff.schema_format_checker())`
+or an equivalent implementation of the documented format. This checker retains
+the existing date-time formats. Plain structural validation does not enable
+format assertions; the runtime validators always enforce the byte-aware rule.
+No JSON/state aggregate limit or schema version is increased.
 
 Assignment, owner, session and actual dispatch IDs are each unique across the
 retained state, including closed history. A successor or independent assignment

@@ -30,6 +30,11 @@ SECURITY_CHECKS = frozenset({
     ("GitGuardian Security Checks", 46505, "gitguardian"),
 })
 BINDING_PREFIX = "workflow-pilot-candidate:v1:"
+# Existing int64 PR identity plus the worst canonical percent encoding of a ref.
+MAX_BINDING_BYTES = (
+    len(f"{BINDING_PREFIX}{2**63 - 1}:{'0' * 40}:{'0' * 40}:")
+    + 3 * event_classifier.MAX_BRANCH_REF_BYTES
+)
 PREFLIGHT_CLASSIFIER = "review-first-classifier"
 MAX_CANDIDATES = 128
 
@@ -379,20 +384,28 @@ def frozen_base(client, pr):
 
 
 def binding_name(number, head, base, base_ref=None):
-    reporter.expect_int(number, "PR number", 1)
+    handoff.integer(number, minimum=1)
     reporter.expect_sha(head, "binding head")
     reporter.expect_sha(base, "binding base")
     name = f"{BINDING_PREFIX}{number}:{head}:{base}"
     if base_ref is not None:
         require(event_classifier._is_git_branch_ref(base_ref), "invalid binding base ref")
         name += ":" + quote(base_ref, safe="")
+    require(len(name.encode("ascii")) <= MAX_BINDING_BYTES, "candidate step name exceeds its ref envelope")
     return name
 
 
 def _binding_fields(name):
+    if not isinstance(name, str) or not name.isascii() or len(name) > MAX_BINDING_BYTES:
+        return None, None
     match = re.fullmatch(re.escape(BINDING_PREFIX) +
                         r"([1-9][0-9]*):([0-9a-f]{40}):([0-9a-f]{40})(?::([^:\s]+))?", name)
     if not match:
+        return None, None
+    number = int(match[1])
+    try:
+        handoff.integer(number, minimum=1)
+    except ValueError:
         return None, None
     base_ref = None
     if match[4] is not None:
@@ -402,7 +415,7 @@ def _binding_fields(name):
             return None, None
         if not event_classifier._is_git_branch_ref(base_ref) or quote(base_ref, safe="") != match[4]:
             return None, None
-    return (int(match[1]), match[2], match[3]), base_ref
+    return (number, match[2], match[3]), base_ref
 
 
 def parse_binding(name):
@@ -522,7 +535,7 @@ def find_candidate(state, identity):
     handoff.integer(identity[0], minimum=1)
     for revision in identity[1:3]:
         handoff.sha(revision)
-    handoff.text(identity[3], maximum=256)
+    handoff.branch_ref(identity[3])
     records = [record for record in state.get("candidates", ()) if candidate_identity(record) == identity]
     require(len(records) == 1, "candidate identity is missing or ambiguous")
     return records[0]
@@ -543,7 +556,7 @@ def validate_candidate_records(records):
             handoff.sha(record[key])
         if record["decision_oid"] is not None:
             handoff.sha(record["decision_oid"])
-        handoff.text(record["base_ref"], maximum=256)
+        handoff.branch_ref(record["base_ref"])
         handoff.choice(record["mode"], reporter.GATE_MODES)
         for key in ("created_at", "dispatch_requested_at", "dispatch_sent_at"):
             if record[key] is not None:
@@ -618,7 +631,7 @@ def validate_local_validation(local):
     for key in ("head_sha", "base_sha"):
         handoff.sha(local[key])
     for key in ("base_ref", "branch"):
-        handoff.text(local[key], maximum=256)
+        handoff.branch_ref(local[key])
     handoff.absolute_path(local["worktree"])
     handoff.timestamp(local["registered_at"])
     handoff.validate_clock(local["clock"])
