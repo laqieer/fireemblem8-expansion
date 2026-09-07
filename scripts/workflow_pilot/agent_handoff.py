@@ -216,9 +216,12 @@ def validate_availability(value):
     timestamp(value["observed_at"])
     timestamp(value["valid_until"])
     for name in ("autostop_enabled", "stop_on_disconnect"):
-        boolean(value[name])
+        if value["mode"] != "plan" or value[name] is not None:
+            boolean(value[name])
     text(value["plan"], nullable=True)
-    require(value["mode"] != "plan" or value["plan"] is not None, "availability plan is missing")
+    require(value["mode"] != "plan"
+            or (value["plan"] is not None and bool(value["plan"].strip())),
+            "availability plan is missing")
 
 
 def validate_clock(value):

@@ -158,6 +158,10 @@ the consumers' independent protected-principal/deployment requirements.
    dispatch. Observe its exact run/attempt and all full jobs before merge
    eligibility. Missing local, review, security or objective/manual evidence
    remains a hold.
+   If host stop settings are unknown, retain explicit nulls in a bounded
+   `plan` with concrete recovery steps; never fabricate Boolean settings or
+   use unknowns for `always-on`. Expired coverage and native interruption
+   observations still reject availability.
 6. Accept a valid finding: record abandonment and deny full dispatch/merge.
    Later clean or cancelled/successful Build results cannot revive that head.
    Resolve a false positive before acceptance, refresh actual facts and

@@ -2201,8 +2201,12 @@ The coordinator creates the initial document with
 `new_state(repository, coordinator_id, availability)` and `json_bytes`, in its
 session storage outside the implementation worktree. `availability` names
 `mode` (`always-on` or `plan`), UTC `observed_at`/`valid_until`, both Dev Box stop
-settings and nullable `plan` text. Inspect the actual host settings before
-recording them. A plan is a decision covering the unattended interval, not
+settings and nullable `plan` text. Record Boolean stop settings only when
+actually known. In `plan` mode an unavailable setting may remain explicitly
+`null`; do not invent a value for a non-Dev-Box or uninspected host.
+Unknown settings never qualify for `always-on` mode. The nonblank recovery
+plan, bounded UTC coverage and native interruption checks remain required.
+A plan is a decision covering the unattended interval, not
 proof of perpetual availability. Boot/suspend observations invalidate stale
 coverage until the coordinator makes a fresh availability decision.
 

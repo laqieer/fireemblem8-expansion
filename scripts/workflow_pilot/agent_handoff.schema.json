@@ -169,11 +169,16 @@
       "required": ["mode", "observed_at", "valid_until", "autostop_enabled", "stop_on_disconnect", "plan"],
       "properties": {
         "mode": {"enum": ["always-on", "plan"]}, "observed_at": {"$ref": "#/$defs/time"},
-        "valid_until": {"$ref": "#/$defs/time"}, "autostop_enabled": {"type": "boolean"},
-        "stop_on_disconnect": {"type": "boolean"}, "plan": {"$ref": "#/$defs/nullableText"}
+        "valid_until": {"$ref": "#/$defs/time"}, "autostop_enabled": {"type": ["boolean", "null"]},
+        "stop_on_disconnect": {"type": ["boolean", "null"]}, "plan": {"$ref": "#/$defs/nullableText"}
       },
       "if": {"properties": {"mode": {"const": "plan"}}},
-      "then": {"properties": {"plan": {"$ref": "#/$defs/text"}}}
+      "then": {"properties": {"plan": {
+        "allOf": [{"$ref": "#/$defs/text"}, {"pattern": "\\S"}]
+      }}},
+      "else": {"properties": {
+        "autostop_enabled": {"type": "boolean"}, "stop_on_disconnect": {"type": "boolean"}
+      }}
     },
     "clock": {
       "type": "object", "additionalProperties": false,
