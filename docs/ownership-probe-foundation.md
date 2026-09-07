@@ -5,6 +5,11 @@ a **framework capability**: one bounded execution and observation authority for
 GNU Make and declared generated-source consumers. It does **not** select,
 replace, or skip validation.
 
+This delivery is the static, single-view core. Optional producer, view,
+runtime-input and dependency-compiler contracts are allocated to #225--#228,
+not exposed as core APIs. See the [complete allocation](ownership-probe-allocation.json)
+and [downstream boundary](#contract-allocation-and-downstream-integration).
+
 ## Run the real consumer
 
 From a source checkout:
@@ -201,118 +206,8 @@ parents, not library-directory prefixes. Finite loader cache and architecture
 search probes are permitted only during trusted pre-observer startup and only
 for absent owned-view paths. Once the observer is ready, candidate evaluation
 cannot reuse that exception. Unrequested runtime files reject rather than
-silently becoming sparse absence; explicit runtime inputs retain their separate
-captured permission.
-
-### Explicit runtime discovery inputs
-
-The optional `ProbeSession(..., runtime_files=(... ,))` admits exact regular
-system files, or their actual absence, for Make's existing runtime discovery:
-
-```python
-with ProbeSession(
-    loader, scratch_root=scratch, budget=budget,
-    runtime_files=(
-        "/usr/include/newlib/stdlib.h",
-        "/usr/include/build",
-        "/usr/include/.dep",
-    ),
-) as probe:
-    observation = probe.make("assets-test", commands=commands)
-```
-
-The first path supports the real `modern.mk` newlib wildcard. Capturing its
-actual `/usr/include` ancestor also preserves GNU Make's standard include-search
-context. The other two declarations capture actual absent search prefixes for
-missing relative generated/dependency includes, not empty Make assignments.
-An explicitly captured absent path proves its descendants absent as well.
-If such a path instead names a directory or another nonregular object, capture
-rejects rather than fabricating that absence.
-
-Files must be canonical absolute paths below the existing trusted system
-tool/library roots or `/usr/include/`; root ownership and non-group/other-
-writability checks also apply to existing ancestors. Nonstock symlink/non-directory
-ancestors, special files, executable-image collisions, overlaps, duplicates and
-excess requests reject. Present files retain captured real bytes and modes;
-absent inputs are not created. No live include tree is mounted. Unrequested
-runtime files and directory enumeration remain forbidden, and declarations
-grant no new executable or write authority.
-
-`probe.runtime_inputs` exposes frozen `RuntimeInput(path, data, mode, parents, canonical, aliases)`
-records during the session; `data is None` denotes captured absence and
-`parents` records ancestor presence. Capture, copies and observations spend the
-existing control/report budgets. Runtime inputs remain fixed across BASE/current
-view selection, clear on session exit and bind Make's execution identity.
-Semantic identity still comes from actual native target/domain observations,
-not unrelated runtime bytes. Default callers that omit `runtime_files` retain
-their existing behavior.
-
-Explicit stock spellings such as `/bin/mkdir` capture the canonical
-`/usr/bin/mkdir` source and the actual root-owned `/bin -> /usr/bin` ancestor.
-The validated stock `/bin` root link is reproduced in the owned guest tree
-using its confined relative target. The existing guest resolver
-retains `realpath` behavior but rejects unrequested spellings through those
-links. There is no live `/bin` mount, caller-created alias or PATH rewrite.
-
-For a requested stock spelling of an existing interceptor program, the guest
-keeps that interceptor image rather than overwriting it with the real host
-executable. It grants metadata and authenticated dispatch only, not data reads
-of a substituted program image. Other execution-image collisions still reject.
-Requesting `/bin/mkdir` does not authorize `/bin/rm`, `/bin/env`, native Make
-re-exec through another path, mutable/nonstock/escaping aliases or arbitrary
-candidate execution.
-
-An explicitly requested, present stock `env` program also uses this existing
-metadata-only path. `runtime_files=("/bin/env",)` captures its canonical
-`/usr/bin/env` target; a direct canonical request or both spellings are also
-supported. The guest gets the same interceptor at the canonical destination,
-never the real `env` image. Ordinary `env -u ... $(PYTHON) ...` recipes retain
-their original PATH, argv and native recipe context without executing either
-program. Missing captured `env` does not create an executable.
-
-This is not a new `Command` executable or permission for arbitrary runtime
-programs. Unrequested aliases, program-data reads and interpreter/image
-collisions remain denied. Eager, recursive and include-remake invocations
-still require an exact registered real result; merely requesting the runtime
-file cannot manufacture one. Default callers do not gain `env` dispatch.
-
-There is no candidate-readable generated probe program or writable domain
-file. The trusted observer reads GNU Make's actual target/dependency/recipe
-structures and evaluates requested global and target-scoped variables. It
-finishes all candidate expression expansion **before** opening its typed result
-descriptor. Only syscall instructions in that trusted observer's executable
-mapping may open/write the result channel. GNU Make `file`/include/eval cannot.
-Candidate stdout/stderr is retained as bytes for diagnostics, never parsed as
-authoritative Make structure.
-After observer initialization, candidate reads of its image and enumeration of
-runtime directories reject; the private interceptor is below the already
-protected control namespace. There are no probe-only public shell/Make aliases.
-
-The static interceptor alone opens the event and read-only mapping channels.
-Neither Make nor a registered command receives those descriptors. The original
-length-framed event fields and exact FNV-keyed mapping format are retained.
-Direct argv is now canonically quoted: one argument containing a space cannot
-collide with two arguments. Hash hits still require exact command bytes.
-Mappings contain actual results of registered, confined commands, not invented
-successful values. An initial Make parse error can be retried only when there
-is an observed, explicitly registered unresolved eager command; final success
-requires successful GNU Make completion and its authenticated observation.
-Declared file results extend those same mappings with a bounded typed sidecar.
-Only a value/remake interceptor with an exact matched command can request
-publication; Make and registered-command processes cannot call that private
-operation. The supervisor, outside the chroot, writes the captured bytes into
-the owned backing view at that dispatch, before the interceptor returns.
-Neither the candidate nor interceptor receives writable `/repo` authority.
-
-The observer preserves GNU Make's actual `execvp` restart after remaking an
-include, including argv order and native environment/`MAKE_RESTARTS` behavior.
-It restores only its private bootstrap values and preload, which disappear
-again before Make imports its environment. The syscall IP and original Make
-PID authenticate this transition; a job child or registered command cannot
-use it to execute native Make. Restarts retain the same supervisor, event
-stream, budgets and 64-pass bound. A fresh outer replay starts without any
-previous replay's generated files, rather than precreating an include and
-silently losing the native first-parse/remake/restart context.
+silently becoming sparse absence. Optional explicit runtime inputs belong to
+#227; mandatory runtime closure remains in the core.
 
 ### Registered commands and native tools
 
@@ -337,153 +232,14 @@ flags/plugins are accepted. The output must be a bounded x86-64 ELF with valid
 program headers, no writable executable load segment and only the admitted
 dynamic loader. A session-issued `NativeTool` is sealed before `native` runs it
 in another channel-free capsule. It never becomes a Make-capsule executable.
-Changed or foreign-session/view ELF handles reject.
-
-### Dependency-only host compiler commands
-
-The same public `Command` accepts `dependency_only=True` for the actual host
-dependency action, not arbitrary compilation:
-
-```python
-dependency = Command(
-    ("/usr/bin/cc", "-E", "-I", "tools/agbcc/include",
-     "-iquote", "include", "-iquote", ".", "-nostdinc", "-undef",
-     "-DFE8_ARCHIVAL_BUILD=1", "src/example.c", "-MM", "-MG",
-     "-MT", "src/example.o"),
-    sources=("src/example.c",),
-    code=declared_header_pool,
-    outputs=(".dep/src/example.d",),
-    dependency_only=True)
-output = probe.command(dependency)
-```
-
-The action accepts exactly one canonical C translation-unit argument, one
-target and one declared output. `-E`, `-MM`, `-nostdinc`, `-undef` and one `-MT`
-are required;
-`-MG` is optional. Ordered `-I`/`-iquote` and symbolic `-D`/`-U` declarations
-are supported without reordering the real argv. Other compiler modes, arbitrary
-flags, response files, plugins/specs, link/assembler actions and output overrides
-reject before payload launch. No ARM/agbcc executable or library is required
-for this host-only query.
-
-The existing trusted compiler resolver supplies the real C driver/cc1
-transitions in the channel-free compiler capsule. The action accounts creation
-of the declared private output ancestors and appends only controlled
-`-MF /work/<output>`, equivalent to the original dependency stdout redirection.
-`ProcessOutput.generated` contains the actual dependency bytes; `artifact`
-remains `None`, never a sealed native ELF.
-
-Sources retain declared/permitted/consumed equality. A bounded explicitly
-admitted header `code` pool uses the existing code authority, and
-`code_consumed` identifies only actually observed headers. Callers may rerun
-with that measured exact closure as `sources` and no header pool. Dependency
-semantic identity uses the actually consumed source/header set, not unused
-pool members. Conditional, recursive and ordered header search is performed
-by the real preprocessor, not a copied parser.
-
-For `-MG`, negative probes are checked against the existing complete owned
-source view. Genuine absent inputs may remain missing; undeclared existing
-files and unadmitted symlink/gitlink namespaces cannot masquerade as absence.
-Only declared include-directory metadata is materialized. Generated headers
-must be real captured/declared inputs when present; this action does not
-invent missing headers or import an uncaptured build directory.
-
-Register the command under the original exact Make producer string to reuse
-the existing generated-file dispatch/publication/remake path. Make consumes
-the nonempty `.d` with its actual restart and prerequisite semantics. All
-source, native, view, output, process, memory, byte and cleanup limits remain
-unchanged.
-
-### Native Make registrations and declared file results
-
-The existing typed `Command` also accepts `native_tool=tool` from that same
-active session view. Its exact argv must begin with `/native/tool`; the rest is the
-real native argv, including empty arguments. It executes through the same
-channel-free command path as `native`, never through Make's mount:
-
-```python
-tool = probe.compile_native(scaninc_sources, headers=scaninc_headers, cxx=True)
-registration = Command(
-    ("/native/tool", "-I", "include", "-I", "", "proof.s"),
-    native_tool=tool, sources=("proof.s",))
-observation = probe.make("all", commands={
-    'tools/scaninc/scaninc -I include -I "" proof.s': registration,
-})
-```
-
-Registrations describe commands actually dispatched by Make, not permission
-to install an executable or invent a successful missing-program result.
-The native result retains real stdout and successful source observations.
-Semantic command identity includes the sealed ELF and its declared build-input
-identities, not a guessed printf replacement. A copied/forged, changed or
-foreign-session tool is not an issued registration.
-
-For a producer, declare **all** surviving files to capture with
-`Command(..., outputs=("generated.mk",))`. Each name is exact, canonical and
-repository-relative: the producer writes `/work/generated.mk`, and the matched
-Make dispatch publishes it as `/repo/generated.mk`. For example:
-
-```python
-producer = Command(
-    ("/usr/bin/python3", "/repo/producer.py", "/work/generated.mk"),
-    code=("producer.py",), sources=("choice.txt",), outputs=("generated.mk",))
-observation = probe.make(
-    "all", variables=("SELECTED", "MAKEFILE_LIST", "MAKE_RESTARTS"),
-    commands={"python3 producer.py generated.mk": producer})
-```
-
-The candidate Makefile may `include generated.mk` and supply a remake rule
-whose recipe is the registered producer. GNU Make really sees the initially
-missing include, dispatches the remake, re-execs, loads it, and selects its
-prerequisites. Parse-time `shell` producers publish before the include instead;
-their native context does not acquire an invented restart. Chained includes
-can require multiple real restarts. Ordinary recipes remain metadata-only.
-
-`command` and `native(..., outputs=...)` return
-`ProcessOutput.generated`, a tuple of immutable `GeneratedFile(path, data, mode)`
-values, never live scratch paths. `outputs=()` preserves existing stdout-only
-callers and their disposable `/work` use. Opting into capture requires exact
-equality between the declaration and surviving regular files; only their
-ancestor directories may also remain. Extra, missing, nonregular, symlinked,
-escaping, oversized and overlapping outputs reject. Tracked blobs, symlinks,
-gitlinks and their path namespace cannot be replaced. Two distinct producers
-cannot publish one path in a pass, even if their bytes happen to agree;
-equivalent registrations/aliases share an identity. Repeated dispatch of that
-same producer republishes the result at the actual dispatch, not once before
-the pass.
-
-File modes and bytes participate in generated-result identity; Make's mount
-is still read-only/noexec/nosuid. Each file and the combined framed mapping
-(including its metadata) fit the existing file limit. Capture, retained cache,
-mapping/provenance, publication bytes and created files/directories spend the
-same report-wide quotas, including speculative producers. Publication streams
-bounded chunks under the original deadline, not an independent output copier.
-Only final successful outer-replay dispatches contribute dynamic identity;
-recipe-owning generated files bind to their actual output identities.
-
-Publication is Make-call/replay-local. Every next outer replay, return, failure
-or interruption removes only the declared generated files and new owned
-ancestors; snapshot inputs and unrelated worktrees are untouched. Producers
-still read only their declared snapshot code/sources and write fresh private
-`/work` output. This is not an incremental build filesystem or an API for
-feeding another producer undeclared previous outputs. The downstream graph
-and full-domain adoption remain #180's responsibility.
-
-On the sudo-drop route the supervisor transfers each newly created publication
-directory/file to the configured runner UID/GID through its nofollow-opened
-descriptor. Directories transfer before children are created; files transfer
-before content and their declared mode are applied. Existing source/view/control
-objects are never chowned. The user-namespace route performs no transfer: its
-UID mapping already gives the outer runner ownership. Transfer failure remains
-a visible publication failure, not permission to run privileged cleanup or
-ignore residue. Live owner/group/mode checks and ordinary runner cleanup are
-part of the include/restart, binary-output and interruption regressions.
+Changed or foreign-session ELF handles reject. Native Make registration and
+declared generated-file results belong to #225, not this direct native API.
 
 ## Source declaration and identity contracts
 
 `Command` declares argv, admitted code paths, candidate source paths/globs and
 directories permitted for enumeration. The supervisor resolves selectors
-against the selected snapshot and materializes only that view. A selector that
+against one captured snapshot and uses its persistent complete backing. A selector that
 matches a symlink/gitlink rejects; it does not silently drop that input.
 Literal selectors identify exact repository-relative paths, not matching
 basenames in unrelated directories. Explicit `*`, `?` or `[` glob selectors
@@ -493,13 +249,12 @@ constructed paths reject. Code imports have a separately admitted code set and
 bounded, absent import-cache probes.
 
 Python module and import-cache exceptions prove absence against the complete
-**active** owned source view, not the sparse command mount. An existing
-undeclared `__init__`, module variant or cache path rejects even when omitted
-from that sparse mount. Unadmitted nonregular namespaces reject before any
+**active** owned source view. An existing undeclared `__init__`, module variant
+or cache path rejects rather than being omitted from a sparse command mount.
+Unadmitted nonregular namespaces reject before any
 absence claim. Truly absent related probes remain permitted and spend bounded
-attempt bookkeeping without successful-consumption credit. CURRENT/BASE
-selection and files published into the active generated view use the same
-predicate as dependency-negative probes; no live-checkout substitution or
+attempt bookkeeping without successful-consumption credit. Compiler negative
+search probes also require genuine absence. No live-checkout substitution or
 new import authority is introduced.
 
 Authorization remains entry-time and fail-closed, but source/code/Make-path
@@ -521,9 +276,10 @@ The closed supervisor result includes the actual attempted-record sum as
 process/syscall totals, including failed capsules. Missing, malformed,
 out-of-range or inconsistent counts reject rather than defaulting to zero;
 successful observation sets and bookkeeping bytes constrain the count.
-Command, native, compiler, generated Make work and CURRENT/BASE selection share
-this total. Cached results do not repeat already-accounted work, and neither
-view restoration nor failure resets the counter. With no records remaining,
+Command, native, compiler, static Make and metadata revalidation share this
+total. Cache hits do not repeat candidate execution, but genuine metadata
+queries are new charged work. Neither reuse nor failure resets the counter.
+With no records remaining,
 another capsule rejects before launch. A terminal failure also forbids cached
 replay. The separate captured-source entry bound still uses `Limits.entries`;
 source capture is not a filesystem-observation charge.
@@ -533,7 +289,8 @@ compiler exception before the general namespace denial. The capsule has no
 proc mount or fabricated executable link: stat/lstat/access/readlink return
 authentic absence, not a host executable identity. This grants no source
 consumption, file read/write/exec, unknown descriptor or neighboring proc/sys/
-device access. Ordinary command/Make modes remain denied; the interceptor's
+device access. Ordinary command/Make modes remain denied, with Make's earlier
+exact runtime guard taking precedence before observer-ready; the interceptor's
 existing private protocol and other trusted absent-runtime probes are unchanged.
 
 Directory evidence comes from parsed `getdents`/`getdents64` bytes, not the
@@ -556,54 +313,82 @@ Declarations must name actual directories in the selected active view before
 admission or cache reuse. The syscall boundary checks directory type again;
 putting a regular file in `directories` never grants its content.
 
-For an explicitly enumerating command, the existing read-only/noexec source
-mount uses the complete active owned view. The guard requires that same
+For every command, the existing read-only/noexec source mount uses the complete
+active owned view. The guard requires that same
 directory backing before returning entries and rejects incomplete sparse or
 nonregular namespaces. File reads still require their separate code/source
-declarations; listing a name does not grant its contents. CURRENT/BASE and
-published generated entries therefore cannot be hidden by sparsity.
+declarations; listing a name does not grant its contents.
 The standalone registry consumer declares its import/source directories and
 captures recorded gitlinks from already available local object databases so
 its root listing is complete. Missing databases/pins reject; no fetch or live
 submodule mount is introduced.
 
-For `--worktree`, capture uses the actual Git index and non-ignored live source
-inventory, not immutable HEAD blob contents. An actually empty uninitialized
-gitlink directory is captured as such; initialized gitlinks contribute their
-actual live source bytes. Nonempty uninitialized or unsafe namespaces reject.
+For `--worktree`, default admission uses HEAD paths, not the index or every
+nonignored live file. The admitted paths contribute actual live bytes,
+executable modes and genuine absence/type information, not immutable HEAD blob
+contents. Callers may supply an explicit same-budget source-path map.
+An actually empty live gitlink directory is captured as such; nonempty
+initialized contents require explicit path admission and are not traversed
+automatically. Unsupported or unsafe type changes reject.
 Those bytes are frozen for the report, not exposed through a continuing live
 host mount. Immutable revision capture retains exact-pin object-database semantics.
 
-### Observable-view cache and replay validity
+### Complete metadata and static reuse
 
-Successful command results retain bounded observations of the directory
-names/types and presence/absence they actually consulted. The original
-snapshot and command remain the base cache identity, but a cached result is
-reused only when its relevant active-view observations still agree. Unchanged
-relevant inputs retain cache reuse; unrelated publication does not disable all
-caches. Directory-type admission is checked independently before reuse.
-Directory metadata also binds membership: a generated subdirectory can change
-an observed link count even when no listing syscall was needed.
+Every registered command uses the same persistent complete read-only/noexec
+source backing as native Make, regardless of `Command.directories`. A
+declaration grants an operation, not selection of a sparse filesystem. Implicit
+source/code ancestors retain permitted metadata but do not become enumerable.
+Directory declarations are type-checked; names-only listing never grants member
+contents. The guard uses the mounted read-only view, never a writable alias.
 
-Protected Make mappings use the same observations at their authenticated
-dispatch point. The existing framed match selector identifies a valid completed
-result (`match >= 0`, the completed mapping index) or a missing result in the
-actual generated publication context (`match == -1 - context_index`). A
-command can therefore retain distinct valid results for earlier and later
-views in one native Make pass. The original argv/hash/count framing and
-generated-file format are reused, not replaced by a new codec or service.
-Generated file ownership uses the normalized registration and its admitted
-inputs, not the Make alias or view-dependent output bytes. Aliases of one
-producer and its valid replacement results share ownership; different
-producers still cannot replace each other's outputs.
+`ProcessOutput.metadata` contains operation-aware source observations:
+syscall number, canonical guest path, flags, mask, buffer size, directory
+offset, actual signed kernel result, and complete input/output buffer bytes.
+Stat/lstat/fstat/newfstatat, supported statx/fstatfs, access/readlink variants
+and directory results retain their actual supported ABI data. Failed operations
+keep their status without becoming successful source consumption. Unreadable
+buffers and unsupported requests are explicit, not empty successful records.
 
-When resolution is needed, only actual already-captured producer outputs
-reconstruct that observed command view in publication order; no speculative
-file bytes or private mapping seeds are invented. These materializations,
-observations and retained results spend the existing creation/byte/state/lifetime
-bounds. A final native pass must use matching view-valid results, including
-mappings installed before later publication. Generated create/remove/replace and absence/listing changes
-cannot be hidden behind the original snapshot's cache key.
+The same fixed native comparison routine in the existing interceptor serves
+command-cache checks and authenticated Make mapping selection. It reissues the
+recorded operations in the authoritative guest context, using the complete
+buffers and original flags/masks. Input buffers retain caller-owned padding;
+kernel-returned metadata is neither masked nor normalized, and old output
+bytes are not substituted for fresh kernel results.
+
+A private metadata-validation invocation uses the existing supervisor, mounts,
+limits and sole reaper, but executes only that trusted static routine. It is
+not a registered candidate command and exposes no control channel to candidate
+code. Metadata paths/operations are constrained by the selected completed
+record. Ordinary candidate capsules remain channel-free. Make uses the same
+routine in its authenticated interceptor, not a Python executor in Make.
+
+Native event writes are recorded only after complete successful kernel writes
+in the existing closed supervisor report. The reader compares those bytes to
+the event file before resolving any command. The existing argv/hash/count
+framing is retained: nonnegative matches identify completed mappings, `-1`
+requires real resolution, and `-2` rejects unsupported metadata reuse. There
+is no new protocol version, signer, broker, namespace service or filesystem
+simulation.
+
+An unchanged compatible result can be reused. Changed metadata causes genuine
+execution; a result that cannot be reproduced in the native Make context
+rejects rather than supplying stale matched output. In particular, filesystem
+capacity from `fstatfs` may change even without a source edit. Its complete
+returned buffer remains part of validation; no universal stable mount-ID or
+free-block assumption is made. Invalid-pointer metadata may execute directly
+and report its real error, but cannot authorize unsupported Make replay.
+
+Metadata revalidation has real process/syscall/observation and byte costs.
+Request records, complete buffers, descriptor metadata, private map reads and
+native event-write evidence spend the existing cumulative bounds. Cache hits
+avoid candidate execution, not the required metadata validation cost. No
+counter, cap, deadline or budget meaning is relaxed.
+
+This core does not recreate source contexts or publish generated files.
+Generated metadata fidelity belongs to held #225; names/type agreement in the
+unapproved reference is not sufficient evidence for that extension.
 
 Registry success additionally requires the typed reported `source_paths` to
 equal that set. Reported JSON is candidate data, not supervisor evidence.
@@ -647,16 +432,14 @@ is no recursive submodule discovery. Explicit empty pins expose only their
 empty root. Git storage uses the same trusted local-object-database boundary as
 existing source capture, not a new hostile-Git parsing service.
 
-Admitted gitlink namespaces are read-only/noexec and remain protected against
-generated-output replacement. Source declarations still name actual regular
+Admitted gitlink namespaces are read-only/noexec. Source declarations still name actual regular
 files/globs; literal names keep their exact root-relative matching. Native and
 registry calls retain successful-return source accounting. Explicit
 `owner_inputs=("mgfembp",)` can name the whole captured pin; file owners continue
 to identify their actual path/mode/content. An unrequested pin is not an owner.
 
-Link admission requires a captured immutable superproject loader. Different
-BASE/current captures may request different pins and paths and use the existing
-`select_view` API. Checked-out submodule files and moving branch HEADs never
+Pin admission requires a captured immutable superproject loader. Same-report
+CURRENT/BASE selection belongs to #226. Checked-out submodule files and moving branch HEADs never
 substitute for the captured commit. New entry metadata, blob reads and
 materialization retain the original entry/byte/run/deadline bounds; no source
 inventory/hash ledger or live submodule mount is added.
@@ -666,8 +449,8 @@ Two identities deliberately serve different purposes:
 * **Execution snapshot:** complete admitted Git path/mode/type/content state,
   including current live bytes, executable bits and symlink targets for a
   worktree snapshot, and immutable gitlink identities. It binds execution/cache
-  reuse. There is no process-global cache. A session's captured view cannot
-  change beneath a later invocation.
+  reuse together with complete actual metadata revalidation. There is no
+  process-global cache or per-command sparse object identity.
 * **Semantic owner:** only the requested target's native observations, requested
   domain state, declared/recipe-owning inputs and relevant command output.
   Unrelated source/docs/symlink/mode changes cannot change every Make owner.
@@ -744,86 +527,6 @@ performed by Make. Even cached results cannot be reused after that report's
 deadline or a terminal budget failure. The production consumer passes the one
 budget used for tree capture through its Make session and registry helper.
 
-### Selecting immutable BASE/current views in one report
-
-Deleted generated inputs must be observed with their BASE registry and source
-bytes, not the current registry or a union of both filesystems. Use the existing
-session's explicit scoped selector:
-
-```python
-budget = ProbeBudget()
-current = AuthorityLoader(
-    root, git_tree_entries(root, current_revision, budget=budget),
-    current_revision, budget=budget)
-base = AuthorityLoader(
-    root, git_tree_entries(root, base_revision, budget=budget),
-    base_revision, budget=budget)
-with ProbeSession(current, scratch_root=root / "build/test-artifacts/probe",
-                  budget=budget) as probe:
-    current_record = probe_generated_registry(
-        current, command=current_command, session=probe)
-    with probe.select_view(base):
-        base_record = probe_generated_registry(
-            base, command=base_command, session=probe)
-    # The original current view and its cache are active again here.
-```
-
-The context yields that same `ProbeSession`, not a second report owner.
-`git_tree_entries` binds its captured entry map to the report budget,
-repository root and revision representation; loader construction rejects a
-different captured root/revision. The captured object IDs determine immutable
-bytes even if a ref or worktree later changes. Selection requires an immutable
-loader from that capture API with the same budget and exact repository root,
-not another clone/worktree that happens to contain the same objects. Detached
-entry maps, mutable alternate views, foreign budgets and inactive/closed
-sessions reject. Existing default worktree sessions remain supported, including
-restoration of their already captured live snapshot after an immutable selection.
-
-Guest paths stay `/repo/<original-path>`; no BASE/current prefixes or virtual
-filesystem simulation are introduced. The active loader's helper check is
-unchanged: using BASE outside its selection, or current inside BASE, is still a
-foreign-loader error. Nested selections restore their previous view.
-Invalid selection admission does not replace or tear down the active owner.
-Failures after admission, including setup, body or teardown failures, are
-terminal to the report; restoration never resets/reopens its budget. A late
-context exit cannot reactivate a closed outer session.
-
-Every selection reserves an existing report state and creates a distinct
-immutable `Snapshot`. Exact regular entries independently admitted by both
-immutable captures (same root, budget, original path, mode, type and Git object
-ID) can share already funded immutable bytes and hardlinked source storage.
-This avoids re-reading/copying an entire unchanged repository, not charging
-less for work actually performed. Changed, missing or mode-different entries
-must be captured/copied independently. Mutable snapshots do not certify Git
-object bytes and cannot supply that reuse. Every view's metadata, all new
-capture/read bytes and copied storage spend the same aggregate budget, without
-refunds. Captures and direct loader reads also share that budget.
-The deadline, launches, Make states, processes, memory limits, source/output
-bytes and file-creation counters never reset. The session's trusted Make runtime,
-interceptor, namespace route, signal ownership and sole-reaper cleanup are reused.
-
-Only view-dependent loader/snapshot/tree/cache/native state is scoped. The
-prior view is suspended, and its exact state is restored on normal exit.
-The selected tree, cache and native files are removed rather than retained
-in a view registry; unlinking shared immutable sources leaves the prior view
-intact. Group related BASE queries in one selection; re-entering creates another
-bounded snapshot and does not refund prior work. Large unrelated views, or
-views without certified immutable reuse, may legitimately exhaust the existing
-aggregate bound instead of increasing it.
-Native handles must be compiled and used in their active view: even identical
-ELF bytes do not grant cross-view execution. Default-view handles survive a
-selection; selected-view handles expire when it ends. Generated files publish
-only into the active read-only view and retain the existing dispatch/restart,
-ownership-transfer and cleanup contracts.
-
-Execution identities reflect each captured snapshot. Semantic identities do
-not include a view label, host prefix or other whole-view marker: genuinely
-equivalent consumed inputs/commands keep the same semantic identity despite
-unrelated tree differences. Different source bytes, generated results and
-native build inputs still invalidate their respective owners. This is the
-existing trusted-caller authority boundary, not protection against arbitrary
-Python object mutation, and it does not implement #180's full ownership graph.
-
 The existing **3,600-second maximum is one monotonic deadline**, including
 snapshotting, compilation, all subprocesses and replay. Every subprocess gets
 the remaining lifetime. Defaults bound 4,096 states/launches, 32 simultaneously
@@ -852,7 +555,7 @@ and resolution windows do not add extra Make replay passes.
 
 `Limits.processes` bounds live capacity, including the capsule root, stopped
 newborns and suspended vfork ancestors. `Limits.descendants` bounds cumulative
-actual creation across every capsule, command, replay and immutable view.
+actual creation across every core capsule, command and replay.
 The old extra 32-total-per-capsule restriction is explicitly replaced by the
 live-capacity bound; none of the numerical maxima is increased.
 
@@ -869,9 +572,9 @@ The closed supervisor report retains `processes` as total actual creation on
 success or failure and adds `live_process_peak`, measured from tracked live
 processes plus unresolved newborns. `ProbeSession.processes_used` accumulates
 the totals; `ProbeSession.live_process_peak` retains their maximum live peak
-across serialized capsules and views. Reservations/configured limits are not
+across serialized capsules. Reservations/configured limits are not
 reported as live processes. `memory_peak` remains virtual-memory-credit
-evidence, not RSS. Failure and selection cannot reset any report allowance.
+evidence, not RSS. Failure and reuse cannot reset any report allowance.
 
 Byte accounting is also aggregate: 768 MiB total, 384 MiB snapshot processing,
 64 MiB streamed output, 64 MiB capsule writes, 32 MiB each cache/mappings/control,
@@ -989,61 +692,59 @@ exact-candidate evidence on a host where the documented noninteractive sudo
 permission is available; never use a shared development host's credentials or
 change its namespace policy to manufacture the result.
 
-## Dependency and downstream integration boundary
+## Contract allocation and downstream integration
 
-This is an independent root extracted from the concepts/APIs in PR
-[#186](https://github.com/laqieer/fireemblem8-expansion/pull/186), **not** a copy
-of its graph implementation. At the introducing base, `master` has no
-`validation-ownership-check`, graph, reporter or domain planner. A no-op target
-with that name would falsely claim the unmerged dependency was satisfied, so
-this root provides the distinct executable foundation target above.
+This is the complete single-view static execution/source/registry/resource/
+cleanup foundation, not the #180 graph or a reduced replacement for its
+acceptance. Its real immutable and HEAD-admitted live consumer must work.
+The exact selector/API/documentation allocation is
+[`ownership-probe-allocation.json`](ownership-probe-allocation.json).
 
-Required downstream #180 / PR #186 integration:
+The integrated reference
+`d9bc40da63b843934b340734eb1fe0e1bc61a6d3` is explicitly **unapproved**. Its
+complete implementation, test selectors and procedures remain preserved in
+Git and in the designated reference worktree. The forward core extraction is
+not a claim that those optional contracts are independently implemented,
+reviewed or delivered:
 
-1. Import this `GitTreeEntry`/`AuthorityLoader` API instead of the reporter's
-   duplicated loader and compile the interceptor/observer from the trusted base.
-2. Keep the complete finite-domain/context census, oracle, graph, lifecycle,
-   workflow and exact-base policy above the execution boundary. Share one
-   session/budget for the **entire** report; never restart it per owner/variant.
-   Use `select_view(base_loader)` for immutable BASE registry/source queries
-   needed by deleted paths; preserve original guest paths and restore current
-   on scope exit rather than mutating private fields or creating another report.
-3. Consume native `MakeObservation.semantics`/`semantic_digest`, not debug/trace
-   stdout or an identity hash containing the full execution snapshot. Adapt
-   registered exact command keys to the collision-free argv convention.
-4. Supply complete typed code/source/enumeration declarations to registry and
-   native commands. `probe_generated_registry` requires a typed `Command`,
-   matching loader and the active report-wide `ProbeSession`; its result is the
-   verified typed record. It must not create a per-registry session or budget.
-   Gitlink-backed tools use explicit `GitlinkSource` capture of their exact
-   superproject pin, not a live checkout or executable mounted into Make.
-   Bind issued native tools through `Command.native_tool` and declare generated
-   include files with `Command.outputs`; do not discard file results, precreate
-   includes before a new Make invocation, or substitute synthetic stdout.
-5. Restore the full public `validation-ownership-check` Make target **in PR #186** and
-   exercise its entire current domain matrix, generated ownership, oracle and
-   lifecycle under the unchanged bound. No such matrix/graph proof is claimed
-   by this foundation's small, real consumer.
+| Issue | Complete allocated contract | Immediate dependency |
+| --- | --- | --- |
+| #225 | Native Make registration, declared generated results/publication, authentic remakes and generated-context metadata/reuse/provenance | #206 |
+| #226 | Same-budget immutable CURRENT/BASE selection and storage reuse | #206 |
+| #227 | Optional runtime-file inputs and stock alias/env metadata behavior | #206 |
+| #228 | Dependency-only compiler producer with actual output/header provenance | #225 |
 
-In particular, the downstream 112-domain adoption is not established by the
-normal-context, interception or cleanup regressions here.
-The actual child root-Make work now observes the admitted newlib header and
-pinned mgfembp source/header wildcards and has real scaninc/linker/asset adapters.
-Separating live capacity from cumulative work traverses its former 33-process
-cutoff. The subsequent stock `/bin/mkdir` and dependency-only compiler seams
-are explicit, bounded inputs/actions, not PATH rewrites or unrestricted compiler
-authority. The subsequent explicit stock `env` request supports observing
-the ordinary test recipe, not running its tests. Record the actual root-query
-outcome and any later boundary independently; no complete graph adoption is
-claimed from the solved producer examples.
+Shared safety remains in the lowest exposing layer. Core keeps `compile_native`
+and `native` isolation, mandatory runtime closure, exact source/gitlink input
+support and the original typed stdout-only command surface. It does not expose
+`Command.native_tool`, `Command.outputs`, `Command.dependency_only`,
+`ProcessOutput.generated`, `ProbeSession.select_view`, optional `runtime_files`,
+native output capture or `Snapshot(reuse=...)`.
 
-Dependencies are the existing generated-registry schema and host tools above.
-Conflicts: PR #186's probe/interceptor/reporter surfaces must be reconciled.
-Other feature/profile conflicts: **none**. Modern debug/release, archival,
+#225 remains explicitly held: its current physical delete/recreate replay does
+not preserve all allowed metadata. Its prior generated-listing successes do
+not replace the retained nlink/timestamp and reconstruction counterexamples.
+All old positive/adversarial cases stay with that complete contract. No
+restoration of unsafe code, mechanical code/test/doc split, artificial V/R
+dependency on D, or new execution platform is implied.
+
+#180 must integrate the relevant completed leaves with the core and retain its
+entire CURRENT/BASE/domain census, graph, oracle, lifecycle and public
+`validation-ownership-check` acceptance. The foundation consumer is not full
+root or 112-domain evidence. Calibrating budgets remains a separately
+authorized task after reviewed complete API/caller/input and workload evidence;
+no elevated diagnostic or production cap is used here.
+
+The review5133381960/head8169 architecture hold is not discharged merely by
+this source split or a commit SHA. Main owns explicit disposition after actual
+coherent core, complete allocation and independent delivery evidence.
+Every issue keeps its own candidate/review/master/closure gates.
+
+Host dependencies remain the existing generated-registry schema and tools.
+Other game/profile conflicts are **none**. Modern debug/release, archival,
 save/config identity, localization content, generated game output and ROM/RAM
-are unchanged. No feature flag or new Build topology/context is introduced.
-Revert this dedicated change to roll back; broader validation remains mandatory
-and PR #186 remains blocked rather than accepting unsafe or missing evidence.
+are unchanged. No feature flag or Build topology/context is added.
+Rollback uses an ordinary revert; broader validation remains mandatory.
 
 Tester procedure:
 [`TC-WORKFLOW-OWNERSHIP-PROBE-SANDBOX-001`](test-cases/workflow-governance.md#tc-workflow-ownership-probe-sandbox-001-confine-and-bound-authentic-probe-execution).

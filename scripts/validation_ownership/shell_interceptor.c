@@ -1,6 +1,7 @@
 #define _GNU_SOURCE
 #include <errno.h>
 #include <fcntl.h>
+#include <limits.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -16,6 +17,8 @@
  * inherited from GNU Make and never mounted in registered-command capsules. */
 #define MAX_COMMAND (64U * 1024U)
 #define MAX_OUTPUT (1024U * 1024U)
+#define MAX_METADATA (16U * 1024U * 1024U)
+#define MAX_METADATA_BUFFER 65536U
 
 static int write_all(int fd, const void *buffer, size_t size)
 {
@@ -33,7 +36,7 @@ static int write_all(int fd, const void *buffer, size_t size)
     return 0;
 }
 
-static unsigned char *read_file_at(int directory, const char *name, size_t *size)
+static unsigned char *read_file_at(int directory, const char *name, size_t *size, size_t limit)
 {
     struct stat status;
     unsigned char *result;
@@ -42,7 +45,7 @@ static unsigned char *read_file_at(int directory, const char *name, size_t *size
     if (fd < 0)
         return NULL;
     if (fstat(fd, &status) || !S_ISREG(status.st_mode)
-        || status.st_size < 0 || status.st_size > MAX_OUTPUT)
+        || status.st_size < 0 || (uint64_t)status.st_size > limit)
     {
         close(fd);
         return NULL;
@@ -70,6 +73,211 @@ static unsigned char *read_file_at(int directory, const char *name, size_t *size
     result[used] = 0;
     *size = used;
     return result;
+}
+
+static uint32_t metadata_u32(const unsigned char **cursor)
+{
+    const unsigned char *p = *cursor;
+    *cursor += 4;
+    return (uint32_t)p[0] | (uint32_t)p[1] << 8 | (uint32_t)p[2] << 16 | (uint32_t)p[3] << 24;
+}
+
+static uint64_t metadata_u64(const unsigned char **cursor)
+{
+    uint64_t low = metadata_u32(cursor);
+    return low | (uint64_t)metadata_u32(cursor) << 32;
+}
+
+/* The same actual guest syscalls validate cached commands and Make mappings.
+ * Original input buffers preserve caller-owned padding; no returned metadata
+ * field is masked, normalised or fabricated. */
+static int metadata_matches(int directory, const char *name)
+{
+    size_t length;
+    unsigned char *data = read_file_at(directory, name, &length, MAX_METADATA);
+    const unsigned char *cursor, *end;
+    uint32_t count, index;
+    int outcome = 0;
+    if (!data || length < 4)
+    {
+        free(data);
+        return 125;
+    }
+    cursor = data;
+    end = data + length;
+    count = metadata_u32(&cursor);
+    if (count > 32768)
+    {
+        free(data);
+        return 125;
+    }
+    for (index = 0; index < count; ++index)
+    {
+        uint32_t number, flags, mask, path_size, before_size, after_size;
+        uint64_t size, offset;
+        int64_t expected, actual;
+        const unsigned char *before, *after;
+        unsigned char *buffer;
+        char path[4097];
+        long value;
+        int descriptor = -1;
+        if ((size_t)(end - cursor) < 48)
+        {
+            outcome = 125;
+            break;
+        }
+        number = metadata_u32(&cursor);
+        flags = metadata_u32(&cursor);
+        mask = metadata_u32(&cursor);
+        size = metadata_u64(&cursor);
+        offset = metadata_u64(&cursor);
+        expected = (int64_t)metadata_u64(&cursor);
+        path_size = metadata_u32(&cursor);
+        before_size = metadata_u32(&cursor);
+        after_size = metadata_u32(&cursor);
+        if (path_size < 5 || path_size > 4096 || path_size > (size_t)(end - cursor)
+            || memcmp(cursor, "/repo", 5) || (path_size > 5 && cursor[5] != '/')
+            || memchr(cursor, 0, path_size))
+        {
+            outcome = 125;
+            break;
+        }
+        memcpy(path, cursor, path_size);
+        path[path_size] = 0;
+        cursor += path_size;
+        before = cursor;
+        if (before_size != UINT32_MAX)
+        {
+            if (before_size != size || before_size > (size_t)(end - cursor))
+            {
+                outcome = 125;
+                break;
+            }
+            cursor += before_size;
+        }
+        after = cursor;
+        if (after_size != UINT32_MAX)
+        {
+            if (after_size != size || after_size > (size_t)(end - cursor))
+            {
+                outcome = 125;
+                break;
+            }
+            cursor += after_size;
+        }
+        if (size > MAX_METADATA_BUFFER || offset > INT64_MAX || expected == -EFAULT
+            || (expected >= 0 && (before_size == UINT32_MAX || after_size == UINT32_MAX)))
+        {
+            fprintf(stderr, "unsupported metadata request: %s syscall %u\n", path, number);
+            outcome = 2;
+            break;
+        }
+        if (((number == SYS_stat || number == SYS_lstat || number == SYS_fstat || number == SYS_newfstatat) && size != 144)
+            || (number == SYS_statx && size != 256) || (number == SYS_fstatfs && size != 120)
+            || ((number == SYS_access || number == SYS_faccessat || number == SYS_faccessat2) && size)
+            || (number != SYS_getdents && number != SYS_getdents64 && offset))
+        {
+            outcome = 125;
+            break;
+        }
+        buffer = calloc(size ? (size_t)size : 1, 1);
+        if (!buffer)
+        {
+            outcome = 125;
+            break;
+        }
+        if (before_size != UINT32_MAX && size)
+            memcpy(buffer, before, (size_t)size);
+        if (number == SYS_fstat || number == SYS_fstatfs
+            || number == SYS_getdents || number == SYS_getdents64)
+        {
+            descriptor = open(path, O_CLOEXEC | O_NOFOLLOW
+                | ((number == SYS_getdents || number == SYS_getdents64) ? O_RDONLY | O_DIRECTORY : O_PATH));
+            if (descriptor < 0)
+            {
+                actual = -errno;
+                free(buffer);
+                fprintf(stderr, "metadata reopen mismatch: %s syscall %u result %lld\n",
+                    path, number, (long long)actual);
+                outcome = 1;
+                break;
+            }
+        }
+        if ((number == SYS_getdents || number == SYS_getdents64)
+            && lseek(descriptor, (off_t)offset, SEEK_SET) < 0)
+        {
+            close(descriptor);
+            free(buffer);
+            outcome = 2;
+            break;
+        }
+        errno = 0;
+        switch (number)
+        {
+        case SYS_stat:
+        case SYS_lstat:
+            value = syscall(number, path, buffer);
+            break;
+        case SYS_fstat:
+        case SYS_fstatfs:
+            value = syscall(number, descriptor, buffer);
+            break;
+        case SYS_newfstatat:
+            value = syscall(number, AT_FDCWD, path, buffer, flags);
+            break;
+        case SYS_statx:
+            value = syscall(number, AT_FDCWD, path, flags, mask, buffer);
+            break;
+        case SYS_access:
+            value = syscall(number, path, flags);
+            break;
+        case SYS_faccessat:
+            value = syscall(number, AT_FDCWD, path, mask);
+            break;
+        case SYS_faccessat2:
+            value = syscall(number, AT_FDCWD, path, mask, flags);
+            break;
+        case SYS_readlink:
+            value = syscall(number, path, buffer, (size_t)size);
+            break;
+        case SYS_readlinkat:
+            value = syscall(number, AT_FDCWD, path, buffer, (size_t)size);
+            break;
+        case SYS_getdents:
+        case SYS_getdents64:
+            value = syscall(number, descriptor, buffer, (size_t)size);
+            break;
+        default:
+            if (descriptor >= 0)
+                close(descriptor);
+            free(buffer);
+            outcome = 125;
+            goto done;
+        }
+        actual = value < 0 ? -errno : value;
+        if (descriptor >= 0)
+            close(descriptor);
+        if (actual != expected || (after_size != UINT32_MAX && memcmp(buffer, after, (size_t)size)))
+        {
+            size_t different = 0;
+            while (after_size != UINT32_MAX && different < size && buffer[different] == after[different])
+                ++different;
+            fprintf(stderr, "metadata mismatch record %u: %s syscall %u expected %lld actual %lld",
+                index, path, number, (long long)expected, (long long)actual);
+            if (after_size != UINT32_MAX && different < size)
+                fprintf(stderr, " byte %zu expected %u actual %u", different, after[different], buffer[different]);
+            fputc('\n', stderr);
+            outcome = 1;
+        }
+        free(buffer);
+        if (outcome)
+            break;
+    }
+    if (!outcome && cursor != end)
+        outcome = 125;
+done:
+    free(data);
+    return outcome;
 }
 
 static const char *canonical_program(const char *program)
@@ -144,12 +352,23 @@ int main(int argc, char **argv)
     int mapping;
     int events;
     long kind = syscall(SYS_getpid, VO_QUERY_KIND);
-    long selected;
     const char *program = argv[0];
     int shell = !strcmp(program, "/bin/sh") || !strcmp(program, "/bin/bash");
 
     if (kind == VO_RECIPE)
         return 0;
+    if (kind == VO_VALIDATE)
+    {
+        int result;
+        if (argc != 1 || strcmp(program, VO_INTERCEPTOR))
+            return 125;
+        mapping = open("/control/map", O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);
+        if (mapping < 0)
+            return 125;
+        result = metadata_matches(mapping, "validate.meta");
+        close(mapping);
+        return result;
+    }
     if (kind != VO_VALUE)
         return 125;
     if (argc < 1 || argc > 1024)
@@ -181,25 +400,36 @@ int main(int argc, char **argv)
     events = open("/control/events", O_WRONLY | O_APPEND | O_NOFOLLOW | O_CLOEXEC);
     if (mapping < 0 || events < 0)
         return 125;
-    mapped = read_file_at(mapping, "count", &size);
+    mapped = read_file_at(mapping, "count", &size, MAX_OUTPUT);
     if (!mapped || size != 4)
         return 125;
     mapping_count = (uint32_t)mapped[0] | (uint32_t)mapped[1] << 8
         | (uint32_t)mapped[2] << 16 | (uint32_t)mapped[3] << 24;
     free(mapped);
-    selected = syscall(SYS_getpid, VO_PUBLISH, hash, 0);
-    if (selected < 0 || selected > INT32_MAX)
-        return 125;
-    match = (uint32_t)selected < mapping_count ? (int)selected : -1 - (int)(selected - mapping_count);
-    if (match >= 0)
+    for (index = 0; index < mapping_count; ++index)
     {
-        if ((uint32_t)match >= mapping_count)
+        int verdict;
+        snprintf(path, sizeof(path), "%016llx.cmd", (unsigned long long)index);
+        mapped = read_file_at(mapping, path, &size, MAX_OUTPUT);
+        if (!mapped)
             return 125;
-        snprintf(path, sizeof(path), "%016llx.cmd", (unsigned long long)match);
-        mapped = read_file_at(mapping, path, &size);
-        if (!mapped || size != strlen(command) || memcmp(mapped, command, size))
-            return 125;
+        if (size != strlen(command) || memcmp(mapped, command, size))
+        {
+            free(mapped);
+            continue;
+        }
         free(mapped);
+        if (syscall(SYS_getpid, VO_METADATA, index, hash))
+            return 125;
+        snprintf(path, sizeof(path), "%016llx.meta", (unsigned long long)index);
+        verdict = metadata_matches(mapping, path);
+        if (verdict == 125)
+            return 125;
+        if (verdict == 0 || verdict == 2)
+        {
+            match = verdict == 0 ? (int)index : -2;
+            break;
+        }
     }
     put_u32(&cursor, (uint32_t)match);
     put_u32(&cursor, mapping_count);
@@ -222,7 +452,7 @@ int main(int argc, char **argv)
     if (match >= 0)
     {
         snprintf(path, sizeof(path), "%016llx.out", (unsigned long long)match);
-        mapped = read_file_at(mapping, path, &size);
+        mapped = read_file_at(mapping, path, &size, MAX_OUTPUT);
         if (!mapped || write_all(STDOUT_FILENO, mapped, size))
             return 125;
         free(mapped);

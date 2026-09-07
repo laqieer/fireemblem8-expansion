@@ -1,0 +1,469 @@
+{
+  "reference": "d9bc40da63b843934b340734eb1fe0e1bc61a6d3",
+  "reference_approved": false,
+  "contract": "issue206-static-core-delivery-contract",
+  "dependencies": {
+    "225": [
+      206
+    ],
+    "226": [
+      206
+    ],
+    "227": [
+      206
+    ],
+    "228": [
+      225
+    ]
+  },
+  "extension_state": "Preserved unapproved reference, not implemented delivery branches. P225 held on metadata fidelity.",
+  "original_selector_count": 223,
+  "original_selectors_by_owner": {
+    "206": [
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_literal_source_selectors_are_repository_relative",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_literal_source_selector_does_not_match_nested_unadmitted_input",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_authority_stages_require_an_explicit_report_budget",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_gitlink_sources_use_captured_commit_not_checkout_or_branch",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_gitlink_sources_require_explicit_regular_exact_available_pin",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_gitlink_entries_and_bytes_spend_existing_capture_bounds",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_gitlink_empty_pin_is_a_make_directory_not_extra_command_authority",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_authority_composition_rejects_foreign_and_detached_budgets",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_authority_chain_keeps_capture_reads_snapshot_and_execution_on_one_budget",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_capture_run_quota_cannot_be_reset_by_reads_snapshot_or_session",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_direct_live_and_immutable_authority_reads_share_the_byte_quota",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_expired_capture_cannot_start_another_authority_stage",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_report_budget_binds_one_terminal_session_lifetime",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_registered_python_reexec_rejects_before_replacement_startup",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_registered_native_reexec_and_inherited_entry_paths_reject",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_trusted_startup_vectors_exclude_owned_prefix_hooks",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_session_teardown_defers_signals_until_owned_state_is_removed",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_cleanup_finishes_all_actions_and_replays_pending_signals_afterward",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_per_call_teardown_defers_signals_and_preserves_primary_errors",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_partial_call_setup_interruption_removes_preallocated_owned_paths",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_setup_failure_remains_primary_during_deferred_exit_signal",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_budget_cleanup_defers_signal_until_children_and_pipes_are_closed",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_cleanup_preserves_a_callers_already_blocked_signal_mask",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_budget_payload_does_not_inherit_the_temporary_setup_mask",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_watchdog_teardown_delivers_signal_after_sole_reaping",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_default_termination_is_delivered_only_after_owned_session_removal",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_directory_declaration_cannot_authorize_regular_file_content",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_public_live_and_immutable_controls_use_distinct_actual_source_bytes",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_live_gitlink_capture_reads_initialized_live_bytes_without_head_substitution",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_public_worktree_consumer_preserves_the_requested_live_mode",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_live_inventory_uses_actual_nonignored_additions_and_deletions",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_live_gitlink_absence_empty_and_unsafe_namespaces_are_not_pin_placeholders",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_make_uncaptured_runtime_file_cannot_select_a_false_absence_branch",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_make_runtime_probe_permissions_end_at_native_bootstrap",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_command_root_enumeration_requires_an_explicit_faithful_directory",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_explicit_enumeration_rejects_incomplete_sparse_backing_and_undeclared_ancestors",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_explicit_enumeration_rejects_nonregular_namespaces",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_python_existing_initializer_cannot_be_reported_as_sparse_absence",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_python_module_and_cache_probes_distinguish_real_absence_from_undeclared_inputs",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_python_negative_probes_reject_nonregular_and_generated_active_namespaces",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_owned_cleanup_removes_deep_admissible_tree_without_recursion",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_owned_cleanup_preserves_symlink_targets_permissions_and_replaced_entries",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_owned_cleanup_completes_actual_deep_native_output",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_generated_registry_uses_actual_structured_and_sequence_schema_counts",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_generated_registry_requires_the_existing_schema_count_contract",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_serial_resolution_handles_large_batch_with_one_pending_item",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_pending_request_bytes_accumulate_after_completed_commands",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_serial_resolution_validates_late_native_frames_before_any_worker",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_view_report_validation_rejects_malformed_observations_and_contexts",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_serial_resolution_rejects_known_mapping_miss_without_rerunning_worker",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_serial_resolution_pending_depth_is_bounded_and_restored",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_serial_resolution_cleans_after_worker_failure_interrupt_and_overflow",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_observation_total_exact_limit_cache_and_next_capsule",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_observation_remaining_count_reaches_next_capsule_guard",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_observation_totals_charge_failed_deferred_and_terminal_processes",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_observation_totals_cover_compiler_native_generated_make_and_cache",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_observation_accounting_rejects_malformed_closed_reports",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_observation_accounting_ignores_candidate_stdout_and_accepts_real_zero",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_observation_record_limit_is_aggregate_across_collections",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_failed_observations_spend_aggregate_records_not_consumption",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_observation_bytes_remain_an_independent_aggregate_bound",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_compile_executable_metadata_exception_is_narrow",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_compile_executable_metadata_probe_reports_capsule_absence",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_failed_open_and_metadata_cannot_forge_registry_consumption",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_successful_metadata_open_and_content_remain_source_observations",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_failed_and_partial_getdents_cannot_credit_unreturned_siblings",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_fd_read_metadata_mmap_and_dup_credit_only_successful_exits",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_getdents_credits_returned_names_and_not_failure_eof_or_tail",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_code_and_make_path_observations_wait_for_success",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_directory_names_do_not_credit_nested_or_symlink_referents",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_directory_observation_transfer_and_buffer_limits_are_bounded",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_directory_parser_rejects_malformed_actual_records",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_pid_signal_families_allow_self_delivery_but_reject_owned_siblings",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_signal_policy_rejects_group_broadcast_and_mixed_thread_targets",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_descriptor_async_and_timer_signal_routes_remain_unadmitted",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_registry_helper_requires_an_explicit_active_report_session",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_registry_helper_rejects_foreign_loader_or_budget_without_launch",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_registry_helper_calls_share_cache_deadline_and_creation_quota",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_registry_helper_cannot_reuse_cache_past_the_report_deadline",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_make_and_registry_helper_consume_the_same_creation_budget",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_recursive_bind_restricts_submounts_and_preserves_explicit_exceptions",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_recursive_mount_attribute_failure_has_no_top_only_fallback",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_root_setup_rejects_unsupported_recursive_attributes_before_supervision",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_reaped_process_handles_never_signal_an_unrelated_owned_canary",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_tracee_cleanup_uses_pinned_identity_after_numeric_pid_reuse",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_budget_normal_completion_reaps_group_and_escaped_descendants",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_watchdog_payload_stdin_is_binary_and_separate_from_lifetime",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_budget_launch_interruption_waits_for_handle_ownership",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_missing_pidfd_support_rejects_before_payload_or_tracee_launch",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_post_fork_stack_growth_is_funded_before_execution",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_kernel_virtual_credits_block_stack_faults_without_sampling",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_kernel_limits_are_funded_by_one_aggregate_virtual_pool",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_repeated_vfork_exec_preserves_virtual_credit_ownership",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_shared_vm_growth_counts_every_live_member",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_make_option_channels_cannot_inject_unrequested_evaluation",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_equivalent_assignment_order_preserves_actual_make_identity",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_assignment_identity_preserves_values_origins_and_observed_order",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_conditional_graphs_match_ordinary_make_not_probe_markers",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_default_file_and_requested_domains_preserve_production_make_context",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_secondary_expansion_keeps_target_specific_shell_context",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_recipe_commands_are_metadata_but_make_expansion_effects_still_reject",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_dispatch_classifies_identical_recipe_and_expansion_by_native_context",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_recursive_and_makefile_remake_dispatch_still_requires_real_mappings",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_private_dispatch_and_observer_inputs_cannot_be_candidate_authority",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_partial_scratch_setup_releases_created_parents_and_descriptors",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_scratch_setup_interruption_waits_for_resource_ownership",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_scratch_cleanup_preserves_existing_parents_and_primary_failure",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_privileged_cleanup_delegates_before_wait_and_never_hides_permission_errors",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_privileged_budget_uses_real_watchdog_without_running_sudo",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_sudo_preflight_and_capsules_share_the_privileged_lifecycle_contract",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_privileged_lifetime_closes_on_budget_rejection_and_interruption",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_watchdog_rejects_missing_lifetime_and_kernel_support_before_launch",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_watchdog_reaps_owned_orphans_on_completion_eof_deadline_and_signal",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_make_runtime_uses_captured_non_multiarch_closure_and_real_make",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_runtime_capture_rejects_mutable_aliases_and_malformed_elf_or_listing",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_directory_permission_attacks_reject_without_masked_errors_or_residue",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_safe_output_permissions_and_regular_file_fchmod_remain_supported",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_ptrace_bootstrap_restores_post_drop_memory_observation",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_ptrace_pathname_stops_at_nul_before_an_unmapped_page",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_authentic_make_target_and_domain_semantics",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_raw_binary_registered_output_and_concrete_source",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_native_prefixed_controls_reproduce_descriptor_forgery",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_make_cannot_open_observation_mapping_event_or_fd_paths",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_make_native_dispatch_and_shell_flags_are_not_authority",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_stdout_cannot_forge_native_target_or_domain_results",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_parse_time_file_reads_are_confined_and_source_symlinks_reject",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_eager_command_replay_after_parse_failure_is_exact_and_real",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_make_identity_excludes_discarded_replay_inputs",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_make_identity_follows_the_last_late_resolved_branch",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_make_final_command_identity_deduplicates_aliases_and_declarations",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_discarded_replay_commands_remain_authorized_and_aggregate_charged",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_registry_source_open_mmap_stat_and_directory_glob_are_real",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_undeclared_sources_reject_even_when_errors_are_caught",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_registry_cannot_reach_channels_descriptors_or_escape_syscalls",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_declared_reported_and_consumed_sources_must_agree",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_semantic_identity_excludes_unrelated_snapshot_and_live_cache_drift",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_snapshot_is_stable_within_one_session",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_variant_limit_rejects_before_any_variant_launch",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_global_deadline_is_not_reset_per_process",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_streaming_output_cache_and_scratch_storage_are_aggregate_bounded",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_candidate_symlink_and_relocated_directory_aliases_reject",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_trusted_runtime_symlinks_use_the_authorized_source_destination",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_shared_mapping_protection_upgrade_and_fork_reject",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_mutable_backing_file_mappings_reject_even_readonly_private_aliases",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_protection_and_remap_alias_families_reject",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_private_mapping_resize_fork_and_read_protection_stay_supported",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_shared_clone_state_rejects_but_suspended_parent_spawn_stays_supported",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_alternate_memory_alias_and_creation_interfaces_remain_fail_closed",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_all_supported_creation_attempts_reserve_the_aggregate_quota",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_unsupported_creation_and_empty_path_link_cannot_bypass_low_quota",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_creation_quota_is_not_reset_between_commands",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_fanout_bound_and_parent_interrupt_clean_descendants",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_process_sequential_make_exceeds_thirty_two_total_with_bounded_live_work",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_process_live_capacity_rejects_before_excess_child_creation",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_process_total_allowance_exhausts_with_sequential_low_live_work",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_process_totals_cross_capsules_replay_views_and_failure_without_reset",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_process_newborn_reservations_count_once_and_failures_release_capacity",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_process_root_failure_retains_actual_creation_and_measured_peak",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_strict_named_protocols_reject_binary_and_truncated_frames",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_worktree_symlink_escape_and_invalid_limit_values_fail",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_pattern_rules_and_target_specific_variable_values_are_native",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_event_mapping_and_pending_byte_bounds_cover_real_commands",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_native_tools_compile_and_run_only_in_channel_free_capsules",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_native_candidate_cannot_write_channels_or_read_inherited_fds",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_real_immutable_tree_consumer_reports_make_and_bundle_sources",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_cxx_native_compilation_and_worker_failure_are_confined",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_fifo_input_and_malformed_native_result_do_not_leave_residue",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_direct_argument_boundaries_cannot_collide_and_quote_refactors_survive",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_live_symlink_and_mode_state_bind_execution_not_unrelated_owner",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_memory_and_filesystem_observations_are_aggregate_bounded",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_one_session_cannot_hide_parallel_workers"
+    ],
+    "225": [
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_immutable_views_isolate_cache_native_files_and_generated_make_outputs",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_cached_listing_cannot_seed_a_stale_new_generated_mapping",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_installed_mapping_changes_with_the_actual_generated_view",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_directory_metadata_dependency_changes_with_generated_membership",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_generated_replacement_selects_actual_view_variants_without_stale_replay",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_generated_unrelated_view_keeps_the_actual_cached_result",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_replay_preserves_intermediate_generated_listing_order",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_cached_absence_cannot_survive_generated_presence",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_explicit_enumeration_tracks_selected_and_generated_views_without_extra_reads",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_python_negative_probes_reject_nonregular_and_generated_active_namespaces",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_view_report_validation_rejects_malformed_observations_and_contexts",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_observation_totals_cover_compiler_native_generated_make_and_cache",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_native_registration_feeds_real_repository_scaninc_to_make",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_native_registration_rejects_missing_forged_foreign_and_wrong_argv",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_publication_transfers_only_new_objects_on_the_privileged_route",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_publication_transfer_failure_preserves_error_descriptors_and_cleanup",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_generated_include_publication_matches_ordinary_make_restart_context",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_generated_native_output_uses_the_same_command_and_mapping_seam",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_generated_output_declarations_and_capture_fail_closed",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_generated_publication_conflicts_and_resource_charges_are_aggregate",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_generated_discarded_outputs_do_not_enter_final_owner_identity",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_generated_sources_and_bytes_change_selected_identity_not_native_context",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_native_registration_identity_uses_only_final_tool_and_build_sources",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_generated_commands_still_require_complete_source_and_registration_authority",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_generated_publication_bytes_cache_and_interruption_share_owned_cleanup",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_generated_chained_remakes_preserve_two_native_restarts",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_generated_multi_output_aliases_share_captured_bytes_and_identity",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_generated_includes_cannot_acquire_channels_after_native_restart"
+    ],
+    "226": [
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_runtime_inputs_share_capture_and_control_quota_across_views",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_dependency_compiler_views_bind_consumed_headers_not_unused_pool_or_live_bytes",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_gitlink_sources_keep_two_pins_paths_views_and_cumulative_accounting",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_gitlink_empty_pin_is_a_make_directory_not_extra_command_authority",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_immutable_view_selects_real_deleted_base_registry_in_one_report",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_immutable_view_rejects_wrong_foreign_mutable_and_closed_authority",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_immutable_view_nested_restoration_and_terminal_error_cleanup",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_immutable_views_isolate_cache_native_files_and_generated_make_outputs",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_immutable_view_rejects_a_suspended_native_handle_even_for_identical_bytes",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_immutable_view_shares_make_state_and_snapshot_byte_limits",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_immutable_view_shares_report_run_and_deadline_limits",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_immutable_view_cannot_reset_creation_or_borrow_current_command_cache",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_immutable_view_restores_live_default_and_cannot_reactivate_closed_report",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_immutable_view_teardown_error_is_terminal_and_outer_cleanup_finishes",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_immutable_view_reuses_only_identical_admitted_immutable_sources",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_directory_type_is_checked_in_the_actual_selected_view",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_explicit_enumeration_tracks_selected_and_generated_views_without_extra_reads",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_python_negative_probes_follow_current_base_and_declared_code",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_observation_totals_follow_immutable_views_without_reset",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_process_totals_cross_capsules_replay_views_and_failure_without_reset"
+    ],
+    "227": [
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_runtime_inputs_capture_real_present_absent_and_ancestor_search",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_runtime_inputs_do_not_admit_unrequested_paths_writes_or_enumeration",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_runtime_inputs_share_capture_and_control_quota_across_views",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_stock_runtime_alias_preserves_root_path_and_native_dispatch",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_stock_runtime_alias_rejects_unrequested_escape_read_and_collision",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_explicit_env_recipe_preserves_native_context_without_executing_payload",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_explicit_env_does_not_grant_eager_or_public_execution",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_explicit_env_keeps_spelling_read_image_and_other_program_boundaries",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_absent_captured_env_does_not_materialize_an_interceptor",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_make_uncaptured_runtime_file_cannot_select_a_false_absence_branch"
+    ],
+    "228": [
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_dependency_compiler_matches_real_conditional_recursive_missing_and_ordered_inputs",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_dependency_compiler_views_bind_consumed_headers_not_unused_pool_or_live_bytes",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_dependency_compiler_rejects_flags_escape_and_undeclared_or_unused_sources",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_dependency_output_is_consumed_by_make_with_real_restart_and_provenance",
+      "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_observation_totals_cover_compiler_native_generated_make_and_cache"
+    ]
+  },
+  "renamed_core_selectors": {
+    "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_live_inventory_uses_actual_nonignored_additions_and_deletions": "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_live_inventory_keeps_head_admission_with_actual_deletions_and_modes",
+    "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_python_negative_probes_reject_nonregular_and_generated_active_namespaces": "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_python_negative_probes_reject_nonregular_namespaces",
+    "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_view_report_validation_rejects_malformed_observations_and_contexts": "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_metadata_report_validation_rejects_malformed_buffers_and_native_writes",
+    "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_observation_totals_cover_compiler_native_generated_make_and_cache": "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_observation_totals_cover_compiler_native_static_make_and_cache",
+    "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_process_totals_cross_capsules_replay_views_and_failure_without_reset": "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_process_totals_cross_capsules_replay_and_failure_without_reset"
+  },
+  "new_core_selectors": [
+    "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_changed_metadata_forces_real_execution_without_mutating_validation",
+    "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_live_admitted_type_changes_are_not_silently_regularized",
+    "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_metadata_captures_complete_syscall_buffers_status_flags_and_masks",
+    "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_static_metadata_uses_persistent_objects_for_cache_and_native_make",
+    "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_uncomparable_metadata_executes_directly_but_cannot_seed_make_reuse"
+  ],
+  "mixed_contract_allocations": [
+    {
+      "selector": "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_runtime_inputs_share_capture_and_control_quota_across_views",
+      "owners": [
+        227,
+        226
+      ],
+      "contract": "R runtime lifetime and V selection; combined scenario belongs to their integration, not an API dependency."
+    },
+    {
+      "selector": "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_dependency_compiler_views_bind_consumed_headers_not_unused_pool_or_live_bytes",
+      "owners": [
+        228,
+        226
+      ],
+      "contract": "D dependency source closure and V selection; D still depends only on P."
+    },
+    {
+      "selector": "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_gitlink_empty_pin_is_a_make_directory_not_extra_command_authority",
+      "owners": [
+        206,
+        226
+      ],
+      "contract": "Core exact empty pin, explicit faithful listing and no content grant; V owns selection/restoration continuation."
+    },
+    {
+      "selector": "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_immutable_views_isolate_cache_native_files_and_generated_make_outputs",
+      "owners": [
+        226,
+        225
+      ],
+      "contract": "V cache/native isolation; P generated-output interaction preserved for integration."
+    },
+    {
+      "selector": "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_make_uncaptured_runtime_file_cannot_select_a_false_absence_branch",
+      "owners": [
+        206,
+        227
+      ],
+      "contract": "Core uncaptured runtime rejection; R owns explicit optional-file positive."
+    },
+    {
+      "selector": "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_explicit_enumeration_tracks_selected_and_generated_views_without_extra_reads",
+      "owners": [
+        226,
+        225
+      ],
+      "contract": "V selected-source enumeration and P publication; core keeps static complete enumeration."
+    },
+    {
+      "selector": "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_python_negative_probes_reject_nonregular_and_generated_active_namespaces",
+      "owners": [
+        206,
+        225
+      ],
+      "contract": "Core nonregular/absence guard; P owns generated-presence interaction."
+    },
+    {
+      "selector": "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_view_report_validation_rejects_malformed_observations_and_contexts",
+      "owners": [
+        206,
+        225
+      ],
+      "contract": "Core validates complete metadata records; P owns generated-context report shape."
+    },
+    {
+      "selector": "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_observation_totals_cover_compiler_native_generated_make_and_cache",
+      "owners": [
+        206,
+        225,
+        228
+      ],
+      "contract": "Core compiler/native/static Make/cache accounting; P/D own generated/dependency action variants."
+    },
+    {
+      "selector": "scripts.validation_ownership.tests.test_foundation.FoundationTests.test_process_totals_cross_capsules_replay_views_and_failure_without_reset",
+      "owners": [
+        206,
+        226
+      ],
+      "contract": "Core cumulative process counts across capsules/replay/failure; V owns selected-view continuation."
+    }
+  ],
+  "api_source_documentation": {
+    "206": {
+      "apis": [
+        "AuthorityLoader/GitTreeEntries/Snapshot single-view source admission",
+        "GitlinkSource immutable exact-pin inputs",
+        "ProbeSession.command/make/variants/registry",
+        "compile_native/native isolation",
+        "complete guest metadata/cache/Make revalidation",
+        "mandatory Make runtime closure",
+        "budget/lifecycle/source/channel/process/memory guards"
+      ],
+      "documentation": [
+        "Trust boundary",
+        "Registered commands and native tools",
+        "Source declaration and identity contracts",
+        "Exact captured gitlink sources",
+        "Aggregate lifetime and resources",
+        "core tester-case actions and safety procedures"
+      ]
+    },
+    "225": {
+      "apis": [
+        "Command.native_tool",
+        "Command.outputs",
+        "GeneratedFile",
+        "ProcessOutput.generated",
+        "native(outputs=...)",
+        "_output_paths/_capture_outputs",
+        "native Make registration",
+        "Policy.publish and generated mapping frame/ownership",
+        "generated contexts, physical reconstruction, metadata/reuse/provenance"
+      ],
+      "documentation": [
+        "Native Make registrations and declared file results",
+        "Native-registration and generated-include regression procedure",
+        "generated-context portions of Observable-view cache and replay validity",
+        "all retained generated metadata counterexamples and old positives"
+      ],
+      "state": "Held on full generated metadata fidelity; no independent implementation/review claim."
+    },
+    "226": {
+      "apis": [
+        "ProbeSession.select_view",
+        "Snapshot(reuse=...)",
+        "Snapshot.reused_paths",
+        "same-budget immutable storage sharing and restoration"
+      ],
+      "documentation": [
+        "Selecting immutable BASE/current views in one report",
+        "Same-report immutable BASE/current procedure"
+      ]
+    },
+    "227": {
+      "apis": [
+        "ProbeSession(runtime_files=...)",
+        "RuntimeInput",
+        "_capture_runtime_input",
+        "optional runtime mount/absence/parents",
+        "stock Make alias handling",
+        "explicit env metadata-only interception"
+      ],
+      "documentation": [
+        "Explicit runtime discovery inputs",
+        "Explicit env recipe interception",
+        "optional-runtime portions of Root-Make runtime and pinned-source inputs",
+        "stock-alias portions of Stock runtime spelling and native dependency-only action"
+      ]
+    },
+    "228": {
+      "apis": [
+        "Command.dependency_only",
+        "_dependency_options",
+        "dependency_compiler",
+        "bounded real dependency-only output and header provenance"
+      ],
+      "documentation": [
+        "Dependency-only host compiler commands",
+        "dependency portions of Stock runtime spelling and native dependency-only action"
+      ]
+    }
+  },
+  "case": "TC-WORKFLOW-OWNERSHIP-PROBE-SANDBOX-001",
+  "case_allocation": "Core keeps its shared/static procedure. Reference subprocedures listed above move with complete issue implementations/tests/docs. Extension case IDs are not claimed registered here.",
+  "additional_preserved_evidence": {
+    "206": [
+      "static sparse inode mismatch",
+      "HEAD versus unapproved staged/untracked admission",
+      "validation-atime mutation",
+      "terminal d9 CI core fixture/guard causes"
+    ],
+    "225": [
+      "original d9 source-ancestor nlink and explicit-directory timestamp negatives",
+      "owner generated inode/ctime and reconstruction observations",
+      "all prior ordinary include/restart, output/provenance/cleanup positives and negatives"
+    ],
+    "227": [
+      "terminal d9 optional runtime/env diagnostic families with causal positive counterparts"
+    ]
+  },
+  "auxiliary_core_surfaces": [
+    "tests/workflows/test_ownership_probe.py imports the retained FoundationTests",
+    "scripts/docs_check_tests/test_check_docs.py verifies the indexed core case/commands",
+    "scripts/docs_check_tests/test_development_workflow_skill.py retains the core case inventory"
+  ],
+  "integration": "#180 retains every complete graph/domain/oracle/lifecycle/public requirement and cross-extension combinations. Mixed tests do not create artificial V/R dependencies for D."
+}

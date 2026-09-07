@@ -17,8 +17,6 @@ import signal
 import stat
 import struct
 import sys
-from collections.abc import Iterator
-from contextlib import contextmanager
 from dataclasses import dataclass
 from functools import wraps
 from pathlib import Path, PurePosixPath
@@ -27,7 +25,6 @@ from threading import get_ident, main_thread
 from .authority import AuthorityLoader, ENVIRONMENT, Snapshot, encoded, parse_json, relative_path
 from .budget import Limits, MakeProbeError, NAMESPACE_LAUNCHER, ProbeBudget, text
 from .lifecycle import cleanup_scope, finish_cleanup
-from .syscall_guard import Violation, view_state
 
 
 TRUSTED_ROOT = Path(__file__).resolve().parent
@@ -42,7 +39,8 @@ ALIASES = (
         "true", "echo",
     )),
 )
-STOCK_RUNTIME_ALIASES = {"/bin": "/usr/bin"}
+METADATA_CALLS = {4, 5, 6, 21, 78, 89, 138, 217, 262, 267, 269, 332, 439}
+METADATA_HEADER = struct.Struct("<IIIQQqIII")
 
 
 def terminal_failure(method):
@@ -70,26 +68,6 @@ class Command:
     code: tuple[str, ...] = ()
     sources: tuple[str, ...] = ()
     directories: tuple[str, ...] = ()
-    native_tool: NativeTool | None = None
-    outputs: tuple[str, ...] = ()
-    dependency_only: bool = False
-
-
-@dataclass(frozen=True)
-class GeneratedFile:
-    path: str
-    data: bytes
-    mode: int
-
-
-@dataclass(frozen=True)
-class RuntimeInput:
-    path: str
-    data: bytes | None
-    mode: int | None
-    parents: tuple[tuple[str, bool], ...]
-    canonical: str = ""
-    aliases: tuple[tuple[str, str], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -99,8 +77,7 @@ class ProcessOutput:
     consumed: tuple[str, ...]
     code_consumed: tuple[str, ...]
     artifact: bytes | None = None
-    generated: tuple[GeneratedFile, ...] = ()
-    view_inputs: tuple[tuple, ...] = ()
+    metadata: tuple[tuple, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -171,7 +148,7 @@ def _event_command(event: dict) -> str:
     return " ".join(quote(value) for value in (program, *arguments[1:]))
 
 
-def _read_events(raw: bytes, *, expected_mapping_count: int, expected_context_count: int = 1):
+def _read_events(raw: bytes, *, expected_mapping_count: int):
     reader = Frames(raw)
     events = []
     while reader.offset < len(raw):
@@ -180,7 +157,7 @@ def _read_events(raw: bytes, *, expected_mapping_count: int, expected_context_co
         hash_value = int.from_bytes(reader.take(8), "little")
         argc = reader.integer()
         if (
-            not -expected_context_count <= match < expected_mapping_count
+            not -2 <= match < expected_mapping_count
             or count != expected_mapping_count or not 1 <= argc <= 1024
         ):
             raise MakeProbeError("invalid trusted interceptor frame")
@@ -192,6 +169,59 @@ def _read_events(raw: bytes, *, expected_mapping_count: int, expected_context_co
             raise MakeProbeError("interceptor command/hash mismatch")
         events.append(event)
     return events
+
+
+def _metadata_records(value, limit):
+    if not isinstance(value, list) or len(value) > limit:
+        raise MakeProbeError("malformed/excessive guest metadata records")
+    records = []
+    seen = set()
+    for record in value:
+        if not isinstance(record, list) or len(record) != 9:
+            raise MakeProbeError("malformed guest metadata record")
+        number, path, flags, mask, size, offset, result, before, after = record
+        if (
+            type(number) is not int or number not in METADATA_CALLS
+            or not isinstance(path, str) or not (path == "/repo" or path.startswith("/repo/"))
+            or path != "/repo" and relative_path(path[6:]) != path[6:]
+            or any(type(item) is not int or not 0 <= item < 1 << 32 for item in (flags, mask))
+            or any(type(item) is not int or not 0 <= item < 1 << 64 for item in (size, offset))
+            or type(result) is not int or not -(1 << 63) <= result < 1 << 63
+        ):
+            raise MakeProbeError("malformed guest metadata operation")
+        for data in (before, after):
+            if data is not None and (
+                not isinstance(data, str) or len(data) != 2*size
+                or size > 65536 or not re.fullmatch(r"(?:[0-9a-f]{2})*", data)
+            ):
+                raise MakeProbeError("malformed guest metadata buffer")
+        fixed = {4: 144, 5: 144, 6: 144, 21: 0, 138: 120, 262: 144, 269: 0, 332: 256, 439: 0}
+        if number in fixed and size != fixed[number] or number not in {78, 217} and offset:
+            raise MakeProbeError("guest metadata disagrees with its syscall ABI")
+        if tuple(record) in seen:
+            raise MakeProbeError("duplicate guest metadata record")
+        seen.add(tuple(record))
+        records.append(tuple(record))
+    return tuple(records)
+
+
+def _metadata_frame(records):
+    data = bytearray(struct.pack("<I", len(records)))
+    for number, path, flags, mask, size, offset, result, before, after in records:
+        name = path.encode("utf-8")
+        seed = None if before is None else bytes.fromhex(before)
+        returned = None if after is None else bytes.fromhex(after)
+        data.extend(METADATA_HEADER.pack(
+            number, flags, mask, size, offset, result, len(name),
+            0xFFFFFFFF if seed is None else len(seed),
+            0xFFFFFFFF if returned is None else len(returned),
+        ))
+        data.extend(name)
+        if seed is not None:
+            data.extend(seed)
+        if returned is not None:
+            data.extend(returned)
+    return bytes(data)
 
 
 def _read_observation(raw: bytes, target: str, variables: tuple[str, ...]):
@@ -326,26 +356,20 @@ def _remove_owned_tree(path):
     finish_cleanup([remove])
 
 
-def _trusted_runtime_path(path: str, *, optional=False):
+def _trusted_runtime_path(path: str):
     requested = PurePosixPath(path)
     if not requested.is_absolute() or str(requested) != path or ".." in requested.parts:
         raise MakeProbeError("noncanonical trusted runtime path")
     roots = (
         "/usr/bin/", "/usr/lib/", "/usr/lib64/", "/lib/", "/lib64/",
-        *(("/usr/include/", "/bin/") if optional else ()),
     )
     if not path.startswith(roots):
         raise MakeProbeError(f"runtime is outside the trusted system tool/library roots: {path}")
-    resolved = Path(path).resolve(strict=not optional)
+    resolved = Path(path).resolve(strict=True)
     if not resolved.as_posix().startswith(roots):
         raise MakeProbeError(f"runtime is outside the trusted system tool/library roots: {path}")
     for entry in {Path(path), *Path(path).parents, resolved, *resolved.parents}:
-        try:
-            mode = entry.lstat()
-        except FileNotFoundError:
-            if optional:
-                continue
-            raise
+        mode = entry.lstat()
         if mode.st_uid != 0 or (
             not stat.S_ISLNK(mode.st_mode) and mode.st_mode & (stat.S_IWGRP | stat.S_IWOTH)
         ):
@@ -355,43 +379,6 @@ def _trusted_runtime_path(path: str, *, optional=False):
 
 def _trusted_runtime_bytes(path: str, budget: ProbeBudget):
     return budget.read_bytes(_trusted_runtime_path(path), "control")
-
-
-def _capture_runtime_input(path, budget):
-    if (
-        not isinstance(path, str) or not path.startswith("/")
-        or any(character in path for character in "*?[")
-    ):
-        raise MakeProbeError("runtime input must be a bounded exact pathname")
-    relative_path(path[1:])
-    resolved = _trusted_runtime_path(path, optional=True)
-    parents, aliases = [], []
-    for parent in Path(path).parents:
-        budget.remaining()
-        try:
-            info = parent.lstat()
-        except FileNotFoundError:
-            parents.append((str(parent), False))
-        else:
-            if stat.S_ISLNK(info.st_mode):
-                expected = STOCK_RUNTIME_ALIASES.get(str(parent))
-                if expected is None or parent.resolve().as_posix() != expected:
-                    raise MakeProbeError("runtime input has a nonstock/escaping ancestor alias")
-                aliases.append((str(parent), os.path.relpath(expected, str(parent.parent))))
-            elif not stat.S_ISDIR(info.st_mode):
-                raise MakeProbeError("runtime input has a non-directory/symlink ancestor")
-            parents.append((str(parent), True))
-    try:
-        info = Path(path).lstat()
-    except FileNotFoundError:
-        data, mode = None, None
-    else:
-        if not stat.S_ISREG(info.st_mode) or info.st_mode & 0o7000:
-            raise MakeProbeError("runtime input is not an ordinary regular file")
-        data = budget.read_bytes(resolved, "control")
-        mode = stat.S_IMODE(info.st_mode)
-    budget.charge("control", len(encoded([path, mode, parents, str(resolved), aliases])))
-    return RuntimeInput(path, data, mode, tuple(parents), str(resolved), tuple(aliases))
 
 
 def _make_interpreter(binary: bytes):
@@ -519,7 +506,6 @@ class ProbeSession:
 
     def __init__(
         self, loader: AuthorityLoader, *, scratch_root: Path, budget: ProbeBudget,
-        runtime_files: tuple[str, ...] = (),
     ):
         if not isinstance(loader, AuthorityLoader):
             raise MakeProbeError("probe requires its exact-tree authority loader")
@@ -540,17 +526,6 @@ class ProbeSession:
         self.handlers = {}
         self.snapshot = None
         self.make_runtime = ()
-        if (
-            not isinstance(runtime_files, (tuple, list))
-            or any(not isinstance(path, str) for path in runtime_files)
-            or len(runtime_files) > budget.limits.pending
-            or len(set(runtime_files)) != len(runtime_files)
-        ):
-            raise MakeProbeError("runtime input count/duplicates exceed admission contract")
-        self.runtime_paths = tuple(runtime_files)
-        self.runtime_inputs = ()
-        self.runtime_dispatch = ()
-        self.dependency_compiler = None
         self.serial = 0
         self.processes_used = 0
         self.live_process_peak = 0
@@ -599,71 +574,12 @@ class ProbeSession:
     def _interrupt(self, signum, frame):
         raise KeyboardInterrupt(f"ownership probe interrupted by signal {signum}")
 
-    @contextmanager
-    def select_view(self, loader: AuthorityLoader) -> Iterator[ProbeSession]:
-        """Select a captured immutable view without creating another report owner."""
-        if self.base is None or self.snapshot is None:
-            raise MakeProbeError("probe session is not active")
-        if get_ident() != self.owner_thread:
-            self.budget.failed = True
-            raise MakeProbeError("a probe session has one bounded execution worker")
-        self.budget.remaining()
-        if (
-            not isinstance(loader, AuthorityLoader) or loader.budget is not self.budget
-            or loader.entries.budget is not self.budget or loader.root != self.loader.root
-            or loader.revision is None or loader.entries.capture != (loader.root, loader.revision)
-        ):
-            raise MakeProbeError("view requires a same-report, same-repository immutable capture")
-        if self.budget.children:
-            raise MakeProbeError("cannot select a view during active report execution")
-        self.budget.plan(1)
-        self.serial += 1
-        root = self.base / f"view-{self.serial}"
-        previous = (self.loader, self.snapshot, self.tree, self.cache, self.native_tools)
-        cache, tools = {}, {}
-        def restore():
-            if self.base is not None:
-                self.loader, self.snapshot, self.tree, self.cache, self.native_tools = previous
-            else:
-                # An already closed outer session cannot be reactivated by a
-                # late context exit, nor retain its suspended execution handles.
-                previous[0].live_modes.clear()
-                previous[3].clear()
-                previous[4].clear()
-        try:
-            with cleanup_scope([
-                cache.clear, tools.clear, lambda: _remove_owned_tree(root), restore,
-            ]):
-                self.loader, self.snapshot, self.tree = loader, None, root / "tree"
-                self.cache, self.native_tools = cache, tools
-                root.mkdir()
-                self.tree.mkdir()
-                self.snapshot = Snapshot(loader, self.budget, reuse=previous[1])
-                for name in sorted(self.snapshot.reused_paths):
-                    self.budget.remaining()
-                    target = self.tree / name
-                    target.parent.mkdir(parents=True, exist_ok=True)
-                    os.link(previous[2] / name, target, follow_symlinks=False)
-                copied = self.snapshot.files.keys() - self.snapshot.reused_paths
-                self.budget.charge("snapshot", sum(len(self.snapshot.files[name]) for name in copied))
-                self.snapshot.materialize(self.tree, copied, self.budget)
-                for name in sorted(self.snapshot.gitlink_roots):
-                    (self.tree / name).mkdir(parents=True, exist_ok=True)
-                yield self
-        except BaseException as error:
-            self.budget.failed = True
-            finish_cleanup([self.budget.close], primary=error)
-            raise
-
     def __exit__(self, kind, value, traceback):
         def clear_state():
             self.cache.clear()
             self.mappings.clear()
             self.native_tools.clear()
             self.make_runtime = ()
-            self.runtime_inputs = ()
-            self.runtime_dispatch = ()
-            self.dependency_compiler = None
             self.snapshot = None
             self.loader.live_modes.clear()
         def remove_base():
@@ -697,26 +613,6 @@ class ProbeSession:
         if version.returncode or version.stdout.splitlines()[0] != b"GNU Make 4.3":
             raise MakeProbeError("native observation ABI requires GNU Make 4.3")
         self.make_runtime = _make_runtime(self.budget)
-        reserved = {path for path, _ in self.make_runtime} | set(ALIASES) | {"/lib/vo-observer.so"}
-        captured = []
-        dispatch = []
-        for path in self.runtime_paths:
-            item = _capture_runtime_input(path, self.budget)
-            intercepted = (
-                bool(item.aliases) and item.canonical in ALIASES
-                or item.canonical == "/usr/bin/env" and item.data is not None
-            )
-            if intercepted:
-                dispatch.append(item.path)
-            if any(path == other or path.startswith(other + "/") or other.startswith(path + "/")
-                   for other in reserved):
-                raise MakeProbeError("runtime input conflicts with trusted execution image")
-            if item.canonical in reserved and not intercepted:
-                raise MakeProbeError("runtime input conflicts with trusted execution image")
-            captured.append(item)
-            reserved.add(path)
-        self.runtime_inputs = tuple(captured)
-        self.runtime_dispatch = tuple(dispatch)
         python = self.budget.run(
             ["/usr/bin/python3", "-I", "-S", "-B", "-c",
              "import sys; print('%d.%d' % sys.version_info[:2])"],
@@ -772,7 +668,7 @@ class ProbeSession:
                 return PurePosixPath(name).match(pattern) if is_glob else name == pattern
 
             if any(
-                path not in self.snapshot.files and matches(path)
+                path not in self.snapshot.files and path not in self.snapshot.absent_paths and matches(path)
                 for path in self.loader.entries
             ):
                 raise MakeProbeError("source selector matches an unadmitted symlink/gitlink")
@@ -792,34 +688,14 @@ class ProbeSession:
             (root / directory).mkdir()
         (root / "dev/null").touch()
         if make:
-            for alias, target in sorted({
-                pair for item in self.runtime_inputs for pair in item.aliases
-            }):
-                destination = root / alias.lstrip("/")
-                _mkdir_target(root, "/" + target, directory=True)
-                destination.rmdir()
-                destination.symlink_to(target)
             for target, data in self.make_runtime:
                 _mkdir_target(root, target).write_bytes(data)
                 (root / target.lstrip("/")).chmod(0o555)
             shutil.copyfile(self.base / "observer.so", _mkdir_target(root, "/lib/vo-observer.so"))
             (root / "lib/vo-observer.so").chmod(0o555)
-            for target in sorted(set(ALIASES) | {
-                item.canonical for item in self.runtime_inputs if item.path in self.runtime_dispatch
-            }):
+            for target in ALIASES:
                 shutil.copyfile(self.base / "interceptor", _mkdir_target(root, target))
                 (root / target.lstrip("/")).chmod(0o555)
-            for item in self.runtime_inputs:
-                for parent, present in reversed(item.parents):
-                    if present and parent != "/":
-                        _mkdir_target(root, parent, directory=True)
-                if item.data is not None:
-                    if item.path in self.runtime_dispatch:
-                        continue
-                    self.budget.charge("control", len(item.data))
-                    target = _mkdir_target(root, item.path)
-                    target.write_bytes(item.data)
-                    target.chmod(item.mode)
         else:
             for directory, target in (("bin", "usr/bin"), ("lib", "usr/lib"), ("lib64", "usr/lib64")):
                 (root / directory).rmdir()
@@ -828,13 +704,15 @@ class ProbeSession:
 
     def _sandbox_run(
         self, root, *, mode, argv, environment, mounts, code=(), sources=(),
-        directories=(), executables=None, dependency=False, include_dirs=(), mapping_entries=(),
+        directories=(), executables=None, mapping_entries=(), metadata_validation=False,
     ):
         self.budget.remaining()
+        if [item for item in mounts if item["target"] == "/repo"] != [self._mount(self.tree, "/repo")]:
+            raise MakeProbeError("incomplete/non-readonly source backing is not admitted")
         self.serial += 1
         report = self.base / f"report-{self.serial}.json"
         config_path = self.base / f"launch-{self.serial}.json"
-        executable = ["/usr/bin/make", "/control/interceptor", *ALIASES, *self.runtime_dispatch] if mode == "make" else (
+        executable = ["/usr/bin/make", "/control/interceptor", *ALIASES] if mode == "make" else (
             [argv[0]] if executables is None else list(executables)
         )
         file_remaining = min(
@@ -854,23 +732,11 @@ class ProbeSession:
             "forbidden_paths": [
                 "/repo/" + path for path in self.loader.entries
                 if path not in self.snapshot.files and path not in self.snapshot.gitlink_roots
+                and path not in self.snapshot.absent_paths
             ],
-            "runtime_files": [item.path for item in self.runtime_inputs] if mode == "make" else [],
-            "runtime_aliases": sorted({alias for item in self.runtime_inputs for alias, _ in item.aliases})
-            if mode == "make" else [],
-            "intercepted_runtime": sorted({
-                item.canonical for item in self.runtime_inputs if item.path in self.runtime_dispatch
-            }) if mode == "make" else [],
-            "runtime_absent": [item.path for item in self.runtime_inputs if item.data is None]
-            if mode == "make" else [],
-            "runtime_parents": sorted({
-                parent for item in self.runtime_inputs for parent, _ in item.parents
-            }) if mode == "make" else [],
-            "source_view": str(self.tree),
-            "dependency_probe": dependency,
             "runtime_closure": [name for name, _ in self.make_runtime] if mode == "make" else [],
             "mapping_entries": mapping_entries,
-            "dependency_include_dirs": ["/repo" if path == "." else "/repo/" + path for path in include_dirs],
+            "metadata_validation": metadata_validation,
             "deadline": self.budget.deadline,
             "file_limit": file_remaining,
             "memory_limit": self.budget.limits.address_space_bytes,
@@ -910,8 +776,7 @@ class ProbeSession:
                 "ok", "returncode", "error", "consumed", "code_consumed", "accessed",
                 "processes", "syscalls", "written_bytes", "created_files",
                 "memory_peak", "observation_bytes", "live_process_peak", "observations",
-                "view_inputs",
-                "view_contexts", "final_context",
+                "metadata", "events",
             }:
                 raise MakeProbeError("malformed supervisor result")
             observations = observed["observations"]
@@ -927,37 +792,16 @@ class ProbeSession:
                 or observed["observation_bytes"] < 128 * observations
             ):
                 raise MakeProbeError("malformed supervisor observation accounting")
-            if not isinstance(observed["view_inputs"], list) or len(observed["view_inputs"]) > config["observation_count"]:
-                raise MakeProbeError("malformed observable source-view inputs")
-            for item in observed["view_inputs"]:
-                if (
-                    not isinstance(item, list) or len(item) != 3 or item[0] not in {"type", "directory"}
-                    or not isinstance(item[1], str) or item[1] != "." and relative_path(item[1]) != item[1]
-                    or not (item[2] is None or type(item[2]) is int or
-                            isinstance(item[2], str) and re.fullmatch(r"[0-9a-f]{64}", item[2]))
-                ):
-                    raise MakeProbeError("malformed observable source-view input")
-            contexts = observed["view_contexts"]
+            observed["metadata"] = _metadata_records(observed["metadata"], config["observation_count"])
+            if len(observed["metadata"]) > observations:
+                raise MakeProbeError("unaccounted guest metadata records")
             if (
-                not isinstance(contexts, list) or not contexts or contexts[0] != []
-                or len(contexts) > self.budget.limits.entries
-                or type(observed["final_context"]) is not int
-                or not 0 <= observed["final_context"] < len(contexts)
+                not isinstance(observed["events"], list)
+                or any(not isinstance(item, str) or len(item) > 2*65536
+                       or not re.fullmatch(r"(?:[0-9a-f]{2})+", item) for item in observed["events"])
+                or mode != "make" and observed["events"]
             ):
-                raise MakeProbeError("malformed generated source contexts")
-            for context in contexts:
-                if not isinstance(context, list) or len(context) > self.budget.limits.created_files:
-                    raise MakeProbeError("excessive generated source context")
-                names = set()
-                for item in context:
-                    if (
-                        not isinstance(item, list) or len(item) != 2
-                        or not isinstance(item[0], str) or relative_path(item[0]) != item[0]
-                        or item[0] in names or type(item[1]) is not int
-                        or not 0 <= item[1] < len(mapping_entries)
-                    ):
-                        raise MakeProbeError("malformed generated source context entry")
-                    names.add(item[0])
+                raise MakeProbeError("malformed supervisor native event writes")
             self.observations_used += observations
             self.processes_used += observed["processes"]
             self.live_process_peak = max(self.live_process_peak, observed["live_process_peak"])
@@ -968,7 +812,9 @@ class ProbeSession:
             if result.returncode or observed["ok"] is not True:
                 raise MakeProbeError(f"confined {mode} probe rejected: {observed['error']}; {result.stderr!r}")
             result.returncode = observed["returncode"]
-            if mode != "make" and result.returncode:
+            if metadata_validation and result.returncode not in {0, 1, 2}:
+                raise MakeProbeError("invalid trusted metadata comparison status")
+            if mode != "make" and not metadata_validation and result.returncode:
                 raise MakeProbeError(f"registered command failed: {result.returncode}")
             return result, observed
 
@@ -983,17 +829,33 @@ class ProbeSession:
     def command(self, command: Command):
         return self._command(command)
 
-    def _view_state(self, name, kind):
-        try:
-            return view_state(
-                self.tree, name, kind, lambda size: self.budget.charge("control", size),
-                limit=self.budget.limits.entries, deadline=self.budget.deadline,
+    def _metadata_matches(self, records):
+        if not records:
+            return True
+        frame = _metadata_frame(records)
+        if len(frame) > self.budget.limits.file_bytes:
+            self.budget.reject("metadata revalidation exceeds file byte bound")
+        self.budget.charge("control", len(frame))
+        name = f"validation-root-{self.serial + 1}"
+        root = self.base / name
+        control = self.base / f"validation-control-{self.serial + 1}"
+        with cleanup_scope([lambda: _remove_owned_tree(root), lambda: _remove_owned_tree(control)]):
+            self._new_root(name)
+            (control / "map").mkdir(parents=True)
+            (control / "interceptor").touch()
+            (control / "map/validate.meta").write_bytes(frame)
+            result, _ = self._sandbox_run(
+                root, mode="command", argv=["/control/interceptor"], environment=ENVIRONMENT,
+                mounts=[
+                    self._mount(self.tree, "/repo"),
+                    self._mount(control, "/control"),
+                    self._mount(self.base / "interceptor", "/control/interceptor", executable=True),
+                    self._mount(Path("/dev/null"), "/dev/null", writable=True),
+                ],
+                mapping_entries=[{"key": "0000000000000000", "metadata": records}],
+                metadata_validation=True,
             )
-        except (Violation, OSError) as error:
-            raise MakeProbeError(f"unsafe observable source view: {error}") from error
-
-    def _view_matches(self, inputs):
-        return all(self._view_state(name, kind) == expected for kind, name, expected in inputs)
+            return result.returncode == 0
 
     def _directories(self, declared):
         result = tuple(sorted({path if path == "." else relative_path(path) for path in declared}))
@@ -1004,134 +866,32 @@ class ProbeSession:
                 for name in self.loader.entries
             ):
                 raise MakeProbeError("directory declaration enters a nonregular source namespace")
-            if self._view_state(path, "type") != stat.S_IFDIR:
+            self.budget.charge("control", len(path.encode("utf-8")) + 64)
+            try:
+                mode = (self.tree / path).lstat().st_mode
+            except FileNotFoundError as error:
+                raise MakeProbeError(f"directory declaration is absent: {path}") from error
+            if not stat.S_ISDIR(mode):
                 raise MakeProbeError(f"directory declaration is not an active directory: {path}")
         return result
 
-    def _output_paths(self, paths):
-        if len(paths) > 4096:
-            raise MakeProbeError("generated output count exceeds admission bound")
-        names = tuple(sorted(relative_path(path) for path in paths))
-        declared = set(names)
-        for index, name in enumerate(names):
-            self.budget.remaining()
-            if index and name == names[index - 1] or any(
-                parent.as_posix() in declared for parent in PurePosixPath(name).parents
-            ):
-                raise MakeProbeError("conflicting generated output declarations")
-            if any(
-                name == source or name.startswith(source + "/") or source.startswith(name + "/")
-                for source in self.loader.entries
-            ):
-                raise MakeProbeError("generated output conflicts with immutable source")
-        return names
-
-    def _capture_outputs(self, root, names):
-        if not names:
-            return ()
-        directories = {
-            parent.as_posix() for name in names for parent in PurePosixPath(name).parents
-            if parent.as_posix() != "."
-        }
-        pending, found = [root], {}
-        count = 0
-        while pending:
-            self.budget.remaining()
-            with os.scandir(pending.pop()) as entries:
-                for entry in entries:
-                    self.budget.remaining()
-                    count += 1
-                    if count > self.budget.limits.created_files:
-                        self.budget.reject("generated output tree exceeds creation bound")
-                    name = Path(entry.path).relative_to(root).as_posix()
-                    self.budget.charge("control", len(os.fsencode(name)) + 64)
-                    mode = entry.stat(follow_symlinks=False).st_mode
-                    if stat.S_ISDIR(mode) and name in directories:
-                        pending.append(Path(entry.path))
-                    elif stat.S_ISREG(mode) and name in names and not mode & 0o7000:
-                        found[name] = stat.S_IMODE(mode)
-                    else:
-                        raise MakeProbeError("undeclared or nonregular generated output")
-        if set(found) != set(names):
-            raise MakeProbeError("missing declared generated output")
-        return tuple(
-            GeneratedFile(name, self.budget.read_bytes(root / name, "output"), found[name])
-            for name in names
-        )
-
-    @staticmethod
-    def _dependency_options(command, sources, outputs):
-        if command.argv[0] != "/usr/bin/cc" or command.native_tool is not None or len(outputs) != 1:
-            raise MakeProbeError("dependency action requires host cc and one declared output")
-        flags, directories, source, target = set(), [], None, None
-        index = 1
-        while index < len(command.argv):
-            argument = command.argv[index]
-            index += 1
-            if argument in {"-E", "-MM", "-MG", "-nostdinc", "-undef"}:
-                if argument in flags:
-                    raise MakeProbeError("duplicate dependency compiler mode")
-                flags.add(argument)
-                continue
-            option = None
-            for prefix in ("-iquote", "-I", "-D", "-U", "-MT"):
-                if argument == prefix:
-                    if index == len(command.argv):
-                        raise MakeProbeError("missing dependency option value")
-                    option, value = prefix, command.argv[index]
-                    index += 1
-                    break
-                if argument.startswith(prefix) and prefix != "-MT":
-                    option, value = prefix, argument[len(prefix):]
-                    break
-            if option is not None:
-                if not value or value.startswith("@") or "\n" in value or "\r" in value:
-                    raise MakeProbeError("invalid dependency option value")
-                if option in {"-I", "-iquote"}:
-                    if value.startswith("-"):
-                        raise MakeProbeError("dependency include path is not a directory declaration")
-                    if value != ".":
-                        relative_path(value)
-                    directories.append(value)
-                elif option in {"-D", "-U"}:
-                    name, separator, _ = value.partition("=")
-                    if not VARIABLE.fullmatch(name) or option == "-U" and separator:
-                        raise MakeProbeError("dependency macro must have a symbolic name")
-                else:
-                    if target is not None or not TARGET.fullmatch(value) or value.startswith(("-", "/")):
-                        raise MakeProbeError("invalid dependency target")
-                    relative_path(value)
-                    target = value
-                continue
-            if argument.startswith(("-", "@")) or source is not None or not argument.endswith(".c"):
-                raise MakeProbeError("unsupported dependency compiler option/source")
-            source = relative_path(argument)
-        if not {"-E", "-MM", "-nostdinc", "-undef"} <= flags or target is None or source not in sources:
-            raise MakeProbeError("dependency action requires exact preprocessing modes and declared C source")
-        return tuple(dict.fromkeys(directories))
-
-    def _command(self, command: Command, *, compiler=None):
+    def _command(self, command: Command, *, compiler=None, native=None):
         self.budget.remaining()
         if not isinstance(command, Command):
             raise MakeProbeError("registered command requires a typed Command")
-        if not isinstance(command.dependency_only, bool):
-            raise MakeProbeError("dependency action must be an explicit boolean")
-        native = command.native_tool
         programs = {"/usr/bin/python3", "/usr/bin/uname", "/usr/bin/printf"}
         if native is not None:
             if not isinstance(native, NativeTool) or not any(
                 native is issued for issued in self.native_tools.values()
             ):
-                raise MakeProbeError("native tool is not issued by this exact probe session view")
+                raise MakeProbeError("native tool is not issued by this exact probe session")
             if hashlib.sha256(self.budget.read_bytes(native.path, "control")).hexdigest() != native.digest:
                 raise MakeProbeError("sealed native tool changed after validation")
             if not command.argv or command.argv[0] != "/native/tool":
-                raise MakeProbeError("native registration requires exact /native/tool argv")
+                raise MakeProbeError("native execution requires exact /native/tool argv")
             programs.add("/native/tool")
         if compiler is not None:
             programs.update(compiler)
-        if command.dependency_only:
-            programs.add("/usr/bin/cc")
         if (
             not command.argv
             or command.argv[0] not in programs
@@ -1149,14 +909,12 @@ class ProbeSession:
         code = tuple(sorted(set(command.code)))
         sources = self.sources(command.sources) if command.sources else ()
         directories = self._directories(command.directories)
-        outputs = self._output_paths(command.outputs)
-        include_dirs = self._dependency_options(command, sources, outputs) if command.dependency_only else ()
         key = (self.snapshot.digest, command, None if native is None else native.digest)
         if key in self.cache:
             for cached in self.cache[key]:
-                if self._view_matches(cached.view_inputs):
+                if self._metadata_matches(cached.metadata):
                     return cached
-        self.budget.charge("pending", len(encoded([command.argv, code, sources, directories, outputs])))
+        self.budget.charge("pending", len(encoded([command.argv, code, sources, directories])))
         for path in code:
             relative_path(path)
             if path not in self.snapshot.files:
@@ -1166,12 +924,6 @@ class ProbeSession:
         root = self.base / root_name
         with cleanup_scope([lambda: _remove_owned_tree(work), lambda: _remove_owned_tree(root)]):
             work.mkdir()
-            tree = work / "tree"
-            tree.mkdir()
-            self.snapshot.materialize(tree, set(code) | set(sources), self.budget)
-            for directory in include_dirs:
-                if directory != "." and (self.tree / directory).is_dir():
-                    (tree / directory).mkdir(parents=True, exist_ok=True)
             output = work / "output"
             output.mkdir()
             self._new_root(root_name)
@@ -1179,51 +931,34 @@ class ProbeSession:
                 shutil.copyfile(native.path, _mkdir_target(root, "/native/tool"))
                 (root / "native/tool").chmod(0o555)
             argv = list(command.argv)
-            if command.dependency_only:
-                if self.dependency_compiler is None:
-                    self.dependency_compiler = self._compiler_tools(False, ("cc1",))
-                argv[0], compiler = self.dependency_compiler
-                parent = output
-                for part in PurePosixPath(outputs[0]).parts[:-1]:
-                    parent /= part
-                    self.files_created += 1
-                    if self.files_created > self.budget.limits.created_files:
-                        self.budget.reject("aggregate dependency directory-creation budget exhausted")
-                    parent.mkdir()
-                argv.extend(("-MF", "/work/" + outputs[0]))
             if argv[0] == "/usr/bin/python3":
                 argv[1:1] = ["-I", "-S", "-B"]
             completed, observed = self._sandbox_run(
                 root, mode="command" if compiler is None else "compile", argv=argv,
                 environment={**ENVIRONMENT, "SOURCE_DATE_EPOCH": "0", "TMPDIR": "/work"},
                 mounts=[
-                    self._mount(self.tree if directories else tree, "/repo"),
+                    self._mount(self.tree, "/repo"),
                     self._mount(Path("/usr"), "/usr", executable=True),
                     self._mount(output, "/work", writable=True),
                     self._mount(Path("/dev/null"), "/dev/null", writable=True),
                 ],
                 code=code, sources=sources, directories=directories,
-                executables=compiler, dependency=command.dependency_only, include_dirs=include_dirs,
+                executables=compiler,
             )
             consumed = tuple(observed["consumed"])
             if consumed != sources:
                 raise MakeProbeError(f"declared/consumed source mismatch: declared={sources!r}, consumed={consumed!r}")
             result = ProcessOutput(
                 completed.stdout, completed.stderr, consumed, tuple(observed["code_consumed"]),
-                None if compiler is None or command.dependency_only else self.budget.read_bytes(output / "tool", "control"),
-                self._capture_outputs(output, outputs),
-                tuple(sorted({
-                    *(tuple(item) for item in observed["view_inputs"]),
-                    *(("type", path, stat.S_IFDIR) for path in directories),
-                })),
+                None if compiler is None else self.budget.read_bytes(output / "tool", "control"),
+                observed["metadata"],
             )
             self.budget.charge(
                 "cache", len(completed.stdout) + len(completed.stderr)
                 + len(encoded([self.snapshot.digest, command.argv, code, sources, directories]))
-                + (0 if result.artifact is None else len(result.artifact))
-                + sum(len(item.data) + len(os.fsencode(item.path)) + 64 for item in result.generated),
+                + (0 if result.artifact is None else len(result.artifact)),
             )
-            self.budget.charge("cache", len(encoded(result.view_inputs)))
+            self.budget.charge("cache", len(encoded(result.metadata)))
             self.cache.setdefault(key, []).append(result)
             return result
 
@@ -1319,12 +1054,12 @@ class ProbeSession:
             raise MakeProbeError("native ELF has no loadable program")
 
     @terminal_failure
-    def native(self, tool: NativeTool, arguments=(), *, sources=(), directories=(), outputs=()):
+    def native(self, tool: NativeTool, arguments=(), *, sources=(), directories=()):
         return self._command(
             Command(
                 ("/native/tool", *arguments), sources=tuple(sources), directories=tuple(directories),
-                native_tool=tool, outputs=tuple(outputs),
             ),
+            native=tool,
         )
 
     @terminal_failure
@@ -1371,54 +1106,9 @@ class ProbeSession:
         control = self.base / f"control-{self.serial + 1}"
         mappings = {}
         command_results = {}
-        generated_paths = set()
-        generated_directories = set()
-        active_context = ()
         commands = {} if commands is None else commands
-        def clear_generated():
-            def remove_directory(name):
-                try:
-                    (self.tree / name).rmdir()
-                except FileNotFoundError:
-                    pass
-            finish_cleanup([
-                *(lambda name=name: (self.tree / name).unlink(missing_ok=True)
-                  for name in sorted(generated_paths)),
-                *(lambda name=name: remove_directory(name) for name in sorted(
-                    generated_directories, key=lambda value: (-value.count("/"), value),
-                )),
-            ])
-        def select_context(context):
-            nonlocal active_context
-            context = tuple(tuple(item) for item in context)
-            if context == active_context:
-                return
-            clear_generated()
-            for name, index in context:
-                result = mappings[index][2]
-                output = next((item for item in result.generated if item.path == name), None)
-                if output is None:
-                    raise MakeProbeError("source context refers to an unrecorded generated output")
-                parent = self.tree
-                for part in PurePosixPath(name).parts[:-1]:
-                    parent /= part
-                    if not parent.exists():
-                        self.files_created += 1
-                        if self.files_created > self.budget.limits.created_files:
-                            self.budget.reject("generated context exceeds creation bound")
-                        parent.mkdir()
-                self.files_created += 1
-                if self.files_created > self.budget.limits.created_files:
-                    self.budget.reject("generated context exceeds creation bound")
-                self.budget.charge("sandbox", len(output.data))
-                target = self.tree / name
-                descriptor = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
-                with os.fdopen(descriptor, "wb") as stream:
-                    stream.write(output.data)
-                    os.fchmod(stream.fileno(), output.mode)
-            active_context = context
         with cleanup_scope([
-            clear_generated, mappings.clear,
+            mappings.clear,
             lambda: _remove_owned_tree(control), lambda: _remove_owned_tree(root),
         ]):
             self._new_root(root_name, make=True)
@@ -1431,8 +1121,6 @@ class ProbeSession:
             (control / "interceptor").touch()
             for _ in range(MAX_DYNAMIC_PASSES):
                 self.budget.remaining()
-                clear_generated()
-                active_context = ()
                 (mapping_path / "count").write_bytes(len(mappings).to_bytes(4, "little"))
                 events_path.write_bytes(b"")
                 result_path.write_bytes(b"")
@@ -1449,20 +1137,17 @@ class ProbeSession:
                         self._mount(Path("/dev/null"), "/dev/null", writable=True),
                     ],
                     mapping_entries=[
-                        {"key": _command_hash(command), "view_inputs": result.view_inputs}
+                        {"key": _command_hash(command), "metadata": result.metadata}
                         for command, identity, result in mappings.values()
                     ],
                 )
-                contexts = observed["view_contexts"]
-                for context in contexts:
-                    for name, index in context:
-                        if name not in {item.path for item in mappings[index][2].generated}:
-                            raise MakeProbeError("source context has an unknown generated member")
-                final_context = tuple(tuple(item) for item in contexts[observed["final_context"]])
-                active_context = final_context
+                raw_events = self.budget.read_bytes(events_path, "event")
+                native_events = b"".join(bytes.fromhex(item) for item in observed["events"])
+                self.budget.charge("control", len(native_events))
+                if raw_events != native_events:
+                    raise MakeProbeError("trusted interceptor frame differs from its native write")
                 events = _read_events(
-                    self.budget.read_bytes(events_path, "event"), expected_mapping_count=len(mappings),
-                    expected_context_count=len(contexts),
+                    raw_events, expected_mapping_count=len(mappings),
                 )
                 needs_resolution = False
                 matched = set()
@@ -1473,15 +1158,10 @@ class ProbeSession:
                         if mappings[event["match"]][0] != command:
                             raise MakeProbeError("interceptor matched an unknown mapping")
                         matched.add(mappings[event["match"]][1])
+                    elif event["match"] == -2:
+                        raise MakeProbeError(f"unsupported guest metadata reuse for Make command: {command!r}")
                     else:
-                        select_context(contexts[-1 - event["match"]])
-                        if any(
-                            mapped == command and self._view_matches(result.view_inputs)
-                            for mapped, identity, result in mappings.values()
-                        ):
-                            raise MakeProbeError("interceptor missed a known mapping")
                         needs_resolution = True
-                select_context(final_context)
                 if not needs_resolution:
                     if completed.returncode:
                         raise MakeProbeError(
@@ -1494,45 +1174,23 @@ class ProbeSession:
                     recipe_sources = {
                         record["source"] for record in semantics["files"] if record["source"]
                     }
-                    generated_owners = {}
-                    for name, index in final_context:
-                        for record in command_results[mappings[index][1]].get("generated_outputs", ()):
-                            if record[0] == name:
-                                generated_owners[name] = record
                     owners = set(owner_inputs) | recipe_sources
-                    semantics["owner_inputs"] = sorted(
-                        self.snapshot.owners(owners - generated_owners.keys())
-                        + [generated_owners[name] for name in sorted(owners & generated_owners.keys())],
-                    )
+                    semantics["owner_inputs"] = self.snapshot.owners(owners)
                     semantics["dynamic_commands"] = sorted(
                         (command_results[key] for key in matched), key=encoded,
                     )
                     semantic_bytes = encoded(semantics)
                     self.budget.charge("control", len(semantic_bytes))
-                    execution_digest = self.snapshot.digest
-                    if self.runtime_inputs:
-                        execution = encoded([self.snapshot.digest, [
-                            (item.path, item.mode, item.parents, item.canonical, item.aliases,
-                             None if item.data is None else hashlib.sha256(item.data).hexdigest())
-                            for item in self.runtime_inputs
-                        ]])
-                        self.budget.charge("control", len(execution))
-                        execution_digest = hashlib.sha256(execution).hexdigest()
                     return MakeObservation(
-                        target, semantics, execution_digest,
+                        target, semantics, self.snapshot.digest,
                         hashlib.sha256(semantic_bytes).hexdigest(),
                         completed.stdout, completed.stderr, tuple(events),
                     )
+                resolved = set()
                 for event in events:
                     self.budget.remaining()
                     command = _event_command(event)
-                    if event["match"] >= 0:
-                        continue
-                    select_context(contexts[-1 - event["match"]])
-                    if any(
-                        mapped == command and self._view_matches(result.view_inputs)
-                        for mapped, identity, result in mappings.values()
-                    ):
+                    if event["match"] >= 0 or command in resolved:
                         continue
                     pending = self.pending_commands
                     if pending >= self.budget.limits.pending:
@@ -1544,6 +1202,14 @@ class ProbeSession:
                             raise MakeProbeError(f"unregistered eager/recursive Make command: {command!r}")
                         registration = commands[command]
                         result = self.command(registration)
+                        if any(
+                            mapped == command and old.metadata == result.metadata
+                            for mapped, identity, old in mappings.values()
+                        ):
+                            raise MakeProbeError(
+                                f"guest metadata cannot be reproduced in the native Make context: {command!r}; "
+                                f"{completed.stderr!r}"
+                            )
                         output = result.stdout
                         if any(
                             mapped != command and _command_hash(mapped) == _command_hash(command)
@@ -1556,6 +1222,11 @@ class ProbeSession:
                         self.budget.charge("mapping", len(command.encode("utf-8")) + len(output) + 4)
                         (mapping_path / (key + ".cmd")).write_bytes(command.encode("utf-8"))
                         (mapping_path / (key + ".out")).write_bytes(output)
+                        metadata = _metadata_frame(result.metadata)
+                        if len(metadata) > self.budget.limits.file_bytes:
+                            self.budget.reject("metadata mapping exceeds file byte bound")
+                        self.budget.charge("mapping", len(metadata))
+                        (mapping_path / (key + ".meta")).write_bytes(metadata)
                         command_identity = {
                             "argv": list(registration.argv),
                             "directories": sorted(set(registration.directories)),
@@ -1563,62 +1234,15 @@ class ProbeSession:
                                 set(registration.code) | set(self.sources(registration.sources))
                             ),
                         }
-                        if registration.dependency_only:
-                            command_identity["dependency_only"] = True
-                            command_identity["inputs"] = self.snapshot.owners(
-                                set(result.consumed) | set(result.code_consumed),
-                            )
-                        if registration.native_tool is not None:
-                            tool = registration.native_tool
-                            command_identity["native_tool"] = {
-                                "sha256": tool.digest, "inputs": list(tool.inputs),
-                            }
                         command_result = {
                             "command": command_identity,
                             "output_sha256": hashlib.sha256(output).hexdigest(),
                         }
-                        if result.view_inputs:
-                            command_result["observed_view"] = result.view_inputs
-                        if result.generated:
-                            command_result["generated_outputs"] = [
-                                (item.path, f"{stat.S_IFREG | item.mode:06o}", hashlib.sha256(item.data).hexdigest())
-                                for item in result.generated
-                            ]
-                        if registration.native_tool is not None or result.generated or result.view_inputs:
-                            self.budget.charge("mapping", len(encoded(command_result)))
+                        self.budget.charge("mapping", len(encoded(command_result)))
                         identity = hashlib.sha256(encoded(command_result)).hexdigest()
-                        if result.generated:
-                            size = 44 + sum(
-                                12 + len(item.path.encode("utf-8")) + len(item.data) for item in result.generated
-                            )
-                            if size > self.budget.limits.file_bytes:
-                                self.budget.reject("generated mapping exceeds file byte bound")
-                            self.budget.charge("mapping", size)
-                            producer = encoded([
-                                command_identity, sorted(set(registration.code)),
-                                self.sources(registration.sources), sorted(registration.outputs),
-                            ])
-                            self.budget.charge("mapping", len(producer))
-                            frame = bytearray(b"VOGEN1\0\0" + hashlib.sha256(producer).digest())
-                            frame.extend(struct.pack("<I", len(result.generated)))
-                            for item in result.generated:
-                                if any(
-                                    item.path.startswith(path + "/") or path.startswith(item.path + "/")
-                                    for path in generated_paths
-                                ):
-                                    raise MakeProbeError("conflicting generated output namespaces")
-                                name = item.path.encode("utf-8")
-                                frame.extend(struct.pack("<III", len(name), item.mode, len(item.data)))
-                                frame.extend(name)
-                                frame.extend(item.data)
-                                generated_paths.add(item.path)
-                                generated_directories.update(
-                                    parent.as_posix() for parent in PurePosixPath(item.path).parents
-                                    if parent.as_posix() != "." and not (self.tree / parent).exists()
-                                )
-                            (mapping_path / (key + ".files")).write_bytes(frame)
                         command_results.setdefault(identity, command_result)
                         mappings[len(mappings)] = (command, identity, result)
+                        resolved.add(command)
             raise MakeProbeError("Make dynamic replay exceeded the existing pass bound")
 
     @terminal_failure

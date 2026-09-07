@@ -147,62 +147,29 @@ def _tree_entries(root, revision, budget, *, git_dir=None):
 
 def _live_tree_entries(root, budget):
     root = Path(os.path.abspath(root))
+    admitted = _tree_entries(root, "HEAD", budget)
     result = {}
     directories = set()
-    pending = [("", root)]
-    while pending:
-        prefix, repository = pending.pop()
+    for name, entry in admitted.items():
         budget.remaining()
-        rows = git(repository, budget, "ls-files", "--stage", "--others", "--exclude-standard", "-z")
-        for row in rows.split(b"\0"):
-            if not row:
-                continue
-            indexed_mode, oid = None, ""
-            if b"\t" in row:
-                header, row = row.split(b"\t", 1)
-                indexed_mode, oid, stage = text(header, "live Git entry", "ascii").split()
-                if stage != "0":
-                    raise MakeProbeError("live source inventory has unmerged entries")
-            local = relative_path(text(row, "live Git path"))
-            name = relative_path(prefix + local)
-            descriptor = os.open(repository, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
-            try:
-                parts = local.split("/")
-                for part in parts[:-1]:
-                    following = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=descriptor)
-                    os.close(descriptor)
-                    descriptor = following
-                mode = os.stat(parts[-1], dir_fd=descriptor, follow_symlinks=False).st_mode
-            except FileNotFoundError:
-                continue
-            except OSError as error:
-                raise MakeProbeError("unsafe live source inventory") from error
-            finally:
-                os.close(descriptor)
-            if len(result) >= budget.limits.entries or name in result:
-                budget.reject("live source entry bound or duplicate exceeded")
-            budget.charge("snapshot", len(name.encode("utf-8")) + 128)
-            if indexed_mode == "160000":
-                if not stat.S_ISDIR(mode):
-                    raise MakeProbeError("live gitlink is not an actual directory")
-                module = repository / local
-                with os.scandir(module) as stream:
-                    nonempty = next(stream, None) is not None
-                if nonempty:
-                    top = text(git(module, budget, "rev-parse", "--show-toplevel"), "live gitlink repository").strip()
-                    if Path(os.path.abspath(top)) != module:
-                        raise MakeProbeError("nonempty live gitlink is not its initialized repository")
-                    if len(pending) >= budget.limits.pending:
-                        budget.reject("live gitlink traversal exceeds pending bound")
-                    pending.append((name + "/", module))
-                directories.add(name)
-                result[name] = GitTreeEntry(name, "160000", "commit", oid)
-            elif stat.S_ISREG(mode):
-                result[name] = GitTreeEntry(name, "100755" if mode & stat.S_IXUSR else "100644", "blob", oid)
-            elif stat.S_ISLNK(mode):
-                result[name] = GitTreeEntry(name, "120000", "blob", oid)
-            else:
-                raise MakeProbeError("live source inventory contains a nonregular input")
+        mode = _live_mode(root, name)
+        budget.charge("snapshot", len(name.encode("utf-8")) + 128)
+        if mode is None:
+            result[name] = entry
+        elif entry.mode == "160000":
+            if not stat.S_ISDIR(mode):
+                raise MakeProbeError("live gitlink is not an actual directory")
+            with os.scandir(root / name) as stream:
+                if next(stream, None) is not None:
+                    raise MakeProbeError("nonempty live gitlink requires explicit source-path admission")
+            directories.add(name)
+            result[name] = entry
+        elif stat.S_ISREG(mode):
+            result[name] = GitTreeEntry(name, "100755" if mode & stat.S_IXUSR else "100644", "blob", entry.object_id)
+        elif stat.S_ISLNK(mode):
+            result[name] = GitTreeEntry(name, "120000", "blob", entry.object_id)
+        else:
+            raise MakeProbeError("admitted live source changed to an unsupported nonregular type")
     if not result:
         raise MakeProbeError("empty live authority tree")
     captured = GitTreeEntries(result, budget=budget)
@@ -210,6 +177,23 @@ def _live_tree_entries(root, budget):
     captured.live_directories = directories
     budget.charge("control", len(encoded([str(root), None, sorted(directories)])))
     return captured
+
+
+def _live_mode(root, name):
+    descriptor = os.open(root, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    try:
+        parts = relative_path(name).split("/")
+        for part in parts[:-1]:
+            following = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=descriptor)
+            os.close(descriptor)
+            descriptor = following
+        return os.stat(parts[-1], dir_fd=descriptor, follow_symlinks=False).st_mode
+    except FileNotFoundError:
+        return None
+    except OSError as error:
+        raise MakeProbeError("unsafe live source inventory") from error
+    finally:
+        os.close(descriptor)
 
 
 def git_tree_entries(
@@ -363,24 +347,18 @@ class AuthorityLoader:
 class Snapshot:
     """An immutable in-memory execution view, not semantic owner identity."""
 
-    def __init__(self, loader: AuthorityLoader, budget: ProbeBudget, *, reuse: Snapshot | None = None):
+    def __init__(self, loader: AuthorityLoader, budget: ProbeBudget):
         if (
             not isinstance(budget, ProbeBudget) or budget is not loader.budget
             or budget is not loader.entries.budget
         ):
             raise MakeProbeError("snapshot requires its authority's report budget")
         budget.remaining()
-        if reuse is not None and (
-            not isinstance(reuse, Snapshot) or reuse.budget is not budget
-            or reuse.loader.root != loader.root
-            or loader.revision is None or loader.entries.capture != (loader.root, loader.revision)
-        ):
-            raise MakeProbeError("snapshot reuse requires same-report repository capture authority")
         self.budget = budget
         self.loader = loader
         self.files = {}
         self.modes = {}
-        self.reused_paths = set()
+        self.absent_paths = set()
         self.gitlink_roots = {
             name for name, entry in loader.entries.items()
             if entry.mode == "160000" and entry.object_type == "commit" and entry.git_dir is not None
@@ -394,16 +372,6 @@ class Snapshot:
                 entry for _, entry in sorted(loader.entries.items())
                 if entry.mode in {"100644", "100755"} and entry.object_type == "blob"
             ]
-            if reuse is not None and reuse.loader.revision is not None and (
-                reuse.loader.entries.capture == (loader.root, reuse.loader.revision)
-            ):
-                for entry in entries:
-                    if reuse.loader.entries.get(entry.path) == entry and entry.path in reuse.files:
-                        if len(reuse.files[entry.path]) > budget.limits.file_bytes:
-                            raise MakeProbeError("reused immutable blob exceeds file bound")
-                        immutable[entry.path] = reuse.files[entry.path]
-                        self.reused_paths.add(entry.path)
-            entries = [entry for entry in entries if entry.path not in self.reused_paths]
             for directory in dict.fromkeys(entry.git_dir for entry in entries):
                 batch = [entry for entry in entries if entry.git_dir == directory]
                 result = budget.run(
@@ -438,11 +406,15 @@ class Snapshot:
         for name, entry in sorted(loader.entries.items()):
             budget.remaining()
             relative_path(name)
+            if loader.revision is None and _live_mode(loader.root, name) is None:
+                self.absent_paths.add(name)
+                budget.charge("snapshot", len(name.encode("utf-8")) + 64)
+                records.append((name, "absent"))
+                continue
             if entry.mode in {"100644", "100755"} and entry.object_type == "blob":
                 data = immutable[name] if loader.revision is not None else loader.read_blob(name, "execution snapshot")
                 budget.charge(
-                    "snapshot", (0 if name in self.reused_paths else len(data))
-                    + len(name.encode("utf-8")) + 64,
+                    "snapshot", len(data) + len(name.encode("utf-8")) + 64,
                 )
                 self.files[name] = data
                 self.modes[name] = entry.mode if loader.revision is not None else loader.live_modes[name]

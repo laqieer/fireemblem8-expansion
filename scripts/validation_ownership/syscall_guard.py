@@ -1,6 +1,6 @@
 """Fail-closed Linux x86-64 syscall authority, outside the candidate chroot.
 
-The sparse, noexec mount is the filesystem boundary. Ptrace adds violation
+The complete, readonly/noexec mount is the filesystem boundary. Ptrace adds violation
 reporting (including caught failures), FD/channel separation, exec authority
 and complete metadata/mmap/directory observations. No candidate code runs in
 this Python process. Mutable shared memory and namespace aliases reject.
@@ -41,10 +41,10 @@ MAP_ANONYMOUS = 0x20
 # Fixed placement, loader hints and stacks do not alias pages or change their
 # size. Growing/huge-page and unknown flags cannot bypass 4 KiB reservations.
 MMAP_FLAGS = 3 | 0x10 | MAP_ANONYMOUS | 0x800 | 0x1000 | 0x20000 | 0x100000
-VO_READY, VO_DISPATCH, VO_QUERY_KIND, VO_PUBLISH = (
+VO_READY, VO_DISPATCH, VO_QUERY_KIND, VO_METADATA = (
     0x564F4D4B00000001, 0x564F4D4B00000002, 0x564F4D4B00000003, 0x564F4D4B00000004,
 )
-VO_RECIPE, VO_VALUE = 0x564F4D4B00000011, 0x564F4D4B00000012
+VO_RECIPE, VO_VALUE, VO_VALIDATE = 0x564F4D4B00000011, 0x564F4D4B00000012, 0x564F4D4B00000013
 STACK_LIMIT = 16 * 1024 * 1024
 SYSCALL_MEMORY_LIMIT = 65536
 
@@ -130,42 +130,6 @@ def directory_entries(data, *, wide):
     return names
 
 
-def view_state(root, name, kind, charge, *, limit, deadline):
-    if (
-        kind not in {"type", "directory"}
-        or not isinstance(name, str) or name.startswith("/") or "\\" in name
-        or name != "." and any(part in {"", ".", ".."} for part in name.split("/"))
-    ):
-        raise Violation("invalid observable source-view input")
-    if time.monotonic() >= deadline:
-        raise Violation("aggregate probe deadline exhausted observing source view")
-    path = Path(root) / name
-    charge(len(name.encode("utf-8")) + 64)
-    try:
-        mode = stat.S_IFMT(path.lstat().st_mode)
-    except FileNotFoundError:
-        return None
-    if kind == "type" or mode != stat.S_IFDIR:
-        return mode
-    digest = hashlib.sha256()
-    descriptor = os.open(path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC)
-    try:
-        with os.scandir(descriptor) as entries:
-            for count, entry in enumerate(entries, 1):
-                if count > limit or time.monotonic() >= deadline:
-                    raise Violation("observable source directory exceeds report bounds")
-                data = json.dumps(
-                    [entry.name, stat.S_IFMT(entry.stat(follow_symlinks=False).st_mode)],
-                    ensure_ascii=True, separators=(",", ":"),
-                ).encode("ascii")
-                charge(len(data) + 64)
-                digest.update(len(data).to_bytes(4, "little"))
-                digest.update(data)
-    finally:
-        os.close(descriptor)
-    return digest.hexdigest()
-
-
 def trace_me(drop_privileges):
     drop_privileges()
     # setuid/setgid in the sudo route clears dumpability. TRACEME alone does
@@ -204,6 +168,8 @@ class Process:
     pidfd: int = -1
     observations: list[tuple[str, str]] = field(default_factory=list)
     observation_needs_bytes: bool = False
+    metadata_pending: tuple | None = None
+    metadata_index: int | None = None
 
     def clone(self):
         return Process(
@@ -236,7 +202,9 @@ class Policy:
         self.calls = 0
         self.created = 0
         self.observation_bytes = 0
-        self.view_inputs = {}
+        self.metadata = []
+        self.metadata_seen = set()
+        self.events = []
         self.memory_peak = 0
         self.processes = {}
         self.newborn_stops = {}
@@ -244,10 +212,6 @@ class Policy:
         self.live_process_peak = 0
         self.make_pid = 0
         self.make_restarts = 0
-        self.published = {}
-        self.generated_view = {}
-        self.view_contexts = [[]]
-        self.current_context = 0
         self.executable = set(config["executables"])
         self.executable.update(self.resolve(path) for path in config["executables"])
         self.runtime_closure = set(config.get("runtime_closure", ()))
@@ -448,137 +412,6 @@ class Policy:
             raise Violation("aggregate descendant-process budget exhausted before creation")
         state.process_reservation = True
 
-    def publish(self, key):
-        mapping = Path(self.config["root"]) / "control/map"
-        path = mapping / f"{key:016x}.files"
-        try:
-            descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
-        except FileNotFoundError:
-            return ()
-        names = []
-        with os.fdopen(descriptor, "rb") as source:
-            status = os.fstat(source.fileno())
-            if not stat.S_ISREG(status.st_mode) or not 44 <= status.st_size <= self.config["file_limit"]:
-                raise Violation("invalid generated mapping file bound")
-            self.observation_bytes += status.st_size
-            if self.observation_bytes > self.config["observation_limit"]:
-                raise Violation("aggregate generated mapping observation budget exhausted")
-            remaining = status.st_size
-            def take(size):
-                nonlocal remaining
-                if time.monotonic() >= self.config["deadline"]:
-                    raise Violation("aggregate probe deadline exhausted during publication")
-                if size > remaining:
-                    raise Violation("truncated generated mapping")
-                data = source.read(size)
-                if len(data) != size:
-                    raise Violation("truncated generated mapping")
-                remaining -= size
-                return data
-            def integer():
-                return int.from_bytes(take(4), "little")
-            if take(8) != b"VOGEN1\0\0":
-                raise Violation("invalid generated mapping protocol")
-            producer = take(32)
-            count = integer()
-            if not 1 <= count <= self.config["creation_limit"]:
-                raise Violation("generated output count exceeds creation bound")
-            view = next(item["source"] for item in self.config["mounts"] if item["target"] == "/repo")
-            for _ in range(count):
-                length, mode, size = integer(), integer(), integer()
-                if not 1 <= length <= 4096 or mode & ~0o777 or size > self.config["file_limit"]:
-                    raise Violation("invalid generated output declaration")
-                try:
-                    name = take(length).decode("utf-8", "strict")
-                except UnicodeDecodeError as error:
-                    raise Violation("generated output path is not UTF-8") from error
-                if (
-                    name.startswith("/") or "\\" in name
-                    or any(ord(ch) < 32 or ord(ch) == 127 for ch in name)
-                    or any(part in {"", ".", ".."} for part in name.split("/"))
-                ):
-                    raise Violation("generated output path escapes the readonly view")
-                self.written += size
-                if self.written > self.config["write_limit"]:
-                    raise Violation("aggregate generated publication byte budget exhausted")
-                directory = os.open(view, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
-                try:
-                    parts = name.split("/")
-                    for part in parts[:-1]:
-                        created = False
-                        try:
-                            following = os.open(
-                                part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=directory,
-                            )
-                        except FileNotFoundError:
-                            self.reserve_creation()
-                            os.mkdir(part, 0o755, dir_fd=directory)
-                            following = os.open(
-                                part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=directory,
-                            )
-                            created = True
-                        os.close(directory)
-                        directory = following
-                        if created and self.config["sudo_drop"]:
-                            # Transfer before adding children, so even failed publication
-                            # remains removable by the unprivileged report owner.
-                            os.fchown(directory, self.config["runner_uid"], self.config["runner_gid"])
-                    if name in self.published:
-                        if self.published[name] != producer:
-                            raise Violation("conflicting generated output producers")
-                        os.unlink(parts[-1], dir_fd=directory)
-                    self.reserve_creation()
-                    try:
-                        output = os.open(
-                            parts[-1], os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
-                            0o600, dir_fd=directory,
-                        )
-                    except FileExistsError as error:
-                        raise Violation("generated output conflicts with immutable source") from error
-                    with os.fdopen(output, "wb") as destination:
-                        if self.config["sudo_drop"]:
-                            os.fchown(destination.fileno(), self.config["runner_uid"], self.config["runner_gid"])
-                        left = size
-                        while left:
-                            data = take(min(left, SYSCALL_MEMORY_LIMIT))
-                            destination.write(data)
-                            left -= len(data)
-                        os.fchmod(destination.fileno(), mode)
-                    self.published[name] = producer
-                    names.append(name)
-                finally:
-                    os.close(directory)
-            if remaining:
-                raise Violation("trailing generated mapping bytes")
-        return tuple(names)
-
-    def mapping_context(self):
-        context = [[name, index] for name, index in self.generated_view.items()]
-        if context not in self.view_contexts:
-            self.reserve_observation("accessed", "generated-context:" + str(len(self.view_contexts)))
-            self.charge_view(len(json.dumps(context, separators=(",", ":")).encode("ascii")) + 64)
-            self.view_contexts.append(context)
-        self.current_context = self.view_contexts.index(context)
-        return self.current_context
-
-    def resolve_mapping(self, key):
-        for index, mapping in enumerate(self.config.get("mapping_entries", ())):
-            if mapping["key"] != f"{key:016x}":
-                continue
-            if all(
-                view_state(
-                    self.config["source_view"], name, kind, self.charge_view,
-                    limit=self.config["observation_count"], deadline=self.config["deadline"],
-                ) == expected
-                for kind, name, expected in mapping["view_inputs"]
-            ):
-                for name in self.publish(index):
-                    self.generated_view.pop(name, None)
-                    self.generated_view[name] = index
-                self.mapping_context()
-                return index
-        return len(self.config.get("mapping_entries", ())) + self.mapping_context()
-
     def observer(self, state, registers):
         return state.role == "make" and any(
             start <= registers.rip < end for start, end in state.observer_ranges
@@ -600,13 +433,6 @@ class Policy:
                     resolved.pop()
                 continue
             if follow_final or pending:
-                alias = "/" + "/".join((*resolved, part))
-                if self.mode == "make" and alias in self.config.get("runtime_aliases", ()):
-                    allowed = set(self.config["executables"]) | set(self.config.get("runtime_files", ())) | set(
-                        self.config.get("runtime_parents", ()),
-                    )
-                    if ".." in name.split("/") or posixpath.normpath(name) not in allowed:
-                        raise Violation(f"unrequested stock runtime alias spelling: {name}")
                 try:
                     target = os.readlink(Path(self.config["root"]).joinpath(*resolved, part))
                 except OSError as error:
@@ -652,10 +478,7 @@ class Policy:
         for forbidden in self.config["forbidden_paths"]:
             if path == forbidden or path.startswith(forbidden + "/"):
                 raise Violation(f"nonregular candidate source denied: {path}")
-        source_view = self.config.get("source_view")
-        if not source_view:
-            raise Violation("complete active source view is unavailable")
-        full = Path(source_view) / path.removeprefix("/repo").lstrip("/")
+        full = Path(self.config["root"]) / path.lstrip("/")
         try:
             return full.lstat().st_mode
         except FileNotFoundError:
@@ -664,26 +487,111 @@ class Policy:
     def absent_source(self, state, path, operation):
         if self.source_mode(path) is not None:
             raise Violation(f"undeclared source {operation}: {path}")
-        self.observe_view("type", path)
         self.defer_observation(state, "accessed", path)
 
-    def charge_view(self, size):
+    def charge_metadata(self, size):
         self.observation_bytes += size
         if self.observation_bytes > self.config["observation_limit"]:
-            raise Violation("aggregate source-view observation byte budget exhausted")
+            raise Violation("aggregate metadata observation byte budget exhausted")
 
-    def observe_view(self, kind, path):
-        name = path.removeprefix("/repo").lstrip("/") or "."
-        key = kind, name
-        self.reserve_observation("accessed", kind + ":" + name)
-        observed = view_state(
-            self.config["source_view"], name, kind, self.charge_view,
-            limit=self.config["observation_count"], deadline=self.config["deadline"],
-        )
-        if key in self.view_inputs and self.view_inputs[key] != observed:
-            raise Violation("source view changed during command observation")
-        self.view_inputs[key] = observed
-        return observed
+    def metadata_buffer(self, pid, address, size):
+        if not size:
+            return b""
+        if size > SYSCALL_MEMORY_LIMIT:
+            return None
+        self.charge_metadata(size)
+        if not address:
+            return None
+        try:
+            return memory(pid, address, size)
+        except OSError as error:
+            if error.errno not in {errno.EIO, errno.EFAULT}:
+                raise
+            return None
+
+    def directory_offset(self, pid, descriptor):
+        with open(f"/proc/{pid}/fdinfo/{descriptor}", "rb") as source:
+            data = source.read(4097)
+        self.charge_metadata(len(data))
+        if len(data) > 4096:
+            raise Violation("directory descriptor metadata exceeds bound")
+        match = re.search(rb"^pos:\s+([0-9]+)$", data, re.MULTILINE)
+        if match is None or int(match[1]) >= 1 << 64:
+            raise Violation("directory descriptor has no bounded offset")
+        return int(match[1])
+
+    def begin_metadata(self, pid, state, r, path):
+        if (
+            not (path == "/repo" or path.startswith("/repo/"))
+            or self.mode == "make" and state.role != "helper"
+        ):
+            return
+        number = r.orig_rax
+        flags = mask = size = address = offset = 0
+        if number in {4, 5, 6}:
+            size, address = 144, r.rsi
+        elif number == 138:
+            size, address = 120, r.rsi
+        elif number == 262:
+            size, address, flags = 144, r.rdx, r.r10 & 0xFFFFFFFF
+        elif number == 332:
+            size, address = 256, r.r8
+            flags, mask = r.rdx & 0xFFFFFFFF, r.r10 & 0xFFFFFFFF
+        elif number == 21:
+            flags = r.rsi & 0xFFFFFFFF
+        elif number in {269, 439}:
+            mask = r.rdx & 0xFFFFFFFF
+            flags = r.r10 & 0xFFFFFFFF if number == 439 else 0
+        elif number == 89:
+            size, address = r.rdx, r.rsi
+        elif number == 267:
+            size, address = r.r10, r.rdx
+        elif number in {78, 217}:
+            size, address = r.rdx, r.rsi
+            offset = self.directory_offset(pid, r.rdi)
+        else:
+            return
+        request = (number, path, flags, mask, size, offset)
+        if state.role == "helper":
+            records = self.metadata_authority(state)
+            if not any(tuple(record[:6]) == request for record in records):
+                raise Violation(f"metadata helper request exceeds its recorded operation: {path}")
+            self.reserve_observation("accessed", "revalidation:" + repr(request))
+            state.metadata_pending = (request, address, None)
+        elif self.mode != "make":
+            self.reserve_observation("accessed", "metadata-attempt:" + repr(request))
+            seed = self.metadata_buffer(pid, address, size)
+            state.metadata_pending = (request, address, seed)
+
+    def finish_metadata(self, pid, state, result):
+        pending, state.metadata_pending = state.metadata_pending, None
+        if pending is None:
+            return
+        request, address, before = pending
+        size = request[4]
+        if state.role == "helper":
+            self.charge_metadata(min(size, SYSCALL_MEMORY_LIMIT))
+            return
+        after = self.metadata_buffer(pid, address, size)
+        record = [
+            *request, result,
+            None if before is None else before.hex(),
+            None if after is None else after.hex(),
+        ]
+        payload = json.dumps(record, separators=(",", ":"), ensure_ascii=True).encode("ascii")
+        self.charge_metadata(len(payload))
+        key = hashlib.sha256(payload).hexdigest()
+        self.reserve_observation("accessed", "metadata:" + key)
+        if key not in self.metadata_seen:
+            self.metadata_seen.add(key)
+            self.metadata.append(record)
+
+    def metadata_authority(self, state):
+        index = state.metadata_index
+        entries = self.config.get("mapping_entries", ())
+        if index is None or not 0 <= index < len(entries):
+            return ()
+        return entries[index]["metadata"]
 
     def check_enumeration(self, path):
         if path not in self.enumerations:
@@ -694,13 +602,6 @@ class Policy:
         prefix = path.rstrip("/") + "/"
         if any(name.startswith(prefix) for name in self.config["forbidden_paths"]):
             raise Violation(f"nonregular namespace in source enumeration: {path}")
-        relative = path.removeprefix("/repo").lstrip("/")
-        full = Path(self.config["source_view"]) / relative
-        sparse = Path(self.config["root"]) / "repo" / relative
-        full_stat, sparse_stat = full.stat(), sparse.stat()
-        if (full_stat.st_dev, full_stat.st_ino) != (sparse_stat.st_dev, sparse_stat.st_ino):
-            raise Violation(f"incomplete sparse source enumeration: {path}")
-        self.observe_view("directory", path)
 
     def make_runtime_access(self, state, path, operation):
         if operation in {"read", "metadata"} and path in self.runtime_closure | self.executable | {"/lib/vo-observer.so"}:
@@ -738,6 +639,13 @@ class Policy:
         if state.role == "helper":
             if operation == "metadata" and path in {"/", "/bin", "/usr", "/usr/bin", "/proc/self/exe"}:
                 return
+            records = [record for record in self.metadata_authority(state) if record[1] == path]
+            if records and (
+                operation == "metadata"
+                or operation in {"read", "directory"} and any(record[0] in {78, 217} for record in records)
+            ):
+                self.defer_observation(state, "accessed", path)
+                return
             raise Violation(f"interceptor attempted nonprotocol filesystem access: {path}")
         if self.mode == "make" and state.role == "make" and not state.observer_ready:
             if not (path == "/repo" or path.startswith("/repo/")):
@@ -768,15 +676,6 @@ class Policy:
             if self.mode in {"command", "compile"} and (path == "/work" or path.startswith("/work/")):
                 return
             raise Violation(f"write outside private command output: {path}")
-        if self.mode == "make" and operation == "read" and path in self.config.get("intercepted_runtime", ()):
-            raise Violation("intercepted runtime program is metadata/dispatch only")
-        if self.mode == "make" and (
-            path in self.config.get("runtime_files", ())
-            or operation == "metadata" and path in self.config.get("runtime_parents", ())
-            or any(path.startswith(absent + "/") for absent in self.config.get("runtime_absent", ()))
-        ):
-            self.defer_observation(state, "accessed", path)
-            return
         if self.mode == "make":
             if not (path == "/repo" or path.startswith("/repo/")):
                 self.make_runtime_access(state, path, operation)
@@ -832,22 +731,16 @@ class Policy:
         elif path in self.code:
             self.defer_observation(state, "code_consumed", path.removeprefix("/repo/"))
             return
-        elif self.config.get("dependency_probe") and path.startswith("/repo/") and operation in {"read", "metadata"}:
-            mode = self.source_mode(path)
-            if mode is None:
-                self.observe_view("type", path)
-                self.defer_observation(state, "accessed", path)
-                return
-            if operation == "metadata" and path in (
-                set(self.config["dependency_include_dirs"]) | self.code_dirs | self.source_dirs
-            ) and stat.S_ISDIR(mode):
-                self.defer_observation(state, "accessed", path)
-                return
         elif self.mode == "compile" and operation == "metadata" and path.endswith(".gch") and path[:-4] in self.code:
+            self.absent_source(state, path, operation)
             return
         elif self.mode == "compile" and operation in {"metadata", "read"} and path in self.link_option_probes:
+            self.absent_source(state, path, operation)
             return
         elif path in self.code_dirs | self.source_dirs | self.enumerations:
+            mode = self.source_mode(path)
+            if mode is None or not stat.S_ISDIR(mode):
+                raise Violation(f"source ancestor is not an active directory: {path}")
             return
         elif operation in {"metadata", "read"} and "__pycache__" in path.split("/"):
             # -B prevents cache writes; importlib may probe the absent cache
@@ -894,18 +787,24 @@ class Policy:
         n = r.orig_rax
         a, b, c, d, e = r.rdi, r.rsi, r.rdx, r.r10, r.r8
         state.pending = None
+        state.metadata_pending = None
         state.observations.clear()
         state.observation_needs_bytes = False
         trusted = self.observer(state, r)
-        if n == 39 and a in {VO_READY, VO_DISPATCH, VO_QUERY_KIND, VO_PUBLISH}:
+        if n == 39 and a in {VO_READY, VO_DISPATCH, VO_QUERY_KIND, VO_METADATA}:
             if a == VO_QUERY_KIND:
-                if state.role != "helper" or state.helper_kind not in {VO_RECIPE, VO_VALUE}:
+                if state.role != "helper" or state.helper_kind not in {VO_RECIPE, VO_VALUE, VO_VALIDATE}:
                     raise Violation("unauthenticated interceptor kind query")
                 state.pending = ("helper_kind", state.helper_kind)
-            elif a == VO_PUBLISH:
-                if state.role != "helper" or state.helper_kind != VO_VALUE or c:
-                    raise Violation("unauthenticated generated output publication")
-                state.pending = ("helper_kind", self.resolve_mapping(b))
+            elif a == VO_METADATA:
+                entries = self.config.get("mapping_entries", ())
+                if (
+                    state.role != "helper" or state.helper_kind != VO_VALUE
+                    or not 0 <= b < len(entries) or entries[b]["key"] != f"{c:016x}"
+                ):
+                    raise Violation("unauthenticated metadata mapping request")
+                state.metadata_index = b
+                state.pending = ("helper_kind", 0)
             else:
                 if not trusted:
                     raise Violation("unauthenticated Make dispatch notification")
@@ -933,7 +832,8 @@ class Policy:
             )
             creating = n == 85 or flags & os.O_CREAT or flags & os.O_TMPFILE == os.O_TMPFILE
             writing = creating or bool(flags & (os.O_WRONLY | os.O_RDWR | os.O_TRUNC))
-            self.check(state, path, "write" if writing else "read", observer=trusted)
+            operation = "write" if writing else "metadata" if state.role == "helper" and flags & os.O_PATH else "read"
+            self.check(state, path, operation, observer=trusted)
             if creating:
                 self.reserve_creation()
             state.pending = ("open", path)
@@ -947,13 +847,17 @@ class Policy:
             )
             self.check(state, path, "metadata", observer=trusted)
             state.observation_needs_bytes = n in {89, 267}
+            self.begin_metadata(pid, state, r, path)
         elif n in {5, 138}:  # fstat, fstatfs
-            self.check_fd(state, a, "metadata", r)
+            path = self.check_fd(state, a, "metadata", r)
+            self.begin_metadata(pid, state, r, path)
         elif n in {0, 17, 19}:  # read/pread/readv
-            self.check_fd(state, a, "read", r)
+            path = self.check_fd(state, a, "read", r)
             state.observation_needs_bytes = True
+            if state.role == "helper" and path.startswith("/control/map/") and path.endswith(".meta"):
+                state.pending = ("metadata-input", None)
         elif n in {1, 18, 20}:  # write/pwrite/writev
-            self.check_fd(state, a, "write", r)
+            path = self.check_fd(state, a, "write", r)
             if n == 20:
                 if c > 1024:
                     raise Violation("oversized writev vector")
@@ -964,6 +868,10 @@ class Policy:
             self.written += amount
             if self.written > self.config["write_limit"]:
                 raise Violation("aggregate capsule write budget exhausted")
+            if self.mode == "make" and state.role == "helper" and path == "/control/events":
+                if n != 1 or not 20 <= c <= SYSCALL_MEMORY_LIMIT:
+                    raise Violation("invalid native event write")
+                state.pending = ("event", memory(pid, b, c))
         elif n == 3:
             state.pending = ("close", a)
         elif n in {8, 74, 75, 73}:
@@ -973,6 +881,7 @@ class Policy:
             if c > SYSCALL_MEMORY_LIMIT:
                 raise Violation("directory request exceeds the syscall memory bound")
             state.pending = ("directory", (path, b, c, n == 217))
+            self.begin_metadata(pid, state, r, path)
         elif n == 9:
             descriptor = signed(e)
             kind = d & 0xF
@@ -1036,7 +945,9 @@ class Policy:
                 else:
                     raise Violation("Make execution escaped authenticated native dispatch")
             else:
-                role = "compiler" if self.mode == "compile" else "command"
+                role = "helper" if self.config.get("metadata_validation") else (
+                    "compiler" if self.mode == "compile" else "command"
+                )
             self.reserve_exec(pid, state)
             state.pending = ("exec", role)
         elif n in {56, 57, 58}:
@@ -1179,6 +1090,7 @@ class Policy:
 
     def leave(self, pid, state, r):
         result = signed(r.rax)
+        self.finish_metadata(pid, state, result)
         state.memory_reservation = 0
         state.process_reservation = False
         observations = state.observations
@@ -1204,6 +1116,14 @@ class Policy:
             ptrace(SETREGS, pid, 0, ctypes.byref(r))
         elif operation == "directory":
             self.observe_directory(pid, state, value, result)
+        elif operation == "metadata-input":
+            self.charge_metadata(result)
+        elif operation == "event":
+            if result != len(value):
+                raise Violation("partial native event write")
+            self.charge_metadata(len(value))
+            self.reserve_observation("accessed", "native-event:" + str(len(self.events)))
+            self.events.append(value.hex())
         if not state.observation_needs_bytes or result > 0:
             for collection, path in observations:
                 self.observe(collection, path)
@@ -1273,6 +1193,9 @@ def supervise(config, drop_privileges):
         "make" if config["mode"] == "make" else "compiler" if config["mode"] == "compile" else "command",
         memory_group=pid, pidfd=os.pidfd_open(pid),
     )
+    if config.get("metadata_validation"):
+        processes[pid].helper_kind = VO_VALIDATE
+        processes[pid].metadata_index = 0
     policy.total_processes = 1
     policy.account_processes()
 
@@ -1320,7 +1243,10 @@ def supervise(config, drop_privileges):
                 release_vfork(stopped)
                 if stopped == pid:
                     main_status = code
-                if code != 0 and not (stopped == pid and config["mode"] == "make"):
+                if code != 0 and not (
+                    stopped == pid and (config["mode"] == "make"
+                    or config.get("metadata_validation") and code in {1, 2})
+                ):
                     raise Violation(f"sandbox process exited unsuccessfully: {code}")
                 continue
             sig = os.WSTOPSIG(status)
@@ -1427,9 +1353,8 @@ def supervise(config, drop_privileges):
                 "memory_peak": policy.memory_peak,
                 "observation_bytes": policy.observation_bytes,
                 "observations": sum(map(len, policy.observation_attempts.values())),
-                "view_inputs": [[kind, path, state] for (kind, path), state in sorted(policy.view_inputs.items())],
-                "view_contexts": policy.view_contexts,
-                "final_context": policy.current_context,
+                "metadata": policy.metadata,
+                "events": policy.events,
             }
             Path(config["report"]).write_text(
                 json.dumps(result, sort_keys=True, separators=(",", ":")), encoding="ascii",
