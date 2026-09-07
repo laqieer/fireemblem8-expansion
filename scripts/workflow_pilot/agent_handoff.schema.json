@@ -335,6 +335,38 @@
       }},
       "else": {"properties": {"process": {"properties": {"state": {"const": "exited"}}}}}
     },
+    "coordinatorLocal": {
+      "type": "object", "additionalProperties": false,
+      "required": ["coordinator_id", "repository", "pr_number", "head_sha", "base_sha", "base_ref",
+                   "branch", "worktree", "git_identity", "registered_at", "clock", "required_checks", "checks"],
+      "properties": {
+        "coordinator_id": {"$ref": "#/$defs/id"}, "repository": {"$ref": "#/$defs/repository"},
+        "pr_number": {"$ref": "#/$defs/positive"},
+        "head_sha": {"$ref": "#/$defs/sha"}, "base_sha": {"$ref": "#/$defs/sha"},
+        "base_ref": {"$ref": "#/$defs/text", "maxLength": 256},
+        "branch": {"$ref": "#/$defs/text", "maxLength": 256},
+        "worktree": {"$ref": "#/$defs/absolute"}, "git_identity": {"$ref": "#/$defs/gitIdentity"},
+        "registered_at": {"$ref": "#/$defs/time"}, "clock": {"$ref": "#/$defs/clock"},
+        "required_checks": {
+          "type": "object", "minProperties": 2, "maxProperties": 32,
+          "propertyNames": {"$ref": "#/$defs/id"}, "additionalProperties": {"$ref": "#/$defs/requiredCheck"},
+          "allOf": [
+            {"not": {"additionalProperties": {"properties": {"contract": {"enum": ["protocol-json", "coordinator-check"]}}}}},
+            {"not": {"additionalProperties": {"properties": {"contract": {"enum": ["git-diff-check", "protocol-json"]}}}}}
+          ]
+        },
+        "checks": {
+          "type": "object", "maxProperties": 32, "propertyNames": {"$ref": "#/$defs/id"},
+          "additionalProperties": {
+            "type": "object", "additionalProperties": false, "required": ["definitions", "observation"],
+            "properties": {
+              "definitions": {"$ref": "#/$defs/coordinatorLocal/properties/required_checks"},
+              "observation": {"$ref": "#/$defs/check"}
+            }
+          }
+        }
+      }
+    },
     "candidate": {
       "type": "object", "additionalProperties": false,
       "required": ["pr_number", "head_sha", "base_sha", "base_ref", "decision_oid", "mode",
@@ -352,7 +384,8 @@
         "dispatch_sent_at": {"anyOf": [{"$ref": "#/$defs/time"}, {"type": "null"}]},
         "watermark": {"$ref": "#/$defs/integer"},
         "full_run_id": {"$ref": "#/$defs/nullablePositive"},
-        "full_attempt": {"$ref": "#/$defs/nullablePositive"}
+        "full_attempt": {"$ref": "#/$defs/nullablePositive"},
+        "local_validation": {"$ref": "#/$defs/coordinatorLocal"}
       },
       "allOf": [
         {

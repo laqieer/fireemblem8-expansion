@@ -158,6 +158,15 @@ the consumers' independent protected-principal/deployment requirements.
    dispatch. Observe its exact run/attempt and all full jobs before merge
    eligibility. Missing local, review, security or objective/manual evidence
    remains a hold.
+   Also exercise already-committed coordinator-owned work with no assignments:
+   explicitly register raw Git plus every semantic local criterion, capture
+   their real native results, and require all checks before local readiness.
+   Use actual config/baseline/document validators for the excluded fixture.
+   Reject raw-only/pass-label registration, incomplete/failed captures,
+   changed definitions/check sets, head/base/worktree drift and stale native
+   availability. An applicable incomplete or invalid delegated owner still
+   blocks this alternative. No fixture commit, owner, receipt or LLM PID is
+   manufactured to obtain local proof.
    If host stop settings are unknown, retain explicit nulls in a bounded
    `plan` with concrete recovery steps; never fabricate Boolean settings or
    use unknowns for `always-on`. Expired coverage and native interruption
@@ -313,6 +322,8 @@ modern/archival or manual audiovisual compatibility changes.
 
 `scripts.workflow_pilot.tests.test_adaptive_gate` runs real local Git/handoff,
 typed state, HTTP-response and actual preflight/summary shell controls. The
+`scripts.workflow_pilot.tests.test_coordinator_local` selector exercises
+registered coordinator-owned native checks and their negative controls. The
 existing topology, publisher, metadata, schema and review selectors cover
 their directly coupled integration contracts. The coordinator records the
 actual disposable-PR exercise separately; fixtures are never pilot samples.

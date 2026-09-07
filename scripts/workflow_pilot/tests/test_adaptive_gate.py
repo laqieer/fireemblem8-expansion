@@ -245,6 +245,15 @@ class GateTests(unittest.TestCase):
         self.assertIn("Preserved local/runtime evidence.", body)
         self.assertTrue(report["final_master_build_required"])
 
+    def test_registered_local_criteria_are_not_hidden_by_an_accepted_delegate(self):
+        self.assertTrue(gate._local_ready(self.state, self.pr))
+        gate.register_local_validation(self.state, self.record, self.pr, self.fixture.worktree, {
+            "raw": {"contract": "git-diff-check", "evidence_id": "raw", "inputs": []},
+            "extra": {"contract": "coordinator-check", "evidence_id": "extra", "inputs": []},
+        })
+        self.assertFalse(gate._local_ready(self.state, self.pr))
+        self.assertFalse(self.assess()["dispatchable"])
+
     def test_accepted_finding_abandons_even_if_an_early_or_later_build_passes(self):
         finding = review.Finding(
             "finding", next(iter(self.scope)), "wire", "validators:review-session",

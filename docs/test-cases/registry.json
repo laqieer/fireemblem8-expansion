@@ -2208,6 +2208,10 @@
         {
           "command": "build/host-python/bin/python3 -I -c 'import sys, unittest; sys.path.insert(0, \".\"); unittest.main(module=None)' scripts.workflow_pilot.tests.test_adaptive_gate -v",
           "evidence": "scripts/workflow_pilot/tests/test_adaptive_gate.py"
+        },
+        {
+          "command": "build/host-python/bin/python3 -I -c 'import sys, unittest; sys.path.insert(0, \".\"); unittest.main(module=None)' scripts.workflow_pilot.tests.test_coordinator_local -v",
+          "evidence": "scripts/workflow_pilot/tests/test_coordinator_local.py"
         }
       ]
     },

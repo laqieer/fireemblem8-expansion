@@ -177,8 +177,11 @@ watchers. The existing assignment/handoff and watcher schemas remain valid.
    pagination. A resolved false positive does not turn a failed check green:
    observe the successful exact check. A coordinator-accepted valid security
    or review finding permanently abandons that head.
-4. The existing exact local handoff must be accepted and closed. The
-   coordinator supplies `criteria_ready` only from the existing objective and
+4. Delegated work needs the existing accepted, closed exact local handoff.
+   Coordinator-owned work can instead use the explicit native local-validation
+   registration below; an applicable incomplete/invalid delegation cannot be
+   hidden by that alternative. The coordinator supplies `criteria_ready` only
+   from the existing objective and
    manual audiovisual completion gates. Its default is false. No human review
    gate or audiovisual exception is introduced.
 5. `dispatch_full(client, state_path, pr, assess_callback)` calls the callback
@@ -226,6 +229,48 @@ These APIs consume trusted coordinator observations, not authenticated JSON
 receipts or arbitrary Python callers. They do not offer a broker, signer,
 capability service, source ledger or reviewer fleet. Missing evidence is a
 visible hold, not a pass label.
+
+#### Coordinator-owned local validation
+
+An already-committed coordinator edit does not need an artificial new owner or
+commit. `register_local_validation(state, record, pr, worktree, required_checks)`
+binds the current repository/PR/head/frozen base/base ref/branch and actual Git
+worktree identity to the existing finite check-definition format. The record
+is stored in `candidate.local_validation`, not a second registry. Registration
+requires the existing native availability/clock checks, a clean exact worktree,
+a raw Git check and at least one registered `coordinator-check` semantic
+criterion. An empty assignment list or raw diff alone is never ready.
+
+For each required ID, call
+`capture_local_check(state, record, pr, check_id, trusted_executor)`. Raw Git and
+optional parsed protocol checks use existing #178 primitives; semantic checks
+use the existing trusted executor returning an actual `ProcessResult` and its
+parsed measurements. Candidate JSON cannot supply commands or a passed flag.
+Native PID/exit/RSS belongs to the **check process**, not an LLM owner.
+Unmeasured quantities remain `null`, not guessed zeroes or resource claims.
+
+Every registered check must finish successfully at the same head/base/worktree.
+Each observation retains the complete registered definition set, so changing,
+adding or removing a criterion invalidates even the remaining captures.
+Re-register after changing a criterion or its
+trusted evidence contract; registration clears all prior captures. Capture
+failures replace prior success with explicit incomplete evidence. Git drift,
+missing native process data, stale clocks or unavailable coordinator coverage
+remain non-ready. Use the existing short locked-state transactions; no new
+scheduler or persistence service is needed.
+
+`coordinator_local_ready` validates this local proof only. `_local_ready` keeps
+the delegated path and checks applicable terminal lineage before considering
+direct evidence. An open, rejected or incomplete required delegate still holds.
+Conversely, once direct criteria are explicitly registered, an older accepted
+handoff cannot hide their missing or failed captures.
+Independent review/family evidence, exact security, full Build, objective/manual
+criteria and master gates remain separate; local readiness is not merge permission.
+
+The provider's separate dispatch-tool and `parentAgentTaskId` namespaces, shared
+native log session, and unavailable LLM-owner OS exit/RSS remain unresolved for
+genuine delegated callers. This direct route does not manufacture their equality
+or substitute a check process for a delegated owner.
 
 ### Pilot measurement and rollback
 
