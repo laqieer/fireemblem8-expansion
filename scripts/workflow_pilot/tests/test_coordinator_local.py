@@ -211,8 +211,7 @@ class CoordinatorLocalTests(unittest.TestCase):
     def test_schema_and_runtime_reuse_closed_check_types(self):
         self.complete()
         validator = Draft202012Validator(json.loads(
-            (ROOT / "scripts/workflow_pilot/agent_handoff.schema.json").read_text()),
-            format_checker=handoff.schema_format_checker())
+            (ROOT / "scripts/workflow_pilot/agent_handoff.schema.json").read_text()))
         self.assertTrue(validator.is_valid(self.state))
         handoff.validate_state(self.state)
         for field, value in (("local_ready", True), ("program", "success"), ("checks", []),

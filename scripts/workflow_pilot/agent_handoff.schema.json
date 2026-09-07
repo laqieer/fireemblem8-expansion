@@ -14,10 +14,6 @@
     "sha": {"type": "string", "pattern": "^[0-9a-f]{40}$", "maxLength": 40},
     "text": {"type": "string", "minLength": 1, "maxLength": 16384,
              "not": {"pattern": "[\\uD800-\\uDFFF]"}},
-    "branchRef": {
-      "$ref": "#/$defs/text", "maxLength": 1024, "format": "git-branch-ref",
-      "$comment": "maxLength is a code-point prefilter, not a byte claim. Require agent_handoff.schema_format_checker() (or equivalent git-branch-ref format) for the authoritative Git syntax and 1024 UTF-8 byte bound; runtime validation always enforces it."
-    },
     "time": {
       "type": "string", "format": "date-time",
       "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,6})?Z$",
@@ -101,7 +97,7 @@
         "pull_request": {"$ref": "#/$defs/nullablePositive"},
         "owner_id": {"$ref": "#/$defs/id"}, "session_id": {"$ref": "#/$defs/id"},
         "dispatch_id": {"$ref": "#/$defs/id"}, "assigned_parent_sha": {"$ref": "#/$defs/sha"},
-        "expected_branch": {"$ref": "#/$defs/branchRef"},
+        "expected_branch": {"$ref": "#/$defs/text", "maxLength": 256},
         "allowed_worktree": {"$ref": "#/$defs/absolute"},
         "allowed_scope": {
           "type": "array", "minItems": 1, "maxItems": 256, "uniqueItems": true,
@@ -347,8 +343,8 @@
         "coordinator_id": {"$ref": "#/$defs/id"}, "repository": {"$ref": "#/$defs/repository"},
         "pr_number": {"$ref": "#/$defs/positive"},
         "head_sha": {"$ref": "#/$defs/sha"}, "base_sha": {"$ref": "#/$defs/sha"},
-        "base_ref": {"$ref": "#/$defs/branchRef"},
-        "branch": {"$ref": "#/$defs/branchRef"},
+        "base_ref": {"$ref": "#/$defs/text", "maxLength": 256},
+        "branch": {"$ref": "#/$defs/text", "maxLength": 256},
         "worktree": {"$ref": "#/$defs/absolute"}, "git_identity": {"$ref": "#/$defs/gitIdentity"},
         "registered_at": {"$ref": "#/$defs/time"}, "clock": {"$ref": "#/$defs/clock"},
         "required_checks": {
@@ -379,7 +375,7 @@
       "properties": {
         "pr_number": {"$ref": "#/$defs/positive"},
         "head_sha": {"$ref": "#/$defs/sha"}, "base_sha": {"$ref": "#/$defs/sha"},
-        "base_ref": {"$ref": "#/$defs/branchRef"},
+        "base_ref": {"$ref": "#/$defs/text", "maxLength": 256},
         "decision_oid": {"anyOf": [{"$ref": "#/$defs/sha"}, {"type": "null"}]},
         "mode": {"enum": ["concurrent", "review-first"]},
         "created_at": {"$ref": "#/$defs/time"},

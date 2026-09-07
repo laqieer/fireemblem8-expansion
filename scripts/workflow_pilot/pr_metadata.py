@@ -19,7 +19,7 @@ from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 from typing import Any, Callable, Literal
 
-from . import candidate_evidence, event_classifier, metadata_event
+from . import candidate_evidence, metadata_event
 
 
 MAX_API_BYTES = 4 * 1024 * 1024
@@ -616,12 +616,6 @@ def _text(value: object, field: str, *, optional: bool = False) -> str | None:
         return None
     if not isinstance(value, str) or not value:
         raise MetadataEditError(f"{field} must be nonempty text")
-    return value
-
-
-def _branch_ref(value, field):
-    if not event_classifier._is_git_branch_ref(value):
-        raise MetadataEditError(f"{field} is not a Git branch ref within the UTF-8 byte bound")
     return value
 
 
@@ -1617,8 +1611,8 @@ def _parse_pull_request_payload(
         repo_owner.get("id"),
         "pull request repository owner id",
     )
-    head_ref = _branch_ref(head.get("ref"), "pull request head ref")
-    base_ref = _branch_ref(base.get("ref"), "pull request base ref")
+    head_ref = _text(head.get("ref"), "pull request head ref")
+    base_ref = _text(base.get("ref"), "pull request base ref")
     title = _text(payload.get("title"), "pull request title")
     body = payload.get("body")
     if "body" not in payload or (body is not None and not isinstance(body, str)):
@@ -1946,9 +1940,9 @@ def _fetch_metadata_observation(
     observed = replace(
         state,
         head_sha=_sha(pull.get("headRefOid"), "metadata head"),
-        head_ref=_branch_ref(pull.get("headRefName"), "metadata head ref"),
+        head_ref=_text(pull.get("headRefName"), "metadata head ref"),
         base_sha=_sha(pull.get("baseRefOid"), "metadata base"),
-        base_ref=_branch_ref(pull.get("baseRefName"), "metadata base ref"),
+        base_ref=_text(pull.get("baseRefName"), "metadata base ref"),
         title=_text(pull.get("title"), "metadata title"),
         body=pull["body"],
         updated_at=_github_timestamp(pull.get("updatedAt"), "metadata updatedAt"),
@@ -2751,7 +2745,7 @@ def _parse_run(
         raise MetadataEditError(f"Build run {run_id} event is not a candidate event")
     if _sha(raw.get("head_sha"), f"Build run {run_id} head") != state.head_sha:
         raise MetadataEditError(f"Build run {run_id} head identity drifted")
-    head_branch = _branch_ref(raw.get("head_branch"), f"Build run {run_id} head branch")
+    head_branch = _text(raw.get("head_branch"), f"Build run {run_id} head branch")
     path = _text(raw.get("path"), f"Build run {run_id} path")
     if path != WORKFLOW_PATH and not path.startswith(WORKFLOW_PATH + "@"):
         raise MetadataEditError(f"Build run {run_id} workflow path drifted")

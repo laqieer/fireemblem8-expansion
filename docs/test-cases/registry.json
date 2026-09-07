@@ -2198,13 +2198,13 @@
       "profiles": ["Locked host Python and source checkout", "Coordinator-owned disposable PRs on a dependency-ready base"],
       "purpose": "Change expensive candidate Build timing without reducing review, security, complete candidate/master or manual quality gates.",
       "prerequisites": "Use existing #176 decisions, #178 coordinator/handoff state, #179 task/triage authority and the locked interpreter. Only the delivery coordinator performs remote exercises.",
-      "actions": "Run test_adaptive_gate, test_candidate_identity, test_live_stack, test_refless_runs, test_ref_bounds and test_coordinator_local with directly affected topology/publisher/review/metadata controls. Retain actual historical run refs and complete frozen identities across same-head/base/ref transitions; exercise ASCII/multibyte nested Git refs through router, typed state, format-enabled schema, native checks, canonical marker and summary; validate real parent decisions/ancestry, then execute the documented disposable PR procedure with actual GitHub identities.",
-      "expected_result": "Named-risk/large candidates defer the complete Build until accepted clean exact review/security. The shared 1024-UTF-8-byte branch contract admits supported refs through registration; the percent-encoded marker stays within its derived 3202-byte envelope. One bound full run plus every final criterion is necessary; master retains all eight jobs and its real publisher.",
-      "negative_control": "Unknown decisions and pause retain broader timing. Overlong/malformed refs never strand review-first candidates; maxLength without the documented format is not byte evidence. Accepted findings abandon heads; stale, duplicate, cancelled, unresolved, wrong-source, ref-incomplete and early-dispatch evidence cannot authorize merge. Invalid or unobserved live parent chains remain held.",
+      "actions": "Run test_adaptive_gate, test_candidate_identity, test_live_stack and test_coordinator_local with directly affected topology/publisher/review/metadata controls. Retain actual historical run refs and complete frozen identities across same-head/base/ref transitions; validate real parent decisions/ancestry, then execute the documented disposable PR procedure with actual GitHub identities.",
+      "expected_result": "Named-risk/large candidates defer the complete Build until accepted clean exact review/security. One bound full run plus every final criterion is necessary; master retains all eight jobs and its real publisher.",
+      "negative_control": "Unknown decisions and pause retain broader timing. Accepted findings abandon heads; stale, duplicate, cancelled, unresolved, wrong-source, ref-incomplete and early-dispatch evidence cannot authorize merge. Invalid or unobserved live parent chains remain held.",
       "interactions": "Depends on #176/#177/#178/#179. #180/#206 remain parallel and #196 extraction is later. Preserve trusted pushes, one watcher per run/attempt and audiovisual holds.",
       "save_compatibility": "No gameplay, save/config, locale, generated-game-data, ROM/RAM or archival behavior changes.",
       "cleanup": "Local fixtures remove only owned build paths. Main closes disposable PRs without merging them and uses existing worktree cleanup after active work ends.",
-      "limitations": "Local fixtures are not remote evidence or merged pilot samples; the derived marker bound is not a measured hosted step-name maximum. Actual hosted long-ref evidence must remain untruncated. Owner dispatch remains possible. Three weeks or 20 real post-deployment merged PRs with efficiency/non-inferiority remains future promotion evidence.",
+      "limitations": "Local fixtures are not remote evidence or merged pilot samples. Owner dispatch remains possible. Three weeks or 20 real post-deployment merged PRs with efficiency/non-inferiority remains future promotion evidence.",
       "automation": [
         {
           "command": "build/host-python/bin/python3 -I -c 'import sys, unittest; sys.path.insert(0, \".\"); unittest.main(module=None)' scripts.workflow_pilot.tests.test_adaptive_gate -v",
@@ -2225,10 +2225,6 @@
         {
           "command": "build/host-python/bin/python3 -I -c 'import sys, unittest; sys.path.insert(0, \".\"); unittest.main(module=None)' scripts.workflow_pilot.tests.test_refless_runs -v",
           "evidence": "scripts/workflow_pilot/tests/test_refless_runs.py"
-        },
-        {
-          "command": "build/host-python/bin/python3 -I -c 'import sys, unittest; sys.path.insert(0, \".\"); unittest.main(module=None)' scripts.workflow_pilot.tests.test_ref_bounds -v",
-          "evidence": "scripts/workflow_pilot/tests/test_ref_bounds.py"
         }
       ]
     },

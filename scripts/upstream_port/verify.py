@@ -801,7 +801,6 @@ _CANDIDATE_MARKER_CONDITION = "${{ needs.event-router.outputs.candidate_binding 
 _CANDIDATE_MARKER_COMMANDS = (
     ("[[", "$CANDIDATE_BINDING", "=~",
      "^workflow-pilot-candidate:v1:[1-9][0-9]*:[0-9a-f]{40}:[0-9a-f]{40}(:[A-Za-z0-9._%~-]+)?$", "]]"),
-    ("test", "${#CANDIDATE_BINDING}", "-le", "3202"),
 )
 _PREFLIGHT_STEP_NAME = "Attest review-first preflight"
 _PREFLIGHT_STEP_CONDITION = (
@@ -826,7 +825,6 @@ _PREFLIGHT_COMMANDS = (
     ("[[", "$DECISION_OID", "=~", "^[0-9a-f]{40}$", "]]"),
     ("[[", "$CANDIDATE_BINDING", "=~",
      "^workflow-pilot-candidate:v1:${PR_NUMBER}:${PR_HEAD_SHA}:[0-9a-f]{40}(:[A-Za-z0-9._%~-]+)?$", "]]"),
-    ("test", "${#CANDIDATE_BINDING}", "-le", "3202"),
 )
 _EXPECTED_JOB_OUTPUTS = {
     "event-identity": (

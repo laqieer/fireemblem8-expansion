@@ -818,7 +818,7 @@ class GateTests(unittest.TestCase):
 
     def test_schema_preserves_existing_state_and_bounds_optional_candidate_records(self):
         schema = json.loads((ROOT / "scripts/workflow_pilot/agent_handoff.schema.json").read_text())
-        validator = Draft202012Validator(schema, format_checker=handoff.schema_format_checker())
+        validator = Draft202012Validator(schema)
         self.assertTrue(validator.is_valid(self.state))
         handoff.validate_state(self.state)
         for value in (None, {}, self.state["candidates"] * 129):
@@ -992,8 +992,7 @@ class GateTests(unittest.TestCase):
         observed = observations.load_json(path)
         self.assertEqual(observed["candidates"][0]["abandoned_reason"], "superseded-head-or-base")
         schema = Draft202012Validator(json.loads(
-            (ROOT / "scripts/workflow_pilot/agent_handoff.schema.json").read_text()),
-            format_checker=handoff.schema_format_checker())
+            (ROOT / "scripts/workflow_pilot/agent_handoff.schema.json").read_text()))
         self.assertTrue(schema.is_valid(observed))
         observed["candidates"][0]["dispatch_observed_at"] = None
         self.assertFalse(schema.is_valid(observed))
@@ -1547,7 +1546,6 @@ class DispatchBootstrapTests(unittest.TestCase):
         self.launch.write_text(
             "import json, os, runpy, subprocess, sys\n"
             "from pathlib import Path\n"
-            "sys.dont_write_bytecode = True\n"
             "native = subprocess.run\n"
             "def transport(argv, **kwargs):\n"
             "    if argv[0] != '/usr/bin/gh':\n"

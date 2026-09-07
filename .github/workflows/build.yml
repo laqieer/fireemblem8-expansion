@@ -453,7 +453,6 @@ jobs:
         CANDIDATE_BINDING: ${{ needs.event-router.outputs.candidate_binding }}
       run: |
         [[ "$CANDIDATE_BINDING" =~ ^workflow-pilot-candidate:v1:[1-9][0-9]*:[0-9a-f]{40}:[0-9a-f]{40}(:[A-Za-z0-9._%~-]+)?$ ]]
-        test "${#CANDIDATE_BINDING}" -le 3202
 
   # Fast, host-only lane (issues #13 + #12/#15): exercises every
   # tools/gba-playtest host test -- scenario/schema parsing, generators,
@@ -509,7 +508,6 @@ jobs:
         test "$CLASSIFIED_BASE" = "$PR_BASE_SHA"
         [[ "$DECISION_OID" =~ ^[0-9a-f]{40}$ ]]
         [[ "$CANDIDATE_BINDING" =~ ^workflow-pilot-candidate:v1:${PR_NUMBER}:${PR_HEAD_SHA}:[0-9a-f]{40}(:[A-Za-z0-9._%~-]+)?$ ]]
-        test "${#CANDIDATE_BINDING}" -le 3202
     - name: Attest metadata-only branch-protection continuity
       if: ${{ needs.event-classifier.result == 'success' && needs.event-classifier.outputs.classification == 'metadata-only' }}
       env:
@@ -1069,7 +1067,6 @@ jobs:
         test "$CLASSIFIED_BASE" = "$PR_BASE_SHA"
         [[ "$DECISION_OID" =~ ^[0-9a-f]{40}$ ]]
         [[ "$CANDIDATE_BINDING" =~ ^workflow-pilot-candidate:v1:${PR_NUMBER}:${PR_HEAD_SHA}:[0-9a-f]{40}(:[A-Za-z0-9._%~-]+)?$ ]]
-        test "${#CANDIDATE_BINDING}" -le 3202
     - name: Attest metadata-only branch-protection continuity
       if: ${{ needs.event-classifier.result == 'success' && needs.event-classifier.outputs.classification == 'metadata-only' }}
       env:
@@ -2491,7 +2488,6 @@ jobs:
                               fail("metadata-only summary candidate step is invalid")
                           marker = step.get("name", "")
                           if isinstance(marker, str) and marker.startswith("workflow-pilot-candidate:v1:"):
-                              if len(marker.encode("utf-8")) > 3202: fail("oversize candidate step")
                               if step.get("status") != "completed" or step.get("conclusion") != "success":
                                   fail("metadata-only summary candidate binding did not succeed")
                               candidate_markers.append(marker)
@@ -2531,7 +2527,6 @@ jobs:
                   if match[2] != head_sha:
                       fail("metadata-only summary candidate binding head drifted")
                   ref = urllib.parse.unquote(match[4], errors="strict")
-                  if len(ref.encode("utf-8")) > 1024: fail("oversize candidate ref")
                   if urllib.parse.quote(ref, safe="") != match[4]:
                       fail("noncanonical candidate base ref")
                   if ref != env("PR_BASE_REF", max_bytes=1024):

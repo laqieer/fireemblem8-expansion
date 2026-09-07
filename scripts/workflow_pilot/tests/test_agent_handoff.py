@@ -10,7 +10,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest import mock
 
-from jsonschema import Draft202012Validator, ValidationError
+from jsonschema import Draft202012Validator, FormatChecker, ValidationError
 
 from scripts.workflow_pilot import agent_handoff as handoff
 from scripts.workflow_pilot import coordinator_observations as observations
@@ -747,7 +747,7 @@ class HandoffSchemaTests(unittest.TestCase):
     def setUpClass(cls):
         cls.schema = json.loads((ROOT / "scripts/workflow_pilot/agent_handoff.schema.json").read_text())
         Draft202012Validator.check_schema(cls.schema)
-        cls.validator = Draft202012Validator(cls.schema, format_checker=handoff.schema_format_checker())
+        cls.validator = Draft202012Validator(cls.schema, format_checker=FormatChecker())
 
     def setUp(self):
         self.fixture = GitFixture()

@@ -13,7 +13,6 @@ import sys
 from pathlib import Path
 
 from scripts.workflow_pilot import coordinator_observations as observations
-from scripts.workflow_pilot import event_classifier
 from scripts.workflow_pilot import raw_diff_check as git
 
 
@@ -51,19 +50,6 @@ def text(value, *, nullable=False, maximum=16384, pattern=None):
     require(not any(0xD800 <= ord(char) <= 0xDFFF for char in value), "invalid Unicode scalar")
     if pattern is not None:
         require(pattern.fullmatch(value) is not None, "invalid string format")
-
-
-def branch_ref(value):
-    require(type(value) is str and event_classifier._is_git_branch_ref(value),
-            "invalid Git branch ref or UTF-8 byte bound")
-
-
-def schema_format_checker():
-    """JSON Schema formats are opt-in; use the same byte-aware ref predicate."""
-    from jsonschema import FormatChecker
-    checker = FormatChecker()
-    checker.checks("git-branch-ref")(event_classifier._is_git_branch_ref)
-    return checker
 
 
 def integer(value, *, minimum=0, maximum=2**63 - 1, nullable=False):
@@ -156,7 +142,7 @@ def validate_assignment(value):
     integer(value["issue"], minimum=1)
     integer(value["pull_request"], minimum=1, nullable=True)
     sha(value["assigned_parent_sha"])
-    branch_ref(value["expected_branch"])
+    text(value["expected_branch"], maximum=256)
     absolute_path(value["allowed_worktree"])
     for scope in items(value["allowed_scope"], maximum=256, minimum=1, unique=True):
         path(scope, prefix=True)
