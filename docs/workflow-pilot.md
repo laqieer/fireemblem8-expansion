@@ -324,6 +324,44 @@ translates expected CLI timeout/launch errors once into its existing
 diagnostics. Unexpected programming exceptions are not relabeled as ordinary
 tool unavailability.
 
+### Owned review-process cleanup
+
+[Issue #223](https://github.com/laqieer/fireemblem8-expansion/issues/223) fixes
+ordinary subprocess lifetime, not the withdrawn #204 capsule. The current
+Linux runner in `raw_diff_check.py` is shared by the real command, native and
+staged-worker paths. Their execution deadlines remain **60, 20 and 240
+seconds**, respectively. It preserves real exit status and binary stdout/stderr,
+including successful diagnostics, and bounds combined output to 4 MiB.
+Its additive `input` option accepts at most 4 MiB of bytes, writes while draining
+output, delivers EOF, and handles a reader closing its pipe without deadlock.
+
+Each outer invocation creates its own session. Nested review commands use
+`new_session=False` to create a private child group inside that session, not a
+second session invisible to outer cancellation. The runner retains the
+waitable leader identity, signals only kernel handles whose session/group
+belongs to that invocation, and adopts/reaps ordinary descendants. Early leader
+exit and closed stdio are not proof that owned work has finished. Timeout,
+output overage and interruption finish this cleanup before returning or
+raising; the caller's group and unrelated processes remain untouched.
+The prior process-wide subreaper state and default signal handlers are restored;
+overlapping exact-tool module instances share only that resource accounting.
+
+Cleanup has a separate five-second confirmation bound. If owned termination
+cannot be verified, `ProcessCleanupError` yields unavailable observations and
+retains the staged directory named in the diagnostic, rather than deleting
+possibly active work. Ordinary timeouts remain unavailable/zero-check evidence;
+actual native assertion failures remain contract violations.
+
+Both coordinator loading and worker staging obtain the shared runner from the
+selected exact **tool** Git tree. A missing, dirty or different candidate
+checkout helper cannot replace those bytes. There is no new JSON request field,
+case registry, package, job, publication control or #181 result contract.
+These are ordinary Linux process/session controls, not a PID registry, daemon,
+namespace/cgroup service, signer or hostile-code isolation system. Deliberate
+descendant escape, abrupt coordinator `SIGKILL` and arbitrary host mutation
+remain outside the contract. Game, save, generated-data, locale, ROM/RAM and
+modern/archival profiles are unaffected.
+
 ### Finite coverage and actual evidence
 
 | Family | Required roles |

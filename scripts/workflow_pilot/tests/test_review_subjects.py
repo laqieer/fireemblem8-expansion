@@ -726,7 +726,7 @@ class SubjectTests(SubjectTestCase):
     def test_worker_record_types_and_missing_fields_reject_before_admission(self):
         members = self.tools.members(self.scope("session"))
         payload = json.dumps([item.probe for item in members]).encode()
-        run = subprocess.run
+        run = self.tools.subjects.run_process
         captured = []
 
         def capture(*args, **kwargs):
@@ -735,7 +735,7 @@ class SubjectTests(SubjectTestCase):
                 captured.append(json.loads(completed.stdout))
             return completed
 
-        with patch.object(subprocess, "run", side_effect=capture):
+        with patch.object(self.tools.subjects, "run_process", side_effect=capture):
             observations = self.tools.run_obligations(members, self.repo.base)
             self.assert_satisfied(observations)
         self.assertEqual(len(captured), 1)
@@ -770,7 +770,7 @@ class SubjectTests(SubjectTestCase):
                         return subprocess.CompletedProcess(args[0], 0, raw, b"")
                     return run(*args, **kwargs)
 
-                with patch.object(subprocess, "run", side_effect=corrupt):
+                with patch.object(self.tools.subjects, "run_process", side_effect=corrupt):
                     with self.assertRaises(ValueError):
                         self.tools.run_obligations(members, self.repo.base)
 
@@ -810,7 +810,7 @@ class SubjectTests(SubjectTestCase):
                               if item.probe.startswith("aoe-arm:" if kind == "arm-object"
                                                        else "generated-")}
                     payload = json.dumps([item.probe for item in members]).encode()
-                    run = subprocess.run
+                    run = tools.subjects.run_process
                     captured = []
 
                     def capture(*args, **kwargs):
@@ -819,7 +819,7 @@ class SubjectTests(SubjectTestCase):
                             captured.extend(json.loads(completed.stdout))
                         return completed
 
-                    with patch.object(subprocess, "run", side_effect=capture):
+                    with patch.object(tools.subjects, "run_process", side_effect=capture):
                         with self.assertRaisesRegex(ValueError, "kind"):
                             tools.run_obligations(members, candidate)
                     actual = [row for row in captured if row["probe"] in probes]

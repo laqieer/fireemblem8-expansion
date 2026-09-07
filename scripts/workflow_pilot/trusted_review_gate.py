@@ -125,7 +125,7 @@ class GitTree:
 def load_tools(tree: GitTree):
     package = importlib.import_module("scripts.workflow_pilot")
     loaded = []
-    for name in MODULES:
+    for name in ("raw_diff_check", *MODULES):
         qualified = "scripts.workflow_pilot." + name
         module = types.ModuleType(qualified)
         module.__file__ = str(tree.root / ("scripts/workflow_pilot/" + name + ".py"))
@@ -134,7 +134,8 @@ def load_tools(tree: GitTree):
         setattr(package, name, module)
         source = tree.read("scripts/workflow_pilot/" + name + ".py")
         exec(compile(source, tree.revision + ":" + name, "exec"), module.__dict__)
-        loaded.append(module)
+        if name in MODULES:
+            loaded.append(module)
     return tuple(loaded)
 
 
@@ -262,6 +263,7 @@ class ReviewTools:
         probes = {item.probe for item in members}
         tree.materialize(root, sorted(paths))
         tool_paths = ("scripts/workflow_pilot/__init__.py",
+                      "scripts/workflow_pilot/raw_diff_check.py",
                       self.subjects.REVIEW_SOURCE, "scripts/workflow_pilot/review_subjects.py",
                       self.subjects.AOE_DRIVER, self.subjects.AOE_DISABLED)
         self.tool_tree.materialize(root, tool_paths)
@@ -283,8 +285,10 @@ class ReviewTools:
                    for item in members}
         build = self.subject_root / "build"
         build.mkdir(exist_ok=True)
-        with tempfile.TemporaryDirectory(prefix="review-family-", dir=build) as directory:
-            root = Path(directory)
+        directory = tempfile.TemporaryDirectory(prefix="review-family-", dir=build, delete=False)
+        cleanup = True
+        try:
+            root = Path(directory.name)
             self._stage(tree, root, members)
             home = root / "build/home"
             home.mkdir()
@@ -294,17 +298,23 @@ class ReviewTools:
                 **self.arm_tools,
             }
             try:
-                completed = subprocess.run(
+                completed = self.subjects.run_process(
                     [sys.executable, "-I", "-B", "-c", WORKER_CODE, str(root)],
                     input=json.dumps(probes).encode(), cwd=root, env=environment,
-                    capture_output=True, timeout=240)
+                    timeout=240)
                 model.require(completed.returncode == 0, "probe process failed: " +
                               completed.stderr.decode(errors="replace")[-2000:])
                 rows = model.parse_json(completed.stdout)
             except (OSError, ValueError, subprocess.TimeoutExpired) as error:
+                cleanup = not isinstance(error, self.subjects.ProcessCleanupError)
                 rows = [{"probe": probe, "verdict": "unavailable", "checks": 0,
-                         "kind": None, "detail": str(error)[:model.MAX_DETAIL], "blocked_by": []}
+                         "kind": None, "detail": (
+                             str(error) + ("" if cleanup else f"; staging retained at {root}")
+                         )[:model.MAX_DETAIL], "blocked_by": []}
                         for probe in probes]
+        finally:
+            if cleanup:
+                directory.cleanup()
         model.require(isinstance(rows, list) and len(rows) == len(probes),
                       "missing/extra probe observations")
         for row in rows:
