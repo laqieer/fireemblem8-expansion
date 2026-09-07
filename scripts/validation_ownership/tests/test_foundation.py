@@ -1364,6 +1364,56 @@ raise AssertionError("default termination was lost")
             )
         budget.close()
 
+    def test_live_gitlink_snapshot_rechecks_presence_type_and_empty_admission(self):
+        module, pins = self.gitlink_fixture()
+        self.add("Makefile", "VALUE := $(if $(wildcard module),present,absent)\nall: ;\n")
+        self.gitlink_git(self.root, "add", "Makefile")
+        self.gitlink_git(self.root, "update-index", "--add", "--cacheinfo", f"160000,{pins[-1]},module")
+        self.gitlink_git(self.root, "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid",
+                         "-c", "commit.gpgsign=false", "commit", "--quiet", "-m", "admitted module")
+        live = self.root / "module"
+        for transition in ("unchanged", "absent", "file", "symlink", "nonempty", "appeared"):
+            with self.subTest(transition=transition):
+                budget = ProbeBudget(Limits(seconds=30))
+                if transition != "appeared":
+                    live.mkdir()
+                try:
+                    entries = git_tree_entries(self.root, None, budget=budget)
+                    if transition == "appeared":
+                        live.mkdir()
+                    elif transition != "unchanged":
+                        live.rmdir()
+                        if transition == "file":
+                            live.write_text("not a directory")
+                        elif transition == "symlink":
+                            live.symlink_to(module)
+                        elif transition == "nonempty":
+                            live.mkdir()
+                            (live / "unadmitted.txt").write_text("not an admitted source")
+                    loader = AuthorityLoader(self.root, entries, budget=budget)
+                    if transition not in ("unchanged", "absent"):
+                        with self.assertRaises(MakeProbeError):
+                            Snapshot(loader, budget)
+                    else:
+                        with ProbeSession(loader, scratch_root=self.scratch, budget=budget) as session:
+                            absent = transition == "absent"
+                            self.assertEqual("module" in session.snapshot.absent_paths, absent)
+                            self.assertEqual("module" in session.snapshot.gitlink_roots, not absent)
+                            self.assertEqual((session.tree / "module").exists(), not absent)
+                            result = session.make("all", variables=("VALUE",))
+                            self.assertEqual(result.semantics["domains"]["VALUE"]["value"],
+                                             "absent" if absent else "present")
+                        self.assert_clean(session)
+                finally:
+                    budget.close()
+                    if live.is_symlink() or live.is_file():
+                        live.unlink()
+                    elif live.is_dir():
+                        unexpected = live / "unadmitted.txt"
+                        if unexpected.exists():
+                            unexpected.unlink()
+                        live.rmdir()
+
     def test_make_uncaptured_runtime_file_cannot_select_a_false_absence_branch(self):
         path = f"/usr/lib/python{sys.version_info.major}.{sys.version_info.minor}/os.py"
         self.assertTrue(Path(path).is_file())

@@ -7,7 +7,7 @@ replace, or skip validation.
 
 This delivery is the static, single-view core. Optional producer, view,
 runtime-input and dependency-compiler contracts are allocated to #225--#228,
-not exposed as core APIs. See the [complete allocation](ownership-probe-allocation.json)
+not exposed as core APIs. See the [archived delivery allocation](https://github.com/laqieer/fireemblem8-expansion/blob/56e0a206ffae088b0dbc1fe8aa6339a8ee820f33/docs/ownership-probe-allocation.json)
 and [downstream boundary](#contract-allocation-and-downstream-integration).
 
 ## Run the real consumer
@@ -697,8 +697,9 @@ change its namespace policy to manufacture the result.
 This is the complete single-view static execution/source/registry/resource/
 cleanup foundation, not the #180 graph or a reduced replacement for its
 acceptance. Its real immutable and HEAD-admitted live consumer must work.
-The exact selector/API/documentation allocation is
-[`ownership-probe-allocation.json`](ownership-probe-allocation.json).
+The exact historical selector/API/documentation allocation is preserved in the
+[delivery evidence](https://github.com/laqieer/fireemblem8-expansion/blob/56e0a206ffae088b0dbc1fe8aa6339a8ee820f33/docs/ownership-probe-allocation.json),
+not maintained as an operational ledger in the current source tree.
 
 The integrated reference
 `d9bc40da63b843934b340734eb1fe0e1bc61a6d3` is explicitly **unapproved**. Its

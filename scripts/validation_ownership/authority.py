@@ -159,9 +159,7 @@ def _live_tree_entries(root, budget):
         elif entry.mode == "160000":
             if not stat.S_ISDIR(mode):
                 raise MakeProbeError("live gitlink is not an actual directory")
-            with os.scandir(root / name) as stream:
-                if next(stream, None) is not None:
-                    raise MakeProbeError("nonempty live gitlink requires explicit source-path admission")
+            _require_empty_live_gitlink(root, name)
             directories.add(name)
             result[name] = entry
         elif stat.S_ISREG(mode):
@@ -193,6 +191,36 @@ def _live_mode(root, name):
     except OSError as error:
         raise MakeProbeError("unsafe live source inventory") from error
     finally:
+        os.close(descriptor)
+
+
+def _require_empty_live_gitlink(root, name):
+    descriptor = os.open(root, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    directory = None
+    try:
+        parts = relative_path(name).split("/")
+        for part in parts[:-1]:
+            following = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=descriptor)
+            os.close(descriptor)
+            descriptor = following
+        directory = os.open(parts[-1], os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=descriptor)
+        before = os.fstat(directory)
+        with os.scandir(directory) as stream:
+            if next(stream, None) is not None:
+                raise MakeProbeError("nonempty live gitlink requires explicit source-path admission")
+        after = os.fstat(directory)
+        current = os.stat(parts[-1], dir_fd=descriptor, follow_symlinks=False)
+        if (
+            (before.st_dev, before.st_ino, before.st_mtime_ns, before.st_ctime_ns)
+            != (after.st_dev, after.st_ino, after.st_mtime_ns, after.st_ctime_ns)
+            or (current.st_dev, current.st_ino) != (after.st_dev, after.st_ino)
+        ):
+            raise MakeProbeError("live gitlink changed while checking its empty namespace")
+    except OSError as error:
+        raise MakeProbeError("live gitlink is not an actual stable directory") from error
+    finally:
+        if directory is not None:
+            os.close(directory)
         os.close(descriptor)
 
 
@@ -408,9 +436,14 @@ class Snapshot:
             relative_path(name)
             if loader.revision is None and _live_mode(loader.root, name) is None:
                 self.absent_paths.add(name)
+                self.gitlink_roots.discard(name)
                 budget.charge("snapshot", len(name.encode("utf-8")) + 64)
                 records.append((name, "absent"))
                 continue
+            if loader.revision is None and entry.mode == "160000":
+                if name not in loader.entries.live_directories:
+                    raise MakeProbeError("live gitlink presence changed after admission")
+                _require_empty_live_gitlink(loader.root, name)
             if entry.mode in {"100644", "100755"} and entry.object_type == "blob":
                 data = immutable[name] if loader.revision is not None else loader.read_blob(name, "execution snapshot")
                 budget.charge(

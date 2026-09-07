@@ -3197,8 +3197,13 @@ Generated reconstruction changes inode/ctime/timestamps and remains a held
 #225 requirement, not an implemented static-core success.
 
 The complete unapproved reference and every original selector/procedure
-allocation are recorded in
-[`ownership-probe-allocation.json`](../ownership-probe-allocation.json).
+allocation are preserved as
+[historical delivery evidence](https://github.com/laqieer/fireemblem8-expansion/blob/56e0a206ffae088b0dbc1fe8aa6339a8ee820f33/docs/ownership-probe-allocation.json),
+not a current runtime or validation authority.
+Between live admission and snapshot construction, an empty gitlink becoming
+absent must remain absent in the materialized view and actual Make result.
+A newly appearing, replaced non-directory or nonempty unadmitted namespace
+must reject rather than become a fabricated empty directory.
 Core, P/V/R/D and #180 retain their assigned positive/adversarial requirements;
 no optional API is silently removed or claimed delivered.
 
