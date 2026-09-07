@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass, replace
 import base64
+import copy
 import hashlib
 import json
 from pathlib import Path
@@ -254,7 +255,10 @@ def validate_candidate_records(records):
     for record in handoff.items(records, maximum=MAX_CANDIDATES):
         handoff.fields(record, "pr_number head_sha base_sha base_ref decision_oid mode created_at "
                        "abandoned_reason dispatch_requested_at dispatch_sent_at watermark "
-                       "full_run_id full_attempt")
+                       "full_run_id full_attempt"
+                       + (" local_validation" if isinstance(record, dict) and "local_validation" in record else ""))
+        if "local_validation" in record:
+            validate_local_validation(record["local_validation"])
         handoff.integer(record["pr_number"], minimum=1)
         for key in ("head_sha", "base_sha"):
             handoff.sha(record[key])
@@ -314,14 +318,164 @@ def begin_candidate(state, pr, base, decision):
     return record
 
 
+def _validate_local_checks(checks):
+    handoff.validate_required_checks(checks)
+    require(any(check["contract"] == "coordinator-check" for check in checks.values()),
+            "coordinator validation requires registered semantic checks, not raw diff alone")
+
+
+def validate_local_validation(local):
+    handoff.fields(local, "coordinator_id repository pr_number head_sha base_sha base_ref branch worktree "
+                   "git_identity registered_at clock required_checks checks")
+    handoff.text(local["coordinator_id"], maximum=128, pattern=handoff.ID_RE)
+    handoff.text(local["repository"], maximum=256, pattern=observations.REPOSITORY_RE)
+    handoff.integer(local["pr_number"], minimum=1)
+    for key in ("head_sha", "base_sha"):
+        handoff.sha(local[key])
+    for key in ("base_ref", "branch"):
+        handoff.text(local[key], maximum=256)
+    handoff.absolute_path(local["worktree"])
+    handoff.timestamp(local["registered_at"])
+    handoff.validate_clock(local["clock"])
+    require(local["registered_at"] == local["clock"]["at"], "local registration clock mismatch")
+    handoff.fields(local["git_identity"], "worktree git_dir common_dir device inode")
+    for key in ("worktree", "git_dir", "common_dir"):
+        handoff.absolute_path(local["git_identity"][key])
+    for key in ("device", "inode"):
+        handoff.integer(local["git_identity"][key])
+    _validate_local_checks(local["required_checks"])
+    for check_id, captured in handoff.named_records(local["checks"]):
+        handoff.fields(captured, "definitions observation")
+        handoff.validate_check(captured["observation"])
+        require(captured["observation"]["id"] == check_id, "captured check ID mismatch")
+        _validate_local_checks(captured["definitions"])
+
+
+def _local_delegations(state, pr):
+    predecessors = {entry["assignment"]["predecessor_id"] for entry in state["assignments"]}
+    return [entry for entry in state["assignments"]
+            if entry["assignment"]["id"] not in predecessors
+            and entry["assignment"]["repository"] == pr.repository
+            and (entry["assignment"]["pull_request"] == pr.number
+                 or (entry["assignment"]["pull_request"] is None
+                     and entry["assignment"]["expected_branch"] == pr.head_ref))]
+
+
+def _delegation_incomplete(entries):
+    return any(entry["closed_at"] is None or entry["validation"] is None
+               or not entry["validation"]["handoff_ready"] for entry in entries)
+
+
+def _coordinator_git(state, record, pr, worktree):
+    handoff.summarize_handoffs(state)
+    require(not handoff.availability_errors(state, observations.utc_now()), "coordinator availability unavailable")
+    require(record in state.get("candidates", ()) and state["repository"] == pr.repository
+            and (record["pr_number"], record["head_sha"], record["base_ref"]) ==
+            (pr.number, pr.head_sha, pr.base_ref), "local candidate identity changed")
+    require(not _delegation_incomplete(_local_delegations(state, pr)),
+            "applicable delegated handoff is incomplete or invalid")
+    require(record["abandoned_reason"] is None, "candidate is abandoned")
+    current = handoff.observe_git({"allowed_worktree": str(worktree)})
+    require(current["head"] == pr.head_sha and current["branch"] == pr.head_ref
+            and not current["dirty_paths"] and not current["conflicting"], "local worktree/head changed")
+    bases = handoff._git(Path(worktree), "merge-base", "--all", pr.base_sha, pr.head_sha).decode().splitlines()
+    require(bases == [record["base_sha"]], "local candidate merge base changed")
+    return current
+
+
+def register_local_validation(state, record, pr, worktree, required_checks):
+    """Declare coordinator-owned checks; this does not create an owner or handoff."""
+    current = _coordinator_git(state, record, pr, worktree)
+    clock = observations.clock_observation()
+    local = {
+        "coordinator_id": state["coordinator_id"], "repository": pr.repository, "pr_number": pr.number,
+        "head_sha": pr.head_sha, "base_sha": record["base_sha"], "base_ref": pr.base_ref,
+        "branch": pr.head_ref, "worktree": str(worktree), "git_identity": current["identity"],
+        "registered_at": clock["at"], "clock": clock,
+        "required_checks": copy.deepcopy(required_checks), "checks": {},
+    }
+    validate_local_validation(local)
+    record["local_validation"] = local
+    return local
+
+
+def _registered_local(state, record, pr):
+    local = record.get("local_validation")
+    require(local is not None, "coordinator local checks are not registered")
+    validate_local_validation(local)
+    require((local["coordinator_id"], local["repository"], local["pr_number"], local["head_sha"],
+             local["base_sha"], local["base_ref"], local["branch"]) ==
+            (state["coordinator_id"], pr.repository, pr.number, pr.head_sha,
+             record["base_sha"], pr.base_ref, pr.head_ref), "registered local identity changed")
+    require(not handoff.availability_errors({**state, "clock": local["clock"]}, observations.utc_now()),
+            "registered local clock is stale")
+    current = _coordinator_git(state, record, pr, local["worktree"])
+    require(current["identity"] == local["git_identity"], "registered worktree identity changed")
+    return local
+
+
+def capture_local_check(state, record, pr, check_id, trusted_executor=None):
+    local = _registered_local(state, record, pr)
+    definitions = copy.deepcopy(local["required_checks"])
+    require(check_id in definitions, "unknown registered local check")
+    context = {"allowed_worktree": local["worktree"], "assigned_parent_sha": local["base_sha"],
+               "required_checks": definitions}
+    entry = {"assignment": context, "checks": []}
+    local["checks"].pop(check_id, None)
+    started = observations.utc_now()
+    try:
+        check = handoff.capture_check(entry, check_id, pr.head_sha, trusted_executor, task_owned=False)
+        require(_registered_local(state, record, pr) is local
+                and local["required_checks"] == definitions, "registered check set changed during capture")
+    except (OSError, ValueError) as error:
+        check = {"id": check_id, "evidence_id": definitions[check_id]["evidence_id"],
+                 "contract": definitions[check_id]["contract"], "parent_sha": local["base_sha"],
+                 "result_sha": pr.head_sha, "worktree": local["worktree"], "started_at": started,
+                 "completed_at": None, "exit_code": None, "pid": None, "peak_rss_bytes": None,
+                 "measurements": dict.fromkeys(handoff.METRICS),
+                 "detail": "local capture unavailable: " + str(error)[:2000]}
+        handoff.validate_check(check)
+    local["checks"][check_id] = {"definitions": definitions, "observation": check}
+    return check
+
+
+def coordinator_local_ready(state, record, pr):
+    try:
+        local = _registered_local(state, record, pr)
+        if set(local["checks"]) != set(local["required_checks"]):
+            return False
+        for check_id, definition in local["required_checks"].items():
+            captured = local["checks"][check_id]
+            check = captured["observation"]
+            if (captured["definitions"] != local["required_checks"]
+                    or any(check[key] != expected for key, expected in (
+                        ("contract", definition["contract"]), ("evidence_id", definition["evidence_id"]),
+                        ("parent_sha", local["base_sha"]), ("result_sha", local["head_sha"]),
+                        ("worktree", local["worktree"])))
+                    or check["exit_code"] != 0 or check["completed_at"] is None
+                    or handoff.timestamp(check["started_at"]) < handoff.timestamp(local["registered_at"])
+                    or handoff.timestamp(check["completed_at"]) > handoff.timestamp(observations.utc_now())
+                    or (definition["contract"] != "protocol-json"
+                        and (check["pid"] is None or check["peak_rss_bytes"] is None))):
+                return False
+        return True
+    except (OSError, ValueError):
+        return False
+
+
 def _local_ready(state, pr):
     handoff.summarize_handoffs(state)
-    return any(entry["validation"] is not None and entry["validation"]["handoff_ready"]
-               and entry["validation"]["result_sha"] == pr.head_sha and entry["closed_at"] is not None
-               and entry["assignment"]["repository"] == pr.repository
-               and entry["assignment"]["pull_request"] in (None, pr.number)
-               and entry["assignment"]["expected_branch"] == pr.head_ref
-               for entry in state["assignments"])
+    delegated = _local_delegations(state, pr)
+    if _delegation_incomplete(delegated):
+        return False
+    registered = [record for record in state.get("candidates", ())
+                  if record["pr_number"] == pr.number and record["head_sha"] == pr.head_sha
+                  and record["base_ref"] == pr.base_ref and record["abandoned_reason"] is None
+                  and "local_validation" in record]
+    if registered:
+        return len(registered) == 1 and coordinator_local_ready(state, registered[0], pr)
+    return any(entry["validation"]["result_sha"] == pr.head_sha
+               and entry["assignment"]["expected_branch"] == pr.head_ref for entry in delegated)
 
 
 def assess_candidate(state, record, decision, pr, session, facts, triage, checks, runs,
