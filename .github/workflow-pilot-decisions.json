@@ -55,9 +55,13 @@
     },
     {
       "pull_request": 229,
-      "risk_boundaries": [],
+      "risk_boundaries": [
+        "none"
+      ],
       "threshold": {
-        "triggers": [],
+        "triggers": [
+          "none"
+        ],
         "override_history": []
       },
       "gate_mode": "concurrent",
