@@ -1,1 +1,1 @@
-"""Workflow-efficiency pilot measurement and decision contracts."""
+"""Workflow-pilot measurement, decision, and coordination contracts."""

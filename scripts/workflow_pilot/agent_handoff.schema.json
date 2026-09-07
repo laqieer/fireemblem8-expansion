@@ -1,0 +1,351 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/laqieer/fireemblem8-expansion/agent-handoff-v3",
+  "title": "Bounded handoff records (coordinator observations are not authenticated)",
+  "oneOf": [
+    {"$ref": "#/$defs/assignment"},
+    {"$ref": "#/$defs/result"},
+    {"$ref": "#/$defs/state"},
+    {"$ref": "#/$defs/verdict"}
+  ],
+  "$defs": {
+    "id": {"type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[A-Za-z0-9_.:-]{1,128}$",
+           "not": {"pattern": "[^A-Za-z0-9_.:-]"}},
+    "sha": {"type": "string", "pattern": "^[0-9a-f]{40}$", "maxLength": 40},
+    "text": {"type": "string", "minLength": 1, "maxLength": 16384,
+             "not": {"pattern": "[\\uD800-\\uDFFF]"}},
+    "time": {
+      "type": "string", "format": "date-time",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,6})?Z$",
+      "maxLength": 27
+    },
+    "integer": {"type": "integer", "minimum": 0, "maximum": 9223372036854775807},
+    "positive": {"type": "integer", "minimum": 1, "maximum": 9223372036854775807},
+    "exit": {"type": ["integer", "null"], "minimum": -128, "maximum": 255},
+    "nullableInteger": {"anyOf": [{"$ref": "#/$defs/integer"}, {"type": "null"}]},
+    "nullablePositive": {"anyOf": [{"$ref": "#/$defs/positive"}, {"type": "null"}]},
+    "nullableText": {"anyOf": [{"$ref": "#/$defs/text"}, {"type": "null"}]},
+    "repository": {
+      "type": "string", "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$", "maxLength": 256,
+      "not": {"pattern": "[^A-Za-z0-9_./-]"}
+    },
+    "path": {
+      "$ref": "#/$defs/text", "maxLength": 4096,
+      "not": {"anyOf": [
+        {"pattern": "^/"}, {"pattern": "\\\\|\\u0000|//"},
+        {"pattern": "(^|/)\\.{1,2}(/|(?![\\s\\S]))"}, {"pattern": "/(?![\\s\\S])"}
+      ]}
+    },
+    "scope": {
+      "$ref": "#/$defs/text", "maxLength": 4096,
+      "not": {"anyOf": [
+        {"pattern": "^/"}, {"pattern": "\\\\|\\u0000|//"},
+        {"pattern": "(^|/)\\.{1,2}(/|(?![\\s\\S]))"}
+      ]}
+    },
+    "absolute": {
+      "$ref": "#/$defs/text", "minLength": 2, "maxLength": 4096, "pattern": "^/",
+      "not": {"anyOf": [
+        {"pattern": "\\u0000|//"}, {"pattern": "(^|/)\\.{1,2}(/|(?![\\s\\S]))"},
+        {"pattern": "/(?![\\s\\S])"}
+      ]}
+    },
+    "ids": {"type": "array", "maxItems": 128, "uniqueItems": true, "items": {"$ref": "#/$defs/id"}},
+    "evidenceIds": {
+      "type": "array", "minItems": 1, "maxItems": 32, "uniqueItems": true,
+      "items": {"$ref": "#/$defs/id"}
+    },
+    "criterion": {
+      "type": "object", "additionalProperties": false, "required": ["text", "evidence_ids"],
+      "properties": {"text": {"$ref": "#/$defs/text"}, "evidence_ids": {"$ref": "#/$defs/evidenceIds"}}
+    },
+    "requiredCheck": {
+      "type": "object", "additionalProperties": false,
+      "required": ["contract", "evidence_id", "inputs"],
+      "properties": {
+        "contract": {"enum": ["git-diff-check", "protocol-json", "coordinator-check"]},
+        "evidence_id": {"$ref": "#/$defs/id"},
+        "inputs": {"type": "array", "maxItems": 16, "uniqueItems": true, "items": {"$ref": "#/$defs/path"}}
+      },
+      "if": {"properties": {"contract": {"const": "protocol-json"}}},
+      "then": {"properties": {"inputs": {"minItems": 1}}},
+      "else": {"properties": {"inputs": {"maxItems": 0}}}
+    },
+    "budgets": {
+      "type": "object", "additionalProperties": false,
+      "required": ["changed_lines", "rom_bytes", "ram_bytes", "protocol_changes"],
+      "properties": {
+        "changed_lines": {"$ref": "#/$defs/integer"}, "rom_bytes": {"$ref": "#/$defs/integer"},
+        "ram_bytes": {"$ref": "#/$defs/integer"}, "protocol_changes": {"$ref": "#/$defs/integer"}
+      }
+    },
+    "remoteAction": {
+      "enum": ["comment", "create_remote_ref", "dispatch_ci", "merge", "open_pull_request",
+               "push", "request_review", "update_pull_request"]
+    },
+    "assignment": {
+      "type": "object", "additionalProperties": false,
+      "required": ["schema_version", "repository", "id", "issue", "pull_request", "owner_id", "session_id",
+                   "dispatch_id", "assigned_parent_sha", "expected_branch", "allowed_worktree",
+                   "allowed_scope", "upstream_inputs", "finding_ids", "acceptance_criteria",
+                   "required_checks", "budgets", "max_lifetime_seconds", "max_peak_rss_bytes",
+                   "prohibited_remote_actions", "predecessor_id", "kind"],
+      "properties": {
+        "schema_version": {"type": "integer", "const": 3},
+        "repository": {"$ref": "#/$defs/repository"},
+        "id": {"$ref": "#/$defs/id"}, "issue": {"$ref": "#/$defs/positive"},
+        "pull_request": {"$ref": "#/$defs/nullablePositive"},
+        "owner_id": {"$ref": "#/$defs/id"}, "session_id": {"$ref": "#/$defs/id"},
+        "dispatch_id": {"$ref": "#/$defs/id"}, "assigned_parent_sha": {"$ref": "#/$defs/sha"},
+        "expected_branch": {"$ref": "#/$defs/text", "maxLength": 256},
+        "allowed_worktree": {"$ref": "#/$defs/absolute"},
+        "allowed_scope": {
+          "type": "array", "minItems": 1, "maxItems": 256, "uniqueItems": true,
+          "items": {"$ref": "#/$defs/scope"}
+        },
+        "upstream_inputs": {
+          "type": "array", "maxItems": 16, "uniqueItems": true, "items": {"$ref": "#/$defs/sha"}
+        },
+        "finding_ids": {"$ref": "#/$defs/ids"},
+        "acceptance_criteria": {
+          "type": "object", "minProperties": 1, "maxProperties": 32,
+          "propertyNames": {"$ref": "#/$defs/id"}, "additionalProperties": {"$ref": "#/$defs/criterion"}
+        },
+        "required_checks": {
+          "description": "Runtime also rejects protocol input paths repeated across check definitions.",
+          "type": "object", "minProperties": 1, "maxProperties": 32,
+          "propertyNames": {"$ref": "#/$defs/id"}, "additionalProperties": {"$ref": "#/$defs/requiredCheck"}
+        },
+        "budgets": {"$ref": "#/$defs/budgets"},
+        "max_lifetime_seconds": {"type": "integer", "minimum": 1, "maximum": 86400},
+        "max_peak_rss_bytes": {"$ref": "#/$defs/positive"},
+        "prohibited_remote_actions": {
+          "type": "array", "minItems": 8, "maxItems": 8, "uniqueItems": true,
+          "items": {"$ref": "#/$defs/remoteAction"}
+        },
+        "predecessor_id": {"anyOf": [{"$ref": "#/$defs/id"}, {"type": "null"}]},
+        "kind": {"enum": ["initial", "review", "replacement"]}
+      },
+      "if": {"properties": {"kind": {"const": "initial"}}},
+      "then": {"properties": {"predecessor_id": {"type": "null"}}},
+      "else": {"properties": {"predecessor_id": {"$ref": "#/$defs/id"}}}
+    },
+    "result": {
+      "type": "object", "additionalProperties": false,
+      "required": ["schema_version", "assignment_id", "assigned_parent_sha", "result_sha", "evidence_refs"],
+      "properties": {
+        "schema_version": {"type": "integer", "const": 3}, "assignment_id": {"$ref": "#/$defs/id"},
+        "assigned_parent_sha": {"$ref": "#/$defs/sha"}, "result_sha": {"$ref": "#/$defs/sha"},
+        "evidence_refs": {"type": "array", "maxItems": 32, "uniqueItems": true, "items": {"$ref": "#/$defs/id"}}
+      }
+    },
+    "process": {
+      "type": "object", "additionalProperties": false,
+      "required": ["pid", "start_ticks", "boot_id", "runtime_handle", "observed_at", "state",
+                   "peak_rss_bytes", "rss_complete", "exit_code", "age_ms"],
+      "properties": {
+        "pid": {"$ref": "#/$defs/positive"}, "start_ticks": {"$ref": "#/$defs/positive"},
+        "boot_id": {"$ref": "#/$defs/id"}, "runtime_handle": {"$ref": "#/$defs/id"},
+        "observed_at": {"$ref": "#/$defs/time"}, "state": {"enum": ["running", "exited"]},
+        "peak_rss_bytes": {"$ref": "#/$defs/nullableInteger"}, "rss_complete": {"type": "boolean"},
+        "exit_code": {"$ref": "#/$defs/exit"}, "age_ms": {"$ref": "#/$defs/integer"}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"rss_complete": {"const": true}}},
+          "then": {"properties": {
+            "state": {"const": "exited"}, "exit_code": {"type": "integer"},
+            "peak_rss_bytes": {"$ref": "#/$defs/integer"}
+          }}
+        },
+        {
+          "if": {"properties": {"state": {"const": "running"}}},
+          "then": {"properties": {"exit_code": {"type": "null"}}}
+        }
+      ]
+    },
+    "availability": {
+      "type": "object", "additionalProperties": false,
+      "required": ["mode", "observed_at", "valid_until", "autostop_enabled", "stop_on_disconnect", "plan"],
+      "properties": {
+        "mode": {"enum": ["always-on", "plan"]}, "observed_at": {"$ref": "#/$defs/time"},
+        "valid_until": {"$ref": "#/$defs/time"}, "autostop_enabled": {"type": "boolean"},
+        "stop_on_disconnect": {"type": "boolean"}, "plan": {"$ref": "#/$defs/nullableText"}
+      },
+      "if": {"properties": {"mode": {"const": "plan"}}},
+      "then": {"properties": {"plan": {"$ref": "#/$defs/text"}}}
+    },
+    "clock": {
+      "type": "object", "additionalProperties": false,
+      "required": ["at", "boot_id", "monotonic_ns", "boottime_ns"],
+      "properties": {"at": {"$ref": "#/$defs/time"}, "boot_id": {"$ref": "#/$defs/id"},
+        "monotonic_ns": {"$ref": "#/$defs/integer"}, "boottime_ns": {"$ref": "#/$defs/integer"}}
+    },
+    "gitIdentity": {
+      "type": "object", "additionalProperties": false,
+      "required": ["worktree", "git_dir", "common_dir", "device", "inode"],
+      "properties": {
+        "worktree": {"$ref": "#/$defs/absolute"}, "git_dir": {"$ref": "#/$defs/absolute"},
+        "common_dir": {"$ref": "#/$defs/absolute"}, "device": {"$ref": "#/$defs/integer"},
+        "inode": {"$ref": "#/$defs/positive"}
+      }
+    },
+    "event": {
+      "type": "object", "additionalProperties": false, "required": ["state", "at", "source_id"],
+      "properties": {
+        "state": {"enum": ["assignment_sent", "assignment_received", "progressing", "committed", "handed_off"]},
+        "at": {"$ref": "#/$defs/time"}, "source_id": {"$ref": "#/$defs/text", "maxLength": 128}
+      }
+    },
+    "measurements": {
+      "description": "Captured resource growth; null is unknown. Each protocol-json count covers its disjoint declared inputs. Runtime checks assignment-level completeness, identity, times and budgets.",
+      "type": "object", "additionalProperties": false,
+      "required": ["rom_bytes", "ram_bytes", "protocol_changes"],
+      "properties": {
+        "rom_bytes": {"$ref": "#/$defs/nullableInteger"}, "ram_bytes": {"$ref": "#/$defs/nullableInteger"},
+        "protocol_changes": {"$ref": "#/$defs/nullableInteger"}
+      }
+    },
+    "check": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "evidence_id", "contract", "parent_sha", "result_sha", "worktree",
+                   "started_at", "completed_at", "exit_code", "pid", "peak_rss_bytes", "measurements", "detail"],
+      "properties": {
+        "id": {"$ref": "#/$defs/id"}, "evidence_id": {"$ref": "#/$defs/id"},
+        "contract": {"enum": ["git-diff-check", "protocol-json", "coordinator-check"]},
+        "parent_sha": {"$ref": "#/$defs/sha"}, "result_sha": {"$ref": "#/$defs/sha"},
+        "worktree": {"$ref": "#/$defs/absolute"}, "started_at": {"$ref": "#/$defs/time"},
+        "completed_at": {"anyOf": [{"$ref": "#/$defs/time"}, {"type": "null"}]},
+        "exit_code": {"$ref": "#/$defs/exit"},
+        "pid": {"$ref": "#/$defs/nullablePositive"}, "peak_rss_bytes": {"$ref": "#/$defs/nullableInteger"},
+        "measurements": {"$ref": "#/$defs/measurements"}, "detail": {"$ref": "#/$defs/nullableText"}
+      },
+      "if": {"properties": {"completed_at": {"type": "null"}}},
+      "then": {"properties": {"exit_code": {"type": "null"}}}
+    },
+    "interruption": {
+      "type": "object", "additionalProperties": false,
+      "required": ["at", "reason", "oom_evidence", "worktree", "head", "dirty_paths", "lock_reason",
+                   "retained_data_sha256"],
+      "properties": {
+        "at": {"$ref": "#/$defs/time"}, "reason": {"enum": ["sigkill", "timeout", "rss", "process-exit"]},
+        "oom_evidence": {"$ref": "#/$defs/nullableText"}, "worktree": {"$ref": "#/$defs/absolute"},
+        "head": {"$ref": "#/$defs/sha"},
+        "dirty_paths": {"type": "array", "maxItems": 256, "uniqueItems": true, "items": {"$ref": "#/$defs/path"}},
+        "lock_reason": {"$ref": "#/$defs/text", "maxLength": 256},
+        "retained_data_sha256": {
+          "description": "Local-only integrity of mutable index/dirty data and modes; no clean-source ledger.",
+          "type": "string", "pattern": "^[0-9a-f]{64}$", "maxLength": 64
+        }
+      }
+    },
+    "cursor": {
+      "type": "object", "additionalProperties": false,
+      "required": ["path", "device", "inode", "offset", "session_id"],
+      "properties": {
+        "path": {"$ref": "#/$defs/absolute"}, "device": {"$ref": "#/$defs/integer"},
+        "inode": {"$ref": "#/$defs/integer"}, "offset": {"$ref": "#/$defs/integer"},
+        "session_id": {"$ref": "#/$defs/nullableText", "maxLength": 128}
+      }
+    },
+    "action": {
+      "type": "object", "additionalProperties": false, "required": ["id", "action", "at"],
+      "properties": {"id": {"$ref": "#/$defs/id"}, "action": {"$ref": "#/$defs/remoteAction"},
+                     "at": {"$ref": "#/$defs/time"}}
+    },
+    "ciState": {"enum": ["absent", "pending", "success", "failure", "unknown"]},
+    "verdict": {
+      "type": "object", "additionalProperties": false,
+      "required": ["assignment_id", "result_sha", "observed_at", "local_outcome", "handoff_ready",
+                   "rejection_codes", "changed_lines", "task_commits", "imported_paths", "ci_state"],
+      "properties": {
+        "assignment_id": {"$ref": "#/$defs/id"}, "result_sha": {"$ref": "#/$defs/sha"},
+        "observed_at": {"$ref": "#/$defs/time"},
+        "local_outcome": {"enum": ["accepted", "rejected", "in_progress", "interrupted"]},
+        "handoff_ready": {"type": "boolean"}, "rejection_codes": {"$ref": "#/$defs/ids"},
+        "changed_lines": {"$ref": "#/$defs/nullableInteger"},
+        "task_commits": {"type": "array", "maxItems": 128, "uniqueItems": true, "items": {"$ref": "#/$defs/sha"}},
+        "imported_paths": {"type": "array", "maxItems": 256, "uniqueItems": true, "items": {"$ref": "#/$defs/path"}},
+        "ci_state": {"$ref": "#/$defs/ciState"}
+      },
+      "if": {"properties": {"local_outcome": {"const": "accepted"}}},
+      "then": {"properties": {"handoff_ready": {"const": true}, "rejection_codes": {"maxItems": 0}}},
+      "else": {"properties": {"handoff_ready": {"const": false}}}
+    },
+    "entry": {
+      "description": "Runtime compares assignment, lifecycle and close times; interruption must match close.",
+      "type": "object", "additionalProperties": false,
+      "required": ["assignment", "assigned_at", "git_identity", "events", "process", "checks",
+                   "result", "validation", "interruption", "cursors", "remote_actions", "closed_at", "coordination_turns"],
+      "properties": {
+        "assignment": {"$ref": "#/$defs/assignment"}, "assigned_at": {"$ref": "#/$defs/time"},
+        "git_identity": {"$ref": "#/$defs/gitIdentity"},
+        "events": {"type": "array", "maxItems": 5, "uniqueItems": true, "items": {"$ref": "#/$defs/event"}},
+        "process": {"anyOf": [{"$ref": "#/$defs/process"}, {"type": "null"}]},
+        "checks": {"type": "array", "maxItems": 32, "uniqueItems": true, "items": {"$ref": "#/$defs/check"}},
+        "result": {"anyOf": [{"$ref": "#/$defs/result"}, {"type": "null"}]},
+        "validation": {"anyOf": [{"$ref": "#/$defs/verdict"}, {"type": "null"}]},
+        "interruption": {"anyOf": [{"$ref": "#/$defs/interruption"}, {"type": "null"}]},
+        "cursors": {"type": "array", "maxItems": 4, "uniqueItems": true, "items": {"$ref": "#/$defs/cursor"}},
+        "remote_actions": {"type": "array", "maxItems": 128, "uniqueItems": true, "items": {"$ref": "#/$defs/action"}},
+        "closed_at": {"anyOf": [{"$ref": "#/$defs/time"}, {"type": "null"}]},
+        "coordination_turns": {"$ref": "#/$defs/integer"}
+      },
+      "if": {"properties": {"interruption": {"not": {"type": "null"}}}},
+      "then": {"properties": {"closed_at": {"$ref": "#/$defs/time"}}}
+    },
+    "run": {
+      "type": "object", "additionalProperties": false,
+      "required": ["repository", "run_id", "attempt", "head_sha", "workflow_id", "status", "conclusion", "observed_at"],
+      "properties": {
+        "repository": {"$ref": "#/$defs/repository"}, "run_id": {"$ref": "#/$defs/positive"},
+        "attempt": {"$ref": "#/$defs/positive"}, "head_sha": {"$ref": "#/$defs/sha"},
+        "workflow_id": {"$ref": "#/$defs/positive"},
+        "status": {"enum": ["completed", "queued", "in_progress", "waiting", "pending", "requested"]},
+        "conclusion": {"enum": [null, "success", "failure", "cancelled", "timed_out", "action_required",
+                               "neutral", "skipped", "stale", "startup_failure"]},
+        "observed_at": {"$ref": "#/$defs/time"}
+      },
+      "if": {"properties": {"status": {"const": "completed"}}},
+      "then": {"properties": {"conclusion": {"type": "string"}}},
+      "else": {"properties": {"conclusion": {"type": "null"}}}
+    },
+    "watcher": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "coordinator_id", "run_id", "attempt", "head_sha", "process", "started_at",
+                   "ended_at", "exit_code", "run", "query_error"],
+      "properties": {
+        "id": {"$ref": "#/$defs/id"}, "coordinator_id": {"$ref": "#/$defs/id"},
+        "run_id": {"$ref": "#/$defs/positive"}, "attempt": {"$ref": "#/$defs/positive"},
+        "head_sha": {"$ref": "#/$defs/sha"}, "process": {"$ref": "#/$defs/process"},
+        "started_at": {"$ref": "#/$defs/time"},
+        "ended_at": {"anyOf": [{"$ref": "#/$defs/time"}, {"type": "null"}]},
+        "exit_code": {"$ref": "#/$defs/exit"},
+        "run": {"anyOf": [{"$ref": "#/$defs/run"}, {"type": "null"}]},
+        "query_error": {"$ref": "#/$defs/nullableText"}
+      },
+      "if": {"properties": {"ended_at": {"type": "null"}}},
+      "then": {"properties": {
+        "exit_code": {"type": "null"}, "process": {"properties": {"state": {"const": "running"}}}
+      }},
+      "else": {"properties": {"process": {"properties": {"state": {"const": "exited"}}}}}
+    },
+    "state": {
+      "type": "object", "additionalProperties": false,
+      "required": ["schema_version", "repository", "coordinator_id", "availability", "clock", "assignments", "watchers"],
+      "properties": {
+        "schema_version": {"type": "integer", "const": 3}, "repository": {"$ref": "#/$defs/repository"},
+        "coordinator_id": {"$ref": "#/$defs/id"}, "availability": {"$ref": "#/$defs/availability"},
+        "clock": {"$ref": "#/$defs/clock"},
+        "assignments": {
+          "description": "Runtime also enforces unique assignment/owner/session/dispatch identities, one initial root per issue/non-null PR and predecessor lineage.",
+          "type": "array", "maxItems": 128, "uniqueItems": true, "items": {"$ref": "#/$defs/entry"}
+        },
+        "watchers": {
+          "description": "Runtime also enforces unique boot/PID/start identities across owners and all watchers.",
+          "type": "array", "maxItems": 128, "uniqueItems": true, "items": {"$ref": "#/$defs/watcher"}
+        }
+      }
+    }
+  }
+}

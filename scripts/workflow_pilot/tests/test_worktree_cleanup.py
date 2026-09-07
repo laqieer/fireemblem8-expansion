@@ -1,6 +1,6 @@
 """TC-WORKFLOW-WORKTREE-CLEANUP-001: real Git, deterministic GitHub, no live deletion."""
 
-from contextlib import redirect_stdout
+from contextlib import ExitStack, contextmanager, redirect_stdout
 import copy
 import hashlib
 import io
@@ -8,6 +8,7 @@ import json
 import os
 from pathlib import Path
 import shutil
+import stat
 import subprocess
 import sys
 import unittest
@@ -153,6 +154,26 @@ class CleanupTests(unittest.TestCase):
     def private_gitdir(self):
         return Path(self.command(self.target, "rev-parse", "--absolute-git-dir").strip())
 
+    def completed_empty_gitlinks(self, *names):
+        paths = []
+        for number, name in enumerate(names or ("tools/empty-submodule", "vendor/second-submodule")):
+            self.command(self.target, "config", "--file", ".gitmodules",
+                         f"submodule.fixture-{number}.path", name)
+            self.command(self.target, "config", "--file", ".gitmodules",
+                         f"submodule.fixture-{number}.url", self.root.as_uri())
+            self.command(self.target, "update-index", "--add", "--cacheinfo",
+                         "160000", (self.base, self.head)[number % 2], name)
+            path = self.target / name
+            path.mkdir(parents=True)
+            paths.append(path)
+        self.command(self.target, "add", ".gitmodules")
+        self.command(self.target, "commit", "-qm", "empty gitlink fixture")
+        self.head = self.command(self.target, "rev-parse", "HEAD").strip()
+        self.command(self.root, "merge", "-q", "--no-ff", "topic", "-m", "merge gitlinks")
+        self.merge = self.command(self.root, "rev-parse", "HEAD").strip()
+        self.api = Responses(self.root, self.head, self.merge)
+        return paths
+
     def dangling_commit(self):
         tree = self.command(self.root, "rev-parse", "HEAD^{tree}").strip()
         return self.command(self.root, "commit-tree", tree, "-p", self.base,
@@ -217,6 +238,46 @@ class CleanupTests(unittest.TestCase):
                             *args, **kwargs)
 
         return patch.object(Path, "open", read_mounts)
+
+    @contextmanager
+    def external_target_accesses(self, alias, outside):
+        accesses = []
+        originals = {name: getattr(os, name) for name in ("stat", "lstat", "open", "scandir")}
+        readlink = os.readlink
+
+        def pathname(value, dir_fd=None):
+            if isinstance(value, int):
+                return Path(readlink(f"/proc/self/fd/{value}"))
+            value = Path(os.fsdecode(value))
+            if not value.is_absolute():
+                base = pathname(dir_fd) if dir_fd is not None else Path.cwd()
+                value = base / value
+            return value
+
+        def observe(name):
+            def call(value, *args, **kwargs):
+                path = pathname(value, kwargs.get("dir_fd"))
+                try:
+                    redirected = stat.S_ISLNK(originals["lstat"](alias).st_mode)
+                except FileNotFoundError:
+                    redirected = False
+                if path.is_relative_to(outside) or (
+                    redirected and path.is_relative_to(alias) and (
+                        path != alias or name == "scandir"
+                        or (name == "stat" and kwargs.get("follow_symlinks", True))
+                    )
+                ):
+                    accesses.append((name, str(path)))
+                result = originals[name](value, *args, **kwargs)
+                if name == "open" and pathname(result).is_relative_to(outside):
+                    accesses.append(("opened-external-target", str(pathname(result))))
+                return result
+            return call
+
+        with ExitStack() as stack:
+            for name in originals:
+                stack.enter_context(patch.object(os, name, side_effect=observe(name)))
+            yield accesses
 
     @staticmethod
     def snapshot(path):
@@ -1093,7 +1154,449 @@ class CleanupTests(unittest.TestCase):
         self.command(self.target, "update-index", "--add", "--cacheinfo",
                      "160000," + self.base + ",uninitialized-submodule")
         self.command(self.target, "commit", "-qm", "gitlink")
-        self.held("submodule index")
+        self.held("missing or ambiguous gitlink directory")
+
+    def test_empty_gitlinks_dry_run_preserves_files_index_and_registrations(self):
+        links = self.completed_empty_gitlinks()
+        before = self.snapshot(self.repo.common), self.snapshot(self.target)
+        registrations = cleanup.inventory(self.root)
+        row = self.result()
+        self.assertEqual(row["decision"], "eligible", row)
+        self.assertGreater(row["allocated_bytes"], 0)
+        self.assertEqual((self.snapshot(self.repo.common), self.snapshot(self.target)), before)
+        self.assertEqual(cleanup.inventory(self.root), registrations)
+        self.assertTrue(all(path.is_dir() and not list(path.iterdir()) for path in links))
+
+    def test_empty_gitlinks_apply_uses_normal_removal_and_keeps_shared_refs(self):
+        self.completed_empty_gitlinks()
+        shared = self.command(self.root, "show-ref")
+        gitdir = self.private_gitdir()
+        with patch.object(cleanup, "execute", wraps=cleanup.execute) as commands:
+            row = self.result(apply=True)
+        self.assertEqual(row["decision"], "removed", row)
+        removes = [call.args[0] for call in commands.call_args_list
+                   if "worktree" in call.args[0] and "remove" in call.args[0]]
+        self.assertEqual([command[command.index("worktree"):] for command in removes],
+                         [["worktree", "remove", "--", str(self.target)]])
+        self.assertFalse(self.target.exists())
+        self.assertFalse(gitdir.exists())
+        self.assertNotIn(str(self.target), cleanup.inventory(self.root))
+        self.assertEqual(self.command(self.root, "show-ref"), shared)
+        self.assertEqual(self.command(self.root, "rev-parse", "topic").strip(), self.head)
+        self.assertTrue(self.root.is_dir())
+
+    def test_empty_gitlinks_with_byte_paths_round_trip_and_remove_normally(self):
+        self.completed_empty_gitlinks(os.fsdecode(b"vendor/empty-\xff \t\n\\module"))
+        code, row = self.cli_report()
+        self.assertEqual((code, row["decision"]), (0, "eligible"), row)
+        code, row = self.cli_report(apply=True)
+        self.assertEqual((code, row["decision"]), (0, "removed"), row)
+        self.assertFalse(self.target.exists())
+
+    def test_missing_completed_gitlink_directories_are_not_created_or_removed(self):
+        for link in self.completed_empty_gitlinks():
+            with self.subTest(path=link):
+                link.rmdir()
+                before = self.snapshot(self.repo.common), cleanup.inventory(self.root)
+                self.held("missing or ambiguous gitlink directory")
+                self.assertFalse(link.exists())
+                self.assertEqual((self.snapshot(self.repo.common), cleanup.inventory(self.root)), before)
+                link.mkdir()
+
+    def test_staged_gitlink_oid_path_mode_and_conflict_changes_are_preserved(self):
+        links = self.completed_empty_gitlinks()
+        names = [str(link.relative_to(self.target)) for link in links]
+        extra = self.target / "vendor" / "new-submodule"
+        extra.mkdir()
+        index = self.private_gitdir() / "index"
+        original = index.read_bytes()
+        blob = self.command(self.target, "rev-parse", "HEAD:tracked").strip()
+        for change in ("oid", "addition", "deletion", "rename", "mode", "unmerged"):
+            with self.subTest(change=change):
+                if change in {"deletion", "rename", "unmerged"}:
+                    self.command(self.target, "update-index", "--force-remove", names[0])
+                if change in {"addition", "rename"}:
+                    self.command(self.target, "update-index", "--add", "--cacheinfo",
+                                 "160000", self.base, str(extra.relative_to(self.target)))
+                elif change in {"oid", "mode"}:
+                    self.command(self.target, "update-index", "--cacheinfo",
+                                 "160000" if change == "oid" else "100644",
+                                 self.head if change == "oid" else blob, names[0])
+                elif change == "unmerged":
+                    records = "".join(f"160000 {oid} {stage}\t{names[0]}\0"
+                                      for stage, oid in enumerate((self.base, self.head, self.merge), 1))
+                    self.command(self.target, "update-index", "-z", "--index-info",
+                                 input=os.fsencode(records))
+                before = self.snapshot(self.repo.common), self.snapshot(self.target)
+                self.assertEqual(self.result()["decision"], "retained")
+                self.held("unmerged Git index" if change == "unmerged" else "gitlink index/HEAD")
+                self.assertEqual((self.snapshot(self.repo.common), self.snapshot(self.target)), before)
+                index.write_bytes(original)
+        extra.rmdir()
+        self.assertEqual(self.result()["decision"], "eligible")
+
+    def test_gitlink_files_hidden_data_and_empty_child_directories_are_preserved(self):
+        link, = self.completed_empty_gitlinks("vendor/empty-submodule")
+        for name in ("local-notes", ".hidden", "precious.sav", "build", ".git"):
+            with self.subTest(name=name):
+                file = link / name
+                if name == "build":
+                    file.mkdir()
+                else:
+                    file.write_bytes(b"unique submodule-local data")
+                before = self.snapshot(self.repo.common), self.snapshot(link)
+                self.held("nonempty submodule/gitlink")
+                self.assertEqual((self.snapshot(self.repo.common), self.snapshot(link)), before)
+                self.assertTrue(file.exists())
+                file.rmdir() if name == "build" else file.unlink()
+        link.rmdir()
+        link.write_bytes(b"local replacement of a gitlink")
+        self.held("not a real directory")
+        self.assertEqual(link.read_bytes(), b"local replacement of a gitlink")
+
+    def test_gitlink_initialized_separated_bare_and_nested_repositories_stay_inert(self):
+        link, = self.completed_empty_gitlinks("vendor/empty-submodule")
+        metadata = self.sandbox / "separated-metadata"
+        for kind in ("initialized", "separated", "bare", "nested"):
+            with self.subTest(kind=kind):
+                nested = link / "build" / "nested" if kind == "nested" else link
+                nested.mkdir(parents=True, exist_ok=True)
+                arguments = {"separated": ("--separate-git-dir", str(metadata)),
+                             "bare": ("--bare",)}.get(kind, ())
+                self.command(nested, "init", "-q", *arguments)
+                before = self.snapshot(self.repo.common), self.snapshot(link), self.snapshot(metadata)
+                with patch.object(cleanup, "execute", wraps=cleanup.execute) as commands:
+                    self.held("nonempty submodule/gitlink")
+                self.assertEqual((self.snapshot(self.repo.common), self.snapshot(link),
+                                  self.snapshot(metadata)), before)
+                self.assertTrue(all(Path(call.args[1]) in {self.root, self.target}
+                                    for call in commands.call_args_list))
+                shutil.rmtree(link)
+                link.mkdir()
+
+    def test_gitlink_symlinks_and_symlinked_parents_preserve_referents(self):
+        link, = self.completed_empty_gitlinks("vendor/empty-submodule")
+        outside = self.sandbox / "outside-module"
+        outside.mkdir()
+        for destination in (outside, self.sandbox / "absent-module", link):
+            with self.subTest(destination=destination):
+                link.rmdir()
+                link.symlink_to(destination, target_is_directory=True)
+                before = self.snapshot(self.repo.common), self.snapshot(outside)
+                self.held()
+                self.assertTrue(link.is_symlink())
+                self.assertEqual((self.snapshot(self.repo.common), self.snapshot(outside)), before)
+                link.unlink()
+                link.mkdir()
+        backup = self.sandbox / "real-parent"
+        link.parent.rename(backup)
+        link.parent.symlink_to(backup, target_is_directory=True)
+        self.held("symlinked gitlink")
+        self.assertTrue(link.parent.is_symlink())
+        self.assertTrue((backup / link.name).is_dir())
+
+    def test_gitlink_symlink_observation_never_accesses_external_target(self):
+        link, = self.completed_empty_gitlinks("vendor/empty-submodule")
+        outside = self.sandbox / "external-target"
+        (outside / link.name).mkdir(parents=True)
+        (outside / "data").write_bytes(b"external data")
+        link.parent.rename(self.sandbox / "original-vendor")
+        link.parent.symlink_to(outside, target_is_directory=True)
+        with self.external_target_accesses(link.parent, outside) as accesses:
+            self.held("symlinked gitlink")
+        self.assertEqual(accesses, [], "rejection must not first traverse the external target")
+        self.assertEqual((outside / "data").read_bytes(), b"external data")
+
+    def test_gitlink_parent_replacement_during_open_never_accesses_external_target(self):
+        link, = self.completed_empty_gitlinks("vendor/empty-submodule")
+        parent = link.parent
+        retained = self.sandbox / "original-vendor"
+        outside = self.sandbox / "external-target"
+        (outside / link.name).mkdir(parents=True)
+        (outside / "data").write_bytes(b"external data")
+        for stage in ("before", "after"):
+            with self.subTest(stage=stage):
+                changed = False
+
+                def redirect():
+                    nonlocal changed
+                    changed = True
+                    parent.rename(retained)
+                    parent.symlink_to(outside, target_is_directory=True)
+
+                with self.external_target_accesses(parent, outside) as accesses:
+                    original = os.open
+
+                    def change(value, flags, *args, **kwargs):
+                        selected = not changed and (
+                            Path(value) == link or
+                            (kwargs.get("dir_fd") is not None and Path(value) == Path(parent.name))
+                        )
+                        if selected and stage == "before":
+                            redirect()
+                        result = original(value, flags, *args, **kwargs)
+                        if selected and stage == "after":
+                            redirect()
+                        return result
+
+                    with patch.object(os, "open", side_effect=change):
+                        self.held()
+                self.assertTrue(changed)
+                self.assertEqual(accesses, [], "a changing parent must never redirect observation")
+                self.assertEqual((outside / "data").read_bytes(), b"external data")
+            if changed:
+                parent.unlink()
+                retained.rename(parent)
+
+    def test_gitlink_scan_parent_replacement_never_accesses_external_target(self):
+        link, = self.completed_empty_gitlinks("vendor/empty-submodule")
+        gitlinks = cleanup.gitlink_state(self.target, self.head)
+        parent = link.parent
+        parent_inode = parent.stat().st_ino
+        outside = self.sandbox / "external-target"
+        (outside / link.name).mkdir(parents=True)
+        (outside / "data").write_bytes(b"external data")
+        changed = False
+        with self.external_target_accesses(parent, outside) as accesses:
+            original = os.scandir
+
+            @contextmanager
+            def change(value):
+                nonlocal changed
+                selected = (os.fstat(value).st_ino == parent_inode
+                            if isinstance(value, int) else Path(value) == parent)
+                with original(value) as entries:
+                    yield entries
+                if selected and not changed:
+                    changed = True
+                    parent.rename(self.sandbox / "original-vendor")
+                    parent.symlink_to(outside, target_is_directory=True)
+
+            with patch.object(os, "scandir", side_effect=change):
+                with self.assertRaises((cleanup.Retain, OSError)):
+                    cleanup.allocated_size(self.target, gitlinks)
+        self.assertTrue(changed)
+        self.assertEqual(accesses, [], "queued scan paths must not traverse a substituted parent")
+        self.assertEqual((outside / "data").read_bytes(), b"external data")
+
+    def test_empty_gitlinks_do_not_bypass_mount_lock_or_active_workspace_guards(self):
+        link, = self.completed_empty_gitlinks("vendor/empty-submodule")
+        self.assertEqual(self.result()["decision"], "eligible")
+        for mount in (link, link / "nested-mount"):
+            with self.mount_records(mount):
+                self.held("mount")
+        self.repo = cleanup.Repository(self.root, [self.root, link])
+        self.held("explicitly preserved")
+        self.repo = cleanup.Repository(self.root, [self.root])
+        process = subprocess.Popen(
+            [sys.executable, "-c", "import time; time.sleep(60)"], cwd=link
+        )
+        try:
+            self.process_ids.add(process.pid)
+            self.assertIsNone(process.poll())
+            self.held("active process")
+        finally:
+            process.terminate()
+            process.wait(timeout=10)
+        self.command(self.root, "worktree", "lock", str(self.target))
+        self.held("locked")
+        self.assertIn("locked", cleanup.inventory(self.root)[str(self.target)])
+
+    def test_gitlink_data_arriving_on_both_apply_passes_is_preserved(self):
+        link, = self.completed_empty_gitlinks("vendor/empty-submodule")
+        file = link / "late-data"
+        for stage in (2, 3):
+            with self.subTest(stage=stage):
+                original = self.repo.local_state
+                calls = 0
+
+                def change(path):
+                    nonlocal calls
+                    calls += 1
+                    if calls == stage:
+                        file.write_bytes(b"data arriving after the empty plan")
+                    return original(path)
+
+                with patch.object(self.repo, "local_state", side_effect=change):
+                    self.held("nonempty submodule/gitlink")
+                self.assertEqual(calls, stage)
+                self.assertEqual(file.read_bytes(), b"data arriving after the empty plan")
+                file.unlink()
+
+    def test_empty_gitlink_replacement_on_both_apply_passes_invalidates_the_plan(self):
+        link, = self.completed_empty_gitlinks("vendor/empty-submodule")
+        backup = self.sandbox / "original-module"
+        for stage in (2, 3):
+            with self.subTest(stage=stage):
+                original = self.repo.local_state
+                calls = 0
+
+                def change(path):
+                    nonlocal calls
+                    calls += 1
+                    if calls == stage:
+                        link.rename(backup)
+                        link.mkdir()
+                    return original(path)
+
+                with patch.object(self.repo, "local_state", side_effect=change):
+                    self.held("drift" if stage == 3 else "evidence changed")
+                self.assertEqual(calls, stage)
+                self.assertTrue(link.is_dir() and backup.is_dir())
+                link.rmdir()
+                backup.rename(link)
+
+    def test_gitlink_data_arriving_during_empty_observation_is_preserved(self):
+        link, = self.completed_empty_gitlinks("vendor/empty-submodule")
+        file = link / "during-scan"
+        original = os.scandir
+
+        @contextmanager
+        def change(descriptor):
+            with original(descriptor) as entries:
+                yield entries
+            if isinstance(descriptor, int):
+                file.write_bytes(b"data arriving during empty observation")
+
+        with patch.object(os, "scandir", side_effect=change):
+            self.held("gitlink directory changed")
+        self.assertEqual(file.read_bytes(), b"data arriving during empty observation")
+
+    def test_zero_byte_gitlink_data_arriving_before_final_size_scan_is_preserved(self):
+        link, = self.completed_empty_gitlinks("vendor/empty-submodule")
+        file = link / "late-empty-file"
+        original = cleanup.allocated_size
+        calls = 0
+
+        def change(path, *args):
+            nonlocal calls
+            calls += 1
+            if calls == 3:
+                file.touch()
+            return original(path, *args)
+
+        with patch.object(cleanup, "allocated_size", side_effect=change):
+            self.held("gitlink")
+        self.assertEqual(calls, 3)
+        self.assertEqual(file.read_bytes(), b"")
+
+    def test_gitlink_parent_symlink_before_final_size_scan_is_preserved(self):
+        link, = self.completed_empty_gitlinks("vendor/empty-submodule")
+        parent = link.parent
+        retained = self.sandbox / "retained-vendor"
+        padding = self.target / "build" / "padding"
+        padding.parent.mkdir()
+        padding.touch()
+        original = cleanup.allocated_size
+        expected_size = original(self.target)
+        calls = 0
+
+        def change(path, *args):
+            nonlocal calls
+            calls += 1
+            if calls == 3:
+                parent.rename(retained)
+                parent.symlink_to(retained, target_is_directory=True)
+                difference = expected_size - original(path)
+                self.assertGreaterEqual(difference, 0)
+                self.assertLessEqual(difference, 1024 * 1024)
+                padding.write_bytes(os.urandom(difference))
+                self.assertEqual(original(path), expected_size)
+            return original(path, *args)
+
+        with patch.object(cleanup, "allocated_size", side_effect=change), \
+                patch.object(cleanup, "execute", wraps=cleanup.execute) as commands:
+            self.held("gitlink")
+        self.assertEqual(calls, 3)
+        self.assertTrue(parent.is_symlink())
+        self.assertTrue((retained / link.name).is_dir())
+        self.assertFalse(any("worktree" in call.args[0] and "remove" in call.args[0]
+                             for call in commands.call_args_list))
+
+    def test_submodule_git_and_hooks_do_not_run_even_after_empty_gitlink_observation(self):
+        link, = self.completed_empty_gitlinks("vendor/empty-submodule")
+        prepared = self.sandbox / "prepared-submodule"
+        prepared.mkdir()
+        self.command(prepared, "init", "-q")
+        self.command(prepared, "config", "user.name", "Submodule fixture")
+        self.command(prepared, "config", "user.email", "submodule@example.invalid")
+        (prepared / "local-data").write_bytes(b"submodule work to preserve")
+        self.command(prepared, "add", ".")
+        self.command(prepared, "commit", "-qm", "submodule-only commit")
+        marker = self.sandbox / "hook-ran"
+        hook = self.sandbox / "submodule-fsmonitor"
+        hook.write_text(
+            f"#!{sys.executable}\nimport sys\nfrom pathlib import Path\n"
+            f"Path({str(marker)!r}).write_text('executed')\n"
+            "sys.stdout.buffer.write(b'fixture-token\\0')\n"
+        )
+        hook.chmod(0o700)
+        self.command(prepared, "config", "core.fsmonitor", str(hook))
+        trace = self.sandbox / "git-trace.jsonl"
+        run = subprocess.run
+
+        def traced(command, *args, **kwargs):
+            kwargs["env"] = {**kwargs["env"], "GIT_TRACE2_EVENT": str(trace)}
+            return run(command, *args, **kwargs)
+
+        def submodule_commands():
+            events = [json.loads(line) for line in trace.read_text().splitlines()]
+            self.assertTrue(any(event.get("event") == "start" for event in events))
+            return [event for event in events
+                    if event.get("event") == "child_start"
+                    and event.get("cd") in {str(link), str(link.relative_to(self.target))}]
+
+        link.rmdir()
+        prepared.rename(link)
+        with patch.object(subprocess, "run", side_effect=traced):
+            self.command(self.target, "status", "--porcelain", "--ignore-submodules=none")
+        self.assertTrue(submodule_commands(), "the real-Git control must execute nested status")
+        self.assertTrue(marker.exists(), "the fixture hook must be executable by unsafe nested status")
+        marker.unlink()
+        before = self.snapshot(link), self.snapshot(self.repo.common)
+        for late in (False, True):
+            with self.subTest(late=late):
+                trace.unlink()
+                if late:
+                    link.rename(prepared)
+                    link.mkdir()
+                original = cleanup.git
+                arrived = False
+
+                def arrive(root, *args, **kwargs):
+                    nonlocal arrived
+                    if late and not arrived and root == self.target and args[0] == "status":
+                        link.rmdir()
+                        prepared.rename(link)
+                        arrived = True
+                    return original(root, *args, **kwargs)
+
+                with patch.object(cleanup, "git", side_effect=arrive), \
+                     patch.object(subprocess, "run", side_effect=traced):
+                    self.held()
+                self.assertEqual(arrived, late)
+                self.assertEqual(submodule_commands(), [])
+                self.assertFalse(marker.exists())
+                self.assertEqual((self.snapshot(link), self.snapshot(self.repo.common)), before)
+
+    def test_ambiguous_or_overbound_gitlink_observations_are_retained(self):
+        self.completed_empty_gitlinks()
+        original = cleanup.git
+        for source in ("ls-files", "ls-tree"):
+            for malformed in ("truncated", "duplicate"):
+                with self.subTest(source=source, malformed=malformed):
+                    def change(root, *args, **kwargs):
+                        raw = original(root, *args, **kwargs)
+                        if args[0] == source and (source == "ls-tree" or "--stage" in args):
+                            return raw[:-1] if malformed == "truncated" else raw + raw.split("\0")[0] + "\0"
+                        return raw
+
+                    before = self.snapshot(self.repo.common)
+                    with patch.object(cleanup, "git", side_effect=change):
+                        self.held("Git index/tree")
+                    self.assertEqual(self.snapshot(self.repo.common), before)
+        with patch.object(cleanup, "MAX_RECORDS", 1):
+            self.held("gitlink inventory exceeds safety bound")
 
     def test_symlink_target_and_duplicate_targets_are_not_explicit_authority(self):
         alias = self.sandbox / "alias"

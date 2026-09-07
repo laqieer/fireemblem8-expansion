@@ -278,6 +278,12 @@ VALIDATION_OWNERSHIP_BASE_REQUIRED_PATHS = (
     "scripts/validation_ownership/reporter.py",
     "scripts/validation_ownership/sandbox_exec.py",
     "scripts/validation_ownership/shell_interceptor.c",
+    *("scripts/validation_ownership/" + name for name in (
+        "authority.py", "budget.py", "lifecycle.py", "syscall_guard.py",
+        "make_observer.c", "dispatch.h", "graph_commands.py", "graph_registry.py",
+        "graph_probe.py", "graph_report.py", "graph_lifecycle.py", "scaninc_sources.cpp",
+        "coordinator_capture.py",
+    )),
 )
 VALIDATION_OWNERSHIP_GIT_PATH_REDIRECTS = (
     "GIT_ALTERNATE_OBJECT_DIRECTORIES",
@@ -1410,6 +1416,18 @@ def _step_has_scrubbed_environment(step: str) -> bool:
     return _step_env_entries(step) == SCRUBBED_STEP_ENV
 
 
+def _base_step_has_complete_authority_loop(step: str) -> bool:
+    script = _multiline_step_script(step)
+    matched = re.search(r"(?ms)^for required in(?P<paths>.*?)^do\s*$", script)
+    if matched is None:
+        return False
+    try:
+        paths = shlex.split(matched["paths"].replace("\\\n", " "))
+    except ValueError:
+        return False
+    return len(paths) == len(set(paths)) and set(paths) == set(VALIDATION_OWNERSHIP_BASE_REQUIRED_PATHS)
+
+
 def _base_step_has_scrubbed_environment(step: str) -> bool:
     lines = step.splitlines()
     try:
@@ -2446,6 +2464,7 @@ def _errors(text: str, retired_workflow_exists: bool) -> list[str]:
         or "scripts/validation_ownership/ci_verifier.py"
         not in base_steps[0]
         or not _base_step_has_scrubbed_environment(base_steps[0])
+        or not _base_step_has_complete_authority_loop(base_steps[0])
     ):
         errors.append(
             "candidate host lost exact PR-base validation ownership authority"

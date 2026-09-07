@@ -15,7 +15,6 @@ import stat
 import subprocess
 import sys
 import tempfile
-from concurrent.futures import ThreadPoolExecutor
 from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
@@ -24,6 +23,12 @@ from typing import Any, Iterable
 from scripts import check_docs
 from scripts.upstream_port import verify as workflow_verify
 from scripts.workflow_pilot import reporter as pilot_reporter
+from scripts.validation_ownership.authority import (
+    AuthorityLoader, ENVIRONMENT, GitTreeEntry, GitlinkSource, git_command,
+    git_tree_entries, relative_path,
+)
+from scripts.validation_ownership.budget import MakeProbeError, ProbeBudget
+from scripts.validation_ownership.make_probe import ProbeSession
 
 
 GRAPH_PATH = Path(".github/validation-ownership-graph.json")
@@ -32,17 +37,6 @@ PROBE_ORACLE_PATH = Path("scripts/validation_ownership/probe-oracle.json")
 MAKE_DYNAMIC_PATH = Path(
     ".github/validation-ownership-make-dynamics.json"
 )
-_MAKE_AUTHORITY_CACHE: dict[
-    tuple[Any, ...],
-    dict[str, dict[str, Any]],
-] = {}
-_MAKE_AUTHORITY_CACHE_LIMIT = 64
-_MAKE_AUTHORITY_MAX_PARALLEL_TARGETS = 14
-_VALIDATED_GRAPH_CACHE: dict[
-    tuple[Any, ...],
-    dict[str, Any],
-] = {}
-_VALIDATED_GRAPH_CACHE_LIMIT = 8
 TEST_CASE_REGISTRY_PATH = Path("docs/test-cases/registry.json")
 BUILD_WORKFLOW_PATH = Path(".github/workflows/build.yml")
 EXPECTED_SCHEMA_VERSION = 1
@@ -95,21 +89,12 @@ GITLINK_MODE = "160000"
 
 
 @dataclass(frozen=True)
-class GitTreeEntry:
-    path: str
-    mode: str
-    object_type: str
-    object_id: str
-
-
-@dataclass(frozen=True)
 class ScratchDirectory:
     path: Path
     created: tuple[Path, ...]
 
 
-class OwnershipError(Exception):
-    """The graph cannot prove a complete, unambiguous owner set."""
+OwnershipError = MakeProbeError
 
 
 def _object_no_duplicates(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
@@ -155,6 +140,16 @@ def _schema_type_matches(value: Any, expected: str) -> bool:
     if expected == "object":
         return isinstance(value, dict)
     raise OwnershipError(f"schema uses unsupported type {expected!r}")
+
+
+def _json_equal(left, right):
+    if isinstance(left, bool) or isinstance(right, bool):
+        return type(left) is type(right) and left == right
+    if isinstance(left, dict) and isinstance(right, dict):
+        return left.keys() == right.keys() and all(_json_equal(left[key], right[key]) for key in left)
+    if isinstance(left, list) and isinstance(right, list):
+        return len(left) == len(right) and all(_json_equal(a, b) for a, b in zip(left, right))
+    return left == right
 
 
 def _resolve_schema_ref(root_schema: dict[str, Any], reference: str) -> dict[str, Any]:
@@ -217,9 +212,9 @@ def validate_json_schema(
                 f"{type(value).__name__}"
             )
 
-    if "const" in schema and value != schema["const"]:
+    if "const" in schema and not _json_equal(value, schema["const"]):
         raise OwnershipError(f"{label} must equal {schema['const']!r}")
-    if "enum" in schema and value not in schema["enum"]:
+    if "enum" in schema and not any(_json_equal(value, choice) for choice in schema["enum"]):
         raise OwnershipError(f"{label} has unknown value {value!r}")
 
     if isinstance(value, dict):
@@ -283,17 +278,13 @@ def _sha256(domain: bytes, value: Any) -> str:
 def _git(
     root: Path,
     *arguments: str,
+    budget: ProbeBudget,
     check: bool = True,
 ) -> subprocess.CompletedProcess[bytes]:
-    try:
-        completed = subprocess.run(
-            pilot_reporter.git_command(root, *arguments),
-            env=pilot_reporter.git_environment(offline=True),
-            check=False,
-            capture_output=True,
-        )
-    except (OSError, pilot_reporter.PilotDataError) as error:
-        raise OwnershipError(f"cannot execute trusted Git: {error}") from error
+    completed = budget.run(
+        [*git_command(root), *arguments], env=ENVIRONMENT,
+        output_limit=budget.limits.file_bytes,
+    )
     if check and completed.returncode != 0:
         detail = completed.stderr.decode("utf-8", errors="replace").strip()
         raise OwnershipError(
@@ -303,11 +294,15 @@ def _git(
     return completed
 
 
-def validate_repository_root(root: Path) -> Path:
-    try:
-        return pilot_reporter.validate_repository_root(root)
-    except pilot_reporter.PilotDataError as error:
-        raise OwnershipError(str(error)) from error
+def validate_repository_root(root: Path, *, budget: ProbeBudget) -> Path:
+    root = Path(root).absolute()
+    if root.is_symlink() or not root.is_dir():
+        raise OwnershipError("repository root must be a non-symlink directory")
+    resolved = root.resolve(strict=True)
+    top = _git(resolved, "rev-parse", "--show-toplevel", budget=budget).stdout.decode("utf-8").strip()
+    if Path(top).resolve(strict=True) != resolved:
+        raise OwnershipError("repository root must identify the Git worktree top level")
+    return resolved
 
 
 def prepare_validation_scratch(root: Path) -> ScratchDirectory:
@@ -396,152 +391,39 @@ def cleanup_validation_scratch(scratch: ScratchDirectory) -> None:
 
 
 def _validate_relative_path(relative: str | Path, label: str) -> str:
-    value = Path(relative).as_posix()
-    if (
-        not value
-        or value.startswith("/")
-        or value == "."
-        or ".." in Path(value).parts
-        or "\0" in value
-    ):
-        raise OwnershipError(f"{label} must be a confined repository-relative path")
-    return value
-
-
-def git_tree_entries(root: Path, revision: str = "HEAD") -> dict[str, GitTreeEntry]:
-    output = _git(root, "ls-tree", "-rz", "--full-tree", revision).stdout
     try:
-        records = output.decode("utf-8").split("\0")
-    except UnicodeDecodeError as error:
-        raise OwnershipError("Git tree paths are not valid UTF-8") from error
-    result = {}
-    for record in records:
-        if not record:
-            continue
-        try:
-            header, path = record.split("\t", 1)
-            mode, object_type, object_id = header.split(" ")
-        except ValueError as error:
-            raise OwnershipError("Git returned a malformed tree entry") from error
-        _validate_relative_path(path, "Git tree path")
-        if path in result:
-            raise OwnershipError(f"Git tree repeats path {path!r}")
-        result[path] = GitTreeEntry(path, mode, object_type, object_id)
-    if not result:
-        raise OwnershipError(f"Git tree {revision!r} contains no entries")
-    return result
+        return relative_path(str(relative))
+    except MakeProbeError as error:
+        raise OwnershipError(f"{label} must be a confined repository-relative path") from error
 
 
-def tracked_paths(root: Path) -> tuple[str, ...]:
-    return tuple(sorted(git_tree_entries(root)))
+def tracked_paths(root: Path, *, budget: ProbeBudget) -> tuple[str, ...]:
+    return tuple(sorted(git_tree_entries(root, budget=budget)))
 
 
-class AuthorityLoader:
-    """Load authority only from one validated Git tree and confined root."""
-
-    def __init__(
-        self,
-        root: Path,
-        entries: dict[str, GitTreeEntry],
-        revision: str | None = None,
-        scratch_root: Path | None = None,
-    ):
-        self.root = root
-        self.entries = entries
-        self.revision = revision
-        self.scratch_root = scratch_root
-
-    def entry(self, relative: str | Path, label: str) -> GitTreeEntry:
-        path = _validate_relative_path(relative, label)
-        entry = self.entries.get(path)
-        if entry is None:
-            raise OwnershipError(f"{label} {path!r} is not tracked by the selected Git tree")
-        if not REGULAR_BLOB_MODE_RE.fullmatch(entry.mode) or entry.object_type != "blob":
-            raise OwnershipError(
-                f"{label} {path!r} must be a tracked regular blob, got "
-                f"mode {entry.mode} type {entry.object_type}"
-            )
-        return entry
-
-    def read_blob(self, relative: str | Path, label: str) -> bytes:
-        entry = self.entry(relative, label)
-        if self.revision is not None:
-            completed = _git(
-                self.root,
-                "cat-file",
-                "blob",
-                entry.object_id,
-            )
-            return completed.stdout
-        path = self.root / entry.path
-        try:
-            resolved = path.resolve(strict=True)
-        except OSError as error:
-            raise OwnershipError(f"{label} {entry.path!r} is unavailable: {error}") from error
-        if path.is_symlink() or not resolved.is_file():
-            raise OwnershipError(f"{label} {entry.path!r} must be a regular file")
-        if self.root not in resolved.parents:
-            raise OwnershipError(f"{label} {entry.path!r} escapes repository root")
-        try:
-            return resolved.read_bytes()
-        except OSError as error:
-            raise OwnershipError(f"cannot read {label} {entry.path!r}: {error}") from error
-
-    def read_json(self, relative: str | Path, label: str) -> Any:
-        try:
-            text = self.read_blob(relative, label).decode("utf-8")
-        except UnicodeDecodeError as error:
-            raise OwnershipError(f"{label} is not valid UTF-8") from error
-        return parse_json(text, label)
-
-
-def repository_status(root: Path) -> bytes:
+def repository_status(root: Path, *, budget: ProbeBudget) -> bytes:
     return _git(
         root,
         "status",
         "--porcelain=v1",
         "-z",
         "--untracked-files=all",
+        budget=budget,
     ).stdout
 
 
 def _generated_registry_records(
     loader: AuthorityLoader,
+    *,
+    session,
 ) -> tuple[list[dict[str, Any]], set[str]]:
-    generated_modules = [
-        path
-        for path in loader.entries
-        if path.startswith("scripts/generated_data/") and path.endswith(".py")
-    ]
-    if not generated_modules:
-        raise OwnershipError("generated-data registry has no tracked Python authority")
-    for path in generated_modules:
-        loader.read_blob(path, "generated-data authority")
     try:
-        from scripts.validation_ownership import make_probe
+        from scripts.validation_ownership.graph_registry import observe_declarations
+        from scripts.validation_ownership.budget import MakeProbeError
 
-        output, probe_authority = make_probe.probe_generated_registry(
-            loader,
-            scratch_root=(
-                loader.scratch_root
-                if loader.scratch_root is not None
-                else (
-                    loader.root
-                    / "build"
-                    / "test-artifacts"
-                    / "validation-ownership"
-                )
-            ),
-        )
-    except make_probe.MakeProbeError as error:
+        records = observe_declarations(loader, session)
+    except MakeProbeError as error:
         raise OwnershipError(str(error)) from error
-    try:
-        decoded = output.decode("utf-8")
-    except UnicodeDecodeError as error:
-        raise OwnershipError(
-            "candidate generated-data registry output is not UTF-8"
-        ) from error
-    records = parse_json(decoded, "candidate generated-data registry output")
     if not isinstance(records, list) or not records:
         raise OwnershipError(
             "candidate generated-data registry output must be a nonempty list"
@@ -621,8 +503,6 @@ def _generated_registry_records(
         raise OwnershipError(
             "candidate generated-data registry names are not sorted"
         )
-    for record in records:
-        record["probe_authority"] = probe_authority
     return records, paths
 
 
@@ -1481,6 +1361,7 @@ def _parse_make_authorities(
     requested_targets: set[str] | None = None,
     *,
     require_dynamic_contracts: bool = False,
+    session=None,
 ) -> dict[str, dict[str, Any]]:
     if requested_targets is None:
         raise OwnershipError(
@@ -1514,17 +1395,8 @@ def _parse_make_authorities(
         loader,
         required=require_dynamic_contracts,
     )
-    cache_key = _make_authority_cache_key(
-        loader,
-        requested_targets,
-        require_dynamic_contracts,
-    )
-    cached = _MAKE_AUTHORITY_CACHE.pop(cache_key, None)
-    if cached is not None:
-        _MAKE_AUTHORITY_CACHE[cache_key] = cached
-        return cached
     try:
-        from scripts.validation_ownership import make_probe
+        from scripts.validation_ownership import graph_probe
 
         common_args = {
             "declared_external_names": set(ambient_contracts),
@@ -1539,56 +1411,12 @@ def _parse_make_authorities(
             "escaped_literal_names": escaped_literals,
             "scoped_variable_names": scoped_variables,
             "trusted_builtin_names": trusted_builtins,
-            "trusted_reference_names": {
-                *trusted_builtins,
-                *scoped_variables,
-                *escaped_literals,
-            },
-            "scratch_root": (
-                loader.scratch_root
-                if loader.scratch_root is not None
-                else (
-                    loader.root
-                    / "build"
-                    / "test-artifacts"
-                    / "validation-ownership"
-                )
-            ),
+            "session": session,
         }
-
-        def probe_targets(targets: set[str]) -> dict[str, dict[str, Any]]:
-            return make_probe.run_probe(
-                loader,
-                targets,
-                prerequisite_domains,
-                dynamic_contracts,
-                **common_args,
-            )
-
-        if len(requested_targets) == 1:
-            result = probe_targets(set(requested_targets))
-        else:
-            result = {}
-            ordered_targets = [
-                {target}
-                for target in sorted(requested_targets)
-            ]
-            with _make_authority_executor(
-                max_workers=min(
-                    _MAKE_AUTHORITY_MAX_PARALLEL_TARGETS,
-                    len(ordered_targets),
-                )
-            ) as executor:
-                futures = [
-                    executor.submit(
-                        probe_targets,
-                        target_set,
-                    )
-                    for target_set in ordered_targets
-                ]
-                for future in futures:
-                    result.update(future.result())
-    except make_probe.MakeProbeError as error:
+        result = graph_probe.run_probe(
+            loader, requested_targets, prerequisite_domains, dynamic_contracts, **common_args,
+        )
+    except MakeProbeError as error:
         raise OwnershipError(str(error)) from error
     dynamic_values = sorted(
         dynamic_contracts.values(),
@@ -1596,131 +1424,7 @@ def _parse_make_authorities(
     )
     for authority in result.values():
         authority["dynamic_dependencies"] = dynamic_values
-    if len(_MAKE_AUTHORITY_CACHE) >= _MAKE_AUTHORITY_CACHE_LIMIT:
-        _MAKE_AUTHORITY_CACHE.pop(next(iter(_MAKE_AUTHORITY_CACHE)))
-    _MAKE_AUTHORITY_CACHE[cache_key] = result
     return result
-
-
-def _make_authority_executor(max_workers: int):
-    return ThreadPoolExecutor(max_workers=max_workers)
-
-
-def _make_authority_state(
-    loader: AuthorityLoader,
-) -> tuple[tuple[str, ...], ...]:
-    if loader.revision is not None:
-        return tuple(
-            (
-                path,
-                entry.mode,
-                entry.object_type,
-                entry.object_id,
-            )
-            for path, entry in sorted(loader.entries.items())
-        )
-
-    head_entries = git_tree_entries(loader.root)
-    output = _git(
-        loader.root,
-        "diff",
-        "--no-ext-diff",
-        "--no-textconv",
-        "--name-only",
-        "-z",
-        "HEAD",
-        "--",
-    ).stdout
-    try:
-        changed_paths = {
-            path
-            for path in output.decode("utf-8").split("\0")
-            if path
-        }
-    except UnicodeDecodeError as error:
-        raise OwnershipError("Git returned a non-UTF-8 changed path") from error
-
-    records = []
-    for path, entry in sorted(loader.entries.items()):
-        head_entry = head_entries.get(path)
-        if head_entry == entry and path not in changed_paths:
-            identity = entry.object_id
-        elif entry.mode == GITLINK_MODE:
-            identity = f"gitlink:{entry.object_id}"
-        else:
-            candidate = loader.root / path
-            try:
-                path_stat = os.lstat(candidate)
-            except FileNotFoundError:
-                identity = "worktree:missing"
-            except OSError as error:
-                raise OwnershipError(
-                    f"cannot inspect Make cache path {path!r}: {error}"
-                ) from error
-            else:
-                if stat.S_ISLNK(path_stat.st_mode):
-                    try:
-                        target = os.readlink(candidate)
-                    except OSError as error:
-                        raise OwnershipError(
-                            f"cannot read Make cache symlink {path!r}: {error}"
-                        ) from error
-                    identity = f"worktree:symlink:{target}"
-                elif stat.S_ISREG(path_stat.st_mode):
-                    mode = "100755" if path_stat.st_mode & 0o111 else "100644"
-                    digest = hashlib.sha256(
-                        loader.read_blob(path, "Make cache authority")
-                    ).hexdigest()
-                    identity = f"worktree:{mode}:{digest}"
-                else:
-                    identity = f"worktree:special:{stat.S_IFMT(path_stat.st_mode):o}"
-        records.append(
-            (
-                path,
-                entry.mode,
-                entry.object_type,
-                identity,
-            )
-        )
-    return tuple(records)
-
-
-def _entries_state(
-    entries: dict[str, GitTreeEntry],
-) -> tuple[tuple[str, str, str, str], ...]:
-    return tuple(
-        (
-            path,
-            entry.mode,
-            entry.object_type,
-            entry.object_id,
-        )
-        for path, entry in sorted(entries.items())
-    )
-
-
-def _make_authority_cache_key(
-    loader: AuthorityLoader,
-    requested_targets: Iterable[str],
-    require_dynamic_contracts: bool,
-) -> tuple[Any, ...]:
-    return (
-        "authoritative-gnu-make-v2",
-        str(loader.root),
-        loader.revision,
-        tuple(sorted(requested_targets)),
-        _make_authority_state(loader),
-        require_dynamic_contracts,
-    )
-
-
-def _same_make_authority_tree(
-    current_loader: AuthorityLoader,
-    base_loader: AuthorityLoader,
-) -> bool:
-    return _make_authority_state(current_loader) == _make_authority_state(
-        base_loader
-    )
 
 
 def _authority_identity(authority: dict[str, Any]) -> tuple[str, ...]:
@@ -1746,6 +1450,7 @@ def _validate_authorities(
     generated_records: list[dict[str, Any]],
     *,
     strict_workflow: bool,
+    session=None,
 ) -> dict[str, dict[str, str]]:
     requested_make_targets = {
         node["authority"]["target"]
@@ -1757,16 +1462,17 @@ def _validate_authorities(
             loader,
             requested_make_targets,
             require_dynamic_contracts=True,
+            session=session,
         )
         if requested_make_targets
         else {}
     )
-    ambient_contracts = load_make_ambient_contracts(loader, required=True)
+    ambient_contracts = load_make_ambient_contracts(loader, required=bool(requested_make_targets))
     (
         trusted_builtins,
         scoped_variables,
         escaped_literals,
-    ) = load_make_typed_variable_contracts(loader, required=True)
+    ) = load_make_typed_variable_contracts(loader, required=bool(requested_make_targets))
     expected_census = {
         "ambient_undefined": {
             name
@@ -1790,7 +1496,7 @@ def _validate_authorities(
             "Make variable authority census does not match the sealed "
             f"registry (actual={actual_census!r}, expected={expected_census!r})"
         )
-    prerequisite_domains = load_make_prerequisite_domains(loader, required=True)
+    prerequisite_domains = load_make_prerequisite_domains(loader, required=bool(requested_make_targets))
     actual_prerequisite_domains = {
         name
         for target in make_targets.values()
@@ -1807,7 +1513,7 @@ def _validate_authorities(
         )
     symbolic_recipe_names = load_make_symbolic_recipe_names(
         loader,
-        required=True,
+        required=bool(requested_make_targets),
     )
     actual_symbolic_recipe_names = {
         name
@@ -1825,7 +1531,7 @@ def _validate_authorities(
         )
     generated_prerequisites = load_make_generated_prerequisite_paths(
         loader,
-        required=True,
+        required=bool(requested_make_targets),
     )
     actual_generated_prerequisites = {
         path
@@ -1934,7 +1640,7 @@ def _validate_authorities(
             "display": display,
             "fingerprint": fingerprint,
         }
-    contracts = load_make_dynamic_contracts(loader, required=True)
+    contracts = load_make_dynamic_contracts(loader, required=bool(requested_make_targets))
     for contract in contracts.values() if requested_make_targets else ():
         expected = set(contract["owning_evidence_ids"])
         unknown = sorted(expected - set(evidence_nodes))
@@ -2134,10 +1840,11 @@ def _path_admission_sources(loader: AuthorityLoader, generated_paths: set[str]) 
     history = _git(
         loader.root, "log", "--format=%H", "--diff-filter=A", "--max-count=2",
         loader.revision or "HEAD", "--", GRAPH_PATH.as_posix(),
+        budget=loader.budget,
     ).stdout.decode("ascii").splitlines()
     if len(history) != 1:
         raise OwnershipError("semantic admission requires one available graph-introduction tree")
-    initial_paths = set(git_tree_entries(loader.root, history[0]))
+    initial_paths = set(git_tree_entries(loader.root, history[0], budget=loader.budget))
     from scripts.validation_ownership.ci_verifier import BASE_AUTHORITY_PATHS
 
     return {
@@ -2165,6 +1872,8 @@ def _validate_semantics(
     graph: dict[str, Any],
     loader: AuthorityLoader,
     entries: dict[str, GitTreeEntry],
+    *,
+    session=None,
 ) -> dict[str, Any]:
     if graph["schema_version"] != EXPECTED_SCHEMA_VERSION:
         raise OwnershipError(
@@ -2305,7 +2014,7 @@ def _validate_semantics(
         evidence_nodes,
         edge_ids,
     )
-    generated_records, generated_paths = _generated_registry_records(loader)
+    generated_records, generated_paths = _generated_registry_records(loader, session=session)
     admission_sources = _path_admission_sources(loader, generated_paths)
 
     rule_ids = set()
@@ -2410,8 +2119,10 @@ def _validate_semantics(
         evidence_nodes,
         generated_records,
         strict_workflow=True,
+        session=session,
     )
     return {
+        "graph": graph,
         "nodes": nodes,
         "surfaces": surfaces,
         "evidence": evidence_nodes,
@@ -2430,28 +2141,15 @@ def validate_graph(
     schema: dict[str, Any],
     loader: AuthorityLoader,
     entries: dict[str, GitTreeEntry],
+    *,
+    session=None,
 ) -> dict[str, Any]:
     if not isinstance(schema, dict):
         raise OwnershipError("graph schema must be an object")
     if schema.get("$schema") != "https://json-schema.org/draft/2020-12/schema":
         raise OwnershipError("graph schema must use JSON Schema draft 2020-12")
     validate_json_schema(graph, schema, schema)
-    cache_key = (
-        _sha256(GRAPH_SEAL_DOMAIN, graph),
-        str(Path(loader.root).resolve(strict=True)),
-        loader.revision,
-        _make_authority_state(loader),
-        _entries_state(entries),
-    )
-    cached = _VALIDATED_GRAPH_CACHE.pop(cache_key, None)
-    if cached is not None:
-        _VALIDATED_GRAPH_CACHE[cache_key] = cached
-        return cached
-    result = _validate_semantics(graph, loader, entries)
-    if len(_VALIDATED_GRAPH_CACHE) >= _VALIDATED_GRAPH_CACHE_LIMIT:
-        _VALIDATED_GRAPH_CACHE.pop(next(iter(_VALIDATED_GRAPH_CACHE)))
-    _VALIDATED_GRAPH_CACHE[cache_key] = result
-    return result
+    return _validate_semantics(graph, loader, entries, session=session)
 
 
 def _resolved_edges(
@@ -2570,6 +2268,8 @@ def _authority_changed_edges(
     model: dict[str, Any],
     current_loader: AuthorityLoader,
     base_loader: AuthorityLoader,
+    *,
+    base_model=None,
 ) -> set[str]:
     if (
         SCHEMA_PATH.as_posix() not in base_loader.entries
@@ -2637,34 +2337,9 @@ def _authority_changed_edges(
         for node_id, node in current_nodes.items()
         if node["authority"]["kind"] == "make-target"
     }
-    same_make_authority = _same_make_authority_tree(
-        current_loader,
-        base_loader,
-    )
-    if same_make_authority:
-        prior_authorities = _validate_authorities(
-            base_loader,
-            {
-                node_id: node
-                for node_id, node in prior_nodes.items()
-                if node_id not in make_node_ids
-            },
-            model["generated_records"],
-            strict_workflow=False,
-        )
-        prior_authorities.update(
-            {
-                node_id: model["authorities"][node_id]
-                for node_id in make_node_ids
-            }
-        )
-    else:
-        prior_authorities = _validate_authorities(
-            base_loader,
-            prior_nodes,
-            model["generated_records"],
-            strict_workflow=False,
-        )
+    if base_model is None:
+        raise OwnershipError("authority comparison requires the selected BASE model")
+    prior_authorities = base_model["authorities"]
     changed_nodes = {
         node_id
         for node_id in set(current_nodes) & set(prior_nodes)
@@ -2690,11 +2365,40 @@ def _prior_graph(loader: AuthorityLoader | None) -> dict[str, Any] | None:
     )
 
 
+def introduction_base_model(graph, loader, entries, *, changed_paths, session):
+    """Apply explicitly introduced rules to real BASE data, never a fake BASE graph."""
+    records, generated_paths = _generated_registry_records(loader, session=session)
+    nodes = {node["id"]: node for node in graph["nodes"]}
+    surfaces = {key: node for key, node in nodes.items() if node["kind"] == "surface"}
+    evidence = {key: node for key, node in nodes.items() if node["kind"] == "evidence"}
+    outgoing = {key: [edge for edge in graph["edges"] if edge["source"] == key] for key in surfaces}
+    selected = set()
+    for path in changed_paths:
+        if path not in entries:
+            continue
+        for rule in graph["path_rules"]:
+            if _path_rule_matches(rule, path, generated_paths):
+                selected.update(edge["target"] for edge in outgoing[rule["surface"]]
+                                if edge["type"] != "depends-on")
+    authorities = _validate_authorities(
+        loader, {key: evidence[key] for key in selected}, records,
+        strict_workflow=False, session=session,
+    )
+    return {
+        "graph": graph, "graph_origin": "introduced-rules-over-base",
+        "entries": entries, "generated_paths": generated_paths, "generated_records": records,
+        "nodes": nodes, "surfaces": surfaces, "evidence": evidence,
+        "outgoing": outgoing, "authorities": authorities,
+    }
+
+
 def _resolve_path(
     path: str,
     graph: dict[str, Any],
     model: dict[str, Any],
     base_entries: dict[str, GitTreeEntry] | None = None,
+    *,
+    base_model: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     path = _validate_relative_path(path, "changed path")
     current_entry = model["entries"].get(path)
@@ -2718,6 +2422,11 @@ def _resolve_path(
         )
     entry = current_entry or base_entry
     assert entry is not None
+    if current_entry is None:
+        if base_model is None or base_model["entries"].get(path) != base_entry:
+            raise OwnershipError("deleted-path resolution requires the selected BASE ownership model")
+        graph = base_model["graph"]
+        model = base_model
     if entry.mode == SYMLINK_MODE:
         raise OwnershipError(
             f"changed path {path!r} is a rejected 120000 symlink"
@@ -2805,6 +2514,7 @@ def _resolve_path(
         "surface_type": surface["surface_type"],
         "git_mode": entry.mode,
         "admission": admission,
+        "graph_origin": model.get("graph_origin", "selected-tree"),
         "owners": owners,
     }
 
@@ -3041,12 +2751,15 @@ def build_report(
     authority_changed_edge_ids: Iterable[str] = (),
     base_entries: dict[str, GitTreeEntry] | None = None,
     model: dict[str, Any] | None = None,
+    *,
+    session=None,
+    base_model: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     if model is None:
-        model = validate_graph(graph, schema, loader, entries)
+        model = validate_graph(graph, schema, loader, entries, session=session)
     oracle = validate_probe_oracle(oracle, graph, entries)
     resolutions = [
-        _resolve_path(path, graph, model, base_entries)
+        _resolve_path(path, graph, model, base_entries, base_model=base_model)
         for path in sorted(set(changed_paths))
     ]
     selected = {}
@@ -3121,222 +2834,36 @@ def run_lifecycle_check(
     authority_root: Path,
     check_id: str,
 ) -> int:
-    if check_id not in LIFECYCLE_CHECKS:
-        raise OwnershipError(f"lifecycle check {check_id!r} is not allowlisted")
-    authority_root = validate_repository_root(authority_root)
-    scratch = prepare_validation_scratch(authority_root)
-    try:
-        artifact_root = artifact_root.resolve(strict=True)
-        if scratch.path not in artifact_root.parents:
-            raise OwnershipError("lifecycle artifact root must be in the bounded sandbox")
-        graph_path = artifact_root / GRAPH_PATH
-        if not graph_path.is_file() or graph_path.is_symlink():
-            raise OwnershipError(
-                "validation ownership graph artifact is missing: "
-                + LIFECYCLE_FAILURE_REASON
-            )
-        graph = load_json(graph_path)
-        entries = git_tree_entries(authority_root)
-        loader = AuthorityLoader(authority_root, entries)
-        schema = loader.read_json(SCHEMA_PATH, "ownership graph schema")
-        oracle = loader.read_json(PROBE_ORACLE_PATH, "ownership probe oracle")
-        validate_json_schema(
-            graph,
-            schema,
-            schema,
-            "$",
+    from . import graph_lifecycle, graph_report
+    from .graph_commands import ROOT_RUNTIME_FILES
+
+    budget = ProbeBudget()
+    authority_root = Path(authority_root).resolve(strict=True)
+    loader = graph_report.capture(authority_root, "HEAD", budget)
+    with ProbeSession(loader, scratch_root=authority_root / "build/test-artifacts/validation-ownership",
+                      budget=budget, runtime_files=ROOT_RUNTIME_FILES) as session:
+        graph, schema, oracle = graph_report.documents(loader)
+        model = validate_graph(
+            graph, schema, loader, graph_report.inventory(loader), session=session,
         )
-        validate_probe_oracle(oracle, graph, entries)
-        model = validate_graph(graph, schema, loader, entries)
-        measurement = _measure(oracle, graph, model)
-        if check_id == "TC-WORKFLOW-GATE-OWNERSHIP-001":
-            cases = _load_test_case_registry(loader)
-            if check_id not in cases:
-                raise OwnershipError(
-                    "ownership consistency tester case is stale"
-                )
-        if (
-            measurement["false_positive_selections"] != 0
-            or measurement["false_negative_selections"] != 0
-        ):
-            raise OwnershipError(
-                "ownership lifecycle consumer has exact owner-pair selection loss"
-            )
-        return 0
-    finally:
-        cleanup_validation_scratch(scratch)
-
-
-def _run_lifecycle_subprocess(
-    authority_root: Path,
-    artifact_root: Path,
-    check_id: str,
-) -> subprocess.CompletedProcess[bytes]:
-    command = (
-        "/usr/bin/python3",
-        "-I",
-        "-S",
-        "-B",
-        str(authority_root / "scripts/validation_ownership/isolated_launcher.py"),
-        "lifecycle-check",
-        "--artifact-root",
-        str(artifact_root),
-        "--authority-root",
-        str(authority_root),
-        "--check",
-        check_id,
-    )
-    try:
-        return subprocess.run(
-            command,
-            cwd=authority_root,
-            env={"LC_ALL": "C", "PATH": "/usr/bin:/bin", "PYTHONHASHSEED": "0"},
-            check=False,
-            capture_output=True,
-            timeout=LIFECYCLE_TIMEOUT_SECONDS,
+        return graph_lifecycle.check(
+            artifact_root, check_id, session=session, graph=graph, schema=schema,
+            oracle=oracle, model=model,
         )
-    except (OSError, subprocess.TimeoutExpired) as error:
-        raise OwnershipError(f"cannot execute lifecycle proof: {error}") from error
-
-
-def _run_lifecycle_direct(
-    authority_root: Path,
-    artifact_root: Path,
-    check_id: str,
-) -> subprocess.CompletedProcess[bytes]:
-    try:
-        returncode = run_lifecycle_check(
-            artifact_root,
-            authority_root,
-            check_id,
-        )
-        detail = b""
-    except OwnershipError as error:
-        returncode = 1
-        detail = str(error).encode("utf-8")
-    return subprocess.CompletedProcess(
-        args=(check_id,),
-        returncode=returncode,
-        stdout=b"",
-        stderr=detail,
-    )
-
-
-def _assert_lifecycle_consistency_identities(root: Path) -> None:
-    consistency_checks = sorted(
-        check_id
-        for check_id in LIFECYCLE_CHECKS
-        if check_id != "validation-ownership-check"
-    )
-    if not consistency_checks:
-        return
-    entries = git_tree_entries(root)
-    loader = AuthorityLoader(root, entries)
-    cases = _load_test_case_registry(loader)
-    for check_id in consistency_checks:
-        if check_id not in cases:
-            raise OwnershipError(
-                "ownership consistency tester case is stale"
-            )
 
 
 def validate_executable_lifecycle(
     root: Path,
     graph: dict[str, Any],
     *,
-    baseline_validated: bool = False,
+    session,
+    schema,
+    oracle,
+    model,
 ) -> list[dict[str, str]]:
-    events = graph["lifecycle_events"]
-    triggers = {
-        event["id"]: event
-        for event in events
-        if event["type"] in REQUIRED_PROOF_KINDS
-    }
-    proofs = sorted(
-        (
-            event
-            for event in events
-            if event["type"] == "deletion_proof"
-        ),
-        key=lambda item: item["occurred_at"],
-    )
-    scratch = prepare_validation_scratch(root)
-    sandbox_parent = scratch.path
-    source_bytes = (root / GRAPH_PATH).read_bytes()
-    results = []
-    try:
-        _assert_lifecycle_consistency_identities(root)
-        with tempfile.TemporaryDirectory(
-            prefix=f".{root.name}-validation-ownership-proof-",
-            dir=sandbox_parent,
-        ) as temporary:
-            sandbox = Path(temporary)
-            artifact = sandbox / GRAPH_PATH
-            artifact.parent.mkdir(parents=True)
-            shutil.copy2(root / GRAPH_PATH, artifact)
-            if not baseline_validated:
-                initial = _run_lifecycle_direct(
-                    root,
-                    sandbox,
-                    "validation-ownership-check",
-                )
-                if initial.returncode != 0:
-                    detail = initial.stderr.decode(
-                        "utf-8",
-                        errors="replace",
-                    ).strip()
-                    raise OwnershipError(
-                        "stale executable lifecycle baseline does not pass"
-                        + (f": {detail}" if detail else "")
-                    )
-            backup = sandbox / "validation-ownership-graph.backup"
-            artifact.replace(backup)
-            removed = _run_lifecycle_direct(
-                root,
-                sandbox,
-                "validation-ownership-check",
-            )
-            backup.replace(artifact)
-            if removed.returncode == 0:
-                raise OwnershipError(
-                    "lifecycle proof removal did not fail"
-                )
-            removal_detail = removed.stderr.decode(
-                "utf-8",
-                errors="replace",
-            )
-            if LIFECYCLE_FAILURE_REASON not in removal_detail:
-                raise OwnershipError(
-                    "lifecycle proof removal lacks the named failure"
-                )
-            restored = _run_lifecycle_direct(
-                root,
-                sandbox,
-                "validation-ownership-check",
-            )
-            if restored.returncode != 0:
-                raise OwnershipError(
-                    "lifecycle proof restoration did not pass"
-                )
-            for proof in proofs:
-                trigger = triggers[proof["trigger_event_id"]]
-                results.append(
-                    {
-                        "trigger_event_id": trigger["id"],
-                        "trigger_type": trigger["type"],
-                        "proof_id": proof["id"],
-                        "removal": "fail",
-                        "reason": LIFECYCLE_FAILURE_REASON,
-                        "restoration": "pass",
-                    }
-                )
-    except OSError as error:
-        raise OwnershipError(f"cannot prepare lifecycle sandbox: {error}") from error
-    finally:
-        cleanup_validation_scratch(scratch)
-    if (root / GRAPH_PATH).read_bytes() != source_bytes:
-        raise OwnershipError("lifecycle proof changed the source graph")
-    return results
+    from .graph_lifecycle import prove
+
+    return prove(root, graph, session=session, schema=schema, oracle=oracle, model=model)
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -3347,6 +2874,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         )
     )
     parser.add_argument("--repository-root", required=True)
+    parser.add_argument("--revision", default="HEAD", help="immutable current Git revision")
     parser.add_argument(
         "--changed",
         action="append",
@@ -3363,67 +2891,21 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 def main(argv: list[str] | None = None) -> int:
     arguments = parse_args(argv)
+    budget = ProbeBudget()
     try:
-        root = validate_repository_root(Path(arguments.repository_root))
-        before = repository_status(root)
-        entries = git_tree_entries(root)
-        loader = AuthorityLoader(root, entries)
-        graph = loader.read_json(GRAPH_PATH, "validation ownership graph")
-        schema = loader.read_json(SCHEMA_PATH, "ownership graph schema")
-        oracle = loader.read_json(PROBE_ORACLE_PATH, "ownership probe oracle")
-        base_entries = (
-            git_tree_entries(root, arguments.base_revision)
-            if arguments.base_revision is not None
-            else None
+        from .graph_report import check
+
+        report = check(
+            Path(arguments.repository_root), budget=budget, revision=arguments.revision,
+            base_revision=arguments.base_revision, changed_paths=arguments.changed,
         )
-        base_loader = (
-            AuthorityLoader(root, base_entries, arguments.base_revision)
-            if base_entries is not None
-            else None
-        )
-        prior = _prior_graph(base_loader)
-        if prior is not None:
-            validate_json_schema(prior, schema, schema, "prior graph")
-        model = validate_graph(graph, schema, loader, entries)
-        authority_changed = (
-            _authority_changed_edges(
-                graph,
-                prior,
-                model,
-                loader,
-                base_loader,
-            )
-            if base_loader is not None and prior is not None
-            else set()
-        )
-        report = build_report(
-            graph,
-            schema,
-            oracle,
-            loader,
-            entries,
-            arguments.changed,
-            prior,
-            arguments.base_revision is not None,
-            authority_changed,
-            base_entries,
-            model,
-        )
-        report["artifact"]["executable_lifecycle"] = (
-            validate_executable_lifecycle(
-                root,
-                graph,
-                baseline_validated=True,
-            )
-        )
-        after = repository_status(root)
-        if after != before:
-            raise OwnershipError("reporter changed the repository worktree")
         sys.stdout.buffer.write(normalized_json(report))
         return 0
-    except OwnershipError as error:
+    except (OwnershipError, OSError) as error:
         print(f"validation-ownership: error: {error}", file=sys.stderr)
         return 2
+    finally:
+        budget.close()
 
 
 if __name__ == "__main__":

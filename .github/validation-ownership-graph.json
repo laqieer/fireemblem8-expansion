@@ -1627,6 +1627,106 @@
         },
         {
           "kind": "exact",
+          "path": "scripts/validation_ownership/graph_registry.py"
+        },
+        {
+          "kind": "exact",
+          "path": "scripts/validation_ownership/tests/test_report_views.py"
+        },
+        {
+          "kind": "exact",
+          "path": "scripts/validation_ownership/consumer.py"
+        },
+        {
+          "kind": "exact",
+          "path": "scripts/validation_ownership/foundation.mk"
+        },
+        {
+          "kind": "exact",
+          "path": "scripts/validation_ownership/tests/report_fixture.py"
+        },
+        {
+          "kind": "exact",
+          "path": "scripts/validation_ownership/tests/test_coordinator_capture.py"
+        },
+        {
+          "kind": "exact",
+          "path": "scripts/validation_ownership/tests/test_foundation.py"
+        },
+        {
+          "kind": "exact",
+          "path": "scripts/validation_ownership/tests/test_graph_commands.py"
+        },
+        {
+          "kind": "exact",
+          "path": "scripts/validation_ownership/tests/test_graph_report.py"
+        },
+        {
+          "kind": "exact",
+          "path": "scripts/workflow_pilot/agent_handoff.py"
+        },
+        {
+          "kind": "exact",
+          "path": "scripts/workflow_pilot/agent_handoff.schema.json"
+        },
+        {
+          "kind": "exact",
+          "path": "scripts/workflow_pilot/coordinator_observations.py"
+        },
+        {
+          "kind": "exact",
+          "path": "scripts/workflow_pilot/raw_diff_check.py"
+        },
+        {
+          "kind": "exact",
+          "path": "scripts/workflow_pilot/review_family.py"
+        },
+        {
+          "kind": "exact",
+          "path": "scripts/workflow_pilot/review_family.schema.json"
+        },
+        {
+          "kind": "exact",
+          "path": "scripts/workflow_pilot/review_subjects.py"
+        },
+        {
+          "kind": "exact",
+          "path": "scripts/workflow_pilot/tests/arm_review_subjects.py"
+        },
+        {
+          "kind": "exact",
+          "path": "scripts/workflow_pilot/tests/review_support.py"
+        },
+        {
+          "kind": "exact",
+          "path": "scripts/workflow_pilot/tests/test_agent_handoff.py"
+        },
+        {
+          "kind": "exact",
+          "path": "scripts/workflow_pilot/tests/test_coordinator_observations.py"
+        },
+        {
+          "kind": "exact",
+          "path": "scripts/workflow_pilot/tests/test_github_review.py"
+        },
+        {
+          "kind": "exact",
+          "path": "scripts/workflow_pilot/tests/test_review_family.py"
+        },
+        {
+          "kind": "exact",
+          "path": "scripts/workflow_pilot/tests/test_review_subjects.py"
+        },
+        {
+          "kind": "exact",
+          "path": "scripts/workflow_pilot/trusted_review_gate.py"
+        },
+        {
+          "kind": "exact",
+          "path": "tests/workflows/test_ownership_probe.py"
+        },
+        {
+          "kind": "exact",
           "path": "scripts/validation_ownership/tests/test_make_probe.py"
         },
         {
@@ -1709,6 +1809,10 @@
       "id": "paths.docs",
       "surface": "surface.docs",
       "include": [
+        {
+          "kind": "exact",
+          "path": "docs/ownership-probe-foundation.md"
+        },
         {
           "kind": "prefix",
           "path": "docs/"

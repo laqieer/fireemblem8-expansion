@@ -664,11 +664,137 @@ static int TestReference(void)
     return 0;
 }
 
-int main(void)
+static int TestItemPhase(enum ExpansionAoEItemPhase phase)
+{
+    struct ExpansionAoEItemContext context;
+    enum ExpansionAoEItemDispatchResult result;
+    int expectedCalls;
+
+    memset(&context, 0, sizeof(context));
+    context.phase = phase;
+    context.itemId = ITEM_ID_CONFIGURED_CAP;
+    sRouteCalls = 0;
+    result = ExpansionAoE_DispatchItem(&context);
+    expectedCalls = phase == EXPANSION_AOE_ITEM_AI_SELECT ? 0 : 1;
+    CHECK(result == (expectedCalls ? EXPANSION_AOE_ITEM_HANDLED : EXPANSION_AOE_ITEM_REJECTED),
+          "phase must follow its registered route policy");
+    CHECK(sRouteCalls == expectedCalls, "phase callback count");
+    context.phase = EXPANSION_AOE_ITEM_PHASE_COUNT;
+    CHECK(ExpansionAoE_DispatchItem(&context) == EXPANSION_AOE_ITEM_ERROR,
+          "unknown phase must fail before callback");
+    CHECK(sRouteCalls == expectedCalls, "invalid phase must not execute");
+    return 0;
+}
+
+static int TestShape(enum ExpansionAoEShapeKind kind)
+{
+    static const u8 sExpectedGeometry[3][5][5] =
+    {
+        {
+            { 0, 0, 1, 0, 0 },
+            { 0, 1, 1, 1, 0 },
+            { 1, 1, 1, 1, 1 },
+            { 0, 1, 1, 1, 0 },
+            { 0, 0, 1, 0, 0 },
+        },
+        {
+            { 1, 1, 1, 1, 1 },
+            { 1, 1, 1, 1, 1 },
+            { 1, 1, 1, 1, 1 },
+            { 1, 1, 1, 1, 1 },
+            { 1, 1, 1, 1, 1 },
+        },
+        {
+            { 0, 0, 1, 0, 0 },
+            { 0, 0, 1, 0, 0 },
+            { 1, 1, 1, 1, 1 },
+            { 0, 0, 1, 0, 0 },
+            { 0, 0, 1, 0, 0 },
+        },
+    };
+    struct ExpansionAoEShape shape;
+    struct ExpansionAoEOrigin origin;
+    struct ExpansionAoETargetFilter filter;
+    struct ExpansionAoETargetSet targets;
+    int expectedTiles;
+    int geometryIndex;
+    int expected;
+    int x;
+    int y;
+
+    ResetWorld();
+    PutUnit(1, 4, 4, 10, 20);
+    memset(&shape, 0, sizeof(shape));
+    shape.kind = kind;
+    shape.maxRange = 2;
+    memset(&origin, 0, sizeof(origin));
+    origin.kind = EXPANSION_AOE_ORIGIN_UNIT;
+    origin.sourceUnitId = 1;
+    memset(&filter, 0, sizeof(filter));
+    filter.relationMask = EXPANSION_AOE_TARGET_SOURCE;
+    expectedTiles = kind == EXPANSION_AOE_SHAPE_DIAMOND ? 13
+        : kind == EXPANSION_AOE_SHAPE_SQUARE ? 25 : 9;
+    geometryIndex = kind == EXPANSION_AOE_SHAPE_DIAMOND ? 0
+        : kind == EXPANSION_AOE_SHAPE_SQUARE ? 1 : 2;
+    BmMapFill(gBmMapRange, 0x7F);
+    CHECK(ExpansionAoE_BuildTargetSet(&shape, &origin, &filter,
+                                    EXPANSION_AOE_BUILD_RANGE_MAP, &targets)
+              == EXPANSION_AOE_OK, "valid shape must build");
+    CHECK(targets.count == 1 && targets.targets[0].unitId == 1,
+          "shape preserves its valid source target");
+    CHECK(targets.rangeTileCount == expectedTiles, "shape geometry");
+    for (y = 0; y < gBmMapSize.y; y++)
+    {
+        for (x = 0; x < gBmMapSize.x; x++)
+        {
+            expected = 0;
+            if (x >= 2 && x <= 6 && y >= 2 && y <= 6)
+                expected = sExpectedGeometry[geometryIndex][y - 2][x - 2];
+            CHECK(gBmMapRange[y][x] == expected, "selected shape range-map cell");
+        }
+    }
+    shape.maxRange = EXPANSION_AOE_MAX_RADIUS + 1;
+    CHECK(ExpansionAoE_BuildTargetSet(&shape, &origin, &filter, 0, &targets)
+              == EXPANSION_AOE_ERR_SHAPE, "over-range shape must reject");
+    return 0;
+}
+
+int main(int argc, char** argv)
 {
     CHECK(EXPANSION_AOE_MAX_TARGETS == 16, "target capacity contract");
     CHECK(EXPANSION_AOE_MAX_RADIUS == 5, "shape radius contract");
     CHECK(sizeof(struct ExpansionAoETargetSet) <= 80, "target set stack budget");
+
+    if (argc == 2)
+    {
+        if (strcmp(argv[1], "items") == 0)
+            return TestItemRoutes();
+        if (strcmp(argv[1], "targets") == 0)
+            return TestTargetBuilding();
+        if (strcmp(argv[1], "execution") == 0)
+            return TestExecution();
+        if (strcmp(argv[1], "slots") == 0)
+            return TestStableSlotDiscovery();
+        if (strcmp(argv[1], "reference") == 0)
+            return TestReference();
+        if (strcmp(argv[1], "phase:CAN_USE") == 0)
+            return TestItemPhase(EXPANSION_AOE_ITEM_CAN_USE);
+        if (strcmp(argv[1], "phase:BEGIN_USE") == 0)
+            return TestItemPhase(EXPANSION_AOE_ITEM_BEGIN_USE);
+        if (strcmp(argv[1], "phase:EXECUTE") == 0)
+            return TestItemPhase(EXPANSION_AOE_ITEM_EXECUTE);
+        if (strcmp(argv[1], "phase:AI_SELECT") == 0)
+            return TestItemPhase(EXPANSION_AOE_ITEM_AI_SELECT);
+        if (strcmp(argv[1], "shape:DIAMOND") == 0)
+            return TestShape(EXPANSION_AOE_SHAPE_DIAMOND);
+        if (strcmp(argv[1], "shape:SQUARE") == 0)
+            return TestShape(EXPANSION_AOE_SHAPE_SQUARE);
+        if (strcmp(argv[1], "shape:CROSS") == 0)
+            return TestShape(EXPANSION_AOE_SHAPE_CROSS);
+        return 64;
+    }
+    if (argc != 1)
+        return 64;
 
     if (TestTargetBuilding() != 0)
         return 1;

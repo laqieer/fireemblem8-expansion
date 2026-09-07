@@ -27,6 +27,11 @@ if __name__ == "__main__":
     isolated_launcher._clear_ambient_execution_environment()
 
 from scripts.validation_ownership import reporter
+from scripts.validation_ownership.authority import AuthorityLoader, ENVIRONMENT, git_command
+from scripts.validation_ownership.budget import ProbeBudget
+from scripts.validation_ownership.graph_report import capture, inventory
+from scripts.validation_ownership.graph_commands import ROOT_RUNTIME_FILES
+from scripts.validation_ownership.make_probe import ProbeSession
 
 
 TRUSTED_PREFIX = "scripts/validation_ownership/"
@@ -42,6 +47,12 @@ TRUSTED_RUNTIME_PATHS = frozenset(
         f"{TRUSTED_PREFIX}reporter.py",
         f"{TRUSTED_PREFIX}sandbox_exec.py",
         f"{TRUSTED_PREFIX}shell_interceptor.c",
+        *(f"{TRUSTED_PREFIX}{name}" for name in (
+            "authority.py", "budget.py", "lifecycle.py", "syscall_guard.py",
+            "make_observer.c", "dispatch.h", "graph_commands.py", "graph_registry.py",
+            "graph_probe.py", "graph_report.py", "graph_lifecycle.py", "scaninc_sources.cpp",
+            "coordinator_capture.py",
+        )),
     }
 )
 BASE_AUTHORITY_PATHS = frozenset(
@@ -54,59 +65,13 @@ BASE_AUTHORITY_PATHS = frozenset(
 )
 
 
-class PinnedAuthorityLoader(reporter.AuthorityLoader):
-    """Read verifier package files from base and all other authority from head."""
-
-    def __init__(
-        self,
-        candidate_root: Path,
-        entries: dict[str, reporter.GitTreeEntry],
-        candidate_sha: str,
-        base_loader: reporter.AuthorityLoader,
-        trusted_paths: set[str],
-    ):
-        super().__init__(candidate_root, entries, candidate_sha)
-        self.base_loader = base_loader
-        self.trusted_paths = trusted_paths
-        self.scratch_root = base_loader.scratch_root
-
-    def read_blob(self, relative: str | Path, label: str) -> bytes:
-        path = reporter._validate_relative_path(relative, label)
-        if path in self.trusted_paths:
-            return self.base_loader.read_blob(path, label)
-        return super().read_blob(path, label)
+def _git(root: Path, *arguments: str, budget: ProbeBudget) -> subprocess.CompletedProcess[bytes]:
+    return budget.run([*git_command(root), *arguments], env=ENVIRONMENT,
+                      output_limit=budget.limits.file_bytes)
 
 
-def _git(root: Path, *arguments: str) -> subprocess.CompletedProcess[bytes]:
-    environment = {
-        "GIT_CONFIG_COUNT": "0",
-        "GIT_CONFIG_GLOBAL": "/dev/null",
-        "GIT_CONFIG_NOSYSTEM": "1",
-        "GIT_CONFIG_SYSTEM": "/dev/null",
-        "GIT_NO_LAZY_FETCH": "1",
-        "GIT_NO_REPLACE_OBJECTS": "1",
-        "HOME": "/nonexistent",
-        "LANG": "C",
-        "LC_ALL": "C",
-        "PATH": "/usr/bin:/bin",
-        "TZ": "UTC",
-    }
-    return subprocess.run(
-        [
-            "/usr/bin/git",
-            "--no-replace-objects",
-            "-C",
-            str(root),
-            *arguments,
-        ],
-        check=False,
-        capture_output=True,
-        env=environment,
-    )
-
-
-def _exact_commit(root: Path, value: str, label: str) -> str:
-    completed = _git(root, "rev-parse", "--verify", f"{value}^{{commit}}")
+def _exact_commit(root: Path, value: str, label: str, *, budget: ProbeBudget) -> str:
+    completed = _git(root, "rev-parse", "--verify", f"{value}^{{commit}}", budget=budget)
     if completed.returncode != 0:
         raise reporter.OwnershipError(f"{label} is not an available commit")
     resolved = completed.stdout.decode("ascii").strip()
@@ -158,6 +123,19 @@ def _base_authority_mode(
     present_authority = BASE_AUTHORITY_PATHS & set(base_entries)
     if not has_validation_package and not present_authority:
         return "bootstrap-not-authoritative"
+    graph_markers = {
+        reporter.GRAPH_PATH.as_posix(), reporter.SCHEMA_PATH.as_posix(),
+        reporter.MAKE_DYNAMIC_PATH.as_posix(), reporter.PROBE_ORACLE_PATH.as_posix(),
+        f"{TRUSTED_PREFIX}reporter.py", f"{TRUSTED_PREFIX}ci_verifier.py",
+    }
+    foundation = {
+        f"{TRUSTED_PREFIX}{name}" for name in (
+            "authority.py", "budget.py", "make_probe.py", "syscall_guard.py",
+            "sandbox_exec.py", "shell_interceptor.c", "make_observer.c", "lifecycle.py",
+        )
+    }
+    if not graph_markers & set(base_entries) and foundation <= set(base_entries):
+        return "foundation-introduction"
     missing = sorted(BASE_AUTHORITY_PATHS - set(base_entries))
     if missing:
         raise reporter.OwnershipError(
@@ -187,7 +165,7 @@ def _trusted_paths(
             raise reporter.OwnershipError(
                 f"trusted verifier path {path!r} is missing or not regular"
             )
-        if target.read_bytes() != base_loader.read_blob(
+        if base_loader.budget.read_bytes(target, "control") != base_loader.read_blob(
             path,
             "trusted verifier identity",
         ):
@@ -228,7 +206,7 @@ def _verify_loaded_modules(
             raise reporter.OwnershipError(
                 f"trusted module {name!r} lacks base source authority"
             )
-        if path.read_bytes() != base_loader.read_blob(
+        if base_loader.budget.read_bytes(path, "control") != base_loader.read_blob(
             relative,
             "trusted module identity",
         ):
@@ -237,42 +215,6 @@ def _verify_loaded_modules(
             )
         result.append(relative)
     return result
-
-
-def _pinned_loader(
-    candidate_root: Path,
-    candidate_sha: str,
-    base_loader: reporter.AuthorityLoader,
-    trusted_paths: set[str],
-) -> tuple[dict[str, reporter.GitTreeEntry], PinnedAuthorityLoader, list[str]]:
-    candidate_entries = reporter.git_tree_entries(candidate_root, candidate_sha)
-    changed = []
-    for path in trusted_paths:
-        candidate = candidate_entries.get(path)
-        base = base_loader.entries[path]
-        if candidate != base:
-            changed.append(path)
-        candidate_entries[path] = base
-    unexpected = sorted(
-        path
-        for path in candidate_entries
-        if path.startswith(TRUSTED_PREFIX) and path not in trusted_paths
-    )
-    if unexpected:
-        raise reporter.OwnershipError(
-            f"candidate adds untrusted verifier files {unexpected}"
-        )
-    return (
-        candidate_entries,
-        PinnedAuthorityLoader(
-            candidate_root,
-            candidate_entries,
-            candidate_sha,
-            base_loader,
-            trusted_paths,
-        ),
-        sorted(changed),
-    )
 
 
 def _base_step(text: str) -> str:
@@ -286,12 +228,11 @@ def _base_step(text: str) -> str:
 
 
 def _verify_base_step(
-    loader: PinnedAuthorityLoader,
+    loader: AuthorityLoader,
     base_loader: reporter.AuthorityLoader,
 ) -> None:
     path = reporter.BUILD_WORKFLOW_PATH
-    candidate = reporter.AuthorityLoader.read_blob(
-        loader,
+    candidate = loader.read_blob(
         path,
         "candidate Build workflow",
     ).decode("utf-8")
@@ -469,9 +410,24 @@ def verify(
     repository_root: Path,
     base_sha: str,
     candidate_sha: str,
+    *,
+    trusted_sha: str | None = None,
+    expected_mode: str = "exact-base-pinned",
 ) -> dict[str, Any]:
+    budget = ProbeBudget()
+    try:
+        return _verify(
+            trusted_root, repository_root, base_sha, candidate_sha,
+            trusted_sha=trusted_sha, expected_mode=expected_mode, budget=budget,
+        )
+    finally:
+        budget.close()
+
+
+def _verify(trusted_root, repository_root, base_sha, candidate_sha, *,
+            trusted_sha, expected_mode, budget):
     trusted_root = trusted_root.resolve(strict=True)
-    repository_root = reporter.validate_repository_root(repository_root)
+    repository_root = reporter.validate_repository_root(repository_root, budget=budget)
     if repository_root == trusted_root:
         raise reporter.OwnershipError(
             "trusted verifier root must be separate from the candidate tree"
@@ -486,18 +442,19 @@ def verify(
             raise reporter.OwnershipError(
                 "candidate repository is present on trusted verifier sys.path"
             )
-    base_sha = _exact_commit(repository_root, base_sha, "base SHA")
+    base_sha = _exact_commit(repository_root, base_sha, "base SHA", budget=budget)
     candidate_sha = _exact_commit(
         repository_root,
         candidate_sha,
         "candidate SHA",
+        budget=budget,
     )
-    head = _git(repository_root, "rev-parse", "HEAD")
+    head = _git(repository_root, "rev-parse", "HEAD", budget=budget)
     if head.returncode != 0 or head.stdout.decode("ascii").strip() != candidate_sha:
         raise reporter.OwnershipError(
             "candidate SHA does not match the checked-out HEAD"
         )
-    base_entries = reporter.git_tree_entries(repository_root, base_sha)
+    base_entries = reporter.git_tree_entries(repository_root, base_sha, budget=budget)
     base_mode = _base_authority_mode(base_entries)
     if base_mode == "bootstrap-not-authoritative":
         return {
@@ -507,67 +464,63 @@ def verify(
             "mode": base_mode,
             "reason": "exact base predates validation ownership authority",
         }
+    if expected_mode not in {"exact-base-pinned", "foundation-introduction"} or expected_mode != base_mode:
+        raise reporter.OwnershipError("verifier result mode differs from the independently expected mode")
+    source_sha = base_sha if trusted_sha is None else _exact_commit(
+        repository_root, trusted_sha, "trusted source SHA", budget=budget,
+    )
+    if base_mode == "exact-base-pinned" and source_sha != base_sha:
+        raise reporter.OwnershipError("exact-base verification requires exact BASE verifier source")
+    if base_mode == "foundation-introduction" and trusted_sha is None:
+        raise reporter.OwnershipError("graph introduction requires independently selected verifier source")
     runtime_root = _prepare_trusted_runtime_root(trusted_root)
-    base_loader = reporter.AuthorityLoader(
-        repository_root,
-        base_entries,
-        base_sha,
-        runtime_root,
+    source_loader = capture(repository_root, source_sha, budget, scratch_root=runtime_root)
+    base_loader = capture(repository_root, base_sha, budget, scratch_root=runtime_root)
+    loader = capture(repository_root, candidate_sha, budget, scratch_root=runtime_root)
+    trusted_paths = _trusted_paths(trusted_root, source_loader)
+    loaded_before = _verify_loaded_modules(trusted_root, source_loader)
+    candidate_changes = sorted(
+        path for path in trusted_paths
+        if loader.entries.get(path) != source_loader.entries[path]
     )
-    trusted_paths = _trusted_paths(trusted_root, base_loader)
-    loaded_before = _verify_loaded_modules(trusted_root, base_loader)
-    entries, loader, candidate_changes = _pinned_loader(
-        repository_root,
-        candidate_sha,
-        base_loader,
-        trusted_paths,
-    )
-    _verify_base_step(loader, base_loader)
-    graph = loader.read_json(reporter.GRAPH_PATH, "candidate ownership graph")
-    schema = base_loader.read_json(
-        reporter.SCHEMA_PATH,
-        "base ownership schema",
-    )
-    oracle = base_loader.read_json(
-        reporter.PROBE_ORACLE_PATH,
-        "base ownership oracle",
-    )
-    base_graph = base_loader.read_json(
-        reporter.GRAPH_PATH,
-        "base ownership graph",
-    )
-    reporter.validate_probe_oracle(oracle, base_graph, base_entries)
-    base_model = reporter.validate_graph(
-        base_graph,
-        schema,
-        base_loader,
-        base_entries,
-    )
-    reporter.validate_probe_oracle(oracle, graph, entries)
-    model = reporter.validate_graph(graph, schema, loader, entries)
-    (
-        oracle_pairs_sha256,
-        oracle_authority_sha256,
-    ) = _verify_oracle_pairs(
-        oracle,
-        graph,
-        model,
-        base_graph,
-        base_model,
-    )
-    loaded_after = _verify_loaded_modules(trusted_root, base_loader)
-    return {
-        "base_sha": base_sha,
-        "candidate_sha": candidate_sha,
-        "candidate_trusted_changes": candidate_changes,
-        "coverage_paths": len(model["coverage"]),
-        "evidence_authorities": len(model["authorities"]),
-        "mode": "exact-base-pinned",
-        "oracle_authority_sha256": oracle_authority_sha256,
-        "oracle_pairs_sha256": oracle_pairs_sha256,
-        "trusted_modules": sorted(set(loaded_before) | set(loaded_after)),
-        "trusted_package_files": len(trusted_paths),
-    }
+    if base_mode == "exact-base-pinned":
+        _verify_base_step(loader, base_loader)
+    entries = inventory(loader)
+    with ProbeSession(loader, scratch_root=runtime_root, budget=budget,
+                      runtime_files=ROOT_RUNTIME_FILES) as session:
+        graph = loader.read_json(reporter.GRAPH_PATH, "candidate ownership graph")
+        schema = source_loader.read_json(reporter.SCHEMA_PATH, "trusted ownership schema")
+        oracle = source_loader.read_json(reporter.PROBE_ORACLE_PATH, "trusted ownership oracle")
+        reporter.validate_probe_oracle(oracle, graph, entries)
+        model = reporter.validate_graph(graph, schema, loader, entries, session=session)
+        lifecycle = reporter.validate_executable_lifecycle(
+            repository_root, graph, session=session, schema=schema, oracle=oracle, model=model,
+        )
+        if base_mode == "exact-base-pinned":
+            with session.select_view(base_loader):
+                base_graph = base_loader.read_json(reporter.GRAPH_PATH, "BASE ownership graph")
+                reporter.validate_probe_oracle(oracle, base_graph, inventory(base_loader))
+                base_model = reporter.validate_graph(
+                    base_graph, schema, base_loader, inventory(base_loader), session=session,
+                )
+            pairs, authorities = _verify_oracle_pairs(oracle, graph, model, base_graph, base_model)
+        else:
+            measured = reporter._measure(oracle, graph, model)
+            pairs = hashlib.sha256(reporter.normalized_json(measured["probes"])).hexdigest()
+            authorities = hashlib.sha256(reporter.normalized_json(model["authorities"])).hexdigest()
+        loaded_after = _verify_loaded_modules(trusted_root, source_loader)
+        result = {
+            "authority": "exact-base" if base_mode == "exact-base-pinned" else "explicit-introduction",
+            "base_sha": base_sha, "candidate_sha": candidate_sha, "trusted_sha": source_sha,
+            "candidate_trusted_changes": candidate_changes,
+            "coverage_paths": len(model["coverage"]), "evidence_authorities": len(model["authorities"]),
+            "mode": base_mode, "oracle_authority_sha256": authorities, "oracle_pairs_sha256": pairs,
+            "trusted_modules": sorted(set(loaded_before) | set(loaded_after)),
+            "trusted_package_files": len(trusted_paths),
+            "runs": budget.runs, "states": budget.states, "processes": session.processes_used,
+            "lifecycle": lifecycle,
+        }
+    return result
 
 
 def parse_args() -> argparse.Namespace:
@@ -576,6 +529,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--repository-root", required=True, type=Path)
     parser.add_argument("--base-sha", required=True)
     parser.add_argument("--candidate-sha", required=True)
+    parser.add_argument("--trusted-sha")
+    parser.add_argument("--expected-mode", choices=("exact-base-pinned", "foundation-introduction"),
+                        default="exact-base-pinned")
     return parser.parse_args()
 
 
@@ -587,6 +543,7 @@ def main() -> int:
             arguments.repository_root,
             arguments.base_sha,
             arguments.candidate_sha,
+            trusted_sha=arguments.trusted_sha, expected_mode=arguments.expected_mode,
         )
     except (OSError, ValueError, reporter.OwnershipError) as error:
         print(f"validation-ownership-base-verifier: {error}", file=sys.stderr)

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Enter the validation-ownership mount/chroot sandbox and execute one command."""
+"""Trusted namespace setup; candidate processes never import this program."""
 
 from __future__ import annotations
 
@@ -7,192 +7,108 @@ import ctypes
 import errno
 import json
 import os
-import stat
 import sys
 from pathlib import Path
 
 
-MS_RDONLY = 1
-MS_NOSUID = 2
-MS_NODEV = 4
-MS_NOEXEC = 8
-MS_BIND = 4096
-MS_REC = 16384
-MS_REMOUNT = 32
-PR_SET_NO_NEW_PRIVS = 38
-PR_SET_KEEPCAPS = 8
-PR_CAPBSET_DROP = 24
-LINUX_CAPABILITY_VERSION_3 = 0x20080522
-EVENT_FD = 3
-MAPPING_FD = 4
+MS_RDONLY, MS_NOSUID, MS_NODEV, MS_NOEXEC = 1, 2, 4, 8
+MS_REMOUNT, MS_BIND, MS_REC = 32, 4096, 16384
+AT_EMPTY_PATH, AT_RECURSIVE = 0x1000, 0x8000
+SYS_MOUNT_SETATTR = 442  # Linux x86-64; available since Linux 5.12.
 
 
-class _CapabilityHeader(ctypes.Structure):
+class MountAttributes(ctypes.Structure):
     _fields_ = [
-        ("version", ctypes.c_uint32),
-        ("pid", ctypes.c_int),
+        ("attr_set", ctypes.c_uint64), ("attr_clr", ctypes.c_uint64),
+        ("propagation", ctypes.c_uint64), ("userns_fd", ctypes.c_uint64),
     ]
 
 
-class _CapabilityData(ctypes.Structure):
-    _fields_ = [
-        ("effective", ctypes.c_uint32),
-        ("permitted", ctypes.c_uint32),
-        ("inheritable", ctypes.c_uint32),
-    ]
-
-
-def _mount(
-    source: str | None,
-    target: str,
-    flags: int,
-) -> None:
+def mount(source, target, flags, kind=None):
     libc = ctypes.CDLL(None, use_errno=True)
-    encoded_source = None if source is None else os.fsencode(source)
-    result = libc.mount(
-        encoded_source,
-        os.fsencode(target),
-        None,
-        flags,
-        None,
-    )
-    if result != 0:
+    if libc.mount(
+        None if source is None else os.fsencode(source),
+        os.fsencode(target), None if kind is None else os.fsencode(kind),
+        flags, None,
+    ):
         error = ctypes.get_errno()
-        raise OSError(error, os.strerror(error), target)
+        raise OSError(error, os.strerror(error), str(target))
 
 
-def _bind(source: Path, target: Path, *, read_only: bool) -> None:
-    _mount(str(source), str(target), MS_BIND | MS_REC)
-    if read_only:
-        _mount(
-            None,
-            str(target),
-            MS_BIND | MS_REMOUNT | MS_RDONLY | MS_NOSUID | MS_NODEV,
-        )
+def bind(source, target, *, writable=False, executable=False):
+    mount(source, target, MS_BIND | MS_REC)
+    flags = MS_NOSUID | MS_NODEV
+    if not writable:
+        flags |= MS_RDONLY
+    if not executable:
+        flags |= MS_NOEXEC
+    recursive_attributes(target, flags)
 
 
-def _drop_sudo_privileges(uid: int, gid: int) -> None:
-    if uid <= 0 or gid <= 0:
-        raise RuntimeError("sudo sandbox requires a non-root runner identity")
-    libc = ctypes.CDLL(None, use_errno=True)
-    if libc.prctl(PR_SET_KEEPCAPS, 0, 0, 0, 0) != 0:
-        error = ctypes.get_errno()
-        raise OSError(error, os.strerror(error), "prctl(PR_SET_KEEPCAPS)")
-    for capability in range(64):
-        if libc.prctl(PR_CAPBSET_DROP, capability, 0, 0, 0) != 0:
+def recursive_attributes(target, flags):
+    # A top-level MS_REMOUNT does not restrict copied submounts. Pin this
+    # namespace's bind and add restrictions atomically to the entire subtree.
+    descriptor = os.open(target, os.O_PATH | os.O_NOFOLLOW | os.O_CLOEXEC)
+    try:
+        attributes = MountAttributes(attr_set=flags)
+        libc = ctypes.CDLL(None, use_errno=True)
+        libc.syscall.restype = ctypes.c_long
+        if libc.syscall(
+            ctypes.c_long(SYS_MOUNT_SETATTR), ctypes.c_int(descriptor), ctypes.c_char_p(b""),
+            ctypes.c_uint(AT_EMPTY_PATH | AT_RECURSIVE), ctypes.byref(attributes),
+            ctypes.c_size_t(ctypes.sizeof(attributes)),
+        ):
             error = ctypes.get_errno()
-            if error != errno.EINVAL:
-                raise OSError(
-                    error,
-                    os.strerror(error),
-                    "prctl(PR_CAPBSET_DROP)",
-                )
-    os.setgroups([])
-    os.setgid(gid)
-    os.setuid(uid)
-    header = _CapabilityHeader(LINUX_CAPABILITY_VERSION_3, 0)
-    data = (_CapabilityData * 2)()
-    if libc.capset(ctypes.byref(header), ctypes.byref(data)) != 0:
-        error = ctypes.get_errno()
-        raise OSError(error, os.strerror(error), "capset")
-    if os.getuid() != uid or os.getgid() != gid or os.getgroups():
-        raise RuntimeError("sudo sandbox did not drop the runner identity")
+            raise OSError(
+                error, f"recursive mount attributes require Linux 5.12+ and namespace authority: {os.strerror(error)}",
+                str(target),
+            )
+    finally:
+        os.close(descriptor)
 
 
-def _open_control_descriptors(
-    event_path: str | None,
-    mapping_path: str | None,
-) -> None:
-    if (event_path is None) != (mapping_path is None):
-        raise RuntimeError("sandbox control descriptors must be paired")
-    if event_path is None:
-        for descriptor in (EVENT_FD, MAPPING_FD):
-            try:
-                os.close(descriptor)
-            except OSError:
-                pass
-        return
-    event = Path(event_path).resolve(strict=True)
-    mapping = Path(mapping_path).resolve(strict=True)
-    event_fd = os.open(
-        event,
-        os.O_WRONLY | os.O_APPEND | os.O_NOFOLLOW,
-    )
-    mapping_fd = os.open(
-        mapping,
-        os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
-    )
-    if not stat.S_ISREG(os.fstat(event_fd).st_mode):
-        raise RuntimeError("sandbox event control is not a regular file")
-    if not stat.S_ISDIR(os.fstat(mapping_fd).st_mode):
-        raise RuntimeError("sandbox mapping control is not a directory")
-    os.dup2(event_fd, EVENT_FD, inheritable=True)
-    os.dup2(mapping_fd, MAPPING_FD, inheritable=True)
-    os.set_inheritable(EVENT_FD, True)
-    os.set_inheritable(MAPPING_FD, True)
-    if event_fd not in {EVENT_FD, MAPPING_FD}:
-        os.close(event_fd)
-    if mapping_fd not in {EVENT_FD, MAPPING_FD}:
-        os.close(mapping_fd)
-
-
-def main() -> int:
-    if not sys.flags.isolated or len(sys.argv) != 2:
-        raise SystemExit("sandbox_exec requires isolated Python and one config")
-    config_path = Path(sys.argv[1]).resolve(strict=True)
-    config = json.loads(config_path.read_text(encoding="utf-8"))
-    if set(config) != {
-        "argv",
-        "cwd",
-        "environment",
-        "event_path",
-        "mapping_path",
-        "read_only",
-        "root",
-        "runner_gid",
-        "runner_uid",
-        "sudo_drop",
-        "writable",
-    }:
-        raise SystemExit("sandbox_exec config has unexpected fields")
-
-    root = Path(config["root"]).resolve(strict=True)
-    _open_control_descriptors(
-        config["event_path"],
-        config["mapping_path"],
-    )
-    _mount(str(root), str(root), MS_BIND | MS_REC)
-    for source_text, target_text in config["read_only"]:
-        source = Path(source_text).resolve(strict=True)
-        target = root / target_text.lstrip("/")
-        _bind(source, target, read_only=True)
-    _mount(
-        None,
-        str(root),
-        MS_BIND | MS_REMOUNT | MS_RDONLY | MS_NOSUID | MS_NODEV,
-    )
-    for source_text, target_text in config["writable"]:
-        source = Path(source_text).resolve(strict=True)
-        target = root / target_text.lstrip("/")
-        _bind(source, target, read_only=False)
-
-    os.chroot(root)
-    os.chdir(config["cwd"])
-    if config["sudo_drop"]:
-        _drop_sudo_privileges(
-            config["runner_uid"],
-            config["runner_gid"],
-        )
+def drop_privileges(config):
     libc = ctypes.CDLL(None, use_errno=True)
-    if libc.prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) != 0:
-        error = ctypes.get_errno()
-        raise OSError(error, os.strerror(error), "prctl")
-    os.execve(
-        config["argv"][0],
-        config["argv"],
-        config["environment"],
-    )
-    return 127
+    # UID 0 in a private user namespace is still stripped of all capabilities.
+    for capability in range(64):
+        if libc.prctl(24, capability, 0, 0, 0) and ctypes.get_errno() != errno.EINVAL:
+            raise OSError(ctypes.get_errno(), "cannot drop capability bounding set")
+    if config["sudo_drop"]:
+        if config["runner_uid"] <= 0 or config["runner_gid"] <= 0:
+            raise RuntimeError("privileged launcher requires a non-root runner identity")
+        os.setgroups([])
+        os.setgid(config["runner_gid"])
+        os.setuid(config["runner_uid"])
+    class Header(ctypes.Structure):
+        _fields_ = [("version", ctypes.c_uint32), ("pid", ctypes.c_int)]
+    class Data(ctypes.Structure):
+        _fields_ = [
+            ("effective", ctypes.c_uint32), ("permitted", ctypes.c_uint32),
+            ("inheritable", ctypes.c_uint32),
+        ]
+    header = Header(0x20080522, 0)
+    data = (Data * 2)()
+    if libc.capset(ctypes.byref(header), ctypes.byref(data)):
+        raise OSError(ctypes.get_errno(), "cannot clear capabilities")
+    if libc.prctl(38, 1, 0, 0, 0):
+        raise OSError(ctypes.get_errno(), "cannot set no_new_privs")
+
+
+def main():
+    if not sys.flags.isolated or not sys.flags.no_site or len(sys.argv) != 2:
+        raise SystemExit("sandbox launcher requires Python -I -S and trusted config")
+    config = json.loads(Path(sys.argv[1]).read_bytes())
+    root = Path(config["root"])
+    # Seal inherited submounts before installing deliberate child exceptions.
+    bind(root, root, executable=True)
+    # A private proc mount belongs to the supervisor, not the candidate chroot.
+    mount("proc", "/proc", MS_NOSUID | MS_NODEV | MS_NOEXEC, "proc")
+    for item in config["mounts"]:
+        bind(item["source"], root / item["target"].lstrip("/"),
+             writable=item["writable"], executable=item["executable"])
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from syscall_guard import supervise
+    return supervise(config, lambda: drop_privileges(config))
 
 
 if __name__ == "__main__":

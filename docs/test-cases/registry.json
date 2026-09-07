@@ -482,8 +482,11 @@
         "https://github.com/laqieer/fireemblem8-expansion/issues/171",
         "https://github.com/laqieer/fireemblem8-expansion/issues/176",
         "https://github.com/laqieer/fireemblem8-expansion/issues/177",
+        "https://github.com/laqieer/fireemblem8-expansion/issues/178",
+        "https://github.com/laqieer/fireemblem8-expansion/issues/179",
         "https://github.com/laqieer/fireemblem8-expansion/issues/180",
         "https://github.com/laqieer/fireemblem8-expansion/issues/199",
+        "https://github.com/laqieer/fireemblem8-expansion/issues/206",
         "https://github.com/laqieer/fireemblem8-expansion/issues/208",
         "https://github.com/laqieer/fireemblem8-expansion/issues/207",
         "https://github.com/laqieer/fireemblem8-expansion/issues/216"
@@ -499,6 +502,9 @@
         "TC-WORKFLOW-METADATA-EDIT-RACE-001",
         "TC-WORKFLOW-PILOT-BASELINE-001",
         "TC-WORKFLOW-GATE-OWNERSHIP-001",
+        "TC-WORKFLOW-OWNERSHIP-PROBE-SANDBOX-001",
+        "TC-WORKFLOW-REVIEW-FAMILY-001",
+        "TC-WORKFLOW-AGENT-HANDOFF-001",
         "TC-WORKFLOW-WORKTREE-CLEANUP-001",
         "TC-WORKFLOW-HOST-PYTHON-DEPS-001"
       ]
@@ -2184,6 +2190,62 @@
       ]
     },
     {
+      "id": "TC-WORKFLOW-REVIEW-FAMILY-001",
+      "title": "Expand valid findings across complete sibling families",
+      "feature_id": "workflow-governance",
+      "issue_urls": ["https://github.com/laqieer/fireemblem8-expansion/issues/179"],
+      "document": "docs/test-cases/workflow-governance.md",
+      "anchor": "tc-workflow-review-family-001-expand-valid-findings-across-complete-sibling-families",
+      "profiles": ["Host-only source checkout with the isolated #216 host interpreter, Git and native GCC", "Modern Build lane with ARM GCC/binutils for mandatory ARM-object positives"],
+      "purpose": "Bind actual reviewed subjects to complete finite sibling obligations and trusted execution observations, preserving bounded remediation and sticky architecture holds.",
+      "prerequisites": "Use the existing locked host environment for host tests; the separate ARM selector uses the supported compiler/binutils via PATH or resolved MODERN_CC/MODERN_NM/MODERN_SIZE paths. Tests own source-backed Git and non-system toolchain fixtures under build/ and need no credentials, live PR, ROM or emulator.",
+      "actions": "Run the focused host review suites and explicit arm_review_subjects selector. Exercise all five families, real optional-owner and generated-code mutations, Make-resolved tool overrides and missing-tool rejection, complete local report triage, current active/dismissed review retriage, one active PR/head owner, exact merge-base lineage, commit-only loading, bounded Git diagnostics and first/second/third-round transitions.",
+      "expected_result": "The same reviewed probes detect actual broken origin code/data and pass corrected subjects. Every expected member is recorded. Third-round holds survive later heads and clean reports until bound coordinator disposition.",
+      "negative_control": "Missing siblings after the reported fix, added/deleted/unknown members, duplicate ownership, wrong task/head/source, fabricated pass labels, compile/import/zero/skipped tests, stale triage and undisposed holds cannot establish eligibility.",
+      "interactions": "Depends on #176 metrics, existing Git/GitHub/task/test interfaces and #216 locked schema dependencies; #181 depends on it. #178 is independent. #204 is not a dependency. Preserve #207 immediate assigned-branch WIP persistence and #208 cleanup.",
+      "save_compatibility": "No gameplay, save/config, generated-game-data, locale, ROM/RAM, modern/archival or required-context changes.",
+      "cleanup": "Tests remove only their owned build/review-family-* source copies and fixtures. Keep task work and diagnostic logs; no remote mutation occurs.",
+      "limitations": "Finite coverage is chosen by the trusted reviewer/coordinator, not discovered semantically from filenames. CLI JSON is an audit, never task provenance or merge authority. Host/native/object evidence is not target-ROM proof; no same-UID isolation claim or manual-only criterion.",
+      "automation": [
+        {
+          "command": "build/host-python/bin/python3 -I -m unittest discover -s scripts/workflow_pilot/tests -t . -p 'test_*review*.py' -v",
+          "evidence": "scripts/workflow_pilot/tests/test_review_subjects.py"
+        },
+        {
+          "command": "python3 -m unittest scripts.workflow_pilot.tests.arm_review_subjects -v",
+          "evidence": "scripts/workflow_pilot/tests/arm_review_subjects.py"
+        }
+      ]
+    },
+    {
+      "id": "TC-WORKFLOW-AGENT-HANDOFF-001",
+      "title": "Validate bounded exact-SHA agent handoffs",
+      "feature_id": "workflow-governance",
+      "issue_urls": ["https://github.com/laqieer/fireemblem8-expansion/issues/178"],
+      "document": "docs/test-cases/workflow-governance.md",
+      "anchor": "tc-workflow-agent-handoff-001-validate-bounded-exact-sha-agent-handoffs",
+      "profiles": ["Source-only Linux checkout with the issue #216 locked host Python environment and Git"],
+      "purpose": "Prove exact-SHA, bounded local handoffs using actual Git, native CLI events, owned process exits/checks, authoritative run reconciliation and retained original worktree recovery.",
+      "prerequisites": "Start at the exact source root with the unchanged #176 baseline and #216 environment; no token, live workflow, ROM or emulator is required.",
+      "actions": "Run the focused handoff/observation suite. Exercise clean single/multiple task commits and authorized upstream merges; stale/dirty/wrong-scope/missing-evidence controls; native lifecycle, real PID/exit/RSS, duplicate owners/watchers, exact GitHub responses, SIGKILL preservation and availability. Execute documented CLI positive/negative commands and optional reporting.",
+      "expected_result": "Only an exact clean measured descendant is locally ready. Task trailers exclude imported upstream history; incremental budgets remain separate from full-PR review size. Lifecycle states are independently observed, owners rotate, one watcher owns each exact run/attempt, GitHub success/failure remains authoritative, and one replacement reuses the retained locked original worktree.",
+      "negative_control": "Stale/wrong-parent/non-HEAD/unrelated results, dirty/conflicting/hidden-index trees, missing trailers/evidence, failed or incomplete checks, unknown/over-budget resources, oversized/duplicate/invalid JSON, candidate checker substitution, tool-success/printed-exit labels, reused/opaque PID, missing RSS, overlapping ownership/watchers, wrong run identities, unknown OOM, lost recovery locks and unavailable coordinators fail or remain explicitly unknown.",
+      "interactions": "Depends on #176 and #216/#217; dependent #181. #179 is independent and #205/#211 is not required. Preserve #199 metadata events, #207 immediate publication, #208 cleanup and original final gates; no broker or generic runtime is introduced.",
+      "save_compatibility": "No game/runtime, save/configuration, locale, generated data, ROM/RAM content, modern debug/release, archival or Build topology change.",
+      "cleanup": "Fixtures remove only their own build/test-artifacts/agent-handoff-* directories and reap their own children. No remote state, unrelated process or Dev Box setting changes.",
+      "limitations": "GitHub/kernel responses are inert fixtures at external boundaries; production adapters execute. Opaque runtime handles and absent OS/RSS/OOM authority remain unknown. Coordinator records are trusted operational input, not authenticated offline proof or publication authority. No manual-only criterion applies.",
+      "automation": [
+        {
+          "command": "build/host-python/bin/python3 -I -c 'import sys, unittest; sys.path.insert(0, \".\"); unittest.main(module=None)' scripts.workflow_pilot.tests.test_agent_handoff scripts.workflow_pilot.tests.test_coordinator_observations -v",
+          "evidence": "scripts/workflow_pilot/tests/test_agent_handoff.py"
+        },
+        {
+          "command": "python3 -m unittest scripts.docs_check_tests.test_development_workflow_skill.DevelopmentWorkflowSkillTests.test_bounded_exact_sha_agent_handoff_is_indexed -v",
+          "evidence": "scripts/docs_check_tests/test_development_workflow_skill.py"
+        }
+      ]
+    },
+    {
       "id": "TC-WORKFLOW-HOST-PYTHON-DEPS-001",
       "title": "Bootstrap isolated schema-test dependencies",
       "feature_id": "workflow-governance",
@@ -2229,13 +2291,13 @@
       ],
       "purpose": "Remove completed worktree residue only after merged work has successful automatic master Build and relevant exact-proof-commit CI.",
       "prerequisites": "Run from the source root; fixtures use exclusively owned build/worktree-cleanup-* directories, no credentials, network, ROM or emulator.",
-      "actions": "Run the focused real-Git suite; plan inertly and apply an eligible fixture. Exercise local ownership/work, bare/nested repositories, every private recovery/REUC stage, shared commit reachability, private configuration/edit buffers/index snapshots/locks, unknown or malformed index extensions and valid v2-v4 caches, local promisor fetching, source-backed generated paths, active paths/owned processes, remote identity/pagination/CI, non-UTF8 target/backlink/mount paths with lossless ASCII JSON, and both apply-pass drift controls. Mount records are ordinary fixture byte files, never real mounts.",
-      "expected_result": "Only the fresh eligible explicit target is removed normally; its branch and other work remain. Every REUC object is preserved by shared refs, unique private metadata stays byte-identical, and the report contains proof, observed allocated size and precise retention reasons with lossless filesystem byte paths.",
-      "negative_control": "The pre-fix workflow leaves completed fixtures; the initial helper deletes bare/private-recovery fixtures and lazy-fetches promisor objects. The first correction still accepts REUC-only blobs, private configuration/index backups and unknown extensions, and crashes decoding non-UTF8 backlink/mount paths. These and premature, implicit, dirty, active, foreign, unpushed, stale or missing-evidence deletion fail behavioral controls.",
+      "actions": "Run the focused real-Git suite; plan inertly and apply an eligible fixture, both without gitlinks and with present empty unpopulated gitlinks matching immutable HEAD. Exercise missing/populated/initialized/separated/bare/nested gitlinks, index/HEAD mode/ID/path-set or conflict changes, symlinks, untrusted submodule hooks and traced child Git commands, directory replacement and late data on both apply passes and the final size scan. Keep the equal-block-size unvisited-gitlink control; observe zero external-target stat/open/scandir access for existing symlink parents, before/after directory-open replacements and queued scan replacements. Also exercise local ownership/work, every private recovery/REUC stage, shared commit reachability, private configuration/edit buffers/index snapshots/locks, unknown or malformed index extensions and valid v2-v4 caches, local promisor fetching, source-backed generated paths, active paths/owned processes, remote identity/pagination/CI, and non-UTF8 gitlink/target/backlink/mount paths with lossless ASCII JSON. Mount records are ordinary fixture byte files, never real mounts.",
+      "expected_result": "Only the fresh eligible explicit target, known released and quiescent by the coordinator, is removed normally; its branch and other work remain. Empty gitlink directories need independent live index/HEAD equality and stable repeated empty-directory observations. Descriptor-relative no-follow traversal checks entry identities without accessing external symlink targets; submodule Git/hooks never execute during eligibility checks. Every REUC object is preserved by shared refs, unique private metadata stays byte-identical, and the report contains proof, observed allocated size and precise retention reasons with lossless filesystem byte paths.",
+      "negative_control": "The pre-fix workflow leaves completed fixtures; the initial helper deletes bare/private-recovery fixtures and lazy-fetches promisor objects. The first correction still accepts REUC-only blobs, private configuration/index backups and unknown extensions, and crashes decoding non-UTF8 backlink/mount paths. The blanket gitlink rejection fails the empty-directory positives; ignoring submodule status without independent identity/emptiness checks fails staged/data controls, and a size-only final check loses a late zero-byte file. A resolve-based rejection and queued full-path scan access external symlink targets before retaining. These and premature, implicit, dirty, active, foreign, unpushed, stale or missing-evidence deletion fail behavioral controls.",
       "interactions": "Depends on the existing completion gate, Git, gh for live reads, Linux process visibility and one coordinator's preserved-path inventory; conflicts with force/prune, premature deletion or unreported active assignments. Cleanup never delays immediate commit publication.",
       "save_compatibility": "Source-only workflow tooling; no ROM/RAM, save/config, generated-data, localization, modern or archival changes.",
       "cleanup": "Tests remove only their UUID-owned fixture roots; the coordinator alone applies real historical cleanup after merge/master gates and records retained blockers.",
-      "limitations": "Allocated blocks are not exact physical freed bytes. Ambiguous squash/rebase history, private-only recovery/REUC objects, private configuration or unfamiliar metadata/index formats, any promisor configuration, missing API/local objects and unknown ignored data stay held. Tests scope process inventory to owned PIDs and skip unsupported non-Linux/proc hosts; live use still fails closed on missing visibility or malformed byte-path records. No manual-only visual criterion.",
+      "limitations": "Allocated blocks are not exact physical freed bytes. Content arriving in a gitlink after its final empty observation but before Git deletes it can be lost; ordinary Git does not inspect that content. No atomic writer lock or permission platform is claimed. Apply only to explicitly known released, quiescent task workspaces, with complete preserved inventory and no reassignment; otherwise retain. Only present real empty unpopulated gitlinks can qualify; missing, populated, changed or ambiguous paths stay held. Ambiguous squash/rebase history, private-only recovery/REUC objects, private configuration or unfamiliar metadata/index formats, any promisor configuration, missing API/local objects and unknown ignored data stay held. Tests scope process inventory to owned PIDs and skip unsupported non-Linux/proc hosts; live use still fails closed on missing visibility or malformed byte-path records. No manual-only visual criterion.",
       "automation": [
         {
           "command": "python3 -m unittest scripts.workflow_pilot.tests.test_worktree_cleanup -v",
@@ -2505,7 +2567,7 @@
       ],
       "purpose": "Prove every exact Git-tree path and mode has one complete typed validation owner set or one actual-gitlink fail-closed exclusion, with confined authoritative GNU Make, workflow, tester-case, generated-data, and manual-handoff authority. Prefixes apply only to the Git-derived initial cohort: newly tracked src/foo.c and analogous paths require exact semantic ownership or actual source-registry admission; prefix renaming or expansion cannot authorize them.",
       "prerequisites": "Start at the exact repository root with the ownership graph, strict schema, independent sealed probe oracle, reporter, generated-data registry, tester-case registry, Build workflow, Makefiles, /usr/bin/make, mount/network/PID namespaces plus either user namespaces or passwordless exact /usr/bin/sudo, a static-capable /usr/bin/cc, the host C++ compiler, libpng/zlib development headers and libraries plus pkg-config (libpng-dev and pkg-config on Ubuntu), the existing pinned host Python environment, and manual-handoff contract unchanged; no token, ROM, emulator, or remote workflow is required.",
-      "actions": "Run the isolated no-site ownership suite and standalone check with -I -S -B before any Make invocation; resolve representative runtime, ABI, host-only, generated-data, localization, configuration, manual A/V, workflow, governance, repository-config, issue-template, pull-request-template, and CODEOWNERS-exclusion paths, including exact title inputs, the LORM_SP1_PROOF and Eirika package sources, unobserved graphics/audio, generated manifest sources, review-only previews and handoff metadata; derive exact Make authority from a read-only exact-tree and exact-gitlink GNU Make sandbox using unprivileged namespaces or an exact sudo/unshare path that drops to the original runner with no groups/capabilities; derive and execute all 112 live CLI domains from the parsed sealed prerequisite model (111 tracked fallbacks plus explicit NODEP), plus environment/fallback origins; bind concrete closures, pattern stems, expanded recipes, includes, errors, dynamic command outputs, and terminal tracked/generated inputs; prove trace/recipe text never authorizes execution, including eager commands equal to normalized recipes; keep append-only event and read-only mapping descriptors outside candidate-visible paths and reject forged/truncated/wrong-count records; derive typed generated paths from an exact-candidate credential-free registry subprocess rather than a trusted-process base import; compare MODE=two, eval, define/call, target/automatic/braced/one-character variables, and pattern recipe mutation with direct GNU Make; stage the complete exact PR-base verifier package in CI and directly enter its Python verifier without first running Make, reject candidate reporter/interceptor authority, and compare candidate resolved owner pairs byte-for-byte with the independent base oracle; emit bootstrap-not-authoritative when the introducing base lacks it; run complete nonrecursive graph/Make/workflow/oracle lifecycle consumers; reject missing prerequisites, active errors, unbounded selectors, unregistered eager commands and unsafe includes; separately test hostile controls, MAKECMDGOALS ownership and config/SHELL injection in the trusted-Make convenience branch. Demonstrate that Make itself processes MAKEFILES and --eval before that branch, while the standalone entry scrubs ambient Make controls and rejects Make-only arguments without their effects; execute each lifecycle proof. Resolve scripts/modernize/package_ci_patch.sh and tests/workflows/test_patch_release_workflow.py to their existing complete host pair and independent oracle probes; remove or redirect each role, reject a retired patch-release job authority and require explicit base context for deletion of publisher_shell_contract.py. Exercise the actual packaging helper and parsed eight-job/30-gate contract with owned synthetic positive/adversarial inputs; this focused evidence does not replace full112-domain acceptance or actual private-base publication.",
+      "actions": "Run the isolated no-site ownership suite and standalone check with -I -S -B before any Make invocation; resolve representative runtime, ABI, host-only, generated-data, localization, configuration, manual A/V, workflow, governance and named exclusion paths, including exact title inputs, LORM_SP1_PROOF, Eirika, unobserved graphics/audio, generated sources, review-only previews and handoff metadata. Use one public ProbeBudget/capture/ProbeSession for CURRENT and grouped BASE registry, target and state queries; derive and execute all 112 live CLI domains from the sealed model (111 tracked fallbacks plus explicit NODEP), plus environment/fallback origins. Require native target/prerequisite/recipe-variable observations, real native/compiler/generated output consumption and original Make restarts. Compare MODE=two, eval, define/call, target/automatic/braced/one-character variables and recipe mutation with actual GNU Make; reject unknown eager commands, missing prerequisites, active errors, unsealed inputs and unsafe source paths. For deleted paths require BASE's real registry/model/rules/owners, not CURRENT classification or filenames alone. Perform actual artifact deletion/restoration against the already measured model without recursive reports or budget resets. Keep ordinary CI invocation guards and independently capture the actual standalone verifier through the existing coordinator-check/trusted_executor/capture_check contract with trusted immutable source, actual expected PR BASE, head/worktree and result mode. Removed/replaced candidate invocations or checker code must not suppress that call. Bootstrap authority-none is not exact-base acceptance; a foundation-only introduction requires explicit independently selected source and reports introduction, not a fabricated BASE verifier. Demonstrate actual MAKEFILES and --eval pre-Make effects and the standalone entry's isolation. Preserve complete source-specific asset ownership, semantic new-path admission, all edge-family negatives, the existing publisher host owner pair and explicitly based deletion explanations. Exercise the parsed eight-job/30-gate contract; focused fixtures never replace full repository domain/oracle/lifecycle/public acceptance.",
       "expected_result": "Whole-repository path/mode coverage is exact and every representative path matches independently sealed exact edge/evidence owner pairs. Exact main-title inputs select title framebuffer checks; imported battle and Eirika package inputs select their resource/lifecycle and palette/VRAM consumers, not unrelated presentation-policy probes. Other ROM A/V inputs retain compile/link, applicable generated checks and supplementary handoff without invented runtime coverage; review-only previews claim no ROM build/runtime observation and handoff metadata resolves to governance host checks. The pull-request template resolves to documentation governance, CODEOWNERS is a named external-enforcement exclusion, both ownership commands remain required 30-gate host checks, lifecycle proofs pass, and transitive Make changes invalidate only affected authority edges.",
       "negative_control": "Unknown/untracked/ignored paths and edge/evidence IDs, same-type wrong owners, symlinks or scratch-component symlinks, synthetic gitlinks, mode changes, escaping/nonblob authorities, absolute/dynamic/untracked Make includes, uncovered/overlapping patterns, cycles, duplicate owners, stale targets, undeclared/stale/unsealed external or symbolic inputs, host-value capture, missing/unbounded/malformed/escaping/dynamic/unknown/untracked/oversized prerequisite domains, literal missing prerequisites, active errors, unregistered direct shell or eager assignment commands even when trace/recipe text matches, command-registry ambiguity/nonconvergence, event/mapping pathname exposure, Make $(file) or registered-script control forgery, malformed event identity/count/hash, candidate registry write/network/credential authority or malformed typed output, loss of userns and sudo/unshare fallback, retained sudo root/groups/capabilities, candidate verifier/interceptor/module authority, shape-valid base-oracle owner redirects, missing or substituted base staging/bootstrap state, incomplete/recursive lifecycle validation, broken lifecycle Make/workflow authority, sandbox loss, control flags, hostile Make control variables, MAKECMDGOALS ownership, AUTOTOOLS_CONFIG_MK/SHELL injection, oracle/lifecycle drift, live-checkout writes, mixed Make goals, manual-only evidence, and every mutated/deleted edge family fail closed.",
       "interactions": "Depends on issue #176 artifact admission, executable lifecycle, seals, isolated execution, eight-job workflow source/target equivalence, and maintenance measurement, the shared issue #206 / PR #212 probe foundation, and the inherited issue #216 pinned host Python environment; reuses existing Make targets, the build-once master-only packaging steps, generated-data registry, tester-case registry, and manual-handoff protocol. The package helper and its actual test consumer retain the existing host owner pair and independent oracle probes; a removed publisher path needs explicit base/deletion context, never an empty successful owner. Issue #181 is parallel. No conflict or authorization exists to skip or narrow validation.",
@@ -3352,6 +3414,38 @@
         {
           "command": "make expansion-modern-debugtools-music-check MODERN_CONFIG=release MODERN_ABI=aapcs",
           "evidence": "tools/gba-playtest/scenarios/debugtools-music-title-modern-release.json"
+        }
+      ]
+    },
+    {
+      "id": "TC-WORKFLOW-OWNERSHIP-PROBE-SANDBOX-001",
+      "title": "Confine and bound authentic probe execution",
+      "feature_id": "workflow-governance",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/206"
+      ],
+      "document": "docs/test-cases/workflow-governance.md",
+      "anchor": "tc-workflow-ownership-probe-sandbox-001-confine-and-bound-authentic-probe-execution",
+      "profiles": [
+        "Linux x86-64 source checkout, GNU Make 4.3, static-capable C/C++ host toolchain, Python 3 and private namespaces"
+      ],
+      "purpose": "Prove one authentic Make/generated-source execution authority with isolated channels, exact source declarations and aggregate resource bounds.",
+      "prerequisites": "Clean checkout; all disposable inputs, native payloads and channels stay under build/test-artifacts; no ROM, credentials, emulator or remote mutation.",
+      "actions": "Run the standalone foundation consumer and focused process suite; compare native Make/domain results and real chapterbundle sources, register actual repository scaninc and dependency-only host preprocessing, compare stock runtime spelling and generated include/remake/restart context with ordinary Make, prove explicit env recipe interception with a real side-effect sentinel while eager/public execution stays denied, select immutable BASE/current registries and explicit captured gitlinks in one report, compare actual runtime present/absent inputs and pinned source wildcards, enforce the report-wide attempted-record threshold across collections/capsules/views with exact-limit, cache, failure and strict-result controls, check the compile-only absent /proc/self/exe metadata probe, then exercise native load/SHELL, descriptor/channel, source mmap/stat/glob, view/output confinement, final-pass identity, resource and interruption controls.",
+      "expected_result": "Only authenticated target-specific observations and declared/permitted/consumed/reported sources succeed; issued native tools remain channel-free; declared generated bytes publish only at matched dispatch with authentic Make restart context; raw bytes survive; live capacity, cumulative process work and attempted-observation records obey the one report lifetime without numeric increases or resets; cached replay is not double charged and source-entry limits remain independent; every authority/resource bypass rejects and owned state is cleaned.",
+      "negative_control": "Benign pre-fix Make load/SHELL processes actually forge an inherited test FD; unconfined source functions access undeclared files; per-process timeouts exceed the single global bound. Exact bc136 compiles/runs real scaninc but cannot register it in Make, and loses a /work generated include that ordinary Make loads to select observed. Exact 0b4cc7d admits a fourth cross-collection record under a three-record aggregate bound and rejects compile-only /proc/self/exe metadata before the kernel can report authentic absence. Exact e403445 still admits successive public command capsules beyond the report-wide observation bound.",
+      "interactions": "Reuses GNU Make, exact-tree and generated-registry contracts; PR186 must integrate the authority and retain its complete domain/graph/oracle/lifecycle gates. No independent game/profile conflicts.",
+      "save_compatibility": "Host-only foundation; no save, migration, configuration identity, generated game content, locale, ROM/RAM, modern debug/release or archival change.",
+      "cleanup": "Context exit, failure, timeout, overflow and SIGINT/SIGTERM reap recorded children, clear caches and remove only owned scratch; tests clean their disposable roots. New sudo-drop publication directories/files belong to the runner for unprivileged cleanup; existing source/control ownership and user-namespace mappings remain unchanged.",
+      "limitations": "This independent root does not claim the unmerged #180 graph, complete PR186 matrix or public validation-ownership-check target. Unsupported Make native ABIs/platforms reject; no manual-only criterion applies.",
+      "automation": [
+        {
+          "command": "python3 -m unittest scripts.validation_ownership.tests.test_foundation -v",
+          "evidence": "scripts/validation_ownership/tests/test_foundation.py"
+        },
+        {
+          "command": "make -f scripts/validation_ownership/foundation.mk ownership-probe-check",
+          "evidence": "scripts/validation_ownership/consumer.py"
         }
       ]
     },

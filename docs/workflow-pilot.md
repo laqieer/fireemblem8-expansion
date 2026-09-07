@@ -100,6 +100,421 @@ input-format/cohort checksum: it detects identity, timestamp, PR/SHA
 association, and relationship substitution that preserves aggregate metrics,
 but does not hash source files, blobs, objects, ROMs, or the repository tree.
 
+## Sibling-family review convergence
+
+[Issue #179](https://github.com/laqieer/fireemblem8-expansion/issues/179) adds a
+bounded local review and executable sibling sweep, not another delivery or
+hostile-Python platform. It depends on #176's risk/metric contracts, the
+existing Git/GitHub/task/test interfaces, and #216's locked schema-test
+environment. #181 is a dependent; #178 is independent. #204 is not a
+prerequisite. The original
+[tester case](test-cases/workflow-governance.md#tc-workflow-review-family-001-expand-valid-findings-across-complete-sibling-families)
+remains the acceptance contract.
+
+### Trust and ownership
+
+The coordinator freezes repository/PR/base/head, accepted cases, findings and
+risk classification. A high-risk or large candidate gets one fresh bounded
+read-only review before its first remote review. The existing task runtime
+owns task identity, owner, role, completion and observed tool actions. The
+reviewer's response is findings data, not an authentication token. Keep its
+owner distinct from implementation and coordination.
+Share one `ReviewOwnership` index across the coordinator's sessions; it blocks
+another active reviewer for the same repository/PR or the same candidate head,
+regardless of scope, before another task can start.
+
+`ReviewSession.begin` forwards the closed `code-review` role, exact head/scope,
+allowed read/report actions and duration/file/finding bounds to the
+coordinator's existing task adapter. It returns immediately. After the
+existing task-completion notification, `finish` reads that task's actual
+result. There is no polling, new agent backend or JSON-selected runtime.
+The adapter's result exposes the actual `task`, `owner`, `role`, `head`,
+`subjects`, `completed`, `read_only`, `actions`, `files`, `findings`, `started_at` and
+`completed_at`; these are runtime metadata, not fields copied from the
+reviewer's prose. Both `completed` and `read_only` must be Boolean `True`
+for report admission; truthy strings/numbers or missing fields cannot admit
+a completed review. Requested
+duration (1–3,600 seconds) and files (1–200, default 200) are strict Python
+integers. The lease retains its requested file bound; returned `files` must
+be an integer from zero through that bound, never a Boolean, float or string.
+Scope/actions must be collections of strings and findings a list/tuple of
+typed records. Malformed or over-budget reports do not grant review evidence
+or silently release ownership.
+Every admitted completed report must include actual runtime observations for
+both `read-candidate` and `emit-report`; `read-evidence` is optional.
+An empty or partial subset of the allowed actions is not sufficient.
+Bound read tools through the coordinator's `readers` map.
+`read_action` rejects mutation/arbitrary-command operations before dispatch.
+Ordinary test execution is a separate coordinator-owned test role, not a
+second overlapping reviewer.
+
+Lease retirement is distinct from report admission. `finish` reads actual
+task status even after the deadline. A still-running or unknown task retains
+ownership; a verified late terminal result closes the lease with
+`outcome: timed-out`, releases ownership and rejects the report. The deadline
+is checked after reading and again before admission, so completion observed
+across the deadline cannot supply review evidence.
+
+The explicit `session.abort(runtime)` operation uses the coordinator's
+optional existing `runtime.stop(task)` capability when the task is still
+running. It verifies the exact task/owner/role/head/scope, Boolean terminal
+`completed` state and terminal timestamp chronology. A stop request or
+acknowledgment alone never closes the lease: the operation reads the actual
+task again. Stop/read failure, missing stop capability, unknown status or
+malformed terminal metadata retains ownership until real terminal evidence
+is available. An already completed failed report can be abandoned without
+being accepted or stopping it again.
+
+Both paths use the same retirement helper. `finished` means the lease is
+closed, while `outcome` distinguishes an admitted `completed` review from
+`timed-out` or `aborted` work. Timeout/abort retains no report or local finding
+evidence and cannot satisfy independent pre-review admission. Completion
+releases the existing index for a fresh session; no polling loop, new task
+backend or cleanup service is added.
+
+The coordinator and reviewed validator/test tools are trusted. Candidate
+requests are data and cannot choose Python programs, imports, commands,
+expected members, pass records or trusted-status flags. Test children receive
+captured source and a minimal environment without supplied GitHub/SSH
+credentials or coordinator configuration. These are operational controls,
+**not OS isolation from malicious same-UID code**. No broker, HMAC, receipt
+store, capsule, import-capability proof or protected installation is required.
+
+### Public request and execution API
+
+The independently checked
+[`review_family.schema.json`](../scripts/workflow_pilot/review_family.schema.json)
+defines the closed wire shape. `validate_request` also checks identity joins,
+duplicates, bounds and subject membership. The CLI accepts only a non-symlink
+regular request file, reads at most 1 MiB plus one EOF byte from its checked
+descriptor, and rejects overage before JSON parsing. Malformed JSON, invalid
+record types and nonregular inputs produce bounded nonzero diagnostics.
+These file/runtime limits do not add fields to the version-1 JSON schema.
+A request contains:
+
+```json
+{
+  "schema_version": 1,
+  "repository": "owner/repo",
+  "pull_request": 1,
+  "base_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "candidate_sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "subjects": [
+    {"case_id": "TC-GAMEPLAY-006", "subject": "aoe-item-dispatch"}
+  ],
+  "findings": []
+}
+```
+
+An accepted finding additionally names `finding_id`, `case_id`, `subject`,
+`family` and `reported_member`. Its actual review/task, origin and source
+location come from the coordinator's observation, not candidate JSON.
+The requested subjects/findings must equal the frozen accepted scope; omitting
+an entire finding is not a way to avoid its sibling obligations.
+
+The three responsibilities are:
+
+| Implementation | Contract |
+| --- | --- |
+| `review_family.py` | Strict data, ownership, coverage and round reducer |
+| `review_subjects.py` | Existing-case bindings, finite models and closed probes |
+| `trusted_review_gate.py` | Exact Git/GitHub collection and approved test-process execution |
+
+`ReviewTools` loads the two fixed validator modules from the coordinator's
+explicit **reviewed tool revision**, compiling the exact captured Git bytes.
+The existing fixed isolated launcher must itself run from a **separately
+trusted checkout or installation**, using a trusted interpreter. Its trust is
+established by the coordinator before invocation: a candidate launcher cannot
+authenticate itself by checking `--tool-revision` after it has already started.
+Do not run the candidate checkout's bootstrap or automatically copy it elsewhere
+and call that trust.
+
+For `review-family`, `--repository-root` identifies the candidate object-storage
+worktree, not the launcher's own root. The launcher requires separate locations
+and validates the exact candidate Git top level, commit type and captured
+regular-blob bytes before executing any reviewed initializer or validator.
+Other protected modes retain their original same-root checks. It loads the
+gate's captured bytes, not a validate-then-reopen working-copy path.
+An existing case binding/model may be
+reviewed in the same feature PR and selected at its exact tool revision.
+There is no required base-first installation or second canonical case catalog.
+The request cannot select that revision or register its own probe.
+This introducing PR supplies the fixed launcher mode too: the coordinator may
+independently review and trust that launcher from this PR in another checkout.
+This explicit introducing-PR boundary does not require a separate adapter PR,
+broker, source ledger or generic bootstrap service.
+
+`resolve_subject` joins an existing catalog case to the reviewed binding.
+`expand_members` derives the finite source-backed obligations at the finding
+origin and candidate. `run_obligations` executes their closed selectors and
+returns actual observations. `ReviewTools.assess` obtains fresh GitHub facts,
+executes the actual origin/candidate probes, revalidates source identities and
+GitHub state, then calls `assess_handoff` with the coordinator's real review
+session and triage. The session's `identity` is the frozen
+`(repository, pull_request, base_sha)` tuple. The coordinator derives
+`base_sha` as the unique merge base of the candidate and the observed live base.
+Unrelated base fast-forwards preserve that identity; an arbitrary older
+ancestor is not an acceptable replacement. The coordinator derives
+`pre_review_required` from the existing #176 risk/threshold decision, not a
+candidate option.
+
+The coordinator supplies existing tool adapters through the in-process API;
+they are never deserialized from a file. This API does not authenticate an
+arbitrary Python caller. Its trust boundary is the existing coordinator/tool
+role, not a new platform.
+The existing ownership index enforces repository/PR and candidate-head
+exclusion independently, even for disjoint scopes. A new head does not permit
+a second active reviewer on the same PR; another PR does not permit duplicate
+active review of the same candidate head. Only work with both a different
+repository/PR identity and a different head remains independent. Completion
+releases both exclusions for a subsequent bounded session.
+`begin` requires `runtime.start` to return a nonblank string task identity,
+preserved unchanged. Missing, blank or wrong-type handles unwind the attempted
+reservation before any lease or local report can be created; a later valid
+acquisition remains possible.
+`advance` rejects while a lease is active, including after its deadline or
+a stop acknowledgment without terminal evidence. The existing observed
+completion/timeout/abort path must release it first. Subsequent head changes
+preserve the old report's origin rather than rebinding it to the new head.
+
+`ReviewSession.finish` snapshots validated runtime fields into an internal
+frozen report before releasing ownership. Scope/actions are immutable sets,
+findings are a tuple of frozen typed values, and timestamps and bounds are
+copied values. Later runtime-record mutations cannot change the accepted
+report or its pre-review chronology. This is a value snapshot, not a receipt,
+signature, history service or protection against arbitrary malicious Python
+mutation of the trusted coordinator. Before handoff, call
+`session.triage_local(finding_id, accepted=decision, reason=reason)` for every
+returned finding, with a Boolean decision. Accepted records enter the existing sibling sweep;
+rejected records retain a nonblank coordinator reason. Omitted, duplicate,
+wrong-task or contradictory dispositions cannot establish eligibility, even
+after a later candidate passes its probes. This is coordinator-owned triage,
+not authenticated provenance from a JSON author.
+
+For diagnostic planning/checking, use the closed launcher mode:
+
+```bash
+TRUSTED_REVIEW_ROOT=/absolute/path/to/independently-trusted-checkout
+CANDIDATE_ROOT=/absolute/path/to/candidate-checkout
+"$TRUSTED_REVIEW_ROOT/build/host-python/bin/python3" -I \
+  "$TRUSTED_REVIEW_ROOT/scripts/workflow_pilot/isolated_launcher.py" review-family \
+  --repository-root "$CANDIDATE_ROOT" --subject-root "$CANDIDATE_ROOT" \
+  --tool-revision "$REVIEWED_TOOL_SHA" --candidate "$CANDIDATE_SHA" \
+  --request "$CANDIDATE_ROOT/build/review-request.json" --mode plan
+```
+
+`plan` derives obligations from exact Git source without executing candidate
+code. `check` also reads GitHub and runs the selected candidate probes.
+Both emit audit JSON, never a bearer credential or merge permission. `check`
+lists untriaged review IDs and leaves handoff eligibility false: a file
+argument cannot establish an independent task or complete coordinator
+triage. The coordinator consumes actual task results with the in-process API;
+it must not convert `source_audit_complete` into approval.
+Expected missing-object and ancestry failures are translated at the existing
+Git adapter into bounded, nonzero `review-family:` diagnostics in both direct
+and isolated entrypoints, not tracebacks or successful fallback assessments.
+The actual direct `GitTree.git` path supplies a 60-second deadline through the
+existing reporter Git runner's optional timeout seam; unrelated callers keep
+their original default behavior. Its timeout is translated through the same
+direct adapter boundary, independently of the launcher helper.
+The fixed launcher's Git helper also translates its expected subprocess
+timeout into a bounded `workflow-pilot-launcher:` failure. The GitHub adapter
+translates expected CLI timeout/launch errors once into its existing
+`ValueError` boundary; both entrypoints report bounded `review-family:`
+diagnostics. Unexpected programming exceptions are not relabeled as ordinary
+tool unavailability.
+
+### Finite coverage and actual evidence
+
+| Family | Required roles |
+| --- | --- |
+| action | actions, items, targets |
+| lifecycle | entries, preservation, resets, terminals |
+| wire | producers, consumers, validators, replay, stale-bindings |
+| generated | owners, outputs, consumers, drift-checks |
+| resource | enabled, disabled |
+
+Roles are not the entire concrete member set. Every obligation identifies its
+actual producer/predicate, consumer, representation, revalidation, profile,
+source inputs, evidence classes and expected `kind` (`host`, `native`,
+`parsed` or `arm-object`). Parse the declared enum/schema/model;
+never infer completeness from a filename alone. The trusted reviewer and
+coordinator must select the model that genuinely represents the finding.
+Unknown, ambiguous, added/deleted or remapped members need a reviewed model
+and explicit removal evidence; they cannot disappear silently. Current
+bindings reject such changes rather than manufacture not-applicable results.
+The total bound is 250 obligations, not five arbitrarily selected siblings.
+
+An obligation's immutable `inputs` retain its semantic subject attachment.
+Its separate `execution_inputs` bind the complete shared worker staging
+closure; the adapter does not add undeclared candidate files. AoE inputs include the
+compiled core/reference sources and the complete staged header set. Generated
+inputs include all schemas imported by the existing registry, the staged
+generated-data code/data/headers/inventories and declared authored resources.
+Every observation's `source_objects` bind the complete execution union,
+including mixed-subject requests; narrowing that closure cannot borrow
+undeclared bytes staged for another member. Adding another subject does not
+expand a member's semantic `inputs`: an unrelated generated/workflow source
+cannot attach to an AoE finding merely because it was staged or another
+subject failed. The fixed reviewed tool overlays remain
+bound by `tool_revision`, not a candidate-supplied program. This is the actual
+finite staging boundary, not a generic Python import/capability guarantee.
+
+The shipped unrelated subject uses are:
+
+- **`TC-GAMEPLAY-006 / aoe-item-dispatch`:** actual typed AoE phase, route and
+  target predicates in `src/expansion_aoe.c`. The existing C driver has closed
+  per-phase/shape/route/target selectors, preserving its no-argument full run.
+  It executes real functions with positive and adversarial inputs. Separate
+  shape selectors build the actual range map and compare every cell with
+  independent selected-shape bitmaps, not merely tile totals or another
+  production geometry helper. A same-nine-cell square cannot stand in for
+  the cross geometry.
+  Separate
+  enabled/disabled native reference and ARM object symbol/section checks
+  establish the resource boundary. Each enabled core/reference object must
+  contain a nonempty `ewram_data` section; an absent placement is not zero
+  budget usage. The aggregate 128-byte EWRAM and 8-KiB text limits and disabled
+  symbol omission remain required. The modern linker gate passes its resolved
+  `MODERN_CC`, `MODERN_NM` and `MODERN_SIZE` paths, including
+  `MODERN_TOOLCHAIN_ROOT` and explicit compiler overrides, to the workers.
+  Direct coordinator calls use the same environment settings or the closed
+  `ReviewTools(..., arm_tools={...})` mapping; defaults resolve through PATH.
+  Missing selected tools remain unavailable, never a fallback to system tools.
+  The parsed phase/shape enum values must match the existing zero-based,
+  contiguous selector mapping and count sentinels: aliased or missing numeric
+  cases cannot masquerade as independent siblings. The finite parser supports
+  implicit increments and nonnegative decimal/octal/hex literal assignments,
+  not general C expression evaluation. Equivalent formatting or explicitly
+  reordered declarations preserving values remain valid.
+  This binding does not claim every future
+  downstream route provider or in-game UI path is covered.
+- **`TC-CORE-004 / generated-eventlists`:** the real event-list schema's
+  required and optional owner declarations, authored source, generated C,
+  typed consumer round trip and committed inventory. Optional chapter/strategy
+  owners run their existing schema validation as well as event-list reference
+  checks, not those independent features' full ROM/runtime gates. Existing
+  observation inputs include the concrete producer/parser/inventory, shared
+  validation modules and authored resources consumed by this binding; valid
+  findings in those sources participate in actual before/after sibling sweeps.
+- **`TC-WORKFLOW-REVIEW-FAMILY-001 / review-session`:** actual reducer and
+  request code executed as a registered subject with finite lifecycle/wire
+  controls. This explicit binding never redirects unrelated findings to
+  workflow-governance code.
+
+`affected-fixed` requires the same reviewed semantic probe to find a contract
+violation at the actual finding origin and to pass the candidate. Unaffected
+siblings must pass their own probes before and after. Each accepted defect
+requires an affected-fixed row for its **reported member itself**; an
+already-satisfied reported member cannot borrow a different sibling's failure.
+Both direct handoff assessment and the coordinator adapter use that same
+predicate. Being included in the execution closure establishes staged-byte
+binding, not semantic finding attachment or damage: unrelated inputs or
+all-pass tests cannot repair a finding.
+Missing/duplicated/wrong-subject/stale observations reject. Imports, compile
+errors, missing tools, zero/skipped tests and timeouts are **unavailable**,
+not useful failing controls. Native exit codes come from the selected trusted
+driver, not a candidate PASS label. Host, native, generated and ARM object
+results are explicitly typed; none is relabeled as target-ROM execution.
+When common generated-source validation fails before an output, consumer or
+drift predicate, the selected member is `unavailable` with zero checks and
+`blocked_by: ["owners:eventlists"]`. Optional owners' additional event-list
+reference validation uses the same attribution, without hiding their own
+validation failures. The reducer requires an actually failed owner observation
+in that same subject/family/origin and a satisfied candidate, and reports the
+sibling as `prerequisite-fixed`, never `affected-fixed` or
+`verified-unaffected`. Missing or unobserved prerequisites still reject.
+Reporting that blocked drift/consumer as the defect cannot pass the mandatory
+reported-member check. Genuine owner defects and executed member failures
+retain their normal before/after evidence.
+The worker reports `probe`, `kind`, `verdict`, strict integer `checks`, a
+`blocked_by` member list (empty unless attributed as above) and a
+nonblank `detail` of at most 2,000 characters. The adapter preserves those
+fields together with the captured source objects, and validates the reported
+kind against the obligation instead of deriving a replacement from the probe
+name. Missing fields, wrong kinds/counts/types and unknown fields reject.
+Successful and contract-violation rows retain the actual executor's kind and
+positive check count (a failed semantic assertion counts as an executed check).
+Unavailable rows always have zero checks: they retain the attempted executor's
+kind when known, or use `null` when no executor/result was obtained. Neither
+form grants successful or affected-fixed evidence credit. A wrongly routed
+native/host executor cannot establish an ARM/parsed obligation, even when its
+own assertions pass or report a genuine violation.
+Actual gameplay changes still require their applicable existing ROM scenario.
+
+### Review triage, holds, persistence and metrics
+
+GitHub collection authenticates the actual Copilot Bot identity and retains
+complete bounded review content. IDs, heads, actor and timestamps are facts;
+the coordinator's complete-content triage determines clean/change-request/
+untriaged status. COMMENTED, no inline comments and natural-language approval
+phrases never automatically mean clean. Changed content invalidates old
+triage; missing/incomplete observations fail closed. Dismissed review facts are
+retained as history but never clean authority: only active COMMENTED/APPROVED
+facts can support clean triage on the exact head. Handoff eligibility and
+`exact_head_review_clean` share one readiness condition: every collected fact
+has complete triage and zero unresolved conversations, including earlier-head
+and historical reviews. Exact clean additionally requires the latest
+current-head active clean triage; handoff readiness alone is not final remote
+approval and remains subject to the architecture hold. A later clean review
+cannot hide an older unresolved thread or untriaged record. Resolution is
+observed from fresh GitHub facts and requires the normal changed-fact retriage
+before either readiness or clean assessment.
+
+Keep one current record per review ID, with immutable review head, actor and
+submission identity inside the frozen repository/PR session. An unchanged
+provisional `untriaged` observation can receive complete triage once; an
+unchanged finalized replay rejects. Fresh edited content, thread state or
+dismissal invalidates the previous decision and handoff, including changes
+observed during probe execution. Explicit coordinator retriage replaces the
+record instead of adding a round. Formal CHANGES_REQUESTED observations count
+before content triage, but do not emit actionable handoffs until triaged.
+The finalized `dismissed` outcome is permitted only for an actual DISMISSED
+fact; it completes historical triage without granting clean authority.
+Previously accepted finding bindings remain required, including when newer
+content omits them. Retriage refreshes handoffs from that accepted set.
+
+First and second consecutive change requests produce bounded handoffs.
+Each returned `round_handoffs` entry binds `candidate_sha` and `tool_revision`
+and contains `outcome_refs`, indexes into that assessment's `outcomes`.
+Each outcome identifies the finding and full subject/family/member, with
+`origin_evidence` and `candidate_evidence` indexes into the same response's
+`evidence` array. Those validated records retain the member identity, probe,
+profile, evidence classes, actual kind/checks/verdict/detail and prerequisite
+attribution. Their `source_set` indexes address the response's `source_sets`,
+each containing the exact revision/tool binding and captured path/Git-object
+pairs. Source sets and member observations are emitted once, not copied into
+every finding/round; no source payload or external evidence registry is added.
+References are local to the enclosing assessment, not permission tokens or
+identities to reuse across candidates. An auditor can follow each round to
+every examined sibling's origin and candidate evidence without reconstructing
+discarded worker results. Later round refreshes do not mutate returned reports.
+Before a hold, clean triage resets the sequence. The third request creates a
+sticky hold bound to its review ID and head. New heads and later clean
+reports cannot reset it. Only the coordinator's bound `redesign`, `decompose`
+or `retain-with-evidence` disposition, with a reason, permits resumption.
+Stale/wrong-head/reused dispositions fail.
+A valid disposition starts the next count window. Retriaging an older current
+record cannot recount completed rounds or silently reopen the old hold.
+
+Preserve #207: stop new narrow work and eligibility during the hold, but
+immediately publish already-created commits on their assigned branch as
+explicitly ineligible WIP. No side branch or post-commit persistence delay is
+introduced. Retain the decision in existing coordinator state/canonical
+evidence; saved audit JSON is not authorization.
+
+#176's historical baseline v1, fixtures and formulas remain unchanged.
+Use `reviews.rounds`, `reviews.valid_findings_per_kloc`,
+`delivery.first_push_to_clean_review` and the existing `pilot_coordination` /
+`metadata_maintenance` event fields. Record actual coordination work; do not
+invent saved minutes or a second metric ledger.
+
+All exact-head Copilot/security/Build, unresolved-review, exact-master Build
+and remote-completion gates remain mandatory. The audit never grants merge
+permission. There is no gameplay/save/config/locale/generated-game-data,
+ROM/RAM, modern/archival, Build topology or required-context change. Rollback
+is the dedicated #179 PR revert, with no manual-only criterion.
+
 ## Completed-worktree cleanup
 
 Issue [#208](https://github.com/laqieer/fireemblem8-expansion/issues/208)
@@ -132,16 +547,39 @@ python3 -m scripts.workflow_pilot.worktree_cleanup --repository-root . \
 `--apply` requires both explicit targets and a preserved-workspace inventory.
 There is no plan-import or caller-provided `eligible` authority. All paths are
 exact Git-registered roots; a similarly named directory is not enough.
+Apply only to task workspaces the coordinator explicitly knows are **released
+and quiescent**. A green inventory result does not establish that precondition.
+Retain uncertain registrations or workspaces with possible continuing writers;
+never guess that another active session's work is disposable.
 The helper keeps the invoking/source/main/master worktrees, broad
 home/repository/session roots and ancestors, other registered worktree
 ancestors, explicit preserved paths, and active process working directories.
 It checks exact Git common-directory and metadata-backlink ownership, branch
 and HEAD, ordinary and hidden-index changes, all untracked files, private
 worktree refs, incomplete Git operations, and upstream divergence.
-Detached, unassociated/reused branches, missing registrations, nested Git
-repositories/submodules (including bare or separated Git metadata without a
-`.git` child), mounts, special files, and unknown ignored local data remain
+Detached, unassociated/reused branches, missing registrations, populated
+submodules/nested Git repositories (including bare or separated Git metadata
+without a `.git` child), mounts, special files, and unknown ignored local data remain
 held, not guessed disposable.
+
+An **unpopulated gitlink** can qualify only when its directory is present,
+real, and completely empty. The parsed index and immutable HEAD tree must
+have identical gitlink path sets, modes, and object IDs. Staged additions,
+deletions, renames, mode/ID changes, and unresolved stages remain held.
+Superproject status uses `--ignore-submodules=all` to avoid executing nested
+Git commands; that status is not a substitute for the independent identity
+comparison. The helper never runs Git in a submodule to establish emptiness.
+Filesystem observation starts from an opened worktree-root descriptor. Each
+relative directory component uses fd-relative `O_DIRECTORY|O_NOFOLLOW`, with
+entry/descriptor identity checks before and after observation. The size scan
+uses the same anchored traversal, not full-path resolution, stat or directory
+opening through a potentially substituted parent. Symlink targets are never
+traversed to decide whether to reject the link.
+Missing directories, symlinks (including parent components), mounts, any
+contained entry, and changing directory identities or modification times
+retain the workspace. Known generated-output names do not exempt contents
+inside a gitlink. Do not create missing directories, deinitialize submodules,
+or rewrite the index to make a retained real worktree qualify.
 
 Every private reflog's old **and** new object identities, every private
 pseudoref, and **every index resolve-undo object** are inspected, including
@@ -232,10 +670,15 @@ record IDs, and validated repository/commit identities. Missing, malformed,
 over-bound, stale, or changing evidence retains the target. The API cache is
 only an in-memory optimization for one pass. Apply clears it before each
 target and compares fresh Git/PR/CI proof with the plan, then repeats local
-identity/status/lock/process/private-recovery checks and the nested-Git/size
-scan immediately before normal
-`git worktree remove`. There is no force, unlock, branch deletion, global
-prune, or recursive filesystem deletion fallback.
+identity/status/lock/process/private-recovery/empty-gitlink checks and the
+nested-Git/size scan immediately before normal `git worktree remove`.
+The size scans also recheck the same gitlink directory observations, including
+emptiness: a zero-byte file can leave the allocated size unchanged, and normal
+Git removal alone can delete ordinary files inside an uninitialized gitlink.
+Every expected gitlink must actually be visited and checked; a substituted
+ancestor cannot hide a gitlink even when the total allocated size is unchanged.
+There is no force, deinit, index rewrite, unlock, branch deletion, global prune,
+or recursive filesystem deletion fallback.
 
 JSON reports `eligible`, `retained`, or `removed`, the evidence, and the first
 precise retention blocker. `allocated_bytes` measures observed allocated
@@ -261,9 +704,14 @@ Supported live use is Linux with visible same-owner process CWDs and a
 coordinator-maintained complete preserved-path list. Other users' assignments
 must also be included explicitly; this is not an OS-wide process lock or an
 atomic GitHub/filesystem transaction. An uninspectable same-owner process
-blocks removal. Do not reassign targets while cleanup is running. API limits,
-unavailable history, ambiguous identities, and retained user data are precise
-operational holds, never reasons to broaden deletion.
+blocks removal. Do not reassign targets while cleanup is running.
+**Residual write window:** new gitlink content after its final empty-directory
+observation and before Git deletes the workspace can be lost; ordinary Git
+removal does not inspect that uninitialized gitlink content. Rechecking observed
+changes is not atomic exclusion of arbitrary writers. If the coordinator cannot
+establish a known released, quiescent target throughout apply, retain it.
+API limits, unavailable history, ambiguous identities, and retained user data
+are precise operational holds, never reasons to broaden deletion.
 The real-worktree tests explicitly skip hosts without Linux `/proc`; they
 scope process inventory to test-owned PIDs, including a real child with its
 CWD in the fixture, and exercise unreadable-CWD retention. Simulated mount
@@ -1501,3 +1949,341 @@ Rollback is a normal revert of the dedicated issue #176 commit. Because no
 delivery behavior or final gate changes here, existing CI, review, merge,
 runtime, save, localization, generated-data, and archival behavior remains in
 place throughout rollback.
+
+## Bounded exact-SHA implementation handoffs
+
+Issue #178 implements Discussion #174's bounded coordination capability, not a
+credential or publication platform. Its
+[approved scope](https://github.com/laqieer/fireemblem8-expansion/issues/178#issuecomment-5556967123)
+replaces the unmerged signed/broker design. The supported host is Linux with
+Python 3, Git, native Copilot CLI events and existing process controls. Live
+run reconciliation uses the coordinator's existing `gh` authentication;
+deterministic tests need no token, live workflow, emulator or ROM.
+
+### Assignment, result and trust boundary
+
+The closed [JSON Schema](../scripts/workflow_pilot/agent_handoff.schema.json)
+describes v3 assignments, candidate results, coordinator state and verdicts.
+V2 handoff documents and authority/broker flags are rejected, not migrated.
+There are no released v2 handoff consumers. Reporter v1 is a different,
+unchanged baseline contract.
+
+The coordinator retains one assignment with issue/PR, owner/session/dispatch
+IDs, exact parent SHA, branch/worktree, unique allowed paths/directory prefixes,
+exact permitted upstream inputs, findings, keyed acceptance criteria/checks,
+named evidence, line/ROM/RAM/protocol budgets, lifetime/RSS limits and the complete
+prohibited remote-action set. A successor names its predecessor. No executable
+or permission is accepted from an implementation result:
+
+```json
+{
+  "schema_version": 3,
+  "assignment_id": "review-178-1",
+  "assigned_parent_sha": "1111111111111111111111111111111111111111",
+  "result_sha": "2222222222222222222222222222222222222222",
+  "evidence_refs": ["raw-diff", "focused-case"]
+}
+```
+
+Those SHAs are illustrative, not executable evidence. `load_assignment`,
+`load_result`, `parse_assignment(bytes)` and `parse_result(bytes)` reject
+over-1-MiB input **before** decoding/copying; duplicate keys, nonfinite values,
+unknown fields, invalid Unicode, excessive depth/nodes/strings and unsupported
+versions reject. Collections are bounded: 128 assignments/watchers, 256 scope
+entries, 32 checks/criteria, 16 upstream inputs and 16 inputs per protocol check.
+There are five lifecycle states; text is at most 16 KiB. Keyed criteria/checks and unique
+arrays avoid duplicate wire identities. The independent Draft 2020-12 tests
+exercise structural/schema agreement. Git identity, cross-record correlation,
+chronology, ownership and evidence completeness require additional runtime
+checks, not a schema claim of authenticity.
+
+Assignment, owner, session and actual dispatch IDs are each unique across the
+retained state, including closed history. A successor or independent assignment
+needs a fresh dispatch identity; changing other IDs cannot reuse an old task
+correlation.
+
+Reusable text and path fields accept Unicode scalar values, including
+supplementary characters and valid JSON escapes. Escaped lone UTF-16
+surrogates reject in the independent schema and the byte API/CLI alike.
+Protocol paths must also be disjoint across required check definitions:
+duplicate or partially overlapping definitions reject at runtime. The ordinary
+schema checks each definition's shape/unique inputs, not this cross-record
+relationship or the resulting aggregate budget.
+
+The one bounded wire decoder normalizes mathematically integral JSON numbers
+(`178.0`, `17.8e1`) to native integers before validation or OS operations.
+Boolean, fractional, nonfinite and out-of-range integer inputs still reject;
+fractional tokens that would round or underflow to an integer also reject.
+Downstream typed APIs keep their strict integer contract. This uses the
+published Draft 2020-12 semantics, not a custom schema validator.
+
+Coordinator observations are trusted operational input, **not authenticated
+data**. The single canonical state path and its short nonblocking lock prevent
+accidental competing writers; unsigned JSON, modes, IDs and source labels do not
+authenticate the caller. Existing platform role/tool permissions prohibit
+implementation-owner remote actions. Recorded prohibited requests/actions reject;
+this module does not prove that an arbitrary hostile same-UID process performed
+no hidden action. No signature, HMAC ledger, protected installation, daemon,
+remote ref mutation or publication endpoint is present.
+
+State updates exclusively create a uniquely named sibling staging file, fsync
+its complete bytes and atomically replace the canonical document under the
+existing lock. Normal/error cleanup removes only the current transaction's
+created staging file. A crash can leave partial or complete staging, including
+the former fixed `.new` name; later transactions leave those files untouched
+and read only canonical state. No staging file is promoted as an allegedly
+completed operation. A name collision fails without modifying the existing
+file, and a retry uses a fresh name. No recovery journal or ownership layer is
+needed; a random filename is not authority.
+
+### Coordinator integration and commands
+
+Use a reviewed source checkout, not the implementation worktree, for the
+existing isolated launcher. Python `-I` avoids ambient imports; it is not an OS
+sandbox or permission to execute arbitrary candidate code with credentials.
+The only built-in process check runs the fixed reviewed raw-diff checker with
+a closed credential-free environment. Additional focused checks use
+`capture_check(entry, check_id, result_sha, trusted_executor)` from the existing
+approved coordinator test/CI route. That executor returns an actual owned
+process capture and its parsed measurements, never candidate command strings
+or displayed `passed` labels. Unregistered/missing executors remain incomplete.
+Use existing `linker_report.budget` map/ELF checks for runtime-resource measures;
+there is no new resource-closure or file-to-gate graph.
+
+The coordinator creates the initial document with
+`new_state(repository, coordinator_id, availability)` and `json_bytes`, in its
+session storage outside the implementation worktree. `availability` names
+`mode` (`always-on` or `plan`), UTC `observed_at`/`valid_until`, both Dev Box stop
+settings and nullable `plan` text. Inspect the actual host settings before
+recording them. A plan is a decision covering the unattended interval, not
+proof of perpetual availability. Boot/suspend observations invalidate stale
+coverage until the coordinator makes a fresh availability decision.
+
+Set `REVIEWED_SOURCE`, `COORDINATOR_STATE`, `ASSIGNMENT`, `OWNER_EVENTS`,
+`RESULT` and `WORKTREE` to those actual paths. The four operations are:
+
+```bash
+/usr/bin/python3 -I "$REVIEWED_SOURCE/scripts/workflow_pilot/isolated_launcher.py" agent-handoff assign \
+  --state "$COORDINATOR_STATE" --assignment "$ASSIGNMENT"
+```
+
+```bash
+/usr/bin/python3 -I "$REVIEWED_SOURCE/scripts/workflow_pilot/isolated_launcher.py" agent-handoff observe \
+  --state "$COORDINATOR_STATE" --assignment-id review-178-1 --runtime-events "$OWNER_EVENTS"
+```
+
+```bash
+/usr/bin/python3 -I "$REVIEWED_SOURCE/scripts/workflow_pilot/isolated_launcher.py" agent-handoff validate \
+  --state "$COORDINATOR_STATE" --result "$RESULT" --worktree "$WORKTREE"
+```
+
+```bash
+/usr/bin/python3 -I "$REVIEWED_SOURCE/scripts/workflow_pilot/isolated_launcher.py" agent-handoff reconcile-run \
+  --state "$COORDINATOR_STATE" --run-id 123456
+```
+
+`assign` reserves ownership before dispatch; it does not launch agents.
+`observe` reads the existing native JSONL producer incrementally with no-follow
+file identity/cursors. Pass the coordinator dispatch log, then the matching
+owner session log (repeat `observe` as actual runtime notifications arrive).
+Include `[handoff:review-178-1]` in the actual assigned prompt. `dispatch_id`
+correlates the coordinator's task/write-agent/shell tool call and must equal
+the native receipt's `data.parentAgentTaskId`; `session_id` and `owner_id`
+identify the actual assigned session/runtime. A correlation marker alone is
+not receipt evidence. Missing, opaque or wrong task identity stays incomplete.
+Each event uses the session context established before it, starting from the
+previous cursor; a later `session.start` cannot retroactively attach earlier
+receipt, progress or delivery to that session. Incremental and bounded batches
+retain this context without storing another event history. An old session
+start may establish resumed context, but events predating the assignment do
+not acknowledge or count its work. Future-dated events reject.
+
+| State | Actual observation |
+| --- | --- |
+| `assignment_sent` | Matching native `tool.execution_start` dispatch |
+| `assignment_received` | Matching session's native `user.message` with the assignment marker and matching `parentAgentTaskId` |
+| `progressing` | A separate post-receipt `tool.execution_start` |
+| `committed` | Git observes the delivered SHA as real worktree HEAD |
+| `handed_off` | Native `assistant.message` delivers `{"handoff_result": ...}` after the commit observation |
+
+`subagent.started` does not imply receipt or progress.
+`tool.execution_complete.success` is transport status, not an OS exit code.
+The owner emits its final result as the JSON envelope shown in the last row,
+without Markdown fences; the inner object follows the result schema.
+The adapter records separate observation timestamps/source IDs, not inferred
+states from a single success response. A second committed handoff from the
+same owner is rejected.
+
+Bind a real owner PID using `observe --pid <pid>` or `bind_process`. Kernel
+boot ID/PID/start ticks and runtime handle identify the process; PID sampling
+alone cannot supply an exit status or complete peak RSS. The existing runtime
+that owns the `Popen` child calls the nonblocking
+`observe_owned_exit(process, identity)` and `record_process` at its completion
+notification. These consume `wait4` exit/RSS data. An opaque handle, already
+consumed wait status or inaccessible process remains unknown and cannot certify
+budget compliance. Do not parse printed exit labels, kill unrelated processes,
+or add a custom agent runtime to manufacture missing observations. Keep the
+existing runtime/timeout lifetime limit; validation also rejects elapsed/RSS
+overages and unretired owners.
+
+`validate` emits a bounded verdict and exits 0 only for a ready local handoff;
+rejected/incomplete handoffs exit 2. It is not merge or push authorization.
+It verifies exact Git/worktree identity, strict ancestry, clean status/index,
+the task-owned first-parent chain and both terminal Copilot trailers. Normal
+merges of recorded exact upstream inputs are allowed: imported history needs
+no task trailers, and unchanged upstream-owned paths are not task scope.
+Unrecorded merge inputs, arbitrary out-of-scope resolutions, hidden index flags,
+dirty/conflicting trees and stale/non-HEAD results reject.
+
+Incremental changed lines count task additions + deletions after excluding
+authorized unchanged upstream paths. This is **not** the full-PR 20K review
+gate; a specifically budgeted deletion/refactor may have a large incremental
+diff while reducing the final PR. Binary/unquantified changes do not become zero.
+Known host-only task paths or an observed result with no task-owned paths
+(such as a pure authorized import) may derive zero task ROM/RAM. Zero numstat
+alone is not a resource observation: non-host mode/type changes and empty-file
+additions/deletions still need actual coordinator measurements. A measured zero
+is valid evidence; a missing measurement is not. The raw check captures any
+justified inferred zeros in its existing measurement fields, so later reporting
+does not guess from allowed scope, numstat or a removed worktree.
+Protocol checks compare presence and typed parsed immutable JSON values,
+not schema-version increments or source spelling. Creating/deleting a valid
+JSON `null` document consumes one change; absent/absent and unchanged `null`
+consume none. Key order, integral numeric spelling and valid Unicode escapes
+do not change a value, but Boolean/numeric substitutions and array order do.
+Comparison retains the original input bounds without re-encoding valid
+Unicode into a larger escaped document.
+Each declared input belongs to one protocol check. Multiple disjoint checks
+are supported, and their changed-input counts sum across the assignment.
+An unknown or impossible count cannot be masked by another check or by a
+coordinator's aggregate measure. ROM/RAM measures refer to the same whole-task
+growth and use the greatest observed value, not a sum of repeated measurements.
+Missing measurements and overages reject.
+The raw checker pins whitespace/diff/config behavior, disables hooks/fsmonitor/
+textconv/external diff, bounds object/output bytes, and rechecks Git after checks.
+Combined stdout/stderr is bounded to 4 MiB and raw processes to 30 seconds.
+
+### Rotation, watchers and preserved recovery
+
+A completed handoff retires that owner; a review successor has a fresh
+owner/session and the accepted exact result as its assigned parent. Reservations
+reject duplicate/overlapping owners, reused retired owners and multiple
+successors. The state permits only one initial root per issue or non-null PR,
+including after retirement/interruption: later work must use the real lineage,
+not another `initial` assignment that bypasses retained-worktree recovery.
+Independent issue/PR roots remain separate. Only one coordinator manages the
+canonical state.
+
+Accepted completion requires a genuinely observed zero owner exit and complete
+owned RSS, not merely an exited process. Unknown exit evidence stays incomplete.
+An observed nonzero or signal exit after delivery uses the existing interruption
+preservation path before closing the owner; it is never accepted completion.
+The same eligibility check guards optional accepted reporting. Honest abnormal
+exit observations remain valid state. A committed WIP checkpoint is retained and
+may still be published immediately by the existing #207 coordinator workflow;
+WIP publication and accepted handoff completion are separate decisions.
+
+One pure owner-acceptance predicate covers zero completion, assignment-to-close
+wall-clock lifetime, process age and RSS in both live validation and reporting.
+A small process age cannot override an exceeded wall-clock limit. Validation
+rechecks eligibility after focused checks and records a new close and verdict
+at the same observation instant, so time spent checking cannot evade the limit.
+Future or negative owner/lifecycle/clock chronology is invalid, not zero elapsed
+time. Closed history uses its captured interval without requiring its worktree;
+an open report whose recorded clock predates assignment is incomplete rather
+than silently clamped to zero.
+
+Register the existing direct shell watcher with `reserve_watcher`, binding
+repository/run/attempt/head and an actually running process. Boot/PID/start
+identity is unique across all owners and watchers regardless of runtime handle,
+run or attempt; an exited or unreaped zombie cannot be reserved as active.
+Use the established
+`timeout 90m gh run watch <run-id> --interval 30 --exit-status` command through
+the shell runtime; no reasoning agent waits for it. `finish_watcher` consumes
+an owned exit observation or retains unknown exit status. A replacement watcher
+cannot overlap the old process. Active records require a running observation
+without an exit code; completed records require an exited observation, whose
+exit/RSS may remain unknown. `reconcile-run` makes one bounded `gh api`
+query of that exact run/attempt: authoritative success survives watcher timeout,
+failure/cancellation remains failure, nonterminal remains pending and query or
+identity errors remain unknown. None changes Build topology or existing
+candidate-evidence/metadata classification.
+
+On an owned interruption, use `observe --interruption` or
+`preserve_interruption`. SIGKILL needs an actual exit observation; call it OOM
+only when bounded kernel evidence matches boot/PID/time. Permission failures
+remain “OOM unconfirmed.” Retain the original linked worktree, index, staged/
+unstaged/untracked content and modes; apply Git's existing retention lock,
+which #208 cleanup respects. No reset, deletion or recovery-copy engine runs.
+Already finished failures remain failures; a registered running check stays
+incomplete. `begin_check` lets the existing executor register its real child
+before asynchronous execution.
+
+The existing interruption record carries one local-only
+`retained_data_sha256`: a bounded aggregate of the actual index, Git-enumerated
+dirty/untracked file bytes, symlink target text and relevant file/directory
+modes. Clean committed content still derives from Git and is not hashed into
+a source/blob ledger. The existing nofollow reader streams mutable content,
+with a combined 4-MiB/30-second bound and at most 256 mutable paths. A bounded
+32,768-entry nofollow type scan catches special files that Git omits; it does
+not read clean content or follow symlink targets. Unsupported types, unsafe
+metadata, changed data or an observation overage hold without deleting work.
+
+An interruption has a non-null close at the same parsed timestamp, after its
+assignment and lifecycle observations and before any replacement assignment.
+Loaded contradictory/future times reject, so recovery cost cannot become
+negative. The schema requires the close field; timestamp comparison and
+replacement chronology remain runtime checks rather than authentication.
+
+Only after the owner is terminal and preservation succeeds may one fresh
+replacement reuse that same worktree and exact HEAD. Reassignment reobserves
+and compares mutable integrity, not just HEAD and status pathnames.
+Changed/missing retention
+state or an un-lockable primary worktree gives a precise hold without deleting
+anything. Repeated replacement is not automatic. The retained physical worktree
+is not an authenticated content snapshot; coordinator ownership prevents other
+writers while it is reassigned. Existing completed-worktree cleanup remains
+the sole cleanup mechanism.
+If observation fails after the retention lock is applied, the owner stays open
+and the lock protects the original worktree; retry may reuse that same reason
+after safe observation is possible. No second recovery store or copy is made.
+
+### Optional operational report and compatibility
+
+Reporter `--handoffs <state.json>` first validates the unchanged v1 baseline,
+then emits `{schema_version: 2, baseline: <v1>, implementation_handoffs: <metrics>}`.
+Without the flag, v1 fixtures, arguments, expected values, seals and deletion
+proofs are unchanged. Counts include accepted/rejected/interrupted/in-progress,
+stale responses, lifetime, measured RSS, unknown RSS, native coordination turns,
+recovery cost and separate authoritative CI states. Missing observations never
+become zero measurements or authenticated offline delivery proof. A locally
+accepted handoff is not a merged/delivered PR. Each watcher row uses its own
+run/attempt observation and query error: a newer success on the same head does
+not relabel earlier failures, cancellations, pending or unknown observations.
+Current-head CI selection elsewhere still selects the latest run/attempt.
+
+Live handoff validation and accepted reporting use the same pure
+focused-check/resource evidence predicate: required evidence references,
+check identity, completion, observation times and ROM/RAM/protocol budgets
+must all agree. Reporting uses the recorded verdict's observation time rather
+than requiring historical Git/files or rerunning checks. Mutating an accepted
+record to missing/null/mistyped/over-budget observations cannot leave it
+counted accepted. Complete captured host-only, pure-import and measured
+non-host records remain reportable after their worktree is removed.
+An older accepted label without necessary captured measurements is incomplete,
+not permission to invent zeros; reobserve it only if the actual inputs remain
+available. Honest rejected/in-progress records with unknown measurements remain
+reportable. None of these consistency checks authenticates the stored data.
+
+Dependencies: #176 and #216's locked `jsonschema` test environment, delivered
+by merged PR #217. This work was a genuine child while that dependency was
+open; that stack is history and the current immediate base is `master`.
+No #205/#211 dependency or #179 API is adopted. Dependent: #181.
+Conflicts: reused owners/watchers, arbitrary candidate execution or broker
+formats. No game/runtime, save, ROM/RAM content,
+locale, generated data, modern/archival profile, Build topology or final-gate
+change. Revert the dedicated #178 change if needed; owner publication,
+metadata-event handling, immediate checkpoint publication and #208 cleanup stay.
+
+The complete human/automated procedure is
+[TC-WORKFLOW-AGENT-HANDOFF-001](test-cases/workflow-governance.md#tc-workflow-agent-handoff-001-validate-bounded-exact-sha-agent-handoffs).

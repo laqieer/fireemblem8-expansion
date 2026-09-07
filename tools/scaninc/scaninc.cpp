@@ -27,7 +27,7 @@
 #include "scaninc.h"
 #include "source_file.h"
 
-bool CanOpenFile(std::string path)
+bool CanOpenFile(const std::string &path, void *)
 {
     FILE *fp = std::fopen(path.c_str(), "rb");
 
@@ -40,11 +40,9 @@ bool CanOpenFile(std::string path)
 
 const char *const USAGE = "Usage: scaninc [-I INCLUDE_PATH] FILE_PATH\n";
 
+#ifndef SCANINC_NO_MAIN
 int main(int argc, char **argv)
 {
-    std::queue<std::string> filesToProcess;
-    std::set<std::string> dependencies;
-
     std::vector<std::string> includeDirs;
 
     argc--;
@@ -82,6 +80,20 @@ int main(int argc, char **argv)
 
     std::string initialPath(argv[0]);
 
+    for (const std::string &path : ScanIncDependencies(
+             initialPath, includeDirs, CanOpenFile, nullptr))
+    {
+        std::printf("%s\n", path.c_str());
+    }
+}
+#endif
+
+std::set<std::string> ScanIncDependencies(
+    const std::string &initialPath, std::vector<std::string> includeDirs,
+    ScanincPathAvailable available, void *context)
+{
+    std::queue<std::string> filesToProcess;
+    std::set<std::string> dependencies;
     filesToProcess.push(initialPath);
 
     while (!filesToProcess.empty())
@@ -100,7 +112,7 @@ int main(int argc, char **argv)
             for (auto includeDir : includeDirs)
             {
                 std::string path(includeDir + include);
-                if (CanOpenFile(path))
+                if (available(path, context))
                 {
                     bool inserted = dependencies.insert(path).second;
                     if (inserted)
@@ -114,8 +126,5 @@ int main(int argc, char **argv)
         includeDirs.pop_back();
     }
 
-    for (const std::string &path : dependencies)
-    {
-        std::printf("%s\n", path.c_str());
-    }
+    return dependencies;
 }

@@ -995,6 +995,15 @@ class TesterCaseRegistryTests(unittest.TestCase):
                             "tests.upstream_port.test_verify.VerifyGatesMirrorWorkflowTests -v",
                         },
                     },
+                    "TC-WORKFLOW-REVIEW-FAMILY-001": {
+                        "document": "docs/test-cases/workflow-governance.md",
+                        "commands": {
+                            "build/host-python/bin/python3 -I -m unittest discover "
+                            "-s scripts/workflow_pilot/tests -t . -p 'test_*review*.py' -v",
+                            "python3 -m unittest "
+                            "scripts.workflow_pilot.tests.arm_review_subjects -v",
+                        },
+                    },
                     "TC-WORKFLOW-WORKTREE-CLEANUP-001": {
                         "document": "docs/test-cases/workflow-governance.md",
                         "commands": {
@@ -1070,6 +1079,17 @@ class TesterCaseRegistryTests(unittest.TestCase):
                             "test_development_workflow_skill -v",
                         },
                     },
+                    "TC-WORKFLOW-AGENT-HANDOFF-001": {
+                        "document": "docs/test-cases/workflow-governance.md",
+                        "commands": {
+                            "build/host-python/bin/python3 -I -c "
+                            "'import sys, unittest; sys.path.insert(0, \".\"); unittest.main(module=None)' "
+                            "scripts.workflow_pilot.tests.test_agent_handoff "
+                            "scripts.workflow_pilot.tests.test_coordinator_observations -v",
+                            "python3 -m unittest scripts.docs_check_tests.test_development_workflow_skill."
+                            "DevelopmentWorkflowSkillTests.test_bounded_exact_sha_agent_handoff_is_indexed -v",
+                        },
+                    },
                     "TC-WORKFLOW-PILOT-BASELINE-001": {
                         "document": "docs/test-cases/workflow-governance.md",
                         "commands": {
@@ -1088,6 +1108,14 @@ class TesterCaseRegistryTests(unittest.TestCase):
                             "/usr/bin/python3 -I -S -B "
                             "scripts/validation_ownership/isolated_launcher.py "
                             "check --repository-root .",
+                        },
+                    },
+                    "TC-WORKFLOW-OWNERSHIP-PROBE-SANDBOX-001": {
+                        "document": "docs/test-cases/workflow-governance.md",
+                        "commands": {
+                            "python3 -m unittest "
+                            "scripts.validation_ownership.tests.test_foundation -v",
+                            "make -f scripts/validation_ownership/foundation.mk ownership-probe-check",
                         },
                     },
                 },

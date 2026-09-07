@@ -2427,10 +2427,12 @@ ifeq ($(MODERN_TOOLCHAIN_ROOT),)
   MODERN_OBJCOPY ?= $(PREFIX)objcopy$(EXE)
   MODERN_READELF ?= $(PREFIX)readelf$(EXE)
   MODERN_NM ?= $(PREFIX)nm$(EXE)
+  MODERN_SIZE ?= $(PREFIX)size$(EXE)
 else
   MODERN_OBJCOPY ?= $(MODERN_TOOLCHAIN_ROOT)/bin/$(PREFIX)objcopy$(EXE)
   MODERN_READELF ?= $(MODERN_TOOLCHAIN_ROOT)/bin/$(PREFIX)readelf$(EXE)
   MODERN_NM ?= $(MODERN_TOOLCHAIN_ROOT)/bin/$(PREFIX)nm$(EXE)
+  MODERN_SIZE ?= $(MODERN_TOOLCHAIN_ROOT)/bin/$(PREFIX)size$(EXE)
 endif
 export MODERN_NM
 export MODERN_TOOLCHAIN_ROOT
@@ -4737,6 +4739,8 @@ expansion-modern-linker-check: expansion-modern-budget-check \
 		expansion-modern-localization-runtime-prefs-check \
 		expansion-modern-localization-runtime-save-check \
 		expansion-modern-localization-runtime-shifted-check
+	MODERN_CC="$(MODERN_CC)" MODERN_NM="$(MODERN_NM)" MODERN_SIZE="$(MODERN_SIZE)" \
+		"$(PYTHON)" -m unittest scripts.workflow_pilot.tests.arm_review_subjects -v
 	"$(PYTHON)" scripts/shiftcheck/scan_build_addrs.py \
 		--makefile Makefile \
 		--ldscript "$(MODERN_CLEAN_LDSCRIPT)" \

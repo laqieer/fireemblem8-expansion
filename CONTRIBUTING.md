@@ -91,6 +91,21 @@ cannot satisfy its dependencies. See the
 [host Python setup and cleanup procedure](docs/workflow-pilot.md#isolated-host-python-dependencies)
 and [tester case](docs/test-cases/workflow-governance.md#tc-workflow-host-python-deps-001-bootstrap-isolated-schema-test-dependencies).
 
+### Bounded independent review
+
+High-risk/large changes receive one fresh read-only review before their first
+remote review, with ownership separate from implementation and coordination.
+Valid findings trigger complete source-backed sibling sweeps, not another
+one-line patch cycle. First/second request rounds produce bounded handoffs;
+the third holds new narrow work and eligibility until a held-round/head-bound
+architecture decision. Already-created commits still publish immediately on
+their assigned branch as ineligible WIP. All final gates remain mandatory.
+
+Use the [review-family contract](docs/workflow-pilot.md#sibling-family-review-convergence)
+and [tester case](docs/test-cases/workflow-governance.md#tc-workflow-review-family-001-expand-valid-findings-across-complete-sibling-families).
+Its existing-case bindings can be reviewed in the same feature PR. It requires
+no broker, receipt/signature service or protected installation.
+
 ## 4. Full validation policy
 
 During iteration, run only the focused fast checks and the one relevant ROM

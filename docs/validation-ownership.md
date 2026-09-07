@@ -28,6 +28,54 @@ read from candidate claims and is not a skip-validation switch. The shared
 executor must still enforce exact declared/consumed sources and declared
 private outputs. This consumer seam alone does not establish the full Make
 domain, graph, oracle or lifecycle acceptance.
+Registry declaration execution now has an explicit shared-session entry:
+`graph_registry.observe_declarations(loader, session)`. The selected loader
+must be the active public view and own the same budget. It invokes the real
+candidate `REGISTRY` through a confined `Command`; the reporter then validates
+the declaration fields and their captured source paths. A foreign view, stale
+source or invalid schema identity rejects rather than becoming an empty registry.
+
+Deleted-path resolution requires the selected BASE ownership model, not just
+BASE's filename inventory. It uses that model's graph rules, generated-source
+classification and evidence owners. CURRENT still enforces semantic admission;
+providing BASE context cannot admit a newly tracked CURRENT file by prefix.
+The report-level orchestration must supply this model from its grouped BASE
+view before deletion explanations can be accepted.
+The asset integration control captures the real three-record manifest as BASE,
+then removes the battle record and one of its tracked inputs from CURRENT.
+Both generated includes reach actual GNU Make and each restarts once. A single
+public `select_view` block restores BASE's real deleted source and battle
+consumer ID, without resetting the report budget or changing source paths.
+That source/output test is not a substitute for the reporter's BASE ownership
+model, full112 domains, oracle, lifecycle or independently captured public gate.
+
+The scanner adapter similarly reuses `SourceFile::GetIncludes` and
+`ScanIncDependencies` from `tools/scaninc`. The ordinary CLI still uses real
+file availability and its original include-search order. The graph's native
+driver discovers direct includes with the actual parser, resolves availability
+from the same immutable capture, then runs that same dependency traversal with
+the exact admitted source closure. This avoids asking a confined process to
+open undeclared absent candidates such as
+`include/asm/macros/music_voice.inc`; it does not copy the scanner parser or
+invent dependency output. Missing initial inputs, escaping includes and
+symlink/gitlink matches fail. Native command consumption must equal its
+declaration, and the resulting dependency text must reach actual GNU Make.
+Ordinary-versus-adapted comparisons use equivalent captured input metadata, not
+an ambient worktree containing untracked files. Native adapter unit tests and
+standalone producer successes are not whole-root Make acceptance.
+The host C dependency adapter preserves the original ordered `cc -E -MM`
+include/define arguments and the declared `.dep` destination through
+`Command(dependency_only=True)`. An explicit captured header-code pool discovers
+the real compiler closure; unused headers do not become dependency provenance.
+The actual dependency file must reach GNU Make, with its original prerequisite
+order and genuine restart. This uses neither an ARM/agbcc executable nor a
+copied preprocessor, fake `.d` file or re-exec from a Python command capsule.
+The root Make dependency query invokes the existing `$(PYTHON)` interpreter
+explicitly rather than relying on an executable script's shebang. This keeps
+ordinary output unchanged and lets the registered command reach Make without
+granting execution on the captured source mount. The full linker itself is
+not executed by the dependency adapter; its real `-m` CLI reads the linker
+script and returns the prerequisite list.
 
 ## Authoritative files and public commands
 
@@ -48,9 +96,10 @@ domain, graph, oracle or lifecycle acceptance.
   enumerates tracked paths through trusted Git, resolves live authorities,
   emits canonical JSON, and verifies that execution did not change Git state.
 - [`scripts/validation_ownership/isolated_launcher.py`](../scripts/validation_ownership/isolated_launcher.py)
-  admits only `check`, `resolve`, `tests`, and the closed lifecycle-check mode
-  after isolated no-site Python startup and removes ambient `GIT_*`, Make
-  preload/flag/override, and shell-startup controls before entering its payload.
+  retains the foundation consumer's no-mode/options entry and admits `check`,
+  `resolve`, `tests`, and the closed lifecycle-check graph modes after isolated
+  no-site Python startup. It removes ambient `GIT_*`, Make preload/flag/override,
+  and shell-startup controls before entering its payload.
 
 Validate whole-repository coverage without selecting or running any owner:
 
@@ -272,52 +321,28 @@ maintenance estimate without modifying issue #176's immutable baseline
 fixture or expected report.
 
 Make authority comes from `/usr/bin/make`, not a repository implementation of
-Make syntax. The reporter creates a new scratch root from the selected exact
-Git tree, materializes the exact `mgfembp` gitlink commit from the shared object
-database, and starts GNU Make through user, mount, PID, and network namespaces.
-Every in-repository scratch component is created and reopened relative to a
-trusted directory descriptor with `O_NOFOLLOW`; an existing file or symlink at
-`build`, `test-artifacts`, or `validation-ownership` rejects before a probe,
-temporary directory, deletion, or external write.
-The superproject and gitlink trees are read-only mounts. Only separate ignored
-Make scratch, registered-command scratch, and generated `build` output mounts
-are writable. Supervisor control is outside all candidate-visible mounts.
-Missing
-namespace support, the fixed absolute tools, the exact gitlink object, or the
-statically built command interceptor fails before Make starts.
-The launcher first probes unprivileged user namespaces. On runners that block
-them, it permits only exact passwordless `/usr/bin/sudo -n /usr/bin/unshare`;
-after mounting and chrooting, the trusted launcher clears supplementary
-groups, the capability bounding/permitted/effective sets, and keep-caps, drops
-to the frozen original runner UID/GID, sets no-new-privileges, and only then
-executes candidate Make. Candidate code never runs as host root. The selected
-launcher mode, absolute binaries, versions, and executable digests are part of
-authority; if both paths fail, the probe fails closed.
+Make syntax. `graph_report.check` uses one caller-supplied `ProbeBudget`,
+capture chain and public `ProbeSession` for all CURRENT targets/states, grouped BASE
+queries and lifecycle checks. The caller supplies the budget; no target or
+registry helper creates another lifetime. `graph_probe` owns only domain
+planning and the reference-position census. Execution, immutable snapshots,
+stock runtime inputs, native tools, generated publication and cleanup use the
+[shared foundation](ownership-probe-foundation.md).
 
-The probe binds the SHA-256 and version of `/usr/bin/make`, its normalized
-argv, empty/scrubbed environment, `C` locale, UTC timezone, fixed source-date
-epoch, every tracked Make input path and mode, the interceptor source/compiler/
-binary identity, and the source-built `tools/gbagfx/gbagfx` authority. GNU Make
-runs with `-n -B --trace --debug=v`; built-in implicit rules remain active, but
-tracked inputs have explicit no-remake rules so `-B` cannot invent an unrelated
-makefile-remake chain. The resulting concrete considered-target graph, pattern
-stems, terminal tracked/gitlink/generated inputs, expanded recipes, includes,
-errors, and normalized trace records form the authority fingerprint. Scratch
-prefixes and source line numbers are normalized; comments and unrelated target
-changes remain stable when GNU Make's observed semantics remain stable. GNU
-Make database `Last modified` diagnostics from fresh copied trees are excluded
-as nonsemantic execution timestamps; rule, prerequisite, recipe, and status
-records remain bound.
-The in-process optimization cache keys Make authority by the complete selected
-tracked-entry set: path, object type, Git mode, and content identity for every
-blob or gitlink copied into the probe. Exact revisions use their Git object
-IDs; live-tree deviations use exact content and current mode rather than file
-size or timestamps. Wildcard-visible ordinary file addition/removal,
-regular-to-symlink or executable-mode changes, and same-size mutations with
-restored metadata therefore cannot reuse an earlier result. The same complete
-state decides whether prior Make authority can be reused for invalidation.
-Each probe uses a new random child and ignores incomplete scratch children left
-by an interrupted process.
+The native observer records actual target/prerequisite order, recipe text,
+target-local variable values/origins/flavors, includes and successful dynamic
+provenance. It does not scrape diagnostic output or synthesize a dry-run
+Makefile. Ordinary recipes are metadata only; genuine expansion and include
+remakes use the declared real command/output adapters. The graph planner
+retains actual generated include bytes for its census. It does not create a
+second sandbox, interceptor, source loader or process executor.
+
+All report observations share the existing deadline and cumulative resource
+accounting. BASE uses one public `select_view` block, the same original source
+paths and independently captured BASE registry/model. Global graph/target
+caches and per-target executors are removed. The already validated model is
+reused for the same artifact's nonrecursive lifecycle removal/restoration;
+that reuse is not another graph evaluation or a success label.
 
 Schema version 5 seals each external selector as either a finite exact domain,
 an exact tracked fallback, or symbolic recipe/environment-only authority.
@@ -371,18 +396,12 @@ Process-environment variants are likewise driven by authentic observations:
 only names that the loaded sources treat as ambient defaults or actually
 undefined authority spawn environment-origin graph variants; explicit
 Makefile-assigned graph selectors do not.
-State, combination, depth, source,
-domain, subprocess, and one-hour per concrete standalone-target or
-combined-root fallback/domain/origin probe-state bounds all fail closed on
-exhaustion. For bounded performance, the reference graph conservatively
-narrows each solo target's candidate domains;
-an actual GNU Make database comparison over the combined roots establishes
-whether any requested target is `MAKECMDGOALS`-sensitive. Standalone checks
-remain authoritative for every concrete fallback/domain/origin state. Any
-changed database that can alter loaded sources, closure, or recipe payload is
-re-evaluated with the standalone target; a graph-only external name with an
-unchanged discovery signature keeps the changed database fingerprint while
-reusing the fallback recipe semantics.
+State, context, source, domain, subprocess and byte bounds fail closed across
+the entire report. Each target remains a standalone native Make goal.
+One-variable domain observations extend their actual parent context when a
+branch reveals a new domain or fallback. No combined goal is attributed to a
+different target, no per-target deadline is restarted, and no registry entry
+is backfilled as an observed domain.
 
 This means GNU Make itself owns conditionals, `eval`, pattern/static-pattern
 resolution, `define`/`call`, target-specific and inherited values, `${NAME}`,
@@ -397,31 +416,13 @@ every domain/origin variant. No combined `MAKECMDGOALS` result is attributed
 to another target; target order and set iteration therefore cannot change a
 record.
 
-GNU Make can execute parse-time `$(shell)`, `!=`, and makefile-remake recipes
-even in otherwise nonexecuting modes. The sandbox therefore exposes no general
-shell to Make: `SHELL` is the statically compiled interceptor, and the root
-contains only GNU Make, its loader/libc, and that interceptor. Every attempted
-command is logged. A command must match exactly one sealed registry regex.
-Fixed commands receive their registered output; source-dependent commands run
-once in a second networkless read-only `/usr` + exact-tree command sandbox,
-with only the scratch build overlay writable, and their concrete output digest
-is fingerprinted. Normal `-n` recipes produce no interceptor event. Any
-include-remake, recursive, eager, or direct expansion that GNU Make does
-attempt is authorized only when the concrete command matches exactly one
-sealed contract; the same text appearing in trace output, a recipe, or
-normalized multiline output grants no authority. Unknown direct recipe
-expansion, unregistered shell/eager assignment,
-ambiguous command registration, nonconvergence, or sandbox failure rejects.
-The interceptor receives a fixed append-only event descriptor and read-only
-mapping-directory descriptor opened by the trusted launcher before chroot.
-Neither descriptor has a pathname through `/proc` or `/dev/fd`, and no event
-or mapping path appears in candidate environment or scratch. Event state is
-truncated by the supervisor for each pass, and every record's format, argument
-bound, mapping count, command hash, and match identity is revalidated.
-Registered commands run in a different scratch namespace with both control
-descriptors closed. Candidate `$(file ...)` writes and registered scripts can
-only create decoys in their own scratch; they cannot read, overwrite, or forge
-supervisor events or mappings.
+GNU Make can execute parse-time `$(shell)`, `!=` and makefile-remake recipes.
+The foundation's native dispatch intercepts those operations without replacing
+Make-visible `SHELL`/argv semantics. A graph command must match exactly one
+sealed domain and execute through its public `Command`/native/dependency action.
+Only actual returned bytes and declared outputs can reach replay. Unknown
+commands, source/consumption mismatches, nonconvergence or unavailable
+confinement reject. The graph has no control-channel implementation of its own.
 
 Generated-data path classification likewise does not import the base
 `scripts.generated_data.registry` into the trusted reporter. A small trusted
@@ -465,10 +466,11 @@ removes only that unchanged external identity. CI starts the extracted
 `ci_verifier.py` directly with `-I -S -B`, not through `ci_gate.mk` or another
 Make invocation. The Make-based base gate remains a trusted-invocation
 convenience only. The standalone base verifier verifies every
-staged verifier package file and every loaded transitive `scripts.*` module against base Git objects,
-excludes the candidate checkout from `sys.path`, and overlays the base
-validation package/schema/oracle while reading all other graph and Make
-authority from the exact candidate commit. Candidate modifications to
+staged verifier package file and every loaded transitive `scripts.*` module
+against independently selected immutable source, excludes the candidate
+checkout from `sys.path`, and reads CURRENT and BASE through separate real
+public views. There is no hybrid loader overwriting candidate entry identities
+with BASE bytes. Candidate modifications to
 `reporter.py`, `make_probe.py`, the interceptor, or their tests therefore
 cannot authorize themselves. After trusted validation of both exact-base and
 candidate graphs, the verifier resolves every independent-oracle probe,
@@ -488,17 +490,25 @@ no-replacement, and no-lazy-fetch settings. Empty or hostile inherited
 `GIT_DIR`, work-tree, common-dir, index, namespace, object, replace-ref,
 ceiling, exec-path, and alternate-object variables therefore cannot redirect
 or break candidate/base identity checks.
-This introducing PR's base lacks that package,
-so both hosted CI and the candidate-staged local verifier emit
-`bootstrap-not-authoritative` with `authority` set to `none`; candidate tests
-and the public gate still run, but direct adversarial review is the
-introduction evidence. The exact-base capability check iterates the same
-complete runtime/schema/graph/oracle path list mirrored from the verifier.
-Zero present paths means introduction mode; any present path with any missing
-peer—including a lone Make-dynamics registry—rejects rather than downgrading.
-After merge, every ordinary PR
-enters `exact-base-pinned` mode. Git remains the identity authority; no
-source-hash ledger is committed.
+Candidate YAML is redundant drift protection, not the authority to decide
+whether verification ran. `coordinator_capture.validate_handoff` requires the
+existing #178 `coordinator-check` assignment and always calls the real
+standalone verifier through `capture_check`/`trusted_executor` before managed
+admission. The coordinator owns the trusted source/root, actual PR BASE,
+candidate/worktree and expected mode outside candidate control. The actual
+bounded process result, PID, exit and RSS are retained by the existing handoff
+contract. Missing, stale, failed or mismatched captures and candidate pass
+labels cannot grant acceptance.
+
+A base with no authority remains `bootstrap-not-authoritative`/`authority:none`;
+exit0 is not managed exact-base acceptance. A complete foundation-only BASE is
+the explicit `foundation-introduction` transition and needs independently
+selected immutable graph-verifier source. It reports `explicit-introduction`,
+not a fabricated BASE verifier or exact-base proof. Partial graph authority
+fails instead of downgrading. A complete graph BASE uses `exact-base-pinned`
+and exact BASE verifier source. Git remains the identity authority; no
+source ledger, new service, signer, privileged PR event or human approval is
+introduced.
 
 Domain-separated seals continue to cover the strict schema, probe oracle,
 complete graph, resolved edges, and live evidence-authority fingerprints.

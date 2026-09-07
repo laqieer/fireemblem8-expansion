@@ -988,7 +988,20 @@ jobs:
           scripts/validation_ownership/probe-oracle.json \
           scripts/validation_ownership/reporter.py \
           scripts/validation_ownership/sandbox_exec.py \
-          scripts/validation_ownership/shell_interceptor.c
+          scripts/validation_ownership/shell_interceptor.c \
+          scripts/validation_ownership/authority.py \
+          scripts/validation_ownership/budget.py \
+          scripts/validation_ownership/lifecycle.py \
+          scripts/validation_ownership/syscall_guard.py \
+          scripts/validation_ownership/make_observer.c \
+          scripts/validation_ownership/dispatch.h \
+          scripts/validation_ownership/graph_commands.py \
+          scripts/validation_ownership/graph_registry.py \
+          scripts/validation_ownership/graph_probe.py \
+          scripts/validation_ownership/graph_report.py \
+          scripts/validation_ownership/graph_lifecycle.py \
+          scripts/validation_ownership/scaninc_sources.cpp \
+          scripts/validation_ownership/coordinator_capture.py
         do
           if /usr/bin/git cat-file -e "$EXPECTED_BASE_SHA:$required"; then
             base_validation_present=$((base_validation_present + 1))
@@ -997,11 +1010,39 @@ jobs:
           fi
         done
         if [ "$base_validation_present" -eq 0 ]; then
+          if /usr/bin/git cat-file -e "$EXPECTED_BASE_SHA:scripts/validation_ownership"; then
+            printf 'validation-ownership: incomplete exact-base authority\n' >&2
+            exit 1
+          fi
           printf 'validation-ownership: bootstrap-not-authoritative base=%s candidate=%s\n' \
             "$EXPECTED_BASE_SHA" "$EXPECTED_CANDIDATE_SHA"
         elif [ "$base_validation_missing" -ne 0 ]; then
-          printf 'validation-ownership: incomplete exact-base authority\n' >&2
-          exit 1
+          foundation_missing=0
+          graph_present=0
+          for required in authority.py budget.py make_probe.py syscall_guard.py \
+            sandbox_exec.py shell_interceptor.c make_observer.c lifecycle.py
+          do
+            /usr/bin/git cat-file -e "$EXPECTED_BASE_SHA:scripts/validation_ownership/$required" ||
+              foundation_missing=$((foundation_missing + 1))
+          done
+          for marker in .github/validation-ownership-graph.json \
+            .github/validation-ownership-make-dynamics.json \
+            scripts/validation_ownership/graph.schema.json \
+            scripts/validation_ownership/probe-oracle.json \
+            scripts/validation_ownership/reporter.py \
+            scripts/validation_ownership/ci_verifier.py
+          do
+            if /usr/bin/git cat-file -e "$EXPECTED_BASE_SHA:$marker"; then
+              graph_present=$((graph_present + 1))
+            fi
+          done
+          if [ "$foundation_missing" -eq 0 ] && [ "$graph_present" -eq 0 ]; then
+            printf 'validation-ownership: foundation-introduction authority=none base=%s candidate=%s; independently captured introduction required\n' \
+              "$EXPECTED_BASE_SHA" "$EXPECTED_CANDIDATE_SHA"
+          else
+            printf 'validation-ownership: incomplete exact-base authority\n' >&2
+            exit 1
+          fi
         else
           /usr/bin/git archive --format=tar "$EXPECTED_BASE_SHA" |
             /usr/bin/tar -xf - -C "$trusted_root"

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Closed isolated-startup launcher for validation ownership reporting."""
+"""Closed isolated-startup launcher for the foundation and ownership graph."""
 
 from __future__ import annotations
 
@@ -45,6 +45,12 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 2
     arguments = list(sys.argv[1:] if argv is None else argv)
+    if not arguments or arguments[0].startswith("--"):
+        _clear_ambient_execution_environment()
+        sys.path.insert(0, str(ROOT))
+        from scripts.validation_ownership.consumer import main as foundation_main
+
+        return foundation_main(arguments)
     if not arguments or arguments[0] not in MODES:
         print(
             "validation-ownership-launcher: mode is not allowlisted",

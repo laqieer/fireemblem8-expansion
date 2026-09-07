@@ -22,6 +22,17 @@ For feature requests and bug fixes, this skill implements Discussion #30 and
 is authoritative over conflicting generic review or closure guidance elsewhere
 in the repository. Do not add a human code-review or approval gate.
 
+Before adding a prerequisite, gate or service in this repository, identify the
+original accepted requirement or concrete risk, accepted threat model, smallest
+existing mechanism, and why a simpler solution is insufficient. Review findings
+do not automatically expand requirements: fix accepted-contract bugs, simplify
+architecture-created problems, and separate optional hardening with honest
+claims. At the existing third-round/8K reconsideration point, compare a concrete
+simpler design and remove unnecessary machinery or split complete independent
+contracts when needed—not merely write another note. Measure the original
+end-to-end outcomes and total delivery cost; preserve real safety requirements
+and every final gate.
+
 ## Phase 1: establish state
 
 1. Read the complete issue or discussion, including comments and linked PRs.
@@ -593,6 +604,85 @@ blindly.
 No human code review or approval is required. A CODEOWNERS request is advisory
 unless an external GitHub ruleset enforces it; this workflow does not add such
 a gate.
+
+### Sibling-family review convergence
+
+Before the first remote review of a high-risk or large change, the coordinator
+uses one fresh bounded read-only reviewer through the existing task/tool
+interfaces. Keep implementer/reviewer/coordinator identities distinct and
+reject overlapping reviewer ownership. Only reading the exact candidate,
+reading supplied evidence and returning the report are permitted; deny edit,
+push, comment, request-review, CI dispatch, merge and arbitrary commands at the
+tool dispatch boundary.
+
+Use the [review-family API](../../../docs/workflow-pilot.md#sibling-family-review-convergence)
+to bind accepted findings to existing cases, actual production predicates and
+reviewed finite source models. Complete all applicable action/item/target,
+lifecycle, wire/replay/stale-binding, generated-owner/output/consumer/drift and
+enabled/disabled resource obligations. Evidence comes from actual task,
+Git/GitHub and test-tool observations. Do not accept candidate programs, pass
+records or trusted-status flags, or relabel a whole-suite pass as member/ROM
+evidence. Unknown coverage blocks honestly; a new binding can be reviewed and
+selected at an exact tool revision in the same feature PR, without an
+unrelated base-first installation.
+
+First/second change requests produce bounded complete family handoffs. A
+third creates a sticky architecture/decomposition hold bound to the held
+round/head. New heads and later clean reviews do not release it. Require the
+coordinator's bound redesign/decompose/retain-with-evidence disposition before
+resuming narrow work or eligibility. Preserve the publication protocol below:
+already-created commits are immediately owner-pushed on their assigned branch
+as ineligible WIP, never hidden on an invented side branch or held locally.
+
+GitHub review identities and content are observations, not natural-language
+approval signals. The coordinator triages complete content, including
+suppressed findings; COMMENTED and zero new inline comments do not mean clean.
+Keep exact-head Copilot/security/Build and exact-master completion unchanged.
+Read-only tool roles/minimal environments are operational controls, not
+same-UID OS isolation. No broker, generic receipt/capability platform, new
+agent backend or protected installation is a prerequisite.
+
+The indexed case is
+[`TC-WORKFLOW-REVIEW-FAMILY-001`](../../../docs/test-cases/workflow-governance.md#tc-workflow-review-family-001-expand-valid-findings-across-complete-sibling-families).
+
+### Bounded exact-SHA implementation handoffs
+
+Use the [version-3 contract](../../../docs/workflow-pilot.md#bounded-exact-sha-implementation-handoffs)
+and retain `TC-WORKFLOW-AGENT-HANDOFF-001`. One coordinator owns the assignment
+and a bounded, locked, atomically updated session-local state document. The
+implementation-submitted result cannot replace Git, focused-check, process or
+GitHub observations, or alter scope, budgets or permitted actions.
+
+Observe dispatch, explicit receipt, progress, commit and result delivery
+separately. Native CLI event IDs correlate the first three and delivery; Git
+establishes the commit. A tool's transport success and displayed exit text are
+not OS process results. Run focused checks through reviewed coordinator tools
+or the existing approved test/CI route, never by importing a candidate-selected
+module into a credential-bearing collector.
+
+Record exact authorized upstream merge inputs before assignment; verify the
+task's first-parent commits and apply their trailers without demanding task
+trailers from imported upstream history. Keep incremental handoff budgets
+separate from the full PR's review-size gate. Close the implementation owner
+after its committed handoff; a review successor needs a fresh runtime/session.
+Use existing runtime deadlines and process controls for bounded lifetime.
+Opaque handles and unavailable RSS or OOM authority remain unknown, not proven.
+
+One coordinator owns one direct watcher per repository/run/attempt. A watcher
+failure triggers an exact GitHub run query; preserve real failure and incomplete
+states and re-arm only after the previous watcher has terminated. No reasoning
+agent waits for CI. Preserve/lock and reuse the original interrupted worktree
+before one bounded replacement; never reset/delete it or build a second recovery
+copy engine. Check unattended availability or document a covering availability
+plan, without treating that decision as a permanent uptime guarantee.
+
+These are operational observations, not authenticated records. Existing
+platform role/tool permissions enforce the implementation owner's remote-action
+prohibition; do not claim protection against arbitrary hostile same-UID
+processes. There is no handoff broker, signer, privileged publication API or
+new delivery graph. The coordinator still performs normal owner-context pushes,
+and immediate publication plus every final security/review/Build/merge/closure
+gate below remain mandatory.
 
 ### Immediate publication and visible work
 

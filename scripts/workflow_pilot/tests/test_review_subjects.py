@@ -1,0 +1,847 @@
+"""Actual source, native/ARM and generated-data controls for review convergence."""
+
+from pathlib import Path
+import sys
+
+if __package__ in (None, ""):
+    sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
+
+import copy
+from dataclasses import replace
+import json
+import re
+import shlex
+import subprocess
+import tempfile
+import unittest
+from unittest.mock import patch
+
+from scripts.modernize.tests.make_database import make_database_rule
+from scripts.workflow_pilot.trusted_review_gate import GitTree, ReviewTools
+from scripts.workflow_pilot.tests.review_support import ROOT, ENV, TRUSTED_LAUNCHER, git, request, snapshot
+
+
+class SubjectTestCase(unittest.TestCase):
+    maxDiff = None
+    @classmethod
+    def setUpClass(cls):
+        cls.workspace = snapshot()
+        cls.repo = cls.workspace.__enter__()
+        cls.tools = ReviewTools(GitTree(cls.repo.root, cls.repo.base), cls.repo.root)
+        cls.model = cls.tools.model
+        cls.observed = {}
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.workspace.__exit__(None, None, None)
+
+    def scope(self, kind, head=None):
+        cases = {
+            "aoe": ("TC-GAMEPLAY-006", "aoe-item-dispatch"),
+            "generated": ("TC-CORE-004", "generated-eventlists"),
+            "session": ("TC-WORKFLOW-REVIEW-FAMILY-001", "review-session"),
+        }
+        case, subject = cases[kind]
+        return request(case, subject, self.repo.base, head or self.repo.base)
+
+    def run_members(self, members, revision):
+        key = revision, tuple(item.identity for item in members)
+        if key not in self.observed:
+            self.observed[key] = self.tools.run_obligations(members, revision)
+        return self.observed[key]
+
+    def assert_satisfied(self, observations):
+        self.assertTrue(observations)
+        bad = [(item.obligation.member, item.verdict, item.detail) for item in observations
+               if item.verdict != "satisfied"]
+        self.assertEqual(bad, [])
+        self.assertTrue(all(item.checks > 0 for item in observations))
+
+
+class SubjectTests(SubjectTestCase):
+    @staticmethod
+    def host_members(members):
+        return tuple(item for item in members if not item.probe.startswith("aoe-arm:"))
+
+    def test_two_unrelated_production_subjects_and_all_five_families(self):
+        families = set()
+        for kind in ("aoe", "generated", "session"):
+            with self.subTest(subject=kind):
+                members = self.tools.members(self.scope(kind))
+                observations = self.run_members(self.host_members(members), self.repo.base)
+                self.assert_satisfied(observations)
+                families.update(item.obligation.family for item in observations)
+                self.assertEqual({item.kind for item in observations},
+                                 {"native"} if kind == "aoe"
+                                 else {"parsed"} if kind == "generated" else {"host"})
+        self.assertEqual(families, set(self.model.FAMILIES))
+
+    def test_missing_arm_compiler_is_unavailable_and_cannot_admit_handoff(self):
+        missing = self.repo.root / "build" / "uninstalled-arm-none-eabi-gcc"
+        self.assertFalse(missing.exists())
+        tools = ReviewTools(GitTree(self.repo.root, self.repo.base), self.repo.root,
+                            arm_tools={"MODERN_CC": str(missing)})
+        data = self.scope("aoe")
+        members = tools.members(data)
+        observations = tools.run_obligations(members, self.repo.base)
+        native = tuple(item for item in observations if item.kind == "native")
+        self.assert_satisfied(native)
+        self.assertEqual(len(native), len(self.host_members(members)))
+        arm = tuple(item for item in observations if item.kind == "arm-object")
+        self.assertEqual(
+            {(item.obligation.member, item.verdict, item.checks) for item in arm},
+            {("enabled:objects", "unavailable", 0), ("disabled:objects", "unavailable", 0)})
+        for item in arm:
+            self.assertIn("FileNotFoundError", item.detail)
+            self.assertIn(str(missing), item.detail)
+        model = tools.model
+        session = model.ReviewSession(
+            "coordinator", "implementer",
+            frozenset({model.subject_key(data["subjects"][0])}), self.repo.base,
+            identity=("owner/repo", 1, self.repo.base))
+        for evidence, error in (
+            (observations, "candidate obligation failed"),
+            (native, "missing or wrong member evidence"),
+        ):
+            with self.subTest(evidence_count=len(evidence)):
+                with self.assertRaisesRegex(ValueError, error):
+                    model.assess_handoff(
+                        data, members, evidence, session, tool_revision=self.repo.base,
+                        remote_reviews=(), triage=(), pre_review_required=False)
+
+    def test_modern_linker_recipe_runs_mandatory_arm_positives(self):
+        toolchain = self.repo.root / "uninstalled-arm-toolchain"
+        self.assertFalse(toolchain.exists())
+        for config in ("debug", "release"):
+            with self.subTest(config=config):
+                completed = subprocess.run(
+                    ["make", "--no-print-directory", "-rR", "-n", "-p",
+                     "MODERN_CONFIG=" + config, "MODERN_ABI=aapcs",
+                     "MODERN_TOOLCHAIN_ROOT=" + str(toolchain),
+                     "__issue179_review_profile_probe__"],
+                    cwd=ROOT, env=ENV, capture_output=True, text=True, timeout=60)
+                self.assertNotEqual(completed.returncode, 0)
+                rule = make_database_rule(completed.stdout, "expansion-modern-linker-check")
+                self.assertIsNotNone(rule, completed.stderr)
+                commands = [shlex.split(line.lstrip("\t").lstrip("@+"))
+                            for line in rule.replace("\\\n", " ").splitlines()
+                            if line.startswith("\t")]
+                self.assertIn(
+                    ["MODERN_CC=$(MODERN_CC)", "MODERN_NM=$(MODERN_NM)",
+                     "MODERN_SIZE=$(MODERN_SIZE)", "$(PYTHON)", "-m", "unittest",
+                     "scripts.workflow_pilot.tests.arm_review_subjects", "-v"],
+                    commands)
+
+    def remediation(self, kind, path, broken, member, *, fixed=None):
+        original = (self.repo.root / path).read_bytes()
+        before = self.repo.commit({path: broken})
+        after = self.repo.commit({path: original if fixed is None else fixed}, parent=before)
+        data = self.scope(kind, after)
+        members = tuple(item for item in self.tools.members(data, (before,))
+                        if item.family == ("action" if kind == "aoe" else "generated"))
+        prior = self.run_members(members, before)
+        current = self.run_members(members, after)
+        self.assert_satisfied(current)
+        relevant = [item for item in prior if item.obligation.member == member]
+        self.assertEqual(len(relevant), 1)
+        self.assertEqual(relevant[0].verdict, "contract-violation", relevant[0].detail)
+        self.assertEqual(relevant[0].kind, relevant[0].obligation.kind)
+        self.assertGreater(relevant[0].checks, 0)
+        model = self.model
+        key = model.subject_key(data["subjects"][0])
+        session = model.ReviewSession("coordinator", "implementer", frozenset({key}), after,
+                                      identity=("owner/repo", 1, self.repo.base))
+        finding = model.Finding("actual-finding", key, members[0].family, member,
+                                before, path, "review-1")
+        session.accept(finding)
+        data["findings"] = [{
+            "finding_id": finding.id, **data["subjects"][0],
+            "family": finding.family, "reported_member": member,
+        }]
+        report = model.assess_handoff(
+            data, members, (*prior, *current), session, tool_revision=self.repo.base,
+            remote_reviews=(), triage=(), pre_review_required=False)
+        self.assertTrue(report["handoff_eligible"])
+        self.assertFalse(report["exact_head_review_clean"])
+        self.assertFalse(report["merge_permission"])
+        self.assertTrue(any(row["outcome"] == "affected-fixed" for row in report["outcomes"]))
+        return data, members, prior, current, session
+
+    def test_real_aoe_before_after_missing_and_unrelated_evidence(self):
+        path = "src/expansion_aoe.c"
+        source = (self.repo.root / path).read_text()
+        broken = source.replace("&& route->aiPolicy == EXPANSION_AOE_AI_NEVER", "&& 0")
+        self.assertNotEqual(source, broken)
+        data, members, prior, current, session = self.remediation(
+            "aoe", path, broken, "actions:AI_SELECT")
+        kwargs = dict(tool_revision=self.repo.base, remote_reviews=(), triage=(),
+                      pre_review_required=False)
+        for observations in (
+            (*prior, *current[1:]),
+            (*prior, *current, current[0]),
+            (*current, *(replace(item, revision=prior[0].revision) for item in current)),
+            (*prior, *(replace(item, tool_revision="f" * 40) for item in current)),
+            (*prior, *(replace(item, revision="e" * 40) for item in current)),
+        ):
+            with self.assertRaises(ValueError):
+                self.model.assess_handoff(data, members, observations, session, **kwargs)
+        wrong = copy.deepcopy(data)
+        wrong["findings"][0]["reported_member"] = "targets:unknown"
+        with self.assertRaises(ValueError):
+            self.model.assess_handoff(wrong, members, (*prior, *current), session, **kwargs)
+
+    def test_cross_same_count_wrong_geometry_fails_its_selected_member(self):
+        path = "src/expansion_aoe.c"
+        source = (self.repo.root / path).read_text()
+        broken = source.replace(
+            """    case EXPANSION_AOE_SHAPE_CROSS:
+        if (dx != 0 && dy != 0)
+            return -1;
+
+        return dx + dy;""",
+            """    case EXPANSION_AOE_SHAPE_CROSS:
+        return 2 * (dx > dy ? dx : dy);""")
+        self.assertNotEqual(source, broken)
+        self.remediation("aoe", path, broken, "targets:CROSS")
+
+    def test_real_generated_owner_before_after_missing_sibling(self):
+        path = "src/data/ch2_eventlists.json"
+        data = json.loads((self.repo.root / path).read_text())
+        data["lists"][0]["entries"][0]["args"][1] = "EventScr_UnknownReviewReference"
+        arguments = self.remediation("generated", path, json.dumps(data), "owners:eventlists")
+        request_data, members, prior, current, session = arguments
+        missing = tuple(item for item in current if item.obligation.member != "owners:shops")
+        with self.assertRaises(ValueError):
+            self.model.assess_handoff(
+                request_data, members, (*prior, *missing), session, tool_revision=self.repo.base,
+                remote_reviews=(), triage=(), pre_review_required=False)
+
+    def test_invalid_generated_source_cannot_claim_drift_or_consumer_repairs(self):
+        path = "src/data/ch2_eventlists.json"
+        source = json.loads((self.repo.root / path).read_text())
+        source["lists"][0]["entries"][0]["args"][1] = "EventScr_UnknownReviewReference"
+        data, members, prior, current, session = self.remediation(
+            "generated", path, json.dumps(source), "owners:eventlists")
+        finding = next(iter(session.accepted.values()))
+        for member, unrelated_path in (
+            ("drift-checks:eventlists", "reports/generated_data_eventlists_inventory.md"),
+            ("consumers:eventlists", "src/events/ch2-eventinfo.h"),
+        ):
+            with self.subTest(reported=member):
+                self.assertEqual(self.tools.tree(finding.origin).oid(unrelated_path),
+                                 self.tools.tree(data["candidate_sha"]).oid(unrelated_path))
+                session.accepted[finding.id] = replace(
+                    finding, member=member, source_path=unrelated_path)
+                data["findings"][0]["reported_member"] = member
+                with self.assertRaisesRegex(ValueError, "reported member"):
+                    self.model.assess_handoff(
+                        data, members, (*prior, *current), session, tool_revision=self.repo.base,
+                        remote_reviews=(), triage=(), pre_review_required=False)
+        for member in ("outputs:eventlists", "consumers:eventlists", "drift-checks:eventlists"):
+            with self.subTest(prerequisite=member):
+                observation = next(item for item in prior if item.obligation.member == member)
+                self.assertEqual((observation.verdict, observation.checks), ("unavailable", 0))
+                self.assertEqual(observation.blocked_by, ("owners:eventlists",))
+        session.accepted[finding.id] = finding
+        data["findings"][0]["reported_member"] = finding.member
+        report = self.model.assess_handoff(
+            data, members, (*prior, *current), session, tool_revision=self.repo.base,
+            remote_reviews=(), triage=(), pre_review_required=False)
+        self.assertEqual({row["outcome"] for row in report["outcomes"]
+                          if row["member"] in {"outputs:eventlists", "consumers:eventlists",
+                                               "drift-checks:eventlists"}},
+                         {"prerequisite-fixed"})
+        blocked = next(item for item in prior if item.obligation.member == "outputs:eventlists")
+        for blockers in ((), ("owners:shops",), ("owners:unknown",), ("consumers:eventlists",)):
+            with self.subTest(unobserved_prerequisites=blockers):
+                altered = tuple(replace(item, blocked_by=blockers) if item is blocked else item
+                                for item in prior)
+                with self.assertRaisesRegex(ValueError, "origin (evidence|prerequisite)"):
+                    self.model.assess_handoff(
+                        data, members, (*altered, *current), session, tool_revision=self.repo.base,
+                        remote_reviews=(), triage=(), pre_review_required=False)
+
+    def test_real_inventory_and_consumer_repairs_execute_the_selected_predicates(self):
+        for path, member in (
+            ("reports/generated_data_eventlists_inventory.md", "drift-checks:eventlists"),
+            ("src/events/ch2-eventinfo.h", "consumers:eventlists"),
+        ):
+            with self.subTest(member=member):
+                source = (self.repo.root / path).read_text()
+                broken = (source + "\nUncommitted inventory change\n" if member.startswith("drift")
+                          else source.replace("FACTION_ID_BLUE", "FACTION_ID_RED"))
+                self.assertNotEqual(source, broken)
+                self.remediation("generated", path, broken, member)
+
+    def test_mixed_subject_findings_keep_semantic_inputs_separate_from_staged_bytes(self):
+        paths = ("src/expansion_aoe.c", "reports/generated_data_eventlists_inventory.md",
+                 "scripts/workflow_pilot/review_family.py")
+        originals = {path: (self.repo.root / path).read_text() for path in paths}
+        changes = {
+            paths[0]: originals[paths[0]].replace("&& route->aiPolicy == EXPANSION_AOE_AI_NEVER", "&& 0"),
+            paths[1]: originals[paths[1]] + "\nUncommitted inventory change\n",
+            paths[2]: originals[paths[2]].replace('require(request["candidate_sha"] == session.head,',
+                                                 'require(True,'),
+        }
+        self.assertTrue(all(changes[path] != originals[path] for path in paths))
+        origin = self.repo.commit(changes)
+        candidate = self.repo.commit(originals, parent=origin)
+        data = self.scope("aoe", candidate)
+        data["subjects"].extend(self.scope("generated", candidate)["subjects"])
+        data["subjects"].extend(self.scope("session", candidate)["subjects"])
+        members = self.host_members(self.tools.members(data, (origin,)))
+        current = self.run_members(members, candidate)
+        self.assert_satisfied(current)
+        selected = ("action", "generated", "wire")
+        prior = self.run_members(tuple(item for item in members if item.family in selected), origin)
+        model = self.model
+        scope = frozenset(model.subject_key(item) for item in data["subjects"])
+        session = model.ReviewSession("coordinator", "implementer", scope, candidate,
+                                      identity=("owner/repo", 1, self.repo.base))
+        findings = []
+        for index, (subject, family, member, path) in enumerate(zip(
+            data["subjects"], selected,
+            ("actions:AI_SELECT", "drift-checks:eventlists", "stale-bindings:review-session"), paths,
+        )):
+            finding = model.Finding(
+                "finding-" + str(index), model.subject_key(subject), family, member,
+                origin, path, "review-1")
+            findings.append(finding)
+            session.accept(finding)
+            data["findings"].append({
+                "finding_id": finding.id, **subject, "family": family, "reported_member": member,
+            })
+        arguments = dict(tool_revision=self.repo.base, remote_reviews=(), triage=(),
+                         pre_review_required=False)
+        good = model.assess_handoff(data, members, (*prior, *current), session, **arguments)
+        self.assertTrue(good["handoff_eligible"])
+        for finding, unrelated_path in zip(findings, (paths[1], paths[2], paths[0])):
+            with self.subTest(subject=finding.subject):
+                self.assertTrue(all(unrelated_path in dict(item.source_objects)
+                                    for item in (*prior, *current)))
+                session.accepted[finding.id] = replace(finding, source_path=unrelated_path)
+                with self.assertRaisesRegex(ValueError, "unrelated source"):
+                    model.assess_handoff(data, members, (*prior, *current), session, **arguments)
+                session.accepted[finding.id] = finding
+        for kind in ("aoe", "generated", "session"):
+            standalone = self.tools.members(self.scope(kind, candidate), (origin,))
+            expected = {item.identity: item.inputs for item in standalone}
+            for member in members:
+                if member.identity in expected:
+                    with self.subTest(semantic_inputs=member.identity):
+                        self.assertTrue(member.inputs == expected[member.identity],
+                                        "mixed request changed the member's semantic input mapping")
+
+    def test_two_round_handoffs_retain_bound_actual_origin_and_candidate_evidence(self):
+        inventory = "reports/generated_data_eventlists_inventory.md"
+        consumer = "src/events/ch2-eventinfo.h"
+        originals = {path: (self.repo.root / path).read_text() for path in (inventory, consumer)}
+        first = self.repo.commit({inventory: originals[inventory] + "\nInventory drift\n"})
+        second = self.repo.commit({
+            inventory: originals[inventory],
+            consumer: originals[consumer].replace("FACTION_ID_BLUE", "FACTION_ID_RED"),
+        }, parent=first)
+        candidate = self.repo.commit({consumer: originals[consumer]}, parent=second)
+        data = self.scope("generated", candidate)
+        members = self.tools.members(data, (first, second))
+        observations = tuple(item for revision in (first, second, candidate)
+                             for item in self.run_members(members, revision))
+        self.assert_satisfied(tuple(item for item in observations if item.revision == candidate))
+        model = self.model
+        key = model.subject_key(data["subjects"][0])
+        session = model.ReviewSession("coordinator", "implementer", frozenset({key}), candidate,
+                                      identity=("owner/repo", 1, self.repo.base))
+        for number, origin, member, path in (
+            (1, first, "drift-checks:eventlists", inventory),
+            (2, second, "consumers:eventlists", consumer),
+        ):
+            fact = model.ReviewFact(
+                "review-" + str(number), origin, "observed-copilot", "CHANGES_REQUESTED",
+                f"2026-01-01T00:00:{number:02d}Z", "Complete reviewed source defect",
+                (("comment-" + str(number), path, "Observed selected predicate failure"),))
+            finding = model.Finding(
+                "finding-" + str(number), key, "generated", member, origin, path, fact.id)
+            session.triage(model.Triage(fact, "changes-requested", (finding,)))
+            data["findings"].append({
+                "finding_id": finding.id, **data["subjects"][0],
+                "family": finding.family, "reported_member": member,
+            })
+        report = model.assess_handoff(
+            data, members, observations, session, tool_revision=self.repo.base,
+            remote_reviews=tuple(item.fact for item in session.rounds.events),
+            triage=tuple(session.rounds.events), pre_review_required=False)
+        self.assertTrue(report["handoff_eligible"])
+        wire = json.loads(json.dumps(report))
+        self.assertEqual(len(wire["round_handoffs"]), 2)
+        actual = {(item.obligation.identity, item.revision): item for item in observations}
+        for round_handoff in wire["round_handoffs"]:
+            with self.subTest(round=round_handoff["consecutive"]):
+                self.assertIn("outcome_refs", round_handoff)
+                self.assertEqual(round_handoff["candidate_sha"], candidate)
+                self.assertEqual(round_handoff["tool_revision"], self.repo.base)
+                rows = [wire["outcomes"][index] for index in round_handoff["outcome_refs"]]
+                self.assertEqual({(row["subject"], row["family"], row["member"]) for row in rows},
+                                 {item.identity for item in members})
+                self.assertEqual(len(rows), len(members))
+                self.assertEqual({row["finding_id"] for row in rows}, set(round_handoff["findings"]))
+                for row in rows:
+                    for field, revision in (("origin_evidence", round_handoff["head"]),
+                                            ("candidate_evidence", candidate)):
+                        evidence = wire["evidence"][row[field]]
+                        identity = tuple(evidence[name] for name in ("subject", "family", "member"))
+                        observed = actual[identity, revision]
+                        self.assertEqual(identity, (row["subject"], row["family"], row["member"]))
+                        self.assertEqual(evidence["revision"], revision)
+                        self.assertEqual(evidence["tool_revision"], observed.tool_revision)
+                        for name in ("verdict", "checks", "kind", "detail"):
+                            self.assertEqual(evidence[name], getattr(observed, name))
+                        self.assertEqual(evidence["profile"], observed.obligation.profile)
+                        self.assertEqual(evidence["probe"], observed.obligation.probe)
+                        self.assertEqual(evidence["evidence"], list(observed.evidence))
+                        source_set = wire["source_sets"][evidence["source_set"]]
+                        self.assertEqual(source_set["revision"], revision)
+                        self.assertEqual(source_set["tool_revision"], observed.tool_revision)
+                        self.assertEqual(dict(source_set["objects"]), dict(observed.source_objects))
+                    before = wire["evidence"][row["origin_evidence"]]
+                    expected = ("affected-fixed" if before["verdict"] == "contract-violation"
+                                else "verified-unaffected")
+                    self.assertEqual(row["outcome"], expected)
+        self.assertEqual(len(wire["source_sets"]), 3)
+        self.assertEqual(len(wire["evidence"]), len(observations))
+        saved = copy.deepcopy(report)
+        edited = replace(session.rounds.events[0].fact, body="Review content edited")
+        session.refresh_reviews((edited, session.rounds.events[1].fact))
+        self.assertEqual(report, saved, "later round refresh rewrote an already returned assessment")
+
+    def test_compiled_header_dependency_finding_uses_actual_member_failure(self):
+        path = "include/bmunit.h"
+        source = (self.repo.root / path).read_text()
+        broken = source.replace("#define UNIT_IS_VALID(aUnit) ((aUnit) && (aUnit)->pCharacterData)",
+                                "#define UNIT_IS_VALID(aUnit) ((aUnit) && (aUnit)->pCharacterData && 0)")
+        self.assertNotEqual(source, broken)
+        data, members, prior, current, session = self.remediation(
+            "aoe", path, broken, "targets:stable-slots")
+        self.assertTrue(all(path in dict(item.source_objects) for item in (*prior, *current)))
+        finding = next(iter(session.accepted.values()))
+        unrelated = replace(finding, member="items:routes")
+        self.assertEqual(next(item.verdict for item in prior
+                              if item.obligation.member == unrelated.member), "satisfied")
+        session.accepted[finding.id] = unrelated
+        data["findings"][0]["reported_member"] = unrelated.member
+        with self.assertRaisesRegex(ValueError, "reported member"):
+            self.model.assess_handoff(
+                data, members, (*prior, *current), session, tool_revision=self.repo.base,
+                remote_reviews=(), triage=(), pre_review_required=False)
+
+    def test_every_shared_worker_binds_its_actual_staged_candidate_closure(self):
+        for kind in ("aoe", "generated", "mixed"):
+            with self.subTest(kind=kind):
+                data = self.scope("aoe" if kind == "mixed" else kind)
+                if kind == "mixed":
+                    for other in ("generated", "session"):
+                        data["subjects"].extend(self.scope(other)["subjects"])
+                members = self.host_members(self.tools.members(data))
+                tree = self.tools.tree(self.repo.base)
+                root = self.repo.root / "build" / ("staged-closure-" + kind)
+                root.mkdir(parents=True, exist_ok=True)
+                copied = set()
+                materialize = tree.materialize
+
+                def capture(destination, paths):
+                    materialize(destination, paths)
+                    copied.update(paths)
+                    for path in paths:
+                        self.assertEqual((destination / path).read_bytes(), tree.read(path))
+
+                with patch.object(tree, "materialize", side_effect=capture):
+                    self.tools._stage(tree, root, members)
+                self.assertTrue(copied)
+                for member in members:
+                    self.assertEqual(set(member.source_inputs), copied, member.member)
+                    self.assertTrue(set(member.inputs) <= copied)
+                observations = self.run_members(members, self.repo.base)
+                self.assert_satisfied(observations)
+                for item in observations:
+                    self.assertEqual(dict(item.source_objects),
+                                     {path: tree.oid(path) for path in copied})
+                narrowed = replace(members[0], execution_inputs=members[0].execution_inputs[1:])
+                with self.assertRaisesRegex(ValueError, "candidate inputs"):
+                    self.tools.run_obligations((narrowed, *members[1:]), self.repo.base)
+
+    def test_optional_owner_semantic_invalid_data_is_rejected(self):
+        for path, owner in (
+            ("src/data/autoplay_strategies.json", "autoplaystrategies"),
+            ("src/data/ch2_bundle.json", "chapterbundle"),
+        ):
+            with self.subTest(owner=owner):
+                data = json.loads((self.repo.root / path).read_text())
+                fixed = None
+                if owner == "autoplaystrategies":
+                    selected = copy.deepcopy(data["strategies"][0])
+                    selected["id"] = "AUTOPLAY_STRATEGY_REVIEW_SELECTED"
+                    data["strategies"].append(selected)
+                    fixed = json.dumps(data)
+                    selected["callback"] = "not a C callback"
+                else:
+                    data["chapter"]["mapEventDataId"] = 9999
+                self.remediation("generated", path, json.dumps(data), "owners:" + owner, fixed=fixed)
+
+    def test_generated_producer_consumer_and_inventory_findings_bind_executed_source(self):
+        cases = (
+            ("generate.py", "outputs:eventlists",
+             'return "".join(parts)', 'return "".join(parts).replace("FACTION_ID_BLUE", "FACTION_ID_RED")'),
+            ("parser.py", "consumers:eventlists",
+             "return errors", 'return errors + [GeneratedDataError("invalid parsed consumer")]'),
+            ("inventory.py", "drift-checks:eventlists",
+             'return "".join(lines)', 'return "".join(lines) + "unexpected inventory row\\n"'),
+        )
+        for name, member, old, new in cases:
+            with self.subTest(source=name):
+                path = "scripts/generated_data/eventlists/" + name
+                source = (self.repo.root / path).read_text()
+                self.assertIn(old, source)
+                self.remediation("generated", path, source.replace(old, new), member)
+                revision = self.repo.commit({path: "# Harmless formatting control.\n" + source})
+                members = self.tools.members(self.scope("generated", revision))
+                self.assert_satisfied(self.run_members(members, revision))
+
+    def test_lifecycle_and_wire_execute_actual_origin_source(self):
+        path = "scripts/workflow_pilot/review_family.py"
+        source = (self.repo.root / path).read_text()
+        mutation = source.replace(
+            '        self._refresh()\n',
+            '        self._refresh()\n        if review.outcome == "clean":\n            self.hold = None\n')
+        self.assertNotEqual(source, mutation)
+        origin = self.repo.commit({path: mutation})
+        members = self.tools.members(self.scope("session"), (origin,))
+        observations = self.run_members(members, origin)
+        bad = {item.obligation.family for item in observations if item.verdict == "contract-violation"}
+        self.assertEqual(bad, {"lifecycle", "wire"})
+        self.assert_satisfied(self.run_members(members, self.repo.base))
+
+    def test_unknown_added_deleted_and_wrong_subjects_fail_closed(self):
+        data = self.scope("aoe")
+        data["subjects"][0]["subject"] = "arbitrary-plugin"
+        with self.assertRaises(ValueError):
+            self.tools.members(data)
+        path = "include/expansion_aoe.h"
+        original = (self.repo.root / path).read_text()
+        for changed in (
+            original.replace("EXPANSION_AOE_ITEM_PHASE_COUNT",
+                             "EXPANSION_AOE_ITEM_NEW_ACTION,\n    EXPANSION_AOE_ITEM_PHASE_COUNT"),
+            original.replace("    EXPANSION_AOE_ITEM_BEGIN_USE,\n", ""),
+        ):
+            revision = self.repo.commit({path: changed})
+            with self.assertRaises(ValueError):
+                self.tools.members(self.scope("aoe", revision), (self.repo.base,))
+        deleted = self.repo.commit({"src/data/ch2_shops.json": None})
+        with self.assertRaises(ValueError):
+            self.tools.members(self.scope("generated", deleted), (self.repo.base,))
+
+    def test_finite_enum_values_match_native_compiler_and_reject_aliased_coverage(self):
+        path = "include/expansion_aoe.h"
+        original = (self.repo.root / path).read_text()
+        phase_names = ("CAN_USE", "BEGIN_USE", "EXECUTE", "AI_SELECT", "PHASE_COUNT")
+        shape_names = ("DIAMOND", "SQUARE", "CROSS", "COUNT")
+        symbols = (["EXPANSION_AOE_ITEM_" + name for name in phase_names] +
+                   ["EXPANSION_AOE_SHAPE_" + name for name in shape_names])
+        expected = (0, 1, 2, 3, 4, 0, 1, 2, 3)
+        reordered = re.sub(
+            r"enum ExpansionAoEItemPhase\s*\{[^}]*\}",
+            """enum ExpansionAoEItemPhase {
+    EXPANSION_AOE_ITEM_BEGIN_USE = 01, /* Same values, another declaration order. */
+    EXPANSION_AOE_ITEM_CAN_USE = 0x0,
+    EXPANSION_AOE_ITEM_EXECUTE = 0x2,
+    EXPANSION_AOE_ITEM_AI_SELECT = 03,
+    EXPANSION_AOE_ITEM_PHASE_COUNT = 4
+}""", original)
+        variants = (
+            ("original", original, True),
+            ("equivalent", reordered, True),
+            ("phase-alias", original.replace("EXPANSION_AOE_ITEM_BEGIN_USE,",
+                                             "EXPANSION_AOE_ITEM_BEGIN_USE = 0,"), False),
+            ("shape-alias", original.replace("EXPANSION_AOE_SHAPE_SQUARE,",
+                                             "EXPANSION_AOE_SHAPE_SQUARE = 0,"), False),
+            ("phase-gap", original.replace("EXPANSION_AOE_ITEM_BEGIN_USE,",
+                                           "EXPANSION_AOE_ITEM_BEGIN_USE = 2,"), False),
+            ("count", original.replace("    EXPANSION_AOE_ITEM_PHASE_COUNT\n",
+                                       "    EXPANSION_AOE_ITEM_PHASE_COUNT = 3\n"), False),
+        )
+        directory = Path(self.enterContext(tempfile.TemporaryDirectory(
+            prefix="review-enum-values-", dir=ROOT / "build")))
+        base = self.tools.tree(self.repo.base)
+        base.materialize(directory, base.under("include"))
+        executable = directory / "values"
+        code = ('#include "global.h"\n#include "expansion_aoe.h"\n#include <stdio.h>\n'
+                'int main(void) { printf("' + " ".join(["%d"] * len(symbols)) + '\\n", '
+                + ", ".join(symbols) + '); return 0; }\n')
+        for name, source, accepted in variants:
+            with self.subTest(variant=name):
+                revision = self.repo.base if name == "original" else self.repo.commit({path: source})
+                tree = self.tools.tree(revision)
+                (directory / path).write_bytes(tree.read(path))
+                compiled = subprocess.run(
+                    ["/usr/bin/gcc", "-std=gnu89", "-DFE8_EXPANSION_MODERN_BUILD=1",
+                     "-I", str(directory / "include"), "-x", "c", "-", "-o", str(executable)],
+                    input=code, env=ENV, capture_output=True, text=True, timeout=60)
+                self.assertEqual(compiled.returncode, 0, compiled.stderr)
+                actual = subprocess.run([str(executable)], env=ENV, capture_output=True,
+                                        text=True, check=True, timeout=10)
+                values = tuple(map(int, actual.stdout.split()))
+                if accepted:
+                    self.assertEqual(values, expected)
+                    self.assertTrue(self.tools.members(self.scope("aoe", revision)))
+                else:
+                    self.assertNotEqual(values, expected)
+                    with self.assertRaises(ValueError):
+                        self.tools.members(self.scope("aoe", revision))
+
+    def test_wire_stale_binding_probe_reaches_production_head_predicate(self):
+        path = "scripts/workflow_pilot/review_family.py"
+        source = (self.repo.root / path).read_text()
+        broken = source.replace('require(request["candidate_sha"] == session.head,',
+                                'require(True,')
+        self.assertNotEqual(source, broken)
+        revision = self.repo.commit({path: broken})
+        members = self.tools.members(self.scope("session", revision))
+        observations = self.run_members(members, revision)
+        stale = next(item for item in observations if item.obligation.role == "stale-bindings")
+        self.assertEqual(stale.verdict, "contract-violation", stale.detail)
+
+    def test_compile_import_and_unknown_probe_are_unavailable_not_repairs(self):
+        cases = (
+            ("aoe", "src/expansion_aoe.c", "not valid C;\n"),
+            ("session", "scripts/workflow_pilot/review_family.py", "import missing_review_module\n"),
+        )
+        for kind, path, source in cases:
+            revision = self.repo.commit({path: source})
+            members = self.tools.members(self.scope(kind, revision))
+            observed = self.run_members(members, revision)
+            self.assertTrue(any(item.verdict == "unavailable" for item in observed))
+            self.assertFalse(any(item.verdict == "contract-violation" for item in observed))
+        unknown = self.tools.subjects.worker(["not-a-probe"])[0]
+        self.assertEqual((unknown["verdict"], unknown["kind"], unknown["checks"]),
+                         ("unavailable", None, 0))
+
+    def test_immutable_git_bytes_not_reopened_worktree_and_no_fsmonitor(self):
+        tree = GitTree(self.repo.root, self.repo.base)
+        path = "scripts/workflow_pilot/review_family.py"
+        intended = tree.read(path)
+        worktree = self.repo.root / path
+        worktree.write_text("raise RuntimeError('worktree substitution')\n")
+        try:
+            self.assertEqual(tree.read(path), intended)
+            self.assertEqual(GitTree(self.repo.root, self.repo.base).read(path), intended)
+            self.assert_satisfied(self.tools.run_obligations(
+                self.tools.members(self.scope("session")), self.repo.base))
+        finally:
+            worktree.write_bytes(intended)
+        hook = self.repo.root / "fsmonitor-hook"
+        sentinel = self.repo.root / "hook-ran"
+        hook.write_text("#!/bin/sh\nprintf invoked > '" + str(sentinel) + "'\n")
+        hook.chmod(0o700)
+        subprocess.run(["/usr/bin/git", "-C", str(self.repo.root), "config",
+                        "core.fsmonitor", str(hook)], env=ENV, check=True)
+        GitTree(self.repo.root, self.repo.base).read(path)
+        GitTree(self.repo.root, self.repo.base).git("status", "--porcelain")
+        self.assertFalse(sentinel.exists())
+        subprocess.run(["/usr/bin/git", "-C", str(self.repo.root), "status", "--porcelain"],
+                       env=ENV, capture_output=True, check=True)
+        self.assertTrue(sentinel.exists(), "raw Git did not exercise the configured fsmonitor hook")
+
+    def test_semantics_preserving_source_refactor_remains_green(self):
+        path = "src/expansion_aoe.c"
+        source = (self.repo.root / path).read_text()
+        revision = self.repo.commit({path: "/* Formatting-only review control. */\n" + source})
+        members = self.tools.members(self.scope("aoe", revision), (self.repo.base,))
+        self.assert_satisfied(self.run_members(self.host_members(members), revision))
+
+    def test_selected_git_objects_modes_and_bytes_are_checked(self):
+        path = "include/expansion_aoe.h"
+        tree = GitTree(self.repo.root, self.repo.base)
+        with patch.object(tree, "git", return_value=b"substituted source"):
+            with self.assertRaisesRegex(ValueError, "bytes differ"):
+                tree.read(path)
+        git(self.repo.root, "read-tree", self.repo.base)
+        git(self.repo.root, "update-index", "--cacheinfo",
+            "120000," + tree.oid(path) + "," + path)
+        changed_tree = git(self.repo.root, "write-tree")
+        revision = git(self.repo.root, "commit-tree", changed_tree, "-p", self.repo.base,
+                       "-m", "unsafe source-mode control")
+        git(self.repo.root, "read-tree", self.repo.base)
+        with self.assertRaisesRegex(ValueError, "regular Git blob"):
+            self.tools.members(self.scope("aoe", revision))
+
+    def test_same_feature_can_supply_reviewed_binding_without_base_installation(self):
+        path = "scripts/workflow_pilot/review_subjects.py"
+        source = (self.repo.root / path).read_text()
+        changed = source.replace(
+            'BINDINGS = (\n',
+            'BINDINGS = (\n    SubjectSpec("TC-GAMEPLAY-006", "new-reviewed-binding", "aoe"),\n')
+        revision = self.repo.commit({path: changed})
+        data = self.scope("aoe", revision)
+        data["subjects"][0]["subject"] = "new-reviewed-binding"
+        with self.assertRaisesRegex(ValueError, "unknown subject"):
+            self.tools.members(data)
+        reviewed = ReviewTools(GitTree(self.repo.root, revision), self.repo.root)
+        members = reviewed.members(data)
+        self.assertTrue(members)
+        self.assertTrue(all(item.subject.endswith("/new-reviewed-binding") for item in members))
+        request_path = self.repo.root / "build" / "new-binding-request.json"
+        request_path.parent.mkdir(exist_ok=True)
+        request_path.write_text(json.dumps(data))
+        planned = subprocess.run(
+            [sys.executable, "-I", str(TRUSTED_LAUNCHER), "review-family",
+             "--repository-root", str(self.repo.root), "--subject-root", str(self.repo.root),
+             "--tool-revision", revision, "--candidate", revision,
+             "--request", str(request_path), "--mode", "plan"],
+            env=ENV, capture_output=True, text=True, timeout=30)
+        self.assertEqual(planned.returncode, 0, planned.stderr)
+        plan = json.loads(planned.stdout)
+        self.assertEqual(plan["tool_revision"], revision)
+        self.assertTrue(all(item["subject"].endswith("/new-reviewed-binding")
+                            for item in plan["obligations"]))
+        self.assertFalse(plan["merge_permission"])
+        # Subsequent tests continue using the explicitly selected original tool objects.
+
+    def test_zero_skipped_and_wrong_source_observations_cannot_pass(self):
+        members = self.tools.members(self.scope("session"))
+        good = self.run_members(members, self.repo.base)[0]
+        for bad in (
+            replace(good, checks=0), replace(good, verdict="skipped"),
+            replace(good, checks=True), replace(good, checks=1.0),
+            replace(good, verdict=[]), replace(good, kind={}),
+            replace(good, source_objects=(("unrelated.py", self.repo.base),)),
+            replace(good, source_objects=(("source",),)),
+            replace(good, source_objects=None), replace(good, evidence=([],)),
+            replace(good, evidence=None), replace(good, evidence=("runtime",)),
+            replace(good, detail=None), replace(good, kind="rom"),
+            replace(good, blocked_by=None), replace(good, blocked_by=([],)),
+            replace(good, blocked_by=("owners:eventlists",)),
+            *(replace(good, kind=kind) for kind in ("native", "parsed", "arm-object", None)),
+        ):
+            with self.subTest(observation=bad), self.assertRaises(ValueError):
+                bad.validate()
+
+    def test_worker_record_types_and_missing_fields_reject_before_admission(self):
+        members = self.tools.members(self.scope("session"))
+        payload = json.dumps([item.probe for item in members]).encode()
+        run = subprocess.run
+        captured = []
+
+        def capture(*args, **kwargs):
+            completed = run(*args, **kwargs)
+            if kwargs.get("input") == payload:
+                captured.append(json.loads(completed.stdout))
+            return completed
+
+        with patch.object(subprocess, "run", side_effect=capture):
+            observations = self.tools.run_obligations(members, self.repo.base)
+            self.assert_satisfied(observations)
+        self.assertEqual(len(captured), 1)
+        good = captured[0]
+        self.assertEqual(
+            [(item.kind, item.verdict, item.checks, item.detail) for item in observations],
+            [(row["kind"], row["verdict"], row["checks"], row["detail"]) for row in good])
+        malformed = [None, [], "row", {**good[0], "trusted": True}]
+        for field in good[0]:
+            row = dict(good[0])
+            del row[field]
+            malformed.append(row)
+        for field, value in (
+            ("kind", "native"), ("kind", "parsed"), ("kind", "arm-object"),
+            ("kind", None), ("kind", {}), ("kind", []),
+            ("checks", True), ("checks", 1.0), ("checks", "1"), ("checks", 0),
+            ("checks", -1), ("checks", None), ("verdict", []), ("verdict", "skipped"),
+            ("detail", None), ("detail", []), ("detail", "x" * 2001), ("detail", ""),
+            ("probe", None), ("probe", good[1]["probe"]),
+            ("blocked_by", None), ("blocked_by", "owners:eventlists"),
+            ("blocked_by", [None]), ("blocked_by", [[]]),
+            ("blocked_by", ["owners:eventlists"]), ("blocked_by", [True]),
+        ):
+            malformed.append({**good[0], field: value})
+        malformed.append({**good[0], "verdict": "unavailable", "checks": 1})
+        for row in malformed:
+            with self.subTest(row=row):
+                raw = json.dumps([row, *good[1:]]).encode()
+
+                def corrupt(*args, **kwargs):
+                    if kwargs.get("input") == payload:
+                        return subprocess.CompletedProcess(args[0], 0, raw, b"")
+                    return run(*args, **kwargs)
+
+                with patch.object(subprocess, "run", side_effect=corrupt):
+                    with self.assertRaises(ValueError):
+                        self.tools.run_obligations(members, self.repo.base)
+
+    def test_wrongly_routed_real_worker_success_failure_and_unavailability_keep_kind(self):
+        worker_path = "scripts/workflow_pilot/review_subjects.py"
+        worker_source = (self.repo.root / worker_path).read_text()
+        for kind, old, route, source_path, source in (
+            ("arm-object", 'return _arm(probe == "aoe-arm:enabled")',
+             'return _native("aoe-phase:AI_SELECT")', "src/expansion_aoe.c", "native"),
+            ("parsed", "return _generated(probe)",
+             'return _session_probe("lifecycle:resets")',
+             "scripts/workflow_pilot/review_family.py", "host"),
+        ):
+            original = (self.repo.root / source_path).read_text()
+            broken = (original.replace("&& route->aiPolicy == EXPANSION_AOE_AI_NEVER", "&& 0")
+                      if source == "native" else original.replace(
+                          "                consecutive = 0\n", "                consecutive += 0\n"))
+            unavailable = "not valid C;\n" if source == "native" else "import missing_review_module\n"
+            routed = worker_source.replace(old, route)
+            self.assertNotEqual(routed, worker_source)
+            self.assertNotEqual(original, broken)
+            for verdict, contents in (
+                ("satisfied", original), ("contract-violation", broken), ("unavailable", unavailable),
+            ):
+                with self.subTest(expected=kind, actual=source, verdict=verdict):
+                    revision = self.repo.commit({worker_path: routed})
+                    candidate = (revision if contents == original else
+                                 self.repo.commit({source_path: contents}, parent=revision))
+                    tools = ReviewTools(GitTree(self.repo.root, revision), self.repo.root)
+                    data = self.scope("aoe" if kind == "arm-object" else "generated", candidate)
+                    if kind == "parsed":
+                        data["subjects"].extend(self.scope("session")["subjects"])
+                    members = tools.members(data)
+                    if kind == "arm-object":
+                        members = tuple(item for item in members if item.family == "resource")
+                    probes = {item.probe for item in members
+                              if item.probe.startswith("aoe-arm:" if kind == "arm-object"
+                                                       else "generated-")}
+                    payload = json.dumps([item.probe for item in members]).encode()
+                    run = subprocess.run
+                    captured = []
+
+                    def capture(*args, **kwargs):
+                        completed = run(*args, **kwargs)
+                        if kwargs.get("input") == payload:
+                            captured.extend(json.loads(completed.stdout))
+                        return completed
+
+                    with patch.object(subprocess, "run", side_effect=capture):
+                        with self.assertRaisesRegex(ValueError, "kind"):
+                            tools.run_obligations(members, candidate)
+                    actual = [row for row in captured if row["probe"] in probes]
+                    self.assertEqual({row["probe"] for row in actual}, probes)
+                    self.assertEqual({(row["kind"], row["verdict"]) for row in actual},
+                                     {(source, verdict)})
+                    self.assertTrue(all(row["checks"] == 0 if verdict == "unavailable"
+                                        else row["checks"] > 0 for row in actual))
+
+    def test_worker_exit_without_rows_has_no_evidence_kind_or_checks(self):
+        path = "scripts/workflow_pilot/review_subjects.py"
+        source = (self.repo.root / path).read_text()
+        source = source.replace("def worker(probes: list[str]) -> list[dict]:",
+                                "def worker(probes: list[str]) -> list[dict]:\n    raise SystemExit(7)")
+        revision = self.repo.commit({path: source})
+        tools = ReviewTools(GitTree(self.repo.root, revision), self.repo.root)
+        members = tools.members(self.scope("session"))
+        observations = tools.run_obligations(members, self.repo.base)
+        self.assertEqual({(item.verdict, item.kind, item.checks) for item in observations},
+                         {("unavailable", None, 0)})
+        self.assertTrue(all("process failed" in item.detail for item in observations))
+
+
+if __name__ == "__main__":
+    unittest.main()

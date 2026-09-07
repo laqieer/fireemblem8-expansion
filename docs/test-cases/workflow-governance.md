@@ -115,6 +115,300 @@ afterward as described in step 6. No visual/audio/manual-only criterion applies.
 This setup cannot supply missing Git authority or discharge
 the consumers' independent protected-principal/deployment requirements.
 
+## TC-WORKFLOW-REVIEW-FAMILY-001: Expand valid findings across complete sibling families
+
+- **Feature / originating issue:** `workflow-governance` /
+  [issue #179](https://github.com/laqieer/fireemblem8-expansion/issues/179).
+- **Supported configuration:** source checkout, the existing #216 locked
+  CPython 3.12 host environment, Git and native GCC for host coverage; the
+  existing modern Build lane's ARM GCC/binutils for mandatory object positives.
+- **Prerequisites and starting state:** run from the repository root. Follow
+  the [existing host setup](../workflow-pilot.md#isolated-host-python-dependencies)
+  if needed. Tests create only owned source copies/Git histories below
+  `build/review-family-*`. No live PR, credential, ROM, emulator, protected
+  installation or new agent backend is needed. CLI fixtures invoke the
+  independently trusted test checkout's existing fixed launcher outside
+  the owned candidate repository; they do not execute a candidate bootstrap.
+
+### Actions
+
+1. Run the focused suite with the inherited locked interpreter:
+
+   ```bash
+   build/host-python/bin/python3 -I -m unittest discover \
+     -s scripts/workflow_pilot/tests -t . -p 'test_*review*.py' -v
+   ```
+
+2. With the supported ARM compiler/binutils on PATH (or the resolved
+   `MODERN_CC`, `MODERN_NM` and `MODERN_SIZE` environment paths), run the
+   separate ARM-positive selector:
+
+   ```bash
+   python3 -m unittest scripts.workflow_pilot.tests.arm_review_subjects -v
+   ```
+
+   The existing `expansion-modern-linker-check` recipe also runs this selector
+   in both modern Build configurations, without a new workflow job or verifier
+   gate. Missing tools fail rather than skip. The host reporter suite needs no
+   ARM installation and retains all native/source-backed family coverage;
+   its parsed Make contract verifies that both configurations retain the
+   mandatory ARM selector and resolved tool paths. The owned non-system
+   toolchain control exercises both `MODERN_TOOLCHAIN_ROOT` and an explicit
+   compiler override through Make, then records actual compiler/nm/size
+   execution; a system-only installation is not required.
+   Inspect the actual AoE controls: every public item phase, typed route checks,
+   each shape and bounded/stable target behavior runs its selected native
+   driver group. Each shape requests the actual range map and checks every
+   cell against an independent radius-two selected-shape bitmap. Change CROSS
+   to a 3x3 square that still reports nine tiles and preserves the source
+   target: its own selector must fail on geometry, then pass restored source.
+   Enabled and disabled reference drivers and ARM object
+   symbols/sections pass in their respective profiles, including formatting-only
+   source changes. Remove EWRAM placement from the core, reference, then both
+   in owned source revisions. Inspect the real compiled objects: each missing
+   section must reject the enabled ARM member even though total EWRAM is
+   below budget. Restored enabled placement, aggregate EWRAM/text budgets and
+   the supported disabled omission remain good.
+   Remove the real AI_NEVER rejection in an owned
+   origin commit; the same probe fails before and passes restored source.
+   Compile and read the actual header's phase/shape enum values. Original and
+   equivalent explicitly valued/reordered declarations retain the same
+   zero-based mapping. Alias `BEGIN_USE` to `0`, alias the square shape, add
+   a numeric gap or change the count sentinel: compilation confirms the
+   numeric difference and the finite coverage model must reject before
+   advertising independent siblings. No general C interpreter is involved.
+   Make the included `bmunit.h` unit-validity predicate reject valid units,
+   then restore it. The native stable-slot member fails before and passes
+   after; that actual header dependency is bound and its finding is admissible.
+   Reporting an unaffected item-route member instead must still reject.
+3. Inspect the unrelated generated-eventlist controls: resolve actual schema
+   owners, validate authored references, generate and parse C output, compare
+   the consumer and inventory. Introduce a nonexistent event-script reference
+   in owned source; validation fails before and passes after restoration.
+   Report an unchanged inventory or consumer as the defect instead: the
+   selected predicate never executed, so its unavailable/zero-check
+   prerequisite observation cannot claim an affected-fixed repair. The
+   owner repair remains admissible with those siblings explicitly
+   `prerequisite-fixed`, bound to the actually failed same-origin owner.
+   Remove, invent or substitute a satisfied prerequisite owner and reject.
+   Introduce real inventory drift and consumer output differences separately;
+   their own predicates fail and restoration passes.
+   Optional owners also run their existing semantic validators: invalid
+   callbacks on selected non-reference strategies and chapter bundle metadata
+   fail. Default-off reference records remain inactive. Mutate the actual
+   generator, consumer parser and inventory producer, restore them and make
+   formatting-only edits. Their source-bound findings must sweep the family
+   and pass only after repair, without unrelated feature-wide ROM checks.
+   Compare actual staged candidate bytes with every obligation's declared
+   execution closure and observed Git objects for AoE, generated and mixed-subject
+   workers. All staged headers, imported registry schemas and authored inputs
+   must be bound. Narrowing one execution closure while another still stages
+   those bytes rejects before execution; fixed tool overlays retain their
+   tool-revision binding. Semantic `inputs` must match the corresponding
+   standalone subject's mapping, not the mixed staging union. Break real AoE,
+   generated drift and session predicates in the same origin, then repair
+   them. Their correctly attached findings pass; swapping each finding's
+   source path to a different subject's staged source rejects.
+4. Execute the real review reducer as a source subject. The lifecycle and wire
+   probes cover entries/preservation/resets/terminals and
+   producers/consumers/validators/replay/stale bindings. Mutating the hold
+   behavior must fail both affected families, not just a string check.
+5. Drop a sibling observation after fixing the reported member. Repeat for
+   all family roles, duplicate observations, added/deleted enums or files,
+   unknown cases/members/probes, wrong subjects/heads/tool revisions and
+   unrelated all-pass evidence. Every incomplete handoff rejects.
+   Report a wire validator that already passed at the origin while a different
+   stale-binding sibling actually failed. Both direct handoff assessment and
+   the coordinator adapter must reject the misclassified finding; only the
+   reported member's own affected-fixed row can satisfy it.
+6. Make compilation/import unavailable and provide zero/skipped/unknown probe
+   results. The owned missing-compiler fixture changes only its
+   coordinator-selected compiler path to a nonexistent file: native checks still pass,
+   enabled/disabled object observations are `unavailable` with zero checks,
+   and both those observations and their omission reject handoff. No system
+   compiler or global environment is changed. A passing host regression proves
+   honest unavailability, not satisfied ARM obligations.
+   None can count as an affected-fixed negative control. Preserve
+   the distinction between actual native, parsed, host and ARM object evidence;
+   no group or whole-suite result can masquerade as a ROM scenario.
+   Route an ARM probe to the actual native executor and a generated probe to
+   the actual host reducer in owned tool commits. Repeat with passing, broken
+   and unavailable source. The returned kind stays native/host and the
+   mismatched obligation rejects in all three cases. Corrupt the actual
+   worker output's kind, verdict, count, detail, fields or row shape; missing,
+   wrong and malformed records reject rather than being relabeled.
+   Genuine executor failures retain their kind, while a worker exiting before
+   any result has `kind: null`; unavailable rows always have zero checks.
+7. Exercise the existing task adapter's bounded read-only role and actual
+   returned task metadata. Make `runtime.start` return None, empty/whitespace
+   strings, Booleans, numbers, bytes and containers. Each must reject before
+   lease creation without retaining its reservation or admitting a local
+   finding. Retry with a valid opaque string ID: preserve it unchanged,
+   complete the review and allow subsequent acquisition.
+   Denied mutation operations never reach the bound
+   tool; duplicate/overlapping owners, wrong/stale/incomplete task results and
+   excessive duration reject. This proves the operational interface, not
+   same-UID OS containment or that a synthetic test launched a live agent.
+   Disjoint scopes cannot create a second active reviewer for the same
+   repository/PR even at a different head, or for the same candidate head even
+   on another PR. Work with both a different repository/PR identity and a
+   different head remains independent, even with overlapping scope. Completed
+   sessions release both exclusions; denied starts never reach the runtime.
+   Attempt head advance during the lease, including after expiration or
+   a nonterminal stop acknowledgment: the session/head binding must remain
+   unchanged. Only actual completed/aborted/timed-out terminal release permits
+   normal head advance, while retaining the report's old origin.
+   Both runtime `completed` and `read_only` must be Boolean `True`; repeat with
+   false, truthy strings/numbers, containers and missing fields. Request a
+   completed report with empty/partial allowed actions: both `read-candidate`
+   and `emit-report` must have been observed. Their pair passes with or without
+   optional `read-evidence`; any subset missing either required action rejects.
+   A rejected but truly terminal task may still be explicitly aborted without
+   admitting its report. Request a
+   ten-file lease, return ten files, then eleven; only the first completes.
+   Repeat requested/returned bounds with Boolean, fractional/integral float,
+   string, negative and over-global-cap values. Only strict integer counts
+   within the requested bound (at most 200) pass. Malformed adjacent runtime
+   fields leave ownership active; a subsequent valid result can finish it.
+   Expire a lease while the runtime still reports it running: observe the
+   status, reject completion and keep fresh-reviewer admission blocked.
+   Then supply actual terminal completion; reject the late report but close
+   the lease as `timed-out` and allow a fresh reviewer. Repeat with the
+   deadline passing during the runtime read; no late report is admitted.
+   Exercise explicit abort through the runtime's existing stop capability.
+   A stop acknowledgment without terminal status, read/stop failure, unknown
+   status, missing capability, wrong identity or malformed terminal chronology
+   must not release ownership. Once terminal evidence is observed, close as
+   `aborted` without accepting a report; an already completed failed report
+   needs no second stop. Normal completion retains `outcome: completed`.
+   Every returned typed finding needs explicit accepted/rejected local triage
+   with a reason. Omission rejects even on repaired source; acceptance enters
+   the existing sibling sweep, and rejection never silently accepts a finding.
+   Mutate the runtime's timestamps, actions, scope, findings, bounds and
+   completion flags after finish, and during the ownership-release callback.
+   The returned internal report must retain its validated immutable values,
+   including nested collections and typed findings. A timely review remains
+   timely; changing a recorded late completion to an earlier time cannot
+   admit pre-review eligibility.
+8. Exercise exact GitHub actor/head/content collection and complete coordinator
+   triage. COMMENTED, approval phrases and zero inline findings remain
+   untriaged until that decision. Change content or the head and require
+   rejection. The live adapter's command is read-only GraphQL.
+   Dismissed exact-head facts remain visible but cannot be clean authority.
+   Promote a formal untriaged request to full triage without adding a round.
+   Edit an actually observed clean/requested review, require invalidation, then
+   retriage that same record; repeat with dismissal and a later active clean
+   review. Handoffs refresh, accepted findings remain required, unchanged final
+   replay and identity rebinding reject, and sticky holds survive retriage.
+   Finalized `dismissed` triage closes only actual historical dismissals.
+   Leave an older-head review conversation unresolved while adding a clean
+   current-head review. Both readiness and exact-head clean status stay false.
+   Resolve the conversation in the observed GitHub facts and reject stale
+   triage. While the earlier record remains untriaged, both flags must still
+   be false. Complete normal retriage and require both positive flags.
+   Unrelated live-base fast-forwards preserve the actual candidate merge base;
+   substituting an older ancestor or a base outside that lineage rejects.
+9. Exercise the real isolated launcher from a separately trusted checkout or
+   installation, using the [documented command](../workflow-pilot.md#public-request-and-execution-api)
+   and explicitly reviewed tool revision stored in the candidate repository.
+   Substitute the candidate's bootstrap, initializers and validator/gate files;
+   the candidate marker must not run, and only intended captured Git bytes
+   may execute. This PR's launcher can be independently trusted in another
+   checkout; it is not authenticated by a candidate SHA or a fresh copied file.
+   A same-feature reviewed binding works through this external entrypoint
+   without a forced base-first adapter installation.
+   Wrong source, unsafe Git
+   modes, ambient hooks/import state, duplicate request fields and candidate
+   success/program/trust fields fail rather than enabling a fallback.
+   A real unattached tree object containing an initializer must be rejected
+   before that initializer executes.
+   A subdirectory supplied as candidate storage must likewise reject before a
+   reviewed initializer executes; retain exact top-level, commit and source
+   controls and the original same-root rules for other protected modes.
+   Missing candidate/base objects and invalid ancestry in both real direct
+   and isolated CLI entrypoints fail nonzero with bounded diagnostics, not a traceback.
+   Test valid request JSON padded to exactly 1 MiB, one byte over, malformed
+   JSON/record types, missing files, directories, symlinks and a FIFO without
+   a writer. Only the exact-bound regular valid request succeeds. Both real
+   entrypoints also reject a 256 MiB sparse input under a 128 MiB child
+   address-space limit without allocation failure, blocking or a traceback.
+   Diagnostic detail remains bounded even for a very long duplicate JSON key.
+   In both direct and isolated entrypoints, force an actual local Git process
+   timeout and route the GH adapter to a timed-out local child or missing
+   executable. Require bounded nonzero diagnostics and no traceback or
+   successful fallback. The API must translate only the expected OS/timeout
+   errors, not an unrelated programming exception. No remote API is contacted
+   by these controlled error-path tests.
+   The direct Git timeout control must enter `trusted_review_gate.main` /
+   `GitTree.git`, not call the launcher under a direct label. Verify its
+   explicit bounded call raises a real local subprocess timeout while a
+   default reporter Git call retains its original behavior; exercise the
+   external launcher's existing timeout path separately.
+10. For two consecutive generated-data remediation rounds, introduce actual
+    inventory drift, then a consumer mismatch, and repair both. Parse each
+    returned round's `outcome_refs`, then its outcomes' origin/candidate
+    evidence references. Every expected sibling must resolve to the actual
+    validated member identity, profile/probe, evidence classes, kind, checks,
+    verdict and revision-bound source-object set. Verify affected-fixed versus
+    unaffected states from those real worker observations; shared source sets
+    must not be duplicated per sibling. Later review-content refresh must not
+    rewrite the already returned assessment.
+    First/second request rounds produce bounded handoffs; the third remains
+    held through later heads and clean reports until a valid coordinator
+    disposition names the held round/head. Preserve already-created commits
+    on their assigned branch as ineligible WIP; do not delay publication or
+    invent side branches.
+
+### Expected result
+
+Both unrelated production subjects have real positive and before/after
+negative controls. Every expected member and applicable evidence class is
+present. Actual execution observations determine outcomes. Source audit JSON
+is not task provenance, approval or merge permission. Even a zero-finding
+local review retains exact-head Copilot/security/Build and exact-master gates.
+
+### Negative control
+
+The original fixed #179 predicates could not detect unrelated gameplay
+repairs. The source mutations now fail those actual predicates. Missing
+siblings, wrong source/identity, untriaged content or an undisposed third
+request never pass. Formatting-only source changes remain green. A missing
+tool or failed import/compile is unavailable rather than proof of a fix.
+The pre-intake-fix implementation allocated oversized files before rejection,
+accepted truthy completion and over-lease counts, and relabeled wrong-routed
+worker kinds. The same deterministic inputs now reject without granting
+completion or evidence credit; actual correctly typed positive results pass.
+
+### Interactions and save compatibility
+
+Depends on #176 metrics/risk decisions, existing Git/GitHub/task/test tools and
+#216's locked schema dependencies. #181 depends on it; #178 is independent and
+#204 is not a dependency. Preserve #207's publication and #208's cleanup
+contracts. No gameplay/save/config, generated-game-data, locale,
+ROM/RAM, modern/archival, topology or required-context change occurs.
+
+### Automation
+
+The command in step 1 runs the existing unittest runner against only the three
+review test modules. They exercise actual native/ARM, generated-data and
+source-reducer observations, closed CLI behavior, independent schema parity
+and coordinator task/GitHub adapters. No live task, remote mutation or broad
+ROM/profile matrix is part of this deterministic test case.
+
+### Cleanup and limitations
+
+Tests remove only their owned fixtures; retain actual task work and diagnostic
+logs.
+
+The trusted reviewer/coordinator selects the authoritative finite model:
+filenames do not establish semantic completeness. Unknown or newly changed
+coverage requires a reviewed binding/model, which can be selected at an exact
+tool revision in the same feature PR. A model is not another canonical case
+catalog or an installation prerequisite. Read-only roles/minimal environments
+are not hostile same-UID isolation. Applicable real gameplay runtime evidence
+remains required for an actual gameplay change. No manual-only criterion
+applies to this workflow case.
+
 ## TC-WORKFLOW-WORKTREE-CLEANUP-001: Remove only proven completed worktrees
 
 - **Feature / originating issue:** `workflow-governance` /
@@ -201,11 +495,41 @@ the consumers' independent protected-principal/deployment requirements.
     retain with a reason rather than crashing or silently ignoring mounts.
     Report a retained non-UTF-8 ignored filename through strict ASCII JSON
     without losing either its name or file content.
-12. For actual delivery, the coordinator first merges the task's PR, verifies
-   all relevant exact-master CI and `make remote-completion-check`, then runs
-   the [documented planner/apply commands](../workflow-pilot.md#completed-worktree-cleanup).
-   Preserve all assigned workspaces throughout apply. Record removed paths,
-   observed pre-removal allocated sizes, proof identities, and retained reasons.
+12. In the owned completed fixture, commit `.gitmodules` and multiple gitlinks
+    with real commit IDs, leaving their directories present and empty.
+    Dry-run must preserve the index, shared/private metadata, files, and
+    registrations; apply must remove normally while retaining shared refs.
+    Repeat with a non-UTF-8 gitlink path containing spaces, tabs, and newlines.
+    Remove a directory or stage a gitlink ID, path-set, mode, or conflict-stage
+    change: each must retain, without creating paths or repairing the index.
+    Put local/hidden/ignored data or even an empty child directory inside a
+    gitlink; replace it with a file, symlink, or symlinked parent; inject fixture
+    mount records. None qualifies, including names otherwise used for generated
+    output. Existing locks and active/preserved paths still block.
+    Repeat with actual initialized, separated, bare, and nested Git repositories.
+    A test-owned submodule fsmonitor hook writes a marker under ordinary nested
+    status as the negative control. Cleanup must neither execute that hook nor
+    spawn nested Git, as observed through real Git Trace2 events, even if the
+    initialized repository arrives between the empty observation and status.
+    Introduce local data or replace the empty directory on both apply
+    revalidation passes. Also introduce data during the empty scan and a
+    zero-byte file before the final size scan: the data and registration remain.
+    Replace a gitlink ancestor with a symlink while preserving the total
+    allocated block count; an unvisited gitlink must still retain the target.
+    Observe stat/open/scandir calls against a real test-owned external target.
+    Existing symlink parents, replacements immediately before/after directory
+    open, and replacements after scan entries are queued must cause retention
+    without any external-target access. Keep ordinary and byte-path positives.
+    Incomplete/duplicate index/tree observations and excessive gitlink counts
+    must retain rather than treating an ambiguous inventory as empty.
+13. For actual delivery, the coordinator first merges the task's PR, verifies
+    all relevant exact-master CI and `make remote-completion-check`, then runs
+    the [documented planner/apply commands](../workflow-pilot.md#completed-worktree-cleanup).
+    Select only known released, quiescent task workspaces; a green inventory
+    does not establish release or exclude writers. Preserve all assigned or
+    uncertain workspaces, including other active sessions, throughout apply.
+    Record removed paths, observed pre-removal allocated sizes, proof identities,
+    and retained reasons.
 
 ### Expected result
 
@@ -224,6 +548,12 @@ of clean current status. Unique private configuration, recovery/index
 snapshots, edit buffers and unfamiliar index extensions are not build output.
 Filesystem byte paths remain lossless through Git, mount/backlink checks and
 JSON. Fresh checks still cover non-UTF-8 path and private-metadata drift.
+Present real empty unpopulated gitlinks qualify only with exact live
+index/HEAD identity agreement; populated, missing, changed, or ambiguous
+gitlinks do not. Empty-directory observations are repeated by local checks
+and size scans, not inferred from ignored submodule status or allocated bytes.
+Relative components are observed from a held worktree-root descriptor without
+following symlink targets; entry/descriptor substitution retains the workspace.
 
 ### Negative control
 
@@ -240,6 +570,17 @@ Its first recovery fix still accepted REUC-only unreachable blobs, private
 configuration/backups and unrecognized index extensions, and text decoding
 crashed on valid non-UTF-8 target/backlink/mount names. The extended controls
 fail against that parent helper, including after-plan/final-check drift.
+The later blanket rejection of every `160000` index entry incorrectly holds
+clean empty-gitlink fixtures; the new dry-run and normal-removal positives fail
+against that helper. Ignoring submodule status without the index/HEAD comparison
+or empty-directory checks fails the staged/data controls. A size-only final
+check loses a late zero-byte file because ordinary Git removal does not protect
+data inside an uninitialized gitlink. None of these controls authorizes actual
+historical cleanup before this follow-up's own candidate and merged-master gates.
+The resolve-based observer still rejected symlinks only after accessing their
+external targets, and a queued full-path scan could do the same after a parent
+replacement. The no-target-access controls fail against that implementation
+even though it eventually reports retention.
 
 ### Interactions and save compatibility
 
@@ -271,6 +612,13 @@ judgment is required; actual service availability and active ownership remain
 live operational checks. Fixture process inventory includes only owned PIDs;
 the live helper retains its full same-owner visibility requirement. Mount
 records are simulated with byte files, never actual or privileged mounts.
+These controls prove rejection of observed changes, not an atomic transaction
+or writer lock. New content written inside a gitlink after its final empty
+observation but before Git deletes it can be lost because ordinary Git does
+not inspect that content. Apply is limited to explicitly known released,
+quiescent task workspaces with a complete preserved inventory and no reassignment.
+If that precondition cannot be established, retain the target regardless of
+otherwise green proof. No permission lock or arbitrary-writer guarantee is added.
 
 ## TC-WORKFLOW-IMMEDIATE-PUSH-001: Publish new commits immediately and expose WIP ownership
 
@@ -2377,6 +2725,32 @@ game behavior needs a compensating change.
    `MODE=two`, `$(eval $(RULE))`, a concrete `%.out: %.in` recipe mutation,
    target-local/automatic/braced/one-character variables, literal missing
    prerequisites, active `$(error)`, unknown direct shell, and unused `!=`.
+   The scanner controls must compile the real native parser, compare the
+   actual `sound/voicegroups/voicegroup038.s` output and Make prerequisites
+   against ordinary scaninc, and cover recursive includes, first-match search
+   precedence, missing include candidates, escaping paths and nonregular
+   sources. The captured-source adapter uses the existing scanner traversal,
+   not a substitute dependency parser. Require real consumed sources and final
+   Make command provenance; a successful standalone producer with an empty
+   Make value or missing dispatch event is a failure, not adoption evidence.
+   For the asset producer, capture the real three-record manifest as BASE,
+   remove its battle record and script from CURRENT, then inspect both generated
+   includes through one shared session and one BASE view. CURRENT must omit the
+   battle consumer; BASE must consume the genuinely deleted source and restore
+   `LORM_SP1_PROOF`. Both Make queries restart once. This source/output control
+   does not replace the complete graph-level BASE/deletion requirements.
+   Separately capture a generated registry whose declared source changes from
+   an actually deleted BASE file to a CURRENT file. The reporter's declaration
+   query must execute in the selected shared view. Resolving the deleted file
+   must use BASE's generated classification and BASE owner, not CURRENT's
+   broad source prefix; filenames alone are insufficient. Wrong selected
+   loaders, stale declaration paths and invalid schema identities reject.
+   Compare the dependency adapter with the real host C preprocessor using
+   ordered include directories and a conflicting unused header. Require equal
+   dependency bytes, the actual source/header closure, a real included `.d`,
+   restart1 and dependency provenance. Wrong output directories or drivers
+   reject; unsupported compiler flags must reach the public action's rejection
+   rather than being silently discarded.
 6. Exercise the standalone launcher with a controlled `MAKEFILES` preload and
    ambient Make flags: its actual Make payload must run without the preload or
    dry-run effect. Supplying `--eval` as a reporter argument must reject without
@@ -2515,27 +2889,21 @@ finite recipe-only default such as `MESSAGE ?= fallback` stays in the observed
 census without spawning closure-expansion variants. Reversed domain
 declaration order produces identical authority. State/source/domain/
 combination/depth/time cap fixtures reject rather than returning a partial
-census, with the time cap enforced independently for each concrete
-standalone-target or combined-root fallback/domain/origin probe state.
+census, with one deadline and aggregate budget shared by the entire report.
 Environment-origin graph variants are spawned only for names observed as
 loaded-source defaults or actual undefined authority; explicit graph
 assignments collapse that unrelated environment dimension.
-The combined-root GNU Make database comparison establishes whether any
-requested target is `MAKECMDGOALS`-sensitive; standalone checks remain
-authoritative for every concrete fallback/domain/origin state. A changed
-database that can alter loaded sources, closure, or recipe payload always
-triggers the corresponding standalone variant, while a graph-only external
-name with unchanged discovery keeps the changed database fingerprint and
-reuses the fallback recipe semantics.
-Make cache and prior-invalidation identity includes every selected tracked
-entry's path, object type, Git mode, and content identity, not only named Make
-inputs. Adding/removing wildcard-visible `src/b.c`, changing a regular entry
-to executable or symlink mode, or making a same-size change with its original
-timestamp restored must miss the cache. Cached and cold probes remain
-byte-identical across repeated and cross-root execution with an unrelated
-stale scratch child present. Fresh-copy `Last modified` database diagnostics
-normalize away, while database rule, prerequisite, and recipe mutations remain
-distinguishable.
+Every target is a standalone native GNU Make observation; no combined-root
+result is attributed to another target. Referenced recipe variables are
+observed through bounded native variable pages, and inconsistent graph or
+command provenance across pages rejects. A semantic recipe-variable change
+must change its authority while a comment-only refactor remains stable.
+The shared foundation owns snapshot/command caches within the report and
+selected immutable view; there is no reporter-global graph cache or per-target
+session/deadline reset. Wildcard-visible paths, modes, source bytes and generated
+outputs retain their actual captured identity. BASE registry/models are measured
+in one grouped public view, and lifecycle removal/restoration reuses that
+already validated model without recursive report execution.
 Every local scratch path component is opened relative to the trusted
 repository descriptor with no symlink following before any temporary
 directory is created. Tracked `build` and intermediate `test-artifacts` or
@@ -2709,3 +3077,875 @@ remote state is read or changed. No manual-only criterion applies.
 
 Rollback is a normal revert of issue #180's dedicated commit; existing broader
 validation behavior is unchanged.
+
+## TC-WORKFLOW-OWNERSHIP-PROBE-SANDBOX-001: Confine and bound authentic probe execution
+
+### Feature and configuration
+
+Issue [#206](https://github.com/laqieer/fireemblem8-expansion/issues/206);
+supported Linux x86-64 source checkout, GNU Make 4.3, Python 3, a static-capable
+host C compiler, C++ compiler for native-tool controls, and working private
+namespaces on Linux 5.12 or later. See the [foundation contract](../ownership-probe-foundation.md).
+No ROM, emulator, credentials, remote workflow or feature flag is required.
+Start from a clean checkout; fixtures use only ignored `build/test-artifacts`.
+
+### Actions
+
+1. Run `make -f scripts/validation_ownership/foundation.mk ownership-probe-check`.
+   Inspect the returned native `localization-check` dependency on
+   `localization-generate`, the actual output-directory value and the real
+   chapterbundle registry result containing `src/data/ch2_bundle.json`.
+2. Run `make -f scripts/validation_ownership/foundation.mk ownership-probe-test`.
+   Positive fixtures use GNU Make include/define/eval, finite domain values,
+   patterns, target variables and order-only prerequisites. Their typed
+   observations must describe actual targets, not candidate stdout.
+3. The same suite compiles benign pre-fix `load`/native-SHELL payloads and
+   demonstrates actual writes to an explicitly inherited test FD. The confined
+   payloads must reject without a forged byte. File/include/eval, supervisor
+   paths, device/proc FD paths, alternate SHELL/loaders, shell flags and
+   stdout-shaped observations cannot forge channels. Canonical argv preserves
+   argument boundaries and equivalent quote spellings.
+4. Observe actual admitted open/mmap/stat/glob/directory inputs. Repeat with
+   undeclared and dynamically constructed paths, caught exceptions, unused or
+   falsely reported source declarations, and symlink/FIFO controls. Every
+   mismatch must fail closed. Real C/C++ candidate tools compile and run only
+   in channel-free capsules; changed ELF handles and channel/FD access reject.
+   The alias controls create a relative symlink from a deeper cwd and relocate
+   a cwd/dirfd ancestor before a `..` lookup. All symlink and rename variants
+   must reject before dispatch; they cannot hide an undeclared attempt under
+   a recorded `/work` path.
+   An owned, namespace-only runtime alias fixture also checks relative and
+   absolute trusted symlinks: declared source open/mmap still reports the real
+   source, while direct, cwd and directory-FD undeclared accesses reject.
+5. Change unrelated docs/source/modes/symlink targets in the disposable fixture:
+   execution identity changes while the unrelated owner's semantic digest
+   remains stable. Change a real owner input and require changed semantics and
+   command bytes; old Git entry IDs must not cause stale output reuse.
+6. Exhaust variant, process, pending-request, event, mapping, output, cache,
+   scratch-write and file-creation limits. Two individually short real
+   processes cannot reset the aggregate deadline. Malformed binary/text
+   protocols, worker failure and SIGTERM interruption must reject and leave
+   no live owned child, descriptor, mapping, cache or owned scratch tree.
+   Creation controls include `O_TMPFILE`, `creat`, directory creation,
+   hardlinks/`linkat`, `AT_EMPTY_PATH` and a one-creation limit across commands.
+   Supported attempts consume quota before dispatch; symlink, relocation and
+   special-file alternatives reject rather than escaping accounting.
+7. Run the same suite's mapping controls. A read-only/`PROT_NONE` shared
+   anonymous mapping upgraded writable and inherited by a child must reject,
+   as must mutable file backing even through a read-only private mmap and
+   duplicated/closed descriptors. The benign unconfined control demonstrates
+   child-written pathname and `writev` vector bytes reaching real syscalls.
+   Writable protection upgrades, remap clones/fixed/DONTUNMAP aliases and
+   alternate memory APIs reject. Private COW fork, ordinary private resize,
+   read-only source mmap and suspended-parent native spawn remain positive.
+8. The bootstrap controls reproduce a nondumpable stopped child and a
+   pathname ending at an unmapped page. The old memory reads fail with `EIO`.
+   Post-drop observation must work without restoring credentials/capabilities,
+   and NUL-terminated boundary strings must read correctly while malformed
+   UTF-8 and overlong paths still reject. Every control reaps its own child.
+9. Exercise the same suite's lifecycle controls: complete a worker that leaves
+   an owned child, close its caller lifetime pipe, exhaust the shared deadline,
+   overflow output, and interrupt it. The watchdog must reap its entire owned
+   tree before returning. Modeled outer `PermissionError` cannot bypass that
+   cleanup. Missing kernel support or a missing/closed lifetime pipe must reject
+   before launch. These fixtures use same-UID processes, never real sudo; hold
+   any claim of full sudo-route validation until separate exact-candidate
+   evidence actually exercises that credential transition.
+   The same-UID adapter validates the production launcher contract but runs the
+   actual watchdog/payload without `unshare`, including on hosts that deny user
+   namespaces. Budget/interruption controls require a payload-start marker and
+   the intended error, not an early launcher failure. Real capsule namespace
+   execution remains a separate production-path check.
+10. Capture Make's parsed ELF interpreter and runtime closure, then run the real
+    Make observation with only an Arch-shaped, non-multiarch `/usr/lib` library
+    layout. Require the authentic prerequisite/value and read-only captured
+    files, even after the fixture's runtime source map is cleared. Mutable or
+    non-system aliases, malformed ELF headers and unresolved dependencies
+    reject. This controlled layout is not a native Arch host validation claim.
+11. Attempt `chmod('/work', 0)`, nested and directory-FD permission removal,
+    restrictive directory creation and owner-masking umasks, even while catching
+    errors in the candidate. Require the original policy rejection and complete
+    owned scratch removal, not a cleanup `PermissionError`. Confirm that safe
+    directory permissions, regular-file `fchmod`, and real C/C++ compiler output
+    remain supported. Fixtures retain only their own directory FDs to safely
+    restore permissions if a regression re-admits the old behavior.
+12. Run the same suite's ordinary-Make context comparisons. Conditional
+    prerequisites must match real `/usr/bin/make` for `SHELL`/`MAKE` values and
+    origins, `.SHELLFLAGS` origin, and dry-run/always-make/job/print flags.
+    Compare complete value/origin/flavor records in default, file-shell,
+    requested-domain and POSIX contexts. Identical recipe and `$(shell)` argv
+    must remain metadata-only and value-bearing respectively; recursive and
+    Makefile-remake commands still require actual registered mappings.
+13. Reproduce the benign `GNUMAKEFLAGS=--eval=INJECTED=yes` control in the owned
+    fixture with ordinary Make; its graph changes. Passing that option channel
+    through either probe assignment origin must reject before a Make launch.
+    Private dispatch queries, observer-image reads and control-path reads must
+    not become a candidate-controlled context or evidence channel.
+14. Fail scratch construction after new parents exist: use a tracked leaf,
+    overlong component, injected open/mkdir failures, an inaccessible owned
+    directory for an unprivileged runner, and interruption. All new parents and
+    FDs must be released, while an existing parent/sentinel survives.
+    SIGTERM delivered during allocation must wait until ownership is recorded.
+    A modeled cleanup failure must preserve the primary setup exception; the
+    fixture teardown, not production code, removes that deliberately retained
+    test residue.
+15. Complete an ordinary budget command while an owned descendant still holds
+    its streams, including a descendant that first starts its own session.
+    Require prompt termination/reaping and preserved normal exit status.
+    Model PID reuse by assigning an already-reaped handle the numeric PID of
+    a live test-owned canary: budget, watchdog and tracee cleanup must leave
+    that unrelated canary alive. Tracee cleanup uses the old pidfd identity,
+    never a start-time check followed by a numeric signal. Binary stdin must
+    remain separate from the lifetime channel, with no extra payload FD.
+16. Fork small native processes, then grow their stacks using only page faults.
+    The old control's eight children touch only 16 MiB total yet hold
+    39,317,504 virtual bytes under a 33,554,432-byte aggregate limit.
+    Require the new admission to prevent that overspend while a smaller
+    supported stack-growth case succeeds. Directly exhaust a funded stopped
+    process's virtual credit and continue it without another supervisor
+    accounting call: kernel limits must block the stack fault. Verify the sum
+    of assigned kernel bounds plus pending fork credit, shared-VM growth, and
+    repeated vfork/exec accounting in the owned compiler-role driver.
+    Registered native command reexec is deliberately denied, not an exception
+    to that startup policy. No RSS, huge allocation, global setting or
+    unrelated process is part of these controls.
+17. In the selected production namespace route, create only owned, size-limited
+    1 MiB tmpfs fixtures with two submount levels. Recursively bind them into
+    read-only/noexec and read-only/executable views. Kernel mount flags must
+    include nosuid/nodev at every level; writes and disallowed executable
+    launches must fail, while explicit executable views work. Preserve a
+    source submount's stronger noexec flag and the original source mount flags.
+    Verify inherited root submounts are sealed before explicit writable
+    work/control and read-only executable helper exceptions. Simulated
+    `mount_setattr` unavailability must release its FD and reject before
+    supervision, never fall back to a top-only remount.
+18. Invoke `probe_generated_registry` repeatedly under one report session.
+    An identical request must reuse its cache without another process or file
+    creation; a distinct request must exhaust the same creation quota, including
+    a creation already performed for Make. Expire the original deadline and
+    require even a cached request to reject without another launch. Missing,
+    `None`, inactive, foreign-loader and mismatched-budget owners must reject.
+    The actual consumer must create one session and use the same budget for
+    tree capture, Make and registry discovery; there is no helper scratch-root
+    or implicit fresh-owner path.
+19. Exercise all five PID-based signal senders (`kill`, `tkill`, `tgkill`,
+    `rt_sigqueueinfo`, `rt_tgsigqueueinfo`) against the sender and a forked,
+    exclusively test-owned sibling. Block SIGUSR1 and consume it synchronously:
+    self delivery must work, sibling delivery must be denied before dispatch.
+    Test group/broadcast and mixed thread selectors only through the policy
+    function, never by issuing those requests to the kernel. Keep pidfd,
+    asynchronous-owner, timer/mqueue and signal-generating ioctl alternatives
+    closed using owned pipes, self identities or invalid descriptors.
+    Run the complete foundation suite, including both unfunded and funded
+    stack-fault branches; the funded case uses only its current child's size.
+20. Declare a regular source, make an `O_DIRECTORY` open or metadata/readlink
+    operation fail, catch the error and report the declared name anyway.
+    Registry equality must reject it. Use real legacy/wide getdents with an
+    undersized buffer and a one-entry buffer: credit must match only the actual
+    returned names, independent of ordering, never all declared siblings.
+    Positive stat/access/open/read/mmap observations must still pass.
+    The owned stopped-syscall controls separately cover FD read/pread/readv,
+    fstat/fstatfs, seek, mmap, dup/fcntl, close, EOF and partial reads without
+    an earlier open masking failure. Test code and Make-path evidence too.
+    Reuse stale directory-buffer bytes at EOF, corrupt actual returned records,
+    and exceed buffer/observation bounds; none may forge consumption.
+21. Create an owned Python prefix containing a harmless `.pth`/`sitecustomize`
+    marker. Replay the actual public Make/direct, namespace, watchdog, version
+    query and registered-Python launch vectors with that interpreter. Removing
+    `-S` must execute the owned hooks; the real `-I -S` vectors must not. Never
+    install a hook in a global/user site directory.
+22. Send real SIGINT/SIGTERM only to owned test processes during partial setup,
+    report/config unlinking, command/Make directory deletion, session removal,
+    and process/pipe reaping. Prior Python handlers must observe complete
+    cleanup, and an original operation error must remain primary. Multiple
+    deferred signals must not disappear because one handler raises.
+    Preserve a caller's already-blocked mask, and verify default SIGTERM in an
+    owned subprocess takes effect only after its session scratch is removed.
+23. Let an unresolved `$(shell ...)` temporarily select another registered
+    command, then disappear once the real result is replayed. Repeat with a
+    branch reached only after a later expansion resolves. The semantic command
+    list must match only the final successful pass. Change the discarded
+    command's source, code and output: execution identity may change, but the
+    requested owner's digest must not. Changing a final command's actual
+    inputs/output must still change its identity. Repeated final events,
+    equivalent command aliases and reordered/equivalent source declarations
+    must not duplicate records or change the digest. An unregistered command,
+    failed source observation or exhausted mapping quota must still reject,
+    even when that speculative branch would later disappear.
+24. Capture a real fixture Git tree with an explicit report budget. Omit the
+    budget from capture, loader or session construction; pass `None`, another
+    budget or a detached entries dictionary; attempt foreign-budget snapshot
+    materialization. All must reject before launching or writing anything.
+    A valid loader/read/snapshot/Make sequence must retain the capture's exact
+    budget, original deadline and increasing counters. With a one-launch
+    limit, tree capture must prevent any subsequent read, snapshot or session
+    launch. Repeated live and immutable reads must exhaust the same byte
+    quota. Expire the capture deadline and close a successful session: neither
+    may start another authority stage. A second session, even through another
+    loader, must reject without disrupting the still-active original owner.
+25. Run ordinary GNU Make and the probe with two unique assignments in both
+    orders, using each supported origin and both mixed-origin combinations.
+    Include a recursive `B=$(A)-two` value. Equivalent native prerequisites,
+    values, origins and flavors must produce the same semantic digest.
+    Changed values/origins must still change it. Then use `MAKEOVERRIDES` to
+    select a prerequisite from command-line order: both the ordinary result
+    and native observation must preserve that meaningful difference. Sorting
+    executed argv or discarding the order-sensitive observation must fail.
+26. Run a registered Python command that writes its initial startup flags to
+    an owned `/work/initial` marker. Require `[1,1,1]` for `-I/-S/-B`. Then
+    attempt reexec with changed argv/environment, no startup flags, a runtime
+    alias, a raw syscall and a forked child. Each must reject at exec entry,
+    before replacement startup can create `/work/reexecuted`.
+    Compile an owned native control and repeat direct, fork, vfork and
+    suspended-parent clone reexec. Its initial launch must still work.
+    Path-based and descriptor/empty-path `execveat` stay rejected in both
+    controls. Real compiler and Make dispatch positives must remain accepted;
+    every negative must remove owned children, channels, cache and scratch.
+
+### Expected result
+
+The real consumer reports the native localization prerequisite and exactly the
+declared chapterbundle source. Candidate programs cannot forge observation
+channels or hide undeclared source access; unsupported aliases, shared mutable
+memory and resource exhaustion reject before unsafe work proceeds. Immutable
+source mmap, private COW fork and valid boundary pathnames remain supported.
+Execution snapshots change independently of unrelated semantic owner identity,
+and every failure clears owned processes, channels, mappings and caches.
+
+### Negative control
+
+The pre-fix native Make processes really forge the inherited test channel;
+unconfined source functions really read/stat/enumerate undeclared fixture
+paths; a per-process timeout really admits work beyond a single total budget.
+These controls are restricted to disposable test inputs and are not a
+production bypass switch. Normal positive behavior is tested alongside every
+boundary; no failure is converted to successful evidence.
+
+The original #206 guard additionally admitted relative symlink and relocated
+cwd/dirfd aliases, shared mapping upgrades and private mappings of mutable
+backing files; it reported zero creations for `O_TMPFILE` and omitted hardlink
+entries. The frozen process regressions fail against that guard. Their benign
+unconfined mapping controls use only owned buffers, fixture paths and reaped
+child PIDs; no timed race against unrelated host data or process is required.
+
+The prior sudo caller's unprivileged `killpg` raised `PermissionError` before
+reaping; the lifecycle contract reproduces that failure without acquiring
+privileges. The prior Make root attempted a nonexistent Debian multiarch libc
+on a non-multiarch layout. A real confined `chmod('/work', 0)` followed by a
+failing command formerly masked the original error with cleanup
+`PermissionError` and left an inaccessible owned directory. The new regressions
+preserve these negative controls while limiting all effects to owned fixtures.
+
+Before the normal-context correction, benign ordinary Make selected `genuine`
+while the probe selected `hidden` for seven independent flag/value/origin
+conditions. `GNUMAKEFLAGS --eval` also injected an unrequested definition.
+Partial setup rejected a tracked leaf but left newly created parents behind
+because ownership had not reached the session. These are behavioral negative
+controls, not source-spelling checks.
+
+The previous budget reaped its leader before calling `killpg`, and the owned
+PID-reuse model actually killed its unrelated test-owned canary. The previous
+memory guard only checked selected syscalls; held post-fork stacks exceeded
+the aggregate virtual limit without another checked allocation. The controls
+use exclusively owned process identities, disabled core dumps for the deliberate
+stack-fault case, and small bounded memory.
+
+The previous recursive bind reported restricted top-level flags `4111` but
+left a copied tmpfs submount at `4096`: writes and executable launches through
+that supposedly read-only/noexec child really succeeded. The regression uses
+only private namespaces and bounded owned mounts, which disappear on exit.
+
+The prior optional helper succeeded twice by creating two independent sessions:
+each created one file while the active caller's one-file quota and process
+counter stayed unchanged. This is the per-registry multiplication the explicit
+report-session API rejects; sharing only a budget while resetting session-owned
+counters is not equivalent.
+
+The prior unconditional `rt_sigqueueinfo` allowance really delivered SIGUSR1
+and its queued value to an owned sibling. The old funded-stack fixture also
+raised `NameError` in both branches before checking the kernel bound because
+it referenced another test's `first`/`second` locals. Both failures are retained
+as negative controls; partial selections cannot stand in for running these paths.
+
+Before exit-time credit, an `O_DIRECTORY` open returning `ENOTDIR` still made a
+declared regular file count as consumed. A getdents call returning `-1`, or just
+one 24-byte entry, credited both declared siblings and accepted forged registry
+JSON. The new regressions preserve those actual syscall failures/partial results,
+while legitimate successful metadata and content observations remain positive.
+
+The earlier `-I -B` public invocation executed an owned prefix's `.pth` hook.
+The earlier teardown restored the caller handler before `rmtree`; a real
+SIGTERM then saw live scratch, interrupted its removal and masked an existing
+failure. The new executable startup and owned-signal controls retain those
+negative cases without changing global site or kernel policy.
+
+The earlier replay accumulator retained a discarded branch's command even
+though final native events contained only the selected command. Changing the
+discarded source/output or code changed the owner's digest while ordinary Make
+and the final prerequisite graph stayed identical. Real conditional Make
+fixtures preserve this control; final-pass filtering cannot excuse failed
+source accounting or speculative work that exceeds aggregate bounds.
+
+The earlier reusable API spent a capture budget's single launch, discarded its
+identity at the loader and accepted a real command under a fresh session
+budget. Equivalent reordered environment/command-line assignment contexts
+also produced different digests despite matching ordinary Make observations.
+The new order control retains the genuinely different `MAKEOVERRIDES` graph.
+The earlier path-only exec guard let a registered Python command replace
+itself with only `-S` and write an owned marker with flags `[0,1,0]`. Omitting
+all isolation flags reached site-startup metadata before rejecting for an
+unrelated path violation. The corrected guard must reject the exec itself,
+not rely on that later error or an absent marker alone.
+
+The exact `bc136` consumer reproduction compiled the actual repository scaninc
+C++ sources and returned `proof.bin` from `proof.s` with native source evidence,
+but Make could not register that issued tool. Its generated-include producer
+correctly could not write `/repo`; redirecting to private `/work` returned zero
+but discarded `generated.mk`. Ordinary Make selected `observed`, while the
+old probe returned an empty prerequisite list, undefined `SELECTED`, and only
+`Makefile` in `MAKEFILE_LIST`. Returning zero or precreating the file before a
+fresh pass is not an acceptable substitute for the actual native context.
+
+### Native-registration and generated-include regression procedure
+
+Use the same supported host, clean state and source build as above. The
+`test_native_registration_*` and `test_generated_*` selectors in the existing
+foundation suite cover these steps:
+
+1. Compile the real `tools/scaninc` C++ sources in the session. Register the
+   issued tool with exact `-I include -I "" proof.s` arguments and declared
+   `proof.s`. Require authentic `proof.bin` output, consumed `proof.s`, selected
+   prerequisite, ELF/build-input identity, and no native executable in Make.
+   Missing, copied/forged, foreign and changed handles or mismatched argv reject.
+2. Run the include producer with declared `outputs=("generated.mk",)`. Compare
+   ordinary Make against the probe's values/origins/flavors, `MAKEFILE_LIST`,
+   prerequisites, `MAKE_RESTARTS`, assignment/flag context and first-parse
+   state. Remakes produce restart `1`, chained generated includes produce `2`,
+   and a parse-time producer preserves the ordinary no-restart context.
+   Exercise the same file mapping with a real native producer as well.
+3. Verify returned generated bytes/modes, source consumption and generated
+   recipe-source identity, including binary multi-output and equivalent alias
+   registrations. Repeat a Make call in one session and require clean
+   initial file state and equivalent semantics. Change selected source bytes
+   without changing output, change generated bytes without changing Make
+   context, and change native build source without changing ELF bytes: the
+   selected owner identity must reflect each relevant change. Mutating a
+   discarded native or generated producer must not enter the final identity,
+   though its real execution/source checks and resource charges remain.
+4. Reject undeclared/unused source inputs, missing registration, missing/extra
+   files/directories, symlinks, escaping or conflicting output names, tracked
+   source replacement and competing producers. Exhaust capture/cache/mapping,
+   publication-byte and creation limits. Interrupt after actual publication
+   with an owned SIGTERM; require per-call as well as session cleanup.
+   Generated Make syntax still cannot read/write channels, overwrite immutable
+   source or `load` native code after Make's genuine re-exec.
+5. Before the existing include/binary/interruption cases remove their outputs,
+   verify actual file and newly created directory UID/GID equal the outer
+   runner, directories retain `0755`, and files retain declared modes (including
+   binary `0444`). Require ordinary unprivileged unlink/rmdir cleanup. The
+   sudo-drop supervisor transfers only its newly created descriptors, never
+   existing source/control ancestors; the user-namespace route must not attempt
+   that transfer. Conditional-route controls call real `fchown` to the current
+   unprivileged identity and inject directory/file transfer denial: errors must
+   remain visible, descriptors close, and partial output remains removable.
+   Those controls do not claim a real sudo credential transition.
+
+The `07c35d9` hosted sudo-drop regression produced root-owned publication
+directories: outer unlink of `generated/nested.mk` failed with `PermissionError`,
+then directory removal and interrupted teardown left residue. The same Make
+case passed locally with user namespaces, whose mapping hid that ownership
+gap. A new exact-head hosted run is required for the real sudo-route positive;
+never use shared-host sudo credentials or change global policy to manufacture it.
+
+No new case ID, graph test matrix or CI job is introduced. The prior stdout-only
+Command/native/registry, argv-order, final-pass, no-site, syscall/channel,
+source-return accounting and sole-reaper controls remain applicable.
+
+### Same-report immutable BASE/current procedure
+
+The `test_immutable_view*` selectors extend this same case for the concrete
+#180 deleted-source adoption boundary:
+
+1. Capture BASE and current with one `ProbeBudget`. BASE registry code selects
+   `src/data/deleted_generated.json`; current deletes that path, changes its
+   registry and selects `src/data/current_generated.json`. Both native registry
+   implementations assert their original `/repo/...` paths.
+2. Enter one current `ProbeSession`, then `with probe.select_view(base_loader)`
+   to query BASE. Require both actual source sets/records, the same report owner,
+   and unchanged start/deadline. On exit require the prior current snapshot and
+   cache, not a recapture of subsequently changed worktree bytes. Nested views
+   must restore their immediate predecessor.
+3. Reject wrong captured root/revision, another repository with identical
+   objects, foreign budget, detached capture, mutable alternate and inactive or
+   closed authority. The existing wrong-loader helper rejection remains active
+   outside explicit selection; a second same-budget session remains forbidden.
+4. Run the same command/native/generated Make inputs in different views. Require
+   correct per-view output and original guest paths, isolated caches/tool files,
+   no borrowed native handles and no generated-file residue on restoration.
+   Equivalent truly consumed native/Make inputs retain the same semantic
+   identity across unrelated tree differences. Exact immutable Git entries may
+   share funded bytes/source inodes only when both views independently admit
+   the same original path, mode, type and object ID. Changed/mode-different or
+   absent entries stay independent; mutable/foreign authority cannot provide
+   reused bytes. Source-write attacks still reject and cleanup preserves the
+   prior immutable inode. Run the real HEAD/master foundation consumer pair
+   within one unchanged budget, not just tiny fixture trees.
+5. Consume capture/read/run/state/snapshot-byte/creation quotas across selections
+   and reject exhaustion without resets or refunds. Check the original
+   monotonic deadline, terminal setup/body/teardown errors and complete outer
+   cleanup; a late context exit cannot reactivate a closed report. Retain actual
+   0/1/2 Make restarts and publication ownership checks on supported routes.
+
+Exact `2e19091` before-fix evidence has independent BASE and current registry
+positives, but the one-report compositions reject: foreign loader, duplicate
+session lifetime and missing deleted source in current. Separate budgets or
+rewritten filesystem prefixes are not acceptable substitutes. The new selector
+uses the existing session/Snapshot/capsule only; full 112-domain adoption remains
+#180's separate responsibility. Local user-namespace or same-UID route controls
+do not claim a real sudo credential-transition result.
+The first full-tree selector recaptured all unchanged blobs and exhausted the
+384 MiB snapshot-processing cap after HEAD alone spent about 289 MB. Exact
+immutable-entry reuse removes those duplicate reads/copies without resetting
+the report budget or sharing command/native execution authority.
+
+### Root-Make runtime and pinned-source inputs
+
+The `test_runtime_inputs_*` and `test_gitlink_*` controls exercise the same
+case's explicit input seam. From an owned source fixture:
+
+1. Declare an actual system header and an actually absent runtime path with
+   `ProbeSession(runtime_files=...)`. Compare native ordinary/probed wildcard
+   values and captured bytes/modes/ancestor presence. A captured absent prefix
+   may answer only truthful missing descendants; unrelated paths, enumeration,
+   writes, overlaps and nonregular/runtime-image inputs reject.
+2. Use `git_tree_entries(..., gitlinks=(GitlinkSource(path, git_dir),))` for a
+   recorded `160000` entry. Require exact pinned bytes and original prefixed
+   guest paths, even after the database's checked-out branch and source
+   directories differ. Run source-accounted native/registry consumers; wrong,
+   unavailable/non-commit pins, unrequested links, substituted checkout paths,
+   symlink/escaping/nonregular/nested subtrees and detached admission reject.
+3. Capture two immutable pins/paths with one report and select BASE/current
+   normally. Require per-view source content, pin identity, restored state,
+   unchanged deadline and cumulative entry/read/byte/run/process charges.
+   Exhaust existing source-entry, snapshot-byte and runtime-copy quotas.
+4. Exercise the actual child root Make with real registered producers and no
+   dummy assignments. Its newlib header detection needs actual parent/search
+   metadata too: explicitly captured absence of `/usr/include/build` and
+   `/usr/include/.dep` supports the real include fallback probes. Compare the
+   original `modern.mk` detection/source-list clauses against ordinary GNU Make
+   over an independent exact-pin archive.
+
+At exact `0a832d4`, thirteen real registered commands preceded rejection of
+`/usr/include/newlib/stdlib.h`. The separately labelled explicit-empty-newlib
+diagnostic reached the unadmitted `mgfembp/src` gitlink; that diagnostic was
+never default acceptance. With both inputs captured, the real default trace
+successfully observes the header and the pinned src/include files, then reaches
+later unresolved scaninc dependency-remake events and the former total-per-
+capsule process restriction. That historical prototype's missing adapter and
+arm-compressing-linker permission diagnostics are retained as such. The later
+child work implements those producers; neither historical input-seam success
+nor the process-accounting correction below claims a full root/112-domain result.
+
+### Live process capacity and total work
+
+`Limits.processes=32` is the simultaneous live traced guest capacity, including
+root, newborn/unresolved and vfork states. `Limits.descendants=16384` is total
+actual process creation for the entire report across capsules/retries/views.
+The former extra 32-total-per-capsule restriction is withdrawn explicitly; all
+numeric, deadline, run/state/syscall/memory/byte/source/execution/cleanup limits
+stay unchanged.
+
+Run the existing suite's `test_process_*` methods:
+
+1. Execute forty sequential actual Make shell expansions. Require all native
+   values/events, total creation greater than 32 and live peak within 32.
+2. Hold children live under a small live cap with ample total allowance.
+   Reject the next creation before excess child progress; verify actual totals,
+   live peak, closed budget and owned teardown.
+3. Reap children sequentially under a small total allowance. Reject cumulative
+   exhaustion while live usage remains low. Spend additional work across
+   command caching, Make replay and selected views without reset/refund.
+4. Exercise reserved/newborn-first/normal process states without double credit,
+   failed clone3/fork returns, actual native/compiler vfork/exec, root failure,
+   normal exit and interruption cleanup. Total creation includes real failures;
+   live peak comes from tracked state, not the configured cap. Memory credits
+   are not RSS.
+5. Run the frozen child's actual current adapters and unchanged default root.
+   All 33 recorded producers are real successes; no variable override or fake
+   output is permitted. The old supervisor stopped at 33 with 153 report
+   creations used. The corrected trace reaches 620 creations in that Make
+   capsule (live peak 2), 740 report creations (peak 3), then honestly rejects
+   unadmitted `/bin/mkdir` metadata. This is measured progress, not full 112
+   acceptance or permission for another limit/authority expansion.
+
+### Stock runtime spelling and native dependency-only action
+
+The `test_stock_runtime_alias_*` and `test_dependency_*` selectors extend this
+same case:
+
+1. Reproduce the real `TOOLCHAIN ?= $(DEVKITARM)` / exported PATH prefix with
+   a tiny ordinary mkdir recipe. Without a request, `/bin/mkdir` rejects;
+   `runtime_files=("/bin/mkdir",)` must capture the actual root-owned stock
+   alias/canonical source and preserve native PATH, realpath and metadata-only
+   dispatch. Unrequested `/bin` spellings, escaping/nonstock/mutable aliases,
+   source writes, program-data reads and executable-image collisions reject.
+2. Invoke the real host preprocessor with `Command(dependency_only=True)`,
+   the original ordered include/define options and one declared `.d` output.
+   Compare ordinary and confined nonempty bytes, never a fabricated parser
+   result or promoted ELF. Conditional and recursive includes, quote/angle
+   search order, present generated headers and genuine `-MG` missing headers
+   must behave alike. Omitting `-MG` retains the real missing-header error.
+3. Require the measured source/header closure. Undeclared existing input,
+   unused required sources, arbitrary compiler flags/response files/plugins/
+   specs/link/output modes and output escape reject. A bounded header-code
+   pool may measure actual `code_consumed`; rerun that exact closure as sources.
+   Mutating unused pool entries must not alter semantic ownership, and live
+   checkout mutations must not replace a selected immutable input.
+4. Let GNU Make consume the actual generated `.d`. Compare its duplicate-
+   preserving prerequisites (`$+`), `MAKEFILE_LIST`, real restart and generated
+   provenance with ordinary Make under the same report budget. Native
+   registrations, source/output/view isolation and cleanup remain intact.
+5. Run the exact frozen child root with its controlled current adapters and
+   this trusted parent API. The world-map producer emits nonempty dependency
+   bytes with the actually observed source/header closure; the exact-closure
+   rerun matches. Retain run-specific quantities in evidence, not a fixed source
+   census in this procedure. No captured agbcc headers/executable/library or ARM
+   installation is needed for the actual `-nostdinc -MG` query. The initial
+   updated root rejected `/bin/env`; exercise its explicit metadata-only
+   request below and record the resulting root outcome/counters separately,
+   without claiming full 112-domain adoption.
+
+Before this correction, ordinary mkdir worked with either PATH while the
+confined prefixed recipe failed, explicit alias capture rejected `/bin/mkdir`,
+and public `/usr/bin/cc` dependency entry rejected with zero payload launches.
+The existing compiler capsule/guest resolver/output mapper, not a new runtime
+platform or wider source execution permission, supplies the correction.
+
+### Explicit env recipe interception
+
+The `test_explicit_env_*` and `test_absent_captured_env_*` controls extend the
+same runtime/dispatch seam:
+
+1. Run an ordinary Make fixture whose original exported PATH prepends `/bin`
+   and whose `env -u ... $(PYTHON) ...` recipe writes a real sentinel file.
+   Verify that the payload ran and its selected environment variables were
+   cleared, then remove only that fixture sentinel. Capture the same fixture
+   through `ProbeSession(runtime_files=("/bin/env",))`. Native value/origin/
+   flavor and recipe observations must match the ordinary context, but no
+   sentinel may be created. The guest env image must be the existing static
+   interceptor, not the real host program; no eager-command event/result is
+   attributed to this ordinary recipe.
+2. Repeat for direct original/canonical paths and both request orders.
+   Unrequested spellings, escaping/mutable aliases, program-data reads,
+   interpreter/image replacement and unrelated runtime-program dispatch reject.
+   Captured absence must not create an env interceptor.
+3. Use the same env command in a shell expansion, recursive recipe and include
+   remake. Without a real registered result each must reject, not run the
+   payload or invent its output. Direct public `Command` execution of env also
+   remains unsupported.
+4. Run the exact frozen child root's default `assets-test` metadata query with
+   its actual controlled adapters and explicit runtime requests. Observe the
+   original env/unittest recipe without executing it. Preserve the actual
+   dependency producer, source closure, report-wide budgets and cleanup.
+   A complete query or its next precise boundary must be recorded honestly;
+   recipe classification is not full graph/112-domain acceptance.
+
+Before the correction, an original-only env request rejects canonical
+metadata; both spellings reach an untrusted canonical dispatch rejection.
+Reusing the existing intercepted dispatch map fixes these failures without
+adding env to the default program set, changing PATH/source, or granting
+runtime-file execution authority.
+
+### Aggregate attempted observations and absent compiler metadata
+
+The same case's `test_observation_*`, `test_failed_observations_*` and
+`test_compile_executable_metadata_*` controls freeze the two existing guard
+corrections:
+
+1. Set the existing observation-record limit to three in a direct guard
+   fixture. Admit one record in each of `consumed`, `code_consumed` and
+   `accessed`, then repeat them without another record/byte charge. A fourth
+   record in any collection must reject **before insertion**, even though that
+   individual collection has room. With ample records, independently exhaust
+   the observation-byte limit and require the unchanged fail-closed error.
+2. Defer failed observations in all three collections. The attempts must spend
+   bookkeeping but grant no consumption. A successful retry reuses the charge;
+   a later failure does not erase successful evidence. A new failed attempt at
+   the aggregate count limit rejects before entering deferred state. Retain
+   the neighboring real syscall successful/failed source/FD controls.
+3. Permit only compile-mode metadata of exact `/proc/self/exe`. Run an owned
+   native probe in the existing test compiler-role capsule and require actual
+   `ENOENT` from stat, lstat, access and readlink. There is no proc mount or link
+   materialization; do not interpret this as resolving the host executable.
+   Run the same probe as a normal command and require rejection.
+4. Other command/Make modes, read/write/exec, unknown/proc FD paths and nearby
+   process/sys/device metadata remain denied. Run the existing native,
+   runtime-alias, process, successful-source and dependency/output/restart
+   neighbors plus the real world-map dependency producer and its measured
+   source/header closure.
+5. Run `test_observation_total_*`, `test_observation_totals_*` and
+   `test_observation_remaining_*` through public session operations. Repeated
+   metadata/open/read of the same input deduplicates within a capsule. Real
+   commands must reach an exact report-wide limit, cached replay must spend no
+   new records, and a fresh capsule must reject when no allowance remains.
+   If a positive allowance remains, the next capsule must enforce that smaller
+   count before inserting its next record.
+6. Select immutable CURRENT/BASE views and restore current without resetting
+   the total or deadline. Account real compiler, native, command and generated
+   Make/restart work in that same session. Failed deferred probes spend records
+   without successful consumption; process/source failures preserve the total
+   and make the entire lifetime unusable. The captured-source entry limit stays
+   independent; no numerical limit is raised.
+7. Run `test_observation_accounting_*`. Require the new count in the existing
+   closed supervisor result, rejecting missing, nonintegral, boolean, negative,
+   excessive or inconsistent values. Candidate stdout cannot replace that
+   trusted count. An actual source-free capsule may report zero; malformed
+   accounting may not be silently converted to zero. Cache/failure cleanup
+   must retain the same terminal report lifetime.
+
+Before the capsule-local correction, exact `0b4cc7d` admits the fourth
+cross-collection record at a three-record aggregate bound and rejects the compile metadata
+probe before the kernel can return its real absence. These are regression
+controls, not new budgets, APIs or authority. All numerical limits and one
+report lifetime remain unchanged. Exact `e403445` still admits successive real
+capsules whose combined observations exceed that report's configured count.
+The report-wide correction passes the remaining allowance to each capsule and
+accumulates its measured attempted records; it does not merely repeat the
+local-guard control. The actual child root/112-domain adoption is independent
+and is not rerun or claimed by this bounded correction.
+
+### Interactions and save compatibility
+
+This host-only contract changes no save, migration, config identity, generated
+game content, localization, modern/archival behavior or ROM/RAM. Other feature
+interactions: none. The authority and existing generated-registry schema stay
+shared; PR #186 / #180 must still perform their downstream graph adoption.
+
+### Automation
+
+`python3 -m unittest scripts.validation_ownership.tests.test_foundation -v`
+executes the real process scenarios, native compile/link checks, parsed ELF and
+binary/JSON protocols, exact source sets, semantic identity and cleanup.
+The standalone Make check is a separate real consumer, not a test-name alias.
+No subjective/manual-only criterion applies.
+
+### Cleanup and limitations
+
+Fixtures and session channels are removed automatically. Remove the empty
+`build/test-artifacts/ownership-foundation-tests` parent if desired. No remote
+state is read or changed.
+
+The introducing root does not claim PR #186's full graph, domain matrix, oracle,
+lifecycle or absent-on-master `validation-ownership-check` target. Those remain
+explicit downstream integration gates under #180. Unsupported native Make
+ABIs/platforms fail rather than running a weaker probe. Roll back by reverting
+this dedicated foundation; broader validation remains required.
+
+## TC-WORKFLOW-AGENT-HANDOFF-001: Validate bounded exact-SHA agent handoffs
+
+- **Feature / originating issue:** `workflow-governance` /
+  [issue #178](https://github.com/laqieer/fireemblem8-expansion/issues/178).
+- **Supported configuration or artifact:** source-only Linux checkout with the
+  [locked host Python environment](../workflow-pilot.md#isolated-host-python-dependencies),
+  Git and the reviewed v3 handoff tools. No token/live workflow, ROM or emulator.
+- **Prerequisites and clean starting state:** use the exact source root and
+  #176 baseline; create/probe #216's owned environment as documented. The
+  fixtures allocate only their own `build/test-artifacts/agent-handoff-*`
+  directories and harmless child processes. Do not clean another owner's data.
+
+### Actions
+
+1. From the source root, run the focused suite with the inherited interpreter:
+
+   ```bash
+   build/host-python/bin/python3 -I -c 'import sys, unittest; sys.path.insert(0, "."); unittest.main(module=None)' \
+     scripts.workflow_pilot.tests.test_agent_handoff \
+     scripts.workflow_pilot.tests.test_coordinator_observations -v
+   ```
+
+2. Inspect the real-Git positive fixture: exact clean strict descendant, named
+   evidence, real raw-check exit/PID, measured owner exit/RSS, distinct native
+   dispatch/receipt/progress/delivery and Git commit observations. One and
+   multiple task commits pass. Merge an authorized exact upstream input with
+   no task trailers, plus a task commit with trailers: imported paths/history
+   pass without consuming task scope/line budget. An unrecorded merge rejects.
+3. Apply stale/wrong-parent/non-HEAD/unrelated result, dirty/conflicting tree,
+   missing trailers/evidence/checks, out-of-scope path, hidden index flags,
+   whitespace/checker replacement, and incremental line-budget controls.
+   Remove only the failing condition and confirm success returns. Candidate
+   `passed` fields and printed `exit 0` cannot replace a failing OS exit.
+4. Exercise actual parsed protocol and resource inputs. Unknown/non-host
+   resources, unquantified binary changes and ROM/RAM/protocol overages reject.
+   Schema/runtime controls reject unknown fields, duplicate scope/keys,
+   bad timestamps/types/enums, oversize/deep input and nonregular/symlink
+   metadata. Equivalent JSON ordering stays equivalent.
+   Send integral decimal/exponent integers through the byte API and real
+   isolated CLI: schema and runtime agree, and a reloaded actual PID is an
+   integer usable by the process adapter. Boolean/fractional/nonfinite/
+   out-of-range values reject, including fractions that would round to an
+   integer. No custom schema validator or per-field float bypass is used.
+   Use actual non-host mode-only, regular-to-symlink and empty-file add/delete
+   commits whose numstat is zero: missing resource observations must reject.
+   Actual linker observations of zero pass; nonzero growth rejects an
+   insufficient budget and passes with sufficient limits. Host-only zero-line
+   changes and pure authorized imports with no task-owned paths still pass.
+   Create/delete a valid `null` protocol file: each consumes one change;
+   absent/absent and unchanged `null` consume zero. Preserve positives for
+   object key order, integral numeric spelling and equivalent Unicode escapes;
+   Boolean-to-number substitutions and changed array order must consume a
+   change. Valid Unicode input within the existing byte bound stays valid even
+   when escaped re-encoding would be larger.
+   Partition the same changed inputs among multiple disjoint protocol checks
+   and reorder their declarations: the assignment total stays the same.
+   Fully or partially overlapping input definitions reject through assignment,
+   loaded-state and CLI admission; ordinary schema validation does not claim
+   this runtime-only cross-record check. Missing/impossible per-check counts
+   cannot be hidden by other check measurements.
+   Send escaped lone high/low surrogates through text/path fields: independent
+   Draft 2020-12 and the actual byte API/CLI reject. Ordinary Unicode,
+   supplementary characters and valid escapes pass, including after a
+   CLI round trip. Rejected CLI input leaves canonical state unchanged.
+5. Exercise dispatch-only and received-only native event streams. Confirm
+   the matching session's receipt needs both the assignment marker and
+   `data.parentAgentTaskId` equal to the dispatched task ID. Wrong-task,
+   unrelated, absent or opaque identities/content leave receipt incomplete.
+   `subagent.started`/transport success infer nothing; actual tool start
+   advances progress once. Replayed event cursors cannot multiply metrics.
+   Put receipt, turn, progress and delivery before the first matching
+   `session.start`: none may acquire its later context. Repeat within a batch,
+   across incremental calls and at the 128-event boundary; valid subsequent
+   events with retained cursor context still complete normally. An old session
+   start may establish context, but stale pre-assignment task events must not
+   acknowledge or count the new assignment. Exercise the actual CLI and check
+   that a future-clock rejection leaves canonical state unchanged.
+   Real process exit/RSS pass; opaque/reused identities, missing complete RSS,
+   lifetime/RSS overage and repeated committed-owner work do not pass.
+   Deliver a real committed checkpoint, then observe owner exit 7 or SIGKILL:
+   local acceptance and an accepted report reject it, preservation happens
+   before retirement, and Git HEAD/index/check facts remain intact. A missing
+   owned exit observation never becomes zero. Actual zero-exit completion
+   still passes; immediate WIP publication is a separate coordinator decision.
+   Compare captured assignment-to-close lifetime just below, exactly at and
+   one microsecond beyond the limit while actual process age stays small.
+   Live admission and historical accepted reporting must agree; retained valid
+   history still reports after removing only its fixture worktree. Advance a
+   controlled clock past the limit after a successful real raw check: final
+   acceptance must reject, with close and verdict using one timestamp.
+   Missing/future/negative lifecycle times and an open report clock predating
+   assignment never become fabricated zero elapsed time.
+6. Reserve duplicate/overlapping owners/watchers and attempt a second state
+   writer: each rejects. Try different watcher IDs/runs with the same actual
+   boot/PID/start identity, both through reservation and loaded state: reject.
+   Distinct live processes pass; an owned unreaped zombie cannot reserve a
+   watcher. Running/ended records must agree with process state and exit data;
+   completed observations with unknown exit/RSS remain valid and reconcilable.
+   Reuse a dispatch ID with otherwise fresh assignment/owner/session IDs in
+   a review or independent reservation, and mutate a loaded state similarly:
+   reject. A genuinely fresh dispatch remains valid, and the existing other
+   identity-uniqueness controls still reject duplicates.
+   Record an implementation-owner prohibited remote
+   action and confirm rejection. This is operational/role-policy checking,
+   not authentication against a hostile same-UID process.
+   SIGKILL only an owned writer after partial and complete staging writes:
+   canonical bytes stay intact and repeated new transactions succeed without
+   promoting the interrupted state. Legacy staging, user files and symlinks
+   stay untouched; forced exclusive-create collisions fail safely and can be
+   retried with a fresh staging name. A failed replace preserves canonical
+   state and removes only the current transaction's staging.
+7. Use the exact GitHub run-response fixtures through the production query
+   adapter. Watcher timeout plus authoritative success stays success;
+   failure/cancellation stays failure, in-progress stays pending, API errors
+   and wrong run/attempt/head stay unknown. No watcher status substitutes for
+   the run. A replacement cannot overlap a still-live watcher. Report multiple
+   runs/attempts on one head: a later success must not erase earlier failures,
+   cancellations, pending work or a query error (even after an older success).
+8. Kill only the fixture's owned child and inspect inert matching kernel
+   evidence. Preserve exact staged/unstaged/untracked bytes, mode and index;
+   confirm the original linked worktree is locked and reused by one replacement,
+   with the running check incomplete. Missing OOM authority stays unknown.
+   Move interruption time before assignment, after close or after replacement;
+   remove its close or put both close/interruption in the future: reject in
+   loaded state, reporting and replacement admission without changing retained
+   file/index/lock bytes. Actual interruption matches close and yields positive,
+   never negative, replacement recovery cost. Independent schema checks the
+   required close, while time ordering/equality remains a runtime contract.
+   A live owner, lost retention state or second replacement rejects without
+   resetting/deleting the worktree or copying it into a new recovery engine.
+   After completion or interruption, try a fresh `initial` assignment for the
+   same issue or PR, including a different clean worktree: reject in live and
+   loaded state. The real review/replacement lineage and independent issue/PR
+   initial assignments still pass; a null PR does not merge unrelated issues.
+   Change staged, unstaged or untracked bytes, index or file/directory modes
+   while retaining the same HEAD/status pathnames: reassignment must reject.
+   Restore the exact data/modes in the owned fixture and genuine reuse passes.
+   Check the closed integrity field with independent schema/runtime mutations.
+   Large clean committed content and external symlink target bytes are not
+   read into recovery integrity; changing the link text itself rejects.
+   FIFO/over-budget input holds with the original work and retention lock
+   intact and the owner not closed; retry after restoring safe observability.
+9. Exercise explicit availability plans and always-on observations. Enabled
+   stop triggers without a plan, expired/future coverage and a detected
+   suspend/boot change reject. A declared plan is not an uptime guarantee.
+10. Execute the [documented production CLI](../workflow-pilot.md#coordinator-integration-and-commands)
+    against the generated state/result: clean positive exits 0; the dirty
+    negative exits 2. Removed publication verbs reject. Exercise optional
+    reporting, confirm stale/incomplete and unknown RSS remain visible, and
+    confirm baseline v1 without the option remains unchanged.
+    Starting from a genuinely accepted handoff, mutate captured ROM/RAM and
+    protocol measurements to missing, null, wrong types or over budget; also
+    remove checks/evidence or change identity, completion and times. Both live
+    validation without re-running checks and accepted reporting must reject.
+    Independent partial ROM/RAM observations may together cover one global
+    growth measure; repeated observations do not multiply that growth.
+    Honest rejected records with unknown resources still report as rejected.
+    Capture justified host-only/pure-import zeros, then remove only the owned
+    fixture worktree: complete historical host/import/non-host observations
+    still report without Git access. A missing captured zero must not be
+    reconstructed from a verdict label or allowed scope.
+
+### Expected result
+
+Only an exact, clean, scoped, measured local handoff is ready. Task-owned
+first-parent commits carry both Copilot trailers; authorized imported upstream
+history does not need this session's trailers. Each lifecycle state has a
+separate actual observation. Ownership and watcher reservations are exclusive,
+the implementation owner retires, and one interrupted-worktree replacement is
+bounded. GitHub remains CI authority. No validation result publishes anything
+or satisfies the separate full-PR/final delivery gates.
+
+### Negative control
+
+Each adversary above fails or remains explicitly unknown/incomplete.
+Runtime-check mutation must fail even if command/pass labels are preserved.
+Equivalent source/JSON wording or order does not affect semantic evidence.
+There is no disabled gameplay profile: omitting optional handoff reporting
+preserves the baseline v1 report. No manual-only criterion applies.
+
+### Interactions and save compatibility
+
+Depends on #176 and #216/#217's locked test environment; dependent #181.
+#179 is independent and #205/#211 is not required. Conflicts are stale/duplicate
+ownership and the removed broker format. Preserve #199 metadata events,
+#207 immediate publication, #208 cleanup and all original final gates.
+No ROM/RAM content, save/configuration, locale, generated game data, modern
+debug/release or archival behavior changes.
+
+### Automation
+
+The focused command above runs real Git/process/raw-check/CLI tests plus
+independent Draft 2020-12 positive/adversarial schema validation.
+`test_reporter.BaselineFixtureTests` and the existing isolated-lifecycle
+launcher test cover unchanged v1 neighbors. The existing development-workflow
+and catalog tests check both case mirrors and the public CLI mapping. Full
+Build CI remains the comprehensive integration gate; no ROM build or broad
+local suite is needed for this source-only change.
+
+### Cleanup and limitations
+
+Each fixture removes its own directories and reaps only its own children.
+No real OOM pressure, Dev Box setting, unrelated process or GitHub state is
+changed. Raw kernel/GitHub responses use inert fixtures at external boundaries;
+the production file/process/query adapters themselves run in the tests.
+Opaque runtime handles cannot certify exit/RSS; a missing real observation
+remains an explicit hold, never an authenticated label or invented backend.
+Revert the dedicated #178 change on regression.

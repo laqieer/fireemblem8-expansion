@@ -4,6 +4,17 @@ This is a ROM-hack base derived from the **Fire Emblem: The Sacred Stones**
 (GBA) decompilation. The expansion output is not required to be byte-identical
 to the original ROM.
 
+Before adding a prerequisite, gate or service in this repository, identify the
+original accepted requirement or concrete risk, accepted threat model, smallest
+existing mechanism, and why a simpler solution is insufficient. Review findings
+do not automatically expand requirements: fix accepted-contract bugs, simplify
+architecture-created problems, and separate optional hardening with honest
+claims. At the existing third-round/8K reconsideration point, compare a concrete
+simpler design and remove unnecessary machinery or split complete independent
+contracts when needed—not merely write another note. Measure the original
+end-to-end outcomes and total delivery cost; preserve real safety requirements
+and every final gate.
+
 ## Build
 
 This repository's default, supported path is the **modern
@@ -119,6 +130,43 @@ or focused evidence cannot answer the acceptance criterion. Combined Build CI
 is the comprehensive final integration gate. Stop after focused checks pass,
 commit the candidate, and hand it off.
 
+## Sibling-family review convergence
+
+For a high-risk or large change, use one fresh bounded read-only reviewer
+before the first remote review. Keep implementer, reviewer and coordinator
+ownership distinct. Use the existing task/tool interfaces, not another agent
+backend. The reviewer can read the exact candidate and supplied evidence and
+return its report; it cannot edit, push, comment, request review, dispatch CI
+or merge. Enforce those actions at dispatch, not by accepting a claimed
+permission list from candidate JSON.
+
+The coordinator binds every accepted finding to its actual existing case,
+production predicate and finite source model. Expand actions/items/targets,
+lifecycle, wire/replay/stale bindings, generated owners/consumers/drift, and
+enabled/disabled resources completely. A missing sibling still blocks after
+the reported member is fixed. Use actual source-backed test observations,
+not arbitrary pass labels or a whole-suite result relabeled as member/ROM
+evidence. Select any new binding at an explicitly reviewed exact tool revision;
+it can land in the same feature PR and does not require base-first installation.
+
+First and second change requests produce bounded handoffs. The third creates
+a sticky architecture/decomposition hold; new heads and later clean reviews
+do not clear it without a coordinator disposition bound to the held round/head.
+Stop new narrow work, but immediately publish already-created commits on their
+assigned branch as explicitly ineligible WIP. Do not invent side branches or
+delay persistence. GitHub IDs/heads/actors are facts; complete-content triage is
+the coordinator's responsibility. COMMENTED or zero new inline comments is not
+approval. Local audits never replace exact-head Copilot/security/Build or
+exact-master completion.
+
+Follow the [executable API and tester procedure](../docs/workflow-pilot.md#sibling-family-review-convergence).
+The trusted coordinator and reviewed test tools are the authority. Read-only
+roles and minimal environments are operational controls, not hostile same-UID
+OS isolation. No broker, receipt/signature platform or protected installation
+is required.
+
+## CI waiting
+
 CI waiting must not occupy a reasoning subagent. The orchestrator that
 dispatches a workflow records its exact SHA and run ID, then returns
 immediately. The orchestrator runs exactly one bounded direct shell watcher:
@@ -168,6 +216,37 @@ occupy a reasoning agent or stop with a waiting-only response. Cancel only a
 superseded candidate run after that candidate actually changes. A broken
 master Build requires an immediate fix-forward or revert and blocks that
 issue's closure and remote completion, but not unrelated independent PRs.
+
+### Bounded exact-SHA implementation handoffs
+
+Use the [version-3 handoff contract](../docs/workflow-pilot.md#bounded-exact-sha-implementation-handoffs)
+for bounded implementation cycles. The coordinator owns the assignment, real
+Git/check/process observations and one locked session-local coordination
+document; the implementation returns only the assignment ID, echoed parent,
+result SHA and named evidence references. These records are not authenticated
+data or publication capabilities.
+
+Keep assignment sent, received, progressing, committed and handed-off distinct.
+Use actual CLI events and OS exit observations, never tool-transport success or
+printed pass labels. Retire an owner after its committed handoff or lifetime
+limit and use a fresh owner for review. Permit explicitly recorded normal
+upstream merges; apply task trailers/scope to task-owned changes, not imported
+upstream history. Incremental assignment budgets do not replace full-PR
+review-size preflight.
+
+Keep one real direct watcher per exact GitHub run/attempt. Reconcile watcher
+errors through GitHub; a process timeout is not CI failure or success. On
+interruption, preserve and lock the original worktree before one bounded
+replacement reuses it. Unknown PID/RSS/OOM observations remain unknown.
+Record an always-on coordinator or an explicit availability plan before
+unattended delivery; a plan is not a guarantee of uptime.
+
+Only the existing coordinator publishes through Git/gh. Handoff tooling never
+pushes, modifies remote refs or supplies credentials to candidate execution.
+Use the existing reviewed-source/approved check route and platform role
+permissions, not an alleged Python or same-UID OS sandbox. Immediate checkpoint
+publication, metadata-event handling, final gates and completed-worktree
+cleanup remain unchanged.
 
 ### Completed-worktree cleanup
 

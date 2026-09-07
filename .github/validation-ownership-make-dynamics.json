@@ -987,15 +987,17 @@
     },
     {
       "id": "banim-compressing-linker-inputs",
-      "expression": "$(shell ./scripts/arm_compressing_linker.py -t linker_script_banim.txt -m)",
+      "expression": "$(shell $(PYTHON) scripts/arm_compressing_linker.py -t linker_script_banim.txt -m)",
       "tool": "scripts/arm_compressing_linker.py",
       "input_files": [
         "linker_script_banim.txt"
       ],
-      "input_variables": [],
+      "input_variables": [
+        "PYTHON"
+      ],
       "automatic_inputs": [],
       "resolved_value": null,
-      "command_regex": "^\\./scripts/arm_compressing_linker\\.py -t linker_script_banim\\.txt -m$",
+      "command_regex": "^python3 scripts/arm_compressing_linker\\.py -t linker_script_banim\\.txt -m$",
       "owning_evidence_ids": [
         "owner.link-modern",
         "owner.negative-localization",
@@ -1437,5 +1439,5 @@
     "value_policy": "finite-exact-or-tracked-fallback",
     "target_policy": "defined-pattern-or-tracked-tree"
   },
-  "seal": "ec89314259ff24f102d884e6604d08964fa9a429bfd481910bd25af01bf89a5c"
+  "seal": "eb59715cb7bd1340fcfae890215017727741d2300ecd46923ebf3b652ed951a2"
 }
