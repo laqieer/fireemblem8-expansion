@@ -917,6 +917,8 @@ class FoundationTests(unittest.TestCase):
                 "    def load_records(self, source):\n"
                 "        assert Path(source) == Path('/repo') / self.default_source\n"
                 "        return json.loads(Path(source).read_text())\n"
+                "    def manifest_record_count(self, records):\n"
+                "        return len(records)\n"
                 "class Registry:\n"
                 "    def resolve(self, name):\n"
                 "        assert name == 'table'\n"
@@ -1497,6 +1499,7 @@ int main(int argc,char **argv) {
                         self.assertNotEqual(result.returncode, 0)
 
     def test_session_teardown_defers_signals_until_owned_state_is_removed(self):
+        from scripts.validation_ownership import make_probe
         self.add("Makefile", "all: ;\n")
         for signum in (signal.SIGINT, signal.SIGTERM):
             for has_primary in (False, True):
@@ -1515,14 +1518,14 @@ int main(int argc,char **argv) {
                         ))
                         raise RuntimeError("owned deferred termination")
                     signal.signal(signum, caller_handler)
-                    remove = shutil.rmtree
+                    remove = make_probe._remove_owned_tree
                     def interrupted_remove(path, *args, **kwargs):
                         if base is not None and Path(path) == base:
                             os.kill(os.getpid(), signum)
                         return remove(path, *args, **kwargs)
                     try:
                         with self.assertRaises(MakeProbeError if has_primary else RuntimeError) as caught:
-                            with patch("shutil.rmtree", interrupted_remove):
+                            with patch.object(make_probe, "_remove_owned_tree", interrupted_remove):
                                 with session:
                                     base = session.base
                                     session.command(Command(("/usr/bin/printf", "cached")))
@@ -1566,6 +1569,7 @@ int main(int argc,char **argv) {
                 signal.signal(signum, value)
 
     def test_per_call_teardown_defers_signals_and_preserves_primary_errors(self):
+        from scripts.validation_ownership import make_probe
         self.add("Makefile", "all: ;\n")
         for boundary in ("report", "command-tree", "make-tree"):
             for failed in (False, True):
@@ -1578,7 +1582,7 @@ int main(int argc,char **argv) {
                     sent = False
                     with session:
                         base = session.base
-                        remove, unlink = shutil.rmtree, Path.unlink
+                        remove, unlink = make_probe._remove_owned_tree, Path.unlink
                         def signal_once():
                             nonlocal sent
                             if not sent:
@@ -1595,7 +1599,7 @@ int main(int argc,char **argv) {
                             if boundary == "report" and path.parent == base and path.name.startswith("report-"):
                                 signal_once()
                             return unlink(path, *args, **kwargs)
-                        with patch("shutil.rmtree", removing), patch.object(Path, "unlink", unlinking):
+                        with patch.object(make_probe, "_remove_owned_tree", removing), patch.object(Path, "unlink", unlinking):
                             with self.assertRaises(MakeProbeError if failed else KeyboardInterrupt) as caught:
                                 if boundary == "make-tree":
                                     session.make("all")
@@ -1633,6 +1637,7 @@ int main(int argc,char **argv) {
                 self.assert_clean(session)
 
     def test_setup_failure_remains_primary_during_deferred_exit_signal(self):
+        from scripts.validation_ownership import make_probe
         self.add("Makefile", "all: ;\n")
         session = self.session()
         primary = MakeProbeError("owned setup failure")
@@ -1642,13 +1647,13 @@ int main(int argc,char **argv) {
             seen.append(session.base is None and not self.scratch.exists())
             raise KeyboardInterrupt("deferred setup exit")
         signal.signal(signal.SIGTERM, handler)
-        remove = shutil.rmtree
+        remove = make_probe._remove_owned_tree
         def removing(path, *args, **kwargs):
             if session.base is not None and Path(path) == session.base:
                 os.kill(os.getpid(), signal.SIGTERM)
             return remove(path, *args, **kwargs)
         try:
-            with patch.object(session, "_tools", side_effect=primary), patch("shutil.rmtree", removing):
+            with patch.object(session, "_tools", side_effect=primary), patch.object(make_probe, "_remove_owned_tree", removing):
                 with self.assertRaises(MakeProbeError) as caught:
                     with session:
                         self.fail("failed setup entered")
@@ -1774,12 +1779,13 @@ print("delivered after reaping")
     def test_default_termination_is_delivered_only_after_owned_session_removal(self):
         self.add("Makefile", "all: ;\n")
         program = r'''
-import os,shutil,signal,sys
+import os,signal,sys
 from pathlib import Path
 sys.path.insert(0,sys.argv[1])
 from scripts.validation_ownership.authority import AuthorityLoader,GitTreeEntries,GitTreeEntry
 from scripts.validation_ownership.budget import ProbeBudget
 from scripts.validation_ownership.make_probe import ProbeSession
+from scripts.validation_ownership import make_probe
 root,scratch=map(Path,sys.argv[2:4])
 budget=ProbeBudget()
 entries=GitTreeEntries({"Makefile":GitTreeEntry("Makefile","100644","blob","0"*40)},budget=budget)
@@ -1789,12 +1795,12 @@ session=ProbeSession(AuthorityLoader(root,entries,budget=budget),scratch_root=sc
 session._tools=lambda:None
 session._compile_interceptor=lambda:None
 signal.signal(signal.SIGTERM,signal.SIG_DFL)
-original=shutil.rmtree
+original=make_probe._remove_owned_tree
 def removing(path,*args,**kwargs):
     if session.base is not None and Path(path)==session.base:
         os.kill(os.getpid(),signal.SIGTERM)
     return original(path,*args,**kwargs)
-shutil.rmtree=removing
+make_probe._remove_owned_tree=removing
 with session:
     pass
 raise AssertionError("default termination was lost")
@@ -1806,6 +1812,302 @@ raise AssertionError("default termination was lost")
             self.assertEqual(child.returncode, -signal.SIGTERM, child.stderr.read())
         self.assertFalse(self.scratch.exists())
         self.assertEqual((self.root / "Makefile").read_text(), "all: ;\n")
+
+    def test_python_existing_initializer_cannot_be_reported_as_sparse_absence(self):
+        self.add("__init__.py", "")
+        self.add("reader.py", (
+            "import json,os\n"
+            "print(json.dumps({'name':'selected' if os.path.exists('__init__.py') else 'omitted',"
+            "'version':1,'record_count':0,'source_paths':[]}))\n"
+        ))
+        ordinary = subprocess.run(
+            ["/usr/bin/python3", "-I", "-S", "-B", "reader.py"],
+            cwd=self.root, env=ENVIRONMENT, capture_output=True, check=True, timeout=10,
+        )
+        self.assertEqual(json.loads(ordinary.stdout)["name"], "selected")
+        with self.session() as session:
+            with self.assertRaisesRegex(MakeProbeError, "undeclared source"):
+                session.registry(Command(
+                    ("/usr/bin/python3", "/repo/reader.py"), code=("reader.py",),
+                ))
+        self.assert_clean(session)
+
+    def test_python_module_and_cache_probes_distinguish_real_absence_from_undeclared_inputs(self):
+        paths = (
+            "__init__.py", "__init__.pyc", "__init__.abi3.so",
+            "__init__.cpython-312-x86_64-linux-gnu.so", "reader.pyc", "reader.abi3.so",
+            "reader.cpython-312-x86_64-linux-gnu.so", "__pycache__",
+            "__pycache__/reader.cpython-312.pyc", "__pycache__/reader.cpython-312.opt-1.pyc",
+        )
+        self.add("reader.py", (
+            "import os,sys\nprint(int(os.path.exists(sys.argv[1])))\n"
+        ))
+        with self.session() as session:
+            for path in paths:
+                result = session.command(Command(
+                    ("/usr/bin/python3", "/repo/reader.py", path), code=("reader.py",),
+                ))
+                self.assertEqual(result.stdout, b"0\n")
+                self.assertEqual(result.consumed, ())
+        self.assert_clean(session)
+        for path in paths:
+            with self.subTest(path=path):
+                leaf = path + "/kept" if path == "__pycache__" else path
+                self.add(leaf, "present")
+                with self.session() as session:
+                    with self.assertRaisesRegex(MakeProbeError, "undeclared source"):
+                        session.command(Command(
+                            ("/usr/bin/python3", "/repo/reader.py", path), code=("reader.py",),
+                        ))
+                self.assert_clean(session)
+                (self.root / leaf).unlink()
+                del self.entries[leaf]
+                if "/" in leaf:
+                    (self.root / leaf).parent.rmdir()
+        self.add("reader.py", "import os\nos.path.exists('unrelated.py')\n")
+        with self.session() as session:
+            with self.assertRaisesRegex(MakeProbeError, "undeclared source"):
+                session.command(Command(("/usr/bin/python3", "/repo/reader.py"), code=("reader.py",)))
+        self.assert_clean(session)
+
+    def test_python_negative_probes_follow_current_base_and_declared_code(self):
+        self.add("reader.py", "import os\nprint(int(os.path.exists('__init__.py')))\n")
+        self.add("__init__.py", "base")
+        budget = ProbeBudget()
+        base = self.capture_view(budget)
+        (self.root / "__init__.py").unlink()
+        del self.entries["__init__.py"]
+        current = self.capture_view(budget)
+        self.add("__init__.py", "live-only")
+        command = Command(("/usr/bin/python3", "/repo/reader.py"), code=("reader.py",))
+        with ProbeSession(current, scratch_root=self.scratch, budget=budget) as session:
+            absent = session.command(command)
+            self.assertEqual(absent.stdout, b"0\n")
+            with session.select_view(base):
+                allowed = session.command(replace(command, code=("reader.py", "__init__.py")))
+                self.assertEqual(allowed.stdout, b"1\n")
+                self.assertIn("__init__.py", allowed.code_consumed)
+                with self.assertRaisesRegex(MakeProbeError, "undeclared source"):
+                    session.command(command)
+            self.assertIs(session.loader, current)
+            self.assertTrue(budget.closed)
+        self.assert_clean(session)
+
+    def test_python_negative_probes_reject_nonregular_and_generated_active_namespaces(self):
+        self.add("reader.py", "import os,sys\nprint(int(os.path.exists(sys.argv[1])))\n")
+        for name, probe in (
+            ("__init__.py", "__init__.py"),
+            ("__pycache__", "__pycache__/reader.cpython-312.pyc"),
+        ):
+            with self.subTest(name=name):
+                (self.root / name).symlink_to(self.directory)
+                self.entries[name] = GitTreeEntry(name, "120000", "blob", "0"*40)
+                with self.session() as session:
+                    with self.assertRaisesRegex(MakeProbeError, "nonregular"):
+                        session.command(Command(
+                            ("/usr/bin/python3", "/repo/reader.py", probe), code=("reader.py",),
+                        ))
+                self.assert_clean(session)
+                (self.root / name).unlink()
+                del self.entries[name]
+        self.add("producer.py", (
+            "open('/work/trigger.mk','w').write('VALUE := $(shell python3 reader.py __init__.py)\\n')\n"
+            "open('/work/__init__.py','w').write('generated')\n"
+        ))
+        self.add("Makefile", "include trigger.mk\ntrigger.mk:\n\t@python3 producer.py\nall: ;\n")
+        with self.session() as session:
+            with self.assertRaisesRegex(MakeProbeError, "undeclared source"):
+                session.make("all", commands={
+                    "python3 producer.py": Command(
+                        ("/usr/bin/python3", "/repo/producer.py"), code=("producer.py",),
+                        outputs=("trigger.mk", "__init__.py"),
+                    ),
+                    "python3 reader.py __init__.py": Command(
+                        ("/usr/bin/python3", "/repo/reader.py", "__init__.py"), code=("reader.py",),
+                    ),
+                })
+            self.assertFalse((session.tree / "__init__.py").exists())
+            self.assertFalse((session.tree / "trigger.mk").exists())
+        self.assert_clean(session)
+
+    def test_owned_cleanup_removes_deep_admissible_tree_without_recursion(self):
+        from scripts.validation_ownership.make_probe import _remove_owned_tree
+        path = self.directory / "deep"
+        path.mkdir()
+        created = [path]
+        descriptor = os.open(path, os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            for _ in range(1050):
+                os.mkdir("a", 0o700, dir_fd=descriptor)
+                following = os.open("a", os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=descriptor)
+                os.close(descriptor)
+                descriptor = following
+                path /= "a"
+                created.append(path)
+        finally:
+            os.close(descriptor)
+        self.assertLess(len(os.fsencode(path)), 4096)
+        self.assertLess(len(created), Limits().created_files)
+        recursion_limit = sys.getrecursionlimit()
+        descriptors = set(os.listdir("/proc/self/fd"))
+        opened = set()
+        peak = 0
+        original_open, original_close = os.open, os.close
+        def opening(*args, **kwargs):
+            nonlocal peak
+            result = original_open(*args, **kwargs)
+            opened.add(result)
+            peak = max(peak, len(opened))
+            return result
+        def closing(descriptor):
+            try:
+                return original_close(descriptor)
+            finally:
+                opened.discard(descriptor)
+        try:
+            with patch("os.open", opening), patch("os.close", closing):
+                _remove_owned_tree(created[0])
+            self.assertFalse(created[0].exists())
+            self.assertEqual(sys.getrecursionlimit(), recursion_limit)
+            self.assertEqual(opened, set())
+            self.assertLessEqual(peak, 2)
+            self.assertEqual(set(os.listdir("/proc/self/fd")), descriptors)
+        finally:
+            for path in reversed(created):
+                try:
+                    os.rmdir(path)
+                except FileNotFoundError:
+                    pass
+
+    def test_owned_cleanup_preserves_symlink_targets_permissions_and_replaced_entries(self):
+        from scripts.validation_ownership.make_probe import _remove_owned_tree
+        outside = self.directory / "outside"
+        outside.mkdir()
+        (outside / "kept").write_bytes(b"unrelated")
+        root = self.directory / "owned"
+        root.mkdir()
+        (root / "link").symlink_to(outside, target_is_directory=True)
+        (root / "file").write_bytes(b"owned")
+        _remove_owned_tree(root)
+        self.assertEqual((outside / "kept").read_bytes(), b"unrelated")
+        alias = self.directory / "alias"
+        alias.symlink_to(outside, target_is_directory=True)
+        for path in (alias, alias / "nested"):
+            with self.subTest(path=path):
+                with self.assertRaises(OSError):
+                    _remove_owned_tree(path)
+                self.assertEqual((outside / "kept").read_bytes(), b"unrelated")
+        alias.unlink()
+        root.mkdir()
+        (root / "child").mkdir()
+        original = os.open
+        swapped = False
+        def replacing(path, *args, **kwargs):
+            nonlocal swapped
+            descriptor = original(path, *args, **kwargs)
+            if path == "child" and not swapped:
+                swapped = True
+                (root / "child").rename(root / "moved")
+                outside.rename(root / "child")
+            return descriptor
+        with patch("os.open", replacing):
+            with self.assertRaisesRegex(OSError, "cleanup entry changed"):
+                _remove_owned_tree(root)
+        self.assertEqual((root / "child/kept").read_bytes(), b"unrelated")
+        (root / "child").rename(outside)
+        _remove_owned_tree(root)
+        if os.geteuid() != 0:
+            root.mkdir()
+            locked = root / "locked"
+            locked.mkdir()
+            locked.chmod(0)
+            try:
+                with self.assertRaises(PermissionError):
+                    _remove_owned_tree(root)
+                self.assertEqual(stat.S_IMODE(locked.stat().st_mode), 0)
+            finally:
+                locked.chmod(0o700)
+                _remove_owned_tree(root)
+
+    def test_owned_cleanup_completes_actual_deep_native_output(self):
+        from scripts.validation_ownership import make_probe
+        self.add("deep.c", (
+            "#include <stdio.h>\n#include <sys/stat.h>\n#include <unistd.h>\n"
+            "int main(void) {\n int depth;\n if(chdir(\"/work\")) return 1;\n"
+            " for(depth=0;depth<1050;++depth) {\n"
+            "  if(mkdir(\"a\",0700)||chdir(\"a\")) return 2;\n }\n"
+            " printf(\"%d\\n\",depth);\n return 0;\n}\n"
+        ))
+        observed = []
+        with self.session() as session:
+            tool = session.compile_native(("deep.c",))
+            original = make_probe._remove_owned_tree
+            def removing(path):
+                leaf = Path(path) / "output" / Path(*(["a"]*1050))
+                if Path(path).name.startswith("command-") and leaf.is_dir():
+                    observed.append(len(os.fsencode(leaf)))
+                return original(path)
+            with patch.object(make_probe, "_remove_owned_tree", removing):
+                result = session.native(tool)
+            self.assertEqual(result.stdout, b"1050\n")
+            self.assertEqual(len(observed), 1)
+            self.assertLess(observed[0], 4096)
+            self.assertLessEqual(session.files_created, session.budget.limits.created_files)
+        self.assert_clean(session)
+
+    def test_generated_registry_uses_actual_structured_and_sequence_schema_counts(self):
+        from scripts.generated_data.registry import REGISTRY
+        budget = ProbeBudget()
+        scratch = self.directory / "registry-real"
+        scratch.mkdir()
+        loader = AuthorityLoader(
+            ROOT, git_tree_entries(ROOT, "HEAD", budget=budget), "HEAD",
+            scratch_root=scratch, budget=budget,
+        )
+        driver = (TRUSTED_ROOT / "generated_registry_probe.py").read_text()
+        with ProbeSession(loader, scratch_root=scratch, budget=budget) as session:
+            code = tuple(sorted(
+                path for path in session.snapshot.files
+                if path.endswith(".py") and path.startswith(("scripts/generated_data/", "scripts/assets/"))
+            ))
+            for name in ("autoplaystrategies", "shops"):
+                with self.subTest(schema=name):
+                    schema = REGISTRY.resolve(name)
+                    source = schema.default_source
+                    records = schema.load_records(str(ROOT / source))
+                    expected = schema.manifest_record_count(records)
+                    if name == "autoplaystrategies":
+                        self.assertIsInstance(records, dict)
+                        self.assertNotEqual(len(records), expected)
+                    observed = session.registry(Command(
+                        ("/usr/bin/python3", "-c", driver, name, source),
+                        code=code, sources=(source,),
+                    ))
+                    self.assertEqual(observed["record_count"], expected)
+                    self.assertEqual(observed["source_paths"], [source])
+        self.assertFalse(session.cache)
+        self.assertFalse(budget.children)
+        self.assertEqual(list(scratch.iterdir()), [])
+        scratch.rmdir()
+
+    def test_generated_registry_requires_the_existing_schema_count_contract(self):
+        self.add("data/source.json", "[]")
+        self.add("scripts/generated_data/registry.py", (
+            "import json\nfrom pathlib import Path\n"
+            "class Schema:\n name='missing'\n version=1\n"
+            " def load_records(self,path): return json.loads(Path(path).read_text())\n"
+            "class Registry:\n"
+            " def resolve(self,name): return Schema()\n"
+            "REGISTRY=Registry()\n"
+        ))
+        driver = (TRUSTED_ROOT / "generated_registry_probe.py").read_text()
+        with self.session() as session:
+            with self.assertRaisesRegex(MakeProbeError, "manifest_record_count"):
+                session.registry(Command(
+                    ("/usr/bin/python3", "-c", driver, "missing", "data/source.json"),
+                    code=("scripts/generated_data/registry.py",), sources=("data/source.json",),
+                ))
+        self.assert_clean(session)
 
     def resolution_batch_fixture(self, count=40):
         self.add("data/prefix", "p")

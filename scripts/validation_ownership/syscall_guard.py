@@ -556,6 +556,24 @@ class Policy:
             raise Violation(f"unavailable inherited/unknown descriptor {fd}")
         return state.fds[fd]
 
+    def source_mode(self, path):
+        for forbidden in self.config["forbidden_paths"]:
+            if path == forbidden or path.startswith(forbidden + "/"):
+                raise Violation(f"nonregular candidate source denied: {path}")
+        source_view = self.config.get("source_view")
+        if not source_view:
+            raise Violation("complete active source view is unavailable")
+        full = Path(source_view) / path.removeprefix("/repo/")
+        try:
+            return full.lstat().st_mode
+        except FileNotFoundError:
+            return None
+
+    def absent_source(self, state, path, operation):
+        if self.source_mode(path) is not None:
+            raise Violation(f"undeclared source {operation}: {path}")
+        self.defer_observation(state, "accessed", path)
+
     def check(self, state, path, operation, *, observer=False):
         if path.startswith("<"):
             return
@@ -660,14 +678,9 @@ class Policy:
         elif path in self.code:
             self.defer_observation(state, "code_consumed", path.removeprefix("/repo/"))
             return
-        elif self.config.get("dependency_source_view") and path.startswith("/repo/") and operation in {"read", "metadata"}:
-            for forbidden in self.config["forbidden_paths"]:
-                if path == forbidden or path.startswith(forbidden + "/"):
-                    raise Violation(f"nonregular dependency source denied: {path}")
-            full = Path(self.config["dependency_source_view"]) / path.removeprefix("/repo/")
-            try:
-                mode = full.lstat().st_mode
-            except FileNotFoundError:
+        elif self.config.get("dependency_probe") and path.startswith("/repo/") and operation in {"read", "metadata"}:
+            mode = self.source_mode(path)
+            if mode is None:
                 self.defer_observation(state, "accessed", path)
                 return
             if operation == "metadata" and path in (
@@ -692,6 +705,7 @@ class Policy:
                 path == parent + "/__pycache__"
                 or (match and parent + "/" + match[1] + ".py" in self.code)
             ):
+                self.absent_source(state, path, operation)
                 return
         elif operation == "metadata" and posixpath.dirname(path) in self.code_dirs:
             filename = posixpath.basename(path)
@@ -703,6 +717,7 @@ class Policy:
                 match[1] == "__init__"
                 or posixpath.dirname(path) + "/" + match[1] + ".py" in self.code
             ):
+                self.absent_source(state, path, operation)
                 return
         raise Violation(f"undeclared source {operation}: {path}")
 

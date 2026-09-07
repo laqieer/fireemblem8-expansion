@@ -484,6 +484,16 @@ Undeclared data open, mmap, stat/access/readlink, directory/glob or dynamically
 constructed paths reject. Code imports have a separately admitted code set and
 bounded, absent import-cache probes.
 
+Python module and import-cache exceptions prove absence against the complete
+**active** owned source view, not the sparse command mount. An existing
+undeclared `__init__`, module variant or cache path rejects even when omitted
+from that sparse mount. Unadmitted nonregular namespaces reject before any
+absence claim. Truly absent related probes remain permitted and spend bounded
+attempt bookkeeping without successful-consumption credit. CURRENT/BASE
+selection and files published into the active generated view use the same
+predicate as dependency-negative probes; no live-checkout substitution or
+new import authority is introduced.
+
 Authorization remains entry-time and fail-closed, but source/code/Make-path
 evidence is committed only after a successful kernel return. A successful open
 is pathname/existence metadata; successful stat/access and file mappings also
@@ -532,6 +542,10 @@ A directory observation consumes only the declared names it exposes. Command
 success requires **declared = permitted = consumed** candidate sources.
 Registry success additionally requires the typed reported `source_paths` to
 equal that set. Reported JSON is candidate data, not supervisor evidence.
+The generated-registry driver obtains cardinality through the selected schema's
+existing `manifest_record_count(records)` API. Structured records and
+sequence-backed tables therefore retain their schema-defined meaning; a schema
+missing that contract fails rather than falling back to container length.
 Malformed UTF-8, duplicate/nonfinite JSON, stale/omitted/extra paths, malformed
 frames and unused source declarations reject. Directory source selectors must
 be explicit: the foundation does not infer a generator's ownership from a
@@ -844,6 +858,13 @@ SIGINT/SIGTERM kill/reap the recorded process groups and traced descendants,
 clear caches, close channels and remove only the owned scratch tree. Scratch
 components and input leaves reject symlinks/FIFOs. No cleanup uses process
 names, other worktrees, global caches or system temporary directories.
+Owned-tree removal is iterative and descriptor-relative, with no Python
+recursion-depth dependency or new tree-depth limit. Nofollow component opens
+and directory identity checks prevent symlink traversal or removal of a
+replaced unrelated entry. Parent identities are checked when climbing back
+through an opened directory, so descriptor use stays bounded independently of
+tree depth. Cleanup does not change permissions to force traversal; errors
+remain visible, and the existing signal-safe lifetime closes every held FD.
 Scratch allocation retains directory FDs and local ownership of every new
 parent until the session takes over. A tracked component, inaccessible leaf,
 open/mkdir failure or interruption cleans partial allocation too, without

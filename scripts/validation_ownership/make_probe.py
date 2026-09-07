@@ -253,10 +253,72 @@ def _mkdir_target(root: Path, target: str, directory=False):
 
 
 def _remove_owned_tree(path):
-    try:
-        shutil.rmtree(path)
-    except FileNotFoundError:
-        pass
+    def identity(info):
+        return info.st_dev, info.st_ino
+
+    def remove():
+        parts = Path(path).absolute().parts
+        if len(parts) < 2 or ".." in parts:
+            raise OSError(errno.EINVAL, "cleanup requires a named owned tree")
+        flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC
+        current = following = -1
+        try:
+            current = os.open(parts[0], flags)
+            try:
+                for name in parts[1:-1]:
+                    following = os.open(name, flags, dir_fd=current)
+                    os.close(current)
+                    current, following = following, -1
+                parent = identity(os.fstat(current))
+                before = os.stat(parts[-1], dir_fd=current, follow_symlinks=False)
+                following = os.open(parts[-1], flags, dir_fd=current)
+            except FileNotFoundError:
+                return
+            if identity(before) != identity(os.fstat(following)):
+                raise OSError(errno.ESTALE, "owned cleanup root changed")
+            os.close(current)
+            current, following = following, -1
+            stack = [(parts[-1], identity(before), parent, iter(os.listdir(current)))]
+            while stack:
+                name, expected, parent, names = stack[-1]
+                entry = next(names, None)
+                if entry is None:
+                    following = os.open("..", flags, dir_fd=current)
+                    if identity(os.fstat(following)) != parent:
+                        raise OSError(errno.ESTALE, "owned cleanup parent changed")
+                    try:
+                        present = os.stat(name, dir_fd=following, follow_symlinks=False)
+                    except FileNotFoundError:
+                        pass
+                    else:
+                        if identity(present) != expected:
+                            raise OSError(errno.ESTALE, "owned cleanup entry changed")
+                        os.rmdir(name, dir_fd=following)
+                    os.close(current)
+                    current, following = following, -1
+                    stack.pop()
+                    continue
+                try:
+                    before = os.stat(entry, dir_fd=current, follow_symlinks=False)
+                    if not stat.S_ISDIR(before.st_mode):
+                        os.unlink(entry, dir_fd=current)
+                        continue
+                    following = os.open(entry, flags, dir_fd=current)
+                except FileNotFoundError:
+                    continue
+                if identity(before) != identity(os.fstat(following)):
+                    raise OSError(errno.ESTALE, "owned cleanup child changed")
+                names = iter(os.listdir(following))
+                stack.append((entry, identity(before), identity(os.fstat(current)), names))
+                os.close(current)
+                current, following = following, -1
+        finally:
+            finish_cleanup([
+                lambda descriptor=descriptor: os.close(descriptor)
+                for descriptor in (following, current) if descriptor >= 0
+            ], primary=sys.exc_info()[1])
+
+    finish_cleanup([remove])
 
 
 def _trusted_runtime_path(path: str, *, optional=False):
@@ -799,7 +861,8 @@ class ProbeSession:
             "runtime_parents": sorted({
                 parent for item in self.runtime_inputs for parent, _ in item.parents
             }) if mode == "make" else [],
-            "dependency_source_view": str(self.tree) if dependency else None,
+            "source_view": str(self.tree),
+            "dependency_probe": dependency,
             "dependency_include_dirs": ["/repo" if path == "." else "/repo/" + path for path in include_dirs],
             "deadline": self.budget.deadline,
             "file_limit": file_remaining,

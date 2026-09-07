@@ -3341,6 +3341,38 @@ accumulates its measured attempted records; it does not merely repeat the
 local-guard control. The actual child root/112-domain adoption is independent
 and is not rerun or claimed by this bounded correction.
 
+### Complete-view absence, deep owned cleanup and schema cardinality
+
+1. Capture an initializer beside a declared reader, but admit only the reader
+   as code. Ordinary isolated Python selects the existing-file branch; the
+   confined registry must reject the undeclared metadata input rather than
+   accepting an omitted-file branch. Repeat for module suffix variants and
+   import-cache names. Truly absent related probes remain negative, while
+   unrelated undeclared names still reject.
+2. Select immutable CURRENT/BASE views, including a genuinely deleted
+   initializer and a conflicting live-checkout file. Only the selected complete
+   view determines absence. Explicitly admitted code can be observed normally;
+   unadmitted symlink namespaces and generated initializers published into the
+   active view must not become sparse absence. Preserve source accounting,
+   final replay and cleanup.
+3. Create an owned 1,050-level directory tree within the existing path/creation
+   bounds. The removal helper must delete it without recursion-limit changes
+   or depth-dependent FD growth. Exercise real native output at that depth
+   under existing limits when feasible; a timeout before completion is not
+   end-to-end evidence. Retain symlink-target, ancestor-link, replaced-entry,
+   permission, missing-path and deferred-signal safety controls.
+4. Run the actual generated-registry driver with the structured autoplay
+   strategies schema and a sequence-backed table. Compare counts to each
+   schema's public `manifest_record_count` result and require exact declared/
+   consumed/reported source paths. A deliberately incomplete mock schema must
+   fail, not receive a container-length fallback.
+
+Before this correction, exact `3f633cb` accepts a wrong initializer-absence
+branch, recursive teardown fails on an admitted deep tree, and the registry
+driver reports structural dictionary keys as records. These are existing
+boundary corrections, not a new import/cleanup/schema platform. The original
+lifetime pending-byte hold and every numerical resource limit remain unchanged.
+
 ### Interactions and save compatibility
 
 This host-only contract changes no save, migration, config identity, generated
