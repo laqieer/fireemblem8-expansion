@@ -30,7 +30,7 @@ from scripts.validation_ownership.authority import (
 )
 from scripts.validation_ownership.budget import Limits, MakeProbeError, NAMESPACE_LAUNCHER, ProbeBudget
 from scripts.validation_ownership.make_probe import (
-    Command, NativeTool, ProbeSession, TRUSTED_ROOT, _event_command, _make_interpreter, _make_runtime,
+    Command, NativeTool, ProbeSession, TRUSTED_ROOT, _command_hash, _event_command, _make_interpreter, _make_runtime,
     _read_events, _read_observation, _trusted_runtime_bytes, probe_generated_registry,
 )
 
@@ -1813,6 +1813,413 @@ raise AssertionError("default termination was lost")
         self.assertFalse(self.scratch.exists())
         self.assertEqual((self.root / "Makefile").read_text(), "all: ;\n")
 
+    def test_directory_declaration_cannot_authorize_regular_file_content(self):
+        self.add("secret.txt", "undeclared fixture bytes")
+        for boundary in ("admission", "capsule"):
+            with self.subTest(boundary=boundary):
+                with self.session() as session:
+                    runs = session.budget.runs
+                    admission = session._directories if boundary == "admission" else lambda paths: paths
+                    with patch.object(session, "_directories", admission):
+                        with self.assertRaisesRegex(MakeProbeError, "director"):
+                            session.command(Command(
+                                ("/usr/bin/python3", "-c", "print(open('secret.txt').read())"),
+                                directories=("secret.txt",),
+                            ))
+                    self.assertEqual(session.budget.runs == runs, boundary == "admission")
+                self.assert_clean(session)
+
+    def observable_listing_fixture(self, *, early=False):
+        self.add("data/current.txt", "current")
+        self.add("reader.py", "import os\nprint(' '.join(sorted(os.listdir('data'))))\n")
+        self.add("producer.py", (
+            "import os\nos.mkdir('/work/data')\n"
+            "open('/work/data/generated.txt','w').write('generated')\n"
+            "open('/work/trigger.mk','w').write('VALUE := $(shell python3 reader.py)\\n')\n"
+        ))
+        self.add("Makefile", (
+            ("EARLY := $(shell python3 reader.py)\n" if early else "")
+            + "include trigger.mk\ntrigger.mk:\n\t@python3 producer.py\nall: ;\n"
+        ))
+        reader = Command(
+            ("/usr/bin/python3", "/repo/reader.py"), code=("reader.py",), directories=("data",),
+        )
+        producer = Command(
+            ("/usr/bin/python3", "/repo/producer.py"), code=("producer.py",),
+            outputs=("trigger.mk", "data/generated.txt"),
+        )
+        return reader, producer
+
+    def test_cached_listing_cannot_seed_a_stale_new_generated_mapping(self):
+        reader, producer = self.observable_listing_fixture()
+        with self.session() as session:
+            before = session.command(reader)
+            self.assertEqual(before.stdout, b"current.txt\n")
+            actual = []
+            class Commands:
+                def __contains__(self, name):
+                    return name in ("python3 reader.py", "python3 producer.py")
+                def __getitem__(self, name):
+                    if name == "python3 reader.py":
+                        actual.append(sorted(path.name for path in (session.tree / "data").iterdir()))
+                        return reader
+                    return producer
+            result = session.make("all", variables=("VALUE",), commands=Commands())
+            self.assertIn(["current.txt", "generated.txt"], actual)
+            self.assertEqual(result.semantics["domains"]["VALUE"]["value"], "current.txt generated.txt")
+            self.assertTrue(all(event["match"] >= 0 for event in result.events))
+            self.assertFalse((session.tree / "data/generated.txt").exists())
+            self.assertIs(session.command(reader), before)
+        self.assert_clean(session)
+
+    def test_installed_mapping_changes_with_the_actual_generated_view(self):
+        reader, producer = self.observable_listing_fixture(early=True)
+        with self.session() as session:
+            result = session.make("all", variables=("VALUE",), commands={
+                "python3 reader.py": reader, "python3 producer.py": producer,
+            })
+            self.assertEqual(result.semantics["domains"]["VALUE"]["value"], "current.txt generated.txt")
+            self.assertTrue(all(event["match"] >= 0 for event in result.events))
+            self.assertEqual(len({
+                event["match"] for event in result.events if _event_command(event) == "python3 reader.py"
+            }), 2)
+        self.assert_clean(session)
+
+    def test_directory_metadata_dependency_changes_with_generated_membership(self):
+        reader, _ = self.observable_listing_fixture()
+        self.add("reader.py", "import os\nprint(os.stat('data').st_nlink)\n")
+        self.add("producer.py", (
+            "import os\nos.makedirs('/work/data/nested')\n"
+            "open('/work/data/nested/generated.txt','w').write('generated')\n"
+            "open('/work/trigger.mk','w').write('VALUE := $(shell python3 reader.py)\\n')\n"
+        ))
+        producer = Command(
+            ("/usr/bin/python3", "/repo/producer.py"), code=("producer.py",),
+            outputs=("trigger.mk", "data/nested/generated.txt"),
+        )
+        with self.session() as session:
+            before = session.command(reader)
+            actual = []
+            class Commands:
+                def __contains__(self, name):
+                    return name in ("python3 reader.py", "python3 producer.py")
+                def __getitem__(self, name):
+                    if name == "python3 reader.py":
+                        actual.append((session.tree / "data").stat().st_nlink)
+                        return reader
+                    return producer
+            result = session.make("all", variables=("VALUE",), commands=Commands())
+            self.assertGreater(actual[-1], int(before.stdout))
+            self.assertEqual(result.semantics["domains"]["VALUE"]["value"], str(actual[-1]))
+            self.assertIs(session.command(reader), before)
+        self.assert_clean(session)
+
+    def test_generated_replacement_selects_actual_view_variants_without_stale_replay(self):
+        self.add("state/current.txt", "current")
+        self.add("writer.py", (
+            "import os\nvalue=str(len(os.listdir('state'))-1)\n"
+            "os.mkdir('/work/data')\nopen('/work/data/value.txt','w').write(value)\nprint(value)\n"
+        ))
+        self.add("producer.py", (
+            "import os\nos.mkdir('/work/state')\n"
+            "open('/work/state/generated.txt','w').write('generated')\n"
+            "open('/work/trigger.mk','w').write('SECOND := $(shell python3 writer.py)\\n')\n"
+        ))
+        self.add("Makefile", (
+            "FIRST := $(shell python3 writer.py)\ninclude trigger.mk\n"
+            "trigger.mk:\n\t@python3 producer.py\nall: ;\n"
+        ))
+        writer = Command(
+            ("/usr/bin/python3", "/repo/writer.py"), code=("writer.py",),
+            directories=("state",), outputs=("data/value.txt",),
+        )
+        producer = Command(
+            ("/usr/bin/python3", "/repo/producer.py"), code=("producer.py",),
+            outputs=("trigger.mk", "state/generated.txt"),
+        )
+        with self.session() as session:
+            result = session.make("all", variables=("FIRST", "SECOND"), commands={
+                "python3 writer.py": writer, "python3 producer.py": producer,
+            })
+            self.assertEqual(result.semantics["domains"]["FIRST"]["value"], "1")
+            self.assertEqual(result.semantics["domains"]["SECOND"]["value"], "1")
+            variants = {
+                event["match"] for event in result.events if _event_command(event) == "python3 writer.py"
+            }
+            self.assertEqual(len(variants), 2)
+            self.assertFalse((session.tree / "data").exists())
+            self.assertFalse((session.tree / "state/generated.txt").exists())
+        self.assert_clean(session)
+
+    def test_generated_unrelated_view_keeps_the_actual_cached_result(self):
+        reader, _ = self.observable_listing_fixture()
+        self.add("other/current.txt", "other")
+        self.add("producer.py", (
+            "import os\nos.mkdir('/work/other')\n"
+            "open('/work/other/generated.txt','w').write('unrelated')\n"
+            "open('/work/trigger.mk','w').write('VALUE := $(shell python3 reader.py)\\n')\n"
+        ))
+        producer = Command(
+            ("/usr/bin/python3", "/repo/producer.py"), code=("producer.py",),
+            outputs=("trigger.mk", "other/generated.txt"),
+        )
+        with self.session() as session:
+            before = session.command(reader)
+            observed = []
+            run = session.command
+            def recording(command):
+                result = run(command)
+                if command == reader:
+                    observed.append(result)
+                return result
+            with patch.object(session, "command", recording):
+                result = session.make("all", variables=("VALUE",), commands={
+                    "python3 reader.py": reader, "python3 producer.py": producer,
+                })
+            self.assertEqual(result.semantics["domains"]["VALUE"]["value"], "current.txt")
+            self.assertEqual(observed, [before])
+            self.assertIs(observed[0], before)
+        self.assert_clean(session)
+
+    def test_replay_preserves_intermediate_generated_listing_order(self):
+        self.add("data/current.txt", "current")
+        self.add("reader.py", "import os\nprint(' '.join(os.listdir('data')))\n")
+        for name in ("z", "a"):
+            self.add("producer_" + name + ".py", (
+                "import sys\nfrom pathlib import Path\n"
+                "path=Path(sys.argv[1])/'data/" + name + ".txt'\n"
+                "path.parent.mkdir(parents=True,exist_ok=True)\npath.write_text('generated')\n"
+            ))
+        self.add("Makefile", (
+            "all: z first a second\n"
+            "z:\n\t+@python3 producer_z.py .\n"
+            "first:\n\t+@python3 reader.py\n"
+            "a:\n\t+@python3 producer_a.py .\n"
+            "second:\n\t+@python3 reader.py\n"
+        ))
+        ordinary = subprocess.run(
+            ["/usr/bin/make", "-f", "Makefile", "all"], cwd=self.root, env=ENVIRONMENT,
+            capture_output=True, check=True, timeout=10,
+        ).stdout
+        for name in ("z", "a"):
+            (self.root / ("data/" + name + ".txt")).unlink()
+        commands = {
+            "python3 reader.py": Command(
+                ("/usr/bin/python3", "/repo/reader.py"), code=("reader.py",), directories=("data",),
+            ),
+            **{
+                f"python3 producer_{name}.py .": Command(
+                    ("/usr/bin/python3", f"/repo/producer_{name}.py", "/work"),
+                    code=(f"producer_{name}.py",), outputs=(f"data/{name}.txt",),
+                ) for name in ("z", "a")
+            },
+        }
+        with self.session() as session:
+            observed = session.make("all", commands=commands)
+            self.assertEqual(observed.stdout, ordinary)
+            self.assertTrue(all(event["match"] >= 0 for event in observed.events))
+        self.assert_clean(session)
+
+    def test_cached_absence_cannot_survive_generated_presence(self):
+        self.add("reader.py", "import os\nprint(int(os.path.exists('__init__.py')))\n")
+        self.add("producer.py", (
+            "open('/work/__init__.py','w').write('present')\n"
+            "open('/work/trigger.mk','w').write('VALUE := $(shell python3 reader.py)\\n')\n"
+        ))
+        reader = Command(("/usr/bin/python3", "/repo/reader.py"), code=("reader.py",))
+        producer = Command(
+            ("/usr/bin/python3", "/repo/producer.py"), code=("producer.py",),
+            outputs=("trigger.mk", "__init__.py"),
+        )
+        for installed in (False, True):
+            with self.subTest(installed=installed):
+                self.add("Makefile", (
+                    ("EARLY := $(shell python3 reader.py)\n" if installed else "")
+                    + "include trigger.mk\ntrigger.mk:\n\t@python3 producer.py\nall: ;\n"
+                ))
+                with self.session() as session:
+                    self.assertEqual(session.command(reader).stdout, b"0\n")
+                    run, reads = session._sandbox_run, []
+                    def recording(root, **kwargs):
+                        if kwargs["mode"] == "make":
+                            reads.append(sum(
+                                item["key"] == _command_hash("python3 reader.py")
+                                for item in kwargs["mapping_entries"]
+                            ))
+                        return run(root, **kwargs)
+                    with patch.object(session, "_sandbox_run", recording):
+                        with self.assertRaisesRegex(MakeProbeError, "undeclared source"):
+                            session.make("all", commands={
+                                "python3 reader.py": reader, "python3 producer.py": producer,
+                            })
+                    self.assertEqual(any(reads), installed)
+                    self.assertFalse((session.tree / "__init__.py").exists())
+                self.assert_clean(session)
+
+    def test_directory_type_is_checked_in_the_actual_selected_view(self):
+        self.add("data/current.txt", "current")
+        self.add("reader.py", "import os\nprint(len(os.listdir('data')))\n")
+        budget = ProbeBudget()
+        directory_view = self.capture_view(budget)
+        (self.root / "data/current.txt").unlink()
+        (self.root / "data").rmdir()
+        del self.entries["data/current.txt"]
+        self.add("data", "regular file")
+        file_view = self.capture_view(budget)
+        command = Command(
+            ("/usr/bin/python3", "/repo/reader.py"), code=("reader.py",), directories=("data",),
+        )
+        with ProbeSession(directory_view, scratch_root=self.scratch, budget=budget) as session:
+            self.assertEqual(session.command(command).stdout, b"1\n")
+            with session.select_view(file_view):
+                runs = budget.runs
+                with self.assertRaisesRegex(MakeProbeError, "not an active directory"):
+                    session.command(command)
+                self.assertEqual(budget.runs, runs)
+        self.assert_clean(session)
+
+    def test_public_live_and_immutable_controls_use_distinct_actual_source_bytes(self):
+        self.add("localization.mk", (
+            "LOCALIZATION_OUT_DIR := pinned\nlocalization-check: localization-generate\n"
+            "localization-generate: ;\n"
+        ))
+        self.add("src/data/ch2_bundle.json", '[{"value":"pinned"}]')
+        self.add("scripts/generated_data/registry.py", (
+            "import json\nfrom pathlib import Path\n"
+            "class Records(list): pass\n"
+            "class Schema:\n name='chapterbundle'\n version=1\n"
+            " def load_records(self, source):\n"
+            "  path=Path(source)/'ch2_bundle.json'\n"
+            "  records=Records(json.loads(path.read_text()))\n"
+            "  records.source_paths=[str(path)]\n  return records\n"
+            " def manifest_record_count(self, records): return len(records)\n"
+            "class Registry:\n"
+            " def resolve(self,name): return Schema()\n"
+            "REGISTRY=Registry()\n"
+        ))
+        self.gitlink_git(self.root, "init", "--quiet")
+        self.gitlink_git(self.root, "add", "--all")
+        self.gitlink_git(self.root, "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid",
+                         "commit", "--quiet", "-m", "pinned fixture")
+        revision = self.gitlink_git(self.root, "rev-parse", "HEAD")
+        self.add("localization.mk", (
+            "LOCALIZATION_OUT_DIR := actual-live\nlocalization-check: localization-generate\n"
+            "localization-generate: ;\n"
+        ))
+        self.add("src/data/ch2_bundle.json", '[{"value":"live"},{"value":"added"}]')
+        results = []
+        for arguments in (("--revision", revision), ("--worktree",)):
+            result = subprocess.run(
+                ["/usr/bin/python3", "-I", "-S", "-B", str(TRUSTED_ROOT / "isolated_launcher.py"),
+                 "--repository-root", str(self.root), *arguments],
+                cwd=self.root, env=ENVIRONMENT, capture_output=True, timeout=30,
+            )
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            results.append(json.loads(result.stdout))
+        self.assertEqual([result["generated_registry"]["record_count"] for result in results], [1, 2])
+        self.assertEqual([
+            result["make"]["semantics"]["domains"]["LOCALIZATION_OUT_DIR"]["value"] for result in results
+        ], ["pinned", "actual-live"])
+        self.assertEqual(results[1]["generated_registry"]["source_paths"], ["src/data/ch2_bundle.json"])
+        self.assertNotEqual(results[0]["execution_snapshot"], results[1]["execution_snapshot"])
+
+    def test_live_gitlink_capture_reads_initialized_live_bytes_without_head_substitution(self):
+        module, pins = self.gitlink_fixture()
+        self.gitlink_git(self.root, "update-index", "--add", "--cacheinfo", f"160000,{pins[-1]},module")
+        revision = self.gitlink_git(self.root, "write-tree")
+        self.gitlink_git(self.root, "clone", "--quiet", "--no-hardlinks", str(module), "module")
+        live_source = self.root / "module/include/value.h"
+        live_source.write_text('#define VALUE "changed-live"\n')
+        budget = ProbeBudget()
+        live_entries = git_tree_entries(self.root, None, budget=budget)
+        live = AuthorityLoader(self.root, live_entries, budget=budget)
+        immutable_entries = git_tree_entries(
+            self.root, revision, budget=budget,
+            gitlinks=(GitlinkSource("module", module / ".git"),),
+        )
+        immutable = AuthorityLoader(self.root, immutable_entries, revision, budget=budget)
+        self.assertEqual(live.read_blob("module/include/value.h", "live"), live_source.read_bytes())
+        self.assertEqual(immutable.read_blob("module/include/value.h", "immutable"), b'#define VALUE "current"\n')
+        with ProbeSession(live, scratch_root=self.scratch, budget=budget) as session:
+            observed = session.command(Command(
+                ("/usr/bin/python3", "-c", "print(open('module/include/value.h').read(),end='')"),
+                sources=("module/include/value.h",),
+            ))
+            self.assertEqual(observed.stdout, live_source.read_bytes())
+            self.assertEqual(observed.consumed, ("module/include/value.h",))
+        self.assert_clean(session)
+
+    def test_public_worktree_consumer_preserves_the_requested_live_mode(self):
+        result = subprocess.run(
+            ["/usr/bin/python3", "-I", "-S", "-B",
+             str(TRUSTED_ROOT / "isolated_launcher.py"), "--repository-root", str(ROOT), "--worktree"],
+            cwd=ROOT, env=ENVIRONMENT, capture_output=True, timeout=90,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(json.loads(result.stdout)["generated_registry"]["name"], "chapterbundle")
+
+    def test_live_inventory_uses_actual_nonignored_additions_and_deletions(self):
+        self.add(".gitignore", "ignored.txt\nbuild/\n")
+        self.add("data/deleted.txt", "removed")
+        self.capture_tree(ProbeBudget())
+        (self.root / "data/deleted.txt").unlink()
+        (self.root / "data/new.txt").write_text("actual untracked bytes")
+        (self.root / "ignored.txt").write_text("not a source input")
+        budget = ProbeBudget()
+        entries = git_tree_entries(self.root, None, budget=budget)
+        self.assertEqual(set(entries), {".gitignore", "data/new.txt"})
+        loader = AuthorityLoader(self.root, entries, budget=budget)
+        with ProbeSession(loader, scratch_root=self.scratch, budget=budget) as session:
+            listing = session.command(Command(
+                ("/usr/bin/python3", "-c", "import os; print(' '.join(os.listdir('data')))"),
+                directories=("data",),
+            ))
+            self.assertEqual(listing.stdout, b"new.txt\n")
+            self.assertEqual(listing.consumed, ())
+            read = session.command(Command(
+                ("/usr/bin/python3", "-c", "print(open('data/new.txt').read())"),
+                sources=("data/new.txt",),
+            ))
+            self.assertEqual(read.stdout, b"actual untracked bytes\n")
+            self.assertEqual(read.consumed, ("data/new.txt",))
+        self.assert_clean(session)
+
+    def test_live_gitlink_absence_empty_and_unsafe_namespaces_are_not_pin_placeholders(self):
+        module, pins = self.gitlink_fixture()
+        self.gitlink_git(self.root, "update-index", "--add", "--cacheinfo", f"160000,{pins[-1]},module")
+        budget = ProbeBudget()
+        self.assertNotIn("module", git_tree_entries(self.root, None, budget=budget))
+        budget.close()
+        live = self.root / "module"
+        live.mkdir()
+        budget = ProbeBudget()
+        entries = git_tree_entries(self.root, None, budget=budget)
+        self.assertEqual(entries.live_directories, {"module"})
+        loader = AuthorityLoader(self.root, entries, budget=budget)
+        with ProbeSession(loader, scratch_root=self.scratch, budget=budget) as session:
+            listing = session.command(Command(
+                ("/usr/bin/python3", "-c", "import os; print(os.listdir('module'))"),
+                directories=("module",),
+            ))
+            self.assertEqual(listing.stdout, b"[]\n")
+        self.assert_clean(session)
+        (live / "unexpected.txt").write_text("not an initialized gitlink repository")
+        budget = ProbeBudget()
+        with self.assertRaisesRegex(MakeProbeError, "not its initialized repository"):
+            git_tree_entries(self.root, None, budget=budget)
+        budget.close()
+        (live / "unexpected.txt").unlink()
+        live.rmdir()
+        live.symlink_to(module)
+        budget = ProbeBudget()
+        with self.assertRaisesRegex(MakeProbeError, "not an actual directory"):
+            git_tree_entries(self.root, None, budget=budget)
+        with self.assertRaisesRegex(MakeProbeError, "does not substitute immutable"):
+            git_tree_entries(
+                self.root, None, budget=budget, gitlinks=(GitlinkSource("module", module / ".git"),),
+            )
+        budget.close()
+
     def test_make_uncaptured_runtime_file_cannot_select_a_false_absence_branch(self):
         path = f"/usr/lib/python{sys.version_info.major}.{sys.version_info.minor}/os.py"
         self.assertTrue(Path(path).is_file())
@@ -2339,7 +2746,7 @@ raise AssertionError("default termination was lost")
                 f"python3 worker.py {index} 'word value' \"\"" for index in dict.fromkeys(order)
             ])
             self.assertEqual(len(result.events), len(order))
-            self.assertTrue(all(event["match"] == 0 for event in result.events))
+            self.assertTrue(all(event["match"] >= 0 for event in result.events))
             self.assertEqual(len(result.semantics["dynamic_commands"]), len(registrations))
             self.assertEqual([mode for mode, _ in capsules].count("make"), 2)
             self.assertEqual([mode for mode, _ in capsules].count("command"), len(registrations))
@@ -2371,7 +2778,7 @@ raise AssertionError("default termination was lost")
 
     def test_serial_resolution_validates_late_native_frames_before_any_worker(self):
         registrations, _ = self.resolution_batch_fixture(count=3)
-        for defect in ("truncated", "hash", "mapping-count", "matched-unknown"):
+        for defect in ("truncated", "hash", "mapping-count", "matched-unknown", "missing-context"):
             with self.subTest(defect=defect):
                 requested = []
                 class Commands:
@@ -2401,6 +2808,8 @@ raise AssertionError("default termination was lost")
                             data[last+8] ^= 1
                         elif defect == "mapping-count":
                             data[last+4:last+8] = (99).to_bytes(4, "little")
+                        elif defect == "missing-context":
+                            data[last:last+4] = (-2).to_bytes(4, "little", signed=True)
                         else:
                             data[last:last+4] = (0).to_bytes(4, "little")
                         return bytes(data)
@@ -2410,6 +2819,40 @@ raise AssertionError("default termination was lost")
                     self.assertEqual(requested, [])
                     self.assertEqual(session.pending_commands, 0)
                     self.assertEqual(session.pending_commands_peak, 0)
+                self.assert_clean(session)
+
+    def test_view_report_validation_rejects_malformed_observations_and_contexts(self):
+        self.add("data/a", "observed")
+        command = Command(
+            ("/usr/bin/python3", "-c", "import os; print(os.listdir('data'))"), directories=("data",),
+        )
+        for field, value in (
+            ("view_inputs", None),
+            ("view_inputs", [["unknown", "data", None]]),
+            ("view_inputs", [["directory", "../data", "0"*64]]),
+            ("view_inputs", [["directory", "data", True]]),
+            ("view_contexts", None),
+            ("view_contexts", []),
+            ("view_contexts", [[], [["data/generated", 0]]]),
+            ("final_context", True),
+            ("final_context", 1),
+        ):
+            with self.subTest(field=field, value=value):
+                with self.session() as session:
+                    original = session.budget.read_bytes
+                    def malformed(path, category):
+                        data = original(path, category)
+                        if path.name.startswith("report-"):
+                            observed = json.loads(data)
+                            if value is None:
+                                del observed[field]
+                            else:
+                                observed[field] = value
+                            return json.dumps(observed).encode()
+                        return data
+                    with patch.object(session.budget, "read_bytes", malformed):
+                        with self.assertRaises(MakeProbeError):
+                            session.command(command)
                 self.assert_clean(session)
 
     def test_serial_resolution_rejects_known_mapping_miss_without_rerunning_worker(self):
@@ -2911,6 +3354,7 @@ raise AssertionError("default termination was lost")
                 "root": str(self.directory), "mode": mode, "code": ["code.bin"],
                 "sources": ["data/a", "data/b"], "enumerations": list(directories),
                 "source_view": str(self.root),
+                "deadline": time.monotonic() + 30,
                 "executables": [], "python_version": "3.12", "argv": [],
                 "memory_limit": 256*1024*1024, "syscall_limit": 1024,
                 "write_limit": 1024*1024, "observation_count": 1024,
@@ -2933,6 +3377,7 @@ raise AssertionError("default termination was lost")
                 expected = tuple(value & ((1 << 64)-1) for value in arguments)
                 if information[0] == 1 and registers.orig_rax == number and actual[:len(expected)] == expected:
                     policy.entry(pid, state, registers)
+                    entry_observation_bytes = policy.observation_bytes
                     self.assertFalse(policy.consumed)
                     self.assertFalse(policy.code_consumed)
                     self.assertFalse(policy.accessed)
@@ -2945,6 +3390,7 @@ raise AssertionError("default termination was lost")
                         "code": set(policy.code_consumed), "accessed": set(policy.accessed),
                         "data": memory(pid, buffer, result) if buffer is not None and result > 0 else b"",
                         "fds": dict(state.fds),
+                        "entry_observation_bytes": entry_observation_bytes,
                     }
             self.fail("owned syscall did not reach its exit")
 
@@ -3182,10 +3628,17 @@ raise AssertionError("default termination was lost")
                     217, (descriptor, ctypes.addressof(buffer), len(buffer)),
                     {descriptor: "/repo/data"},
                 )
+            observed = self.traced_observation(
+                217, (descriptor, ctypes.addressof(buffer), 4096),
+                {descriptor: "/repo/data"},
+            )
+            self.assertGreater(observed["result"], 1)
+            os.lseek(descriptor, 0, os.SEEK_SET)
             with self.assertRaisesRegex(Violation, "directory-observation byte budget"):
                 self.traced_observation(
                     217, (descriptor, ctypes.addressof(buffer), 4096),
-                    {descriptor: "/repo/data"}, observation_limit=1,
+                    {descriptor: "/repo/data"},
+                    observation_limit=observed["entry_observation_bytes"] + observed["result"] - 1,
                 )
         finally:
             os.close(descriptor)
@@ -4415,6 +4868,7 @@ int main(int argc, char **argv) {
                         "consumed": [], "code_consumed": [], "accessed": [],
                         "processes": 1, "live_process_peak": 1, "syscalls": 1, "written_bytes": 0,
                         "created_files": 0, "memory_peak": 1, "observation_bytes": 0, "observations": 0,
+                        "view_inputs": [], "view_contexts": [[]], "final_context": 0,
                     }))
                 return subprocess.CompletedProcess(argv, 0, b"", b"")
             return original_run(argv, **kwargs)
@@ -4952,7 +5406,7 @@ int main(int argc, char **argv) {
             )
             self.assertEqual(result.semantics["domains"]["VALUE"]["value"], "alpha")
             self.assertTrue(result.events)
-            self.assertTrue(all(event["match"] == 0 for event in result.events))
+            self.assertTrue(all(event["match"] >= 0 for event in result.events))
             self.assertEqual(len(session.cache), 1)
         self.assert_clean(session)
 
@@ -5013,7 +5467,7 @@ int main(int argc, char **argv) {
                         {"choose.py", "choice.txt"},
                     )
                     self.assertEqual(
-                        {result.consumed for result in session.cache.values()},
+                        {result.consumed for variants in session.cache.values() for result in variants},
                         {("choice.txt",), ("discarded.txt",)},
                     )
                 self.assert_clean(session)
@@ -5043,12 +5497,15 @@ int main(int argc, char **argv) {
                 "all", variables=("OUTER", "INNER"), owner_inputs=("Makefile",), commands=commands,
             )
             self.assertEqual({_event_command(event) for event in observed.events}, {outer, inner})
-            self.assertTrue(all(event["match"] == 0 for event in observed.events))
+            self.assertTrue(all(event["match"] >= 0 for event in observed.events))
             self.assertEqual(
                 {tuple(item["command"]["argv"]) for item in observed.semantics["dynamic_commands"]},
                 {commands[outer].argv, commands[inner].argv},
             )
-            self.assertEqual({item.stdout for item in session.cache.values()}, {b"enabled", b"genuine", b"unused"})
+            self.assertEqual(
+                {item.stdout for variants in session.cache.values() for item in variants},
+                {b"enabled", b"genuine", b"unused"},
+            )
         self.assert_clean(session)
 
     def test_make_final_command_identity_deduplicates_aliases_and_declarations(self):
@@ -6006,7 +6463,7 @@ int main(int argc, char **argv) {
             })
             self.assertEqual(dynamic["command"]["inputs"], session.snapshot.owners(("proof.s",)))
             self.assertEqual(dynamic["output_sha256"], hashlib.sha256(actual.stdout).hexdigest())
-            self.assertTrue(all(event["match"] == 0 for event in observed.events))
+            self.assertTrue(all(event["match"] >= 0 for event in observed.events))
             self.assertFalse((session.tree / "native/tool").exists())
         self.assert_clean(session)
 
@@ -6353,7 +6810,7 @@ int main(int argc, char **argv) {
                     self.assertEqual([_event_command(event) for event in result.events], [chosen])
                     dynamic, = result.semantics["dynamic_commands"]
                     self.assertNotIn("generated_outputs", dynamic)
-                    self.assertTrue(any(output.generated for output in session.cache.values()))
+                    self.assertTrue(any(output.generated for variants in session.cache.values() for output in variants))
                     self.assertGreater(session.files_created, 0)
                     self.assertFalse((session.tree / "generated").exists())
                 self.assert_clean(session)
@@ -6408,7 +6865,9 @@ int main(int argc, char **argv) {
                 dynamic, = result.semantics["dynamic_commands"]
                 self.assertEqual(dynamic["command"]["native_tool"]["inputs"], list(chosen.inputs))
                 self.assertEqual([_event_command(event) for event in result.events], ["tools/chosen;"])
-                self.assertTrue(any(output.stdout == b"unused\n" for output in session.cache.values()))
+                self.assertTrue(any(
+                    output.stdout == b"unused\n" for variants in session.cache.values() for output in variants
+                ))
             self.assert_clean(session)
         self.assertEqual(len(set(binaries)), 1)
         self.assertEqual(results[0].semantic_digest, results[1].semantic_digest)
@@ -6469,7 +6928,7 @@ int main(int argc, char **argv) {
                     if case == "publication":
                         self.assertTrue(any(
                             output.generated and len(output.generated[0].data) == 3*1024*1024
-                            for output in session.cache.values()
+                            for variants in session.cache.values() for output in variants
                         ))
                     self.assertFalse((session.tree / "generated").exists())
                     self.assertFalse(list(session.base.glob("make-root-*")))

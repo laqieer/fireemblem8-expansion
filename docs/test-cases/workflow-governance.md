@@ -3343,6 +3343,34 @@ and is not rerun or claimed by this bounded correction.
 
 ### Complete-view absence, deep owned cleanup and schema cardinality
 
+The coherent observable-view family additionally requires:
+
+- A regular file or nonregular path in `Command.directories` rejects before
+  payload launch or cached reuse. Actual directory metadata/listing permission
+  never permits member file content. Repeat after selected-view type changes.
+- Cache a real directory reader, publish a generated member and an include
+  invoking it, and require the final Make value to contain the actual later
+  listing. Repeat with an already installed mapping used both before and after
+  publication; final matched selectors must identify the correct completed
+  result in each observed context.
+- Exercise generated replacement, intermediate listing order, cleanup/removal
+  back to the initial view, and a truly unrelated publication. Changed
+  observations invalidate command and mapping reuse; unchanged relevant
+  observations keep the same cached result. A cached negative module probe
+  cannot hide later undeclared presence.
+- Repeat with actual directory metadata: publishing a nested directory must
+  update a reader's observed link count, not reuse a result bound only to
+  directory type. The same complete-view check applies without a listing syscall.
+- Run the actual public `--worktree` entry and compare a changed live fixture
+  with its pinned revision. The registry count and Make value must reflect
+  live bytes only in live mode. Check an actually empty uninitialized gitlink
+  directory and initialized gitlink live bytes without substituting HEAD.
+
+The original `8169e9ef` negatives returned unaccounted regular-file bytes,
+installed a stale cached listing into an all-matched final replay, and exited
+from the public worktree entry with an immutable-admission error. These are
+runtime controls, not a source-fingerprint-only acceptance argument.
+
 Run the runtime/enumeration family alongside the related boundary controls:
 
 - Compare ordinary Make's existing unrequested runtime-file branch with the

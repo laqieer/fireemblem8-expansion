@@ -144,6 +144,7 @@ int main(int argc, char **argv)
     int mapping;
     int events;
     long kind = syscall(SYS_getpid, VO_QUERY_KIND);
+    long selected;
     const char *program = argv[0];
     int shell = !strcmp(program, "/bin/sh") || !strcmp(program, "/bin/bash");
 
@@ -186,12 +187,18 @@ int main(int argc, char **argv)
     mapping_count = (uint32_t)mapped[0] | (uint32_t)mapped[1] << 8
         | (uint32_t)mapped[2] << 16 | (uint32_t)mapped[3] << 24;
     free(mapped);
-    snprintf(path, sizeof(path), "%016llx.cmd", (unsigned long long)hash);
-    mapped = read_file_at(mapping, path, &size);
-    if (mapped)
+    selected = syscall(SYS_getpid, VO_PUBLISH, hash, 0);
+    if (selected < 0 || selected > INT32_MAX)
+        return 125;
+    match = (uint32_t)selected < mapping_count ? (int)selected : -1 - (int)(selected - mapping_count);
+    if (match >= 0)
     {
-        if (size == strlen(command) && !memcmp(mapped, command, size))
-            match = 0;
+        if ((uint32_t)match >= mapping_count)
+            return 125;
+        snprintf(path, sizeof(path), "%016llx.cmd", (unsigned long long)match);
+        mapped = read_file_at(mapping, path, &size);
+        if (!mapped || size != strlen(command) || memcmp(mapped, command, size))
+            return 125;
         free(mapped);
     }
     put_u32(&cursor, (uint32_t)match);
@@ -212,11 +219,9 @@ int main(int argc, char **argv)
     if (write(events, event, (size_t)(cursor - event)) != cursor - event)
         return 125;
     close(events);
-    if (match == 0)
+    if (match >= 0)
     {
-        if (syscall(SYS_getpid, VO_PUBLISH, hash, 0))
-            return 125;
-        snprintf(path, sizeof(path), "%016llx.out", (unsigned long long)hash);
+        snprintf(path, sizeof(path), "%016llx.out", (unsigned long long)match);
         mapped = read_file_at(mapping, path, &size);
         if (!mapped || write_all(STDOUT_FILENO, mapped, size))
             return 125;

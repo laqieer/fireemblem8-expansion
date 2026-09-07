@@ -12,6 +12,8 @@ from .make_probe import Command, ProbeSession, TRUSTED_ROOT, probe_generated_reg
 
 def registry_entries(root, revision, budget):
     entries = git_tree_entries(root, revision, budget=budget)
+    if revision is None:
+        return entries
     gitlinks = []
     for name, entry in entries.items():
         if entry.mode != "160000":
@@ -30,7 +32,7 @@ def registry_entries(root, revision, budget):
 
 def check(root: Path, revision: str | None):
     budget = ProbeBudget()
-    entries = registry_entries(root, revision or "HEAD", budget)
+    entries = registry_entries(root, revision, budget)
     loader = AuthorityLoader(root, entries, revision, budget=budget)
     with ProbeSession(
         loader, scratch_root=root / "build/test-artifacts/ownership-probe", budget=budget,

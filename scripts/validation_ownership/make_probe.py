@@ -27,6 +27,7 @@ from threading import get_ident, main_thread
 from .authority import AuthorityLoader, ENVIRONMENT, Snapshot, encoded, parse_json, relative_path
 from .budget import Limits, MakeProbeError, NAMESPACE_LAUNCHER, ProbeBudget, text
 from .lifecycle import cleanup_scope, finish_cleanup
+from .syscall_guard import Violation, view_state
 
 
 TRUSTED_ROOT = Path(__file__).resolve().parent
@@ -99,6 +100,7 @@ class ProcessOutput:
     code_consumed: tuple[str, ...]
     artifact: bytes | None = None
     generated: tuple[GeneratedFile, ...] = ()
+    view_inputs: tuple[tuple, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -169,7 +171,7 @@ def _event_command(event: dict) -> str:
     return " ".join(quote(value) for value in (program, *arguments[1:]))
 
 
-def _read_events(raw: bytes, *, expected_mapping_count: int):
+def _read_events(raw: bytes, *, expected_mapping_count: int, expected_context_count: int = 1):
     reader = Frames(raw)
     events = []
     while reader.offset < len(raw):
@@ -177,7 +179,10 @@ def _read_events(raw: bytes, *, expected_mapping_count: int):
         count = reader.integer()
         hash_value = int.from_bytes(reader.take(8), "little")
         argc = reader.integer()
-        if match not in {-1, 0} or count != expected_mapping_count or not 1 <= argc <= 1024:
+        if (
+            not -expected_context_count <= match < expected_mapping_count
+            or count != expected_mapping_count or not 1 <= argc <= 1024
+        ):
             raise MakeProbeError("invalid trusted interceptor frame")
         event = {
             "match": match, "mapping_count": count,
@@ -823,7 +828,7 @@ class ProbeSession:
 
     def _sandbox_run(
         self, root, *, mode, argv, environment, mounts, code=(), sources=(),
-        directories=(), executables=None, dependency=False, include_dirs=(),
+        directories=(), executables=None, dependency=False, include_dirs=(), mapping_entries=(),
     ):
         self.budget.remaining()
         self.serial += 1
@@ -864,6 +869,7 @@ class ProbeSession:
             "source_view": str(self.tree),
             "dependency_probe": dependency,
             "runtime_closure": [name for name, _ in self.make_runtime] if mode == "make" else [],
+            "mapping_entries": mapping_entries,
             "dependency_include_dirs": ["/repo" if path == "." else "/repo/" + path for path in include_dirs],
             "deadline": self.budget.deadline,
             "file_limit": file_remaining,
@@ -904,6 +910,8 @@ class ProbeSession:
                 "ok", "returncode", "error", "consumed", "code_consumed", "accessed",
                 "processes", "syscalls", "written_bytes", "created_files",
                 "memory_peak", "observation_bytes", "live_process_peak", "observations",
+                "view_inputs",
+                "view_contexts", "final_context",
             }:
                 raise MakeProbeError("malformed supervisor result")
             observations = observed["observations"]
@@ -919,6 +927,37 @@ class ProbeSession:
                 or observed["observation_bytes"] < 128 * observations
             ):
                 raise MakeProbeError("malformed supervisor observation accounting")
+            if not isinstance(observed["view_inputs"], list) or len(observed["view_inputs"]) > config["observation_count"]:
+                raise MakeProbeError("malformed observable source-view inputs")
+            for item in observed["view_inputs"]:
+                if (
+                    not isinstance(item, list) or len(item) != 3 or item[0] not in {"type", "directory"}
+                    or not isinstance(item[1], str) or item[1] != "." and relative_path(item[1]) != item[1]
+                    or not (item[2] is None or type(item[2]) is int or
+                            isinstance(item[2], str) and re.fullmatch(r"[0-9a-f]{64}", item[2]))
+                ):
+                    raise MakeProbeError("malformed observable source-view input")
+            contexts = observed["view_contexts"]
+            if (
+                not isinstance(contexts, list) or not contexts or contexts[0] != []
+                or len(contexts) > self.budget.limits.entries
+                or type(observed["final_context"]) is not int
+                or not 0 <= observed["final_context"] < len(contexts)
+            ):
+                raise MakeProbeError("malformed generated source contexts")
+            for context in contexts:
+                if not isinstance(context, list) or len(context) > self.budget.limits.created_files:
+                    raise MakeProbeError("excessive generated source context")
+                names = set()
+                for item in context:
+                    if (
+                        not isinstance(item, list) or len(item) != 2
+                        or not isinstance(item[0], str) or relative_path(item[0]) != item[0]
+                        or item[0] in names or type(item[1]) is not int
+                        or not 0 <= item[1] < len(mapping_entries)
+                    ):
+                        raise MakeProbeError("malformed generated source context entry")
+                    names.add(item[0])
             self.observations_used += observations
             self.processes_used += observed["processes"]
             self.live_process_peak = max(self.live_process_peak, observed["live_process_peak"])
@@ -943,6 +982,31 @@ class ProbeSession:
     @terminal_failure
     def command(self, command: Command):
         return self._command(command)
+
+    def _view_state(self, name, kind):
+        try:
+            return view_state(
+                self.tree, name, kind, lambda size: self.budget.charge("control", size),
+                limit=self.budget.limits.entries, deadline=self.budget.deadline,
+            )
+        except (Violation, OSError) as error:
+            raise MakeProbeError(f"unsafe observable source view: {error}") from error
+
+    def _view_matches(self, inputs):
+        return all(self._view_state(name, kind) == expected for kind, name, expected in inputs)
+
+    def _directories(self, declared):
+        result = tuple(sorted({path if path == "." else relative_path(path) for path in declared}))
+        for path in result:
+            if any(
+                name not in self.snapshot.files and name not in self.snapshot.gitlink_roots
+                and (path == name or path.startswith(name + "/"))
+                for name in self.loader.entries
+            ):
+                raise MakeProbeError("directory declaration enters a nonregular source namespace")
+            if self._view_state(path, "type") != stat.S_IFDIR:
+                raise MakeProbeError(f"directory declaration is not an active directory: {path}")
+        return result
 
     def _output_paths(self, paths):
         if len(paths) > 4096:
@@ -1084,12 +1148,14 @@ class ProbeSession:
                 raise MakeProbeError("command argv is not strict UTF-8") from error
         code = tuple(sorted(set(command.code)))
         sources = self.sources(command.sources) if command.sources else ()
-        directories = tuple(sorted({path if path == "." else relative_path(path) for path in command.directories}))
+        directories = self._directories(command.directories)
         outputs = self._output_paths(command.outputs)
         include_dirs = self._dependency_options(command, sources, outputs) if command.dependency_only else ()
         key = (self.snapshot.digest, command, None if native is None else native.digest)
         if key in self.cache:
-            return self.cache[key]
+            for cached in self.cache[key]:
+                if self._view_matches(cached.view_inputs):
+                    return cached
         self.budget.charge("pending", len(encoded([command.argv, code, sources, directories, outputs])))
         for path in code:
             relative_path(path)
@@ -1146,6 +1212,10 @@ class ProbeSession:
                 completed.stdout, completed.stderr, consumed, tuple(observed["code_consumed"]),
                 None if compiler is None or command.dependency_only else self.budget.read_bytes(output / "tool", "control"),
                 self._capture_outputs(output, outputs),
+                tuple(sorted({
+                    *(tuple(item) for item in observed["view_inputs"]),
+                    *(("type", path, stat.S_IFDIR) for path in directories),
+                })),
             )
             self.budget.charge(
                 "cache", len(completed.stdout) + len(completed.stderr)
@@ -1153,7 +1223,8 @@ class ProbeSession:
                 + (0 if result.artifact is None else len(result.artifact))
                 + sum(len(item.data) + len(os.fsencode(item.path)) + 64 for item in result.generated),
             )
-            self.cache[key] = result
+            self.budget.charge("cache", len(encoded(result.view_inputs)))
+            self.cache.setdefault(key, []).append(result)
             return result
 
     def _compiler_tools(self, cxx, names):
@@ -1302,6 +1373,7 @@ class ProbeSession:
         command_results = {}
         generated_paths = set()
         generated_directories = set()
+        active_context = ()
         commands = {} if commands is None else commands
         def clear_generated():
             def remove_directory(name):
@@ -1316,6 +1388,35 @@ class ProbeSession:
                     generated_directories, key=lambda value: (-value.count("/"), value),
                 )),
             ])
+        def select_context(context):
+            nonlocal active_context
+            context = tuple(tuple(item) for item in context)
+            if context == active_context:
+                return
+            clear_generated()
+            for name, index in context:
+                result = mappings[index][2]
+                output = next((item for item in result.generated if item.path == name), None)
+                if output is None:
+                    raise MakeProbeError("source context refers to an unrecorded generated output")
+                parent = self.tree
+                for part in PurePosixPath(name).parts[:-1]:
+                    parent /= part
+                    if not parent.exists():
+                        self.files_created += 1
+                        if self.files_created > self.budget.limits.created_files:
+                            self.budget.reject("generated context exceeds creation bound")
+                        parent.mkdir()
+                self.files_created += 1
+                if self.files_created > self.budget.limits.created_files:
+                    self.budget.reject("generated context exceeds creation bound")
+                self.budget.charge("sandbox", len(output.data))
+                target = self.tree / name
+                descriptor = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+                with os.fdopen(descriptor, "wb") as stream:
+                    stream.write(output.data)
+                    os.fchmod(stream.fileno(), output.mode)
+            active_context = context
         with cleanup_scope([
             clear_generated, mappings.clear,
             lambda: _remove_owned_tree(control), lambda: _remove_owned_tree(root),
@@ -1331,6 +1432,7 @@ class ProbeSession:
             for _ in range(MAX_DYNAMIC_PASSES):
                 self.budget.remaining()
                 clear_generated()
+                active_context = ()
                 (mapping_path / "count").write_bytes(len(mappings).to_bytes(4, "little"))
                 events_path.write_bytes(b"")
                 result_path.write_bytes(b"")
@@ -1346,23 +1448,40 @@ class ProbeSession:
                         self._mount(self.base / "interceptor", "/control/interceptor", executable=True),
                         self._mount(Path("/dev/null"), "/dev/null", writable=True),
                     ],
+                    mapping_entries=[
+                        {"key": _command_hash(command), "view_inputs": result.view_inputs}
+                        for command, identity, result in mappings.values()
+                    ],
                 )
+                contexts = observed["view_contexts"]
+                for context in contexts:
+                    for name, index in context:
+                        if name not in {item.path for item in mappings[index][2].generated}:
+                            raise MakeProbeError("source context has an unknown generated member")
+                final_context = tuple(tuple(item) for item in contexts[observed["final_context"]])
+                active_context = final_context
                 events = _read_events(
                     self.budget.read_bytes(events_path, "event"), expected_mapping_count=len(mappings),
+                    expected_context_count=len(contexts),
                 )
                 needs_resolution = False
                 matched = set()
                 for event in events:
                     self.budget.remaining()
                     command = _event_command(event)
-                    if event["match"] == 0:
-                        if command not in mappings:
+                    if event["match"] >= 0:
+                        if mappings[event["match"]][0] != command:
                             raise MakeProbeError("interceptor matched an unknown mapping")
-                        matched.add(mappings[command])
+                        matched.add(mappings[event["match"]][1])
                     else:
-                        if command in mappings:
+                        select_context(contexts[-1 - event["match"]])
+                        if any(
+                            mapped == command and self._view_matches(result.view_inputs)
+                            for mapped, identity, result in mappings.values()
+                        ):
                             raise MakeProbeError("interceptor missed a known mapping")
                         needs_resolution = True
+                select_context(final_context)
                 if not needs_resolution:
                     if completed.returncode:
                         raise MakeProbeError(
@@ -1375,10 +1494,11 @@ class ProbeSession:
                     recipe_sources = {
                         record["source"] for record in semantics["files"] if record["source"]
                     }
-                    generated_owners = {
-                        record[0]: record for key in matched
-                        for record in command_results[key].get("generated_outputs", ())
-                    }
+                    generated_owners = {}
+                    for name, index in final_context:
+                        for record in command_results[mappings[index][1]].get("generated_outputs", ()):
+                            if record[0] == name:
+                                generated_owners[name] = record
                     owners = set(owner_inputs) | recipe_sources
                     semantics["owner_inputs"] = sorted(
                         self.snapshot.owners(owners - generated_owners.keys())
@@ -1406,7 +1526,13 @@ class ProbeSession:
                 for event in events:
                     self.budget.remaining()
                     command = _event_command(event)
-                    if event["match"] == 0 or command in mappings:
+                    if event["match"] >= 0:
+                        continue
+                    select_context(contexts[-1 - event["match"]])
+                    if any(
+                        mapped == command and self._view_matches(result.view_inputs)
+                        for mapped, identity, result in mappings.values()
+                    ):
                         continue
                     pending = self.pending_commands
                     if pending >= self.budget.limits.pending:
@@ -1419,7 +1545,12 @@ class ProbeSession:
                         registration = commands[command]
                         result = self.command(registration)
                         output = result.stdout
-                        key = _command_hash(command)
+                        if any(
+                            mapped != command and _command_hash(mapped) == _command_hash(command)
+                            for mapped, identity, old in mappings.values()
+                        ):
+                            raise MakeProbeError("exact-command mapping collision")
+                        key = f"{len(mappings):016x}"
                         if (mapping_path / (key + ".cmd")).exists():
                             raise MakeProbeError("exact-command mapping collision")
                         self.budget.charge("mapping", len(command.encode("utf-8")) + len(output) + 4)
@@ -1427,7 +1558,7 @@ class ProbeSession:
                         (mapping_path / (key + ".out")).write_bytes(output)
                         command_identity = {
                             "argv": list(registration.argv),
-                            "directories": sorted(registration.directories),
+                            "directories": sorted(set(registration.directories)),
                             "inputs": self.snapshot.owners(
                                 set(registration.code) | set(self.sources(registration.sources))
                             ),
@@ -1446,12 +1577,14 @@ class ProbeSession:
                             "command": command_identity,
                             "output_sha256": hashlib.sha256(output).hexdigest(),
                         }
+                        if result.view_inputs:
+                            command_result["observed_view"] = result.view_inputs
                         if result.generated:
                             command_result["generated_outputs"] = [
                                 (item.path, f"{stat.S_IFREG | item.mode:06o}", hashlib.sha256(item.data).hexdigest())
                                 for item in result.generated
                             ]
-                        if registration.native_tool is not None or result.generated:
+                        if registration.native_tool is not None or result.generated or result.view_inputs:
                             self.budget.charge("mapping", len(encoded(command_result)))
                         identity = hashlib.sha256(encoded(command_result)).hexdigest()
                         if result.generated:
@@ -1461,7 +1594,12 @@ class ProbeSession:
                             if size > self.budget.limits.file_bytes:
                                 self.budget.reject("generated mapping exceeds file byte bound")
                             self.budget.charge("mapping", size)
-                            frame = bytearray(b"VOGEN1\0\0" + bytes.fromhex(identity))
+                            producer = encoded([
+                                command_identity, sorted(set(registration.code)),
+                                self.sources(registration.sources), sorted(registration.outputs),
+                            ])
+                            self.budget.charge("mapping", len(producer))
+                            frame = bytearray(b"VOGEN1\0\0" + hashlib.sha256(producer).digest())
                             frame.extend(struct.pack("<I", len(result.generated)))
                             for item in result.generated:
                                 if any(
@@ -1480,7 +1618,7 @@ class ProbeSession:
                                 )
                             (mapping_path / (key + ".files")).write_bytes(frame)
                         command_results.setdefault(identity, command_result)
-                        mappings[command] = identity
+                        mappings[len(mappings)] = (command, identity, result)
             raise MakeProbeError("Make dynamic replay exceeded the existing pass bound")
 
     @terminal_failure

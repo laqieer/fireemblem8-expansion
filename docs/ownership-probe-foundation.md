@@ -552,6 +552,9 @@ success requires **declared = permitted = consumed** candidate sources.
 the repository root. Code/source ancestors permit necessary metadata, not
 implicit directory listing. Imports that actually enumerate their code paths
 must declare those paths too.
+Declarations must name actual directories in the selected active view before
+admission or cache reuse. The syscall boundary checks directory type again;
+putting a regular file in `directories` never grants its content.
 
 For an explicitly enumerating command, the existing read-only/noexec source
 mount uses the complete active owned view. The guard requires that same
@@ -563,6 +566,44 @@ The standalone registry consumer declares its import/source directories and
 captures recorded gitlinks from already available local object databases so
 its root listing is complete. Missing databases/pins reject; no fetch or live
 submodule mount is introduced.
+
+For `--worktree`, capture uses the actual Git index and non-ignored live source
+inventory, not immutable HEAD blob contents. An actually empty uninitialized
+gitlink directory is captured as such; initialized gitlinks contribute their
+actual live source bytes. Nonempty uninitialized or unsafe namespaces reject.
+Those bytes are frozen for the report, not exposed through a continuing live
+host mount. Immutable revision capture retains exact-pin object-database semantics.
+
+### Observable-view cache and replay validity
+
+Successful command results retain bounded observations of the directory
+names/types and presence/absence they actually consulted. The original
+snapshot and command remain the base cache identity, but a cached result is
+reused only when its relevant active-view observations still agree. Unchanged
+relevant inputs retain cache reuse; unrelated publication does not disable all
+caches. Directory-type admission is checked independently before reuse.
+Directory metadata also binds membership: a generated subdirectory can change
+an observed link count even when no listing syscall was needed.
+
+Protected Make mappings use the same observations at their authenticated
+dispatch point. The existing framed match selector identifies a valid completed
+result (`match >= 0`, the completed mapping index) or a missing result in the
+actual generated publication context (`match == -1 - context_index`). A
+command can therefore retain distinct valid results for earlier and later
+views in one native Make pass. The original argv/hash/count framing and
+generated-file format are reused, not replaced by a new codec or service.
+Generated file ownership uses the normalized registration and its admitted
+inputs, not the Make alias or view-dependent output bytes. Aliases of one
+producer and its valid replacement results share ownership; different
+producers still cannot replace each other's outputs.
+
+When resolution is needed, only actual already-captured producer outputs
+reconstruct that observed command view in publication order; no speculative
+file bytes or private mapping seeds are invented. These materializations,
+observations and retained results spend the existing creation/byte/state/lifetime
+bounds. A final native pass must use matching view-valid results, including
+mappings installed before later publication. Generated create/remove/replace and absence/listing changes
+cannot be hidden behind the original snapshot's cache key.
 
 Registry success additionally requires the typed reported `source_paths` to
 equal that set. Reported JSON is candidate data, not supervisor evidence.

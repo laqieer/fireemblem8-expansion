@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import ctypes
 import errno
+import hashlib
 import json
 import math
 import os
@@ -129,6 +130,42 @@ def directory_entries(data, *, wide):
     return names
 
 
+def view_state(root, name, kind, charge, *, limit, deadline):
+    if (
+        kind not in {"type", "directory"}
+        or not isinstance(name, str) or name.startswith("/") or "\\" in name
+        or name != "." and any(part in {"", ".", ".."} for part in name.split("/"))
+    ):
+        raise Violation("invalid observable source-view input")
+    if time.monotonic() >= deadline:
+        raise Violation("aggregate probe deadline exhausted observing source view")
+    path = Path(root) / name
+    charge(len(name.encode("utf-8")) + 64)
+    try:
+        mode = stat.S_IFMT(path.lstat().st_mode)
+    except FileNotFoundError:
+        return None
+    if kind == "type" or mode != stat.S_IFDIR:
+        return mode
+    digest = hashlib.sha256()
+    descriptor = os.open(path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC)
+    try:
+        with os.scandir(descriptor) as entries:
+            for count, entry in enumerate(entries, 1):
+                if count > limit or time.monotonic() >= deadline:
+                    raise Violation("observable source directory exceeds report bounds")
+                data = json.dumps(
+                    [entry.name, stat.S_IFMT(entry.stat(follow_symlinks=False).st_mode)],
+                    ensure_ascii=True, separators=(",", ":"),
+                ).encode("ascii")
+                charge(len(data) + 64)
+                digest.update(len(data).to_bytes(4, "little"))
+                digest.update(data)
+    finally:
+        os.close(descriptor)
+    return digest.hexdigest()
+
+
 def trace_me(drop_privileges):
     drop_privileges()
     # setuid/setgid in the sudo route clears dumpability. TRACEME alone does
@@ -199,6 +236,7 @@ class Policy:
         self.calls = 0
         self.created = 0
         self.observation_bytes = 0
+        self.view_inputs = {}
         self.memory_peak = 0
         self.processes = {}
         self.newborn_stops = {}
@@ -207,6 +245,9 @@ class Policy:
         self.make_pid = 0
         self.make_restarts = 0
         self.published = {}
+        self.generated_view = {}
+        self.view_contexts = [[]]
+        self.current_context = 0
         self.executable = set(config["executables"])
         self.executable.update(self.resolve(path) for path in config["executables"])
         self.runtime_closure = set(config.get("runtime_closure", ()))
@@ -413,7 +454,8 @@ class Policy:
         try:
             descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
         except FileNotFoundError:
-            return
+            return ()
+        names = []
         with os.fdopen(descriptor, "rb") as source:
             status = os.fstat(source.fileno())
             if not stat.S_ISREG(status.st_mode) or not 44 <= status.st_size <= self.config["file_limit"]:
@@ -503,10 +545,39 @@ class Policy:
                             left -= len(data)
                         os.fchmod(destination.fileno(), mode)
                     self.published[name] = producer
+                    names.append(name)
                 finally:
                     os.close(directory)
             if remaining:
                 raise Violation("trailing generated mapping bytes")
+        return tuple(names)
+
+    def mapping_context(self):
+        context = [[name, index] for name, index in self.generated_view.items()]
+        if context not in self.view_contexts:
+            self.reserve_observation("accessed", "generated-context:" + str(len(self.view_contexts)))
+            self.charge_view(len(json.dumps(context, separators=(",", ":")).encode("ascii")) + 64)
+            self.view_contexts.append(context)
+        self.current_context = self.view_contexts.index(context)
+        return self.current_context
+
+    def resolve_mapping(self, key):
+        for index, mapping in enumerate(self.config.get("mapping_entries", ())):
+            if mapping["key"] != f"{key:016x}":
+                continue
+            if all(
+                view_state(
+                    self.config["source_view"], name, kind, self.charge_view,
+                    limit=self.config["observation_count"], deadline=self.config["deadline"],
+                ) == expected
+                for kind, name, expected in mapping["view_inputs"]
+            ):
+                for name in self.publish(index):
+                    self.generated_view.pop(name, None)
+                    self.generated_view[name] = index
+                self.mapping_context()
+                return index
+        return len(self.config.get("mapping_entries", ())) + self.mapping_context()
 
     def observer(self, state, registers):
         return state.role == "make" and any(
@@ -593,7 +664,26 @@ class Policy:
     def absent_source(self, state, path, operation):
         if self.source_mode(path) is not None:
             raise Violation(f"undeclared source {operation}: {path}")
+        self.observe_view("type", path)
         self.defer_observation(state, "accessed", path)
+
+    def charge_view(self, size):
+        self.observation_bytes += size
+        if self.observation_bytes > self.config["observation_limit"]:
+            raise Violation("aggregate source-view observation byte budget exhausted")
+
+    def observe_view(self, kind, path):
+        name = path.removeprefix("/repo").lstrip("/") or "."
+        key = kind, name
+        self.reserve_observation("accessed", kind + ":" + name)
+        observed = view_state(
+            self.config["source_view"], name, kind, self.charge_view,
+            limit=self.config["observation_count"], deadline=self.config["deadline"],
+        )
+        if key in self.view_inputs and self.view_inputs[key] != observed:
+            raise Violation("source view changed during command observation")
+        self.view_inputs[key] = observed
+        return observed
 
     def check_enumeration(self, path):
         if path not in self.enumerations:
@@ -610,6 +700,7 @@ class Policy:
         full_stat, sparse_stat = full.stat(), sparse.stat()
         if (full_stat.st_dev, full_stat.st_ino) != (sparse_stat.st_dev, sparse_stat.st_ino):
             raise Violation(f"incomplete sparse source enumeration: {path}")
+        self.observe_view("directory", path)
 
     def make_runtime_access(self, state, path, operation):
         if operation in {"read", "metadata"} and path in self.runtime_closure | self.executable | {"/lib/vo-observer.so"}:
@@ -726,6 +817,8 @@ class Policy:
             for forbidden in self.config["forbidden_paths"]:
                 if path == forbidden or path.startswith(forbidden + "/"):
                     raise Violation(f"nonregular candidate source denied: {path}")
+        if self.mode != "make" and path in self.enumerations:
+            self.check_enumeration(path)
         if self.mode == "make":
             if path == "/repo" or path.startswith("/repo/"):
                 for forbidden in self.config["forbidden_paths"]:
@@ -742,6 +835,7 @@ class Policy:
         elif self.config.get("dependency_probe") and path.startswith("/repo/") and operation in {"read", "metadata"}:
             mode = self.source_mode(path)
             if mode is None:
+                self.observe_view("type", path)
                 self.defer_observation(state, "accessed", path)
                 return
             if operation == "metadata" and path in (
@@ -811,8 +905,7 @@ class Policy:
             elif a == VO_PUBLISH:
                 if state.role != "helper" or state.helper_kind != VO_VALUE or c:
                     raise Violation("unauthenticated generated output publication")
-                self.publish(b)
-                state.pending = ("helper_kind", 0)
+                state.pending = ("helper_kind", self.resolve_mapping(b))
             else:
                 if not trusted:
                     raise Violation("unauthenticated Make dispatch notification")
@@ -1334,6 +1427,9 @@ def supervise(config, drop_privileges):
                 "memory_peak": policy.memory_peak,
                 "observation_bytes": policy.observation_bytes,
                 "observations": sum(map(len, policy.observation_attempts.values())),
+                "view_inputs": [[kind, path, state] for (kind, path), state in sorted(policy.view_inputs.items())],
+                "view_contexts": policy.view_contexts,
+                "final_context": policy.current_context,
             }
             Path(config["report"]).write_text(
                 json.dumps(result, sort_keys=True, separators=(",", ":")), encoding="ascii",
