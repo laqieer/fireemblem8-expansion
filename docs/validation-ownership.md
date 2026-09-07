@@ -343,6 +343,12 @@ paths and independently captured BASE registry/model. Global graph/target
 caches and per-target executors are removed. The already validated model is
 reused for the same artifact's nonrecursive lifecycle removal/restoration;
 that reuse is not another graph evaluation or a success label.
+Within each selected view, the existing Make registry is parsed and validated
+once for its authority pass. Its ambient, finite, typed and generated-input
+sections reuse that validated data; repeated tool/input references reuse their
+captured bytes with explicit cache-byte accounting. The metadata object is
+bound to its exact loader and budget, cannot cross CURRENT/BASE views, and is
+not a process-global cache or a switch that skips validation.
 
 Schema version 5 seals each external selector as either a finite exact domain,
 an exact tracked fallback, or symbolic recipe/environment-only authority.

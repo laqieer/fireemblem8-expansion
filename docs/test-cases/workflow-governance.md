@@ -2904,6 +2904,10 @@ session/deadline reset. Wildcard-visible paths, modes, source bytes and generate
 outputs retain their actual captured identity. BASE registry/models are measured
 in one grouped public view, and lifecycle removal/restoration reuses that
 already validated model without recursive report execution.
+Make metadata sections share one fully validated registry object per selected
+loader/budget. Repeated references reuse funded input bytes, not a second Git
+read for each section. Cross-view reuse, stale/missing inputs and malformed
+seals still reject; the actual full-report result must remain unchanged.
 Every local scratch path component is opened relative to the trusted
 repository descriptor with no symlink following before any temporary
 directory is created. Tracked `build` and intermediate `test-artifacts` or

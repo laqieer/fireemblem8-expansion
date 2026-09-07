@@ -774,13 +774,15 @@ def load_make_dynamic_contracts(
     loader: AuthorityLoader,
     *,
     required: bool,
+    _data=None,
+    _blobs=None,
 ) -> dict[str, dict[str, Any]]:
     path = MAKE_DYNAMIC_PATH.as_posix()
     if path not in loader.entries:
         if required:
             raise OwnershipError("Make dynamic dependency registry is not tracked")
         return {}
-    data = loader.read_json(MAKE_DYNAMIC_PATH, "Make dynamic dependency registry")
+    data = loader.read_json(MAKE_DYNAMIC_PATH, "Make dynamic dependency registry") if _data is None else _data
     if not isinstance(data, dict):
         raise OwnershipError("Make dynamic dependency registry has invalid fields")
     schema_version = data.get("schema_version")
@@ -1160,7 +1162,7 @@ def load_make_dynamic_contracts(
             ):
                 raise OwnershipError(f"{label}.{field} must contain unique strings")
         tool = _validate_relative_path(contract["tool"], f"{label}.tool")
-        tool_content = loader.read_blob(tool, f"{label}.tool")
+        tool_content = _make_input_blob(loader, tool, f"{label}.tool", _blobs)
         semantics = {
             "tool": {
                 "path": tool,
@@ -1182,7 +1184,7 @@ def load_make_dynamic_contracts(
                     "path": input_path,
                     "semantics": _source_semantics(
                         input_path,
-                        loader.read_blob(input_path, f"{label}.input"),
+                        _make_input_blob(loader, input_path, f"{label}.input", _blobs),
                     ),
                 }
             )
@@ -1193,18 +1195,56 @@ def load_make_dynamic_contracts(
     return result
 
 
+def _make_input_blob(loader, path, label, blobs):
+    if blobs is None:
+        return loader.read_blob(path, label)
+    if path not in blobs:
+        value = loader.read_blob(path, label)
+        loader.budget.charge("cache", len(value) + len(path.encode("utf-8")))
+        blobs[path] = value
+    return blobs[path]
+
+
+@dataclass(frozen=True)
+class _MakeMetadata:
+    loader: AuthorityLoader
+    data: dict[str, Any] | None
+    contracts: dict[str, dict[str, Any]]
+    blobs: dict[str, bytes]
+
+
+def _make_metadata(loader, *, required):
+    if MAKE_DYNAMIC_PATH.as_posix() not in loader.entries:
+        contracts = load_make_dynamic_contracts(loader, required=required)
+        return _MakeMetadata(loader, None, contracts, {})
+    data = loader.read_json(MAKE_DYNAMIC_PATH, "Make dynamic dependency registry")
+    blobs = {}
+    contracts = load_make_dynamic_contracts(loader, required=required, _data=data, _blobs=blobs)
+    loader.budget.charge("cache", len(normalized_json(data)) + len(normalized_json(contracts)))
+    return _MakeMetadata(loader, data, contracts, blobs)
+
+
+def _selected_make_data(loader, metadata, *, required):
+    if metadata is None:
+        metadata = _make_metadata(loader, required=required)
+    if metadata.loader is not loader or metadata.loader.budget is not loader.budget:
+        raise OwnershipError("Make metadata belongs to another selected authority view")
+    loader.budget.remaining()
+    return metadata
+
+
 def load_make_ambient_contracts(
     loader: AuthorityLoader,
     *,
     required: bool,
+    _metadata=None,
 ) -> dict[str, dict[str, Any]]:
     path = MAKE_DYNAMIC_PATH.as_posix()
     if path not in loader.entries:
         if required:
             raise OwnershipError("Make ambient input registry is not tracked")
         return {}
-    data = loader.read_json(MAKE_DYNAMIC_PATH, "Make ambient input registry")
-    load_make_dynamic_contracts(loader, required=required)
+    data = _selected_make_data(loader, _metadata, required=required).data
     if data["schema_version"] == 1:
         return {}
     ambient = data["ambient_inputs"]
@@ -1234,14 +1274,14 @@ def load_make_typed_variable_contracts(
     loader: AuthorityLoader,
     *,
     required: bool,
+    _metadata=None,
 ) -> tuple[dict[str, dict[str, str]], ...]:
     path = MAKE_DYNAMIC_PATH.as_posix()
     if path not in loader.entries:
         if required:
             raise OwnershipError("Make variable authority registry is not tracked")
         return {}, {}, {}
-    data = loader.read_json(MAKE_DYNAMIC_PATH, "Make variable authority registry")
-    load_make_dynamic_contracts(loader, required=required)
+    data = _selected_make_data(loader, _metadata, required=required).data
     if data["schema_version"] < 3:
         return {}, {}, {}
     ambient = data["ambient_inputs"]
@@ -1262,14 +1302,14 @@ def load_make_prerequisite_domains(
     loader: AuthorityLoader,
     *,
     required: bool,
+    _metadata=None,
 ) -> dict[str, dict[str, Any]]:
     path = MAKE_DYNAMIC_PATH.as_posix()
     if path not in loader.entries:
         if required:
             raise OwnershipError("Make prerequisite domain registry is not tracked")
         return {}
-    data = loader.read_json(MAKE_DYNAMIC_PATH, "Make prerequisite domain registry")
-    load_make_dynamic_contracts(loader, required=required)
+    data = _selected_make_data(loader, _metadata, required=required).data
     if data["schema_version"] < 4:
         return {}
     domains = data["prerequisite_domains"]
@@ -1297,14 +1337,15 @@ def load_make_generated_prerequisite_paths(
     loader: AuthorityLoader,
     *,
     required: bool,
+    _metadata=None,
 ) -> dict[str, dict[str, Any]]:
     path = MAKE_DYNAMIC_PATH.as_posix()
     if path not in loader.entries:
         if required:
             raise OwnershipError("Make generated prerequisite registry is not tracked")
         return {}
-    data = loader.read_json(MAKE_DYNAMIC_PATH, "Make generated prerequisite registry")
-    load_make_dynamic_contracts(loader, required=required)
+    metadata = _selected_make_data(loader, _metadata, required=required)
+    data = metadata.data
     if data["schema_version"] < 4:
         return {}
     result = {}
@@ -1324,9 +1365,11 @@ def load_make_generated_prerequisite_paths(
                     "path": authority_path,
                     "semantics": _source_semantics(
                         authority_path,
-                        loader.read_blob(
+                        _make_input_blob(
+                            loader,
                             authority_path,
                             "Make generated prerequisite authority",
+                            metadata.blobs,
                         ),
                     ),
                 }
@@ -1342,14 +1385,14 @@ def load_make_symbolic_recipe_names(
     loader: AuthorityLoader,
     *,
     required: bool,
+    _metadata=None,
 ) -> set[str]:
     path = MAKE_DYNAMIC_PATH.as_posix()
     if path not in loader.entries:
         if required:
             raise OwnershipError("Make symbolic recipe registry is not tracked")
         return set()
-    data = loader.read_json(MAKE_DYNAMIC_PATH, "Make symbolic recipe registry")
-    load_make_dynamic_contracts(loader, required=required)
+    data = _selected_make_data(loader, _metadata, required=required).data
     if data["schema_version"] < 5:
         return set()
     return set(data["prerequisite_domains"]["symbolic_recipe_names"])
@@ -1362,30 +1405,33 @@ def _parse_make_authorities(
     *,
     require_dynamic_contracts: bool = False,
     session=None,
+    _metadata=None,
 ) -> dict[str, dict[str, Any]]:
     if requested_targets is None:
         raise OwnershipError(
             "authoritative GNU Make probing requires explicit target roots"
         )
-    dynamic_contracts = load_make_dynamic_contracts(
-        loader,
-        required=require_dynamic_contracts,
-    )
+    metadata = _selected_make_data(loader, _metadata, required=require_dynamic_contracts)
+    dynamic_contracts = metadata.contracts
     prerequisite_domains = load_make_prerequisite_domains(
         loader,
         required=require_dynamic_contracts,
+        _metadata=metadata,
     )
     generated_paths = load_make_generated_prerequisite_paths(
         loader,
         required=require_dynamic_contracts,
+        _metadata=metadata,
     )
     ambient_contracts = load_make_ambient_contracts(
         loader,
         required=require_dynamic_contracts,
+        _metadata=metadata,
     )
     symbolic_recipe_names = load_make_symbolic_recipe_names(
         loader,
         required=require_dynamic_contracts,
+        _metadata=metadata,
     )
     (
         trusted_builtins,
@@ -1394,6 +1440,7 @@ def _parse_make_authorities(
     ) = load_make_typed_variable_contracts(
         loader,
         required=require_dynamic_contracts,
+        _metadata=metadata,
     )
     try:
         from scripts.validation_ownership import graph_probe
@@ -1457,22 +1504,28 @@ def _validate_authorities(
         for node in evidence_nodes.values()
         if node["authority"]["kind"] == "make-target"
     }
+    metadata = _make_metadata(loader, required=bool(requested_make_targets))
     make_targets = (
         _parse_make_authorities(
             loader,
             requested_make_targets,
             require_dynamic_contracts=True,
             session=session,
+            _metadata=metadata,
         )
         if requested_make_targets
         else {}
     )
-    ambient_contracts = load_make_ambient_contracts(loader, required=bool(requested_make_targets))
+    ambient_contracts = load_make_ambient_contracts(
+        loader, required=bool(requested_make_targets), _metadata=metadata,
+    )
     (
         trusted_builtins,
         scoped_variables,
         escaped_literals,
-    ) = load_make_typed_variable_contracts(loader, required=bool(requested_make_targets))
+    ) = load_make_typed_variable_contracts(
+        loader, required=bool(requested_make_targets), _metadata=metadata,
+    )
     expected_census = {
         "ambient_undefined": {
             name
@@ -1496,7 +1549,9 @@ def _validate_authorities(
             "Make variable authority census does not match the sealed "
             f"registry (actual={actual_census!r}, expected={expected_census!r})"
         )
-    prerequisite_domains = load_make_prerequisite_domains(loader, required=bool(requested_make_targets))
+    prerequisite_domains = load_make_prerequisite_domains(
+        loader, required=bool(requested_make_targets), _metadata=metadata,
+    )
     actual_prerequisite_domains = {
         name
         for target in make_targets.values()
@@ -1514,6 +1569,7 @@ def _validate_authorities(
     symbolic_recipe_names = load_make_symbolic_recipe_names(
         loader,
         required=bool(requested_make_targets),
+        _metadata=metadata,
     )
     actual_symbolic_recipe_names = {
         name
@@ -1532,6 +1588,7 @@ def _validate_authorities(
     generated_prerequisites = load_make_generated_prerequisite_paths(
         loader,
         required=bool(requested_make_targets),
+        _metadata=metadata,
     )
     actual_generated_prerequisites = {
         path
@@ -1640,7 +1697,7 @@ def _validate_authorities(
             "display": display,
             "fingerprint": fingerprint,
         }
-    contracts = load_make_dynamic_contracts(loader, required=bool(requested_make_targets))
+    contracts = metadata.contracts
     for contract in contracts.values() if requested_make_targets else ():
         expected = set(contract["owning_evidence_ids"])
         unknown = sorted(expected - set(evidence_nodes))

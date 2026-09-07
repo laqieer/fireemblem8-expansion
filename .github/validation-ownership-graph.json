@@ -1635,6 +1635,10 @@
         },
         {
           "kind": "exact",
+          "path": "scripts/validation_ownership/tests/test_make_metadata.py"
+        },
+        {
+          "kind": "exact",
           "path": "scripts/validation_ownership/consumer.py"
         },
         {
