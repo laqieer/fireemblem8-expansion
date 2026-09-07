@@ -713,7 +713,7 @@ class GateTests(unittest.TestCase):
         queued = next(run for run in parsed if run.run_id == 3)
         self.assertEqual((full.binding, full.mode), ("explicit-same", "full"))
         self.assertEqual((queued.binding, queued.mode, queued.candidate_binding),
-                         ("explicit-other", "active-unknown", None))
+                         ("unbound", "active-unknown", None))
         ready = self.assess(runs=(preflight, full))
         self.assertTrue(ready["merge_eligible"], ready)
         dispatch = self.assess(state=before_dispatch, record=before_dispatch["candidates"][0],
