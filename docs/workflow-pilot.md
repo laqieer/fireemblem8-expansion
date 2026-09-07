@@ -3,7 +3,7 @@
 Issue [#176](https://github.com/laqieer/fireemblem8-expansion/issues/176)
 is an accepted **framework capability: workflow measurement and decision
 contract**. It freezes the pre-pilot evidence and supplies one fail-closed
-reporter before any dependent issue changes delivery behavior. It does not
+shared reporter before any dependent issue changes delivery behavior. It does not
 select CI, order review, alter a merge gate, or create a mutable delivery
 ledger.
 
