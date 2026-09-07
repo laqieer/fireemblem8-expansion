@@ -182,6 +182,18 @@ the consumers' independent protected-principal/deployment requirements.
    diagnostic. Conversely, ordinary release errors after verified cleanup must
    not retain staging. Restore fault injections before cleaning only owned
    fixture processes and paths.
+   Run the complete operation-local timing matrix: after creation, during body
+   work, at normal/error cleanup entry, a second signal after the first
+   interruption, reaper/handler restoration and after positive cleanup
+   confirmation. Observe actual callback invocation, pidfd/exit state and the
+   directory cleanup boundary, not success-shaped labels. Nonraising caller
+   handlers must retain both successful output and ordinary timeout behavior;
+   unrelated processes, caller handlers and masks remain intact. Combine close
+   and restoration failures with genuinely unconfirmed termination.
+   Interrupt the actual cleanup transition with an ordinary error while real
+   children remain live: without the current runner's private positive cleanup
+   notification, staging must remain regardless of exception class. Verified
+   tool/timeout failures must still remove their owned staging.
    Remove or corrupt the checkout helper and give the candidate a different
    committed helper: both coordinator and staged worker must still execute the
    exact selected tool-tree bytes. Overlapping tool module instances must also

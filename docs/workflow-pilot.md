@@ -343,19 +343,29 @@ belongs to that invocation, and adopts/reaps ordinary descendants. Early leader
 exit and closed stdio are not proof that owned work has finished. Timeout,
 output overage and interruption finish this cleanup before returning or
 raising; the caller's group and unrelated processes remain untouched.
-The prior process-wide subreaper state and default signal handlers are restored;
-overlapping exact-tool module instances share only that resource accounting.
-Handled `SIGINT`/`SIGTERM` during creation are deferred until the returned child
-handle and pidfd are inside cleanup protection, then dispatched to the caller's
-handler. Recording the signal rather than blocking it preserves the payload's
-inherited signal mask. A pending interruption is not discarded if creation
-fails, and an unverified cleanup error retains precedence and staging.
+Handled `SIGINT`/`SIGTERM` are recorded for the complete operation, not changed
+back to asynchronous exception-raising handlers during body work. The runner
+dispatches the caller's saved handler at explicit cleanup-protected checkpoints
+after creation and during bounded I/O/wait loops. A raising handler initiates
+cleanup; a nonraising handler keeps its normal behavior. Signals at success or
+error cleanup entry, second signals and restoration do not jump past owned
+cleanup. Pending delivery and caller-handler restoration occur after resource
+and subreaper cleanup attempts. The caller's mask is preserved, including in the
+payload; the runner never blocks creation-time signals across exec.
+Overlapping exact-tool module instances share only process-wide reaper resource
+accounting. These operational boundaries do not claim kernel-wide atomicity.
 
-Cleanup has a separate five-second confirmation bound. If owned termination
-cannot be verified, `ProcessCleanupError` yields unavailable observations and
-retains the staged directory named in the diagnostic, rather than deleting
-possibly active work. Ordinary timeouts remain unavailable/zero-check evidence;
-actual native assertion failures remain contract violations.
+Cleanup has a separate five-second confirmation bound. The staged adapter
+starts each dispatched operation unconfirmed. The exact trusted runner invokes
+one private `_on_cleanup` callback only after that invocation establishes no
+created child or successful owned termination and reaping. The callback is
+current in-process cooperation, not a candidate JSON Boolean, persisted receipt,
+authority service or changed public result schema. Staging deletion depends on
+this positive confirmation, never on the absence of a special exception type.
+Unknown cleanup retains staging and diagnostics even if an ordinary error or
+late interruption escapes. Verified cleanup still removes staging on tool,
+timeout or cancellation failure; ordinary timeouts remain unavailable/zero-check
+evidence and actual native assertion failures remain contract violations.
 If subreaper-state restoration also fails during unsafe process cleanup, the
 runner preserves `ProcessCleanupError`, includes both failures in the existing
 diagnostic, and chains the original cleanup error. Restoration failure alone
@@ -366,10 +376,11 @@ and the existing bounded wait. `ESRCH`, an unavailable wait status, a failed
 signal/wait, or even successful leader termination cannot prove the complete
 scope is empty: the result remains `ProcessCleanupError` with causal
 diagnostics. An already-reaped leader never authorizes a numeric group signal.
-The same unsafe classification survives later selector, descriptor, stream,
+The same unsafe error facts survive later selector, descriptor, stream,
 signal-mask, handler or subreaper-restoration errors. Remaining release steps
-are still attempted. Once cleanup is verified, unrelated close/restoration
-failures remain ordinary errors rather than forcing blanket staging retention.
+are still attempted. Their diagnostics are retained even when a later cleanup
+attempt positively confirms termination. Once cleanup is verified, unrelated
+close/restoration failures do not force blanket staging retention.
 
 Both coordinator loading and worker staging obtain the shared runner from the
 selected exact **tool** Git tree. A missing, dirty or different candidate

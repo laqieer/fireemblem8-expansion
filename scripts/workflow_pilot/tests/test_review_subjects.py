@@ -767,6 +767,7 @@ class SubjectTests(SubjectTestCase):
 
                 def corrupt(*args, **kwargs):
                     if kwargs.get("input") == payload:
+                        kwargs["_on_cleanup"]()
                         return subprocess.CompletedProcess(args[0], 0, raw, b"")
                     return run(*args, **kwargs)
 

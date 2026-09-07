@@ -158,8 +158,7 @@ def _child_reaper():
 @contextmanager
 def _interruptible():
     previous = {}
-    deferred = True
-    pending = None
+    pending = {}
 
     def deliver(number, frame):
         handler = previous[number]
@@ -170,19 +169,11 @@ def _interruptible():
         raise SystemExit(128 + number)
 
     def interrupt(number, frame):
-        nonlocal pending
-        if deferred:
-            if pending is None:
-                pending = number, frame
-        else:
-            deliver(number, frame)
+        pending.setdefault(number, frame)
 
-    def resume():
-        nonlocal deferred, pending
-        deferred = False
-        requested, pending = pending, None
-        if requested is not None:
-            deliver(*requested)
+    def checkpoint():
+        for number in tuple(pending):
+            deliver(number, pending.pop(number))
 
     if threading.current_thread() is threading.main_thread():
         for number in (signal.SIGINT, signal.SIGTERM):
@@ -192,18 +183,33 @@ def _interruptible():
                 signal.signal(number, interrupt)
     cleanup_error = None
     try:
-        yield resume
+        yield checkpoint
     except BaseException as error:
         cleanup_error = error
     finally:
-        if deferred:
+        while pending:
             try:
-                resume()
+                checkpoint()
+            except BaseException as error:
+                cleanup_error = _cleanup_error(cleanup_error, error)
+        mask = None
+        try:
+            mask = signal.pthread_sigmask(signal.SIG_BLOCK, set(previous))
+        except BaseException as error:
+            cleanup_error = _cleanup_error(cleanup_error, error)
+        while pending:
+            try:
+                checkpoint()
             except BaseException as error:
                 cleanup_error = _cleanup_error(cleanup_error, error)
         for number, handler in previous.items():
             try:
                 signal.signal(number, handler)
+            except BaseException as error:
+                cleanup_error = _cleanup_error(cleanup_error, error)
+        if mask is not None:
+            try:
+                signal.pthread_sigmask(signal.SIG_SETMASK, mask)
             except BaseException as error:
                 cleanup_error = _cleanup_error(cleanup_error, error)
         if cleanup_error is not None:
@@ -302,19 +308,26 @@ def _reap_owned(process, leader_fd, new_session, deadline):
 
 
 def run_process(argv, *, cwd, env, timeout=GIT_TIMEOUT_SECONDS, max_bytes=MAX_BYTES,
-                input=None, new_session=True):
+                input=None, new_session=True, _on_cleanup=None):
     """Capture an owned child, not printed exit labels or tool transport status."""
     if input is not None and (not isinstance(input, bytes) or len(input) > MAX_BYTES):
         raise ValueError(f"process input must be bytes bounded to {MAX_BYTES} bytes")
     if type(new_session) is not bool:
         raise ValueError("process session ownership must be Boolean")
-    with _child_reaper(), _interruptible() as resume_interrupts:
-        return _run_process(argv, cwd=cwd, env=env, timeout=timeout, max_bytes=max_bytes,
-                            input=input, new_session=new_session,
-                            resume_interrupts=resume_interrupts)
+    cleanup_confirmed = [False]
+    with _interruptible() as checkpoint:
+        try:
+            with _child_reaper():
+                return _run_process(argv, cwd=cwd, env=env, timeout=timeout, max_bytes=max_bytes,
+                                    input=input, new_session=new_session,
+                                    checkpoint=checkpoint, cleanup_confirmed=cleanup_confirmed)
+        finally:
+            if cleanup_confirmed[0] and _on_cleanup is not None:
+                _on_cleanup()
 
 
-def _run_process(argv, *, cwd, env, timeout, max_bytes, input, new_session, resume_interrupts):
+def _run_process(argv, *, cwd, env, timeout, max_bytes, input, new_session,
+                 checkpoint, cleanup_confirmed):
     started = time.monotonic()
     process = None
     leader_fd = -1
@@ -337,7 +350,7 @@ def _run_process(argv, *, cwd, env, timeout, max_bytes, input, new_session, resu
             process_group=None if new_session else 0,
         )
         leader_fd = os.pidfd_open(process.pid)
-        resume_interrupts()
+        checkpoint()
         output = {process.stdout: bytearray(), process.stderr: bytearray()}
         remaining = max_bytes
         deadline = started + timeout
@@ -351,6 +364,7 @@ def _run_process(argv, *, cwd, env, timeout, max_bytes, input, new_session, resu
         elif process.stdin is not None:
             process.stdin.close()
         while selector.get_map():
+            checkpoint()
             if not cleaned and os.waitid(
                     os.P_PIDFD, leader_fd, os.WEXITED | os.WNOHANG | os.WNOWAIT):
                 terminate()
@@ -379,6 +393,7 @@ def _run_process(argv, *, cwd, env, timeout, max_bytes, input, new_session, resu
                 else:
                     selector.unregister(key.fileobj)
         while not os.waitid(os.P_PIDFD, leader_fd, os.WEXITED | os.WNOHANG | os.WNOWAIT):
+            checkpoint()
             if time.monotonic() >= deadline:
                 raise ValueError("process timed out")
             time.sleep(0.01)
@@ -386,6 +401,7 @@ def _run_process(argv, *, cwd, env, timeout, max_bytes, input, new_session, resu
             terminate()
             cleaned = True
         usage = _reap_leader(process)
+        checkpoint()
         return ProcessResult(
             process.returncode, bytes(output[process.stdout]), bytes(output[process.stderr]),
             process.pid, time.monotonic() - started, usage.ru_maxrss * 1024,
@@ -412,6 +428,7 @@ def _run_process(argv, *, cwd, env, timeout, max_bytes, input, new_session, resu
         masked, previous = finish(
             signal.pthread_sigmask, signal.SIG_BLOCK, {signal.SIGINT, signal.SIGTERM})
         terminated = cleaned
+        reaped = process is None or process.returncode is not None
         if process is not None:
             if not cleaned:
                 if leader_fd >= 0:
@@ -419,7 +436,8 @@ def _run_process(argv, *, cwd, env, timeout, max_bytes, input, new_session, resu
                 else:
                     terminated, _ = finish(_terminate_without_pidfd, process, unverified=True)
             if terminated and process.returncode is None:
-                finish(_reap_leader, process, unverified=True)
+                reaped, _ = finish(_reap_leader, process, unverified=True)
+        cleanup_confirmed[0] = process is None or (terminated and reaped)
         if selector is not None:
             finish(selector.close)
         if leader_fd >= 0:

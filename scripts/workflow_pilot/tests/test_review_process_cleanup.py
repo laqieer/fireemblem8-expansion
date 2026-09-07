@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ast
 import ctypes
 from contextlib import ExitStack, contextmanager
 import errno
@@ -206,7 +207,7 @@ class OwnedFixture(unittest.TestCase):
             signal.pthread_sigmask(signal.SIG_SETMASK, mask)
 
     @contextmanager
-    def restoration_outcome(self, fail):
+    def restoration_outcome(self, fail, on_restore=None):
         original = ctypes.CDLL
         restorations = []
 
@@ -220,6 +221,8 @@ class OwnedFixture(unittest.TestCase):
                     self.updates += 1
                     if self.updates == 2:
                         restorations.append(args[0])
+                        if on_restore is not None:
+                            on_restore()
                         if fail:
                             ctypes.set_errno(errno.EIO)
                             return -1
@@ -283,8 +286,10 @@ class OwnedFixture(unittest.TestCase):
             def selector():
                 instance = original_selector()
                 close = instance.close
-                def select(*_args, **_kwargs):
+                wait = instance.select
+                def select(*args, **kwargs):
                     os.kill(os.getpid(), signal.SIGINT)
+                    return wait(*args, **kwargs)
                 def close_selector():
                     close()
                     fail()
@@ -305,6 +310,39 @@ class OwnedFixture(unittest.TestCase):
 class ProcessRunnerTests(OwnedFixture):
     def run_tool(self, **kwargs):
         return raw.run_process([str(self.program)], cwd=self.directory, env=ENV, **kwargs)
+
+    def test_lifetime_nonraising_caller_handler_keeps_real_result(self):
+        self.configure("exit")
+        previous = signal.getsignal(signal.SIGINT)
+        calls = []
+        handler = lambda number, _frame: calls.append(number)
+        signal.signal(signal.SIGINT, handler)
+        try:
+            with self.creation_interrupt(signal.SIGINT):
+                result = self.run_tool(timeout=5)
+            self.assertEqual((result.returncode, result.stdout, result.stderr),
+                             (0, b"actual output\0\n", b"actual diagnostic\n"))
+            self.assertEqual(calls, [signal.SIGINT])
+            self.assertIs(signal.getsignal(signal.SIGINT), handler)
+            self.assert_reaped()
+        finally:
+            signal.signal(signal.SIGINT, previous)
+
+    def test_lifetime_nonraising_body_handler_does_not_cancel_the_command(self):
+        previous = signal.getsignal(signal.SIGINT)
+        calls = []
+        handler = lambda number, _frame: calls.append((number, self.present()))
+        signal.signal(signal.SIGINT, handler)
+        try:
+            self.interrupt_when_ready()
+            with self.assertRaisesRegex(ValueError, "timed out"):
+                self.run_tool(timeout=0.5)
+            self.assertEqual(len(calls), 1)
+            self.assertTrue(calls[0][1])
+            self.assertIs(signal.getsignal(signal.SIGINT), handler)
+            self.assert_reaped()
+        finally:
+            signal.signal(signal.SIGINT, previous)
 
     def test_creation_boundary_interrupt_reaps_before_propagation(self):
         unrelated = subprocess.Popen([sys.executable, "-I", "-B", "-c",
@@ -546,6 +584,7 @@ class StagedProcessTests(OwnedFixture):
     def setUpClass(cls):
         cls.workspace = snapshot()
         cls.repo = cls.workspace.__enter__()
+        cls.lifetime_observations = []
 
     @classmethod
     def tearDownClass(cls):
@@ -643,6 +682,241 @@ class StagedProcessTests(OwnedFixture):
         with self.assertRaises(KeyboardInterrupt):
             self.run_staged(outer_timeout=5)
         self.assert_reaped()
+
+    def test_lifetime_error_cleanup_entry_signal_cannot_skip_owned_cleanup(self):
+        tools = self.tools()
+        runner = tools.subjects.run_process.__globals__["_run_process"]
+        syntax = ast.parse(tools.tool_tree.read("scripts/workflow_pilot/raw_diff_check.py"))
+        function = next(node for node in syntax.body
+                        if isinstance(node, ast.FunctionDef) and node.name == runner.__name__)
+        entry = next(node.finalbody[0].lineno for node in function.body
+                     if isinstance(node, ast.Try) and node.finalbody)
+        original_stage, original_run = tools._stage, tools.subjects.run_process
+        original_cleanup = gate.tempfile.TemporaryDirectory.cleanup
+        stages, cleanup_states, delivered = [], [], []
+
+        def stage(tree, root, members):
+            stages.append(root)
+            original_stage(tree, root, members)
+
+        def run(*args, **kwargs):
+            kwargs["timeout"] = 0.25
+            return original_run(*args, **kwargs)
+
+        def trace(frame, event, _argument):
+            if (frame.f_code is runner.__code__ and event == "line"
+                    and frame.f_lineno == entry and not delivered):
+                delivered.append(self.present())
+                os.kill(os.getpid(), signal.SIGINT)
+            return trace
+
+        def cleanup(directory):
+            if Path(directory.name) in stages:
+                cleanup_states.append(self.present())
+            return original_cleanup(directory)
+
+        bootstrap = f"import runpy;runpy.run_path({str(self.program)!r},run_name='__main__')"
+        previous_trace = sys.gettrace()
+        try:
+            with self.creation_handler(signal.SIGINT), patch.object(tools, "_stage", stage), \
+                    patch.object(tools.subjects, "run_process", run), patch.object(
+                    gate, "WORKER_CODE", bootstrap), self.creation_interrupt(None), patch.object(
+                    gate.tempfile.TemporaryDirectory, "cleanup", cleanup):
+                sys.settrace(trace)
+                with self.assertRaises(KeyboardInterrupt):
+                    tools.run_obligations(self.members(tools), self.repo.base)
+                sys.settrace(previous_trace)
+            self.assertTrue(delivered and delivered[0])
+            self.assertTrue(cleanup_states and all(not state for state in cleanup_states),
+                            {"cleanup_states": cleanup_states, "processes": self.present()})
+            self.assert_reaped()
+        finally:
+            sys.settrace(previous_trace)
+
+    def test_lifetime_staged_signal_timing_matrix(self):
+        for phase in ("body", "normal-cleanup", "error-cleanup", "second-signal",
+                      "reaper-restore", "handler-restore", "after-confirmation"):
+            for number in (signal.SIGINT, signal.SIGTERM):
+                with self.subTest(phase=phase, signal=number):
+                    self.assert_lifetime_phase(phase, number)
+
+    def assert_lifetime_phase(self, phase, number):
+        self.configure("exit" if phase in ("normal-cleanup", "handler-restore",
+                                          "after-confirmation") else "sleep")
+        tools = self.tools()
+        runner = tools.subjects.run_process.__globals__["_run_process"]
+        syntax = ast.parse(tools.tool_tree.read("scripts/workflow_pilot/raw_diff_check.py"))
+        function = next(node for node in syntax.body
+                        if isinstance(node, ast.FunctionDef) and node.name == runner.__name__)
+        protected = next(node for node in function.body if isinstance(node, ast.Try) and node.finalbody)
+        cleanup_entry = protected.finalbody[0].lineno
+        body_entry = next(node.lineno for node in protected.body if isinstance(node, ast.While))
+        locations = {
+            "body": {body_entry}, "normal-cleanup": {cleanup_entry},
+            "error-cleanup": {cleanup_entry}, "second-signal": {body_entry, cleanup_entry},
+        }.get(phase, set())
+        delivered, handler_calls, confirmations, stages, removed = set(), [], [], [], []
+        original_stage, original_run = tools._stage, tools.subjects.run_process
+        original_cleanup = gate.tempfile.TemporaryDirectory.cleanup
+        previous_handler = signal.getsignal(number)
+        previous_mask = signal.pthread_sigmask(signal.SIG_BLOCK, {signal.SIGUSR1})
+        previous_trace = sys.gettrace()
+        original_signal = signal.signal
+        restoration_signals = []
+        unrelated = subprocess.Popen([sys.executable, "-I", "-B", "-c",
+                                      "import time;time.sleep(12)"])
+
+        def handler(received, _frame):
+            handler_calls.append((received, self.present()))
+            if received == signal.SIGINT:
+                raise KeyboardInterrupt
+            raise SystemExit(128 + received)
+
+        def emit():
+            os.kill(os.getpid(), number)
+
+        def trace(frame, event, _argument):
+            if (frame.f_code is runner.__code__ and event == "line"
+                    and frame.f_lineno in locations and frame.f_lineno not in delivered):
+                delivered.add(frame.f_lineno)
+                emit()
+            return trace
+
+        def stage(tree, root, members):
+            stages.append(root)
+            original_stage(tree, root, members)
+
+        def run(*args, **kwargs):
+            notify = kwargs["_on_cleanup"]
+            def confirmed():
+                self.assertEqual(self.present(), [])
+                notify()
+                confirmations.append(True)
+                if phase == "after-confirmation":
+                    emit()
+            kwargs["_on_cleanup"] = confirmed
+            kwargs["timeout"] = 0.25 if phase in ("error-cleanup", "reaper-restore") else 5
+            return original_run(*args, **kwargs)
+
+        def cleanup(directory):
+            if Path(directory.name) in stages:
+                self.assertEqual(self.present(), [])
+                self.assertEqual(confirmations, [True])
+                removed.append(str(directory.name))
+            return original_cleanup(directory)
+
+        def restore_handler(received, value):
+            if (phase == "handler-restore" and received == number and value is handler
+                    and not restoration_signals):
+                restoration_signals.append(received)
+                emit()
+            return original_signal(received, value)
+
+        bootstrap = f"import runpy;runpy.run_path({str(self.program)!r},run_name='__main__')"
+        signal.signal(number, handler)
+        try:
+            with patch.object(tools, "_stage", stage), patch.object(
+                    tools.subjects, "run_process", run), patch.object(
+                    gate, "WORKER_CODE", bootstrap), self.creation_interrupt(None), \
+                    self.restoration_outcome(False, emit if phase == "reaper-restore" else None), \
+                    patch.object(gate.tempfile.TemporaryDirectory, "cleanup", cleanup), \
+                    patch.object(signal, "signal", restore_handler):
+                sys.settrace(trace)
+                with self.assertRaises(KeyboardInterrupt if number == signal.SIGINT else SystemExit):
+                    tools.run_obligations(self.members(tools), self.repo.base)
+                sys.settrace(previous_trace)
+            self.assertEqual(len(handler_calls), 2 if phase == "second-signal" else 1)
+            self.assertEqual(delivered, locations)
+            self.assertEqual(confirmations, [True])
+            self.assertEqual(restoration_signals, [number] if phase == "handler-restore" else [])
+            self.assertTrue(removed and all(not path.exists() for path in stages))
+            self.assertIs(signal.getsignal(number), handler)
+            self.assertEqual(signal.pthread_sigmask(signal.SIG_BLOCK, set()),
+                             previous_mask | {signal.SIGUSR1})
+            self.assertIsNone(unrelated.poll())
+            self.assert_reaped()
+            if phase in ("body", "second-signal"):
+                self.assertTrue(handler_calls[0][1])
+            if phase != "body":
+                self.assertEqual(handler_calls[-1][1], [])
+            type(self).lifetime_observations.append({
+                "phase": phase, "signal": number.name,
+                "handler_observations": [
+                    {"signal": signal.Signals(received).name, "owned_processes": processes}
+                    for received, processes in handler_calls],
+                "cleanup_confirmations": len(confirmations),
+                "remaining_owned_processes": self.present(),
+                "removed_staging": removed,
+                "caller_handler_restored": signal.getsignal(number) is handler,
+                "caller_mask": sorted(int(item) for item in
+                                      signal.pthread_sigmask(signal.SIG_BLOCK, set())),
+                "unrelated_process_running": unrelated.poll() is None,
+            })
+        finally:
+            sys.settrace(previous_trace)
+            signal.signal(number, previous_handler)
+            signal.pthread_sigmask(signal.SIG_SETMASK, previous_mask)
+            unrelated.kill()
+            unrelated.wait(timeout=5)
+            self.cleanup_processes(restore_reaper=False)
+
+    def test_lifetime_combined_close_and_restore_errors_keep_unconfirmed_staging(self):
+        self.assert_failed_termination_staging(fail_restore=True, exit_failure="stdout")
+
+    def test_lifetime_missing_positive_confirmation_retains_real_work_for_ordinary_error(self):
+        tools = self.tools()
+        runner = tools.subjects.run_process.__globals__["_run_process"]
+        syntax = ast.parse(tools.tool_tree.read("scripts/workflow_pilot/raw_diff_check.py"))
+        function = next(node for node in syntax.body
+                        if isinstance(node, ast.FunctionDef) and node.name == runner.__name__)
+        entry = next(node.finalbody[0].lineno for node in function.body
+                     if isinstance(node, ast.Try) and node.finalbody)
+        original_stage, original_run = tools._stage, tools.subjects.run_process
+        stages, created, interrupted = [], [], []
+        previous_trace = sys.gettrace()
+
+        def stage(tree, root, members):
+            stages.append(root)
+            original_stage(tree, root, members)
+
+        def run(*args, **kwargs):
+            kwargs["timeout"] = 0.25
+            return original_run(*args, **kwargs)
+
+        def trace(frame, event, _argument):
+            if (frame.f_code is runner.__code__ and event == "line"
+                    and frame.f_lineno == entry and not interrupted):
+                interrupted.append(True)
+                raise OSError(errno.EIO, "controlled unconfirmed cleanup transition")
+            return trace
+
+        bootstrap = f"import runpy;runpy.run_path({str(self.program)!r},run_name='__main__')"
+        try:
+            with patch.object(tools, "_stage", stage), patch.object(
+                    tools.subjects, "run_process", run), patch.object(
+                    gate, "WORKER_CODE", bootstrap), self.creation_interrupt(None) as created:
+                sys.settrace(trace)
+                result = tools.run_obligations(self.members(tools), self.repo.base)
+                sys.settrace(previous_trace)
+            self.assertEqual(interrupted, [True])
+            self.assertTrue(created and all(os.waitid(
+                os.P_PIDFD, item["descriptor"], os.WEXITED | os.WNOHANG | os.WNOWAIT
+            ) is None for item in created))
+            self.assertTrue(stages and all(path.is_dir() for path in stages))
+            self.assertTrue(all(item.verdict == "unavailable" and item.checks == 0
+                                and "controlled unconfirmed cleanup transition" in item.detail
+                                and str(stages[0]) in item.detail for item in result))
+        finally:
+            sys.settrace(previous_trace)
+            for item in created:
+                try:
+                    signal.pidfd_send_signal(item["descriptor"], signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+                item["process"].wait(timeout=5)
+            self.cleanup_processes(restore_reaper=False)
+            for path in stages:
+                shutil.rmtree(path, ignore_errors=True)
 
     def test_staged_creation_interrupt_reaps_before_directory_cleanup(self):
         for number in (signal.SIGINT, signal.SIGTERM):

@@ -286,7 +286,13 @@ class ReviewTools:
         build = self.subject_root / "build"
         build.mkdir(exist_ok=True)
         directory = tempfile.TemporaryDirectory(prefix="review-family-", dir=build, delete=False)
-        cleanup = True
+        cleanup = True  # No test process has been dispatched.
+        failure = None
+
+        def cleanup_confirmed():
+            nonlocal cleanup
+            cleanup = True
+
         try:
             root = Path(directory.name)
             self._stage(tree, root, members)
@@ -298,23 +304,29 @@ class ReviewTools:
                 **self.arm_tools,
             }
             try:
+                cleanup = False
                 completed = self.subjects.run_process(
                     [sys.executable, "-I", "-B", "-c", WORKER_CODE, str(root)],
                     input=json.dumps(probes).encode(), cwd=root, env=environment,
-                    timeout=240)
+                    timeout=240, _on_cleanup=cleanup_confirmed)
+                model.require(cleanup, "owned process cleanup was not confirmed")
                 model.require(completed.returncode == 0, "probe process failed: " +
                               completed.stderr.decode(errors="replace")[-2000:])
                 rows = model.parse_json(completed.stdout)
             except (OSError, ValueError, subprocess.TimeoutExpired) as error:
-                cleanup = not isinstance(error, self.subjects.ProcessCleanupError)
                 rows = [{"probe": probe, "verdict": "unavailable", "checks": 0,
                          "kind": None, "detail": (
                              str(error) + ("" if cleanup else f"; staging retained at {root}")
                          )[:model.MAX_DETAIL], "blocked_by": []}
                         for probe in probes]
+        except BaseException as error:
+            failure = error
+            raise
         finally:
             if cleanup:
                 directory.cleanup()
+            elif failure is not None:
+                failure.add_note(f"cleanup unconfirmed; staging retained at {root}")
         model.require(isinstance(rows, list) and len(rows) == len(probes),
                       "missing/extra probe observations")
         for row in rows:
