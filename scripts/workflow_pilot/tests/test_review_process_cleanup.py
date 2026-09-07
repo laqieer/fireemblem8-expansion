@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import ctypes
+from contextlib import contextmanager
+import errno
 import json
 import os
 from pathlib import Path
@@ -38,6 +40,7 @@ class OwnedFixture(unittest.TestCase):
         self.directory = Path(directory)
         self.records = self.directory / "processes.jsonl"
         self.records.write_text("")
+        self.past_processes = []
         self.program = self.directory / "ordinary-tool"
         self.stop_interrupt = threading.Event()
         self.interrupter = None
@@ -49,6 +52,8 @@ class OwnedFixture(unittest.TestCase):
         self.configure("sleep")
 
     def configure(self, mode, code=0):
+        self.past_processes.extend(identity for row in self.recorded()
+                                   for identity in row["processes"])
         self.records.write_text("")
         self.program.write_text(
             "#!/usr/bin/python3\n"
@@ -85,8 +90,11 @@ class OwnedFixture(unittest.TestCase):
     def recorded(self):
         return [json.loads(line) for line in self.records.read_text().splitlines()]
 
-    def present(self):
-        return [state for row in self.recorded() for identity in row["processes"]
+    def present(self, previous=False):
+        identities = [identity for row in self.recorded() for identity in row["processes"]]
+        if previous:
+            identities.extend(self.past_processes)
+        return [state for identity in identities
                 if (state := process_state(identity["pid"])) is not None
                 and state["start"] == identity["start"]]
 
@@ -99,7 +107,7 @@ class OwnedFixture(unittest.TestCase):
         if self.interrupter is not None:
             self.interrupter.join(timeout=5)
         for _ in range(2):
-            for state in self.present():
+            for state in self.present(previous=True):
                 try:
                     descriptor = os.pidfd_open(state["pid"])
                 except ProcessLookupError:
@@ -132,10 +140,116 @@ class OwnedFixture(unittest.TestCase):
         self.interrupter = threading.Thread(target=interrupt)
         self.interrupter.start()
 
+    @contextmanager
+    def creation_interrupt(self, number):
+        original = subprocess.Popen
+        observations = []
+        expected_mask = signal.pthread_sigmask(signal.SIG_BLOCK, set())
+
+        def recover(process, descriptor):
+            try:
+                try:
+                    signal.pidfd_send_signal(descriptor, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+                process.wait(timeout=5)
+            finally:
+                os.close(descriptor)
+                for stream in (process.stdin, process.stdout, process.stderr):
+                    if stream is not None:
+                        stream.close()
+
+        def create(*args, **kwargs):
+            process = original(*args, **kwargs)
+            if "process_group" not in kwargs:
+                return process
+            descriptor = os.pidfd_open(process.pid)
+            self.addCleanup(recover, process, descriptor)
+            deadline = time.monotonic() + 5
+            while not self.records.stat().st_size and time.monotonic() < deadline:
+                time.sleep(0.01)
+            self.assertTrue(self.recorded(), "the real creation-boundary fixture did not start")
+            status = Path(f"/proc/{process.pid}/status").read_text().splitlines()
+            mask = int(next(line.split()[1] for line in status if line.startswith("SigBlk:")), 16)
+            self.assertEqual(mask, sum(1 << (int(item) - 1) for item in expected_mask))
+            observed = {"process": process, "descriptor": descriptor, "returned": False}
+            observations.append(observed)
+            os.kill(os.getpid(), number)
+            observed["returned"] = True
+            return process
+
+        with patch.object(subprocess, "Popen", create):
+            yield observations
+
+    @contextmanager
+    def creation_handler(self, number):
+        previous = signal.getsignal(number)
+        mask = signal.pthread_sigmask(signal.SIG_BLOCK, {signal.SIGUSR1})
+        calls = []
+
+        def handled_term(received, _frame):
+            calls.append(received)
+            raise SystemExit(128 + received)
+
+        handler = signal.default_int_handler if number == signal.SIGINT else handled_term
+        signal.signal(number, handler)
+        try:
+            yield calls
+            self.assertIs(signal.getsignal(number), handler)
+            self.assertEqual(signal.pthread_sigmask(signal.SIG_BLOCK, set()), mask | {signal.SIGUSR1})
+        finally:
+            signal.signal(number, previous)
+            signal.pthread_sigmask(signal.SIG_SETMASK, mask)
+
 
 class ProcessRunnerTests(OwnedFixture):
     def run_tool(self, **kwargs):
         return raw.run_process([str(self.program)], cwd=self.directory, env=ENV, **kwargs)
+
+    def test_creation_boundary_interrupt_reaps_before_propagation(self):
+        unrelated = subprocess.Popen([sys.executable, "-I", "-B", "-c",
+                                      "import time;time.sleep(12)"])
+        self.addCleanup(unrelated.wait)
+        self.addCleanup(unrelated.kill)
+        caller_group = os.getpgrp()
+        for number in (signal.SIGINT, signal.SIGTERM):
+            with self.subTest(signal=number):
+                self.configure("sleep")
+                expected = KeyboardInterrupt if number == signal.SIGINT else SystemExit
+                with self.creation_handler(number) as calls:
+                    with self.creation_interrupt(number) as created:
+                        with self.assertRaises(expected) as caught:
+                            self.run_tool(timeout=5)
+                    self.assert_reaped()
+                    self.assertTrue(created and all(item["returned"] for item in created))
+                    self.assertTrue(all(item["process"].returncode is not None for item in created))
+                    self.assertIsNone(unrelated.poll())
+                    self.assertEqual(os.getpgrp(), caller_group)
+                    if number == signal.SIGTERM:
+                        self.assertEqual(caught.exception.code, 128 + number)
+                        self.assertEqual(calls, [number])
+
+    def test_pending_creation_signal_is_not_lost_when_real_popen_fails(self):
+        original = subprocess.Popen
+        failures = []
+        with self.assertRaises(FileNotFoundError):
+            raw.run_process([str(self.directory / "absent-tool")],
+                            cwd=self.directory, env=ENV)
+
+        def fail_creation(*args, **kwargs):
+            os.kill(os.getpid(), signal.SIGINT)
+            try:
+                return original(*args, **kwargs)
+            except FileNotFoundError as error:
+                failures.append(error.errno)
+                raise
+
+        with self.creation_handler(signal.SIGINT), patch.object(subprocess, "Popen", fail_creation):
+            with self.assertRaises(KeyboardInterrupt):
+                raw.run_process([str(self.directory / "absent-tool")],
+                                cwd=self.directory, env=ENV)
+        self.assertEqual(failures, [errno.ENOENT])
+        self.assertEqual(self.recorded(), [])
 
     def test_timeout_and_closed_stdio_reap_ordinary_descendants(self):
         for mode in ("sleep", "closed-stdio"):
@@ -353,6 +467,61 @@ class StagedProcessTests(OwnedFixture):
         with self.assertRaises(KeyboardInterrupt):
             self.run_staged(outer_timeout=5)
         self.assert_reaped()
+
+    def test_staged_creation_interrupt_reaps_before_directory_cleanup(self):
+        for number in (signal.SIGINT, signal.SIGTERM):
+            with self.subTest(signal=number):
+                self.configure("sleep")
+                expected = KeyboardInterrupt if number == signal.SIGINT else SystemExit
+                bootstrap = f"import runpy;runpy.run_path({str(self.program)!r},run_name='__main__')"
+                with self.creation_handler(number) as calls:
+                    with self.creation_interrupt(number) as created:
+                        with self.assertRaises(expected) as caught:
+                            self.run_staged(outer_timeout=5, bootstrap=bootstrap)
+                    self.assert_reaped()
+                    self.assertTrue(created and all(item["returned"] for item in created))
+                    self.assertTrue(all(item["process"].returncode is not None for item in created))
+                    if number == signal.SIGTERM:
+                        self.assertEqual(caught.exception.code, 128 + number)
+                        self.assertEqual(calls, [number])
+
+    def test_creation_interrupt_retains_live_staging_when_termination_fails(self):
+        tools = self.tools()
+        stages = []
+        created = []
+        original_stage = tools._stage
+
+        def stage(tree, root, members):
+            stages.append(root)
+            original_stage(tree, root, members)
+
+        bootstrap = f"import runpy;runpy.run_path({str(self.program)!r},run_name='__main__')"
+        try:
+            with self.creation_handler(signal.SIGINT):
+                with patch.object(tools, "_stage", stage), patch.object(
+                        gate, "WORKER_CODE", bootstrap), self.creation_interrupt(
+                        signal.SIGINT) as created, patch.object(
+                        signal, "pidfd_send_signal",
+                        side_effect=PermissionError(errno.EPERM, "controlled termination failure")):
+                    result = tools.run_obligations(self.members(tools), self.repo.base)
+                self.assertTrue(created and all(item["returned"] for item in created))
+                self.assertTrue(all(os.waitid(
+                    os.P_PIDFD, item["descriptor"], os.WEXITED | os.WNOHANG | os.WNOWAIT
+                ) is None for item in created))
+                self.assertTrue(self.present())
+                self.assertTrue(stages and all(path.is_dir() for path in stages))
+                self.assertTrue(all(item.verdict == "unavailable" and item.checks == 0
+                                    and str(stages[0]) in item.detail for item in result))
+        finally:
+            for item in created:
+                try:
+                    signal.pidfd_send_signal(item["descriptor"], signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+                item["process"].wait(timeout=5)
+            self.cleanup_processes()
+            for path in stages:
+                shutil.rmtree(path, ignore_errors=True)
 
     def test_native_early_exit_retains_return_code_classification(self):
         for code, verdict, checks in ((0, "satisfied", 1),

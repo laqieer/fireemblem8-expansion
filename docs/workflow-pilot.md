@@ -345,6 +345,11 @@ output overage and interruption finish this cleanup before returning or
 raising; the caller's group and unrelated processes remain untouched.
 The prior process-wide subreaper state and default signal handlers are restored;
 overlapping exact-tool module instances share only that resource accounting.
+Handled `SIGINT`/`SIGTERM` during creation are deferred until the returned child
+handle and pidfd are inside cleanup protection, then dispatched to the caller's
+handler. Recording the signal rather than blocking it preserves the payload's
+inherited signal mask. A pending interruption is not discarded if creation
+fails, and an unverified cleanup error retains precedence and staging.
 
 Cleanup has a separate five-second confirmation bound. If owned termination
 cannot be verified, `ProcessCleanupError` yields unavailable observations and

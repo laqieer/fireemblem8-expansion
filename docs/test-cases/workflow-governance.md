@@ -160,6 +160,14 @@ the consumers' independent protected-principal/deployment requirements.
    remain alive. Positive byte input/output and real native 0/1/other exit
    classifications must remain unchanged. An unavailable cleanup observation
    retains staging and never supplies satisfied evidence.
+   At the real `Popen` boundary, deliver `SIGINT` and a handled `SIGTERM` after
+   successful creation but before the handle returns. Neither may bypass
+   cleanup protection: interruption propagates out of the runner only after
+   owned work is reaped, the caller's handler is restored, and the payload inherits no
+   unintended signal mask. Repeat with a real creation error. Deny the
+   kernel-handle termination operation after a real staged launch: pidfds must
+   show live owned work and the directory must remain until the test restores
+   termination and cleans its own processes.
    Remove or corrupt the checkout helper and give the candidate a different
    committed helper: both coordinator and staged worker must still execute the
    exact selected tool-tree bytes. Overlapping tool module instances must also

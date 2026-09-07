@@ -136,20 +136,52 @@ def _child_reaper():
 @contextmanager
 def _interruptible():
     previous = {}
+    deferred = True
+    pending = None
 
-    def interrupt(number, _frame):
+    def deliver(number, frame):
+        handler = previous[number]
+        if callable(handler):
+            return handler(number, frame)
         if number == signal.SIGINT:
             raise KeyboardInterrupt
         raise SystemExit(128 + number)
 
+    def interrupt(number, frame):
+        nonlocal pending
+        if deferred:
+            if pending is None:
+                pending = number, frame
+        else:
+            deliver(number, frame)
+
+    def resume():
+        nonlocal deferred, pending
+        deferred = False
+        requested, pending = pending, None
+        if requested is not None:
+            deliver(*requested)
+
     if threading.current_thread() is threading.main_thread():
         for number in (signal.SIGINT, signal.SIGTERM):
             handler = signal.getsignal(number)
-            if handler in (signal.SIG_DFL, signal.default_int_handler):
+            if handler == signal.SIG_DFL or callable(handler):
                 previous[number] = handler
                 signal.signal(number, interrupt)
     try:
-        yield
+        yield resume
+    except BaseException as error:
+        if deferred:
+            try:
+                resume()
+            except BaseException as interruption:
+                if isinstance(error, ProcessCleanupError):
+                    raise error from interruption
+                raise
+        raise
+    else:
+        if deferred:
+            resume()
     finally:
         for number, handler in previous.items():
             signal.signal(number, handler)
@@ -226,18 +258,15 @@ def run_process(argv, *, cwd, env, timeout=GIT_TIMEOUT_SECONDS, max_bytes=MAX_BY
         raise ValueError(f"process input must be bytes bounded to {MAX_BYTES} bytes")
     if type(new_session) is not bool:
         raise ValueError("process session ownership must be Boolean")
-    with _child_reaper(), _interruptible():
+    with _child_reaper(), _interruptible() as resume_interrupts:
         return _run_process(argv, cwd=cwd, env=env, timeout=timeout, max_bytes=max_bytes,
-                            input=input, new_session=new_session)
+                            input=input, new_session=new_session,
+                            resume_interrupts=resume_interrupts)
 
 
-def _run_process(argv, *, cwd, env, timeout, max_bytes, input, new_session):
+def _run_process(argv, *, cwd, env, timeout, max_bytes, input, new_session, resume_interrupts):
     started = time.monotonic()
-    process = subprocess.Popen(
-        argv, cwd=cwd, env=env, stdin=subprocess.DEVNULL if input is None else subprocess.PIPE,
-        stdout=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=new_session,
-        process_group=None if new_session else 0,
-    )
+    process = None
     leader_fd = -1
     cleaned = False
     cleanup_deadline = None
@@ -249,7 +278,14 @@ def _run_process(argv, *, cwd, env, timeout, max_bytes, input, new_session):
         _terminate_owned(process, leader_fd, new_session, cleanup_deadline)
 
     try:
+        # Defer Python handlers rather than blocking signals inherited by exec.
+        process = subprocess.Popen(
+            argv, cwd=cwd, env=env, stdin=subprocess.DEVNULL if input is None else subprocess.PIPE,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=new_session,
+            process_group=None if new_session else 0,
+        )
         leader_fd = os.pidfd_open(process.pid)
+        resume_interrupts()
         output = {process.stdout: bytearray(), process.stderr: bytearray()}
         remaining = max_bytes
         deadline = started + timeout
@@ -306,7 +342,7 @@ def _run_process(argv, *, cwd, env, timeout, max_bytes, input, new_session):
     finally:
         previous = signal.pthread_sigmask(signal.SIG_BLOCK, {signal.SIGINT, signal.SIGTERM})
         try:
-            if not cleaned:
+            if process is not None and not cleaned:
                 if leader_fd >= 0:
                     terminate()
                 else:
@@ -322,14 +358,16 @@ def _run_process(argv, *, cwd, env, timeout, max_bytes, input, new_session):
                         raise ProcessCleanupError(
                             "owned process termination could not be confirmed") from error
                     raise ProcessCleanupError("owned process identity could not be retained")
-            process.wait()
+            if process is not None:
+                process.wait()
         finally:
             if leader_fd >= 0:
                 os.close(leader_fd)
-            if process.stdin is not None:
-                process.stdin.close()
-            process.stdout.close()
-            process.stderr.close()
+            if process is not None:
+                if process.stdin is not None:
+                    process.stdin.close()
+                process.stdout.close()
+                process.stderr.close()
             signal.pthread_sigmask(signal.SIG_SETMASK, previous)
 
 
