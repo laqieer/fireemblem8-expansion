@@ -606,7 +606,26 @@ def _full_jobs(
             runner_name=None,
         )
     )
+    _bind_full_jobs(jobs)
     return jobs
+
+
+def _bind_full_jobs(jobs, *, number=PR_NUMBER, head=HEAD, base=BASE, base_ref="master"):
+    from scripts.workflow_pilot.adaptive_gate import binding_name
+    classifier = next(job for job in jobs if job["name"] == "event-classifier")
+    classifier["steps"] = [] if base_ref is None else [{
+        "name": binding_name(number, head, base, base_ref),
+        "status": "completed", "conclusion": "success",
+    }]
+
+
+def _fixture_full_compare(jobs):
+    from scripts.workflow_pilot.adaptive_gate import binding_base_ref, parse_binding
+    return any(
+        parse_binding(step.get("name", "")) is not None
+        and parse_binding(step["name"])[:2] == (PR_NUMBER, HEAD)
+        and binding_base_ref(step["name"]) == "master"
+        for job in jobs for step in job.get("steps", ()))
 
 
 def _metadata_jobs(
@@ -727,8 +746,10 @@ def _rejection_run_drift_cases() -> dict[str, tuple[list, list]]:
     active = _run(101, 10, mode="full", active=True)
     other_binding = copy.deepcopy(full)
     other_binding[0]["pull_requests"][0]["base"]["sha"] = NEW_HEAD
+    _bind_full_jobs(other_binding[1], base=NEW_HEAD)
     unbound = copy.deepcopy(full)
     unbound[0]["pull_requests"] = []
+    _bind_full_jobs(unbound[1], base_ref=None)
     updated = copy.deepcopy(full)
     updated[0]["updated_at"] = "2026-09-04T00:00:04Z"
     failed = _run(101, 10, mode="full", success=False)
@@ -1040,6 +1061,7 @@ def _add_snapshot(
     runs_and_jobs: list[tuple[dict, list[dict]]],
     *,
     copies: int = 1,
+    merge_base: str = BASE,
 ) -> None:
     client.add(
         "GET",
@@ -1082,6 +1104,10 @@ def _add_snapshot(
                 for _ in range(copies)
             ),
         )
+        if _fixture_full_compare(jobs):
+            client.add("GET", _endpoint(f"compare/{BASE}...{HEAD}"),
+                       *({"base_commit": {"sha": BASE}, "merge_base_commit": {"sha": merge_base}}
+                         for _ in range(copies)))
 
 
 _MISSING = object()
@@ -1166,6 +1192,9 @@ def _cli_snapshot_calls(
                 payload={"total_count": len(jobs), "jobs": jobs},
             )
         )
+        if _fixture_full_compare(jobs):
+            calls.append(_cli_api_call("GET", _endpoint(f"compare/{BASE}...{HEAD}"),
+                         payload={"base_commit": {"sha": BASE}, "merge_base_commit": {"sha": BASE}}))
     return calls
 
 
@@ -2042,6 +2071,7 @@ class PullRequestMetadataTests(unittest.TestCase):
         client = ScriptedClient()
         record, jobs = _run(101, 10, mode="full")
         record["pull_requests"] = []
+        _bind_full_jobs(jobs, base_ref=None)
         _add_pr_states(client, _pr())
         _add_snapshot(client, [(record, jobs)])
         decision = pr_metadata.edit_metadata(
@@ -7169,6 +7199,8 @@ class PullRequestMetadataTests(unittest.TestCase):
                 client = ScriptedClient()
                 record, jobs = _run(101, 10, mode="full")
                 record["pull_requests"][0][field] = value
+                _bind_full_jobs(jobs, number=value if name == "pr" else PR_NUMBER,
+                                base=value["sha"] if name == "base" else BASE)
                 _add_pr_states(client, _pr())
                 _add_snapshot(client, [(record, jobs)])
                 decision = pr_metadata.edit_metadata(
@@ -7258,7 +7290,7 @@ class PullRequestMetadataTests(unittest.TestCase):
             any(method != "GET" for method, _endpoint, _body in client.calls)
         )
 
-    def test_same_head_run_for_another_base_is_validated_then_ignored(self):
+    def test_same_head_unmarked_run_for_another_base_still_blocks_metadata(self):
         client = ScriptedClient()
         other_base_record, _other_jobs = _run(202, 11, mode="full", active=True)
         other_base_record["pull_requests"][0]["base"]["sha"] = "4" * 40
@@ -7286,20 +7318,10 @@ class PullRequestMetadataTests(unittest.TestCase):
             body="new stable body",
             essential_reason=None,
         )
-        self.assertEqual(decision.action, "updated")
-        self.assertIn("reconcile", decision.guidance[0])
-        receipt_call = next(
-            call
-            for call in client.calls
-            if call[:2]
-            == ("POST", _endpoint(f"issues/{PR_NUMBER}/comments"))
-        )
-        self.assertEqual(
-            pr_metadata._parse_intent_comment_body(
-                receipt_call[2]["body"]
-            ).watermark_run_id,
-            202,
-        )
+        self.assertEqual(decision.action, "deferred")
+        self.assertEqual(decision.run_id, 202)
+        self.assertFalse(decision.mutated)
+        self.assertTrue(all(method == "GET" for method, _endpoint, _body in client.calls))
         other_jobs_endpoint = _query(
             "actions/runs/202/attempts/1/jobs",
             [("per_page", "100"), ("page", "1")],

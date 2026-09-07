@@ -1026,7 +1026,7 @@ def _summary_job(
 
 
 def _summary_full_jobs() -> list[dict]:
-    return [
+    jobs = [
         _summary_job("event-identity", "success"),
         _summary_job("event-router", "success"),
         _summary_job("event-classifier", "success"),
@@ -1037,6 +1037,17 @@ def _summary_full_jobs() -> list[dict]:
         _summary_job("patch-release", "skipped", runner_name=None, started_at=None),
         _summary_job("summary", "success"),
     ]
+    classifier = next(job for job in jobs if job["name"] == "event-classifier")
+    classifier["steps"] = [{
+        "name": f"workflow-pilot-candidate:v1:{SUMMARY_TEST_PR_NUMBER}:{SUMMARY_TEST_HEAD_SHA}:"
+                f"{SUMMARY_TEST_BASE_SHA}:master",
+        "status": "completed", "conclusion": "success",
+    }]
+    return jobs
+
+
+def _summary_compare_path():
+    return f"/repos/{SUMMARY_TEST_REPOSITORY}/compare/{SUMMARY_TEST_BASE_SHA}...{SUMMARY_TEST_HEAD_SHA}"
 
 
 def _summary_metadata_jobs() -> list[dict]:
@@ -1095,6 +1106,7 @@ def _summary_metadata_env(**overrides: str) -> dict[str, str]:
         "LEGACY_RESULT": "skipped",
         "PATCH_RELEASE_RESULT": "skipped",
         "PR_BASE_SHA": SUMMARY_TEST_BASE_SHA,
+        "PR_BASE_REF": "master",
         "PR_HEAD_SHA": SUMMARY_TEST_HEAD_SHA,
         "PR_NUMBER": str(SUMMARY_TEST_PR_NUMBER),
         "PUSH_SHA": "",
@@ -1160,7 +1172,12 @@ def _run_summary_with_api_servers(
     )
     primary_server.routes = {
         path: list(value) if isinstance(value, list) else [value]
-        for path, value in primary_routes.items()
+        for path, value in {
+            _summary_compare_path():
+                _summary_response({"base_commit": {"sha": SUMMARY_TEST_BASE_SHA},
+                                   "merge_base_commit": {"sha": SUMMARY_TEST_BASE_SHA}}),
+            **primary_routes,
+        }.items()
     }
     primary_server.requests = []
     primary_server.api_base = f"http://127.0.0.1:{primary_server.server_port}"
@@ -6525,6 +6542,7 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                 _summary_runs_path(page=2),
                 _summary_jobs_path(8101),
                 _summary_jobs_path(8100),
+                _summary_compare_path(),
             ],
         )
         self.assertTrue(requests)
@@ -6969,6 +6987,7 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                 _summary_runs_path(page=1),
                 _summary_jobs_path(8102),
                 _summary_jobs_path(8101),
+                _summary_compare_path(),
             ],
         )
 
@@ -7333,6 +7352,8 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                 )
                 self.assertEqual(completed.returncode, 1, completed.stderr)
                 self.assertIn(error_fragment, completed.stderr)
+                if error_fragment.startswith("metadata-only summary newest prior full Build CI"):
+                    expected_requests = [*expected_requests, _summary_compare_path()]
                 self.assertEqual(
                     [request["path"] for request in requests],
                     expected_requests,
@@ -7386,6 +7407,7 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
             [
                 _summary_runs_path(page=1),
                 _summary_jobs_path(8101),
+                _summary_compare_path(),
             ],
         )
 

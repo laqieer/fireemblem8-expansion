@@ -59,20 +59,20 @@ class CoordinatorLocalTests(unittest.TestCase):
     def complete(self):
         local = gate.register_local_validation(
             self.state, self.record, self.pr, self.fixture.worktree, CHECKS)
-        self.assertFalse(gate._local_ready(self.state, self.pr))
+        self.assertFalse(gate._local_ready(self.state, self.pr, self.record))
         gate.capture_local_check(self.state, self.record, self.pr, "raw")
-        self.assertFalse(gate._local_ready(self.state, self.pr))
+        self.assertFalse(gate._local_ready(self.state, self.pr, self.record))
         check = gate.capture_local_check(self.state, self.record, self.pr, "config", self.executor)
         self.assertEqual(check["exit_code"], 0)
         self.assertGreater(check["pid"], 0)
         self.assertGreater(check["peak_rss_bytes"], 0)
         self.assertEqual(check["measurements"]["protocol_changes"], 1)
-        self.assertTrue(gate._local_ready(self.state, self.pr))
+        self.assertTrue(gate._local_ready(self.state, self.pr, self.record))
         self.assertEqual(self.state["assignments"], [])
         return local
 
     def test_current_committed_head_can_complete_all_checks_without_owner_or_commit(self):
-        self.assertFalse(gate._local_ready(self.state, self.pr))
+        self.assertFalse(gate._local_ready(self.state, self.pr, self.record))
         self.complete()
         self.assertEqual(handoff.observe_git({"allowed_worktree": str(self.fixture.worktree)})["head"],
                          self.head)
@@ -88,7 +88,7 @@ class CoordinatorLocalTests(unittest.TestCase):
             with self.subTest(definitions=definitions), self.assertRaises(ValueError):
                 gate.register_local_validation(
                     self.state, self.record, self.pr, self.fixture.worktree, definitions)
-        self.assertFalse(gate._local_ready(self.state, self.pr))
+        self.assertFalse(gate._local_ready(self.state, self.pr, self.record))
 
     def test_missing_failed_incomplete_and_changed_definitions_never_reuse_success(self):
         local = self.complete()
@@ -106,13 +106,13 @@ class CoordinatorLocalTests(unittest.TestCase):
         for change in mutations:
             self.record["local_validation"] = copy.deepcopy(good)
             change(self.record["local_validation"])
-            self.assertFalse(gate._local_ready(self.state, self.pr))
+            self.assertFalse(gate._local_ready(self.state, self.pr, self.record))
         self.record["local_validation"] = good
         missing = gate.capture_local_check(
             self.state, self.record, self.pr, "config", lambda *_: ({"passed": True}, {}))
         self.assertIsNone(missing["exit_code"])
         self.assertIn("unavailable", missing["detail"])
-        self.assertFalse(gate._local_ready(self.state, self.pr))
+        self.assertFalse(gate._local_ready(self.state, self.pr, self.record))
         gate.register_local_validation(self.state, self.record, self.pr, self.fixture.worktree, CHECKS)
         self.assertEqual(self.record["local_validation"]["checks"], {})
 
@@ -124,22 +124,22 @@ class CoordinatorLocalTests(unittest.TestCase):
                              ("worktree", str(self.fixture.repository))):
             self.record["local_validation"] = copy.deepcopy(good)
             self.record["local_validation"][field] = value
-            self.assertFalse(gate._local_ready(self.state, self.pr))
+            self.assertFalse(gate._local_ready(self.state, self.pr, self.record))
         self.record["local_validation"] = copy.deepcopy(good)
         self.record["local_validation"]["git_identity"]["inode"] += 1
-        self.assertFalse(gate._local_ready(self.state, self.pr))
+        self.assertFalse(gate._local_ready(self.state, self.pr, self.record))
         self.record["local_validation"] = copy.deepcopy(good)
         changed_base = SimpleNamespace(**{**vars(self.pr), "base_sha": self.head})
-        self.assertFalse(gate._local_ready(self.state, changed_base))
+        self.assertFalse(gate._local_ready(self.state, changed_base, self.record))
         path = self.fixture.worktree / "docs/value.json"
         path.write_text('{"value":8}\n')
-        self.assertFalse(gate._local_ready(self.state, self.pr))
+        self.assertFalse(gate._local_ready(self.state, self.pr, self.record))
         path.write_text('{"value":7}\n')
         self.record["local_validation"]["clock"]["boot_id"] = "changed-boot"
-        self.assertFalse(gate._local_ready(self.state, self.pr))
+        self.assertFalse(gate._local_ready(self.state, self.pr, self.record))
         self.record["local_validation"] = copy.deepcopy(good)
         self.state["availability"]["valid_until"] = at_offset(-1)
-        self.assertFalse(gate._local_ready(self.state, self.pr))
+        self.assertFalse(gate._local_ready(self.state, self.pr, self.record))
         with self.assertRaises(ValueError):
             gate.capture_local_check(self.state, self.record, self.pr, "config", self.executor)
 
@@ -155,18 +155,18 @@ class CoordinatorLocalTests(unittest.TestCase):
         check = gate.capture_local_check(self.state, self.record, self.pr, "config", failed)
         self.assertEqual(check["exit_code"], 7)
         self.assertGreater(check["pid"], 0)
-        self.assertFalse(gate._local_ready(self.state, self.pr))
+        self.assertFalse(gate._local_ready(self.state, self.pr, self.record))
 
     def test_applicable_incomplete_delegation_cannot_be_hidden(self):
         self.complete()
         assignment = copy.deepcopy(self.fixture.assignment)
         assignment["assigned_parent_sha"] = self.head
         entry = handoff.assign(self.state, assignment)
-        self.assertFalse(gate._local_ready(self.state, self.pr))
+        self.assertFalse(gate._local_ready(self.state, self.pr, self.record))
         with self.assertRaises(ValueError):
             gate.register_local_validation(self.state, self.record, self.pr, self.fixture.worktree, CHECKS)
         entry["closed_at"] = observations.utc_now()
-        self.assertFalse(gate._local_ready(self.state, self.pr))
+        self.assertFalse(gate._local_ready(self.state, self.pr, self.record))
         with self.assertRaises(ValueError):
             gate.register_local_validation(self.state, self.record, self.pr, self.fixture.worktree, CHECKS)
 
@@ -180,9 +180,9 @@ class CoordinatorLocalTests(unittest.TestCase):
 
         check = gate.capture_local_check(self.state, self.record, self.pr, "config", changing)
         self.assertIsNone(check["exit_code"])
-        self.assertFalse(gate._local_ready(self.state, self.pr))
+        self.assertFalse(gate._local_ready(self.state, self.pr, self.record))
         (self.fixture.worktree / "docs/value.json").write_text('{"value":7}\n')
-        self.assertFalse(gate._local_ready(self.state, self.pr))
+        self.assertFalse(gate._local_ready(self.state, self.pr, self.record))
 
     def test_registry_change_during_real_capture_invalidates_the_observation(self):
         self.complete()
@@ -194,7 +194,7 @@ class CoordinatorLocalTests(unittest.TestCase):
 
         check = gate.capture_local_check(self.state, self.record, self.pr, "config", changed)
         self.assertIsNone(check["exit_code"])
-        self.assertFalse(gate._local_ready(self.state, self.pr))
+        self.assertFalse(gate._local_ready(self.state, self.pr, self.record))
 
     def test_removing_a_criterion_and_its_result_cannot_shrink_registered_coverage(self):
         definitions = {**CHECKS, "second": {**CHECKS["config"], "evidence_id": "second-v1"}}
@@ -203,10 +203,10 @@ class CoordinatorLocalTests(unittest.TestCase):
         for check_id in definitions:
             gate.capture_local_check(self.state, self.record, self.pr, check_id,
                                      self.executor if check_id != "raw" else None)
-        self.assertTrue(gate._local_ready(self.state, self.pr))
+        self.assertTrue(gate._local_ready(self.state, self.pr, self.record))
         del local["required_checks"]["second"]
         del local["checks"]["second"]
-        self.assertFalse(gate._local_ready(self.state, self.pr))
+        self.assertFalse(gate._local_ready(self.state, self.pr, self.record))
 
     def test_schema_and_runtime_reuse_closed_check_types(self):
         self.complete()

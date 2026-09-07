@@ -29,6 +29,31 @@
       }
     },
     {
+      "pull_request": 221,
+      "risk_boundaries": [
+        "protocol",
+        "lifecycle"
+      ],
+      "threshold": {
+        "triggers": [
+          "changed-files",
+          "changed-lines",
+          "risk-boundary"
+        ],
+        "override_history": []
+      },
+      "gate_mode": "review-first",
+      "stack": {
+        "depth": 0,
+        "parent_pr": null,
+        "exception_reason": null
+      },
+      "pilot": {
+        "included": false,
+        "disposition": "excluded"
+      }
+    },
+    {
       "pull_request": 222,
       "risk_boundaries": [
         "lifecycle"

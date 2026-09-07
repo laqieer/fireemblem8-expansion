@@ -21,6 +21,7 @@ class RequestTests(unittest.TestCase):
         valid = request()
         self.assertEqual(model.validate_request(model.parse_json(json.dumps(valid).encode())), valid)
         for key in ("pass", "program", "module", "members", "trusted", "receipt",
+                    "cleanup_confirmed", "_on_cleanup",
                     "execution_inputs", "blocked_by", "evidence"):
             with self.subTest(key=key), self.assertRaises(model.ReviewError):
                 model.validate_request({**valid, key: True})
@@ -55,6 +56,7 @@ class RequestTests(unittest.TestCase):
         ):
             cases.append(({**request(), key: value}, False))
         for extra in ("program", "expected_members", "pass", "trusted",
+                      "cleanup_confirmed", "_on_cleanup",
                       "execution_inputs", "blocked_by", "evidence"):
             cases.append(({**request(), extra: "injected"}, False))
         for data, expected in cases:

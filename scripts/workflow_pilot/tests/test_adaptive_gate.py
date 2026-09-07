@@ -42,6 +42,22 @@ def decisions(number=191, risks=("none",), mode="concurrent", *, paused=False):
     }]}
 
 
+def git_scope_files(root, base, head):
+    stats = {}
+    for row in git(root, "diff", "--numstat", "--no-renames", base, head).splitlines():
+        added, deleted, name = row.split("\t")
+        stats[name] = (int(added), int(deleted))
+    files = []
+    for name, (old_mode, new_mode, old_oid, new_oid) in handoff._changes(root, base, head).items():
+        added, deleted = stats[name]
+        files.append({
+            "filename": name, "sha": (old_oid if new_mode == b"000000" else new_oid).decode(),
+            "status": "removed" if new_mode == b"000000" else
+                      "added" if old_mode == b"000000" else "modified",
+            "additions": added, "deletions": deleted, "changes": added + deleted})
+    return files
+
+
 class ModeTests(unittest.TestCase):
     def select(self, raw, lines=100):
         return gate.select_mode(raw, number=191, head_sha="a" * 40,
@@ -75,6 +91,16 @@ class ModeTests(unittest.TestCase):
         self.assertIn("override", selected.reason)
         self.assertEqual(self.select(decisions(risks=("save",), mode="concurrent")).mode, "review-first")
 
+    def test_provenance_callback_without_scope_is_not_an_override(self):
+        raw = decisions()
+        raw["pull_requests"][0]["threshold"]["override_history"] = [
+            {"enabled": True, "reason": "A reason cannot supply missing scope evidence"}]
+        selected = gate.select_mode(raw, number=191, head_sha="a" * 40, decision_oid="b" * 40,
+                                    changed_lines=3000, verify_override=lambda record: None)
+        self.assertFalse(selected.known)
+        self.assertEqual(selected.mode, "concurrent")
+        self.assertIn("scope authority unavailable", selected.reason)
+
     def test_actual_git_pre_review_override_and_late_introduction(self):
         from scripts.workflow_pilot.tests import test_reporter as fixtures
         fixtures.TEST_ARTIFACTS.mkdir(parents=True, exist_ok=True)
@@ -82,13 +108,15 @@ class ModeTests(unittest.TestCase):
             with self.subTest(introduction=introduction):
                 owner = fixtures.FailClosedDataTests()
                 self.addCleanup(owner.doCleanups)
-                root, fixture, raw, _, _ = owner.make_override_case(introduction=introduction)
+                root, fixture, raw, _, shas = owner.make_override_case(
+                    introduction=introduction, marker_path="docs/override.md", marker_lines=3000)
                 data = reporter.validate_fixture(fixture)
                 data["repository_authority"] = reporter.validate_repository_authority(root, data)
                 head = data["pull_requests"][1]["head_sha"]
                 oid = reporter.run_git(root, "rev-parse", head + ":" + str(reporter.DECISION_RECORD_PATH))
                 selected = gate.select_mode(
-                    raw, number=1, head_sha=head, decision_oid=oid.decode().strip(), changed_lines=5000,
+                    raw, number=1, head_sha=head, decision_oid=oid.decode().strip(),
+                    changed_lines=sum(item["changes"] for item in git_scope_files(root, shas["0"], head)),
                     data=data, repository_root=root)
                 self.assertEqual(selected.known, accepted, selected.reason)
                 self.assertEqual(selected.mode, "concurrent")
@@ -114,6 +142,225 @@ class ModeTests(unittest.TestCase):
         with self.assertRaises(reporter.PilotDataError):
             reporter.project_cohort_decisions(
                 {**raw, "pull_requests": [*raw["pull_requests"], raw["pull_requests"][0]]}, {150})
+
+
+class OverrideScopeTests(unittest.TestCase):
+    def route(self, category, *, risk="none", fault=None):
+        from scripts.workflow_pilot.tests import test_pr_metadata as m
+        artifacts = ROOT / "build/test-artifacts"
+        artifacts.mkdir(parents=True, exist_ok=True)
+        owned = tempfile.TemporaryDirectory(prefix="override-scope-", dir=artifacts)
+        self.addCleanup(owned.cleanup)
+        root = Path(owned.name)
+        git(root, "init", "-b", m.HEAD_REF)
+        git(root, "config", "user.name", "Scope regression")
+        git(root, "config", "user.email", "scope@example.invalid")
+        path = {
+            "generated": "src/data/supports.json",
+            "localization": "texts/expansion/catalog.en.json",
+            "docs": "docs/scope.md", "delete": "src/retired.c",
+            "runtime": "src/runtime.c", "archival": "asm/archive.s",
+            "spoofed": "src/generated/claimed.c", "partial-delete": "src/retired.c",
+            "renamed-runtime": "src/runtime.c", "renamed-docs": "docs/old.md",
+        }[category]
+        if category in {"generated", "localization"}:
+            before = (ROOT / path).read_text()
+            after = before + "\n" * 2100
+            self.assertEqual(json.loads(before), json.loads(after))
+        else:
+            before = "old\n" * 2100
+            after = None if category == "delete" else (
+                "old\n" if category == "partial-delete" else "new\n" * 2100)
+        if category.startswith("renamed-"):
+            before, after = "old\n" * 4200, "old\n" * 4200 + "new\n" * 2100
+        source = root / path
+        source.parent.mkdir(parents=True, exist_ok=True)
+        source.write_text(before)
+        raw = decisions(m.PR_NUMBER, (risk,))
+        if fault == "reordered":
+            raw["pull_requests"].extend(decisions(m.PR_NUMBER + 1)["pull_requests"])
+        decision_path = root / reporter.DECISION_RECORD_PATH
+        decision_path.parent.mkdir(parents=True)
+        write_json(decision_path, raw)
+        git(root, "add", ".")
+        git(root, "commit", "-m", "Scope base")
+        base = git(root, "rev-parse", "HEAD")
+        git(root, "branch", "master", base)
+        raw["pull_requests"][0]["threshold"]["override_history"] = [
+            {"enabled": True, "reason": "Generated, localized, documented or bulk deletion work"}]
+        if fault == "reordered":
+            raw["pull_requests"].reverse()
+        if fault in {"other-decision", "masked-decision"}:
+            raw["pull_requests"].extend(decisions(m.PR_NUMBER + 1)["pull_requests"])
+        write_json(decision_path, raw)
+        if after is None:
+            source.unlink()
+        else:
+            source.write_text(after)
+        if category.startswith("renamed-"):
+            destination = root / "docs/moved.md"
+            destination.parent.mkdir(exist_ok=True)
+            source.rename(destination)
+        if fault == "mixed":
+            (root / "src").mkdir(exist_ok=True)
+            (root / "src/other.c").write_text("int runtime_change;\n")
+        git(root, "add", ".")
+        git(root, "commit", "-m", "Actual scope delta and timing record")
+        head = git(root, "rev-parse", "HEAD")
+        if fault in {"advanced-base", "masked-decision"}:
+            upstream = reporter.load_decisions_from_commit(root, base)
+            upstream["pull_requests"].extend(decisions(m.PR_NUMBER + 1)["pull_requests"])
+            git(root, "checkout", "master")
+            write_json(decision_path, upstream)
+            git(root, "add", ".")
+            git(root, "commit", "-m", "Independent integration-base metadata")
+            base = git(root, "rev-parse", "HEAD")
+        frozen = git(root, "merge-base", "--all", base, head)
+        files = git_scope_files(root, frozen, head)
+        if category.startswith("renamed-"):
+            renames = [row.split("\t") for row in git(root, "diff", "--name-status", "-M", frozen, head).splitlines()
+                       if row.startswith("R")]
+            self.assertEqual(len(renames), 1)
+            _, old, new = renames[0]
+            stats = [row.split("\t") for row in git(root, "diff", "--numstat", "-M", frozen, head).splitlines()
+                     if not row.endswith(str(reporter.DECISION_RECORD_PATH))]
+            self.assertEqual(len(stats), 1)
+            added, deleted = map(int, stats[0][:2])
+            files = [item for item in files if item["filename"] not in {old, new}]
+            files.append({"filename": new, "previous_filename": old, "status": "renamed",
+                          "sha": git(root, "rev-parse", head + ":" + new),
+                          "additions": added, "deletions": deleted, "changes": added + deleted})
+        pr = m._pr(head=head, base=base)
+        pr.update(changed_files=len(files), additions=sum(item["additions"] for item in files),
+                  deletions=sum(item["deletions"] for item in files))
+        payload = {"number": m.PR_NUMBER, "action": "synchronize", "pull_request": copy.deepcopy(pr)}
+        event = event_classifier.classify_event(
+            "pull_request", payload, github_ref=f"refs/pull/{m.PR_NUMBER}/merge", github_sha="f" * 40,
+            pr_base_sha=base, pr_head_sha=head, push_sha="")
+        endpoint = m._endpoint(f"compare/{base}...{head}")
+        comparison = {"url": github._api_url(endpoint), "base_commit": {"sha": base},
+                      "merge_base_commit": {"sha": git(root, "merge-base", "--all", base, head)},
+                      "total_commits": 1, "commits": [{"sha": head}], "files": files}
+        if fault == "missing":
+            comparison.pop("files")
+        elif fault == "truncated":
+            comparison["files"] = files[:-1]
+        elif fault == "stale":
+            comparison["commits"] = [{"sha": base}]
+        elif fault == "commit-truncated":
+            comparison["total_commits"] = 2
+        elif fault == "foreign-url":
+            comparison["url"] = comparison["url"].replace("owner/repo", "foreign/repo")
+        elif fault == "missing-count":
+            pr.pop("changed_files")
+        elif fault == "bad-status":
+            comparison["files"][-1]["status"] = "claimed-generated"
+        elif fault == "wrong-count":
+            comparison["files"][-1]["changes"] += 1
+        committed = git(root, "show", "-s", "--format=%cI", head).replace("+00:00", "Z")
+        submitted = (reporter.parse_time(committed, "commit") + timedelta(seconds=1)).isoformat().replace("+00:00", "Z")
+        if fault == "late":
+            submitted = committed
+        review_data = {"data": {"repository": {"nameWithOwner": m.REPOSITORY, "pullRequest": {
+            "number": m.PR_NUMBER, "baseRefOid": base, "headRefOid": head,
+            "reviews": {"pageInfo": {"hasNextPage": False, "endCursor": None}, "nodes": [{
+                "id": "scope-review", "state": "APPROVED", "submittedAt": submitted,
+                "body": "", "commit": {"oid": head},
+                "author": {"__typename": "Bot", "id": "BOT_kgDOCnlnWA",
+                           "login": "copilot-pull-request-reviewer"},
+                "comments": {"pageInfo": {"hasNextPage": False}, "nodes": []},
+            }]}, "reviewThreads": {"pageInfo": {"hasNextPage": False}, "nodes": []},
+        }}}}
+        responses = {
+            ("GET", m._endpoint("").rstrip("/")): {
+                "id": m.REPOSITORY_ID, "full_name": m.REPOSITORY, "default_branch": "master"},
+            ("GET", m._endpoint(f"pulls/{m.PR_NUMBER}")): pr,
+            ("GET", endpoint): comparison,
+            ("GET", m._endpoint(f"compare/{head}...{head}")): {
+                "base_commit": {"sha": head}, "merge_base_commit": {"sha": head}},
+            ("GET", m._endpoint(f"git/commits/{head}")): {"sha": head, "committer": {"date": committed}},
+            ("POST", "graphql"): review_data,
+        }
+        for revision in {base, frozen, head}:
+            content = reporter.run_git(root, "show", revision + ":" + str(reporter.DECISION_RECORD_PATH))
+            responses[("GET", m._query("contents/" + str(reporter.DECISION_RECORD_PATH), [("ref", revision)]))] = {
+                "path": str(reporter.DECISION_RECORD_PATH), "type": "file", "encoding": "base64",
+                "sha": git(root, "rev-parse", revision + ":" + str(reporter.DECISION_RECORD_PATH)),
+                "content": base64.b64encode(content).decode()}
+        calls = []
+
+        def transport(argv, **kwargs):
+            method = argv[argv.index("--method") + 1]
+            target = argv[argv.index("X-GitHub-Api-Version: 2022-11-28") + 1]
+            calls.append((method, target))
+            if fault in {"head-moves", "base-ref-moves"} and calls.count(("GET", endpoint)) >= 2 and target.endswith(
+                    f"pulls/{m.PR_NUMBER}"):
+                if fault == "head-moves":
+                    (root / "later.md").write_text("A genuinely newer local Git candidate\n")
+                    git(root, "add", ".")
+                    git(root, "commit", "-m", "Candidate advanced during observation")
+                    pr["head"]["sha"] = git(root, "rev-parse", "HEAD")
+                else:
+                    git(root, "branch", "retargeted", base)
+                    pr["base"]["ref"] = "retargeted"
+            headers = "HTTP/2.0 200 OK\r\nContent-Type: application/json\r\n"
+            if fault == "paginated" and target == endpoint:
+                headers += f'Link: <{github._api_url(endpoint)}?page=2>; rel="next"\r\n'
+            body = json.dumps(responses[(method, target)])
+            return subprocess.CompletedProcess(argv, 0, (headers + "\r\n" + body).encode(), b"")
+
+        result, selected, _ = gate.route_event(
+            github.GitHubClient("/usr/bin/gh", runner=transport), event, payload, m.REPOSITORY)
+        self.observed = {"category": category, "risk": risk, "fault": fault, "base": base, "head": head,
+                         "files": files, "calls": calls, "decision": asdict(selected),
+                         "classification": result.classification}
+        return result, selected
+
+    def test_only_actual_eligible_categories_honor_a_timely_override(self):
+        for category, fault in (("generated", None), ("localization", None), ("docs", None),
+                                ("delete", None), ("docs", "reordered"), ("renamed-docs", None)):
+            with self.subTest(category=category, fault=fault):
+                result, selected = self.route(category, fault=fault)
+                self.assertTrue(selected.known, self.observed)
+                self.assertEqual(selected.reason, "validated-pre-review-override")
+                self.assertEqual(result.classification, "full")
+
+    def test_known_ineligible_runtime_archival_and_claims_keep_size_timing(self):
+        for category, risk, fault in (
+            ("runtime", "runtime", None), ("archival", "archival", None),
+            ("runtime", "none", None), ("runtime", "generated-data", None),
+            ("spoofed", "generated-data", None), ("partial-delete", "none", None),
+            ("renamed-runtime", "none", None),
+            ("generated", "generated-data", "mixed"), ("docs", "none", "other-decision"),
+        ):
+            with self.subTest(category=category, risk=risk, fault=fault):
+                result, selected = self.route(category, risk=risk, fault=fault)
+                self.assertTrue(selected.known, self.observed)
+                self.assertEqual((selected.reason, result.classification),
+                                 ("large-change", "review-first"), self.observed)
+
+    def test_bookkeeping_uses_actual_diff_origin_not_an_advanced_live_base(self):
+        for fault, expected in (("advanced-base", "full"), ("masked-decision", "review-first")):
+            with self.subTest(fault=fault):
+                result, selected = self.route("docs", fault=fault)
+                self.assertTrue(selected.known, self.observed)
+                self.assertEqual(result.classification, expected, self.observed)
+
+    def test_missing_stale_truncated_or_moving_authority_stays_unknown_and_broader(self):
+        for fault in ("missing", "truncated", "stale", "commit-truncated", "foreign-url",
+                      "missing-count", "bad-status", "wrong-count", "paginated",
+                      "head-moves", "base-ref-moves", "late"):
+            with self.subTest(fault=fault):
+                result, selected = self.route("docs", fault=fault)
+                self.assertFalse(selected.known, self.observed)
+                self.assertTrue(selected.reason.startswith("unknown-decision:"), selected.reason)
+                self.assertEqual(result.classification, "full")
+
+    def test_named_risk_cannot_be_overridden_by_scope_or_missing_scope_facts(self):
+        for fault in (None, "missing", "late"):
+            with self.subTest(fault=fault):
+                result, selected = self.route("docs", risk="security", fault=fault)
+                self.assertEqual((selected.reason, result.classification), ("named-risk", "review-first"))
 
 
 class GateTests(unittest.TestCase):
@@ -152,6 +399,7 @@ class GateTests(unittest.TestCase):
         self.runs = [self.workflow_run(1, "review-first")]
 
     def workflow_run(self, run_id, mode="full", *, event=None, conclusion=None, attempt=1):
+        from scripts.workflow_pilot.tests.test_pr_metadata import WORKFLOW_ID
         created = reporter.parse_time(at_offset(-20), "run")
         classifier = (candidate_evidence.PREFLIGHT_CLASSIFIER if mode == "review-first"
                       else candidate_evidence.FULL_CLASSIFIER)
@@ -164,13 +412,14 @@ class GateTests(unittest.TestCase):
                 index + 1, run_id, name, "completed", verdict,
                 None if verdict == "skipped" else "hosted-runner", created, created, created,
                 candidate_binding=(self.pr.number, self.pr.head_sha, self.fixture.parent)
-                if job_id == "event-classifier" else None))
+                if job_id == "event-classifier" else None,
+                candidate_base_ref=self.pr.base_ref if job_id == "event-classifier" else None))
         return github.RunState(
-            run_id, 10, run_id, attempt, self.pr.head_ref, created, created, created, "completed",
+            run_id, WORKFLOW_ID, run_id, attempt, self.pr.head_ref, created, created, created, "completed",
             conclusion or ("failure" if mode == "review-first" else "success"),
             "explicit-same", mode, tuple(jobs), event or ("pull_request" if mode == "review-first"
                                                         else "workflow_dispatch"),
-            self.pr.head_sha, (self.pr.number, self.pr.head_sha, self.fixture.parent))
+            self.pr.head_sha, (self.pr.number, self.pr.head_sha, self.fixture.parent), self.pr.base_ref)
 
     def parsed_dispatch(self, run_id, *, queued=False, created=None, number=None, branch=None):
         from scripts.workflow_pilot.tests import test_pr_metadata as fixtures
@@ -194,7 +443,7 @@ class GateTests(unittest.TestCase):
                 job[field] = job[field].replace(fixtures.REPOSITORY, self.pr.repository)
             if job["name"] == "event-classifier":
                 job["steps"] = [{
-                    "name": gate.binding_name(self.pr.number, self.pr.head_sha, self.record["base_sha"]),
+                    "name": gate.binding_name(self.pr.number, self.pr.head_sha, self.record["base_sha"], self.pr.base_ref),
                     "status": "completed", "conclusion": "success"}]
         workflow = fixtures._workflow()
         for field in ("url", "html_url", "badge_url"):
@@ -248,12 +497,12 @@ class GateTests(unittest.TestCase):
         self.assertTrue(report["final_master_build_required"])
 
     def test_registered_local_criteria_are_not_hidden_by_an_accepted_delegate(self):
-        self.assertTrue(gate._local_ready(self.state, self.pr))
+        self.assertTrue(gate._local_ready(self.state, self.pr, self.record))
         gate.register_local_validation(self.state, self.record, self.pr, self.fixture.worktree, {
             "raw": {"contract": "git-diff-check", "evidence_id": "raw", "inputs": []},
             "extra": {"contract": "coordinator-check", "evidence_id": "extra", "inputs": []},
         })
-        self.assertFalse(gate._local_ready(self.state, self.pr))
+        self.assertFalse(gate._local_ready(self.state, self.pr, self.record))
         self.assertFalse(self.assess()["dispatchable"])
 
     def test_accepted_finding_abandons_even_if_an_early_or_later_build_passes(self):
@@ -432,7 +681,7 @@ class GateTests(unittest.TestCase):
                         job[field] = job[field].replace(fixtures.REPOSITORY, self.pr.repository)
                     if job["name"] == "event-classifier":
                         job["steps"] = [{
-                            "name": gate.binding_name(number, self.pr.head_sha, merge_bases[0]),
+                            "name": gate.binding_name(number, self.pr.head_sha, merge_bases[0], self.pr.base_ref),
                             "status": "completed", "conclusion": "success"}]
                 rows.append((raw, jobs))
             workflow = fixtures._workflow()
@@ -493,6 +742,7 @@ class GateTests(unittest.TestCase):
         with patch.object(observations, "utc_now", return_value=at_offset(-30)):
             self.record = gate.begin_candidate(
                 self.state, self.pr, self.fixture.parent, self.decision)
+        self.runs.append(self.workflow_run(2, "review-first"))
         self.assertFalse(self.assess()["dispatchable"])
         fresh = replace(old, id="review-2", submitted_at=at_offset(-10), body="Fresh complete clean review")
         self.session.triage(review.Triage(fresh, "clean"))
@@ -592,6 +842,13 @@ class GateTests(unittest.TestCase):
 
         class Client:
             def request(inner, method, endpoint, **kwargs):
+                if method == "GET":
+                    self.assertEqual(endpoint, github._endpoint(
+                        pr.repository, f"compare/{pr.base_sha}...{pr.head_sha}"))
+                    return SimpleNamespace(payload={
+                        "base_commit": {"sha": pr.base_sha},
+                        "merge_base_commit": {"sha": git(self.fixture.worktree, "merge-base",
+                                                        pr.base_sha, pr.head_sha)}})
                 calls.append((method, endpoint, kwargs))
                 saved = observations.load_json(path)
                 self.assertIsNotNone(saved["candidates"][0]["dispatch_requested_at"])
@@ -618,6 +875,13 @@ class GateTests(unittest.TestCase):
         write_json(path, self.state)
         calls = []
         def accept_post(argv, **kwargs):
+            if argv[argv.index("--method") + 1] == "GET":
+                self.assertEqual(argv[-1], github._endpoint(
+                    self.pr.repository, f"compare/{self.pr.base_sha}...{self.pr.head_sha}"))
+                payload = {"base_commit": {"sha": self.pr.base_sha}, "merge_base_commit": {
+                    "sha": git(self.fixture.worktree, "merge-base", self.pr.base_sha, self.pr.head_sha)}}
+                wire = "HTTP/2.0 200 OK\r\nContent-Type: application/json\r\n\r\n" + json.dumps(payload)
+                return subprocess.CompletedProcess(argv, 0, wire.encode(), b"")
             calls.append((argv, kwargs))
             self.assertEqual(json.loads(kwargs["input"]), {"ref": self.pr.head_ref})
             return subprocess.CompletedProcess(argv, 0, b"HTTP/2.0 204 No Content\r\n\r\n", b"")
@@ -673,7 +937,13 @@ class GateTests(unittest.TestCase):
         other = self.parsed_dispatch(3)
         queued = self.parsed_dispatch(3, queued=True)
         path = self.fixture.home / "reconciliation.json"
-        client = SimpleNamespace(request=lambda *args, **kwargs: self.fail("unexpected remote mutation"))
+        def read_compare(method, endpoint, **kwargs):
+            self.assertEqual((method, endpoint), ("GET", github._endpoint(
+                self.pr.repository, f"compare/{self.pr.base_sha}...{self.pr.head_sha}")))
+            return SimpleNamespace(payload={"base_commit": {"sha": self.pr.base_sha}, "merge_base_commit": {
+                "sha": git(self.fixture.worktree, "merge-base", self.pr.base_sha, self.pr.head_sha)}})
+
+        client = SimpleNamespace(request=read_compare)
         cases = (
             (), (good, other), (good, queued),
             (replace(good, created_at=reporter.parse_time(at_offset(-60), "earlier")),),
@@ -834,7 +1104,9 @@ class AdapterTests(unittest.TestCase):
         m = self.m
         client = m.ScriptedClient()
         pr = {**m._pr(), "additions": lines, "deletions": 0}
-        client.add("GET", m._endpoint(f"pulls/{m.PR_NUMBER}"), pr)
+        client.add("GET", m._endpoint(f"pulls/{m.PR_NUMBER}"), pr, pr)
+        repository = {"id": m.REPOSITORY_ID, "full_name": m.REPOSITORY, "default_branch": "master"}
+        client.add("GET", m._endpoint("").rstrip("/"), repository, repository)
         client.add("GET", m._query("contents/" + reporter.DECISION_RECORD_PATH.as_posix(),
                                   [("ref", m.HEAD)]), self.content(raw))
         client.add("GET", m._endpoint(f"compare/{m.BASE}...{m.HEAD}"),
@@ -859,7 +1131,7 @@ class AdapterTests(unittest.TestCase):
                 result, selected, binding = gate.route_event(client, decision, payload, m.REPOSITORY)
                 self.assertEqual(result.classification, expected)
                 self.assertEqual(result.expected_head, m.HEAD)
-                self.assertEqual(binding, gate.binding_name(m.PR_NUMBER, m.HEAD, m.BASE))
+                self.assertEqual(binding, gate.binding_name(m.PR_NUMBER, m.HEAD, m.BASE, "master"))
                 self.assertEqual(selected.decision_oid, self.content(raw)["sha"])
                 self.assertTrue(all(method == "GET" for method, _, _ in client.calls))
         raw = decisions(m.PR_NUMBER, ("protocol",))
@@ -886,20 +1158,25 @@ class AdapterTests(unittest.TestCase):
                 root, fixture, raw, _, shas = owner.make_override_case(
                     first_tree="missing-entry" if variant == "late" else
                     variant if variant in {"missing-entry", "missing-file", "changed-entry"} else "exact",
-                    override_count=count)
+                    override_count=count, marker_path="docs/override.md", marker_lines=3000)
                 head, base = fixture["pull_requests"][0]["head_sha"], shas["0"]
                 first = min((item for item in fixture["reviews"] if item["author"] == reporter.REVIEW_BOT),
                             key=lambda item: item["submitted_at"])
                 if variant == "late":
                     first = {**first, "submitted_at": "2026-01-01T02:00:00Z"}
-                pr = {**m._pr(head=head, base=base), "number": 1, "additions": 3000, "deletions": 0}
+                files = git_scope_files(root, base, head)
+                pr = {**m._pr(head=head, base=base), "number": 1, "changed_files": len(files),
+                      "additions": sum(item["additions"] for item in files),
+                      "deletions": sum(item["deletions"] for item in files)}
                 pr["url"] = f"https://api.github.com/repos/{m.REPOSITORY}/pulls/1"
                 payload = {"number": 1, "action": "synchronize", "pull_request": pr}
                 event = event_classifier.classify_event(
                     "pull_request", payload, github_ref="refs/pull/1/merge", github_sha="f" * 40,
                     pr_base_sha=base, pr_head_sha=head, push_sha="")
                 client = m.ScriptedClient()
-                client.add("GET", m._endpoint("pulls/1"), pr)
+                client.add("GET", m._endpoint("pulls/1"), pr, pr, pr, pr)
+                repository = {"id": m.REPOSITORY_ID, "full_name": m.REPOSITORY, "default_branch": "master"}
+                client.add("GET", m._endpoint("").rstrip("/"), repository, repository)
                 for revision in {head, first["commit_sha"]}:
                     endpoint = m._query("contents/" + str(reporter.DECISION_RECORD_PATH), [("ref", revision)])
                     try:
@@ -918,8 +1195,13 @@ class AdapterTests(unittest.TestCase):
                                {"sha": revision, "committer": {"date": committed}})
                 for anchor in {base, first["commit_sha"]}:
                     merge_base = fixtures.git_run(root, "merge-base", "--all", anchor, head).stdout.decode().strip()
-                    client.add("GET", m._endpoint(f"compare/{anchor}...{head}"),
-                               {"base_commit": {"sha": anchor}, "merge_base_commit": {"sha": merge_base}})
+                    endpoint = m._endpoint(f"compare/{anchor}...{head}")
+                    commits = git(root, "rev-list", "--reverse", f"{anchor}..{head}").splitlines()
+                    comparison = {
+                        "url": github._api_url(endpoint), "base_commit": {"sha": anchor},
+                        "merge_base_commit": {"sha": merge_base}, "total_commits": len(commits),
+                        "commits": [{"sha": sha} for sha in commits], "files": git_scope_files(root, anchor, head)}
+                    client.add("GET", endpoint, comparison, comparison)
                 reviews = {"data": {"repository": {"nameWithOwner": m.REPOSITORY, "pullRequest": {
                     "number": 1, "baseRefOid": base, "headRefOid": head,
                     "reviews": {"pageInfo": {"hasNextPage": False, "endCursor": None}, "nodes": [{
@@ -974,7 +1256,9 @@ class AdapterTests(unittest.TestCase):
                 current["base"]["ref"] = base_ref
                 if name == "changed-head-ref":
                     current["head"]["ref"] = "other-head-ref"
-                client.add("GET", m._endpoint(f"pulls/{m.PR_NUMBER}"), current)
+                client.add("GET", m._endpoint(f"pulls/{m.PR_NUMBER}"), current, current)
+                repository = {"id": m.REPOSITORY_ID, "full_name": m.REPOSITORY, "default_branch": "master"}
+                client.add("GET", m._endpoint("").rstrip("/"), repository, repository)
                 client.add("GET", m._query(
                     "contents/" + reporter.DECISION_RECORD_PATH.as_posix(), [("ref", live_head)]),
                     self.content(decisions(m.PR_NUMBER, ("lifecycle",))))
@@ -1006,7 +1290,7 @@ class AdapterTests(unittest.TestCase):
                     self.assertEqual(result.classification, "review-first")
                     self.assertEqual(result.expected_base, original_base)
                     self.assertEqual(result.expected_head, head)
-                    self.assertEqual(binding, gate.binding_name(m.PR_NUMBER, head, original_base))
+                    self.assertEqual(binding, gate.binding_name(m.PR_NUMBER, head, original_base, "master"))
                 else:
                     with self.assertRaises(ValueError):
                         route()
@@ -1025,7 +1309,7 @@ class AdapterTests(unittest.TestCase):
         self.assertEqual(result.classification, "full")
         self.assertTrue(result.run_expensive)
         self.assertEqual(selected.mode, "review-first")
-        self.assertEqual(binding, gate.binding_name(m.PR_NUMBER, m.HEAD, m.BASE))
+        self.assertEqual(binding, gate.binding_name(m.PR_NUMBER, m.HEAD, m.BASE, "master"))
         for bad in ({"inputs": {"pass": True}}, {"inputs": "success"}):
             with self.assertRaises(ValueError):
                 gate.route_dispatch(client, decision, bad, m.REPOSITORY, "refs/heads/" + m.HEAD_REF,
@@ -1044,12 +1328,10 @@ class AdapterTests(unittest.TestCase):
                     job["event"] = event
                     if job["name"] == "event-classifier":
                         job["steps"] = [{
-                            "name": gate.binding_name(m.PR_NUMBER, m.HEAD, "c" * 40),
+                            "name": gate.binding_name(m.PR_NUMBER, m.HEAD, "c" * 40, "master"),
                             "status": "completed", "conclusion": "success"}]
                 client = m.ScriptedClient()
-                m._add_snapshot(client, [(raw, jobs)])
-                client.add("GET", m._endpoint(f"compare/{m.BASE}...{m.HEAD}"),
-                           {"base_commit": {"sha": m.BASE}, "merge_base_commit": {"sha": "c" * 40}})
+                m._add_snapshot(client, [(raw, jobs)], merge_base="c" * 40)
                 observed = github.list_candidate_runs(client, pr)
                 self.assertEqual(len(observed), 1)
                 run = observed[0]
@@ -1175,7 +1457,9 @@ class WorkflowTests(unittest.TestCase):
             path=".github/workflows/build.yml@refs/heads/fixture")
         current = t._summary_workflow_run(t.SUMMARY_TEST_RUN_ID)
         for marker, success in (
-            (gate.binding_name(number, head, frozen), True),
+            (gate.binding_name(number, head, frozen), False),
+            (gate.binding_name(number, head, frozen, "master"), True),
+            (gate.binding_name(number, head, frozen, "different/base"), False),
             (gate.binding_name(number, "d" * 40, frozen), False),
             (gate.binding_name(number, head, "d" * 40), False),
             (gate.binding_name(number + 1, head, frozen), False),
@@ -1221,11 +1505,18 @@ class DispatchBootstrapTests(unittest.TestCase):
         git(self.root, "checkout", "-b", "integration")
         for source in (ROOT / "scripts/workflow_pilot").glob("*.py"):
             shutil.copyfile(source, sources / source.name)
+        self.parent_number = metadata.PR_NUMBER - 1
+        self.decision_path = self.root / reporter.DECISION_RECORD_PATH
+        self.decision_path.parent.mkdir(parents=True)
+        write_json(self.decision_path, decisions(self.parent_number))
         git(self.root, "add", ".")
         git(self.root, "commit", "-m", "Feature-containing integration base")
         self.base = git(self.root, "rev-parse", "HEAD")
         git(self.root, "checkout", "-b", metadata.HEAD_REF)
         (sources / "isolated_launcher.py").write_text("raise AssertionError('candidate executed')\n")
+        child = decisions(metadata.PR_NUMBER, ("lifecycle",), "review-first")
+        child["pull_requests"][0]["stack"].update(depth=1, parent_pr=self.parent_number)
+        write_json(self.decision_path, child)
         git(self.root, "add", ".")
         git(self.root, "commit", "-m", "Candidate must not supply classifier programs")
         self.head = git(self.root, "rev-parse", "HEAD")
@@ -1233,6 +1524,10 @@ class DispatchBootstrapTests(unittest.TestCase):
         self.pr["base"]["ref"] = "integration"
         self.pr["head"]["repo"] = copy.deepcopy(self.pr["base"]["repo"])
         self.pr.update(additions=1, deletions=1)
+        self.parent_pr = metadata._pr(head=self.base, base=self.default)
+        self.parent_pr.update(number=self.parent_number, id=9000, node_id="PR_parent",
+                              url=github._api_url(metadata._endpoint(f"pulls/{self.parent_number}")))
+        self.parent_pr["head"]["ref"] = "integration"
         self.query = {"data": {"repository": {
             "nameWithOwner": metadata.REPOSITORY, "pullRequests": {
                 "totalCount": 1, "pageInfo": {"hasNextPage": False}, "nodes": [{
@@ -1307,17 +1602,23 @@ class DispatchBootstrapTests(unittest.TestCase):
             VALIDATED_FALLBACK_SHA=identity["fallback_sha"])
         verified, _ = self.script("event-router", 2)
         self.assertEqual(verified.returncode, 0, verified.stderr)
-        raw = decisions(m.PR_NUMBER, ("lifecycle",), "review-first")
         routes = {
+            m._endpoint("").rstrip("/"): {
+                "id": m.REPOSITORY_ID, "full_name": m.REPOSITORY, "default_branch": "master"},
             m._query("pulls", [("state", "open"), ("head", "owner:" + m.HEAD_REF),
                                ("per_page", "100")]): [self.pr],
             m._endpoint(f"pulls/{m.PR_NUMBER}"): self.pr,
-            m._query("contents/" + reporter.DECISION_RECORD_PATH.as_posix(), [("ref", self.head)]):
-                AdapterTests().content(raw),
+            m._endpoint(f"pulls/{self.parent_number}"): self.parent_pr,
             m._endpoint(f"compare/{self.pr['base']['sha']}...{self.head}"): {
                 "base_commit": {"sha": self.pr["base"]["sha"]},
                 "merge_base_commit": {"sha": git(self.root, "merge-base", self.pr["base"]["sha"], self.head)}},
         }
+        for revision in (self.head, self.base):
+            content = reporter.run_git(self.root, "show", revision + ":" + str(reporter.DECISION_RECORD_PATH))
+            routes[m._query("contents/" + str(reporter.DECISION_RECORD_PATH), [("ref", revision)])] = {
+                "path": str(reporter.DECISION_RECORD_PATH), "type": "file", "encoding": "base64",
+                "sha": git(self.root, "rev-parse", revision + ":" + str(reporter.DECISION_RECORD_PATH)),
+                "content": base64.b64encode(content).decode()}
         routes.update(responses or {})
         write_json(self.owned / "api.json", routes)
         return self.script("event-router", 3)
@@ -1391,12 +1692,20 @@ class DispatchBootstrapTests(unittest.TestCase):
 
     def test_deployed_root_base_and_exact_checkout_verification(self):
         git(self.root, "update-ref", "refs/heads/master", self.base)
+        root_decision = decisions(self.m.PR_NUMBER, ("lifecycle",), "review-first")
+        write_json(self.decision_path, root_decision)
+        git(self.root, "add", ".")
+        git(self.root, "commit", "-m", "Actual root decision after base retarget")
+        self.head = git(self.root, "rev-parse", "HEAD")
+        self.pr["head"]["sha"] = self.head
+        self.environment.update(RAW_SHA=self.head, RAW_SHA_JSON=json.dumps(self.head), GITHUB_SHA=self.head)
+        self.query["data"]["repository"]["pullRequests"]["nodes"][0]["headRefOid"] = self.head
         self.query["data"]["repository"]["pullRequests"]["nodes"][0]["baseRefName"] = "master"
         self.pr["base"]["ref"] = "master"
         identity = self.identity(DEFAULT_BRANCH="")
         result, values = self.classify(identity)
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(values["candidate_binding"], gate.binding_name(self.m.PR_NUMBER, self.head, self.base))
+        self.assertEqual(values["candidate_binding"], gate.binding_name(self.m.PR_NUMBER, self.head, self.base, "master"))
         wrong, _ = self.script("event-router", 2, CLASSIFIER_EXPECTED_SHA=self.head)
         self.assertNotEqual(wrong.returncode, 0)
 

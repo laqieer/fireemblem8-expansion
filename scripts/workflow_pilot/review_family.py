@@ -425,6 +425,8 @@ class ReviewSession:
     runtime.start/read/stop are the actual CLI task operations.
     They are supplied by trusted orchestration code, never by request JSON.
     There is no polling: finish is called after the task-completion event.
+    Coordinator-authored work can have one actual coordinator/implementer.
+    The reviewer must still be independent of both roles.
     """
 
     def __init__(self, coordinator: str, implementer: str, scope: frozenset[str],

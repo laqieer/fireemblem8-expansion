@@ -13,6 +13,7 @@ import hashlib
 import json
 from pathlib import Path
 import re
+from urllib.parse import quote, unquote_to_bytes
 
 from . import agent_handoff as handoff
 from . import candidate_evidence
@@ -62,7 +63,11 @@ def select_mode(raw, *, number, head_sha, decision_oid, changed_lines,
         if record["pilot"]["disposition"] == "paused":
             return GateDecision(head_sha, decision_oid, "concurrent", "pilot-paused",
                                 required, True, True)
+        if high_risk:
+            return GateDecision(head_sha, decision_oid, "review-first", "named-risk",
+                                True, True, False)
         history = record["threshold"]["override_history"]
+        eligible = False
         if history and verify_override is None:
             require(data is not None and repository_root is not None,
                     "override provenance unavailable")
@@ -81,17 +86,20 @@ def select_mode(raw, *, number, head_sha, decision_oid, changed_lines,
                 introduction = next(item for item in introductions if item["override_index"] == index)
                 reporter.validate_override_git_provenance(
                     repository_root, data, number, index, override, introduction, first)
+            if history[-1]["enabled"]:
+                eligible = _local_override_scope(repository_root, data, number, head_sha, raw, changed_lines)
         if history:
             if verify_override is not None:
-                verify_override(record)
-            if history[-1]["enabled"] and not high_risk:
+                eligible = verify_override(record)
+                require(type(eligible) is bool, "override scope authority unavailable")
+            if history[-1]["enabled"] and eligible:
                 return GateDecision(head_sha, decision_oid, record["gate_mode"],
                                     "validated-pre-review-override", required, True, False)
         mode = "review-first" if required else record["gate_mode"]
         return GateDecision(head_sha, decision_oid, mode,
                             "named-risk" if high_risk else "large-change" if required else "small-change",
                             required, True, False)
-    except (KeyError, TypeError, ValueError, reporter.PilotDataError) as error:
+    except (KeyError, TypeError, ValueError, OSError, ImportError, reporter.PilotDataError) as error:
         return GateDecision(head_sha, decision_oid, "concurrent",
                             "unknown-decision: " + str(error)[:512], True, False, False)
 
@@ -149,7 +157,7 @@ def _review_snapshot(client, pr, model):
     return ReviewAPI().snapshot(pr.repository, pr.number, model)
 
 
-def _verify_remote_override(client, pr, record):
+def _verify_remote_override(client, pr, record, raw, changed_lines):
     """Validate the actual immutable decision as of the first submitted review."""
     from . import review_family
     identity, facts = _review_snapshot(client, pr, review_family)
@@ -169,6 +177,131 @@ def _verify_remote_override(client, pr, record):
     cutoff = reporter.parse_time(first.submitted_at if first else observations.utc_now(), "override cutoff")
     require(committed < cutoff if first else committed <= cutoff,
             "override commit does not predate its first review")
+    return (_remote_override_scope(client, pr, raw, changed_lines)
+            if record["threshold"]["override_history"][-1]["enabled"] else False)
+
+
+def _override_scope(files, raw, number, read_base_decisions):
+    """Conservative data/document membership, not a semantic validation waiver."""
+    from scripts.generated_data.registry import REGISTRY
+    from scripts.localization import catalog
+    from scripts.localization.game_catalog.build import DEFAULT_AUTHORED_PATHS, DEFAULT_EU_AUTHORED_PATHS
+    from scripts.upstream_port.classify import classify_path
+
+    metadata = [item for item in files if item["filename"] == str(reporter.DECISION_RECORD_PATH)]
+    if metadata:
+        if metadata[0]["status"] not in {"added", "modified"}:
+            return False
+        before = ({"schema_version": reporter.SCHEMA_VERSION, "artifacts": [], "pull_requests": []}
+                  if metadata[0]["status"] == "added" else read_base_decisions())
+
+        def other_decisions(value):
+            reporter.expect_keys(value, "scope decisions", ("schema_version", "artifacts", "pull_requests"))
+            require(reporter.expect_int(value["schema_version"], "scope schema", 1) == reporter.SCHEMA_VERSION,
+                    "unknown scope decision schema")
+            reporter.expect_list(value["artifacts"], "scope artifacts")
+            others = reporter.project_cohort_decisions(
+                value, {item["pull_request"] for item in value["pull_requests"]} - {number})
+            others["pull_requests"] = sorted(others["pull_requests"], key=lambda item: item["pull_request"])
+            others["artifacts"] = sorted(others["artifacts"], key=lambda item: item["artifact_id"])
+            return others
+
+        if not handoff._same_json_value(other_decisions(before), other_decisions(raw)):
+            return False
+    files = [item for item in files if item not in metadata]
+    if not files:
+        return False
+    if all(item["status"] == "removed" and item["additions"] == 0 and item["deletions"] > 0
+           for item in files):
+        return True
+    generated = {value for name in REGISTRY.all_names()
+                 for value in (REGISTRY.resolve(name).default_source, REGISTRY.resolve(name).default_inventory_path)
+                 if value and Path(value).suffix}
+    localized = {str(value) for value in (
+        catalog.DEFAULT_REGISTRY_PATH, *catalog.DEFAULT_CATALOG_PATHS.values(),
+        *DEFAULT_AUTHORED_PATHS.values(), *DEFAULT_EU_AUTHORED_PATHS.values())}
+    paths = {item["filename"] for item in files} | {
+        item["previous_filename"] for item in files if item["status"] == "renamed"}
+    return all(name in generated or name in localized or (
+        not reporter.is_generated_path(name) and classify_path(name) == "docs"
+        and Path(name).suffix == ".md") for name in paths)
+
+
+def _remote_override_scope(client, pr, raw, changed_lines):
+    endpoint = github._endpoint(pr.repository, f"pulls/{pr.number}")
+
+    def observe():
+        payload = client.request("GET", endpoint, label="override scope candidate").payload
+        current = github._parse_pull_request_payload(payload, pr.repository, pr.number)
+        require((current.head_sha, current.head_ref, current.base_sha, current.base_ref)
+                == (pr.head_sha, pr.head_ref, pr.base_sha, pr.base_ref), "override scope candidate changed")
+        counts = tuple(reporter.expect_int(payload[name], "override " + name, 0)
+                       for name in ("changed_files", "additions", "deletions"))
+        require(counts[1] + counts[2] == changed_lines, "override diff size changed")
+        return counts
+
+    counts = observe()
+    endpoint_compare = github._endpoint(pr.repository, f"compare/{pr.base_sha}...{pr.head_sha}")
+    response = client.request("GET", endpoint_compare, label="immutable override diff")
+    comparison = response.payload
+    github._require_api_url(comparison["url"], endpoint_compare, field="override compare URL")
+    require(not response.headers.get("link"), "paginated override diff is unavailable")
+    require(comparison["base_commit"]["sha"] == pr.base_sha, "override comparison base changed")
+    base = reporter.expect_sha(comparison["merge_base_commit"]["sha"], "override merge base")
+    commits = reporter.expect_list(comparison["commits"], "override commits")
+    require(len(commits) == reporter.expect_int(comparison["total_commits"], "override commit count", 0)
+            and (commits[-1]["sha"] == pr.head_sha if commits else pr.head_sha == pr.base_sha),
+            "override comparison head or commit completeness changed")
+    reporter.expect_unique([reporter.expect_sha(item["sha"], "override commit") for item in commits],
+                           "override commit identities")
+    files = reporter.expect_list(comparison["files"], "override files")
+    require(len(files) == counts[0], "override file list truncated")
+    names = []
+    for item in files:
+        handoff.path(item["filename"])
+        names.append(item["filename"])
+        reporter.expect_sha(item["sha"], "override file object")
+        require(item["status"] in {"added", "modified", "removed", "renamed"}, "unknown override file status")
+        if item["status"] == "renamed":
+            handoff.path(item["previous_filename"])
+        added, deleted, changed = (reporter.expect_int(item[key], "override file " + key, 0)
+                                   for key in ("additions", "deletions", "changes"))
+        require(added + deleted == changed and (item["status"] != "added" or deleted == 0)
+                and (item["status"] != "removed" or added == 0), "incoherent override file counts")
+    reporter.expect_unique(names, "override changed paths")
+    require((sum(item["additions"] for item in files), sum(item["deletions"] for item in files)) == counts[1:],
+            "override diff totals incomplete")
+    eligible = _override_scope(files, raw, pr.number, lambda: _decision_at(client, pr, base)[0])
+    require(observe() == counts, "override file authority changed during observation")
+    return eligible
+
+
+def _local_override_scope(root, data, number, head, raw, changed_lines):
+    pr = data["pull_requests"][number]
+    require(pr["state"] == "merged" and pr["head_sha"] == head, "local scope needs an immutable merged candidate")
+    merge = reporter.expect_sha(pr["merge_sha"], "scope merge")
+    parents = reporter.run_git(root, "show", "-s", "--format=%P", merge).decode().split()
+    require(len(parents) == 2 and parents[1] == head, "scope merge does not bind the candidate")
+    bases = reporter.run_git(root, "merge-base", "--all", parents[0], head).decode().split()
+    require(len(bases) == 1, "scope merge base is ambiguous")
+    base = bases[0]
+    changes = handoff._changes(root, base, head)
+    files = []
+    for row in handoff._git(root, "diff", "--numstat", "--no-ext-diff", "--no-textconv",
+                           "--no-renames", "-z", base, head, "--").split(b"\0"):
+        if not row:
+            continue
+        added, deleted, name = row.split(b"\t", 2)
+        filename = name.decode("utf-8")
+        old_mode, new_mode, _, _ = changes[filename]
+        require({old_mode, new_mode} <= {b"000000", b"100644", b"100755"}, "unsupported scope file mode")
+        files.append({"filename": filename, "additions": int(added), "deletions": int(deleted),
+                      "status": "removed" if new_mode == b"000000" else
+                                "added" if old_mode == b"000000" else "modified"})
+    require({item["filename"] for item in files} == set(changes)
+            and sum(item["additions"] + item["deletions"] for item in files) == changed_lines,
+            "local override diff is incomplete or has another size")
+    return _override_scope(files, raw, number, lambda: reporter.load_decisions_from_commit(root, base))
 
 
 def fetch_decision(client, pr, changed_lines):
@@ -178,9 +311,63 @@ def fetch_decision(client, pr, changed_lines):
         raw, oid = _decision_at(client, pr, pr.head_sha)
     except (KeyError, TypeError, ValueError, reporter.PilotDataError, github.MetadataEditError):
         pass
-    return select_mode(raw, number=pr.number, head_sha=pr.head_sha, decision_oid=oid,
-                       changed_lines=changed_lines,
-                       verify_override=lambda record: _verify_remote_override(client, pr, record))
+    selected = select_mode(raw, number=pr.number, head_sha=pr.head_sha, decision_oid=oid,
+                           changed_lines=changed_lines,
+                           verify_override=lambda record: _verify_remote_override(client, pr, record, raw, changed_lines))
+    if selected.known:
+        try:
+            _validate_live_stack(client, pr, raw)
+        except (KeyError, TypeError, ValueError, reporter.PilotDataError, github.MetadataEditError) as error:
+            return replace(selected, mode="concurrent", known=False, pre_review_required=True,
+                           reason="unknown-decision: stack: " + str(error)[:480])
+    return selected
+
+
+def _validate_live_stack(client, pr, raw):
+    endpoint = github._endpoint(pr.repository, "").rstrip("/")
+
+    def repository():
+        value = client.request("GET", endpoint, label="stack repository").payload
+        require(value["full_name"] == pr.repository and
+                github._positive_int(value["id"], "stack repository ID") == pr.repository_id,
+                "stack repository identity changed")
+        require(event_classifier._is_git_branch_ref(value["default_branch"]), "stack default branch unavailable")
+        return value["default_branch"]
+
+    default = repository()
+    first = reporter.historical_decision_record(raw, pr.head_sha, pr.number)
+    records, observed = {}, {pr.number: pr}
+    current, contents = pr, raw
+    for _ in range(first["stack"]["depth"] + 1):
+        record = reporter.historical_decision_record(contents, current.head_sha, current.number)
+        records[current.number] = record
+        parent = record["stack"]["parent_pr"]
+        if parent is None or parent in records or len(records) > first["stack"]["depth"]:
+            break
+        current, _ = fetch_candidate(client, pr.repository, parent)
+        observed[parent] = current
+        contents, _ = _decision_at(client, current, current.head_sha)
+    reporter.validate_stack_decisions(records, {
+        "fixture": {"default_branch": default},
+        "pull_requests": {number: {"base_ref": item.base_ref, "head_branch": item.head_ref}
+                          for number, item in observed.items()},
+    })
+    for number, record in records.items():
+        parent = record["stack"]["parent_pr"]
+        if parent is not None:
+            child, upstream = observed[number], observed[parent]
+            require(child.base_sha == upstream.head_sha
+                    and frozen_base(client, child) == upstream.head_sha,
+                    "stack parent head is not incorporated into its child")
+    for number, before in observed.items():
+        after, _ = fetch_candidate(client, pr.repository, number)
+        require((after.head_sha, after.head_ref, after.base_ref) ==
+                (before.head_sha, before.head_ref, before.base_ref), "stack parent/candidate moved")
+        if after.base_sha != before.base_sha:
+            require(records[number]["stack"]["parent_pr"] is None
+                    and frozen_base(client, before) == frozen_base(client, after),
+                    "stack base changed during observation")
+    require(repository() == default, "stack default branch changed")
 
 
 def frozen_base(client, pr):
@@ -191,16 +378,39 @@ def frozen_base(client, pr):
     return reporter.expect_sha(response.payload["merge_base_commit"]["sha"], "candidate merge base")
 
 
-def binding_name(number, head, base):
+def binding_name(number, head, base, base_ref=None):
     reporter.expect_int(number, "PR number", 1)
     reporter.expect_sha(head, "binding head")
     reporter.expect_sha(base, "binding base")
-    return f"{BINDING_PREFIX}{number}:{head}:{base}"
+    name = f"{BINDING_PREFIX}{number}:{head}:{base}"
+    if base_ref is not None:
+        require(event_classifier._is_git_branch_ref(base_ref), "invalid binding base ref")
+        name += ":" + quote(base_ref, safe="")
+    return name
+
+
+def _binding_fields(name):
+    match = re.fullmatch(re.escape(BINDING_PREFIX) +
+                        r"([1-9][0-9]*):([0-9a-f]{40}):([0-9a-f]{40})(?::([^:\s]+))?", name)
+    if not match:
+        return None, None
+    base_ref = None
+    if match[4] is not None:
+        try:
+            base_ref = unquote_to_bytes(match[4]).decode("utf-8")
+        except UnicodeError:
+            return None, None
+        if not event_classifier._is_git_branch_ref(base_ref) or quote(base_ref, safe="") != match[4]:
+            return None, None
+    return (int(match[1]), match[2], match[3]), base_ref
 
 
 def parse_binding(name):
-    match = re.fullmatch(re.escape(BINDING_PREFIX) + r"([1-9][0-9]*):([0-9a-f]{40}):([0-9a-f]{40})", name)
-    return (int(match[1]), match[2], match[3]) if match else None
+    return _binding_fields(name)[0]
+
+
+def binding_base_ref(name):
+    return _binding_fields(name)[1]
 
 
 def route_event(client, decision, payload, repository):
@@ -225,7 +435,7 @@ def route_event(client, decision, payload, repository):
     if selected.mode == "review-first":
         decision = replace(decision, classification="review-first", run_expensive=False,
                            reason="review-first-" + selected.reason)
-    return decision, selected, binding_name(pr.number, pr.head_sha, base)
+    return decision, selected, binding_name(pr.number, pr.head_sha, base, event_pr["base"]["ref"])
 
 
 def route_dispatch(client, decision, payload, repository, ref, *, expected_candidate):
@@ -254,7 +464,7 @@ def route_dispatch(client, decision, payload, repository, ref, *, expected_candi
                 "dispatched candidate differs from the checked-out integration base")
     selected = fetch_decision(client, pr, lines)
     return (replace(decision, expected_base=pr.base_sha), selected,
-            binding_name(pr.number, pr.head_sha, frozen_base(client, pr)))
+            binding_name(pr.number, pr.head_sha, frozen_base(client, pr), pr.base_ref))
 
 
 @dataclass(frozen=True)
@@ -302,6 +512,22 @@ def security_checks(client, pr):
     return tuple(sorted(result, key=lambda item: item.name))
 
 
+def candidate_identity(record):
+    """The existing frozen identity, within its repository-scoped coordinator state."""
+    return tuple(record[key] for key in ("pr_number", "head_sha", "base_sha", "base_ref"))
+
+
+def find_candidate(state, identity):
+    require(isinstance(identity, tuple) and len(identity) == 4, "complete candidate identity required")
+    handoff.integer(identity[0], minimum=1)
+    for revision in identity[1:3]:
+        handoff.sha(revision)
+    handoff.text(identity[3], maximum=256)
+    records = [record for record in state.get("candidates", ()) if candidate_identity(record) == identity]
+    require(len(records) == 1, "candidate identity is missing or ambiguous")
+    return records[0]
+
+
 def validate_candidate_records(records):
     seen = set()
     for record in handoff.items(records, maximum=MAX_CANDIDATES):
@@ -343,7 +569,7 @@ def validate_candidate_records(records):
                     "observed dispatch lacks reservation/run binding")
             require(handoff.timestamp(record["dispatch_requested_at"]) <=
                     handoff.timestamp(record["dispatch_observed_at"]), "dispatch observation predates request")
-        identity = record["pr_number"], record["head_sha"], record["base_sha"], record["base_ref"]
+        identity = candidate_identity(record)
         require(identity not in seen, "duplicate candidate identity")
         seen.add(identity)
 
@@ -355,14 +581,14 @@ def begin_candidate(state, pr, base, decision):
     reporter.expect_sha(base, "candidate base")
     records = state.setdefault("candidates", [])
     key = pr.number, pr.head_sha, base, pr.base_ref
+    if any(candidate_identity(record) == key for record in records):
+        record = find_candidate(state, key)
+        require(record["decision_oid"] == decision.decision_oid, "decision identity changed")
+        return record
+    require(len(records) < MAX_CANDIDATES, "candidate history bound reached")
     for record in records:
-        identity = record["pr_number"], record["head_sha"], record["base_sha"], record["base_ref"]
-        if identity == key:
-            require(record["decision_oid"] == decision.decision_oid, "decision identity changed")
-            return record
         if record["pr_number"] == pr.number and record["abandoned_reason"] is None:
             record["abandoned_reason"] = "superseded-head-or-base"
-    require(len(records) < MAX_CANDIDATES, "candidate history bound reached")
     abandoned = next((item["abandoned_reason"] for item in records
                       if item["pr_number"] == pr.number and item["head_sha"] == pr.head_sha
                       and item["abandoned_reason"] not in (None, "superseded-head-or-base")), None)
@@ -428,9 +654,8 @@ def _delegation_incomplete(entries):
 def _coordinator_git(state, record, pr, worktree):
     handoff.summarize_handoffs(state)
     require(not handoff.availability_errors(state, observations.utc_now()), "coordinator availability unavailable")
-    require(record in state.get("candidates", ()) and state["repository"] == pr.repository
-            and (record["pr_number"], record["head_sha"], record["base_ref"]) ==
-            (pr.number, pr.head_sha, pr.base_ref), "local candidate identity changed")
+    require(find_candidate(state, candidate_identity(record)) == record and state["repository"] == pr.repository,
+            "local candidate identity changed")
     require(not _delegation_incomplete(_local_delegations(state, pr)),
             "applicable delegated handoff is incomplete or invalid")
     require(record["abandoned_reason"] is None, "candidate is abandoned")
@@ -438,7 +663,8 @@ def _coordinator_git(state, record, pr, worktree):
     require(current["head"] == pr.head_sha and current["branch"] == pr.head_ref
             and not current["dirty_paths"] and not current["conflicting"], "local worktree/head changed")
     bases = handoff._git(Path(worktree), "merge-base", "--all", pr.base_sha, pr.head_sha).decode().splitlines()
-    require(bases == [record["base_sha"]], "local candidate merge base changed")
+    require(len(bases) == 1 and candidate_identity(record) ==
+            (pr.number, pr.head_sha, bases[0], pr.base_ref), "local candidate merge base changed")
     return current
 
 
@@ -462,10 +688,9 @@ def _registered_local(state, record, pr):
     local = record.get("local_validation")
     require(local is not None, "coordinator local checks are not registered")
     validate_local_validation(local)
-    require((local["coordinator_id"], local["repository"], local["pr_number"], local["head_sha"],
-             local["base_sha"], local["base_ref"], local["branch"]) ==
-            (state["coordinator_id"], pr.repository, pr.number, pr.head_sha,
-             record["base_sha"], pr.base_ref, pr.head_ref), "registered local identity changed")
+    require(candidate_identity(local) == candidate_identity(record)
+            and (local["coordinator_id"], local["repository"], local["branch"]) ==
+            (state["coordinator_id"], pr.repository, pr.head_ref), "registered local identity changed")
     require(not handoff.availability_errors({**state, "clock": local["clock"]}, observations.utc_now()),
             "registered local clock is stale")
     current = _coordinator_git(state, record, pr, local["worktree"])
@@ -522,23 +747,42 @@ def coordinator_local_ready(state, record, pr):
         return False
 
 
-def _local_ready(state, pr):
+def _local_ready(state, pr, record):
     handoff.summarize_handoffs(state)
+    require(find_candidate(state, candidate_identity(record)) == record, "unrecorded local candidate")
     delegated = _local_delegations(state, pr)
-    if _delegation_incomplete(delegated):
+    if _delegation_incomplete(delegated) or record["abandoned_reason"] is not None:
         return False
-    registered = [record for record in state.get("candidates", ())
-                  if record["pr_number"] == pr.number and record["head_sha"] == pr.head_sha
-                  and record["base_ref"] == pr.base_ref and record["abandoned_reason"] is None
-                  and "local_validation" in record]
-    if registered:
-        return len(registered) == 1 and coordinator_local_ready(state, registered[0], pr)
-    return any(entry["validation"]["result_sha"] == pr.head_sha
-               and entry["assignment"]["expected_branch"] == pr.head_ref for entry in delegated)
+    if "local_validation" in record:
+        return coordinator_local_ready(state, record, pr)
+    for entry in delegated:
+        if (entry["validation"]["result_sha"] == pr.head_sha
+                and entry["assignment"]["expected_branch"] == pr.head_ref):
+            try:
+                bases = handoff._git(Path(entry["assignment"]["allowed_worktree"]), "merge-base", "--all",
+                                     pr.base_sha, pr.head_sha).decode().splitlines()
+                if len(bases) == 1 and candidate_identity(record) == (
+                        pr.number, pr.head_sha, bases[0], pr.base_ref):
+                    return True
+            except (OSError, ValueError):
+                pass
+    return False
 
 
-def _reserved_dispatch(record, pr, run):
-    return (record["dispatch_requested_at"] is not None and run.event == "workflow_dispatch"
+def _reserved_dispatch(record, pr, run, runs):
+    binding = run.candidate_binding
+    workflows = {prior.workflow_id for prior in runs if prior.mode == "review-first"
+                 and prior.head_sha == pr.head_sha and prior.head_branch == pr.head_ref
+                 and prior.candidate_base_ref == pr.base_ref
+                 and prior.run_number <= record["watermark"] and prior.candidate_binding == binding
+                 and candidate_evidence.preflight_success({
+                     job.name: (job.status, job.conclusion) for job in prior.jobs})}
+    return (isinstance(binding, tuple) and len(binding) == 3
+            and candidate_identity(record) == (*binding, pr.base_ref)
+            and binding[:2] == (pr.number, pr.head_sha)
+            and run.candidate_base_ref == pr.base_ref
+            and len(workflows) == 1 and run.workflow_id in workflows
+            and record["dispatch_requested_at"] is not None and run.event == "workflow_dispatch"
             and run.head_sha == pr.head_sha and run.head_branch == pr.head_ref
             and run.candidate_binding == (pr.number, pr.head_sha, record["base_sha"])
             and run.run_number > record["watermark"]
@@ -548,26 +792,43 @@ def _reserved_dispatch(record, pr, run):
             and record["full_attempt"] in (None, run.run_attempt))
 
 
+def _candidate_runs(state, record, pr, runs):
+    """Historical ref witnesses are authoritative; missing witnesses stay unproven."""
+    identity = candidate_identity(record)
+    others = [item for item in state["candidates"] if candidate_identity(item)[:3] == identity[:3]
+              and candidate_identity(item) != identity and item["full_run_id"] is not None]
+    result = []
+    for run in runs:
+        if (run.head_sha != pr.head_sha or run.head_branch != pr.head_ref
+                or run.candidate_binding not in (None, identity[:3])
+                or run.candidate_base_ref not in (None, identity[3])):
+            continue
+        if run.candidate_base_ref is not None:
+            require(not any((item["full_run_id"], item["full_attempt"]) ==
+                            (run.run_id, run.run_attempt) for item in others),
+                    "run witness contradicts recorded candidate ownership")
+        result.append(run)
+    return tuple(result)
+
+
 def assess_candidate(state, record, decision, pr, session, facts, triage, checks, runs,
                      *, family_evidence=None, accepted_security=(), criteria_ready=False):
     """Consume existing typed observations. Does not dispatch, merge or launch a watcher."""
     handoff.validate_state(state)
     require(type(criteria_ready) is bool, "objective/manual readiness must be an actual decision")
-    require(record in state.get("candidates", ()), "unrecorded candidate")
+    require(find_candidate(state, candidate_identity(record)) == record, "unrecorded candidate")
     require((pr.repository, pr.number, session.head, session.identity) ==
             (state["repository"], record["pr_number"], record["head_sha"],
              (pr.repository, pr.number, record["base_sha"])), "candidate/review identity mismatch")
-    require(pr.head_sha == record["head_sha"] and pr.base_ref == record["base_ref"]
+    require(candidate_identity(record) == (pr.number, pr.head_sha, session.identity[2], pr.base_ref)
             and decision.head_sha == pr.head_sha and decision.decision_oid == record["decision_oid"],
             "candidate head/base/decision changed")
     current_findings = tuple(item for item in session.accepted.values() if item.origin == pr.head_sha)
     require(all(item in checks for item in accepted_security), "stale accepted security finding")
     if current_findings or accepted_security:
         record["abandoned_reason"] = "accepted-review-or-security-finding"
-    rebound = any(item["pr_number"] == record["pr_number"]
-                  and item["head_sha"] == record["head_sha"]
-                  and (item["base_sha"], item["base_ref"]) !=
-                  (record["base_sha"], record["base_ref"])
+    rebound = any(candidate_identity(item)[:2] == candidate_identity(record)[:2]
+                  and candidate_identity(item) != candidate_identity(record)
                   for item in state["candidates"])
     missing = []
     try:
@@ -590,7 +851,7 @@ def assess_candidate(state, record, decision, pr, session, facts, triage, checks
         missing.append("review: " + str(error)[:512])
     if session.rounds.hold is not None:
         missing.append("architecture-hold")
-    if not _local_ready(state, pr):
+    if not _local_ready(state, pr, record):
         missing.append("exact-local-handoff")
     security_ready = (
         len(checks) == len(SECURITY_CHECKS)
@@ -601,18 +862,20 @@ def assess_candidate(state, record, decision, pr, session, facts, triage, checks
                      reporter.parse_time(record["created_at"], "candidate")) for item in checks))
     if not security_ready:
         missing.append("exact-clean-security")
-    expected_binding = pr.number, pr.head_sha, record["base_sha"]
-    matching = [run for run in runs if run.candidate_binding == expected_binding
+    expected_binding = candidate_identity(record)[:3]
+    current_runs = _candidate_runs(state, record, pr, runs)
+    matching = [run for run in current_runs if run.candidate_binding == expected_binding
+                and run.candidate_base_ref == record["base_ref"]
                 and run.head_sha == pr.head_sha and run.head_branch == pr.head_ref]
     # A raw base-tip mismatch cannot classify an unmarked run as unrelated.
-    unknown = [run for run in runs if run.head_sha == pr.head_sha and run.head_branch == pr.head_ref
+    unknown = [run for run in current_runs if run.head_sha == pr.head_sha and run.head_branch == pr.head_ref
                and run.status in github.ACTIVE_RUN_STATUSES
                and run.candidate_binding in (None, expected_binding)
-               and (run.candidate_binding is None or run.mode == "active-unknown")]
+               and (run.candidate_binding is None or run.candidate_base_ref is None or run.mode == "active-unknown")]
     if unknown:
         missing.append("unclassified-active-run")
-    visible = [*matching, *(run for run in unknown if run not in matching)]
-    full = [run for run in matching if run.mode in {"full", "active-full"}]
+    visible = current_runs
+    full = [run for run in current_runs if run.mode in {"full", "active-full"}]
     if any(run.head_sha != pr.head_sha for run in runs):
         missing.append("stale-run")
     if len({run.run_id for run in full}) != len(full) or len(full) > 1:
@@ -636,17 +899,18 @@ def assess_candidate(state, record, decision, pr, session, facts, triage, checks
             missing.append("wrong-full-run")
         elif decision.mode == "review-first":
             # GitHub creation times have second precision; retain the native reservation.
-            if (not _reserved_dispatch(record, pr, run)
+            if (not _reserved_dispatch(record, pr, run, matching)
                     or (record["dispatch_sent_at"] is None and record.get("dispatch_observed_at") is None)):
                 missing.append("early-or-unbound-full-run")
             else:
                 record["full_run_id"], record["full_attempt"] = run.run_id, run.run_attempt
                 admitted = run
-        elif run.event == "pull_request":
+        elif (run.event == "pull_request" and run.candidate_binding == expected_binding
+              and run.candidate_base_ref == record["base_ref"]):
             record["full_run_id"], record["full_attempt"] = run.run_id, run.run_attempt
             admitted = run
         else:
-            missing.append("unexpected-full-dispatch")
+            missing.append("unproven-full-run-ownership")
     complete = False
     if admitted is not None:
         try:
@@ -692,6 +956,7 @@ def assess_observed(client, state, record, session, triage, review_tools, *,
     """Refresh through #177/#179 and validate the unique actual Git merge base."""
     pr, lines = fetch_candidate(client, state["repository"], record["pr_number"])
     decision = fetch_decision(client, pr, lines)
+    require(decision.known, "live decision authority is unavailable")
     request = {"candidate_sha": pr.head_sha, "base_sha": record["base_sha"]}
     review_tools.validate_base(request, pr.base_sha)
     identity, facts = _review_snapshot(client, pr, review_tools.model)
@@ -719,7 +984,7 @@ def assess_observed(client, state, record, session, triage, review_tools, *,
 
 def reserve_full_dispatch(state, record, assessment, runs):
     handoff.validate_state(state)
-    require(record in state.get("candidates", ()) and assessment["record"] == record
+    require(find_candidate(state, candidate_identity(record)) == record and assessment["record"] == record
             and assessment["dispatchable"], "candidate is not dispatchable")
     require(record["dispatch_requested_at"] is None and record["abandoned_reason"] is None,
             "duplicate or abandoned full dispatch")
@@ -732,18 +997,22 @@ def dispatch_full(client, state_path, pr, assess):
     """Persist reservation before POST. Unknown delivery never permits retry."""
     with observations.locked_state(state_path) as state:
         handoff.validate_state(state)
+        require(state["repository"] == pr.repository, "dispatch repository changed")
+        identity = pr.number, pr.head_sha, frozen_base(client, pr), pr.base_ref
         record, assessment, runs = assess(state)
+        require(find_candidate(state, identity) == record, "dispatch candidate identity changed")
         current = github.fetch_pull_request(client, pr.repository, pr.number)
-        github.require_identity(current, head_sha=pr.head_sha, base_sha=pr.base_sha)
-        require((current.head_ref, current.base_ref) == (pr.head_ref, pr.base_ref),
+        require((current.head_sha, current.head_ref, current.base_ref) ==
+                (pr.head_sha, pr.head_ref, pr.base_ref),
                 "dispatch branch identity changed")
+        if current.base_sha != pr.base_sha:
+            require(frozen_base(client, current) == identity[2], "dispatch frozen base changed")
         reservation = reserve_full_dispatch(state, record, assessment, runs)
-        identity = record["pr_number"], record["head_sha"], record["base_sha"], record["base_ref"]
     client.request("POST", github._endpoint(pr.repository, "actions/workflows/build.yml/dispatches"),
                    body={"ref": pr.head_ref}, label="one input-free full Build")
     with observations.locked_state(state_path) as state:
-        record = next(item for item in state["candidates"] if (
-            item["pr_number"], item["head_sha"], item["base_sha"], item["base_ref"]) == identity)
+        require(state["repository"] == pr.repository, "dispatch repository changed")
+        record = find_candidate(state, identity)
         require(record["dispatch_requested_at"] == reservation, "dispatch reservation changed")
         record["dispatch_sent_at"] = observations.utc_now()
     return {"state": "dispatch-observation-pending", "head_sha": pr.head_sha}
@@ -754,25 +1023,15 @@ def reconcile_full_dispatch(client, state_path, pr):
     with observations.locked_state(state_path) as state:
         handoff.validate_state(state)
         require(state["repository"] == pr.repository, "reconciliation repository changed")
-        records = [item for item in state.get("candidates", ())
-                   if (item["pr_number"], item["head_sha"], item["base_ref"]) ==
-                   (pr.number, pr.head_sha, pr.base_ref)]
-        require(len(records) == 1, "reconciliation candidate is missing or ambiguous")
-        record = records[0]
+        identity = pr.number, pr.head_sha, frozen_base(client, pr), pr.base_ref
+        record = find_candidate(state, identity)
         require(record["dispatch_requested_at"] is not None, "no reserved full dispatch")
-        runs = github.list_candidate_runs(client, pr, include_dispatch=True)
-        binding = pr.number, pr.head_sha, record["base_sha"]
-        scoped = [run for run in runs if run.head_sha == pr.head_sha and run.head_branch == pr.head_ref
-                  and run.candidate_binding in (None, binding)]
+        scoped = _candidate_runs(state, record, pr, github.list_candidate_runs(client, pr, include_dispatch=True))
         unknown = any(run.status in github.ACTIVE_RUN_STATUSES
-                      and (run.candidate_binding is None or run.mode == "active-unknown") for run in scoped)
+                      and (run.candidate_binding is None or run.candidate_base_ref is None
+                           or run.mode == "active-unknown") for run in scoped)
         full = [run for run in scoped if run.mode in {"full", "active-full"}]
-        workflows = {run.workflow_id for run in scoped if run.mode == "review-first"
-                     and run.run_number <= record["watermark"] and run.candidate_binding == binding
-                     and candidate_evidence.preflight_success({
-                         job.name: (job.status, job.conclusion) for job in run.jobs})}
-        if (unknown or len(full) != 1 or len(workflows) != 1
-                or full[0].workflow_id not in workflows or not _reserved_dispatch(record, pr, full[0])):
+        if unknown or len(full) != 1 or not _reserved_dispatch(record, pr, full[0], scoped):
             return {"state": "dispatch-uncertain", "head_sha": pr.head_sha}
         current = github.fetch_pull_request(client, pr.repository, pr.number)
         if ((current.head_sha, current.head_ref, current.base_ref) !=
@@ -788,11 +1047,17 @@ def reconcile_full_dispatch(client, state_path, pr):
 def cancel_abandoned(client, state_path, record, run):
     state = observations.load_json(state_path)
     handoff.validate_state(state)
-    require(record in state.get("candidates", ()) and record["abandoned_reason"] is not None,
+    require(find_candidate(state, candidate_identity(record)) == record and record["abandoned_reason"] is not None,
             "cancellation requires recorded abandonment")
     require(run.head_sha == record["head_sha"] and run.candidate_binding ==
-            (record["pr_number"], record["head_sha"], record["base_sha"]),
+            candidate_identity(record)[:3]
+            and run.candidate_base_ref == record["base_ref"]
+            and record["full_run_id"] in (None, run.run_id)
+            and record["full_attempt"] in (None, run.run_attempt),
             "cancellation would affect unrelated work")
+    if sum(candidate_identity(item)[:3] == run.candidate_binding for item in state["candidates"]) > 1:
+        require((record["full_run_id"], record["full_attempt"]) == (run.run_id, run.run_attempt),
+                "cancellation base-ref ownership is ambiguous without its observed run")
     actual = observations.github_run(state["repository"], run.run_id, run.run_attempt, run.head_sha)
     require(actual["status"] != "completed" and actual["workflow_id"] == run.workflow_id,
             "run is terminal or belongs to another workflow")

@@ -123,12 +123,54 @@ Keep each decision in `.github/workflow-pilot-decisions.json`, not another
 policy file. `protocol`, `replay`, `transport`, `security`, `save`, `lifecycle`,
 `abi` and `migration` select review-first. More than 2,000 changed lines is
 also a review-first signal. Small low-risk records may select concurrent.
+Operational callers use `fetch_decision`, which applies #176's existing
+authoritative stack validator to the observed repository default branch and
+the actual PR/parent chain. Parent decisions are read from each parent's own
+immutable head, not copied from the child or invented. Branch agreement,
+depth/parent/exception rules, cycle rejection and incorporation of each
+current parent head are mandatory. Refresh detects parent or relationship
+movement; unavailable or inconsistent authority remains unknown/broader.
+That fallback can run the full workflow, but live admission through
+`assess_observed` remains held until decision authority is available.
+PR221's introducing implementation has an explicitly excluded root decision
+in the existing decision file. This is current protocol/lifecycle policy with
+no overrides, not a backdated claim about earlier reviews. Its pre-feature
+master classifier still selects the broad bootstrap, not review-first proof.
+The frozen PR150 baseline remains unchanged; a child must incorporate the
+actual new parent and refresh its observed stack before becoming known.
 Overrides reuse #176's record validation and immutable pre-review authority;
 named high risk always wins. Production routing reads the actual first-reviewed
 decision from its Git blob, verifies its commit date and ancestry against the
 current head, and rejects changed/missing or late authority. Before any submitted Copilot review,
 the actual committed current decision supplies that pre-review observation.
 No candidate reason string or supplied success flag authorizes an override.
+A timely enabled override additionally needs complete immutable diff evidence.
+The supported conservative scope is registered generated-data **file** sources
+and inventories; authored expansion/game catalog paths (including the expansion
+ID registry); Markdown selected by the existing docs classifier, excluding
+unregistered generated-path claims; or removal of every substantive changed
+file with actual positive deletions and no additions. Other generator/runtime
+edits, unregistered generated/catalog claims, directory-wide data claims,
+partial runtime deletions and mixed runtime work do not qualify. This does not apply #176's historical
+bulk-deletion percentage to admission or add new risk enum values.
+Only the current PR's entry in the existing decision file is exempted as
+bookkeeping: other decisions and artifact records must remain semantically
+unchanged relative to the diff's actual merge base, not an advanced live tip.
+Bookkeeping alone is not an eligible category.
+
+Production checks the exact base/head compare URL, complete commit/file counts
+and statuses against fresh PR totals, and rechecks head/base SHA and both refs
+after observation. Paginated/truncated comparisons, missing counts or changed
+identity are unknown/broader, never a validated override. Known timely but
+ineligible scope retains ordinary size/risk timing. Named risk remains
+review-first regardless of an unused override; pilot pause retains its existing
+broader behavior. The local historical decision API uses the actual merged
+candidate's Git parents, unique merge base, raw diff and counts; an open
+historical record lacking that frozen scope authority remains unknown.
+Scope membership is not semantic validation: all local, review, security and
+full Build requirements remain independent and mandatory.
+The existing trusted `verify_override` callback returns actual scope eligibility;
+a verifier returning no scope result is unknown, not an accepted override.
 A timing override does not waive #179's independent local
 review. A missing/unknown record, unavailable override provenance, or existing
 `pilot.disposition: paused` uses the broader concurrent/full workflow and
@@ -179,7 +221,11 @@ watchers. The existing assignment/handoff and watcher schemas remain valid.
 1. `fetch_candidate`, `fetch_decision` and `frozen_base` collect existing PR,
    decision and merge-base observations. In a short `locked_state` transaction,
    `begin_candidate` records the exact head/base/ref/decision and supersedes
-   older candidates for that PR only.
+   older candidates for that PR only. `candidate_identity(record)` returns the
+   existing `(PR, head, frozen base, base ref)` tuple within that repository's
+   state. `find_candidate(state, identity)` requires this complete key and
+   returns exactly one record, including an abandoned one when explicitly
+   selected. Never look up by PR/head alone or select the newest record.
 2. Supply the coordinator's actual #179 `ReviewSession` and complete `Triage`
    records. `assess_observed` refreshes the real GitHub review facts, exact
    check runs, and Build runs, and calls #179's shared `review_state` predicate.
@@ -218,12 +264,21 @@ watchers. The existing assignment/handoff and watcher schemas remain valid.
    Zero, multiple, unclassified, stale or wrong-identity runs stay uncertain.
    Observations may support cleanup of abandoned heads but never revive them,
    and fresh review/local/security/criteria plus full-job success remain required.
+   Reconciliation derives the frozen base from the supplied immutable PR
+   snapshot before lookup. Retained old and new same-head/base-ref reservations
+   therefore remain distinct. A retained old snapshot can observe its own run
+   for cleanup; live drift marks it abandoned rather than rebinding it.
+   Stored run/attempt observations remain history, not substitutes for missing
+   historical ref evidence. Unknown ownership, modes or attempts stay visible
+   holds, not guessed epochs.
 6. When a run becomes visible, use the existing #178 `reserve_watcher` /
    `finish_watcher` / `reconcile_run` interfaces and exactly one attached
    bounded shell watcher per run/attempt. A reasoning agent never waits.
 7. `cancel_abandoned` reloads the persisted state before any remote action,
    verifies actual repository/run/attempt/head/workflow identity, and refuses
-   cancellation without prior abandonment or for unrelated work.
+   cancellation without prior abandonment or for unrelated work. Bound run and
+   attempt must match. When multiple base refs share a marker, an unobserved
+   run cannot be guessed into one record for cancellation.
 8. Render `evidence_comment(assessment, preserved_text)` and update the single
    existing owner-authored canonical comment through
    `pr_metadata.update_evidence_comment`. Preserve other local/runtime/manual
@@ -241,6 +296,19 @@ master movement does not itself supersede or cancel a candidate. A changed
 head, base ref or unique merge base does. The workflow's candidate-binding step
 and #177's existing metadata continuity lookback preserve this distinction for
 both PR and input-free dispatch runs.
+The existing `workflow-pilot-candidate:v1` step now carries the historical base
+ref as a canonical URL-encoded suffix after PR/head/frozen-base. PR events use
+their validated raw event ref; dispatch uses its checked integration-base
+observation. The parser preserves legacy three-field witnesses and exposes
+their missing ref as `None`, never a value borrowed from today's PR association.
+Both concurrent and reserved admission require the complete emitted witness.
+Old unmarked or ref-incomplete full runs cannot be assigned to a current
+same-head rebind/retarget, even if the previous record was never assessed.
+This also applies to metadata transactions and the inline metadata summary:
+legacy parsing is not `explicit-same` full ownership, and a newer unproven full
+run cannot be skipped in favor of an older complete one. Canonical witnesses
+for another ref remain other-candidate evidence; missing data remains unbound.
+There is no new workflow input, protocol version or authored state schema.
 Automatic exact-head security checks can legitimately start before the
 coordinator first registers a new head. Do not rewrite their timestamps.
 A same-head base rebind instead requires the current eligible clean review
@@ -282,13 +350,18 @@ missing native process data, stale clocks or unavailable coordinator coverage
 remain non-ready. Use the existing short locked-state transactions; no new
 scheduler or persistence service is needed.
 
-`coordinator_local_ready` validates this local proof only. `_local_ready` keeps
-the delegated path and checks applicable terminal lineage before considering
+`coordinator_local_ready` validates this local proof only.
+`_local_ready(state, pr, record)` takes the explicit complete candidate record,
+keeps the delegated path and checks applicable terminal lineage before considering
 direct evidence. An open, rejected or incomplete required delegate still holds.
 Conversely, once direct criteria are explicitly registered, an older accepted
 handoff cannot hide their missing or failed captures.
-Independent review/family evidence, exact security, full Build, objective/manual
-criteria and master gates remain separate; local readiness is not merge permission.
+Independent review/family evidence, global objective/manual/ROM/RAM/protocol/
+profile criteria, exact security, full Build and master gates remain separate;
+local readiness is not merge permission. Delegated owners retain descendant,
+trailer, assigned scope/resource and lifecycle obligations. A coordinator's
+check-process measurements never stand in for a nonexistent worker's budgets
+or LLM process measurements.
 
 When the coordinator also implements the candidate, pass that same actual owner
 to both `ReviewSession` roles. The reviewer must still differ from both roles;
@@ -338,7 +411,10 @@ risk classification. A high-risk or large candidate gets one fresh bounded
 read-only review before its first remote review. The existing task runtime
 owns task identity, owner, role, completion and observed tool actions. The
 reviewer's response is findings data, not an authentication token. Keep its
-owner distinct from implementation and coordination.
+owner distinct from implementation and coordination. Those latter roles may
+be the same actual owner for coordinator-authored work; no aliases or invented
+delegation are permitted. `ReviewSession` accepts that real ownership, while
+`begin` still rejects either owner as reviewer before task launch.
 Share one `ReviewOwnership` index across the coordinator's sessions; it blocks
 another active reviewer for the same repository/PR or the same candidate head,
 regardless of scope, before another task can start.
@@ -543,6 +619,74 @@ translates expected CLI timeout/launch errors once into its existing
 `ValueError` boundary; both entrypoints report bounded `review-family:`
 diagnostics. Unexpected programming exceptions are not relabeled as ordinary
 tool unavailability.
+
+### Owned review-process cleanup
+
+[Issue #223](https://github.com/laqieer/fireemblem8-expansion/issues/223) fixes
+ordinary subprocess lifetime, not the withdrawn #204 capsule. The current
+Linux runner in `raw_diff_check.py` is shared by the real command, native and
+staged-worker paths. Their execution deadlines remain **60, 20 and 240
+seconds**, respectively. It preserves real exit status and binary stdout/stderr,
+including successful diagnostics, and bounds combined output to 4 MiB.
+Its additive `input` option accepts at most 4 MiB of bytes, writes while draining
+output, delivers EOF, and handles a reader closing its pipe without deadlock.
+
+Each outer invocation creates its own session. Nested review commands use
+`new_session=False` to create a private child group inside that session, not a
+second session invisible to outer cancellation. The runner retains the
+waitable leader identity, signals only kernel handles whose session/group
+belongs to that invocation, and adopts/reaps ordinary descendants. Early leader
+exit and closed stdio are not proof that owned work has finished. Timeout,
+output overage and interruption finish this cleanup before returning or
+raising; the caller's group and unrelated processes remain untouched.
+Handled `SIGINT`/`SIGTERM` are recorded for the complete operation, not changed
+back to asynchronous exception-raising handlers during body work. The runner
+dispatches the caller's saved handler at explicit cleanup-protected checkpoints
+after creation and during bounded I/O/wait loops. A raising handler initiates
+cleanup; a nonraising handler keeps its normal behavior. Signals at success or
+error cleanup entry, second signals and restoration do not jump past owned
+cleanup. Pending delivery and caller-handler restoration occur after resource
+and subreaper cleanup attempts. The caller's mask is preserved, including in the
+payload; the runner never blocks creation-time signals across exec.
+Overlapping exact-tool module instances share only process-wide reaper resource
+accounting. These operational boundaries do not claim kernel-wide atomicity.
+
+Cleanup has a separate five-second confirmation bound. The staged adapter
+starts each dispatched operation unconfirmed. The exact trusted runner invokes
+one private `_on_cleanup` callback only after that invocation establishes no
+created child or successful owned termination and reaping. The callback is
+current in-process cooperation, not a candidate JSON Boolean, persisted receipt,
+authority service or changed public result schema. Staging deletion depends on
+this positive confirmation, never on the absence of a special exception type.
+Unknown cleanup retains staging and diagnostics even if an ordinary error or
+late interruption escapes. Verified cleanup still removes staging on tool,
+timeout or cancellation failure; ordinary timeouts remain unavailable/zero-check
+evidence and actual native assertion failures remain contract violations.
+If subreaper-state restoration also fails during unsafe process cleanup, the
+runner preserves `ProcessCleanupError`, includes both failures in the existing
+diagnostic, and chains the original cleanup error. Restoration failure alone
+still raises `OSError`; it is never converted into a successful result.
+Without a pidfd, the fallback first checks that the actual leader is still a
+waitable child before using its numeric group, then attempts group termination
+and the existing bounded wait. `ESRCH`, an unavailable wait status, a failed
+signal/wait, or even successful leader termination cannot prove the complete
+scope is empty: the result remains `ProcessCleanupError` with causal
+diagnostics. An already-reaped leader never authorizes a numeric group signal.
+The same unsafe error facts survive later selector, descriptor, stream,
+signal-mask, handler or subreaper-restoration errors. Remaining release steps
+are still attempted. Their diagnostics are retained even when a later cleanup
+attempt positively confirms termination. Once cleanup is verified, unrelated
+close/restoration failures do not force blanket staging retention.
+
+Both coordinator loading and worker staging obtain the shared runner from the
+selected exact **tool** Git tree. A missing, dirty or different candidate
+checkout helper cannot replace those bytes. There is no new JSON request field,
+case registry, package, job, publication control or #181 result contract.
+These are ordinary Linux process/session controls, not a PID registry, daemon,
+namespace/cgroup service, signer or hostile-code isolation system. Deliberate
+descendant escape, abrupt coordinator `SIGKILL` and arbitrary host mutation
+remain outside the contract. Game, save, generated-data, locale, ROM/RAM and
+modern/archival profiles are unaffected.
 
 ### Finite coverage and actual evidence
 
@@ -1283,10 +1427,15 @@ post-intent run/job snapshots also defer.
 
 Each exact-head run has one typed PR-binding state after its repository,
 workflow, event, and head identity is validated: `explicit-same`,
-`explicit-other`, or `unbound`. Missing, null, or empty `pull_requests` is
-unbound. An active unbound run blocks because GitHub may not have materialized
+`explicit-other`, or `unbound`. A full run requires its canonical historical
+PR/head/frozen-base/base-ref step, including for PR events. Missing, null, or
+empty `pull_requests` cannot supply that proof; a complete immutable step can.
+Metadata-only observation retains its separate raw PR/event attestation, never
+full-run credit. An active unbound run blocks because GitHub may not have materialized
 its PR binding yet. A terminal unbound run cannot authorize full-Build or
-metadata-continuity evidence. One explicit binding to another PR/base is
+metadata-continuity evidence. A missing marker/ref remains unbound even if
+today's PR metadata matches, and blocks reuse past a newer unproven run.
+One complete historical binding to another PR/base/ref is
 ignored only after its complete run and job authority validates. Multiple
 bindings, a binding head that contradicts the run head, or malformed binding
 content fails closed.
