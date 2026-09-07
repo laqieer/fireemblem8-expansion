@@ -863,6 +863,7 @@ class ProbeSession:
             }) if mode == "make" else [],
             "source_view": str(self.tree),
             "dependency_probe": dependency,
+            "runtime_closure": [name for name, _ in self.make_runtime] if mode == "make" else [],
             "dependency_include_dirs": ["/repo" if path == "." else "/repo/" + path for path in include_dirs],
             "deadline": self.budget.deadline,
             "file_limit": file_remaining,
@@ -1083,7 +1084,7 @@ class ProbeSession:
                 raise MakeProbeError("command argv is not strict UTF-8") from error
         code = tuple(sorted(set(command.code)))
         sources = self.sources(command.sources) if command.sources else ()
-        directories = tuple(sorted({relative_path(path) for path in command.directories}))
+        directories = tuple(sorted({path if path == "." else relative_path(path) for path in command.directories}))
         outputs = self._output_paths(command.outputs)
         include_dirs = self._dependency_options(command, sources, outputs) if command.dependency_only else ()
         key = (self.snapshot.digest, command, None if native is None else native.digest)
@@ -1130,7 +1131,8 @@ class ProbeSession:
                 root, mode="command" if compiler is None else "compile", argv=argv,
                 environment={**ENVIRONMENT, "SOURCE_DATE_EPOCH": "0", "TMPDIR": "/work"},
                 mounts=[
-                    self._mount(tree, "/repo"), self._mount(Path("/usr"), "/usr", executable=True),
+                    self._mount(self.tree if directories else tree, "/repo"),
+                    self._mount(Path("/usr"), "/usr", executable=True),
                     self._mount(output, "/work", writable=True),
                     self._mount(Path("/dev/null"), "/dev/null", writable=True),
                 ],

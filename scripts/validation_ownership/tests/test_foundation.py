@@ -935,7 +935,7 @@ class FoundationTests(unittest.TestCase):
         current = self.capture_view(budget)
         commands = tuple(Command(
             ("/usr/bin/python3", "-I", "-S", "-B", "-c", driver, "table", source),
-            code=code, sources=(source,),
+            code=code, sources=(source,), directories=(".", "scripts", "scripts/generated_data"),
         ) for source in (old, new))
         return base, current, commands
 
@@ -1813,6 +1813,180 @@ raise AssertionError("default termination was lost")
         self.assertFalse(self.scratch.exists())
         self.assertEqual((self.root / "Makefile").read_text(), "all: ;\n")
 
+    def test_make_uncaptured_runtime_file_cannot_select_a_false_absence_branch(self):
+        path = f"/usr/lib/python{sys.version_info.major}.{sys.version_info.minor}/os.py"
+        self.assertTrue(Path(path).is_file())
+        self.add("Makefile", "VALUE := $(if $(wildcard " + path + "),selected,omitted)\n"
+                 "all:\n\t@printf '%s\\n' '$(VALUE)'\n")
+        ordinary = subprocess.run(
+            ["/usr/bin/make", "-f", "Makefile", "all"], cwd=self.root, env=ENVIRONMENT,
+            capture_output=True, check=True, timeout=10,
+        )
+        self.assertEqual(ordinary.stdout, b"selected\n")
+        with self.session() as session:
+            with self.assertRaisesRegex(MakeProbeError, "runtime|undeclared"):
+                session.make("all", variables=("VALUE",))
+        self.assert_clean(session)
+        with self.session(runtime_files=(path,)) as session:
+            result = session.make("all", variables=("VALUE",))
+            self.assertEqual(result.semantics["domains"]["VALUE"]["value"], "selected")
+        self.assert_clean(session)
+
+    def test_make_runtime_probe_permissions_end_at_native_bootstrap(self):
+        from scripts.validation_ownership.syscall_guard import Policy, Process, Violation
+        closure = [path for path, _ in _make_runtime(ProbeBudget())]
+        config = {
+            "root": str(self.directory), "mode": "make", "code": [], "sources": [],
+            "enumerations": [], "executables": ["/usr/bin/make"], "python_version": "3.12",
+            "argv": [], "runtime_closure": closure, "forbidden_paths": [],
+        }
+        policy = Policy(config)
+        state = Process("make")
+        probes = (
+            "/etc/ld.so.cache", "/etc/ld.so.preload",
+            "/lib/x86_64-linux-gnu/glibc-hwcaps/x86-64-v3/libc.so.6",
+        )
+        for path in probes:
+            policy.check(state, path, "metadata")
+            policy.check(state, path, "read")
+        state.observer_ready = True
+        for path in probes:
+            for operation in ("read", "metadata", "directory", "write"):
+                with self.subTest(path=path, operation=operation):
+                    with self.assertRaises(Violation):
+                        policy.check(state, path, operation)
+        for path in closure:
+            policy.check(state, path, "metadata")
+        for ready in (False, True):
+            state.observer_ready = ready
+            for path in ("/usr/lib/unrequested", "/usr/lib64/unrequested", "/lib/unrequested"):
+                with self.assertRaisesRegex(Violation, "uncaptured Make runtime"):
+                    policy.check(state, path, "read")
+        state.observer_ready = False
+        present = self.directory / probes[0].lstrip("/")
+        present.parent.mkdir()
+        present.write_text("not captured")
+        with self.assertRaisesRegex(Violation, "uncaptured Make runtime"):
+            policy.check(state, probes[0], "read")
+        self.add("Makefile", "VALUE := $(wildcard /etc/ld.so.cache)\nall: ;\n")
+        with self.session() as session:
+            with self.assertRaisesRegex(MakeProbeError, "uncaptured Make runtime"):
+                session.make("all", variables=("VALUE",))
+        self.assert_clean(session)
+
+    def test_command_root_enumeration_requires_an_explicit_faithful_directory(self):
+        self.add("hidden.txt", "exists")
+        self.add("reader.py", (
+            "import json,os\n"
+            "print(json.dumps({'name':'selected' if 'hidden.txt' in os.listdir('.') else 'omitted',"
+            "'version':1,'record_count':0,'source_paths':[]}))\n"
+        ))
+        ordinary = subprocess.run(
+            ["/usr/bin/python3", "-I", "-S", "-B", "reader.py"], cwd=self.root, env=ENVIRONMENT,
+            capture_output=True, check=True, timeout=10,
+        )
+        self.assertEqual(json.loads(ordinary.stdout)["name"], "selected")
+        with self.session() as session:
+            with self.assertRaisesRegex(MakeProbeError, "enumerat|directory"):
+                session.registry(Command(("/usr/bin/python3", "/repo/reader.py"), code=("reader.py",)))
+        self.assert_clean(session)
+        command = Command(
+            ("/usr/bin/python3", "/repo/reader.py"), code=("reader.py",), directories=(".",),
+        )
+        with self.session() as session:
+            result = session.registry(command)
+            self.assertEqual(result["name"], "selected")
+            self.assertEqual(result["source_paths"], [])
+        self.assert_clean(session)
+        self.add("reader.py", "open('hidden.txt').read()\n")
+        with self.session() as session:
+            with self.assertRaisesRegex(MakeProbeError, "undeclared source read"):
+                session.command(command)
+        self.assert_clean(session)
+
+    def test_explicit_enumeration_rejects_incomplete_sparse_backing_and_undeclared_ancestors(self):
+        self.add("hidden.txt", "exists")
+        self.add("reader.py", "import os\nprint(os.listdir('.'))\n")
+        with self.session() as session:
+            run = session._sandbox_run
+            def incomplete(root, **kwargs):
+                work = root.parent / root.name.replace("command-root-", "command-")
+                kwargs["mounts"][0] = session._mount(work / "tree", "/repo")
+                return run(root, **kwargs)
+            with patch.object(session, "_sandbox_run", incomplete):
+                with self.assertRaisesRegex(MakeProbeError, "incomplete sparse"):
+                    session.command(Command(
+                        ("/usr/bin/python3", "/repo/reader.py"), code=("reader.py",), directories=(".",),
+                    ))
+        self.assert_clean(session)
+        self.add("pkg/code.py", "VALUE=7\n")
+        self.add("reader.py", "import os\nprint(os.listdir('pkg'))\n")
+        for directories in ((), (".",)):
+            with self.subTest(directories=directories):
+                with self.session() as session:
+                    with self.assertRaisesRegex(MakeProbeError, "undeclared source directory"):
+                        session.command(Command(
+                            ("/usr/bin/python3", "/repo/reader.py"), code=("reader.py", "pkg/code.py"),
+                            directories=directories,
+                        ))
+                self.assert_clean(session)
+        with self.session() as session:
+            result = session.command(Command(
+                ("/usr/bin/python3", "/repo/reader.py"), code=("reader.py", "pkg/code.py"),
+                directories=("pkg",),
+            ))
+            self.assertEqual(result.stdout, b"['code.py']\n")
+            self.assertIn("pkg/code.py", result.code_consumed)
+        self.assert_clean(session)
+
+    def test_explicit_enumeration_tracks_selected_and_generated_views_without_extra_reads(self):
+        self.add("data/base.txt", "base")
+        self.add("reader.py", "import os\nprint(' '.join(sorted(os.listdir('data'))))\n")
+        budget = ProbeBudget()
+        base = self.capture_view(budget)
+        (self.root / "data/base.txt").unlink()
+        del self.entries["data/base.txt"]
+        self.add("data/current.txt", "current")
+        current = self.capture_view(budget)
+        command = Command(
+            ("/usr/bin/python3", "/repo/reader.py"), code=("reader.py",), directories=("data",),
+        )
+        with ProbeSession(current, scratch_root=self.scratch, budget=budget) as session:
+            first = session.command(command)
+            self.assertEqual(first.stdout, b"current.txt\n")
+            with session.select_view(base):
+                self.assertEqual(session.command(command).stdout, b"base.txt\n")
+            self.assertIs(session.command(command), first)
+        self.assert_clean(session)
+        self.add("producer.py", (
+            "import os\nos.mkdir('/work/data')\n"
+            "open('/work/data/generated.txt','w').write('generated')\n"
+            "open('/work/trigger.mk','w').write('VALUE := $(shell python3 reader.py)\\n')\n"
+        ))
+        self.add("Makefile", "include trigger.mk\ntrigger.mk:\n\t@python3 producer.py\nall: ;\n")
+        with self.session() as session:
+            result = session.make("all", variables=("VALUE",), commands={
+                "python3 producer.py": Command(
+                    ("/usr/bin/python3", "/repo/producer.py"), code=("producer.py",),
+                    outputs=("trigger.mk", "data/generated.txt"),
+                ),
+                "python3 reader.py": command,
+            })
+            self.assertEqual(result.semantics["domains"]["VALUE"]["value"], "current.txt generated.txt")
+        self.assert_clean(session)
+
+    def test_explicit_enumeration_rejects_nonregular_namespaces(self):
+        self.add("reader.py", "import os\nprint(os.listdir('data'))\n")
+        self.add("data/real.txt", "real")
+        (self.root / "data/link").symlink_to(self.directory)
+        self.entries["data/link"] = GitTreeEntry("data/link", "120000", "blob", "0"*40)
+        with self.session() as session:
+            with self.assertRaisesRegex(MakeProbeError, "nonregular namespace"):
+                session.command(Command(
+                    ("/usr/bin/python3", "/repo/reader.py"), code=("reader.py",), directories=("data",),
+                ))
+        self.assert_clean(session)
+
     def test_python_existing_initializer_cannot_be_reported_as_sparse_absence(self):
         self.add("__init__.py", "")
         self.add("reader.py", (
@@ -2057,11 +2231,12 @@ raise AssertionError("default termination was lost")
 
     def test_generated_registry_uses_actual_structured_and_sequence_schema_counts(self):
         from scripts.generated_data.registry import REGISTRY
+        from scripts.validation_ownership.consumer import registry_entries
         budget = ProbeBudget()
         scratch = self.directory / "registry-real"
         scratch.mkdir()
         loader = AuthorityLoader(
-            ROOT, git_tree_entries(ROOT, "HEAD", budget=budget), "HEAD",
+            ROOT, registry_entries(ROOT, "HEAD", budget), "HEAD",
             scratch_root=scratch, budget=budget,
         )
         driver = (TRUSTED_ROOT / "generated_registry_probe.py").read_text()
@@ -2070,6 +2245,9 @@ raise AssertionError("default termination was lost")
                 path for path in session.snapshot.files
                 if path.endswith(".py") and path.startswith(("scripts/generated_data/", "scripts/assets/"))
             ))
+            directories = tuple(sorted({".", *(
+                parent.as_posix() for name in code for parent in Path(name).parents
+            )}))
             for name in ("autoplaystrategies", "shops"):
                 with self.subTest(schema=name):
                     schema = REGISTRY.resolve(name)
@@ -2081,7 +2259,7 @@ raise AssertionError("default termination was lost")
                         self.assertNotEqual(len(records), expected)
                     observed = session.registry(Command(
                         ("/usr/bin/python3", "-c", driver, name, source),
-                        code=code, sources=(source,),
+                        code=code, sources=(source,), directories=directories,
                     ))
                     self.assertEqual(observed["record_count"], expected)
                     self.assertEqual(observed["source_paths"], [source])
@@ -2106,6 +2284,7 @@ raise AssertionError("default termination was lost")
                 session.registry(Command(
                     ("/usr/bin/python3", "-c", driver, "missing", "data/source.json"),
                     code=("scripts/generated_data/registry.py",), sources=("data/source.json",),
+                    directories=(".", "scripts", "scripts/generated_data"),
                 ))
         self.assert_clean(session)
 
@@ -2715,7 +2894,7 @@ raise AssertionError("default termination was lost")
 
     def traced_observation(
         self, number, arguments, descriptors, *, buffer=None, mode="command",
-        observation_limit=1024*1024,
+        observation_limit=1024*1024, directories=("data",),
     ):
         from scripts.validation_ownership.syscall_guard import (
             GETREGS, SETOPTIONS, SYSCALL, Policy, Process, Registers, memory, ptrace, signed, trace_me,
@@ -2730,7 +2909,8 @@ raise AssertionError("default termination was lost")
             ptrace(SETOPTIONS, pid, 0, 0x100001)
             policy = Policy({
                 "root": str(self.directory), "mode": mode, "code": ["code.bin"],
-                "sources": ["data/a", "data/b"], "enumerations": ["data"],
+                "sources": ["data/a", "data/b"], "enumerations": list(directories),
+                "source_view": str(self.root),
                 "executables": [], "python_version": "3.12", "argv": [],
                 "memory_limit": 256*1024*1024, "syscall_limit": 1024,
                 "write_limit": 1024*1024, "observation_count": 1024,
@@ -2982,7 +3162,7 @@ raise AssertionError("default termination was lost")
         try:
             observed = self.traced_observation(
                 217, (descriptor, ctypes.addressof(buffer), 4096),
-                {descriptor: "/repo"}, buffer=ctypes.addressof(buffer),
+                {descriptor: "/repo"}, buffer=ctypes.addressof(buffer), directories=(".",),
             )
             self.assertGreater(observed["result"], 0)
             self.assertEqual(observed["code"], {"code.bin"})
@@ -6436,7 +6616,8 @@ int main(int argc, char **argv) {
             result = consumer.check(ROOT, "HEAD")
         self.assertEqual(len(sessions), 1)
         self.assertEqual(registry_sessions, sessions)
-        self.assertEqual(budgets, [sessions[0].budget])
+        self.assertTrue(budgets)
+        self.assertTrue(all(budget is sessions[0].budget for budget in budgets))
         self.assertEqual(result["scope"], "ownership-probe-foundation")
         self.assertEqual(result["make"]["target"], "localization-check")
         self.assertEqual(result["make"]["semantics"]["files"][0]["prerequisites"], [

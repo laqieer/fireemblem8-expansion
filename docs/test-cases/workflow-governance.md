@@ -3343,6 +3343,26 @@ and is not rerun or claimed by this bounded correction.
 
 ### Complete-view absence, deep owned cleanup and schema cardinality
 
+Run the runtime/enumeration family alongside the related boundary controls:
+
+- Compare ordinary Make's existing unrequested runtime-file branch with the
+  confined query. Require denial unless that exact input is captured. Check
+  the real captured ELF closure, non-multiarch layout and loader startup;
+  cache/hardware-search exceptions must stop at the native observer boundary.
+  Candidate read/metadata/write/directory operations cannot inherit them.
+- List a root containing an unadmitted regular entry through ordinary isolated
+  Python. An undeclared root or nested-code/source directory must reject.
+  Explicit `Command.directories` (including `.` for root) must return the
+  complete active listing, while an undeclared member read still rejects.
+- Substitute an incomplete sparse backing only in the controlled test
+  adapter; the actual guard must reject it before returning a false listing.
+  Exercise nonregular namespaces, selected CURRENT/BASE contents and generated
+  entries published during real Make replay.
+- Preserve the earlier initializer/module/cache, schema/source, iterative
+  deep cleanup, signal, native dispatch and resource controls. The real
+  standalone registry declares import directories and uses existing exact-pin
+  capture for root gitlink names; missing local inputs are not fabricated.
+
 1. Capture an initializer beside a declared reader, but admit only the reader
    as code. Ordinary isolated Python selects the existing-file branch; the
    confined registry must reject the undeclared metadata input rather than

@@ -196,6 +196,14 @@ same GNU Make 4.3/glibc ABI requirement. No candidate ELF, `ldd` script, ambient
 preload/library path or repository cwd participates in runtime discovery.
 Later capsules reuse the immutable capture, not mutable aliases or host reads.
 
+Make runtime permissions use those exact captured files and necessary metadata
+parents, not library-directory prefixes. Finite loader cache and architecture
+search probes are permitted only during trusted pre-observer startup and only
+for absent owned-view paths. Once the observer is ready, candidate evaluation
+cannot reuse that exception. Unrequested runtime files reject rather than
+silently becoming sparse absence; explicit runtime inputs retain their separate
+captured permission.
+
 ### Explicit runtime discovery inputs
 
 The optional `ProbeSession(..., runtime_files=(... ,))` admits exact regular
@@ -540,6 +548,22 @@ bookkeeping without becoming consumed-source evidence.
 Access observation includes metadata and enumeration, not merely byte reads.
 A directory observation consumes only the declared names it exposes. Command
 success requires **declared = permitted = consumed** candidate sources.
+`Command.directories` explicitly authorizes source enumeration; `.` denotes
+the repository root. Code/source ancestors permit necessary metadata, not
+implicit directory listing. Imports that actually enumerate their code paths
+must declare those paths too.
+
+For an explicitly enumerating command, the existing read-only/noexec source
+mount uses the complete active owned view. The guard requires that same
+directory backing before returning entries and rejects incomplete sparse or
+nonregular namespaces. File reads still require their separate code/source
+declarations; listing a name does not grant its contents. CURRENT/BASE and
+published generated entries therefore cannot be hidden by sparsity.
+The standalone registry consumer declares its import/source directories and
+captures recorded gitlinks from already available local object databases so
+its root listing is complete. Missing databases/pins reject; no fetch or live
+submodule mount is introduced.
+
 Registry success additionally requires the typed reported `source_paths` to
 equal that set. Reported JSON is candidate data, not supervisor evidence.
 The generated-registry driver obtains cardinality through the selected schema's
