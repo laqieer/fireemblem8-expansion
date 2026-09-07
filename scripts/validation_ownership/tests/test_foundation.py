@@ -1666,6 +1666,151 @@ raise AssertionError("default termination was lost")
         self.assertFalse(self.scratch.exists())
         self.assertEqual((self.root / "Makefile").read_text(), "all: ;\n")
 
+    def observation_policy(self, *, count=3, byte_limit=1024*1024, mode="command"):
+        from scripts.validation_ownership.syscall_guard import Policy
+        return Policy({
+            "root": str(self.directory), "mode": mode, "code": [], "sources": [],
+            "enumerations": [], "executables": [], "python_version": "3.12", "argv": [],
+            "observation_count": count, "observation_limit": byte_limit,
+        })
+
+    def test_observation_record_limit_is_aggregate_across_collections(self):
+        from scripts.validation_ownership.syscall_guard import Violation
+        records = (
+            ("consumed", "data/a"), ("code_consumed", "reader.py"),
+            ("accessed", "/repo/missing"),
+        )
+        for extra_collection, _ in records:
+            with self.subTest(extra_collection=extra_collection):
+                policy = self.observation_policy()
+                for collection, value in records:
+                    policy.observe(collection, value)
+                charged = sum(len(value.encode("utf-8")) + 128 for _, value in records)
+                self.assertEqual(policy.observation_bytes, charged)
+                self.assertEqual(sum(map(len, policy.observation_attempts.values())), 3)
+                for collection, value in records:
+                    policy.observe(collection, value)
+                    self.assertEqual(getattr(policy, collection), {value})
+                self.assertEqual(policy.observation_bytes, charged)
+                with self.assertRaisesRegex(Violation, "aggregate filesystem-observation budget exhausted"):
+                    policy.observe(extra_collection, "extra")
+                self.assertEqual(sum(map(len, policy.observation_attempts.values())), 3)
+                self.assertNotIn("extra", policy.observation_attempts[extra_collection])
+                self.assertNotIn("extra", getattr(policy, extra_collection))
+
+    def test_failed_observations_spend_aggregate_records_not_consumption(self):
+        from scripts.validation_ownership.syscall_guard import Process, Registers, Violation
+        policy = self.observation_policy()
+        state = Process("command")
+        records = (
+            ("consumed", "data/a"), ("code_consumed", "reader.py"),
+            ("accessed", "/repo/missing"),
+        )
+        for collection, value in records:
+            policy.defer_observation(state, collection, value)
+            policy.leave(0, state, Registers(rax=-errno.ENOENT))
+            self.assertEqual(getattr(policy, collection), set())
+            self.assertEqual(policy.observation_attempts[collection], {value})
+            self.assertEqual(state.observations, [])
+        charged = policy.observation_bytes
+        for collection, value in records:
+            policy.defer_observation(state, collection, value)
+            policy.leave(0, state, Registers(rax=0))
+            self.assertEqual(getattr(policy, collection), {value})
+            policy.defer_observation(state, collection, value)
+            policy.leave(0, state, Registers(rax=-errno.EFAULT))
+            self.assertEqual(getattr(policy, collection), {value})
+        self.assertEqual(policy.observation_bytes, charged)
+        with self.assertRaisesRegex(Violation, "aggregate filesystem-observation budget exhausted"):
+            policy.defer_observation(state, "accessed", "/repo/another")
+        self.assertEqual(state.observations, [])
+        self.assertEqual(policy.accessed, {"/repo/missing"})
+        self.assertEqual(sum(map(len, policy.observation_attempts.values())), 3)
+
+    def test_observation_bytes_remain_an_independent_aggregate_bound(self):
+        from scripts.validation_ownership.syscall_guard import Violation
+        value = "data/a"
+        charge = len(value.encode("utf-8")) + 128
+        policy = self.observation_policy(count=10, byte_limit=2*charge)
+        for collection in ("consumed", "code_consumed"):
+            policy.observe(collection, value)
+            policy.observe(collection, value)
+        self.assertEqual(policy.observation_bytes, 2*charge)
+        self.assertEqual(sum(map(len, policy.observation_attempts.values())), 2)
+        with self.assertRaisesRegex(Violation, "aggregate filesystem-observation budget exhausted"):
+            policy.observe("accessed", value)
+        self.assertEqual(policy.observation_bytes, 3*charge)
+        self.assertFalse(policy.observation_attempts["accessed"])
+        self.assertFalse(policy.accessed)
+
+    def test_compile_executable_metadata_exception_is_narrow(self):
+        from scripts.validation_ownership.syscall_guard import Process, Registers, Violation
+        for mode, role in (("compile", "compiler"), ("command", "command"), ("make", "make")):
+            with self.subTest(mode=mode):
+                policy = self.observation_policy(mode=mode)
+                state = Process(role, bootstrap=False)
+                if mode == "compile":
+                    policy.check(state, "/proc/self/exe", "metadata")
+                else:
+                    with self.assertRaisesRegex(Violation, "descriptor/device namespace denied"):
+                        policy.check(state, "/proc/self/exe", "metadata")
+                for operation in ("read", "write", "directory", "exec"):
+                    with self.subTest(operation=operation):
+                        with self.assertRaisesRegex(Violation, "descriptor/device namespace denied"):
+                            policy.check(state, "/proc/self/exe", operation)
+                for path in (
+                    "/proc", "/proc/self", "/proc/self/exe/extra", "/proc/self/exe-other",
+                    "/proc/1/exe", "/proc/thread-self/exe", "/proc/self/maps",
+                    "/proc/self/fd", "/proc/self/fd/0", "/sys/kernel", "/dev/mem", "/dev/fd/0",
+                ):
+                    with self.subTest(path=path):
+                        with self.assertRaisesRegex(Violation, "descriptor/device namespace denied"):
+                            policy.check(state, path, "metadata")
+                for operation in ("read", "metadata"):
+                    with self.assertRaisesRegex(Violation, "unavailable inherited/unknown descriptor"):
+                        policy.check_fd(state, 3, operation, Registers())
+                self.assertFalse(policy.consumed | policy.code_consumed | policy.accessed)
+        path = ctypes.create_string_buffer(b"/proc/self/exe")
+        with self.assertRaisesRegex(Violation, "untrusted executable dispatch"):
+            self.traced_observation(59, (ctypes.addressof(path), 0, 0), {}, mode="compile")
+
+    def test_compile_executable_metadata_probe_reports_capsule_absence(self):
+        self.add("probe.c", (
+            "#define _GNU_SOURCE\n#include <errno.h>\n#include <stdio.h>\n"
+            "#include <sys/stat.h>\n#include <unistd.h>\n"
+            "int main(void) {\n"
+            " struct stat data; char target[4096]; int result, error;\n"
+            " errno=0; result=stat(\"/proc/self/exe\",&data); error=errno;\n"
+            " printf(\"%d %d\\n\",result,error);\n"
+            " errno=0; result=lstat(\"/proc/self/exe\",&data); error=errno;\n"
+            " printf(\"%d %d\\n\",result,error);\n"
+            " errno=0; result=access(\"/proc/self/exe\",F_OK); error=errno;\n"
+            " printf(\"%d %d\\n\",result,error);\n"
+            " errno=0; result=readlink(\"/proc/self/exe\",target,sizeof(target)); error=errno;\n"
+            " printf(\"%d %d\\n\",result,error);\n return 0;\n}\n"
+        ))
+        with self.session() as session:
+            tool = session.compile_native(("probe.c",))
+            run = session._sandbox_run
+            def compiler_probe(root, **kwargs):
+                # Test-owned driver, as in the compiler vfork/exec control.
+                self.assertEqual(kwargs["mode"], "command")
+                self.assertEqual(kwargs["argv"], ["/native/tool"])
+                self.assertFalse((root / "proc").exists())
+                kwargs["mode"] = "compile"
+                return run(root, **kwargs)
+            with patch.object(session, "_sandbox_run", compiler_probe):
+                result = session.native(tool)
+            self.assertEqual(
+                [tuple(map(int, line.split())) for line in result.stdout.splitlines()],
+                [(-1, errno.ENOENT)]*4,
+            )
+            self.assertEqual(result.stderr, b"")
+            self.assertEqual(result.consumed, ())
+            with self.assertRaisesRegex(MakeProbeError, "descriptor/device namespace denied"):
+                session.native(tool, ("normal-command",))
+        self.assert_clean(session)
+
     def traced_observation(
         self, number, arguments, descriptors, *, buffer=None, mode="command",
         observation_limit=1024*1024,

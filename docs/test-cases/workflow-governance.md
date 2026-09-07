@@ -3206,6 +3206,40 @@ and public `/usr/bin/cc` dependency entry rejected with zero payload launches.
 The existing compiler capsule/guest resolver/output mapper, not a new runtime
 platform or wider source execution permission, supplies the correction.
 
+### Aggregate attempted observations and absent compiler metadata
+
+The same case's `test_observation_*`, `test_failed_observations_*` and
+`test_compile_executable_metadata_*` controls freeze the two existing guard
+corrections:
+
+1. Set the existing observation-record limit to three in a direct guard
+   fixture. Admit one record in each of `consumed`, `code_consumed` and
+   `accessed`, then repeat them without another record/byte charge. A fourth
+   record in any collection must reject **before insertion**, even though that
+   individual collection has room. With ample records, independently exhaust
+   the observation-byte limit and require the unchanged fail-closed error.
+2. Defer failed observations in all three collections. The attempts must spend
+   bookkeeping but grant no consumption. A successful retry reuses the charge;
+   a later failure does not erase successful evidence. A new failed attempt at
+   the aggregate count limit rejects before entering deferred state. Retain
+   the neighboring real syscall successful/failed source/FD controls.
+3. Permit only compile-mode metadata of exact `/proc/self/exe`. Run an owned
+   native probe in the existing test compiler-role capsule and require actual
+   `ENOENT` from stat, lstat, access and readlink. There is no proc mount or link
+   materialization; do not interpret this as resolving the host executable.
+   Run the same probe as a normal command and require rejection.
+4. Other command/Make modes, read/write/exec, unknown/proc FD paths and nearby
+   process/sys/device metadata remain denied. Run the existing native,
+   runtime-alias, process, successful-source and dependency/output/restart
+   neighbors plus the real 738-byte world-map dependency producer.
+
+Before this correction, exact `0b4cc7d` admits the fourth cross-collection
+record at a three-record aggregate bound and rejects the compile metadata
+probe before the kernel can return its real absence. These are regression
+controls, not new budgets, APIs or authority. All numerical limits and one
+report lifetime remain unchanged. The actual child root/112-domain adoption
+is independent and is not rerun or claimed by this bounded correction.
+
 ### Interactions and save compatibility
 
 This host-only contract changes no save, migration, config identity, generated

@@ -476,6 +476,21 @@ remain observations. Failed calls add no evidence, and read/pread/readv/readlink
 need positive returned bytes. A later failed operation does not erase a prior
 valid observation. FD duplication/state changes are applied only on success.
 
+The configured observation-record count bounds the **sum** of attempted
+`consumed`, `code_consumed` and `accessed` records before insertion, not a
+separate allowance for each collection. Repeating a value in the same
+collection spends no additional record or bookkeeping bytes; a failed attempt
+retains its charge, and later successful consumption does not charge it again.
+The independent aggregate observation-byte limit and terminal failure remain.
+
+Only compile-mode **metadata** probes of exact `/proc/self/exe` pass the
+compiler exception before the general namespace denial. The capsule has no
+proc mount or fabricated executable link: stat/lstat/access/readlink return
+authentic absence, not a host executable identity. This grants no source
+consumption, file read/write/exec, unknown descriptor or neighboring proc/sys/
+device access. Ordinary command/Make modes remain denied; the interceptor's
+existing private protocol and other trusted absent-runtime probes are unchanged.
+
 Directory evidence comes from parsed `getdents`/`getdents64` bytes, not the
 declared sibling list. Only complete, actually returned names are credited;
 failed calls, EOF, dot entries, deleted inode slots and unused buffer tails do

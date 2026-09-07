@@ -245,7 +245,7 @@ class Policy:
             self.observation_bytes += len(value.encode("utf-8")) + 128
             if (
                 self.observation_bytes > self.config["observation_limit"]
-                or len(attempted) >= self.config["observation_count"]
+                or sum(map(len, self.observation_attempts.values())) >= self.config["observation_count"]
             ):
                 raise Violation("aggregate filesystem-observation budget exhausted")
             attempted.add(value)
@@ -589,13 +589,13 @@ class Policy:
         }:
             if operation in {"read", "metadata"}:
                 return
+        if self.mode == "compile" and operation == "metadata" and path == "/proc/self/exe":
+            return
         if path.startswith(("/proc", "/sys", "/dev/")):
             raise Violation(f"descriptor/device namespace denied: {path}")
         if self.mode == "make" and operation == "metadata" and path in {
             "/usr/gnu/include", "/usr/local/include", "/usr/include",
         }:
-            return
-        if self.mode == "compile" and operation == "metadata" and path == "/proc/self/exe":
             return
         if self.mode == "compile" and operation == "metadata" and path in {
             prefix + "/" + name for prefix in ("/usr/bin", "/bin")
