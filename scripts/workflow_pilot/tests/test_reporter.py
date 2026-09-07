@@ -55,6 +55,16 @@ def sha(character):
     return character * 40
 
 
+def baseline_inputs():
+    """Project the live seed before any case-specific adversarial mutation."""
+    fixture = reporter.load_json(BASELINE)
+    decisions = reporter.project_cohort_decisions(
+        reporter.load_json(DECISIONS),
+        (item["number"] for item in fixture["pull_requests"]),
+    )
+    return fixture, decisions
+
+
 def minimal_fixture():
     return {
         "schema_version": 1,
@@ -642,10 +652,27 @@ def add_override(fixture, decisions, commit_sha=sha("b"), occurred_at=None):
 class BaselineFixtureTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.fixture = reporter.load_json(BASELINE)
-        cls.decisions = reporter.project_cohort_decisions(
-            reporter.load_json(DECISIONS), (item["number"] for item in cls.fixture["pull_requests"]))
+        cls.fixture, cls.decisions = baseline_inputs()
         cls.expected = reporter.load_json(BASELINE_EXPECTED)
+
+    def test_projected_seed_keeps_later_unknown_and_boolean_decisions_strict(self):
+        fixture, seed = baseline_inputs()
+        reporter.check_expected(authoritative_report(fixture, seed), self.expected)
+        unknown_pr = max(item["number"] for item in fixture["pull_requests"]) + 1
+        for collection, record, pattern in (
+            ("pull_requests", {**seed["pull_requests"][0], "pull_request": unknown_pr},
+             "has no authoritative PR"),
+            ("pull_requests", {**seed["pull_requests"][0], "pull_request": True},
+             "must be an integer"),
+            ("artifacts", {**seed["artifacts"][0], "artifact_id": "unobserved-artifact",
+                           "unique_decision": "unobserved-decision"},
+             "has no authoritative artifact"),
+        ):
+            with self.subTest(collection=collection, pattern=pattern):
+                changed = copy.deepcopy(seed)
+                changed[collection].append(record)
+                with self.assertRaisesRegex(reporter.PilotDataError, pattern):
+                    authoritative_report(fixture, changed)
 
     def test_frozen_baseline_and_expected_values(self):
         result = authoritative_report(self.fixture, self.decisions)
@@ -899,6 +926,7 @@ class BaselineFixtureTests(unittest.TestCase):
             sys.executable,
             "-m",
             "scripts.workflow_pilot.reporter",
+            "--cohort-decisions",
             "--fixture",
             str(BASELINE),
             "--decisions",
@@ -927,6 +955,7 @@ class BaselineFixtureTests(unittest.TestCase):
             sys.executable,
             "-m",
             "scripts.workflow_pilot.reporter",
+            "--cohort-decisions",
             "--fixture",
             str(BASELINE),
             "--expected",
@@ -979,6 +1008,7 @@ class BaselineFixtureTests(unittest.TestCase):
                         sys.executable,
                         "-m",
                         "scripts.workflow_pilot.reporter",
+                        "--cohort-decisions",
                         "--fixture",
                         str(BASELINE),
                         "--decisions",
@@ -1445,10 +1475,7 @@ class StrictPrimitiveAndMessageTests(unittest.TestCase):
                     ):
                         reporter.validate_decisions(decisions, data)
 
-        report = authoritative_report(
-            reporter.load_json(BASELINE),
-            reporter.load_json(DECISIONS),
-        )
+        report = authoritative_report(*baseline_inputs())
         for boolean in (False, True):
             with self.subTest(expected_schema_version=boolean):
                 expected = reporter.load_json(BASELINE_EXPECTED)
@@ -1526,8 +1553,7 @@ class StrictPrimitiveAndMessageTests(unittest.TestCase):
                 )
 
     def test_fixture_commit_message_whitespace_cannot_collide(self):
-        fixture = reporter.load_json(BASELINE)
-        decisions = reporter.load_json(DECISIONS)
+        fixture, decisions = baseline_inputs()
         original = fixture["commits"][0]["message"]
         mutations = (
             original + "\n",
@@ -1699,8 +1725,7 @@ class CohortIdentitySealTests(unittest.TestCase):
 class DecisionSemanticsSealTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.fixture = reporter.load_json(BASELINE)
-        cls.decisions = reporter.load_json(DECISIONS)
+        cls.fixture, cls.decisions = baseline_inputs()
         cls.report = authoritative_report(cls.fixture, cls.decisions)
         cls.expected = reporter.load_json(BASELINE_EXPECTED)
 
@@ -3010,8 +3035,7 @@ class FailClosedDataTests(unittest.TestCase):
         ):
             reporter.load_decisions_from_commit(ROOT, REVIEWER_OVERRIDE_REPRO_SHA)
 
-        fixture = reporter.load_json(BASELINE)
-        decisions = reporter.load_json(DECISIONS)
+        fixture, decisions = baseline_inputs()
         override = {
             "enabled": True,
             "reason": "A newly authored event cannot create historical provenance.",
@@ -3790,8 +3814,7 @@ class ArtifactLifecycleTests(unittest.TestCase):
                 )
 
     def test_committed_artifact_proofs_execute_removal_and_restoration(self):
-        fixture = reporter.load_json(BASELINE)
-        decisions = reporter.load_json(DECISIONS)
+        fixture, decisions = baseline_inputs()
         paths = [
             ROOT / profile["path"]
             for profile in reporter.EXECUTABLE_DELETION_PROOFS.values()
@@ -3929,8 +3952,7 @@ class ArtifactLifecycleTests(unittest.TestCase):
                 )
 
     def test_empty_git_authority_cannot_validate_executable_proofs(self):
-        fixture = reporter.load_json(BASELINE)
-        decisions = reporter.load_json(DECISIONS)
+        fixture, decisions = baseline_inputs()
         with tempfile.TemporaryDirectory(
             prefix="workflow-pilot-empty-authority-",
             dir=TEST_ARTIFACTS,
@@ -3970,8 +3992,7 @@ class ArtifactLifecycleTests(unittest.TestCase):
                     )
 
     def test_fabricated_proof_and_fixture_commands_are_not_executable(self):
-        fixture = reporter.load_json(BASELINE)
-        decisions = reporter.load_json(DECISIONS)
+        fixture, decisions = baseline_inputs()
         next(
             event
             for event in fixture["events"]
@@ -3986,8 +4007,7 @@ class ArtifactLifecycleTests(unittest.TestCase):
                 decisions,
             )
 
-        fixture = reporter.load_json(BASELINE)
-        decisions = reporter.load_json(DECISIONS)
+        fixture, decisions = baseline_inputs()
         fixture["dependency_edges"][0]["source"] = "python3 -c arbitrary"
         decisions["artifacts"][0]["executable_consumer"] = "python3 -c arbitrary"
         authoritative_report(fixture, decisions)
@@ -4111,8 +4131,7 @@ class ArtifactLifecycleTests(unittest.TestCase):
         self.assertEqual(artifact["current_disposition"], "Graduate")
 
     def test_duplicate_unique_artifact_decision_rejects(self):
-        fixture = reporter.load_json(BASELINE)
-        decisions = reporter.load_json(DECISIONS)
+        fixture, decisions = baseline_inputs()
         decisions["artifacts"][1]["unique_decision"] = decisions["artifacts"][0][
             "unique_decision"
         ]
@@ -4188,8 +4207,7 @@ class ArtifactLifecycleTests(unittest.TestCase):
                     "is not claimed exactly by target artifact",
                 )
 
-        fixture = reporter.load_json(BASELINE)
-        decisions = reporter.load_json(DECISIONS)
+        fixture, decisions = baseline_inputs()
         fixture["artifacts"][1]["dependency_ids"].append(
             fixture["artifacts"][0]["dependency_ids"][0]
         )
