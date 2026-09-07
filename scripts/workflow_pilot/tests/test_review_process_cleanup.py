@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import ctypes
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
 import errno
 import json
 import os
 from pathlib import Path
+import selectors
 import signal
 import shutil
 import subprocess
@@ -102,7 +103,7 @@ class OwnedFixture(unittest.TestCase):
         self.assertTrue(self.recorded(), "the ordinary child fixture did not execute")
         self.assertEqual(self.present(), [])
 
-    def cleanup_processes(self):
+    def cleanup_processes(self, restore_reaper=True):
         self.stop_interrupt.set()
         if self.interrupter is not None:
             self.interrupter.join(timeout=5)
@@ -126,7 +127,8 @@ class OwnedFixture(unittest.TestCase):
                         pass
                 finally:
                     os.close(descriptor)
-        self.assertEqual(self.libc.prctl(36, self.previous_reaper.value, 0, 0, 0), 0)
+        if restore_reaper:
+            self.assertEqual(self.libc.prctl(36, self.previous_reaper.value, 0, 0, 0), 0)
 
     def interrupt_when_ready(self):
         def interrupt():
@@ -143,6 +145,7 @@ class OwnedFixture(unittest.TestCase):
     @contextmanager
     def creation_interrupt(self, number):
         original = subprocess.Popen
+        open_pidfd = os.pidfd_open
         observations = []
         expected_mask = signal.pthread_sigmask(signal.SIG_BLOCK, set())
 
@@ -163,7 +166,7 @@ class OwnedFixture(unittest.TestCase):
             process = original(*args, **kwargs)
             if "process_group" not in kwargs:
                 return process
-            descriptor = os.pidfd_open(process.pid)
+            descriptor = open_pidfd(process.pid)
             self.addCleanup(recover, process, descriptor)
             deadline = time.monotonic() + 5
             while not self.records.stat().st_size and time.monotonic() < deadline:
@@ -174,7 +177,8 @@ class OwnedFixture(unittest.TestCase):
             self.assertEqual(mask, sum(1 << (int(item) - 1) for item in expected_mask))
             observed = {"process": process, "descriptor": descriptor, "returned": False}
             observations.append(observed)
-            os.kill(os.getpid(), number)
+            if number is not None:
+                os.kill(os.getpid(), number)
             observed["returned"] = True
             return process
 
@@ -223,6 +227,79 @@ class OwnedFixture(unittest.TestCase):
 
         with patch.object(ctypes, "CDLL", Library):
             yield restorations
+
+    @contextmanager
+    def exit_failure(self, kind, created):
+        failures = []
+        if kind is None:
+            yield failures
+            return
+        original_open, original_close = os.pidfd_open, os.close
+        original_mask, original_handler = signal.pthread_sigmask, signal.signal
+        original_selector = selectors.DefaultSelector
+        handlers = {number: signal.getsignal(number) for number in (signal.SIGINT, signal.SIGTERM)}
+        leader = None
+        with ExitStack() as stack:
+            def fail():
+                failures.append(kind)
+                raise OSError(errno.EIO, f"controlled {kind} cleanup failure")
+
+            def open_pidfd(pid, *args, **kwargs):
+                nonlocal leader
+                descriptor = original_open(pid, *args, **kwargs)
+                if created and pid == created[0]["process"].pid:
+                    leader = descriptor
+                    if kind in ("stdin", "stdout", "stderr"):
+                        stream = getattr(created[0]["process"], kind)
+                        close = stream.close
+                        def close_stream():
+                            close()
+                            fail()
+                        stack.enter_context(patch.object(stream, "close", close_stream))
+                return descriptor
+
+            def close_fd(descriptor):
+                result = original_close(descriptor)
+                if descriptor == leader and kind == "descriptor" and not failures:
+                    fail()
+                return result
+
+            def mask(how, values):
+                if (how == signal.SIG_BLOCK and values == {signal.SIGINT, signal.SIGTERM}
+                        and kind == "mask-block" and not failures):
+                    fail()
+                result = original_mask(how, values)
+                if how == signal.SIG_SETMASK and kind == "mask" and not failures:
+                    fail()
+                return result
+
+            def handler(number, value):
+                result = original_handler(number, value)
+                if (number == signal.SIGINT and value is handlers[number]
+                        and kind == "handler" and not failures):
+                    fail()
+                return result
+
+            def selector():
+                instance = original_selector()
+                close = instance.close
+                def select(*_args, **_kwargs):
+                    os.kill(os.getpid(), signal.SIGINT)
+                def close_selector():
+                    close()
+                    fail()
+                stack.enter_context(patch.object(instance, "select", select))
+                stack.enter_context(patch.object(instance, "close", close_selector))
+                return instance
+
+            stack.enter_context(patch.object(os, "pidfd_open", open_pidfd))
+            stack.enter_context(patch.object(os, "close", close_fd))
+            stack.enter_context(patch.object(signal, "pthread_sigmask", mask))
+            stack.enter_context(patch.object(signal, "signal", handler))
+            if kind == "selector":
+                stack.enter_context(patch.object(selectors, "DefaultSelector", selector))
+            yield failures
+        self.assertEqual({number: signal.getsignal(number) for number in handlers}, handlers)
 
 
 class ProcessRunnerTests(OwnedFixture):
@@ -289,6 +366,66 @@ class ProcessRunnerTests(OwnedFixture):
                                          (0, b"actual output\0\n"))
                 self.assertEqual(len(attempts), 1)
                 self.assert_reaped()
+
+    def test_no_pidfd_fallback_outcomes_remain_explicitly_unverified(self):
+        for mode in ("healthy", "esrch", "timeout", "wait-error", "missing-leader"):
+            with self.subTest(mode=mode):
+                self.configure("sleep")
+                groups = []
+                real_killpg = os.killpg
+
+                def group_signal(group, number):
+                    groups.append(group)
+                    if mode == "esrch":
+                        raise ProcessLookupError(errno.ESRCH, "controlled missing group")
+                    if mode != "timeout":
+                        return real_killpg(group, number)
+
+                with ExitStack() as stack:
+                    created = stack.enter_context(self.creation_interrupt(None))
+
+                    def no_pidfd(_pid, *args, **kwargs):
+                        process = created[0]["process"]
+                        if mode == "missing-leader":
+                            signal.pidfd_send_signal(created[0]["descriptor"], signal.SIGKILL)
+                            process.wait(timeout=5)
+                        elif mode in ("esrch", "timeout", "wait-error"):
+                            def failed_wait(timeout=None):
+                                self.assertEqual(timeout, 5)
+                                if mode == "wait-error":
+                                    raise OSError(errno.EIO, "controlled wait failure")
+                                raise subprocess.TimeoutExpired(process.args, timeout)
+                            stack.enter_context(patch.object(process, "wait", failed_wait))
+                        raise OSError(errno.EMFILE, "controlled initial pidfd failure")
+
+                    stack.enter_context(patch.object(os, "pidfd_open", no_pidfd))
+                    stack.enter_context(patch.object(os, "killpg", group_signal))
+                    with self.assertRaises(raw.ProcessCleanupError) as caught:
+                        self.run_tool(timeout=5)
+                self.assertIsNotNone(caught.exception.__cause__)
+                self.assertIn("controlled initial pidfd failure", str(caught.exception))
+                if mode == "missing-leader":
+                    self.assertEqual(groups, [])
+                    self.assertTrue(self.present())
+                else:
+                    self.assertEqual(groups, [created[0]["process"].pid])
+                if mode in ("esrch", "timeout"):
+                    self.assertIsNone(os.waitid(
+                        os.P_PIDFD, created[0]["descriptor"],
+                        os.WEXITED | os.WNOHANG | os.WNOWAIT))
+                if mode == "healthy":
+                    self.assertEqual(created[0]["process"].returncode, -signal.SIGKILL)
+                if mode == "wait-error":
+                    self.assertIn("controlled wait failure", str(caught.exception))
+
+    def test_failed_leader_wait_is_not_a_successful_reap(self):
+        self.configure("exit")
+        with self.creation_interrupt(None), patch.object(
+                os, "wait4", side_effect=OSError(errno.EIO, "controlled leader reap failure")):
+            with self.assertRaises(raw.ProcessCleanupError) as caught:
+                self.run_tool(timeout=5)
+        self.assertIn("controlled leader reap failure", str(caught.exception))
+        self.assertIsNotNone(caught.exception.__cause__)
 
     def test_timeout_and_closed_stdio_reap_ordinary_descendants(self):
         for mode in ("sleep", "closed-stdio"):
@@ -530,7 +667,94 @@ class StagedProcessTests(OwnedFixture):
     def test_restore_failure_preserves_unsafe_staging_and_both_diagnostics(self):
         self.assert_failed_termination_staging(fail_restore=True)
 
-    def assert_failed_termination_staging(self, *, fail_restore):
+    def test_unsafe_cleanup_survives_descriptor_stream_and_signal_exit_failures(self):
+        for kind in ("selector", "descriptor", "stdin", "stdout", "stderr",
+                     "mask-block", "mask", "handler"):
+            with self.subTest(exit_failure=kind):
+                self.configure("sleep")
+                self.assert_failed_termination_staging(fail_restore=False, exit_failure=kind)
+
+    def test_no_pidfd_failed_group_signal_retains_live_staging(self):
+        tools = self.tools()
+        stages, created, failures, groups = [], [], [], []
+        original_stage = tools._stage
+        original_run = tools.subjects.run_process
+        unrelated = subprocess.Popen([sys.executable, "-I", "-B", "-c",
+                                      "import time;time.sleep(12)"])
+        self.addCleanup(unrelated.wait)
+        self.addCleanup(unrelated.kill)
+        caller_group = os.getpgrp()
+
+        def stage(tree, root, members):
+            stages.append(root)
+            original_stage(tree, root, members)
+
+        def run(*args, **kwargs):
+            try:
+                return original_run(*args, **kwargs)
+            except BaseException as error:
+                failures.append(error)
+                raise
+
+        def deny_group(group, _number):
+            groups.append(group)
+            raise PermissionError(errno.EPERM, "controlled group termination failure")
+
+        bootstrap = f"import runpy;runpy.run_path({str(self.program)!r},run_name='__main__')"
+        try:
+            with patch.object(tools, "_stage", stage), patch.object(
+                    tools.subjects, "run_process", run), patch.object(
+                    gate, "WORKER_CODE", bootstrap), self.creation_interrupt(None) as created, \
+                    patch.object(os, "pidfd_open", side_effect=OSError(errno.EMFILE, "pidfd unavailable")), \
+                    patch.object(os, "killpg", deny_group):
+                result = tools.run_obligations(self.members(tools), self.repo.base)
+            self.assertTrue(created and all(os.waitid(
+                os.P_PIDFD, item["descriptor"], os.WEXITED | os.WNOHANG | os.WNOWAIT
+            ) is None for item in created))
+            self.assertTrue(self.present())
+            self.assertTrue(stages and all(path.is_dir() for path in stages), {
+                "stages": [(str(path), path.is_dir()) for path in stages],
+                "processes": self.present(), "diagnostics": [item.detail for item in result],
+            })
+            self.assertTrue(failures and all(isinstance(error, tools.subjects.ProcessCleanupError)
+                                            for error in failures))
+            cause = failures[0]
+            while cause is not None and not isinstance(cause, PermissionError):
+                cause = cause.__cause__
+            self.assertIsNotNone(cause)
+            self.assertEqual(cause.errno, errno.EPERM)
+            self.assertTrue(all(item.verdict == "unavailable" and item.checks == 0
+                                and str(stages[0]) in item.detail
+                                and "pidfd unavailable" in item.detail for item in result))
+            self.assertEqual(groups, [created[0]["process"].pid])
+            self.assertEqual(os.getpgrp(), caller_group)
+            self.assertIsNone(unrelated.poll())
+        finally:
+            for item in created:
+                try:
+                    signal.pidfd_send_signal(item["descriptor"], signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+                item["process"].wait(timeout=5)
+            self.cleanup_processes(restore_reaper=False)
+            for path in stages:
+                shutil.rmtree(path, ignore_errors=True)
+
+    def test_verified_cleanup_does_not_retain_staging_for_ordinary_exit_error(self):
+        for kind in ("stdout", "mask-block", "mask", "handler"):
+            with self.subTest(exit_failure=kind):
+                self.configure("exit")
+                bootstrap = f"import runpy;runpy.run_path({str(self.program)!r},run_name='__main__')"
+                with self.creation_interrupt(None) as created, self.exit_failure(
+                        kind, created) as failures:
+                    result = self.run_staged(bootstrap=bootstrap)
+                self.assertEqual(failures, [kind])
+                self.assert_reaped()
+                self.assertTrue(all(item.verdict == "unavailable" and item.checks == 0
+                                    and f"controlled {kind} cleanup failure" in item.detail
+                                    for item in result))
+
+    def assert_failed_termination_staging(self, *, fail_restore, exit_failure=None):
         tools = self.tools()
         stages = []
         created = []
@@ -546,7 +770,8 @@ class StagedProcessTests(OwnedFixture):
                 with self.restoration_outcome(fail_restore) as restored, patch.object(
                         tools, "_stage", stage), patch.object(
                         gate, "WORKER_CODE", bootstrap), self.creation_interrupt(
-                        signal.SIGINT) as created, patch.object(
+                        None if exit_failure == "selector" else signal.SIGINT) as created, self.exit_failure(
+                        exit_failure, created) as secondary, patch.object(
                         signal, "pidfd_send_signal",
                         side_effect=PermissionError(errno.EPERM, "controlled termination failure")):
                     result = tools.run_obligations(self.members(tools), self.repo.base)
@@ -567,6 +792,10 @@ class StagedProcessTests(OwnedFixture):
                 if fail_restore:
                     self.assertTrue(all("cannot restore child subreaper state" in item.detail
                                         and f"[Errno {errno.EIO}]" in item.detail for item in result))
+                if exit_failure is not None:
+                    self.assertEqual(secondary, [exit_failure])
+                    self.assertTrue(all(f"controlled {exit_failure} cleanup failure" in item.detail
+                                        for item in result))
         finally:
             for item in created:
                 try:
@@ -574,7 +803,7 @@ class StagedProcessTests(OwnedFixture):
                 except ProcessLookupError:
                     pass
                 item["process"].wait(timeout=5)
-            self.cleanup_processes()
+            self.cleanup_processes(restore_reaper=False)
             for path in stages:
                 shutil.rmtree(path, ignore_errors=True)
 

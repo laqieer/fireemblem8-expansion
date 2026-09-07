@@ -172,6 +172,16 @@ the consumers' independent protected-principal/deployment requirements.
    restoration. Staging must still remain with nonterminal owned pidfds, and
    its unavailable diagnostic must expose both failures. Restore-only failure
    must still raise, while successful restoration returns the real output.
+   Force initial pidfd acquisition failure after a real staged launch, then
+   reject group termination. The pidfds held by the test must show live owned
+   work, staging must remain, and the unsafe diagnostic must retain its cause.
+   Repeat healthy fallback, `ESRCH`, timeout, failed wait and an already-reaped
+   leader; missing-leader evidence must not authorize a possibly reused group.
+   Exercise subsequent selector/descriptor/stream/mask/handler restoration
+   failures during unsafe cleanup. They must not erase the hold or the primary
+   diagnostic. Conversely, ordinary release errors after verified cleanup must
+   not retain staging. Restore fault injections before cleaning only owned
+   fixture processes and paths.
    Remove or corrupt the checkout helper and give the candidate a different
    committed helper: both coordinator and staged worker must still execute the
    exact selected tool-tree bytes. Overlapping tool module instances must also

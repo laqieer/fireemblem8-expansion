@@ -360,6 +360,16 @@ If subreaper-state restoration also fails during unsafe process cleanup, the
 runner preserves `ProcessCleanupError`, includes both failures in the existing
 diagnostic, and chains the original cleanup error. Restoration failure alone
 still raises `OSError`; it is never converted into a successful result.
+Without a pidfd, the fallback first checks that the actual leader is still a
+waitable child before using its numeric group, then attempts group termination
+and the existing bounded wait. `ESRCH`, an unavailable wait status, a failed
+signal/wait, or even successful leader termination cannot prove the complete
+scope is empty: the result remains `ProcessCleanupError` with causal
+diagnostics. An already-reaped leader never authorizes a numeric group signal.
+The same unsafe classification survives later selector, descriptor, stream,
+signal-mask, handler or subreaper-restoration errors. Remaining release steps
+are still attempted. Once cleanup is verified, unrelated close/restoration
+failures remain ordinary errors rather than forcing blanket staging retention.
 
 Both coordinator loading and worker staging obtain the shared runner from the
 selected exact **tool** Git tree. A missing, dirty or different candidate

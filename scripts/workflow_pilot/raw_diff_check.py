@@ -111,6 +111,20 @@ class ProcessCleanupError(ValueError):
     """Owned work could not be confirmed terminal; retain its staging directory."""
 
 
+def _cleanup_error(primary, secondary):
+    if primary is None or primary is secondary:
+        return secondary
+    if isinstance(primary, ProcessCleanupError) or isinstance(secondary, ProcessCleanupError):
+        error = ProcessCleanupError(
+            f"{str(primary) or type(primary).__name__}; "
+            f"{str(secondary) or type(secondary).__name__}")
+        error.__cause__ = primary if isinstance(primary, ProcessCleanupError) else secondary
+        return error
+    if secondary.__cause__ is None:
+        secondary.__cause__ = primary
+    return secondary
+
+
 @contextmanager
 def _child_reaper():
     libc = ctypes.CDLL(None, use_errno=True)
@@ -126,19 +140,19 @@ def _child_reaper():
     cleanup_error = None
     try:
         yield
-    except ProcessCleanupError as error:
+    except BaseException as error:
         cleanup_error = error
-        raise
     finally:
-        with _REAPER_STATE["lock"]:
-            _REAPER_STATE["users"] -= 1
-            if not _REAPER_STATE["users"] and libc.prctl(
-                    36, _REAPER_STATE["previous"], 0, 0, 0) != 0:
-                restore_error = OSError(ctypes.get_errno(), "cannot restore child subreaper state")
-                if cleanup_error is not None:
-                    raise ProcessCleanupError(
-                        f"{cleanup_error}; {restore_error}") from cleanup_error
-                raise restore_error
+        try:
+            with _REAPER_STATE["lock"]:
+                _REAPER_STATE["users"] -= 1
+                if not _REAPER_STATE["users"] and libc.prctl(
+                        36, _REAPER_STATE["previous"], 0, 0, 0) != 0:
+                    raise OSError(ctypes.get_errno(), "cannot restore child subreaper state")
+        except BaseException as error:
+            cleanup_error = _cleanup_error(cleanup_error, error)
+        if cleanup_error is not None:
+            raise cleanup_error
 
 
 @contextmanager
@@ -176,23 +190,24 @@ def _interruptible():
             if handler == signal.SIG_DFL or callable(handler):
                 previous[number] = handler
                 signal.signal(number, interrupt)
+    cleanup_error = None
     try:
         yield resume
     except BaseException as error:
+        cleanup_error = error
+    finally:
         if deferred:
             try:
                 resume()
-            except BaseException as interruption:
-                if isinstance(error, ProcessCleanupError):
-                    raise error from interruption
-                raise
-        raise
-    else:
-        if deferred:
-            resume()
-    finally:
+            except BaseException as error:
+                cleanup_error = _cleanup_error(cleanup_error, error)
         for number, handler in previous.items():
-            signal.signal(number, handler)
+            try:
+                signal.signal(number, handler)
+            except BaseException as error:
+                cleanup_error = _cleanup_error(cleanup_error, error)
+        if cleanup_error is not None:
+            raise cleanup_error
 
 
 def _owned_descriptors(leader, new_session):
@@ -225,8 +240,35 @@ def _owned_descriptors(leader, new_session):
 def _terminate_owned(process, leader_fd, new_session, deadline):
     try:
         _reap_owned(process, leader_fd, new_session, deadline)
-    except OSError as error:
-        raise ProcessCleanupError("owned process cleanup could not be verified") from error
+    except ProcessCleanupError:
+        raise
+    except BaseException as error:
+        raise ProcessCleanupError(f"owned process cleanup could not be verified: {error}") from error
+
+
+def _terminate_without_pidfd(process):
+    try:
+        # Verify that the actual child is still ours and leave it unreaped
+        # before using its numeric group. ESRCH is not proof of an empty scope.
+        os.waitid(os.P_PID, process.pid, os.WEXITED | os.WNOHANG | os.WNOWAIT)
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        process.wait(timeout=5)
+    except BaseException as error:
+        raise ProcessCleanupError(
+            f"owned fallback termination or reaping could not be verified: {error}") from error
+    raise ProcessCleanupError("owned process identity could not be retained")
+
+
+def _reap_leader(process):
+    try:
+        _, status, usage = os.wait4(process.pid, 0)
+    except BaseException as error:
+        raise ProcessCleanupError(f"owned leader could not be reaped: {error}") from error
+    process.returncode = os.waitstatus_to_exitcode(status)
+    return usage
 
 
 def _reap_owned(process, leader_fd, new_session, deadline):
@@ -278,6 +320,8 @@ def _run_process(argv, *, cwd, env, timeout, max_bytes, input, new_session, resu
     leader_fd = -1
     cleaned = False
     cleanup_deadline = None
+    failure = None
+    selector = None
 
     def terminate():
         nonlocal cleanup_deadline
@@ -298,42 +342,42 @@ def _run_process(argv, *, cwd, env, timeout, max_bytes, input, new_session, resu
         remaining = max_bytes
         deadline = started + timeout
         offset = 0
-        with selectors.DefaultSelector() as selector:
-            for stream in output:
-                selector.register(stream, selectors.EVENT_READ)
-            if input:
-                os.set_blocking(process.stdin.fileno(), False)
-                selector.register(process.stdin, selectors.EVENT_WRITE)
-            elif process.stdin is not None:
-                process.stdin.close()
-            while selector.get_map():
-                if not cleaned and os.waitid(
-                        os.P_PIDFD, leader_fd, os.WEXITED | os.WNOHANG | os.WNOWAIT):
-                    terminate()
-                    cleaned = True
-                wait = deadline - time.monotonic()
-                if wait <= 0:
-                    raise ValueError("process timed out")
-                for key, _ in selector.select(min(wait, 0.05)):
-                    if key.fileobj is process.stdin:
-                        try:
-                            offset += os.write(key.fd, input[offset:offset + 65536])
-                        except BlockingIOError:
-                            continue
-                        except BrokenPipeError:
-                            offset = len(input)
-                        if offset == len(input):
-                            selector.unregister(process.stdin)
-                            process.stdin.close()
+        selector = selectors.DefaultSelector()
+        for stream in output:
+            selector.register(stream, selectors.EVENT_READ)
+        if input:
+            os.set_blocking(process.stdin.fileno(), False)
+            selector.register(process.stdin, selectors.EVENT_WRITE)
+        elif process.stdin is not None:
+            process.stdin.close()
+        while selector.get_map():
+            if not cleaned and os.waitid(
+                    os.P_PIDFD, leader_fd, os.WEXITED | os.WNOHANG | os.WNOWAIT):
+                terminate()
+                cleaned = True
+            wait = deadline - time.monotonic()
+            if wait <= 0:
+                raise ValueError("process timed out")
+            for key, _ in selector.select(min(wait, 0.05)):
+                if key.fileobj is process.stdin:
+                    try:
+                        offset += os.write(key.fd, input[offset:offset + 65536])
+                    except BlockingIOError:
                         continue
-                    chunk = os.read(key.fd, min(65536, remaining + 1))
-                    remaining -= len(chunk)
-                    if remaining < 0:
-                        raise ValueError(f"process output exceeds {max_bytes} bytes")
-                    if chunk:
-                        output[key.fileobj].extend(chunk)
-                    else:
-                        selector.unregister(key.fileobj)
+                    except BrokenPipeError:
+                        offset = len(input)
+                    if offset == len(input):
+                        selector.unregister(process.stdin)
+                        process.stdin.close()
+                    continue
+                chunk = os.read(key.fd, min(65536, remaining + 1))
+                remaining -= len(chunk)
+                if remaining < 0:
+                    raise ValueError(f"process output exceeds {max_bytes} bytes")
+                if chunk:
+                    output[key.fileobj].extend(chunk)
+                else:
+                    selector.unregister(key.fileobj)
         while not os.waitid(os.P_PIDFD, leader_fd, os.WEXITED | os.WNOHANG | os.WNOWAIT):
             if time.monotonic() >= deadline:
                 raise ValueError("process timed out")
@@ -341,42 +385,53 @@ def _run_process(argv, *, cwd, env, timeout, max_bytes, input, new_session, resu
         if not cleaned:
             terminate()
             cleaned = True
-        _, status, usage = os.wait4(process.pid, 0)
-        process.returncode = os.waitstatus_to_exitcode(status)
+        usage = _reap_leader(process)
         return ProcessResult(
             process.returncode, bytes(output[process.stdout]), bytes(output[process.stderr]),
             process.pid, time.monotonic() - started, usage.ru_maxrss * 1024,
         )
+    except BaseException as error:
+        failure = error
+        raise
     finally:
-        previous = signal.pthread_sigmask(signal.SIG_BLOCK, {signal.SIGINT, signal.SIGTERM})
-        try:
-            if process is not None and not cleaned:
+        cleanup_error = failure
+
+        def finish(action, *args, unverified=False, **kwargs):
+            nonlocal cleanup_error
+            try:
+                return True, action(*args, **kwargs)
+            except BaseException as error:
+                if unverified and not isinstance(error, ProcessCleanupError):
+                    wrapped = ProcessCleanupError(
+                        f"owned process cleanup could not be verified: {error}")
+                    wrapped.__cause__ = error
+                    error = wrapped
+                cleanup_error = _cleanup_error(cleanup_error, error)
+                return False, None
+
+        masked, previous = finish(
+            signal.pthread_sigmask, signal.SIG_BLOCK, {signal.SIGINT, signal.SIGTERM})
+        terminated = cleaned
+        if process is not None:
+            if not cleaned:
                 if leader_fd >= 0:
-                    terminate()
+                    terminated, _ = finish(terminate, unverified=True)
                 else:
-                    # The child is still waitable, so this group cannot have
-                    # been recycled; without a pidfd its full scope is unknown.
-                    try:
-                        os.killpg(process.pid, signal.SIGKILL)
-                    except ProcessLookupError:
-                        pass
-                    try:
-                        process.wait(timeout=5)
-                    except subprocess.TimeoutExpired as error:
-                        raise ProcessCleanupError(
-                            "owned process termination could not be confirmed") from error
-                    raise ProcessCleanupError("owned process identity could not be retained")
-            if process is not None:
-                process.wait()
-        finally:
-            if leader_fd >= 0:
-                os.close(leader_fd)
-            if process is not None:
-                if process.stdin is not None:
-                    process.stdin.close()
-                process.stdout.close()
-                process.stderr.close()
-            signal.pthread_sigmask(signal.SIG_SETMASK, previous)
+                    terminated, _ = finish(_terminate_without_pidfd, process, unverified=True)
+            if terminated and process.returncode is None:
+                finish(_reap_leader, process, unverified=True)
+        if selector is not None:
+            finish(selector.close)
+        if leader_fd >= 0:
+            finish(os.close, leader_fd)
+        if process is not None:
+            for stream in (process.stdin, process.stdout, process.stderr):
+                if stream is not None:
+                    finish(stream.close)
+        if masked:
+            finish(signal.pthread_sigmask, signal.SIG_SETMASK, previous)
+        if cleanup_error is not None:
+            raise cleanup_error
 
 
 def run_git(repository_root: Path, *arguments: str) -> bytes:
