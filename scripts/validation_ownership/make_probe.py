@@ -488,6 +488,7 @@ class ProbeSession:
         self.processes_used = 0
         self.live_process_peak = 0
         self.syscalls_used = 0
+        self.observations_used = 0
         self.files_created = 0
         self.owner_thread = get_ident()
 
@@ -801,7 +802,7 @@ class ProbeSession:
             "syscall_limit": self.budget.limits.syscalls - self.syscalls_used,
             "write_limit": self.budget.limits.sandbox_bytes - self.budget.bytes.get("sandbox", 0),
             "creation_limit": self.budget.limits.created_files - self.files_created,
-            "observation_count": self.budget.limits.entries,
+            "observation_count": self.budget.limits.entries - self.observations_used,
             "observation_limit": min(
                 self.budget.limits.file_bytes,
                 self.budget.limits.control_bytes - self.budget.bytes.get("control", 0),
@@ -812,6 +813,8 @@ class ProbeSession:
             or config["syscall_limit"] < 1 or config["write_limit"] < 1
         ):
             self.budget.reject("aggregate capsule resource budget exhausted")
+        if config["observation_count"] < 1:
+            self.budget.reject("aggregate filesystem-observation budget exhausted before launch")
         payload = encoded(config)
         self.budget.charge("control", len(payload))
         with cleanup_scope([
@@ -826,12 +829,26 @@ class ProbeSession:
             if not report.is_file():
                 raise MakeProbeError(f"sandbox supervisor produced no result: {result.stderr!r}")
             observed = parse_json(self.budget.read_bytes(report, "control"), "supervisor JSON")
-            if set(observed) != {
+            if not isinstance(observed, dict) or set(observed) != {
                 "ok", "returncode", "error", "consumed", "code_consumed", "accessed",
                 "processes", "syscalls", "written_bytes", "created_files",
-                "memory_peak", "observation_bytes", "live_process_peak",
+                "memory_peak", "observation_bytes", "live_process_peak", "observations",
             }:
                 raise MakeProbeError("malformed supervisor result")
+            observations = observed["observations"]
+            collections = [observed[name] for name in ("consumed", "code_consumed", "accessed")]
+            if (
+                type(observations) is not int or not 0 <= observations <= config["observation_count"]
+                or any(
+                    not isinstance(paths, list) or any(not isinstance(path, str) for path in paths)
+                    or len(set(paths)) != len(paths) for paths in collections
+                )
+                or observations < sum(map(len, collections))
+                or type(observed["observation_bytes"]) is not int
+                or observed["observation_bytes"] < 128 * observations
+            ):
+                raise MakeProbeError("malformed supervisor observation accounting")
+            self.observations_used += observations
             self.processes_used += observed["processes"]
             self.live_process_peak = max(self.live_process_peak, observed["live_process_peak"])
             self.syscalls_used += observed["syscalls"]

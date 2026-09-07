@@ -1666,6 +1666,233 @@ raise AssertionError("default termination was lost")
         self.assertFalse(self.scratch.exists())
         self.assertEqual((self.root / "Makefile").read_text(), "all: ;\n")
 
+    def observation_command_fixture(self):
+        self.add("data/a", "observed\n")
+        self.add("reader.py", (
+            "import os,sys\nfor index in range(8): os.stat('data/a')\n"
+            "sys.stdout.write(open('data/a').read())\n"
+        ))
+        return Command(
+            ("/usr/bin/python3", "/repo/reader.py"), code=("reader.py",), sources=("data/a",),
+        )
+
+    def test_observation_total_exact_limit_cache_and_next_capsule(self):
+        command = self.observation_command_fixture()
+        with self.session(entries=4) as session:
+            self.assertEqual(len(session.snapshot.files), 2)
+            first = session.command(command)
+            self.assertEqual(first.stdout, b"observed\n")
+            second = replace(command, argv=(*command.argv, "second"))
+            self.assertEqual(session.command(second).stdout, b"observed\n")
+            runs = session.budget.runs
+            self.assertIs(session.command(command), first)
+            self.assertEqual(session.budget.runs, runs)
+            with self.assertRaisesRegex(MakeProbeError, "filesystem-observation.*before launch"):
+                session.command(replace(command, argv=(*command.argv, "third")))
+            self.assertEqual(session.observations_used, 4)
+            self.assertEqual(session.budget.runs, runs)
+            self.assertTrue(session.budget.closed)
+            with self.assertRaisesRegex(MakeProbeError, "deadline/budget"):
+                session.command(command)
+            self.assertEqual(session.observations_used, 4)
+        self.assertEqual(session.observations_used, 4)
+        self.assert_clean(session)
+        session = self.session(entries=1)
+        with self.assertRaisesRegex(MakeProbeError, "snapshot entry count"):
+            with session:
+                self.fail("source capture exceeded its independent entry limit")
+        self.assertEqual(session.observations_used, 0)
+        self.assert_clean(session)
+
+    def test_observation_remaining_count_reaches_next_capsule_guard(self):
+        command = self.observation_command_fixture()
+        with self.session(entries=3) as session:
+            self.assertEqual(session.command(command).stdout, b"observed\n")
+            runs = session.budget.runs
+            with self.assertRaisesRegex(MakeProbeError, "confined command.*filesystem-observation"):
+                session.command(replace(command, argv=(*command.argv, "second")))
+            self.assertEqual(session.observations_used, 3)
+            self.assertEqual(session.budget.runs, runs + 1)
+            self.assertEqual(session.processes_used, 2)
+            self.assertTrue(session.budget.failed)
+            self.assertTrue(session.budget.closed)
+        self.assertEqual(session.observations_used, 3)
+        self.assert_clean(session)
+
+    def test_observation_totals_follow_immutable_views_without_reset(self):
+        command = self.observation_command_fixture()
+        budget = ProbeBudget(Limits(entries=4))
+        base = self.capture_view(budget)
+        self.add("data/a", "current\n")
+        current = self.capture_view(budget)
+        started, deadline = budget.started, budget.deadline
+        with ProbeSession(current, scratch_root=self.scratch, budget=budget) as session:
+            before = session.command(command)
+            self.assertEqual(before.stdout, b"current\n")
+            self.assertEqual(session.observations_used, 2)
+            with session.select_view(base):
+                self.assertEqual(session.command(command).stdout, b"observed\n")
+                self.assertEqual(session.observations_used, 4)
+            runs = budget.runs
+            self.assertIs(session.command(command), before)
+            self.assertEqual(budget.runs, runs)
+            with self.assertRaisesRegex(MakeProbeError, "filesystem-observation.*before launch"):
+                with session.select_view(base):
+                    before_launch = budget.runs, session.processes_used
+                    session.command(command)
+            self.assertIs(session.loader, current)
+            self.assertEqual(session.observations_used, 4)
+            self.assertEqual((budget.started, budget.deadline), (started, deadline))
+            self.assertEqual((budget.runs, session.processes_used), before_launch)
+            self.assertGreaterEqual(budget.runs, runs)
+            self.assertTrue(budget.closed)
+        self.assertEqual(session.observations_used, 4)
+        self.assert_clean(session)
+
+    def test_observation_totals_charge_failed_deferred_and_terminal_processes(self):
+        for exit_code, expected in ((0, "declared/consumed"), (7, "unsuccessfully: 7")):
+            with self.subTest(exit_code=exit_code):
+                command = self.observation_command_fixture()
+                self.add("reader.py", (
+                    "import os,sys\n"
+                    "if len(sys.argv)>1:\n"
+                    " for index in range(8):\n"
+                    "  try: os.open('data/a',os.O_RDONLY|os.O_DIRECTORY)\n"
+                    "  except OSError: pass\n"
+                    f" sys.exit({exit_code})\n"
+                    "sys.stdout.write(open('data/a').read())\n"
+                ))
+                with self.session(entries=4) as session:
+                    session.command(command)
+                    self.assertEqual(session.observations_used, 2)
+                    with self.assertRaisesRegex(MakeProbeError, expected):
+                        session.command(replace(command, argv=(*command.argv, "fail")))
+                    self.assertEqual(session.observations_used, 4)
+                    self.assertTrue(session.budget.failed)
+                    self.assertTrue(session.budget.closed)
+                    with self.assertRaisesRegex(MakeProbeError, "deadline/budget"):
+                        session.command(command)
+                    self.assertEqual(session.observations_used, 4)
+                self.assertEqual(session.observations_used, 4)
+                self.assert_clean(session)
+
+    def test_observation_totals_cover_compiler_native_generated_make_and_cache(self):
+        reader = self.observation_command_fixture()
+        dependency = self.dependency_fixture(missing=False)
+        self.add("native.c", (
+            "#include <stdio.h>\nint main(void) {\n"
+            " FILE *file=fopen(\"data/a\",\"r\"); int value;\n"
+            " if(!file) return 1;\n"
+            " while((value=fgetc(file))!=EOF) putchar(value);\n return fclose(file);\n}\n"
+        ))
+        self.add("producer.py", (
+            "value=open('data/a').read().strip()\n"
+            "open('/work/generated.mk','w').write('SELECTED := '+value+'\\n')\n"
+        ))
+        self.add("Makefile", (
+            "include generated.mk\ngenerated.mk: data/a\n\t@python3 producer.py\n"
+            "all: $(SELECTED)\nobserved: ;\n"
+        ))
+        producer = Command(
+            ("/usr/bin/python3", "/repo/producer.py"), code=("producer.py",),
+            sources=("data/a",), outputs=("generated.mk",),
+        )
+        configs, reports = [], []
+        with self.session() as session:
+            original_run, original_capsule = session.budget.run, session._sandbox_run
+            def record_config(argv, **kwargs):
+                if len(argv) >= 2 and argv[-2] == str(TRUSTED_ROOT / "sandbox_exec.py"):
+                    config = json.loads(Path(argv[-1]).read_bytes())
+                    configs.append((config["mode"], config["observation_count"]))
+                return original_run(argv, **kwargs)
+            def record_capsule(root, **kwargs):
+                result, observed = original_capsule(root, **kwargs)
+                reports.append(observed)
+                return result, observed
+            with patch.object(session.budget, "run", record_config), patch.object(
+                session, "_sandbox_run", record_capsule,
+            ):
+                session.command(reader)
+                tool = session.compile_native(("native.c",))
+                native = session.native(tool, sources=("data/a",))
+                self.assertEqual(native.stdout, b"observed\n")
+                used, runs = session.observations_used, session.budget.runs
+                self.assertIs(session.native(tool, sources=("data/a",)), native)
+                self.assertEqual((session.observations_used, session.budget.runs), (used, runs))
+                generated = session.command(dependency)
+                self.assertTrue(generated.generated[0].data)
+                result = session.make(
+                    "all", variables=("MAKE_RESTARTS",), commands={"python3 producer.py": producer},
+                )
+                self.assertEqual(result.semantics["domains"]["MAKE_RESTARTS"]["value"], "1")
+                self.assertEqual(result.semantics["files"][0]["prerequisites"][0]["name"], "observed")
+            self.assertEqual(len(configs), len(reports))
+            self.assertEqual({mode for mode, _ in configs}, {"command", "compile", "make"})
+            used = 0
+            for (_, remaining), observed in zip(configs, reports):
+                self.assertEqual(remaining, session.budget.limits.entries - used)
+                used += observed["observations"]
+            self.assertEqual(session.observations_used, used)
+            self.assertGreater(used, len(session.snapshot.files))
+            self.assertLessEqual(used, session.budget.limits.entries)
+        self.assert_clean(session)
+
+    def test_observation_accounting_rejects_malformed_closed_reports(self):
+        command = self.observation_command_fixture()
+        for case, value in (
+            ("missing", None), ("null", None), ("false", False), ("true", True),
+            ("negative", -1), ("string", "2"), ("float", 2.0), ("array", []),
+            ("object", {}), ("inconsistent-zero", 0), ("above-remaining", None),
+            ("above-byte-evidence", None),
+        ):
+            with self.subTest(case=case):
+                with self.session() as session:
+                    session.command(command)
+                    used = session.observations_used
+                    original = session.budget.read_bytes
+                    def malformed(path, category):
+                        data = original(path, category)
+                        if path.name.startswith("report-"):
+                            report = json.loads(data)
+                            self.assertEqual(report["observations"], 2)
+                            if case == "missing":
+                                del report["observations"]
+                            elif case == "above-remaining":
+                                report["observations"] = session.budget.limits.entries - used + 1
+                            elif case == "above-byte-evidence":
+                                report["observations"] = report["observation_bytes"] // 128 + 1
+                            else:
+                                report["observations"] = value
+                            return json.dumps(report).encode("utf-8")
+                        return data
+                    with patch.object(session.budget, "read_bytes", malformed):
+                        with self.assertRaisesRegex(MakeProbeError, "malformed supervisor"):
+                            session.command(replace(command, argv=(*command.argv, "second")))
+                    self.assertEqual(session.observations_used, used)
+                    self.assertTrue(session.budget.failed)
+                    self.assertTrue(session.budget.closed)
+                    runs = session.budget.runs
+                    with self.assertRaisesRegex(MakeProbeError, "deadline/budget"):
+                        session.command(command)
+                    self.assertEqual((session.observations_used, session.budget.runs), (used, runs))
+                self.assert_clean(session)
+
+    def test_observation_accounting_ignores_candidate_stdout_and_accepts_real_zero(self):
+        command = self.observation_command_fixture()
+        self.add("reader.py", (
+            "import json\nopen('data/a').read()\n"
+            "print(json.dumps({'observations':0,'consumed':[],'code_consumed':[],'accessed':[]}))\n"
+        ))
+        with self.session() as session:
+            session.command(Command(("/usr/bin/printf", "%s", "no source inputs")))
+            self.assertEqual(session.observations_used, 0)
+            result = session.command(command)
+            self.assertEqual(json.loads(result.stdout)["observations"], 0)
+            self.assertEqual(result.consumed, ("data/a",))
+            self.assertEqual(result.code_consumed, ("reader.py",))
+            self.assertEqual(session.observations_used, 2)
+        self.assert_clean(session)
+
     def observation_policy(self, *, count=3, byte_limit=1024*1024, mode="command"):
         from scripts.validation_ownership.syscall_guard import Policy
         return Policy({
@@ -3332,7 +3559,7 @@ int main(int argc, char **argv) {
                         "ok": True, "returncode": 0, "error": None,
                         "consumed": [], "code_consumed": [], "accessed": [],
                         "processes": 1, "live_process_peak": 1, "syscalls": 1, "written_bytes": 0,
-                        "created_files": 0, "memory_peak": 1, "observation_bytes": 0,
+                        "created_files": 0, "memory_peak": 1, "observation_bytes": 0, "observations": 0,
                     }))
                 return subprocess.CompletedProcess(argv, 0, b"", b"")
             return original_run(argv, **kwargs)

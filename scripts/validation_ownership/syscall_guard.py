@@ -1258,6 +1258,7 @@ def supervise(config, drop_privileges):
                 "created_files": policy.created,
                 "memory_peak": policy.memory_peak,
                 "observation_bytes": policy.observation_bytes,
+                "observations": sum(map(len, policy.observation_attempts.values())),
             }
             Path(config["report"]).write_text(
                 json.dumps(result, sort_keys=True, separators=(",", ":")), encoding="ascii",

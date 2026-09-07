@@ -335,8 +335,9 @@ dependency = Command(
 output = probe.command(dependency)
 ```
 
-Only one declared canonical C source, one target and one declared output are
-accepted. `-E`, `-MM`, `-nostdinc`, `-undef` and one `-MT` are required;
+The action accepts exactly one canonical C translation-unit argument, one
+target and one declared output. `-E`, `-MM`, `-nostdinc`, `-undef` and one `-MT`
+are required;
 `-MG` is optional. Ordered `-I`/`-iquote` and symbolic `-D`/`-U` declarations
 are supported without reordering the real argv. Other compiler modes, arbitrary
 flags, response files, plugins/specs, link/assembler actions and output overrides
@@ -476,12 +477,24 @@ remain observations. Failed calls add no evidence, and read/pread/readv/readlink
 need positive returned bytes. A later failed operation does not erase a prior
 valid observation. FD duplication/state changes are applied only on success.
 
-The configured observation-record count bounds the **sum** of attempted
-`consumed`, `code_consumed` and `accessed` records before insertion, not a
-separate allowance for each collection. Repeating a value in the same
-collection spends no additional record or bookkeeping bytes; a failed attempt
-retains its charge, and later successful consumption does not charge it again.
-The independent aggregate observation-byte limit and terminal failure remain.
+The configured observation-record count bounds the **entire report**. Each
+capsule limits the sum of attempted `consumed`, `code_consumed` and `accessed`
+records to the remaining allowance before insertion. Repeating a value in the
+same collection and capsule spends no additional record or bookkeeping bytes;
+a failed attempt retains its charge, and later successful consumption does not
+charge it again. The independent observation-byte limit remains unchanged.
+
+The closed supervisor result includes the actual attempted-record sum as
+`observations`. `ProbeSession.observations_used` accumulates it alongside
+process/syscall totals, including failed capsules. Missing, malformed,
+out-of-range or inconsistent counts reject rather than defaulting to zero;
+successful observation sets and bookkeeping bytes constrain the count.
+Command, native, compiler, generated Make work and CURRENT/BASE selection share
+this total. Cached results do not repeat already-accounted work, and neither
+view restoration nor failure resets the counter. With no records remaining,
+another capsule rejects before launch. A terminal failure also forbids cached
+replay. The separate captured-source entry bound still uses `Limits.entries`;
+source capture is not a filesystem-observation charge.
 
 Only compile-mode **metadata** probes of exact `/proc/self/exe` pass the
 compiler exception before the general namespace denial. The capsule has no
@@ -860,7 +873,7 @@ of its graph implementation. At the introducing base, `master` has no
 with that name would falsely claim the unmerged dependency was satisfied, so
 this root provides the distinct executable foundation target above.
 
-Required downstream #180/PR186 integration:
+Required downstream #180 / PR #186 integration:
 
 1. Import this `GitTreeEntry`/`AuthorityLoader` API instead of the reporter's
    duplicated loader and compile the interceptor/observer from the trusted base.
@@ -882,7 +895,7 @@ Required downstream #180/PR186 integration:
    Bind issued native tools through `Command.native_tool` and declare generated
    include files with `Command.outputs`; do not discard file results, precreate
    includes before a new Make invocation, or substitute synthetic stdout.
-5. Restore the full public `validation-ownership-check` Make target **in PR186** and
+5. Restore the full public `validation-ownership-check` Make target **in PR #186** and
    exercise its entire current domain matrix, generated ownership, oracle and
    lifecycle under the unchanged bound. No such matrix/graph proof is claimed
    by this foundation's small, real consumer.
@@ -899,12 +912,12 @@ unrequested `/bin/env`; no complete default root observation/full graph
 acceptance is claimed from the solved producer examples.
 
 Dependencies are the existing generated-registry schema and host tools above.
-Conflicts: PR186's probe/interceptor/reporter surfaces must be reconciled.
+Conflicts: PR #186's probe/interceptor/reporter surfaces must be reconciled.
 Other feature/profile conflicts: **none**. Modern debug/release, archival,
 save/config identity, localization content, generated game output and ROM/RAM
 are unchanged. No feature flag or new Build topology/context is introduced.
 Revert this dedicated change to roll back; broader validation remains mandatory
-and PR186 remains blocked rather than accepting unsafe or missing evidence.
+and PR #186 remains blocked rather than accepting unsafe or missing evidence.
 
 Tester procedure:
 [`TC-WORKFLOW-OWNERSHIP-PROBE-SANDBOX-001`](test-cases/workflow-governance.md#tc-workflow-ownership-probe-sandbox-001-confine-and-bound-authentic-probe-execution).

@@ -3087,11 +3087,11 @@ Exact `2e19091` before-fix evidence has independent BASE and current registry
 positives, but the one-report compositions reject: foreign loader, duplicate
 session lifetime and missing deleted source in current. Separate budgets or
 rewritten filesystem prefixes are not acceptable substitutes. The new selector
-uses the existing session/Snapshot/capsule only; full112-domain adoption remains
+uses the existing session/Snapshot/capsule only; full 112-domain adoption remains
 #180's separate responsibility. Local user-namespace or same-UID route controls
 do not claim a real sudo credential-transition result.
 The first full-tree selector recaptured all unchanged blobs and exhausted the
-384MiB snapshot-processing cap after HEAD alone spent about289MB. Exact
+384 MiB snapshot-processing cap after HEAD alone spent about 289 MB. Exact
 immutable-entry reuse removes those duplicate reads/copies without resetting
 the report budget or sharing command/native execution authority.
 
@@ -3145,7 +3145,7 @@ stay unchanged.
 Run the existing suite's `test_process_*` methods:
 
 1. Execute forty sequential actual Make shell expansions. Require all native
-   values/events, total creation greater than32 and live peak within32.
+   values/events, total creation greater than 32 and live peak within 32.
 2. Hold children live under a small live cap with ample total allowance.
    Reject the next creation before excess child progress; verify actual totals,
    live peak, closed budget and owned teardown.
@@ -3158,11 +3158,11 @@ Run the existing suite's `test_process_*` methods:
    live peak comes from tracked state, not the configured cap. Memory credits
    are not RSS.
 5. Run the frozen child's actual current adapters and unchanged default root.
-   All33 recorded producers are real successes; no variable override or fake
-   output is permitted. The old supervisor stopped at33 with153 report
-   creations used. The corrected trace reaches620 creations in that Make
-   capsule (live peak2),740 report creations (peak3), then honestly rejects
-   unadmitted `/bin/mkdir` metadata. This is measured progress, not full112
+   All 33 recorded producers are real successes; no variable override or fake
+   output is permitted. The old supervisor stopped at 33 with 153 report
+   creations used. The corrected trace reaches 620 creations in that Make
+   capsule (live peak 2), 740 report creations (peak 3), then honestly rejects
+   unadmitted `/bin/mkdir` metadata. This is measured progress, not full 112
    acceptance or permission for another limit/authority expansion.
 
 ### Stock runtime spelling and native dependency-only action
@@ -3193,12 +3193,13 @@ same case:
    provenance with ordinary Make under the same report budget. Native
    registrations, source/output/view isolation and cleanup remain intact.
 5. Run the exact frozen child root with its controlled current adapters and
-   this trusted parent API. The measured world-map producer emits738 bytes,
-   with one C source and27 actually consumed headers; the exact-closure rerun
-   matches. No captured agbcc headers/executable/library or ARM installation
-   is needed for the actual `-nostdinc -MG` query. The updated full root then
+   this trusted parent API. The world-map producer emits nonempty dependency
+   bytes with the actually observed source/header closure; the exact-closure
+   rerun matches. Retain run-specific quantities in evidence, not a fixed source
+   census in this procedure. No captured agbcc headers/executable/library or ARM
+   installation is needed for the actual `-nostdinc -MG` query. The updated full root then
    rejects separately unrequested `/bin/env`; record that boundary/counters
-   instead of a full112-domain or default-root success claim.
+   instead of a full 112-domain or default-root success claim.
 
 Before this correction, ordinary mkdir worked with either PATH while the
 confined prefixed recipe failed, explicit alias capture rejected `/bin/mkdir`,
@@ -3231,21 +3232,45 @@ corrections:
 4. Other command/Make modes, read/write/exec, unknown/proc FD paths and nearby
    process/sys/device metadata remain denied. Run the existing native,
    runtime-alias, process, successful-source and dependency/output/restart
-   neighbors plus the real 738-byte world-map dependency producer.
+   neighbors plus the real world-map dependency producer and its measured
+   source/header closure.
+5. Run `test_observation_total_*`, `test_observation_totals_*` and
+   `test_observation_remaining_*` through public session operations. Repeated
+   metadata/open/read of the same input deduplicates within a capsule. Real
+   commands must reach an exact report-wide limit, cached replay must spend no
+   new records, and a fresh capsule must reject when no allowance remains.
+   If a positive allowance remains, the next capsule must enforce that smaller
+   count before inserting its next record.
+6. Select immutable CURRENT/BASE views and restore current without resetting
+   the total or deadline. Account real compiler, native, command and generated
+   Make/restart work in that same session. Failed deferred probes spend records
+   without successful consumption; process/source failures preserve the total
+   and make the entire lifetime unusable. The captured-source entry limit stays
+   independent; no numerical limit is raised.
+7. Run `test_observation_accounting_*`. Require the new count in the existing
+   closed supervisor result, rejecting missing, nonintegral, boolean, negative,
+   excessive or inconsistent values. Candidate stdout cannot replace that
+   trusted count. An actual source-free capsule may report zero; malformed
+   accounting may not be silently converted to zero. Cache/failure cleanup
+   must retain the same terminal report lifetime.
 
-Before this correction, exact `0b4cc7d` admits the fourth cross-collection
-record at a three-record aggregate bound and rejects the compile metadata
+Before the capsule-local correction, exact `0b4cc7d` admits the fourth
+cross-collection record at a three-record aggregate bound and rejects the compile metadata
 probe before the kernel can return its real absence. These are regression
 controls, not new budgets, APIs or authority. All numerical limits and one
-report lifetime remain unchanged. The actual child root/112-domain adoption
-is independent and is not rerun or claimed by this bounded correction.
+report lifetime remain unchanged. Exact `e403445` still admits successive real
+capsules whose combined observations exceed that report's configured count.
+The report-wide correction passes the remaining allowance to each capsule and
+accumulates its measured attempted records; it does not merely repeat the
+local-guard control. The actual child root/112-domain adoption is independent
+and is not rerun or claimed by this bounded correction.
 
 ### Interactions and save compatibility
 
 This host-only contract changes no save, migration, config identity, generated
 game content, localization, modern/archival behavior or ROM/RAM. Other feature
 interactions: none. The authority and existing generated-registry schema stay
-shared; PR186/#180 must still perform their downstream graph adoption.
+shared; PR #186 / #180 must still perform their downstream graph adoption.
 
 ### Automation
 
@@ -3261,7 +3286,7 @@ Fixtures and session channels are removed automatically. Remove the empty
 `build/test-artifacts/ownership-foundation-tests` parent if desired. No remote
 state is read or changed.
 
-The introducing root does not claim PR186's full graph, domain matrix, oracle,
+The introducing root does not claim PR #186's full graph, domain matrix, oracle,
 lifecycle or absent-on-master `validation-ownership-check` target. Those remain
 explicit downstream integration gates under #180. Unsupported native Make
 ABIs/platforms fail rather than running a weaker probe. Roll back by reverting
