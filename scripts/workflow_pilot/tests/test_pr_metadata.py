@@ -12,7 +12,7 @@ import unittest
 from dataclasses import replace
 from pathlib import Path
 
-from scripts.workflow_pilot import candidate_evidence, metadata_event, pr_metadata
+from scripts.workflow_pilot import candidate_evidence, metadata_event, pr_metadata, reporter
 
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -895,7 +895,7 @@ def _mutation_client(
     _add_pr_states(client, state, state)
     _add_snapshot(client, runs, copies=2)
     _add_edit_transaction(
-        client, title=title, body=body, pre_state=state, pre_version=pre_version
+        client, runs, title=title, body=body, pre_state=state, pre_version=pre_version
     )
     comments = copy.deepcopy(list(history))
     posts = []
@@ -940,6 +940,7 @@ def _mutation_client(
 
 def _add_edit_transaction(
     client: ScriptedClient,
+    runs_and_jobs: list[tuple[dict, list[dict]]],
     *,
     title: str | None = None,
     body: str | None = None,
@@ -947,6 +948,7 @@ def _add_edit_transaction(
     pre_state: dict | None = None,
     pre_version: pr_metadata.MetadataVersion | None = None,
 ) -> None:
+    """Include the scenario's complete run observations in the post-intent refresh."""
     pre_state = _pr() if pre_state is None else copy.deepcopy(pre_state)
     post_state = _pr(
         title=title if title is not None else pre_state["title"],
@@ -997,13 +999,7 @@ def _add_edit_transaction(
         )),
     )
     client.add("GET", _endpoint(f"pulls/{PR_NUMBER}"), pre_state)
-    for (method, endpoint), responses in list(client.routes.items()):
-        if (
-            method == "GET"
-            and "actions/" in endpoint
-            and responses
-        ):
-            responses.append(copy.deepcopy(responses[-1]))
+    _add_snapshot(client, runs_and_jobs)
     intent_payload: dict[str, object] = {}
     client.add_stable_comment_pages(
         "GET",
@@ -1841,6 +1837,48 @@ class LauncherSandbox:
 
 
 class PullRequestMetadataTests(unittest.TestCase):
+    def test_transaction_refresh_observes_each_planned_full_run_comparison(self):
+        runs = [_run(101, 10, mode="full"), _run(100, 9, mode="full")]
+        client, posts = _mutation_client(runs=runs)
+        decision = pr_metadata.edit_metadata(
+            client, repository=REPOSITORY, pr_number=PR_NUMBER,
+            head_sha=HEAD, base_sha=BASE, title=None, body="new body",
+            essential_reason=None,
+        )
+        self.assertEqual(decision.action, "updated")
+        self.assertEqual(len(posts), 2)
+        compare = ("GET", _endpoint(f"compare/{BASE}...{HEAD}"))
+        self.assertEqual(sum(call[:2] == compare for call in client.calls), 6)
+        self.assertEqual(client.routes[compare], [])
+
+    def test_complete_witness_requires_explicit_valid_compare_observations(self):
+        state = pr_metadata._parse_pull_request_payload(_pr(), REPOSITORY, PR_NUMBER)
+        endpoint = _endpoint(f"compare/{BASE}...{HEAD}")
+        for change in ("none", "missing", "wrong-base", "invalid-merge-base", "different-merge-base"):
+            with self.subTest(change=change):
+                client = ScriptedClient()
+                _add_snapshot(client, [_run(101, 10, mode="full")])
+                route = client.routes[("GET", endpoint)]
+                if change == "missing":
+                    route.clear()
+                    with self.assertRaisesRegex(AssertionError, "unexpected request: GET .*compare/"):
+                        pr_metadata.list_candidate_runs(client, state)
+                elif change in {"wrong-base", "invalid-merge-base"}:
+                    side = "base_commit" if change == "wrong-base" else "merge_base_commit"
+                    route[0][side]["sha"] = NEW_HEAD if change == "wrong-base" else "invalid"
+                    error = ValueError if change == "wrong-base" else reporter.PilotDataError
+                    reason = "compare base identity changed" if change == "wrong-base" else "candidate merge base"
+                    with self.assertRaisesRegex(error, reason):
+                        pr_metadata.list_candidate_runs(client, state)
+                else:
+                    if change == "different-merge-base":
+                        route[0]["merge_base_commit"]["sha"] = NEW_HEAD
+                    runs = pr_metadata.list_candidate_runs(client, state)
+                    self.assertEqual(runs[0].binding,
+                                     "explicit-same" if change == "none" else "explicit-other")
+                    self.assertEqual(pr_metadata._latest_full(runs) is not None, change == "none")
+                self.assertEqual(client.calls[-1][:2], ("GET", endpoint))
+
     def test_active_legacy_publisher_is_pending_without_a_runner(self):
         for pending_status in ("queued", "waiting", "pending", "requested"):
             with self.subTest(pending_status=pending_status):
@@ -2155,7 +2193,7 @@ class PullRequestMetadataTests(unittest.TestCase):
                 updated_at="2026-09-04T00:00:05Z",
             ),
         )
-        _add_edit_transaction(client, body="new body")
+        _add_edit_transaction(client, [active_metadata, successful_full], body="new body")
         decision = pr_metadata.edit_metadata(
             client,
             repository=REPOSITORY,
@@ -2219,6 +2257,7 @@ class PullRequestMetadataTests(unittest.TestCase):
                 )
                 _add_edit_transaction(
                     client,
+                    [successful_full],
                     title=title,
                     body=body,
                 )
@@ -2331,7 +2370,7 @@ class PullRequestMetadataTests(unittest.TestCase):
             _endpoint(f"pulls/{PR_NUMBER}"),
             _pr(title="Essential correction"),
         )
-        _add_edit_transaction(client, title="Essential correction")
+        _add_edit_transaction(client, [active_full], title="Essential correction")
 
         decision = pr_metadata.edit_metadata(
             client,
@@ -2412,7 +2451,7 @@ class PullRequestMetadataTests(unittest.TestCase):
                     _endpoint(f"pulls/{PR_NUMBER}"),
                     _pr(title="Corrected contract"),
                 )
-                _add_edit_transaction(client, title="Corrected contract")
+                _add_edit_transaction(client, [failed_full], title="Corrected contract")
 
                 decision = pr_metadata.edit_metadata(
                     client,
@@ -2495,7 +2534,7 @@ class PullRequestMetadataTests(unittest.TestCase):
                         "PATCH", _endpoint(f"pulls/{PR_NUMBER}"),
                         _pr(title="Corrected contract"),
                     )
-                    _add_edit_transaction(client, title="Corrected contract")
+                    _add_edit_transaction(client, [unsupported], title="Corrected contract")
                     with self.assertRaises(pr_metadata.MetadataEditError):
                         pr_metadata.edit_metadata(
                             client,
@@ -2544,7 +2583,7 @@ class PullRequestMetadataTests(unittest.TestCase):
                             "PATCH", _endpoint(f"pulls/{PR_NUMBER}"),
                             _pr(title="Corrected contract"),
                         )
-                        _add_edit_transaction(client, title="Corrected contract")
+                        _add_edit_transaction(client, [inconsistent], title="Corrected contract")
                         with self.assertRaises(pr_metadata.MetadataEditError):
                             pr_metadata.edit_metadata(
                                 client, repository=REPOSITORY, pr_number=PR_NUMBER,
@@ -2801,6 +2840,7 @@ class PullRequestMetadataTests(unittest.TestCase):
         _add_snapshot(client, [successful_full], copies=2)
         _add_edit_transaction(
             client,
+            [successful_full],
             body="essential correction",
         )
         client.add(
@@ -2890,6 +2930,7 @@ class PullRequestMetadataTests(unittest.TestCase):
                 _add_snapshot(client, [successful_full], copies=2)
                 _add_edit_transaction(
                     client,
+                    [successful_full],
                     title=title,
                     body=body,
                 )
@@ -2926,7 +2967,7 @@ class PullRequestMetadataTests(unittest.TestCase):
                 updated_at="2026-09-04T00:00:05Z",
             ),
         )
-        _add_edit_transaction(client, body="new body")
+        _add_edit_transaction(client, [successful_full], body="new body")
 
         decision = pr_metadata.edit_metadata(
             client,
@@ -3040,6 +3081,7 @@ class PullRequestMetadataTests(unittest.TestCase):
                 )
                 _add_edit_transaction(
                     client,
+                    [successful_full],
                     body="new body",
                     response_changes=changes,
                 )
@@ -3074,7 +3116,7 @@ class PullRequestMetadataTests(unittest.TestCase):
                 updated_at="2026-09-04T00:00:05Z",
             ),
         )
-        _add_edit_transaction(failed, body="new body")
+        _add_edit_transaction(failed, [successful_full], body="new body")
         confirmation_route = (
             "POST",
             _endpoint(f"issues/{PR_NUMBER}/comments"),
@@ -3287,7 +3329,7 @@ class PullRequestMetadataTests(unittest.TestCase):
                         client = ScriptedClient()
                         _add_pr_states(client, _pr(), _pr())
                         _add_snapshot(client, [_run(101, 10, mode="full")], copies=2)
-                        _add_edit_transaction(client, body="new body")
+                        _add_edit_transaction(client, [_run(101, 10, mode="full")], body="new body")
                         client.add("PATCH", _endpoint(f"pulls/{PR_NUMBER}"), target)
                         if retry:
                             intent = _receipt(
@@ -3355,7 +3397,7 @@ class PullRequestMetadataTests(unittest.TestCase):
                     state = target if recovery else _pr()
                     _add_pr_states(client, state, state)
                     _add_snapshot(client, [_run(101, 10, mode="full")], copies=2)
-                    _add_edit_transaction(client, body="new body")
+                    _add_edit_transaction(client, [_run(101, 10, mode="full")], body="new body")
                     client.add("PATCH", _endpoint(f"pulls/{PR_NUMBER}"), target)
                     if recovery:
                         intent = _receipt(
@@ -3426,7 +3468,7 @@ class PullRequestMetadataTests(unittest.TestCase):
                     state = target if recovery else _pr()
                     _add_pr_states(client, state, state)
                     _add_snapshot(client, [_run(101, 10, mode="full")], copies=2)
-                    _add_edit_transaction(client, body="new body")
+                    _add_edit_transaction(client, [_run(101, 10, mode="full")], body="new body")
                     client.add("PATCH", _endpoint(f"pulls/{PR_NUMBER}"), target)
                     if recovery:
                         intent = _receipt(
@@ -3993,7 +4035,7 @@ class PullRequestMetadataTests(unittest.TestCase):
                 client = ScriptedClient()
                 _add_pr_states(client, _pr(), _pr())
                 _add_snapshot(client, [_run(101, 10, mode="full")], copies=2)
-                _add_edit_transaction(client, body="new body")
+                _add_edit_transaction(client, [_run(101, 10, mode="full")], body="new body")
                 observed = _pr()
                 observed[changed]["sha"] = NEW_HEAD
                 client.routes[("POST", "graphql")][1] = _response(
@@ -4028,7 +4070,7 @@ class PullRequestMetadataTests(unittest.TestCase):
                 client = ScriptedClient()
                 _add_pr_states(client, _pr(), _pr())
                 _add_snapshot(client, [_run(101, 10, mode="full")], copies=2)
-                _add_edit_transaction(client, body="new body")
+                _add_edit_transaction(client, [_run(101, 10, mode="full")], body="new body")
                 payload = _graphql_payload(_pr(), _metadata_version())
                 repository = payload["data"]["repository"]
                 pull = repository["pullRequest"]
@@ -6038,6 +6080,7 @@ class PullRequestMetadataTests(unittest.TestCase):
                 _add_snapshot(client, [_run(101, 10, mode="full")], copies=2)
                 _add_edit_transaction(
                     client,
+                    [_run(101, 10, mode="full")],
                     title=title,
                     body=body,
                     pre_state=pre_state,
@@ -7306,7 +7349,7 @@ class PullRequestMetadataTests(unittest.TestCase):
             _endpoint(f"pulls/{PR_NUMBER}"),
             _pr(body="new stable body"),
         )
-        _add_edit_transaction(client, body="new stable body")
+        _add_edit_transaction(client, [(other_base_record, []), exact_full], body="new stable body")
 
         decision = pr_metadata.edit_metadata(
             client,
