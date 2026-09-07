@@ -70,6 +70,8 @@ class FoundationTests(unittest.TestCase):
         self.assertFalse(session.mappings)
         self.assertFalse(session.make_runtime)
         self.assertFalse(session.runtime_inputs)
+        self.assertFalse(session.runtime_dispatch)
+        self.assertIsNone(session.dependency_compiler)
         self.assertFalse(session.budget.children)
         self.assertIsNone(session.snapshot)
         self.assertIsNone(session.base)
@@ -211,6 +213,196 @@ class FoundationTests(unittest.TestCase):
             with self.assertRaisesRegex(MakeProbeError, "control byte"):
                 session.make("all")
             self.assertEqual(budget.runs, runs)
+        self.assert_clean(session)
+
+    def test_stock_runtime_alias_preserves_root_path_and_native_dispatch(self):
+        self.assertEqual(Path("/bin").resolve(), Path("/usr/bin"))
+        self.add("Makefile", (
+            "TOOLCHAIN ?= $(DEVKITARM)\nexport PATH := $(TOOLCHAIN)/bin:$(PATH)\n"
+            "CANON := $(realpath /bin/mkdir)\n$(info $(PATH))\n$(info $(CANON))\n"
+            "all:\n\t@mkdir -p build/owned\n"
+        ))
+        normal = subprocess.run(
+            ["/usr/bin/make", "-f", "Makefile", "all"], cwd=self.root,
+            env=ENVIRONMENT, capture_output=True, check=True, timeout=10,
+        ).stdout.decode().splitlines()
+        with self.session(runtime_files=("/bin/mkdir",)) as session:
+            item, = session.runtime_inputs
+            self.assertEqual(item.canonical, "/usr/bin/mkdir")
+            self.assertIn(("/bin", "usr/bin"), item.aliases)
+            result = session.make("all", variables=("PATH", "CANON"))
+            self.assertEqual(result.semantics["domains"]["PATH"]["value"], normal[0])
+            self.assertEqual(result.semantics["domains"]["CANON"]["value"], normal[1])
+            self.assertEqual(result.events, ())
+            self.assertFalse((session.tree / "build/owned").exists())
+        self.assert_clean(session)
+
+    def test_stock_runtime_alias_rejects_unrequested_escape_read_and_collision(self):
+        for expression, message in (
+            ("$(wildcard /bin/rm)", "unrequested stock runtime alias"),
+            ("$(file </bin/mkdir)", "metadata/dispatch only"),
+            ("$(file >/bin/mkdir,changed)", "write outside"),
+            ("$(wildcard /bin/../bin/mkdir)", "unrequested stock runtime alias"),
+        ):
+            with self.subTest(expression=expression):
+                self.add("Makefile", f"VALUE := {expression}\nall: ;\n")
+                with self.assertRaisesRegex(MakeProbeError, message):
+                    with self.session(runtime_files=("/bin/mkdir",)) as session:
+                        session.make("all")
+                self.assert_clean(session)
+        self.add("Makefile", "all: ;\n")
+        with self.assertRaisesRegex(MakeProbeError, "execution image"):
+            with self.session(runtime_files=("/bin/make",)):
+                self.fail("stock alias replaced trusted Make")
+        from scripts.validation_ownership.make_probe import _capture_runtime_input
+        original_stat, original_resolve = Path.lstat, Path.resolve
+        def mutable(path):
+            info = original_stat(path)
+            return SimpleNamespace(st_uid=1000, st_mode=info.st_mode) if path == Path("/bin") else info
+        with patch.object(Path, "lstat", mutable):
+            with self.assertRaisesRegex(MakeProbeError, "mutable/untrusted"):
+                _capture_runtime_input("/bin/mkdir", ProbeBudget())
+        with patch.object(Path, "resolve", lambda path, **kw: self.root if path == Path("/bin") else original_resolve(path, **kw)):
+            with self.assertRaisesRegex(MakeProbeError, "nonstock/escaping"):
+                _capture_runtime_input("/bin/mkdir", ProbeBudget())
+
+    def dependency_fixture(self, *, selected="1", missing=True):
+        self.add("src/main.c", (
+            '#include "choice.h"\n#include <ordered.h>\n'
+            '#if SELECTED\n#include "active.h"\n#else\n#include "inactive.h"\n#endif\n'
+            + ('#include "generated/missing.h"\n' if missing else "")
+        ))
+        self.add("quote/choice.h", '#ifndef CHOICE_H\n#define CHOICE_H\n#include "nested.h"\n#endif\n')
+        self.add("quote/nested.h", '#include "choice.h"\n')
+        self.add("first/ordered.h", "#define ORDERED 1\n")
+        self.add("second/ordered.h", "#define ORDERED 2\n")
+        self.add("quote/active.h", "#define ACTIVE 1\n")
+        self.add("quote/inactive.h", "#define ACTIVE 0\n")
+        argv = (
+            "/usr/bin/cc", "-E", "-I", "first", "-Isecond", "-iquote", "quote",
+            "-nostdinc", "-undef", "-DSELECTED=" + selected, "src/main.c", "-MM", "-MG", "-MT", "all",
+        )
+        headers = tuple(sorted(path for path in self.entries if path.endswith(".h")))
+        return Command(argv, code=headers, sources=("src/main.c",),
+                       outputs=("out/deps.d",), dependency_only=True)
+
+    def test_dependency_compiler_matches_real_conditional_recursive_missing_and_ordered_inputs(self):
+        for selected in ("1", "0"):
+            with self.subTest(selected=selected):
+                command = self.dependency_fixture(selected=selected)
+                if selected == "0":
+                    self.add("quote/generated/missing.h", "#define GENERATED_PRESENT 1\n")
+                    command = replace(command, code=(*command.code, "quote/generated/missing.h"))
+                normal = subprocess.run(
+                    list(command.argv), cwd=self.root, env={**ENVIRONMENT, "TMPDIR": str(self.directory)},
+                    capture_output=True, check=True, timeout=10,
+                ).stdout
+                with self.session() as session:
+                    output = session.command(command)
+                    self.assertIsNone(output.artifact)
+                    self.assertEqual(output.stdout, b"")
+                    generated, = output.generated
+                    self.assertEqual(generated.path, "out/deps.d")
+                    self.assertEqual(generated.data, normal)
+                    self.assertTrue(generated.data)
+                    self.assertIn(b"generated/missing.h", generated.data)
+                    self.assertEqual(output.consumed, ("src/main.c",))
+                    expected = {"first/ordered.h", "quote/choice.h", "quote/nested.h",
+                                "quote/active.h" if selected == "1" else "quote/inactive.h"}
+                    if selected == "0":
+                        expected.add("quote/generated/missing.h")
+                    self.assertEqual(set(output.code_consumed), expected)
+                    closure = tuple(sorted(expected | set(output.consumed)))
+                    exact = session.command(replace(command, code=(), sources=closure))
+                    self.assertEqual(exact.consumed, closure)
+                    self.assertEqual(exact.generated, output.generated)
+                    self.assertFalse(session.native_tools)
+                self.assert_clean(session)
+
+    def test_dependency_compiler_views_bind_consumed_headers_not_unused_pool_or_live_bytes(self):
+        command = self.dependency_fixture(missing=False)
+        event = "mkdir -p out && " + shlex.join(command.argv) + " > out/deps.d"
+        self.add("Makefile", "include out/deps.d\nout/deps.d: src/main.c\n\t@" + event + "\nall: ;\n")
+        budget = ProbeBudget()
+        base = self.capture_view(budget)
+        self.add("quote/inactive.h", "#define UNUSED_CURRENT_HEADER 999\n")
+        current = self.capture_view(budget)
+        with ProbeSession(current, scratch_root=self.scratch, budget=budget) as session:
+            before = session.make("all", commands={event: command})
+            compiler = session.dependency_compiler
+            self.add("quote/active.h", '#include "/etc/passwd"\n')
+            with session.select_view(base):
+                selected = session.make("all", commands={event: command})
+                self.assertIs(session.dependency_compiler, compiler)
+                self.assertEqual(selected.semantic_digest, before.semantic_digest)
+                self.assertNotEqual(selected.execution_digest, before.execution_digest)
+                self.assertFalse((session.tree / "out").exists())
+            rerun = session.command(replace(command, argv=(*command.argv, "-DUNRELATED=1")))
+            self.assertIn("quote/active.h", rerun.code_consumed)
+            self.assertNotIn("quote/inactive.h", rerun.code_consumed)
+            self.assertIsNone(rerun.artifact)
+        self.assert_clean(session)
+
+    def test_dependency_compiler_rejects_flags_escape_and_undeclared_or_unused_sources(self):
+        command = self.dependency_fixture()
+        for changed in (
+            replace(command, dependency_only=False),
+            replace(command, argv=(*command.argv, "-fplugin=plugin.so")),
+            replace(command, argv=(*command.argv, "-specs=specs")),
+            replace(command, argv=(*command.argv, "-o", "/work/escape")),
+            replace(command, argv=(*command.argv, "@response")),
+            replace(command, argv=tuple(arg for arg in command.argv if arg != "-MM")),
+            replace(command, argv=tuple(arg for arg in command.argv if arg != "-nostdinc")),
+            replace(command, outputs=("../escape.d",)),
+            replace(command, outputs=("src/main.c",)),
+        ):
+            with self.subTest(command=changed):
+                with self.session() as session:
+                    runs = session.budget.runs
+                    with self.assertRaises(MakeProbeError):
+                        session.command(changed)
+                    self.assertEqual(session.budget.runs, runs)
+                self.assert_clean(session)
+        for case, changed, expected in (
+            ("undeclared-header", replace(command, code=tuple(path for path in command.code if path != "quote/active.h")),
+             "undeclared source"),
+            ("unused-source", replace(command, sources=("src/main.c", "quote/inactive.h")), "declared/consumed"),
+            ("missing-without-MG", replace(command, argv=tuple(arg for arg in command.argv if arg != "-MG")),
+             "unsuccessfully"),
+        ):
+            with self.subTest(case=case):
+                with self.assertRaisesRegex(MakeProbeError, expected):
+                    with self.session() as session:
+                        session.command(changed)
+                self.assert_clean(session)
+
+    def test_dependency_output_is_consumed_by_make_with_real_restart_and_provenance(self):
+        command = self.dependency_fixture()
+        event = "mkdir -p out && " + shlex.join(command.argv) + " > out/deps.d"
+        self.add("Makefile", (
+            "include out/deps.d\nout/deps.d: src/main.c\n\t@" + event + "\n"
+            "generated/missing.h: ;\nall:\n"
+            "\t@printf '%s\\n' '$+' '$(MAKEFILE_LIST)' '$(MAKE_RESTARTS)'\n"
+        ))
+        normal = subprocess.run(
+            ["/usr/bin/make", "-f", "Makefile", "all"], cwd=self.root,
+            env=ENVIRONMENT, capture_output=True, check=True, timeout=10,
+        ).stdout.decode().splitlines()
+        expected = (self.root / "out/deps.d").read_bytes()
+        (self.root / "out/deps.d").unlink()
+        (self.root / "out").rmdir()
+        with self.session() as session:
+            result = session.make("all", variables=("MAKEFILE_LIST", "MAKE_RESTARTS"), commands={event: command})
+            self.assertEqual([item["name"] for item in result.semantics["files"][0]["prerequisites"]], normal[0].split())
+            self.assertEqual(result.semantics["domains"]["MAKEFILE_LIST"]["value"], normal[1])
+            self.assertEqual(result.semantics["domains"]["MAKE_RESTARTS"]["value"], normal[2])
+            self.assertEqual(normal[2], "1")
+            dynamic, = result.semantics["dynamic_commands"]
+            self.assertTrue(dynamic["command"]["dependency_only"])
+            self.assertEqual(dynamic["generated_outputs"][0][2], hashlib.sha256(expected).hexdigest())
+            self.assertNotIn("quote/inactive.h", {item[0] for item in dynamic["command"]["inputs"]})
+            self.assertFalse((session.tree / "out").exists())
+            self.assertFalse(session.native_tools)
         self.assert_clean(session)
 
     def gitlink_git(self, root, *args, input=None):

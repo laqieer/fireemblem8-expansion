@@ -3165,6 +3165,47 @@ Run the existing suite's `test_process_*` methods:
    unadmitted `/bin/mkdir` metadata. This is measured progress, not full112
    acceptance or permission for another limit/authority expansion.
 
+### Stock runtime spelling and native dependency-only action
+
+The `test_stock_runtime_alias_*` and `test_dependency_*` selectors extend this
+same case:
+
+1. Reproduce the real `TOOLCHAIN ?= $(DEVKITARM)` / exported PATH prefix with
+   a tiny ordinary mkdir recipe. Without a request, `/bin/mkdir` rejects;
+   `runtime_files=("/bin/mkdir",)` must capture the actual root-owned stock
+   alias/canonical source and preserve native PATH, realpath and metadata-only
+   dispatch. Unrequested `/bin` spellings, escaping/nonstock/mutable aliases,
+   source writes, program-data reads and executable-image collisions reject.
+2. Invoke the real host preprocessor with `Command(dependency_only=True)`,
+   the original ordered include/define options and one declared `.d` output.
+   Compare ordinary and confined nonempty bytes, never a fabricated parser
+   result or promoted ELF. Conditional and recursive includes, quote/angle
+   search order, present generated headers and genuine `-MG` missing headers
+   must behave alike. Omitting `-MG` retains the real missing-header error.
+3. Require the measured source/header closure. Undeclared existing input,
+   unused required sources, arbitrary compiler flags/response files/plugins/
+   specs/link/output modes and output escape reject. A bounded header-code
+   pool may measure actual `code_consumed`; rerun that exact closure as sources.
+   Mutating unused pool entries must not alter semantic ownership, and live
+   checkout mutations must not replace a selected immutable input.
+4. Let GNU Make consume the actual generated `.d`. Compare its duplicate-
+   preserving prerequisites (`$+`), `MAKEFILE_LIST`, real restart and generated
+   provenance with ordinary Make under the same report budget. Native
+   registrations, source/output/view isolation and cleanup remain intact.
+5. Run the exact frozen child root with its controlled current adapters and
+   this trusted parent API. The measured world-map producer emits738 bytes,
+   with one C source and27 actually consumed headers; the exact-closure rerun
+   matches. No captured agbcc headers/executable/library or ARM installation
+   is needed for the actual `-nostdinc -MG` query. The updated full root then
+   rejects separately unrequested `/bin/env`; record that boundary/counters
+   instead of a full112-domain or default-root success claim.
+
+Before this correction, ordinary mkdir worked with either PATH while the
+confined prefixed recipe failed, explicit alias capture rejected `/bin/mkdir`,
+and public `/usr/bin/cc` dependency entry rejected with zero payload launches.
+The existing compiler capsule/guest resolver/output mapper, not a new runtime
+platform or wider source execution permission, supplies the correction.
+
 ### Interactions and save compatibility
 
 This host-only contract changes no save, migration, config identity, generated

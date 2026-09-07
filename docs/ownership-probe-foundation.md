@@ -223,14 +223,14 @@ rejects rather than fabricating that absence.
 
 Files must be canonical absolute paths below the existing trusted system
 tool/library roots or `/usr/include/`; root ownership and non-group/other-
-writability checks also apply to existing ancestors. Symlink/non-directory
+writability checks also apply to existing ancestors. Nonstock symlink/non-directory
 ancestors, special files, executable-image collisions, overlaps, duplicates and
 excess requests reject. Present files retain captured real bytes and modes;
 absent inputs are not created. No live include tree is mounted. Unrequested
 runtime files and directory enumeration remain forbidden, and declarations
 grant no new executable or write authority.
 
-`probe.runtime_inputs` exposes frozen `RuntimeInput(path, data, mode, parents)`
+`probe.runtime_inputs` exposes frozen `RuntimeInput(path, data, mode, parents, canonical, aliases)`
 records during the session; `data is None` denotes captured absence and
 `parents` records ancestor presence. Capture, copies and observations spend the
 existing control/report budgets. Runtime inputs remain fixed across BASE/current
@@ -238,6 +238,21 @@ view selection, clear on session exit and bind Make's execution identity.
 Semantic identity still comes from actual native target/domain observations,
 not unrelated runtime bytes. Default callers that omit `runtime_files` retain
 their existing behavior.
+
+Explicit stock spellings such as `/bin/mkdir` capture the canonical
+`/usr/bin/mkdir` source and the actual root-owned `/bin -> /usr/bin` ancestor.
+The validated stock `/bin` root link is reproduced in the owned guest tree
+using its confined relative target. The existing guest resolver
+retains `realpath` behavior but rejects unrequested spellings through those
+links. There is no live `/bin` mount, caller-created alias or PATH rewrite.
+
+For a requested stock spelling of an existing interceptor program, the guest
+keeps that interceptor image rather than overwriting it with the real host
+executable. It grants metadata and authenticated dispatch only, not data reads
+of a substituted program image. Other execution-image collisions still reject.
+Requesting `/bin/mkdir` does not authorize `/bin/rm`, `/bin/env`, native Make
+re-exec through another path, mutable/nonstock/escaping aliases or arbitrary
+candidate execution.
 
 There is no candidate-readable generated probe program or writable domain
 file. The trusted observer reads GNU Make's actual target/dependency/recipe
@@ -301,6 +316,60 @@ program headers, no writable executable load segment and only the admitted
 dynamic loader. A session-issued `NativeTool` is sealed before `native` runs it
 in another channel-free capsule. It never becomes a Make-capsule executable.
 Changed or foreign-session/view ELF handles reject.
+
+### Dependency-only host compiler commands
+
+The same public `Command` accepts `dependency_only=True` for the actual host
+dependency action, not arbitrary compilation:
+
+```python
+dependency = Command(
+    ("/usr/bin/cc", "-E", "-I", "tools/agbcc/include",
+     "-iquote", "include", "-iquote", ".", "-nostdinc", "-undef",
+     "-DFE8_ARCHIVAL_BUILD=1", "src/example.c", "-MM", "-MG",
+     "-MT", "src/example.o"),
+    sources=("src/example.c",),
+    code=declared_header_pool,
+    outputs=(".dep/src/example.d",),
+    dependency_only=True)
+output = probe.command(dependency)
+```
+
+Only one declared canonical C source, one target and one declared output are
+accepted. `-E`, `-MM`, `-nostdinc`, `-undef` and one `-MT` are required;
+`-MG` is optional. Ordered `-I`/`-iquote` and symbolic `-D`/`-U` declarations
+are supported without reordering the real argv. Other compiler modes, arbitrary
+flags, response files, plugins/specs, link/assembler actions and output overrides
+reject before payload launch. No ARM/agbcc executable or library is required
+for this host-only query.
+
+The existing trusted compiler resolver supplies the real C driver/cc1
+transitions in the channel-free compiler capsule. The action accounts creation
+of the declared private output ancestors and appends only controlled
+`-MF /work/<output>`, equivalent to the original dependency stdout redirection.
+`ProcessOutput.generated` contains the actual dependency bytes; `artifact`
+remains `None`, never a sealed native ELF.
+
+Sources retain declared/permitted/consumed equality. A bounded explicitly
+admitted header `code` pool uses the existing code authority, and
+`code_consumed` identifies only actually observed headers. Callers may rerun
+with that measured exact closure as `sources` and no header pool. Dependency
+semantic identity uses the actually consumed source/header set, not unused
+pool members. Conditional, recursive and ordered header search is performed
+by the real preprocessor, not a copied parser.
+
+For `-MG`, negative probes are checked against the existing complete owned
+source view. Genuine absent inputs may remain missing; undeclared existing
+files and unadmitted symlink/gitlink namespaces cannot masquerade as absence.
+Only declared include-directory metadata is materialized. Generated headers
+must be real captured/declared inputs when present; this action does not
+invent missing headers or import an uncaptured build directory.
+
+Register the command under the original exact Make producer string to reuse
+the existing generated-file dispatch/publication/remake path. Make consumes
+the nonempty `.d` with its actual restart and prerequisite semantics. All
+source, native, view, output, process, memory, byte and cleanup limits remain
+unchanged.
 
 ### Native Make registrations and declared file results
 
@@ -808,10 +877,11 @@ normal-context, interception or cleanup regressions here.
 The actual child root-Make work now observes the admitted newlib header and
 pinned mgfembp source/header wildcards and has real scaninc/linker/asset adapters.
 Separating live capacity from cumulative work traverses its former 33-process
-cutoff; the measured next rejection is unadmitted `/bin/mkdir` metadata after
-620 processes in that Make capsule, with only two simultaneously live. That
-separate later boundary remains visible rather than broadening runtime authority
-or claiming a complete default root observation/full graph acceptance.
+cutoff. The subsequent stock `/bin/mkdir` and dependency-only compiler seams
+are explicit, bounded inputs/actions, not PATH rewrites or unrestricted compiler
+authority. The updated frozen-root measurement next rejects separately
+unrequested `/bin/env`; no complete default root observation/full graph
+acceptance is claimed from the solved producer examples.
 
 Dependencies are the existing generated-registry schema and host tools above.
 Conflicts: PR186's probe/interceptor/reporter surfaces must be reconciled.

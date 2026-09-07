@@ -508,6 +508,13 @@ class Policy:
                     resolved.pop()
                 continue
             if follow_final or pending:
+                alias = "/" + "/".join((*resolved, part))
+                if self.mode == "make" and alias in self.config.get("runtime_aliases", ()):
+                    allowed = set(self.config["executables"]) | set(self.config.get("runtime_files", ())) | set(
+                        self.config.get("runtime_parents", ()),
+                    )
+                    if ".." in name.split("/") or posixpath.normpath(name) not in allowed:
+                        raise Violation(f"unrequested stock runtime alias spelling: {name}")
                 try:
                     target = os.readlink(Path(self.config["root"]).joinpath(*resolved, part))
                 except OSError as error:
@@ -599,6 +606,8 @@ class Policy:
             if self.mode in {"command", "compile"} and (path == "/work" or path.startswith("/work/")):
                 return
             raise Violation(f"write outside private command output: {path}")
+        if self.mode == "make" and operation == "read" and path in self.config.get("intercepted_runtime", ()):
+            raise Violation("intercepted runtime program is metadata/dispatch only")
         if self.mode == "make" and (
             path in self.config.get("runtime_files", ())
             or operation == "metadata" and path in self.config.get("runtime_parents", ())
@@ -651,6 +660,21 @@ class Policy:
         elif path in self.code:
             self.defer_observation(state, "code_consumed", path.removeprefix("/repo/"))
             return
+        elif self.config.get("dependency_source_view") and path.startswith("/repo/") and operation in {"read", "metadata"}:
+            for forbidden in self.config["forbidden_paths"]:
+                if path == forbidden or path.startswith(forbidden + "/"):
+                    raise Violation(f"nonregular dependency source denied: {path}")
+            full = Path(self.config["dependency_source_view"]) / path.removeprefix("/repo/")
+            try:
+                mode = full.lstat().st_mode
+            except FileNotFoundError:
+                self.defer_observation(state, "accessed", path)
+                return
+            if operation == "metadata" and path in (
+                set(self.config["dependency_include_dirs"]) | self.code_dirs | self.source_dirs
+            ) and stat.S_ISDIR(mode):
+                self.defer_observation(state, "accessed", path)
+                return
         elif self.mode == "compile" and operation == "metadata" and path.endswith(".gch") and path[:-4] in self.code:
             return
         elif self.mode == "compile" and operation in {"metadata", "read"} and path in self.link_option_probes:

@@ -41,6 +41,7 @@ ALIASES = (
         "true", "echo",
     )),
 )
+STOCK_RUNTIME_ALIASES = {"/bin": "/usr/bin"}
 
 
 def terminal_failure(method):
@@ -70,6 +71,7 @@ class Command:
     directories: tuple[str, ...] = ()
     native_tool: NativeTool | None = None
     outputs: tuple[str, ...] = ()
+    dependency_only: bool = False
 
 
 @dataclass(frozen=True)
@@ -85,6 +87,8 @@ class RuntimeInput:
     data: bytes | None
     mode: int | None
     parents: tuple[tuple[str, bool], ...]
+    canonical: str = ""
+    aliases: tuple[tuple[str, str], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -261,7 +265,7 @@ def _trusted_runtime_path(path: str, *, optional=False):
         raise MakeProbeError("noncanonical trusted runtime path")
     roots = (
         "/usr/bin/", "/usr/lib/", "/usr/lib64/", "/lib/", "/lib64/",
-        *(("/usr/include/",) if optional else ()),
+        *(("/usr/include/", "/bin/") if optional else ()),
     )
     if not path.startswith(roots):
         raise MakeProbeError(f"runtime is outside the trusted system tool/library roots: {path}")
@@ -294,7 +298,7 @@ def _capture_runtime_input(path, budget):
         raise MakeProbeError("runtime input must be a bounded exact pathname")
     relative_path(path[1:])
     resolved = _trusted_runtime_path(path, optional=True)
-    parents = []
+    parents, aliases = [], []
     for parent in Path(path).parents:
         budget.remaining()
         try:
@@ -302,7 +306,12 @@ def _capture_runtime_input(path, budget):
         except FileNotFoundError:
             parents.append((str(parent), False))
         else:
-            if not stat.S_ISDIR(info.st_mode):
+            if stat.S_ISLNK(info.st_mode):
+                expected = STOCK_RUNTIME_ALIASES.get(str(parent))
+                if expected is None or parent.resolve().as_posix() != expected:
+                    raise MakeProbeError("runtime input has a nonstock/escaping ancestor alias")
+                aliases.append((str(parent), os.path.relpath(expected, str(parent.parent))))
+            elif not stat.S_ISDIR(info.st_mode):
                 raise MakeProbeError("runtime input has a non-directory/symlink ancestor")
             parents.append((str(parent), True))
     try:
@@ -314,8 +323,8 @@ def _capture_runtime_input(path, budget):
             raise MakeProbeError("runtime input is not an ordinary regular file")
         data = budget.read_bytes(resolved, "control")
         mode = stat.S_IMODE(info.st_mode)
-    budget.charge("control", len(encoded([path, mode, parents])))
-    return RuntimeInput(path, data, mode, tuple(parents))
+    budget.charge("control", len(encoded([path, mode, parents, str(resolved), aliases])))
+    return RuntimeInput(path, data, mode, tuple(parents), str(resolved), tuple(aliases))
 
 
 def _make_interpreter(binary: bytes):
@@ -473,6 +482,8 @@ class ProbeSession:
             raise MakeProbeError("runtime input count/duplicates exceed admission contract")
         self.runtime_paths = tuple(runtime_files)
         self.runtime_inputs = ()
+        self.runtime_dispatch = ()
+        self.dependency_compiler = None
         self.serial = 0
         self.processes_used = 0
         self.live_process_peak = 0
@@ -581,6 +592,8 @@ class ProbeSession:
             self.native_tools.clear()
             self.make_runtime = ()
             self.runtime_inputs = ()
+            self.runtime_dispatch = ()
+            self.dependency_compiler = None
             self.snapshot = None
             self.loader.live_modes.clear()
         def remove_base():
@@ -616,14 +629,21 @@ class ProbeSession:
         self.make_runtime = _make_runtime(self.budget)
         reserved = {path for path, _ in self.make_runtime} | set(ALIASES) | {"/lib/vo-observer.so"}
         captured = []
+        dispatch = []
         for path in self.runtime_paths:
             item = _capture_runtime_input(path, self.budget)
+            intercepted = bool(item.aliases) and item.canonical in ALIASES
+            if intercepted:
+                dispatch.append(item.path)
             if any(path == other or path.startswith(other + "/") or other.startswith(path + "/")
                    for other in reserved):
+                raise MakeProbeError("runtime input conflicts with trusted execution image")
+            if item.canonical in reserved and not intercepted:
                 raise MakeProbeError("runtime input conflicts with trusted execution image")
             captured.append(item)
             reserved.add(path)
         self.runtime_inputs = tuple(captured)
+        self.runtime_dispatch = tuple(dispatch)
         python = self.budget.run(
             ["/usr/bin/python3", "-I", "-S", "-B", "-c",
              "import sys; print('%d.%d' % sys.version_info[:2])"],
@@ -699,6 +719,13 @@ class ProbeSession:
             (root / directory).mkdir()
         (root / "dev/null").touch()
         if make:
+            for alias, target in sorted({
+                pair for item in self.runtime_inputs for pair in item.aliases
+            }):
+                destination = root / alias.lstrip("/")
+                _mkdir_target(root, "/" + target, directory=True)
+                destination.rmdir()
+                destination.symlink_to(target)
             for target, data in self.make_runtime:
                 _mkdir_target(root, target).write_bytes(data)
                 (root / target.lstrip("/")).chmod(0o555)
@@ -712,6 +739,8 @@ class ProbeSession:
                     if present and parent != "/":
                         _mkdir_target(root, parent, directory=True)
                 if item.data is not None:
+                    if item.path in self.runtime_dispatch:
+                        continue
                     self.budget.charge("control", len(item.data))
                     target = _mkdir_target(root, item.path)
                     target.write_bytes(item.data)
@@ -724,13 +753,13 @@ class ProbeSession:
 
     def _sandbox_run(
         self, root, *, mode, argv, environment, mounts, code=(), sources=(),
-        directories=(), executables=None,
+        directories=(), executables=None, dependency=False, include_dirs=(),
     ):
         self.budget.remaining()
         self.serial += 1
         report = self.base / f"report-{self.serial}.json"
         config_path = self.base / f"launch-{self.serial}.json"
-        executable = ["/usr/bin/make", "/control/interceptor", *ALIASES] if mode == "make" else (
+        executable = ["/usr/bin/make", "/control/interceptor", *ALIASES, *self.runtime_dispatch] if mode == "make" else (
             [argv[0]] if executables is None else list(executables)
         )
         file_remaining = min(
@@ -752,11 +781,18 @@ class ProbeSession:
                 if path not in self.snapshot.files and path not in self.snapshot.gitlink_roots
             ],
             "runtime_files": [item.path for item in self.runtime_inputs] if mode == "make" else [],
+            "runtime_aliases": sorted({alias for item in self.runtime_inputs for alias, _ in item.aliases})
+            if mode == "make" else [],
+            "intercepted_runtime": sorted({
+                item.canonical for item in self.runtime_inputs if item.path in self.runtime_dispatch
+            }) if mode == "make" else [],
             "runtime_absent": [item.path for item in self.runtime_inputs if item.data is None]
             if mode == "make" else [],
             "runtime_parents": sorted({
                 parent for item in self.runtime_inputs for parent, _ in item.parents
             }) if mode == "make" else [],
+            "dependency_source_view": str(self.tree) if dependency else None,
+            "dependency_include_dirs": ["/repo" if path == "." else "/repo/" + path for path in include_dirs],
             "deadline": self.budget.deadline,
             "file_limit": file_remaining,
             "memory_limit": self.budget.limits.address_space_bytes,
@@ -871,10 +907,63 @@ class ProbeSession:
             for name in names
         )
 
+    @staticmethod
+    def _dependency_options(command, sources, outputs):
+        if command.argv[0] != "/usr/bin/cc" or command.native_tool is not None or len(outputs) != 1:
+            raise MakeProbeError("dependency action requires host cc and one declared output")
+        flags, directories, source, target = set(), [], None, None
+        index = 1
+        while index < len(command.argv):
+            argument = command.argv[index]
+            index += 1
+            if argument in {"-E", "-MM", "-MG", "-nostdinc", "-undef"}:
+                if argument in flags:
+                    raise MakeProbeError("duplicate dependency compiler mode")
+                flags.add(argument)
+                continue
+            option = None
+            for prefix in ("-iquote", "-I", "-D", "-U", "-MT"):
+                if argument == prefix:
+                    if index == len(command.argv):
+                        raise MakeProbeError("missing dependency option value")
+                    option, value = prefix, command.argv[index]
+                    index += 1
+                    break
+                if argument.startswith(prefix) and prefix != "-MT":
+                    option, value = prefix, argument[len(prefix):]
+                    break
+            if option is not None:
+                if not value or value.startswith("@") or "\n" in value or "\r" in value:
+                    raise MakeProbeError("invalid dependency option value")
+                if option in {"-I", "-iquote"}:
+                    if value.startswith("-"):
+                        raise MakeProbeError("dependency include path is not a directory declaration")
+                    if value != ".":
+                        relative_path(value)
+                    directories.append(value)
+                elif option in {"-D", "-U"}:
+                    name, separator, _ = value.partition("=")
+                    if not VARIABLE.fullmatch(name) or option == "-U" and separator:
+                        raise MakeProbeError("dependency macro must have a symbolic name")
+                else:
+                    if target is not None or not TARGET.fullmatch(value) or value.startswith(("-", "/")):
+                        raise MakeProbeError("invalid dependency target")
+                    relative_path(value)
+                    target = value
+                continue
+            if argument.startswith(("-", "@")) or source is not None or not argument.endswith(".c"):
+                raise MakeProbeError("unsupported dependency compiler option/source")
+            source = relative_path(argument)
+        if not {"-E", "-MM", "-nostdinc", "-undef"} <= flags or target is None or source not in sources:
+            raise MakeProbeError("dependency action requires exact preprocessing modes and declared C source")
+        return tuple(dict.fromkeys(directories))
+
     def _command(self, command: Command, *, compiler=None):
         self.budget.remaining()
         if not isinstance(command, Command):
             raise MakeProbeError("registered command requires a typed Command")
+        if not isinstance(command.dependency_only, bool):
+            raise MakeProbeError("dependency action must be an explicit boolean")
         native = command.native_tool
         programs = {"/usr/bin/python3", "/usr/bin/uname", "/usr/bin/printf"}
         if native is not None:
@@ -889,6 +978,8 @@ class ProbeSession:
             programs.add("/native/tool")
         if compiler is not None:
             programs.update(compiler)
+        if command.dependency_only:
+            programs.add("/usr/bin/cc")
         if (
             not command.argv
             or command.argv[0] not in programs
@@ -907,6 +998,7 @@ class ProbeSession:
         sources = self.sources(command.sources) if command.sources else ()
         directories = tuple(sorted({relative_path(path) for path in command.directories}))
         outputs = self._output_paths(command.outputs)
+        include_dirs = self._dependency_options(command, sources, outputs) if command.dependency_only else ()
         key = (self.snapshot.digest, command, None if native is None else native.digest)
         if key in self.cache:
             return self.cache[key]
@@ -923,6 +1015,9 @@ class ProbeSession:
             tree = work / "tree"
             tree.mkdir()
             self.snapshot.materialize(tree, set(code) | set(sources), self.budget)
+            for directory in include_dirs:
+                if directory != "." and (self.tree / directory).is_dir():
+                    (tree / directory).mkdir(parents=True, exist_ok=True)
             output = work / "output"
             output.mkdir()
             self._new_root(root_name)
@@ -930,6 +1025,18 @@ class ProbeSession:
                 shutil.copyfile(native.path, _mkdir_target(root, "/native/tool"))
                 (root / "native/tool").chmod(0o555)
             argv = list(command.argv)
+            if command.dependency_only:
+                if self.dependency_compiler is None:
+                    self.dependency_compiler = self._compiler_tools(False, ("cc1",))
+                argv[0], compiler = self.dependency_compiler
+                parent = output
+                for part in PurePosixPath(outputs[0]).parts[:-1]:
+                    parent /= part
+                    self.files_created += 1
+                    if self.files_created > self.budget.limits.created_files:
+                        self.budget.reject("aggregate dependency directory-creation budget exhausted")
+                    parent.mkdir()
+                argv.extend(("-MF", "/work/" + outputs[0]))
             if argv[0] == "/usr/bin/python3":
                 argv[1:1] = ["-I", "-S", "-B"]
             completed, observed = self._sandbox_run(
@@ -941,14 +1048,14 @@ class ProbeSession:
                     self._mount(Path("/dev/null"), "/dev/null", writable=True),
                 ],
                 code=code, sources=sources, directories=directories,
-                executables=compiler,
+                executables=compiler, dependency=command.dependency_only, include_dirs=include_dirs,
             )
             consumed = tuple(observed["consumed"])
             if consumed != sources:
                 raise MakeProbeError(f"declared/consumed source mismatch: declared={sources!r}, consumed={consumed!r}")
             result = ProcessOutput(
                 completed.stdout, completed.stderr, consumed, tuple(observed["code_consumed"]),
-                None if compiler is None else self.budget.read_bytes(output / "tool", "control"),
+                None if compiler is None or command.dependency_only else self.budget.read_bytes(output / "tool", "control"),
                 self._capture_outputs(output, outputs),
             )
             self.budget.charge(
@@ -960,20 +1067,10 @@ class ProbeSession:
             self.cache[key] = result
             return result
 
-    @terminal_failure
-    def compile_native(self, sources, *, headers=(), cxx=False, libraries=(), defines=()):
-        """Compile candidate tools in a channel-free capsule; seal only valid ELF."""
-        if not sources or len(sources) > 32 or len(headers) > 4096 or len(libraries) > 32 or len(defines) > 32:
-            raise MakeProbeError("native source count outside compilation contract")
-        sources = tuple(relative_path(path) for path in sources)
-        headers = tuple(relative_path(path) for path in headers)
-        if any(not VARIABLE.fullmatch(name) for name in defines) or any(
-            not re.fullmatch(r"[A-Za-z0-9_+.-]{1,64}", name) for name in libraries
-        ):
-            raise MakeProbeError("native compile options are not symbolic declarations")
+    def _compiler_tools(self, cxx, names):
         compiler = str(Path("/usr/bin/g++" if cxx else "/usr/bin/cc").resolve(strict=True))
         executables = [compiler]
-        for name in ("cc1plus" if cxx else "cc1", "collect2", "as", "ld", "nm", "strip"):
+        for name in names:
             result = self.budget.run(
                 [compiler, "-print-prog-name=" + name],
                 env={**ENVIRONMENT, "TMPDIR": str(self.base)},
@@ -988,6 +1085,22 @@ class ProbeSession:
             alias = Path("/bin") / name
             if alias.is_file() and alias.resolve() == Path(path).resolve():
                 executables.append(str(alias))
+        return compiler, tuple(sorted(set(executables)))
+
+    @terminal_failure
+    def compile_native(self, sources, *, headers=(), cxx=False, libraries=(), defines=()):
+        """Compile candidate tools in a channel-free capsule; seal only valid ELF."""
+        if not sources or len(sources) > 32 or len(headers) > 4096 or len(libraries) > 32 or len(defines) > 32:
+            raise MakeProbeError("native source count outside compilation contract")
+        sources = tuple(relative_path(path) for path in sources)
+        headers = tuple(relative_path(path) for path in headers)
+        if any(not VARIABLE.fullmatch(name) for name in defines) or any(
+            not re.fullmatch(r"[A-Za-z0-9_+.-]{1,64}", name) for name in libraries
+        ):
+            raise MakeProbeError("native compile options are not symbolic declarations")
+        compiler, executables = self._compiler_tools(
+            cxx, ("cc1plus" if cxx else "cc1", "collect2", "as", "ld", "nm", "strip"),
+        )
         command = Command(
             (
                 compiler, "-O2", "-Wall", "-Wextra", "-Werror",
@@ -1189,7 +1302,7 @@ class ProbeSession:
                     execution_digest = self.snapshot.digest
                     if self.runtime_inputs:
                         execution = encoded([self.snapshot.digest, [
-                            (item.path, item.mode, item.parents,
+                            (item.path, item.mode, item.parents, item.canonical, item.aliases,
                              None if item.data is None else hashlib.sha256(item.data).hexdigest())
                             for item in self.runtime_inputs
                         ]])
@@ -1219,6 +1332,11 @@ class ProbeSession:
                             set(registration.code) | set(self.sources(registration.sources))
                         ),
                     }
+                    if registration.dependency_only:
+                        command_identity["dependency_only"] = True
+                        command_identity["inputs"] = self.snapshot.owners(
+                            set(result.consumed) | set(result.code_consumed),
+                        )
                     if registration.native_tool is not None:
                         tool = registration.native_tool
                         command_identity["native_tool"] = {
