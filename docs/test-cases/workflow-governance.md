@@ -168,6 +168,10 @@ the consumers' independent protected-principal/deployment requirements.
    kernel-handle termination operation after a real staged launch: pidfds must
    show live owned work and the directory must remain until the test restores
    termination and cleans its own processes.
+   Combine that real staged termination failure with a failed subreaper-state
+   restoration. Staging must still remain with nonterminal owned pidfds, and
+   its unavailable diagnostic must expose both failures. Restore-only failure
+   must still raise, while successful restoration returns the real output.
    Remove or corrupt the checkout helper and give the candidate a different
    committed helper: both coordinator and staged worker must still execute the
    exact selected tool-tree bytes. Overlapping tool module instances must also

@@ -123,14 +123,22 @@ def _child_reaper():
                 raise OSError(ctypes.get_errno(), "cannot adopt owned descendants")
             _REAPER_STATE["previous"] = previous.value
         _REAPER_STATE["users"] += 1
+    cleanup_error = None
     try:
         yield
+    except ProcessCleanupError as error:
+        cleanup_error = error
+        raise
     finally:
         with _REAPER_STATE["lock"]:
             _REAPER_STATE["users"] -= 1
             if not _REAPER_STATE["users"] and libc.prctl(
                     36, _REAPER_STATE["previous"], 0, 0, 0) != 0:
-                raise OSError(ctypes.get_errno(), "cannot restore child subreaper state")
+                restore_error = OSError(ctypes.get_errno(), "cannot restore child subreaper state")
+                if cleanup_error is not None:
+                    raise ProcessCleanupError(
+                        f"{cleanup_error}; {restore_error}") from cleanup_error
+                raise restore_error
 
 
 @contextmanager

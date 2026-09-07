@@ -356,6 +356,10 @@ cannot be verified, `ProcessCleanupError` yields unavailable observations and
 retains the staged directory named in the diagnostic, rather than deleting
 possibly active work. Ordinary timeouts remain unavailable/zero-check evidence;
 actual native assertion failures remain contract violations.
+If subreaper-state restoration also fails during unsafe process cleanup, the
+runner preserves `ProcessCleanupError`, includes both failures in the existing
+diagnostic, and chains the original cleanup error. Restoration failure alone
+still raises `OSError`; it is never converted into a successful result.
 
 Both coordinator loading and worker staging obtain the shared runner from the
 selected exact **tool** Git tree. A missing, dirty or different candidate

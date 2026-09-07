@@ -201,6 +201,29 @@ class OwnedFixture(unittest.TestCase):
             signal.signal(number, previous)
             signal.pthread_sigmask(signal.SIG_SETMASK, mask)
 
+    @contextmanager
+    def restoration_outcome(self, fail):
+        original = ctypes.CDLL
+        restorations = []
+
+        class Library:
+            def __init__(self, *args, **kwargs):
+                self.library = original(*args, **kwargs)
+                self.updates = 0
+
+            def prctl(self, option, *args):
+                if option == 36:
+                    self.updates += 1
+                    if self.updates == 2:
+                        restorations.append(args[0])
+                        if fail:
+                            ctypes.set_errno(errno.EIO)
+                            return -1
+                return self.library.prctl(option, *args)
+
+        with patch.object(ctypes, "CDLL", Library):
+            yield restorations
+
 
 class ProcessRunnerTests(OwnedFixture):
     def run_tool(self, **kwargs):
@@ -250,6 +273,22 @@ class ProcessRunnerTests(OwnedFixture):
                                 cwd=self.directory, env=ENV)
         self.assertEqual(failures, [errno.ENOENT])
         self.assertEqual(self.recorded(), [])
+
+    def test_restore_only_failure_raises_and_success_returns_real_output(self):
+        for fail in (False, True):
+            with self.subTest(failed_restore=fail):
+                self.configure("exit")
+                with self.restoration_outcome(fail) as attempts:
+                    if fail:
+                        with self.assertRaises(OSError) as caught:
+                            self.run_tool(timeout=5)
+                        self.assertEqual(caught.exception.errno, errno.EIO)
+                    else:
+                        result = self.run_tool(timeout=5)
+                        self.assertEqual((result.returncode, result.stdout),
+                                         (0, b"actual output\0\n"))
+                self.assertEqual(len(attempts), 1)
+                self.assert_reaped()
 
     def test_timeout_and_closed_stdio_reap_ordinary_descendants(self):
         for mode in ("sleep", "closed-stdio"):
@@ -486,6 +525,12 @@ class StagedProcessTests(OwnedFixture):
                         self.assertEqual(calls, [number])
 
     def test_creation_interrupt_retains_live_staging_when_termination_fails(self):
+        self.assert_failed_termination_staging(fail_restore=False)
+
+    def test_restore_failure_preserves_unsafe_staging_and_both_diagnostics(self):
+        self.assert_failed_termination_staging(fail_restore=True)
+
+    def assert_failed_termination_staging(self, *, fail_restore):
         tools = self.tools()
         stages = []
         created = []
@@ -498,7 +543,8 @@ class StagedProcessTests(OwnedFixture):
         bootstrap = f"import runpy;runpy.run_path({str(self.program)!r},run_name='__main__')"
         try:
             with self.creation_handler(signal.SIGINT):
-                with patch.object(tools, "_stage", stage), patch.object(
+                with self.restoration_outcome(fail_restore) as restored, patch.object(
+                        tools, "_stage", stage), patch.object(
                         gate, "WORKER_CODE", bootstrap), self.creation_interrupt(
                         signal.SIGINT) as created, patch.object(
                         signal, "pidfd_send_signal",
@@ -509,9 +555,18 @@ class StagedProcessTests(OwnedFixture):
                     os.P_PIDFD, item["descriptor"], os.WEXITED | os.WNOHANG | os.WNOWAIT
                 ) is None for item in created))
                 self.assertTrue(self.present())
-                self.assertTrue(stages and all(path.is_dir() for path in stages))
+                self.assertEqual(len(restored), 1)
+                self.assertTrue(stages and all(path.is_dir() for path in stages), {
+                    "stages": [(str(path), path.is_dir()) for path in stages],
+                    "processes": self.present(),
+                    "diagnostics": [item.detail for item in result],
+                })
                 self.assertTrue(all(item.verdict == "unavailable" and item.checks == 0
                                     and str(stages[0]) in item.detail for item in result))
+                self.assertTrue(all("owned process cleanup" in item.detail for item in result))
+                if fail_restore:
+                    self.assertTrue(all("cannot restore child subreaper state" in item.detail
+                                        and f"[Errno {errno.EIO}]" in item.detail for item in result))
         finally:
             for item in created:
                 try:
