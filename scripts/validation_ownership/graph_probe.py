@@ -221,8 +221,7 @@ def run_probe(
     scoped = set(scoped_variable_names)
     escaped = set(escaped_literal_names)
     undefined = set(ambient_undefined_names)
-    variables = tuple(sorted({"MAKEFILE_LIST", "MAKE_RESTARTS", *domains, *external}
-                             - {name for name in external if not re.fullmatch(IDENTIFIER, name)}))
+    variables = tuple(sorted({"MAKEFILE_LIST", "MAKE_RESTARTS", *domains}))
     if len(variables) > 512:
         raise MakeProbeError("graph domain observation exceeds the public variable bound")
     commands = MakeCommands(session, dynamic_contracts)

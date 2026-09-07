@@ -141,6 +141,12 @@ class AuthoritativeMakeProbeTests(unittest.TestCase):
         self.assertEqual(result["all"]["prerequisite_domain_census"]["used"], ["VALUE"])
         self.assertEqual(result["all"]["prerequisite_domain_census"]["enumerated"], [])
 
+    def test_unconsumed_symbolic_variable_is_not_eagerly_expanded_by_observer(self):
+        self.add("Makefile", "UNUSED ?= $(shell touch marker)\nall: ;\n")
+        result = self.observe(external={"UNUSED"}, symbolic_recipe_names={"UNUSED"})["all"]
+        self.assertEqual(result["record"]["symbolic_recipe_names"], [])
+        self.assertFalse((self.root / "marker").exists())
+
     def test_closed_census_tracks_nested_definitions_and_second_expansion(self):
         census = source_census({"Makefile": (
             b"MODE ?= x\nALIAS = $(MODE)\n"
