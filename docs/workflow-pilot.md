@@ -153,6 +153,16 @@ new reviewer service.
 
 After accepted clean review and security, the coordinator uses one input-free
 `workflow_dispatch` on the actual candidate branch. All eight jobs run.
+Before checkout, `event-identity` uses bounded authenticated GitHub metadata
+to resolve one open same-repository PR at that exact branch/head and selects
+its integration-base SHA, even when the default branch predates this feature.
+The router verifies that exact checkout; `route_dispatch` refreshes the PR and
+requires the same observed PR number, base SHA/ref and head/branch before
+emitting a binding. These are internal bootstrap observations, not dispatch
+inputs. Missing, ambiguous, moved or unavailable authority retains an unbound
+full fallback or fails classification; neither is admitted as candidate evidence.
+An old integration base without adaptive routing likewise remains unbound.
+This does not change the reviewed-ref workflow-YAML source model.
 Dispatching early manually remains possible for a repository owner, but that
 run is inadmissible; no impossible prevention guarantee is claimed.
 The normal modern job still builds once and publishes its existing patch only
@@ -957,7 +967,8 @@ base predates the classifier takes an explicit bootstrap full-build path, so
 introducing or reverting the seam cannot silently suppress evidence.
 The classifier bootstrap may use the trusted default branch when PR base
 identity is missing or unusable; worker checkouts never use a merge/default
-fallback.
+fallback. Input-free dispatches use the authenticated integration-base
+resolution described above, not an unconditional default-branch classifier.
 
 Check contexts are mode-separated. `event-identity` and `event-router` are
 common setup only. Every normalized full or metadata run must contain exactly

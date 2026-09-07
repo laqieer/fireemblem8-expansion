@@ -156,6 +156,13 @@ the consumers' independent protected-principal/deployment requirements.
    Initial review-first runs only the fast path, while concurrent, dispatched
    full and master events retain all four comprehensive worker jobs and all
    eight total jobs. Wrong head/base/decision identity fails preflight.
+   Execute the no-checkout dispatch bootstrap with a pre-feature default tree,
+   a genuine feature-containing integration base and a child whose launcher
+   would fail if executed. Require exact base checkout and a parsed
+   PR/head/merge-base binding from the isolated classifier. Absent, ambiguous,
+   wrong-repository/ref/head, unavailable and changed-base observations must
+   remain unbound or fail. An old base and plain manual dispatch remain broad;
+   the deployed root-PR path still binds. These controls do not dispatch CI.
 5. Complete a real local #178 handoff, then consume typed #179 task and review
    observations and exact security checks. Fully triaged zero-finding review,
    zero unresolved conversations and clean exact security permit one full
@@ -232,9 +239,10 @@ these PRs as merged pilot samples.
    installed helper or a candidate bootstrap. Record the genuine parent PR
    and depth-one stack. If external CodeQL/GHAS does not produce exact checks
    for that non-default base, stop that exercise without fabricating them.
-   The safe alternative is deployment with no enrolled decisions (unknown
-   candidates stay full), followed by the same fixture on actual master
-   before enabling the pilot or closing #181.
+   Before full dispatch, verify the authenticated bootstrap selects that
+   genuine parent's exact SHA rather than the pre-feature default branch.
+   Do not deploy the feature dormant to work around missing classifier
+   authority or waive this pre-merge exercise.
 3. In an owned fixture worktree, make a real documentation change and open a
    **draft** disposable PR with `gh pr create --draft --base "$EXERCISE_BASE"`.
    Its first head may have no committed PR-number decision and correctly
@@ -1317,9 +1325,10 @@ and never checks it out. Invalid base refs are incomplete identity: a valid
 exact head runs all four workers and fails summary; an invalid head runs none.
 The classifier executes from the verified current PR base SHA; a missing base
 uses the trusted default branch only to report invalid identity, while a base
-without the new classifier uses the explicit strict bootstrap. The current
-workflow has no `workflow_dispatch`, so the fixture and topology test assert
-that no final-dispatch job selection exists to preserve.
+without the new classifier uses the explicit strict bootstrap. The original
+#177 workflow had no final-dispatch route; #181 now preserves all eight jobs
+through its input-free dispatch and integration-base bootstrap, covered by
+`TC-WORKFLOW-REVIEW-FIRST-001`.
 The classifier bootstrap may use the trusted default branch when PR base
 identity is missing or unusable; worker checkouts never use a merge/default
 fallback.

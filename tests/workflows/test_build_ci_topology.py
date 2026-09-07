@@ -1656,12 +1656,15 @@ def _identity_contract_errors(job: str) -> list[str]:
         "      classifier_expected_sha: ${{ "
         "steps.identity.outputs.classifier_expected_sha }}",
         "      classifier_ref: ${{ steps.identity.outputs.classifier_ref }}",
+        "      dispatch_base_ref: ${{ steps.identity.outputs.dispatch_base_ref }}",
+        "      dispatch_pr_number: ${{ steps.identity.outputs.dispatch_pr_number }}",
         "      fallback_kind: ${{ steps.identity.outputs.fallback_kind }}",
         "      fallback_sha: ${{ steps.identity.outputs.fallback_sha }}",
         "      BASH_ENV: ''",
         "      DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}",
         "      EVENT_NAME: ${{ github.event_name }}",
         "      EVENT_REF: ${{ github.ref }}",
+        "      GH_TOKEN: ${{ github.token }}",
         "      PR_BASE_SHA_JSON: ${{ "
         "toJSON(github.event.pull_request.base.sha) }}",
         "      PR_HEAD_SHA_JSON: ${{ "
@@ -1756,6 +1759,8 @@ def _classifier_contract_errors(job: str) -> list[str]:
         "      CLASSIFIER_EXPECTED_SHA: ${{ "
         "needs.event-identity.outputs.classifier_expected_sha }}",
         "      CLASSIFIER_REF: ${{ needs.event-identity.outputs.classifier_ref }}",
+        "      DISPATCH_BASE_REF: ${{ needs.event-identity.outputs.dispatch_base_ref }}",
+        "      DISPATCH_PR_NUMBER: ${{ needs.event-identity.outputs.dispatch_pr_number }}",
         "      PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}",
         "      PR_BASE_REF: ${{ github.event.pull_request.base.ref }}",
         "      PR_BASE_REF_JSON: ${{ toJSON(github.event.pull_request.base.ref) }}",
@@ -4689,6 +4694,7 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                             **os.environ,
                             "DEFAULT_BRANCH": case.get("default_branch", "master"),
                             "EVENT_NAME": event_name,
+                            "GITHUB_REPOSITORY": "",
                             "EVENT_REF": case["github_ref"],
                             "GITHUB_OUTPUT": str(output),
                             "PR_BASE_SHA": pr_base_sha,
