@@ -228,7 +228,7 @@ def route_event(client, decision, payload, repository):
     return decision, selected, binding_name(pr.number, pr.head_sha, base)
 
 
-def route_dispatch(client, decision, payload, repository, ref):
+def route_dispatch(client, decision, payload, repository, ref, *, expected_candidate):
     require(payload.get("inputs") in (None, {}) and isinstance(ref, str)
             and ref.startswith("refs/heads/")
             and event_classifier._is_git_branch_ref(ref[len("refs/heads/"):]),
@@ -242,9 +242,16 @@ def route_dispatch(client, decision, payload, repository, ref):
     require(not response.headers.get("link") and isinstance(response.payload, list)
             and len(response.payload) == 1, "dispatch needs one unambiguous open candidate")
     number = reporter.expect_int(response.payload[0]["number"], "dispatch PR", 1)
+    listed = github._parse_pull_request_payload(response.payload[0], repository, number)
+    head_repository = response.payload[0]["head"].get("repo") or {}
+    require(head_repository.get("full_name") == repository
+            and head_repository.get("id") == listed.repository_id,
+            "dispatched candidate belongs to another head repository")
     pr, lines = fetch_candidate(client, repository, number)
-    require(pr.head_ref == branch and pr.head_sha == decision.expected_head,
-            "dispatched branch head changed")
+    for observed in (listed, pr):
+        require(observed.head_ref == branch and observed.head_sha == decision.expected_head
+                and (observed.number, observed.base_sha, observed.base_ref) == expected_candidate,
+                "dispatched candidate differs from the checked-out integration base")
     selected = fetch_decision(client, pr, lines)
     return (replace(decision, expected_base=pr.base_sha), selected,
             binding_name(pr.number, pr.head_sha, frozen_base(client, pr)))

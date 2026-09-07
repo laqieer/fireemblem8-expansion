@@ -252,6 +252,8 @@ _IDENTITY_COMMANDS = (
     ("classifier_available=false",),
     ("classifier_expected_sha=",),
     ("classifier_ref=",),
+    ("dispatch_base_ref=",),
+    ("dispatch_pr_number=",),
     ("fallback_kind=none",),
     ("fallback_sha=",),
     ("if", "[[", "$EVENT_NAME", "=", "pull_request", "]];", "then"),
@@ -326,11 +328,51 @@ _IDENTITY_COMMANDS = (
     ("fallback_sha=$PUSH_SHA",),
     ("elif", "[[", "$EVENT_NAME", "=", "workflow_dispatch", "&&", "$EVENT_REF", "=", "refs/heads/*",
      "]]", "&&", "is_lower_sha", "$RAW_SHA", "$RAW_SHA_JSON", "&&", "/usr/bin/git",
-     "check-ref-format", "$EVENT_REF", ">", "/dev/null", "2>&1", "&&", "/usr/bin/git",
-     "check-ref-format", "refs/heads/$DEFAULT_BRANCH", ">", "/dev/null", "2>&1;", "then"),
-    ("classifier_ref=refs/heads/$DEFAULT_BRANCH",),
+     "check-ref-format", "$EVENT_REF", ">", "/dev/null", "2>&1;", "then"),
     ("fallback_kind=workflow_dispatch",),
     ("fallback_sha=$RAW_SHA",),
+    ("if", "/usr/bin/git", "check-ref-format", "refs/heads/$DEFAULT_BRANCH", ">",
+     "/dev/null", "2>&1;", "then"),
+    ("classifier_ref=refs/heads/$DEFAULT_BRANCH",),
+    ("fi",),
+    ("LC_ALL=C",),
+    ("export", "LC_ALL"),
+    ("branch=${EVENT_REF#refs/heads/}",),
+    ("query=query($owner:String!,$name:String!,$branch:String!){\n"
+     "    repository(owner:$owner,name:$name){nameWithOwner\n"
+     "      pullRequests(states:OPEN,headRefName:$branch,first:100){\n"
+     "        totalCount pageInfo{hasNextPage} nodes{number state\n"
+     "          headRefName headRefOid baseRefName baseRefOid\n"
+     "          headRepository{nameWithOwner} baseRepository{nameWithOwner}}}}}",),
+    ('projection=select(.errors == null) | .data.repository | select(.nameWithOwner == $repo) |\n'
+     '    .pullRequests | select(.totalCount == 1 and .pageInfo.hasNextPage == false and\n'
+     '      (.nodes | type) == "array" and (.nodes | length) == 1) | .nodes[0] |\n'
+     '    select(.state == "OPEN" and .headRefName == $branch and .headRefOid == $head and\n'
+     '      .headRepository.nameWithOwner == $repo and .baseRepository.nameWithOwner == $repo and\n'
+     '      (.baseRefName | type) == "string") | [.number, .baseRefOid, .baseRefName]',),
+    ("if", "[[", "$GITHUB_REPOSITORY", "=~", "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$", "&&",
+     "${#branch}", "-le", "1024", "&&", "$branch", "!=", "@", "]]", "&&",
+     "response=$(/usr/bin/timeout 30 /usr/bin/gh api --hostname github.com graphql        "
+     "-f owner=${GITHUB_REPOSITORY%%/*} -f name=${GITHUB_REPOSITORY#*/}        "
+     "-f branch=$branch -f query=$query)", "&&", "((", "${#response}", "<=", "4", "*",
+     "1024", "*", "1024", "))", "&&",
+     "identity=$(/usr/bin/jq -ce --arg repo $GITHUB_REPOSITORY        --arg branch $branch "
+     "--arg head $RAW_SHA $projection <<< $response);", "then"),
+    ("number=$(/usr/bin/jq -r '.[0]' <<< $identity)",),
+    ("base=$(/usr/bin/jq -r '.[1]' <<< $identity)",),
+    ("base_ref=$(/usr/bin/jq -r '.[2]' <<< $identity)",),
+    ("if", "is_pr_number", "$number", "$(/usr/bin/jq -c '.[0]' <<< $identity)", "&&",
+     "is_lower_sha", "$base", "$(/usr/bin/jq -c '.[1]' <<< $identity)", "&&",
+     "/usr/bin/jq", "-e", "--arg", "ref", "$base_ref", ".[2] == $ref", "<<<", "$identity",
+     ">", "/dev/null", "&&", "[[",
+     "$base_ref", "!=", "@", "&&", "${#base_ref}", "-le", "1024", "]]", "&&", "/usr/bin/git",
+     "check-ref-format", "refs/heads/$base_ref", ">", "/dev/null", "2>&1;", "then"),
+    ("classifier_ref=$base",),
+    ("classifier_expected_sha=$base",),
+    ("dispatch_base_ref=$base_ref",),
+    ("dispatch_pr_number=$number",),
+    ("fi",),
+    ("fi",),
     ("fi",),
     ("if", "[[", "-n", "$classifier_ref", "]];", "then"),
     ("classifier_available=true",),
@@ -339,6 +381,8 @@ _IDENTITY_COMMANDS = (
     ("echo", "classifier_available=$classifier_available"),
     ("echo", "classifier_expected_sha=$classifier_expected_sha"),
     ("echo", "classifier_ref=$classifier_ref"),
+    ("echo", "dispatch_base_ref=$dispatch_base_ref"),
+    ("echo", "dispatch_pr_number=$dispatch_pr_number"),
     ("echo", "fallback_kind=$fallback_kind"),
     ("echo", "fallback_sha=$fallback_sha"),
     ("}", ">>", "$GITHUB_OUTPUT"),
@@ -793,6 +837,8 @@ _EXPECTED_JOB_OUTPUTS = {
             "${{ steps.identity.outputs.classifier_expected_sha }}",
         ),
         ("classifier_ref", "${{ steps.identity.outputs.classifier_ref }}"),
+        ("dispatch_base_ref", "${{ steps.identity.outputs.dispatch_base_ref }}"),
+        ("dispatch_pr_number", "${{ steps.identity.outputs.dispatch_pr_number }}"),
         ("fallback_kind", "${{ steps.identity.outputs.fallback_kind }}"),
         ("fallback_sha", "${{ steps.identity.outputs.fallback_sha }}"),
     ),
@@ -833,6 +879,7 @@ _EXPECTED_JOB_ENV = {
         ("ENV", "''"),
         ("EVENT_NAME", "${{ github.event_name }}"),
         ("EVENT_REF", "${{ github.ref }}"),
+        ("GH_TOKEN", "${{ github.token }}"),
         ("PATH", "/usr/bin:/bin"),
         ("PR_BASE_SHA", "${{ github.event.pull_request.base.sha }}"),
         ("PR_BASE_SHA_JSON", "${{ toJSON(github.event.pull_request.base.sha) }}"),
@@ -853,6 +900,8 @@ _EXPECTED_JOB_ENV = {
         ("CLASSIFIER_EXPECTED_SHA", _CLASSIFIER_EXPECTED_SHA_EXPRESSION),
         ("CLASSIFIER_REF", _CLASSIFIER_REF_EXPRESSION),
         ("DEFAULT_BRANCH", "${{ github.event.repository.default_branch }}"),
+        ("DISPATCH_BASE_REF", "${{ needs.event-identity.outputs.dispatch_base_ref }}"),
+        ("DISPATCH_PR_NUMBER", "${{ needs.event-identity.outputs.dispatch_pr_number }}"),
         ("PR_BASE_REF", "${{ github.event.pull_request.base.ref }}"),
         ("PR_BASE_REF_JSON", "${{ toJSON(github.event.pull_request.base.ref) }}"),
         ("PR_BASE_SHA", "${{ github.event.pull_request.base.sha }}"),

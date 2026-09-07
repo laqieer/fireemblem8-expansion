@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import os
 import re
 import stat
 import sys
@@ -427,8 +428,12 @@ def main(argv: list[str] | None = None) -> int:
                     decision, selected, binding = adaptive_gate.route_event(
                         client, decision, payload, args.repository)
                 elif args.event_name == "workflow_dispatch":
-                    decision, selected, binding = adaptive_gate.route_dispatch(
-                        client, decision, payload, args.repository, args.github_ref)
+                    authority = tuple(os.environ.get(name, "") for name in (
+                        "DISPATCH_PR_NUMBER", "CLASSIFIER_EXPECTED_SHA", "DISPATCH_BASE_REF"))
+                    if any(authority):
+                        decision, selected, binding = adaptive_gate.route_dispatch(
+                            client, decision, payload, args.repository, args.github_ref,
+                            expected_candidate=(int(authority[0]), authority[1], authority[2]))
             except (ValueError, pr_metadata.MetadataEditError) as error:
                 raise EventClassificationError(str(error)[:1000]) from error
         write_github_output(args.output, decision)

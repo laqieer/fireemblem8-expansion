@@ -10,7 +10,9 @@ import hashlib
 import os
 from pathlib import Path
 import re
+import shutil
 import subprocess
+import tempfile
 from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
@@ -1012,19 +1014,22 @@ class AdapterTests(unittest.TestCase):
     def test_input_free_dispatch_resolves_actual_pr_branch_and_stays_full(self):
         m = self.m
         client, payload, decision = self.route_client(decisions(m.PR_NUMBER, ("security",)))
+        payload["pull_request"]["head"]["repo"] = copy.deepcopy(payload["pull_request"]["base"]["repo"])
         endpoint = m._query("pulls", [("state", "open"), ("head", "owner:" + m.HEAD_REF),
                                       ("per_page", "100")])
         client.add("GET", endpoint, [payload["pull_request"]])
         decision = replace(decision, reason="explicit-final-dispatch")
         result, selected, binding = gate.route_dispatch(
-            client, decision, {"inputs": {}}, m.REPOSITORY, "refs/heads/" + m.HEAD_REF)
+            client, decision, {"inputs": {}}, m.REPOSITORY, "refs/heads/" + m.HEAD_REF,
+            expected_candidate=(m.PR_NUMBER, m.BASE, "master"))
         self.assertEqual(result.classification, "full")
         self.assertTrue(result.run_expensive)
         self.assertEqual(selected.mode, "review-first")
         self.assertEqual(binding, gate.binding_name(m.PR_NUMBER, m.HEAD, m.BASE))
         for bad in ({"inputs": {"pass": True}}, {"inputs": "success"}):
             with self.assertRaises(ValueError):
-                gate.route_dispatch(client, decision, bad, m.REPOSITORY, "refs/heads/" + m.HEAD_REF)
+                gate.route_dispatch(client, decision, bad, m.REPOSITORY, "refs/heads/" + m.HEAD_REF,
+                                    expected_candidate=(m.PR_NUMBER, m.BASE, "master"))
 
     def test_dispatched_run_uses_existing_job_parser_attempt_and_merge_base_identity(self):
         m = self.m
@@ -1190,3 +1195,248 @@ class WorkflowTests(unittest.TestCase):
                 actual, _ = t._run_summary_with_api(
                     script, environment=t._summary_metadata_env(), routes=responses)
                 self.assertEqual(actual.returncode == 0, success, actual.stderr)
+
+
+class DispatchBootstrapTests(unittest.TestCase):
+    def setUp(self):
+        from tests.workflows import test_build_ci_topology as topology
+        from scripts.workflow_pilot.tests import test_pr_metadata as metadata
+        self.t, self.m = topology, metadata
+        artifacts = ROOT / "build" / "test-artifacts"
+        artifacts.mkdir(parents=True, exist_ok=True)
+        owned = tempfile.TemporaryDirectory(prefix="dispatch-bootstrap-", dir=artifacts)
+        self.addCleanup(owned.cleanup)
+        self.owned = Path(owned.name)
+        self.root = self.owned / "checkout"
+        sources = self.root / "scripts/workflow_pilot"
+        sources.mkdir(parents=True)
+        for name in ("__init__.py", "event_classifier.py", "isolated_launcher.py"):
+            shutil.copyfile(ROOT / "scripts/workflow_pilot" / name, sources / name)
+        git(self.root, "init", "-b", "master")
+        git(self.root, "config", "user.email", "bootstrap@example.invalid")
+        git(self.root, "config", "user.name", "Bootstrap regression")
+        git(self.root, "add", ".")
+        git(self.root, "commit", "-m", "Pre-adaptive default classifier")
+        self.default = git(self.root, "rev-parse", "HEAD")
+        git(self.root, "checkout", "-b", "integration")
+        for source in (ROOT / "scripts/workflow_pilot").glob("*.py"):
+            shutil.copyfile(source, sources / source.name)
+        git(self.root, "add", ".")
+        git(self.root, "commit", "-m", "Feature-containing integration base")
+        self.base = git(self.root, "rev-parse", "HEAD")
+        git(self.root, "checkout", "-b", metadata.HEAD_REF)
+        (sources / "isolated_launcher.py").write_text("raise AssertionError('candidate executed')\n")
+        git(self.root, "add", ".")
+        git(self.root, "commit", "-m", "Candidate must not supply classifier programs")
+        self.head = git(self.root, "rev-parse", "HEAD")
+        self.pr = metadata._pr(head=self.head, base=self.base)
+        self.pr["base"]["ref"] = "integration"
+        self.pr["head"]["repo"] = copy.deepcopy(self.pr["base"]["repo"])
+        self.pr.update(additions=1, deletions=1)
+        self.query = {"data": {"repository": {
+            "nameWithOwner": metadata.REPOSITORY, "pullRequests": {
+                "totalCount": 1, "pageInfo": {"hasNextPage": False}, "nodes": [{
+                    "number": metadata.PR_NUMBER, "state": "OPEN",
+                    "headRefName": metadata.HEAD_REF, "headRefOid": self.head,
+                    "baseRefName": "integration", "baseRefOid": self.base,
+                    "headRepository": {"nameWithOwner": metadata.REPOSITORY},
+                    "baseRepository": {"nameWithOwner": metadata.REPOSITORY},
+                }]}}}}
+        self.gh = self.owned / "gh"
+        self.gh.write_text("#!/bin/sh\n"
+                           "test \"${BOOTSTRAP_UNAVAILABLE:-0}\" = 0 || exit 1\n"
+                           "exec /usr/bin/cat \"$BOOTSTRAP_RESPONSE\"\n")
+        self.gh.chmod(0o755)
+        self.launch = self.owned / "launch.py"
+        self.launch.write_text(
+            "import json, os, runpy, subprocess, sys\n"
+            "from pathlib import Path\n"
+            "native = subprocess.run\n"
+            "def transport(argv, **kwargs):\n"
+            "    if argv[0] != '/usr/bin/gh':\n"
+            "        return native(argv, **kwargs)\n"
+            "    assert argv[1:5] == ['api', '--hostname', 'github.com', '--include']\n"
+            "    assert argv[argv.index('--method') + 1] == 'GET'\n"
+            "    payload = json.loads(Path(os.environ['API_RESPONSES']).read_text())[argv[-1]]\n"
+            "    raw = 'HTTP/2.0 ' + os.environ.get('API_STATUS', '200')\n"
+            "    raw += ' Response\\r\\nContent-Type: application/json\\r\\n\\r\\n'\n"
+            "    return subprocess.CompletedProcess(argv, 0, (raw + json.dumps(payload)).encode(), b'')\n"
+            "subprocess.run = transport\n"
+            "sys.argv[0] = 'scripts/workflow_pilot/isolated_launcher.py'\n"
+            "runpy.run_path(sys.argv[0], run_name='__main__')\n")
+        self.jobs = topology._job_blocks((ROOT / ".github/workflows/build.yml").read_text())
+        self.environment = {
+            **os.environ, "DEFAULT_BRANCH": "master", "EVENT_NAME": "workflow_dispatch",
+            "EVENT_REF": "refs/heads/" + metadata.HEAD_REF, "RAW_SHA": self.head,
+            "RAW_SHA_JSON": json.dumps(self.head), "GITHUB_REPOSITORY": metadata.REPOSITORY,
+            "GITHUB_EVENT_NAME": "workflow_dispatch", "GITHUB_REF": "refs/heads/" + metadata.HEAD_REF,
+            "GITHUB_SHA": self.head, "PR_BASE_SHA": "", "PR_HEAD_SHA": "", "PUSH_SHA": "",
+            "GITHUB_EVENT_PATH": str(self.owned / "event.json"),
+            "BOOTSTRAP_RESPONSE": str(self.owned / "bootstrap.json"),
+            "API_RESPONSES": str(self.owned / "api.json"),
+        }
+        write_json(self.owned / "event.json", {"inputs": {}})
+
+    def identity(self, **environment):
+        (self.owned / "bootstrap.json").write_text(json.dumps(self.query))
+        self.environment.update(environment)
+        return self.script("event-identity", 0)[1]
+
+    def script(self, job, index, **environment):
+        script = self.t._literal_run_script(self.t._step_blocks(self.jobs[job])[index])
+        script = script.replace("/usr/bin/gh", str(self.gh))
+        script = script.replace("scripts/workflow_pilot/isolated_launcher.py", str(self.launch))
+        output = self.owned / "outputs"
+        output.unlink(missing_ok=True)
+        result = subprocess.run(
+            ["/bin/bash", "-e", "-o", "pipefail", "-c", script], cwd=self.root,
+            env={**self.environment, "GITHUB_OUTPUT": str(output), **environment},
+            capture_output=True, text=True, timeout=30)
+        values = dict(line.split("=", 1) for line in output.read_text().splitlines()) if output.exists() else {}
+        return result, values
+
+    def classify(self, identity, responses=None):
+        m = self.m
+        git(self.root, "checkout", "--detach", identity["classifier_ref"])
+        self.environment.update(
+            CLASSIFIER_REF=identity["classifier_ref"],
+            CLASSIFIER_EXPECTED_SHA=identity["classifier_expected_sha"],
+            DISPATCH_PR_NUMBER=identity.get("dispatch_pr_number", ""),
+            DISPATCH_BASE_REF=identity.get("dispatch_base_ref", ""),
+            VALIDATED_FALLBACK_KIND=identity["fallback_kind"],
+            VALIDATED_FALLBACK_SHA=identity["fallback_sha"])
+        verified, _ = self.script("event-router", 2)
+        self.assertEqual(verified.returncode, 0, verified.stderr)
+        raw = decisions(m.PR_NUMBER, ("lifecycle",), "review-first")
+        routes = {
+            m._query("pulls", [("state", "open"), ("head", "owner:" + m.HEAD_REF),
+                               ("per_page", "100")]): [self.pr],
+            m._endpoint(f"pulls/{m.PR_NUMBER}"): self.pr,
+            m._query("contents/" + reporter.DECISION_RECORD_PATH.as_posix(), [("ref", self.head)]):
+                AdapterTests().content(raw),
+            m._endpoint(f"compare/{self.pr['base']['sha']}...{self.head}"): {
+                "base_commit": {"sha": self.pr["base"]["sha"]},
+                "merge_base_commit": {"sha": git(self.root, "merge-base", self.pr["base"]["sha"], self.head)}},
+        }
+        routes.update(responses or {})
+        write_json(self.owned / "api.json", routes)
+        return self.script("event-router", 3)
+
+    def test_pre_feature_default_executes_integration_base_and_emits_parsed_binding(self):
+        identity = self.identity()
+        result, values = self.classify(identity)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        parsed = github._candidate_step({"steps": [{
+            "name": values.get("candidate_binding", ""), "status": "completed", "conclusion": "success"}]})
+        self.assertEqual(parsed, (self.m.PR_NUMBER, self.head, self.base), (identity, values))
+        self.assertEqual(identity["classifier_ref"], self.base)
+        self.assertEqual(git(self.root, "rev-parse", "HEAD"), self.base)
+        self.assertEqual((values["classification"], values["gate_mode"], values["run_expensive"]),
+                         ("full", "review-first", "true"))
+        m = self.m
+        raw, jobs = m._run(10, 10, mode="full")
+        raw.update(event="workflow_dispatch", head_sha=self.head, pull_requests=[])
+        jobs = [job for job in jobs if job["name"] != "patch-release"]
+        for job in jobs:
+            job.update(event="workflow_dispatch", head_sha=self.head)
+            if job["name"] == "event-classifier":
+                job["steps"] = [{"name": values["candidate_binding"],
+                                 "status": "completed", "conclusion": "success"}]
+        client = m.ScriptedClient()
+        m._add_snapshot(client, [(raw, jobs)])
+        client.add("GET", m._endpoint(f"compare/{self.base}...{self.head}"),
+                   {"base_commit": {"sha": self.base}, "merge_base_commit": {"sha": self.base}})
+        pr = github._parse_pull_request_payload(self.pr, m.REPOSITORY, m.PR_NUMBER)
+        _, _, observed = github._parse_run(client, pr, github._workflow_authority(client, pr), raw)
+        self.assertEqual((observed.binding, observed.candidate_binding), ("explicit-same", parsed))
+        github.require_full_success(observed)
+
+    def test_missing_ambiguous_or_invalid_bootstrap_metadata_remains_unbound(self):
+        original = copy.deepcopy(self.query)
+        for field, value in (
+            ("nodes", []), ("nodes", [None]), ("totalCount", 2), ("hasNextPage", True),
+            ("headRefOid", self.default), ("headRefName", "other"), ("state", "CLOSED"),
+            ("headRepository", {"nameWithOwner": "foreign/repo"}),
+            ("baseRepository", {"nameWithOwner": "foreign/repo"}),
+            ("baseRefOid", "HEAD"), ("baseRefName", "bad\nref"), ("baseRefName", "integration\n"),
+            ("baseRefName", "x" * 1025), ("number", True),
+            ("repository", None), ("errors", [{"message": "unavailable"}]),
+        ):
+            with self.subTest(field=field):
+                self.query = copy.deepcopy(original)
+                repository = self.query["data"]["repository"]
+                prs = repository["pullRequests"]
+                target = (prs if field in {"nodes", "totalCount"} else prs["pageInfo"]
+                          if field == "hasNextPage" else self.query["data"]
+                          if field == "repository" else self.query if field == "errors"
+                          else prs["nodes"][0])
+                target[field] = value
+                identity = self.identity()
+                result, values = self.classify(identity)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(identity["classifier_ref"], "refs/heads/master")
+                self.assertNotIn("candidate_binding", values)
+
+    def test_unavailable_oversized_and_foreign_metadata_cannot_select_authority(self):
+        for change in ("unavailable", "oversized", "foreign"):
+            with self.subTest(change=change):
+                if change == "oversized":
+                    self.query["padding"] = "x" * github.MAX_API_BYTES
+                elif change == "foreign":
+                    self.query.pop("padding")
+                    self.query["data"]["repository"]["nameWithOwner"] = "foreign/repo"
+                identity = self.identity(BOOTSTRAP_UNAVAILABLE="1" if change == "unavailable" else "0")
+                self.assertEqual(identity["classifier_ref"], "refs/heads/master")
+                self.assertEqual(identity["dispatch_pr_number"], "")
+
+    def test_deployed_root_base_and_exact_checkout_verification(self):
+        git(self.root, "update-ref", "refs/heads/master", self.base)
+        self.query["data"]["repository"]["pullRequests"]["nodes"][0]["baseRefName"] = "master"
+        self.pr["base"]["ref"] = "master"
+        identity = self.identity(DEFAULT_BRANCH="")
+        result, values = self.classify(identity)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(values["candidate_binding"], gate.binding_name(self.m.PR_NUMBER, self.head, self.base))
+        wrong, _ = self.script("event-router", 2, CLASSIFIER_EXPECTED_SHA=self.head)
+        self.assertNotEqual(wrong.returncode, 0)
+
+    def test_changed_candidate_base_or_ref_after_bootstrap_cannot_bind(self):
+        original = copy.deepcopy(self.pr)
+        for side, field, value in (
+            ("base", "sha", self.default), ("base", "ref", "retargeted"),
+            ("head", "sha", self.base), ("head", "ref", "moved"),
+            ("head", "repo", {**self.pr["head"]["repo"], "full_name": "foreign/repo"}),
+        ):
+            with self.subTest(side=side, field=field):
+                self.pr = copy.deepcopy(original)
+                identity = self.identity()
+                self.pr[side][field] = value
+                result, values = self.classify(identity)
+                self.assertNotEqual(result.returncode, 0, (identity, values))
+                self.assertNotIn("candidate_binding", values)
+
+    def test_refresh_ambiguity_or_http_failure_cannot_emit_binding(self):
+        endpoint = self.m._query("pulls", [("state", "open"), ("head", "owner:" + self.m.HEAD_REF),
+                                          ("per_page", "100")])
+        for rows, status in (([], "200"), ([self.pr, self.pr], "200"), ([self.pr], "503")):
+            with self.subTest(count=len(rows), status=status):
+                self.environment["API_STATUS"] = status
+                result, values = self.classify(self.identity(), {endpoint: rows})
+                self.assertNotEqual(result.returncode, 0, (result.stderr, values))
+                self.assertNotIn("candidate_binding", values)
+
+    def test_old_base_and_plain_deployed_manual_dispatch_keep_unbound_full_route(self):
+        for deployed in (False, True):
+            with self.subTest(deployed=deployed):
+                if deployed:
+                    git(self.root, "update-ref", "refs/heads/master", self.base)
+                    self.query["data"]["repository"]["pullRequests"]["nodes"] = []
+                    self.query["data"]["repository"]["pullRequests"]["totalCount"] = 0
+                else:
+                    node = self.query["data"]["repository"]["pullRequests"]["nodes"][0]
+                    node.update(baseRefOid=self.default, baseRefName="master")
+                    self.pr["base"].update(sha=self.default, ref="master")
+                result, values = self.classify(self.identity())
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual((values["classification"], values["run_expensive"]), ("full", "true"))
+                self.assertNotIn("candidate_binding", values)
