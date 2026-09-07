@@ -1025,7 +1025,15 @@ def _summary_job(
     }
 
 
-def _summary_full_jobs() -> list[dict]:
+def _summary_full_jobs(
+    *,
+    pr_number: int = SUMMARY_TEST_PR_NUMBER,
+    head_sha: str = SUMMARY_TEST_HEAD_SHA,
+    base_sha: str = SUMMARY_TEST_BASE_SHA,
+    base_ref: str = "master",
+) -> list[dict]:
+    from scripts.workflow_pilot.adaptive_gate import binding_name
+
     jobs = [
         _summary_job("event-identity", "success"),
         _summary_job("event-router", "success"),
@@ -1039,8 +1047,7 @@ def _summary_full_jobs() -> list[dict]:
     ]
     classifier = next(job for job in jobs if job["name"] == "event-classifier")
     classifier["steps"] = [{
-        "name": f"workflow-pilot-candidate:v1:{SUMMARY_TEST_PR_NUMBER}:{SUMMARY_TEST_HEAD_SHA}:"
-                f"{SUMMARY_TEST_BASE_SHA}:master",
+        "name": binding_name(pr_number, head_sha, base_sha, base_ref),
         "status": "completed", "conclusion": "success",
     }]
     return jobs
@@ -7411,6 +7418,52 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
             ],
         )
 
+    def test_summary_historical_witness_and_runner_guards_are_independent(self):
+        from scripts.workflow_pilot.adaptive_gate import binding_name
+
+        script = _literal_run_script(_step_blocks(_job_blocks(self.text)["summary"])[0])
+        number, base = SUMMARY_TEST_PR_NUMBER, SUMMARY_TEST_BASE_SHA
+        no_full = "metadata-only summary requires a prior successful complete full Build CI run"
+        cases = (
+            ("exact", number, base, number, base, True, True, None),
+            ("changed-association-only", number, "3" * 40, number, base, True, True, None),
+            ("wrong-historical-base", number, base, number, "3" * 40, True, False, no_full),
+            ("other-base", number, "3" * 40, number, "3" * 40, True, False, no_full),
+            ("other-pr", number + 1, base, number + 1, base, True, False, no_full),
+            ("contradictory-pr", number + 1, base, number, base, True, False,
+             "candidate marker contradicts PR binding"),
+            ("missing-runner", number, base, number, base, False, False,
+             "metadata-only summary newest prior full Build CI job build is not a successful runner-backed completion"),
+            ("missing-witness", number, base, None, base, True, False,
+             "metadata-only summary full run lacks one candidate binding"),
+        )
+        self.summary_fixture_evidence = []
+        for name, raw_pr, raw_base, historical_pr, historical_base, runner, accepted, error in cases:
+            with self.subTest(name=name):
+                prior = _summary_workflow_run(8100, pr_number=raw_pr, base_sha=raw_base)
+                jobs = _summary_full_jobs(pr_number=historical_pr or number, base_sha=historical_base)
+                witness = (binding_name(historical_pr, SUMMARY_TEST_HEAD_SHA, historical_base, "master")
+                           if historical_pr is not None else None)
+                if witness is None:
+                    next(job for job in jobs if job["name"] == "event-classifier")["steps"] = []
+                if not runner:
+                    jobs = _replace_summary_job(jobs, "build", runner_name=None)
+                routes = {
+                    _summary_runs_path(): _summary_response(_summary_api_payload(
+                        "workflow_runs", [_summary_workflow_run(SUMMARY_TEST_RUN_ID), prior])),
+                    _summary_jobs_path(8100): _summary_response(_summary_api_payload("jobs", jobs)),
+                }
+                result, requests = _run_summary_with_api(script, environment=_summary_metadata_env(), routes=routes)
+                self.summary_fixture_evidence.append({
+                    "case": name, "association": prior["pull_requests"], "witness": witness,
+                    "exit_code": result.returncode, "detail": result.stderr,
+                    "requests": [request["path"] for request in requests]})
+                self.assertEqual(result.returncode == 0, accepted, result.stderr)
+                self.assertNotIn("HTTP 404", result.stderr)
+                self.assertIn(_summary_jobs_path(8100), [request["path"] for request in requests])
+                if error:
+                    self.assertIn(error, result.stderr)
+
     def test_summary_runtime_metadata_only_rejects_invalid_prior_full_evidence(self):
         script = _literal_run_script(_step_blocks(_job_blocks(self.text)["summary"])[0])
         completed = subprocess.run(
@@ -8106,7 +8159,9 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                                 _summary_workflow_run(8100, pr_number=SUMMARY_TEST_PR_NUMBER + 1),
                             ],
                         )
-                    )
+                    ),
+                    _summary_jobs_path(8100): _summary_response(_summary_api_payload(
+                        "jobs", _summary_full_jobs(pr_number=SUMMARY_TEST_PR_NUMBER + 1))),
                 },
                 1,
                 "metadata-only summary requires a prior successful complete full Build CI run",
@@ -8142,10 +8197,10 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                         )
                     ),
                     _summary_jobs_path(8100): _summary_response(
-                        _summary_api_payload("jobs", _summary_full_jobs())),
+                        _summary_api_payload("jobs", _summary_full_jobs(base_sha="3" * 40))),
                 },
                 1,
-                "metadata-only summary full run lacks one candidate binding",
+                "metadata-only summary requires a prior successful complete full Build CI run",
             ),
             (
                 "wrong-repository-url",
@@ -8250,17 +8305,7 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                     _summary_jobs_path(8100): _summary_response(
                         _summary_api_payload(
                             "jobs",
-                            [
-                                _summary_job("event-identity", "success"),
-                                _summary_job("event-router", "success"),
-                                _summary_job("event-classifier", "success"),
-                                _summary_job("host-tests", "success"),
-                                _summary_job("build", "success", runner_name=None),
-                                _summary_job("extended-host-tests", "success"),
-                                _summary_job("legacy", "success"),
-                                _summary_job("patch-release", "skipped", runner_name=None),
-                                _summary_job("summary", "success"),
-                            ],
+                            _replace_summary_job(_summary_full_jobs(), "build", runner_name=None),
                         )
                     ),
                 },
@@ -8401,6 +8446,7 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                 "metadata-only summary workflow runs exceed the reviewed pagination bound",
             ),
         )
+        self.summary_invalid_evidence = []
         for name, environment, routes, expected, error_fragment in cases:
             with self.subTest(name=name):
                 completed, _requests = _run_summary_with_api(
@@ -8410,6 +8456,13 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                 )
                 self.assertEqual(completed.returncode, expected, completed.stderr)
                 self.assertIn(error_fragment, completed.stderr)
+                if name in {"wrong-pr-binding", "wrong-base-binding", "missing-runner"}:
+                    paths = [request["path"] for request in _requests]
+                    self.assertIn(_summary_jobs_path(8100), paths)
+                    self.assertNotIn("HTTP 404", completed.stderr)
+                    self.summary_invalid_evidence.append({
+                        "case": name, "exit_code": completed.returncode,
+                        "detail": completed.stderr, "requests": paths})
 
     def test_workflow_governance_docs_bind_metadata_summary_to_prior_full_evidence(self):
         governance = WORKFLOW_GOVERNANCE_CASE.read_text(encoding="utf-8")
