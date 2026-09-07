@@ -123,8 +123,13 @@ Keep each decision in `.github/workflow-pilot-decisions.json`, not another
 policy file. `protocol`, `replay`, `transport`, `security`, `save`, `lifecycle`,
 `abi` and `migration` select review-first. More than 2,000 changed lines is
 also a review-first signal. Small low-risk records may select concurrent.
-Overrides use #176's immutable pre-review introduction validation; named high
-risk always wins. A timing override does not waive #179's independent local
+Overrides reuse #176's record validation and immutable pre-review authority;
+named high risk always wins. Production routing reads the actual first-reviewed
+decision from its Git blob, verifies its commit date and ancestry against the
+current head, and rejects changed/missing or late authority. Before any submitted Copilot review,
+the actual committed current decision supplies that pre-review observation.
+No candidate reason string or supplied success flag authorizes an override.
+A timing override does not waive #179's independent local
 review. A missing/unknown record, unavailable override provenance, or existing
 `pilot.disposition: paused` uses the broader concurrent/full workflow and
 retains a visible reason.
@@ -195,6 +200,14 @@ watchers. The existing assignment/handoff and watcher schemas remain valid.
    provider precision alongside the strict run-number watermark and identity.
    A same-head/branch active run with unknown binding/mode remains a visible
    hold before both dispatch and merge, even beside an earlier full success.
+   If POST was accepted but saving its acknowledgement failed,
+   `reconcile_full_dispatch(client, state_path, pr)` uses the existing run parser,
+   preflight/workflow identity and reservation watermark to bind one observed
+   eligible dispatch without another POST. It records `dispatch_observed_at`;
+   `dispatch_sent_at` remains null when the HTTP acknowledgement is unknown.
+   Zero, multiple, unclassified, stale or wrong-identity runs stay uncertain.
+   Observations may support cleanup of abandoned heads but never revive them,
+   and fresh review/local/security/criteria plus full-job success remain required.
 6. When a run becomes visible, use the existing #178 `reserve_watcher` /
    `finish_watcher` / `reconcile_run` interfaces and exactly one attached
    bounded shell watcher per run/attempt. A reasoning agent never waits.

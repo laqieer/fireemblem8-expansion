@@ -609,6 +609,124 @@ class GateTests(unittest.TestCase):
         self.assertEqual(len(calls), 1)
         self.assertIsNone(observations.load_json(path)["candidates"][0]["dispatch_sent_at"])
 
+    def test_observed_run_recovers_lost_post_ack_without_another_post(self):
+        from scripts.workflow_pilot.tests import test_pr_metadata as fixtures
+        self.runs[0] = replace(self.runs[0], workflow_id=fixtures.WORKFLOW_ID)
+        path = self.fixture.home / "lost-ack.json"
+        write_json(path, self.state)
+        calls = []
+        def accept_post(argv, **kwargs):
+            calls.append((argv, kwargs))
+            self.assertEqual(json.loads(kwargs["input"]), {"ref": self.pr.head_ref})
+            return subprocess.CompletedProcess(argv, 0, b"HTTP/2.0 204 No Content\r\n\r\n", b"")
+        client = github.GitHubClient("/usr/bin/gh", runner=accept_post)
+        locked = observations.locked_state
+        attempts = []
+
+        def fail_second_lock(target):
+            attempts.append(str(target))
+            if len(attempts) == 2:
+                raise observations.ObservationError("accepted POST, second lock unavailable")
+            return locked(target)
+
+        def assess(state):
+            record = state["candidates"][0]
+            return record, self.assess(state=state, record=record), self.runs
+
+        with patch.object(github, "fetch_pull_request", return_value=self.pr), \
+             patch.object(observations, "locked_state", side_effect=fail_second_lock):
+            with self.assertRaises(observations.ObservationError):
+                gate.dispatch_full(client, path, self.pr, assess)
+        self.assertEqual(len(calls), 1)
+        saved = observations.load_json(path)
+        record = saved["candidates"][0]
+        self.assertIsNotNone(record["dispatch_requested_at"])
+        self.assertIsNone(record["dispatch_sent_at"])
+        run = self.parsed_dispatch(2)
+        before = self.assess(state=saved, record=record, runs=(*self.runs, run))
+        self.assertFalse(before["merge_eligible"])
+        self.boundary_evidence = {"requested": record["dispatch_requested_at"], "before": before}
+        with patch.object(github, "list_candidate_runs", return_value=(*self.runs, run)), \
+             patch.object(github, "fetch_pull_request", return_value=self.pr), \
+             patch.object(gate, "frozen_base", return_value=self.fixture.parent):
+            gate.reconcile_full_dispatch(client, path, self.pr)
+        recovered = observations.load_json(path)
+        record = recovered["candidates"][0]
+        self.assertIsNone(record["dispatch_sent_at"], "missing HTTP acknowledgement must not be invented")
+        self.assertEqual(record["dispatch_requested_at"], self.boundary_evidence["requested"])
+        self.assertEqual((record["full_run_id"], record["full_attempt"]), (2, 1))
+        after = self.assess(state=recovered, record=record, runs=(*self.runs, run))
+        self.assertTrue(after["merge_eligible"], after)
+        self.assertFalse(self.assess(state=recovered, record=record, runs=(*self.runs, run),
+                                    checks=())["merge_eligible"])
+        self.boundary_evidence["after"] = after
+        self.assertEqual(len(calls), 1, "reconciliation must never dispatch again")
+
+    def test_dispatch_reconciliation_keeps_ambiguity_stale_runs_and_abandonment_closed(self):
+        from scripts.workflow_pilot.tests import test_pr_metadata as fixtures
+        self.runs[0] = replace(self.runs[0], workflow_id=fixtures.WORKFLOW_ID)
+        with patch.object(observations, "utc_now", return_value=at_offset(-30)):
+            gate.reserve_full_dispatch(self.state, self.record, self.assess(), self.runs)
+        good = self.parsed_dispatch(2)
+        other = self.parsed_dispatch(3)
+        queued = self.parsed_dispatch(3, queued=True)
+        path = self.fixture.home / "reconciliation.json"
+        client = SimpleNamespace(request=lambda *args, **kwargs: self.fail("unexpected remote mutation"))
+        cases = (
+            (), (good, other), (good, queued),
+            (replace(good, created_at=reporter.parse_time(at_offset(-60), "earlier")),),
+            (replace(good, run_number=self.record["watermark"]),),
+            (replace(good, head_sha="a" * 40),),
+            (replace(good, head_branch="other"),),
+            (replace(good, candidate_binding=(191, self.pr.head_sha, "a" * 40)),),
+            (replace(good, workflow_id=good.workflow_id + 1),),
+            (replace(good, event="pull_request"),),
+        )
+        for index, extra in enumerate(cases):
+            with self.subTest(case=index):
+                write_json(path, self.state)
+                with patch.object(github, "list_candidate_runs", return_value=(*self.runs, *extra)):
+                    result = gate.reconcile_full_dispatch(client, path, self.pr)
+                self.assertEqual(result["state"], "dispatch-uncertain")
+                record = observations.load_json(path)["candidates"][0]
+                self.assertIsNone(record["full_run_id"])
+                self.assertIsNone(record["dispatch_sent_at"])
+                self.assertNotIn("dispatch_observed_at", record)
+        for reason in ("accepted-review-or-security-finding", "superseded-head-or-base"):
+            with self.subTest(abandoned=reason):
+                state = copy.deepcopy(self.state)
+                state["candidates"][0]["abandoned_reason"] = reason
+                write_json(path, state)
+                with patch.object(github, "list_candidate_runs", return_value=(*self.runs, good)), \
+                     patch.object(github, "fetch_pull_request", return_value=self.pr), \
+                     patch.object(gate, "frozen_base", return_value=self.fixture.parent):
+                    result = gate.reconcile_full_dispatch(client, path, self.pr)
+                self.assertEqual(result["state"], "observed-abandoned")
+                state = observations.load_json(path)
+                record = state["candidates"][0]
+                self.assertEqual(record["full_run_id"], good.run_id)
+                self.assertIsNone(record["dispatch_sent_at"])
+                self.assertFalse(self.assess(state=state, record=record,
+                                             runs=(*self.runs, good))["merge_eligible"])
+        state = copy.deepcopy(self.state)
+        state["candidates"][0].update(full_run_id=2, full_attempt=2)
+        write_json(path, state)
+        with patch.object(github, "list_candidate_runs", return_value=(*self.runs, good)):
+            self.assertEqual(gate.reconcile_full_dispatch(client, path, self.pr)["state"], "dispatch-uncertain")
+        write_json(path, self.state)
+        with patch.object(github, "list_candidate_runs", return_value=(*self.runs, good)), \
+             patch.object(github, "fetch_pull_request", return_value=replace(self.pr, head_sha="a" * 40)):
+            self.assertEqual(gate.reconcile_full_dispatch(client, path, self.pr)["state"], "observed-abandoned")
+        observed = observations.load_json(path)
+        self.assertEqual(observed["candidates"][0]["abandoned_reason"], "superseded-head-or-base")
+        schema = Draft202012Validator(json.loads(
+            (ROOT / "scripts/workflow_pilot/agent_handoff.schema.json").read_text()))
+        self.assertTrue(schema.is_valid(observed))
+        observed["candidates"][0]["dispatch_observed_at"] = None
+        self.assertFalse(schema.is_valid(observed))
+        with self.assertRaises(ValueError):
+            handoff.validate_state(observed)
+
     def test_observed_adapter_uses_shared_review_git_and_refreshes_all_remote_facts(self):
         from scripts.workflow_pilot import trusted_review_gate
         tools = SimpleNamespace(model=review, tree=lambda revision: trusted_review_gate.GitTree(
@@ -748,6 +866,80 @@ class AdapterTests(unittest.TestCase):
         result, selected, _ = gate.route_event(client, decision, payload, m.REPOSITORY)
         self.assertEqual(result.classification, "full")
         self.assertFalse(selected.known)
+
+    def test_production_route_observes_immutable_pre_review_override(self):
+        from scripts.workflow_pilot.tests import test_reporter as fixtures
+        fixtures.TEST_ARTIFACTS.mkdir(parents=True, exist_ok=True)
+        m = self.m
+        self.boundary_evidence = []
+        for variant, accepted, count in (
+            ("exact", True, 1), ("before-first-review", True, 1), ("late", False, 1),
+            ("missing-entry", False, 1),
+            ("missing-file", False, 1), ("changed-entry", False, 1),
+            ("unavailable", False, 1), ("no-override", True, 0),
+        ):
+            with self.subTest(variant=variant):
+                owner = fixtures.FailClosedDataTests()
+                self.addCleanup(owner.doCleanups)
+                root, fixture, raw, _, shas = owner.make_override_case(
+                    first_tree="missing-entry" if variant == "late" else
+                    variant if variant in {"missing-entry", "missing-file", "changed-entry"} else "exact",
+                    override_count=count)
+                head, base = fixture["pull_requests"][0]["head_sha"], shas["0"]
+                first = min((item for item in fixture["reviews"] if item["author"] == reporter.REVIEW_BOT),
+                            key=lambda item: item["submitted_at"])
+                if variant == "late":
+                    first = {**first, "submitted_at": "2026-01-01T02:00:00Z"}
+                pr = {**m._pr(head=head, base=base), "number": 1, "additions": 3000, "deletions": 0}
+                pr["url"] = f"https://api.github.com/repos/{m.REPOSITORY}/pulls/1"
+                payload = {"number": 1, "action": "synchronize", "pull_request": pr}
+                event = event_classifier.classify_event(
+                    "pull_request", payload, github_ref="refs/pull/1/merge", github_sha="f" * 40,
+                    pr_base_sha=base, pr_head_sha=head, push_sha="")
+                client = m.ScriptedClient()
+                client.add("GET", m._endpoint("pulls/1"), pr)
+                for revision in {head, first["commit_sha"]}:
+                    endpoint = m._query("contents/" + str(reporter.DECISION_RECORD_PATH), [("ref", revision)])
+                    try:
+                        content = reporter.run_git(root, "show", revision + ":" + str(reporter.DECISION_RECORD_PATH))
+                    except reporter.PilotDataError:
+                        client.add("GET", endpoint, github.MetadataEditError("immutable record missing"))
+                    else:
+                        client.add("GET", endpoint, {
+                            "path": str(reporter.DECISION_RECORD_PATH), "type": "file", "encoding": "base64",
+                            "sha": hashlib.sha1(f"blob {len(content)}\0".encode() + content).hexdigest(),
+                            "content": base64.b64encode(content).decode(),
+                        })
+                    committed = fixtures.git_run(
+                        root, "show", "-s", "--format=%cI", revision).stdout.decode().strip().replace("+00:00", "Z")
+                    client.add("GET", m._endpoint(f"git/commits/{revision}"),
+                               {"sha": revision, "committer": {"date": committed}})
+                for anchor in {base, first["commit_sha"]}:
+                    merge_base = fixtures.git_run(root, "merge-base", "--all", anchor, head).stdout.decode().strip()
+                    client.add("GET", m._endpoint(f"compare/{anchor}...{head}"),
+                               {"base_commit": {"sha": anchor}, "merge_base_commit": {"sha": merge_base}})
+                reviews = {"data": {"repository": {"nameWithOwner": m.REPOSITORY, "pullRequest": {
+                    "number": 1, "baseRefOid": base, "headRefOid": head,
+                    "reviews": {"pageInfo": {"hasNextPage": False, "endCursor": None}, "nodes": [{
+                        "id": str(first["id"]), "state": first["state"], "submittedAt": first["submitted_at"],
+                        "body": "", "commit": {"oid": first["commit_sha"]},
+                        "author": {"__typename": "Bot", "id": "BOT_kgDOCnlnWA",
+                                   "login": "copilot-pull-request-reviewer"},
+                        "comments": {"pageInfo": {"hasNextPage": False}, "nodes": []},
+                    }]},
+                    "reviewThreads": {"pageInfo": {"hasNextPage": False}, "nodes": []},
+                }}}}
+                if variant == "before-first-review":
+                    reviews["data"]["repository"]["pullRequest"]["reviews"]["nodes"] = []
+                client.add("POST", "graphql", github.MetadataEditError("review authority unavailable")
+                           if variant == "unavailable" else reviews)
+                result, selected, _ = gate.route_event(client, event, payload, m.REPOSITORY)
+                self.boundary_evidence.append({"variant": variant, "decision": asdict(selected),
+                                               "classification": result.classification})
+                self.assertEqual(selected.known, accepted, selected.reason)
+                self.assertEqual(result.classification, "review-first" if count == 0 else "full")
+                if variant == "exact":
+                    self.assertEqual(selected.reason, "validated-pre-review-override")
 
     def test_route_preserves_event_identity_across_real_unrelated_base_advance(self):
         m = self.m
