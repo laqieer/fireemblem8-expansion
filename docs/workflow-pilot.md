@@ -129,6 +129,33 @@ decision from its Git blob, verifies its commit date and ancestry against the
 current head, and rejects changed/missing or late authority. Before any submitted Copilot review,
 the actual committed current decision supplies that pre-review observation.
 No candidate reason string or supplied success flag authorizes an override.
+A timely enabled override additionally needs complete immutable diff evidence.
+The supported conservative scope is registered generated-data **file** sources
+and inventories; authored expansion/game catalog paths (including the expansion
+ID registry); Markdown selected by the existing docs classifier, excluding
+unregistered generated-path claims; or removal of every substantive changed
+file with actual positive deletions and no additions. Other generator/runtime
+edits, unregistered generated/catalog claims, directory-wide data claims,
+partial runtime deletions and mixed runtime work do not qualify. This does not apply #176's historical
+bulk-deletion percentage to admission or add new risk enum values.
+Only the current PR's entry in the existing decision file is exempted as
+bookkeeping: other decisions and artifact records must remain semantically
+unchanged relative to the diff's actual merge base, not an advanced live tip.
+Bookkeeping alone is not an eligible category.
+
+Production checks the exact base/head compare URL, complete commit/file counts
+and statuses against fresh PR totals, and rechecks head/base SHA and both refs
+after observation. Paginated/truncated comparisons, missing counts or changed
+identity are unknown/broader, never a validated override. Known timely but
+ineligible scope retains ordinary size/risk timing. Named risk remains
+review-first regardless of an unused override; pilot pause retains its existing
+broader behavior. The local historical decision API uses the actual merged
+candidate's Git parents, unique merge base, raw diff and counts; an open
+historical record lacking that frozen scope authority remains unknown.
+Scope membership is not semantic validation: all local, review, security and
+full Build requirements remain independent and mandatory.
+The existing trusted `verify_override` callback returns actual scope eligibility;
+a verifier returning no scope result is unknown, not an accepted override.
 A timing override does not waive #179's independent local
 review. A missing/unknown record, unavailable override provenance, or existing
 `pilot.disposition: paused` uses the broader concurrent/full workflow and

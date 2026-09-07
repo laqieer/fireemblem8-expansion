@@ -62,7 +62,11 @@ def select_mode(raw, *, number, head_sha, decision_oid, changed_lines,
         if record["pilot"]["disposition"] == "paused":
             return GateDecision(head_sha, decision_oid, "concurrent", "pilot-paused",
                                 required, True, True)
+        if high_risk:
+            return GateDecision(head_sha, decision_oid, "review-first", "named-risk",
+                                True, True, False)
         history = record["threshold"]["override_history"]
+        eligible = False
         if history and verify_override is None:
             require(data is not None and repository_root is not None,
                     "override provenance unavailable")
@@ -81,17 +85,20 @@ def select_mode(raw, *, number, head_sha, decision_oid, changed_lines,
                 introduction = next(item for item in introductions if item["override_index"] == index)
                 reporter.validate_override_git_provenance(
                     repository_root, data, number, index, override, introduction, first)
+            if history[-1]["enabled"]:
+                eligible = _local_override_scope(repository_root, data, number, head_sha, raw, changed_lines)
         if history:
             if verify_override is not None:
-                verify_override(record)
-            if history[-1]["enabled"] and not high_risk:
+                eligible = verify_override(record)
+                require(type(eligible) is bool, "override scope authority unavailable")
+            if history[-1]["enabled"] and eligible:
                 return GateDecision(head_sha, decision_oid, record["gate_mode"],
                                     "validated-pre-review-override", required, True, False)
         mode = "review-first" if required else record["gate_mode"]
         return GateDecision(head_sha, decision_oid, mode,
                             "named-risk" if high_risk else "large-change" if required else "small-change",
                             required, True, False)
-    except (KeyError, TypeError, ValueError, reporter.PilotDataError) as error:
+    except (KeyError, TypeError, ValueError, OSError, ImportError, reporter.PilotDataError) as error:
         return GateDecision(head_sha, decision_oid, "concurrent",
                             "unknown-decision: " + str(error)[:512], True, False, False)
 
@@ -149,7 +156,7 @@ def _review_snapshot(client, pr, model):
     return ReviewAPI().snapshot(pr.repository, pr.number, model)
 
 
-def _verify_remote_override(client, pr, record):
+def _verify_remote_override(client, pr, record, raw, changed_lines):
     """Validate the actual immutable decision as of the first submitted review."""
     from . import review_family
     identity, facts = _review_snapshot(client, pr, review_family)
@@ -169,6 +176,131 @@ def _verify_remote_override(client, pr, record):
     cutoff = reporter.parse_time(first.submitted_at if first else observations.utc_now(), "override cutoff")
     require(committed < cutoff if first else committed <= cutoff,
             "override commit does not predate its first review")
+    return (_remote_override_scope(client, pr, raw, changed_lines)
+            if record["threshold"]["override_history"][-1]["enabled"] else False)
+
+
+def _override_scope(files, raw, number, read_base_decisions):
+    """Conservative data/document membership, not a semantic validation waiver."""
+    from scripts.generated_data.registry import REGISTRY
+    from scripts.localization import catalog
+    from scripts.localization.game_catalog.build import DEFAULT_AUTHORED_PATHS, DEFAULT_EU_AUTHORED_PATHS
+    from scripts.upstream_port.classify import classify_path
+
+    metadata = [item for item in files if item["filename"] == str(reporter.DECISION_RECORD_PATH)]
+    if metadata:
+        if metadata[0]["status"] not in {"added", "modified"}:
+            return False
+        before = ({"schema_version": reporter.SCHEMA_VERSION, "artifacts": [], "pull_requests": []}
+                  if metadata[0]["status"] == "added" else read_base_decisions())
+
+        def other_decisions(value):
+            reporter.expect_keys(value, "scope decisions", ("schema_version", "artifacts", "pull_requests"))
+            require(reporter.expect_int(value["schema_version"], "scope schema", 1) == reporter.SCHEMA_VERSION,
+                    "unknown scope decision schema")
+            reporter.expect_list(value["artifacts"], "scope artifacts")
+            others = reporter.project_cohort_decisions(
+                value, {item["pull_request"] for item in value["pull_requests"]} - {number})
+            others["pull_requests"] = sorted(others["pull_requests"], key=lambda item: item["pull_request"])
+            others["artifacts"] = sorted(others["artifacts"], key=lambda item: item["artifact_id"])
+            return others
+
+        if not handoff._same_json_value(other_decisions(before), other_decisions(raw)):
+            return False
+    files = [item for item in files if item not in metadata]
+    if not files:
+        return False
+    if all(item["status"] == "removed" and item["additions"] == 0 and item["deletions"] > 0
+           for item in files):
+        return True
+    generated = {value for name in REGISTRY.all_names()
+                 for value in (REGISTRY.resolve(name).default_source, REGISTRY.resolve(name).default_inventory_path)
+                 if value and Path(value).suffix}
+    localized = {str(value) for value in (
+        catalog.DEFAULT_REGISTRY_PATH, *catalog.DEFAULT_CATALOG_PATHS.values(),
+        *DEFAULT_AUTHORED_PATHS.values(), *DEFAULT_EU_AUTHORED_PATHS.values())}
+    paths = {item["filename"] for item in files} | {
+        item["previous_filename"] for item in files if item["status"] == "renamed"}
+    return all(name in generated or name in localized or (
+        not reporter.is_generated_path(name) and classify_path(name) == "docs"
+        and Path(name).suffix == ".md") for name in paths)
+
+
+def _remote_override_scope(client, pr, raw, changed_lines):
+    endpoint = github._endpoint(pr.repository, f"pulls/{pr.number}")
+
+    def observe():
+        payload = client.request("GET", endpoint, label="override scope candidate").payload
+        current = github._parse_pull_request_payload(payload, pr.repository, pr.number)
+        require((current.head_sha, current.head_ref, current.base_sha, current.base_ref)
+                == (pr.head_sha, pr.head_ref, pr.base_sha, pr.base_ref), "override scope candidate changed")
+        counts = tuple(reporter.expect_int(payload[name], "override " + name, 0)
+                       for name in ("changed_files", "additions", "deletions"))
+        require(counts[1] + counts[2] == changed_lines, "override diff size changed")
+        return counts
+
+    counts = observe()
+    endpoint_compare = github._endpoint(pr.repository, f"compare/{pr.base_sha}...{pr.head_sha}")
+    response = client.request("GET", endpoint_compare, label="immutable override diff")
+    comparison = response.payload
+    github._require_api_url(comparison["url"], endpoint_compare, field="override compare URL")
+    require(not response.headers.get("link"), "paginated override diff is unavailable")
+    require(comparison["base_commit"]["sha"] == pr.base_sha, "override comparison base changed")
+    base = reporter.expect_sha(comparison["merge_base_commit"]["sha"], "override merge base")
+    commits = reporter.expect_list(comparison["commits"], "override commits")
+    require(len(commits) == reporter.expect_int(comparison["total_commits"], "override commit count", 0)
+            and (commits[-1]["sha"] == pr.head_sha if commits else pr.head_sha == pr.base_sha),
+            "override comparison head or commit completeness changed")
+    reporter.expect_unique([reporter.expect_sha(item["sha"], "override commit") for item in commits],
+                           "override commit identities")
+    files = reporter.expect_list(comparison["files"], "override files")
+    require(len(files) == counts[0], "override file list truncated")
+    names = []
+    for item in files:
+        handoff.path(item["filename"])
+        names.append(item["filename"])
+        reporter.expect_sha(item["sha"], "override file object")
+        require(item["status"] in {"added", "modified", "removed", "renamed"}, "unknown override file status")
+        if item["status"] == "renamed":
+            handoff.path(item["previous_filename"])
+        added, deleted, changed = (reporter.expect_int(item[key], "override file " + key, 0)
+                                   for key in ("additions", "deletions", "changes"))
+        require(added + deleted == changed and (item["status"] != "added" or deleted == 0)
+                and (item["status"] != "removed" or added == 0), "incoherent override file counts")
+    reporter.expect_unique(names, "override changed paths")
+    require((sum(item["additions"] for item in files), sum(item["deletions"] for item in files)) == counts[1:],
+            "override diff totals incomplete")
+    eligible = _override_scope(files, raw, pr.number, lambda: _decision_at(client, pr, base)[0])
+    require(observe() == counts, "override file authority changed during observation")
+    return eligible
+
+
+def _local_override_scope(root, data, number, head, raw, changed_lines):
+    pr = data["pull_requests"][number]
+    require(pr["state"] == "merged" and pr["head_sha"] == head, "local scope needs an immutable merged candidate")
+    merge = reporter.expect_sha(pr["merge_sha"], "scope merge")
+    parents = reporter.run_git(root, "show", "-s", "--format=%P", merge).decode().split()
+    require(len(parents) == 2 and parents[1] == head, "scope merge does not bind the candidate")
+    bases = reporter.run_git(root, "merge-base", "--all", parents[0], head).decode().split()
+    require(len(bases) == 1, "scope merge base is ambiguous")
+    base = bases[0]
+    changes = handoff._changes(root, base, head)
+    files = []
+    for row in handoff._git(root, "diff", "--numstat", "--no-ext-diff", "--no-textconv",
+                           "--no-renames", "-z", base, head, "--").split(b"\0"):
+        if not row:
+            continue
+        added, deleted, name = row.split(b"\t", 2)
+        filename = name.decode("utf-8")
+        old_mode, new_mode, _, _ = changes[filename]
+        require({old_mode, new_mode} <= {b"000000", b"100644", b"100755"}, "unsupported scope file mode")
+        files.append({"filename": filename, "additions": int(added), "deletions": int(deleted),
+                      "status": "removed" if new_mode == b"000000" else
+                                "added" if old_mode == b"000000" else "modified"})
+    require({item["filename"] for item in files} == set(changes)
+            and sum(item["additions"] + item["deletions"] for item in files) == changed_lines,
+            "local override diff is incomplete or has another size")
+    return _override_scope(files, raw, number, lambda: reporter.load_decisions_from_commit(root, base))
 
 
 def fetch_decision(client, pr, changed_lines):
@@ -180,7 +312,7 @@ def fetch_decision(client, pr, changed_lines):
         pass
     return select_mode(raw, number=pr.number, head_sha=pr.head_sha, decision_oid=oid,
                        changed_lines=changed_lines,
-                       verify_override=lambda record: _verify_remote_override(client, pr, record))
+                       verify_override=lambda record: _verify_remote_override(client, pr, record, raw, changed_lines))
 
 
 def frozen_base(client, pr):

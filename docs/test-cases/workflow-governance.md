@@ -152,6 +152,20 @@ the consumers' independent protected-principal/deployment requirements.
    responses: a valid override changes the large-change route, while late,
    missing, changed or unavailable first-reviewed authority remains unknown
    and uses the broader workflow.
+   Exercise actual registered generated/catalog files, Markdown and whole-file
+   deletions through the production route with native Git-derived diff facts.
+   A large runtime/archival/`none` claim, mixed runtime work, unregistered
+   generated path, partial runtime deletion or unrelated decision-file edit
+   is known **ineligible** and keeps ordinary review-first size timing.
+   Missing/stale/truncated/paginated file authority or a head/base-ref change
+   during observation stays **unknown** and broader. A risk label/reason cannot
+   substitute for these facts; named high risk always remains review-first.
+   The bookkeeping exception covers only this PR's decision entry, not another
+   decision, artifact or arbitrary metadata file. No deletion percentage or
+   blanket source-directory exemption is used; all final gates still apply.
+   Advance the base with an independent decision edit: genuine documentation
+   remains eligible, but a candidate's unrelated decision edit cannot be hidden
+   by a matching live-tip change. Compare bookkeeping at the actual merge base.
 4. Execute the actual parsed Build job guards and preflight shell steps.
    Initial review-first runs only the fast path, while concurrent, dispatched
    full and master events retain all four comprehensive worker jobs and all

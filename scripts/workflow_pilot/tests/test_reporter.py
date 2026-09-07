@@ -2798,6 +2798,8 @@ class FailClosedDataTests(unittest.TestCase):
         first_tree="exact",
         introduction="a",
         override_count=1,
+        marker_path="marker.txt",
+        marker_lines=1,
     ):
         directory = self.enterContext(
             tempfile.TemporaryDirectory(
@@ -2879,9 +2881,9 @@ class FailClosedDataTests(unittest.TestCase):
                 decision_path.unlink(missing_ok=True)
             else:
                 decision_path.write_bytes(reporter.normalized_json(tree_decisions))
-            (repository_root / "marker.txt").write_text(
-                f"{letter}\n", encoding="ascii"
-            )
+            marker = repository_root / marker_path
+            marker.parent.mkdir(parents=True, exist_ok=True)
+            marker.write_text(f"{letter}\n" * marker_lines, encoding="ascii")
             git_run(repository_root, "add", "-A")
             environment = {
                 "GIT_AUTHOR_DATE": dates[letter],

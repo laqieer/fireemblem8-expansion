@@ -42,6 +42,22 @@ def decisions(number=191, risks=("none",), mode="concurrent", *, paused=False):
     }]}
 
 
+def git_scope_files(root, base, head):
+    stats = {}
+    for row in git(root, "diff", "--numstat", "--no-renames", base, head).splitlines():
+        added, deleted, name = row.split("\t")
+        stats[name] = (int(added), int(deleted))
+    files = []
+    for name, (old_mode, new_mode, old_oid, new_oid) in handoff._changes(root, base, head).items():
+        added, deleted = stats[name]
+        files.append({
+            "filename": name, "sha": (old_oid if new_mode == b"000000" else new_oid).decode(),
+            "status": "removed" if new_mode == b"000000" else
+                      "added" if old_mode == b"000000" else "modified",
+            "additions": added, "deletions": deleted, "changes": added + deleted})
+    return files
+
+
 class ModeTests(unittest.TestCase):
     def select(self, raw, lines=100):
         return gate.select_mode(raw, number=191, head_sha="a" * 40,
@@ -75,6 +91,16 @@ class ModeTests(unittest.TestCase):
         self.assertIn("override", selected.reason)
         self.assertEqual(self.select(decisions(risks=("save",), mode="concurrent")).mode, "review-first")
 
+    def test_provenance_callback_without_scope_is_not_an_override(self):
+        raw = decisions()
+        raw["pull_requests"][0]["threshold"]["override_history"] = [
+            {"enabled": True, "reason": "A reason cannot supply missing scope evidence"}]
+        selected = gate.select_mode(raw, number=191, head_sha="a" * 40, decision_oid="b" * 40,
+                                    changed_lines=3000, verify_override=lambda record: None)
+        self.assertFalse(selected.known)
+        self.assertEqual(selected.mode, "concurrent")
+        self.assertIn("scope authority unavailable", selected.reason)
+
     def test_actual_git_pre_review_override_and_late_introduction(self):
         from scripts.workflow_pilot.tests import test_reporter as fixtures
         fixtures.TEST_ARTIFACTS.mkdir(parents=True, exist_ok=True)
@@ -82,13 +108,15 @@ class ModeTests(unittest.TestCase):
             with self.subTest(introduction=introduction):
                 owner = fixtures.FailClosedDataTests()
                 self.addCleanup(owner.doCleanups)
-                root, fixture, raw, _, _ = owner.make_override_case(introduction=introduction)
+                root, fixture, raw, _, shas = owner.make_override_case(
+                    introduction=introduction, marker_path="docs/override.md", marker_lines=3000)
                 data = reporter.validate_fixture(fixture)
                 data["repository_authority"] = reporter.validate_repository_authority(root, data)
                 head = data["pull_requests"][1]["head_sha"]
                 oid = reporter.run_git(root, "rev-parse", head + ":" + str(reporter.DECISION_RECORD_PATH))
                 selected = gate.select_mode(
-                    raw, number=1, head_sha=head, decision_oid=oid.decode().strip(), changed_lines=5000,
+                    raw, number=1, head_sha=head, decision_oid=oid.decode().strip(),
+                    changed_lines=sum(item["changes"] for item in git_scope_files(root, shas["0"], head)),
                     data=data, repository_root=root)
                 self.assertEqual(selected.known, accepted, selected.reason)
                 self.assertEqual(selected.mode, "concurrent")
@@ -114,6 +142,223 @@ class ModeTests(unittest.TestCase):
         with self.assertRaises(reporter.PilotDataError):
             reporter.project_cohort_decisions(
                 {**raw, "pull_requests": [*raw["pull_requests"], raw["pull_requests"][0]]}, {150})
+
+
+class OverrideScopeTests(unittest.TestCase):
+    def route(self, category, *, risk="none", fault=None):
+        from scripts.workflow_pilot.tests import test_pr_metadata as m
+        artifacts = ROOT / "build/test-artifacts"
+        artifacts.mkdir(parents=True, exist_ok=True)
+        owned = tempfile.TemporaryDirectory(prefix="override-scope-", dir=artifacts)
+        self.addCleanup(owned.cleanup)
+        root = Path(owned.name)
+        git(root, "init", "-b", m.HEAD_REF)
+        git(root, "config", "user.name", "Scope regression")
+        git(root, "config", "user.email", "scope@example.invalid")
+        path = {
+            "generated": "src/data/supports.json",
+            "localization": "texts/expansion/catalog.en.json",
+            "docs": "docs/scope.md", "delete": "src/retired.c",
+            "runtime": "src/runtime.c", "archival": "asm/archive.s",
+            "spoofed": "src/generated/claimed.c", "partial-delete": "src/retired.c",
+            "renamed-runtime": "src/runtime.c", "renamed-docs": "docs/old.md",
+        }[category]
+        if category in {"generated", "localization"}:
+            before = (ROOT / path).read_text()
+            after = before + "\n" * 2100
+            self.assertEqual(json.loads(before), json.loads(after))
+        else:
+            before = "old\n" * 2100
+            after = None if category == "delete" else (
+                "old\n" if category == "partial-delete" else "new\n" * 2100)
+        if category.startswith("renamed-"):
+            before, after = "old\n" * 4200, "old\n" * 4200 + "new\n" * 2100
+        source = root / path
+        source.parent.mkdir(parents=True, exist_ok=True)
+        source.write_text(before)
+        raw = decisions(m.PR_NUMBER, (risk,))
+        if fault == "reordered":
+            raw["pull_requests"].extend(decisions(m.PR_NUMBER + 1)["pull_requests"])
+        decision_path = root / reporter.DECISION_RECORD_PATH
+        decision_path.parent.mkdir(parents=True)
+        write_json(decision_path, raw)
+        git(root, "add", ".")
+        git(root, "commit", "-m", "Scope base")
+        base = git(root, "rev-parse", "HEAD")
+        git(root, "branch", "master", base)
+        raw["pull_requests"][0]["threshold"]["override_history"] = [
+            {"enabled": True, "reason": "Generated, localized, documented or bulk deletion work"}]
+        if fault == "reordered":
+            raw["pull_requests"].reverse()
+        if fault in {"other-decision", "masked-decision"}:
+            raw["pull_requests"].extend(decisions(m.PR_NUMBER + 1)["pull_requests"])
+        write_json(decision_path, raw)
+        if after is None:
+            source.unlink()
+        else:
+            source.write_text(after)
+        if category.startswith("renamed-"):
+            destination = root / "docs/moved.md"
+            destination.parent.mkdir(exist_ok=True)
+            source.rename(destination)
+        if fault == "mixed":
+            (root / "src").mkdir(exist_ok=True)
+            (root / "src/other.c").write_text("int runtime_change;\n")
+        git(root, "add", ".")
+        git(root, "commit", "-m", "Actual scope delta and timing record")
+        head = git(root, "rev-parse", "HEAD")
+        if fault in {"advanced-base", "masked-decision"}:
+            upstream = reporter.load_decisions_from_commit(root, base)
+            upstream["pull_requests"].extend(decisions(m.PR_NUMBER + 1)["pull_requests"])
+            git(root, "checkout", "master")
+            write_json(decision_path, upstream)
+            git(root, "add", ".")
+            git(root, "commit", "-m", "Independent integration-base metadata")
+            base = git(root, "rev-parse", "HEAD")
+        frozen = git(root, "merge-base", "--all", base, head)
+        files = git_scope_files(root, frozen, head)
+        if category.startswith("renamed-"):
+            renames = [row.split("\t") for row in git(root, "diff", "--name-status", "-M", frozen, head).splitlines()
+                       if row.startswith("R")]
+            self.assertEqual(len(renames), 1)
+            _, old, new = renames[0]
+            stats = [row.split("\t") for row in git(root, "diff", "--numstat", "-M", frozen, head).splitlines()
+                     if not row.endswith(str(reporter.DECISION_RECORD_PATH))]
+            self.assertEqual(len(stats), 1)
+            added, deleted = map(int, stats[0][:2])
+            files = [item for item in files if item["filename"] not in {old, new}]
+            files.append({"filename": new, "previous_filename": old, "status": "renamed",
+                          "sha": git(root, "rev-parse", head + ":" + new),
+                          "additions": added, "deletions": deleted, "changes": added + deleted})
+        pr = m._pr(head=head, base=base)
+        pr.update(changed_files=len(files), additions=sum(item["additions"] for item in files),
+                  deletions=sum(item["deletions"] for item in files))
+        payload = {"number": m.PR_NUMBER, "action": "synchronize", "pull_request": copy.deepcopy(pr)}
+        event = event_classifier.classify_event(
+            "pull_request", payload, github_ref=f"refs/pull/{m.PR_NUMBER}/merge", github_sha="f" * 40,
+            pr_base_sha=base, pr_head_sha=head, push_sha="")
+        endpoint = m._endpoint(f"compare/{base}...{head}")
+        comparison = {"url": github._api_url(endpoint), "base_commit": {"sha": base},
+                      "merge_base_commit": {"sha": git(root, "merge-base", "--all", base, head)},
+                      "total_commits": 1, "commits": [{"sha": head}], "files": files}
+        if fault == "missing":
+            comparison.pop("files")
+        elif fault == "truncated":
+            comparison["files"] = files[:-1]
+        elif fault == "stale":
+            comparison["commits"] = [{"sha": base}]
+        elif fault == "commit-truncated":
+            comparison["total_commits"] = 2
+        elif fault == "foreign-url":
+            comparison["url"] = comparison["url"].replace("owner/repo", "foreign/repo")
+        elif fault == "missing-count":
+            pr.pop("changed_files")
+        elif fault == "bad-status":
+            comparison["files"][-1]["status"] = "claimed-generated"
+        elif fault == "wrong-count":
+            comparison["files"][-1]["changes"] += 1
+        committed = git(root, "show", "-s", "--format=%cI", head).replace("+00:00", "Z")
+        submitted = (reporter.parse_time(committed, "commit") + timedelta(seconds=1)).isoformat().replace("+00:00", "Z")
+        if fault == "late":
+            submitted = committed
+        review_data = {"data": {"repository": {"nameWithOwner": m.REPOSITORY, "pullRequest": {
+            "number": m.PR_NUMBER, "baseRefOid": base, "headRefOid": head,
+            "reviews": {"pageInfo": {"hasNextPage": False, "endCursor": None}, "nodes": [{
+                "id": "scope-review", "state": "APPROVED", "submittedAt": submitted,
+                "body": "", "commit": {"oid": head},
+                "author": {"__typename": "Bot", "id": "BOT_kgDOCnlnWA",
+                           "login": "copilot-pull-request-reviewer"},
+                "comments": {"pageInfo": {"hasNextPage": False}, "nodes": []},
+            }]}, "reviewThreads": {"pageInfo": {"hasNextPage": False}, "nodes": []},
+        }}}}
+        responses = {
+            ("GET", m._endpoint(f"pulls/{m.PR_NUMBER}")): pr,
+            ("GET", endpoint): comparison,
+            ("GET", m._endpoint(f"compare/{head}...{head}")): {
+                "base_commit": {"sha": head}, "merge_base_commit": {"sha": head}},
+            ("GET", m._endpoint(f"git/commits/{head}")): {"sha": head, "committer": {"date": committed}},
+            ("POST", "graphql"): review_data,
+        }
+        for revision in {base, frozen, head}:
+            content = reporter.run_git(root, "show", revision + ":" + str(reporter.DECISION_RECORD_PATH))
+            responses[("GET", m._query("contents/" + str(reporter.DECISION_RECORD_PATH), [("ref", revision)]))] = {
+                "path": str(reporter.DECISION_RECORD_PATH), "type": "file", "encoding": "base64",
+                "sha": git(root, "rev-parse", revision + ":" + str(reporter.DECISION_RECORD_PATH)),
+                "content": base64.b64encode(content).decode()}
+        calls = []
+
+        def transport(argv, **kwargs):
+            method = argv[argv.index("--method") + 1]
+            target = argv[argv.index("X-GitHub-Api-Version: 2022-11-28") + 1]
+            calls.append((method, target))
+            if fault in {"head-moves", "base-ref-moves"} and calls.count(("GET", endpoint)) >= 2 and target.endswith(
+                    f"pulls/{m.PR_NUMBER}"):
+                if fault == "head-moves":
+                    (root / "later.md").write_text("A genuinely newer local Git candidate\n")
+                    git(root, "add", ".")
+                    git(root, "commit", "-m", "Candidate advanced during observation")
+                    pr["head"]["sha"] = git(root, "rev-parse", "HEAD")
+                else:
+                    git(root, "branch", "retargeted", base)
+                    pr["base"]["ref"] = "retargeted"
+            headers = "HTTP/2.0 200 OK\r\nContent-Type: application/json\r\n"
+            if fault == "paginated" and target == endpoint:
+                headers += f'Link: <{github._api_url(endpoint)}?page=2>; rel="next"\r\n'
+            body = json.dumps(responses[(method, target)])
+            return subprocess.CompletedProcess(argv, 0, (headers + "\r\n" + body).encode(), b"")
+
+        result, selected, _ = gate.route_event(
+            github.GitHubClient("/usr/bin/gh", runner=transport), event, payload, m.REPOSITORY)
+        self.observed = {"category": category, "risk": risk, "fault": fault, "base": base, "head": head,
+                         "files": files, "calls": calls, "decision": asdict(selected),
+                         "classification": result.classification}
+        return result, selected
+
+    def test_only_actual_eligible_categories_honor_a_timely_override(self):
+        for category, fault in (("generated", None), ("localization", None), ("docs", None),
+                                ("delete", None), ("docs", "reordered"), ("renamed-docs", None)):
+            with self.subTest(category=category, fault=fault):
+                result, selected = self.route(category, fault=fault)
+                self.assertTrue(selected.known, self.observed)
+                self.assertEqual(selected.reason, "validated-pre-review-override")
+                self.assertEqual(result.classification, "full")
+
+    def test_known_ineligible_runtime_archival_and_claims_keep_size_timing(self):
+        for category, risk, fault in (
+            ("runtime", "runtime", None), ("archival", "archival", None),
+            ("runtime", "none", None), ("runtime", "generated-data", None),
+            ("spoofed", "generated-data", None), ("partial-delete", "none", None),
+            ("renamed-runtime", "none", None),
+            ("generated", "generated-data", "mixed"), ("docs", "none", "other-decision"),
+        ):
+            with self.subTest(category=category, risk=risk, fault=fault):
+                result, selected = self.route(category, risk=risk, fault=fault)
+                self.assertTrue(selected.known, self.observed)
+                self.assertEqual((selected.reason, result.classification),
+                                 ("large-change", "review-first"), self.observed)
+
+    def test_bookkeeping_uses_actual_diff_origin_not_an_advanced_live_base(self):
+        for fault, expected in (("advanced-base", "full"), ("masked-decision", "review-first")):
+            with self.subTest(fault=fault):
+                result, selected = self.route("docs", fault=fault)
+                self.assertTrue(selected.known, self.observed)
+                self.assertEqual(result.classification, expected, self.observed)
+
+    def test_missing_stale_truncated_or_moving_authority_stays_unknown_and_broader(self):
+        for fault in ("missing", "truncated", "stale", "commit-truncated", "foreign-url",
+                      "missing-count", "bad-status", "wrong-count", "paginated",
+                      "head-moves", "base-ref-moves", "late"):
+            with self.subTest(fault=fault):
+                result, selected = self.route("docs", fault=fault)
+                self.assertFalse(selected.known, self.observed)
+                self.assertTrue(selected.reason.startswith("unknown-decision:"), selected.reason)
+                self.assertEqual(result.classification, "full")
+
+    def test_named_risk_cannot_be_overridden_by_scope_or_missing_scope_facts(self):
+        for fault in (None, "missing", "late"):
+            with self.subTest(fault=fault):
+                result, selected = self.route("docs", risk="security", fault=fault)
+                self.assertEqual((selected.reason, result.classification), ("named-risk", "review-first"))
 
 
 class GateTests(unittest.TestCase):
@@ -886,20 +1131,23 @@ class AdapterTests(unittest.TestCase):
                 root, fixture, raw, _, shas = owner.make_override_case(
                     first_tree="missing-entry" if variant == "late" else
                     variant if variant in {"missing-entry", "missing-file", "changed-entry"} else "exact",
-                    override_count=count)
+                    override_count=count, marker_path="docs/override.md", marker_lines=3000)
                 head, base = fixture["pull_requests"][0]["head_sha"], shas["0"]
                 first = min((item for item in fixture["reviews"] if item["author"] == reporter.REVIEW_BOT),
                             key=lambda item: item["submitted_at"])
                 if variant == "late":
                     first = {**first, "submitted_at": "2026-01-01T02:00:00Z"}
-                pr = {**m._pr(head=head, base=base), "number": 1, "additions": 3000, "deletions": 0}
+                files = git_scope_files(root, base, head)
+                pr = {**m._pr(head=head, base=base), "number": 1, "changed_files": len(files),
+                      "additions": sum(item["additions"] for item in files),
+                      "deletions": sum(item["deletions"] for item in files)}
                 pr["url"] = f"https://api.github.com/repos/{m.REPOSITORY}/pulls/1"
                 payload = {"number": 1, "action": "synchronize", "pull_request": pr}
                 event = event_classifier.classify_event(
                     "pull_request", payload, github_ref="refs/pull/1/merge", github_sha="f" * 40,
                     pr_base_sha=base, pr_head_sha=head, push_sha="")
                 client = m.ScriptedClient()
-                client.add("GET", m._endpoint("pulls/1"), pr)
+                client.add("GET", m._endpoint("pulls/1"), pr, pr, pr)
                 for revision in {head, first["commit_sha"]}:
                     endpoint = m._query("contents/" + str(reporter.DECISION_RECORD_PATH), [("ref", revision)])
                     try:
@@ -918,8 +1166,13 @@ class AdapterTests(unittest.TestCase):
                                {"sha": revision, "committer": {"date": committed}})
                 for anchor in {base, first["commit_sha"]}:
                     merge_base = fixtures.git_run(root, "merge-base", "--all", anchor, head).stdout.decode().strip()
-                    client.add("GET", m._endpoint(f"compare/{anchor}...{head}"),
-                               {"base_commit": {"sha": anchor}, "merge_base_commit": {"sha": merge_base}})
+                    endpoint = m._endpoint(f"compare/{anchor}...{head}")
+                    commits = git(root, "rev-list", "--reverse", f"{anchor}..{head}").splitlines()
+                    comparison = {
+                        "url": github._api_url(endpoint), "base_commit": {"sha": anchor},
+                        "merge_base_commit": {"sha": merge_base}, "total_commits": len(commits),
+                        "commits": [{"sha": sha} for sha in commits], "files": git_scope_files(root, anchor, head)}
+                    client.add("GET", endpoint, comparison, comparison)
                 reviews = {"data": {"repository": {"nameWithOwner": m.REPOSITORY, "pullRequest": {
                     "number": 1, "baseRefOid": base, "headRefOid": head,
                     "reviews": {"pageInfo": {"hasNextPage": False, "endCursor": None}, "nodes": [{
