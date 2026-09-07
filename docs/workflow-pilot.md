@@ -296,6 +296,14 @@ master movement does not itself supersede or cancel a candidate. A changed
 head, base ref or unique merge base does. The workflow's candidate-binding step
 and #177's existing metadata continuity lookback preserve this distinction for
 both PR and input-free dispatch runs.
+Dispatch-inclusive run listing excludes known `push` events regardless of
+their mutable PR associations or branch names; they are not candidate Build
+evidence. Unknown event kinds and malformed candidate records still reject.
+A response to an explicitly PR-only query cannot silently include a push.
+The review-first case exercises valid candidate runs beside missing, null,
+empty, same-PR and other-PR push associations, retaining the candidate while
+never fetching the push's jobs or admitting it as full evidence.
+
 The existing `workflow-pilot-candidate:v1` step now carries the historical base
 ref as a canonical URL-encoded suffix after PR/head/frozen-base. PR events use
 their validated raw event ref; dispatch uses its checked integration-base

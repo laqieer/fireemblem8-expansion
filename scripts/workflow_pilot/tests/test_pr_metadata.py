@@ -6785,6 +6785,40 @@ class PullRequestMetadataTests(unittest.TestCase):
                     with self.assertRaises(pr_metadata.MetadataEditError):
                         pr_metadata.list_candidate_runs(client, state)
 
+    def test_dispatch_listing_ignores_pushes_independent_of_mutable_associations(self):
+        state = pr_metadata._parse_pull_request_payload(_pr(), REPOSITORY, PR_NUMBER)
+        associations = (_MISSING, None, [], _run(202, 11, mode="full")[0]["pull_requests"],
+                        [{"number": PR_NUMBER + 1, "head": {"sha": HEAD}, "base": {"sha": BASE}}])
+        for branch in ("master", "topic"):
+            for association in associations:
+                with self.subTest(branch=branch, association=association):
+                    push, _ = _run(202, 11, mode="full", active=True)
+                    push.update(event="push", head_branch=branch)
+                    if association is _MISSING:
+                        push.pop("pull_requests")
+                    else:
+                        push["pull_requests"] = association
+                    candidate, jobs = _run(201, 10, mode="full")
+                    client = ScriptedClient()
+                    _add_snapshot(client, [(push, []), (candidate, jobs)])
+                    runs = pr_metadata.list_candidate_runs(client, state)
+                    self.assertEqual([run.run_id for run in runs], [201])
+                    self.assertEqual((runs[0].binding, runs[0].mode), ("explicit-same", "full"))
+                    self.assertFalse(any("/actions/runs/202" in endpoint
+                                         for _method, endpoint, _body in client.calls))
+
+    def test_pull_request_only_listing_rejects_an_unexpected_push_response(self):
+        state = pr_metadata._parse_pull_request_payload(_pr(), REPOSITORY, PR_NUMBER)
+        push, _ = _run(202, 11, mode="full")
+        push.update(event="push", head_branch="master", pull_requests=[])
+        client = ScriptedClient()
+        client.add("GET", _endpoint("actions/workflows/build.yml"), _workflow())
+        client.add("GET", _query("actions/workflows/build.yml/runs", [
+            ("event", "pull_request"), ("head_sha", HEAD), ("per_page", "100"), ("page", "1"),
+        ]), {"total_count": 1, "workflow_runs": [push]})
+        with self.assertRaises(pr_metadata.MetadataEditError):
+            pr_metadata.list_candidate_runs(client, state, include_dispatch=False)
+
     def test_run_authority_rejects_wrong_workflow_repo_head_event_and_path(self):
         mutations = {
             "workflow": ("workflow_id", WORKFLOW_ID + 1),
@@ -6794,7 +6828,7 @@ class PullRequestMetadataTests(unittest.TestCase):
             ),
             "head": ("head_sha", NEW_HEAD),
             "branch": ("head_branch", "other"),
-            "event": ("event", "push"),
+            "event": ("event", "workflow_run"),
             "path": ("path", ".github/workflows/other.yml"),
             "unknown-conclusion": ("conclusion", "mystery"),
             "unknown-status": ("status", "mystery"),

@@ -2945,8 +2945,7 @@ def list_candidate_runs(
             raw,
         )
         for raw in raw_runs
-        if not (include_dispatch and isinstance(raw, dict) and raw.get("event") == "push"
-                and raw.get("head_branch") == "master" and raw.get("pull_requests") == [])
+        if not (include_dispatch and isinstance(raw, dict) and raw.get("event") == "push")
     )
     by_id: dict[int, RunState] = {}
     number_to_id: dict[int, int] = {}
