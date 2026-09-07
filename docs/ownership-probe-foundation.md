@@ -749,9 +749,27 @@ The existing **3,600-second maximum is one monotonic deadline**, including
 snapshotting, compilation, all subprocesses and replay. Every subprocess gets
 the remaining lifetime. Defaults bound 4,096 states/launches, 32 simultaneously
 live traced guest processes, 16,384 total guest-process creations per report,
-32 pending commands, two million
+32 pending command resolutions, two million
 syscalls and 32,768 snapshot entries. There are no futures or hidden worker
 queues. Variant plans are checked before any variant launch.
+
+Make validates the complete native event stream and protected-map associations
+before resolving work from it. It then streams unresolved commands in their
+original first-occurrence order, resolving and installing each actual result
+before admitting the next. The existing completed mapping deduplicates repeated
+events; there is no separate materialized backlog of pending command strings.
+Completed outputs, caches and mappings retain their existing byte charges.
+The entire valid batch is resolved within the same pass, followed by the
+unchanged native replay and final-pass-only identity selection.
+
+`ProbeSession.pending_commands` measures active resolutions, including nested
+registration work; `pending_commands_peak` retains their actual maximum, not
+the configured limit. Admission enforces `Limits.pending` before starting
+another resolution, and the existing signal-safe cleanup restores the prior
+count on success, failure or interruption. The former extra limit on the
+**whole observed per-pass backlog** is replaced by this bounded serial
+resolution. The pending/fanout maximum and dynamic-pass limit are not raised,
+and resolution windows do not add extra Make replay passes.
 
 `Limits.processes` bounds live capacity, including the capsule root, stopped
 newborns and suspended vfork ancestors. `Limits.descendants` bounds cumulative
@@ -778,7 +796,7 @@ evidence, not RSS. Failure and selection cannot reset any report allowance.
 
 Byte accounting is also aggregate: 768 MiB total, 384 MiB snapshot processing,
 64 MiB streamed output, 64 MiB capsule writes, 32 MiB each cache/mappings/control,
-16 MiB events, and 1 MiB pending requests. Individual candidate output is
+16 MiB events, and 1 MiB pending-request traffic. Individual candidate output is
 streamed with a 1 MiB cap; bounded files/observations are at most 16 MiB.
 Capsules have a 512 MiB **aggregate virtual-address-space** ceiling, 16 MiB
 maximum stack limits, 128 descriptors,
@@ -786,6 +804,13 @@ no core dumps and a 4,096-creation aggregate cap. Limits may be lowered, not
 raised. Filesystem observations and serialized semantic results consume the
 same bounded control budget. Parallel calls to one session reject; a violation
 makes the entire session unusable.
+
+The existing pending-byte category is cumulative **lifetime traffic**, not a
+live outstanding-memory gauge: uncached command declarations, variant inputs,
+binary stdin and subprocess launcher arguments spend it without refunds.
+Serial resolution does not reset that byte counter or reclassify completed
+traffic. A later pending-byte exhaustion is a distinct measured limit, not
+permission to increase it or silently turn it into a reusable credit pool.
 
 Virtual memory uses one funded credit pool, not independent per-process
 512 MiB limits or a sampled/RSS threshold. The supervisor assigns kernel

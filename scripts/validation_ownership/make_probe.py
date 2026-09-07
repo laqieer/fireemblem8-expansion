@@ -490,6 +490,8 @@ class ProbeSession:
         self.syscalls_used = 0
         self.observations_used = 0
         self.files_created = 0
+        self.pending_commands = 0
+        self.pending_commands_peak = 0
         self.owner_thread = get_ident()
 
     def __enter__(self):
@@ -1283,19 +1285,20 @@ class ProbeSession:
                 events = _read_events(
                     self.budget.read_bytes(events_path, "event"), expected_mapping_count=len(mappings),
                 )
-                unknown = []
+                needs_resolution = False
                 matched = set()
                 for event in events:
+                    self.budget.remaining()
                     command = _event_command(event)
                     if event["match"] == 0:
                         if command not in mappings:
                             raise MakeProbeError("interceptor matched an unknown mapping")
                         matched.add(mappings[command])
-                    elif command not in unknown:
-                        unknown.append(command)
-                if len(unknown) > self.budget.limits.pending:
-                    self.budget.reject("registered-command pending count exceeds aggregate bound")
-                if not unknown:
+                    else:
+                        if command in mappings:
+                            raise MakeProbeError("interceptor missed a known mapping")
+                        needs_resolution = True
+                if not needs_resolution:
                     if completed.returncode:
                         raise MakeProbeError(
                             f"GNU Make failed after confined replay: {completed.returncode}; {completed.stderr!r}"
@@ -1335,74 +1338,84 @@ class ProbeSession:
                         hashlib.sha256(semantic_bytes).hexdigest(),
                         completed.stdout, completed.stderr, tuple(events),
                     )
-                for command in unknown:
-                    if command not in commands:
-                        raise MakeProbeError(f"unregistered eager/recursive Make command: {command!r}")
-                    registration = commands[command]
-                    result = self.command(registration)
-                    output = result.stdout
-                    key = _command_hash(command)
-                    if (mapping_path / (key + ".cmd")).exists():
-                        raise MakeProbeError("exact-command mapping collision")
-                    self.budget.charge("mapping", len(command.encode("utf-8")) + len(output) + 4)
-                    (mapping_path / (key + ".cmd")).write_bytes(command.encode("utf-8"))
-                    (mapping_path / (key + ".out")).write_bytes(output)
-                    command_identity = {
-                        "argv": list(registration.argv),
-                        "directories": sorted(registration.directories),
-                        "inputs": self.snapshot.owners(
-                            set(registration.code) | set(self.sources(registration.sources))
-                        ),
-                    }
-                    if registration.dependency_only:
-                        command_identity["dependency_only"] = True
-                        command_identity["inputs"] = self.snapshot.owners(
-                            set(result.consumed) | set(result.code_consumed),
-                        )
-                    if registration.native_tool is not None:
-                        tool = registration.native_tool
-                        command_identity["native_tool"] = {
-                            "sha256": tool.digest, "inputs": list(tool.inputs),
+                for event in events:
+                    self.budget.remaining()
+                    command = _event_command(event)
+                    if event["match"] == 0 or command in mappings:
+                        continue
+                    pending = self.pending_commands
+                    if pending >= self.budget.limits.pending:
+                        self.budget.reject("registered-command pending count exceeds aggregate bound")
+                    with cleanup_scope([lambda: setattr(self, "pending_commands", pending)]):
+                        self.pending_commands = pending + 1
+                        self.pending_commands_peak = max(self.pending_commands_peak, self.pending_commands)
+                        if command not in commands:
+                            raise MakeProbeError(f"unregistered eager/recursive Make command: {command!r}")
+                        registration = commands[command]
+                        result = self.command(registration)
+                        output = result.stdout
+                        key = _command_hash(command)
+                        if (mapping_path / (key + ".cmd")).exists():
+                            raise MakeProbeError("exact-command mapping collision")
+                        self.budget.charge("mapping", len(command.encode("utf-8")) + len(output) + 4)
+                        (mapping_path / (key + ".cmd")).write_bytes(command.encode("utf-8"))
+                        (mapping_path / (key + ".out")).write_bytes(output)
+                        command_identity = {
+                            "argv": list(registration.argv),
+                            "directories": sorted(registration.directories),
+                            "inputs": self.snapshot.owners(
+                                set(registration.code) | set(self.sources(registration.sources))
+                            ),
                         }
-                    command_result = {
-                        "command": command_identity,
-                        "output_sha256": hashlib.sha256(output).hexdigest(),
-                    }
-                    if result.generated:
-                        command_result["generated_outputs"] = [
-                            (item.path, f"{stat.S_IFREG | item.mode:06o}", hashlib.sha256(item.data).hexdigest())
-                            for item in result.generated
-                        ]
-                    if registration.native_tool is not None or result.generated:
-                        self.budget.charge("mapping", len(encoded(command_result)))
-                    identity = hashlib.sha256(encoded(command_result)).hexdigest()
-                    if result.generated:
-                        size = 44 + sum(
-                            12 + len(item.path.encode("utf-8")) + len(item.data) for item in result.generated
-                        )
-                        if size > self.budget.limits.file_bytes:
-                            self.budget.reject("generated mapping exceeds file byte bound")
-                        self.budget.charge("mapping", size)
-                        frame = bytearray(b"VOGEN1\0\0" + bytes.fromhex(identity))
-                        frame.extend(struct.pack("<I", len(result.generated)))
-                        for item in result.generated:
-                            if any(
-                                item.path.startswith(path + "/") or path.startswith(item.path + "/")
-                                for path in generated_paths
-                            ):
-                                raise MakeProbeError("conflicting generated output namespaces")
-                            name = item.path.encode("utf-8")
-                            frame.extend(struct.pack("<III", len(name), item.mode, len(item.data)))
-                            frame.extend(name)
-                            frame.extend(item.data)
-                            generated_paths.add(item.path)
-                            generated_directories.update(
-                                parent.as_posix() for parent in PurePosixPath(item.path).parents
-                                if parent.as_posix() != "." and not (self.tree / parent).exists()
+                        if registration.dependency_only:
+                            command_identity["dependency_only"] = True
+                            command_identity["inputs"] = self.snapshot.owners(
+                                set(result.consumed) | set(result.code_consumed),
                             )
-                        (mapping_path / (key + ".files")).write_bytes(frame)
-                    command_results.setdefault(identity, command_result)
-                    mappings[command] = identity
+                        if registration.native_tool is not None:
+                            tool = registration.native_tool
+                            command_identity["native_tool"] = {
+                                "sha256": tool.digest, "inputs": list(tool.inputs),
+                            }
+                        command_result = {
+                            "command": command_identity,
+                            "output_sha256": hashlib.sha256(output).hexdigest(),
+                        }
+                        if result.generated:
+                            command_result["generated_outputs"] = [
+                                (item.path, f"{stat.S_IFREG | item.mode:06o}", hashlib.sha256(item.data).hexdigest())
+                                for item in result.generated
+                            ]
+                        if registration.native_tool is not None or result.generated:
+                            self.budget.charge("mapping", len(encoded(command_result)))
+                        identity = hashlib.sha256(encoded(command_result)).hexdigest()
+                        if result.generated:
+                            size = 44 + sum(
+                                12 + len(item.path.encode("utf-8")) + len(item.data) for item in result.generated
+                            )
+                            if size > self.budget.limits.file_bytes:
+                                self.budget.reject("generated mapping exceeds file byte bound")
+                            self.budget.charge("mapping", size)
+                            frame = bytearray(b"VOGEN1\0\0" + bytes.fromhex(identity))
+                            frame.extend(struct.pack("<I", len(result.generated)))
+                            for item in result.generated:
+                                if any(
+                                    item.path.startswith(path + "/") or path.startswith(item.path + "/")
+                                    for path in generated_paths
+                                ):
+                                    raise MakeProbeError("conflicting generated output namespaces")
+                                name = item.path.encode("utf-8")
+                                frame.extend(struct.pack("<III", len(name), item.mode, len(item.data)))
+                                frame.extend(name)
+                                frame.extend(item.data)
+                                generated_paths.add(item.path)
+                                generated_directories.update(
+                                    parent.as_posix() for parent in PurePosixPath(item.path).parents
+                                    if parent.as_posix() != "." and not (self.tree / parent).exists()
+                                )
+                            (mapping_path / (key + ".files")).write_bytes(frame)
+                        command_results.setdefault(identity, command_result)
+                        mappings[command] = identity
             raise MakeProbeError("Make dynamic replay exceeded the existing pass bound")
 
     @terminal_failure

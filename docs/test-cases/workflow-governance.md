@@ -3243,6 +3243,46 @@ Reusing the existing intercepted dispatch map fixes these failures without
 adding env to the default program set, changing PATH/source, or granting
 runtime-file execution authority.
 
+### Bounded serial resolution of observed command batches
+
+Run the `test_serial_resolution_*` and
+`test_pending_request_bytes_accumulate_after_completed_commands` selectors:
+
+1. Execute an ordinary Make batch with more than 32 distinct real, source-reading
+   producers, repeated entries and ordered spaced/empty arguments. Repeat
+   through the public session with a one-item pending limit. Require identical
+   actual values/prerequisites, first-occurrence execution order, one execution
+   per repeated command, and final matched replay. The measured active peak
+   must be one, with the initial and final Make passes only; do not add a new
+   pass per resolution window or increase `MAX_DYNAMIC_PASSES`.
+2. Corrupt a late native frame, hash, mapping count or claimed protected-map
+   match after actual Make capture. The complete stream/map contract must
+   reject before any new producer lookup/execution. A later replay that misses
+   a known mapping must not rerun a completed producer.
+3. Resolve an actual nested registration through another Make query. A lowered
+   pending-depth limit must reject before excess work, while a sufficient
+   existing limit permits it. Observe the actual current/peak counts and their
+   restoration, not the configured maximum reported as a measurement.
+4. Fail a real producer, interrupt it after actual output, and overflow its
+   stream bound. Preserve prior completed work's charges, stop later
+   resolutions and clean all owned state. Existing mapping/event/cache,
+   source/view/final-pass and generated-output/restart controls still apply.
+5. Complete a real argument-consuming command with no outstanding child,
+   then submit another distinct command under a lowered pending-byte limit.
+   The existing lifetime traffic charge must accumulate and reject rather
+   than refunding completed work. Keep the default byte maximum unchanged.
+6. Run the latest frozen root with its real adapters and this parent package.
+   Retain actual resolution counts/peak, byte categories, final native outcome
+   or next precise bound. Observed command names are not completed producers,
+   and no subset is full graph/112-domain acceptance.
+
+Before this correction, exact `cd21586` builds the entire unresolved backlog
+and rejects it against the pending count before serial execution begins.
+The replacement streams fully validated observations through bounded
+resolutions using the existing charged completed map for deduplication. The
+extra whole-backlog ceiling is explicitly removed; pending/fanout safety,
+lifetime byte charges and every other numerical bound remain enforced.
+
 ### Aggregate attempted observations and absent compiler metadata
 
 The same case's `test_observation_*`, `test_failed_observations_*` and

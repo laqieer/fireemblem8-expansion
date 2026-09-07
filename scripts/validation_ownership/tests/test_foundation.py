@@ -75,6 +75,7 @@ class FoundationTests(unittest.TestCase):
         self.assertFalse(session.budget.children)
         self.assertIsNone(session.snapshot)
         self.assertIsNone(session.base)
+        self.assertEqual(session.pending_commands, 0)
         self.assertFalse(self.scratch.exists())
 
     def test_literal_source_selectors_are_repository_relative(self):
@@ -1805,6 +1806,238 @@ raise AssertionError("default termination was lost")
             self.assertEqual(child.returncode, -signal.SIGTERM, child.stderr.read())
         self.assertFalse(self.scratch.exists())
         self.assertEqual((self.root / "Makefile").read_text(), "all: ;\n")
+
+    def resolution_batch_fixture(self, count=40):
+        self.add("data/prefix", "p")
+        self.add("worker.py", (
+            "import sys\nassert sys.argv[2:]==['word value','']\n"
+            "sys.stdout.write(open('data/prefix').read()+sys.argv[1]+'\\n')\n"
+        ))
+        order = [*reversed(range(count)), count - 1, 0]
+        self.add("Makefile", (
+            "VALUES := $(foreach n," + " ".join(map(str, order)) + ","
+            "$(shell python3 worker.py $(n) 'word value' \"\"))\n"
+            "all: $(VALUES)\n\t@printf '%s\\n' '$(VALUES)' '$+'\np%: ;\n"
+        ))
+        registrations = {
+            f"python3 worker.py {index} 'word value' \"\"": Command(
+                ("/usr/bin/python3", "/repo/worker.py", str(index), "word value", ""),
+                code=("worker.py",), sources=("data/prefix",),
+            )
+            for index in range(count)
+        }
+        return registrations, order
+
+    def test_serial_resolution_handles_large_batch_with_one_pending_item(self):
+        registrations, order = self.resolution_batch_fixture()
+        ordinary = subprocess.run(
+            ["/usr/bin/make", "-f", "Makefile", "all"], cwd=self.root,
+            env=ENVIRONMENT, capture_output=True, check=True, timeout=20,
+        ).stdout.decode().splitlines()
+        requested, capsules = [], []
+        class Commands:
+            def __contains__(self, command):
+                return command in registrations
+            def __getitem__(self, command):
+                requested.append(command)
+                return registrations[command]
+        with self.session(pending=1) as session:
+            original = session._sandbox_run
+            def record(root, **kwargs):
+                result, observed = original(root, **kwargs)
+                capsules.append((kwargs["mode"], getattr(session, "pending_commands", None)))
+                return result, observed
+            with patch.object(session, "_sandbox_run", record):
+                result = session.make("all", variables=("VALUES",), commands=Commands())
+            self.assertEqual(result.semantics["domains"]["VALUES"]["value"], ordinary[0])
+            self.assertEqual(
+                [item["name"] for item in result.semantics["files"][0]["prerequisites"]],
+                ordinary[1].split(),
+            )
+            self.assertEqual(requested, [
+                f"python3 worker.py {index} 'word value' \"\"" for index in dict.fromkeys(order)
+            ])
+            self.assertEqual(len(result.events), len(order))
+            self.assertTrue(all(event["match"] == 0 for event in result.events))
+            self.assertEqual(len(result.semantics["dynamic_commands"]), len(registrations))
+            self.assertEqual([mode for mode, _ in capsules].count("make"), 2)
+            self.assertEqual([mode for mode, _ in capsules].count("command"), len(registrations))
+            self.assertTrue(all(pending == 1 for mode, pending in capsules if mode == "command"))
+            self.assertEqual(session.pending_commands, 0)
+            self.assertEqual(session.pending_commands_peak, 1)
+            self.assertEqual(session.budget.states, 1)
+            self.assertGreater(session.budget.bytes["mapping"], 0)
+            self.assertGreater(session.budget.bytes["cache"], 0)
+        self.assertEqual(session.pending_commands, 0)
+        self.assert_clean(session)
+
+    def test_pending_request_bytes_accumulate_after_completed_commands(self):
+        self.add("Makefile", "all: ;\n")
+        program = "import sys;print(sum(map(ord,sys.argv[1])))"
+        with self.session(pending_bytes=32*1024) as session:
+            first = session.command(Command(("/usr/bin/python3", "-c", program, "A"*20000)))
+            self.assertEqual(first.stdout, str(65*20000).encode() + b"\n")
+            self.assertFalse(session.budget.children)
+            charged = session.budget.bytes["pending"]
+            self.assertGreater(charged, 20000)
+            runs = session.budget.runs
+            with self.assertRaisesRegex(MakeProbeError, "aggregate pending byte budget"):
+                session.command(Command(("/usr/bin/python3", "-c", program, "B"*20000)))
+            self.assertEqual(session.budget.bytes["pending"], charged)
+            self.assertEqual(session.budget.runs, runs)
+            self.assertTrue(session.budget.closed)
+        self.assert_clean(session)
+
+    def test_serial_resolution_validates_late_native_frames_before_any_worker(self):
+        registrations, _ = self.resolution_batch_fixture(count=3)
+        for defect in ("truncated", "hash", "mapping-count", "matched-unknown"):
+            with self.subTest(defect=defect):
+                requested = []
+                class Commands:
+                    def __contains__(self, command):
+                        return command in registrations
+                    def __getitem__(self, command):
+                        requested.append(command)
+                        return registrations[command]
+                with self.session(pending=1) as session:
+                    original = session.budget.read_bytes
+                    def corrupt(path, category):
+                        raw = original(path, category)
+                        if category != "event":
+                            return raw
+                        last, offset = 0, 0
+                        while offset < len(raw):
+                            last = offset
+                            count = int.from_bytes(raw[offset+16:offset+20], "little")
+                            offset += 20
+                            for _ in range(count):
+                                size = int.from_bytes(raw[offset:offset+4], "little")
+                                offset += 4 + size
+                        data = bytearray(raw)
+                        if defect == "truncated":
+                            return bytes(data[:-1])
+                        if defect == "hash":
+                            data[last+8] ^= 1
+                        elif defect == "mapping-count":
+                            data[last+4:last+8] = (99).to_bytes(4, "little")
+                        else:
+                            data[last:last+4] = (0).to_bytes(4, "little")
+                        return bytes(data)
+                    with patch.object(session.budget, "read_bytes", corrupt):
+                        with self.assertRaisesRegex(MakeProbeError, "frame|hash|unknown mapping"):
+                            session.make("all", commands=Commands())
+                    self.assertEqual(requested, [])
+                    self.assertEqual(session.pending_commands, 0)
+                    self.assertEqual(session.pending_commands_peak, 0)
+                self.assert_clean(session)
+
+    def test_serial_resolution_rejects_known_mapping_miss_without_rerunning_worker(self):
+        registrations, _ = self.resolution_batch_fixture(count=2)
+        requested = []
+        class Commands:
+            def __contains__(self, command):
+                return command in registrations
+            def __getitem__(self, command):
+                requested.append(command)
+                return registrations[command]
+        with self.session(pending=1) as session:
+            original = session.budget.read_bytes
+            def corrupt(path, category):
+                raw = original(path, category)
+                if category == "event" and len(requested) == 2:
+                    return b"\xff\xff\xff\xff" + raw[4:]
+                return raw
+            with patch.object(session.budget, "read_bytes", corrupt):
+                with self.assertRaisesRegex(MakeProbeError, "missed a known mapping"):
+                    session.make("all", commands=Commands())
+            self.assertEqual(len(requested), 2)
+            self.assertEqual(session.pending_commands, 0)
+            self.assertEqual(session.pending_commands_peak, 1)
+        self.assert_clean(session)
+
+    def test_serial_resolution_pending_depth_is_bounded_and_restored(self):
+        outer = "printf %s outer"
+        inner = "printf %s inner"
+        self.add("Makefile", "VALUE := $(shell " + outer + ")\nall: ;\n")
+        self.add("inner.mk", "VALUE := $(shell " + inner + ")\ninner: ;\n")
+        for limit in (1, 2):
+            with self.subTest(limit=limit):
+                with self.session(pending=limit) as session:
+                    class Commands:
+                        def __contains__(self, command):
+                            return command == outer
+                        def __getitem__(self, command):
+                            session.make("inner", makefile="inner.mk", commands={
+                                inner: Command(("/usr/bin/printf", "%s", "inner")),
+                            })
+                            return Command(("/usr/bin/printf", "%s", "outer"))
+                    if limit == 1:
+                        with self.assertRaisesRegex(MakeProbeError, "registered-command pending count"):
+                            session.make("all", commands=Commands())
+                    else:
+                        result = session.make("all", variables=("VALUE",), commands=Commands())
+                        self.assertEqual(result.semantics["domains"]["VALUE"]["value"], "outer")
+                    self.assertEqual(session.pending_commands, 0)
+                    self.assertEqual(session.pending_commands_peak, limit)
+                self.assertEqual(session.pending_commands, 0)
+                self.assert_clean(session)
+
+    def test_serial_resolution_cleans_after_worker_failure_interrupt_and_overflow(self):
+        for case, expected in (
+            ("failure", "unsuccessfully: 7"), ("interrupt", None), ("overflow", "streaming byte bound"),
+        ):
+            with self.subTest(case=case):
+                registrations, _ = self.resolution_batch_fixture(count=3)
+                action = {
+                    "failure": "sys.exit(7)",
+                    "interrupt": "print('ready',flush=True); time.sleep(20)",
+                    "overflow": "sys.stdout.write('X'*2048)",
+                }[case]
+                self.add("worker.py", (
+                    "import sys,time\nprefix=open('data/prefix').read()\n"
+                    "if sys.argv[1]=='1':\n " + action + "\nelse:\n print(prefix+sys.argv[1])\n"
+                ))
+                requested = []
+                class Commands:
+                    def __contains__(self, command):
+                        return command in registrations
+                    def __getitem__(self, command):
+                        requested.append(command)
+                        return registrations[command]
+                with self.session(pending=1, process_output_bytes=1024) as session:
+                    original_run, original_charge = session._sandbox_run, session.budget.charge
+                    in_worker, interrupted = False, False
+                    def running(root, **kwargs):
+                        nonlocal in_worker
+                        in_worker = kwargs["mode"] == "command" and "1" in kwargs["argv"]
+                        try:
+                            return original_run(root, **kwargs)
+                        finally:
+                            in_worker = False
+                    def charging(category, size):
+                        nonlocal interrupted
+                        result = original_charge(category, size)
+                        if case == "interrupt" and in_worker and category == "output" and size and not interrupted:
+                            interrupted = True
+                            os.kill(os.getpid(), signal.SIGTERM)
+                        return result
+                    with patch.object(session, "_sandbox_run", running), patch.object(session.budget, "charge", charging):
+                        if case == "interrupt":
+                            with self.assertRaises(KeyboardInterrupt):
+                                session.make("all", commands=Commands())
+                            self.assertTrue(interrupted)
+                        else:
+                            with self.assertRaisesRegex(MakeProbeError, expected):
+                                session.make("all", commands=Commands())
+                    self.assertEqual(requested, [
+                        "python3 worker.py 2 'word value' \"\"",
+                        "python3 worker.py 1 'word value' \"\"",
+                    ])
+                    self.assertEqual(session.pending_commands, 0)
+                    self.assertEqual(session.pending_commands_peak, 1)
+                    self.assertTrue(session.budget.closed)
+                self.assertEqual(session.pending_commands, 0)
+                self.assert_clean(session)
 
     def observation_command_fixture(self):
         self.add("data/a", "observed\n")
