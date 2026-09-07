@@ -166,6 +166,9 @@ the consumers' independent protected-principal/deployment requirements.
    explicitly register raw Git plus every semantic local criterion, capture
    their real native results, and require all checks before local readiness.
    Use actual config/baseline/document validators for the excluded fixture.
+   Use the same actual coordinator/implementation owner in `ReviewSession`
+   when applicable. Self-review must reject before task launch; a distinct
+   read-only reviewer must still satisfy task/head/scope and completion bounds.
    Reject raw-only/pass-label registration, incomplete/failed captures,
    changed definitions/check sets, head/base/worktree drift and stale native
    availability. An applicable incomplete or invalid delegated owner still

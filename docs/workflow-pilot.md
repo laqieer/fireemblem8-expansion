@@ -280,6 +280,12 @@ handoff cannot hide their missing or failed captures.
 Independent review/family evidence, exact security, full Build, objective/manual
 criteria and master gates remain separate; local readiness is not merge permission.
 
+When the coordinator also implements the candidate, pass that same actual owner
+to both `ReviewSession` roles. The reviewer must still differ from both roles;
+self-review rejects before task launch. Read-only actions, exact task/head/scope,
+completion, time/file bounds and overlapping-session checks remain unchanged.
+Do not manufacture another implementation identity to obtain independent review.
+
 The provider's separate dispatch-tool and `parentAgentTaskId` namespaces, shared
 native log session, and unavailable LLM-owner OS exit/RSS remain unresolved for
 genuine delegated callers. This direct route does not manufacture their equality

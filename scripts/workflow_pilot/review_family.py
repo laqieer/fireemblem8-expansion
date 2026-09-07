@@ -430,8 +430,8 @@ class ReviewSession:
     def __init__(self, coordinator: str, implementer: str, scope: frozenset[str],
                  head: str, *, identity=None, owners=None, clock=time.monotonic, readers=None):
         require(all(isinstance(owner, str) and bool(owner.strip())
-                    for owner in (coordinator, implementer)) and coordinator != implementer,
-                "coordinator and implementer ownership overlap")
+                    for owner in (coordinator, implementer)),
+                "invalid coordinator or implementer identity")
         sha(head)
         require(isinstance(scope, (set, frozenset)) and 0 < len(scope) <= MAX_SUBJECTS
                 and all(isinstance(item, str) and bool(item.strip()) for item in scope),
