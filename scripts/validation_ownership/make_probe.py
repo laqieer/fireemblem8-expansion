@@ -633,7 +633,10 @@ class ProbeSession:
         dispatch = []
         for path in self.runtime_paths:
             item = _capture_runtime_input(path, self.budget)
-            intercepted = bool(item.aliases) and item.canonical in ALIASES
+            intercepted = (
+                bool(item.aliases) and item.canonical in ALIASES
+                or item.canonical == "/usr/bin/env" and item.data is not None
+            )
             if intercepted:
                 dispatch.append(item.path)
             if any(path == other or path.startswith(other + "/") or other.startswith(path + "/")
@@ -732,7 +735,9 @@ class ProbeSession:
                 (root / target.lstrip("/")).chmod(0o555)
             shutil.copyfile(self.base / "observer.so", _mkdir_target(root, "/lib/vo-observer.so"))
             (root / "lib/vo-observer.so").chmod(0o555)
-            for target in ALIASES:
+            for target in sorted(set(ALIASES) | {
+                item.canonical for item in self.runtime_inputs if item.path in self.runtime_dispatch
+            }):
                 shutil.copyfile(self.base / "interceptor", _mkdir_target(root, target))
                 (root / target.lstrip("/")).chmod(0o555)
             for item in self.runtime_inputs:

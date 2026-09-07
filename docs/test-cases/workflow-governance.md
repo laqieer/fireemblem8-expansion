@@ -3197,15 +3197,51 @@ same case:
    bytes with the actually observed source/header closure; the exact-closure
    rerun matches. Retain run-specific quantities in evidence, not a fixed source
    census in this procedure. No captured agbcc headers/executable/library or ARM
-   installation is needed for the actual `-nostdinc -MG` query. The updated full root then
-   rejects separately unrequested `/bin/env`; record that boundary/counters
-   instead of a full 112-domain or default-root success claim.
+   installation is needed for the actual `-nostdinc -MG` query. The initial
+   updated root rejected `/bin/env`; exercise its explicit metadata-only
+   request below and record the resulting root outcome/counters separately,
+   without claiming full 112-domain adoption.
 
 Before this correction, ordinary mkdir worked with either PATH while the
 confined prefixed recipe failed, explicit alias capture rejected `/bin/mkdir`,
 and public `/usr/bin/cc` dependency entry rejected with zero payload launches.
 The existing compiler capsule/guest resolver/output mapper, not a new runtime
 platform or wider source execution permission, supplies the correction.
+
+### Explicit env recipe interception
+
+The `test_explicit_env_*` and `test_absent_captured_env_*` controls extend the
+same runtime/dispatch seam:
+
+1. Run an ordinary Make fixture whose original exported PATH prepends `/bin`
+   and whose `env -u ... $(PYTHON) ...` recipe writes a real sentinel file.
+   Verify that the payload ran and its selected environment variables were
+   cleared, then remove only that fixture sentinel. Capture the same fixture
+   through `ProbeSession(runtime_files=("/bin/env",))`. Native value/origin/
+   flavor and recipe observations must match the ordinary context, but no
+   sentinel may be created. The guest env image must be the existing static
+   interceptor, not the real host program; no eager-command event/result is
+   attributed to this ordinary recipe.
+2. Repeat for direct original/canonical paths and both request orders.
+   Unrequested spellings, escaping/mutable aliases, program-data reads,
+   interpreter/image replacement and unrelated runtime-program dispatch reject.
+   Captured absence must not create an env interceptor.
+3. Use the same env command in a shell expansion, recursive recipe and include
+   remake. Without a real registered result each must reject, not run the
+   payload or invent its output. Direct public `Command` execution of env also
+   remains unsupported.
+4. Run the exact frozen child root's default `assets-test` metadata query with
+   its actual controlled adapters and explicit runtime requests. Observe the
+   original env/unittest recipe without executing it. Preserve the actual
+   dependency producer, source closure, report-wide budgets and cleanup.
+   A complete query or its next precise boundary must be recorded honestly;
+   recipe classification is not full graph/112-domain acceptance.
+
+Before the correction, an original-only env request rejects canonical
+metadata; both spellings reach an untrusted canonical dispatch rejection.
+Reusing the existing intercepted dispatch map fixes these failures without
+adding env to the default program set, changing PATH/source, or granting
+runtime-file execution authority.
 
 ### Aggregate attempted observations and absent compiler metadata
 

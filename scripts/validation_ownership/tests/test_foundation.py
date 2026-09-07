@@ -266,6 +266,146 @@ class FoundationTests(unittest.TestCase):
             with self.assertRaisesRegex(MakeProbeError, "nonstock/escaping"):
                 _capture_runtime_input("/bin/mkdir", ProbeBudget())
 
+    def env_recipe_fixture(self, program="env"):
+        cleared = (
+            "MAKEFLAGS", "MFLAGS", "MAKEOVERRIDES", "ASSET_MANIFEST", "ASSET_OUTPUT_DIR",
+            "EXPANSION_CUSTOM_SPELL_EFFECTS", "FE8_ITEM_ID_CAP",
+        )
+        recipe = program + " " + " ".join("-u " + name for name in cleared)
+        recipe += " $(PYTHON) -I -S -B sentinel.py"
+        self.add("sentinel.py", (
+            "import json,os\n"
+            "with open('env-executed','w') as output:\n"
+            " json.dump({name:os.environ.get(name) for name in " + repr(cleared) + "},output)\n"
+        ))
+        names = ("PATH", "CANON", "PYTHON", "SHELL", "MAKEFLAGS", "MFLAGS")
+        metadata = "".join(
+            "$(info $(" + form + name + "))\n"
+            for name in names for form in ("", "origin ", "flavor ")
+        )
+        path = "/bin/env" if program == "env" else program
+        self.add("Makefile", (
+            "TOOLCHAIN ?= $(DEVKITARM)\nexport PATH := $(TOOLCHAIN)/bin:$(PATH)\n"
+            "PYTHON := /usr/bin/python3\nexport ASSET_MANIFEST := observed-input\n"
+            "CANON := $(realpath " + path + ")\n" + metadata + "all:\n\t@" + recipe + "\n"
+        ))
+        return recipe, names, cleared
+
+    def test_explicit_env_recipe_preserves_native_context_without_executing_payload(self):
+        for program, requested in (
+            ("env", ("/bin/env",)),
+            ("/bin/env", ("/bin/env",)),
+            ("/usr/bin/env", ("/usr/bin/env",)),
+            ("env", ("/bin/env", "/usr/bin/env")),
+            ("env", ("/usr/bin/env", "/bin/env")),
+        ):
+            with self.subTest(program=program, requested=requested):
+                recipe, names, cleared = self.env_recipe_fixture(program)
+                ordinary = subprocess.run(
+                    ["/usr/bin/make", "-f", "Makefile", "all"], cwd=self.root,
+                    env=ENVIRONMENT, capture_output=True, check=True, timeout=10,
+                )
+                effect = self.root / "env-executed"
+                self.assertEqual(json.loads(effect.read_text()), {name: None for name in cleared})
+                effect.unlink()
+                values = ordinary.stdout.decode().splitlines()
+                self.assertEqual(len(values), 3*len(names))
+                expected = {
+                    name: dict(zip(("value", "origin", "flavor"), values[index*3:index*3+3]))
+                    for index, name in enumerate(names)
+                }
+                with self.session(runtime_files=requested) as session:
+                    run = session._sandbox_run
+                    def inspect_image(root, **kwargs):
+                        result, observed = run(root, **kwargs)
+                        if kwargs["mode"] == "make":
+                            image = (root / "usr/bin/env").read_bytes()
+                            self.assertEqual(image, (session.base / "interceptor").read_bytes())
+                            self.assertTrue(all(image != item.data for item in session.runtime_inputs))
+                            self.assertFalse((root / "repo/env-executed").exists())
+                        return result, observed
+                    with patch.object(session, "_sandbox_run", inspect_image):
+                        observed = session.make("all", variables=names)
+                    self.assertEqual(observed.semantics["domains"], expected)
+                    self.assertEqual(observed.semantics["files"][0]["recipe"], "@" + recipe + "\n")
+                    self.assertEqual(observed.semantics["files"][0]["source"], "Makefile")
+                    self.assertEqual(observed.events, ())
+                    self.assertEqual(observed.semantics["dynamic_commands"], [])
+                    self.assertFalse(effect.exists())
+                    self.assertFalse((session.tree / "env-executed").exists())
+                self.assert_clean(session)
+
+    def test_explicit_env_does_not_grant_eager_or_public_execution(self):
+        recipe, _, _ = self.env_recipe_fixture()
+        actual = recipe.replace("$(PYTHON)", "/usr/bin/python3")
+        for makefile in (
+            "VALUE := $(shell " + actual + ")\nall: ;\n",
+            "all:\n\t+@" + actual + "\n",
+            "include generated.mk\ngenerated.mk:\n\t@" + actual + "\nall: ;\n",
+        ):
+            with self.subTest(makefile=makefile):
+                self.add("Makefile", makefile)
+                with self.session(runtime_files=("/bin/env", "/usr/bin/env")) as session:
+                    with self.assertRaisesRegex(MakeProbeError, "unregistered eager/recursive"):
+                        session.make("all")
+                    self.assertFalse((session.tree / "env-executed").exists())
+                self.assert_clean(session)
+        for program in ("/bin/env", "/usr/bin/env"):
+            with self.subTest(program=program):
+                with self.session(runtime_files=("/bin/env", "/usr/bin/env")) as session:
+                    runs = session.budget.runs
+                    with self.assertRaisesRegex(MakeProbeError, "supported exact trusted argv"):
+                        session.command(Command((program, "/usr/bin/python3", "/repo/sentinel.py")))
+                    self.assertEqual(session.budget.runs, runs)
+                self.assert_clean(session)
+
+    def test_explicit_env_keeps_spelling_read_image_and_other_program_boundaries(self):
+        for content, requested, error in (
+            ("all:\n\t@/usr/bin/env /usr/bin/true\n", (), "undeclared source"),
+            ("all:\n\t@/bin/env /usr/bin/true\n",
+             ("/bin/mkdir", "/usr/bin/env"), "unrequested stock runtime alias"),
+            ("VALUE := $(file </bin/env)\nall: ;\n", ("/bin/env",), "metadata/dispatch only"),
+            ("VALUE := $(file </usr/bin/env)\nall: ;\n", ("/bin/env",), "metadata/dispatch only"),
+            ("VALUE := $(wildcard /bin/../bin/env)\nall: ;\n", ("/bin/env",), "unrequested stock runtime alias"),
+            ("VALUE := $(file >/usr/bin/env,changed)\nall: ;\n", ("/bin/env",), "write outside"),
+            ("all:\n\t@/usr/bin/cat Makefile\n", ("/bin/env", "/usr/bin/cat"), "untrusted executable dispatch"),
+        ):
+            with self.subTest(content=content, requested=requested):
+                self.add("Makefile", content)
+                with self.assertRaisesRegex(MakeProbeError, error):
+                    with self.session(runtime_files=requested) as session:
+                        session.make("all")
+                self.assert_clean(session)
+        self.add("Makefile", "all: ;\n")
+        for collision in ("/usr/bin/python3", "/bin/make"):
+            with self.subTest(collision=collision):
+                with self.assertRaisesRegex(MakeProbeError, "execution image|ordinary regular file"):
+                    with self.session(runtime_files=("/bin/env", collision)):
+                        self.fail("env request replaced an existing trusted image")
+        from scripts.validation_ownership.make_probe import _capture_runtime_input
+        original_stat, original_resolve = Path.lstat, Path.resolve
+        def mutable(path):
+            info = original_stat(path)
+            return SimpleNamespace(st_uid=1000, st_mode=info.st_mode) if path == Path("/bin") else info
+        with patch.object(Path, "lstat", mutable):
+            with self.assertRaisesRegex(MakeProbeError, "mutable/untrusted"):
+                _capture_runtime_input("/bin/env", ProbeBudget())
+        with patch.object(Path, "resolve", lambda path, **kw: self.root if path == Path("/bin") else original_resolve(path, **kw)):
+            with self.assertRaisesRegex(MakeProbeError, "nonstock/escaping"):
+                _capture_runtime_input("/bin/env", ProbeBudget())
+
+    def test_absent_captured_env_does_not_materialize_an_interceptor(self):
+        from scripts.validation_ownership.make_probe import _capture_runtime_input
+        self.add("Makefile", "ENV := $(wildcard /usr/bin/env)\nall: ;\n")
+        def absent(path, budget):
+            return replace(_capture_runtime_input(path, budget), data=None, mode=None)
+        with patch("scripts.validation_ownership.make_probe._capture_runtime_input", absent):
+            with self.session(runtime_files=("/usr/bin/env",)) as session:
+                self.assertEqual(session.runtime_dispatch, ())
+                observed = session.make("all", variables=("ENV",))
+                self.assertEqual(observed.semantics["domains"]["ENV"]["value"], "")
+            self.assert_clean(session)
+
     def dependency_fixture(self, *, selected="1", missing=True):
         self.add("src/main.c", (
             '#include "choice.h"\n#include <ordered.h>\n'

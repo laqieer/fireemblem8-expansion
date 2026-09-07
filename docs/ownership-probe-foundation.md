@@ -254,6 +254,20 @@ Requesting `/bin/mkdir` does not authorize `/bin/rm`, `/bin/env`, native Make
 re-exec through another path, mutable/nonstock/escaping aliases or arbitrary
 candidate execution.
 
+An explicitly requested, present stock `env` program also uses this existing
+metadata-only path. `runtime_files=("/bin/env",)` captures its canonical
+`/usr/bin/env` target; a direct canonical request or both spellings are also
+supported. The guest gets the same interceptor at the canonical destination,
+never the real `env` image. Ordinary `env -u ... $(PYTHON) ...` recipes retain
+their original PATH, argv and native recipe context without executing either
+program. Missing captured `env` does not create an executable.
+
+This is not a new `Command` executable or permission for arbitrary runtime
+programs. Unrequested aliases, program-data reads and interpreter/image
+collisions remain denied. Eager, recursive and include-remake invocations
+still require an exact registered real result; merely requesting the runtime
+file cannot manufacture one. Default callers do not gain `env` dispatch.
+
 There is no candidate-readable generated probe program or writable domain
 file. The trusted observer reads GNU Make's actual target/dependency/recipe
 structures and evaluates requested global and target-scoped variables. It
@@ -907,9 +921,10 @@ pinned mgfembp source/header wildcards and has real scaninc/linker/asset adapter
 Separating live capacity from cumulative work traverses its former 33-process
 cutoff. The subsequent stock `/bin/mkdir` and dependency-only compiler seams
 are explicit, bounded inputs/actions, not PATH rewrites or unrestricted compiler
-authority. The updated frozen-root measurement next rejects separately
-unrequested `/bin/env`; no complete default root observation/full graph
-acceptance is claimed from the solved producer examples.
+authority. The subsequent explicit stock `env` request supports observing
+the ordinary test recipe, not running its tests. Record the actual root-query
+outcome and any later boundary independently; no complete graph adoption is
+claimed from the solved producer examples.
 
 Dependencies are the existing generated-registry schema and host tools above.
 Conflicts: PR #186's probe/interceptor/reporter surfaces must be reconciled.
