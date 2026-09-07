@@ -52,6 +52,24 @@
         "included": false,
         "disposition": "excluded"
       }
+    },
+    {
+      "pull_request": 229,
+      "risk_boundaries": [],
+      "threshold": {
+        "triggers": [],
+        "override_history": []
+      },
+      "gate_mode": "concurrent",
+      "stack": {
+        "depth": 1,
+        "parent_pr": 221,
+        "exception_reason": null
+      },
+      "pilot": {
+        "included": false,
+        "disposition": "excluded"
+      }
     }
   ],
   "artifacts": [
