@@ -169,11 +169,16 @@
       "required": ["mode", "observed_at", "valid_until", "autostop_enabled", "stop_on_disconnect", "plan"],
       "properties": {
         "mode": {"enum": ["always-on", "plan"]}, "observed_at": {"$ref": "#/$defs/time"},
-        "valid_until": {"$ref": "#/$defs/time"}, "autostop_enabled": {"type": "boolean"},
-        "stop_on_disconnect": {"type": "boolean"}, "plan": {"$ref": "#/$defs/nullableText"}
+        "valid_until": {"$ref": "#/$defs/time"}, "autostop_enabled": {"type": ["boolean", "null"]},
+        "stop_on_disconnect": {"type": ["boolean", "null"]}, "plan": {"$ref": "#/$defs/nullableText"}
       },
       "if": {"properties": {"mode": {"const": "plan"}}},
-      "then": {"properties": {"plan": {"$ref": "#/$defs/text"}}}
+      "then": {"properties": {"plan": {
+        "allOf": [{"$ref": "#/$defs/text"}, {"pattern": "\\S"}]
+      }}},
+      "else": {"properties": {
+        "autostop_enabled": {"type": "boolean"}, "stop_on_disconnect": {"type": "boolean"}
+      }}
     },
     "clock": {
       "type": "object", "additionalProperties": false,
@@ -330,6 +335,70 @@
       }},
       "else": {"properties": {"process": {"properties": {"state": {"const": "exited"}}}}}
     },
+    "coordinatorLocal": {
+      "type": "object", "additionalProperties": false,
+      "required": ["coordinator_id", "repository", "pr_number", "head_sha", "base_sha", "base_ref",
+                   "branch", "worktree", "git_identity", "registered_at", "clock", "required_checks", "checks"],
+      "properties": {
+        "coordinator_id": {"$ref": "#/$defs/id"}, "repository": {"$ref": "#/$defs/repository"},
+        "pr_number": {"$ref": "#/$defs/positive"},
+        "head_sha": {"$ref": "#/$defs/sha"}, "base_sha": {"$ref": "#/$defs/sha"},
+        "base_ref": {"$ref": "#/$defs/text", "maxLength": 256},
+        "branch": {"$ref": "#/$defs/text", "maxLength": 256},
+        "worktree": {"$ref": "#/$defs/absolute"}, "git_identity": {"$ref": "#/$defs/gitIdentity"},
+        "registered_at": {"$ref": "#/$defs/time"}, "clock": {"$ref": "#/$defs/clock"},
+        "required_checks": {
+          "type": "object", "minProperties": 2, "maxProperties": 32,
+          "propertyNames": {"$ref": "#/$defs/id"}, "additionalProperties": {"$ref": "#/$defs/requiredCheck"},
+          "allOf": [
+            {"not": {"additionalProperties": {"properties": {"contract": {"enum": ["protocol-json", "coordinator-check"]}}}}},
+            {"not": {"additionalProperties": {"properties": {"contract": {"enum": ["git-diff-check", "protocol-json"]}}}}}
+          ]
+        },
+        "checks": {
+          "type": "object", "maxProperties": 32, "propertyNames": {"$ref": "#/$defs/id"},
+          "additionalProperties": {
+            "type": "object", "additionalProperties": false, "required": ["definitions", "observation"],
+            "properties": {
+              "definitions": {"$ref": "#/$defs/coordinatorLocal/properties/required_checks"},
+              "observation": {"$ref": "#/$defs/check"}
+            }
+          }
+        }
+      }
+    },
+    "candidate": {
+      "type": "object", "additionalProperties": false,
+      "required": ["pr_number", "head_sha", "base_sha", "base_ref", "decision_oid", "mode",
+                   "created_at", "abandoned_reason", "dispatch_requested_at", "dispatch_sent_at",
+                   "watermark", "full_run_id", "full_attempt"],
+      "properties": {
+        "pr_number": {"$ref": "#/$defs/positive"},
+        "head_sha": {"$ref": "#/$defs/sha"}, "base_sha": {"$ref": "#/$defs/sha"},
+        "base_ref": {"$ref": "#/$defs/text", "maxLength": 256},
+        "decision_oid": {"anyOf": [{"$ref": "#/$defs/sha"}, {"type": "null"}]},
+        "mode": {"enum": ["concurrent", "review-first"]},
+        "created_at": {"$ref": "#/$defs/time"},
+        "abandoned_reason": {"$ref": "#/$defs/nullableText", "maxLength": 2048},
+        "dispatch_requested_at": {"anyOf": [{"$ref": "#/$defs/time"}, {"type": "null"}]},
+        "dispatch_sent_at": {"anyOf": [{"$ref": "#/$defs/time"}, {"type": "null"}]},
+        "watermark": {"$ref": "#/$defs/integer"},
+        "full_run_id": {"$ref": "#/$defs/nullablePositive"},
+        "full_attempt": {"$ref": "#/$defs/nullablePositive"},
+        "local_validation": {"$ref": "#/$defs/coordinatorLocal"}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"full_run_id": {"type": "null"}}},
+          "then": {"properties": {"full_attempt": {"type": "null"}}},
+          "else": {"properties": {"full_attempt": {"$ref": "#/$defs/positive"}}}
+        },
+        {
+          "if": {"properties": {"dispatch_sent_at": {"type": "string"}}},
+          "then": {"properties": {"dispatch_requested_at": {"$ref": "#/$defs/time"}}}
+        }
+      ]
+    },
     "state": {
       "type": "object", "additionalProperties": false,
       "required": ["schema_version", "repository", "coordinator_id", "availability", "clock", "assignments", "watchers"],
@@ -337,6 +406,9 @@
         "schema_version": {"type": "integer", "const": 3}, "repository": {"$ref": "#/$defs/repository"},
         "coordinator_id": {"$ref": "#/$defs/id"}, "availability": {"$ref": "#/$defs/availability"},
         "clock": {"$ref": "#/$defs/clock"},
+        "candidates": {
+          "type": "array", "maxItems": 128, "items": {"$ref": "#/$defs/candidate"}
+        },
         "assignments": {
           "description": "Runtime also enforces unique assignment/owner/session/dispatch identities, one initial root per issue/non-null PR and predecessor lineage.",
           "type": "array", "maxItems": 128, "uniqueItems": true, "items": {"$ref": "#/$defs/entry"}

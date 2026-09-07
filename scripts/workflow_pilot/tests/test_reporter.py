@@ -643,7 +643,8 @@ class BaselineFixtureTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.fixture = reporter.load_json(BASELINE)
-        cls.decisions = reporter.load_json(DECISIONS)
+        cls.decisions = reporter.project_cohort_decisions(
+            reporter.load_json(DECISIONS), (item["number"] for item in cls.fixture["pull_requests"]))
         cls.expected = reporter.load_json(BASELINE_EXPECTED)
 
     def test_frozen_baseline_and_expected_values(self):

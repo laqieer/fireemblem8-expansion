@@ -193,6 +193,39 @@ _HOST_BUILD_CONDITION = (
     "needs.event-identity.outputs.fallback_sha == github.event.after && "
     "needs.event-identity.outputs.fallback_sha == github.sha)))) }}"
 )
+_ADAPTIVE_DISPATCH_CONDITION = (
+    "github.event_name == 'workflow_dispatch' && "
+    "needs.event-identity.outputs.fallback_kind == 'workflow_dispatch' && "
+    "needs.event-identity.outputs.fallback_sha == github.sha && github.sha != '' && "
+    "(needs.event-classifier.result == 'failure' || "
+    "(needs.event-classifier.result == 'success' && "
+    "needs.event-classifier.outputs.classification == 'full' && "
+    "needs.event-classifier.outputs.head_valid == 'true' && "
+    "needs.event-classifier.outputs.identity_valid == 'true' && "
+    "needs.event-classifier.outputs.full_fallback == 'false' && "
+    "needs.event-classifier.outputs.run_expensive == 'true' && "
+    "needs.event-classifier.outputs.expected_head == github.sha))"
+)
+
+
+def _adaptive_worker_condition(original, *, preflight=False):
+    condition = original
+    for result in ("success", "failure"):
+        condition = condition.replace(
+            f"needs.event-classifier.result == '{result}' && needs.event-identity.result == 'success' && ",
+            f"needs.event-classifier.result == '{result}' && ")
+    condition = condition.replace(
+        "${{ always() && ((", "${{ always() && needs.event-identity.result == 'success' && ((")
+    if preflight:
+        condition = condition.replace(
+            "needs.event-classifier.outputs.classification == 'metadata-only'",
+            "(needs.event-classifier.outputs.classification == 'metadata-only' || "
+            "needs.event-classifier.outputs.classification == 'review-first')")
+    return condition.removesuffix(") }}") + " || (" + _ADAPTIVE_DISPATCH_CONDITION + ")) }}"
+
+
+_WORKER_CONDITION = _adaptive_worker_condition(_WORKER_CONDITION)
+_HOST_BUILD_CONDITION = _adaptive_worker_condition(_HOST_BUILD_CONDITION, preflight=True)
 _PUBLISHER_CONDITION = (
     "${{ success() && github.event_name == 'push' && "
     "github.repository == 'laqieer/fireemblem8-expansion' && "
@@ -205,7 +238,8 @@ _DYNAMIC_JOB_NAMES = {
     "event-classifier": (
         "${{ needs.event-router.result == 'success' && "
         "needs.event-router.outputs.classification == 'metadata-only' && "
-        "'metadata-classifier' || 'event-classifier' }}"
+        "'metadata-classifier' || needs.event-router.outputs.classification == 'review-first' && "
+        "'review-first-classifier' || 'event-classifier' }}"
     ),
 }
 _IDENTITY_COMMANDS = (
@@ -290,6 +324,13 @@ _IDENTITY_COMMANDS = (
     ("classifier_ref=$PUSH_SHA",),
     ("fallback_kind=push",),
     ("fallback_sha=$PUSH_SHA",),
+    ("elif", "[[", "$EVENT_NAME", "=", "workflow_dispatch", "&&", "$EVENT_REF", "=", "refs/heads/*",
+     "]]", "&&", "is_lower_sha", "$RAW_SHA", "$RAW_SHA_JSON", "&&", "/usr/bin/git",
+     "check-ref-format", "$EVENT_REF", ">", "/dev/null", "2>&1", "&&", "/usr/bin/git",
+     "check-ref-format", "refs/heads/$DEFAULT_BRANCH", ">", "/dev/null", "2>&1;", "then"),
+    ("classifier_ref=refs/heads/$DEFAULT_BRANCH",),
+    ("fallback_kind=workflow_dispatch",),
+    ("fallback_sha=$RAW_SHA",),
     ("fi",),
     ("if", "[[", "-n", "$classifier_ref", "]];", "then"),
     ("classifier_available=true",),
@@ -313,6 +354,10 @@ _CLASSIFIER_VERIFY_COMMANDS = (
 )
 _CLASSIFIER_COMMANDS = (
     ("if", "test", "-f", "scripts/workflow_pilot/event_classifier.py;", "then"),
+    ("adaptive=()",),
+    ("if", "test", "-f", "scripts/workflow_pilot/adaptive_gate.py;", "then"),
+    ("adaptive=(--adaptive", "--repository", "$GITHUB_REPOSITORY)"),
+    ("fi",),
     (
         "/usr/bin/python3",
         "-I",
@@ -334,6 +379,7 @@ _CLASSIFIER_COMMANDS = (
         "$PUSH_SHA",
         "--output",
         "$GITHUB_OUTPUT",
+        "${adaptive[@]}",
     ),
     ("else",),
     ("base_ref_valid=false",),
@@ -421,6 +467,11 @@ _CLASSIFIER_COMMANDS = (
     ("elif", "[[", "$head_valid", "=", "true", "]];", "then"),
     ("full_fallback=true",),
     ("fi",),
+    ("elif", "[[", "$VALIDATED_FALLBACK_KIND", "=", "workflow_dispatch", "&&",
+     "$VALIDATED_FALLBACK_SHA", "=", "$GITHUB_SHA", "]];", "then"),
+    ("expected_head=$VALIDATED_FALLBACK_SHA",),
+    ("head_valid=true",),
+    ("identity_valid=true",),
     (
         "elif",
         "[[",
@@ -491,6 +542,13 @@ _MODE_COMMANDS = (
         "then",
     ),
     ("echo", "classified PR head lacks coherent trusted event identity", ">&2"),
+    ("exit", "1"),
+    ("fi",),
+    ("elif", "[", "$EVENT_NAME", "=", "workflow_dispatch", "];", "then"),
+    ("if", "[", "$TRUSTED_EVENT_KIND", "!=", "workflow_dispatch", "]", "||", "[", "-z",
+     "$TRUSTED_EVENT_SHA", "]", "||", "[", "$TRUSTED_EVENT_SHA", "!=", "$EVENT_SHA", "]", "||",
+     "[", "$TRUSTED_EVENT_SHA", "!=", "$CLASSIFIED_HEAD", "];", "then"),
+    ("echo", "dispatched head lacks coherent trusted event identity", ">&2"),
     ("exit", "1"),
     ("fi",),
     ("elif", "[", "$EVENT_NAME", "=", "push", "];", "then"),
@@ -569,7 +627,8 @@ _MODE_COMMANDS = (
         ";;",
     ),
     ("esac",),
-    ("if", "[", "$CLASSIFICATION", "=", "metadata-only", "];", "then"),
+    ("if", "[", "$CLASSIFICATION", "=", "metadata-only", "]", "||",
+     "[", "$CLASSIFICATION", "=", "review-first", "];", "then"),
     (
         "if",
         "[",
@@ -693,6 +752,36 @@ _METADATA_EVENT_MARKER_CONDITION = (
 _METADATA_EVENT_MARKER_COMMANDS = (
     ("[[", "$METADATA_EVENT_DIGEST", "=~", "^[0-9a-f]{64}$", "]]"),
 )
+_CANDIDATE_MARKER_NAME = "${{ needs.event-router.outputs.candidate_binding }}"
+_CANDIDATE_MARKER_CONDITION = "${{ needs.event-router.outputs.candidate_binding != '' }}"
+_CANDIDATE_MARKER_COMMANDS = (
+    ("[[", "$CANDIDATE_BINDING", "=~",
+     "^workflow-pilot-candidate:v1:[1-9][0-9]*:[0-9a-f]{40}:[0-9a-f]{40}$", "]]"),
+)
+_PREFLIGHT_STEP_NAME = "Attest review-first preflight"
+_PREFLIGHT_STEP_CONDITION = (
+    "${{ needs.event-classifier.result == 'success' && "
+    "needs.event-classifier.outputs.classification == 'review-first' }}"
+)
+_PREFLIGHT_ENV = tuple(sorted({
+    "PR_NUMBER": "${{ github.event.number }}",
+    "PR_HEAD_SHA": "${{ github.event.pull_request.head.sha }}",
+    "PR_BASE_SHA": "${{ github.event.pull_request.base.sha }}",
+    "CLASSIFIED_HEAD": "${{ needs.event-classifier.outputs.expected_head }}",
+    "CLASSIFIED_BASE": "${{ needs.event-classifier.outputs.expected_base }}",
+    "CANDIDATE_BINDING": "${{ needs.event-classifier.outputs.candidate_binding }}",
+    "DECISION_OID": "${{ needs.event-classifier.outputs.decision_oid }}",
+}.items()))
+_PREFLIGHT_COMMANDS = (
+    ("[[", "$PR_NUMBER", "=~", "^[1-9][0-9]*$", "]]"),
+    ("[[", "$PR_HEAD_SHA", "=~", "^[0-9a-f]{40}$", "&&",
+     "$PR_BASE_SHA", "=~", "^[0-9a-f]{40}$", "]]"),
+    ("test", "$CLASSIFIED_HEAD", "=", "$PR_HEAD_SHA"),
+    ("test", "$CLASSIFIED_BASE", "=", "$PR_BASE_SHA"),
+    ("[[", "$DECISION_OID", "=~", "^[0-9a-f]{40}$", "]]"),
+    ("[[", "$CANDIDATE_BINDING", "=~",
+     "^workflow-pilot-candidate:v1:${PR_NUMBER}:${PR_HEAD_SHA}:[0-9a-f]{40}$", "]]"),
+)
 _EXPECTED_JOB_OUTPUTS = {
     "event-identity": (
         (
@@ -708,10 +797,14 @@ _EXPECTED_JOB_OUTPUTS = {
         ("fallback_sha", "${{ steps.identity.outputs.fallback_sha }}"),
     ),
     "event-router": (
+        ("candidate_binding", "${{ steps.classify.outputs.candidate_binding }}"),
         ("classification", "${{ steps.classify.outputs.classification }}"),
+        ("decision_oid", "${{ steps.classify.outputs.decision_oid }}"),
         ("expected_base", "${{ steps.classify.outputs.expected_base }}"),
         ("expected_head", "${{ steps.classify.outputs.expected_head }}"),
         ("full_fallback", "${{ steps.classify.outputs.full_fallback }}"),
+        ("gate_mode", "${{ steps.classify.outputs.gate_mode }}"),
+        ("gate_reason", "${{ steps.classify.outputs.gate_reason }}"),
         ("head_valid", "${{ steps.classify.outputs.head_valid }}"),
         ("identity_valid", "${{ steps.classify.outputs.identity_valid }}"),
         ("metadata_event_digest", "${{ steps.metadata-event.outputs.digest }}"),
@@ -719,10 +812,14 @@ _EXPECTED_JOB_OUTPUTS = {
         ("run_expensive", "${{ steps.classify.outputs.run_expensive }}"),
     ),
     "event-classifier": (
+        ("candidate_binding", "${{ needs.event-router.outputs.candidate_binding }}"),
         ("classification", "${{ needs.event-router.outputs.classification }}"),
+        ("decision_oid", "${{ needs.event-router.outputs.decision_oid }}"),
         ("expected_base", "${{ needs.event-router.outputs.expected_base }}"),
         ("expected_head", "${{ needs.event-router.outputs.expected_head }}"),
         ("full_fallback", "${{ needs.event-router.outputs.full_fallback }}"),
+        ("gate_mode", "${{ needs.event-router.outputs.gate_mode }}"),
+        ("gate_reason", "${{ needs.event-router.outputs.gate_reason }}"),
         ("head_valid", "${{ needs.event-router.outputs.head_valid }}"),
         ("identity_valid", "${{ needs.event-router.outputs.identity_valid }}"),
         ("reason", "${{ needs.event-router.outputs.reason }}"),
@@ -948,8 +1045,10 @@ _EXPECTED_STEP_ROLES = {
     "event-classifier": (
         ("setup", "Verify authoritative Build event mode"),
         ("setup", _METADATA_EVENT_MARKER_NAME),
+        ("setup", _CANDIDATE_MARKER_NAME),
     ),
     "host-tests": (
+        ("setup", _PREFLIGHT_STEP_NAME),
         ("setup", _METADATA_ADAPTER_STEP_NAME),
         ("setup", None),
         ("setup", "Verify checked-out revision"),
@@ -964,6 +1063,7 @@ _EXPECTED_STEP_ROLES = {
         ("gate", "Run full-game localization width contract (issue #18)"),
     ),
     "build": (
+        ("setup", _PREFLIGHT_STEP_NAME),
         ("setup", _METADATA_ADAPTER_STEP_NAME),
         ("setup", None),
         ("setup", "Verify checked-out revision"),
@@ -1231,9 +1331,9 @@ def _parse_workflow_context(text):
                     )
                 entries[key] = match.group(2).strip()
             permissions = tuple(sorted(entries.items()))
-            if permissions != (("actions", "read"), ("contents", "read")):
+            if permissions != (("actions", "read"), ("contents", "read"), ("pull-requests", "read")):
                 raise ValueError(
-                    "workflow permissions must be exactly actions: read and contents: read"
+                    "workflow permissions must be read-only actions, contents and pull-requests"
                 )
             values[name] = permissions
         else:
@@ -1749,7 +1849,7 @@ def _parse_step(block, job_name, index):
                             if ": " in entry
                             else (entry[:-1], "")
                         )
-                        for entry in _SCRUBBED_PILOT_ENV
+                        for entry in (*_SCRUBBED_PILOT_ENV, "GH_TOKEN: ${{ github.token }}")
                     )
                 )
             ):
@@ -1786,6 +1886,15 @@ def _parse_step(block, job_name, index):
                 != (("METADATA_EVENT_DIGEST", _METADATA_EVENT_DIGEST_EXPRESSION),)
             ):
                 raise ValueError(f"{step_label} metadata event marker differs")
+        elif index == 2:
+            if (
+                name != _CANDIDATE_MARKER_NAME
+                or set(values) != {"env", "if", "name", "run"}
+                or values["if"] != _CANDIDATE_MARKER_CONDITION
+                or values["run"] != _CANDIDATE_MARKER_COMMANDS
+                or values["env"] != (("CANDIDATE_BINDING", _CANDIDATE_MARKER_NAME),)
+            ):
+                raise ValueError(f"{step_label} candidate marker differs")
         else:
             raise ValueError(f"{step_label} unexpected mode setup step")
         role = "setup"
@@ -1810,7 +1919,7 @@ def _parse_step(block, job_name, index):
             raise ValueError(f"{step_label} patch-only upload differs")
         role = "publisher"
     elif name is None:
-        expected_index = 1 if job_name in _METADATA_ADAPTER_JOBS else 0
+        expected_index = 2 if job_name in _METADATA_ADAPTER_JOBS else 0
         expected_fields = (
             {"uses", "if", "with"}
             if job_name in _METADATA_ADAPTER_JOBS
@@ -1831,7 +1940,15 @@ def _parse_step(block, job_name, index):
             )
         role = "setup"
     else:
-        if name == _METADATA_ADAPTER_STEP_NAME:
+        if name == _PREFLIGHT_STEP_NAME:
+            if (job_name not in _METADATA_ADAPTER_JOBS or index != 0
+                    or set(values) != {"name", "if", "env", "run"}
+                    or values["if"] != _PREFLIGHT_STEP_CONDITION
+                    or values["env"] != _PREFLIGHT_ENV
+                    or values["run"] != _PREFLIGHT_COMMANDS):
+                raise ValueError(f"{step_label} review-first preflight differs")
+            role = "setup"
+        elif name == _METADATA_ADAPTER_STEP_NAME:
             if set(values) != {"name", "if", "env", "run"}:
                 raise ValueError(
                     f"{step_label} must contain exactly env, if, name, run"
@@ -1894,7 +2011,7 @@ def _parse_step(block, job_name, index):
                 )
         if job_name == "summary" and name == _SUMMARY_STEP_NAME:
             role = "summary"
-        elif name in _NON_GATE_STEP_NAMES:
+        elif name in _NON_GATE_STEP_NAMES or name == _PREFLIGHT_STEP_NAME:
             role = "setup"
         elif name == _DOCS_GOVERNANCE_STEP_NAME:
             role = "standalone-gate"

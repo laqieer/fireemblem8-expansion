@@ -9,6 +9,7 @@ import unittest
 from unittest import mock
 
 from scripts.upstream_port import cli, verify as verify_mod
+from scripts.workflow_pilot import metadata_event
 from tests.workflows import test_build_ci_topology as topology_tests
 
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
@@ -1218,14 +1219,16 @@ class VerifyCliCwdTests(unittest.TestCase):
         jobs = {name: (dict(context), steps) for name, context, steps in structure[2]}
         router, router_steps = jobs["event-router"]
         marker_steps = jobs["event-classifier"][1]
+        marker_name = metadata_event.STEP_PREFIX + "${{ needs.event-router.outputs.metadata_event_digest }}"
+        marker_step = next(step for step in marker_steps if step[1] == marker_name)
         self.assertEqual(
             dict(router["outputs"])["metadata_event_digest"],
             "${{ steps.metadata-event.outputs.digest }}",
         )
         self.assertEqual(router_steps[-1][:2], ("setup", "Bind immutable metadata event"))
-        self.assertEqual(marker_steps[-1][0], "setup")
+        self.assertEqual(marker_step[0], "setup")
         self.assertEqual(
-            dict(marker_steps[-1][2])["env"],
+            dict(marker_step[2])["env"],
             (("METADATA_EVENT_DIGEST", "${{ needs.event-router.outputs.metadata_event_digest }}"),),
         )
         gate_jobs = {job for job, _, _ in verify_mod._workflow_gate_contract(structure)}
@@ -1234,7 +1237,10 @@ class VerifyCliCwdTests(unittest.TestCase):
 
         blocks = topology_tests._job_blocks(original)
         producer = topology_tests._step_blocks(blocks["event-router"])[-1]
-        marker = topology_tests._step_blocks(blocks["event-classifier"])[-1]
+        marker = next(
+            step for step in topology_tests._step_blocks(blocks["event-classifier"])
+            if topology_tests._step_name(step) == marker_name
+        )
         mutations = {
             "wrong-output": original.replace(
                 "steps.metadata-event.outputs.digest", "steps.classify.outputs.expected_head"
@@ -1410,6 +1416,13 @@ class VerifyCliCwdTests(unittest.TestCase):
             )
             with open(workflow_path, "r", encoding="utf-8") as handle:
                 original = handle.read()
+            host_adapter = next(
+                step for step in topology_tests._step_blocks(
+                    topology_tests._job_blocks(original)["host-tests"]
+                )
+                if topology_tests._step_name(step) ==
+                "Attest metadata-only branch-protection continuity"
+            )
             mutations = {
                 "extra-python-command": self.replace_in_job(
                     original,
@@ -1495,14 +1508,8 @@ class VerifyCliCwdTests(unittest.TestCase):
                 "uniform-python-heredoc-indent": self.replace_in_job(
                     original,
                     "host-tests",
-                    topology_tests._step_blocks(
-                        topology_tests._job_blocks(original)["host-tests"]
-                    )[0],
-                    topology_tests._indent_metadata_adapter_heredoc_in_step(
-                        topology_tests._step_blocks(
-                            topology_tests._job_blocks(original)["host-tests"]
-                        )[0]
-                    ),
+                    host_adapter,
+                    topology_tests._indent_metadata_adapter_heredoc_in_step(host_adapter),
                 ),
                 "nbsp": self.replace_in_job(
                     original,

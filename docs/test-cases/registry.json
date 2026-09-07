@@ -484,6 +484,7 @@
         "https://github.com/laqieer/fireemblem8-expansion/issues/177",
         "https://github.com/laqieer/fireemblem8-expansion/issues/178",
         "https://github.com/laqieer/fireemblem8-expansion/issues/179",
+        "https://github.com/laqieer/fireemblem8-expansion/issues/181",
         "https://github.com/laqieer/fireemblem8-expansion/issues/199",
         "https://github.com/laqieer/fireemblem8-expansion/issues/208",
         "https://github.com/laqieer/fireemblem8-expansion/issues/207",
@@ -500,6 +501,7 @@
         "TC-WORKFLOW-METADATA-EDIT-RACE-001",
         "TC-WORKFLOW-PILOT-BASELINE-001",
         "TC-WORKFLOW-REVIEW-FAMILY-001",
+        "TC-WORKFLOW-REVIEW-FIRST-001",
         "TC-WORKFLOW-AGENT-HANDOFF-001",
         "TC-WORKFLOW-WORKTREE-CLEANUP-001",
         "TC-WORKFLOW-HOST-PYTHON-DEPS-001"
@@ -2182,6 +2184,34 @@
         {
           "command": "python3 -m unittest scripts.generated_data.tests.test_classes_schema scripts.generated_data.tests.test_units_schema scripts.generated_data.tests.test_eventlists_schema scripts.generated_data.tests.test_eventlists_roundtrip -v",
           "evidence": "scripts/generated_data/tests/test_eventlists_roundtrip.py"
+        }
+      ]
+    },
+    {
+      "id": "TC-WORKFLOW-REVIEW-FIRST-001",
+      "title": "Gate expensive Builds after accepted review",
+      "feature_id": "workflow-governance",
+      "issue_urls": ["https://github.com/laqieer/fireemblem8-expansion/issues/181"],
+      "document": "docs/test-cases/workflow-governance.md",
+      "anchor": "tc-workflow-review-first-001-gate-expensive-builds-after-accepted-review",
+      "profiles": ["Locked host Python and source checkout", "Coordinator-owned disposable PRs on a dependency-ready base"],
+      "purpose": "Change expensive candidate Build timing without reducing review, security, complete candidate/master or manual quality gates.",
+      "prerequisites": "Use existing #176 decisions, #178 coordinator/handoff state, #179 task/triage authority and the locked interpreter. Only the delivery coordinator performs remote exercises.",
+      "actions": "Run test_adaptive_gate and the directly affected topology/publisher/review/metadata controls, then execute the documented review-first and concurrent disposable PR procedure with actual GitHub run and check identities.",
+      "expected_result": "Named-risk/large candidates defer the complete Build until accepted clean exact review/security. One bound full run plus every final criterion is necessary; master retains all eight jobs and its real publisher.",
+      "negative_control": "Unknown decisions and pause retain broader timing. Accepted findings abandon heads; stale, duplicate, cancelled, unresolved, wrong-source and early-dispatch evidence cannot authorize merge.",
+      "interactions": "Depends on #176/#177/#178/#179. #180/#206 remain parallel and #196 extraction is later. Preserve trusted pushes, one watcher per run/attempt and audiovisual holds.",
+      "save_compatibility": "No gameplay, save/config, locale, generated-game-data, ROM/RAM or archival behavior changes.",
+      "cleanup": "Local fixtures remove only owned build paths. Main closes disposable PRs without merging them and uses existing worktree cleanup after active work ends.",
+      "limitations": "Local fixtures are not remote evidence or merged pilot samples. Owner dispatch remains possible. Three weeks or 20 real post-deployment merged PRs with efficiency/non-inferiority remains future promotion evidence.",
+      "automation": [
+        {
+          "command": "build/host-python/bin/python3 -I -c 'import sys, unittest; sys.path.insert(0, \".\"); unittest.main(module=None)' scripts.workflow_pilot.tests.test_adaptive_gate -v",
+          "evidence": "scripts/workflow_pilot/tests/test_adaptive_gate.py"
+        },
+        {
+          "command": "build/host-python/bin/python3 -I -c 'import sys, unittest; sys.path.insert(0, \".\"); unittest.main(module=None)' scripts.workflow_pilot.tests.test_coordinator_local -v",
+          "evidence": "scripts/workflow_pilot/tests/test_coordinator_local.py"
         }
       ]
     },

@@ -5,10 +5,12 @@ on:
     types: [opened, synchronize, reopened, edited]
   push:
     branches: [ "master" ]
+  workflow_dispatch:
 
 permissions:
   actions: read
   contents: read
+  pull-requests: read
 
 jobs:
   # Validate raw event identities before any checkout. This job executes only
@@ -84,6 +86,13 @@ jobs:
           classifier_ref="$PUSH_SHA"
           fallback_kind="push"
           fallback_sha="$PUSH_SHA"
+        elif [[ "$EVENT_NAME" = "workflow_dispatch" && "$EVENT_REF" = refs/heads/* ]] && \
+             is_lower_sha "$RAW_SHA" "$RAW_SHA_JSON" && \
+             /usr/bin/git check-ref-format "$EVENT_REF" > /dev/null 2>&1 && \
+             /usr/bin/git check-ref-format "refs/heads/$DEFAULT_BRANCH" > /dev/null 2>&1; then
+          classifier_ref="refs/heads/$DEFAULT_BRANCH"
+          fallback_kind="workflow_dispatch"
+          fallback_sha="$RAW_SHA"
         fi
         if [[ -n "$classifier_ref" ]]; then
           classifier_available=true
@@ -120,6 +129,10 @@ jobs:
       identity_valid: ${{ steps.classify.outputs.identity_valid }}
       reason: ${{ steps.classify.outputs.reason }}
       run_expensive: ${{ steps.classify.outputs.run_expensive }}
+      candidate_binding: ${{ steps.classify.outputs.candidate_binding }}
+      decision_oid: ${{ steps.classify.outputs.decision_oid }}
+      gate_mode: ${{ steps.classify.outputs.gate_mode }}
+      gate_reason: ${{ steps.classify.outputs.gate_reason }}
       metadata_event_digest: ${{ steps.metadata-event.outputs.digest }}
     env:
       CLASSIFIER_AVAILABLE: ${{ needs.event-identity.outputs.classifier_available }}
@@ -166,6 +179,7 @@ jobs:
       env:
         BASH_ENV: ''
         ENV: ''
+        GH_TOKEN: ${{ github.token }}
         GIT_ALTERNATE_OBJECT_DIRECTORIES: ''
         GIT_CEILING_DIRECTORIES: ''
         GIT_COMMON_DIR: ''
@@ -189,11 +203,15 @@ jobs:
         PYTHONPATH: ''
       run: |
         if test -f scripts/workflow_pilot/event_classifier.py; then
+          adaptive=()
+          if test -f scripts/workflow_pilot/adaptive_gate.py; then
+            adaptive=(--adaptive --repository "$GITHUB_REPOSITORY")
+          fi
           /usr/bin/python3 -I scripts/workflow_pilot/isolated_launcher.py classify-event \
             --event-name "$GITHUB_EVENT_NAME" --event-path "$GITHUB_EVENT_PATH" \
             --github-ref "$GITHUB_REF" --github-sha "$GITHUB_SHA" \
             --pr-base-sha "$PR_BASE_SHA" --pr-head-sha "$PR_HEAD_SHA" \
-            --push-sha "$PUSH_SHA" --output "$GITHUB_OUTPUT"
+            --push-sha "$PUSH_SHA" --output "$GITHUB_OUTPUT" "${adaptive[@]}"
         else
           base_ref_valid=false
           expected_base=""
@@ -225,6 +243,11 @@ jobs:
             elif [[ "$head_valid" = true ]]; then
               full_fallback=true
             fi
+          elif [[ "$VALIDATED_FALLBACK_KIND" = "workflow_dispatch" && \
+                  "$VALIDATED_FALLBACK_SHA" = "$GITHUB_SHA" ]]; then
+            expected_head="$VALIDATED_FALLBACK_SHA"
+            head_valid=true
+            identity_valid=true
           elif [[ "$VALIDATED_FALLBACK_KIND" = "push" && \
                   "$VALIDATED_FALLBACK_SHA" = "$PUSH_SHA" ]]; then
             expected_head="$VALIDATED_FALLBACK_SHA"
@@ -264,7 +287,7 @@ jobs:
         fi
 
   event-classifier:
-    name: ${{ needs.event-router.result == 'success' && needs.event-router.outputs.classification == 'metadata-only' && 'metadata-classifier' || 'event-classifier' }}
+    name: ${{ needs.event-router.result == 'success' && needs.event-router.outputs.classification == 'metadata-only' && 'metadata-classifier' || needs.event-router.outputs.classification == 'review-first' && 'review-first-classifier' || 'event-classifier' }}
     if: always()
     needs: [event-identity, event-router]
     runs-on: ubuntu-latest
@@ -278,6 +301,10 @@ jobs:
       identity_valid: ${{ needs.event-router.outputs.identity_valid }}
       reason: ${{ needs.event-router.outputs.reason }}
       run_expensive: ${{ needs.event-router.outputs.run_expensive }}
+      candidate_binding: ${{ needs.event-router.outputs.candidate_binding }}
+      decision_oid: ${{ needs.event-router.outputs.decision_oid }}
+      gate_mode: ${{ needs.event-router.outputs.gate_mode }}
+      gate_reason: ${{ needs.event-router.outputs.gate_reason }}
     env:
       CLASSIFICATION: ${{ needs.event-router.outputs.classification }}
       CLASSIFIED_HEAD: ${{ needs.event-router.outputs.expected_head }}
@@ -313,6 +340,13 @@ jobs:
             echo "classified PR head lacks coherent trusted event identity" >&2
             exit 1
           fi
+        elif [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+          if [ "$TRUSTED_EVENT_KIND" != "workflow_dispatch" ] || \
+             [ -z "$TRUSTED_EVENT_SHA" ] || [ "$TRUSTED_EVENT_SHA" != "$EVENT_SHA" ] || \
+             [ "$TRUSTED_EVENT_SHA" != "$CLASSIFIED_HEAD" ]; then
+            echo "dispatched head lacks coherent trusted event identity" >&2
+            exit 1
+          fi
         elif [ "$EVENT_NAME" = "push" ]; then
           if [ "$TRUSTED_EVENT_KIND" != "push" ] || \
              [ -z "$TRUSTED_EVENT_SHA" ] || \
@@ -338,7 +372,7 @@ jobs:
           true|false) ;;
           *) echo "Build event router returned invalid identity validity" >&2; exit 1 ;;
         esac
-        if [ "$CLASSIFICATION" = "metadata-only" ]; then
+        if [ "$CLASSIFICATION" = "metadata-only" ] || [ "$CLASSIFICATION" = "review-first" ]; then
           if [ "$EVENT_NAME" != "pull_request" ] || \
              [ "$TRUSTED_EVENT_KIND" != "pull_request" ] || \
              [ "$FULL_FALLBACK" != "false" ] || [ "$HEAD_VALID" != "true" ] || \
@@ -365,6 +399,13 @@ jobs:
         METADATA_EVENT_DIGEST: ${{ needs.event-router.outputs.metadata_event_digest }}
       run: |
         [[ "$METADATA_EVENT_DIGEST" =~ ^[0-9a-f]{64}$ ]]
+
+    - name: ${{ needs.event-router.outputs.candidate_binding }}
+      if: ${{ needs.event-router.outputs.candidate_binding != '' }}
+      env:
+        CANDIDATE_BINDING: ${{ needs.event-router.outputs.candidate_binding }}
+      run: |
+        [[ "$CANDIDATE_BINDING" =~ ^workflow-pilot-candidate:v1:[1-9][0-9]*:[0-9a-f]{40}:[0-9a-f]{40}$ ]]
 
   # Fast, host-only lane (issues #13 + #12/#15): exercises every
   # tools/gba-playtest host test -- scenario/schema parsing, generators,
@@ -396,13 +437,30 @@ jobs:
   # newest prior complete full Build CI run.
   host-tests:
     needs: [event-identity, event-classifier]
-    if: ${{ always() && ((needs.event-classifier.result == 'success' && needs.event-identity.result == 'success' && needs.event-classifier.outputs.classification == 'metadata-only' && needs.event-classifier.outputs.head_valid == 'true' && needs.event-classifier.outputs.identity_valid == 'true' && needs.event-classifier.outputs.full_fallback == 'false' && needs.event-classifier.outputs.run_expensive == 'false' && github.event_name == 'pull_request' && needs.event-identity.outputs.fallback_kind == 'pull_request' && needs.event-identity.outputs.fallback_sha == needs.event-classifier.outputs.expected_head && needs.event-classifier.outputs.expected_head == github.event.pull_request.head.sha && needs.event-classifier.outputs.expected_base == github.event.pull_request.base.sha && github.event.pull_request.head.sha != '' && github.event.pull_request.base.sha != '') || (needs.event-classifier.result == 'success' && needs.event-identity.result == 'success' && needs.event-classifier.outputs.classification == 'full' && needs.event-classifier.outputs.head_valid == 'true' && needs.event-classifier.outputs.run_expensive == 'true' && ((github.event_name == 'pull_request' && needs.event-identity.outputs.fallback_kind == 'pull_request' && needs.event-identity.outputs.fallback_sha == needs.event-classifier.outputs.expected_head && needs.event-classifier.outputs.expected_head == github.event.pull_request.head.sha && github.event.pull_request.head.sha != '' && (needs.event-classifier.outputs.identity_valid == 'true' || needs.event-classifier.outputs.full_fallback == 'true')) || (github.event_name == 'push' && needs.event-identity.outputs.fallback_kind == 'push' && needs.event-identity.outputs.fallback_sha == needs.event-classifier.outputs.expected_head && needs.event-identity.outputs.fallback_sha == github.sha && needs.event-classifier.outputs.identity_valid == 'true' && needs.event-classifier.outputs.expected_head == github.event.after && needs.event-classifier.outputs.expected_base == '' && github.event.after != ''))) || (needs.event-classifier.result == 'failure' && needs.event-identity.result == 'success' && ((github.event_name == 'pull_request' && needs.event-identity.outputs.fallback_kind == 'pull_request' && needs.event-identity.outputs.fallback_sha == github.event.pull_request.head.sha) || (github.event_name == 'push' && needs.event-identity.outputs.fallback_kind == 'push' && needs.event-identity.outputs.fallback_sha == github.event.after && needs.event-identity.outputs.fallback_sha == github.sha)))) }}
+    if: ${{ always() && needs.event-identity.result == 'success' && ((needs.event-classifier.result == 'success' && (needs.event-classifier.outputs.classification == 'metadata-only' || needs.event-classifier.outputs.classification == 'review-first') && needs.event-classifier.outputs.head_valid == 'true' && needs.event-classifier.outputs.identity_valid == 'true' && needs.event-classifier.outputs.full_fallback == 'false' && needs.event-classifier.outputs.run_expensive == 'false' && github.event_name == 'pull_request' && needs.event-identity.outputs.fallback_kind == 'pull_request' && needs.event-identity.outputs.fallback_sha == needs.event-classifier.outputs.expected_head && needs.event-classifier.outputs.expected_head == github.event.pull_request.head.sha && needs.event-classifier.outputs.expected_base == github.event.pull_request.base.sha && github.event.pull_request.head.sha != '' && github.event.pull_request.base.sha != '') || (needs.event-classifier.result == 'success' && needs.event-classifier.outputs.classification == 'full' && needs.event-classifier.outputs.head_valid == 'true' && needs.event-classifier.outputs.run_expensive == 'true' && ((github.event_name == 'pull_request' && needs.event-identity.outputs.fallback_kind == 'pull_request' && needs.event-identity.outputs.fallback_sha == needs.event-classifier.outputs.expected_head && needs.event-classifier.outputs.expected_head == github.event.pull_request.head.sha && github.event.pull_request.head.sha != '' && (needs.event-classifier.outputs.identity_valid == 'true' || needs.event-classifier.outputs.full_fallback == 'true')) || (github.event_name == 'push' && needs.event-identity.outputs.fallback_kind == 'push' && needs.event-identity.outputs.fallback_sha == needs.event-classifier.outputs.expected_head && needs.event-identity.outputs.fallback_sha == github.sha && needs.event-classifier.outputs.identity_valid == 'true' && needs.event-classifier.outputs.expected_head == github.event.after && needs.event-classifier.outputs.expected_base == '' && github.event.after != ''))) || (needs.event-classifier.result == 'failure' && ((github.event_name == 'pull_request' && needs.event-identity.outputs.fallback_kind == 'pull_request' && needs.event-identity.outputs.fallback_sha == github.event.pull_request.head.sha) || (github.event_name == 'push' && needs.event-identity.outputs.fallback_kind == 'push' && needs.event-identity.outputs.fallback_sha == github.event.after && needs.event-identity.outputs.fallback_sha == github.sha))) || (github.event_name == 'workflow_dispatch' && needs.event-identity.outputs.fallback_kind == 'workflow_dispatch' && needs.event-identity.outputs.fallback_sha == github.sha && github.sha != '' && (needs.event-classifier.result == 'failure' || (needs.event-classifier.result == 'success' && needs.event-classifier.outputs.classification == 'full' && needs.event-classifier.outputs.head_valid == 'true' && needs.event-classifier.outputs.identity_valid == 'true' && needs.event-classifier.outputs.full_fallback == 'false' && needs.event-classifier.outputs.run_expensive == 'true' && needs.event-classifier.outputs.expected_head == github.sha)))) }}
     runs-on: ubuntu-latest
     timeout-minutes: 60
     env:
       EXPECTED_BUILD_SHA: ${{ (needs.event-classifier.result == 'success' && needs.event-classifier.outputs.expected_head) || (needs.event-classifier.result == 'failure' && needs.event-identity.outputs.fallback_sha) || '' }}
 
     steps:
+    - name: Attest review-first preflight
+      if: ${{ needs.event-classifier.result == 'success' && needs.event-classifier.outputs.classification == 'review-first' }}
+      env:
+        PR_NUMBER: ${{ github.event.number }}
+        PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        CLASSIFIED_HEAD: ${{ needs.event-classifier.outputs.expected_head }}
+        CLASSIFIED_BASE: ${{ needs.event-classifier.outputs.expected_base }}
+        CANDIDATE_BINDING: ${{ needs.event-classifier.outputs.candidate_binding }}
+        DECISION_OID: ${{ needs.event-classifier.outputs.decision_oid }}
+      run: |
+        [[ "$PR_NUMBER" =~ ^[1-9][0-9]*$ ]]
+        [[ "$PR_HEAD_SHA" =~ ^[0-9a-f]{40}$ && "$PR_BASE_SHA" =~ ^[0-9a-f]{40}$ ]]
+        test "$CLASSIFIED_HEAD" = "$PR_HEAD_SHA"
+        test "$CLASSIFIED_BASE" = "$PR_BASE_SHA"
+        [[ "$DECISION_OID" =~ ^[0-9a-f]{40}$ ]]
+        [[ "$CANDIDATE_BINDING" =~ ^workflow-pilot-candidate:v1:${PR_NUMBER}:${PR_HEAD_SHA}:[0-9a-f]{40}$ ]]
     - name: Attest metadata-only branch-protection continuity
       if: ${{ needs.event-classifier.result == 'success' && needs.event-classifier.outputs.classification == 'metadata-only' }}
       env:
@@ -935,7 +993,7 @@ jobs:
   # target-ROM checks.
   build:
     needs: [event-identity, event-classifier]
-    if: ${{ always() && ((needs.event-classifier.result == 'success' && needs.event-identity.result == 'success' && needs.event-classifier.outputs.classification == 'metadata-only' && needs.event-classifier.outputs.head_valid == 'true' && needs.event-classifier.outputs.identity_valid == 'true' && needs.event-classifier.outputs.full_fallback == 'false' && needs.event-classifier.outputs.run_expensive == 'false' && github.event_name == 'pull_request' && needs.event-identity.outputs.fallback_kind == 'pull_request' && needs.event-identity.outputs.fallback_sha == needs.event-classifier.outputs.expected_head && needs.event-classifier.outputs.expected_head == github.event.pull_request.head.sha && needs.event-classifier.outputs.expected_base == github.event.pull_request.base.sha && github.event.pull_request.head.sha != '' && github.event.pull_request.base.sha != '') || (needs.event-classifier.result == 'success' && needs.event-identity.result == 'success' && needs.event-classifier.outputs.classification == 'full' && needs.event-classifier.outputs.head_valid == 'true' && needs.event-classifier.outputs.run_expensive == 'true' && ((github.event_name == 'pull_request' && needs.event-identity.outputs.fallback_kind == 'pull_request' && needs.event-identity.outputs.fallback_sha == needs.event-classifier.outputs.expected_head && needs.event-classifier.outputs.expected_head == github.event.pull_request.head.sha && github.event.pull_request.head.sha != '' && (needs.event-classifier.outputs.identity_valid == 'true' || needs.event-classifier.outputs.full_fallback == 'true')) || (github.event_name == 'push' && needs.event-identity.outputs.fallback_kind == 'push' && needs.event-identity.outputs.fallback_sha == needs.event-classifier.outputs.expected_head && needs.event-identity.outputs.fallback_sha == github.sha && needs.event-classifier.outputs.identity_valid == 'true' && needs.event-classifier.outputs.expected_head == github.event.after && needs.event-classifier.outputs.expected_base == '' && github.event.after != ''))) || (needs.event-classifier.result == 'failure' && needs.event-identity.result == 'success' && ((github.event_name == 'pull_request' && needs.event-identity.outputs.fallback_kind == 'pull_request' && needs.event-identity.outputs.fallback_sha == github.event.pull_request.head.sha) || (github.event_name == 'push' && needs.event-identity.outputs.fallback_kind == 'push' && needs.event-identity.outputs.fallback_sha == github.event.after && needs.event-identity.outputs.fallback_sha == github.sha)))) }}
+    if: ${{ always() && needs.event-identity.result == 'success' && ((needs.event-classifier.result == 'success' && (needs.event-classifier.outputs.classification == 'metadata-only' || needs.event-classifier.outputs.classification == 'review-first') && needs.event-classifier.outputs.head_valid == 'true' && needs.event-classifier.outputs.identity_valid == 'true' && needs.event-classifier.outputs.full_fallback == 'false' && needs.event-classifier.outputs.run_expensive == 'false' && github.event_name == 'pull_request' && needs.event-identity.outputs.fallback_kind == 'pull_request' && needs.event-identity.outputs.fallback_sha == needs.event-classifier.outputs.expected_head && needs.event-classifier.outputs.expected_head == github.event.pull_request.head.sha && needs.event-classifier.outputs.expected_base == github.event.pull_request.base.sha && github.event.pull_request.head.sha != '' && github.event.pull_request.base.sha != '') || (needs.event-classifier.result == 'success' && needs.event-classifier.outputs.classification == 'full' && needs.event-classifier.outputs.head_valid == 'true' && needs.event-classifier.outputs.run_expensive == 'true' && ((github.event_name == 'pull_request' && needs.event-identity.outputs.fallback_kind == 'pull_request' && needs.event-identity.outputs.fallback_sha == needs.event-classifier.outputs.expected_head && needs.event-classifier.outputs.expected_head == github.event.pull_request.head.sha && github.event.pull_request.head.sha != '' && (needs.event-classifier.outputs.identity_valid == 'true' || needs.event-classifier.outputs.full_fallback == 'true')) || (github.event_name == 'push' && needs.event-identity.outputs.fallback_kind == 'push' && needs.event-identity.outputs.fallback_sha == needs.event-classifier.outputs.expected_head && needs.event-identity.outputs.fallback_sha == github.sha && needs.event-classifier.outputs.identity_valid == 'true' && needs.event-classifier.outputs.expected_head == github.event.after && needs.event-classifier.outputs.expected_base == '' && github.event.after != ''))) || (needs.event-classifier.result == 'failure' && ((github.event_name == 'pull_request' && needs.event-identity.outputs.fallback_kind == 'pull_request' && needs.event-identity.outputs.fallback_sha == github.event.pull_request.head.sha) || (github.event_name == 'push' && needs.event-identity.outputs.fallback_kind == 'push' && needs.event-identity.outputs.fallback_sha == github.event.after && needs.event-identity.outputs.fallback_sha == github.sha))) || (github.event_name == 'workflow_dispatch' && needs.event-identity.outputs.fallback_kind == 'workflow_dispatch' && needs.event-identity.outputs.fallback_sha == github.sha && github.sha != '' && (needs.event-classifier.result == 'failure' || (needs.event-classifier.result == 'success' && needs.event-classifier.outputs.classification == 'full' && needs.event-classifier.outputs.head_valid == 'true' && needs.event-classifier.outputs.identity_valid == 'true' && needs.event-classifier.outputs.full_fallback == 'false' && needs.event-classifier.outputs.run_expensive == 'true' && needs.event-classifier.outputs.expected_head == github.sha)))) }}
     runs-on: ubuntu-latest
     # Exact-head runs 33425252664 and 33420585863 reached the former
     # 60-minute ceiling while still compiling. Keep enough shared-runner
@@ -945,6 +1003,23 @@ jobs:
       EXPECTED_BUILD_SHA: ${{ (needs.event-classifier.result == 'success' && needs.event-classifier.outputs.expected_head) || (needs.event-classifier.result == 'failure' && needs.event-identity.outputs.fallback_sha) || '' }}
 
     steps:
+    - name: Attest review-first preflight
+      if: ${{ needs.event-classifier.result == 'success' && needs.event-classifier.outputs.classification == 'review-first' }}
+      env:
+        PR_NUMBER: ${{ github.event.number }}
+        PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        CLASSIFIED_HEAD: ${{ needs.event-classifier.outputs.expected_head }}
+        CLASSIFIED_BASE: ${{ needs.event-classifier.outputs.expected_base }}
+        CANDIDATE_BINDING: ${{ needs.event-classifier.outputs.candidate_binding }}
+        DECISION_OID: ${{ needs.event-classifier.outputs.decision_oid }}
+      run: |
+        [[ "$PR_NUMBER" =~ ^[1-9][0-9]*$ ]]
+        [[ "$PR_HEAD_SHA" =~ ^[0-9a-f]{40}$ && "$PR_BASE_SHA" =~ ^[0-9a-f]{40}$ ]]
+        test "$CLASSIFIED_HEAD" = "$PR_HEAD_SHA"
+        test "$CLASSIFIED_BASE" = "$PR_BASE_SHA"
+        [[ "$DECISION_OID" =~ ^[0-9a-f]{40}$ ]]
+        [[ "$CANDIDATE_BINDING" =~ ^workflow-pilot-candidate:v1:${PR_NUMBER}:${PR_HEAD_SHA}:[0-9a-f]{40}$ ]]
     - name: Attest metadata-only branch-protection continuity
       if: ${{ needs.event-classifier.result == 'success' && needs.event-classifier.outputs.classification == 'metadata-only' }}
       env:
@@ -1447,7 +1522,7 @@ jobs:
   # post-merge Build runs. It is independent of host-tests and build.
   extended-host-tests:
     needs: [event-identity, event-classifier]
-    if: ${{ always() && ((needs.event-classifier.result == 'success' && needs.event-identity.result == 'success' && needs.event-classifier.outputs.classification == 'full' && needs.event-classifier.outputs.head_valid == 'true' && needs.event-classifier.outputs.run_expensive == 'true' && ((github.event_name == 'pull_request' && needs.event-identity.outputs.fallback_kind == 'pull_request' && needs.event-identity.outputs.fallback_sha == needs.event-classifier.outputs.expected_head && needs.event-classifier.outputs.expected_head == github.event.pull_request.head.sha && github.event.pull_request.head.sha != '' && (needs.event-classifier.outputs.identity_valid == 'true' || needs.event-classifier.outputs.full_fallback == 'true')) || (github.event_name == 'push' && needs.event-identity.outputs.fallback_kind == 'push' && needs.event-identity.outputs.fallback_sha == needs.event-classifier.outputs.expected_head && needs.event-identity.outputs.fallback_sha == github.sha && needs.event-classifier.outputs.identity_valid == 'true' && needs.event-classifier.outputs.expected_head == github.event.after && needs.event-classifier.outputs.expected_base == '' && github.event.after != ''))) || (needs.event-classifier.result == 'failure' && needs.event-identity.result == 'success' && ((github.event_name == 'pull_request' && needs.event-identity.outputs.fallback_kind == 'pull_request' && needs.event-identity.outputs.fallback_sha == github.event.pull_request.head.sha) || (github.event_name == 'push' && needs.event-identity.outputs.fallback_kind == 'push' && needs.event-identity.outputs.fallback_sha == github.event.after && needs.event-identity.outputs.fallback_sha == github.sha)))) }}
+    if: ${{ always() && needs.event-identity.result == 'success' && ((needs.event-classifier.result == 'success' && needs.event-classifier.outputs.classification == 'full' && needs.event-classifier.outputs.head_valid == 'true' && needs.event-classifier.outputs.run_expensive == 'true' && ((github.event_name == 'pull_request' && needs.event-identity.outputs.fallback_kind == 'pull_request' && needs.event-identity.outputs.fallback_sha == needs.event-classifier.outputs.expected_head && needs.event-classifier.outputs.expected_head == github.event.pull_request.head.sha && github.event.pull_request.head.sha != '' && (needs.event-classifier.outputs.identity_valid == 'true' || needs.event-classifier.outputs.full_fallback == 'true')) || (github.event_name == 'push' && needs.event-identity.outputs.fallback_kind == 'push' && needs.event-identity.outputs.fallback_sha == needs.event-classifier.outputs.expected_head && needs.event-identity.outputs.fallback_sha == github.sha && needs.event-classifier.outputs.identity_valid == 'true' && needs.event-classifier.outputs.expected_head == github.event.after && needs.event-classifier.outputs.expected_base == '' && github.event.after != ''))) || (needs.event-classifier.result == 'failure' && ((github.event_name == 'pull_request' && needs.event-identity.outputs.fallback_kind == 'pull_request' && needs.event-identity.outputs.fallback_sha == github.event.pull_request.head.sha) || (github.event_name == 'push' && needs.event-identity.outputs.fallback_kind == 'push' && needs.event-identity.outputs.fallback_sha == github.event.after && needs.event-identity.outputs.fallback_sha == github.sha))) || (github.event_name == 'workflow_dispatch' && needs.event-identity.outputs.fallback_kind == 'workflow_dispatch' && needs.event-identity.outputs.fallback_sha == github.sha && github.sha != '' && (needs.event-classifier.result == 'failure' || (needs.event-classifier.result == 'success' && needs.event-classifier.outputs.classification == 'full' && needs.event-classifier.outputs.head_valid == 'true' && needs.event-classifier.outputs.identity_valid == 'true' && needs.event-classifier.outputs.full_fallback == 'false' && needs.event-classifier.outputs.run_expensive == 'true' && needs.event-classifier.outputs.expected_head == github.sha)))) }}
     runs-on: ubuntu-latest
     timeout-minutes: 60
     env:
@@ -1485,7 +1560,7 @@ jobs:
   # runs, parallel with the supported modern jobs.
   legacy:
     needs: [event-identity, event-classifier]
-    if: ${{ always() && ((needs.event-classifier.result == 'success' && needs.event-identity.result == 'success' && needs.event-classifier.outputs.classification == 'full' && needs.event-classifier.outputs.head_valid == 'true' && needs.event-classifier.outputs.run_expensive == 'true' && ((github.event_name == 'pull_request' && needs.event-identity.outputs.fallback_kind == 'pull_request' && needs.event-identity.outputs.fallback_sha == needs.event-classifier.outputs.expected_head && needs.event-classifier.outputs.expected_head == github.event.pull_request.head.sha && github.event.pull_request.head.sha != '' && (needs.event-classifier.outputs.identity_valid == 'true' || needs.event-classifier.outputs.full_fallback == 'true')) || (github.event_name == 'push' && needs.event-identity.outputs.fallback_kind == 'push' && needs.event-identity.outputs.fallback_sha == needs.event-classifier.outputs.expected_head && needs.event-identity.outputs.fallback_sha == github.sha && needs.event-classifier.outputs.identity_valid == 'true' && needs.event-classifier.outputs.expected_head == github.event.after && needs.event-classifier.outputs.expected_base == '' && github.event.after != ''))) || (needs.event-classifier.result == 'failure' && needs.event-identity.result == 'success' && ((github.event_name == 'pull_request' && needs.event-identity.outputs.fallback_kind == 'pull_request' && needs.event-identity.outputs.fallback_sha == github.event.pull_request.head.sha) || (github.event_name == 'push' && needs.event-identity.outputs.fallback_kind == 'push' && needs.event-identity.outputs.fallback_sha == github.event.after && needs.event-identity.outputs.fallback_sha == github.sha)))) }}
+    if: ${{ always() && needs.event-identity.result == 'success' && ((needs.event-classifier.result == 'success' && needs.event-classifier.outputs.classification == 'full' && needs.event-classifier.outputs.head_valid == 'true' && needs.event-classifier.outputs.run_expensive == 'true' && ((github.event_name == 'pull_request' && needs.event-identity.outputs.fallback_kind == 'pull_request' && needs.event-identity.outputs.fallback_sha == needs.event-classifier.outputs.expected_head && needs.event-classifier.outputs.expected_head == github.event.pull_request.head.sha && github.event.pull_request.head.sha != '' && (needs.event-classifier.outputs.identity_valid == 'true' || needs.event-classifier.outputs.full_fallback == 'true')) || (github.event_name == 'push' && needs.event-identity.outputs.fallback_kind == 'push' && needs.event-identity.outputs.fallback_sha == needs.event-classifier.outputs.expected_head && needs.event-identity.outputs.fallback_sha == github.sha && needs.event-classifier.outputs.identity_valid == 'true' && needs.event-classifier.outputs.expected_head == github.event.after && needs.event-classifier.outputs.expected_base == '' && github.event.after != ''))) || (needs.event-classifier.result == 'failure' && ((github.event_name == 'pull_request' && needs.event-identity.outputs.fallback_kind == 'pull_request' && needs.event-identity.outputs.fallback_sha == github.event.pull_request.head.sha) || (github.event_name == 'push' && needs.event-identity.outputs.fallback_kind == 'push' && needs.event-identity.outputs.fallback_sha == github.event.after && needs.event-identity.outputs.fallback_sha == github.sha))) || (github.event_name == 'workflow_dispatch' && needs.event-identity.outputs.fallback_kind == 'workflow_dispatch' && needs.event-identity.outputs.fallback_sha == github.sha && github.sha != '' && (needs.event-classifier.result == 'failure' || (needs.event-classifier.result == 'success' && needs.event-classifier.outputs.classification == 'full' && needs.event-classifier.outputs.head_valid == 'true' && needs.event-classifier.outputs.identity_valid == 'true' && needs.event-classifier.outputs.full_fallback == 'false' && needs.event-classifier.outputs.run_expensive == 'true' && needs.event-classifier.outputs.expected_head == github.sha)))) }}
     runs-on: ubuntu-latest
     timeout-minutes: 60
     env:
@@ -1663,6 +1738,14 @@ jobs:
             echo "successful PR classification lacks coherent trusted event identity" >&2
             exit 1
           fi
+        elif [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
+          if [ "$FALLBACK_IDENTITY_RESULT" != "success" ] || \
+             [ "$FALLBACK_KIND" != "workflow_dispatch" ] || [ -z "$FALLBACK_SHA" ] || \
+             [ "$FALLBACK_SHA" != "$RAW_PUSH_SHA" ] || \
+             [ "$FALLBACK_SHA" != "$CLASSIFIED_BUILD_SHA" ]; then
+            echo "dispatched candidate lacks coherent trusted event identity" >&2
+            exit 1
+          fi
         elif [ "$GITHUB_EVENT_NAME" = "push" ]; then
           if [ "$FALLBACK_IDENTITY_RESULT" != "success" ] || \
              [ "$FALLBACK_KIND" != "push" ] || [ -z "$FALLBACK_SHA" ] || \
@@ -1698,6 +1781,12 @@ jobs:
             echo "Build event classifier PR identity is missing or stale" >&2
             exit 1
           fi
+        elif [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
+          if [ "$IDENTITY_VALID" != "true" ] || [ "$FULL_FALLBACK" != "false" ] || \
+             [ -z "$CLASSIFIED_BUILD_SHA" ] || [ "$CLASSIFIED_BUILD_SHA" != "$RAW_PUSH_SHA" ]; then
+            echo "dispatched candidate identity is missing or stale" >&2
+            exit 1
+          fi
         elif [ "$GITHUB_EVENT_NAME" = "push" ]; then
           if [ "$IDENTITY_VALID" != "true" ] || [ -z "$PUSH_SHA" ] || \
              [ "$CLASSIFIED_BUILD_SHA" != "$PUSH_SHA" ] || \
@@ -1712,6 +1801,16 @@ jobs:
           exit 1
         fi
 
+        if [ "$CLASSIFICATION" = "review-first" ]; then
+          test "$GITHUB_EVENT_NAME" = "pull_request"
+          test "$RUN_EXPENSIVE" = "false"
+          test "$HOST_TESTS_RESULT" = "success"
+          test "$BUILD_RESULT" = "success"
+          test "$EXTENDED_HOST_TESTS_RESULT" = "skipped"
+          test "$LEGACY_RESULT" = "skipped"
+          echo "Review-first preflight complete; accepted clean review/security must precede full Build." >&2
+          exit 1
+        fi
         if [ "$CLASSIFICATION" = "metadata-only" ]; then
           if [ "$RUN_EXPENSIVE" != "false" ]; then
             echo "metadata-only classification did not suppress workers" >&2
@@ -1990,7 +2089,7 @@ jobs:
                   fail(
                       f"metadata-only summary workflow runs {relation} page is malformed: {error}"
                   )
-              if set(query) != {"event", "head_sha", "page", "per_page"}:
+              if set(query) != {"head_sha", "page", "per_page"}:
                   fail(
                       f"metadata-only summary workflow runs {relation} page has unexpected query keys"
                   )
@@ -1999,10 +2098,6 @@ jobs:
                       fail(
                           f"metadata-only summary workflow runs {relation} page repeats a query parameter"
                       )
-              if query["event"][0] != "pull_request":
-                  fail(
-                      f"metadata-only summary workflow runs {relation} page event drifted"
-                  )
               if query["head_sha"][0] != head_sha:
                   fail(
                       f"metadata-only summary workflow runs {relation} page head drifted"
@@ -2088,7 +2183,9 @@ jobs:
 
           def request_json(path, query_pairs, *, label):
               query = urllib.parse.urlencode(query_pairs)
-              request_url = f"{api_base}{path}?{query}"
+              request_url = f"{api_base}{path}"
+              if query:
+                  request_url += "?" + query
               def reject_redirect(self, request, fp, code, msg, headers):
                   raise urllib.error.HTTPError(
                       request.full_url,
@@ -2197,10 +2294,13 @@ jobs:
               split = urllib.parse.urlsplit(url)
               url_matches = split.path == f"{expected_run_url_prefix}/{run_id}"
               matches = 0
+              same_pr_head = 0
               for pull_request in pull_requests:
                   number, pull_head_sha, pull_base_sha = parse_pull_request_binding(
                       pull_request
                   )
+                  if number == pr_number and pull_head_sha == head_sha:
+                      same_pr_head += 1
                   if (
                       number == pr_number
                       and pull_head_sha == head_sha
@@ -2210,14 +2310,17 @@ jobs:
               if matches > 1:
                   fail("metadata-only summary workflow run pull request binding is ambiguous")
               exact_candidate = (
-                  event == "pull_request"
+                  event in {"pull_request", "workflow_dispatch"}
                   and run_head_sha == head_sha
                   and path_matches
                   and url_matches
-                  and matches == 1
+                  and (event == "workflow_dispatch" or matches == 1
+                       or (same_pr_head == 1 and len(pull_requests) == 1))
               )
               is_current = run_id == current_run_id
-              if event != "pull_request":
+              if is_current and (event != "pull_request" or matches != 1):
+                  fail("metadata-only summary current workflow run identity drifted")
+              if event not in {"pull_request", "workflow_dispatch"}:
                   return {
                       "exact_candidate": False,
                       "is_current": is_current,
@@ -2244,6 +2347,7 @@ jobs:
                       "workflow_id": workflow_id,
                   }
               return {
+                  "binding_required": event == "workflow_dispatch" or matches != 1,
                   "conclusion": conclusion,
                   "created_at": created_at,
                   "exact_candidate": True,
@@ -2292,7 +2396,7 @@ jobs:
               )
               return name, status, conclusion, runner_name, started_at
 
-          def classify_prior_run(run_id, run_attempt):
+          def classify_prior_run(run_id, run_attempt, binding_required):
               payload, link, _request_url = request_json(
                   f"/repos/{quoted_owner}/{quoted_repo}/actions/runs/{run_id}/attempts/{run_attempt}/jobs",
                   [("per_page", str(MAX_PAGE_SIZE)), ("page", "1")],
@@ -2317,6 +2421,7 @@ jobs:
               ):
                   fail("metadata-only summary prior run jobs pagination is invalid")
               by_name = {}
+              candidate_markers = []
               for job in jobs:
                   (
                       name,
@@ -2328,13 +2433,27 @@ jobs:
                   if name in by_name:
                       fail("metadata-only summary prior run jobs repeat a name")
                   by_name[name] = (status, conclusion, runner_name, started_at)
+                  if name == "event-classifier":
+                      steps = job.get("steps", [])
+                      if not isinstance(steps, list):
+                          fail("metadata-only summary candidate steps are invalid")
+                      for step in steps:
+                          if not isinstance(step, dict):
+                              fail("metadata-only summary candidate step is invalid")
+                          marker = step.get("name", "")
+                          if isinstance(marker, str) and marker.startswith("workflow-pilot-candidate:v1:"):
+                              if step.get("status") != "completed" or step.get("conclusion") != "success":
+                                  fail("metadata-only summary candidate binding did not succeed")
+                              candidate_markers.append(marker)
               legacy_patch = by_name.pop("patch-release", None)
               if legacy_patch is not None:
                   status, conclusion, runner_name, _started_at = legacy_patch
                   if status != "completed" or conclusion != "skipped" or runner_name not in {None, ""}:
                       fail("metadata-only summary legacy publisher is not skipped")
               names = frozenset(by_name)
-              if names == METADATA_JOB_NAMES:
+              if names == METADATA_JOB_NAMES or names == (
+                  FULL_JOB_NAMES - {"event-classifier"} | {"review-first-classifier"}
+              ):
                   for name in ("extended-host-tests", "legacy"):
                       status, conclusion, runner_name, _started_at = by_name[name]
                       if (
@@ -2347,6 +2466,32 @@ jobs:
                           )
                   return "metadata-only", by_name
               if names == FULL_JOB_NAMES:
+                  if binding_required or candidate_markers:
+                      if len(candidate_markers) != 1:
+                          fail("metadata-only summary full run lacks one candidate binding")
+                      match = re.fullmatch(
+                          r"workflow-pilot-candidate:v1:([1-9][0-9]*):([0-9a-f]{40}):([0-9a-f]{40})",
+                          candidate_markers[0],
+                      )
+                      if match is None:
+                          fail("metadata-only summary candidate binding is malformed")
+                      if int(match[1]) != pr_number:
+                          return "unbound", by_name
+                      if match[2] != head_sha:
+                          fail("metadata-only summary candidate binding head drifted")
+                      compared, link, _ = request_json(
+                          f"/repos/{quoted_owner}/{quoted_repo}/compare/{base_sha}...{head_sha}",
+                          [], label="metadata-only summary current merge base")
+                      if (link or not isinstance(compared, dict)
+                          or not isinstance(compared.get("base_commit"), dict)
+                          or not isinstance(compared.get("merge_base_commit"), dict)):
+                          fail("metadata-only summary merge-base response is invalid")
+                      if compared.get("base_commit", {}).get("sha") != base_sha:
+                          fail("metadata-only summary compare base drifted")
+                      merge_base = parse_sha(compared.get("merge_base_commit", {}).get("sha"),
+                                             field="metadata-only summary merge base")
+                      if match[3] != merge_base:
+                          return "unbound", by_name
                   return "full", by_name
               fail(f"metadata-only summary prior run {run_id} jobs have unexpected mode shape")
 
@@ -2420,7 +2565,6 @@ jobs:
               payload, link, request_url = request_json(
                   f"/repos/{quoted_owner}/{quoted_repo}/actions/workflows/{WORKFLOW_FILENAME}/runs",
                   [
-                      ("event", "pull_request"),
                       ("head_sha", head_sha),
                       ("per_page", str(MAX_PAGE_SIZE)),
                       ("page", str(page)),
@@ -2515,8 +2659,9 @@ jobs:
               mode, by_name = classify_prior_run(
                   prior_run["run_id"],
                   prior_run["run_attempt"],
+                  prior_run["binding_required"],
               )
-              if mode == "metadata-only":
+              if mode in {"metadata-only", "unbound"}:
                   continue
               validate_authoritative_full_run(prior_run, by_name)
               prior_full_run_id = prior_run["run_id"]

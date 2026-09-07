@@ -1050,7 +1050,6 @@ def _add_snapshot(
     runs_endpoint = _query(
         "actions/workflows/build.yml/runs",
         [
-            ("event", "pull_request"),
             ("head_sha", HEAD),
             ("per_page", "100"),
             ("page", "1"),
@@ -1132,7 +1131,6 @@ def _cli_snapshot_calls(
             _query(
                 "actions/workflows/build.yml/runs",
                 [
-                    ("event", "pull_request"),
                     ("head_sha", HEAD),
                     ("per_page", "100"),
                     ("page", "1"),
@@ -6368,7 +6366,6 @@ class PullRequestMetadataTests(unittest.TestCase):
             _query(
                 "actions/workflows/build.yml/runs",
                 [
-                    ("event", "pull_request"),
                     ("head_sha", HEAD),
                     ("per_page", "100"),
                     ("page", "1"),

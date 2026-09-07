@@ -626,6 +626,29 @@ class ReviewSession:
             if fact.id in current and current[fact.id] != fact:
                 self.triage(Triage(fact, "untriaged"))
 
+    def review_state(self, facts, triage, *, pre_review_required):
+        require(len({fact.id for fact in facts}) == len(facts), "duplicate remote review")
+        self.refresh_reviews(facts)
+        self.validate_local_triage()
+        require(tuple(item.fact for item in triage) == facts,
+                "missing triage or changed review content")
+        require(tuple(self.rounds.events) == triage, "round state differs from observed triage")
+        for item in triage:
+            item.validate()
+        if pre_review_required:
+            require(self.report is not None and self.lease.finished
+                    and self.lease.outcome == "completed",
+                    "actual independent task observation required")
+            require(self.owners is not None, "coordinator review ownership index required")
+            if facts:
+                require(timestamp(self.report.completed_at) < min(
+                    timestamp(item.submitted_at) for item in facts),
+                    "fresh pre-review did not precede the first remote review")
+        ready = all(item.outcome != "untriaged" and not item.fact.unresolved_threads for item in triage)
+        latest = triage[-1] if triage else None
+        return ready, bool(ready and latest and latest.fact.head == self.head
+                           and latest.outcome == "clean")
+
 
 def assess_handoff(request: dict, members: tuple[Obligation, ...],
                    observations: tuple[Observation, ...], session: ReviewSession,
@@ -639,10 +662,8 @@ def assess_handoff(request: dict, members: tuple[Obligation, ...],
     require({subject_key(item) for item in request["subjects"]} == session.scope,
             "request omitted or added an accepted subject")
     require(request["candidate_sha"] == session.head, "stale candidate session")
-    require(len({fact.id for fact in remote_reviews}) == len(remote_reviews),
-            "duplicate remote review")
-    session.refresh_reviews(remote_reviews)
-    session.validate_local_triage()
+    reviews_ready, clean = session.review_state(
+        remote_reviews, triage, pre_review_required=pre_review_required)
     proposed = {item["finding_id"]: item for item in request["findings"]}
     require(set(proposed) == set(session.accepted), "missing or invented accepted finding")
     for finding in session.accepted.values():
@@ -650,20 +671,6 @@ def assess_handoff(request: dict, members: tuple[Obligation, ...],
         require((subject_key(item), item["family"], item["reported_member"])
                 == (finding.subject, finding.family, finding.member),
                 "finding subject/member classification drift")
-    require(tuple(item.fact for item in triage) == remote_reviews,
-            "missing triage or changed review content")
-    require(tuple(session.rounds.events) == triage, "round state differs from observed triage")
-    for item in triage:
-        item.validate()
-    if pre_review_required:
-        require(session.report is not None and session.lease.finished
-                and session.lease.outcome == "completed",
-                "actual independent task observation required")
-        require(session.owners is not None, "coordinator review ownership index required")
-        if remote_reviews:
-            require(timestamp(session.report.completed_at) < min(
-                timestamp(item.submitted_at) for item in remote_reviews),
-                "fresh pre-review did not precede the first remote review")
     index = {}
     for observation in observations:
         observation.validate()
@@ -712,11 +719,6 @@ def assess_handoff(request: dict, members: tuple[Obligation, ...],
         require(any(row["member"] == finding.member and row["outcome"] == "affected-fixed"
                     for row in matching),
                 "reported member has no affected-fixed origin evidence")
-    reviews_ready = all(item.outcome != "untriaged" and not item.fact.unresolved_threads
-                        for item in triage)
-    latest = triage[-1] if triage else None
-    clean = bool(reviews_ready and latest and latest.fact.head == session.head
-                 and latest.outcome == "clean")
     held = session.rounds.hold
     source_refs, source_sets, evidence = {}, [], []
     for key in evidence_refs:

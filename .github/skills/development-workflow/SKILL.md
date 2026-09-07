@@ -716,6 +716,19 @@ values are fixed. Surrounding prose explains this protocol, not an override.
 - **Final gates:** unchanged
 - **Push failure:** explicit-blocker-no-success-claim
 
+### Adaptive candidate timing
+
+Use [#181's existing decision and coordinator API](../../../docs/workflow-pilot.md#adaptive-review-first-candidate-gates)
+when the trusted integration base supports it. Review-first candidates run
+fast fail-closed Build preflight alongside exact-head security and Copilot;
+only accepted clean review/security permits the single complete full dispatch.
+Concurrent, unknown and paused decisions retain the broader full workflow.
+Preflight is not candidate Build evidence. Accepted findings abandon the
+exact head before any cancellation, and stale/duplicate evidence never grants
+merge. Preserve #179 local/family review, every final objective/manual gate,
+all eight full Build jobs and automatic exact-master publication/completion.
+The coordinator alone owns the state, dispatch and existing run watchers.
+
 ### Trusted push ownership
 
 Implementation subagents validate and commit locally but do not push. The

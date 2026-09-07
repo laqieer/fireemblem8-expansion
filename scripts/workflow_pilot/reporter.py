@@ -83,9 +83,11 @@ RISK_BOUNDARIES = {
     "migration",
     "none",
     "protocol",
+    "replay",
     "runtime",
     "save",
     "security",
+    "transport",
 }
 THRESHOLD_TRIGGERS = {
     "changed-files",
@@ -982,11 +984,10 @@ def load_decisions_from_commit(repository_root: Path, sha: str) -> dict[str, Any
     )
 
 
-def historical_override_entry(
+def historical_decision_record(
     decisions: dict[str, Any],
     sha: str,
     pull_request: int,
-    override_index: int,
 ) -> dict[str, Any]:
     label = f"decision record at commit {sha}"
     expect_keys(
@@ -1151,6 +1152,24 @@ def historical_override_entry(
         threshold["override_history"],
         f"{label} PR {pull_request}.threshold.override_history",
     )
+    for index, entry in enumerate(history):
+        entry_label = f"{label} PR {pull_request}.threshold.override_history[{index}]"
+        expect_object(entry, entry_label)
+        expect_keys(entry, entry_label, ("enabled", "reason"))
+        expect_bool(entry["enabled"], f"{entry_label}.enabled")
+        expect_string(entry["reason"], f"{entry_label}.reason")
+    return record
+
+
+def historical_override_entry(
+    decisions: dict[str, Any],
+    sha: str,
+    pull_request: int,
+    override_index: int,
+) -> dict[str, Any]:
+    record = historical_decision_record(decisions, sha, pull_request)
+    label = f"decision record at commit {sha}"
+    history = record["threshold"]["override_history"]
     if override_index >= len(history):
         raise PilotDataError(
             f"commit {sha} decision record lacks PR {pull_request} threshold "
@@ -1164,6 +1183,19 @@ def historical_override_entry(
     expect_bool(entry["enabled"], f"{entry_label}.enabled")
     expect_string(entry["reason"], f"{entry_label}.reason")
     return entry
+
+
+def project_cohort_decisions(decisions: dict, pull_requests: Iterable[int]) -> dict:
+    """Select an explicit historical cohort without changing the live record."""
+    expect_object(decisions, "decision records")
+    numbers = set(pull_requests)
+    for record in expect_list(decisions.get("pull_requests"), "decision records"):
+        expect_object(record, "decision record")
+        expect_int(record.get("pull_request"), "decision PR", 1)
+        historical_decision_record(decisions, "historical-cohort", record["pull_request"])
+    return {**decisions, "pull_requests": [
+        record for record in decisions["pull_requests"] if record["pull_request"] in numbers
+    ]}
 
 
 def validate_override_git_provenance(
@@ -3866,6 +3898,8 @@ def build_report(
     fixture: Any,
     raw_decisions: Any,
     repository_root: Path | None = None,
+    *,
+    cohort_only: bool = False,
 ) -> dict[str, Any]:
     if repository_root is None:
         raise PilotDataError(
@@ -3877,6 +3911,8 @@ def build_report(
         repository_root,
         data,
     )
+    if cohort_only:
+        raw_decisions = project_cohort_decisions(raw_decisions, data["pull_requests"])
     decisions = validate_decisions(raw_decisions, data, repository_root)
     workflow_sample(data)
     classifications = report_classifications(data)
@@ -3980,6 +4016,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--fixture", type=Path, required=True)
     parser.add_argument("--decisions", type=Path, required=True)
     parser.add_argument("--expected", type=Path, required=True)
+    parser.add_argument("--cohort-decisions", action="store_true",
+                        help="explicitly project the live decision collection onto this historical cohort")
     parser.add_argument(
         "--handoffs", type=Path,
         help="optional bounded coordinator observations; not authenticated delivery evidence",
@@ -4023,8 +4061,10 @@ def main(argv: list[str] | None = None) -> int:
             )
         fixture = load_json(args.fixture)
         decisions = load_json(args.decisions)
-        report = build_report(fixture, decisions, repository_root)
+        report = build_report(fixture, decisions, repository_root, cohort_only=args.cohort_decisions)
         check_expected(report, load_json(args.expected))
+        if args.cohort_decisions:
+            decisions = project_cohort_decisions(decisions, report["identities"]["pull_requests"])
         validate_executable_deletion_proofs(
             repository_root,
             args.fixture,

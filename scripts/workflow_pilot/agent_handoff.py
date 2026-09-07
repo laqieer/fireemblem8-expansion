@@ -105,6 +105,30 @@ def sha(value):
     text(value, maximum=40, pattern=SHA_RE)
 
 
+def validate_check_definition(check):
+    fields(check, "contract evidence_id inputs")
+    text(check["evidence_id"], maximum=128, pattern=ID_RE)
+    choice(check["contract"], CHECK_CONTRACTS)
+    for name in items(check["inputs"], maximum=16, unique=True):
+        path(name)
+    require(check["contract"] == "protocol-json" or not check["inputs"],
+            "only a protocol-json check accepts repository input paths")
+    require(check["contract"] != "protocol-json" or check["inputs"],
+            "protocol-json needs explicit inputs")
+
+
+def validate_required_checks(value):
+    protocol_inputs, evidence = set(), set()
+    for _check_id, check in named_records(value, minimum=1):
+        validate_check_definition(check)
+        require(protocol_inputs.isdisjoint(check["inputs"]), "overlapping protocol inputs")
+        protocol_inputs.update(check["inputs"])
+        evidence.add(check["evidence_id"])
+    require(any(check["contract"] == "git-diff-check" for check in value.values()),
+            "a real raw Git check is required")
+    return evidence
+
+
 def validate_assignment(value):
     fields(value, "schema_version repository id issue pull_request owner_id session_id dispatch_id "
            "assigned_parent_sha expected_branch allowed_worktree allowed_scope upstream_inputs "
@@ -131,23 +155,8 @@ def validate_assignment(value):
         text(criterion["text"])
         ids(criterion["evidence_ids"], maximum=32, minimum=1)
         evidence.update(criterion["evidence_ids"])
-    protocol_inputs = set()
-    for _check_id, check in named_records(value["required_checks"], minimum=1):
-        fields(check, "contract evidence_id inputs")
-        text(check["evidence_id"], maximum=128, pattern=ID_RE)
-        choice(check["contract"], CHECK_CONTRACTS)
-        for name in items(check["inputs"], maximum=16, unique=True):
-            path(name)
-        require(check["contract"] == "protocol-json" or not check["inputs"],
-                "only a protocol-json check accepts repository input paths")
-        require(check["contract"] != "protocol-json" or check["inputs"],
-                "protocol-json needs explicit inputs")
-        require(protocol_inputs.isdisjoint(check["inputs"]), "overlapping protocol inputs")
-        protocol_inputs.update(check["inputs"])
-        evidence.discard(check["evidence_id"])
+    evidence.difference_update(validate_required_checks(value["required_checks"]))
     require(not evidence, "criterion has no required evidence producer")
-    require(any(check["contract"] == "git-diff-check" for check in value["required_checks"].values()),
-            "a real raw Git check is required")
     fields(value["budgets"], "changed_lines rom_bytes ram_bytes protocol_changes")
     for limit in value["budgets"].values():
         integer(limit)
@@ -216,9 +225,12 @@ def validate_availability(value):
     timestamp(value["observed_at"])
     timestamp(value["valid_until"])
     for name in ("autostop_enabled", "stop_on_disconnect"):
-        boolean(value[name])
+        if value["mode"] != "plan" or value[name] is not None:
+            boolean(value[name])
     text(value["plan"], nullable=True)
-    require(value["mode"] != "plan" or value["plan"] is not None, "availability plan is missing")
+    require(value["mode"] != "plan"
+            or (value["plan"] is not None and bool(value["plan"].strip())),
+            "availability plan is missing")
 
 
 def validate_clock(value):
@@ -288,7 +300,11 @@ def validate_verdict(value):
 
 
 def validate_state(value):
-    fields(value, "schema_version repository coordinator_id availability clock assignments watchers")
+    fields(value, "schema_version repository coordinator_id availability clock assignments watchers"
+           + (" candidates" if isinstance(value, dict) and "candidates" in value else ""))
+    if "candidates" in value:
+        from .adaptive_gate import validate_candidate_records
+        validate_candidate_records(value["candidates"])
     require(type(value["schema_version"]) is int and value["schema_version"] == SCHEMA_VERSION,
             "state schema_version must be 3")
     text(value["repository"], maximum=256, pattern=observations.REPOSITORY_RE)
@@ -750,8 +766,8 @@ def _same_json_value(left, right):
     return left == right
 
 
-def capture_check(entry, check_id, result_sha, trusted_executor=None):
-    """Only the trusted coordinator selects executors; result JSON never supplies one."""
+def capture_check(entry, check_id, result_sha, trusted_executor=None, *, task_owned=True):
+    """Trusted executors only; direct checks do not claim task-owned resource deltas."""
     a = entry["assignment"]
     definition = a["required_checks"].get(check_id)
     require(definition is not None, "unknown required check")
@@ -766,7 +782,7 @@ def capture_check(entry, check_id, result_sha, trusted_executor=None):
         actual, started, completed = observations.capture_raw_check(a, result_sha)
         code, pid, rss = actual.returncode, actual.pid, actual.peak_rss_bytes
         detail = (actual.stdout + actual.stderr)[:2048].decode("utf-8", errors="replace") or None
-        if code == 0:
+        if code == 0 and task_owned:
             owned, _, _, _ = task_changes(a, result_sha)
             if not owned or all(name in HOST_FILES or name.startswith(HOST_ONLY) for name in owned):
                 measurements.update(rom_bytes=0, ram_bytes=0)
