@@ -10,6 +10,7 @@ import shlex
 from .authority import encoded, parse_json, relative_path
 from .budget import MakeProbeError, text
 from .make_probe import Command, ProbeSession
+from .graph_regex import CommandPatterns
 
 
 PYTHON = "/usr/bin/python3"
@@ -78,6 +79,9 @@ class MakeCommands:
     def __init__(self, session: ProbeSession, contracts):
         self.session = session
         self.contracts = tuple(contracts.values())
+        self.patterns = CommandPatterns(
+            session.budget, tuple(contract.get("command_regex", r"(?!)") for contract in self.contracts),
+        )
         self.requests = []
         self.registrations = {}
         self.generated = {}
@@ -85,15 +89,13 @@ class MakeCommands:
         self.includes = {}
 
     def _matches(self, command):
-        return [
-            contract for contract in self.contracts
-            if re.fullmatch(contract.get("command_regex", r"(?!)"), command, re.DOTALL)
-        ]
+        return [self.contracts[index] for index in self.patterns.fullmatch(command)]
 
     def __contains__(self, command):
         return len(self._matches(command)) == 1
 
     def __getitem__(self, command):
+        self.session.budget.remaining()
         if command in self.registrations:
             return self.registrations[command]
         matches = self._matches(command)

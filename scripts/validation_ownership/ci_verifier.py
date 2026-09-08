@@ -52,6 +52,7 @@ TRUSTED_RUNTIME_PATHS = frozenset(
             "make_observer.c", "dispatch.h", "graph_commands.py", "graph_registry.py",
             "graph_probe.py", "graph_report.py", "graph_lifecycle.py", "scaninc_sources.cpp",
             "coordinator_capture.py",
+            "graph_regex.py",
         )),
     }
 )

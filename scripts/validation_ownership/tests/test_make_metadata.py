@@ -5,8 +5,11 @@ import secrets
 import shutil
 import subprocess
 import unittest
+from unittest import mock
+import os
 
 from scripts.validation_ownership import reporter
+from scripts.validation_ownership import budget as budget_module
 from scripts.validation_ownership.authority import AuthorityLoader, ENVIRONMENT, git_tree_entries
 from scripts.validation_ownership.budget import ProbeBudget, MakeProbeError
 
@@ -101,6 +104,25 @@ class MakeMetadataTests(unittest.TestCase):
         self.write(reporter.MAKE_DYNAMIC_PATH, json.dumps(self.data))
         with self.assertRaisesRegex(MakeProbeError, "seal does not match"):
             reporter._make_metadata(self.loader(), required=True)
+
+    def test_candidate_command_pattern_compilation_uses_bounded_worker(self):
+        self.data = json.loads((ROOT / reporter.MAKE_DYNAMIC_PATH).read_bytes())
+        for contract in self.data["contracts"]:
+            contract["tool"] = "scripts/producer.py"
+            contract["input_files"] = ["source.json"]
+        self.data["contracts"][0]["command_regex"] = "^[$"
+        self.write_registry()
+        loader = self.loader()
+        read, chunks = os.read, []
+        def capture(*args):
+            result = read(*args)
+            chunks.append(result)
+            return result
+        with mock.patch.object(budget_module.os, "read", side_effect=capture), \
+             self.assertRaisesRegex(MakeProbeError, "compile validation failed"):
+            reporter._make_metadata(loader, required=True)
+        self.assertIn(b'"phase":"compile-start"', b"".join(chunks))
+        self.assertFalse(self.budget.children)
 
 
 if __name__ == "__main__":

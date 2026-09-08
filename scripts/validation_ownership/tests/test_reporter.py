@@ -57,7 +57,11 @@ class AssetOwnershipTests(unittest.TestCase):
         with mock.patch.object(reporter, "_validate_authorities", return_value=authorities), \
              mock.patch.object(reporter, "_generated_registry_records", return_value=([], self.generated_paths)), \
              mock.patch.object(reporter, "_path_admission_sources", return_value=self.admission_sources):
-            reporter.validate_json_schema(graph, self.schema, self.schema)
+            schema_budget = ProbeBudget()
+            try:
+                reporter.validate_json_schema(graph, self.schema, self.schema, budget=schema_budget)
+            finally:
+                schema_budget.close()
             return reporter._validate_semantics(graph, self.loader, self.entries if entries is None else entries)
 
     def test_complete_partition_oracle_and_consumer_specific_assets(self):

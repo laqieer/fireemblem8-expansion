@@ -27,7 +27,7 @@ def check(artifact_root, check_id, *, session, graph, schema, oracle, model):
             "validation ownership graph artifact is missing: " + reporter.LIFECYCLE_FAILURE_REASON
         )
     actual = parse_json(session.budget.read_bytes(artifact, "control"), "lifecycle graph")
-    reporter.validate_json_schema(actual, schema, schema)
+    reporter.validate_json_schema(actual, schema, schema, budget=session.budget)
     if actual != graph:
         raise MakeProbeError("lifecycle artifact differs from the measured graph")
     reporter.validate_probe_oracle(oracle, actual, model["entries"])

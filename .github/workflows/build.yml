@@ -1001,7 +1001,8 @@ jobs:
           scripts/validation_ownership/graph_report.py \
           scripts/validation_ownership/graph_lifecycle.py \
           scripts/validation_ownership/scaninc_sources.cpp \
-          scripts/validation_ownership/coordinator_capture.py
+          scripts/validation_ownership/coordinator_capture.py \
+          scripts/validation_ownership/graph_regex.py
         do
           if /usr/bin/git cat-file -e "$EXPECTED_BASE_SHA:$required"; then
             base_validation_present=$((base_validation_present + 1))

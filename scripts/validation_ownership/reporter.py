@@ -166,18 +166,27 @@ def _resolve_schema_ref(root_schema: dict[str, Any], reference: str) -> dict[str
     return value
 
 
-def validate_json_schema(
+def validate_json_schema(value, schema, root_schema, label="graph", *, budget):
+    from .graph_regex import evaluate
+
+    evaluate(budget, "schema", [value, schema, root_schema, label])
+
+
+def _validate_json_schema(
     value: Any,
     schema: dict[str, Any],
     root_schema: dict[str, Any],
     label: str = "graph",
+    *,
+    _pattern_started=None,
 ) -> None:
     if "$ref" in schema:
-        validate_json_schema(
+        _validate_json_schema(
             value,
             _resolve_schema_ref(root_schema, schema["$ref"]),
             root_schema,
             label,
+            _pattern_started=_pattern_started,
         )
         return
     if "oneOf" in schema:
@@ -185,7 +194,7 @@ def validate_json_schema(
         errors = []
         for candidate in schema["oneOf"]:
             try:
-                validate_json_schema(value, candidate, root_schema, label)
+                _validate_json_schema(value, candidate, root_schema, label, _pattern_started=_pattern_started)
             except OwnershipError as error:
                 errors.append(str(error))
             else:
@@ -233,7 +242,7 @@ def validate_json_schema(
                 raise OwnershipError(f"{label} has unknown keys {extra}")
         for key, child in properties.items():
             if key in value:
-                validate_json_schema(value[key], child, root_schema, f"{label}.{key}")
+                _validate_json_schema(value[key], child, root_schema, f"{label}.{key}", _pattern_started=_pattern_started)
 
     if isinstance(value, list):
         minimum = schema.get("minItems")
@@ -246,8 +255,8 @@ def validate_json_schema(
         item_schema = schema.get("items")
         if item_schema is not None:
             for index, item in enumerate(value):
-                validate_json_schema(
-                    item, item_schema, root_schema, f"{label}[{index}]"
+                _validate_json_schema(
+                    item, item_schema, root_schema, f"{label}[{index}]", _pattern_started=_pattern_started,
                 )
 
     if isinstance(value, str):
@@ -257,6 +266,8 @@ def validate_json_schema(
         pattern = schema.get("pattern")
         if pattern is not None:
             try:
+                if _pattern_started is not None:
+                    _pattern_started()
                 matched = re.search(pattern, value)
             except re.error as error:
                 raise OwnershipError(
@@ -1098,6 +1109,7 @@ def load_make_dynamic_contracts(
         raise OwnershipError("Make dynamic dependency registry seal does not match")
     result = {}
     ids = set()
+    command_patterns = []
     for index, contract in enumerate(data["contracts"]):
         label = f"Make dynamic dependency contract {index}"
         fields = {
@@ -1142,12 +1154,7 @@ def load_make_dynamic_contracts(
                 or len(command_regex) > 8192
             ):
                 raise OwnershipError(f"{label}.command_regex is invalid")
-            try:
-                re.compile(command_regex)
-            except re.error as error:
-                raise OwnershipError(
-                    f"{label}.command_regex is invalid: {error}"
-                ) from error
+            command_patterns.append(command_regex)
         for field in (
             "input_files",
             "input_variables",
@@ -1192,6 +1199,9 @@ def load_make_dynamic_contracts(
             **contract,
             "authority_semantics": semantics,
         }
+    from .graph_regex import validate_patterns
+
+    validate_patterns(loader.budget, command_patterns)
     return result
 
 
@@ -2205,7 +2215,7 @@ def validate_graph(
         raise OwnershipError("graph schema must be an object")
     if schema.get("$schema") != "https://json-schema.org/draft/2020-12/schema":
         raise OwnershipError("graph schema must use JSON Schema draft 2020-12")
-    validate_json_schema(graph, schema, schema)
+    validate_json_schema(graph, schema, schema, budget=loader.budget)
     return _validate_semantics(graph, loader, entries, session=session)
 
 

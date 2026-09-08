@@ -2917,6 +2917,14 @@ Make metadata sections share one fully validated registry object per selected
 loader/budget. Repeated references reuse funded input bytes, not a second Git
 read for each section. Cross-view reuse, stale/missing inputs and malformed
 seals still reject; the actual full-report result must remain unchanged.
+Run the bounded-regex controls under one report lifetime. The catastrophic
+command input and candidate-schema pattern must actually enter their worker
+before the report deadline terminates them. Verify preserved ordinary and
+multiline matches, standard-engine syntax, the actual address-space limit,
+malformed/deep patterns, oversized input/output, cache-after-deadline failure
+and interruption cleanup. The old unbounded matcher is reproduced only in an
+owned externally watched child; its outer safety timeout is not production
+budget evidence. Do not raise report limits or relax sources/seals to pass.
 Every local scratch path component is opened relative to the trusted
 repository descriptor with no symlink following before any temporary
 directory is created. Tracked `build` and intermediate `test-artifacts` or

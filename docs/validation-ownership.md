@@ -415,6 +415,25 @@ branch reveals a new domain or fallback. No combined goal is attributed to a
 different target, no per-target deadline is restarted, and no registry entry
 is backfilled as an observed domain.
 
+Candidate command regexes are compiled and matched in a fixed isolated Python
+operation launched through the existing `ProbeBudget.run` watchdog, never by
+the trusted report thread's backtracking engine. Candidate JSON-schema pattern
+validation uses the same bounded operation, including recursive schema checks.
+The operation retains Python `re` syntax and the original search/fullmatch and
+DOTALL semantics. It applies the existing address-space bound before parsing
+inputs or compiling patterns and retains the report's original deadline,
+launch/input/output budgets and owned cleanup. No engine, dependency, dialect,
+service or numeric allowance is added.
+
+All command patterns are evaluated as one batch for a concrete command; exact
+completed match results are reused only within that matcher/report lifetime.
+Repeating a cached match after deadline/failure/closure still fails. Metadata
+sections keep the existing selected-view reuse, with compilation validation
+performed once for that metadata object. Invalid patterns, excessive input,
+resource exhaustion and interrupted work fail closed. The tester case observes
+matching start for its benign catastrophic-backtracking negative rather than
+accepting a missing fixture or pre-match error as timeout evidence.
+
 This means GNU Make itself owns conditionals, `eval`, pattern/static-pattern
 resolution, `define`/`call`, target-specific and inherited values, `${NAME}`,
 one-character `$C`, automatic variables, secondary expansion, assignment

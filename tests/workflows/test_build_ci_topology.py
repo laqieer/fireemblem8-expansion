@@ -283,6 +283,7 @@ VALIDATION_OWNERSHIP_BASE_REQUIRED_PATHS = (
         "make_observer.c", "dispatch.h", "graph_commands.py", "graph_registry.py",
         "graph_probe.py", "graph_report.py", "graph_lifecycle.py", "scaninc_sources.cpp",
         "coordinator_capture.py",
+        "graph_regex.py",
     )),
 )
 VALIDATION_OWNERSHIP_GIT_PATH_REDIRECTS = (

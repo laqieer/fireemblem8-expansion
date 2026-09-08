@@ -1639,6 +1639,10 @@
         },
         {
           "kind": "exact",
+          "path": "scripts/validation_ownership/tests/test_graph_regex.py"
+        },
+        {
+          "kind": "exact",
           "path": "scripts/validation_ownership/consumer.py"
         },
         {

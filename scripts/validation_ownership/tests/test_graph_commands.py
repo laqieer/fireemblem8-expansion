@@ -217,9 +217,11 @@ class GraphCommandTests(unittest.TestCase):
         ):
             with self.subTest(command=bad), self.session() as probe:
                 before = probe.budget.runs
+                capsule_processes = probe.processes_used
                 with self.assertRaisesRegex(MakeProbeError, expected):
                     MakeCommands(probe, self.contracts)[bad]
-                self.assertEqual(probe.budget.runs, before)
+                self.assertEqual(probe.budget.runs, before + 1)
+                self.assertEqual(probe.processes_used, capsule_processes)
         with self.session() as probe:
             bad = command.replace(" -undef ", " -undef -fplugin=evil.so ")
             registration = MakeCommands(probe, self.contracts).dependency(bad)
