@@ -219,13 +219,24 @@ with an optional bounded `candidates` list. It does not launch agents or
 watchers. The existing assignment/handoff and watcher schemas remain valid.
 
 1. `fetch_candidate`, `fetch_decision` and `frozen_base` collect existing PR,
-   decision and merge-base observations. In a short `locked_state` transaction,
-   `begin_candidate` records the exact head/base/ref/decision and supersedes
+   immutable decision/current-control and merge-base observations. In a short
+   `locked_state` transaction, `begin_observed_candidate(client, state, number)`
+   refreshes candidate/control/run identity and calls `begin_candidate`.
+   The lower-level `begin_candidate(..., runs=observed_runs)` requires complete
+   observed history and known control for a new intake. It records the exact
+   head/base/ref/decision and supersedes
    older candidates for that PR only. `candidate_identity(record)` returns the
    existing `(PR, head, frozen base, base ref)` tuple within that repository's
    state. `find_candidate(state, identity)` requires this complete key and
    returns exactly one record, including an abandoned one when explicitly
    selected. Never look up by PR/head alone or select the newest record.
+   `record.mode` is the initial execution lane, not a mutable copy of current
+   pause policy. Old intake is reconciled from bound full/preflight history,
+   never an invented historical unpaused observation. Unknown or contradictory
+   history holds. An observed-empty new intake retains its actual current
+   `intake_control` provisionally, without scheduling/merge authority. Actual
+   bound run history fixes the initial execution lane and retires that
+   provisional observation; a later contradictory history cannot rewrite it.
 2. Supply the coordinator's actual #179 `ReviewSession` and complete `Triage`
    records. `assess_observed` refreshes the real GitHub review facts, exact
    check runs, and Build runs, and calls #179's shared `review_state` predicate.
@@ -247,7 +258,8 @@ watchers. The existing assignment/handoff and watcher schemas remain valid.
    gate or audiovisual exception is introduced.
 5. `dispatch_full(client, state_path, pr, assess_callback)` calls the callback
    to obtain `(record, assessment, observed_runs)`, refetches PR identity, and
-   **persists the reservation before POST**. It sends only `{"ref": head_ref}`.
+   rechecks the current control before it **persists the reservation before
+   POST**. It sends only `{"ref": head_ref}`.
    Unknown delivery cannot be retried into a duplicate; it remains pending
    reconciliation. Bind the unique actual run after the recorded watermark,
    never a guessed run ID. Run ID and attempt are retained; a later mismatched
@@ -386,10 +398,99 @@ or substitute a check process for a delegated owner.
 
 Use #176's existing Build minutes, review rounds/time-to-clean, safety events
 and coordination overhead, plus #178's captured handoff observations.
-`pause_for_safety` updates the existing decision's paused disposition for
-observed `security_finding`, `escaped_defect` or `broken_master` events.
-Persist that decision normally; new candidates take the broader workflow.
+`pause_for_safety` is only a record mutation primitive. The production
+coordinator transition is `pause_pilot`, described below; an arbitrary event
+name or an ordinary failed check is not an attributable incident.
 Pause and ordinary revert change timing only, never final gates.
+
+#### Current safety control and unchanged heads
+
+The sole global control is the existing decision collection at the repository's
+**actual current default branch**, not candidate HEAD or a stack's immediate
+parent. `fetch_pilot_control` resolves repository/default-ref/commit identity,
+checks the root and `.github` trees and regular decision blob, validates every
+record, and rechecks the default source. It reuses the canonical #176 baseline
+fixture to protect that repository's frozen pre-pilot cohort. An explicitly
+paused non-baseline record pauses adaptive timing globally even when
+`pilot.included` is false. A malformed later record cannot be hidden behind an
+earlier paused one.
+
+Candidate-local pause remains conservative. Candidate head, decision blob,
+risk/override provenance and frozen merge base remain independent of the
+current control ref/commit/blob. The bounded `decision.control` observation
+appears in the existing assessment/evidence output. Missing, malformed,
+unavailable or moving control means visible broad/unknown workflow behavior,
+not unpause and not coordinator dispatch/merge authority.
+
+An old successful review-first preflight may receive one reserved full fallback
+under a known pause even while review/security/local/manual quality is pending.
+This requires native coordinator coverage, bound original review context,
+exact preflight/workflow identity, no abandonment/architecture hold, and no
+existing reservation or active/unknown/duplicate full work. The normal
+watermark, input-free POST, lost-ack and unique-run reconciliation rules remain.
+Pending quality is still mandatory before merge. Existing initial concurrent
+PR full runs and initial review-first reserved full runs retain their own
+identity while paused and after explicit unpause. A control failure or pause
+change alone never cancels legitimate CI or revives an abandoned head.
+
+#### Attributable incidents and owner publication
+
+The trusted coordinator calls:
+
+```python
+prepared = gate.pause_pilot(
+    client, state_path, authoritative_fixture, event_id,
+    attribution_root, publication_root, trusted_attribution,
+    master_run=(actual_run_id, actual_attempt))  # required for broken master
+```
+
+The fixture is existing #176 evidence, not a new configuration source.
+The transition validates its complete structure, actual Git object authority,
+post-merge PR/SHA causality and non-baseline identity. Ordinary pre-merge
+findings are not pilot incidents. Broken-master attribution additionally
+refreshes actual repository/event/branch/workflow/head/attempt/terminal outcome.
+A failed scanner's infrastructure or an intentional negative test must not be
+classified as an incident.
+
+`trusted_attribution(context, head)` uses the existing coordinator-check
+executor contract: return an actual owned `ProcessResult` plus typed
+measurements. It must verify the accepted finding or real reproduction and its
+attribution, using the supplied safety event(s), relevant merge parent and
+refreshed master observation. Candidate JSON cannot supply an executable,
+passed flag or checker implementation. The check runs at the exact clean
+incident head with native PID/exit/RSS and unchanged Git identity. These are
+checker-process facts, not invented LLM-owner measurements.
+
+Once attribution succeeds, the existing coordinator state retains one
+`safety_publication` operation, immediately holding further local scheduling
+and merge. Preparation edits only the existing decision file on a clean
+ordinary **non-default** owner branch retaining the current control. It never
+pushes, merges, creates a new control source, or gives the read-only Build
+token write permission. If preparation/publication is unavailable the local
+hold remains and `global_visibility_confirmed` is false.
+
+The owner then uses the existing normal commit/push/PR/merge workflow.
+`confirm_safety_publication(client, state_path)` releases the local publication
+hold only after a fresh default-control read matches the exact prepared blob
+and retains the original control ancestry. A branch-only push or unrelated
+publication is not confirmation. Global visibility begins at this published
+read boundary, not the earlier private mutation; no atomic switch across
+independent queued workflows is claimed.
+
+Unpause uses `unpause_pilot` with an explicit supported `disposition`, validated
+incident facts, a trusted native recovery executor, and the exact current
+successful automatic master run/attempt. It requires the complete parsed
+runner-backed master graph, exact clean security and stable refreshed evidence.
+Recovery must cover the relevant accepted incidents, not merely an unrelated
+green run. It goes through the same owner-branch preparation and confirmed
+publication boundary. Missing data never clears a latch, and an architecture
+hold requires its own existing disposition.
+
+The optional coordinator operation and intake observations extend the existing
+v3 schema without a separate registry, source ledger, signature or aggregate
+budget increase. Schema validates their closed shapes and native-check role;
+runtime additionally checks cross-field incident/head, repository and temporal
+bindings. All state remains trusted operational input, not authenticated data.
 
 Disposable fixtures use `pilot.included: false` and `disposition: excluded`;
 they are not merged pilot samples. Three weeks or **20 actual post-deployment

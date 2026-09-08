@@ -367,6 +367,67 @@
         }
       }
     },
+    "pilotControl": {
+      "type": "object", "additionalProperties": false,
+      "required": ["repository", "repository_id", "default_ref", "commit_sha", "decision_oid", "paused", "observed_at"],
+      "properties": {
+        "repository": {"$ref": "#/$defs/repository"}, "repository_id": {"$ref": "#/$defs/positive"},
+        "default_ref": {
+          "$ref": "#/$defs/text", "maxLength": 256,
+          "pattern": "^(?!@$)(?!/)(?!.*//)(?!.*\\.\\.)(?!.*@\\{)(?!.*[\\u0000-\\u0020\\u007F~^:?*\\[\\\\])(?!.*(?:^|/)\\.)(?!.*\\.lock(?:/|$))(?!.*[/.]$)[\\s\\S]+$"
+        },
+        "commit_sha": {"$ref": "#/$defs/sha"}, "decision_oid": {"$ref": "#/$defs/sha"},
+        "paused": {"type": "boolean"}, "observed_at": {"$ref": "#/$defs/time"}
+      }
+    },
+    "safetyPublication": {
+      "type": "object", "additionalProperties": false,
+      "required": ["operation", "event", "attribution", "control", "target_oid", "disposition"],
+      "properties": {
+        "operation": {"enum": ["pause", "unpause"]},
+        "event": {
+          "type": "object", "additionalProperties": false,
+          "required": ["id", "type", "occurred_at", "pr_number", "sha"],
+          "properties": {
+            "id": {"$ref": "#/$defs/text"},
+            "type": {"enum": ["security_finding", "escaped_defect", "broken_master"]},
+            "occurred_at": {"$ref": "#/$defs/time"}, "pr_number": {"$ref": "#/$defs/positive"},
+            "sha": {"$ref": "#/$defs/sha"}
+          }
+        },
+        "attribution": {
+          "allOf": [
+            {"$ref": "#/$defs/check"},
+            {"properties": {
+              "id": {"const": "safety"},
+              "contract": {"const": "coordinator-check"}, "exit_code": {"const": 0},
+              "completed_at": {"$ref": "#/$defs/time"}, "pid": {"$ref": "#/$defs/positive"},
+              "peak_rss_bytes": {"$ref": "#/$defs/integer"}
+            }}
+          ]
+        },
+        "control": {"anyOf": [{"$ref": "#/$defs/pilotControl"}, {"type": "null"}]},
+        "target_oid": {"anyOf": [{"$ref": "#/$defs/sha"}, {"type": "null"}]},
+        "disposition": {"enum": [null, "evaluate", "excluded", "graduated"]}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"operation": {"const": "pause"}}},
+          "then": {"properties": {
+            "disposition": {"type": "null"},
+            "attribution": {"properties": {"evidence_id": {"const": "safety-attribution"}}}
+          }},
+          "else": {"properties": {
+            "disposition": {"type": "string"},
+            "attribution": {"properties": {"evidence_id": {"const": "safety-recovery"}}}
+          }}
+        },
+        {
+          "if": {"properties": {"target_oid": {"type": "string"}}},
+          "then": {"properties": {"control": {"$ref": "#/$defs/pilotControl"}}}
+        }
+      ]
+    },
     "candidate": {
       "type": "object", "additionalProperties": false,
       "required": ["pr_number", "head_sha", "base_sha", "base_ref", "decision_oid", "mode",
@@ -386,7 +447,11 @@
         "watermark": {"$ref": "#/$defs/integer"},
         "full_run_id": {"$ref": "#/$defs/nullablePositive"},
         "full_attempt": {"$ref": "#/$defs/nullablePositive"},
-        "local_validation": {"$ref": "#/$defs/coordinatorLocal"}
+        "local_validation": {"$ref": "#/$defs/coordinatorLocal"},
+        "intake_control": {
+          "$ref": "#/$defs/pilotControl",
+          "description": "Provisional current control at an observed-empty intake; no scheduling/merge authority until actual bound history fixes the initial lane and retires this provisional observation."
+        }
       },
       "allOf": [
         {
@@ -414,6 +479,10 @@
         "schema_version": {"type": "integer", "const": 3}, "repository": {"$ref": "#/$defs/repository"},
         "coordinator_id": {"$ref": "#/$defs/id"}, "availability": {"$ref": "#/$defs/availability"},
         "clock": {"$ref": "#/$defs/clock"},
+        "safety_publication": {
+          "$ref": "#/$defs/safetyPublication",
+          "description": "One accepted local publication hold; the existing Git decision collection remains the only global control source."
+        },
         "candidates": {
           "type": "array", "maxItems": 128, "items": {"$ref": "#/$defs/candidate"}
         },

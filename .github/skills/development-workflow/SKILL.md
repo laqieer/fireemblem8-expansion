@@ -872,6 +872,20 @@ For every issue-specific PR:
 2. If the consolidated post-merge Build fails, immediately fix forward or revert; do not
    report the feature as delivered. The failure blocks the affected issue's
    closure and remote completion, but not unrelated independent PRs.
+   If an accepted safety event is attributable to the adaptive pilot, use the
+   production `adaptive_gate.pause_pilot` coordinator transition with validated
+   #176 causal facts and an actual trusted native attribution check. Refresh
+   automatic-master run identity/outcome for broken-master attribution; an
+   infrastructure failure, ordinary pre-merge finding or intentional negative
+   test is not by itself an incident. The transition retains a local
+   `safety_publication` hold and prepares only the existing decision file on an
+   ordinary owner branch. Publish through the normal owner Git/PR/merge path,
+   then call `confirm_safety_publication` for exact default-control readback.
+   Do not claim global visibility before confirmation or grant the read-only
+   Build token write authority. Explicit `unpause_pilot` requires incident
+   disposition, native recovery, complete current master/security evidence and
+   the same confirmed publication boundary. Pause/unpause never clears an
+   architecture hold, revives abandonment or cancels unrelated valid CI.
 3. Add the final evidence and commit/PR/CI links to the originating issue.
    Include installed investigation tools, versions, purpose, and any
    pre-existing IDA/Ghidra/GDB resources used.

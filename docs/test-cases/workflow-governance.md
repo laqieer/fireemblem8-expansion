@@ -139,6 +139,7 @@ the consumers' independent protected-principal/deployment requirements.
      scripts.workflow_pilot.tests.test_candidate_identity \
      scripts.workflow_pilot.tests.test_live_stack \
      scripts.workflow_pilot.tests.test_refless_runs \
+     scripts.workflow_pilot.tests.test_live_pause \
      scripts.workflow_pilot.tests.test_coordinator_local -v
    ```
 
@@ -265,9 +266,32 @@ the consumers' independent protected-principal/deployment requirements.
    responses for a full dispatch and its current merge base. It retains
    complete eight-job success; missing/wrong/foreign marker or stale base
    cannot stand in for full candidate evidence.
-10. Observe broken-master/security/escape events through #176 and pause the
-    existing decision record. New candidates return to concurrent timing;
-    final review/security/candidate/master/manual gates remain mandatory.
+10. In owned Git repositories, publish an unpaused default decision and create
+    H, then normally publish a pause to the current default branch without
+    changing H or its frozen merge base. Run the production reader and require
+    broad timing for unchanged H and a new head. A paused excluded sibling
+    counts; a paused immediate stack parent is not the global source.
+    Validate every collection member and the actual repository/default
+    ref/commit/regular blob; missing, malformed, truncated or moving data is
+    unknown/broad, never unpause or admission authority.
+    Use controlled #176 incident fixtures and actual native reproductions to
+    exercise `pause_pilot`, local `safety_publication` hold, ordinary non-default
+    branch preparation, local bare branch publication/merge and confirmed
+    current-control readback. Never manufacture a real repository escape or
+    change production master for this test. Ordinary pre-merge findings,
+    arbitrary event names, failed attribution and wrong automatic-master
+    event/branch/workflow/head/attempt/outcome must not create a latch.
+    Publication failure retains the local hold without claiming global visibility.
+    Give an old exact preflight one reserved full fallback while quality is
+    pending; inspect the persisted watermark before the only input-free POST.
+    Unknown control/history, unbound original review context, missing native
+    coverage, active/unknown/duplicate full work, abandonment and architecture
+    holds must block inappropriate scheduling. Both initial concurrent PR full
+    ownership and initial review-first reserved ownership survive pause/unpause.
+    Prove explicit native recovery, current complete master/security evidence
+    and normal owner publication before unpause. Missing data and unrelated
+    green runs cannot unpause. All final review/security/local/family/manual/
+    candidate/master gates remain mandatory.
 
 ### Actual disposable-PR exercise — coordinator only
 
@@ -327,7 +351,7 @@ these PRs as merged pilot samples.
    pr, changed_lines = gate.fetch_candidate(client, repository, pr_number)
    decision = gate.fetch_decision(client, pr, changed_lines)
    with observations.locked_state(state_path) as state:
-       gate.begin_candidate(state, pr, gate.frozen_base(client, pr), decision)
+       gate.begin_observed_candidate(client, state, pr_number)
 
    def assess_for_dispatch(state):
        current, _ = gate.fetch_candidate(client, repository, pr_number)
@@ -399,6 +423,9 @@ modern/archival or manual audiovisual compatibility changes.
 typed state, HTTP-response and actual preflight/summary shell controls. The
 `scripts.workflow_pilot.tests.test_coordinator_local` selector exercises
 registered coordinator-owned native checks and their negative controls. The
+`scripts.workflow_pilot.tests.test_live_pause` selector covers current-control
+identity, causal native attribution, owned bare publication/readback, schema
+and the unchanged-head fallback/ownership family. The
 existing topology, publisher, metadata, schema and review selectors cover
 their directly coupled integration contracts. The coordinator records the
 actual disposable-PR exercise separately; fixtures are never pilot samples.
@@ -412,6 +439,9 @@ host orchestration feature, no owner-dispatch prevention guarantee, and no
 same-UID sandbox or authenticated receipt claim. Three weeks or 20 real
 post-deployment merged pilot PRs plus measured efficiency/non-inferiority are
 future promotion criteria; no fixture or baseline refresh substitutes for them.
+The pause differential uses owned local publication and controlled provider/
+incident data. Main may separately record an actual unpaused provider read
+for endpoint/permission evidence; it is not proof of an actual escaped defect.
 
 ## TC-WORKFLOW-REVIEW-FAMILY-001: Expand valid findings across complete sibling families
 
