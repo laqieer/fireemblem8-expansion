@@ -13,7 +13,7 @@ from scripts.workflow_pilot import candidate_evidence, coordinator_observations 
 from scripts.workflow_pilot import pr_metadata as github, review_family as review
 from scripts.workflow_pilot.tests import test_pr_metadata as api
 from scripts.workflow_pilot.tests.review_support import Runtime
-from scripts.workflow_pilot.tests.test_adaptive_gate import decisions
+from scripts.workflow_pilot.tests.test_adaptive_gate import decisions, model_control
 from scripts.workflow_pilot.tests.test_agent_handoff import GitFixture, at_offset, git, write_json
 from scripts.workflow_pilot.tests import test_coordinator_local as local_tests
 
@@ -38,7 +38,11 @@ class CandidateIdentityFixture:
         self.decision = gate.select_mode(
             decisions(api.PR_NUMBER, ("lifecycle",) if self.mode == "review-first" else ("none",), self.mode),
             number=api.PR_NUMBER, head_sha=self.head, decision_oid="d" * 40, changed_lines=2)
-        self.old = gate.begin_candidate(self.state, self.pr, self.fixture.parent, self.decision)
+        self.decision = model_control(self.decision, self.pr)
+        control = patch.object(gate, "fetch_pilot_control", side_effect=lambda *args: self.decision.control)
+        control.start()
+        self.addCleanup(control.stop)
+        self.old = gate.begin_candidate(self.state, self.pr, self.fixture.parent, self.decision, runs=())
         self.owners = review.ReviewOwnership()
         # Both immutable Git bases exist and are reviewed before the first remote fixture review.
         self.old_session = self.session(self.fixture.parent)
@@ -167,7 +171,7 @@ class CandidateIdentityFixture:
     def rebind(self, *, reserve=True):
         git(self.fixture.repository, "merge", "--ff-only", self.middle)
         self.live = replace(self.pr, base_sha=git(self.fixture.repository, "rev-parse", "HEAD"))
-        self.new = gate.begin_candidate(self.state, self.live, self.middle, self.decision)
+        self.new = gate.begin_candidate(self.state, self.live, self.middle, self.decision, runs=())
         self.assertEqual(len(self.state["candidates"]), 2)
         self.assertEqual(self.old["abandoned_reason"], "superseded-head-or-base")
         self.assertFalse(gate.coordinator_local_ready(self.state, self.new, self.live))
@@ -246,7 +250,7 @@ class CandidateIdentityTests(CandidateIdentityFixture, unittest.TestCase):
         self.old = self.state["candidates"][0]
         git(self.fixture.repository, "branch", "alternate-base", self.fixture.parent)
         self.live = replace(self.pr, base_ref="alternate-base")
-        new = gate.begin_candidate(self.state, self.live, self.fixture.parent, self.decision)
+        new = gate.begin_candidate(self.state, self.live, self.fixture.parent, self.decision, runs=())
         self.complete_local(new, self.live)
         self.old_session.triage(review.Triage(self.fact("review-retargeted"), "clean"))
         checks = self.security()
@@ -405,7 +409,7 @@ class ConcurrentIdentityTests(CandidateIdentityFixture, unittest.TestCase):
             git(self.fixture.repository, "branch", "alternate-base", self.fixture.parent)
             self.live = replace(self.pr, base_ref="alternate-base")
             base = self.fixture.parent
-        new = gate.begin_candidate(self.state, self.live, base, self.decision)
+        new = gate.begin_candidate(self.state, self.live, base, self.decision, runs=())
         self.complete_local(new, self.live)
         session = self.new_session if field == "base" else self.old_session
         session.triage(review.Triage(self.fact("review-current"), "clean"))

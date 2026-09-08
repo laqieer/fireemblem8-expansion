@@ -42,6 +42,12 @@ def decisions(number=191, risks=("none",), mode="concurrent", *, paused=False):
     }]}
 
 
+def model_control(decision, pr):
+    """Explicit typed observation for reducer-only fixtures, not provider evidence."""
+    return replace(decision, control=gate.PilotControl(
+        pr.repository, pr.repository_id, "master", pr.base_sha, "c" * 40, False, at_offset(-150)))
+
+
 def git_scope_files(root, base, head):
     stats = {}
     for row in git(root, "diff", "--numstat", "--no-renames", base, head).splitlines():
@@ -145,6 +151,13 @@ class ModeTests(unittest.TestCase):
 
 
 class OverrideScopeTests(unittest.TestCase):
+    def setUp(self):
+        control = patch.object(gate, "fetch_pilot_control", side_effect=lambda client, repository, repository_id=None:
+                               gate.PilotControl(repository, repository_id or 1, "master", "a" * 40,
+                                                 "b" * 40, False, at_offset(-1)))
+        control.start()
+        self.addCleanup(control.stop)
+
     def route(self, category, *, risk="none", fault=None):
         from scripts.workflow_pilot.tests import test_pr_metadata as m
         artifacts = ROOT / "build/test-artifacts"
@@ -377,7 +390,12 @@ class GateTests(unittest.TestCase):
         self.decision = gate.select_mode(
             decisions(risks=("lifecycle",), mode="review-first"), number=191,
             head_sha=self.pr.head_sha, decision_oid="d" * 40, changed_lines=50)
-        self.record = gate.begin_candidate(self.state, self.pr, self.fixture.parent, self.decision)
+        self.decision = model_control(self.decision, self.pr)
+        self.control_observation = patch.object(
+            gate, "fetch_pilot_control", side_effect=lambda *args: self.decision.control)
+        self.control_observation.start()
+        self.addCleanup(self.control_observation.stop)
+        self.record = gate.begin_candidate(self.state, self.pr, self.fixture.parent, self.decision, runs=())
         self.record["created_at"] = at_offset(-120)
         self.scope = frozenset({"TC-WORKFLOW-REVIEW-FAMILY-001/review-session"})
         self.session = review.ReviewSession(
@@ -568,7 +586,7 @@ class GateTests(unittest.TestCase):
                 self.assess(pr=pr)
         other = replace(self.pr, head_sha="a" * 40)
         gate.begin_candidate(self.state, other, self.fixture.parent,
-                             replace(self.decision, head_sha=other.head_sha))
+                             replace(self.decision, head_sha=other.head_sha), runs=())
         self.assertEqual(self.record["abandoned_reason"], "superseded-head-or-base")
         self.assertFalse(self.assess()["merge_eligible"])
 
@@ -592,7 +610,7 @@ class GateTests(unittest.TestCase):
         self.record["created_at"] = observations.utc_now()
         self.assertTrue(self.assess()["dispatchable"], "automatic checks precede coordinator observation")
         rebound_pr = replace(self.pr, base_ref="changed-base")
-        rebound = gate.begin_candidate(self.state, rebound_pr, self.fixture.parent, self.decision)
+        rebound = gate.begin_candidate(self.state, rebound_pr, self.fixture.parent, self.decision, runs=())
         report = self.assess(record=rebound, pr=rebound_pr)
         self.assertFalse(report["dispatchable"])
         self.assertIn("review-predates-candidate-binding", report["missing"])
@@ -741,7 +759,7 @@ class GateTests(unittest.TestCase):
         self.pr = replace(self.pr, base_ref="retargeted-base")
         with patch.object(observations, "utc_now", return_value=at_offset(-30)):
             self.record = gate.begin_candidate(
-                self.state, self.pr, self.fixture.parent, self.decision)
+                self.state, self.pr, self.fixture.parent, self.decision, runs=())
         self.runs.append(self.workflow_run(2, "review-first"))
         self.assertFalse(self.assess()["dispatchable"])
         fresh = replace(old, id="review-2", submitted_at=at_offset(-10), body="Fresh complete clean review")
@@ -809,6 +827,7 @@ class GateTests(unittest.TestCase):
                 self.decision = gate.select_mode(
                     decisions(paused=paused), number=191, head_sha=self.pr.head_sha,
                     decision_oid=self.record["decision_oid"], changed_lines=30)
+                self.decision = model_control(self.decision, self.pr)
                 self.record["mode"] = "concurrent"
                 self.runs = [self.workflow_run(2, event="pull_request")]
                 self.assertTrue(self.assess()["merge_eligible"])
@@ -1091,6 +1110,11 @@ class AdapterTests(unittest.TestCase):
     def setUp(self):
         from scripts.workflow_pilot.tests import test_pr_metadata as metadata
         self.m = metadata
+        control = patch.object(gate, "fetch_pilot_control", side_effect=lambda client, repository, repository_id=None:
+                               gate.PilotControl(repository, repository_id or metadata.REPOSITORY_ID, "master",
+                                                 "a" * 40, "b" * 40, False, at_offset(-1)))
+        control.start()
+        self.addCleanup(control.stop)
 
     def content(self, raw):
         payload = json.dumps(raw).encode()
@@ -1496,6 +1520,15 @@ class DispatchBootstrapTests(unittest.TestCase):
         sources.mkdir(parents=True)
         for name in ("__init__.py", "event_classifier.py", "isolated_launcher.py"):
             shutil.copyfile(ROOT / "scripts/workflow_pilot" / name, sources / name)
+        baseline = reporter.load_json(ROOT / reporter.BASELINE_FIXTURE_PATH)
+        baseline_path = self.root / reporter.BASELINE_FIXTURE_PATH
+        baseline_path.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(ROOT / reporter.BASELINE_FIXTURE_PATH, baseline_path)
+        control_path = self.root / reporter.DECISION_RECORD_PATH
+        control_path.parent.mkdir(parents=True)
+        write_json(control_path, reporter.project_cohort_decisions(
+            reporter.load_json(ROOT / reporter.DECISION_RECORD_PATH),
+            (record["number"] for record in baseline["pull_requests"])))
         git(self.root, "init", "-b", "master")
         git(self.root, "config", "user.email", "bootstrap@example.invalid")
         git(self.root, "config", "user.name", "Bootstrap regression")
@@ -1507,7 +1540,7 @@ class DispatchBootstrapTests(unittest.TestCase):
             shutil.copyfile(source, sources / source.name)
         self.parent_number = metadata.PR_NUMBER - 1
         self.decision_path = self.root / reporter.DECISION_RECORD_PATH
-        self.decision_path.parent.mkdir(parents=True)
+        self.decision_path.parent.mkdir(parents=True, exist_ok=True)
         write_json(self.decision_path, decisions(self.parent_number))
         git(self.root, "add", ".")
         git(self.root, "commit", "-m", "Feature-containing integration base")
@@ -1591,6 +1624,7 @@ class DispatchBootstrapTests(unittest.TestCase):
         return result, values
 
     def classify(self, identity, responses=None):
+        from scripts.workflow_pilot.tests.test_live_pause import control_routes
         m = self.m
         git(self.root, "checkout", "--detach", identity["classifier_ref"])
         self.environment.update(
@@ -1613,6 +1647,8 @@ class DispatchBootstrapTests(unittest.TestCase):
                 "base_commit": {"sha": self.pr["base"]["sha"]},
                 "merge_base_commit": {"sha": git(self.root, "merge-base", self.pr["base"]["sha"], self.head)}},
         }
+        routes.update(control_routes(
+            self.root, m.REPOSITORY, m.REPOSITORY_ID, (git(self.root, "rev-parse", "master"),)))
         for revision in (self.head, self.base):
             content = reporter.run_git(self.root, "show", revision + ":" + str(reporter.DECISION_RECORD_PATH))
             routes[m._query("contents/" + str(reporter.DECISION_RECORD_PATH), [("ref", revision)])] = {

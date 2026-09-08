@@ -2198,9 +2198,9 @@
       "profiles": ["Locked host Python and source checkout", "Coordinator-owned disposable PRs on a dependency-ready base"],
       "purpose": "Change expensive candidate Build timing without reducing review, security, complete candidate/master or manual quality gates.",
       "prerequisites": "Use existing #176 decisions, #178 coordinator/handoff state, #179 task/triage authority and the locked interpreter. Only the delivery coordinator performs remote exercises.",
-      "actions": "Run test_adaptive_gate, test_candidate_identity, test_live_stack and test_coordinator_local with directly affected topology/publisher/review/metadata controls. Retain actual historical run refs and complete frozen identities across same-head/base/ref transitions; validate real parent decisions/ancestry, then execute the documented disposable PR procedure with actual GitHub identities.",
-      "expected_result": "Named-risk/large candidates defer the complete Build until accepted clean exact review/security. One bound full run plus every final criterion is necessary; master retains all eight jobs and its real publisher.",
-      "negative_control": "Unknown decisions and pause retain broader timing. Accepted findings abandon heads; stale, duplicate, cancelled, unresolved, wrong-source, ref-incomplete and early-dispatch evidence cannot authorize merge. Invalid or unobserved live parent chains remain held.",
+      "actions": "Run test_adaptive_gate, test_candidate_identity, test_live_stack, test_live_pause and test_coordinator_local with directly affected topology/publisher/review/metadata controls. Retain actual historical run refs and complete frozen identities across same-head/base/ref transitions; validate real parent decisions/ancestry. Exercise current default-control identity, causal native incident attribution, owned bare publication/readback, unchanged-head fallback and initial-lane preservation, then execute the documented disposable PR procedure with actual GitHub identities.",
+      "expected_result": "Named-risk/large candidates normally defer the complete Build until accepted clean exact review/security. A validated current default-branch pause reaches unchanged heads and permits one safely reserved old-preflight full fallback without waiving final quality. Initial lanes and actual full-run ownership remain intact. One bound full run plus every final criterion is necessary; master retains all eight jobs and its real publisher.",
+      "negative_control": "Unknown decisions/control retain broad workflow timing but no coordinator dispatch/merge authority. Arbitrary/pre-merge/unattributed incidents and wrong master evidence cannot publish a latch; publication failure stays locally held. Missing data cannot unpause. Accepted findings abandon heads; stale, duplicate, cancelled, unresolved, wrong-source, ref-incomplete and early-dispatch evidence cannot authorize merge. Invalid or unobserved live parent chains remain held.",
       "interactions": "Depends on #176/#177/#178/#179. #180/#206 remain parallel and #196 extraction is later. Preserve trusted pushes, one watcher per run/attempt and audiovisual holds.",
       "save_compatibility": "No gameplay, save/config, locale, generated-game-data, ROM/RAM or archival behavior changes.",
       "cleanup": "Local fixtures remove only owned build paths. Main closes disposable PRs without merging them and uses existing worktree cleanup after active work ends.",
@@ -2225,6 +2225,10 @@
         {
           "command": "build/host-python/bin/python3 -I -c 'import sys, unittest; sys.path.insert(0, \".\"); unittest.main(module=None)' scripts.workflow_pilot.tests.test_refless_runs -v",
           "evidence": "scripts/workflow_pilot/tests/test_refless_runs.py"
+        },
+        {
+          "command": "build/host-python/bin/python3 -I -c 'import sys, unittest; sys.path.insert(0, \".\"); unittest.main(module=None)' scripts.workflow_pilot.tests.test_live_pause -v",
+          "evidence": "scripts/workflow_pilot/tests/test_live_pause.py"
         }
       ]
     },

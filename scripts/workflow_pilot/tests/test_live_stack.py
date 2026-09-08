@@ -20,6 +20,7 @@ ROOT = Path(__file__).resolve().parents[3]
 
 class LiveStackTests(unittest.TestCase):
     def scenario(self, depth, *, fault=None):
+        from scripts.workflow_pilot.tests.test_live_pause import control_routes
         artifacts = ROOT / "build/test-artifacts"
         artifacts.mkdir(parents=True, exist_ok=True)
         directory = tempfile.TemporaryDirectory(prefix="live-stack-", dir=artifacts)
@@ -29,12 +30,16 @@ class LiveStackTests(unittest.TestCase):
         git(root, "config", "user.name", "Stack regression")
         git(root, "config", "user.email", "stack@example.invalid")
         (root / "README.md").write_text("Actual default tree\n")
+        decision_path = root / reporter.DECISION_RECORD_PATH
+        decision_path.parent.mkdir(parents=True)
+        baseline = reporter.load_json(ROOT / reporter.BASELINE_FIXTURE_PATH)
+        write_json(decision_path, reporter.project_cohort_decisions(
+            reporter.load_json(ROOT / reporter.DECISION_RECORD_PATH),
+            (record["number"] for record in baseline["pull_requests"])))
         git(root, "add", ".")
         git(root, "commit", "-m", "Default base")
         default = git(root, "rev-parse", "HEAD")
         records, pull_requests, heads = {}, {}, []
-        decision_path = root / reporter.DECISION_RECORD_PATH
-        decision_path.parent.mkdir(parents=True)
         for level in range(depth + 1):
             number = api.PR_NUMBER + level
             parent = number - 1 if level else None
@@ -46,6 +51,8 @@ class LiveStackTests(unittest.TestCase):
                 raw["pull_requests"][0]["stack"].update(depth=1, parent_pr=api.PR_NUMBER + 1)
             if fault == "parent-decision-missing" and level == 0:
                 raw["pull_requests"][0]["pull_request"] = api.PR_NUMBER + 100
+            if fault == "parent-paused" and level < depth:
+                raw["pull_requests"][0]["pilot"]["disposition"] = "paused"
             records[number] = raw
             base = heads[-1] if heads else default
             branch = f"feature/stack-{level}"
@@ -100,6 +107,7 @@ class LiveStackTests(unittest.TestCase):
             pr_head_sha=pr["head"]["sha"], pr_base_sha=pr["base"]["sha"], push_sha="")
         calls = []
         parent_reads = 0
+        control = control_routes(root, api.REPOSITORY, api.REPOSITORY_ID, (default,))
 
         def transport(argv, **kwargs):
             nonlocal parent_reads
@@ -110,6 +118,8 @@ class LiveStackTests(unittest.TestCase):
             status = 200
             if endpoint == api._endpoint("").rstrip("/"):
                 response = {"id": api.REPOSITORY_ID, "full_name": api.REPOSITORY, "default_branch": "master"}
+            elif endpoint in control:
+                response = control[endpoint]
             elif "/pulls/" in endpoint:
                 number = int(endpoint.rsplit("/", 1)[1])
                 if fault == "unavailable-parent" and number != child:
@@ -154,6 +164,14 @@ class LiveStackTests(unittest.TestCase):
                 result, selected = self.scenario(depth)
                 self.assertTrue(selected.known, self.stack_evidence)
                 self.assertEqual(result.classification, "review-first")
+
+    def test_immediate_parent_pause_is_not_the_global_default_control(self):
+        result, selected = self.scenario(1, fault="parent-paused")
+        self.assertTrue(selected.known, self.stack_evidence)
+        self.assertFalse(selected.paused)
+        self.assertFalse(selected.control.paused)
+        self.assertEqual(result.classification, "review-first")
+        self.assertEqual(selected.control.default_ref, "master")
 
     def test_actual_invalid_cross_fields_or_parent_authority_remain_unknown(self):
         for depth, fault in (

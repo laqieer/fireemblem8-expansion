@@ -11,7 +11,7 @@ from jsonschema import Draft202012Validator
 from scripts.workflow_pilot import adaptive_gate as gate, agent_handoff as handoff
 from scripts.workflow_pilot import coordinator_observations as observations, raw_diff_check as raw
 from scripts.workflow_pilot.tests.test_agent_handoff import GitFixture, at_offset
-from scripts.workflow_pilot.tests.test_adaptive_gate import decisions
+from scripts.workflow_pilot.tests.test_adaptive_gate import decisions, model_control
 
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -40,11 +40,12 @@ class CoordinatorLocalTests(unittest.TestCase):
             "plan": "Bounded test-owned validation; no host settings asserted.",
         })
         self.pr = SimpleNamespace(
-            repository=self.state["repository"], number=191, head_sha=self.head,
+            repository=self.state["repository"], repository_id=1, number=191, head_sha=self.head,
             head_ref="agent/test", base_sha=self.fixture.parent, base_ref="master")
         decision = gate.select_mode(decisions(), number=191, head_sha=self.head,
                                     decision_oid="a" * 40, changed_lines=1)
-        self.record = gate.begin_candidate(self.state, self.pr, self.pr.base_sha, decision)
+        self.record = gate.begin_candidate(
+            self.state, self.pr, self.pr.base_sha, model_control(decision, self.pr), runs=())
 
     def executor(self, context, head):
         self.assertEqual(head, self.head)
