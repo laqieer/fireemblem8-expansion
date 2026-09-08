@@ -4485,19 +4485,33 @@ rejection with zero payload launches. Preserve that default-false rejection,
 not a fake compiler result. The original integrated d9 comparisons remain
 historical, unapproved evidence rather than a restoration source.
 
-### Interactions, cleanup and limitations
+### Interactions and save compatibility
 
 D depends on P/#225 and delivered core/#206, at depth one above the genuine
 producer branch. It has no V/#226 or R/#227 dependency. Complete P delivery
 still gates bottom-up merging; nested generated publication and complete
 #180/PR #186 CURRENT/BASE/domain integration remain separate.
 
+No manual criterion, gameplay, save/config, locale, generated game output,
+ROM/RAM, modern/archival profile, package or publisher change is involved.
+
+### Automation
+
+Run the complete mapped host case:
+
+```bash
+python3 -m unittest scripts.validation_ownership.tests.test_dependency -v
+```
+
+The suite executes the real compiler and Make paths described above, including
+their positive, rejection, resource and cleanup controls.
+
+### Cleanup and limitations
+
 Tests reset their owned fixtures and clean session state, processes, caches,
 private outputs and generated publications after success or failure. Runtime
 uses the existing read-only host compiler/runtime policy, not an immutable
 runtime binary snapshot. Unsupported compiler platforms/modes fail closed.
-No manual criterion, gameplay, save/config, locale, generated game output,
-ROM/RAM, modern/archival profile, package or publisher change is involved.
 
 ## TC-WORKFLOW-AGENT-HANDOFF-001: Validate bounded exact-SHA agent handoffs
 
