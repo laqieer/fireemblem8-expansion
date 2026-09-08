@@ -31,6 +31,21 @@ the localization recipes. `--revision COMMIT` selects another immutable tree;
 /usr/bin/python3 -I -S -B scripts/validation_ownership/isolated_launcher.py --worktree
 ```
 
+Default live capture requires gitlink paths to be genuinely absent or empty.
+It rejects initialized/nonempty submodules rather than treating them as empty
+or substituting their committed bytes. A caller needing their live contents
+must use explicit same-budget source-path admission; the CLI does not infer
+that authority. To exercise the real live consumer independently of an
+already initialized build checkout, use a fresh linked worktree without
+initializing its submodules:
+
+```sh
+git worktree add --detach build/ownership-probe-live HEAD
+/usr/bin/python3 -I -S -B scripts/validation_ownership/isolated_launcher.py \
+  --repository-root build/ownership-probe-live --worktree
+git worktree remove build/ownership-probe-live
+```
+
 No ARM toolchain, ROM, credentials, GitHub request, or manual judgment is needed.
 The host must provide Linux x86-64, GNU Make **4.3**, Python 3, a static-capable
 GNU host C compiler, a glibc runtime, and working user/mount/network/PID namespaces. Where user

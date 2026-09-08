@@ -2682,6 +2682,13 @@ Start from a clean checkout; fixtures use only ignored `build/test-artifacts`.
    Inspect the returned native `localization-check` dependency on
    `localization-generate`, the actual output-directory value and the real
    chapterbundle registry result containing `src/data/ch2_bundle.json`.
+   For the live consumer, use the foundation guide's fresh linked worktree
+   without initialized submodules. The automated real-source fixture creates
+   its own checkout, changes the admitted output-directory assignment and
+   requires that actual live value. An initialized-gitlink CLI control must
+   reject explicit-admission absence, while explicitly admitted live paths and
+   immutable pinned inputs retain their distinct bytes. Do not borrow a CI
+   checkout's incidental submodule state as the positive fixture.
 2. Run `make -f scripts/validation_ownership/foundation.mk ownership-probe-test`.
    Positive fixtures use GNU Make include/define/eval, finite domain values,
    patterns, target variables and order-only prerequisites. Their typed

@@ -1214,6 +1214,14 @@ raise AssertionError("default termination was lost")
         self.gitlink_git(self.root, "clone", "--quiet", "--no-hardlinks", str(module), "module")
         live_source = self.root / "module/include/value.h"
         live_source.write_text('#define VALUE "changed-live"\n')
+        result = subprocess.run(
+            ["/usr/bin/python3", "-I", "-S", "-B", str(TRUSTED_ROOT / "isolated_launcher.py"),
+             "--repository-root", str(self.root), "--worktree"],
+            cwd=self.root, env=ENVIRONMENT, capture_output=True, timeout=30,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(result.stdout, b"")
+        self.assertIn(b"nonempty live gitlink requires explicit source-path admission", result.stderr)
         budget = ProbeBudget()
         with self.assertRaisesRegex(MakeProbeError, "explicit source-path admission"):
             git_tree_entries(self.root, None, budget=budget)
@@ -1240,13 +1248,26 @@ raise AssertionError("default termination was lost")
         self.assert_clean(session)
 
     def test_public_worktree_consumer_preserves_the_requested_live_mode(self):
+        revision = self.gitlink_git(ROOT, "rev-parse", "HEAD")
+        self.gitlink_git(ROOT, "clone", "--quiet", "--shared", "--no-checkout", str(ROOT), str(self.root))
+        self.gitlink_git(self.root, "-c", "submodule.recurse=false",
+                         "checkout", "--quiet", "--detach", revision)
+        localization = self.root / "localization.mk"
+        localization.write_text(
+            localization.read_text() + "\nLOCALIZATION_OUT_DIR := live-candidate-proof\n",
+        )
         result = subprocess.run(
             ["/usr/bin/python3", "-I", "-S", "-B",
-             str(TRUSTED_ROOT / "isolated_launcher.py"), "--repository-root", str(ROOT), "--worktree"],
-            cwd=ROOT, env=ENVIRONMENT, capture_output=True, timeout=90,
+             str(TRUSTED_ROOT / "isolated_launcher.py"), "--repository-root", str(self.root), "--worktree"],
+            cwd=self.root, env=ENVIRONMENT, capture_output=True, timeout=90,
         )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertEqual(json.loads(result.stdout)["generated_registry"]["name"], "chapterbundle")
+        observed = json.loads(result.stdout)
+        self.assertEqual(observed["generated_registry"]["name"], "chapterbundle")
+        self.assertEqual(
+            observed["make"]["semantics"]["domains"]["LOCALIZATION_OUT_DIR"]["value"],
+            "live-candidate-proof",
+        )
 
     def test_live_inventory_keeps_head_admission_with_actual_deletions_and_modes(self):
         self.add(".gitignore", "ignored.txt\nbuild/\n")
