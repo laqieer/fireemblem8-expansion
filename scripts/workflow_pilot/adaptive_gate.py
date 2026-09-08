@@ -905,7 +905,7 @@ class SecurityCheck:
     head_sha: str
     status: str
     conclusion: str | None
-    created_at: str
+    created_at: str | None
     completed_at: str | None
 
 
@@ -916,28 +916,47 @@ def security_checks(client, pr):
             [("filter", "latest"), ("per_page", "100"), ("page", str(page))]),
         item_key="check_runs", label="exact security checks", maximum=1000,
         repository=pr.repository, repository_id=pr.repository_id)
-    result = []
+    result, seen_ids, seen_checks = [], set(), set()
     for row in rows:
         require(isinstance(row, dict) and isinstance(row.get("app"), dict),
                 "malformed security check record")
         identity = row.get("name"), row.get("app", {}).get("id"), row.get("app", {}).get("slug")
+        reporter.expect_string(identity[0], "check name")
+        reporter.expect_int(identity[1], "check app ID", 1)
+        reporter.expect_string(identity[2], "check app slug")
+        require(row.get("head_sha") == pr.head_sha, "stale security check")
+        reporter.expect_int(row.get("id"), "security check ID", 1)
+        require(row["id"] not in seen_ids, "duplicate security check")
+        seen_ids.add(row["id"])
+        for field in ("created_at", "started_at", "completed_at"):
+            if row.get(field) is not None:
+                reporter.parse_time(row[field], "security " + field)
+        started = row.get("started_at") or row.get("created_at")
+        status, conclusion = row.get("status"), row.get("conclusion")
+        require(isinstance(status, str) and status in {"queued", "in_progress", "completed"},
+                "unknown security status")
+        require((status == "completed") == (conclusion is not None), "incoherent security completion")
+        require(conclusion is None or (isinstance(conclusion, str) and conclusion in github.RUN_CONCLUSIONS),
+                "unknown security conclusion")
+        if status != "queued":
+            require(started is not None, "security start is missing")
+        if status == "completed":
+            completed = reporter.parse_time(row.get("completed_at"), "security completion")
+            require(reporter.parse_time(started, "security start") <= completed,
+                    "security chronology is inconsistent")
+        else:
+            require(row.get("completed_at") is None, "active security check has completion time")
+        if row.get("created_at") is not None and row.get("started_at") is not None:
+            require(reporter.parse_time(row["created_at"], "security creation") <=
+                    reporter.parse_time(row["started_at"], "security start"),
+                    "security start precedes creation")
         if identity[0] not in {item[0] for item in SECURITY_CHECKS}:
             continue
         require(identity in SECURITY_CHECKS, "security check has the wrong app identity")
-        require(row.get("head_sha") == pr.head_sha, "stale security check")
-        reporter.expect_int(row.get("id"), "security check ID", 1)
-        reporter.parse_time(row.get("started_at") or row.get("created_at"), "security start")
-        status, conclusion = row.get("status"), row.get("conclusion")
-        require(status in {"queued", "in_progress", "completed"}, "unknown security status")
-        require((status == "completed") == (conclusion is not None), "incoherent security completion")
-        if status == "completed":
-            reporter.parse_time(row.get("completed_at"), "security completion")
+        require(identity not in seen_checks, "ambiguous exact security checks")
+        seen_checks.add(identity)
         result.append(SecurityCheck(row["id"], *identity, pr.head_sha, status, conclusion,
-                                    row.get("started_at") or row.get("created_at"),
-                                    row.get("completed_at")))
-    require(len({item.id for item in result}) == len(result), "duplicate security check")
-    require({(item.name, item.app_id, item.app_slug) for item in result} == SECURITY_CHECKS
-            and len(result) == len(SECURITY_CHECKS), "missing or ambiguous exact security checks")
+                                    started, row.get("completed_at")))
     return tuple(sorted(result, key=lambda item: item.name))
 
 
