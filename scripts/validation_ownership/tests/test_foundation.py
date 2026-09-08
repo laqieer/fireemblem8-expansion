@@ -139,6 +139,23 @@ class FoundationTests(unittest.TestCase):
                     operation()
         self.assertFalse(self.scratch.exists())
 
+    def runtime_data_path(self):
+        # os.py is a Python startup landmark; its incidental stat would add
+        # incompatible live-inode metadata to the access-only reuse control.
+        result = subprocess.run(
+            ["/usr/bin/python3", "-I", "-S", "-B", "-c", "import calendar; print(calendar.__file__)"],
+            cwd="/", env=ENVIRONMENT, capture_output=True, check=True, timeout=10,
+        )
+        path = result.stdout.decode("utf-8").strip()
+        self.assertEqual(result.stdout, (path + "\n").encode("utf-8"))
+        self.assertTrue(Path(path).is_absolute())
+        info = Path(path).lstat()
+        self.assertTrue(stat.S_ISREG(info.st_mode))
+        self.assertEqual(info.st_uid, 0)
+        self.assertFalse(info.st_mode & 0o7022)
+        self.assertGreater(info.st_size, 0)
+        return path
+
     def test_runtime_inputs_capture_real_present_absent_and_ancestor_search(self):
         present = "/usr/include/stdio.h"
         absent = "/usr/include/ownership-probe-" + secrets.token_hex(12)
@@ -195,7 +212,7 @@ class FoundationTests(unittest.TestCase):
 
     def test_runtime_inputs_read_only_exact_bytes_and_capture_limits(self):
         from scripts.validation_ownership.make_probe import _capture_runtime_input
-        path = "/usr/lib/x86_64-linux-gnu/libc.so"
+        path = self.runtime_data_path()
         expected = Path(path).read_bytes()
         self.assertGreater(len(expected), 0)
         self.add("Makefile", f"VALUE := $(file <{path})\n$(info $(VALUE))\nall: ;\n")
@@ -203,6 +220,12 @@ class FoundationTests(unittest.TestCase):
             ["/usr/bin/make", "-f", "Makefile", "all"], cwd=self.root,
             env=ENVIRONMENT, capture_output=True, check=True, timeout=10,
         )
+        with self.session() as session:
+            with self.assertRaisesRegex(
+                MakeProbeError, "uncaptured Make runtime access: read " + re.escape(path),
+            ):
+                session.make("all", variables=("VALUE",))
+        self.assert_clean(session)
         with self.session(runtime_files=(path,)) as session:
             captured, = session.runtime_inputs
             self.assertEqual(captured.data, expected)
@@ -309,7 +332,7 @@ class FoundationTests(unittest.TestCase):
     def test_runtime_inputs_metadata_uses_shared_guest_revalidation(self):
         present = "/usr/include/stdio.h"
         absent = "/usr/include/ownership-metadata-" + secrets.token_hex(12)
-        library = "/usr/lib/x86_64-linux-gnu/libc.so"
+        library = self.runtime_data_path()
         self.assertTrue(Path(library).is_file())
         self.assertFalse(Path(absent).exists())
         self.add("data/value", "captured source")
@@ -365,7 +388,7 @@ class FoundationTests(unittest.TestCase):
         self.assert_clean(session)
 
     def test_runtime_inputs_capture_full_optional_buffers_status_flags_and_masks(self):
-        path = "/usr/lib/x86_64-linux-gnu/libc.so"
+        path = self.runtime_data_path()
         self.assertTrue(Path(path).is_file())
         self.add("reader.py", (
             "import ctypes,json,os\n"

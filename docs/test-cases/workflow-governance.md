@@ -3345,6 +3345,19 @@ No ROM, ARM compiler, emulator, credentials, remote mutation or subjective
 judgment is required. Use the repository's existing locked host Python when
 available; no additional Python package is required by this runtime family.
 
+The byte/access/full-buffer controls discover ordinary standard-library data
+with `/usr/bin/python3 -I -S -B -c 'import calendar; print(calendar.__file__)'`.
+The result must be an ordinary trusted regular file accepted by the existing
+capture and command policy, not a reserved image. Its path and byte size are
+discovered, not a Debian unversioned `libc.so` prerequisite or pinned Python
+version. `calendar` avoids Python's `os.py` startup-landmark stat, which would
+legitimately add incompatible live-inode metadata to the access-only reuse
+control. The complete incompatible-inode/buffer/status assertions remain in
+their separate control; no metadata is filtered to make the fixture work.
+Modeling an unavailable linker-script pathname proves only fixture independence,
+not an alternate native host's platform support. Never install that library or
+skip an authority check to satisfy these tests.
+
 ### Actions
 
 1. From the repository root, run this complete ordinary/confined comparison.
