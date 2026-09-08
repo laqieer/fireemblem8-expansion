@@ -3412,6 +3412,33 @@ substituting another revision.
    context exits cannot revive closed state; outer cleanup clears suspended
    caches and native handles, not just the currently selected dictionaries.
 
+   Exercise the owner-exit regressions directly, without rerunning an unrelated
+   native/profile suite:
+
+   ```sh
+   python3 -m unittest scripts.validation_ownership.tests.test_foundation.FoundationTests.test_immutable_view_foreign_exit_preserves_correct_owner_unwind scripts.validation_ownership.tests.test_foundation.FoundationTests.test_immutable_view_foreign_exit_during_command_preserves_backing_and_cache_owner -v
+   ```
+
+   The entering worker warms real CURRENT/BASE command caches, then another
+   owned thread attempts normal exit, exceptional exit and misnested exit.
+   Record backing, cache identity/content, view stack, registered children,
+   handlers and accounting **before the owner resumes**. Every attempt must
+   raise the worker-violation error before the context generator is resumed
+   or receives an exception. Only the existing failed-budget flag changes:
+   there is no foreign cleanup or signal restoration. The owner must still
+   be able to unwind the preserved context normally or exceptionally.
+
+   In the active-command case, the genuine confined BASE child first reads
+   its source and writes an owned start marker, then waits on an owned
+   release marker. Pause the owner at its existing budget check while the
+   other thread attempts exit. Before releasing the owner/child, require
+   intact BASE backing/cache/stack and the same live registered child with
+   an open lifetime pipe. On resumption the owner encounters the failed
+   budget and cleans up; BASE output must not enter CURRENT's cache.
+   The synchronization is test-only, not a cross-thread production scheduler.
+   Every reproduction thread must join and correct-owner cleanup must finish,
+   including when exercising the pre-fix negative.
+
 5. Observe file-to-directory and directory-to-file changes, different file
    values, complete selected directory listings, module presence/absence,
    symlink/unadmitted-gitlink rejection and exact empty admitted gitlinks.
@@ -3479,6 +3506,13 @@ second-session and missing-CURRENT-source rejections. Borrowing CURRENT's
 owner list gives the wrong answer for the deleted BASE source. Unsupported
 types, stale metadata/handles, failed or closed budgets and exhausted
 resources must reject, never produce success-shaped replacement evidence.
+The pre-fix owner-exit controls delete selected storage and clear/restore
+caches from a foreign thread. Exceptional exit closes the budget; misnested
+exit also attempts main-thread signal restoration and produces signal errors.
+The synchronized active case returns real BASE output into the restored
+CURRENT cache under its BASE request key. This proves broken cache ownership,
+not a demonstrated key collision. Keep those outcomes as negatives; a check
+inside generator cleanup cannot preserve the context for its later owner.
 
 ### Interactions and save compatibility
 

@@ -1455,6 +1455,205 @@ class FoundationTests(unittest.TestCase):
                     self.assertFalse(session._views)
                 self.assert_clean(session)
 
+    def view_exit_observer(self, session, backing):
+        state = {name: getattr(session, name) for name in (
+            "loader", "snapshot", "tree", "cache", "mappings", "native_tools", "make_runtime", "base", "budget",
+        )}
+        cache = {key: tuple(values) for key, values in session.cache.items()}
+        stack = tuple(session._views)
+        files = {path: path.stat() for path in backing}
+        children = tuple(session.budget.children)
+        handlers = dict(session.handlers)
+        signals = {sig: signal.getsignal(sig) for sig in handlers}
+        counts = session.budget.runs, session.budget.states, dict(session.budget.bytes)
+        def observe():
+            return {
+                "view_identity": all(getattr(session, name) is value for name, value in state.items()),
+                "cache_contents": {key: tuple(values) for key, values in state["cache"].items()} == cache,
+                "view_stack": tuple(session._views) == stack,
+                "backing": all(path.is_file() and path.stat() == info for path, info in files.items()),
+                "children": tuple(session.budget.children) == children,
+                "handlers": session.handlers == handlers,
+                "signals": {sig: signal.getsignal(sig) for sig in signals} == signals,
+                "accounting": (session.budget.runs, session.budget.states, session.budget.bytes) == counts,
+                "budget_failed": session.budget.failed,
+                "budget_closed": session.budget.closed,
+            }
+        return observe
+
+    def test_immutable_view_foreign_exit_preserves_correct_owner_unwind(self):
+        for exit_kind in ("normal", "exceptional", "misnested"):
+            with self.subTest(exit_kind=exit_kind):
+                budget = ProbeBudget()
+                self.add("value", "base")
+                base = self.capture_view(budget)
+                self.add("value", "current")
+                current = self.capture_view(budget)
+                reader = Command(
+                    ("/usr/bin/python3", "-c", "print(open('value').read())"), sources=("value",),
+                )
+                errors, observed, contexts, unwind_errors = [], {}, [], []
+                foreign_error = RuntimeError("foreign exception delivery")
+                owner_error = RuntimeError("correct owner exception")
+                with ProbeSession(current, scratch_root=self.scratch, budget=budget) as session:
+                    original = session.loader, session.snapshot, session.tree, session.cache
+                    self.assertEqual(session.command(reader).stdout, b"current\n")
+                    backing = [session.tree / "value"]
+                    outer = session.select_view(base)
+                    outer.__enter__()
+                    contexts.append(outer)
+                    self.assertEqual(session.command(reader).stdout, b"base\n")
+                    backing.append(session.tree / "value")
+                    if exit_kind == "misnested":
+                        inner = session.select_view(current)
+                        inner.__enter__()
+                        contexts.append(inner)
+                        self.assertEqual(session.command(reader).stdout, b"current\n")
+                        backing.append(session.tree / "value")
+                    selected_roots = [path.parent.parent for path in backing[1:]]
+                    observe = self.view_exit_observer(session, backing)
+                    def foreign():
+                        try:
+                            outer.__exit__(
+                                *((RuntimeError, foreign_error, None)
+                                  if exit_kind == "exceptional" else (None, None, None)),
+                            )
+                        except BaseException as error:
+                            errors.append(error)
+                        finally:
+                            observed.update(observe())
+                    thread = threading.Thread(target=foreign)
+                    try:
+                        thread.start()
+                        thread.join(timeout=10)
+                        self.assertFalse(thread.is_alive())
+                    finally:
+                        for context in reversed(contexts):
+                            try:
+                                if exit_kind == "exceptional" and context is outer:
+                                    self.assertFalse(context.__exit__(RuntimeError, owner_error, None))
+                                else:
+                                    self.assertFalse(context.__exit__(None, None, None))
+                            except BaseException as error:
+                                unwind_errors.append(error)
+                    restored = (
+                        (session.loader, session.snapshot, session.tree, session.cache) == original
+                        and all(not path.exists() for path in selected_roots)
+                    )
+                self.assert_clean(session)
+                self.assertEqual(observed, {
+                    "view_identity": True, "cache_contents": True, "view_stack": True,
+                    "backing": True, "children": True, "handlers": True, "signals": True,
+                    "accounting": True, "budget_failed": True, "budget_closed": False,
+                }, {"exit_kind": exit_kind, "observed_before_owner_unwind": observed,
+                    "foreign_errors": [str(error) for error in errors],
+                    "foreign_cleanup_errors": [getattr(error, "cleanup_errors", ()) for error in errors]})
+                self.assertEqual(len(errors), 1)
+                self.assertIsInstance(errors[0], MakeProbeError)
+                self.assertIn("one bounded execution worker", str(errors[0]))
+                self.assertEqual(unwind_errors, [])
+                self.assertTrue(restored)
+
+    def test_immutable_view_foreign_exit_during_command_preserves_backing_and_cache_owner(self):
+        budget = ProbeBudget()
+        self.add("value", "base")
+        base = self.capture_view(budget)
+        self.add("value", "current")
+        current = self.capture_view(budget)
+        reader = Command(
+            ("/usr/bin/python3", "-c", "print(open('value').read())"), sources=("value",),
+        )
+        command = Command((
+            "/usr/bin/python3", "-c",
+            "import time\nfrom pathlib import Path\nvalue=Path('value').read_text()\n"
+            "Path('/work/started').write_text(value)\n"
+            "while not Path('/work/release').exists(): time.sleep(0.01)\n"
+            "print(value)\n",
+        ), sources=("value",))
+        paused, attacked = threading.Event(), threading.Event()
+        work, observed, errors, coordination_errors = [], {}, [], []
+        owner_error, output = None, None
+        with ProbeSession(current, scratch_root=self.scratch, budget=budget) as session:
+            original = session.loader, session.snapshot, session.tree, session.cache
+            self.assertEqual(session.command(reader).stdout, b"current\n")
+            current_cache = session.cache
+            current_contents = {key: tuple(values) for key, values in current_cache.items()}
+            context = session.select_view(base)
+            context.__enter__()
+            self.assertEqual(session.command(reader).stdout, b"base\n")
+            backing = (original[2] / "value", session.tree / "value")
+            run, remaining = session._sandbox_run, budget.remaining
+            def capture_work(root, **kwargs):
+                work.append(Path(next(mount["source"] for mount in kwargs["mounts"] if mount["target"] == "/work")))
+                return run(root, **kwargs)
+            def pause_owner():
+                if budget.children and not paused.is_set():
+                    paused.set()
+                    if not attacked.wait(timeout=15):
+                        raise AssertionError("foreign exit did not finish while the owner was paused")
+                return remaining()
+            def foreign():
+                try:
+                    if not paused.wait(timeout=10):
+                        raise AssertionError("owner did not reach an actual registered child")
+                    deadline = time.monotonic() + 10
+                    while not (work[0] / "started").is_file():
+                        if time.monotonic() >= deadline:
+                            raise AssertionError("real BASE command did not publish its start marker")
+                        attacked.wait(timeout=0.01)
+                    self.assertEqual((work[0] / "started").read_text(), "base")
+                    children = tuple(budget.children)
+                    self.assertEqual(len(children), 1)
+                    self.assertIsNone(children[0].poll())
+                    observe = self.view_exit_observer(session, backing)
+                    try:
+                        context.__exit__(None, None, None)
+                    except BaseException as error:
+                        errors.append(error)
+                    observed.update(observe())
+                    observed["registered_child_alive"] = children[0].poll() is None
+                    observed["lifetime_pipe_open"] = not children[0].stdin.closed
+                except BaseException as error:
+                    coordination_errors.append(error)
+                finally:
+                    if work and work[0].is_dir():
+                        (work[0] / "release").write_text("resume")
+                    attacked.set()
+            thread = threading.Thread(target=foreign)
+            try:
+                thread.start()
+                with patch.object(session, "_sandbox_run", capture_work), patch.object(budget, "remaining", pause_owner):
+                    try:
+                        output = session.command(command)
+                    except MakeProbeError as error:
+                        owner_error = error
+            finally:
+                attacked.set()
+                thread.join(timeout=15)
+                context.__exit__(None, None, None)
+            joined = not thread.is_alive()
+            restored = (session.loader, session.snapshot, session.tree, session.cache) == original
+            cache_unchanged = {key: tuple(values) for key, values in current_cache.items()} == current_contents
+        self.assert_clean(session)
+        self.assertTrue(joined)
+        self.assertEqual(coordination_errors, [])
+        self.assertEqual(observed, {
+            "view_identity": True, "cache_contents": True, "view_stack": True,
+            "backing": True, "children": True, "handlers": True, "signals": True,
+            "accounting": True, "budget_failed": True, "budget_closed": False,
+            "registered_child_alive": True, "lifetime_pipe_open": True,
+        }, {"observed_before_owner_resumption": observed,
+            "owner_output": None if output is None else output.stdout,
+            "current_cache_unchanged": cache_unchanged})
+        self.assertEqual(len(errors), 1)
+        self.assertIsInstance(errors[0], MakeProbeError)
+        self.assertIn("one bounded execution worker", str(errors[0]))
+        self.assertIsInstance(owner_error, MakeProbeError)
+        self.assertIn("deadline/budget", str(owner_error))
+        self.assertIsNone(output)
+        self.assertTrue(restored)
+        self.assertTrue(cache_unchanged)
+
     def test_immutable_view_teardown_defers_signal_until_previous_state_is_restored(self):
         from scripts.validation_ownership import make_probe
         self.add("value", "same")

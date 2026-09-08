@@ -652,6 +652,18 @@ Closing the outer session clears suspended caches/handles too. A late context
 exit cannot reactivate a closed session. Selection during active execution or
 from another worker rejects.
 
+The returned view context also checks its worker **before** public entry or
+exit delegates to the context generator. Foreign normal exit, exception
+delivery and misnested exit cannot resume/throw into that generator, clear a
+cache, delete backing, terminate children or restore signal/session state.
+The existing worker-violation policy marks the report budget failed; it does
+not perform cleanup from the offending thread. The context remains available
+for the original worker's normal or exceptional unwind, even with that failed
+budget. Correct-owner misnested exit still closes the report as documented.
+An active owner command subsequently encounters the failed budget on its
+existing checks and performs its own cleanup; there is no cross-thread
+scheduler or transfer of execution authority.
+
 The [indexed human procedure](test-cases/workflow-governance.md#tc-workflow-probe-views-001-select-immutable-ownership-views-with-one-report-budget)
 maps all deterministic checks, including real Git BASE/CURRENT registry
 declarations and renamed source bytes. Its discoverable

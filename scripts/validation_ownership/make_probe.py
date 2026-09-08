@@ -18,7 +18,7 @@ import stat
 import struct
 import sys
 from collections.abc import Iterator
-from contextlib import contextmanager
+from contextlib import AbstractContextManager, contextmanager
 from dataclasses import dataclass
 from functools import wraps
 from pathlib import Path, PurePosixPath
@@ -503,6 +503,26 @@ def _scratch_directory(loader, requested):
                     failure.add_note(f"scratch descriptor cleanup failed: {cleanup}")
 
 
+class _OwnedViewContext(AbstractContextManager):
+    def __init__(self, session, context):
+        self._session = session
+        self._context = context
+
+    def _require_owner(self):
+        if get_ident() != self._session.owner_thread:
+            self._session.budget.failed = True
+            raise MakeProbeError("a probe session has one bounded execution worker")
+
+    def __enter__(self):
+        self._require_owner()
+        return self._context.__enter__()
+
+    def __exit__(self, kind, value, traceback):
+        # A check inside the generator would still let its finally blocks run.
+        self._require_owner()
+        return self._context.__exit__(kind, value, traceback)
+
+
 class ProbeSession:
     """The only execution authority; one lifetime with explicitly selected views."""
 
@@ -577,14 +597,14 @@ class ProbeSession:
     def _interrupt(self, signum, frame):
         raise KeyboardInterrupt(f"ownership probe interrupted by signal {signum}")
 
-    @contextmanager
-    def select_view(self, loader: AuthorityLoader) -> Iterator[ProbeSession]:
+    def select_view(self, loader: AuthorityLoader) -> AbstractContextManager[ProbeSession]:
         """Temporarily select an immutable capture on this report's authority."""
+        return _OwnedViewContext(self, self._select_view(loader))
+
+    @contextmanager
+    def _select_view(self, loader: AuthorityLoader) -> Iterator[ProbeSession]:
         if self.base is None or self.snapshot is None:
             raise MakeProbeError("probe session is not active")
-        if get_ident() != self.owner_thread:
-            self.budget.failed = True
-            raise MakeProbeError("a probe session has one bounded execution worker")
         self.budget.remaining()
         if (
             not isinstance(loader, AuthorityLoader) or loader.budget is not self.budget
