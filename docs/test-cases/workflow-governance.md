@@ -292,6 +292,17 @@ the consumers' independent protected-principal/deployment requirements.
     and normal owner publication before unpause. Missing data and unrelated
     green runs cannot unpause. All final review/security/local/family/manual/
     candidate/master gates remain mandatory.
+    Exercise marker lifecycle through the real candidate-run parser: absent,
+    queued/in-progress-null, successful, terminal non-success and malformed/
+    contradictory cases. Valid non-success remains unbound history; only
+    successful exact witnesses bind, and newer unbound full work blocks reuse
+    of old green results.
+    Use the actual `assess_observed` callback inside `dispatch_full`, with
+    complete controlled API responses—not a reducer-only stub. Empty, partial
+    and coherent pending security quality permits the known-pause fallback
+    while preventing merge even after all other quality is ready. Wrong app/
+    head, invalid fields/pagination/lifecycle, unknown authority and accepted
+    findings retain their strict dispatch/abandonment behavior.
 
 ### Actual disposable-PR exercise — coordinator only
 

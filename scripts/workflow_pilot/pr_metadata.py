@@ -2406,23 +2406,44 @@ def _metadata_event_step(
     return digest
 
 
-def _candidate_step_details(raw):
+def _candidate_step_observation(raw):
     from .adaptive_gate import BINDING_PREFIX, parse_binding, binding_base_ref
     steps = raw.get("steps", ())
     if not isinstance(steps, (tuple, list)):
         raise MetadataEditError("candidate binding steps are malformed")
+    if any(not isinstance(step, dict) or not isinstance(step.get("name"), str) or not step["name"]
+           for step in steps):
+        raise MetadataEditError("candidate step record is malformed")
     matching = [step for step in steps
                 if isinstance(step, dict) and isinstance(step.get("name"), str)
                 and step["name"].startswith(BINDING_PREFIX)]
     if not matching:
-        return None, None
+        return None, None, False
     if len(matching) != 1:
         raise MetadataEditError("duplicate candidate binding step")
     step = matching[0]
     binding = parse_binding(step["name"])
-    if binding is None or step.get("status") != "completed" or step.get("conclusion") != "success":
-        raise MetadataEditError("candidate binding was not successfully observed")
-    return binding, binding_base_ref(step["name"])
+    if binding is None:
+        raise MetadataEditError("candidate binding encoding is invalid")
+    status, conclusion = step.get("status"), step.get("conclusion")
+    if not isinstance(status, str) or status not in {"queued", "in_progress", "completed"}:
+        raise MetadataEditError("candidate binding step status is unknown")
+    if (
+        (status == "completed" and (
+            not isinstance(conclusion, str) or conclusion not in RUN_CONCLUSIONS))
+        or (status != "completed" and conclusion is not None)
+    ):
+        raise MetadataEditError("candidate binding step lifecycle is incoherent")
+    if ((raw.get("status") == "completed" and status != "completed")
+            or (raw.get("status") in ACTIVE_RUN_STATUSES - {"in_progress"} and status != "queued")
+            or (raw.get("conclusion") == "skipped" and conclusion != "skipped")):
+        raise MetadataEditError("candidate binding step contradicts its job lifecycle")
+    return binding, binding_base_ref(step["name"]), status == "completed" and conclusion == "success"
+
+
+def _candidate_step_details(raw):
+    binding, base_ref, successful = _candidate_step_observation(raw)
+    return (binding, base_ref) if successful else (None, None)
 
 
 def _candidate_step(raw):
@@ -2583,6 +2604,7 @@ def _list_jobs(
     run_started_at: datetime.datetime | None,
     run_updated_at: datetime.datetime | None,
     event: str = "pull_request",
+    run_pr_number: int | None = None,
 ) -> tuple[JobState, ...]:
     raw_jobs = _list_counted_pages(
         client,
@@ -2619,6 +2641,17 @@ def _list_jobs(
     names = [job.name for job in jobs]
     if len(names) != len(set(names)):
         raise MetadataEditError(f"Build run {run_id} repeats a job name")
+    claims = set()
+    for raw in raw_jobs:
+        if raw["name"] not in {candidate_evidence.FULL_CLASSIFIER, candidate_evidence.PREFLIGHT_CLASSIFIER}:
+            continue
+        claim, base_ref, _successful = _candidate_step_observation(raw)
+        if claim is not None:
+            if claim[1] != head_sha or (run_pr_number is not None and claim[0] != run_pr_number):
+                raise MetadataEditError("candidate marker contradicts run identity")
+            claims.add((claim, base_ref))
+    if len(claims) > 1:
+        raise MetadataEditError("Build run has contradictory candidate declarations")
     return jobs
 
 
@@ -2848,6 +2881,7 @@ def _parse_run(
                 f"Build run {run_id} terminal authority changed during refresh"
             )
         return refreshed_id, refreshed_number, refreshed
+    raw_prs = raw.get("pull_requests") or []
     jobs = _list_jobs(
         client,
         state,
@@ -2860,6 +2894,7 @@ def _parse_run(
         run_started_at=run_started_at,
         run_updated_at=updated_at if status == "completed" else None,
         event=event,
+        run_pr_number=raw_prs[0]["number"] if raw_prs else None,
     )
     bindings = {job.candidate_binding for job in jobs if job.candidate_binding is not None}
     if len(bindings) > 1 or any(item[1] != state.head_sha for item in bindings):
@@ -2874,7 +2909,6 @@ def _parse_run(
         binding = "unbound"
     if candidate_binding is not None:
         from .adaptive_gate import frozen_base
-        raw_prs = raw.get("pull_requests") or []
         if raw_prs and raw_prs[0]["number"] != candidate_binding[0]:
             raise MetadataEditError("candidate marker contradicts PR binding")
         if candidate_base_ref is None:

@@ -9,12 +9,14 @@ import os
 from pathlib import Path
 import subprocess
 import tempfile
+from types import SimpleNamespace
 import unittest
 
 from scripts.workflow_pilot import adaptive_gate as gate, agent_handoff as handoff
 from scripts.workflow_pilot import coordinator_observations as observations, raw_diff_check as raw_git
 from scripts.workflow_pilot import event_classifier, pr_metadata as api, reporter
 from scripts.workflow_pilot import review_family as review
+from scripts.workflow_pilot.trusted_review_gate import GitTree, ReviewTools, REVIEW_QUERY
 from scripts.workflow_pilot.tests import test_pr_metadata as metadata
 from scripts.workflow_pilot.tests import test_reporter as reporting
 from scripts.workflow_pilot.tests.test_adaptive_gate import GateTests, decisions
@@ -477,6 +479,9 @@ class ProducerFixture:
         if (method == "POST" and self.dispatch_handler is not None
                 and endpoint == api._endpoint(self.repository, "actions/workflows/build.yml/dispatches")):
             return self.dispatch_handler(body)
+        if method == "POST" and endpoint == "graphql" and endpoint in self.routes:
+            assert body["query"] == REVIEW_QUERY
+            return metadata._response(copy.deepcopy(self.routes[endpoint]))
         if method != "GET" or endpoint not in self.routes:
             raise AssertionError(f"unplanned provider call: {method} {endpoint}")
         value = self.routes[endpoint]
@@ -721,6 +726,58 @@ class SafetyProducerTests(unittest.TestCase):
         git(f.root, "push", "publication", "candidate")
         git(f.root, "checkout", "publish-pause")
         rows = []
+        security_payload = {"total_count": 0, "check_runs": []}
+        review_nodes = []
+        quality_ready = False
+        accept_security = False
+        security_endpoint = metadata._query(
+            f"commits/{head}/check-runs", [("filter", "latest"), ("per_page", "100"), ("page", "1")])
+
+        def security(kind):
+            at = observations.utc_now()
+            checks = [{"id": index, "name": name, "app": {"id": app_id, "slug": slug},
+                       "head_sha": head, "status": "completed", "conclusion": "success",
+                       "started_at": at, "completed_at": at}
+                      for index, (name, app_id, slug) in enumerate(sorted(gate.SECURITY_CHECKS), 1)]
+            if kind == "empty":
+                checks = []
+            elif kind == "partial":
+                checks = checks[:1]
+            elif kind in {"unrelated", "malformed-unrelated"}:
+                checks = [{**checks[0], "name": "Unrelated legitimate check",
+                           "app": {"id": 999, "slug": "other-app"}}]
+                if kind == "malformed-unrelated":
+                    checks[0]["name"] = None
+            elif kind in {"queued", "in-progress"}:
+                for check in checks:
+                    check.update(status="queued" if kind == "queued" else "in_progress",
+                                 conclusion=None, completed_at=None)
+                    if kind == "queued":
+                        check["started_at"] = None
+            elif kind in {"failure", "accepted-finding"}:
+                checks[0]["conclusion"] = "failure"
+            elif kind == "wrong-app":
+                checks[0]["app"]["id"] += 1
+            elif kind == "wrong-head":
+                checks[0]["head_sha"] = "f" * 40
+            elif kind == "duplicate":
+                checks[1] = {**copy.deepcopy(checks[0]), "id": 3}
+            elif kind == "malformed":
+                checks[0]["id"] = True
+            elif kind == "unknown-status":
+                checks[0]["status"] = "invented"
+            elif kind == "unknown-conclusion":
+                checks[0]["conclusion"] = "invented"
+            elif kind == "active-completion":
+                checks[0].update(status="in_progress", conclusion=None)
+            elif kind == "missing-start":
+                checks[0].update(status="in_progress", conclusion=None, started_at=None, completed_at=None)
+            payload = {"total_count": len(checks), "check_runs": checks}
+            if kind == "pagination":
+                payload["total_count"] += 1
+            if kind == "unavailable":
+                return api.MetadataEditError("fixture security authority unavailable")
+            return payload
 
         def run(number, *, preflight):
             raw, jobs = metadata._run(number, number, mode="full")
@@ -755,6 +812,13 @@ class SafetyProducerTests(unittest.TestCase):
             raw_pr.update(additions=1, deletions=0)
             f.routes[metadata._endpoint(f"pulls/{metadata.PR_NUMBER}")] = raw_pr
             f.routes[metadata._endpoint("actions/workflows/build.yml")] = metadata._workflow()
+            f.routes[security_endpoint] = copy.deepcopy(security_payload)
+            f.routes["graphql"] = {"data": {"repository": {
+                "nameWithOwner": f.repository,
+                "pullRequest": {"number": metadata.PR_NUMBER, "baseRefOid": current, "headRefOid": head,
+                                "reviews": {"pageInfo": {"hasNextPage": False, "endCursor": None},
+                                            "nodes": copy.deepcopy(review_nodes)},
+                                "reviewThreads": {"pageInfo": {"hasNextPage": False}, "nodes": []}}}}}
             f.routes[metadata._query("actions/workflows/build.yml/runs",
                                     [("head_sha", head), ("per_page", "100"), ("page", "1")])] = {
                 "total_count": len(rows), "workflow_runs": [row for row, _ in reversed(rows)]}
@@ -787,6 +851,7 @@ class SafetyProducerTests(unittest.TestCase):
         gate.confirm_safety_publication(f, f.state_path)
         pr = refresh()
         posts = []
+        self.post_observations = []
 
         def dispatch(body):
             state = observations.load_json(f.state_path)
@@ -796,20 +861,45 @@ class SafetyProducerTests(unittest.TestCase):
             self.assertEqual(record["watermark"], 1)
             self.assertEqual(body, {"ref": "candidate"})
             posts.append(body)
+            self.post_observations.append({"body": copy.deepcopy(body), "record": copy.deepcopy(record)})
             return metadata._response(None, status=204)
 
         f.dispatch_handler = dispatch
+        tools = SimpleNamespace(model=review, tree=lambda revision: GitTree(f.root, revision))
+        tools.validate_base = lambda request, live: ReviewTools.validate_base(tools, request, live)
 
         def assess(state):
-            current, lines = gate.fetch_candidate(f, f.repository, pr.number)
-            decision = gate.fetch_decision(f, current, lines)
-            observed = api.list_candidate_runs(f, current, include_dispatch=True)
             record = gate.find_candidate(state, (pr.number, head, f.cause, "master"))
-            result = gate.assess_candidate(
-                state, record, decision, current, session, (), (), (), observed, criteria_ready=False)
-            self.assertFalse(result["merge_eligible"])
+            accepted = gate.security_checks(f, pr)[:1] if accept_security else ()
+            result, observed = gate.assess_observed(
+                f, state, record, session, tuple(session.rounds.events), tools,
+                criteria_ready=quality_ready, accepted_security=accepted)
             return record, result, observed
 
+        self.security_observations = []
+        for kind in ("empty", "partial", "unrelated", "queued", "in-progress", "failure", "complete"):
+            with self.subTest(stage="before-full", quality=kind):
+                security_payload = security(kind)
+                f.routes[security_endpoint] = security_payload
+                _, result, _ = assess(observations.load_json(f.state_path))
+                self.assertTrue(result["dispatchable"], result)
+                self.assertFalse(result["merge_eligible"])
+                self.assertEqual("exact-clean-security" in result["missing"], kind != "complete")
+                self.security_observations.append({"stage": "before-full", "quality": kind,
+                                                   "assessment": result})
+        for kind in ("wrong-app", "wrong-head", "duplicate", "malformed", "malformed-unrelated", "unknown-status",
+                     "unknown-conclusion", "active-completion", "missing-start", "pagination", "unavailable"):
+            with self.subTest(invalid_authority=kind):
+                f.routes[security_endpoint] = security(kind)
+                with self.assertRaises((ValueError, reporter.PilotDataError)) as rejected:
+                    gate.dispatch_full(f, f.state_path, pr, assess)
+                self.security_observations.append({"stage": "invalid-authority", "quality": kind,
+                                                   "rejected": type(rejected.exception).__name__,
+                                                   "detail": str(rejected.exception)})
+                self.assertEqual(posts, [])
+                self.assertIsNone(observations.load_json(f.state_path)["candidates"][0]["dispatch_requested_at"])
+        security_payload = security("empty")
+        f.routes[security_endpoint] = security_payload
         gate.dispatch_full(f, f.state_path, pr, assess)
         self.assertEqual(posts, [{"ref": "candidate"}])
         with self.assertRaises(ValueError):
@@ -824,6 +914,58 @@ class SafetyProducerTests(unittest.TestCase):
         self.assertEqual(state["candidates"][0]["mode"], "review-first")
         self.assertFalse(result["merge_eligible"])
         self.assertIn("objective-or-manual-criteria", result["missing"])
+        git(f.root, "checkout", "candidate")
+        definitions = {
+            "raw": {"contract": "git-diff-check", "evidence_id": "raw", "inputs": []},
+            "semantic": {"contract": "coordinator-check", "evidence_id": "semantic", "inputs": []},
+        }
+
+        def local_check(context, revision):
+            self.assertEqual(revision, head)
+            program = ("import sys; from pathlib import Path; "
+                       "assert (Path(sys.argv[1])/'docs/candidate.txt').read_text()=='Unchanged candidate\\n'")
+            return raw_git.run_process(
+                ["/usr/bin/python3", "-I", "-B", "-c", program, context["allowed_worktree"]],
+                cwd=f.root, env=raw_git.git_environment()), dict.fromkeys(handoff.METRICS)
+
+        with observations.locked_state(f.state_path) as state:
+            record = state["candidates"][0]
+            gate.register_local_validation(state, record, pr, f.root, definitions)
+            gate.capture_local_check(state, record, pr, "raw")
+            gate.capture_local_check(state, record, pr, "semantic", local_check)
+            self.assertTrue(gate.coordinator_local_ready(state, record, pr))
+        review_nodes.append({
+            "id": "PRR_controlled", "state": "APPROVED", "body": "Controlled complete review",
+            "submittedAt": observations.utc_now(), "commit": {"oid": head},
+            "author": {"__typename": "Bot", "id": "BOT_kgDOCnlnWA", "login": "copilot-pull-request-reviewer"},
+            "comments": {"pageInfo": {"hasNextPage": False}, "nodes": []},
+        })
+        pr = refresh()
+        _, facts = gate._review_snapshot(f, pr, review)
+        session.triage(review.Triage(facts[0], "clean"))
+        quality_ready = True
+        for kind in ("empty", "partial", "unrelated", "queued", "in-progress", "failure", "complete"):
+            with self.subTest(stage="after-full", quality=kind):
+                f.routes[security_endpoint] = security(kind)
+                _, result, _ = assess(observations.load_json(f.state_path))
+                self.assertFalse(result["dispatchable"])
+                self.assertEqual(result["merge_eligible"], kind == "complete", result)
+                self.assertEqual("exact-clean-security" in result["missing"], kind != "complete")
+                self.security_observations.append({"stage": "after-full", "quality": kind,
+                                                   "assessment": result})
+        f.routes[security_endpoint] = security("accepted-finding")
+        accept_security = True
+        with observations.locked_state(f.state_path) as state:
+            record, result, _ = assess(state)
+            self.assertFalse(result["merge_eligible"])
+            self.assertIsNotNone(record["abandoned_reason"])
+            self.security_observations.append({"stage": "accepted-finding", "assessment": result})
+        accept_security = False
+        f.routes[security_endpoint] = security("complete")
+        _, abandoned, _ = assess(observations.load_json(f.state_path))
+        self.assertFalse(abandoned["merge_eligible"])
+        self.assertIn("abandoned-candidate", abandoned["missing"])
+        self.security_observations.append({"stage": "later-green-still-abandoned", "assessment": abandoned})
 
 
 if __name__ == "__main__":
