@@ -451,15 +451,39 @@ class FoundationTests(unittest.TestCase):
 
     def test_runtime_inputs_reject_nonregular_and_replaced_capture(self):
         from scripts.validation_ownership.make_probe import _capture_runtime_input
+        descriptors = set(os.listdir("/proc/self/fd"))
         owned = self.directory / "runtime-input"
         owned.write_bytes(b"before")
+        owned.chmod(0o644)
         # Keep the host-root trust check separate; mutate only this owned inode
         # while exercising the real bounded capture/read and replacement checks.
         def trusted(path, **kwargs):
             self.assertEqual(path, str(owned))
             return owned
         with patch("scripts.validation_ownership.make_probe._trusted_runtime_path", trusted):
-            self.assertEqual(_capture_runtime_input(str(owned), ProbeBudget()).data, b"before")
+            ordinary = _capture_runtime_input(str(owned), ProbeBudget())
+            self.assertEqual((ordinary.data, ordinary.mode), (b"before", 0o644))
+            inode = owned.stat().st_ino
+            for special in (0o4000, 0o2000, 0o1000, 0o6000, 0o5000, 0o3000, 0o7000):
+                with self.subTest(special=oct(special)):
+                    budget = ProbeBudget()
+                    with patch.object(budget, "read_bytes", wraps=budget.read_bytes) as read:
+                        try:
+                            owned.chmod(0o644 | special)
+                            status = owned.lstat()
+                            self.assertTrue(stat.S_ISREG(status.st_mode))
+                            self.assertEqual(stat.S_IMODE(status.st_mode), 0o644 | special)
+                            self.assertEqual(status.st_ino, inode)
+                            with self.assertRaisesRegex(MakeProbeError, "ordinary regular file"):
+                                _capture_runtime_input(str(owned), budget)
+                            read.assert_not_called()
+                            self.assertEqual(budget.bytes, {})
+                        finally:
+                            owned.chmod(0o644)
+                        restored = _capture_runtime_input(str(owned), budget)
+                        self.assertEqual((restored.data, restored.mode), (b"before", 0o644))
+                        self.assertEqual(read.call_count, 1)
+                        self.assertFalse(budget.children)
             for kind in ("directory", "symlink", "fifo"):
                 owned.unlink()
                 if kind == "directory":
@@ -487,6 +511,78 @@ class FoundationTests(unittest.TestCase):
             with patch.object(budget, "read_bytes", replaced):
                 with self.assertRaisesRegex(MakeProbeError, "changed during capture"):
                     _capture_runtime_input(str(owned), budget)
+        self.assertEqual(set(os.listdir("/proc/self/fd")), descriptors)
+
+    def test_runtime_inputs_optional_image_mapping_is_read_only_at_make_entry(self):
+        import mmap
+        from scripts.validation_ownership.make_probe import ALIASES
+        from scripts.validation_ownership.syscall_guard import Violation
+
+        self.add("Makefile", "VALUE := mandatory Make loaded\nall: ;\n")
+        descriptors = set(os.listdir("/proc/self/fd"))
+        page = os.sysconf("SC_PAGE_SIZE")
+        with self.session(runtime_files=("/usr/bin/cat",)) as session:
+            captured, = session.runtime_inputs
+            self.assertNotIn(captured.canonical, ALIASES)
+            self.assertEqual(session.runtime_dispatch, ())
+            self.assertEqual(captured.data[:4], b"\x7fELF")
+            self.assertTrue(captured.mode & 0o111)
+            self.assertGreaterEqual(len(captured.data), page)
+            image = session.runtime_root / captured.canonical.lstrip("/")
+            descriptor = os.open(image, os.O_RDONLY)
+            try:
+                self.assertEqual(os.fstat(descriptor).st_ino, image.stat().st_ino)
+                for protection in (mmap.PROT_READ, mmap.PROT_READ | mmap.PROT_EXEC):
+                    with self.subTest(kernel_protection=protection):
+                        with mmap.mmap(descriptor, page, flags=mmap.MAP_PRIVATE, prot=protection) as mapped:
+                            self.assertEqual(mapped[:32], captured.data[:32])
+                transitions = []
+                observed = self.traced_observation(
+                    9, (0, page, mmap.PROT_READ, mmap.MAP_PRIVATE, descriptor, 0),
+                    {descriptor: captured.canonical}, mode="make", root=session.runtime_root,
+                    runtime_files=(captured.canonical,), observer_ready=True,
+                    transitions=transitions, mapping_bytes=32,
+                )
+                self.assertGreater(observed["result"], 0)
+                self.assertEqual(observed["data"], captured.data[:32])
+                self.assertEqual(observed["accessed"], {captured.canonical})
+                self.assertEqual(transitions, ["entry", "resume", "exit"])
+                self.assertGreater(observed["memory_limit"], 0)
+                self.assertEqual(observed["kernel_memory_limit"], observed["memory_limit"])
+                transitions = []
+                # A stopped raw syscall models Make after observer readiness;
+                # no instructions are injected into Make or the mapped image.
+                with self.assertRaisesRegex(Violation, "^optional runtime image execution denied$"):
+                    self.traced_observation(
+                        9, (0, page, mmap.PROT_READ | mmap.PROT_EXEC, mmap.MAP_PRIVATE, descriptor, 0),
+                        {descriptor: captured.canonical}, mode="make", root=session.runtime_root,
+                        runtime_files=(captured.canonical,), observer_ready=True,
+                        transitions=transitions,
+                    )
+                self.assertEqual(transitions, ["entry"])
+            finally:
+                os.close(descriptor)
+            interpreter = _make_interpreter(dict(session.make_runtime)["/usr/bin/make"])
+            library = session.runtime_root / interpreter.lstrip("/")
+            descriptor = os.open(library, os.O_RDONLY)
+            try:
+                transitions = []
+                observed = self.traced_observation(
+                    9, (0, page, mmap.PROT_READ | mmap.PROT_EXEC, mmap.MAP_PRIVATE, descriptor, 0),
+                    {descriptor: interpreter}, root=session.runtime_root,
+                    transitions=transitions, mapping_bytes=32,
+                )
+                self.assertGreater(observed["result"], 0)
+                self.assertEqual(observed["data"], dict(session.make_runtime)[interpreter][:32])
+                self.assertEqual(transitions, ["entry", "resume", "exit"])
+                self.assertGreater(observed["memory_limit"], 0)
+                self.assertEqual(observed["kernel_memory_limit"], observed["memory_limit"])
+            finally:
+                os.close(descriptor)
+            result = session.make("all", variables=("VALUE",))
+            self.assertEqual(result.semantics["domains"]["VALUE"]["value"], "mandatory Make loaded")
+        self.assert_clean(session)
+        self.assertEqual(set(os.listdir("/proc/self/fd")), descriptors)
 
     def test_runtime_inputs_owned_fixtures_ignore_unowned_host_shapes(self):
         for occupied in ("/usr/include/build", "/usr/include/.dep"):
@@ -3454,7 +3550,8 @@ raise AssertionError("default termination was lost")
 
     def traced_observation(
         self, number, arguments, descriptors, *, buffer=None, mode="command",
-        observation_limit=1024*1024, directories=("data",),
+        observation_limit=1024*1024, directories=("data",), root=None,
+        runtime_files=(), observer_ready=False, transitions=None, mapping_bytes=0,
     ):
         from scripts.validation_ownership.syscall_guard import (
             GETREGS, SETOPTIONS, SYSCALL, Policy, Process, Registers, memory, ptrace, signed, trace_me,
@@ -3468,7 +3565,7 @@ raise AssertionError("default termination was lost")
         with self.stopped_tracee(operation) as pid:
             ptrace(SETOPTIONS, pid, 0, 0x100001)
             policy = Policy({
-                "root": str(self.directory), "mode": mode, "code": ["code.bin"],
+                "root": str(self.directory if root is None else root), "mode": mode, "code": ["code.bin"],
                 "sources": ["data/a", "data/b"], "enumerations": list(directories),
                 "source_view": str(self.root),
                 "deadline": time.monotonic() + 30,
@@ -3476,8 +3573,12 @@ raise AssertionError("default termination was lost")
                 "memory_limit": 256*1024*1024, "syscall_limit": 1024,
                 "write_limit": 1024*1024, "observation_count": 1024,
                 "observation_limit": observation_limit, "forbidden_paths": [],
+                "runtime_files": list(runtime_files),
             })
-            state = Process("make" if mode == "make" else "command", memory_group=pid)
+            state = Process(
+                "make" if mode == "make" else "command", memory_group=pid,
+                observer_ready=observer_ready, bootstrap=not observer_ready,
+            )
             state.fds.update(descriptors)
             policy.processes[pid] = state
             directory_bytes = []
@@ -3488,6 +3589,8 @@ raise AssertionError("default termination was lost")
             policy.observe_directory = record_directory
             entered = False
             for _ in range(256):
+                if entered and transitions is not None:
+                    transitions.append("resume")
                 ptrace(SYSCALL, pid)
                 waited, status = os.waitpid(pid, 0)
                 self.assertEqual(waited, pid)
@@ -3499,6 +3602,8 @@ raise AssertionError("default termination was lost")
                 actual = (registers.rdi, registers.rsi, registers.rdx, registers.r10, registers.r8, registers.r9)
                 expected = tuple(value & ((1 << 64)-1) for value in arguments)
                 if information[0] == 1 and registers.orig_rax == number and actual[:len(expected)] == expected:
+                    if transitions is not None:
+                        transitions.append("entry")
                     policy.entry(pid, state, registers)
                     entry_observation_bytes = policy.observation_bytes
                     self.assertFalse(policy.consumed)
@@ -3508,13 +3613,18 @@ raise AssertionError("default termination was lost")
                 elif information[0] == 2 and entered:
                     result = signed(registers.rax)
                     policy.leave(pid, state, registers)
+                    if transitions is not None:
+                        transitions.append("exit")
                     return {
                         "result": result, "consumed": set(policy.consumed),
                         "code": set(policy.code_consumed), "accessed": set(policy.accessed),
-                        "data": memory(pid, buffer, result) if buffer is not None and result > 0 else b"",
+                        "data": (memory(pid, result, mapping_bytes) if mapping_bytes and result > 0
+                                 else memory(pid, buffer, result) if buffer is not None and result > 0 else b""),
                         "fds": dict(state.fds),
                         "entry_observation_bytes": entry_observation_bytes,
                         "directory_observation_bytes": directory_bytes[0] if directory_bytes else None,
+                        "memory_limit": state.memory_limit,
+                        "kernel_memory_limit": resource.prlimit(pid, resource.RLIMIT_AS)[0],
                     }
             self.fail("owned syscall did not reach its exit")
 

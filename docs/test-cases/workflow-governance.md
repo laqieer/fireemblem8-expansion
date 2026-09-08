@@ -3864,6 +3864,21 @@ skip an authority check to satisfy these tests.
    absent multiarch include directory; neither may prevent the owned regular
    capture, real directory/symlink/FIFO denials or inode-replacement denial.
    These models test fixture independence, not another native platform.
+   On the actual owned regular inode, add set-UID, set-GID, sticky and all
+   combinations to mode `0644`. Each special-mode capture must fail at its
+   type/mode predicate before any data read, not an unrelated trust failure.
+   Restore `0644` after every attempt and require successful capture again.
+7. Run `test_runtime_inputs_optional_image_mapping_is_read_only_at_make_entry`
+   through the same focused automation. The owned image contains actual
+   captured non-intercepted executable bytes. Ordinary kernel read and
+   read-plus-execute mappings must both succeed and expose the expected bytes;
+   no mapped instruction is executed. The existing stopped-tracee helper then
+   models post-observer Make state and its explicit runtime declaration:
+   read mapping reaches the real kernel with actual memory reservation, while
+   RX must fail at supervisor syscall entry before resumption. This is not
+   injection into GNU Make, dispatch denial, a noexec substitute or a stubbed
+   guard/reservation. Actual command-library RX and mandatory Make loading
+   remain positive; the separate program-dispatch rejection is retained.
 
 ### Expected result
 
@@ -3899,6 +3914,10 @@ reject without an exact real registration; requesting env cannot produce
 unittest output. The real nonregular/replacement controls mutate only owned
 test inodes, with host-root trust checks tested independently. They do not
 assume a Python executable is a symlink or require a Debian include directory.
+Removing the special-bit predicate must fail every special-mode control;
+removing the optional-image mapping predicate must fail the paired RX control.
+These are test-only coverage mutations of existing guards, not newly
+discovered implementation failures or a reset of any bound review hold.
 
 ### Interactions and save compatibility
 
