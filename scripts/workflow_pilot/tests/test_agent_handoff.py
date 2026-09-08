@@ -759,6 +759,42 @@ class HandoffSchemaTests(unittest.TestCase):
         with self.assertRaises(handoff.HandoffDataError):
             validator(observations.parse_bytes(observations.json_bytes(document)))
 
+    def test_explicit_recovery_plan_can_retain_unknown_stop_settings(self):
+        original = self.fixture.state
+        for autostop, disconnect in ((None, None), (None, False), (True, None)):
+            planned = copy.deepcopy(original)
+            planned["availability"].update(
+                mode="plan", autostop_enabled=autostop, stop_on_disconnect=disconnect,
+                plan="Persist observations and renew coverage after interruption; do not rely on uptime.")
+            for name, validator in (("schema", self.validator.validate), ("runtime", handoff.validate_state)):
+                with self.subTest(settings=(autostop, disconnect), consumer=name):
+                    validator(observations.parse_bytes(observations.json_bytes(planned)))
+            self.assertEqual(handoff.availability_errors(planned, observations.utc_now()), [])
+            always_on = copy.deepcopy(planned)
+            always_on["availability"].update(mode="always-on", plan=None)
+            self.reject_both(always_on, handoff.validate_state)
+
+        for plan in (None, "", " "):
+            changed = copy.deepcopy(planned)
+            changed["availability"]["plan"] = plan
+            self.reject_both(changed, handoff.validate_state)
+        for invalid in (0, 1, "unknown", []):
+            changed = copy.deepcopy(planned)
+            changed["availability"]["autostop_enabled"] = invalid
+            self.reject_both(changed, handoff.validate_state)
+
+        expired = copy.deepcopy(planned)
+        expired["availability"]["valid_until"] = at_offset(-1)
+        self.assertEqual(handoff.availability_errors(expired, observations.utc_now()),
+                         ["coordinator-unavailable"])
+        clock = planned["clock"]
+        for change in ({"boot_id": "different-boot"},
+                       {"boottime_ns": clock["boottime_ns"] + 6_000_000_000}):
+            with self.subTest(clock=change), mock.patch.object(
+                    observations, "clock_observation", return_value={**clock, **change}):
+                self.assertEqual(handoff.availability_errors(planned, observations.utc_now()),
+                                 ["coordinator-unavailable"])
+
     def test_real_generated_assignment_result_state_and_verdict(self):
         f = self.fixture
         result = f.complete()

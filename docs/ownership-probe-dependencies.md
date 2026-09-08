@@ -148,6 +148,10 @@ Run the focused source-only case:
 python3 -m unittest scripts.validation_ownership.tests.test_dependency -v
 ```
 
+The existing native CI owner includes this suite only in full Build mode.
+Metadata-only and review-first preflight runs do not provide native test or
+full Build evidence.
+
 The indexed human procedure is
 [`TC-WORKFLOW-PROBE-DEPENDENCY-001`](test-cases/workflow-governance.md#tc-workflow-probe-dependency-001-observe-real-confined-compiler-dependencies).
 It compares ordinary/confined bytes, source/header unions, changed search and
