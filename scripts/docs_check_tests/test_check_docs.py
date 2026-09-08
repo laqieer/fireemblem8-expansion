@@ -1124,6 +1124,13 @@ class TesterCaseRegistryTests(unittest.TestCase):
                             "python3 -m unittest scripts.validation_ownership.tests.test_producer -v",
                         },
                     },
+                    "TC-WORKFLOW-PROBE-VIEWS-001": {
+                        "document": "docs/test-cases/workflow-governance.md",
+                        "commands": {
+                            "python3 -m unittest "
+                            "scripts.validation_ownership.tests.test_foundation -k immutable_view -v",
+                        },
+                    },
                 },
             },
         }
