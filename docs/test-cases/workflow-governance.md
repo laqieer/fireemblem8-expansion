@@ -3879,6 +3879,18 @@ skip an authority check to satisfy these tests.
    injection into GNU Make, dispatch denial, a noexec substitute or a stubbed
    guard/reservation. Actual command-library RX and mandatory Make loading
    remain positive; the separate program-dispatch rejection is retained.
+   This pointer-independent mmap case uses a fresh exact system-Python exec
+   before its trace stop, with the same fixed `256 MiB` helper address-space
+   policy. Only declared descriptors cross exec, and their actual inode/device
+   identity and the caller's inheritance flags are checked. Other helpers keep
+   their deliberate fork/copied-parent-pointer semantics.
+   Repeat with an owned `256 MiB` PROT_NONE parent reservation: measure actual
+   parent and stopped-tracee virtual memory, require each fresh tracee to fit
+   the unchanged policy while the parent exceeds it, and release the
+   reservation afterward. Returning this case to inherited-parent VM must
+   reproduce real reservation failure. An isolated pass, larger allowance,
+   trimmed test order or skipped read-positive cannot substitute for this
+   enlarged-parent control.
 
 ### Expected result
 

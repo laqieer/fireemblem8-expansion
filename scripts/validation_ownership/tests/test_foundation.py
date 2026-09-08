@@ -619,7 +619,7 @@ class FoundationTests(unittest.TestCase):
                     9, (0, page, mmap.PROT_READ, mmap.MAP_PRIVATE, descriptor, 0),
                     {descriptor: captured.canonical}, mode="make", root=session.runtime_root,
                     runtime_files=(captured.canonical,), observer_ready=True,
-                    transitions=transitions, mapping_bytes=32,
+                    transitions=transitions, mapping_bytes=32, fresh_exec=True,
                 )
                 self.assertGreater(observed["result"], 0)
                 self.assertEqual(observed["data"], captured.data[:32])
@@ -635,7 +635,7 @@ class FoundationTests(unittest.TestCase):
                         9, (0, page, mmap.PROT_READ | mmap.PROT_EXEC, mmap.MAP_PRIVATE, descriptor, 0),
                         {descriptor: captured.canonical}, mode="make", root=session.runtime_root,
                         runtime_files=(captured.canonical,), observer_ready=True,
-                        transitions=transitions,
+                        transitions=transitions, fresh_exec=True,
                     )
                 self.assertEqual(transitions, ["entry"])
             finally:
@@ -648,7 +648,7 @@ class FoundationTests(unittest.TestCase):
                 observed = self.traced_observation(
                     9, (0, page, mmap.PROT_READ | mmap.PROT_EXEC, mmap.MAP_PRIVATE, descriptor, 0),
                     {descriptor: interpreter}, root=session.runtime_root,
-                    transitions=transitions, mapping_bytes=32,
+                    transitions=transitions, mapping_bytes=32, fresh_exec=True,
                 )
                 self.assertGreater(observed["result"], 0)
                 self.assertEqual(observed["data"], dict(session.make_runtime)[interpreter][:32])
@@ -661,6 +661,40 @@ class FoundationTests(unittest.TestCase):
             self.assertEqual(result.semantics["domains"]["VALUE"]["value"], "mandatory Make loaded")
         self.assert_clean(session)
         self.assertEqual(set(os.listdir("/proc/self/fd")), descriptors)
+
+    def test_runtime_inputs_mapping_uses_fresh_vm_after_parent_growth(self):
+        import mmap
+        from scripts.validation_ownership.syscall_guard import Policy
+
+        size = 256 * 1024 * 1024
+        self.mapping_vm_measurements = []
+        self.mapping_parent_before = Policy.virtual_memory(os.getpid())
+        stopped = self.stopped_tracee
+
+        @contextmanager
+        def measured(setup):
+            with stopped(setup) as pid:
+                self.mapping_vm_measurements.append({
+                    "parent_vm": Policy.virtual_memory(os.getpid()),
+                    "tracee_vm": Policy.virtual_memory(pid),
+                    "tracee_as_limit": resource.prlimit(pid, resource.RLIMIT_AS),
+                })
+                yield pid
+
+        with mmap.mmap(-1, size, flags=mmap.MAP_PRIVATE | mmap.MAP_ANONYMOUS, prot=0) as reservation:
+            self.mapping_parent_inflated = Policy.virtual_memory(os.getpid())
+            self.assertGreaterEqual(self.mapping_parent_inflated, self.mapping_parent_before + size)
+            with patch.object(self, "stopped_tracee", measured):
+                self.test_runtime_inputs_optional_image_mapping_is_read_only_at_make_entry()
+            self.assertEqual(len(self.mapping_vm_measurements), 3)
+            for row in self.mapping_vm_measurements:
+                self.assertGreater(row["parent_vm"], size)
+                self.assertGreater(row["tracee_vm"], 0)
+                self.assertLess(row["tracee_vm"], size)
+                self.assertLess(row["tracee_vm"], row["parent_vm"])
+                self.assertEqual(row["tracee_as_limit"], (size, size))
+        self.assertTrue(reservation.closed)
+        self.mapping_parent_after = Policy.virtual_memory(os.getpid())
 
     def test_runtime_inputs_owned_fixtures_ignore_unowned_host_shapes(self):
         for occupied in ("/usr/include/build", "/usr/include/.dep"):
@@ -4837,18 +4871,61 @@ raise AssertionError("default termination was lost")
     def traced_observation(
         self, number, arguments, descriptors, *, buffer=None, mode="command",
         observation_limit=1024*1024, directories=("data",), root=None,
-        runtime_files=(), observer_ready=False, transitions=None, mapping_bytes=0,
+        runtime_files=(), observer_ready=False, transitions=None, mapping_bytes=0, fresh_exec=False,
     ):
         from scripts.validation_ownership.syscall_guard import (
             GETREGS, SETOPTIONS, SYSCALL, Policy, Process, Registers, memory, ptrace, signed, trace_me,
         )
         libc = ctypes.CDLL(None, use_errno=True)
         libc.syscall.restype = ctypes.c_long
+        memory_limit = 256*1024*1024
+        if fresh_exec:
+            self.assertEqual(number, 9)
+            self.assertEqual(len(arguments), 6)
+            self.assertEqual(arguments[0], 0)
+            self.assertIsNone(buffer)
+        inherited = {descriptor: os.get_inheritable(descriptor) for descriptor in descriptors} if fresh_exec else {}
         def operation():
             os.chdir(self.root)
+            if fresh_exec:
+                for name in os.listdir("/proc/self/fd"):
+                    descriptor = int(name)
+                    if descriptor > 2 and descriptor not in descriptors:
+                        try:
+                            os.close(descriptor)
+                        except OSError as error:
+                            if error.errno != errno.EBADF:
+                                raise
+                for descriptor in descriptors:
+                    os.set_inheritable(descriptor, True)
+                program = (
+                    "import ctypes,resource,sys\n"
+                    "sys.path.insert(0,sys.argv[1])\n"
+                    "from syscall_guard import trace_me\n"
+                    "limit=int(sys.argv[2]); resource.setrlimit(resource.RLIMIT_AS,(limit,limit))\n"
+                    "number=int(sys.argv[3]); arguments=tuple(map(int,sys.argv[4:]))\n"
+                    "libc=ctypes.CDLL(None,use_errno=True); libc.syscall.restype=ctypes.c_long\n"
+                    "trace_me(lambda:None)\n"
+                    "libc.syscall(ctypes.c_long(number),"
+                    "*(ctypes.c_ulong(value & ((1<<64)-1)) for value in arguments))\n"
+                )
+                os.execve(
+                    "/usr/bin/python3",
+                    ["/usr/bin/python3", "-I", "-S", "-B", "-c", program,
+                     str(TRUSTED_ROOT), str(memory_limit), str(number), *(str(value) for value in arguments)],
+                    ENVIRONMENT,
+                )
             trace_me(lambda: None)
             libc.syscall(ctypes.c_long(number), *(ctypes.c_ulong(value & ((1 << 64)-1)) for value in arguments))
         with self.stopped_tracee(operation) as pid:
+            if fresh_exec:
+                self.assertEqual({int(name) for name in os.listdir(f"/proc/{pid}/fd")},
+                                 {0, 1, 2, *descriptors})
+                for descriptor, inheritable in inherited.items():
+                    self.assertEqual(os.get_inheritable(descriptor), inheritable)
+                    expected = os.fstat(descriptor)
+                    actual = os.stat(f"/proc/{pid}/fd/{descriptor}")
+                    self.assertEqual((actual.st_dev, actual.st_ino), (expected.st_dev, expected.st_ino))
             ptrace(SETOPTIONS, pid, 0, 0x100001)
             policy = Policy({
                 "root": str(self.directory if root is None else root), "mode": mode, "code": ["code.bin"],
@@ -4856,7 +4933,7 @@ raise AssertionError("default termination was lost")
                 "source_view": str(self.root),
                 "deadline": time.monotonic() + 30,
                 "executables": [], "python_version": "3.12", "argv": [],
-                "memory_limit": 256*1024*1024, "syscall_limit": 1024,
+                "memory_limit": memory_limit, "syscall_limit": 1024,
                 "write_limit": 1024*1024, "observation_count": 1024,
                 "observation_limit": observation_limit, "forbidden_paths": [],
                 "runtime_files": list(runtime_files),
