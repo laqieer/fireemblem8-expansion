@@ -5,9 +5,10 @@ a **framework capability**: one bounded execution and observation authority for
 GNU Make and declared generated-source consumers. It does **not** select,
 replace, or skip validation.
 
-This delivery is the static, single-view core. Optional producer, view,
-runtime-input and dependency-compiler contracts are allocated to #225--#228,
-not exposed as core APIs. See the [archived delivery allocation](https://github.com/laqieer/fireemblem8-expansion/blob/56e0a206ffae088b0dbc1fe8aa6339a8ee820f33/docs/ownership-probe-allocation.json)
+The #206 base is the static, single-view core. This branch adds the
+[live producer vertical slice](ownership-probe-producers.md) for #225.
+V/#226, R/#227 and D/#228 remain separately allocated, not exposed here.
+See the [archived delivery allocation](https://github.com/laqieer/fireemblem8-expansion/blob/56e0a206ffae088b0dbc1fe8aa6339a8ee820f33/docs/ownership-probe-allocation.json)
 and [downstream boundary](#contract-allocation-and-downstream-integration).
 
 ## Run the real consumer
@@ -350,8 +351,8 @@ and directory results retain their actual supported ABI data. Failed operations
 keep their status without becoming successful source consumption. Unreadable
 buffers and unsupported requests are explicit, not empty successful records.
 
-The same fixed native comparison routine in the existing interceptor serves
-command-cache checks and authenticated Make mapping selection. It reissues the
+The fixed native comparison routine in the existing interceptor serves
+command-cache checks. It reissues the
 recorded operations in the authoritative guest context, using the complete
 buffers and original flags/masks. Input buffers retain caller-owned padding;
 kernel-returned metadata is neither masked nor normalized, and old output
@@ -361,14 +362,16 @@ A private metadata-validation invocation uses the existing supervisor, mounts,
 limits and sole reaper, but executes only that trusted static routine. It is
 not a registered candidate command and exposes no control channel to candidate
 code. Metadata paths/operations are constrained by the selected completed
-record. Ordinary candidate capsules remain channel-free. Make uses the same
-routine in its authenticated interceptor, not a Python executor in Make.
+record. Ordinary candidate capsules remain channel-free. Live Make requests
+obtain actual isolated results through the producer rendezvous, never a Python
+executor inside Make. Reusable results still use this complete comparison.
 
 Native event writes are recorded only after complete successful kernel writes
-in the existing closed supervisor report. The reader compares those bytes to
-the event file before resolving any command. The existing argv/hash/count
-framing is retained: nonnegative matches identify completed mappings, `-1`
-requires real resolution, and `-2` rejects unsupported metadata reuse. There
+in the existing closed supervisor report. Each live request is validated before
+its execution; the final transcript must equal the complete native writes and
+fulfilled receipts. The argv/hash/count framing remains: a request has no
+result slot, and its completed event names the supervisor-assigned result.
+Unsupported pure reuse causes genuine execution rather than stale output. There
 is no new protocol version, signer, broker, namespace service or filesystem
 simulation.
 
@@ -377,8 +380,9 @@ execution; a result that cannot be reproduced in the native Make context
 rejects rather than supplying stale matched output. In particular, filesystem
 capacity from `fstatfs` may change even without a source edit. Its complete
 returned buffer remains part of validation; no universal stable mount-ID or
-free-block assumption is made. Invalid-pointer metadata may execute directly
-and report its real error, but cannot authorize unsupported Make replay.
+free-block assumption is made. Invalid-pointer metadata can report its real
+error through a fresh execution; it is not admitted as an unsupported cached
+replay.
 
 Metadata revalidation has real process/syscall/observation and byte costs.
 Request records, complete buffers, descriptor metadata, private map reads and
@@ -386,9 +390,10 @@ native event-write evidence spend the existing cumulative bounds. Cache hits
 avoid candidate execution, not the required metadata validation cost. No
 counter, cap, deadline or budget meaning is relaxed.
 
-This core does not recreate source contexts or publish generated files.
-Generated metadata fidelity belongs to held #225; names/type agreement in the
-unapproved reference is not sufficient evidence for that extension.
+The live extension does not recreate historical source contexts. Validated
+generated files publish into the still-live view at actual dispatch. Names/type
+agreement in the unapproved reference is not sufficient evidence; complete
+P acceptance remains separate from this bounded vertical checkpoint.
 
 Registry success additionally requires the typed reported `source_paths` to
 equal that set. Reported JSON is candidate data, not supervisor evidence.
@@ -535,23 +540,22 @@ live traced guest processes, 16,384 total guest-process creations per report,
 syscalls and 32,768 snapshot entries. There are no futures or hidden worker
 queues. Variant plans are checked before any variant launch.
 
-Make validates the complete native event stream and protected-map associations
-before resolving work from it. It then streams unresolved commands in their
-original first-occurrence order, resolving and installing each actual result
-before admitting the next. The existing completed mapping deduplicates repeated
-events; there is no separate materialized backlog of pending command strings.
-Completed outputs, caches and mappings retain their existing byte charges.
-The entire valid batch is resolved within the same pass, followed by the
-unchanged native replay and final-pass-only identity selection.
+Make validates each authenticated live request before resolving it. The single
+worker obtains its actual result and publication before native execution
+continues. There is no materialized whole-backlog queue or speculative
+empty-output pass. Repeated real effectful dispatches still execute; only
+compatible pure data and provenance deduplicate. Completed outputs and
+request-specific slots retain all existing byte charges. A later malformed
+request or completed transcript fails the whole report, not a partial success.
 
 `ProbeSession.pending_commands` measures active resolutions, including nested
 registration work; `pending_commands_peak` retains their actual maximum, not
 the configured limit. Admission enforces `Limits.pending` before starting
 another resolution, and the existing signal-safe cleanup restores the prior
-count on success, failure or interruption. The former extra limit on the
-**whole observed per-pass backlog** is replaced by this bounded serial
-resolution. The pending/fanout maximum and dynamic-pass limit are not raised,
-and resolution windows do not add extra Make replay passes.
+count on success, failure or interruption. Live queued requests and parked
+process/VM reservations are bounded before nested execution. No new
+whole-backlog ceiling or higher limit is introduced. Make performs only its
+own native include re-execs; the driver does not add replay passes.
 
 `Limits.processes` bounds live capacity, including the capsule root, stopped
 newborns and suspended vfork ancestors. `Limits.descendants` bounds cumulative
@@ -717,14 +721,16 @@ reviewed or delivered:
 
 Shared safety remains in the lowest exposing layer. Core keeps `compile_native`
 and `native` isolation, mandatory runtime closure, exact source/gitlink input
-support and the original typed stdout-only command surface. It does not expose
-`Command.native_tool`, `Command.outputs`, `Command.dependency_only`,
-`ProcessOutput.generated`, `ProbeSession.select_view`, optional `runtime_files`,
-native output capture or `Snapshot(reuse=...)`.
+support and the original typed stdout-only command surface. The P extension
+adds `Command.native_tool`, `Command.outputs`, `ProcessOutput.generated` and
+native output capture. It does not add `Command.dependency_only`,
+`ProbeSession.select_view`, optional `runtime_files` or `Snapshot(reuse=...)`.
 
-#225 remains explicitly held: its current physical delete/recreate replay does
-not preserve all allowed metadata. Its prior generated-listing successes do
-not replace the retained nlink/timestamp and reconstruction counterexamples.
+#225's full delivery remains open. This branch replaces the unapproved
+delete/recreate implementation with a live rendezvous vertical slice; its
+remaining complete acceptance is not inferred from a partial checkpoint.
+Prior generated-listing successes do not replace the retained nlink/timestamp
+and reconstruction counterexamples.
 All old positive/adversarial cases stay with that complete contract. No
 restoration of unsafe code, mechanical code/test/doc split, artificial V/R
 dependency on D, or new execution platform is implied.

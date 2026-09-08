@@ -18,6 +18,7 @@ import posixpath
 import re
 import resource
 import signal
+import socket
 import stat
 import time
 from collections import deque
@@ -25,9 +26,13 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 if __package__:
+    from .authority import _event_command, _read_events, encoded, parse_json
     from .lifecycle import finish_cleanup
+    from .producer_channel import ProducerChannel
 else:
+    from authority import _event_command, _read_events, encoded, parse_json
     from lifecycle import finish_cleanup
+    from producer_channel import ProducerChannel
 
 
 LIBC = ctypes.CDLL(None, use_errno=True)
@@ -41,10 +46,12 @@ MAP_ANONYMOUS = 0x20
 # Fixed placement, loader hints and stacks do not alias pages or change their
 # size. Growing/huge-page and unknown flags cannot bypass 4 KiB reservations.
 MMAP_FLAGS = 3 | 0x10 | MAP_ANONYMOUS | 0x800 | 0x1000 | 0x20000 | 0x100000
-VO_READY, VO_DISPATCH, VO_QUERY_KIND, VO_METADATA = (
+VO_READY, VO_DISPATCH, VO_QUERY_KIND, VO_METADATA, VO_PRODUCE = (
     0x564F4D4B00000001, 0x564F4D4B00000002, 0x564F4D4B00000003, 0x564F4D4B00000004,
+    0x564F4D4B00000005,
 )
 VO_RECIPE, VO_VALUE, VO_VALIDATE = 0x564F4D4B00000011, 0x564F4D4B00000012, 0x564F4D4B00000013
+VO_LIVE = 0x564F4D4B00000014
 STACK_LIMIT = 16 * 1024 * 1024
 SYSCALL_MEMORY_LIMIT = 65536
 
@@ -170,6 +177,15 @@ class Process:
     observation_needs_bytes: bool = False
     metadata_pending: tuple | None = None
     metadata_index: int | None = None
+    kernel_call: int | None = None
+    kernel_io: str | None = None
+    deferred_entry: object | None = None
+    parked: bool = False
+    producer_requested: bool = False
+    producer_ready: bool = False
+    producer_frame: bytes | None = None
+    producer_slot: int | None = None
+    producer_event_written: bool = False
 
     def clone(self):
         return Process(
@@ -205,6 +221,11 @@ class Policy:
         self.metadata = []
         self.metadata_seen = set()
         self.events = []
+        self.producer_requests = deque()
+        self.producer_issued = 0
+        self.producer_completed = 0
+        self.producer_pending_peak = 0
+        self.published = {}
         self.memory_peak = 0
         self.processes = {}
         self.newborn_stops = {}
@@ -411,6 +432,155 @@ class Policy:
         if self.total_processes + reserved - len(self.newborn_stops) >= self.config["descendant_limit"]:
             raise Violation("aggregate descendant-process budget exhausted before creation")
         state.process_reservation = True
+
+    def publish(self, key, *, owner, outputs):
+        mapping = Path(self.config["root"]) / "control/map"
+        path = mapping / f"{key:016x}.files"
+        try:
+            descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        except FileNotFoundError:
+            if outputs:
+                raise Violation("declared generated result is missing")
+            return ()
+        names = []
+        with os.fdopen(descriptor, "rb") as source:
+            status = os.fstat(source.fileno())
+            if not stat.S_ISREG(status.st_mode) or not 44 <= status.st_size <= self.config["file_limit"]:
+                raise Violation("invalid generated mapping file bound")
+            self.observation_bytes += status.st_size
+            if self.observation_bytes > self.config["observation_limit"]:
+                raise Violation("aggregate generated mapping observation budget exhausted")
+            remaining = status.st_size
+            def take(size):
+                nonlocal remaining
+                if time.monotonic() >= self.config["deadline"]:
+                    raise Violation("aggregate probe deadline exhausted during publication")
+                if size > remaining:
+                    raise Violation("truncated generated mapping")
+                data = source.read(size)
+                if len(data) != size:
+                    raise Violation("truncated generated mapping")
+                remaining -= size
+                return data
+            def integer():
+                return int.from_bytes(take(4), "little")
+            if take(8) != b"VOGEN1\0\0":
+                raise Violation("invalid generated mapping protocol")
+            producer = take(32)
+            if producer.hex() != owner:
+                raise Violation("generated result has a foreign producer identity")
+            count = integer()
+            if count != len(outputs) or not 1 <= count <= self.config["creation_limit"]:
+                raise Violation("generated output count exceeds creation bound")
+            view = next(item["source"] for item in self.config["mounts"] if item["target"] == "/repo")
+            for _ in range(count):
+                length, mode, size = integer(), integer(), integer()
+                if not 1 <= length <= 4096 or mode & ~0o777 or size > self.config["file_limit"]:
+                    raise Violation("invalid generated output declaration")
+                try:
+                    name = take(length).decode("utf-8", "strict")
+                except UnicodeDecodeError as error:
+                    raise Violation("generated output path is not UTF-8") from error
+                if (
+                    name.startswith("/") or "\\" in name
+                    or any(ord(ch) < 32 or ord(ch) == 127 for ch in name)
+                    or any(part in {"", ".", ".."} for part in name.split("/"))
+                ):
+                    raise Violation("generated output path escapes the readonly view")
+                if name not in outputs or name in names:
+                    raise Violation("generated result differs from its exact declared outputs")
+                if any(
+                    name == path or name.startswith(path + "/") or path.startswith(name + "/")
+                    for path in self.config.get("reserved_paths", ())
+                ):
+                    raise Violation("generated result conflicts with admitted source authority")
+                self.written += size
+                if self.written > self.config["write_limit"]:
+                    raise Violation("aggregate generated publication byte budget exhausted")
+                directory = os.open(view, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+                try:
+                    parts = name.split("/")
+                    for part in parts[:-1]:
+                        created = False
+                        try:
+                            following = os.open(
+                                part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=directory,
+                            )
+                        except FileNotFoundError:
+                            self.reserve_creation()
+                            os.mkdir(part, 0o755, dir_fd=directory)
+                            following = os.open(
+                                part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=directory,
+                            )
+                            created = True
+                        os.close(directory)
+                        directory = following
+                        if created and self.config["sudo_drop"]:
+                            # Transfer before adding children, so even failed publication
+                            # remains removable by the unprivileged report owner.
+                            os.fchown(directory, self.config["runner_uid"], self.config["runner_gid"])
+                    if name in self.published:
+                        if self.published[name] != producer:
+                            raise Violation("conflicting generated output producers")
+                        os.unlink(parts[-1], dir_fd=directory)
+                    self.reserve_creation()
+                    try:
+                        output = os.open(
+                            parts[-1], os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
+                            0o600, dir_fd=directory,
+                        )
+                    except FileExistsError as error:
+                        raise Violation("generated output conflicts with immutable source") from error
+                    with os.fdopen(output, "wb") as destination:
+                        if self.config["sudo_drop"]:
+                            os.fchown(destination.fileno(), self.config["runner_uid"], self.config["runner_gid"])
+                        left = size
+                        while left:
+                            data = take(min(left, SYSCALL_MEMORY_LIMIT))
+                            destination.write(data)
+                            left -= len(data)
+                        os.fchmod(destination.fileno(), mode)
+                    self.published[name] = producer
+                    names.append(name)
+                finally:
+                    os.close(directory)
+            if remaining:
+                raise Violation("trailing generated mapping bytes")
+        return tuple(names)
+
+    def counters(self):
+        return {
+            "processes": self.total_processes, "syscalls": self.calls,
+            "written_bytes": self.written, "created_files": self.created,
+            "observation_bytes": self.observation_bytes,
+            "observations": sum(map(len, self.observation_attempts.values())),
+            "live_process_peak": self.live_process_peak, "memory_peak": self.memory_peak,
+        }
+
+    def reservations(self):
+        return {
+            "live": len(self.processes) + len(self.newborn_stops),
+            "processes": len(self.processes) + sum(record.process_reservation for record in self.processes.values()),
+            "memory": sum(record.memory_limit + record.memory_reservation for record in self.processes.values()),
+            "pending": len(self.producer_requests),
+        }
+
+    def apply_producer_limits(self, values, ceilings):
+        spent = {
+            "descendant_limit": self.total_processes, "syscall_limit": self.calls,
+            "write_limit": self.written, "creation_limit": self.created,
+            "observation_count": sum(map(len, self.observation_attempts.values())),
+            "observation_limit": self.observation_bytes,
+            "process_limit": self.reservations()["processes"],
+            "memory_limit": self.reservations()["memory"],
+        }
+        if not isinstance(values, dict) or set(values) != set(spent) or any(
+            type(values[name]) is not int or not spent[name] <= values[name] <= ceilings[name]
+            for name in spent
+        ):
+            raise Violation("invalid or unfunded producer resumption grant")
+        self.config.update(values)
+
 
     def observer(self, state, registers):
         return state.role == "make" and any(
@@ -787,13 +957,14 @@ class Policy:
         n = r.orig_rax
         a, b, c, d, e = r.rdi, r.rsi, r.rdx, r.r10, r.r8
         state.pending = None
+        state.kernel_io = None
         state.metadata_pending = None
         state.observations.clear()
         state.observation_needs_bytes = False
         trusted = self.observer(state, r)
-        if n == 39 and a in {VO_READY, VO_DISPATCH, VO_QUERY_KIND, VO_METADATA}:
+        if n == 39 and a in {VO_READY, VO_DISPATCH, VO_QUERY_KIND, VO_METADATA, VO_PRODUCE}:
             if a == VO_QUERY_KIND:
-                if state.role != "helper" or state.helper_kind not in {VO_RECIPE, VO_VALUE, VO_VALIDATE}:
+                if state.role != "helper" or state.helper_kind not in {VO_RECIPE, VO_VALUE, VO_VALIDATE, VO_LIVE}:
                     raise Violation("unauthenticated interceptor kind query")
                 state.pending = ("helper_kind", state.helper_kind)
             elif a == VO_METADATA:
@@ -805,6 +976,26 @@ class Policy:
                     raise Violation("unauthenticated metadata mapping request")
                 state.metadata_index = b
                 state.pending = ("helper_kind", 0)
+            elif a == VO_PRODUCE:
+                if (
+                    state.role != "helper" or state.helper_kind != VO_LIVE
+                    or not self.config.get("producer_fd") or state.producer_requested
+                    or not 20 <= c <= SYSCALL_MEMORY_LIMIT
+                ):
+                    raise Violation("unauthenticated or repeated producer request")
+                frame = memory(pid, b, c)
+                events = _read_events(frame, expected_mapping_count=0)
+                if len(events) != 1 or events[0]["match"] != -1:
+                    raise Violation("invalid live producer request frame")
+                if len(self.producer_requests) >= self.config["pending_limit"]:
+                    raise Violation("pending live producer requests exceed report allowance")
+                self.charge_metadata(len(frame))
+                self.reserve_observation("accessed", "producer-request:" + str(self.calls))
+                state.producer_requested = True
+                state.producer_frame = frame
+                state.pending = ("producer", None)
+                self.producer_requests.append(pid)
+                self.producer_pending_peak = max(self.producer_pending_peak, len(self.producer_requests))
             else:
                 if not trusted:
                     raise Violation("unauthenticated Make dispatch notification")
@@ -853,11 +1044,13 @@ class Policy:
             self.begin_metadata(pid, state, r, path)
         elif n in {0, 17, 19}:  # read/pread/readv
             path = self.check_fd(state, a, "read", r)
+            state.kernel_io = path
             state.observation_needs_bytes = True
             if state.role == "helper" and path.startswith("/control/map/") and path.endswith(".meta"):
                 state.pending = ("metadata-input", None)
         elif n in {1, 18, 20}:  # write/pwrite/writev
             path = self.check_fd(state, a, "write", r)
+            state.kernel_io = path
             if n == 20:
                 if c > 1024:
                     raise Violation("oversized writev vector")
@@ -871,7 +1064,15 @@ class Policy:
             if self.mode == "make" and state.role == "helper" and path == "/control/events":
                 if n != 1 or not 20 <= c <= SYSCALL_MEMORY_LIMIT:
                     raise Violation("invalid native event write")
-                state.pending = ("event", memory(pid, b, c))
+                frame = memory(pid, b, c)
+                if state.helper_kind == VO_LIVE:
+                    if state.producer_slot is None or state.producer_event_written:
+                        raise Violation("unfulfilled or repeated live producer event")
+                    event, = _read_events(frame, expected_mapping_count=state.producer_slot + 1)
+                    requested, = _read_events(state.producer_frame, expected_mapping_count=0)
+                    if event["match"] != state.producer_slot or event["arguments"] != requested["arguments"]:
+                        raise Violation("live producer event differs from its request")
+                state.pending = ("event", frame)
         elif n == 3:
             state.pending = ("close", a)
         elif n in {8, 74, 75, 73}:
@@ -941,6 +1142,8 @@ class Policy:
                     state.helper_kind = VO_VALUE if (
                         required or source == "/usr/bin/make" or self.fd(state, 1) == "<pipe>"
                     ) else VO_RECIPE
+                    if state.helper_kind == VO_VALUE and self.config.get("producer_fd"):
+                        state.helper_kind = VO_LIVE
                     state.dispatch = None
                 else:
                     raise Violation("Make execution escaped authenticated native dispatch")
@@ -1124,6 +1327,10 @@ class Policy:
             self.charge_metadata(len(value))
             self.reserve_observation("accessed", "native-event:" + str(len(self.events)))
             self.events.append(value.hex())
+            if state.helper_kind == VO_LIVE:
+                state.producer_event_written = True
+        elif operation == "producer":
+            state.producer_ready = True
         if not state.observation_needs_bytes or result > 0:
             for collection, path in observations:
                 self.observe(collection, path)
@@ -1159,6 +1366,18 @@ def supervise(config, drop_privileges):
     finally:
         os.close(own_descriptor)
     policy = Policy(config)
+    channel = None
+    ceilings = {name: config[name] for name in (
+        "descendant_limit", "syscall_limit", "write_limit", "creation_limit",
+        "observation_count", "observation_limit", "process_limit", "memory_limit",
+    )}
+    if config.get("producer_fd") is not None:
+        descriptor = config["producer_fd"]
+        if type(descriptor) is not int or descriptor < 3 or not stat.S_ISSOCK(os.fstat(descriptor).st_mode):
+            raise Violation("producer callback descriptor is not a private socket")
+        channel = ProducerChannel(
+            socket.socket(fileno=descriptor), deadline=config["deadline"], limit=config["file_limit"],
+        )
     processes = {}
     policy.processes = processes
     newborn_stops = {}
@@ -1198,13 +1417,225 @@ def supervise(config, drop_privileges):
         processes[pid].metadata_index = 0
     policy.total_processes = 1
     policy.account_processes()
+    parking = False
+
+    def resume(child):
+        state = processes.get(child)
+        if state is None:
+            return
+        if parking or state.producer_ready:
+            state.parked = True
+            return
+        if state.deferred_entry is not None:
+            registers, state.deferred_entry = state.deferred_entry, None
+            state.kernel_call = registers.orig_rax
+            policy.entry(child, state, registers)
+        state.parked = False
+        ptrace(SYSCALL, child)
 
     def release_vfork(child):
         for parent, waited_child in tuple(vfork_waiters.items()):
             if waited_child == child:
                 del vfork_waiters[parent]
                 if parent in processes:
-                    ptrace(SYSCALL, parent)
+                    resume(parent)
+
+    def handle_stop(stopped, status):
+        nonlocal main_status
+        state = processes.get(stopped)
+        if state is None:
+            if os.WIFSTOPPED(status) and os.WSTOPSIG(status) == signal.SIGSTOP:
+                if stopped not in newborn_stops:
+                    policy.total_processes += 1
+                    newborn_stops[stopped] = os.pidfd_open(stopped)
+                policy.account_processes()
+                return
+            raise Violation("unrecorded sandbox descendant")
+        if os.WIFEXITED(status) or os.WIFSIGNALED(status):
+            code = os.waitstatus_to_exitcode(status)
+            unfulfilled = state.producer_requested and (
+                state.producer_slot is None or not state.producer_event_written
+            )
+            del processes[stopped]
+            state.close()
+            vfork_waiters.pop(stopped, None)
+            release_vfork(stopped)
+            if stopped == pid:
+                main_status = code
+            if unfulfilled:
+                raise Violation("parked or unfulfilled producer helper exited")
+            if code != 0 and not (
+                stopped == pid and (config["mode"] == "make"
+                or config.get("metadata_validation") and code in {1, 2})
+            ):
+                raise Violation(f"sandbox process exited unsuccessfully: {code}")
+            return
+        state.parked = True
+        sig = os.WSTOPSIG(status)
+        event = status >> 16
+        if sig == signal.SIGTRAP and event in {1, 2, 3}:
+            child = ctypes.c_ulong()
+            ptrace(0x4201, stopped, 0, ctypes.byref(child))
+            if child.value not in newborn_stops:
+                policy.total_processes += 1
+            record = state.clone()
+            if not state.clone_shares_vm:
+                record.memory_group = child.value
+            record.pidfd = newborn_stops.pop(child.value, -1)
+            already_stopped = record.pidfd >= 0
+            if not already_stopped:
+                record.pidfd = os.pidfd_open(child.value)
+            processes[child.value] = record
+            if not state.process_reservation:
+                raise Violation("unreserved process creation")
+            state.process_reservation = False
+            state.memory_reservation = 0
+            policy.account_processes()
+            if already_stopped:
+                resume(child.value)
+        elif sig == signal.SIGTRAP and event == 4:
+            if state.pending is None or state.pending[0] != "exec":
+                raise Violation("unapproved executable transition")
+            if state.bootstrap:
+                descriptors = {entry.name for entry in Path(f"/proc/{stopped}/fd").iterdir()}
+                policy.charge_metadata(sum(len(name) + 16 for name in descriptors))
+                if descriptors != {"0", "1", "2"}:
+                    raise Violation("initial guest exec inherited a nonstandard descriptor")
+            state.role = state.pending[1]
+            state.bootstrap = False
+            state.fds = {0: "<stdin>", 1: "<stdout>", 2: "<stderr>"}
+            state.observer_ranges = ()
+            state.observer_ready = False
+            state.memory_reservation = 0
+            state.break_end = 0
+            state.kernel_call = None
+            policy.finish_exec(stopped, state)
+            release_vfork(stopped)
+        elif sig == signal.SIGTRAP and event == 5:
+            child = ctypes.c_ulong()
+            ptrace(0x4201, stopped, 0, ctypes.byref(child))
+            record = processes.get(child.value)
+            if record is not None and record.memory_group == state.memory_group:
+                vfork_waiters[stopped] = child.value
+                return
+        elif sig == (signal.SIGTRAP | 0x80):
+            registers = Registers()
+            ptrace(GETREGS, stopped, 0, ctypes.byref(registers))
+            information = (ctypes.c_ubyte * 128)()
+            ptrace(0x420E, stopped, len(information), ctypes.byref(information))
+            if int.from_bytes(bytes(information[4:8]), "little") != 0xC000003E:
+                raise Violation("unadmitted syscall architecture")
+            if information[0] == 1:
+                if state.role == "make" and not state.observer_ranges:
+                    state.observer_ranges = observer_ranges(stopped)
+                if parking:
+                    state.deferred_entry = registers
+                    state.kernel_call = None
+                else:
+                    state.kernel_call = registers.orig_rax
+                    policy.entry(stopped, state, registers)
+            elif information[0] == 2:
+                policy.leave(stopped, state, registers)
+                state.kernel_call = None
+            else:
+                raise Violation("kernel did not identify syscall entry/exit")
+        elif sig not in {signal.SIGSTOP, signal.SIGCHLD, signal.SIGTRAP}:
+            raise Violation(f"sandbox signal {sig}")
+        resume(stopped)
+
+    def unsettled(state):
+        if state.parked or state.kernel_call is None:
+            return False
+        if state.metadata_pending is not None or state.observations:
+            return True
+        if state.kernel_call in {7, 23, 35, 61, 202, 230, 232, 247, 270, 271, 281}:
+            return False
+        if state.kernel_call in {0, 17, 19} and state.kernel_io in {"<pipe>", "<stdin>"}:
+            return False
+        if state.kernel_call in {1, 18, 20} and state.kernel_io == "<pipe>" and state.pending is None:
+            return False
+        return True
+
+    def read_slot(name, maximum):
+        path = Path(config["root"]) / "control/map" / name
+        descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        with os.fdopen(descriptor, "rb") as stream:
+            status = os.fstat(stream.fileno())
+            if not stat.S_ISREG(status.st_mode) or not 0 <= status.st_size <= min(maximum, config["file_limit"]):
+                raise Violation("producer result slot is nonregular or oversized")
+            policy.charge_metadata(status.st_size)
+            data = stream.read(status.st_size + 1)
+            if len(data) != status.st_size:
+                raise Violation("producer result slot changed during read")
+            return data
+
+    def fulfill_producer():
+        nonlocal parking
+        requester = policy.producer_requests[0]
+        state = processes.get(requester)
+        if state is None or not state.producer_ready or channel is None:
+            raise Violation("missing parked producer request")
+        parking = True
+        while True:
+            if time.monotonic() >= config["deadline"]:
+                raise Violation("producer parking exhausted the report deadline")
+            stopped, status = os.waitpid(-1, os.WNOHANG | WALL)
+            if stopped:
+                handle_stop(stopped, status)
+                continue
+            if not any(unsettled(record) for record in processes.values()):
+                break
+            time.sleep(0.0001)
+        if requester not in processes or pid not in processes:
+            raise Violation("producer context died before request notification")
+        policy.producer_issued += 1
+        sequence = policy.producer_issued
+        request = {
+            "kind": "request", "scope": config["producer_scope"], "sequence": sequence,
+            "completed": policy.producer_completed, "frame": state.producer_frame.hex(),
+            "counters": policy.counters(), "reserved": policy.reservations(),
+        }
+        raw = channel.exchange(
+            encoded(request),
+            watch=[record.pidfd for record in processes.values()] + list(newborn_stops.values()),
+        )
+        reply = parse_json(raw, "producer reply")
+        if (
+            not isinstance(reply, dict)
+            or set(reply) != {"kind", "scope", "sequence", "slot", "owner", "outputs", "stdout_sha256", "limits"}
+            or reply["kind"] != "result" or reply["scope"] != config["producer_scope"]
+            or type(reply["sequence"]) is not int or reply["sequence"] != sequence
+            or type(reply["slot"]) is not int or reply["slot"] != sequence - 1
+            or not isinstance(reply["owner"], str) or not re.fullmatch(r"[0-9a-f]{64}", reply["owner"])
+            or not isinstance(reply["stdout_sha256"], str) or not re.fullmatch(r"[0-9a-f]{64}", reply["stdout_sha256"])
+            or not isinstance(reply["outputs"], list)
+            or len(reply["outputs"]) > config["creation_limit"]
+            or any(not isinstance(name, str) for name in reply["outputs"])
+            or len(set(reply["outputs"])) != len(reply["outputs"])
+        ):
+            raise Violation("malformed, foreign or out-of-order producer reply")
+        policy.apply_producer_limits(reply["limits"], ceilings)
+        request_event, = _read_events(state.producer_frame, expected_mapping_count=0)
+        key = f"{sequence - 1:016x}"
+        if read_slot(key + ".cmd", 65536) != _event_command(request_event).encode("utf-8"):
+            raise Violation("producer result slot differs from original command")
+        stdout = read_slot(key + ".out", 1024*1024)
+        if hashlib.sha256(stdout).hexdigest() != reply["stdout_sha256"]:
+            raise Violation("producer stdout differs from its validated result")
+        channel.require_live([record.pidfd for record in processes.values()] + list(newborn_stops.values()))
+        policy.publish(sequence - 1, owner=reply["owner"], outputs=reply["outputs"])
+        policy.producer_completed = sequence
+        state.producer_slot = sequence - 1
+        state.producer_ready = False
+        registers = Registers()
+        ptrace(GETREGS, requester, 0, ctypes.byref(registers))
+        registers.rax = sequence - 1
+        ptrace(SETREGS, requester, 0, ctypes.byref(registers))
+        policy.producer_requests.popleft()
+        parking = False
+        for child, record in tuple(processes.items()):
+            if record.parked:
+                resume(child)
 
     try:
         waited, status = os.waitpid(pid, 0)
@@ -1219,97 +1650,14 @@ def supervise(config, drop_privileges):
         while processes:
             if time.monotonic() >= config["deadline"]:
                 raise Violation("aggregate probe deadline exhausted in syscall supervisor")
+            if policy.producer_requests and processes[policy.producer_requests[0]].producer_ready:
+                fulfill_producer()
+                continue
             stopped, status = os.waitpid(-1, os.WNOHANG | WALL)
             if stopped == 0:
                 time.sleep(0.0001)
                 continue
-            state = processes.get(stopped)
-            if state is None:
-                if os.WIFSTOPPED(status) and os.WSTOPSIG(status) == signal.SIGSTOP:
-                    # Linux can report the child's initial stop before the
-                    # parent's fork event. Keep it stopped until that event
-                    # authenticates the relationship; never guess its role.
-                    if stopped not in newborn_stops:
-                        policy.total_processes += 1
-                        newborn_stops[stopped] = os.pidfd_open(stopped)
-                    policy.account_processes()
-                    continue
-                raise Violation("unrecorded sandbox descendant")
-            if os.WIFEXITED(status) or os.WIFSIGNALED(status):
-                code = os.waitstatus_to_exitcode(status)
-                del processes[stopped]
-                state.close()
-                vfork_waiters.pop(stopped, None)
-                release_vfork(stopped)
-                if stopped == pid:
-                    main_status = code
-                if code != 0 and not (
-                    stopped == pid and (config["mode"] == "make"
-                    or config.get("metadata_validation") and code in {1, 2})
-                ):
-                    raise Violation(f"sandbox process exited unsuccessfully: {code}")
-                continue
-            sig = os.WSTOPSIG(status)
-            event = status >> 16
-            if sig == signal.SIGTRAP and event in {1, 2, 3}:
-                child = ctypes.c_ulong()
-                ptrace(0x4201, stopped, 0, ctypes.byref(child))
-                if child.value not in newborn_stops:
-                    policy.total_processes += 1
-                record = state.clone()
-                if not state.clone_shares_vm:
-                    record.memory_group = child.value
-                record.pidfd = newborn_stops.pop(child.value, -1)
-                already_stopped = record.pidfd >= 0
-                if not already_stopped:
-                    record.pidfd = os.pidfd_open(child.value)
-                processes[child.value] = record
-                if not state.process_reservation:
-                    raise Violation("unreserved process creation")
-                state.process_reservation = False
-                state.memory_reservation = 0
-                policy.account_processes()
-                if already_stopped:
-                    ptrace(SYSCALL, child.value)
-            elif sig == signal.SIGTRAP and event == 4:
-                if state.pending is None or state.pending[0] != "exec":
-                    raise Violation("unapproved executable transition")
-                state.role = state.pending[1]
-                state.bootstrap = False
-                state.fds = {0: "<stdin>", 1: "<stdout>", 2: "<stderr>"}
-                state.observer_ranges = ()
-                state.observer_ready = False
-                state.memory_reservation = 0
-                state.break_end = 0
-                policy.finish_exec(stopped, state)
-                release_vfork(stopped)
-            elif sig == signal.SIGTRAP and event == 5:
-                child = ctypes.c_ulong()
-                ptrace(0x4201, stopped, 0, ctypes.byref(child))
-                record = processes.get(child.value)
-                if record is not None and record.memory_group == state.memory_group:
-                    vfork_waiters[stopped] = child.value
-                    continue
-            elif sig == (signal.SIGTRAP | 0x80):
-                registers = Registers()
-                ptrace(GETREGS, stopped, 0, ctypes.byref(registers))
-                information = (ctypes.c_ubyte * 128)()
-                ptrace(0x420E, stopped, len(information), ctypes.byref(information))
-                operation = information[0]
-                if int.from_bytes(bytes(information[4:8]), "little") != 0xC000003E:
-                    raise Violation("unadmitted syscall architecture")
-                if operation == 1:
-                    # The dynamic loader maps the observer after the exec event.
-                    if state.role == "make" and not state.observer_ranges:
-                        state.observer_ranges = observer_ranges(stopped)
-                    policy.entry(stopped, state, registers)
-                elif operation == 2:
-                    policy.leave(stopped, state, registers)
-                else:
-                    raise Violation("kernel did not identify syscall entry/exit")
-            elif sig not in {signal.SIGSTOP, signal.SIGCHLD, signal.SIGTRAP}:
-                raise Violation(f"sandbox signal {sig}")
-            ptrace(SYSCALL, stopped)
+            handle_stop(stopped, status)
         if newborn_stops:
             raise Violation("unresolved descendant at completion")
     except BaseException as failure:
@@ -1356,8 +1704,22 @@ def supervise(config, drop_privileges):
                 "metadata": policy.metadata,
                 "events": policy.events,
             }
+            if channel is not None:
+                result["rendezvous"] = {
+                    "issued": policy.producer_issued, "completed": policy.producer_completed,
+                    "pending_peak": policy.producer_pending_peak,
+                }
             Path(config["report"]).write_text(
                 json.dumps(result, sort_keys=True, separators=(",", ":")), encoding="ascii",
             )
-        finish_cleanup([reap_owned, write_report], primary=primary)
+        def close_channel():
+            if channel is not None:
+                try:
+                    channel.send(encoded({
+                        "kind": "finished", "scope": config["producer_scope"],
+                        "issued": policy.producer_issued, "completed": policy.producer_completed,
+                    }))
+                finally:
+                    channel.close()
+        finish_cleanup([reap_owned, write_report, close_channel], primary=primary)
     return 0 if result["ok"] else 125

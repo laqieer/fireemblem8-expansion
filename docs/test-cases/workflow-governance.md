@@ -3234,6 +3234,108 @@ explicit downstream integration gates under #180. Unsupported native Make
 ABIs/platforms fail rather than running a weaker probe. Roll back by reverting
 this dedicated foundation; broader validation remains required.
 
+## TC-WORKFLOW-PROBE-PRODUCER-001: Preserve live producer context and native remakes
+
+### Feature and configuration
+
+Issue [#225](https://github.com/laqieer/fireemblem8-expansion/issues/225);
+the supported Linux x86-64/GNU Make 4.3 foundation host, Python and existing
+static-capable C/C++ toolchain. Start from a clean source checkout. All inputs,
+sentinels and channels are owned fixtures under ignored `build/test-artifacts`.
+No ROM, emulator, credentials, remote workflow or new feature flag is needed.
+See [live producers](../ownership-probe-producers.md).
+
+### Actions
+
+1. Run `python3 -m unittest scripts.validation_ownership.tests.test_producer -v`.
+   The live include fixture compares ordinary Make's selected prerequisites,
+   `MAKEFILE_LIST`, value/origin/flavor and native `MAKE_RESTARTS`. It starts
+   exactly one Make capsule, executes an isolated producer, publishes its
+   declared include/data and invokes a later metadata reader.
+2. Require the reader's inode, link count, mtime and ctime to equal the actual
+   still-live source view before cleanup. Prime an older reader result first:
+   publication must force valid current observation, not a stale cache/map.
+   Repeat with two generated includes and require two genuine native restarts.
+3. Inspect actual nested launch configurations and complete supervisor reports.
+   Parked Make/helper processes and every funded virtual-memory credit must
+   remain reserved. Nested process/VM limits plus reservations equal the one
+   global allowance; summed actual report counters equal session totals, not
+   counters charged twice at intermediate and final settlement.
+4. Use a producer that succeeds alone but cannot fit alongside parked Make's
+   funded VM. Require the residual-memory failure after reaching the producer
+   request. Separately exhaust residual live-process and total-creation
+   capacity before another guest launches. Never accept an unrelated earlier
+   bootstrap failure as this control.
+5. Corrupt request scope, sequence, completion frontier, frame hash/count or
+   length. Reject before producer execution. Corrupt replies and deliver a
+   duplicate later request: earlier actual effects stay charged, no possibly
+   effectful request is retried, and no partial transcript succeeds.
+6. Kill only the test-owned parked helper through its pinned pidfd. Close only
+   the owned outer lifetime during a started nested producer. Require terminal
+   failure, no unconfirmed publication and complete cleanup of both lifetimes.
+   The candidate starts with only standard descriptors; attempts to use a
+   callback/private descriptor, read controls, write source or forge the
+   producer marker must fail after the intended payload-start evidence.
+7. Reject missing/extra/nonregular/escaping/oversized output, unused declared
+   source, and output collision with every admitted path/pin, including an
+   actually absent admitted file. Retain normalized same-producer ownership;
+   different producers cannot replace each other's result.
+8. Invoke an output-producing registration twice, including an equivalent
+   alias. Require two real executions/publication effects while equivalent
+   provenance deduplicates. Run real repository scaninc through an issued
+   native tool and require actual `proof.bin` prerequisites and source/tool
+   provenance without mounting the native executable into Make.
+9. Compare an ordinary-Make branch whose real first result excludes another
+   producer. The excluded producer must never execute. Do not manufacture the
+   old speculative empty-output pass to populate its cache. Keep separate
+   actual-dispatch malformed/source/budget negatives and completed-transcript
+   corruption controls.
+
+### Expected result
+
+Real native requests alone cause producer work. The producer remains isolated,
+its complete successful source/output contract is checked, and validated files
+publish before the requesting helper returns. Native Make owns include loading
+and re-exec. Observed source objects are not reconstructed between observation
+and use. All resource/lifetime limits remain cumulative and unchanged.
+
+### Negative control
+
+The unapproved d9 replay physically recreated generated views: retained actual
+source-ancestor link-count and explicit-directory timestamp controls produced
+stale all-matched results. Separate owned reconstruction evidence showed
+different generated inodes/ctime. Those failures are not replaced by a
+names-only hash or a synthetic restart count.
+
+Private `/work` output is deliberately not immediately visible through readonly
+`/repo` inside a producer. The measured same-code source/output namespace
+difference remains a documented two-phase boundary, not permission to expose
+writable source aliases. Required unsupported read-own-publication behavior
+remains a precise hold.
+
+### Interactions and save compatibility
+
+P depends on core #206; V/#226 and R/#227 remain independent core children.
+D/#228 depends on P. #180 retains full integration/domain/graph/oracle/public
+acceptance. No gameplay, saves, config identity, localization, generated game
+content, modern/archival profile or ROM/RAM behavior changes.
+
+### Automation
+
+`python3 -m unittest scripts.validation_ownership.tests.test_producer -v`
+executes the real producer/control/resource cases through the existing host
+runner. Existing Build workflow discovery imports `ProducerTests`; no new job
+or standalone gate is added.
+
+### Cleanup and limitations
+
+All owned source fixtures, captured outputs, channels, roots and children are
+removed on success or failure. No process-name killing or other-worktree
+cleanup occurs. This vertical checkpoint is not full P or root/112-domain
+acceptance, budget calibration or a claim of tested real sudo credentials.
+Nested generated publication currently rejects rather than reconstructing an
+outer context. Main owns the remaining independent review and delivery gates.
+
 ## TC-WORKFLOW-AGENT-HANDOFF-001: Validate bounded exact-SHA agent handoffs
 
 - **Feature / originating issue:** `workflow-governance` /

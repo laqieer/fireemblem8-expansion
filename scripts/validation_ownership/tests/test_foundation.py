@@ -783,7 +783,10 @@ int main(int argc,char **argv) {
                         self.assertFalse(list(base.glob("control-*")))
                         self.assertFalse(session.budget.children)
                         if failed:
-                            self.assertIn("confined", str(caught.exception))
+                            self.assertIn(
+                                "owned primary failure" if boundary == "make-tree" else "confined",
+                                str(caught.exception),
+                            )
                             self.assertTrue(caught.exception.cleanup_errors)
                     self.assert_clean(session)
 
@@ -1139,7 +1142,7 @@ raise AssertionError("default termination was lost")
             self.assertEqual(path.stat(), changed)
         self.assert_clean(session)
 
-    def test_uncomparable_metadata_executes_directly_but_cannot_seed_make_reuse(self):
+    def test_live_make_executes_uncomparable_metadata_instead_of_reusing_it(self):
         self.add("data/module.py", "VALUE=1\n")
         self.add("reader.py", (
             "import ctypes,json\nlibc=ctypes.CDLL(None,use_errno=True); libc.syscall.restype=ctypes.c_long\n"
@@ -1156,8 +1159,16 @@ raise AssertionError("default termination was lost")
             self.assertEqual(json.loads(first.stdout), [-1, errno.EFAULT])
             self.assertTrue(any(record[0] == 4 and record[6] == -errno.EFAULT for record in first.metadata))
             self.assertIsNot(session.command(command), first)
-            with self.assertRaisesRegex(MakeProbeError, "unsupported guest metadata reuse"):
-                session.make("all", commands={"python3 reader.py": command})
+            executed = []
+            original = session._sandbox_run
+            def recording(root, **kwargs):
+                if kwargs["mode"] == "command" and "/repo/reader.py" in kwargs["argv"]:
+                    executed.append(kwargs["argv"])
+                return original(root, **kwargs)
+            with patch.object(session, "_sandbox_run", recording):
+                observed = session.make("all", variables=("VALUE",), commands={"python3 reader.py": command})
+            self.assertEqual(json.loads(observed.semantics["domains"]["VALUE"]["value"]), [-1, errno.EFAULT])
+            self.assertEqual(len(executed), 1)
         self.assert_clean(session)
 
     def test_public_live_and_immutable_controls_use_distinct_actual_source_bytes(self):
@@ -1847,7 +1858,7 @@ raise AssertionError("default termination was lost")
             original = session._sandbox_run
             def record(root, **kwargs):
                 result, observed = original(root, **kwargs)
-                capsules.append((kwargs["mode"], getattr(session, "pending_commands", None)))
+                capsules.append((kwargs["mode"], session.pending_commands, kwargs.get("metadata_validation", False)))
                 return result, observed
             with patch.object(session, "_sandbox_run", record):
                 result = session.make("all", variables=("VALUES",), commands=Commands())
@@ -1857,14 +1868,14 @@ raise AssertionError("default termination was lost")
                 ordinary[1].split(),
             )
             self.assertEqual(requested, [
-                f"python3 worker.py {index} 'word value' \"\"" for index in dict.fromkeys(order)
+                f"python3 worker.py {index} 'word value' \"\"" for index in order
             ])
             self.assertEqual(len(result.events), len(order))
             self.assertTrue(all(event["match"] >= 0 for event in result.events))
             self.assertEqual(len(result.semantics["dynamic_commands"]), len(registrations))
-            self.assertEqual([mode for mode, _ in capsules].count("make"), 2)
-            self.assertEqual([mode for mode, _ in capsules].count("command"), len(registrations))
-            self.assertTrue(all(pending == 1 for mode, pending in capsules if mode == "command"))
+            self.assertEqual(sum(mode == "make" for mode, _, _ in capsules), 1)
+            self.assertEqual(sum(mode == "command" and not validation for mode, _, validation in capsules), len(registrations))
+            self.assertTrue(all(pending == 1 for mode, pending, _ in capsules if mode == "command"))
             self.assertEqual(session.pending_commands, 0)
             self.assertEqual(session.pending_commands_peak, 1)
             self.assertEqual(session.budget.states, 1)
@@ -1890,8 +1901,8 @@ raise AssertionError("default termination was lost")
             self.assertTrue(session.budget.closed)
         self.assert_clean(session)
 
-    def test_serial_resolution_validates_late_native_frames_before_any_worker(self):
-        registrations, _ = self.resolution_batch_fixture(count=3)
+    def test_live_completed_transcript_corruption_cannot_report_success(self):
+        registrations, order = self.resolution_batch_fixture(count=3)
         for defect in ("truncated", "hash", "mapping-count", "matched-unknown", "missing-context"):
             with self.subTest(defect=defect):
                 requested = []
@@ -1930,9 +1941,11 @@ raise AssertionError("default termination was lost")
                     with patch.object(session.budget, "read_bytes", corrupt):
                         with self.assertRaisesRegex(MakeProbeError, "frame|hash|unknown mapping"):
                             session.make("all", commands=Commands())
-                    self.assertEqual(requested, [])
+                    self.assertEqual(requested, [
+                        f"python3 worker.py {index} 'word value' \"\"" for index in order
+                    ])
                     self.assertEqual(session.pending_commands, 0)
-                    self.assertEqual(session.pending_commands_peak, 0)
+                    self.assertEqual(session.pending_commands_peak, 1)
                 self.assert_clean(session)
 
     def test_metadata_report_validation_rejects_malformed_buffers_and_native_writes(self):
@@ -1970,7 +1983,7 @@ raise AssertionError("default termination was lost")
                 self.assert_clean(session)
 
     def test_serial_resolution_rejects_known_mapping_miss_without_rerunning_worker(self):
-        registrations, _ = self.resolution_batch_fixture(count=2)
+        registrations, order = self.resolution_batch_fixture(count=2)
         requested = []
         class Commands:
             def __contains__(self, command):
@@ -1982,13 +1995,15 @@ raise AssertionError("default termination was lost")
             original = session.budget.read_bytes
             def corrupt(path, category):
                 raw = original(path, category)
-                if category == "event" and len(requested) == 2:
+                if category == "event" and len(requested) == len(order):
                     return b"\xff\xff\xff\xff" + raw[4:]
                 return raw
             with patch.object(session.budget, "read_bytes", corrupt):
                 with self.assertRaisesRegex(MakeProbeError, "trusted interceptor frame differs from its native write"):
                     session.make("all", commands=Commands())
-            self.assertEqual(len(requested), 2)
+            self.assertEqual(requested, [
+                f"python3 worker.py {index} 'word value' \"\"" for index in order
+            ])
             self.assertEqual(session.pending_commands, 0)
             self.assertEqual(session.pending_commands_peak, 1)
         self.assert_clean(session)
@@ -2010,7 +2025,7 @@ raise AssertionError("default termination was lost")
                             })
                             return Command(("/usr/bin/printf", "%s", "outer"))
                     if limit == 1:
-                        with self.assertRaisesRegex(MakeProbeError, "registered-command pending count"):
+                        with self.assertRaisesRegex(MakeProbeError, "pending producer capacity"):
                             session.make("all", commands=Commands())
                     else:
                         result = session.make("all", variables=("VALUE",), commands=Commands())
@@ -2218,7 +2233,7 @@ raise AssertionError("default termination was lost")
             def record_config(argv, **kwargs):
                 if len(argv) >= 2 and argv[-2] == str(TRUSTED_ROOT / "sandbox_exec.py"):
                     config = json.loads(Path(argv[-1]).read_bytes())
-                    configs.append((config["mode"], config["observation_count"]))
+                    configs.append((config["mode"], config["observation_count"], session.observations_used))
                 return original_run(argv, **kwargs)
             def record_capsule(root, **kwargs):
                 result, observed = original_capsule(root, **kwargs)
@@ -2241,11 +2256,10 @@ raise AssertionError("default termination was lost")
                 self.assertEqual(result.semantics["domains"]["MAKE_RESTARTS"]["value"], "")
                 self.assertEqual(result.semantics["files"][0]["prerequisites"][0]["name"], "observed")
             self.assertEqual(len(configs), len(reports))
-            self.assertEqual({mode for mode, _ in configs}, {"command", "compile", "make"})
-            used = 0
-            for (_, remaining), observed in zip(configs, reports):
-                self.assertEqual(remaining, session.budget.limits.entries - used)
-                used += observed["observations"]
+            self.assertEqual({mode for mode, _, _ in configs}, {"command", "compile", "make"})
+            for _, remaining, used_at_launch in configs:
+                self.assertEqual(remaining, session.budget.limits.entries - used_at_launch)
+            used = sum(observed["observations"] for observed in reports)
             self.assertEqual(session.observations_used, used)
             self.assertGreater(used, len(session.snapshot.files))
             self.assertLessEqual(used, session.budget.limits.entries)
@@ -4614,7 +4628,7 @@ int main(int argc, char **argv) {
                     )
                     self.assertEqual(
                         {result.consumed for variants in session.cache.values() for result in variants},
-                        {("choice.txt",), ("discarded.txt",)},
+                        {("choice.txt",)},
                     )
                 self.assert_clean(session)
         self.assertEqual(len({item.semantic_digest for item in observations[:3]}), 1)
@@ -4650,7 +4664,7 @@ int main(int argc, char **argv) {
             )
             self.assertEqual(
                 {item.stdout for variants in session.cache.values() for item in variants},
-                {b"enabled", b"genuine", b"unused"},
+                {b"enabled", b"genuine"},
             )
         self.assert_clean(session)
 
@@ -4695,12 +4709,12 @@ int main(int argc, char **argv) {
             self.assertEqual(observations[0].semantic_digest, observations[1].semantic_digest)
         self.assert_clean(session)
 
-    def test_discarded_replay_commands_remain_authorized_and_aggregate_charged(self):
+    def test_actual_dispatched_commands_remain_authorized_and_aggregate_charged(self):
         selected = "printf %s genuine"
         discarded = "python3 -I -S -B discarded.py"
         self.add("declared.txt", "unused")
         self.add("Makefile", (
-            f"SELECT := $(shell {selected})\nifeq ($(SELECT),)\n"
+            f"SELECT := $(shell {selected})\nifeq ($(SELECT),genuine)\n"
             f"UNUSED := $(shell {discarded})\nendif\nall: $(SELECT)\ngenuine: ;\n"
         ))
         commands = {
@@ -4710,6 +4724,11 @@ int main(int argc, char **argv) {
                 code=("discarded.py",), sources=("declared.txt",),
             ),
         }
+        self.add("baseline.mk", f"SELECT := $(shell {selected})\nall: $(SELECT)\ngenuine: ;\n")
+        with self.session() as baseline:
+            baseline.make("all", makefile="baseline.mk", commands={selected: commands[selected]})
+            first_mapping_bytes = baseline.budget.bytes["mapping"]
+        self.assert_clean(baseline)
         for boundary, expected in (
             ("unregistered", "unregistered eager/recursive"),
             ("failed-source", "declared/consumed source mismatch"),
@@ -4722,7 +4741,7 @@ int main(int argc, char **argv) {
                     if boundary == "failed-source"
                     else "print(open('declared.txt').read())\n"
                 ))
-                limits = {"mapping_bytes": len(selected.encode("utf-8")) + len(b"genuine") + 4}
+                limits = {"mapping_bytes": first_mapping_bytes}
                 session = self.session(**(limits if boundary == "mapping-quota" else {}))
                 with self.assertRaisesRegex(MakeProbeError, expected):
                     with session:
@@ -5395,7 +5414,7 @@ int main(int argc, char **argv) {
         self.assert_clean(session)
 
     def test_process_totals_cross_capsules_replay_and_failure_without_reset(self):
-        budget = ProbeBudget(Limits(processes=2, descendants=9))
+        budget = ProbeBudget(Limits(processes=3, descendants=7))
         self.add("Makefile", "VALUE := $(shell printf %s genuine)\nall: ;\n")
         self.add("unrelated.txt", "current")
         current = self.capture_view(budget)
@@ -5406,24 +5425,24 @@ int main(int argc, char **argv) {
             session.command(cached)
             self.assertEqual(session.processes_used, 1)
             session.make("all", commands={"printf %s genuine": Command(("/usr/bin/printf", "%s", "genuine"))})
-            self.assertEqual(session.processes_used, 6)
+            self.assertEqual(session.processes_used, 4)
             with self.assertRaisesRegex(MakeProbeError, "descendant-process"):
                 session.command(Command(("/usr/bin/printf", "second")))
-                self.assertEqual(session.processes_used, 7)
+                self.assertEqual(session.processes_used, 5)
                 session.command(Command((
                     "/usr/bin/python3", "-c",
                     "import os\nfor n in range(2):\n"
                     " child=os.fork()\n if child==0: os._exit(0)\n os.waitpid(child,0)\n",
                 )))
-            self.assertEqual(session.processes_used, 9)
-            self.assertEqual(session.live_process_peak, 2)
+            self.assertEqual(session.processes_used, 7)
+            self.assertEqual(session.live_process_peak, 3)
             self.assertEqual((budget.started, budget.deadline), (started, deadline))
             self.assertIs(session.loader, current)
             self.assertTrue(budget.closed)
             self.assertFalse(budget.children)
             with self.assertRaisesRegex(MakeProbeError, "deadline/budget"):
                 session.command(cached)
-            self.assertEqual(session.processes_used, 9)
+            self.assertEqual(session.processes_used, 7)
         self.assert_clean(session)
 
     def test_process_newborn_reservations_count_once_and_failures_release_capacity(self):

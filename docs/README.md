@@ -138,6 +138,7 @@ and
 | [`archival-decomp.md`](archival-decomp.md) | Current, archival scope | Unsupported-for-releases decomp-matching workflow |
 | [`workflow-pilot.md`](workflow-pilot.md) | Current | Frozen workflow-efficiency baseline, event/evidence protocol, artifact lifecycle, and bounded exact-SHA handoffs (issues #176/#177/#178) |
 | [`ownership-probe-foundation.md`](ownership-probe-foundation.md) | Current | Confined native Make/registry execution, aggregate budgets, source admission and downstream graph seam (issue #206) |
+| [`ownership-probe-producers.md`](ownership-probe-producers.md) | Current | Live registered producers, bounded publication, native remakes and residual aggregate resources (issue #225) |
 | [`config_identity.md`](config_identity.md) | Current | Config surface + ROM identity fingerprint (issue #8) |
 | [`save_format.md`](save_format.md) | Current | Save format + compatibility gate (issue #2) |
 | [`id_space.md`](id_space.md) | Current | Typed-ID DEFAULT vs ACTIVE contract, cap switching (issue #10) |

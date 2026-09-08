@@ -345,7 +345,7 @@ int main(int argc, char **argv)
     unsigned char *cursor = event;
     unsigned char *mapped;
     uint64_t hash = UINT64_C(14695981039346656037);
-    uint32_t mapping_count;
+    uint32_t mapping_count = 0;
     size_t size;
     size_t index;
     int match = -1;
@@ -369,7 +369,7 @@ int main(int argc, char **argv)
         close(mapping);
         return result;
     }
-    if (kind != VO_VALUE)
+    if (kind != VO_VALUE && kind != VO_LIVE)
         return 125;
     if (argc < 1 || argc > 1024)
         return 125;
@@ -400,6 +400,8 @@ int main(int argc, char **argv)
     events = open("/control/events", O_WRONLY | O_APPEND | O_NOFOLLOW | O_CLOEXEC);
     if (mapping < 0 || events < 0)
         return 125;
+    if (kind == VO_LIVE)
+        goto frame;
     mapped = read_file_at(mapping, "count", &size, MAX_OUTPUT);
     if (!mapped || size != 4)
         return 125;
@@ -431,6 +433,7 @@ int main(int argc, char **argv)
             break;
         }
     }
+frame:
     put_u32(&cursor, (uint32_t)match);
     put_u32(&cursor, mapping_count);
     put_u32(&cursor, (uint32_t)hash);
@@ -444,6 +447,17 @@ int main(int argc, char **argv)
         put_u32(&cursor, (uint32_t)length);
         memcpy(cursor, argv[index], length);
         cursor += length;
+    }
+    if (kind == VO_LIVE)
+    {
+        unsigned char *header = event;
+        long slot = syscall(SYS_getpid, VO_PRODUCE, event, (size_t)(cursor - event));
+        if (slot < 0 || slot >= INT32_MAX)
+            return 125;
+        match = (int)slot;
+        mapping_count = (uint32_t)slot + 1;
+        put_u32(&header, (uint32_t)match);
+        put_u32(&header, mapping_count);
     }
     /* One append prevents cross-helper frame interleaving. */
     if (write(events, event, (size_t)(cursor - event)) != cursor - event)

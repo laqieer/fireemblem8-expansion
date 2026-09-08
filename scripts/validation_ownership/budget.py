@@ -12,7 +12,12 @@ import time
 from dataclasses import dataclass, field, fields
 from pathlib import Path
 
-from .lifecycle import finish_cleanup, ordinary_executable
+if __package__:
+    from .lifecycle import finish_cleanup, ordinary_executable
+    from .producer_channel import ChannelError
+else:
+    from lifecycle import finish_cleanup, ordinary_executable
+    from producer_channel import ChannelError
 
 
 class MakeProbeError(RuntimeError):
@@ -72,6 +77,7 @@ class ProbeBudget:
     failed: bool = field(default=False, init=False)
     closed: bool = field(default=False, init=False)
     session_started: bool = field(default=False, init=False)
+    producer_waiters: list = field(default_factory=list, init=False)
 
     @property
     def deadline(self) -> float:
@@ -82,6 +88,11 @@ class ProbeBudget:
         if self.failed or self.closed or remaining <= 0:
             self.failed = True
             raise MakeProbeError("aggregate probe deadline/budget exhausted")
+        for channel in self.producer_waiters:
+            try:
+                channel.ensure_idle()
+            except ChannelError as error:
+                self.reject(str(error))
         return remaining
 
     def reject(self, reason: str):
@@ -155,8 +166,13 @@ class ProbeBudget:
         input_data: bytes | None = None,
         category: str = "output",
         privileged: bool = False,
+        producer_channel=None,
+        producer_handler=None,
     ) -> subprocess.CompletedProcess[bytes]:
         self.remaining()
+        if (producer_channel is None) != (producer_handler is None):
+            self.reject("incomplete private producer channel")
+        producer_fd = None if producer_channel is None else producer_channel.peer.fileno()
         self.runs += 1
         if self.runs > self.limits.runs:
             self.reject("aggregate process-launch budget exhausted")
@@ -194,6 +210,7 @@ class ProbeBudget:
                     str(Path(__file__).resolve().with_name("lifecycle.py")),
                     str(self.deadline),
                     *(["--stdin-fd", str(input_read)] if input_read is not None else []),
+                    *(["--producer-fd", str(producer_fd)] if producer_fd is not None else []),
                     "--", *argv,
                 ]
                 if privileged:
@@ -202,13 +219,19 @@ class ProbeBudget:
                 child = subprocess.Popen(
                     launcher, cwd=cwd, env=env, stdin=subprocess.PIPE,
                     stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                    pass_fds=() if input_read is None else (input_read,),
+                    pass_fds=(
+                        *((input_read,) if input_read is not None else ()),
+                        *((producer_fd,) if producer_fd is not None else ()),
+                    ),
                     close_fds=True, start_new_session=True,
                     preexec_fn=lambda: signal.pthread_sigmask(signal.SIG_SETMASK, mask),
                 )
                 if input_read is not None:
                     os.close(input_read)
                     input_read = None
+                if producer_fd is not None:
+                    producer_channel.close_peer()
+                    producer_fd = None
                 self.children[child] = privileged
             finally:
                 signal.pthread_sigmask(signal.SIG_SETMASK, mask)
@@ -220,9 +243,56 @@ class ProbeBudget:
                 if input_data is not None:
                     os.set_blocking(input_stream.fileno(), False)
                     selector.register(input_stream, selectors.EVENT_WRITE, 2)
+                if producer_channel is not None:
+                    selector.register(producer_channel, selectors.EVENT_READ, 3)
+                for ancestor in self.producer_waiters:
+                    selector.register(ancestor, selectors.EVENT_READ, 4)
                 count = 0
+                producer_finished = producer_channel is None
                 while selector.get_map():
+                    if (
+                        producer_finished and all(key.data == 4 for key in selector.get_map().values())
+                        and child.poll() is not None
+                    ):
+                        break
                     for key, _ in selector.select(min(self.remaining(), 0.05)):
+                        if key.fd not in selector.get_map():
+                            continue
+                        if key.data == 4:
+                            key.fileobj.ensure_idle()
+                            continue
+                        if key.data == 3:
+                            packet = producer_channel.receive()
+                            if packet is None:
+                                continue
+                            # Parked guests cannot issue new output writes;
+                            # drain their already completed output before nested work.
+                            for stream, index in ((child.stdout, 0), (child.stderr, 1)):
+                                while True:
+                                    try:
+                                        chunk = os.read(stream.fileno(), min(65536, limit - count + 1))
+                                    except BlockingIOError:
+                                        break
+                                    if not chunk:
+                                        if stream in selector.get_map():
+                                            selector.unregister(stream)
+                                        break
+                                    count += len(chunk)
+                                    self.charge(category, len(chunk))
+                                    if count > limit:
+                                        self.reject("process output exceeds streaming byte bound")
+                                    output[index].extend(chunk)
+                            self.producer_waiters.append(producer_channel)
+                            try:
+                                reply = producer_handler(packet)
+                            finally:
+                                self.producer_waiters.pop()
+                            if reply is None:
+                                producer_finished = True
+                                selector.unregister(producer_channel)
+                            else:
+                                producer_channel.send(reply)
+                            continue
                         if key.data == 2:
                             if supplied < len(input_data):
                                 supplied += os.write(key.fd, input_data[supplied:supplied + 65536])
@@ -261,6 +331,8 @@ class ProbeBudget:
                 actions.append(lambda: os.close(input_write))
             if input_stream is not None:
                 actions.append(input_stream.close)
+            if producer_fd is not None:
+                actions.append(producer_channel.close_peer)
             try:
                 finish_cleanup(actions, primary=primary)
             except BaseException:

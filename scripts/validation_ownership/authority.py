@@ -7,10 +7,14 @@ import json
 import os
 import re
 import stat
+import struct
 from dataclasses import dataclass
 from pathlib import Path
 
-from .budget import MakeProbeError, ProbeBudget, text
+if __package__:
+    from .budget import MakeProbeError, ProbeBudget, text
+else:
+    from budget import MakeProbeError, ProbeBudget, text
 
 
 ENVIRONMENT = {
@@ -65,6 +69,74 @@ def parse_json(data: bytes, boundary: str):
 
 def encoded(value) -> bytes:
     return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode("ascii")
+
+
+class Frames:
+    def __init__(self, raw: bytes):
+        self.raw = raw
+        self.offset = 0
+
+    def take(self, size: int):
+        if size > len(self.raw) - self.offset:
+            raise MakeProbeError("truncated native observation/event frame")
+        result = self.raw[self.offset:self.offset + size]
+        self.offset += size
+        return result
+
+    def integer(self):
+        return int.from_bytes(self.take(4), "little")
+
+    def string(self, boundary):
+        return text(self.take(self.integer()), boundary)
+
+    def done(self):
+        if self.offset != len(self.raw):
+            raise MakeProbeError("trailing native observation/event bytes")
+
+def _command_hash(command: str) -> str:
+    result = 14695981039346656037
+    for byte in command.encode("utf-8"):
+        result = ((result ^ byte) * 1099511628211) & ((1 << 64) - 1)
+    return f"{result:016x}"
+
+def _event_command(event: dict) -> str:
+    arguments = event["arguments"]
+    if arguments[0] in {"/bin/sh", "/bin/bash"}:
+        if len(arguments) != 3 or arguments[1] not in {"-c", "-ec"}:
+            raise MakeProbeError("SHELL/.SHELLFLAGS escaped the interceptor protocol")
+        return arguments[2]
+    program = arguments[0]
+    if program.startswith("/usr/bin/") and program != "/usr/bin/make":
+        program = program.removeprefix("/usr/bin/")
+    def quote(value):
+        if not value:
+            return '""'
+        if re.fullmatch(r"[A-Za-z0-9_@%+=:,./-]+", value):
+            return value
+        return "'" + value.replace("'", "'\"'\"'") + "'"
+    return " ".join(quote(value) for value in (program, *arguments[1:]))
+
+def _read_events(raw: bytes, *, expected_mapping_count: int):
+    reader = Frames(raw)
+    events = []
+    while reader.offset < len(raw):
+        match = struct.unpack("<i", reader.take(4))[0]
+        count = reader.integer()
+        hash_value = int.from_bytes(reader.take(8), "little")
+        argc = reader.integer()
+        if (
+            not -2 <= match < expected_mapping_count
+            or count != expected_mapping_count or not 1 <= argc <= 1024
+        ):
+            raise MakeProbeError("invalid trusted interceptor frame")
+        event = {
+            "match": match, "mapping_count": count,
+            "arguments": [reader.string("interceptor argv") for _ in range(argc)],
+        }
+        if int(_command_hash(_event_command(event)), 16) != hash_value:
+            raise MakeProbeError("interceptor command/hash mismatch")
+        events.append(event)
+    return events
 
 
 def git_command(root: Path, git_dir: Path | None = None):

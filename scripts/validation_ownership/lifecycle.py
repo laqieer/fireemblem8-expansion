@@ -164,7 +164,7 @@ def interrupted(signum, frame):
     raise WatchdogInterrupted(f"namespace watchdog interrupted by signal {signum}")
 
 
-def run(argv, deadline, *, lifetime=0, payload_input=None):
+def run(argv, deadline, *, lifetime=0, payload_input=None, producer_fd=None):
     if not argv or not math.isfinite(deadline) or deadline <= time.monotonic():
         raise ValueError("namespace watchdog requires a live aggregate deadline")
     if not stat.S_ISFIFO(os.fstat(lifetime).st_mode):
@@ -174,6 +174,11 @@ def run(argv, deadline, *, lifetime=0, payload_input=None):
         or not stat.S_ISFIFO(os.fstat(payload_input).st_mode)
     ):
         raise ValueError("watchdog payload input requires a separate pipe")
+    if producer_fd is not None and (
+        producer_fd < 3 or producer_fd in {lifetime, payload_input}
+        or not stat.S_ISSOCK(os.fstat(producer_fd).st_mode)
+    ):
+        raise ValueError("watchdog producer channel requires a separate private socket")
     ordinary_executable(argv[0])
     require_pidfds()
     if owned_children():
@@ -197,8 +202,12 @@ def run(argv, deadline, *, lifetime=0, payload_input=None):
                 child = subprocess.Popen(
                     argv, stdin=subprocess.DEVNULL if payload_input is None else payload_input,
                     close_fds=True,
+                    pass_fds=() if producer_fd is None else (producer_fd,),
                     start_new_session=True, preexec_fn=lambda: parent_death(parent, mask),
                 )
+                if producer_fd is not None:
+                    os.close(producer_fd)
+                    producer_fd = None
             finally:
                 signal.pthread_sigmask(signal.SIG_SETMASK, mask)
             while True:
@@ -215,7 +224,8 @@ def run(argv, deadline, *, lifetime=0, payload_input=None):
         raise
     finally:
         finish_cleanup(
-            [] if child is None else [lambda: terminate(child)],
+            ([] if child is None else [lambda: terminate(child)])
+            + ([] if producer_fd is None else [lambda: os.close(producer_fd)]),
             primary=primary, handlers=handlers,
         )
     return child.returncode
@@ -227,12 +237,20 @@ def main():
     try:
         arguments = sys.argv[2:]
         payload_input = None
-        if arguments[0] == "--stdin-fd":
-            payload_input = int(arguments[1])
+        producer_fd = None
+        while arguments and arguments[0] in {"--stdin-fd", "--producer-fd"}:
+            option = arguments[0]
+            value = int(arguments[1])
+            if option == "--stdin-fd" and payload_input is None:
+                payload_input = value
+            elif option == "--producer-fd" and producer_fd is None:
+                producer_fd = value
+            else:
+                raise ValueError("duplicate watchdog descriptor option")
             arguments = arguments[2:]
         if not arguments or arguments[0] != "--":
             raise ValueError("watchdog command delimiter is missing")
-        status = run(arguments[1:], float(sys.argv[1]), payload_input=payload_input)
+        status = run(arguments[1:], float(sys.argv[1]), payload_input=payload_input, producer_fd=producer_fd)
     except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as error:
         print(f"namespace watchdog: {error}", file=sys.stderr)
         return 125
