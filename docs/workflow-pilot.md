@@ -243,12 +243,20 @@ watchers. The existing assignment/handoff and watcher schemas remain valid.
    Its `review_tools` uses the actual unique Git merge-base check. Prior
    accepted findings additionally need the existing family handoff inputs:
    `(request, members, observations, tool_revision)`.
-3. Security requires the complete exact-head check-run set: `CodeQL` from
+3. Merge security quality requires the complete exact-head check-run set: `CodeQL` from
    GitHub Advanced Security app 57789 and `GitGuardian Security Checks` from
    app 46505, with their expected slugs, terminal success and complete
    pagination. A resolved false positive does not turn a failed check green:
    observe the successful exact check. A coordinator-accepted valid security
    or review finding permanently abandons that head.
+   A complete successful API observation may legitimately contain no required
+   checks, a partial set or coherently queued/in-progress checks. Those are
+   incomplete quality, not malformed authority: the actual `assess_observed`
+   callback may reach known-pause full fallback, but never merge. A queued
+   check without a reported start remains `created_at: null`; no time is
+   invented. Wrong app/head, malformed records, duplicate required checks,
+   contradictory lifecycle/times, unavailable or incomplete pagination still
+   reject before dispatch. Unpause still requires the complete successful set.
 4. Delegated work needs the existing accepted, closed exact local handoff.
    Coordinator-owned work can instead use the explicit native local-validation
    registration below; an applicable incomplete/invalid delegation cannot be
@@ -322,6 +330,13 @@ their validated raw event ref; dispatch uses its checked integration-base
 observation. The parser preserves legacy three-field witnesses and exposes
 their missing ref as `None`, never a value borrowed from today's PR association.
 Both concurrent and reserved admission require the complete emitted witness.
+Step lifecycle validity and binding credit are separate. A structurally valid
+queued/in-progress marker with null conclusion, or a coherently completed
+non-success marker, leaves the run in history as unbound. Only successful
+completion can bind it. Encoding, uniqueness and declared PR/head identity
+are checked even without credit; malformed or contradictory witnesses reject.
+Non-authorizing newer full runs are never discarded to reuse older green
+evidence. A successfully observed different ref retains explicit-other handling.
 Old unmarked or ref-incomplete full runs cannot be assigned to a current
 same-head rebind/retarget, even if the previous record was never assessed.
 This also applies to metadata transactions and the inline metadata summary:

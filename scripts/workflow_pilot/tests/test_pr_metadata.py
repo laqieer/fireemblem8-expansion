@@ -622,7 +622,9 @@ def _bind_full_jobs(jobs, *, number=PR_NUMBER, head=HEAD, base=BASE, base_ref="m
 def _fixture_full_compare(jobs):
     from scripts.workflow_pilot.adaptive_gate import binding_base_ref, parse_binding
     return any(
-        parse_binding(step.get("name", "")) is not None
+        isinstance(step, dict) and isinstance(step.get("name"), str)
+        and parse_binding(step["name"]) is not None
+        and step.get("status") == "completed" and step.get("conclusion") == "success"
         and parse_binding(step["name"])[:2] == (PR_NUMBER, HEAD)
         and binding_base_ref(step["name"]) == "master"
         for job in jobs for step in job.get("steps", ()))
@@ -1837,6 +1839,135 @@ class LauncherSandbox:
 
 
 class PullRequestMetadataTests(unittest.TestCase):
+    def test_candidate_marker_lifecycle_matrix_retains_non_authorizing_history(self):
+        from scripts.workflow_pilot.adaptive_gate import binding_name
+        marker = binding_name(PR_NUMBER, HEAD, BASE, "master")
+        cases = (
+            ("absent", "queued", None, "unbound"),
+            ("queued", "queued", None, "unbound"),
+            ("in-progress", "in_progress", None, "unbound"),
+            ("success", "completed", "success", "explicit-same"),
+            ("failure", "completed", "failure", "unbound"),
+            ("cancelled", "completed", "cancelled", "unbound"),
+            ("skipped", "completed", "skipped", "unbound"),
+            ("timed-out", "completed", "timed_out", "unbound"),
+            ("unknown-status", "unknown", None, None),
+            ("completed-null", "completed", None, None),
+            ("pending-success", "queued", "success", None),
+            ("unknown-conclusion", "completed", "invented", None),
+            ("malformed", "completed", "failure", None),
+            ("noncanonical", "completed", "failure", None),
+            ("duplicate", "completed", "failure", None),
+            ("wrong-head", "completed", "failure", None),
+            ("wrong-pr", "completed", "failure", None),
+        )
+        self.marker_observations = []
+        for name, status, conclusion, expected in cases:
+            with self.subTest(case=name):
+                active = status != "completed"
+                raw, jobs = _run(101, 10, mode="full", active=active)
+                if name == "queued":
+                    raw.update(status="queued", run_started_at=None)
+                classifier = next(job for job in jobs if job["name"] == "event-classifier")
+                if status == "in_progress":
+                    classifier.update(_job("event-classifier", job_id=classifier["id"], run_id=101,
+                                           status="in_progress", conclusion=None))
+                if not active and conclusion in pr_metadata.RUN_CONCLUSIONS:
+                    classifier["conclusion"] = conclusion
+                    raw["conclusion"] = conclusion
+                step = {"name": marker, "status": status, "conclusion": conclusion}
+                if name == "malformed":
+                    step["name"] = marker.replace(HEAD, "not-a-sha")
+                elif name == "noncanonical":
+                    step["name"] = marker.rsplit(":", 1)[0] + ":mas%74er"
+                elif name == "wrong-head":
+                    step["name"] = binding_name(PR_NUMBER, NEW_HEAD, BASE, "master")
+                elif name == "wrong-pr":
+                    step["name"] = binding_name(PR_NUMBER + 1, HEAD, BASE, "master")
+                classifier["steps"] = [] if name == "absent" else [step]
+                if name == "duplicate":
+                    classifier["steps"].append(copy.deepcopy(step))
+                client = ScriptedClient()
+                _add_snapshot(client, [(raw, jobs)])
+                state = pr_metadata._parse_pull_request_payload(_pr(), REPOSITORY, PR_NUMBER)
+                if expected is None:
+                    with self.assertRaises(pr_metadata.MetadataEditError) as rejected:
+                        pr_metadata.list_candidate_runs(client, state)
+                    self.marker_observations.append({
+                        "case": name, "rejected": type(rejected.exception).__name__,
+                        "detail": str(rejected.exception)})
+                else:
+                    runs = pr_metadata.list_candidate_runs(client, state)
+                    self.assertEqual(len(runs), 1)
+                    self.assertEqual(runs[0].binding, expected)
+                    self.assertEqual(runs[0].candidate_binding is not None, expected == "explicit-same")
+                    self.assertEqual(runs[0].mode, "active-full" if active else "full")
+                    self.marker_observations.append({
+                        "case": name, "binding": runs[0].binding, "mode": runs[0].mode,
+                        "status": runs[0].status, "conclusion": runs[0].conclusion})
+
+    def test_non_success_marker_cannot_hide_newer_full_or_exclude_another_ref(self):
+        from scripts.workflow_pilot.adaptive_gate import binding_name
+        for outcome in ("failure", "cancelled", "skipped", "timed_out"):
+            with self.subTest(outcome=outcome):
+                old = _run(101, 10, mode="full")
+                raw, jobs = _run(202, 11, mode="full", success=False)
+                classifier = next(job for job in jobs if job["name"] == "event-classifier")
+                classifier["steps"][0]["conclusion"] = outcome
+                classifier["conclusion"] = outcome
+                raw["conclusion"] = outcome
+                client = ScriptedClient()
+                _add_snapshot(client, [(raw, jobs), old])
+                state = pr_metadata._parse_pull_request_payload(_pr(), REPOSITORY, PR_NUMBER)
+                runs = pr_metadata.list_candidate_runs(client, state)
+                self.assertEqual([run.run_id for run in runs], [202, 101])
+                self.assertEqual([run.binding for run in runs], ["unbound", "explicit-same"])
+                self.assertIsNone(pr_metadata._latest_full(runs))
+        for outcome, expected in (("success", "explicit-other"), ("failure", "unbound")):
+            raw, jobs = _run(101, 10, mode="full")
+            classifier = next(job for job in jobs if job["name"] == "event-classifier")
+            classifier["steps"][0].update(
+                name=binding_name(PR_NUMBER, HEAD, BASE, "other/base"), conclusion=outcome)
+            classifier["conclusion"] = outcome
+            raw["conclusion"] = outcome
+            client = ScriptedClient()
+            _add_snapshot(client, [(raw, jobs)])
+            state = pr_metadata._parse_pull_request_payload(_pr(), REPOSITORY, PR_NUMBER)
+            self.assertEqual(pr_metadata.list_candidate_runs(client, state)[0].binding, expected)
+
+    def test_uncredited_marker_still_checks_parent_lifecycle_and_cross_job_identity(self):
+        from scripts.workflow_pilot.adaptive_gate import binding_name
+        for variant in ("finished-job-active-step", "queued-job-finished-step", "skipped-job-success-step", "conflicting-jobs",
+                        "non-object-step", "missing-step-name"):
+            with self.subTest(variant=variant):
+                raw, jobs = _run(101, 10, mode="full",
+                                 active=variant not in {"finished-job-active-step", "skipped-job-success-step"})
+                classifier = next(job for job in jobs if job["name"] == "event-classifier")
+                classifier["steps"] = [{
+                    "name": binding_name(PR_NUMBER, HEAD, BASE, "master"),
+                    "status": "queued", "conclusion": None}]
+                if variant == "queued-job-finished-step":
+                    classifier["steps"][0].update(status="completed", conclusion="failure")
+                elif variant == "skipped-job-success-step":
+                    classifier["conclusion"] = "skipped"
+                    classifier["steps"][0].update(status="completed", conclusion="success")
+                elif variant == "conflicting-jobs":
+                    other = _job("review-first-classifier", job_id=10199, run_id=101,
+                                 status="queued", conclusion=None, runner_name=None, started_at=None)
+                    other["steps"] = [{
+                        "name": binding_name(PR_NUMBER, HEAD, BASE, "other/base"),
+                        "status": "queued", "conclusion": None}]
+                    jobs.append(other)
+                elif variant == "non-object-step":
+                    classifier["steps"] = [None]
+                elif variant == "missing-step-name":
+                    classifier["steps"] = [{"status": "queued", "conclusion": None}]
+                client = ScriptedClient()
+                _add_snapshot(client, [(raw, jobs)])
+                state = pr_metadata._parse_pull_request_payload(_pr(), REPOSITORY, PR_NUMBER)
+                with self.assertRaises(pr_metadata.MetadataEditError):
+                    pr_metadata.list_candidate_runs(client, state)
+
     def test_transaction_refresh_observes_each_planned_full_run_comparison(self):
         runs = [_run(101, 10, mode="full"), _run(100, 9, mode="full")]
         client, posts = _mutation_client(runs=runs)
