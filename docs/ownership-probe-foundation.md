@@ -1065,9 +1065,10 @@ adds `Command.dependency_only`
 and actual driver/cc1 execution receipts through P's producer contract, without
 requiring the view selector or optional runtime inputs.
 
-#225's full delivery remains open. This branch replaces the unapproved
-delete/recreate implementation with live rendezvous and scoped nested publication; its
-remaining complete acceptance is not inferred from a partial checkpoint.
+P/#225's implementation is merged through PR #232 and is included in this
+master-based D root. It uses live rendezvous and scoped nested publication
+instead of the unapproved delete/recreate model. P's final delivery evidence
+is tracked in #225; code inclusion here does not substitute for those gates.
 Prior generated-listing successes do not replace the retained nlink/timestamp
 and reconstruction counterexamples.
 All old positive/adversarial cases stay with that complete contract. No
