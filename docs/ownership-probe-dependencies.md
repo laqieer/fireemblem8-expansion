@@ -63,6 +63,12 @@ compiler binaries or Make's separately captured ELF/library closure, and does
 not require the optional R runtime-input API. No additional compiler platform,
 live source mount or general executable grant is introduced.
 
+If a caller also requests delivered R inputs, their captured identity remains
+part of Make's execution digest. Those inputs do not become dependency source
+declarations or compiler execution grants. The default empty runtime-input
+profile and the independently configured runtime profile share P's live
+framing, publication and resource lifetime.
+
 `generated[0].data` contains the actual dependency bytes; `stdout` is empty
 because the compiler wrote its dependency output to the declared file.
 Diagnostics remain raw `stderr` bytes. `artifact` is `None`, and no native
