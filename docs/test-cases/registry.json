@@ -489,7 +489,8 @@
         "https://github.com/laqieer/fireemblem8-expansion/issues/227",
         "https://github.com/laqieer/fireemblem8-expansion/issues/208",
         "https://github.com/laqieer/fireemblem8-expansion/issues/207",
-        "https://github.com/laqieer/fireemblem8-expansion/issues/216"
+        "https://github.com/laqieer/fireemblem8-expansion/issues/216",
+        "https://github.com/laqieer/fireemblem8-expansion/issues/223"
       ],
       "reference": ".github/skills/development-workflow/SKILL.md",
       "status": "current",
@@ -2193,23 +2194,27 @@
       "id": "TC-WORKFLOW-REVIEW-FAMILY-001",
       "title": "Expand valid findings across complete sibling families",
       "feature_id": "workflow-governance",
-      "issue_urls": ["https://github.com/laqieer/fireemblem8-expansion/issues/179"],
+      "issue_urls": ["https://github.com/laqieer/fireemblem8-expansion/issues/179", "https://github.com/laqieer/fireemblem8-expansion/issues/223"],
       "document": "docs/test-cases/workflow-governance.md",
       "anchor": "tc-workflow-review-family-001-expand-valid-findings-across-complete-sibling-families",
-      "profiles": ["Host-only source checkout with the isolated #216 host interpreter, Git and native GCC", "Modern Build lane with ARM GCC/binutils for mandatory ARM-object positives"],
+      "profiles": ["Host-only Linux source checkout with the isolated #216 host interpreter, Git and native GCC", "Modern Build lane with ARM GCC/binutils for mandatory ARM-object positives"],
       "purpose": "Bind actual reviewed subjects to complete finite sibling obligations and trusted execution observations, preserving bounded remediation and sticky architecture holds.",
       "prerequisites": "Use the existing locked host environment for host tests; the separate ARM selector uses the supported compiler/binutils via PATH or resolved MODERN_CC/MODERN_NM/MODERN_SIZE paths. Tests own source-backed Git and non-system toolchain fixtures under build/ and need no credentials, live PR, ROM or emulator.",
-      "actions": "Run the focused host review suites and explicit arm_review_subjects selector. Exercise all five families, real optional-owner and generated-code mutations, Make-resolved tool overrides and missing-tool rejection, complete local report triage, current active/dismissed review retriage, one active PR/head owner, exact merge-base lineage, commit-only loading, bounded Git diagnostics and first/second/third-round transitions.",
-      "expected_result": "The same reviewed probes detect actual broken origin code/data and pass corrected subjects. Every expected member is recorded. Third-round holds survive later heads and clean reports until bound coordinator disposition.",
-      "negative_control": "Missing siblings after the reported fix, added/deleted/unknown members, duplicate ownership, wrong task/head/source, fabricated pass labels, compile/import/zero/skipped tests, stale triage and undisposed holds cannot establish eligibility.",
+      "actions": "Run the focused host review suites and explicit arm_review_subjects selector. Exercise all five families, real optional-owner and generated-code mutations, Make-resolved tool overrides and missing-tool rejection, complete local report triage, current active/dismissed review retriage, one active PR/head owner, exact merge-base lineage, commit-only loading, bounded Git diagnostics and first/second/third-round transitions. For #223, observe actual PID/exit state before staging cleanup across inner/outer timeouts, creation-boundary and running interruption, closed/inherited stdio, bounded/closed stdin, early leader exit, unrelated-process preservation and immutable helper substitution. Check caller-handler and inherited-mask preservation, plus retained live staging when real termination is unavailable.",
+      "expected_result": "The same reviewed probes detect actual broken origin code/data and pass corrected subjects. Every expected member is recorded. Staging removal requires positive cleanup confirmation from the exact trusted current operation, not an exception-type blacklist or candidate field. Record-only signals and protected checkpoints cover creation, body, cleanup, second signals and restoration while preserving caller semantics. Unconfirmed work retains staging and causal diagnostics; verified cleanup still removes staging on tool, timeout or ordinary release errors. Exact tool bytes, output and return classifications remain intact. Third-round holds survive later heads and clean reports until bound coordinator disposition.",
+      "negative_control": "Missing siblings after the reported fix, added/deleted/unknown members, duplicate ownership, wrong task/head/source, fabricated pass labels, compile/import/zero/skipped tests, stale triage and undisposed holds cannot establish eligibility. The pre-fix real staged worker also removed its directory while an ordinary grandchild remained live after timeout.",
       "interactions": "Depends on #176 metrics, existing Git/GitHub/task/test interfaces and #216 locked schema dependencies; #181 depends on it. #178 is independent. #204 is not a dependency. Preserve #207 immediate assigned-branch WIP persistence and #208 cleanup.",
       "save_compatibility": "No gameplay, save/config, generated-game-data, locale, ROM/RAM, modern/archival or required-context changes.",
-      "cleanup": "Tests remove only their owned build/review-family-* source copies and fixtures. Keep task work and diagnostic logs; no remote mutation occurs.",
-      "limitations": "Finite coverage is chosen by the trusted reviewer/coordinator, not discovered semantically from filenames. CLI JSON is an audit, never task provenance or merge authority. Host/native/object evidence is not target-ROM proof; no same-UID isolation claim or manual-only criterion.",
+      "cleanup": "Tests remove only their owned build/review-family-* and build/review-process-tests-* fixtures after owned process exit. Unverified cleanup retains staged work. Keep task work and diagnostic logs; no remote mutation occurs.",
+      "limitations": "Finite coverage is chosen by the trusted reviewer/coordinator, not discovered semantically from filenames. CLI JSON is an audit, never task provenance or merge authority. Host/native/object evidence is not target-ROM proof; no same-UID isolation claim or manual-only criterion. Ordinary Linux process cleanup excludes deliberate descendant escape, abrupt coordinator SIGKILL and arbitrary host mutation.",
       "automation": [
         {
           "command": "build/host-python/bin/python3 -I -m unittest discover -s scripts/workflow_pilot/tests -t . -p 'test_*review*.py' -v",
           "evidence": "scripts/workflow_pilot/tests/test_review_subjects.py"
+        },
+        {
+          "command": "build/host-python/bin/python3 -I -m unittest discover -s scripts/workflow_pilot/tests -t . -p 'test_review_process_cleanup.py' -v",
+          "evidence": "scripts/workflow_pilot/tests/test_review_process_cleanup.py"
         },
         {
           "command": "python3 -m unittest scripts.workflow_pilot.tests.arm_review_subjects -v",
