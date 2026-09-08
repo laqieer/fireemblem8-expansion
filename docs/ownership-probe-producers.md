@@ -62,6 +62,17 @@ the existing policy error path. Ordinary absence, nonexecutable files and
 command/helper metadata probes are not blanket-rejected. Missing direct
 executables still do not acquire authority merely by appearing in a registry.
 
+An execute bit for another permission class is not proof that this caller can
+execute. For example, an owner of a `0641` generated file is denied just as
+for `0644`; that ordinary denial must not be blamed on noexec. The guard reads
+the stopped Make process's kernel-reported identities, supplementary groups
+and capabilities. Plain access uses real IDs; `AT_EACCESS` uses the actual
+filesystem IDs. Owner permission takes precedence, then matching group, then
+other. The existing capability-free state and relevant namespace ID mappings
+are checked, not assumed. A non-owner extended ACL or unrepresentable/
+capability-bearing state rejects as unsupported instead of guessing.
+No credential, mode, access result, mount or metadata buffer is changed.
+
 ## One live native execution
 
 The native observer preserves Make's original target, arguments, variables,

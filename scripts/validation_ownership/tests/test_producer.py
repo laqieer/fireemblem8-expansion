@@ -14,7 +14,8 @@ import unittest
 import zlib
 from pathlib import Path
 from dataclasses import replace
-from unittest.mock import patch
+from types import SimpleNamespace
+from unittest.mock import mock_open, patch
 
 from scripts.validation_ownership.make_probe import Command, NativeTool, TRUSTED_ROOT
 from scripts.validation_ownership.budget import MakeProbeError
@@ -128,6 +129,152 @@ class ProducerTests(unittest.TestCase):
             self.assertTrue(any(row[0] in {21, 269, 439} and row[6] == -errno.EACCES for row in output.metadata))
             self.assertTrue(session._metadata_matches(output.metadata))
         self.fixture.assert_clean(session)
+
+    def test_generated_execute_denial_uses_owner_permissions_not_any_execute_bit(self):
+        from scripts.validation_ownership.sandbox_exec import drop_privileges
+
+        ordinary_drop = (lambda: drop_privileges({"sudo_drop": False})) if os.geteuid() == 0 else None
+        self.fixture.add("producer.py", (
+            "import os,sys\nfrom pathlib import Path\n"
+            "path=Path(sys.argv[1])/'generated.sh'\n"
+            "with path.open('wb') as out:\n"
+            " out.write(b'#!/bin/sh\\nprintf ordinary-value\\n')\n"
+            " os.fchmod(out.fileno(),int(sys.argv[2],8))\n"
+        ))
+        for mode in (0o644, 0o641, 0o650, 0o601, 0o610, 0o701, 0o741):
+            with self.subTest(mode=oct(mode)):
+                command = f"python3 producer.py . {mode:o}"
+                self.fixture.add("Makefile", (
+                    f"GENERATE := $(shell {command})\n"
+                    "VALUE := $(shell ./generated.sh)\nall:\n\t@printf '%s\\n' '$(VALUE)'\n"
+                ))
+                ordinary = subprocess.run(
+                    ["/usr/bin/make", "--no-print-directory", "-f", "Makefile", "all"],
+                    cwd=self.root, env=ENVIRONMENT, capture_output=True, timeout=10, preexec_fn=ordinary_drop,
+                )
+                self.assertEqual(ordinary.returncode, 0, ordinary.stderr)
+                path = self.root / "generated.sh"
+                access = subprocess.run(
+                    ["/usr/bin/python3", "-I", "-S", "-B", "-c",
+                     "import os,sys;print(int(os.access(sys.argv[1],os.X_OK)))", str(path)],
+                    env=ENVIRONMENT, capture_output=True, check=True, timeout=10, preexec_fn=ordinary_drop,
+                )
+                executable = access.stdout == b"1\n"
+                self.assertIn(access.stdout, (b"0\n", b"1\n"))
+                self.assertEqual(stat.S_IMODE(path.stat().st_mode), mode)
+                self.assertEqual(ordinary.stdout, b"ordinary-value\n" if executable else b"\n")
+                path.unlink()
+                producer = Command(
+                    ("/usr/bin/python3", "/repo/producer.py", "/work", f"{mode:o}"),
+                    code=("producer.py",), outputs=("generated.sh",),
+                )
+                with self.fixture.session(seconds=30) as session:
+                    execute, captured = session.command, []
+                    def record(value):
+                        result = execute(value)
+                        captured.extend(result.generated)
+                        return result
+                    with patch.object(session, "command", record):
+                        if executable:
+                            with self.assertRaisesRegex(MakeProbeError, "Make source executable lookup denied"):
+                                session.make("all", variables=("VALUE",), commands={command: producer})
+                        else:
+                            result = session.make("all", variables=("VALUE",), commands={command: producer})
+                            self.assertEqual(result.semantics["domains"]["VALUE"]["value"], "")
+                            self.assertEqual(len(result.events), 1)
+                    self.assertEqual([item.mode for item in captured], [mode])
+                    self.assertFalse((session.tree / "generated.sh").exists())
+                self.fixture.assert_clean(session)
+
+    def test_execute_permission_class_precedence_and_actual_kernel_owner_results(self):
+        from scripts.validation_ownership.syscall_guard import execute_mode_allows
+
+        owner, primary, extra, unrelated = 17, 29, 31, 41
+        for mode, expected in (
+            (0o641, (False, False, True)),
+            (0o650, (False, True, False)),
+            (0o701, (True, False, True)),
+            (0o010, (False, True, False)),
+            (0o100, (True, False, False)),
+            (0o001, (False, False, True)),
+        ):
+            info = SimpleNamespace(st_uid=owner, st_gid=extra, st_mode=stat.S_IFREG | mode)
+            self.assertEqual(
+                (
+                    execute_mode_allows(info, owner, {primary, extra}),
+                    execute_mode_allows(info, unrelated, {primary, extra}),
+                    execute_mode_allows(info, unrelated, {primary}),
+                ),
+                expected,
+            )
+        info = SimpleNamespace(st_uid=owner, st_gid=extra, st_mode=stat.S_IFREG | 0o001)
+        self.assertTrue(execute_mode_allows(info, 0, {primary}))
+        root_owned = SimpleNamespace(
+            st_uid=0, st_gid=extra, st_mode=stat.S_IFREG | 0o001,
+        )
+        self.assertFalse(execute_mode_allows(root_owned, 0, {primary}))
+        if os.getuid() != 0:
+            path = self.fixture.directory / "kernel-permission"
+            path.write_bytes(b"owned permission input")
+            for mode in (0o644, 0o641, 0o650, 0o701, 0o741):
+                path.chmod(mode)
+                self.assertEqual(
+                    execute_mode_allows(path.stat(), os.getuid(), {os.getgid(), *os.getgroups()}),
+                    os.access(path, os.X_OK),
+                )
+
+    def test_execute_credentials_use_real_or_filesystem_ids_and_reject_unproven_caps(self):
+        from scripts.validation_ownership.syscall_guard import Violation
+
+        policy, _ = self.publication_policy(False)
+        status = (
+            b"Uid:\t17\t19\t23\t29\nGid:\t31\t37\t41\t43\n"
+            b"Groups:\t47 53\nCapPrm:\t0000000000000000\nCapEff:\t0000000000000000\n"
+        )
+        with patch("builtins.open", mock_open(read_data=status)):
+            self.assertEqual(policy.execute_credentials(os.getpid(), False), (17, {31, 47, 53}))
+            self.assertEqual(policy.execute_credentials(os.getpid(), True), (29, {43, 47, 53}))
+        for malformed in (
+            status.replace(b"17\t19\t23\t29", b"17\t19"),
+            status + b"Uid:\t17\t19\t23\t29\n",
+            status.replace(b"Groups:\t47 53\n", b""),
+            status.replace(b"CapPrm:\t0000000000000000", b"CapPrm:\t0000000000000002"),
+            status.replace(b"CapEff:\t0000000000000000", b"CapEff:\t0000000000000002"),
+        ):
+            with self.subTest(status=malformed):
+                with patch("builtins.open", mock_open(read_data=malformed)):
+                    with self.assertRaises(Violation):
+                        policy.execute_credentials(os.getpid(), False)
+        if os.getuid() != 0:
+            self.assertEqual(
+                policy.execute_credentials(os.getpid(), False), (os.getuid(), {os.getgid(), *os.getgroups()}),
+            )
+            self.assertEqual(
+                policy.execute_credentials(os.getpid(), True), (os.geteuid(), {os.getegid(), *os.getgroups()}),
+            )
+
+    def test_source_execute_permission_checks_group_acl_and_identity_boundaries(self):
+        from scripts.validation_ownership.syscall_guard import Violation
+
+        policy, _ = self.publication_policy(False)
+        policy.config["root"] = str(self.fixture.directory)
+        self.fixture.add("permission-input", "owned input")
+        path = self.root / "permission-input"
+        owner, group = path.stat().st_uid, path.stat().st_gid
+        with patch.object(policy, "execute_credentials", return_value=(owner + 1, {group})):
+            path.chmod(0o601)
+            self.assertFalse(policy.source_execute_allowed(os.getpid(), "/repo/permission-input", False))
+            path.chmod(0o650)
+            self.assertTrue(policy.source_execute_allowed(os.getpid(), "/repo/permission-input", False))
+            with patch("os.getxattr", return_value=b"extended ACL is outside the managed mode contract"):
+                with self.assertRaisesRegex(Violation, "extended ACL"):
+                    policy.source_execute_allowed(os.getpid(), "/repo/permission-input", False)
+        with patch.object(policy, "execute_credentials", return_value=(owner + 1, {group + 1})):
+            path.chmod(0o601)
+            self.assertTrue(policy.source_execute_allowed(os.getpid(), "/repo/permission-input", False))
+            with patch("builtins.open", mock_open(read_data=b"0 0 1\n")):
+                with self.assertRaisesRegex(Violation, "unrepresentable"):
+                    policy.source_execute_allowed(os.getpid(), "/repo/permission-input", False)
 
     def test_explicit_python_link_recipe_preserves_real_arm_outputs_and_failed_publish(self):
         required = ("/usr/bin/arm-none-eabi-ld", "/usr/bin/arm-none-eabi-objcopy")

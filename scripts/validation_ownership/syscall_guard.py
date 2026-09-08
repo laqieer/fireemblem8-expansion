@@ -151,6 +151,15 @@ def signed(value):
     return ctypes.c_longlong(value).value
 
 
+def execute_mode_allows(info, uid, gids):
+    """POSIX class precedence after the caller and applicable ACL checks."""
+    if uid == info.st_uid:
+        return bool(info.st_mode & stat.S_IXUSR)
+    if info.st_gid in gids:
+        return bool(info.st_mode & stat.S_IXGRP)
+    return bool(info.st_mode & stat.S_IXOTH)
+
+
 @dataclass
 class Process:
     role: str
@@ -718,6 +727,75 @@ class Policy:
         except FileNotFoundError:
             return None
 
+    def execute_credentials(self, pid, effective):
+        with open(f"/proc/{pid}/status", "rb") as source:
+            data = source.read(SYSCALL_MEMORY_LIMIT + 1)
+        self.charge_metadata(len(data))
+        if len(data) > SYSCALL_MEMORY_LIMIT:
+            raise Violation("Make execute credentials exceed the observation bound")
+        fields = {}
+        for line in data.splitlines():
+            name, separator, value = line.partition(b":")
+            if name in {b"Uid", b"Gid", b"Groups", b"CapPrm", b"CapEff"}:
+                if not separator or name in fields:
+                    raise Violation("malformed Make execute credentials")
+                fields[name] = value.split()
+        if set(fields) != {b"Uid", b"Gid", b"Groups", b"CapPrm", b"CapEff"}:
+            raise Violation("incomplete Make execute credentials")
+        for name in (b"Uid", b"Gid", b"Groups"):
+            values = fields[name]
+            if (name != b"Groups" and len(values) != 4) or any(
+                not value.isdigit() or int(value) >= 1 << 32 for value in values
+            ):
+                raise Violation("invalid Make execute credential identity")
+            fields[name] = tuple(map(int, values))
+        for name in (b"CapPrm", b"CapEff"):
+            if len(fields[name]) != 1 or not re.fullmatch(b"[0-9a-fA-F]{16}", fields[name][0]):
+                raise Violation("invalid Make execute capabilities")
+            if int(fields[name][0], 16):
+                raise Violation("Make execute permission requires its existing capability-free caller")
+        index = 3 if effective else 0
+        return fields[b"Uid"][index], {fields[b"Gid"][index], *fields[b"Groups"]}
+
+    def source_execute_allowed(self, pid, path, effective):
+        uid, gids = self.execute_credentials(pid, effective)
+        full = Path(self.config["root"]) / path.lstrip("/")
+        info = full.lstat()
+        if not stat.S_ISREG(info.st_mode):
+            return False
+        # Status and stat IDs use this supervisor's user namespace. Refuse an
+        # unmapped/overflow identity instead of comparing its lossy spelling.
+        for kind, values in (("uid", {uid, info.st_uid}), ("gid", {info.st_gid})):
+            with open(f"/proc/self/{kind}_map", "rb") as source:
+                data = source.read(SYSCALL_MEMORY_LIMIT + 1)
+            self.charge_metadata(len(data))
+            if len(data) > SYSCALL_MEMORY_LIMIT:
+                raise Violation("Make execute identity mapping exceeds the observation bound")
+            ranges = []
+            for line in data.splitlines():
+                values_in_range = line.split()
+                if len(values_in_range) != 3 or not all(value.isdigit() for value in values_in_range):
+                    raise Violation("invalid Make execute identity mapping")
+                first, _, count = map(int, values_in_range)
+                if count <= 0 or first + count > 1 << 32:
+                    raise Violation("invalid Make execute identity mapping")
+                ranges.append((first, first + count))
+            if any(not any(first <= value < last for first, last in ranges) for value in values):
+                raise Violation("Make execute permission has an unrepresentable source or caller identity")
+            if kind == "uid" and uid == info.st_uid:
+                return execute_mode_allows(info, uid, gids)
+            if kind == "gid":
+                gids = {gid for gid in gids if any(first <= gid < last for first, last in ranges)}
+        try:
+            acl = os.getxattr(full, "system.posix_acl_access", follow_symlinks=False)
+        except OSError as error:
+            if error.errno not in {errno.ENODATA, errno.EOPNOTSUPP}:
+                raise
+        else:
+            self.charge_metadata(len(acl))
+            raise Violation("Make non-owner execute permission requires a source without an extended ACL")
+        return execute_mode_allows(info, uid, gids)
+
     def absent_source(self, state, path, operation):
         if self.source_mode(path) is not None:
             raise Violation(f"undeclared source {operation}: {path}")
@@ -1109,8 +1187,8 @@ class Policy:
                 and n in {21, 269, 439} and ((b if n == 21 else c) & 0xFFFFFFFF) == os.X_OK
             ):
                 mode = self.source_mode(path)
-                if mode is not None and stat.S_ISREG(mode) and mode & 0o111:
-                    state.pending = ("make-source-exec", path)
+                if mode is not None and stat.S_ISREG(mode):
+                    state.pending = ("make-source-exec", (path, n == 439 and bool(d & 0x200)))
             self.begin_metadata(pid, state, r, path)
         elif n in {5, 138}:  # fstat, fstatfs
             path = self.check_fd(state, a, "metadata", r)
@@ -1376,8 +1454,8 @@ class Policy:
             state.break_end = result
         operation, value = pending if pending is not None else (None, None)
         if result < 0:
-            if operation == "make-source-exec" and result == -errno.EACCES:
-                raise Violation(f"Make source executable lookup denied by noexec view: {value}")
+            if operation == "make-source-exec" and result == -errno.EACCES and self.source_execute_allowed(pid, *value):
+                raise Violation(f"Make source executable lookup denied by noexec view: {value[0]}")
             return
         if operation in {"open", "dup"}:
             state.fds[result] = value

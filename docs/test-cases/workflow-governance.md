@@ -3768,6 +3768,13 @@ See [live producers](../ownership-probe-producers.md).
     writable/executable source mount to make it appear present. Run the real
     original linker dependency expression: its successful source stat followed
     by noexec `X_OK`/`EACCES` must reject, not authorize empty `INPUTS`. The
+    permission-class controls use real producer `fchmod`: owned `0644`, `0641`,
+    `0650`, `0601` and `0610` remain ordinary nonexecutability, whereas owner-
+    executable modes still reject under noexec. Check real versus filesystem
+    credential selection, supplementary-group/other precedence and bounded
+    rejection of unsupported capability/identity/ACL states. The exact old
+    any-execute-bit guard must fail these controls when restored as a mutation.
+    No successful access result or file mode is forced by the probe. The
     source-authored explicit Python form returns the same real dependency
     bytes. Exercise all nine related graphics rules with the actual gbagfx:
     original/adapted argv, valid output bytes, output-path failures and cleanup
