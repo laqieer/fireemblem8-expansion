@@ -40,8 +40,10 @@ producer = Command(
 
 The tool still executes only in a channel-free native capsule, never in Make.
 Changed/foreign handles, unsupported argv, incomplete source consumption and
-invalid output declarations reject. There is no V/R/D API or implicit runtime
-input grant in this extension.
+invalid output declarations reject. There is no V/R API or implicit runtime
+input grant in this extension. D's
+[dependency-only compiler command](ownership-probe-dependencies.md) reuses this
+same output/publication contract.
 
 ## One live native execution
 

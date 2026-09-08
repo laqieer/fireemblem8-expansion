@@ -185,6 +185,7 @@ class Process:
     producer_frame: bytes | None = None
     producer_slot: int | None = None
     producer_event_written: bool = False
+    exec_path: str | None = None
 
     def clone(self):
         return Process(
@@ -220,6 +221,7 @@ class Policy:
         self.metadata = []
         self.metadata_seen = set()
         self.events = []
+        self.executed = []
         self.producer_requests = deque()
         self.producer_issued = 0
         self.producer_completed = 0
@@ -900,6 +902,16 @@ class Policy:
         elif path in self.code:
             self.defer_observation(state, "code_consumed", path.removeprefix("/repo/"))
             return
+        elif self.config.get("dependency") and path.startswith("/repo/") and operation in {"read", "metadata"}:
+            mode = self.source_mode(path)
+            if mode is None:
+                self.absent_source(state, path, operation)
+                return
+            if (
+                operation == "metadata" and stat.S_ISDIR(mode)
+                and path in set(self.config["dependency"]["include_dirs"]) | self.code_dirs | self.source_dirs
+            ):
+                return
         elif self.mode == "compile" and operation == "metadata" and path.endswith(".gch") and path[:-4] in self.code:
             self.absent_source(state, path, operation)
             return
@@ -1123,6 +1135,11 @@ class Policy:
             path = self.path(pid, state, a)
             if path not in self.executable:
                 raise Violation(f"untrusted executable dispatch: {path}")
+            if self.config.get("dependency"):
+                expected = self.config["dependency"]["executables"]
+                if len(self.executed) >= len(expected) or path != expected[len(self.executed)]:
+                    raise Violation("dependency execution escaped the driver/cc1 profile")
+                state.exec_path = path
             if self.mode == "make":
                 if state.bootstrap and path == "/usr/bin/make":
                     role = "make"
@@ -1494,6 +1511,12 @@ def supervise(config, drop_privileges):
         elif sig == signal.SIGTRAP and event == 4:
             if state.pending is None or state.pending[0] != "exec":
                 raise Violation("unapproved executable transition")
+            if config.get("dependency"):
+                if state.exec_path is None:
+                    raise Violation("dependency exec has no admitted image")
+                policy.reserve_observation("accessed", "dependency-exec:" + str(len(policy.executed)) + state.exec_path)
+                policy.executed.append(state.exec_path)
+                state.exec_path = None
             if state.bootstrap:
                 descriptors = {entry.name for entry in Path(f"/proc/{stopped}/fd").iterdir()}
                 policy.charge_metadata(sum(len(name) + 16 for name in descriptors))
@@ -1705,6 +1728,8 @@ def supervise(config, drop_privileges):
                 "metadata": policy.metadata,
                 "events": policy.events,
             }
+            if config.get("dependency"):
+                result["executed"] = policy.executed
             if channel is not None:
                 result["rendezvous"] = {
                     "issued": policy.producer_issued, "completed": policy.producer_completed,
