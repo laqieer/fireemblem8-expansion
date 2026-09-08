@@ -560,10 +560,10 @@ budget used for tree capture through its Make session and registry helper.
 
 Issue [#226](https://github.com/laqieer/fireemblem8-expansion/issues/226) is a
 framework capability for revision comparisons and deleted-source ownership.
-It depends on #206 / PR #212's source, session, metadata and lifecycle
-authority. While that parent is open its immediate base is
-`delivery/d581-issue-206`, at depth one. #180 / PR #186 consumes this seam for
-its broader report; #225, #227 and #228 are **not** dependencies.
+It depends on the delivered #206 / PR #212 core's source, session, metadata
+and lifecycle authority. Issue #226 is now a standalone `master`-based root
+(depth zero). #180 / PR #186 consumes this seam for its broader report;
+#225, #227 and #228 are **not** dependencies.
 
 Deleted sources require the actual BASE declarations and bytes. Asking the
 CURRENT registry whether it owns a deleted BASE path can incorrectly classify

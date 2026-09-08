@@ -3861,8 +3861,8 @@ inside generator cleanup cannot preserve the context for its later owner.
 
 ### Interactions and save compatibility
 
-Depends on #206 / PR #212; the genuine child base while open is
-`delivery/d581-issue-206`, depth one. #180 / PR #186 owns downstream integration.
+Depends on the delivered #206 / PR #212 core. Issue #226 is now a standalone
+`master`-based root (depth zero); #180 / PR #186 owns downstream integration.
 No dependency on independent #225 producer work, #227 runtime-input work or
 #228 dependency compilation. Their mixed historical tests retain their
 respective integration requirements: generated-context publication/remakes,
