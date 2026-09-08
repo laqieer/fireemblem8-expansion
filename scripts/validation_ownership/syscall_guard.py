@@ -170,6 +170,7 @@ class Process:
     memory_group: int = 0
     memory_limit: int = 0
     clone_shares_vm: bool = False
+    vfork_child: int | None = None
     process_reservation: bool = False
     pidfd: int = -1
     observations: list[tuple[str, str]] = field(default_factory=list)
@@ -432,6 +433,80 @@ class Policy:
             raise Violation("aggregate descendant-process budget exhausted before creation")
         state.process_reservation = True
 
+    def publication_name(self, name):
+        if (
+            not isinstance(name, str) or not 1 <= len(name.encode("utf-8")) <= 4096
+            or name.startswith("/") or "\\" in name
+            or any(ord(ch) < 32 or ord(ch) == 127 for ch in name)
+            or any(part in {"", ".", ".."} for part in name.split("/"))
+        ):
+            raise Violation("generated output path escapes the readonly view")
+        if any(
+            name == path or name.startswith(path + "/") or path.startswith(name + "/")
+            for path in self.config.get("reserved_paths", ())
+        ):
+            raise Violation("generated result conflicts with admitted source authority")
+
+    def adopt_published(self, records):
+        if not isinstance(records, list) or len(records) > self.config["publication_limit"]:
+            raise Violation("published context exceeds the existing creation bound")
+        adopted = {}
+        for record in records:
+            if not isinstance(record, list) or len(record) != 5:
+                raise Violation("malformed completed publication")
+            name, owner, mode, size, digest = record
+            self.publication_name(name)
+            if (
+                name in adopted or type(mode) is not int or not 0 <= mode <= 0o777
+                or type(size) is not int or not 0 <= size <= self.config["file_limit"]
+                or not isinstance(owner, str) or not re.fullmatch("[0-9a-f]{64}", owner)
+                or not isinstance(digest, str) or not re.fullmatch("[0-9a-f]{64}", digest)
+            ):
+                raise Violation("invalid completed publication identity")
+            producer = bytes.fromhex(owner)
+            if name in self.published and self.published[name] != producer:
+                raise Violation("conflicting generated output producers")
+            self.reserve_observation("accessed", "published:" + hashlib.sha256(encoded(record)).hexdigest())
+            self.charge_metadata(len(encoded(record)))
+            # Re-read through the existing readonly mount, never the writable
+            # backing alias: validation must not change source atime.
+            directory = os.open(
+                Path(self.config["root"]) / "repo", os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
+            )
+            try:
+                parts = name.split("/")
+                for part in parts[:-1]:
+                    following = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=directory)
+                    os.close(directory)
+                    directory = following
+                descriptor = os.open(parts[-1], os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=directory)
+            finally:
+                os.close(directory)
+            with os.fdopen(descriptor, "rb") as source:
+                before = os.fstat(source.fileno())
+                if before.st_mode != stat.S_IFREG | mode or before.st_size != size:
+                    raise Violation("published source type, mode or size changed")
+                self.charge_metadata(size)
+                remaining, actual = size, hashlib.sha256()
+                while remaining:
+                    if time.monotonic() >= self.config["deadline"]:
+                        raise Violation("aggregate deadline exhausted during readonly publication validation")
+                    data = source.read(min(remaining, SYSCALL_MEMORY_LIMIT))
+                    if not data:
+                        raise Violation("published source was truncated")
+                    actual.update(data)
+                    remaining -= len(data)
+                after = os.fstat(source.fileno())
+                if (
+                    actual.hexdigest() != digest or before != after
+                    or any(getattr(before, field) != getattr(after, field) for field in (
+                        "st_atime_ns", "st_mtime_ns", "st_ctime_ns", "st_blksize", "st_blocks", "st_rdev",
+                    ))
+                ):
+                    raise Violation("published source changed during readonly validation")
+            adopted[name] = producer
+        self.published.update(adopted)
+
     def publish(self, key, *, owner, outputs):
         mapping = Path(self.config["root"]) / "control/map"
         path = mapping / f"{key:016x}.files"
@@ -480,19 +555,9 @@ class Policy:
                     name = take(length).decode("utf-8", "strict")
                 except UnicodeDecodeError as error:
                     raise Violation("generated output path is not UTF-8") from error
-                if (
-                    name.startswith("/") or "\\" in name
-                    or any(ord(ch) < 32 or ord(ch) == 127 for ch in name)
-                    or any(part in {"", ".", ".."} for part in name.split("/"))
-                ):
-                    raise Violation("generated output path escapes the readonly view")
+                self.publication_name(name)
                 if name not in outputs or name in names:
                     raise Violation("generated result differs from its exact declared outputs")
-                if any(
-                    name == path or name.startswith(path + "/") or path.startswith(name + "/")
-                    for path in self.config.get("reserved_paths", ())
-                ):
-                    raise Violation("generated result conflicts with admitted source authority")
                 self.written += size
                 if self.written > self.config["write_limit"]:
                     raise Violation("aggregate generated publication byte budget exhausted")
@@ -1488,6 +1553,8 @@ def supervise(config, drop_privileges):
                 raise Violation("unreserved process creation")
             state.process_reservation = False
             state.memory_reservation = 0
+            if event == 2:
+                state.vfork_child = child.value
             policy.account_processes()
             if already_stopped:
                 resume(child.value)
@@ -1534,6 +1601,8 @@ def supervise(config, drop_privileges):
                     policy.entry(stopped, state, registers)
             elif information[0] == 2:
                 policy.leave(stopped, state, registers)
+                if state.kernel_call in {56, 58, 435}:
+                    state.vfork_child = None
                 state.kernel_call = None
             else:
                 raise Violation("kernel did not identify syscall entry/exit")
@@ -1546,6 +1615,11 @@ def supervise(config, drop_privileges):
             return False
         if state.metadata_pending is not None or state.observations:
             return True
+        # The kernel VFORK event has already accounted for this child.
+        # Its parent cannot return from clone/vfork until the child execs or
+        # exits; waiting for that return while the child is parked deadlocks.
+        if state.vfork_child is not None and state.kernel_call in {56, 58, 435} and not state.process_reservation:
+            return False
         if state.kernel_call in {7, 23, 35, 61, 202, 230, 232, 247, 270, 271, 281}:
             return False
         if state.kernel_call in {0, 17, 19} and state.kernel_io in {"<pipe>", "<stdin>"}:
@@ -1598,9 +1672,10 @@ def supervise(config, drop_privileges):
             watch=[record.pidfd for record in processes.values()] + list(newborn_stops.values()),
         )
         reply = parse_json(raw, "producer reply")
+        required = {"kind", "scope", "sequence", "slot", "owner", "outputs", "stdout_sha256", "limits"}
         if (
             not isinstance(reply, dict)
-            or set(reply) != {"kind", "scope", "sequence", "slot", "owner", "outputs", "stdout_sha256", "limits"}
+            or set(reply) not in (required, required | {"adopt_sha256"})
             or reply["kind"] != "result" or reply["scope"] != config["producer_scope"]
             or type(reply["sequence"]) is not int or reply["sequence"] != sequence
             or type(reply["slot"]) is not int or reply["slot"] != sequence - 1
@@ -1610,6 +1685,9 @@ def supervise(config, drop_privileges):
             or len(reply["outputs"]) > config["creation_limit"]
             or any(not isinstance(name, str) for name in reply["outputs"])
             or len(set(reply["outputs"])) != len(reply["outputs"])
+            or "adopt_sha256" in reply and (
+                not isinstance(reply["adopt_sha256"], str) or not re.fullmatch("[0-9a-f]{64}", reply["adopt_sha256"])
+            )
         ):
             raise Violation("malformed, foreign or out-of-order producer reply")
         policy.apply_producer_limits(reply["limits"], ceilings)
@@ -1620,6 +1698,20 @@ def supervise(config, drop_privileges):
         stdout = read_slot(key + ".out", 1024*1024)
         if hashlib.sha256(stdout).hexdigest() != reply["stdout_sha256"]:
             raise Violation("producer stdout differs from its validated result")
+        try:
+            data = read_slot(key + ".adopt", config["file_limit"])
+        except FileNotFoundError as failure:
+            if "adopt_sha256" in reply:
+                raise Violation("missing nested publication transfer") from failure
+        else:
+            if "adopt_sha256" not in reply:
+                raise Violation("unacknowledged nested publication transfer")
+            if hashlib.sha256(data).hexdigest() != reply["adopt_sha256"]:
+                raise Violation("nested publication transfer differs from its protected result slot")
+            records = parse_json(data, "completed nested publications")
+            if records == []:
+                raise Violation("empty nested publication transfer")
+            policy.adopt_published(records)
         channel.require_live([record.pidfd for record in processes.values()] + list(newborn_stops.values()))
         channel.ensure_idle()
         policy.publish(sequence - 1, owner=reply["owner"], outputs=reply["outputs"])
@@ -1645,6 +1737,8 @@ def supervise(config, drop_privileges):
                 processes[pid].break_end = int(mapping.split()[0].split("-")[1], 16)
         ptrace(SETOPTIONS, pid, 0, OPTIONS)
         policy.reserve_memory(pid, processes[pid], 0)
+        if "published" in config:
+            policy.adopt_published(config["published"])
         ptrace(SYSCALL, pid)
         while processes:
             if time.monotonic() >= config["deadline"]:

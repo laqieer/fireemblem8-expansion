@@ -6,7 +6,7 @@ GNU Make and declared generated-source consumers. It does **not** select,
 replace, or skip validation.
 
 The #206 base is the static, single-view core. This branch adds the
-[live producer vertical slice](ownership-probe-producers.md) for #225.
+[live producer and nested-publication extension](ownership-probe-producers.md) for #225.
 V/#226, R/#227 and D/#228 remain separately allocated, not exposed here.
 See the [archived delivery allocation](https://github.com/laqieer/fireemblem8-expansion/blob/56e0a206ffae088b0dbc1fe8aa6339a8ee820f33/docs/ownership-probe-allocation.json)
 and [downstream boundary](#contract-allocation-and-downstream-integration).
@@ -754,7 +754,7 @@ native output capture. It does not add `Command.dependency_only`,
 `ProbeSession.select_view`, optional `runtime_files` or `Snapshot(reuse=...)`.
 
 #225's full delivery remains open. This branch replaces the unapproved
-delete/recreate implementation with a live rendezvous vertical slice; its
+delete/recreate implementation with live rendezvous and scoped nested publication; its
 remaining complete acceptance is not inferred from a partial checkpoint.
 Prior generated-listing successes do not replace the retained nlink/timestamp
 and reconstruction counterexamples.

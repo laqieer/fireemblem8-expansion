@@ -2,9 +2,10 @@
 
 Issue [#225](https://github.com/laqieer/fireemblem8-expansion/issues/225)
 extends the [confined foundation](ownership-probe-foundation.md) with one
-live native Make invocation, isolated registered producers and validated
-publication. This checkpoint is the bounded vertical implementation, not
-complete #180 integration or a full-root/domain/calibration result.
+live native Make invocation per query, isolated registered producers and
+validated publication. Nested queries share the active generated view without
+reconstructing it. This is not complete #180 integration or a full-root/domain/
+calibration result.
 
 ## Typed producer results
 
@@ -42,6 +43,14 @@ The tool still executes only in a channel-free native capsule, never in Make.
 Changed/foreign handles, unsupported argv, incomplete source consumption and
 invalid output declarations reject. There is no V/R/D API or implicit runtime
 input grant in this extension.
+
+Registration is applied at actual native dispatch; it does not change Make's
+executable lookup. A missing direct recipe executable such as `tools/native`
+can fail with `ENOENT` before any producer request. The original shell-dispatched
+form `tools/native;` can reach the interceptor, but the framework does not
+append that syntax, synthesize executable metadata, or install the native image
+into Make. An actual consumer needing an unresolved direct executable remains
+a precise unsupported case until it has an accepted ordinary-Make adaptation.
 
 ## One live native execution
 
@@ -129,12 +138,51 @@ current input hashes never relabel earlier stdout.
 The kernel's metadata on published objects is authoritative, not metadata
 copied from private output files.
 
+## Nested queries and publication lifetime
+
+A trusted registration resolver can call the same session's `make` API while
+its parent query is parked. These are separate real Make observations in one
+current source view, not independent V-style views and not a new recursive
+command executor. The caller retains the nested observation for its own
+consumer logic and still returns a typed registration with genuine command
+output. No shell output is fabricated from a graph or substituted observation.
+
+Completed child outputs remain present until the outermost active Make query
+finishes. Removing them when the child returns would invalidate the context
+the parent is about to observe. Independent later queries start without those
+generated files; cached results must pass current input/metadata validation
+again. An explicitly selected generated Makefile can be an entry point while
+its publication is live, but loses admission after outer cleanup.
+
+The existing publication ownership map follows this lifetime. A child
+supervisor receives the current completed bindings. Before its parent resumes,
+changed bindings cross the existing protected result slot as a bounded
+publication transfer, bound to that reply by a checksum. Each binding contains
+the path, normalized producer, mode, size and actual content digest. The
+supervisor checks declarations, original-source/pin exclusion, ownership and
+the real regular file through its readonly/noexec source mount with nofollow
+walks. These reads must not change atime or replace source objects. Invalid,
+missing, conflicting or changed bindings reject.
+
+Adoption updates ownership only: it neither republishes files nor refunds or
+recharges their earlier creation/write effects. Its actual verification reads
+and retained mapping/version data spend the existing control/cache/mapping
+budgets. All parked ancestors keep their process and funded-VM reservations.
+Same-producer replacement works across nested queries; another producer cannot
+take over a child's or parent's outputs. Failure, parent lifetime loss or
+interruption tears down the entire active scope with the existing sole reaper.
+
 ## One resource ledger and lifetime
 
 Before nested work, the supervisor settles actual monotonic counter deltas.
 Already admitted filesystem operations finish at supervised stops; blocked
 nonmutating waits/pipes remain parked rather than waiting for Make to exit.
 No new syscall is admitted while the producer callback owns the parked phase.
+A kernel-authenticated vfork parent is also waiting-only after its child's
+creation event: it may be suspended in `clone`, `vfork` or `clone3` while that
+child is parked before exec. Waiting for the parent syscall to return would
+deadlock. The child and all funded credits remain reserved; unrelated creation
+or filesystem operations are not exempted from settlement.
 
 All parked live processes, pending creation reservations and funded
 `RLIMIT_AS` credits remain reserved. The nested capsule receives only residual
@@ -171,7 +219,10 @@ The deterministic procedure is
 The suite covers the live producer/include/metadata-reader transition,
 authentic one/two restarts, real repository scaninc, aliases and repeated
 effects, source/output rejection, request/reply corruption, descriptor/channel
-separation, parked death/lifetime loss and residual resources.
+separation, parked death/lifetime loss and residual resources. It also covers
+parse-time versus remade includes with the full Make assignment context,
+generated native file results, ownership-transfer failure, inherited nested
+ownership, readonly adoption and all 13 ordinary file-stat fields.
 
 Core tests whose old implementation required an empty speculative pass are
 adapted to ordinary native behavior: an unreachable producer is absent, not
@@ -180,12 +231,18 @@ Each live request is validated before its execution; completed transcript
 corruption is rejected after actual work, not represented as prevalidation of
 future unobserved requests. Native command order/bytes and all charges remain.
 
-Full P acceptance remains open beyond this vertical checkpoint. The complete
-unapproved d9 P allocation remains reference material, not an independent
-delivery claim. Nested static queries use the same reserved ledger; nested
-generated publication currently rejects rather than restoring an earlier view.
-No broad current/BASE/domain graph, public #180 completion or raised-budget
-diagnostic is claimed.
+The unapproved d9 allocation remains the reference for retained requirements,
+not evidence of correctness. P retains its native registration, publication,
+remake, generated-context and resource/control cases under this live model.
+The old speculative-execution assertions are replaced by actual unreachable-
+branch nonexecution. Cache reuse after publication/cleanup is conditional on
+all observations, not on restoring old directory names alone. The CURRENT/
+BASE portions of shared V/P cases remain allocated to V and combined-extension
+integration; this module does not add `select_view` or storage-reuse APIs.
+
+Full P acceptance remains separate from implementation checkpoints and from
+the unresolved direct-executable case above. No broad current/BASE/domain
+graph, public #180 completion or raised-budget diagnostic is claimed.
 
 P depends on #206. V/#226 and R/#227 are independent core children; D/#228
 depends on P, not V/R. No gameplay, save/config, locale, generated game content,
