@@ -1156,6 +1156,13 @@ class TesterCaseRegistryTests(unittest.TestCase):
                             "-k absent_captured_env -k make_uncaptured_runtime -v",
                         },
                     },
+                    "TC-WORKFLOW-PROBE-VIEWS-001": {
+                        "document": "docs/test-cases/workflow-governance.md",
+                        "commands": {
+                            "python3 -m unittest "
+                            "scripts.validation_ownership.tests.test_foundation -k immutable_view -v",
+                        },
+                    },
                 },
             },
         }

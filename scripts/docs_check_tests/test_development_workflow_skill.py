@@ -4560,6 +4560,7 @@ printf '%s\t%s\t%s\n' "$result" \
             "TC-WORKFLOW-PILOT-BASELINE-001",
             "TC-WORKFLOW-OWNERSHIP-PROBE-SANDBOX-001",
             "TC-WORKFLOW-PROBE-RUNTIME-INPUTS-001",
+            "TC-WORKFLOW-PROBE-VIEWS-001",
         ]
         self.assertEqual(
             [],
