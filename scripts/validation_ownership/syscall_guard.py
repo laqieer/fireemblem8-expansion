@@ -248,6 +248,9 @@ class Policy:
         self.executable = set(config["executables"])
         self.executable.update(self.resolve(path) for path in config["executables"])
         self.runtime_closure = set(config.get("runtime_closure", ()))
+        dependency = config.get("dependency")
+        if dependency:
+            self.runtime_closure.update(dependency["runtime_files"])
         self.runtime_directories = set()
         for name in self.runtime_closure | self.executable | {"/lib/vo-observer.so"}:
             parent = posixpath.dirname(name)
@@ -268,6 +271,18 @@ class Policy:
             "/etc/ld.so.cache", "/etc/ld.so.preload", *search,
             *(directory + "/" + name for directory in search for name in libraries),
         }
+        if dependency:
+            self.dependency_files = {
+                self.resolve(path) for path in self.runtime_closure | self.executable
+            }
+            self.dependency_directories = {
+                self.resolve(path)
+                for path in self.runtime_directories | search | set(dependency["runtime_directories"])
+            }
+            self.dependency_stat_probes = {
+                self.resolve(path) for path in dependency["runtime_stat_probes"]
+            }
+            self.dependency_loader_probes = {self.resolve(path) for path in self.loader_probes}
         version = config["python_version"]
         self.runtime_probes = {
             "/usr/bin/pybuilddir.txt", "/usr/bin/Modules/Setup.local",
@@ -962,6 +977,28 @@ class Policy:
                 return
         raise Violation(f"uncaptured Make runtime access: {operation} {path}")
 
+    def dependency_runtime_access(self, state, path, operation):
+        full = Path(self.config["root"]) / path.lstrip("/")
+        try:
+            mode = full.lstat().st_mode
+        except FileNotFoundError:
+            mode = None
+        except OSError as error:
+            raise Violation(f"dependency runtime path has an unsupported type: {path}") from error
+        allowed = (
+            operation in {"read", "metadata"} and path in self.dependency_files
+            and mode is not None and stat.S_ISREG(mode)
+            or operation == "metadata" and path in self.dependency_directories
+            and (mode is None or stat.S_ISDIR(mode))
+            or mode is None and (
+                operation == "metadata" and path in self.dependency_stat_probes
+                or operation in {"read", "metadata"} and path in self.dependency_loader_probes
+            )
+        )
+        if not allowed:
+            raise Violation(f"undeclared dependency host {operation}: {path}")
+        self.defer_observation(state, "accessed", path)
+
     def check(self, state, path, operation, *, observer=False):
         if path.startswith("<"):
             return
@@ -981,6 +1018,12 @@ class Policy:
             if observer and path == "/control/result" and operation == "write":
                 return
             raise Violation(f"supervisor channel denied: {operation} {path}")
+        if self.config.get("dependency") and not (
+            path in {"/repo", "/work"} or path.startswith(("/repo/", "/work/"))
+        ):
+            # No generic runtime prefix may authorize a dependency source.
+            self.dependency_runtime_access(state, path, operation)
+            return
         if path == "/dev/null":
             return
         if state.role == "helper":

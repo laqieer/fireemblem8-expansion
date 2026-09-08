@@ -4430,7 +4430,7 @@ workflow or generated game data is needed.
    `code` pool.
 4. Repeat an identical valid query. Require genuine effectful executions and
    compatible bytes/receipts while the session reuses only its resolved host
-   profile. Change a host header after the source snapshot was captured:
+   profile. Change a checkout header after the source snapshot was captured:
    results must still bind the original captured source, not later host data.
    Replace a published conditional header between identical compiler calls;
    require two corresponding dependency receipts and fresh output from the
@@ -4465,6 +4465,26 @@ workflow or generated game data is needed.
     for both alongside parked Make/helpers: require failure at that actual
     nested compiler boundary. Corrupt its execution receipt and inject a
     cleanup failure; neither may yield successful evidence.
+11. Attempt an actual host `#include` and an `__has_include` branch selecting
+    an admitted repository header. Include through a declared recursive
+    header too. Ordinary GCC can consume the host file, but the D command
+    must reject before returning dependency evidence. Cover system/local
+    includes, GCC private/include-fixed/libexec paths, library/sysroot trees,
+    Python data, extensionless files, aliases, parent spellings, missing
+    names and wrong types. Necessary resolved driver/interpreter/library
+    paths and bounded runtime probes must still execute successfully.
+12. Run the owned mutation control that bypasses only D's host decision while
+    retaining its `/repo` source policy. It must reproduce the old accepted
+    host branch with the host input absent from source identities. Restoring
+    the decision must reject the same query. A post-hoc `.d` parser is not
+    a repair, because `__has_include` need not emit the host probe at all.
+13. For joined/separate `-I` and `-iquote`, try `=`, `=include`, `=/include`,
+    `$SYSROOT`, `$SYSROOTinclude` and `$SYSROOT/include`: reject all before
+    a payload launch. Compare real ordinary/confined success with canonical
+    literal names containing those characters internally. Keep `./`, `..`
+    and explicit `--sysroot` negatives. This closes profile ambiguity; the
+    observed default sysroot is empty, and the ordinary nonempty-sysroot
+    controls do not establish another confined escape on that default.
 
 ### Expected result
 
@@ -4474,6 +4494,9 @@ validated publication precedes authentic GNU Make consumption and restart.
 The default API, full metadata, noexec source, protected channels, exact
 handle/output checks and one aggregate lifetime remain intact. No compiler
 permission, numeric cap or CI topology is broadened.
+Host access is decided against D's finite necessary runtime before either
+generic runtime prefix branch; other host preprocessing cannot become an
+unreported input or a falsely successful missing-header branch.
 
 ### Negative control and retained evidence
 
@@ -4484,6 +4507,14 @@ also records ordinary host availability and the public unsupported-command
 rejection with zero payload launches. Preserve that default-false rejection,
 not a fake compiler result. The original integrated d9 comparisons remain
 historical, unapproved evidence rather than a restoration source.
+
+At `11848c4e0294d6397eda6733850dfb382a1d0a1b`, real
+`#include "/usr/include/linux/version.h"` produced ordinary-identical
+dependency bytes and successful driver/cc1 receipts, but the source/header
+union contained only `src/query.c`. A real `__has_include` query selected
+`quote/enabled.h` while omitting the host probe even from the `.d`.
+The host decision now rejects both; the owned mutation retains this original
+negative without changing host files or weakening generic compiler tests.
 
 ### Interactions and save compatibility
 
@@ -4510,8 +4541,9 @@ their positive, rejection, resource and cleanup controls.
 
 Tests reset their owned fixtures and clean session state, processes, caches,
 private outputs and generated publications after success or failure. Runtime
-uses the existing read-only host compiler/runtime policy, not an immutable
-runtime binary snapshot. Unsupported compiler platforms/modes fail closed.
+uses the existing read-only host model with D's finite runtime/source
+decision, not an immutable runtime binary snapshot. Generic compiler/native
+policy is unchanged. Unsupported compiler platforms/modes fail closed.
 
 ## TC-WORKFLOW-AGENT-HANDOFF-001: Validate bounded exact-SHA agent handoffs
 

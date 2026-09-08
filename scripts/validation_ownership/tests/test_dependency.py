@@ -10,7 +10,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from scripts.validation_ownership.authority import ENVIRONMENT
-from scripts.validation_ownership.budget import MakeProbeError
+from scripts.validation_ownership.budget import MakeProbeError, ProbeBudget
 from scripts.validation_ownership.make_probe import Command, NativeTool
 from scripts.validation_ownership import make_probe
 from scripts.validation_ownership.tests import test_foundation as foundation
@@ -28,6 +28,7 @@ class DependencyTests(unittest.TestCase):
     def assert_clean(self, session):
         self.fixture.assert_clean(session)
         self.assertIsNone(session.dependency_compiler)
+        self.assertIsNone(session.dependency_runtime)
         self.assertFalse(session.published_sources)
         self.assertFalse(session.parked_capsules)
 
@@ -212,6 +213,7 @@ class DependencyTests(unittest.TestCase):
                 ("-fplugin=plugin.so",), ("-specs=specs",), ("@response",),
                 ("-B", "tools"), ("-wrapper", "wrapper"), ("-x", "c++"),
                 ("-include", "secret.h"), ("-imacros", "secret.h"), ("-Wp,-MD,escape",),
+                ("--sysroot=owned",), ("--sysroot", "owned"),
                 ("-I", "/etc"), ("-I../outside",), ("-I", ""), ("-iquote", "-MM"),
                 ("-UENABLED=1",), ("-D", "NAME\n=1"), ("-MT", "another"),
                 ("-I",), ("-D",), ("-U",), ("-MT",), ("second.c",),
@@ -225,6 +227,169 @@ class DependencyTests(unittest.TestCase):
                         session.command(changed)
                     self.assertEqual(session.budget.runs, launches)
                 self.assert_clean(session)
+
+    def test_sysroot_special_include_operands_reject_before_compiler_launch(self):
+        command = self.dependency()
+        for value in ("=", "=include", "=/include", "$SYSROOT", "$SYSROOTinclude", "$SYSROOT/include"):
+            for prefix, joined in (("-I", False), ("-I", True), ("-iquote", False), ("-iquote", True)):
+                option = (prefix + value,) if joined else (prefix, value)
+                with self.subTest(option=option):
+                    changed = replace(command, argv=(*command.argv, *option))
+                    with self.fixture.session(seconds=30) as session:
+                        runs = session.budget.runs
+                        with self.assertRaisesRegex(MakeProbeError, "sysroot-special"):
+                            session.command(changed)
+                        self.assertEqual(session.budget.runs, runs)
+                    self.assert_clean(session)
+        for value in ("./=include", "./$SYSROOTinclude", "../include", "a/../include"):
+            with self.subTest(noncanonical=value):
+                with self.assertRaisesRegex(MakeProbeError, "canonical and repository-relative"):
+                    make_probe.ProbeSession._dependency_options(
+                        replace(command, argv=(*command.argv, "-I", value)),
+                        command.sources, command.outputs,
+                    )
+
+    def test_internal_sysroot_characters_are_ordinary_literal_include_names(self):
+        for directory, prefix, joined in (
+            ("local/=headers", "-I", False),
+            ("local/$SYSROOTheaders", "-I", True),
+            ("headers=literal", "-iquote", False),
+            ("headers$SYSROOTliteral", "-iquote", True),
+        ):
+            with self.subTest(directory=directory, prefix=prefix):
+                command = self.dependency()
+                self.fixture.add("src/query.c", '#include "literal.h"\n')
+                header = directory + "/literal.h"
+                self.fixture.add(header, "#define LITERAL 1\n")
+                option = (prefix + directory,) if joined else (prefix, directory)
+                command = replace(
+                    command,
+                    argv=("/usr/bin/cc", "-E", "-nostdinc", "-undef", *option,
+                          "src/query.c", "-MM", "-MG", "-MT", "query.o"),
+                    code=(header,),
+                )
+                expected = self.ordinary(command)
+                with self.fixture.session(seconds=45) as session:
+                    result = session.command(command)
+                    self.assertEqual(result.generated[0].data, expected)
+                    self.assertEqual(result.code_consumed, (header,))
+                self.assert_clean(session)
+
+    def compiler_path(self, query):
+        result = subprocess.run(
+            ["/usr/bin/cc", query], cwd=self.root, env=ENVIRONMENT,
+            capture_output=True, check=True, timeout=10,
+        )
+        path = Path(result.stdout.decode("utf-8").strip())
+        self.assertTrue(path.is_absolute())
+        return path.resolve()
+
+    def test_host_header_and_has_include_cannot_escape_source_provenance(self):
+        command = self.dependency()
+        host = "/usr/include/linux/version.h"
+        self.assertTrue(Path(host).is_file())
+        for source in (
+            '#include "' + host + '"\n',
+            '#if __has_include("' + host + '")\n#include "enabled.h"\n'
+            '#else\n#include "disabled.h"\n#endif\n',
+        ):
+            with self.subTest(source=source):
+                self.fixture.add("src/query.c", source)
+                expected = self.ordinary(command)
+                self.assertTrue(expected)
+                with self.fixture.session(seconds=45) as session:
+                    with self.assertRaisesRegex(MakeProbeError, "undeclared dependency host"):
+                        session.command(command)
+                self.assert_clean(session)
+        self.fixture.add("src/query.c", '#include "enabled.h"\n')
+        self.fixture.add("quote/enabled.h", '#include "' + host + '"\n')
+        with self.fixture.session(seconds=45) as session:
+            with self.assertRaisesRegex(MakeProbeError, "undeclared dependency host"):
+                session.command(command)
+        self.assert_clean(session)
+
+    def test_host_source_family_rejects_existing_missing_alias_and_type_probes(self):
+        command = self.dependency()
+        install = self.compiler_path("-print-file-name=.")
+        frontend = self.compiler_path("-print-prog-name=cc1")
+        linker = self.compiler_path("-print-prog-name=collect2")
+        library_script = self.compiler_path("-print-file-name=libc.so")
+        python_data = Path(self.fixture.runtime_data_path())
+        missing = "ownership-" + self.fixture.directory.name
+        candidates = (
+            install / "include/stddef.h",
+            install / "include-fixed" / missing,
+            frontend.parent / missing,
+            library_script,
+            Path("/lib") / library_script.relative_to("/usr/lib"),
+            python_data,
+            linker,
+            Path("/usr/local/include") / missing,
+            Path("/usr/x86_64-linux-gnu/include") / missing,
+            Path("/usr/include/linux/../linux/version.h"),
+            Path("/usr/include"),
+            Path("/dev/null"),
+        )
+        for path in candidates:
+            with self.subTest(host_path=str(path)):
+                self.fixture.add("src/query.c", (
+                    '#if __has_include("' + str(path) + '")\n#include "enabled.h"\n'
+                    '#else\n#include "disabled.h"\n#endif\n'
+                ))
+                with self.fixture.session(seconds=45) as session:
+                    with self.assertRaisesRegex(MakeProbeError, "undeclared dependency host"):
+                        session.command(command)
+                self.assert_clean(session)
+        self.fixture.add("src/query.c", '#if __has_include("' + str(library_script / "child") + '")\n#endif\n')
+        with self.fixture.session(seconds=45) as session:
+            with self.assertRaisesRegex(MakeProbeError, "dependency runtime path has an unsupported type"):
+                session.command(command)
+        self.assert_clean(session)
+
+    def test_runtime_decision_mutation_reproduces_the_original_host_branch_bypass(self):
+        command = self.dependency()
+        host = "/usr/include/linux/version.h"
+        self.fixture.add("src/query.c", (
+            '#if __has_include("' + host + '")\n#include "enabled.h"\n'
+            '#else\n#include "disabled.h"\n#endif\n'
+        ))
+        expected = self.ordinary(command)
+        proxy = self.fixture.directory / "mutated-runtime-boundary.py"
+        proxy.write_text(
+            "import sys\n"
+            f"sys.path.insert(0,{str(make_probe.TRUSTED_ROOT)!r})\n"
+            "import syscall_guard as guard,sandbox_exec\n"
+            "original=guard.Policy.check\n"
+            "def without_dependency_decision(self,state,path,operation,**kwargs):\n"
+            " if path in ('/repo','/work') or path.startswith(('/repo/','/work/')):\n"
+            "  return original(self,state,path,operation,**kwargs)\n"
+            " dependency=self.config.pop('dependency',None)\n"
+            " try:\n  return original(self,state,path,operation,**kwargs)\n"
+            " finally:\n"
+            "  if dependency is not None: self.config['dependency']=dependency\n"
+            "guard.Policy.check=without_dependency_decision\n"
+            "raise SystemExit(sandbox_exec.main())\n"
+        )
+        run = ProbeBudget.run
+        def mutate(budget, argv, **kwargs):
+            if len(argv) >= 2 and argv[-2] == str(make_probe.TRUSTED_ROOT / "sandbox_exec.py"):
+                config = json.loads(Path(argv[-1]).read_bytes())
+                if config.get("dependency"):
+                    argv = [*argv[:-2], str(proxy), argv[-1]]
+            return run(budget, argv, **kwargs)
+        with self.fixture.session(seconds=45) as session:
+            with self.assertRaisesRegex(MakeProbeError, "undeclared dependency host"):
+                session.command(command)
+        self.assert_clean(session)
+        with patch.object(ProbeBudget, "run", mutate):
+            with self.fixture.session(seconds=45) as session:
+                result = session.command(command)
+                self.assertEqual(result.generated[0].data, expected)
+                self.assertIn("quote/enabled.h", result.code_consumed)
+                self.assertNotIn(host, set(result.consumed) | set(result.code_consumed))
+                self.assertNotIn(host, {item[0] for item in result.input_identities})
+                self.assertEqual(result.executed, session.dependency_compiler)
+        self.assert_clean(session)
 
     def test_existing_undeclared_header_cannot_be_reported_as_missing(self):
         command = self.dependency()

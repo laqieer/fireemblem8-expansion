@@ -41,6 +41,16 @@ names or `.`; definitions use symbolic object-like macro names, and `-U`
 accepts a name without a value. Target names use the existing bounded Make
 target syntax, not arbitrary Make expressions.
 
+Raw `-I` and `-iquote` operands beginning with `=` or literal `$SYSROOT`
+reject in both joined and separate forms, including bare/no-slash forms.
+GCC treats those prefixes specially on a configured sysroot. Characters
+inside a canonical name, such as `local/=headers` or
+`local/$SYSROOTheaders`, remain literal and supported. Noncanonical `./` or
+`..` components still reject; they are not stripped into special syntax.
+This is profile-ambiguity rejection, not a claim that the installed empty
+default sysroot supplied another escape. Explicit `--sysroot` remains
+unsupported.
+
 There is no `-c`, `-S`, alternative dependency mode, output override,
 response file, plugin, specs, wrapper, forced include, arbitrary language,
 assembler or linker authority. The trusted adaptation adds only `-MF` for
@@ -58,10 +68,24 @@ in driver/frontend order, through the existing channel-free compiler capsule.
 an incomplete or contradictory receipt rejects. It is not a `cc -###` plan.
 
 Compiler runtime access retains the existing recursively read-only `/usr`
-mount and compiler runtime policy. This is not an immutable copy of the
-compiler binaries or Make's separately captured ELF/library closure, and does
-not require the optional R runtime-input API. No additional compiler platform,
-live source mount or general executable grant is introduced.
+mount, but D decides source/runtime authority before the generic compiler
+and Python/library prefix allowances. The trusted interpreter already
+identified for the supported host resolves the driver/cc1 library paths with
+bounded `--inhibit-cache --list` queries; the trusted driver supplies its
+finite search directories. D admits only the exact resolved program,
+interpreter and shared-library files, directory metadata, and the bounded
+genuinely absent driver/loader probes needed by that profile. File types
+and statuses remain real, and directory metadata grants no enumeration or
+member contents. Unsupported runtime resolution rejects instead of falling
+back to the broad compiler policy.
+
+Other host preprocessing reads and searches reject explicitly, including
+missing names, nonregular objects, stock aliases and parent spellings.
+This covers system/local includes, GCC private/include-fixed/libexec paths,
+library and sysroot trees, Python data and extensionless files—not a `.h`
+filter or two-prefix blacklist. Generic native compilation remains unchanged.
+There is no compiler binary snapshot, new privilege service, optional R
+dependency, resource increase or guessed dependency parser.
 
 If a caller also requests delivered R inputs, their captured identity remains
 part of Make's execution digest. Those inputs do not become dependency source

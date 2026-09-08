@@ -439,6 +439,23 @@ def _make_interpreter(binary: bytes):
     return interpreter
 
 
+def _runtime_library_paths(raw, existing):
+    known = set(existing)
+    result = []
+    for row in text(raw, "trusted runtime listing", "ascii").splitlines():
+        row = row.strip()
+        if re.fullmatch(r"linux-vdso\.so\.1 \(0x[0-9a-f]+\)", row):
+            continue
+        match = re.fullmatch(r"(?:[A-Za-z0-9_.+-]+ => )?(/[^ \t]+) \(0x[0-9a-f]+\)", row)
+        if match is None or len(known) >= 64:
+            raise MakeProbeError("unresolved/malformed trusted Make runtime closure")
+        path = match[1]
+        if path not in known:
+            result.append(path)
+            known.add(path)
+    return tuple(result)
+
+
 def _make_runtime(budget: ProbeBudget):
     binary = _trusted_runtime_bytes("/usr/bin/make", budget)
     interpreter = _make_interpreter(binary)
@@ -451,16 +468,8 @@ def _make_runtime(budget: ProbeBudget):
     result = budget.run([interpreter, "--list", "/usr/bin/make"], env=ENVIRONMENT, cwd=Path("/"))
     if result.returncode:
         raise MakeProbeError(f"cannot resolve trusted Make runtime: {result.stderr!r}")
-    for row in text(result.stdout, "trusted Make runtime listing", "ascii").splitlines():
-        row = row.strip()
-        if re.fullmatch(r"linux-vdso\.so\.1 \(0x[0-9a-f]+\)", row):
-            continue
-        match = re.fullmatch(r"(?:[A-Za-z0-9_.+-]+ => )?(/[^ \t]+) \(0x[0-9a-f]+\)", row)
-        if match is None or len(runtime) >= 64:
-            raise MakeProbeError("unresolved/malformed trusted Make runtime closure")
-        path = match[1]
-        if path not in runtime:
-            runtime[path] = _trusted_runtime_bytes(path, budget)
+    for path in _runtime_library_paths(result.stdout, runtime):
+        runtime[path] = _trusted_runtime_bytes(path, budget)
     if len(runtime) < 3:
         raise MakeProbeError("trusted Make runtime closure is incomplete")
     return tuple(sorted(runtime.items()))
@@ -589,6 +598,7 @@ class ProbeSession:
         self.snapshot = None
         self.make_runtime = ()
         self.dependency_compiler = None
+        self.dependency_runtime = None
         if (
             not isinstance(runtime_files, (tuple, list))
             or len(runtime_files) > budget.limits.pending
@@ -734,6 +744,7 @@ class ProbeSession:
             self.parked_capsules.clear()
             self.make_runtime = ()
             self.dependency_compiler = None
+            self.dependency_runtime = None
             self.runtime_inputs = ()
             self.runtime_dispatch = ()
             self.runtime_root = None
@@ -1387,6 +1398,8 @@ class ProbeSession:
                 if not value or value.startswith("@") or "\n" in value or "\r" in value:
                     raise MakeProbeError("invalid or missing dependency option value")
                 if option in {"-I", "-iquote"}:
+                    if value.startswith(("=", "$SYSROOT")):
+                        raise MakeProbeError("sysroot-special dependency include operand is unsupported")
                     if value.startswith("-"):
                         raise MakeProbeError("dependency include path is not repository-relative")
                     includes.append(value if value == "." else relative_path(value))
@@ -1494,9 +1507,11 @@ class ProbeSession:
                         raise MakeProbeError("dependency profile requires one resolved C frontend")
                     self.dependency_compiler = driver, frontends[0]
                     self.budget.charge("control", len(encoded(self.dependency_compiler)))
+                    self.dependency_runtime = self._dependency_runtime()
                 argv[0] = self.dependency_compiler[0]
                 compiler = self.dependency_compiler
                 dependency = {
+                    **self.dependency_runtime,
                     "executables": list(compiler),
                     "include_dirs": ["/repo" if path == "." else "/repo/" + path for path in include_dirs],
                 }
@@ -1551,6 +1566,63 @@ class ProbeSession:
                 self.budget.charge("cache", len(encoded(result.executed)))
             self.cache.setdefault(key, []).append(result)
             return result
+
+    def _dependency_runtime(self):
+        interpreter = _make_interpreter(dict(self.make_runtime)["/usr/bin/make"])
+        runtime = {interpreter, *self.dependency_compiler}
+        for program in self.dependency_compiler:
+            result = self.budget.run(
+                [interpreter, "--inhibit-cache", "--list", program], env=ENVIRONMENT, cwd=Path("/"),
+            )
+            if result.returncode:
+                raise MakeProbeError(f"cannot resolve dependency compiler runtime: {result.stderr!r}")
+            runtime.update(_runtime_library_paths(result.stdout, runtime))
+        runtime.update(
+            str(_trusted_runtime_path(path, compiler=True)) for path in tuple(runtime)
+        )
+        if len(runtime) > 64:
+            raise MakeProbeError("dependency runtime closure exceeds the existing path bound")
+        result = self.budget.run(
+            [self.dependency_compiler[0], "-print-search-dirs"], env=ENVIRONMENT, cwd=Path("/"),
+        )
+        rows = text(result.stdout, "trusted compiler search directories", "utf-8").splitlines()
+        if result.returncode or len(rows) != 3:
+            raise MakeProbeError("unresolved dependency compiler search directories")
+        searches = {}
+        for expected, row in zip(("install", "programs", "libraries"), rows):
+            name, separator, value = row.partition(": ")
+            if name != expected or not separator:
+                raise MakeProbeError("malformed dependency compiler search directories")
+            paths = value.removeprefix("=").split(":")
+            if not paths or len(paths) > 64:
+                raise MakeProbeError("dependency compiler search count exceeds bound")
+            normalized = set()
+            for path in paths:
+                if not path.startswith(("/usr/", "/lib/", "/lib64/")):
+                    raise MakeProbeError("dependency compiler search escapes system roots")
+                canonical = os.path.normpath(path)
+                if canonical not in {"/usr", "/lib", "/lib64"} and not canonical.startswith(("/usr/", "/lib/", "/lib64/")):
+                    raise MakeProbeError("dependency compiler search escapes system roots")
+                relative_path(canonical[1:])
+                normalized.add(canonical)
+            searches[name] = normalized
+        if len(searches["install"]) != 1:
+            raise MakeProbeError("dependency compiler requires one installation directory")
+        install, = searches["install"]
+        directories = set().union(*searches.values())
+        if len(directories) > 64:
+            raise MakeProbeError("dependency compiler search count exceeds bound")
+        probes = {
+            str(Path(path) / "specs")
+            for path in searches["libraries"] | {install, str(Path(install).parent)}
+        }
+        profile = {
+            "runtime_files": sorted(runtime),
+            "runtime_directories": sorted(directories),
+            "runtime_stat_probes": sorted(probes | {"/proc/self/exe"}),
+        }
+        self.budget.charge("control", len(encoded(profile)))
+        return profile
 
     def _compiler_tools(self, cxx, names):
         compiler = str(Path("/usr/bin/g++" if cxx else "/usr/bin/cc").resolve(strict=True))
