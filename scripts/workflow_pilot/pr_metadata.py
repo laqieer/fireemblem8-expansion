@@ -53,6 +53,8 @@ FULL_JOB_NAMES = frozenset(candidate_evidence.KNOWN_JOB_IDS)
 METADATA_JOB_NAMES = (
     FULL_JOB_NAMES - {candidate_evidence.FULL_CLASSIFIER}
 ) | {candidate_evidence.METADATA_CLASSIFIER}
+PREFLIGHT_JOB_NAMES = (FULL_JOB_NAMES - {candidate_evidence.FULL_CLASSIFIER}) | {
+    candidate_evidence.PREFLIGHT_CLASSIFIER}
 FULL_SUCCESS_JOB_NAMES = FULL_JOB_NAMES
 ACTIVE_RUN_STATUSES = frozenset(
     {"pending", "queued", "requested", "in_progress", "waiting"}
@@ -163,6 +165,8 @@ class JobState:
     started_at: datetime.datetime | None
     completed_at: datetime.datetime | None
     metadata_event_sha256: str | None = None
+    candidate_binding: tuple[int, str, str] | None = None
+    candidate_base_ref: str | None = None
 
 
 @dataclass(frozen=True)
@@ -187,6 +191,10 @@ class RunState:
     binding: RunBinding
     mode: str
     jobs: tuple[JobState, ...]
+    event: str = "pull_request"
+    head_sha: str = ""
+    candidate_binding: tuple[int, str, str] | None = None
+    candidate_base_ref: str | None = None
 
 
 @dataclass(frozen=True)
@@ -1501,6 +1509,14 @@ class GitHubClient:
         expected_status = (
             200 if endpoint == "graphql" else 201 if method == "POST" else 200
         )
+        if method == "POST" and re.fullmatch(
+            r"repos/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/actions/workflows/build\.yml/dispatches", endpoint
+        ):
+            expected_status = 204
+        if method == "POST" and re.fullmatch(
+            r"repos/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/actions/runs/[1-9][0-9]*/cancel", endpoint
+        ):
+            expected_status = 202
         if response.status != expected_status:
             raise GitHubHTTPError(
                 method, endpoint, response,
@@ -2390,6 +2406,50 @@ def _metadata_event_step(
     return digest
 
 
+def _candidate_step_observation(raw):
+    from .adaptive_gate import BINDING_PREFIX, parse_binding, binding_base_ref
+    steps = raw.get("steps", ())
+    if not isinstance(steps, (tuple, list)):
+        raise MetadataEditError("candidate binding steps are malformed")
+    if any(not isinstance(step, dict) or not isinstance(step.get("name"), str) or not step["name"]
+           for step in steps):
+        raise MetadataEditError("candidate step record is malformed")
+    matching = [step for step in steps
+                if isinstance(step, dict) and isinstance(step.get("name"), str)
+                and step["name"].startswith(BINDING_PREFIX)]
+    if not matching:
+        return None, None, False
+    if len(matching) != 1:
+        raise MetadataEditError("duplicate candidate binding step")
+    step = matching[0]
+    binding = parse_binding(step["name"])
+    if binding is None:
+        raise MetadataEditError("candidate binding encoding is invalid")
+    status, conclusion = step.get("status"), step.get("conclusion")
+    if not isinstance(status, str) or status not in {"queued", "in_progress", "completed"}:
+        raise MetadataEditError("candidate binding step status is unknown")
+    if (
+        (status == "completed" and (
+            not isinstance(conclusion, str) or conclusion not in RUN_CONCLUSIONS))
+        or (status != "completed" and conclusion is not None)
+    ):
+        raise MetadataEditError("candidate binding step lifecycle is incoherent")
+    if ((raw.get("status") == "completed" and status != "completed")
+            or (raw.get("status") in ACTIVE_RUN_STATUSES - {"in_progress"} and status != "queued")
+            or (raw.get("conclusion") == "skipped" and conclusion != "skipped")):
+        raise MetadataEditError("candidate binding step contradicts its job lifecycle")
+    return binding, binding_base_ref(step["name"]), status == "completed" and conclusion == "success"
+
+
+def _candidate_step_details(raw):
+    binding, base_ref, successful = _candidate_step_observation(raw)
+    return (binding, base_ref) if successful else (None, None)
+
+
+def _candidate_step(raw):
+    return _candidate_step_details(raw)[0]
+
+
 def _parse_job(
     raw: object,
     *,
@@ -2402,6 +2462,7 @@ def _parse_job(
     run_created_at: datetime.datetime,
     run_started_at: datetime.datetime | None,
     run_updated_at: datetime.datetime | None,
+    event: str = "pull_request",
 ) -> JobState:
     if not isinstance(raw, dict):
         raise MetadataEditError(f"Build run {run_id} job must be an object")
@@ -2413,7 +2474,7 @@ def _parse_job(
         != run_attempt
     ):
         raise MetadataEditError(f"Build job {job_id} attempt identity drifted")
-    if "event" in raw and raw.get("event") != "pull_request":
+    if "event" in raw and raw.get("event") != event:
         raise MetadataEditError(f"Build job {job_id} event identity drifted")
     if _sha(raw.get("head_sha"), f"Build job {job_id} head") != head_sha:
         raise MetadataEditError(f"Build job {job_id} head identity drifted")
@@ -2506,6 +2567,8 @@ def _parse_job(
         run_started_at=run_started_at,
         run_updated_at=run_updated_at,
     )
+    binding, base_ref = (_candidate_step_details(raw) if name in {
+        candidate_evidence.FULL_CLASSIFIER, candidate_evidence.PREFLIGHT_CLASSIFIER} else (None, None))
     return JobState(
         job_id,
         run_id,
@@ -2523,6 +2586,8 @@ def _parse_job(
             )
             if name == candidate_evidence.METADATA_CLASSIFIER else None
         ),
+        binding,
+        base_ref,
     )
 
 
@@ -2538,6 +2603,8 @@ def _list_jobs(
     run_created_at: datetime.datetime,
     run_started_at: datetime.datetime | None,
     run_updated_at: datetime.datetime | None,
+    event: str = "pull_request",
+    run_pr_number: int | None = None,
 ) -> tuple[JobState, ...]:
     raw_jobs = _list_counted_pages(
         client,
@@ -2564,6 +2631,7 @@ def _list_jobs(
             run_created_at=run_created_at,
             run_started_at=run_started_at,
             run_updated_at=run_updated_at,
+            event=event,
         )
         for raw in raw_jobs
     )
@@ -2573,6 +2641,17 @@ def _list_jobs(
     names = [job.name for job in jobs]
     if len(names) != len(set(names)):
         raise MetadataEditError(f"Build run {run_id} repeats a job name")
+    claims = set()
+    for raw in raw_jobs:
+        if raw["name"] not in {candidate_evidence.FULL_CLASSIFIER, candidate_evidence.PREFLIGHT_CLASSIFIER}:
+            continue
+        claim, base_ref, _successful = _candidate_step_observation(raw)
+        if claim is not None:
+            if claim[1] != head_sha or (run_pr_number is not None and claim[0] != run_pr_number):
+                raise MetadataEditError("candidate marker contradicts run identity")
+            claims.add((claim, base_ref))
+    if len(claims) > 1:
+        raise MetadataEditError("Build run has contradictory candidate declarations")
     return jobs
 
 
@@ -2605,6 +2684,8 @@ def _run_mode(
             return "full"
         if names == METADATA_JOB_NAMES:
             return "metadata-only"
+        if names == PREFLIGHT_JOB_NAMES:
+            return "review-first"
         raise MetadataEditError(
             f"completed Build run {run_id} has an unknown or mixed job shape"
         )
@@ -2612,9 +2693,12 @@ def _run_mode(
     classifier_names = names & {
         candidate_evidence.FULL_CLASSIFIER,
         candidate_evidence.METADATA_CLASSIFIER,
+        candidate_evidence.PREFLIGHT_CLASSIFIER,
     }
     if classifier_names == {candidate_evidence.FULL_CLASSIFIER}:
         return "active-full"
+    if classifier_names == {candidate_evidence.PREFLIGHT_CLASSIFIER}:
+        return "active-review-first"
     if classifier_names == {candidate_evidence.METADATA_CLASSIFIER}:
         classifier = next(
             job
@@ -2689,8 +2773,9 @@ def _parse_run(
         raise MetadataEditError(f"Build run {run_id} workflow identity drifted")
     run_number = _positive_int(raw.get("run_number"), "Build run number")
     run_attempt = _positive_int(raw.get("run_attempt"), "Build run attempt")
-    if raw.get("event") != "pull_request":
-        raise MetadataEditError(f"Build run {run_id} event is not pull_request")
+    event = raw.get("event")
+    if event not in {"pull_request", "workflow_dispatch"}:
+        raise MetadataEditError(f"Build run {run_id} event is not a candidate event")
     if _sha(raw.get("head_sha"), f"Build run {run_id} head") != state.head_sha:
         raise MetadataEditError(f"Build run {run_id} head identity drifted")
     head_branch = _text(raw.get("head_branch"), f"Build run {run_id} head branch")
@@ -2783,7 +2868,9 @@ def _parse_run(
             or refreshed_number != run_number
             or refreshed.run_attempt != run_attempt
             or refreshed.head_branch != head_branch
-            or refreshed.binding != binding
+            or _run_binding(refreshed_response.payload, state=state, run_id=run_id,
+                            head_sha=state.head_sha, head_branch=head_branch) != binding
+            or refreshed.event != event
             or refreshed.status != status
             or refreshed.conclusion != conclusion
             or refreshed.created_at != created_at
@@ -2794,6 +2881,7 @@ def _parse_run(
                 f"Build run {run_id} terminal authority changed during refresh"
             )
         return refreshed_id, refreshed_number, refreshed
+    raw_prs = raw.get("pull_requests") or []
     jobs = _list_jobs(
         client,
         state,
@@ -2805,7 +2893,34 @@ def _parse_run(
         run_created_at=created_at,
         run_started_at=run_started_at,
         run_updated_at=updated_at if status == "completed" else None,
+        event=event,
+        run_pr_number=raw_prs[0]["number"] if raw_prs else None,
     )
+    bindings = {job.candidate_binding for job in jobs if job.candidate_binding is not None}
+    if len(bindings) > 1 or any(item[1] != state.head_sha for item in bindings):
+        raise MetadataEditError("Build run has contradictory candidate bindings")
+    candidate_binding = next(iter(bindings), None)
+    base_refs = {job.candidate_base_ref for job in jobs if job.candidate_binding is not None}
+    if len(base_refs) > 1:
+        raise MetadataEditError("Build run has contradictory candidate base refs")
+    candidate_base_ref = next(iter(base_refs), None)
+    mode = _run_mode(jobs, run_id=run_id, status=status)
+    if mode not in {"metadata-only", "active-metadata-only"}:
+        binding = "unbound"
+    if candidate_binding is not None:
+        from .adaptive_gate import frozen_base
+        if raw_prs and raw_prs[0]["number"] != candidate_binding[0]:
+            raise MetadataEditError("candidate marker contradicts PR binding")
+        if candidate_base_ref is None:
+            binding = "unbound"
+        elif (candidate_base_ref == state.base_ref
+                and candidate_binding[:2] == (state.number, state.head_sha)
+                and candidate_binding[2] == frozen_base(client, state)):
+            if head_branch != state.head_ref:
+                raise MetadataEditError("candidate branch binding changed")
+            binding = "explicit-same"
+        else:
+            binding = "explicit-other"
     return (
         run_id,
         run_number,
@@ -2821,8 +2936,12 @@ def _parse_run(
             status=status,
             conclusion=conclusion,
             binding=binding,
-            mode=_run_mode(jobs, run_id=run_id, status=status),
+            mode=mode,
             jobs=jobs,
+            event=event,
+            head_sha=state.head_sha,
+            candidate_binding=candidate_binding,
+            candidate_base_ref=candidate_base_ref,
         ),
     )
 
@@ -2830,6 +2949,8 @@ def _parse_run(
 def list_candidate_runs(
     client: GitHubClient,
     state: PullRequestState,
+    *,
+    include_dispatch: bool = True,
 ) -> tuple[RunState, ...]:
     workflow = _workflow_authority(client, state)
     raw_runs = _list_counted_pages(
@@ -2838,7 +2959,7 @@ def list_candidate_runs(
             state.repository,
             "actions/workflows/build.yml/runs",
             [
-                ("event", "pull_request"),
+                *([] if include_dispatch else [("event", "pull_request")]),
                 ("head_sha", state.head_sha),
                 ("per_page", str(PAGE_SIZE)),
                 ("page", str(page)),
@@ -2858,6 +2979,7 @@ def list_candidate_runs(
             raw,
         )
         for raw in raw_runs
+        if not (include_dispatch and isinstance(raw, dict) and raw.get("event") == "push")
     )
     by_id: dict[int, RunState] = {}
     number_to_id: dict[int, int] = {}
@@ -3024,14 +3146,12 @@ def require_metadata_failure(run: RunState) -> None:
 
 
 def _latest_full(runs: tuple[RunState, ...]) -> RunState | None:
-    return next(
-        (
-            run
-            for run in runs
-            if run.binding == "explicit-same" and run.mode == "full"
-        ),
-        None,
-    )
+    for run in runs:
+        if run.binding == "unbound":
+            return None
+        if run.binding == "explicit-same" and run.mode == "full":
+            return run if run.candidate_binding is not None and run.candidate_base_ref is not None else None
+    return None
 
 
 def _blocking_active_runs(runs: tuple[RunState, ...]) -> tuple[RunState, ...]:
@@ -3958,6 +4078,8 @@ def _current_full_authorization(
         run.binding == "unbound"
         or run.status in ACTIVE_RUN_STATUSES
         or run.mode != "full"
+        or run.candidate_binding is None
+        or run.candidate_base_ref is None
     ):
         return run, False
     require_full_success(run)

@@ -609,8 +609,10 @@ a gate.
 
 Before the first remote review of a high-risk or large change, the coordinator
 uses one fresh bounded read-only reviewer through the existing task/tool
-interfaces. Keep implementer/reviewer/coordinator identities distinct and
-reject overlapping reviewer ownership. Only reading the exact candidate,
+interfaces. The reviewer must differ from both coordinator and implementer;
+those two may be the same actual owner for coordinator-authored work. Never
+create aliases or a pretend delegate to satisfy an inequality. Reject
+overlapping reviewer ownership. Only reading the exact candidate,
 reading supplied evidence and returning the report are permitted; deny edit,
 push, comment, request-review, CI dispatch, merge and arbitrary commands at the
 tool dispatch boundary.
@@ -645,10 +647,19 @@ agent backend or protected installation is a prerequisite.
 The indexed case is
 [`TC-WORKFLOW-REVIEW-FAMILY-001`](../../../docs/test-cases/workflow-governance.md#tc-workflow-review-family-001-expand-valid-findings-across-complete-sibling-families).
 
+- **Reviewer:** distinct-from-coordinator, distinct-from-implementer, read-only, bounded
+- **Coordinator implementation:** same-actual-owner-permitted, no-aliases
+- **Delegated local proof:** terminal-owner-handoff, descendant-and-trailers, assigned-scope-and-resources
+- **Coordinator local proof:** exact-git-and-worktree, registered-complete-native-checks,
+  incomplete-delegate-blocks, no-fabricated-worker
+- **Final criteria:** independent-review, objective-and-manual, rom-ram-protocol-profile,
+  security, candidate-Build, master-Build, bound-architecture-disposition, remote-completion
+
 ### Bounded exact-SHA implementation handoffs
 
 Use the [version-3 contract](../../../docs/workflow-pilot.md#bounded-exact-sha-implementation-handoffs)
-and retain `TC-WORKFLOW-AGENT-HANDOFF-001`. One coordinator owns the assignment
+for delegated implementation and retain `TC-WORKFLOW-AGENT-HANDOFF-001`.
+One coordinator owns the assignment
 and a bounded, locked, atomically updated session-local state document. The
 implementation-submitted result cannot replace Git, focused-check, process or
 GitHub observations, or alter scope, budgets or permitted actions.
@@ -667,6 +678,15 @@ separate from the full PR's review-size gate. Close the implementation owner
 after its committed handoff; a review successor needs a fresh runtime/session.
 Use existing runtime deadlines and process controls for bounded lifetime.
 Opaque handles and unavailable RSS or OOM authority remain unknown, not proven.
+
+Genuinely coordinator-authored work instead uses the existing
+[registered native local checks](../../../docs/workflow-pilot.md#coordinator-owned-local-validation),
+bound to its actual owner, exact Git head/frozen base/ref/worktree and complete
+check definitions. No assignment, extra commit, worker budget or LLM PID/RSS
+is invented. Empty assignments or raw diff alone are not proof, and an
+applicable incomplete delegate still blocks. Independent review, global
+objective/manual/ROM/RAM/protocol/profile criteria, security and complete
+candidate/master Builds remain separate and mandatory for both paths.
 
 One coordinator owns one direct watcher per repository/run/attempt. A watcher
 failure triggers an exact GitHub run query; preserve real failure and incomplete
@@ -715,6 +735,19 @@ values are fixed. Surrounding prose explains this protocol, not an override.
 - **Authority:** persistence-not-acceptance
 - **Final gates:** unchanged
 - **Push failure:** explicit-blocker-no-success-claim
+
+### Adaptive candidate timing
+
+Use [#181's existing decision and coordinator API](../../../docs/workflow-pilot.md#adaptive-review-first-candidate-gates)
+when the trusted integration base supports it. Review-first candidates run
+fast fail-closed Build preflight alongside exact-head security and Copilot;
+only accepted clean review/security permits the single complete full dispatch.
+Concurrent, unknown and paused decisions retain the broader full workflow.
+Preflight is not candidate Build evidence. Accepted findings abandon the
+exact head before any cancellation, and stale/duplicate evidence never grants
+merge. Preserve #179 local/family review, every final objective/manual gate,
+all eight full Build jobs and automatic exact-master publication/completion.
+The coordinator alone owns the state, dispatch and existing run watchers.
 
 ### Trusted push ownership
 
@@ -839,6 +872,20 @@ For every issue-specific PR:
 2. If the consolidated post-merge Build fails, immediately fix forward or revert; do not
    report the feature as delivered. The failure blocks the affected issue's
    closure and remote completion, but not unrelated independent PRs.
+   If an accepted safety event is attributable to the adaptive pilot, use the
+   production `adaptive_gate.pause_pilot` coordinator transition with validated
+   #176 causal facts and an actual trusted native attribution check. Refresh
+   automatic-master run identity/outcome for broken-master attribution; an
+   infrastructure failure, ordinary pre-merge finding or intentional negative
+   test is not by itself an incident. The transition retains a local
+   `safety_publication` hold and prepares only the existing decision file on an
+   ordinary owner branch. Publish through the normal owner Git/PR/merge path,
+   then call `confirm_safety_publication` for exact default-control readback.
+   Do not claim global visibility before confirmation or grant the read-only
+   Build token write authority. Explicit `unpause_pilot` requires incident
+   disposition, native recovery, complete current master/security evidence and
+   the same confirmed publication boundary. Pause/unpause never clears an
+   architecture hold, revives abandonment or cancels unrelated valid CI.
 3. Add the final evidence and commit/PR/CI links to the originating issue.
    Include installed investigation tools, versions, purpose, and any
    pre-existing IDA/Ghidra/GDB resources used.
