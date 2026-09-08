@@ -115,6 +115,350 @@ afterward as described in step 6. No visual/audio/manual-only criterion applies.
 This setup cannot supply missing Git authority or discharge
 the consumers' independent protected-principal/deployment requirements.
 
+## TC-WORKFLOW-REVIEW-FIRST-001: Gate expensive Builds after accepted review
+
+- **Feature / issue:** `workflow-governance` /
+  [#181](https://github.com/laqieer/fireemblem8-expansion/issues/181).
+- **Profile / prerequisites:** source checkout with the existing locked host
+  Python, Git and local process controls. Local cases own Git repositories,
+  real handoff processes and disposable HTTP responses below `build`.
+  Remote exercise is performed only by the delivery coordinator with normal
+  repository-owner credentials and existing review/runtime adapters.
+- **Compatibility:** no gameplay, save/config, locale, generated game-data,
+  ROM/RAM, compiler profile or archival change. Dependencies are #176–#179;
+  #180/#206 are independent and #196 extraction is out of scope.
+
+### Actions
+
+1. Run the existing runner:
+
+   ```bash
+   build/host-python/bin/python3 -I -c \
+     'import sys, unittest; sys.path.insert(0, "."); unittest.main(module=None)' \
+     scripts.workflow_pilot.tests.test_adaptive_gate \
+     scripts.workflow_pilot.tests.test_candidate_identity \
+     scripts.workflow_pilot.tests.test_live_stack \
+     scripts.workflow_pilot.tests.test_refless_runs \
+     scripts.workflow_pilot.tests.test_live_pause \
+     scripts.workflow_pilot.tests.test_coordinator_local -v
+   ```
+
+   An existing equivalent locked interpreter may be supplied instead; do not
+   create another dependency bootstrap.
+   The dispatch-discovery controls run the actual embedded Bash/jq program
+   against owned Git and complete provider fixtures. One eligible candidate
+   plus a same-named fork must bind in either order. Multiple eligible
+   candidates, unknown nodes, mismatched counts and incomplete pages must stay
+   unbound; no real fork or repository mutation is needed for these controls.
+2. Select small/low-risk, exactly 2,000 lines, greater-than-2,000 lines and each
+   named high risk. Expect concurrent for the first two and review-first for
+   large/named-risk candidates. Missing/unknown records and paused decisions
+   keep the broader workflow with explicit reasons.
+3. Validate an override from its actual committed introduction and reviewed
+   Git trees using #176. A pre-review override can change timing; a late or
+   missing introduction is unknown/broader, never authenticated by a reason
+   string. Independent local review is not waived by the timing override.
+   Exercise `route_event` itself with actual immutable decision/commit/review
+   responses: a valid override changes the large-change route, while late,
+   missing, changed or unavailable first-reviewed authority remains unknown
+   and uses the broader workflow.
+   Exercise actual registered generated/catalog files, Markdown and whole-file
+   deletions through the production route with native Git-derived diff facts.
+   A large runtime/archival/`none` claim, mixed runtime work, unregistered
+   generated path, partial runtime deletion or unrelated decision-file edit
+   is known **ineligible** and keeps ordinary review-first size timing.
+   Missing/stale/truncated/paginated file authority or a head/base-ref change
+   during observation stays **unknown** and broader. A risk label/reason cannot
+   substitute for these facts; named high risk always remains review-first.
+   The bookkeeping exception covers only this PR's decision entry, not another
+   decision, artifact or arbitrary metadata file. No deletion percentage or
+   blanket source-directory exemption is used; all final gates still apply.
+   Advance the base with an independent decision edit: genuine documentation
+   remains eligible, but a candidate's unrelated decision edit cannot be hidden
+   by a matching live-tip change. Compare bookkeeping at the actual merge base.
+4. Execute the actual parsed Build job guards and preflight shell steps.
+   Initial review-first runs only the fast path, while concurrent, dispatched
+   full and master events retain all four comprehensive worker jobs and all
+   eight total jobs. Wrong head/base/decision identity fails preflight.
+   Execute the no-checkout dispatch bootstrap with a pre-feature default tree,
+   a genuine feature-containing integration base and a child whose launcher
+   would fail if executed. Require exact base checkout and a parsed
+   PR/head/merge-base binding from the isolated classifier. Absent, ambiguous,
+   wrong-repository/ref/head, unavailable and changed-base observations must
+   remain unbound or fail. An old base and plain manual dispatch remain broad;
+   the deployed root-PR path still binds. These controls do not dispatch CI.
+5. Complete a real local #178 handoff, then consume typed #179 task and review
+   observations and exact security checks. Fully triaged zero-finding review,
+   zero unresolved conversations and clean exact security permit one full
+   dispatch. Observe its exact run/attempt and all full jobs before merge
+   eligibility. Missing local, review, security or objective/manual evidence
+   remains a hold.
+   Also exercise already-committed coordinator-owned work with no assignments:
+   explicitly register raw Git plus every semantic local criterion, capture
+   their real native results, and require all checks before local readiness.
+   Use actual config/baseline/document validators for the excluded fixture.
+   Use the same actual coordinator/implementation owner in `ReviewSession`
+   when applicable. Self-review must reject before task launch; a distinct
+   read-only reviewer must still satisfy task/head/scope and completion bounds.
+   Reject raw-only/pass-label registration, incomplete/failed captures,
+   changed definitions/check sets, head/base/worktree drift and stale native
+   availability. An applicable incomplete or invalid delegated owner still
+   blocks this alternative. No fixture commit, owner, receipt or LLM PID is
+   manufactured to obtain local proof.
+   If host stop settings are unknown, retain explicit nulls in a bounded
+   `plan` with concrete recovery steps; never fabricate Boolean settings or
+   use unknowns for `always-on`. Expired coverage and native interruption
+   observations still reject availability.
+6. Accept a valid finding: record abandonment and deny full dispatch/merge.
+   Later clean or cancelled/successful Build results cannot revive that head.
+   Resolve a false positive before acceptance, refresh actual facts and
+   retriage; the same un-abandoned head can become clean. A failed security
+   check remains unclean until actual successful check evidence is observed.
+7. Exercise stale review/security/head/base, unresolved threads, duplicate
+   full runs, changed attempts, early owner dispatch and duplicate watchers.
+   All reject admission. Record dispatch before the simulated network call;
+   a failed/unknown delivery must not retry into a second dispatch.
+   Lose the second state write after an accepted POST. Reconcile through the
+   actual parsed unique full run and original watermark without repeating POST
+   or inventing an HTTP acknowledgement time. Zero/multiple/unclassified,
+   earlier and wrong identity/attempt/workflow observations remain uncertain;
+   abandoned/superseded heads may be recorded only for cleanup.
+   Combine unrelated base-tip movement with a queued same-head/branch PR run:
+   it remains visible and blocks dispatch/merge until its immutable candidate
+   marker establishes the binding. A confirmed different marker stays unrelated.
+   Observe a real parsed queued same-head/branch dispatch with no jobs/binding,
+   both alone and beside a completed full success: it must hold both dispatch
+   and merge until classified. Compare a fractional native reservation with
+   the provider's same-second run creation: retain both actual values and
+   accept the legitimate correlation, while earlier seconds, old watermarks,
+   changed attempts and duplicate identities still reject.
+8. Compile actual Git ancestry for an unrelated master advance. The frozen
+   merge base remains valid and no candidate is cancelled. A changed head,
+   base ref or unique merge base supersedes the old binding.
+   Route the immutable raw event against that advanced live tip: preserve its
+   original base/head output and reject tampered event/ref data. After a real
+   same-head base rebind, fully triaged history plus a fresh clean review and
+   fresh security can proceed; old untriaged/unresolved content or accepted
+   valid findings must still hold or abandon the candidate.
+   Fast-forward a real integration base into an intermediate ancestor of an
+   unchanged candidate head, keeping both refs unchanged. Retain old/new
+   frozen-base records, reservations and parsed runs. Complete the new native
+   local checks and fresh clean-review/security evidence; reconcile only its
+   exact full identity. The old snapshot may record its own run for abandoned
+   cleanup, never admission. Retarget a base ref with the same frozen base.
+   Current v1 witnesses must include the actual historical ref; legacy ref-less
+   or unmarked runs remain unproven, regardless of today's mutable PR association
+   or whether the old record was assessed. Test both concurrent and reserved
+   marked/unmarked cases, admitting only the actual current complete witness.
+   Send the same real Git head through metadata transaction parsing and the
+   actual inline summary after a ref-only retarget. Legacy ref-less and absent
+   markers must remain unbound; canonical exact-ref witnesses succeed, while
+   wrong/noncanonical/invalid-UTF-8 refs fail. Metadata-only results never
+   replace a full Build, and a newer unproven full run blocks reuse of older
+   success. Keep the 32768-byte source bound and behavior-backed raw/AST guards.
+   Zero/multiple/unclassified runs, wrong
+   head/base/ref/workflow/bound attempt, missing acknowledgement and partial
+   identity lookups cannot authorize a candidate. Unrelated base-tip movement
+   with the same unique merge base still permits normal dispatch.
+   Exercise actual root, depth-one, depth-two and exceptional depth-three
+   decision/parent chains through production routing. The shared #176 validator
+   must reject missing parents/exceptions, bad depths, self/multi-parent cycles,
+   branch mismatches, unavailable parent decisions and unsynced/moving parent
+   heads. Read each parent's own committed decision; never supply a fabricated
+   parent or use the child's copy as parent authority. Preserve the genuine
+   feature-parent bootstrap when the default tree predates adaptive gating.
+9. Execute the existing metadata summary against disposable local HTTP
+   responses for a full dispatch and its current merge base. It retains
+   complete eight-job success; missing/wrong/foreign marker or stale base
+   cannot stand in for full candidate evidence.
+10. In owned Git repositories, publish an unpaused default decision and create
+    H, then normally publish a pause to the current default branch without
+    changing H or its frozen merge base. Run the production reader and require
+    broad timing for unchanged H and a new head. A paused excluded sibling
+    counts; a paused immediate stack parent is not the global source.
+    Validate every collection member and the actual repository/default
+    ref/commit/regular blob; missing, malformed, truncated or moving data is
+    unknown/broad, never unpause or admission authority.
+    Use controlled #176 incident fixtures and actual native reproductions to
+    exercise `pause_pilot`, local `safety_publication` hold, ordinary non-default
+    branch preparation, local bare branch publication/merge and confirmed
+    current-control readback. Never manufacture a real repository escape or
+    change production master for this test. Ordinary pre-merge findings,
+    arbitrary event names, failed attribution and wrong automatic-master
+    event/branch/workflow/head/attempt/outcome must not create a latch.
+    Publication failure retains the local hold without claiming global visibility.
+    Give an old exact preflight one reserved full fallback while quality is
+    pending; inspect the persisted watermark before the only input-free POST.
+    Unknown control/history, unbound original review context, missing native
+    coverage, active/unknown/duplicate full work, abandonment and architecture
+    holds must block inappropriate scheduling. Both initial concurrent PR full
+    ownership and initial review-first reserved ownership survive pause/unpause.
+    Prove explicit native recovery, current complete master/security evidence
+    and normal owner publication before unpause. Missing data and unrelated
+    green runs cannot unpause. All final review/security/local/family/manual/
+    candidate/master gates remain mandatory.
+    Exercise marker lifecycle through the real candidate-run parser: absent,
+    queued/in-progress-null, successful, terminal non-success and malformed/
+    contradictory cases. Valid non-success remains unbound history; only
+    successful exact witnesses bind, and newer unbound full work blocks reuse
+    of old green results.
+    Use the actual `assess_observed` callback inside `dispatch_full`, with
+    complete controlled API responses—not a reducer-only stub. Empty, partial
+    and coherent pending security quality permits the known-pause fallback
+    while preventing merge even after all other quality is ready. Wrong app/
+    head, invalid fields/pagination/lifecycle, unknown authority and accepted
+    findings retain their strict dispatch/abandonment behavior.
+
+### Actual disposable-PR exercise — coordinator only
+
+Do not run these remote mutations from an implementation agent. Never count
+these PRs as merged pilot samples.
+
+1. Publish the tested implementation checkpoint immediately and obtain its
+   required independent review before hosted review. Record its full SHA as
+   `CANDIDATE`. The introducing PR's base predates adaptive gating, so its
+   normal full Build remains required. Do not call that bootstrap run a
+   review-first observation.
+   The current PR221 root decision is explicitly pilot-excluded and has no
+   override. Its new presence is not historical pre-review proof. Validate
+   the existing schema/actual root relation and unchanged baseline before
+   syncing a genuine child to the committed parent.
+2. For a pre-merge exercise, create disposable child branches against the
+   actual introducing PR's dependency-ready head branch, not an invented
+   installed helper or a candidate bootstrap. Record the genuine parent PR
+   and depth-one stack. If external CodeQL/GHAS does not produce exact checks
+   for that non-default base, stop that exercise without fabricating them.
+   Before full dispatch, verify the authenticated bootstrap selects that
+   genuine parent's exact SHA rather than the pre-feature default branch.
+   Do not deploy the feature dormant to work around missing classifier
+   authority or waive this pre-merge exercise.
+3. In an owned fixture worktree, make a real documentation change and open a
+   **draft** disposable PR with `gh pr create --draft --base "$EXERCISE_BASE"`.
+   Its first head may have no committed PR-number decision and correctly
+   receive the broader full workflow. Record that exact bootstrap head/run.
+4. Once the PR number exists, append its record to the existing decision file:
+   `risk_boundaries: ["lifecycle"]`, `gate_mode: "review-first"`, the actual
+   root/stack record, `threshold.triggers: ["risk-boundary"]`,
+   `override_history: []`, and
+   `pilot: {"included": false, "disposition": "excluded"}`. Commit and
+   owner-push a **new** head. The explicit historical-cohort projection keeps
+   baseline v1 unchanged. Observe the new head before marking the bootstrap
+   head superseded in the existing coordinator state; only then may its full
+   run be cancelled.
+5. Confirm the new exact-head Build has `review-first-classifier`, successful
+   fast `host-tests`/`build`, skipped extended/legacy, and the explicit pending
+   full `summary` failure. Register this candidate before requesting reviews.
+   Complete its actual applicable local proof: a delegated terminal handoff,
+   or explicit registered native checks for coordinator-authored work. Never
+   manufacture an assignment, worker budget or process measurement. Complete
+   independent review with a reviewer different from coordinator and implementer
+   (who may be one actual owner), and request
+   exact-head Copilot while the existing security checks run concurrently.
+   Inspect complete review content and all threads; do not infer clean from
+   COMMENTED, a heading or zero new inline comments.
+6. In the trusted coordinator, use the actual objects already collected:
+
+   ```python
+   from scripts.workflow_pilot import adaptive_gate as gate
+   from scripts.workflow_pilot import coordinator_observations as observations
+   from scripts.workflow_pilot import pr_metadata
+
+   client = pr_metadata.GitHubClient("/usr/bin/gh")
+   pr, changed_lines = gate.fetch_candidate(client, repository, pr_number)
+   decision = gate.fetch_decision(client, pr, changed_lines)
+   with observations.locked_state(state_path) as state:
+       gate.begin_observed_candidate(client, state, pr_number)
+
+   def assess_for_dispatch(state):
+       current, _ = gate.fetch_candidate(client, repository, pr_number)
+       identity = (current.number, current.head_sha,
+                   gate.frozen_base(client, current), current.base_ref)
+       record = gate.find_candidate(state, identity)
+       assessment, runs = gate.assess_observed(
+           client, state, record, review_session, tuple(review_session.rounds.events),
+           review_tools, family_evidence=validated_family_inputs,
+           accepted_security=accepted_security_findings,
+           criteria_ready=existing_objective_and_manual_gates_complete)
+       return record, assessment, runs
+
+   gate.dispatch_full(client, state_path, pr, assess_for_dispatch)
+   ```
+
+   `review_session`, `review_tools`, triage, family inputs, security findings
+   and criterion completion must be the real existing coordinator observations,
+   not success-shaped JSON fixtures. Use one locked state transaction for each
+   normal assessment and the existing canonical-comment updater for its result.
+7. Observe the actual dispatched run ID/attempt after the saved watermark.
+   Record one existing #178 watcher and run exactly
+   `timeout 90m gh run watch "$RUN_ID" --interval 30 --exit-status` as an
+   attached asynchronous shell. No reasoning agent waits. Verify exactly one
+   input-free full dispatch and all eight completed jobs, with no publisher
+   on the PR/dispatch. Reassess fresh review/security/criteria before eligibility.
+8. Owner-push a real second change. Observe supersession and prove that the
+   earlier full success and earlier review/security cannot authorize the new
+   head. Do not cancel any independent PR merely because master moved.
+   Exercise an accepted real local/remote finding on a separate negative head;
+   persist its abandonment before cancelling any associated full run. A known
+   negative/WIP head is not a successful local validation sample. Repair it
+   using #179's actual sibling-family evidence before another clean head.
+9. Repeat with a separate small/low-risk record in concurrent mode. Confirm
+   that the initial event runs the complete graph without waiting for review,
+   while merge eligibility still requires the same final gates. Test pause by
+   updating the existing record and observing the broader route on a new head.
+10. Save exact PR/head/base/decision/run/attempt/review/check identities and
+    actual commands/results in the canonical evidence comment. Close, do not
+    merge, disposable PRs; retire only their owned processes/worktrees through
+    existing cleanup after no active work remains. Main separately verifies
+    automatic full master Build and its real build-once publisher after the
+    implementation merge.
+
+### Expected result
+
+Adaptive timing saves only unneeded early comprehensive runs. A candidate can
+be merge-eligible only after actual clean review/security, complete local and
+objective/manual evidence and one exact full success. Master retains the
+complete automatic graph and real publisher.
+
+### Negative control
+
+The pre-feature workflow starts full Build concurrently for every code event.
+Missing/unknown decisions intentionally retain that broader behavior. Valid
+findings, stale or duplicate identities, missing observations and cancelled
+runs never become merge evidence in either timing mode.
+
+### Interactions and save compatibility
+
+Reuse #176 decisions/metrics/pause, #177 metadata continuity, #178 local
+handoffs/watchers and #179 review/family/hold authority. #180/#206 remain
+parallel. No gameplay, save/config, localization, resource allocation,
+modern/archival or manual audiovisual compatibility changes.
+
+### Automation
+
+`scripts.workflow_pilot.tests.test_adaptive_gate` runs real local Git/handoff,
+typed state, HTTP-response and actual preflight/summary shell controls. The
+`scripts.workflow_pilot.tests.test_coordinator_local` selector exercises
+registered coordinator-owned native checks and their negative controls. The
+`scripts.workflow_pilot.tests.test_live_pause` selector covers current-control
+identity, causal native attribution, owned bare publication/readback, schema
+and the unchanged-head fallback/ownership family. The
+existing topology, publisher, metadata, schema and review selectors cover
+their directly coupled integration contracts. The coordinator records the
+actual disposable-PR exercise separately; fixtures are never pilot samples.
+
+### Cleanup and limitations
+
+Local HTTP/task records are controlled fixtures, not actual GitHub reviewer
+launches or remote delivery evidence. The real exercise above remains required
+and is owned by main. There is no subjective manual-only criterion for this
+host orchestration feature, no owner-dispatch prevention guarantee, and no
+same-UID sandbox or authenticated receipt claim. Three weeks or 20 real
+post-deployment merged pilot PRs plus measured efficiency/non-inferiority are
+future promotion criteria; no fixture or baseline refresh substitutes for them.
+The pause differential uses owned local publication and controlled provider/
+incident data. Main may separately record an actual unpaused provider read
+for endpoint/permission evidence; it is not proof of an actual escaped defect.
+
 ## TC-WORKFLOW-REVIEW-FAMILY-001: Expand valid findings across complete sibling families
 
 - **Feature / originating issue:** `workflow-governance` /
@@ -1148,9 +1492,10 @@ and never checks it out. Invalid base refs are incomplete identity: a valid
 exact head runs all four workers and fails summary; an invalid head runs none.
 The classifier executes from the verified current PR base SHA; a missing base
 uses the trusted default branch only to report invalid identity, while a base
-without the new classifier uses the explicit strict bootstrap. The current
-workflow has no `workflow_dispatch`, so the fixture and topology test assert
-that no final-dispatch job selection exists to preserve.
+without the new classifier uses the explicit strict bootstrap. The original
+#177 workflow had no final-dispatch route; #181 now preserves all eight jobs
+through its input-free dispatch and integration-base bootstrap, covered by
+`TC-WORKFLOW-REVIEW-FIRST-001`.
 The classifier bootstrap may use the trusted default branch when PR base
 identity is missing or unusable; worker checkouts never use a merge/default
 fallback.
@@ -3475,7 +3820,9 @@ executes the real producer/control/resource cases through the existing host
 runner. The existing `ownership-probe-test` target selects both foundation and
 producer modules exactly once in `extended-host-tests`. Lightweight workflow
 discovery checks that selection with `PlanCollector`; it does not import native
-test classes for execution in another job. No new job or standalone gate is added.
+test classes for execution in another job. The actual adaptive job condition
+selects both modules only in full mode and skips them for metadata-only and
+review-first preflight runs. No new job or standalone gate is added.
 
 ### Cleanup and limitations
 

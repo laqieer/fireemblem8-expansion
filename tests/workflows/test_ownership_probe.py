@@ -54,7 +54,10 @@ class ProbeExecutionOwnershipTests(unittest.TestCase):
         return step
 
     def test_full_parallel_owner_selects_every_native_case(self):
-        self.owner_step(topology.WORKFLOW.read_text(encoding="utf-8"))
+        from scripts.workflow_pilot.tests.test_adaptive_gate import WorkflowTests, workflow_condition
+
+        text = topology.WORKFLOW.read_text(encoding="utf-8")
+        self.owner_step(text)
         command = subprocess.run(
             [*PROBE_COMMAND, "--dry-run"], cwd=ROOT, check=True,
             capture_output=True, text=True, timeout=10,
@@ -76,6 +79,16 @@ class ProbeExecutionOwnershipTests(unittest.TestCase):
         self.assertEqual(len(expected), len(set(expected)))
         self.assertEqual(sorted(collector.selected), sorted(expected))
         self.assertEqual(len(collector.selected), len(set(collector.selected)))
+        condition = topology._direct_job_if(topology._job_blocks(text)["extended-host-tests"])
+        contexts = WorkflowTests()
+        for event, mode in (
+            ("pull_request", "full"), ("push", "full"), ("workflow_dispatch", "full"),
+            ("pull_request", "metadata-only"), ("pull_request", "review-first"),
+        ):
+            with self.subTest(event=event, mode=mode):
+                active = workflow_condition(condition, contexts.context(event, mode))
+                selected = collector.selected if active else []
+                self.assertEqual(sorted(selected), sorted(expected) if mode == "full" else [])
 
     def test_native_cases_are_not_duplicated_in_workflow_discovery(self):
         native = set()
