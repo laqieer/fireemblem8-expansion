@@ -79,6 +79,22 @@ and statuses remain real, and directory metadata grants no enumeration or
 member contents. Unsupported runtime resolution rejects instead of falling
 back to the broad compiler policy.
 
+Necessary admitted runtime-file reads remain valid after repository source
+reads. Negative runtime exceptions have a narrower purpose boundary: loader
+probes must originate in the resolved interpreter's executable mapping, and
+driver specs/search metadata must come from the verified driver through its
+own or libc's executable mapping. The supervisor checks the actual kernel
+exec object, the owned syscall-entry stop and instruction, and mapping device/
+inode identities. Mapping labels, pathname claims, syscall ordering and a
+"first source read" phase flag are not authority. These bounded observations
+spend the same metadata budget.
+
+A source-level `__has_include("/etc/ld.so.cache")` cannot reuse the loader's
+capsule absence. That lookup comes from cc1/libc, not the loader, and rejects
+even when the kernel would genuinely return `ENOENT`. No errno is changed.
+Ordinary bootstrap negatives and verified driver metadata keep their real
+statuses; unsupported or unprovable origins fail rather than guessing purpose.
+
 Other host preprocessing reads and searches reject explicitly, including
 missing names, nonregular objects, stock aliases and parent spellings.
 This covers system/local includes, GCC private/include-fixed/libexec paths,
@@ -118,6 +134,9 @@ namespaces and non-directory ancestors retain the lower type policy.
 An include directory is not permission to read its members or enumerate it.
 The existing metadata recorder retains real kernel status, operation, masks
 and complete returned buffers; no metadata field is fabricated or masked.
+An explicit `Command.directories` declaration remains a separate base
+capability for the declared directory's real enumeration; it is neither
+inferred from include options nor rejected merely because D is selected.
 
 With `-MG`, a legitimately missing header may appear in the real `.d` without
 becoming a consumed existing source or receiving an invented input identity.
@@ -197,6 +216,13 @@ The pre-feature public rejection and original producer evidence remain
 recorded in [#206's compiler checkpoint](https://github.com/laqieer/fireemblem8-expansion/issues/206#issuecomment-5563209086).
 The unapproved integrated d9 implementation is historical evidence, not an
 approval or restoration source.
+
+The purpose regression retains the ordinary-present/confined-absent cache
+counterexample after a real `before.h` read, an old path-only-rule mutation,
+actual loader/specs status controls, and late admitted-runtime/directory
+positives. Malformed runtime listings use a neutral shared diagnostic and
+remain terminal with zero candidate payloads for both Make and D callers;
+the former Make-specific label was not a separate authority defect.
 
 D depends on P/#225, merged through
 [PR #232](https://github.com/laqieer/fireemblem8-expansion/pull/232), and

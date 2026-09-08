@@ -448,7 +448,7 @@ def _runtime_library_paths(raw, existing):
             continue
         match = re.fullmatch(r"(?:[A-Za-z0-9_.+-]+ => )?(/[^ \t]+) \(0x[0-9a-f]+\)", row)
         if match is None or len(known) >= 64:
-            raise MakeProbeError("unresolved/malformed trusted Make runtime closure")
+            raise MakeProbeError("unresolved/malformed trusted runtime closure")
         path = match[1]
         if path not in known:
             result.append(path)
@@ -1617,10 +1617,18 @@ class ProbeSession:
             str(Path(path) / "specs")
             for path in searches["libraries"] | {install, str(Path(install).parent)}
         }
+        libc = {
+            str(_trusted_runtime_path(path, compiler=True))
+            for path in runtime if Path(path).name == "libc.so.6"
+        }
+        if len(libc) != 1:
+            raise MakeProbeError("dependency runtime requires one resolved libc image")
         profile = {
             "runtime_files": sorted(runtime),
             "runtime_directories": sorted(directories),
             "runtime_stat_probes": sorted(probes | {"/proc/self/exe"}),
+            "runtime_interpreter": str(_trusted_runtime_path(interpreter, compiler=True)),
+            "runtime_libc": libc.pop(),
         }
         self.budget.charge("control", len(encoded(profile)))
         return profile

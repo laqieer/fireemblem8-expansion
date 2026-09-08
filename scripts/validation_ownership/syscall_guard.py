@@ -196,6 +196,8 @@ class Process:
     producer_slot: int | None = None
     producer_event_written: bool = False
     exec_path: str | None = None
+    dependency_image: str | None = None
+    dependency_stop: tuple[int, int, int] | None = None
     path_context: tuple[str, int, str | None] | None = None
 
     def clone(self):
@@ -204,6 +206,7 @@ class Process:
             observer_ranges=self.observer_ranges, bootstrap=self.bootstrap,
             break_end=self.break_end, dispatch=self.dispatch, observer_ready=self.observer_ready,
             memory_group=self.memory_group, memory_limit=self.memory_limit,
+            dependency_image=self.dependency_image,
         )
 
     def close(self):
@@ -283,6 +286,17 @@ class Policy:
                 self.resolve(path) for path in dependency["runtime_stat_probes"]
             }
             self.dependency_loader_probes = {self.resolve(path) for path in self.loader_probes}
+            self.dependency_interpreter = self.resolve(dependency["runtime_interpreter"])
+            self.dependency_libc = self.resolve(dependency["runtime_libc"])
+            purpose_images = {
+                *dependency["executables"], self.dependency_interpreter, self.dependency_libc,
+            }
+            if not purpose_images <= self.dependency_files:
+                raise Violation("dependency purpose image is outside the resolved runtime")
+            self.dependency_image_ids = {
+                path: self.dependency_image_identity(Path(config["root"]) / path.lstrip("/"))
+                for path in purpose_images
+            }
         version = config["python_version"]
         self.runtime_probes = {
             "/usr/bin/pybuilddir.txt", "/usr/bin/Modules/Setup.local",
@@ -980,6 +994,85 @@ class Policy:
                 return
         raise Violation(f"uncaptured Make runtime access: {operation} {path}")
 
+    def dependency_image_identity(self, path):
+        self.charge_metadata(144)
+        try:
+            info = Path(path).stat()
+        except OSError as error:
+            raise Violation("dependency executable identity is unavailable") from error
+        if not stat.S_ISREG(info.st_mode):
+            raise Violation("dependency executable identity is not a regular image")
+        return info.st_dev, info.st_ino
+
+    def verify_dependency_image(self, pid, path):
+        expected = self.dependency_image_ids.get(path)
+        if expected is None or (
+            self.dependency_image_identity(Path(self.config["root"]) / path.lstrip("/")) != expected
+            or self.dependency_image_identity(f"/proc/{pid}/exe") != expected
+        ):
+            raise Violation("dependency executable differs from its verified image")
+
+    def dependency_negative_purpose(self, state, path, operation):
+        if state.dependency_stop is None or state.dependency_image not in self.config["dependency"]["executables"]:
+            raise Violation("dependency negative probe has no verified syscall context")
+        pid, number, ip = state.dependency_stop
+        if self.processes.get(pid) is not state or state.pidfd < 0 or state.kernel_call != number:
+            raise Violation("dependency negative probe is not owned by the stopped tracee")
+        self.reserve_observation("accessed", f"dependency-purpose:{pid}:{number}:{ip}:{operation}:{path}")
+        information = (ctypes.c_ubyte * 128)()
+        ptrace(0x420E, pid, len(information), ctypes.byref(information))
+        if (
+            information[0] != 1
+            or int.from_bytes(bytes(information[4:8]), "little") != 0xC000003E
+            or int.from_bytes(bytes(information[8:16]), "little") != ip
+            or int.from_bytes(bytes(information[24:32]), "little") != number
+            or ip < 2
+        ):
+            raise Violation("dependency negative probe lost its actual syscall-entry stop")
+        self.charge_metadata(2)
+        if memory(pid, ip - 2, 2) != b"\x0f\x05":
+            raise Violation("dependency negative probe has an unsupported syscall instruction")
+        self.verify_dependency_image(pid, state.dependency_image)
+        with open(f"/proc/{pid}/maps", "rb") as source:
+            data = source.read(SYSCALL_MEMORY_LIMIT + 1)
+        self.charge_metadata(len(data))
+        if len(data) > SYSCALL_MEMORY_LIMIT:
+            raise Violation("dependency syscall mapping exceeds the observation bound")
+        origin = None
+        for line in data.splitlines():
+            fields = line.split(None, 5)
+            if len(fields) < 5:
+                raise Violation("malformed dependency syscall mapping")
+            try:
+                start, end = (int(value, 16) for value in fields[0].split(b"-"))
+                major, minor = (int(value, 16) for value in fields[3].split(b":"))
+                inode = int(fields[4])
+            except ValueError as error:
+                raise Violation("malformed dependency syscall mapping identity") from error
+            if start <= ip - 2 < ip < end:
+                if fields[1] != b"r-xp" or inode <= 0 or origin is not None:
+                    raise Violation("dependency syscall origin is not one readonly executable image")
+                origin = os.makedev(major, minor), inode
+        if origin is None:
+            raise Violation("dependency syscall origin has no executable mapping")
+        for image in (self.dependency_interpreter, self.dependency_libc):
+            if self.dependency_image_identity(Path(self.config["root"]) / image.lstrip("/")) != self.dependency_image_ids[image]:
+                raise Violation("dependency purpose image changed after resolution")
+        loader = (
+            path in self.dependency_loader_probes and operation in {"read", "metadata"}
+            and origin == self.dependency_image_ids[self.dependency_interpreter]
+        )
+        driver = (
+            operation == "metadata"
+            and path in self.dependency_stat_probes | self.dependency_directories
+            and state.dependency_image == self.config["dependency"]["executables"][0]
+            and origin in {
+                self.dependency_image_ids[state.dependency_image],
+                self.dependency_image_ids[self.dependency_libc],
+            }
+        )
+        return loader or driver
+
     def dependency_runtime_access(self, state, path, operation):
         full = Path(self.config["root"]) / path.lstrip("/")
         try:
@@ -992,11 +1085,11 @@ class Policy:
             operation in {"read", "metadata"} and path in self.dependency_files
             and mode is not None and stat.S_ISREG(mode)
             or operation == "metadata" and path in self.dependency_directories
-            and (mode is None or stat.S_ISDIR(mode))
+            and mode is not None and stat.S_ISDIR(mode)
             or mode is None and (
-                operation == "metadata" and path in self.dependency_stat_probes
+                operation == "metadata" and path in self.dependency_stat_probes | self.dependency_directories
                 or operation in {"read", "metadata"} and path in self.dependency_loader_probes
-            )
+            ) and self.dependency_negative_purpose(state, path, operation)
         )
         if not allowed:
             raise Violation(f"undeclared dependency host {operation}: {path}")
@@ -1206,6 +1299,7 @@ class Policy:
         state.kernel_io = None
         state.metadata_pending = None
         state.path_context = None
+        state.dependency_stop = (pid, r.orig_rax, r.rip) if self.config.get("dependency") else None
         state.observations.clear()
         state.observation_needs_bytes = False
         trusted = self.observer(state, r)
@@ -1562,6 +1656,7 @@ class Policy:
             raise Violation("aggregate capsule storage budget exhausted")
 
     def leave(self, pid, state, r):
+        state.dependency_stop = None
         result = signed(r.rax)
         self.finish_metadata(pid, state, result)
         state.memory_reservation = 0
@@ -1772,6 +1867,9 @@ def supervise(config, drop_privileges):
             if config.get("dependency"):
                 if state.exec_path is None:
                     raise Violation("dependency exec has no admitted image")
+                policy.verify_dependency_image(stopped, state.exec_path)
+                state.dependency_image = state.exec_path
+                state.dependency_stop = None
                 policy.reserve_observation("accessed", "dependency-exec:" + str(len(policy.executed)) + state.exec_path)
                 policy.executed.append(state.exec_path)
                 state.exec_path = None

@@ -4538,6 +4538,31 @@ workflow or generated game data is needed.
     and explicit `--sysroot` negatives. This closes profile ambiguity; the
     observed default sysroot is empty, and the ordinary nonempty-sysroot
     controls do not establish another confined escape on that default.
+14. Read a real repository `before.h`, then use
+    `__has_include("/etc/ld.so.cache")` to select `present.h` or `absent.h`.
+    Where the host cache exists, ordinary GCC selects `present.h`; D must
+    reject the source probe instead of treating its bootstrap-view absence
+    as source evidence. Exercise the other negative loader-probe names too,
+    including ones genuinely absent on both sides. Restore the old
+    path/operation-only negative rule in an owned mutation and require that
+    the ordinary/confined branch mismatch reappears.
+15. Keep real loader `ENOENT` probes and driver specs/search metadata working.
+    Bind each exception to the actual executable and mapped syscall origin:
+    resolved interpreter for loader probes, verified driver/driver-or-libc
+    for driver metadata. Spoof a claimed executable, PID or instruction
+    pointer and require rejection. Changing only mapping pathname labels
+    must not change the result; invalid mapping identities must reject.
+16. After `before.h` has actually been consumed, read an admitted libc image
+    and retain ordinary-identical dependency results. Keep an explicit
+    `Command.directories` enumeration positive and its undeclared-content
+    negative. These are intended capabilities; do not close every runtime
+    grant after the first source access or reject all directory declarations.
+    Unexpected owned cache files/directories, source reads of specs or
+    directories, and unlisted neighboring names must remain denied.
+17. Return malformed trusted-runtime listings to the existing Make and
+    dependency callers. Both must fail terminally before candidate payload
+    execution with owned cleanup. A shared diagnostic is not proof of a new
+    source-authority defect.
 
 ### Expected result
 
@@ -4550,6 +4575,9 @@ permission, numeric cap or CI topology is broadened.
 Host access is decided against D's finite necessary runtime before either
 generic runtime prefix branch; other host preprocessing cannot become an
 unreported input or a falsely successful missing-header branch.
+Negative exceptions additionally require verified executable/mapping purpose
+at the actual stopped syscall, while late admitted runtime-file access and
+explicit directory capabilities remain valid.
 
 ### Negative control and retained evidence
 
@@ -4568,6 +4596,15 @@ union contained only `src/query.c`. A real `__has_include` query selected
 `quote/enabled.h` while omitting the host probe even from the `.d`.
 The host decision now rejects both; the owned mutation retains this original
 negative without changing host files or weakening generic compiler tests.
+
+The distinct remaining purpose defect at
+`b05f5c871fdce9ee9dbf31301c744dc46dad4595` accepted
+`query.o: query.c before.h absent.h` where ordinary GCC returned
+`query.o: query.c before.h present.h`. The kernel's cache `ENOENT` was real;
+the error was using loader absence as a source-level fact after `before.h`.
+The purpose correction rejects that source probe while preserving bootstrap
+negatives. Admitted runtime files after source reads and explicit directory
+declarations remain by design, not additional defects.
 
 ### Interactions and save compatibility
 

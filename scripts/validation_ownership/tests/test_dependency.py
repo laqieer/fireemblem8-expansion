@@ -6,6 +6,7 @@ import shlex
 import subprocess
 import unittest
 from dataclasses import replace
+from contextlib import contextmanager
 from pathlib import Path
 from unittest.mock import patch
 
@@ -283,6 +284,262 @@ class DependencyTests(unittest.TestCase):
         path = Path(result.stdout.decode("utf-8").strip())
         self.assertTrue(path.is_absolute())
         return path.resolve()
+
+    def purpose_fixture(self, host="/etc/ld.so.cache"):
+        self.fixture.add("before.h", "#define BEFORE_READ 1\n")
+        self.fixture.add("present.h", "#define PRESENT 1\n")
+        self.fixture.add("absent.h", "#define ABSENT 1\n")
+        self.fixture.add("query.c", (
+            '#include "before.h"\n#if __has_include("' + str(host) + '")\n'
+            '#include "present.h"\n#else\n#include "absent.h"\n#endif\n'
+        ))
+        return Command(
+            ("/usr/bin/cc", "-E", "-nostdinc", "-undef", "query.c", "-MM", "-MG", "-MT", "query.o"),
+            code=("before.h", "present.h", "absent.h"), sources=("query.c",),
+            outputs=("out/query.d",), dependency_only=True,
+        )
+
+    @contextmanager
+    def purpose_supervisor(self, body):
+        bootstrap = (
+            "import json,os,sys\nfrom pathlib import Path\n"
+            f"sys.path.insert(0,{str(make_probe.TRUSTED_ROOT)!r})\n"
+            "import syscall_guard as guard,sandbox_exec\n"
+            + body + "\nraise SystemExit(sandbox_exec.main())\n"
+        )
+        run = ProbeBudget.run
+        def instrument(budget, argv, **kwargs):
+            if len(argv) >= 2 and argv[-2] == str(make_probe.TRUSTED_ROOT / "sandbox_exec.py"):
+                if json.loads(Path(argv[-1]).read_bytes()).get("dependency"):
+                    argv = [*argv[:-2], "-c", bootstrap, argv[-1]]
+            return run(budget, argv, **kwargs)
+        with patch.object(ProbeBudget, "run", instrument):
+            yield
+
+    def test_negative_loader_queries_after_actual_source_reads_are_not_source_authority(self):
+        self.assertTrue(Path("/etc/ld.so.cache").is_file())
+        libc = self.compiler_path("-print-file-name=libc.so.6")
+        candidates = [
+            directory / "glibc-hwcaps" / level / "libc.so.6"
+            for directory in (libc.parent, Path("/usr/lib"), Path("/usr/lib64"))
+            for level in ("x86-64-v2", "x86-64-v3", "x86-64-v4")
+        ]
+        absent = [path for path in candidates if not path.exists()][:3]
+        self.assertEqual(len(absent), 3)
+        for path in (Path("/etc/ld.so.cache"), Path("/etc/ld.so.preload"), *absent):
+            with self.subTest(path=str(path)):
+                command = self.purpose_fixture(path)
+                ordinary = self.ordinary(command)
+                if path == Path("/etc/ld.so.cache"):
+                    self.assertIn(b"present.h", ordinary)
+                    self.assertNotIn(b"absent.h", ordinary)
+                reports = []
+                with self.fixture.session(seconds=45) as session:
+                    read = session.budget.read_bytes
+                    def capture(name, category):
+                        data = read(name, category)
+                        if name.parent == session.base and name.name.startswith("report-"):
+                            reports.append(json.loads(data))
+                        return data
+                    with patch.object(session.budget, "read_bytes", capture):
+                        with self.assertRaisesRegex(MakeProbeError, "undeclared dependency host"):
+                            session.command(command)
+                    self.assertIn("before.h", reports[-1]["code_consumed"])
+                    self.assertNotIn("present.h", reports[-1]["code_consumed"])
+                    self.assertNotIn("absent.h", reports[-1]["code_consumed"])
+                self.assert_clean(session)
+
+    def test_old_negative_purpose_mutation_reproduces_the_real_cache_mismatch(self):
+        command = self.purpose_fixture()
+        ordinary = self.ordinary(command)
+        self.assertIn(b"present.h", ordinary)
+        legacy = (
+            "def legacy_negative(self,state,path,operation):\n"
+            " return ((operation=='metadata' and path in self.dependency_stat_probes|self.dependency_directories)\n"
+            "  or (operation in ('read','metadata') and path in self.dependency_loader_probes))\n"
+            "guard.Policy.dependency_negative_purpose=legacy_negative\n"
+        )
+        with self.purpose_supervisor(legacy):
+            with self.fixture.session(seconds=45) as session:
+                result = session.command(command)
+                self.assertEqual(result.generated[0].data, b"query.o: query.c before.h absent.h\n")
+                self.assertNotEqual(result.generated[0].data, ordinary)
+                self.assertEqual(set(result.code_consumed), {"before.h", "absent.h"})
+                self.assertNotIn("/etc/ld.so.cache", {item[0] for item in result.input_identities})
+                self.assertEqual(result.executed, session.dependency_compiler)
+            self.assert_clean(session)
+        with self.fixture.session(seconds=45) as session:
+            with self.assertRaisesRegex(MakeProbeError, "undeclared dependency host"):
+                session.command(command)
+        self.assert_clean(session)
+
+    def test_real_loader_and_driver_negative_statuses_are_preserved(self):
+        command = self.purpose_fixture()
+        self.fixture.add("query.c", '#include "before.h"\n#include "present.h"\n')
+        observer = (
+            "purpose,leave=guard.Policy.dependency_negative_purpose,guard.Policy.leave\n"
+            "def observe(self,state,path,operation):\n"
+            " result=purpose(self,state,path,operation)\n"
+            " if result: state.negative_observed=(path,operation,state.dependency_image)\n"
+            " return result\n"
+            "def finish(self,pid,state,r):\n"
+            " observed=getattr(state,'negative_observed',None)\n"
+            " result=leave(self,pid,state,r)\n"
+            " if observed is not None:\n"
+            "  print('NEGATIVE_RUNTIME_STATUS='+json.dumps([*observed,guard.signed(r.rax)]),file=sys.stderr)\n"
+            "  state.negative_observed=None\n"
+            " return result\n"
+            "guard.Policy.dependency_negative_purpose=observe;guard.Policy.leave=finish\n"
+        )
+        with self.purpose_supervisor(observer):
+            with self.fixture.session(seconds=45) as session:
+                result = session.command(command)
+                self.assertEqual(result.generated[0].data, self.ordinary(command))
+                prefix = b"NEGATIVE_RUNTIME_STATUS="
+                statuses = [json.loads(line[len(prefix):]) for line in result.stderr.splitlines() if line.startswith(prefix)]
+                driver, frontend = session.dependency_compiler
+                self.assertIn(["/etc/ld.so.cache", "read", driver, -2], statuses)
+                self.assertIn(["/etc/ld.so.cache", "read", frontend, -2], statuses)
+                self.assertTrue(any(path.endswith("/specs") and operation == "metadata" and image == driver and status == -2
+                                    for path, operation, image, status in statuses))
+                self.assertLessEqual(session.observations_used, session.budget.limits.entries)
+                self.assertLessEqual(session.budget.bytes["control"], session.budget.limits.control_bytes)
+            self.assert_clean(session)
+
+    def test_mapped_origin_uses_kernel_identity_not_pathname_labels(self):
+        command = self.purpose_fixture()
+        self.fixture.add("query.c", '#include "before.h"\n#include "present.h"\n')
+        for wrong_identity in (False, True):
+            with self.subTest(wrong_identity=wrong_identity):
+                body = (
+                    "import io\noriginal_open=open\n"
+                    "def relabeled(name,*args,**kwargs):\n"
+                    " stream=original_open(name,*args,**kwargs)\n"
+                    " if str(name).startswith('/proc/') and str(name).endswith('/maps'):\n"
+                    "  with stream: data=stream.read(guard.SYSCALL_MEMORY_LIMIT+1)\n"
+                    "  lines=[]\n"
+                    "  for line in data.splitlines():\n"
+                    "   fields=line.split(None,5)\n"
+                    "   if len(fields)>5:\n"
+                    "    fields[5]=b'/a/claimed/path/that-is-not-an-authority'\n"
+                    + ("    fields[4]=b'0'\n" if wrong_identity else "")
+                    + "   lines.append(b' '.join(fields))\n"
+                    "  return io.BytesIO(b'\\n'.join(lines)+b'\\n')\n"
+                    " return stream\n"
+                    "guard.open=relabeled\n"
+                )
+                with self.purpose_supervisor(body):
+                    with self.fixture.session(seconds=45) as session:
+                        if wrong_identity:
+                            with self.assertRaisesRegex(MakeProbeError, "readonly executable image"):
+                                session.command(command)
+                        else:
+                            self.assertEqual(session.command(command).generated[0].data, self.ordinary(command))
+                    self.assert_clean(session)
+
+    def test_late_admitted_runtime_and_explicit_directory_capabilities_remain_valid(self):
+        libc = self.compiler_path("-print-file-name=libc.so.6")
+        command = replace(self.purpose_fixture(libc), directories=(".",))
+        observer = (
+            "original=guard.Policy.dependency_runtime_access\n"
+            "def observe(self,state,path,operation):\n"
+            " result=original(self,state,path,operation)\n"
+            f" if path=={str(libc)!r} and operation=='read' and 'before.h' in self.code_consumed:\n"
+            "  print('ACTUAL_LATE_RUNTIME_READ',file=sys.stderr)\n"
+            " return result\n"
+            "guard.Policy.dependency_runtime_access=observe\n"
+        )
+        with self.purpose_supervisor(observer):
+            with self.fixture.session(seconds=45) as session:
+                result = session.command(command)
+                self.assertEqual(result.generated[0].data, self.ordinary(command))
+                self.assertEqual(set(result.code_consumed), {"before.h", "present.h"})
+                self.assertIn(b"ACTUAL_LATE_RUNTIME_READ", result.stderr)
+            self.assert_clean(session)
+        self.fixture.add("data/one.h", "one")
+        with self.fixture.session(seconds=45) as session:
+            reader = Command(
+                ("/usr/bin/python3", "-c", "import os; print(' '.join(os.listdir('data')))"),
+                directories=("data",),
+            )
+            self.assertEqual(session.command(reader).stdout, b"one.h\n")
+            with self.assertRaisesRegex(MakeProbeError, "undeclared source"):
+                session.command(replace(reader, argv=("/usr/bin/python3", "-c", "print(open('data/one.h').read())")))
+        self.assert_clean(session)
+
+    def test_negative_purpose_requires_real_executable_and_kernel_entry_identity(self):
+        command = self.purpose_fixture()
+        for defect, change, expected in (
+            ("image", "state.dependency_image=self.config['dependency']['executables'][0]", "verified image"),
+            ("ip", "pid,n,ip=state.dependency_stop;state.dependency_stop=(pid,n,ip+2)", "actual syscall-entry"),
+            ("pid", "pid,n,ip=state.dependency_stop;state.dependency_stop=(pid+1,n,ip)", "owned by the stopped"),
+        ):
+            with self.subTest(defect=defect):
+                body = (
+                    "original=guard.Policy.dependency_negative_purpose\n"
+                    "def claimed(self,state,path,operation):\n"
+                    " if path=='/etc/ld.so.cache' and 'before.h' in self.code_consumed:\n"
+                    "  " + change + "\n"
+                    " return original(self,state,path,operation)\n"
+                    "guard.Policy.dependency_negative_purpose=claimed\n"
+                )
+                with self.purpose_supervisor(body):
+                    with self.fixture.session(seconds=45) as session:
+                        with self.assertRaisesRegex(MakeProbeError, expected):
+                            session.command(command)
+                    self.assert_clean(session)
+
+    def test_negative_runtime_unexpected_objects_and_source_neighbors_remain_denied(self):
+        command = self.purpose_fixture()
+        for directory in (False, True):
+            with self.subTest(unexpected_cache_directory=directory):
+                with self.fixture.session(seconds=45) as session:
+                    run = session._sandbox_run
+                    def unexpected(root, **kwargs):
+                        if kwargs.get("dependency"):
+                            (root / "etc").mkdir()
+                            cache = root / "etc/ld.so.cache"
+                            if directory:
+                                cache.mkdir()
+                            else:
+                                cache.write_bytes(b"owned unexpected cache")
+                        return run(root, **kwargs)
+                    with patch.object(session, "_sandbox_run", unexpected):
+                        with self.assertRaisesRegex(MakeProbeError, "undeclared dependency host"):
+                            session.command(command)
+                self.assert_clean(session)
+        install = self.compiler_path("-print-file-name=.")
+        for path in (install / "specs", install, Path("/etc/ld.so.cache.unlisted")):
+            with self.subTest(source_path=str(path)):
+                command = self.purpose_fixture(path)
+                with self.fixture.session(seconds=45) as session:
+                    with self.assertRaisesRegex(MakeProbeError, "undeclared dependency host"):
+                        session.command(command)
+                self.assert_clean(session)
+
+    def test_shared_runtime_listing_diagnostic_is_terminal_for_both_callers(self):
+        command = self.purpose_fixture(self.compiler_path("-print-file-name=libc.so.6"))
+        run = ProbeBudget.run
+        for caller in ("make", "dependency"):
+            with self.subTest(caller=caller):
+                capsules, corrupted = [], []
+                def malformed(budget, argv, **kwargs):
+                    if str(make_probe.TRUSTED_ROOT / "sandbox_exec.py") in argv:
+                        capsules.append(tuple(argv))
+                    result = run(budget, argv, **kwargs)
+                    if "--list" in argv and (argv[-1] == "/usr/bin/make") == (caller == "make"):
+                        corrupted.append(tuple(argv))
+                        return subprocess.CompletedProcess(argv, 0, b"not a trusted runtime listing\n", b"")
+                    return result
+                session = self.fixture.session(seconds=45)
+                with patch.object(ProbeBudget, "run", malformed):
+                    with self.assertRaisesRegex(MakeProbeError, "unresolved/malformed trusted runtime closure"):
+                        with session:
+                            session.command(command)
+                self.assertTrue(corrupted)
+                self.assertEqual(capsules, [])
+                self.assertTrue(session.budget.closed)
+                self.assert_clean(session)
 
     def test_host_header_and_has_include_cannot_escape_source_provenance(self):
         command = self.dependency()
