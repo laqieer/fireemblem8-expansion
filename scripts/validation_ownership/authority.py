@@ -447,17 +447,26 @@ class AuthorityLoader:
 class Snapshot:
     """An immutable in-memory execution view, not semantic owner identity."""
 
-    def __init__(self, loader: AuthorityLoader, budget: ProbeBudget):
+    def __init__(self, loader: AuthorityLoader, budget: ProbeBudget, *, reuse: Snapshot | None = None):
         if (
-            not isinstance(budget, ProbeBudget) or budget is not loader.budget
+            not isinstance(loader, AuthorityLoader)
+            or not isinstance(budget, ProbeBudget) or budget is not loader.budget
             or budget is not loader.entries.budget
         ):
             raise MakeProbeError("snapshot requires its authority's report budget")
         budget.remaining()
+        if reuse is not None and (
+            not isinstance(reuse, Snapshot) or reuse.budget is not budget
+            or reuse.loader.budget is not budget or reuse.loader.entries.budget is not budget
+            or reuse.loader.root != loader.root
+            or loader.revision is None or loader.entries.capture != (loader.root, loader.revision)
+        ):
+            raise MakeProbeError("snapshot reuse requires same-report repository capture authority")
         self.budget = budget
         self.loader = loader
         self.files = {}
         self.modes = {}
+        self.reused_paths = set()
         self.absent_paths = set()
         self.gitlink_roots = {
             name for name, entry in loader.entries.items()
@@ -472,6 +481,17 @@ class Snapshot:
                 entry for _, entry in sorted(loader.entries.items())
                 if entry.mode in {"100644", "100755"} and entry.object_type == "blob"
             ]
+            if reuse is not None and reuse.loader.revision is not None and (
+                reuse.loader.entries.capture == (loader.root, reuse.loader.revision)
+            ):
+                for entry in entries:
+                    budget.remaining()
+                    if reuse.loader.entries.get(entry.path) == entry and entry.path in reuse.files:
+                        if len(reuse.files[entry.path]) > budget.limits.file_bytes:
+                            raise MakeProbeError("reused immutable blob exceeds file bound")
+                        immutable[entry.path] = reuse.files[entry.path]
+                        self.reused_paths.add(entry.path)
+            entries = [entry for entry in entries if entry.path not in self.reused_paths]
             for directory in dict.fromkeys(entry.git_dir for entry in entries):
                 batch = [entry for entry in entries if entry.git_dir == directory]
                 result = budget.run(
@@ -519,7 +539,8 @@ class Snapshot:
             if entry.mode in {"100644", "100755"} and entry.object_type == "blob":
                 data = immutable[name] if loader.revision is not None else loader.read_blob(name, "execution snapshot")
                 budget.charge(
-                    "snapshot", len(data) + len(name.encode("utf-8")) + 64,
+                    "snapshot", (0 if name in self.reused_paths else len(data))
+                    + len(name.encode("utf-8")) + 64,
                 )
                 self.files[name] = data
                 self.modes[name] = entry.mode if loader.revision is not None else loader.live_modes[name]

@@ -11,6 +11,7 @@ import struct
 import subprocess
 import time
 import unittest
+import zlib
 from pathlib import Path
 from dataclasses import replace
 from unittest.mock import patch
@@ -39,6 +40,275 @@ class ProducerTests(unittest.TestCase):
             ("/usr/bin/python3", "/repo/producer.py"), code=("producer.py",), outputs=("generated.txt",),
         )
 
+    def test_original_linker_lookup_denies_instead_of_accepting_empty_output(self):
+        path = "scripts/arm_compressing_linker.py"
+        self.fixture.add(path, (foundation.ROOT / path).read_bytes(), mode="100755")
+        (self.root / path).chmod(0o755)
+        self.fixture.add("linker_script_banim.txt", (foundation.ROOT / "linker_script_banim.txt").read_bytes())
+        original = "./scripts/arm_compressing_linker.py -t linker_script_banim.txt -m"
+        self.fixture.add("original.mk", (
+            "INPUTS := $(shell " + original + ")\nall:\n\t@printf '%s\\n' '$(INPUTS)'\n"
+        ))
+        current = (foundation.ROOT / "Makefile").read_text()
+        line = next(line for line in current.splitlines() if line.startswith("$(BANIM_OBJECT):"))
+        expression = line.split(":", 1)[1].strip().removesuffix(" $(ASSET_BANIM_COMBINED_LINKER_SCRIPT)")
+        self.fixture.add("adapted.mk", "PYTHON := python3\nINPUTS := " + expression + "\nall:\n\t@printf '%s\\n' '$(INPUTS)'\n")
+        outputs = []
+        for makefile in ("original.mk", "adapted.mk"):
+            result = subprocess.run(
+                ["/usr/bin/make", "--no-print-directory", "-f", makefile, "all"],
+                cwd=self.root, env={**ENVIRONMENT, "TMPDIR": str(self.fixture.directory)},
+                capture_output=True, check=True, timeout=15,
+            )
+            outputs.append(result.stdout)
+        self.assertTrue(outputs[0])
+        self.assertEqual(outputs[0], outputs[1])
+        registration = Command(
+            ("/usr/bin/python3", "/repo/" + path, "-t", "linker_script_banim.txt", "-m"),
+            code=(path,), sources=("linker_script_banim.txt",),
+        )
+        with self.fixture.session(seconds=30) as session:
+            calls = []
+            class Original:
+                def __contains__(self, value):
+                    calls.append(value)
+                    return value == original
+                def __getitem__(self, value):
+                    return registration
+            with self.assertRaisesRegex(MakeProbeError, "Make source executable lookup denied by noexec view"):
+                session.make("all", makefile="original.mk", variables=("INPUTS",), commands=Original())
+            self.assertEqual(calls, [])
+            self.assertEqual(session.processes_used, 1)
+        self.fixture.assert_clean(session)
+        with self.fixture.session(seconds=30) as session:
+            observed = session.make(
+                "all", makefile="adapted.mk", variables=("INPUTS",),
+                commands={"python3 scripts/arm_compressing_linker.py -t linker_script_banim.txt -m": registration},
+            )
+            self.assertEqual(observed.semantics["domains"]["INPUTS"]["value"], outputs[0].decode().strip())
+            self.assertEqual(observed.stderr, b"")
+            self.assertEqual(len(observed.events), 1)
+            dynamic, = observed.semantics["dynamic_commands"]
+            self.assertEqual(dynamic["command"]["argv"], list(registration.argv))
+            self.assertEqual(dynamic["command"]["inputs"], session.snapshot.owners((path, "linker_script_banim.txt")))
+            self.assertEqual(dynamic["output_sha256"], hashlib.sha256(outputs[0]).hexdigest())
+        self.fixture.assert_clean(session)
+
+    def test_make_lookup_guard_preserves_ordinary_absence_nonexecutables_and_metadata(self):
+        self.fixture.add("not-executable.py", "print('must not execute')\n")
+        self.fixture.add("executable.py", "print('metadata only')\n", mode="100755")
+        self.fixture.add("reader.py", (
+            "import os\nprint(int(os.access('executable.py',os.X_OK)))\n"
+        ))
+        self.fixture.add("Makefile", (
+            "MISSING := $(shell ./missing-program)\n"
+            "NONEXEC := $(shell ./not-executable.py)\n"
+            "NAMES := $(wildcard *.py)\nall: ;\n"
+        ))
+        with self.fixture.session(seconds=30) as session:
+            observed = session.make("all", variables=("MISSING", "NONEXEC", "NAMES"))
+            self.assertEqual(observed.semantics["domains"]["MISSING"]["value"], "")
+            self.assertEqual(observed.semantics["domains"]["NONEXEC"]["value"], "")
+            self.assertEqual(set(observed.semantics["domains"]["NAMES"]["value"].split()), {
+                "executable.py", "not-executable.py", "reader.py",
+            })
+            command = Command(
+                ("/usr/bin/python3", "/repo/reader.py"), code=("reader.py",), sources=("executable.py",),
+            )
+            # A failed access is not successful source consumption.
+            with self.assertRaisesRegex(MakeProbeError, "declared/consumed"):
+                session.command(command)
+        self.fixture.assert_clean(session)
+        with self.fixture.session(seconds=30) as session:
+            command = Command(
+                ("/usr/bin/python3", "/repo/reader.py"), code=("reader.py", "executable.py"),
+            )
+            output = session.command(command)
+            self.assertEqual(output.stdout, b"0\n")
+            self.assertTrue(any(row[0] in {21, 269, 439} and row[6] == -errno.EACCES for row in output.metadata))
+            self.assertTrue(session._metadata_matches(output.metadata))
+        self.fixture.assert_clean(session)
+
+    def test_explicit_python_link_recipe_preserves_real_arm_outputs_and_failed_publish(self):
+        required = ("/usr/bin/arm-none-eabi-ld", "/usr/bin/arm-none-eabi-objcopy")
+        if not all(Path(path).is_file() for path in required):
+            self.skipTest("tiny ordinary linker equivalence requires the existing ARM binutils")
+        script = "scripts/arm_compressing_linker.py"
+        self.fixture.add(script, (foundation.ROOT / script).read_bytes(), mode="100755")
+        (self.root / script).chmod(0o755)
+        self.fixture.add("input.bin", b"owned linker input\0" * 4)
+        self.fixture.add("input.lnk", "input.bin\n")
+        lines = (foundation.ROOT / "Makefile").read_text().splitlines()
+        index = next(index for index, line in enumerate(lines) if line.startswith("$(BANIM_OBJECT):"))
+        recipe = lines[index + 1]
+        control = recipe.replace("$(PYTHON) scripts/arm_compressing_linker.py", "./scripts/arm_compressing_linker.py", 1)
+        self.assertNotEqual(recipe, control)
+        prelude = (
+            "PYTHON := /usr/bin/python3\nLD := /usr/bin/arm-none-eabi-ld\n"
+            "OBJCOPY := /usr/bin/arm-none-eabi-objcopy\n"
+            "ASSET_BANIM_COMBINED_LINKER_SCRIPT := input.lnk\n"
+            "input.bin input.lnk: ;\n"
+            "result.o: input.bin input.lnk\n"
+        )
+        outputs, cleanup_states = [], []
+        environment = {**ENVIRONMENT, "TMPDIR": str(self.fixture.directory), "PYTHONDONTWRITEBYTECODE": "1"}
+        def collect_residue():
+            paths = sorted(self.root.glob(".result.o.*"))
+            result = [(path.suffix, path.read_bytes()) for path in paths]
+            for path in paths:
+                path.unlink()
+            return result
+        for name, command in (("control.mk", control), ("adapted.mk", recipe)):
+            self.fixture.add(name, prelude + command + "\n")
+            result = subprocess.run(
+                ["/usr/bin/make", "--no-print-directory", "-B", "-f", name, "result.o"],
+                cwd=self.root, env=environment, capture_output=True, timeout=15,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            outputs.append(((self.root / "result.o").read_bytes(), (self.root / "result.o.sym.o").read_bytes()))
+            cleanup_states.append(collect_residue())
+            self.assertFalse((self.root / "result.o.previous").exists())
+            self.assertFalse((self.root / "result.o.sym.o.previous").exists())
+        self.assertTrue(all(output.startswith(b"\x7fELF") for output in outputs[0]))
+        self.assertEqual(outputs[0], outputs[1])
+        self.assertEqual(cleanup_states[0], cleanup_states[1])
+        self.fixture.add("input.lnk", "missing.bin\n")
+        failures = []
+        for name in ("control.mk", "adapted.mk"):
+            result = subprocess.run(
+                ["/usr/bin/make", "--no-print-directory", "-B", "-f", name, "result.o"],
+                cwd=self.root, env=environment, capture_output=True, timeout=15,
+            )
+            self.assertNotEqual(result.returncode, 0)
+            failures.append((result.returncode, collect_residue()))
+            self.assertEqual(
+                ((self.root / "result.o").read_bytes(), (self.root / "result.o.sym.o").read_bytes()), outputs[0],
+            )
+            self.assertFalse((self.root / "result.o.previous").exists())
+            self.assertFalse((self.root / "result.o.sym.o.previous").exists())
+        self.assertEqual(failures[0], failures[1])
+
+    @staticmethod
+    def two_color_png():
+        def chunk(name, data):
+            return struct.pack(">I", len(data)) + name + data + struct.pack(">I", zlib.crc32(name + data))
+        pixels = b"".join(b"\0" + bytes((x + y) % 2 for x in range(8)) for y in range(8))
+        return (
+            b"\x89PNG\r\n\x1a\n"
+            + chunk(b"IHDR", struct.pack(">IIBBBBB", 8, 8, 8, 3, 0, 0, 0))
+            + chunk(b"PLTE", b"\0\0\0\xff\xff\xff")
+            + chunk(b"IDAT", zlib.compress(pixels)) + chunk(b"IEND", b"")
+        )
+
+    def test_source_authored_gbagfx_family_preserves_argv_bytes_status_and_metadata(self):
+        source_root = foundation.ROOT / "tools/gbagfx"
+        for path in source_root.iterdir():
+            if path.suffix in {".c", ".h"} or path.name == "Makefile":
+                self.fixture.add("tools/gbagfx/" + path.name, path.read_bytes())
+        built = subprocess.run(
+            ["/usr/bin/make", "--no-print-directory", "-C", "tools/gbagfx"], cwd=self.root,
+            env={**ENVIRONMENT, "TMPDIR": str(self.fixture.directory)},
+            capture_output=True, timeout=45,
+        )
+        self.assertEqual(built.returncode, 0, built.stderr)
+        recorder = self.fixture.directory / "record-argv.py"
+        recorded = self.fixture.directory / "argv.json"
+        recorder.write_text(
+            "import json,os,sys\nfrom pathlib import Path\n"
+            f"Path({str(recorded)!r}).write_text(json.dumps(sys.argv[1:]))\n"
+            "os.execv(sys.argv[1],sys.argv[1:])\n"
+        )
+        lines = (foundation.ROOT / "Makefile").read_text().splitlines()
+        rules = []
+        for index, line in enumerate(lines):
+            if line.startswith("%") and ";" in line and any(
+                token in line for token in ("$(GBAGFX)", "$(PAL2GBAPAL)")
+            ):
+                rules.append(line)
+            elif line.startswith("\t$(GBAGFX) "):
+                rules.append(lines[index - 1] + "\n" + line)
+        self.assertEqual(len(rules), 9)
+        real_image = "graphics/banim/banim_lorm_sp1_sheet_0.png"
+        cases = {
+            "%.1bpp:": ("tile.1bpp", "tile.png", self.two_color_png(), []),
+            "%.4bpp:": (real_image.removesuffix(".png") + ".4bpp", real_image,
+                        (foundation.ROOT / real_image).read_bytes(), []),
+            "%.8bpp:": ("tile.8bpp", "tile.png", self.two_color_png(), []),
+            "%.gbapal: %.pal": ("tile.gbapal", "tile.pal", b"JASC-PAL\r\n0100\r\n2\r\n0 0 0\r\n255 255 255\r\n", []),
+            "%.gbapal: %.png": ("tile.gbapal", "tile.png", self.two_color_png(), []),
+            "%.lz: %": ("sample.bin.lz", "sample.bin", b"actual compression input\0"*64, ["-mindist", "2"]),
+            "fe6sio_payload.bin.lz:": ("fe6sio_payload.bin.lz", "mgfembp/mgfembp.bin", b"owned raw input"*64, ["-mindist", "1"]),
+            "%.rl:": ("sample.bin.rl", "sample.bin", b"repeated input\0"*64, []),
+            "%.lz:$(MAP_LAYOUT_SUBDIR)": ("layout.lz", "maps/layout.bin", b"owned map input\0"*64, []),
+        }
+        expected_outputs = {}
+        for index, rule in enumerate(rules):
+            key, = [key for key in cases if rule.startswith(key)]
+            target, source, data, flags = cases[key]
+            self.fixture.add(source, data)
+            current = f"rule-{index}.mk"
+            control = f"control-{index}.mk"
+            prelude = "GBAGFX := tools/gbagfx/gbagfx\nPAL2GBAPAL := $(GBAGFX)\nMAP_LAYOUT_SUBDIR := maps\nLZ_FLAGS := -mindist 2\n"
+            self.fixture.add(current, prelude + rule + "\n")
+            self.fixture.add(control, prelude + rule.removesuffix(";") + "\n")
+            outputs, arguments = [], []
+            for makefile in (control, current):
+                (self.root / target).unlink(missing_ok=True)
+                result = subprocess.run(
+                    ["/usr/bin/make", "--no-print-directory", "-f", makefile, target,
+                     f"GBAGFX=/usr/bin/python3 {recorder} tools/gbagfx/gbagfx"],
+                    cwd=self.root, env=ENVIRONMENT, capture_output=True, timeout=15,
+                )
+                self.assertEqual(result.returncode, 0, (rule, result.stderr))
+                outputs.append((self.root / target).read_bytes())
+                arguments.append(json.loads(recorded.read_bytes()))
+            self.assertTrue(outputs[0])
+            self.assertEqual(outputs[0], outputs[1])
+            self.assertEqual(arguments, [["tools/gbagfx/gbagfx", source, target, *flags]]*2)
+            expected_outputs[target] = outputs[1]
+            (self.root / target).unlink()
+            (self.root / target).mkdir()
+            rejected = []
+            for makefile in (control, current):
+                result = subprocess.run(
+                    ["/usr/bin/make", "--no-print-directory", "-B", "-f", makefile, target],
+                    cwd=self.root, env=ENVIRONMENT, capture_output=True, timeout=15,
+                )
+                self.assertNotEqual(result.returncode, 0, rule)
+                rejected.append(result.returncode)
+                self.assertTrue((self.root / target).is_dir())
+                self.assertEqual(list((self.root / target).iterdir()), [])
+            self.assertEqual(rejected[0], rejected[1])
+            (self.root / target).rmdir()
+            if source.endswith(".png"):
+                original = (self.root / source).read_bytes()
+                (self.root / source).write_bytes(b"invalid PNG")
+                failed = []
+                for makefile in (control, current):
+                    result = subprocess.run(
+                        ["/usr/bin/make", "--no-print-directory", "-f", makefile, target],
+                        cwd=self.root, env=ENVIRONMENT, capture_output=True, timeout=15,
+                    )
+                    self.assertNotEqual(result.returncode, 0, rule)
+                    failed.append((result.returncode, (self.root / target).exists()))
+                    (self.root / target).unlink(missing_ok=True)
+                self.assertEqual(failed[0], failed[1])
+                (self.root / source).write_bytes(original)
+        with self.fixture.session(seconds=60) as session:
+            for index, rule in enumerate(rules):
+                key, = [key for key in cases if rule.startswith(key)]
+                target, source, _, _ = cases[key]
+                observed = session.make(target, makefile=f"rule-{index}.mk")
+                self.assertEqual(observed.events, ())
+                self.assertEqual(observed.semantics["dynamic_commands"], [])
+                self.assertEqual(observed.semantics["files"][0]["prerequisites"], [
+                    {"name": source, "order_only": False},
+                ])
+                self.assertFalse((session.tree / target).exists())
+                self.assertEqual(observed.semantics["files"][0]["recipe"].strip().rstrip(";"),
+                                 rule.split(";", 1)[1].strip().rstrip(";") if "\n" not in rule
+                                 else rule.split("\n", 1)[1].strip().rstrip(";"))
+        self.fixture.assert_clean(session)
     def capture_reports(self, session, reports):
         read = session.budget.read_bytes
         def capture(path, category):
@@ -229,6 +499,142 @@ class ProducerTests(unittest.TestCase):
                         if "/" in path:
                             self.assertFalse((session.tree / path).parent.exists())
                     self.assertEqual(results[0].semantic_digest, results[1].semantic_digest)
+                self.fixture.assert_clean(session)
+
+    def test_immutable_views_isolate_cache_native_files_and_generated_make_outputs(self):
+                names, source_command, producer = self.include_fixture("generated/vars.mk")
+                self.fixture.add("reader.py", "print(open('choice.txt').read())\n")
+                self.fixture.add("native.c", '#include <stdio.h>\nint main(void) { puts("observed"); }\n')
+                self.fixture.add("stable.mk", "NATIVE := $(shell tools/native;)\nstable: ;\n")
+                budget = foundation.ProbeBudget()
+                self.fixture.add("choice.txt", "base")
+                base = self.fixture.capture_view(budget)
+                self.fixture.add("choice.txt", "current")
+                current = self.fixture.capture_view(budget)
+                reader = Command(
+                    ("/usr/bin/python3", "/repo/reader.py"), code=("reader.py",), sources=("choice.txt",),
+                )
+                def observe(session, tool, value):
+                    stable = session.make("stable", makefile="stable.mk", variables=("NATIVE",), commands={
+                        "tools/native;": Command(("/native/tool",), native_tool=tool),
+                    })
+                    generated = session.make("all", variables=names, commands={source_command: producer})
+                    self.assertEqual(generated.semantics["domains"]["SELECTED"]["value"], value)
+                    self.assertEqual(generated.semantics["domains"]["MAKE_RESTARTS"]["value"], "1")
+                    self.assertEqual(generated.semantics["files"][0]["prerequisites"], [
+                        {"name": value, "order_only": False},
+                    ])
+                    self.assertFalse((session.tree / "generated").exists())
+                    self.assertFalse(session.published_sources)
+                    self.assertFalse(session.published_versions)
+                    self.assertFalse(session.generated_paths)
+                    return stable, generated
+                with foundation.ProbeSession(current, scratch_root=self.fixture.scratch, budget=budget) as session:
+                    original = session.tree, session.cache, session.mappings, session.native_tools
+                    deadline = budget.deadline
+                    current_result = session.command(reader)
+                    current_tool = session.compile_native(("native.c",))
+                    current_stable, current_generated = observe(session, current_tool, "current")
+                    before = budget.runs, session.files_created, session.processes_used, dict(budget.bytes)
+                    with session.select_view(base):
+                        self.assertFalse(session.cache)
+                        self.assertFalse(session.native_tools)
+                        self.assertEqual(session.command(reader).stdout, b"base\n")
+                        base_tool = session.compile_native(("native.c",))
+                        self.assertEqual(base_tool.digest, current_tool.digest)
+                        self.assertNotEqual(base_tool.path, current_tool.path)
+                        base_stable, base_generated = observe(session, base_tool, "base")
+                        self.assertEqual(base_stable.semantic_digest, current_stable.semantic_digest)
+                        self.assertNotEqual(base_stable.execution_digest, current_stable.execution_digest)
+                        self.assertNotEqual(base_generated.semantic_digest, current_generated.semantic_digest)
+                        self.assertFalse((original[0] / "generated").exists())
+                        self.assertGreater(budget.runs, before[0])
+                        self.assertGreater(session.files_created, before[1])
+                        self.assertGreater(session.processes_used, before[2])
+                        self.assertTrue(all(budget.bytes.get(key, 0) >= value for key, value in before[3].items()))
+                    self.assertEqual((session.tree, session.cache, session.mappings, session.native_tools), original)
+                    self.assertEqual(budget.deadline, deadline)
+                    self.assertFalse(base_tool.path.exists())
+                    self.assertTrue(current_tool.path.exists())
+                    self.assertEqual(session.command(reader).stdout, current_result.stdout)
+                    self.assertEqual(session.native(current_tool).stdout, b"observed\n")
+                    with self.assertRaisesRegex(MakeProbeError, "not issued"):
+                        session.command(Command(("/native/tool",), native_tool=base_tool))
+                self.fixture.assert_clean(session)
+
+    def test_explicit_enumeration_tracks_selected_and_generated_views_without_extra_reads(self):
+                self.fixture.add("data/base.txt", "base")
+                self.fixture.add("reader.py", "import os\nprint(' '.join(sorted(os.listdir('data'))))\n")
+                self.fixture.add("producer.py", (
+                    "import os\nos.mkdir('/work/data')\n"
+                    "open('/work/data/generated.txt','w').write('generated')\n"
+                    "open('/work/trigger.mk','w').write('VALUE := $(shell python3 reader.py)\\n')\n"
+                ))
+                self.fixture.add("Makefile", "include trigger.mk\ntrigger.mk:\n\t@python3 producer.py\nall: ;\n")
+                budget = foundation.ProbeBudget()
+                base = self.fixture.capture_view(budget)
+                (self.root / "data/base.txt").unlink()
+                self.fixture.entries.pop("data/base.txt")
+                self.fixture.add("data/current.txt", "current")
+                current = self.fixture.capture_view(budget)
+                reader = Command(
+                    ("/usr/bin/python3", "/repo/reader.py"), code=("reader.py",), directories=("data",),
+                )
+                producer = Command(
+                    ("/usr/bin/python3", "/repo/producer.py"), code=("producer.py",),
+                    outputs=("trigger.mk", "data/generated.txt"),
+                )
+                with foundation.ProbeSession(current, scratch_root=self.fixture.scratch, budget=budget) as session:
+                    current_tree, current_cache = session.tree, session.cache
+                    first = session.command(reader)
+                    self.assertEqual(first.stdout, b"current.txt\n")
+                    self.assertEqual(first.consumed, ())
+                    with session.select_view(base):
+                        self.assertEqual(session.command(reader).stdout, b"base.txt\n")
+                        before = session.observations_used
+                        observed = session.make("all", variables=("VALUE",), commands={
+                            "python3 reader.py": reader, "python3 producer.py": producer,
+                        })
+                        self.assertEqual(observed.semantics["domains"]["VALUE"]["value"], "base.txt generated.txt")
+                        self.assertGreater(session.observations_used, before)
+                        self.assertFalse((current_tree / "data/generated.txt").exists())
+                        self.assertFalse((session.tree / "data/generated.txt").exists())
+                    self.assertIs(session.tree, current_tree)
+                    self.assertIs(session.cache, current_cache)
+                    self.assertEqual(session.command(reader).stdout, b"current.txt\n")
+                    observed = session.make("all", variables=("VALUE",), commands={
+                        "python3 reader.py": reader, "python3 producer.py": producer,
+                    })
+                    self.assertEqual(observed.semantics["domains"]["VALUE"]["value"], "current.txt generated.txt")
+                    self.assertFalse((session.tree / "data/generated.txt").exists())
+                    self.assertFalse(session.published_sources)
+                self.fixture.assert_clean(session)
+
+    def test_view_selection_cannot_replace_a_live_publication_after_native_exit(self):
+                _, command, producer = self.include_fixture()
+                budget = foundation.ProbeBudget()
+                loader = self.fixture.capture_view(budget)
+                blocked = []
+                with foundation.ProbeSession(loader, scratch_root=self.fixture.scratch, budget=budget) as session:
+                    original = session._sandbox_run
+                    tree = session.tree
+                    def completed(root, **kwargs):
+                        result = original(root, **kwargs)
+                        if kwargs["mode"] == "make":
+                            self.assertFalse(budget.children)
+                            self.assertEqual(session.pending_commands, 0)
+                            self.assertIn("generated.mk", session.published_sources)
+                            with self.assertRaisesRegex(MakeProbeError, "active report execution"):
+                                with session.select_view(loader):
+                                    self.fail("replaced an active publication view")
+                            self.assertIs(session.tree, tree)
+                            blocked.append(True)
+                        return result
+                    with patch.object(session, "_sandbox_run", completed):
+                        observed = session.make("all", variables=("SELECTED",), commands={command: producer})
+                    self.assertEqual(observed.semantics["domains"]["SELECTED"]["value"], "observed")
+                    self.assertEqual(blocked, [True])
+                    self.assertFalse(session.published_sources)
                 self.fixture.assert_clean(session)
 
     def test_native_registration_rejects_missing_forged_foreign_wrong_argv_and_changed_tools(self):

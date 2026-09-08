@@ -41,18 +41,28 @@ producer = Command(
 
 The tool still executes only in a channel-free native capsule, never in Make.
 Changed/foreign handles, unsupported argv, incomplete source consumption and
-invalid output declarations reject. There is no V/R API or implicit runtime
-input grant in this extension. D's
+invalid output declarations reject. The producer extension grants no optional
+runtime inputs or dependency-compiler authority. The independently merged view
+selector is exercised with P below. D's separately allocated
 [dependency-only compiler command](ownership-probe-dependencies.md) reuses this
-same output/publication contract.
+same output/publication contract without requiring that selector.
 
 Registration is applied at actual native dispatch; it does not change Make's
-executable lookup. A missing direct recipe executable such as `tools/native`
-can fail with `ENOENT` before any producer request. The original shell-dispatched
-form `tools/native;` can reach the interceptor, but the framework does not
-append that syntax, synthesize executable metadata, or install the native image
-into Make. An actual consumer needing an unresolved direct executable remains
-a precise unsupported case until it has an accepted ordinary-Make adaptation.
+executable lookup. The repository's linker discovery and link recipe explicitly
+name `$(PYTHON)`. Its related gbagfx/PAL2GBAPAL recipes explicitly use shell
+dispatch. These are source-authored adaptations: ordinary program arguments,
+output bytes, error status and cleanup behavior remain covered by real
+controls. The probe never appends syntax, synthesizes executable metadata or
+installs a native image into Make. Graphics recipes remain metadata-only in
+the report; their ordinary build outputs are not claimed as probe-produced.
+
+The original direct Python entry demonstrated a different failure from a
+missing program: Make successfully statted an executable source, received
+`EACCES` for `X_OK` from the noexec view, then accepted empty `$(shell)` output.
+That exact failed Make-mode executable lookup now terminates the probe through
+the existing policy error path. Ordinary absence, nonexecutable files and
+command/helper metadata probes are not blanket-rejected. Missing direct
+executables still do not acquire authority merely by appearing in a registry.
 
 ## One live native execution
 
@@ -241,15 +251,21 @@ not evidence of correctness. P retains its native registration, publication,
 remake, generated-context and resource/control cases under this live model.
 The old speculative-execution assertions are replaced by actual unreachable-
 branch nonexecution. Cache reuse after publication/cleanup is conditional on
-all observations, not on restoring old directory names alone. The CURRENT/
-BASE portions of shared V/P cases remain allocated to V and combined-extension
-integration; this module does not add `select_view` or storage-reuse APIs.
+all observations, not on restoring old directory names alone. The merged V
+layer supplies CURRENT/BASE selection and storage reuse. Both
+original shared V/P combinations are exercised with one budget, restored
+per-view caches/native handles, isolated generated visibility and charged
+metadata revalidation. A view cannot be switched while a Make publication
+scope is active, even after its last native process exits.
 
-Full P acceptance remains separate from implementation checkpoints and from
-the unresolved direct-executable case above. No broad current/BASE/domain
-graph, public #180 completion or raised-budget diagnostic is claimed.
+Full P acceptance remains separate from implementation checkpoints. The
+identified original direct consumers have explicit source adaptations; this
+does not grant arbitrary unadapted executables or unrestricted same-directory
+read-own-publication. No broad current/BASE/domain graph, public #180 completion
+or raised-budget diagnostic is claimed.
 
-P depends on #206. V/#226 and R/#227 are independent core children; D/#228
-depends on P, not V/R. No gameplay, save/config, locale, generated game content,
+P depends on #206 and composes with the merged V/#226 implementation from
+PR #230. R/#227 remains a separate core extension; D/#228 depends on P, not V/R.
+No gameplay, save/config, locale, generated game content,
 modern/archival profile, package, privilege or Build-job change is introduced.
 Main owns publication, independent review and all remote delivery gates.

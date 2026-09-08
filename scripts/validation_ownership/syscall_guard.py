@@ -1114,6 +1114,15 @@ class Policy:
             )
             self.check(state, path, "metadata", observer=trusted)
             state.observation_needs_bytes = n in {89, 267}
+            # Make can otherwise turn the noexec mount's X_OK denial into
+            # successful empty $(shell) output before any dispatch is observed.
+            if (
+                state.role == "make" and state.observer_ready and path.startswith("/repo/")
+                and n in {21, 269, 439} and ((b if n == 21 else c) & 0xFFFFFFFF) == os.X_OK
+            ):
+                mode = self.source_mode(path)
+                if mode is not None and stat.S_ISREG(mode) and mode & 0o111:
+                    state.pending = ("make-source-exec", path)
             self.begin_metadata(pid, state, r, path)
         elif n in {5, 138}:  # fstat, fstatfs
             path = self.check_fd(state, a, "metadata", r)
@@ -1382,9 +1391,11 @@ class Policy:
         pending, state.pending = state.pending, None
         if r.orig_rax == 12 and result > 0:
             state.break_end = result
-        if result < 0:
-            return
         operation, value = pending if pending is not None else (None, None)
+        if result < 0:
+            if operation == "make-source-exec" and result == -errno.EACCES:
+                raise Violation(f"Make source executable lookup denied by noexec view: {value}")
+            return
         if operation in {"open", "dup"}:
             state.fds[result] = value
         elif operation == "close":

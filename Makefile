@@ -593,12 +593,14 @@ include release.mk
 %.pal: ;
 %.aif: ;
 
-%.1bpp: %.png  ; $(GBAGFX) $< $@
-%.4bpp: %.png  ; $(GBAGFX) $< $@
-%.8bpp: %.png  ; $(GBAGFX) $< $@
-%.gbapal: %.pal ; $(PAL2GBAPAL) $< $@
-%.gbapal: %.png ; $(GBAGFX) $< $@
-%.lz: % ; $(GBAGFX) $< $@ $(LZ_FLAGS)
+# Explicit shell dispatch preserves ordinary argv/status and lets metadata-only
+# Make observers reach dispatch without installing executable build products.
+%.1bpp: %.png  ; $(GBAGFX) $< $@;
+%.4bpp: %.png  ; $(GBAGFX) $< $@;
+%.8bpp: %.png  ; $(GBAGFX) $< $@;
+%.gbapal: %.pal ; $(PAL2GBAPAL) $< $@;
+%.gbapal: %.png ; $(GBAGFX) $< $@;
+%.lz: % ; $(GBAGFX) $< $@ $(LZ_FLAGS);
 # These DemonLight sprite images were compressed in the original ROM with a
 # minimum LZ match distance of 3 (gbagfx defaults to 2). Reproduce byte-identically.
 graphics/banim/dragonfx/Img_DemonLightSprites_087A5BA4.4bpp.lz: LZ_FLAGS := -mindist 3
@@ -622,13 +624,13 @@ mgfembp/mgfembp.bin: mgfembp/tools/agbcc/bin/agbcc FORCE
 	$(MAKE) -C mgfembp CPP=cpp PREFIX="$(PREFIX)" mgfembp.bin
 
 fe6sio_payload.bin.lz: mgfembp/mgfembp.bin
-	$(GBAGFX) $< $@ -mindist 1
+	$(GBAGFX) $< $@ -mindist 1;
 
 FORCE:
 .PHONY: FORCE
 # Titlescreen dragon-foreground TSA was compressed with minimum LZ match distance 1.
 graphics/titlescreen/title_dragon_foreground.map.bin.lz: LZ_FLAGS := -mindist 1
-%.rl: % ; $(GBAGFX) $< $@
+%.rl: % ; $(GBAGFX) $< $@;
 %.fk: % ; ./scripts/compressor.py $< fk
 %.bin: %.mar  ; $(MARTOMAP)  $< $@
 sound/%.bin: sound/%.aif ; $(AIF2PCM) $< $@
@@ -650,8 +652,8 @@ sound/%.bin: sound/%.aif ; $(AIF2PCM) $< $@
 
 # Battle Animation Recipes
 
-$(BANIM_OBJECT): $(shell ./scripts/arm_compressing_linker.py -t linker_script_banim.txt -m) $(ASSET_BANIM_COMBINED_LINKER_SCRIPT)
-	./scripts/arm_compressing_linker.py -o $@ -t $(ASSET_BANIM_COMBINED_LINKER_SCRIPT) -b 0x8c02000 -l $(LD) --objcopy $(OBJCOPY) -c ./scripts/compressor.py
+$(BANIM_OBJECT): $(shell $(PYTHON) scripts/arm_compressing_linker.py -t linker_script_banim.txt -m) $(ASSET_BANIM_COMBINED_LINKER_SCRIPT)
+	$(PYTHON) scripts/arm_compressing_linker.py -o $@ -t $(ASSET_BANIM_COMBINED_LINKER_SCRIPT) -b 0x8c02000 -l $(LD) --objcopy $(OBJCOPY) -c ./scripts/compressor.py
 
 %_modes.bin: %_motion.o
 	$(OBJCOPY) -O binary -j .data.modes $< $@
@@ -874,7 +876,7 @@ else
 	$(SED) '/.section	.debug_line/i\.align 2, 0' $*.s
 endif
 	$(AS) $(ASFLAGS) $*.s -o $@
-%.lz:$(MAP_LAYOUT_SUBDIR)/%.bin ; $(GBAGFX) $< $@
+%.lz:$(MAP_LAYOUT_SUBDIR)/%.bin ; $(GBAGFX) $< $@;
 
 # Don't delete intermediate files
 .SECONDARY:
