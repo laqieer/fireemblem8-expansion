@@ -128,8 +128,9 @@ query.o: ;
 P publishes the validated `.d` only after the actual compiler exits
 successfully. Make then reads it and performs its own restart. Generated
 headers may be published first in that same live Make invocation; this is not
-a nested `session.make()` with generated outputs. P's separate nested
-publication restriction remains intact.
+a nested `session.make()` with generated outputs. Nested publication lifetime,
+source admission and vfork parking remain P-owned mechanisms, not additional
+requirements or privately duplicated fixes in D's standalone contract.
 
 Every output-producing dispatch executes genuinely, including repeated
 identical registrations. Compatible pure observations still use the existing
@@ -146,6 +147,10 @@ Run the focused source-only case:
 ```sh
 python3 -m unittest scripts.validation_ownership.tests.test_dependency -v
 ```
+
+The existing native CI owner includes this suite only in full Build mode.
+Metadata-only and review-first preflight runs do not provide native test or
+full Build evidence.
 
 The indexed human procedure is
 [`TC-WORKFLOW-PROBE-DEPENDENCY-001`](test-cases/workflow-governance.md#tc-workflow-probe-dependency-001-observe-real-confined-compiler-dependencies).

@@ -472,6 +472,10 @@ class ProbeSession:
         self.mappings = {}
         self.native_tools = {}
         self.published_sources = {}
+        self.published_versions = {}
+        self.publication_serial = 0
+        self.generated_paths = set()
+        self.generated_directories = set()
         self.parked_capsules = []
         self.memory_peak = 0
         self.make_depth = 0
@@ -533,6 +537,9 @@ class ProbeSession:
             self.mappings.clear()
             self.native_tools.clear()
             self.published_sources.clear()
+            self.published_versions.clear()
+            self.generated_paths.clear()
+            self.generated_directories.clear()
             self.parked_capsules.clear()
             self.make_runtime = ()
             self.dependency_compiler = None
@@ -645,6 +652,15 @@ class ProbeSession:
             result.append((name, f"{stat.S_IFREG | item.mode:06o}", hashlib.sha256(item.data).hexdigest()))
         return sorted(result)
 
+    def _publication_records(self, since=0):
+        result = []
+        for name, (owner, serial) in sorted(self.published_versions.items()):
+            self.budget.remaining()
+            if serial > since:
+                item = self.published_sources[name]
+                result.append([name, owner, item.mode, len(item.data), hashlib.sha256(item.data).hexdigest()])
+        return result
+
     def _new_root(self, name, *, make=False):
         root = self.base / name
         root.mkdir()
@@ -734,6 +750,9 @@ class ProbeSession:
                 raise MakeProbeError("live producer requests require native Make")
             config["producer_scope"] = self.base.name + "/" + root.name
             config["reserved_paths"] = list(self.loader.entries)
+            config["publication_limit"] = self.budget.limits.created_files
+            if self.published_sources:
+                config["published"] = self._publication_records()
             config["pending_limit"] = self.budget.limits.pending - sum(
                 item["pending"] for item in self.parked_capsules
             )
@@ -1362,7 +1381,7 @@ class ProbeSession:
         if not TARGET.fullmatch(target) or target.startswith(("-", "/")) or ".." in target.split("/"):
             raise MakeProbeError("invalid requested Make target")
         relative_path(makefile)
-        if makefile not in self.snapshot.files:
+        if makefile not in self.snapshot.files and makefile not in self.published_sources:
             raise MakeProbeError("Makefile is not an admitted snapshot input")
         if len(variables) > 512 or len(assignments) > 512 or len(owner_inputs) > 4096:
             raise MakeProbeError("Make request count exceeds admission bound")
@@ -1397,19 +1416,21 @@ class ProbeSession:
         control = self.base / f"control-{self.serial + 1}"
         receipts = {}
         command_results = {}
-        generated_paths = set()
-        generated_directories = set()
+        generated_paths = self.generated_paths
+        generated_directories = self.generated_directories
         confirmed = 0
         depth = self.make_depth
         commands = {} if commands is None else commands
 
         def cleanup_generated():
-            for name in generated_paths:
-                self.published_sources.pop(name, None)
+            if depth:
+                return
             finish_cleanup([
                 *(lambda name=name: (self.tree / name).unlink(missing_ok=True) for name in generated_paths),
                 *(lambda name=name: (self.tree / name).rmdir() if (self.tree / name).exists() else None
                   for name in sorted(generated_directories, key=lambda value: (-value.count("/"), value))),
+                generated_paths.clear, generated_directories.clear,
+                self.published_sources.clear, self.published_versions.clear,
             ])
 
         def acknowledge(completed):
@@ -1418,10 +1439,15 @@ class ProbeSession:
                 raise MakeProbeError("invalid producer publication acknowledgement")
             for index in range(confirmed, completed):
                 for item in receipts[index][2].generated:
+                    self.publication_serial += 1
+                    version = receipts[index][3], self.publication_serial
+                    self.budget.charge("cache", len(encoded([item.path, version])))
                     self.published_sources[item.path] = item
+                    self.published_versions[item.path] = version
             confirmed = completed
 
         def produce(event, sequence):
+            publication_start = self.publication_serial
             command = _event_command(event)
             if sequence != len(receipts) + 1:
                 raise MakeProbeError("producer request slot is stale or duplicated")
@@ -1436,8 +1462,6 @@ class ProbeSession:
                 if not isinstance(registration, Command):
                     raise MakeProbeError("producer registration requires a typed Command")
                 outputs = self._output_paths(registration.outputs)
-                if outputs and depth:
-                    raise MakeProbeError("nested generated publication requires a separate supported source context")
                 for name in outputs:
                     if any(name.startswith(other + "/") or other.startswith(name + "/") for other in generated_paths):
                         raise MakeProbeError("conflicting generated output namespaces")
@@ -1492,11 +1516,20 @@ class ProbeSession:
                     (mapping_path / (key + ".files")).write_bytes(frame)
                 result_identity = hashlib.sha256(encoded(record)).hexdigest()
                 command_results.setdefault(result_identity, record)
-                receipts[sequence - 1] = (command, result_identity, result)
-                return {
+                receipts[sequence - 1] = (command, result_identity, result, producer)
+                reply = {
                     "slot": sequence - 1, "owner": producer, "outputs": list(outputs),
                     "stdout_sha256": record["output_sha256"],
                 }
+                adopted = self._publication_records(publication_start)
+                if adopted:
+                    data = encoded(adopted)
+                    if len(data) > self.budget.limits.file_bytes:
+                        self.budget.reject("nested publication mapping exceeds file byte bound")
+                    self.budget.charge("mapping", len(data))
+                    (mapping_path / (key + ".adopt")).write_bytes(data)
+                    reply["adopt_sha256"] = hashlib.sha256(data).hexdigest()
+                return reply
 
         with cleanup_scope([
             cleanup_generated, receipts.clear,

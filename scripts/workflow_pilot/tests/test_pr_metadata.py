@@ -12,7 +12,7 @@ import unittest
 from dataclasses import replace
 from pathlib import Path
 
-from scripts.workflow_pilot import candidate_evidence, metadata_event, pr_metadata
+from scripts.workflow_pilot import candidate_evidence, metadata_event, pr_metadata, reporter
 
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -606,7 +606,28 @@ def _full_jobs(
             runner_name=None,
         )
     )
+    _bind_full_jobs(jobs)
     return jobs
+
+
+def _bind_full_jobs(jobs, *, number=PR_NUMBER, head=HEAD, base=BASE, base_ref="master"):
+    from scripts.workflow_pilot.adaptive_gate import binding_name
+    classifier = next(job for job in jobs if job["name"] == "event-classifier")
+    classifier["steps"] = [] if base_ref is None else [{
+        "name": binding_name(number, head, base, base_ref),
+        "status": "completed", "conclusion": "success",
+    }]
+
+
+def _fixture_full_compare(jobs):
+    from scripts.workflow_pilot.adaptive_gate import binding_base_ref, parse_binding
+    return any(
+        isinstance(step, dict) and isinstance(step.get("name"), str)
+        and parse_binding(step["name"]) is not None
+        and step.get("status") == "completed" and step.get("conclusion") == "success"
+        and parse_binding(step["name"])[:2] == (PR_NUMBER, HEAD)
+        and binding_base_ref(step["name"]) == "master"
+        for job in jobs for step in job.get("steps", ()))
 
 
 def _metadata_jobs(
@@ -727,8 +748,10 @@ def _rejection_run_drift_cases() -> dict[str, tuple[list, list]]:
     active = _run(101, 10, mode="full", active=True)
     other_binding = copy.deepcopy(full)
     other_binding[0]["pull_requests"][0]["base"]["sha"] = NEW_HEAD
+    _bind_full_jobs(other_binding[1], base=NEW_HEAD)
     unbound = copy.deepcopy(full)
     unbound[0]["pull_requests"] = []
+    _bind_full_jobs(unbound[1], base_ref=None)
     updated = copy.deepcopy(full)
     updated[0]["updated_at"] = "2026-09-04T00:00:04Z"
     failed = _run(101, 10, mode="full", success=False)
@@ -874,7 +897,7 @@ def _mutation_client(
     _add_pr_states(client, state, state)
     _add_snapshot(client, runs, copies=2)
     _add_edit_transaction(
-        client, title=title, body=body, pre_state=state, pre_version=pre_version
+        client, runs, title=title, body=body, pre_state=state, pre_version=pre_version
     )
     comments = copy.deepcopy(list(history))
     posts = []
@@ -919,6 +942,7 @@ def _mutation_client(
 
 def _add_edit_transaction(
     client: ScriptedClient,
+    runs_and_jobs: list[tuple[dict, list[dict]]],
     *,
     title: str | None = None,
     body: str | None = None,
@@ -926,6 +950,7 @@ def _add_edit_transaction(
     pre_state: dict | None = None,
     pre_version: pr_metadata.MetadataVersion | None = None,
 ) -> None:
+    """Include the scenario's complete run observations in the post-intent refresh."""
     pre_state = _pr() if pre_state is None else copy.deepcopy(pre_state)
     post_state = _pr(
         title=title if title is not None else pre_state["title"],
@@ -976,13 +1001,7 @@ def _add_edit_transaction(
         )),
     )
     client.add("GET", _endpoint(f"pulls/{PR_NUMBER}"), pre_state)
-    for (method, endpoint), responses in list(client.routes.items()):
-        if (
-            method == "GET"
-            and "actions/" in endpoint
-            and responses
-        ):
-            responses.append(copy.deepcopy(responses[-1]))
+    _add_snapshot(client, runs_and_jobs)
     intent_payload: dict[str, object] = {}
     client.add_stable_comment_pages(
         "GET",
@@ -1040,6 +1059,7 @@ def _add_snapshot(
     runs_and_jobs: list[tuple[dict, list[dict]]],
     *,
     copies: int = 1,
+    merge_base: str = BASE,
 ) -> None:
     client.add(
         "GET",
@@ -1050,7 +1070,6 @@ def _add_snapshot(
     runs_endpoint = _query(
         "actions/workflows/build.yml/runs",
         [
-            ("event", "pull_request"),
             ("head_sha", HEAD),
             ("per_page", "100"),
             ("page", "1"),
@@ -1083,6 +1102,10 @@ def _add_snapshot(
                 for _ in range(copies)
             ),
         )
+        if _fixture_full_compare(jobs):
+            client.add("GET", _endpoint(f"compare/{BASE}...{HEAD}"),
+                       *({"base_commit": {"sha": BASE}, "merge_base_commit": {"sha": merge_base}}
+                         for _ in range(copies)))
 
 
 _MISSING = object()
@@ -1132,7 +1155,6 @@ def _cli_snapshot_calls(
             _query(
                 "actions/workflows/build.yml/runs",
                 [
-                    ("event", "pull_request"),
                     ("head_sha", HEAD),
                     ("per_page", "100"),
                     ("page", "1"),
@@ -1168,6 +1190,9 @@ def _cli_snapshot_calls(
                 payload={"total_count": len(jobs), "jobs": jobs},
             )
         )
+        if _fixture_full_compare(jobs):
+            calls.append(_cli_api_call("GET", _endpoint(f"compare/{BASE}...{HEAD}"),
+                         payload={"base_commit": {"sha": BASE}, "merge_base_commit": {"sha": BASE}}))
     return calls
 
 
@@ -1814,6 +1839,177 @@ class LauncherSandbox:
 
 
 class PullRequestMetadataTests(unittest.TestCase):
+    def test_candidate_marker_lifecycle_matrix_retains_non_authorizing_history(self):
+        from scripts.workflow_pilot.adaptive_gate import binding_name
+        marker = binding_name(PR_NUMBER, HEAD, BASE, "master")
+        cases = (
+            ("absent", "queued", None, "unbound"),
+            ("queued", "queued", None, "unbound"),
+            ("in-progress", "in_progress", None, "unbound"),
+            ("success", "completed", "success", "explicit-same"),
+            ("failure", "completed", "failure", "unbound"),
+            ("cancelled", "completed", "cancelled", "unbound"),
+            ("skipped", "completed", "skipped", "unbound"),
+            ("timed-out", "completed", "timed_out", "unbound"),
+            ("unknown-status", "unknown", None, None),
+            ("completed-null", "completed", None, None),
+            ("pending-success", "queued", "success", None),
+            ("unknown-conclusion", "completed", "invented", None),
+            ("malformed", "completed", "failure", None),
+            ("noncanonical", "completed", "failure", None),
+            ("duplicate", "completed", "failure", None),
+            ("wrong-head", "completed", "failure", None),
+            ("wrong-pr", "completed", "failure", None),
+        )
+        self.marker_observations = []
+        for name, status, conclusion, expected in cases:
+            with self.subTest(case=name):
+                active = status != "completed"
+                raw, jobs = _run(101, 10, mode="full", active=active)
+                if name == "queued":
+                    raw.update(status="queued", run_started_at=None)
+                classifier = next(job for job in jobs if job["name"] == "event-classifier")
+                if status == "in_progress":
+                    classifier.update(_job("event-classifier", job_id=classifier["id"], run_id=101,
+                                           status="in_progress", conclusion=None))
+                if not active and conclusion in pr_metadata.RUN_CONCLUSIONS:
+                    classifier["conclusion"] = conclusion
+                    raw["conclusion"] = conclusion
+                step = {"name": marker, "status": status, "conclusion": conclusion}
+                if name == "malformed":
+                    step["name"] = marker.replace(HEAD, "not-a-sha")
+                elif name == "noncanonical":
+                    step["name"] = marker.rsplit(":", 1)[0] + ":mas%74er"
+                elif name == "wrong-head":
+                    step["name"] = binding_name(PR_NUMBER, NEW_HEAD, BASE, "master")
+                elif name == "wrong-pr":
+                    step["name"] = binding_name(PR_NUMBER + 1, HEAD, BASE, "master")
+                classifier["steps"] = [] if name == "absent" else [step]
+                if name == "duplicate":
+                    classifier["steps"].append(copy.deepcopy(step))
+                client = ScriptedClient()
+                _add_snapshot(client, [(raw, jobs)])
+                state = pr_metadata._parse_pull_request_payload(_pr(), REPOSITORY, PR_NUMBER)
+                if expected is None:
+                    with self.assertRaises(pr_metadata.MetadataEditError) as rejected:
+                        pr_metadata.list_candidate_runs(client, state)
+                    self.marker_observations.append({
+                        "case": name, "rejected": type(rejected.exception).__name__,
+                        "detail": str(rejected.exception)})
+                else:
+                    runs = pr_metadata.list_candidate_runs(client, state)
+                    self.assertEqual(len(runs), 1)
+                    self.assertEqual(runs[0].binding, expected)
+                    self.assertEqual(runs[0].candidate_binding is not None, expected == "explicit-same")
+                    self.assertEqual(runs[0].mode, "active-full" if active else "full")
+                    self.marker_observations.append({
+                        "case": name, "binding": runs[0].binding, "mode": runs[0].mode,
+                        "status": runs[0].status, "conclusion": runs[0].conclusion})
+
+    def test_non_success_marker_cannot_hide_newer_full_or_exclude_another_ref(self):
+        from scripts.workflow_pilot.adaptive_gate import binding_name
+        for outcome in ("failure", "cancelled", "skipped", "timed_out"):
+            with self.subTest(outcome=outcome):
+                old = _run(101, 10, mode="full")
+                raw, jobs = _run(202, 11, mode="full", success=False)
+                classifier = next(job for job in jobs if job["name"] == "event-classifier")
+                classifier["steps"][0]["conclusion"] = outcome
+                classifier["conclusion"] = outcome
+                raw["conclusion"] = outcome
+                client = ScriptedClient()
+                _add_snapshot(client, [(raw, jobs), old])
+                state = pr_metadata._parse_pull_request_payload(_pr(), REPOSITORY, PR_NUMBER)
+                runs = pr_metadata.list_candidate_runs(client, state)
+                self.assertEqual([run.run_id for run in runs], [202, 101])
+                self.assertEqual([run.binding for run in runs], ["unbound", "explicit-same"])
+                self.assertIsNone(pr_metadata._latest_full(runs))
+        for outcome, expected in (("success", "explicit-other"), ("failure", "unbound")):
+            raw, jobs = _run(101, 10, mode="full")
+            classifier = next(job for job in jobs if job["name"] == "event-classifier")
+            classifier["steps"][0].update(
+                name=binding_name(PR_NUMBER, HEAD, BASE, "other/base"), conclusion=outcome)
+            classifier["conclusion"] = outcome
+            raw["conclusion"] = outcome
+            client = ScriptedClient()
+            _add_snapshot(client, [(raw, jobs)])
+            state = pr_metadata._parse_pull_request_payload(_pr(), REPOSITORY, PR_NUMBER)
+            self.assertEqual(pr_metadata.list_candidate_runs(client, state)[0].binding, expected)
+
+    def test_uncredited_marker_still_checks_parent_lifecycle_and_cross_job_identity(self):
+        from scripts.workflow_pilot.adaptive_gate import binding_name
+        for variant in ("finished-job-active-step", "queued-job-finished-step", "skipped-job-success-step", "conflicting-jobs",
+                        "non-object-step", "missing-step-name"):
+            with self.subTest(variant=variant):
+                raw, jobs = _run(101, 10, mode="full",
+                                 active=variant not in {"finished-job-active-step", "skipped-job-success-step"})
+                classifier = next(job for job in jobs if job["name"] == "event-classifier")
+                classifier["steps"] = [{
+                    "name": binding_name(PR_NUMBER, HEAD, BASE, "master"),
+                    "status": "queued", "conclusion": None}]
+                if variant == "queued-job-finished-step":
+                    classifier["steps"][0].update(status="completed", conclusion="failure")
+                elif variant == "skipped-job-success-step":
+                    classifier["conclusion"] = "skipped"
+                    classifier["steps"][0].update(status="completed", conclusion="success")
+                elif variant == "conflicting-jobs":
+                    other = _job("review-first-classifier", job_id=10199, run_id=101,
+                                 status="queued", conclusion=None, runner_name=None, started_at=None)
+                    other["steps"] = [{
+                        "name": binding_name(PR_NUMBER, HEAD, BASE, "other/base"),
+                        "status": "queued", "conclusion": None}]
+                    jobs.append(other)
+                elif variant == "non-object-step":
+                    classifier["steps"] = [None]
+                elif variant == "missing-step-name":
+                    classifier["steps"] = [{"status": "queued", "conclusion": None}]
+                client = ScriptedClient()
+                _add_snapshot(client, [(raw, jobs)])
+                state = pr_metadata._parse_pull_request_payload(_pr(), REPOSITORY, PR_NUMBER)
+                with self.assertRaises(pr_metadata.MetadataEditError):
+                    pr_metadata.list_candidate_runs(client, state)
+
+    def test_transaction_refresh_observes_each_planned_full_run_comparison(self):
+        runs = [_run(101, 10, mode="full"), _run(100, 9, mode="full")]
+        client, posts = _mutation_client(runs=runs)
+        decision = pr_metadata.edit_metadata(
+            client, repository=REPOSITORY, pr_number=PR_NUMBER,
+            head_sha=HEAD, base_sha=BASE, title=None, body="new body",
+            essential_reason=None,
+        )
+        self.assertEqual(decision.action, "updated")
+        self.assertEqual(len(posts), 2)
+        compare = ("GET", _endpoint(f"compare/{BASE}...{HEAD}"))
+        self.assertEqual(sum(call[:2] == compare for call in client.calls), 6)
+        self.assertEqual(client.routes[compare], [])
+
+    def test_complete_witness_requires_explicit_valid_compare_observations(self):
+        state = pr_metadata._parse_pull_request_payload(_pr(), REPOSITORY, PR_NUMBER)
+        endpoint = _endpoint(f"compare/{BASE}...{HEAD}")
+        for change in ("none", "missing", "wrong-base", "invalid-merge-base", "different-merge-base"):
+            with self.subTest(change=change):
+                client = ScriptedClient()
+                _add_snapshot(client, [_run(101, 10, mode="full")])
+                route = client.routes[("GET", endpoint)]
+                if change == "missing":
+                    route.clear()
+                    with self.assertRaisesRegex(AssertionError, "unexpected request: GET .*compare/"):
+                        pr_metadata.list_candidate_runs(client, state)
+                elif change in {"wrong-base", "invalid-merge-base"}:
+                    side = "base_commit" if change == "wrong-base" else "merge_base_commit"
+                    route[0][side]["sha"] = NEW_HEAD if change == "wrong-base" else "invalid"
+                    error = ValueError if change == "wrong-base" else reporter.PilotDataError
+                    reason = "compare base identity changed" if change == "wrong-base" else "candidate merge base"
+                    with self.assertRaisesRegex(error, reason):
+                        pr_metadata.list_candidate_runs(client, state)
+                else:
+                    if change == "different-merge-base":
+                        route[0]["merge_base_commit"]["sha"] = NEW_HEAD
+                    runs = pr_metadata.list_candidate_runs(client, state)
+                    self.assertEqual(runs[0].binding,
+                                     "explicit-same" if change == "none" else "explicit-other")
+                    self.assertEqual(pr_metadata._latest_full(runs) is not None, change == "none")
+                self.assertEqual(client.calls[-1][:2], ("GET", endpoint))
+
     def test_active_legacy_publisher_is_pending_without_a_runner(self):
         for pending_status in ("queued", "waiting", "pending", "requested"):
             with self.subTest(pending_status=pending_status):
@@ -2044,6 +2240,7 @@ class PullRequestMetadataTests(unittest.TestCase):
         client = ScriptedClient()
         record, jobs = _run(101, 10, mode="full")
         record["pull_requests"] = []
+        _bind_full_jobs(jobs, base_ref=None)
         _add_pr_states(client, _pr())
         _add_snapshot(client, [(record, jobs)])
         decision = pr_metadata.edit_metadata(
@@ -2127,7 +2324,7 @@ class PullRequestMetadataTests(unittest.TestCase):
                 updated_at="2026-09-04T00:00:05Z",
             ),
         )
-        _add_edit_transaction(client, body="new body")
+        _add_edit_transaction(client, [active_metadata, successful_full], body="new body")
         decision = pr_metadata.edit_metadata(
             client,
             repository=REPOSITORY,
@@ -2191,6 +2388,7 @@ class PullRequestMetadataTests(unittest.TestCase):
                 )
                 _add_edit_transaction(
                     client,
+                    [successful_full],
                     title=title,
                     body=body,
                 )
@@ -2303,7 +2501,7 @@ class PullRequestMetadataTests(unittest.TestCase):
             _endpoint(f"pulls/{PR_NUMBER}"),
             _pr(title="Essential correction"),
         )
-        _add_edit_transaction(client, title="Essential correction")
+        _add_edit_transaction(client, [active_full], title="Essential correction")
 
         decision = pr_metadata.edit_metadata(
             client,
@@ -2384,7 +2582,7 @@ class PullRequestMetadataTests(unittest.TestCase):
                     _endpoint(f"pulls/{PR_NUMBER}"),
                     _pr(title="Corrected contract"),
                 )
-                _add_edit_transaction(client, title="Corrected contract")
+                _add_edit_transaction(client, [failed_full], title="Corrected contract")
 
                 decision = pr_metadata.edit_metadata(
                     client,
@@ -2467,7 +2665,7 @@ class PullRequestMetadataTests(unittest.TestCase):
                         "PATCH", _endpoint(f"pulls/{PR_NUMBER}"),
                         _pr(title="Corrected contract"),
                     )
-                    _add_edit_transaction(client, title="Corrected contract")
+                    _add_edit_transaction(client, [unsupported], title="Corrected contract")
                     with self.assertRaises(pr_metadata.MetadataEditError):
                         pr_metadata.edit_metadata(
                             client,
@@ -2516,7 +2714,7 @@ class PullRequestMetadataTests(unittest.TestCase):
                             "PATCH", _endpoint(f"pulls/{PR_NUMBER}"),
                             _pr(title="Corrected contract"),
                         )
-                        _add_edit_transaction(client, title="Corrected contract")
+                        _add_edit_transaction(client, [inconsistent], title="Corrected contract")
                         with self.assertRaises(pr_metadata.MetadataEditError):
                             pr_metadata.edit_metadata(
                                 client, repository=REPOSITORY, pr_number=PR_NUMBER,
@@ -2773,6 +2971,7 @@ class PullRequestMetadataTests(unittest.TestCase):
         _add_snapshot(client, [successful_full], copies=2)
         _add_edit_transaction(
             client,
+            [successful_full],
             body="essential correction",
         )
         client.add(
@@ -2862,6 +3061,7 @@ class PullRequestMetadataTests(unittest.TestCase):
                 _add_snapshot(client, [successful_full], copies=2)
                 _add_edit_transaction(
                     client,
+                    [successful_full],
                     title=title,
                     body=body,
                 )
@@ -2898,7 +3098,7 @@ class PullRequestMetadataTests(unittest.TestCase):
                 updated_at="2026-09-04T00:00:05Z",
             ),
         )
-        _add_edit_transaction(client, body="new body")
+        _add_edit_transaction(client, [successful_full], body="new body")
 
         decision = pr_metadata.edit_metadata(
             client,
@@ -3012,6 +3212,7 @@ class PullRequestMetadataTests(unittest.TestCase):
                 )
                 _add_edit_transaction(
                     client,
+                    [successful_full],
                     body="new body",
                     response_changes=changes,
                 )
@@ -3046,7 +3247,7 @@ class PullRequestMetadataTests(unittest.TestCase):
                 updated_at="2026-09-04T00:00:05Z",
             ),
         )
-        _add_edit_transaction(failed, body="new body")
+        _add_edit_transaction(failed, [successful_full], body="new body")
         confirmation_route = (
             "POST",
             _endpoint(f"issues/{PR_NUMBER}/comments"),
@@ -3259,7 +3460,7 @@ class PullRequestMetadataTests(unittest.TestCase):
                         client = ScriptedClient()
                         _add_pr_states(client, _pr(), _pr())
                         _add_snapshot(client, [_run(101, 10, mode="full")], copies=2)
-                        _add_edit_transaction(client, body="new body")
+                        _add_edit_transaction(client, [_run(101, 10, mode="full")], body="new body")
                         client.add("PATCH", _endpoint(f"pulls/{PR_NUMBER}"), target)
                         if retry:
                             intent = _receipt(
@@ -3327,7 +3528,7 @@ class PullRequestMetadataTests(unittest.TestCase):
                     state = target if recovery else _pr()
                     _add_pr_states(client, state, state)
                     _add_snapshot(client, [_run(101, 10, mode="full")], copies=2)
-                    _add_edit_transaction(client, body="new body")
+                    _add_edit_transaction(client, [_run(101, 10, mode="full")], body="new body")
                     client.add("PATCH", _endpoint(f"pulls/{PR_NUMBER}"), target)
                     if recovery:
                         intent = _receipt(
@@ -3398,7 +3599,7 @@ class PullRequestMetadataTests(unittest.TestCase):
                     state = target if recovery else _pr()
                     _add_pr_states(client, state, state)
                     _add_snapshot(client, [_run(101, 10, mode="full")], copies=2)
-                    _add_edit_transaction(client, body="new body")
+                    _add_edit_transaction(client, [_run(101, 10, mode="full")], body="new body")
                     client.add("PATCH", _endpoint(f"pulls/{PR_NUMBER}"), target)
                     if recovery:
                         intent = _receipt(
@@ -3965,7 +4166,7 @@ class PullRequestMetadataTests(unittest.TestCase):
                 client = ScriptedClient()
                 _add_pr_states(client, _pr(), _pr())
                 _add_snapshot(client, [_run(101, 10, mode="full")], copies=2)
-                _add_edit_transaction(client, body="new body")
+                _add_edit_transaction(client, [_run(101, 10, mode="full")], body="new body")
                 observed = _pr()
                 observed[changed]["sha"] = NEW_HEAD
                 client.routes[("POST", "graphql")][1] = _response(
@@ -4000,7 +4201,7 @@ class PullRequestMetadataTests(unittest.TestCase):
                 client = ScriptedClient()
                 _add_pr_states(client, _pr(), _pr())
                 _add_snapshot(client, [_run(101, 10, mode="full")], copies=2)
-                _add_edit_transaction(client, body="new body")
+                _add_edit_transaction(client, [_run(101, 10, mode="full")], body="new body")
                 payload = _graphql_payload(_pr(), _metadata_version())
                 repository = payload["data"]["repository"]
                 pull = repository["pullRequest"]
@@ -6010,6 +6211,7 @@ class PullRequestMetadataTests(unittest.TestCase):
                 _add_snapshot(client, [_run(101, 10, mode="full")], copies=2)
                 _add_edit_transaction(
                     client,
+                    [_run(101, 10, mode="full")],
                     title=title,
                     body=body,
                     pre_state=pre_state,
@@ -6368,7 +6570,6 @@ class PullRequestMetadataTests(unittest.TestCase):
             _query(
                 "actions/workflows/build.yml/runs",
                 [
-                    ("event", "pull_request"),
                     ("head_sha", HEAD),
                     ("per_page", "100"),
                     ("page", "1"),
@@ -6715,6 +6916,40 @@ class PullRequestMetadataTests(unittest.TestCase):
                     with self.assertRaises(pr_metadata.MetadataEditError):
                         pr_metadata.list_candidate_runs(client, state)
 
+    def test_dispatch_listing_ignores_pushes_independent_of_mutable_associations(self):
+        state = pr_metadata._parse_pull_request_payload(_pr(), REPOSITORY, PR_NUMBER)
+        associations = (_MISSING, None, [], _run(202, 11, mode="full")[0]["pull_requests"],
+                        [{"number": PR_NUMBER + 1, "head": {"sha": HEAD}, "base": {"sha": BASE}}])
+        for branch in ("master", "topic"):
+            for association in associations:
+                with self.subTest(branch=branch, association=association):
+                    push, _ = _run(202, 11, mode="full", active=True)
+                    push.update(event="push", head_branch=branch)
+                    if association is _MISSING:
+                        push.pop("pull_requests")
+                    else:
+                        push["pull_requests"] = association
+                    candidate, jobs = _run(201, 10, mode="full")
+                    client = ScriptedClient()
+                    _add_snapshot(client, [(push, []), (candidate, jobs)])
+                    runs = pr_metadata.list_candidate_runs(client, state)
+                    self.assertEqual([run.run_id for run in runs], [201])
+                    self.assertEqual((runs[0].binding, runs[0].mode), ("explicit-same", "full"))
+                    self.assertFalse(any("/actions/runs/202" in endpoint
+                                         for _method, endpoint, _body in client.calls))
+
+    def test_pull_request_only_listing_rejects_an_unexpected_push_response(self):
+        state = pr_metadata._parse_pull_request_payload(_pr(), REPOSITORY, PR_NUMBER)
+        push, _ = _run(202, 11, mode="full")
+        push.update(event="push", head_branch="master", pull_requests=[])
+        client = ScriptedClient()
+        client.add("GET", _endpoint("actions/workflows/build.yml"), _workflow())
+        client.add("GET", _query("actions/workflows/build.yml/runs", [
+            ("event", "pull_request"), ("head_sha", HEAD), ("per_page", "100"), ("page", "1"),
+        ]), {"total_count": 1, "workflow_runs": [push]})
+        with self.assertRaises(pr_metadata.MetadataEditError):
+            pr_metadata.list_candidate_runs(client, state, include_dispatch=False)
+
     def test_run_authority_rejects_wrong_workflow_repo_head_event_and_path(self):
         mutations = {
             "workflow": ("workflow_id", WORKFLOW_ID + 1),
@@ -6724,7 +6959,7 @@ class PullRequestMetadataTests(unittest.TestCase):
             ),
             "head": ("head_sha", NEW_HEAD),
             "branch": ("head_branch", "other"),
-            "event": ("event", "push"),
+            "event": ("event", "workflow_run"),
             "path": ("path", ".github/workflows/other.yml"),
             "unknown-conclusion": ("conclusion", "mystery"),
             "unknown-status": ("status", "mystery"),
@@ -7172,6 +7407,8 @@ class PullRequestMetadataTests(unittest.TestCase):
                 client = ScriptedClient()
                 record, jobs = _run(101, 10, mode="full")
                 record["pull_requests"][0][field] = value
+                _bind_full_jobs(jobs, number=value if name == "pr" else PR_NUMBER,
+                                base=value["sha"] if name == "base" else BASE)
                 _add_pr_states(client, _pr())
                 _add_snapshot(client, [(record, jobs)])
                 decision = pr_metadata.edit_metadata(
@@ -7261,7 +7498,7 @@ class PullRequestMetadataTests(unittest.TestCase):
             any(method != "GET" for method, _endpoint, _body in client.calls)
         )
 
-    def test_same_head_run_for_another_base_is_validated_then_ignored(self):
+    def test_same_head_unmarked_run_for_another_base_still_blocks_metadata(self):
         client = ScriptedClient()
         other_base_record, _other_jobs = _run(202, 11, mode="full", active=True)
         other_base_record["pull_requests"][0]["base"]["sha"] = "4" * 40
@@ -7277,7 +7514,7 @@ class PullRequestMetadataTests(unittest.TestCase):
             _endpoint(f"pulls/{PR_NUMBER}"),
             _pr(body="new stable body"),
         )
-        _add_edit_transaction(client, body="new stable body")
+        _add_edit_transaction(client, [(other_base_record, []), exact_full], body="new stable body")
 
         decision = pr_metadata.edit_metadata(
             client,
@@ -7289,20 +7526,10 @@ class PullRequestMetadataTests(unittest.TestCase):
             body="new stable body",
             essential_reason=None,
         )
-        self.assertEqual(decision.action, "updated")
-        self.assertIn("reconcile", decision.guidance[0])
-        receipt_call = next(
-            call
-            for call in client.calls
-            if call[:2]
-            == ("POST", _endpoint(f"issues/{PR_NUMBER}/comments"))
-        )
-        self.assertEqual(
-            pr_metadata._parse_intent_comment_body(
-                receipt_call[2]["body"]
-            ).watermark_run_id,
-            202,
-        )
+        self.assertEqual(decision.action, "deferred")
+        self.assertEqual(decision.run_id, 202)
+        self.assertFalse(decision.mutated)
+        self.assertTrue(all(method == "GET" for method, _endpoint, _body in client.calls))
         other_jobs_endpoint = _query(
             "actions/runs/202/attempts/1/jobs",
             [("per_page", "100"), ("page", "1")],

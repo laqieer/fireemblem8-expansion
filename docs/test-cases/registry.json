@@ -484,6 +484,7 @@
         "https://github.com/laqieer/fireemblem8-expansion/issues/177",
         "https://github.com/laqieer/fireemblem8-expansion/issues/178",
         "https://github.com/laqieer/fireemblem8-expansion/issues/179",
+        "https://github.com/laqieer/fireemblem8-expansion/issues/181",
         "https://github.com/laqieer/fireemblem8-expansion/issues/199",
         "https://github.com/laqieer/fireemblem8-expansion/issues/206",
         "https://github.com/laqieer/fireemblem8-expansion/issues/225",
@@ -507,6 +508,7 @@
         "TC-WORKFLOW-PROBE-PRODUCER-001",
         "TC-WORKFLOW-PROBE-DEPENDENCY-001",
         "TC-WORKFLOW-REVIEW-FAMILY-001",
+        "TC-WORKFLOW-REVIEW-FIRST-001",
         "TC-WORKFLOW-AGENT-HANDOFF-001",
         "TC-WORKFLOW-WORKTREE-CLEANUP-001",
         "TC-WORKFLOW-HOST-PYTHON-DEPS-001"
@@ -2193,6 +2195,50 @@
       ]
     },
     {
+      "id": "TC-WORKFLOW-REVIEW-FIRST-001",
+      "title": "Gate expensive Builds after accepted review",
+      "feature_id": "workflow-governance",
+      "issue_urls": ["https://github.com/laqieer/fireemblem8-expansion/issues/181"],
+      "document": "docs/test-cases/workflow-governance.md",
+      "anchor": "tc-workflow-review-first-001-gate-expensive-builds-after-accepted-review",
+      "profiles": ["Locked host Python and source checkout", "Coordinator-owned disposable PRs on a dependency-ready base"],
+      "purpose": "Change expensive candidate Build timing without reducing review, security, complete candidate/master or manual quality gates.",
+      "prerequisites": "Use existing #176 decisions, #178 coordinator/handoff state, #179 task/triage authority and the locked interpreter. Only the delivery coordinator performs remote exercises.",
+      "actions": "Run test_adaptive_gate, test_candidate_identity, test_live_stack, test_live_pause and test_coordinator_local with directly affected topology/publisher/review/metadata controls. Retain actual historical run refs and complete frozen identities across same-head/base/ref transitions; validate real parent decisions/ancestry. Exercise current default-control identity, causal native incident attribution, owned bare publication/readback, unchanged-head fallback and initial-lane preservation, then execute the documented disposable PR procedure with actual GitHub identities.",
+      "expected_result": "Named-risk/large candidates normally defer the complete Build until accepted clean exact review/security. A validated current default-branch pause reaches unchanged heads and permits one safely reserved old-preflight full fallback without waiving final quality. Initial lanes and actual full-run ownership remain intact. One bound full run plus every final criterion is necessary; master retains all eight jobs and its real publisher.",
+      "negative_control": "Unknown decisions/control retain broad workflow timing but no coordinator dispatch/merge authority. Arbitrary/pre-merge/unattributed incidents and wrong master evidence cannot publish a latch; publication failure stays locally held. Missing data cannot unpause. Accepted findings abandon heads; stale, duplicate, cancelled, unresolved, wrong-source, ref-incomplete and early-dispatch evidence cannot authorize merge. Invalid or unobserved live parent chains remain held.",
+      "interactions": "Depends on #176/#177/#178/#179. #180/#206 remain parallel and #196 extraction is later. Preserve trusted pushes, one watcher per run/attempt and audiovisual holds.",
+      "save_compatibility": "No gameplay, save/config, locale, generated-game-data, ROM/RAM or archival behavior changes.",
+      "cleanup": "Local fixtures remove only owned build paths. Main closes disposable PRs without merging them and uses existing worktree cleanup after active work ends.",
+      "limitations": "Local fixtures are not remote evidence or merged pilot samples. Owner dispatch remains possible. Three weeks or 20 real post-deployment merged PRs with efficiency/non-inferiority remains future promotion evidence.",
+      "automation": [
+        {
+          "command": "build/host-python/bin/python3 -I -c 'import sys, unittest; sys.path.insert(0, \".\"); unittest.main(module=None)' scripts.workflow_pilot.tests.test_adaptive_gate -v",
+          "evidence": "scripts/workflow_pilot/tests/test_adaptive_gate.py"
+        },
+        {
+          "command": "build/host-python/bin/python3 -I -c 'import sys, unittest; sys.path.insert(0, \".\"); unittest.main(module=None)' scripts.workflow_pilot.tests.test_coordinator_local -v",
+          "evidence": "scripts/workflow_pilot/tests/test_coordinator_local.py"
+        },
+        {
+          "command": "build/host-python/bin/python3 -I -c 'import sys, unittest; sys.path.insert(0, \".\"); unittest.main(module=None)' scripts.workflow_pilot.tests.test_candidate_identity -v",
+          "evidence": "scripts/workflow_pilot/tests/test_candidate_identity.py"
+        },
+        {
+          "command": "build/host-python/bin/python3 -I -c 'import sys, unittest; sys.path.insert(0, \".\"); unittest.main(module=None)' scripts.workflow_pilot.tests.test_live_stack -v",
+          "evidence": "scripts/workflow_pilot/tests/test_live_stack.py"
+        },
+        {
+          "command": "build/host-python/bin/python3 -I -c 'import sys, unittest; sys.path.insert(0, \".\"); unittest.main(module=None)' scripts.workflow_pilot.tests.test_refless_runs -v",
+          "evidence": "scripts/workflow_pilot/tests/test_refless_runs.py"
+        },
+        {
+          "command": "build/host-python/bin/python3 -I -c 'import sys, unittest; sys.path.insert(0, \".\"); unittest.main(module=None)' scripts.workflow_pilot.tests.test_live_pause -v",
+          "evidence": "scripts/workflow_pilot/tests/test_live_pause.py"
+        }
+      ]
+    },
+    {
       "id": "TC-WORKFLOW-REVIEW-FAMILY-001",
       "title": "Expand valid findings across complete sibling families",
       "feature_id": "workflow-governance",
@@ -2203,7 +2249,7 @@
       "purpose": "Bind actual reviewed subjects to complete finite sibling obligations and trusted execution observations, preserving bounded remediation and sticky architecture holds.",
       "prerequisites": "Use the existing locked host environment for host tests; the separate ARM selector uses the supported compiler/binutils via PATH or resolved MODERN_CC/MODERN_NM/MODERN_SIZE paths. Tests own source-backed Git and non-system toolchain fixtures under build/ and need no credentials, live PR, ROM or emulator.",
       "actions": "Run the focused host review suites and explicit arm_review_subjects selector. Exercise all five families, real optional-owner and generated-code mutations, Make-resolved tool overrides and missing-tool rejection, complete local report triage, current active/dismissed review retriage, one active PR/head owner, exact merge-base lineage, commit-only loading, bounded Git diagnostics and first/second/third-round transitions. For #223, observe actual PID/exit state before staging cleanup across inner/outer timeouts, creation-boundary and running interruption, closed/inherited stdio, bounded/closed stdin, early leader exit, unrelated-process preservation and immutable helper substitution. Check caller-handler and inherited-mask preservation, plus retained live staging when real termination is unavailable.",
-      "expected_result": "The same reviewed probes detect actual broken origin code/data and pass corrected subjects. Every expected member is recorded. Staging removal requires positive cleanup confirmation from the exact trusted current operation, not an exception-type blacklist or candidate field. Record-only signals and protected checkpoints cover creation, body, cleanup, second signals and restoration while preserving caller semantics. Unconfirmed work retains staging and causal diagnostics; verified cleanup still removes staging on tool, timeout or ordinary release errors. Exact tool bytes, output and return classifications remain intact. Third-round holds survive later heads and clean reports until bound coordinator disposition.",
+      "expected_result": "The same reviewed probes detect actual broken origin code/data and pass corrected subjects. Every expected member is recorded. The reviewer differs from coordinator and implementer, which may be one actual owner for coordinator-authored work. Staging removal requires positive cleanup confirmation from the exact trusted current operation, not an exception-type blacklist or candidate field. Record-only signals and protected checkpoints cover creation, body, cleanup, second signals and restoration while preserving caller semantics. Unconfirmed work retains staging and causal diagnostics; verified cleanup still removes staging on tool, timeout or ordinary release errors. Exact tool bytes, output and return classifications remain intact. Third-round holds survive later heads and clean reports until bound coordinator disposition.",
       "negative_control": "Missing siblings after the reported fix, added/deleted/unknown members, duplicate ownership, wrong task/head/source, fabricated pass labels, compile/import/zero/skipped tests, stale triage and undisposed holds cannot establish eligibility. The pre-fix real staged worker also removed its directory while an ordinary grandchild remained live after timeout.",
       "interactions": "Depends on #176 metrics, existing Git/GitHub/task/test interfaces and #216 locked schema dependencies; #181 depends on it. #178 is independent. #204 is not a dependency. Preserve #207 immediate assigned-branch WIP persistence and #208 cleanup.",
       "save_compatibility": "No gameplay, save/config, generated-game-data, locale, ROM/RAM, modern/archival or required-context changes.",
@@ -2221,6 +2267,10 @@
         {
           "command": "python3 -m unittest scripts.workflow_pilot.tests.arm_review_subjects -v",
           "evidence": "scripts/workflow_pilot/tests/arm_review_subjects.py"
+        },
+        {
+          "command": "build/host-python/bin/python3 -I -c 'import sys, unittest; sys.path.insert(0, \".\"); unittest.main(module=None)' scripts.docs_check_tests.test_development_workflow_skill.DevelopmentWorkflowSkillTests.test_review_ownership_contract_and_actual_runtime_roles_agree -v",
+          "evidence": "scripts/docs_check_tests/test_development_workflow_skill.py"
         }
       ]
     },
@@ -3438,13 +3488,13 @@
       ],
       "purpose": "Prove one live native Make producer rendezvous with isolated candidate execution, validated publication, actual metadata/restarts and one residual aggregate resource lifetime.",
       "prerequisites": "Clean source checkout; all source/output/channel/sentinel fixtures remain under owned ignored build directories; no ROM, credentials, emulator, new package or remote mutation.",
-      "actions": "Run the ProducerTests process suite. Compare ordinary Make with an actual isolated producer, live publication, later metadata reader and one/two native restarts. Exercise real scaninc, repeated effects/aliases, ownership and source/output rejection, request/reply/sequence corruption, callback FD separation, parked helper death, ancestor lifetime loss and residual live/VM/cumulative exhaustion. Keep unreachable producers unexecuted while validating every actual request.",
-      "expected_result": "Only authenticated real dispatches execute. Full source/output checks precede publication into the still-live readonly view; native Make owns include/restart behavior. The producer has private work and no callback/control/source-write authority. All parked processes and funded VM remain reserved, monotonic deltas settle once, malformed or uncertain requests never retry, and failures clean without partial success.",
+      "actions": "Run the ProducerTests process suite. Compare ordinary Make with isolated producers, live publication, complete metadata, parse-time includes and one/two native restarts. Exercise real scaninc/native file output, effects/aliases, ownership and source/output rejection, request/reply/sequence corruption, callback FD separation, helper death, lifetime loss and residual live/VM/cumulative exhaustion. Test inherited nested ownership and readonly transfer validation, generated Makefile admission and cleanup, and fail-closed missing direct executables. Keep unreachable producers unexecuted while validating every actual request.",
+      "expected_result": "Only authenticated real dispatches execute. Full source/output checks precede publication into the still-live readonly view; native Make owns include/restart behavior. Nested queries retain child outputs until outer completion and validate transferred ownership through readonly source, without rebuilding contexts. The producer has private work and no callback/control/source-write authority. All parked processes and funded VM remain reserved, monotonic deltas settle once, malformed or uncertain requests never retry, and failures clean without partial success.",
       "negative_control": "Unapproved d9 rebuilds observed generated contexts and returns stale all-matched link counts/timestamps; separate owned traces show recreated inode/ctime. An ordinary same-directory writer can see its own output where an isolated two-phase private-work producer cannot; that boundary is preserved, not virtualized. Low per-report resource tests require the actual request boundary and a standalone positive rather than an unrelated early failure.",
       "interactions": "Depends on core206. V226 and R227 are independent core children; D228 depends on P225. Issue180 retains complete domain/graph/oracle/lifecycle/public integration. No unrelated game/profile interaction.",
       "save_compatibility": "Host-only producer infrastructure; no gameplay, save, config identity, localization, generated game content, ROM/RAM or modern/archival profile change.",
       "cleanup": "The existing sole-reaper watchdog/supervisor owns both live Make and nested producer lifetimes. EOF, malformed data, death, interruption and budget failure close owned channels, reap children and remove only owned private/output state without retry or counter reset.",
-      "limitations": "This is the bounded live vertical checkpoint, not full P/root112/calibration/remote completion. Nested generated publication rejects. Full P acceptance and real sudo-transition evidence remain separately scoped; no manual-only criterion is asserted.",
+      "limitations": "Implementation checkpoints do not establish full P/root112/calibration/remote completion. Nested queries share one active generated view; V view selection and combined V/P cases remain separately allocated. Missing direct executable paths can fail before native dispatch and are not synthesized. Same-directory read-own-publication remains outside the two-phase contract. Actual same-UID sudo evidence is not a root credential-transition claim; no manual-only criterion is asserted.",
       "automation": [
         {
           "command": "python3 -m unittest scripts.validation_ownership.tests.test_producer -v",
@@ -3472,7 +3522,7 @@
       "interactions": "Depends on P225 and transitively core206. No V226 or R227 dependency. Shared compiler/result/source/test/docs contracts require normal genuine-parent refresh. Complete P delivery remains the bottom-up merge prerequisite; nested generated publication and full180/PR186 integration stay separate.",
       "save_compatibility": "Host-only API; no gameplay, save migration, config identity, locale, generated game content, ROM/RAM, modern/archival profile, CI topology or publisher change.",
       "cleanup": "Use the existing session/watchdog/supervisor cleanup and one aggregate ledger. Failed execution, result capture, publication, receipt validation or cleanup never yields partial success; only owned fixture/scratch/generated state is removed.",
-      "limitations": "Only the fixed GNU C dependency-preprocessor profile is supported. No arbitrary flags, assembler/linker, response files, plugins/specs/wrappers, V/R APIs, nested Make publication, full-root/domain claim, runtime binary snapshot or raised budget. No manual-only criterion.",
+      "limitations": "Only the fixed GNU C dependency-preprocessor profile is supported. No arbitrary flags, assembler/linker, response files, plugins/specs/wrappers, V/R APIs, full-root/domain claim, runtime binary snapshot or raised budget. This standalone case uses one outer Make; nested publication and vfork parking remain P-owned, with separate qualification and delivery gates. No manual-only criterion.",
       "automation": [
         {
           "command": "python3 -m unittest scripts.validation_ownership.tests.test_dependency -v",
