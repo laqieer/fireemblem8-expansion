@@ -65,8 +65,13 @@ proc child visibility, and ptrace vfork-completion stops are also required.
 Missing lifecycle primitives reject before a payload runs; there is no
 numeric-PID generation-check or unconfined fallback.
 Native C++ tool consumers additionally need the existing host C++ compiler.
-The existing Build `tests/workflows` discovery imports this same process suite;
-there is no added workflow, job, duplicate gate or required-context name.
+The existing required `extended-host-tests` Build worker runs this complete
+process suite through `ownership-probe-test`, in parallel with the host
+localization work. Lightweight `tests/workflows` checks verify the single
+unconditional owner, complete unittest selection and absence of duplicate
+native discovery in the host job. The protected host command sequence, job
+timeouts, combined summary and all candidate/master requirements are unchanged;
+there is no added workflow, job or required-context name.
 
 ## Trust boundary
 

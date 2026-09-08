@@ -2697,6 +2697,11 @@ Start from a clean checkout; fixtures use only ignored `build/test-artifacts`.
    Positive fixtures use GNU Make include/define/eval, finite domain values,
    patterns, target variables and order-only prerequisites. Their typed
    observations must describe actual targets, not candidate stdout.
+   Build CI runs the same complete native suite in its existing required
+   `extended-host-tests` worker. The lightweight workflow contract compares
+   the public target's actual unittest selection with every native case and
+   rejects missing, duplicate, conditional or advisory ownership. The host
+   workflow discovery must not execute the native suite a second time.
 3. The same suite compiles benign pre-fix `load`/native-SHELL payloads and
    demonstrates actual writes to an explicitly inherited test FD. The confined
    payloads must reject without a forged byte. File/include/eval, supervisor
