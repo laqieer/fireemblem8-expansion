@@ -1590,7 +1590,10 @@ jobs:
         test "$ACTUAL_SHA" = "$EXPECTED_BUILD_SHA"
 
     - name: Install extended host dependencies
-      run: sudo apt-get update && sudo apt-get install -y build-essential
+      run: sudo apt-get update && sudo apt-get install -y build-essential python3-venv
+
+    - name: Run ownership-probe process suite
+      run: make -f scripts/validation_ownership/foundation.mk ownership-probe-test
 
     - name: Run CJK font gates
       run: make -f cjk_fonts.mk cjk-fonts-check cjk-fonts-test
