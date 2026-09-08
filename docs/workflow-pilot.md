@@ -1455,7 +1455,7 @@ GitHub jobs API supplies this run-bound observation without an artifact,
 another job, extra permissions, or a mutable ledger. The consumer checks the
 step's number, uniqueness, success, digest format and job-bounded chronology.
 The upstream verifier independently validates both steps and their output link
-as closed CI setup; neither becomes one of its 28 locally executed gates.
+as closed CI setup; neither becomes one of its 29 locally executed gates.
 
 The fingerprint must match the authenticated intent/confirmation's exact
 transition. Its event metadata instant must identify the confirmed native

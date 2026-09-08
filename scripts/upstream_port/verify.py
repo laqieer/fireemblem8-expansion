@@ -992,6 +992,7 @@ _EXPECTED_STEP_ROLES = {
         ("setup", None),
         ("setup", "Verify checked-out revision"),
         ("setup", "Install extended host dependencies"),
+        ("gate", "Run ownership-probe process suite"),
         ("gate", "Run CJK font gates"),
         ("gate", "Run multilang texttools codec gates"),
         ("gate", "Run configuration and linker-budget gates"),
@@ -2419,6 +2420,16 @@ def gates(jobs: int = 2) -> List[Gate]:
                 "maximal-supported-features profile, then runs issue #168's "
                 "deterministic map-menu presentation scenario without reading "
                 "a base image, creating a patch, or publishing an artifact"
+            ),
+        ),
+        Gate(
+            name="ownership-probe-process-suite",
+            command=[
+                "make", "-f", "scripts/validation_ownership/foundation.mk", "ownership-probe-test",
+            ],
+            applicable_note=(
+                "complete native ownership-probe process suite, owned once by "
+                "the required extended host worker rather than serial host discovery"
             ),
         ),
         Gate(
