@@ -1,11 +1,17 @@
 import copy
 import json
 import unittest
+from pathlib import Path
+import tempfile
+import subprocess
+from types import SimpleNamespace
+from unittest import mock
 
 from scripts.validation_ownership import reporter
 from scripts.validation_ownership.budget import MakeProbeError, ProbeBudget
 from scripts.validation_ownership.graph_report import check
 from .report_fixture import ReportFixture
+from . import report_fixture
 
 
 class GraphReportTests(unittest.TestCase):
@@ -59,6 +65,45 @@ class GraphReportTests(unittest.TestCase):
         with self.assertRaisesRegex(MakeProbeError, "missing owner"):
             self.run_report()
 
+
+class GitFixtureTests(unittest.TestCase):
+    def test_fixture_git_never_starts_automatic_maintenance_even_if_locally_enabled(self):
+        parent = report_fixture.ROOT / "build/test-artifacts/fixture-maintenance"
+        parent.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=parent) as directory:
+            directory = Path(directory)
+            root = directory / "repo"
+            root.mkdir()
+            context = SimpleNamespace(root=root, directory=directory)
+            ReportFixture.git(context, "init", "--quiet")
+            for name, value in (
+                ("maintenance.auto", "true"), ("gc.auto", "1"),
+                ("gc.autoDetach", "false"), ("maintenance.autoDetach", "false"),
+            ):
+                ReportFixture.git(context, "config", "--local", name, value)
+            environment = {
+                **report_fixture.ENVIRONMENT,
+                "GIT_AUTHOR_NAME": "Fixture", "GIT_AUTHOR_EMAIL": "fixture@example.invalid",
+                "GIT_COMMITTER_NAME": "Fixture", "GIT_COMMITTER_EMAIL": "fixture@example.invalid",
+                "TMPDIR": str(directory),
+            }
+            ordinary_trace = directory / "ordinary.json"
+            subprocess.run(
+                ["/usr/bin/git", "-C", str(root), "commit", "--allow-empty", "-q", "-m", "ordinary"],
+                env={**environment, "GIT_TRACE2_EVENT": str(ordinary_trace)},
+                capture_output=True, check=True, timeout=15,
+            )
+            def automatic_children(path):
+                return [event for line in path.read_text().splitlines()
+                        for event in (json.loads(line),)
+                        if event.get("event") == "child_start"
+                        and any(arg in {"maintenance", "gc"} for arg in event.get("argv", []))]
+            self.assertTrue(automatic_children(ordinary_trace))
+            controlled_trace = directory / "controlled.json"
+            with mock.patch.dict(report_fixture.ENVIRONMENT, {"GIT_TRACE2_EVENT": str(controlled_trace)}):
+                ReportFixture.git(context, "commit", "--allow-empty", "-q", "-m", "controlled")
+            self.assertEqual(automatic_children(controlled_trace), [])
+            self.assertEqual(ReportFixture.git(context, "rev-list", "--count", "HEAD").strip(), b"2")
 
 if __name__ == "__main__":
     unittest.main()

@@ -126,7 +126,10 @@ class ReportFixture:
 
     def git(self, *args):
         return subprocess.run(
-            ["/usr/bin/git", "-C", str(self.root), *args],
+            ["/usr/bin/git", "-C", str(self.root),
+             "-c", "maintenance.auto=false", "-c", "gc.auto=0",
+             "-c", "gc.autoDetach=false", "-c", "maintenance.autoDetach=false",
+             "-c", "core.hooksPath=/dev/null", *args],
             env={**ENVIRONMENT, "TMPDIR": str(self.directory),
                  "GIT_AUTHOR_NAME": "Fixture", "GIT_AUTHOR_EMAIL": "fixture@example.invalid",
                  "GIT_COMMITTER_NAME": "Fixture", "GIT_COMMITTER_EMAIL": "fixture@example.invalid"},

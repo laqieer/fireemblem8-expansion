@@ -2908,6 +2908,11 @@ session/deadline reset. Wildcard-visible paths, modes, source bytes and generate
 outputs retain their actual captured identity. BASE registry/models are measured
 in one grouped public view, and lifecycle removal/restoration reuses that
 already validated model without recursive report execution.
+Owned Git fixture commands disable automatic maintenance/GC, detachment and
+hooks through per-command configuration. A real Trace2 control with locally
+enabled maintenance must show ordinary Git spawning maintenance while the
+fixture helper does not. Cleanup still reports real failures; it does not
+ignore racing filenames or sleep until maintenance might finish.
 Make metadata sections share one fully validated registry object per selected
 loader/budget. Repeated references reuse funded input bytes, not a second Git
 read for each section. Cross-view reuse, stale/missing inputs and malformed
