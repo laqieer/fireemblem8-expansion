@@ -3665,6 +3665,304 @@ explicit downstream integration gates under #180. Unsupported native Make
 ABIs/platforms fail rather than running a weaker probe. Roll back by reverting
 this dedicated foundation; broader validation remains required.
 
+## TC-WORKFLOW-PROBE-RUNTIME-INPUTS-001: Observe explicit runtime inputs without executing recipes
+
+### Feature and configuration
+
+Issue [#227](https://github.com/laqieer/fireemblem8-expansion/issues/227);
+the [explicit runtime-input contract](../ownership-probe-foundation.md#explicit-runtime-discovery-inputs)
+depends only on the delivered #206 / PR #212 core. #227 is a standalone
+`master`-based root (depth zero). #226 is independent; #225 and #228 are
+not prerequisites. #180 / PR #186 owns complete-root integration, not this
+case.
+
+Use a clean Linux x86-64 checkout with GNU Make 4.3, Python 3, glibc, a
+static-capable host C compiler and the core's working private namespaces,
+pidfd/ptrace and Linux 5.12+ recursive mount attributes. Stock controls require
+the actual root-owned `/bin -> /usr/bin` link and ordinary root-owned
+`/usr/bin/mkdir`, `/usr/bin/env`, `/usr/bin/cat` and `/usr/include/stdio.h` files. Do not create
+or replace system paths to satisfy a fixture. The newlib control observes the
+real header if present, or its genuine absence; it never installs newlib.
+The include-search controls derive matching relative and `/usr/include/`
+absence names from their uniquely owned fixture directory and verify actual
+absence. Legitimate ambient `build` or `.dep` include entries do not prevent
+the case from running; no host contents are deleted.
+
+No ROM, ARM compiler, emulator, credentials, remote mutation or subjective
+judgment is required. Use the repository's existing locked host Python when
+available; no additional Python package is required by this runtime family.
+
+The byte/access/full-buffer controls discover ordinary standard-library data
+with `/usr/bin/python3 -I -S -B -c 'import calendar; print(calendar.__file__)'`.
+The result must be an ordinary trusted regular file accepted by the existing
+capture and command policy, not a reserved image. Its path and byte size are
+discovered, not a Debian unversioned `libc.so` prerequisite or pinned Python
+version. `calendar` avoids Python's `os.py` startup-landmark stat, which would
+legitimately add incompatible live-inode metadata to the access-only reuse
+control. The complete incompatible-inode/buffer/status assertions remain in
+their separate control; no metadata is filtered to make the fixture work.
+Modeling an unavailable linker-script pathname proves only fixture independence,
+not an alternate native host's platform support. Never install that library or
+skip an authority check to satisfy these tests.
+
+### Actions
+
+1. From the repository root, run this complete ordinary/confined comparison.
+   It creates a unique owned fixture below ignored `build/test-artifacts`,
+   captures a real Git tree, and removes only that fixture in `finally`.
+   The ordinary env recipe must first create a real sentinel with its selected
+   variable removed. That sentinel is removed **before** confined observation.
+
+   ```sh
+   python3 -B - <<'PY'
+   import json
+   import os
+   import secrets
+   import shutil
+   import subprocess
+   from pathlib import Path
+   from scripts.validation_ownership.authority import AuthorityLoader, ENVIRONMENT, git_tree_entries
+   from scripts.validation_ownership.budget import MakeProbeError, ProbeBudget
+   from scripts.validation_ownership.make_probe import ProbeSession
+
+   root = Path("build/test-artifacts").resolve() / ("runtime-case-" + secrets.token_hex(8))
+   root.mkdir(parents=True)
+   header = "/usr/include/stdio.h"
+   missing = "/usr/include/" + root.name
+   missing_tool = "/bin/" + root.name
+   names = ("HEADER", "MISSING", "MISSING_TOOL", "MISSING_TOOL_CANON", "PATH", "MKDIR", "ENV")
+   assert Path(header).is_file() and not Path(missing).exists()
+   assert not Path(missing_tool).exists() and not Path("/usr/bin/" + root.name).exists()
+   assert Path("/bin").resolve() == Path("/usr/bin")
+   assert Path("/usr/bin/cat").is_file()
+   try:
+       makefile = (
+           "TOOLCHAIN ?= $(DEVKITARM)\nexport PATH := $(TOOLCHAIN)/bin:$(PATH)\n"
+           "export RUNTIME_INPUT_CASE := ordinary-only\n"
+           f"HEADER := $(wildcard {header})\nMISSING := $(wildcard {missing})\n"
+           f"MISSING_TOOL := $(wildcard {missing_tool}/child.h)\n"
+           f"MISSING_TOOL_CANON := $(wildcard /usr/bin/{root.name}/child.h)\n"
+           "MKDIR := $(realpath /bin/mkdir)\nENV := $(realpath /bin/env)\n"
+           + "".join("$(info " + name + "=$(" + name + "))\n" for name in names)
+           + "all:\n\t@mkdir -p owned-mkdir\n"
+           "\t@env -u RUNTIME_INPUT_CASE /usr/bin/python3 -I -S -B sentinel.py\n"
+       )
+       (root / "Makefile").write_text(makefile)
+       (root / "sentinel.py").write_text(
+           "import os\nfrom pathlib import Path\n"
+           "assert 'RUNTIME_INPUT_CASE' not in os.environ\n"
+           "Path('env-executed').write_text('ordinary payload ran')\n"
+       )
+       ordinary = subprocess.run(
+           ["/usr/bin/make", "-f", "Makefile", "all"], cwd=root,
+           env=ENVIRONMENT, capture_output=True, check=True, timeout=10,
+       )
+       expected = dict(line.split("=", 1) for line in ordinary.stdout.decode().splitlines())
+       assert (root / "env-executed").read_text() == "ordinary payload ran"
+       (root / "env-executed").unlink()
+       (root / "owned-mkdir").rmdir()
+       def git(*args):
+           return subprocess.run(
+               ["/usr/bin/git", *args], cwd=root, env=ENVIRONMENT,
+               capture_output=True, check=True, timeout=10,
+           ).stdout.decode().strip()
+       git("init", "--quiet")
+       git("add", "Makefile", "sentinel.py")
+       revision = git("write-tree")
+       for requested in ((header, missing, missing_tool, "/bin/mkdir", "/bin/env", "/usr/bin/env"), ()):
+           budget = ProbeBudget()
+           entries = git_tree_entries(root, revision, budget=budget)
+           loader = AuthorityLoader(root, entries, revision, budget=budget)
+           session = ProbeSession(
+               loader, scratch_root=root / "build/probe", budget=budget,
+               runtime_files=requested,
+           )
+           try:
+               with session:
+                   observed = session.make("all", variables=names)
+                   assert requested, "disabled lookup must not fabricate absence"
+                   actual = {name: observed.semantics["domains"][name]["value"] for name in names}
+                   assert actual == expected
+                   assert observed.events == () and observed.semantics["dynamic_commands"] == []
+                   assert not (session.tree / "env-executed").exists()
+                   assert not (session.tree / "owned-mkdir").exists()
+                   print(json.dumps({
+                       "requested": True, "ordinary_equals_confined": actual,
+                       "runs": budget.runs, "processes": session.processes_used,
+                       "live_peak": session.live_process_peak, "syscalls": session.syscalls_used,
+                       "observations": session.observations_used, "bytes": budget.bytes,
+                       "sudo_drop": session.sudo_drop,
+                   }))
+           except MakeProbeError as error:
+               assert not requested
+               assert f"uncaptured Make runtime access: metadata {header}" in str(error), error
+               print("disabled control:", error)
+           assert not (root / "env-executed").exists()
+           assert not (root / "build/probe").exists()
+           assert session.runtime_inputs == () and session.runtime_root is None
+           assert not budget.children
+       for requested in (("/bin/cat", "/usr/bin/cat"), ("/usr/bin/cat", "/bin/cat")):
+           budget = ProbeBudget()
+           entries = git_tree_entries(root, revision, budget=budget)
+           loader = AuthorityLoader(root, entries, revision, budget=budget)
+           session = ProbeSession(
+               loader, scratch_root=root / "build/probe", budget=budget,
+               runtime_files=requested,
+           )
+           try:
+               with session:
+                   raise AssertionError("ordinary canonical duplicate was admitted")
+           except MakeProbeError as error:
+               assert str(error) == "duplicate/overlapping optional runtime inputs", error
+               print("duplicate control:", requested, error)
+           assert not (root / "build/probe").exists() and not budget.children
+       print("runtime input case: PASS; ordinary sentinel ran, confined sentinel did not")
+   finally:
+       shutil.rmtree(root)
+   PY
+   ```
+
+2. Run the focused automation command below. The ordinary/confined controls
+   compare actual newlib wildcard/include-search behavior, explicit file bytes,
+   original/canonical mkdir and env paths, variable values/origins/flavors,
+   native recipe text and both env declaration orders. Ordinary duplicate cat
+   aliases and overlapping original/canonical missing prefixes must reject in
+   both orders; distinct component names remain valid. Original and canonical
+   descendants of a genuinely captured `/bin` absence must both return real
+   absence. Inspect its named test
+   results; an unsupported fixture or missing tool is not a passing negative.
+   The spelling controls capture the discovered data and an actual nested
+   standard-library input so each traversed intermediate directory really
+   exists. Canonical present/absent Make `wildcard` and `file` lookups containing
+   parent components must reject when they need optional runtime authority,
+   like the stock-alias controls. Plain captured lookups pass full native
+   metadata revalidation. The separate FD-relative registered-command,
+   source-parent and mandatory-file/directory controls must still succeed.
+3. Check the named denial controls: unrequested existing **and missing**
+   files, unrequested `/bin` aliases, escaping spellings, nonregular/replaced
+   captures, readback of intercepted images, writes, directory enumeration,
+   and unsupported `cat`/env public dispatch. Make's directory wildcard is
+   denied at its actual unrequested directory open; its exact-file wildcard
+   counterpart succeeds. A requested `cat` is actually found before the
+   authenticated dispatch rejects it. No error-regex widening substitutes
+   for those positive counterparts.
+4. Inspect the metadata controls' real syscall evidence: full
+   stat/lstat/fstat/newfstatat/statx/fstatfs/access/readlink buffers, status and
+   flags/masks. Unchanged optional Make metadata and compatible registered
+   observations must pass the same native comparison as source records.
+   Changing an owned captured timestamp must invalidate the old full record
+   without validation changing atime. Different actual command-runtime
+   inode/status results must reject reuse, not be replaced with the captured
+   object's metadata.
+5. Confirm mandatory Make/interpreter/ELF closure and phase-bound loader
+   probes remain independent of the opt-in. Low existing capture/control
+   quotas and failures must terminate with no owned processes, descriptors,
+   source/runtime backing or control files left over.
+6. Run the same family's owned-fixture shape controls. Model each ambient
+   `/usr/include/build` and `.dep` entry as occupied and verify actual owned
+   include-search positives still run. Model a regular system Python and an
+   absent multiarch include directory; neither may prevent the owned regular
+   capture, real directory/symlink/FIFO denials or inode-replacement denial.
+   These models test fixture independence, not another native platform.
+   On the actual owned regular inode, add set-UID, set-GID, sticky and all
+   combinations to mode `0644`. Each special-mode capture must fail at its
+   type/mode predicate before any data read, not an unrelated trust failure.
+   Restore `0644` after every attempt and require successful capture again.
+7. Run `test_runtime_inputs_optional_image_mapping_is_read_only_at_make_entry`
+   through the same focused automation. The owned image contains actual
+   captured non-intercepted executable bytes. Ordinary kernel read and
+   read-plus-execute mappings must both succeed and expose the expected bytes;
+   no mapped instruction is executed. The existing stopped-tracee helper then
+   models post-observer Make state and its explicit runtime declaration:
+   read mapping reaches the real kernel with actual memory reservation, while
+   RX must fail at supervisor syscall entry before resumption. This is not
+   injection into GNU Make, dispatch denial, a noexec substitute or a stubbed
+   guard/reservation. Actual command-library RX and mandatory Make loading
+   remain positive; the separate program-dispatch rejection is retained.
+   This pointer-independent mmap case uses a fresh exact system-Python exec
+   before its trace stop, with the same fixed `256 MiB` helper address-space
+   policy. Only declared descriptors cross exec, and their actual inode/device
+   identity and the caller's inheritance flags are checked. Other helpers keep
+   their deliberate fork/copied-parent-pointer semantics.
+   Repeat with an owned `256 MiB` PROT_NONE parent reservation: measure actual
+   parent and stopped-tracee virtual memory, require each fresh tracee to fit
+   the unchanged policy while the parent exceeds it, and release the
+   reservation afterward. Returning this case to inherited-parent VM must
+   reproduce real reservation failure. An isolated pass, larger allowance,
+   trimmed test order or skipped read-positive cannot substitute for this
+   enlarged-parent control.
+
+### Expected result
+
+The script prints the ordinary-equal header, missing path, PATH and canonical
+tool values, the precise disabled runtime denial, and its final `PASS`.
+The ordinary env sentinel demonstrably ran; neither that payload nor the mkdir
+recipe executes in the confined observation. All focused controls pass through
+the actual syscall/Make path. Full metadata goes through the core comparator,
+not a names/types-only witness or a second optional-runtime predicate.
+
+### Negative control
+
+The same fixture without `runtime_files` rejects its existing header lookup;
+it must not choose a false-absence branch. Explicitly captured true absence is
+a separate positive, not that denial. On exact `2f48d7fa96a58020f2aceed8c509efd09a7ea88b`,
+ordinary `/bin/cat` plus `/usr/bin/cat` was accepted only in one order, while
+the other order was misclassified as a mandatory image collision. A captured
+missing `/bin` prefix also rejected its own descendant although the equivalent
+canonical descendant worked. The paired real Make controls must now agree,
+without accepting sibling names, `..`, writes or enumeration.
+On exact `415c7a5be36c329257271b12fc693005ef2939c6`, canonical parent spellings
+could still acquire optional Make authority: real present/content and absent
+queries with valid intermediate directories completed and passed native
+revalidation, while stock-alias equivalents rejected. The new scoped controls
+must reject these optional lookups without breaking independently authorized
+command/source/mandatory parent paths. Reverting that boundary or the owned
+fixture corrections must fail the corresponding regression family.
+The historical absent-env materialization
+unit control additionally models a host without env and must not install its
+interceptor, including both env declaration orders. Actual true-absence assertions use the original absent paths,
+not that modeled environment. Eager, recursive and include-remake env recipes
+reject without an exact real registration; requesting env cannot produce
+unittest output. The real nonregular/replacement controls mutate only owned
+test inodes, with host-root trust checks tested independently. They do not
+assume a Python executable is a symlink or require a Debian include directory.
+Removing the special-bit predicate must fail every special-mode control;
+removing the optional-image mapping predicate must fail the paired RX control.
+These are test-only coverage mutations of existing guards, not newly
+discovered implementation failures or a reset of any bound review hold.
+
+### Interactions and save compatibility
+
+Reuses #206's source admission, persistent complete read-only/noexec source
+mount, authenticated dispatch, metadata frames/native comparison and aggregate
+lifecycle. The optional runtime capture is fixed for that session; selection
+across views is separately owned by #226, not a prerequisite here.
+No generated producer, native Make registration or dependency-only action is
+introduced. Game/profile conflicts are **none**. No save/migration, game/config
+identity, ROM/RAM, localization, generated game output, modern/archival profile,
+budget number, workflow topology/publisher, service or permission changes.
+
+### Automation
+
+```sh
+python3 -m unittest scripts.validation_ownership.tests.test_foundation -k runtime_inputs -k stock_runtime_alias -k explicit_env -k absent_captured_env -k make_uncaptured_runtime -v
+```
+
+The required core metadata/closure/lifecycle neighbors remain in their existing
+family; no duplicate channel-policy tests or whole-root report are introduced.
+
+### Cleanup and limitations
+
+The script and tests remove their own fixtures; session teardown also clears
+runtime records and removes persistent owned backing after failure or quota
+exhaustion. Do not remove or modify host includes, `/bin`, env or Make images.
+Unsupported layouts, metadata reuse and host/kernel facilities reject rather
+than falling back to live mounts, fabricated metadata or arbitrary execution.
+This proves the optional runtime contract, not the complete #180 report,
+producer/view/dependency integration or ROM behavior. No manual-only criterion
+remains; rollback removes the optional layer or fixes forward without widening
+the mandatory core.
+
 ## TC-WORKFLOW-PROBE-VIEWS-001: Select immutable ownership views with one report budget
 
 ### Feature and configuration

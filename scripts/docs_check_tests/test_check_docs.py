@@ -947,6 +947,36 @@ class TesterCaseRegistryTests(unittest.TestCase):
     def test_real_repository_complete_registry_passes(self):
         self.assertEqual(check_docs.check_test_case_registry(REAL_REPO_ROOT), [])
 
+    def test_runtime_inputs_case_is_indexed_with_focused_procedure(self):
+        registry, errors = check_docs.parse_test_case_registry(REAL_REPO_ROOT)
+        self.assertEqual(errors, [])
+        case_id = "TC-WORKFLOW-PROBE-RUNTIME-INPUTS-001"
+        feature = next(item for item in registry["features"] if item["id"] == "workflow-governance")
+        case, = [item for item in registry["cases"] if item["id"] == case_id]
+        self.assertEqual(feature["required_cases"].count(case_id), 1)
+        self.assertEqual(case["issue_urls"], ["https://github.com/laqieer/fireemblem8-expansion/issues/227"])
+        selected = {
+            "schema_version": registry["schema_version"],
+            "coverage": {"mode": "complete", "expected_feature_ids": [feature["id"]], "deferred_issues": []},
+            "features": [{**feature, "required_cases": [case_id]}],
+            "cases": [case],
+        }
+        with mock.patch.object(check_docs, "parse_test_case_registry", return_value=(selected, [])):
+            self.assertEqual(check_docs.check_test_case_registry(REAL_REPO_ROOT), [])
+        self.assertEqual(case["automation"], [{
+            "command": "python3 -m unittest scripts.validation_ownership.tests.test_foundation "
+                       "-k runtime_inputs -k stock_runtime_alias -k explicit_env "
+                       "-k absent_captured_env -k make_uncaptured_runtime -v",
+            "evidence": "scripts/validation_ownership/tests/test_foundation.py",
+        }])
+        with open(os.path.join(REAL_REPO_ROOT, case["document"]), encoding="utf-8") as stream:
+            section = markdown_section(stream.read(), case_id + ": " + case["title"])
+        for heading in (
+            "Feature and configuration", "Actions", "Expected result", "Negative control",
+            "Interactions and save compatibility", "Automation", "Cleanup and limitations",
+        ):
+            self.assertTrue(markdown_section(section, heading), heading)
+
     def test_late_shipped_contracts_are_complete_and_fail_closed(self):
         registry_path = os.path.join(REAL_REPO_ROOT, check_docs.TEST_CASE_REGISTRY_PATH)
         with open(registry_path, encoding="utf-8") as stream:
@@ -1116,6 +1146,14 @@ class TesterCaseRegistryTests(unittest.TestCase):
                             "python3 -m unittest "
                             "scripts.validation_ownership.tests.test_foundation -v",
                             "make -f scripts/validation_ownership/foundation.mk ownership-probe-check",
+                        },
+                    },
+                    "TC-WORKFLOW-PROBE-RUNTIME-INPUTS-001": {
+                        "document": "docs/test-cases/workflow-governance.md",
+                        "commands": {
+                            "python3 -m unittest scripts.validation_ownership.tests.test_foundation "
+                            "-k runtime_inputs -k stock_runtime_alias -k explicit_env "
+                            "-k absent_captured_env -k make_uncaptured_runtime -v",
                         },
                     },
                     "TC-WORKFLOW-PROBE-VIEWS-001": {
