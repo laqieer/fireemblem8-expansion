@@ -3331,6 +3331,10 @@ GNU Make 4.3, Python 3, static-capable C/C++ host compilers and supported privat
 namespaces. No ROM, emulator, feature flag, credentials or remote mutation.
 Use a clean checkout. All fixtures, Git commits and native outputs are owned
 under ignored `build/test-artifacts`; never use another checkout's report.
+The full-tree case also requires this checkout's local `HEAD` and first parent
+`HEAD^1`, with the captured gitlinks' object databases already available.
+Missing history or pins fails rather than selecting a smaller fixture or
+substituting another revision.
 
 ### Actions
 
@@ -3429,10 +3433,26 @@ under ignored `build/test-artifacts`; never use another checkout's report.
    tails. Altered namespace-field records cannot authorize reuse.
    The unchanged-record core controls still prove native Make uses this same
    complete backing and revalidation does not mutate metadata.
-   Retain the historical real HEAD/master capture-envelope control: run the
-   foundation's immutable localization/chapterbundle queries under one budget
-   with a selected second captured revision, not two `consumer.check` calls.
-   No increased cap or full graph claim follows from that small query pair.
+   Run the committed full-tree capture-envelope regression, also included
+   in the `immutable_view` family:
+
+   ```sh
+   python3 -m unittest scripts.validation_ownership.tests.test_foundation.FoundationTests.test_immutable_view_real_repository_query_pair -v
+   ```
+
+   It resolves CURRENT `HEAD` and BASE `HEAD^1` once from the actual local Git
+   repository, then uses their complete immutable trees and existing explicit
+   gitlink/source declarations. One **default** `ProbeBudget`/`ProbeSession`
+   performs CURRENT localization Make plus chapterbundle registry, selected
+   BASE Make plus registry, and restored CURRENT Make. Expect exactly two
+   full-registry queries; there is **no third full-registry query**. Verify
+   actual source sets, prerequisites, registry records, certified byte/inode
+   reuse, restored ownership and CURRENT semantics, cumulative counters,
+   unchanged deadline/limits and complete cleanup. No historical file/byte
+   census is the oracle. Keep a precise hold if default limits fail: do not
+   raise caps, mask metadata, shrink the tree or substitute two independent
+   `consumer.check` calls. This is the real workload, not an ignored harness
+   or a replacement for the smaller changed-declaration controls.
 
 7. Exhaust existing state, snapshot-byte, launch, creation, observation and
    descendant allowances across selection/restoration. Cache hits with no
@@ -3448,6 +3468,9 @@ BASE owns the deleted path through its own registry, with original consumed
 bytes and count. View state and handles restore correctly; complete actual
 metadata governs reuse even when storage is shared. All cumulative counters
 and the original deadline remain in force, with complete owned cleanup.
+The full-tree `HEAD`/`HEAD^1` case completes two localization/chapterbundle
+query pairs and the restored CURRENT Make observation under default limits.
+It does not request a third full-registry replay or claim full #180 acceptance.
 
 ### Negative control
 

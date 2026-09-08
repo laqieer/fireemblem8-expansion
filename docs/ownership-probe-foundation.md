@@ -556,7 +556,7 @@ performed by Make. Even cached results cannot be reused after that report's
 deadline or a terminal budget failure. The production consumer passes the one
 budget used for tree capture through its Make session and registry helper.
 
-### Selecting immutable BASE/current views in one report
+### Selecting immutable BASE/CURRENT views in one report
 
 Issue [#226](https://github.com/laqieer/fireemblem8-expansion/issues/226) is a
 framework capability for revision comparisons and deleted-source ownership.
@@ -654,7 +654,16 @@ from another worker rejects.
 
 The [indexed human procedure](test-cases/workflow-governance.md#tc-workflow-probe-views-001-select-immutable-ownership-views-with-one-report-budget)
 maps all deterministic checks, including real Git BASE/CURRENT registry
-declarations and renamed source bytes. No manual-only criterion, feature flag,
+declarations and renamed source bytes. Its discoverable
+`test_immutable_view_real_repository_query_pair` additionally resolves local
+`HEAD` and `HEAD^1` once and captures both complete trees with the existing
+gitlink/source declarations. One default budget/session runs CURRENT Make
+and chapterbundle registry, selected BASE Make and registry, then restored
+CURRENT Make: exactly two full-registry queries, not a third cached replay.
+It checks actual certified byte/inode reuse, source-view ownership,
+cumulative accounting, the original deadline and complete cleanup without
+historical source/byte census constants or raised limits.
+No manual-only criterion, feature flag,
 game/profile conflict, ROM/RAM, save/config identity, locale, generated game
 output, modern/archival or workflow/publisher change applies. Generated
 publication/reconstruction and native Make registration belong to #225;

@@ -590,6 +590,128 @@ class FoundationTests(unittest.TestCase):
             self.assertEqual((budget.started, budget.deadline), (started, deadline))
         self.assert_clean(session)
 
+    def test_immutable_view_real_repository_query_pair(self):
+        from scripts.validation_ownership.authority import git
+        from scripts.validation_ownership.consumer import registry_entries
+        budget = ProbeBudget()
+        lifetime = budget.started, budget.deadline
+        scratch = self.directory / "real-repository-pair"
+        try:
+            revisions = git(ROOT, budget, "rev-parse", "HEAD", "HEAD^1").decode("ascii").splitlines()
+            self.assertEqual(len(revisions), 2)
+            current, base = (
+                AuthorityLoader(ROOT, registry_entries(ROOT, revision, budget), revision, budget=budget)
+                for revision in revisions
+            )
+            with ProbeSession(current, scratch_root=scratch, budget=budget) as session:
+                report_root = session.base
+                original = {name: getattr(session, name) for name in (
+                    "loader", "snapshot", "tree", "cache", "mappings", "native_tools", "make_runtime",
+                )}
+
+                def counters():
+                    return {
+                        "runs": budget.runs, "states": budget.states, "processes": session.processes_used,
+                        "syscalls": session.syscalls_used, "observations": session.observations_used,
+                        "created_files": session.files_created,
+                        **{"bytes:" + name: used for name, used in budget.bytes.items()},
+                    }
+
+                def progressed(before):
+                    after = counters()
+                    for name, used in before.items():
+                        self.assertGreaterEqual(after.get(name, 0), used, name)
+                    for name in ("runs", "states", "processes", "syscalls", "observations"):
+                        self.assertGreater(after[name], before[name], name)
+                    self.assertEqual((budget.started, budget.deadline), lifetime)
+                    self.assertIs(session.budget, budget)
+                    self.assertEqual(budget.limits, Limits())
+                    return after
+
+                def make():
+                    observed = session.make(
+                        "localization-check", makefile="localization.mk",
+                        variables=("LOCALIZATION_OUT_DIR",), owner_inputs=("localization.mk",),
+                    )
+                    self.assertEqual(observed.semantics["files"][0]["prerequisites"], [
+                        {"name": "localization-generate", "order_only": False},
+                    ])
+                    self.assertTrue(observed.semantics["domains"]["LOCALIZATION_OUT_DIR"]["value"])
+                    self.assertEqual(observed.semantics["owner_inputs"], session.snapshot.owners(("localization.mk",)))
+                    return observed
+
+                def registry(loader):
+                    self.assertIs(session.loader, loader)
+                    self.assertIs(session.snapshot.loader, loader)
+                    self.assertIs(session.snapshot.budget, budget)
+                    self.assertIs(loader.entries.budget, budget)
+                    self.assertEqual(set(session.snapshot.files), {
+                        name for name, entry in loader.entries.items()
+                        if entry.mode in {"100644", "100755"} and entry.object_type == "blob"
+                    })
+                    code = tuple(sorted(
+                        path for path in session.snapshot.files
+                        if path.endswith(".py") and path.startswith(("scripts/generated_data/", "scripts/assets/"))
+                    ))
+                    directories = tuple(sorted({".", "src/data", *(
+                        parent.as_posix() for name in code for parent in Path(name).parents
+                    )}))
+                    observed = probe_generated_registry(loader, session=session, command=Command(
+                        ("/usr/bin/python3", "-I", "-S", "-B", "-c",
+                         (TRUSTED_ROOT / "generated_registry_probe.py").read_text(encoding="utf-8"),
+                         "chapterbundle", "src/data"),
+                        code=code, sources=("src/data/*_bundle.json",), directories=directories,
+                    ))
+                    self.assertEqual(observed["name"], "chapterbundle")
+                    self.assertEqual(observed["source_paths"], list(session.sources(("src/data/*_bundle.json",))))
+                    self.assertGreater(observed["record_count"], 0)
+
+                before = counters()
+                current_make = make()
+                registry(current)
+                current_counts = progressed(before)
+                shared = {
+                    name for name, entry in base.entries.items()
+                    if name in original["snapshot"].files and current.entries.get(name) == entry
+                }
+                self.assertTrue(shared)
+                with session.select_view(base) as selected:
+                    self.assertIs(selected, session)
+                    self.assertIs(session.base, report_root)
+                    self.assertIsNot(session.cache, original["cache"])
+                    self.assertIsNot(session.native_tools, original["native_tools"])
+                    self.assertEqual(session.snapshot.reused_paths, shared)
+                    for name in shared:
+                        self.assertIs(session.snapshot.files[name], original["snapshot"].files[name], name)
+                        selected_stat = (session.tree / name).stat()
+                        current_stat = (original["tree"] / name).stat()
+                        self.assertEqual(
+                            (selected_stat.st_dev, selected_stat.st_ino),
+                            (current_stat.st_dev, current_stat.st_ino), name,
+                        )
+                    make()
+                    registry(base)
+                    base_counts = progressed(current_counts)
+                    self.assertGreater(budget.bytes["snapshot"], current_counts["bytes:snapshot"])
+                    selected_root = session.tree.parent
+                for name, value in original.items():
+                    self.assertIs(getattr(session, name), value, name)
+                self.assertFalse(selected_root.exists())
+                restored = make()
+                self.assertEqual(restored.semantics, current_make.semantics)
+                self.assertEqual(restored.semantic_digest, current_make.semantic_digest)
+                self.assertEqual(restored.execution_digest, current_make.execution_digest)
+                progressed(base_counts)
+                for name, used in budget.bytes.items():
+                    self.assertLessEqual(used, getattr(budget.limits, name + "_bytes"), name)
+                self.assertLessEqual(sum(budget.bytes.values()), budget.limits.total_bytes)
+                self.assertFalse(budget.failed)
+            self.assert_clean(session)
+            self.assertTrue(budget.closed)
+            self.assertFalse(scratch.exists())
+        finally:
+            budget.close()
+
     def test_immutable_view_rejects_wrong_foreign_mutable_and_closed_authority(self):
         budget, other_budget = ProbeBudget(), ProbeBudget()
         self.add("value", "base")
