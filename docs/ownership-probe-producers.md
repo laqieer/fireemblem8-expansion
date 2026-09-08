@@ -110,6 +110,14 @@ The helper receives only its fulfilled slot and emits the authentic stdout and
 completed native event. Final event counts bind to their individual receipt,
 not a later table size.
 
+A query with no `commands` registry and no inherited generated context retains
+the live handshake but has no publication grant. Its private `reserved_paths`
+field is `null`, not an empty list of source reservations: any attempted
+publication rejects. This avoids repeatedly copying a complete immutable
+inventory that the query cannot use. A registered or inherited publication
+scope still carries every original reserved path, including absent sources
+and empty gitlinks.
+
 Make then loads the real include or performs its own re-exec. The persistent
 source view is never deleted/recreated between observation and use. A later
 metadata reader sees the actual published inode/link count/timestamps; cached
@@ -225,6 +233,14 @@ global live-process/VM capacity. On completion, its actual work reduces the
 outer remaining authorization before resumption. Final settlement charges
 only the unsent delta, not counters already settled at earlier requests.
 
+A cold shell producer needs capacity for Make, its parked interceptor and the
+producer. A two-live-process report cannot launch that third process. It can
+consume a compatible pure result that was genuinely executed before Make, with
+that earlier work still charged. The lowered view regression exercises that
+composition and repeated native queries before exhausting its unchanged
+descendant allowance; the cold-producer negative retains the same two-slot
+denial.
+
 The same deadline, launches/states, pending count, descendants, syscalls,
 observations, creation limits and all byte budgets remain. Callback frames,
 declarations, output, mapping, cache and publication data spend their existing
@@ -254,6 +270,9 @@ The deterministic procedure is
 Foundation, producer and dependency modules belong to the one existing
 `extended-host-tests` owner in full Build mode. Metadata-only and review-first
 preflight runs skip that owner; their attestations are not full native evidence.
+That owner installs the existing libpng/pkg-config and ARM-binutils prerequisites
+for its real graphics and linker controls, in addition to the host compiler and
+Python environment. No new job or duplicate native execution is introduced.
 The suite covers the live producer/include/metadata-reader transition,
 authentic one/two restarts, real repository scaninc, aliases and repeated
 effects, source/output rejection, request/reply corruption, descriptor/channel
@@ -281,6 +300,29 @@ per-view caches/native handles, isolated generated visibility and charged
 metadata revalidation. A view cannot be switched while a Make publication
 scope is active, even after its last native process exits.
 
+The full-tree CURRENT/BASE pair retains both complete registry queries,
+restored CURRENT Make, all actual metadata buffers and default cumulative
+limits. Only unused static-query publication authority is omitted; no
+observation charge or record is dropped. The active foreign-view-exit fixture
+publishes its ready marker by linking an already closed value file, so file
+creation alone cannot be mistaken for a completed BASE write.
+
+Route controls distinguish unavailable prerequisites from passing execution.
+The same-UID sudo comparison requires user namespaces and skips the whole
+comparison when they are unavailable, rather than indexing missing results.
+Where the existing privileged namespace route is available, a separate real
+sudo/watchdog control observes root supervisor peer credentials, dropped guest
+identities, static/live results and summed resource reports. On a host where
+user namespaces work, only that preliminary selection is modeled as a denial;
+sudo, namespace setup, credential dropping and every capsule still run
+genuinely. An unavailable sudo policy or namespace route remains an explicit
+unsupported outcome, never a host-security change.
+Watchdog status 125 and unexpected launcher faults fail the control; they
+cannot be relabeled as an optional permission skip. A driver-UID foreign peer
+fails at credentials on the privileged route and at ancestry on the direct
+route. Separate same-UID kernel-peer controls prove both a live owned launch
+and rejection of another live launch without changing expected credentials.
+
 Full P acceptance remains separate from implementation checkpoints. The
 identified original direct consumers have explicit source adaptations; this
 does not grant arbitrary unadapted executables or unrestricted same-directory
@@ -290,5 +332,5 @@ or raised-budget diagnostic is claimed.
 P depends on #206 and composes with the independently merged V/#226 and R/#227
 implementations from PRs #230 and #231. D/#228 depends on P, not V/R.
 No gameplay, save/config, locale, generated game content,
-modern/archival profile, package, privilege or Build-job change is introduced.
+modern/archival profile, privilege or Build-job change is introduced.
 Main owns publication, independent review and all remote delivery gates.

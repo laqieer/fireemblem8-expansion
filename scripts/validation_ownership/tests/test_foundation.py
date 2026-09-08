@@ -2219,7 +2219,20 @@ class FoundationTests(unittest.TestCase):
             first = session.command(cached)
             self.assertIs(session.command(cached), first)
             self.assertEqual(session.processes_used, 1)
-            session.make("all", commands={"printf %s genuine": Command(("/usr/bin/printf", "%s", "genuine"))})
+            producer = Command(("/usr/bin/printf", "%s", "genuine"))
+            produced = session.command(producer)
+            self.assertEqual(produced.stdout, b"genuine")
+            # Both slots belong to parked Make/helper processes. A real,
+            # already completed pure result needs no third live process.
+            observations = [
+                session.make("all", variables=("VALUE",), commands={"printf %s genuine": producer})
+                for _ in range(2)
+            ]
+            for observed in observations:
+                self.assertEqual(observed.semantics["domains"]["VALUE"]["value"], "genuine")
+                self.assertEqual(len(observed.events), 1)
+            self.assertEqual(observations[0].semantics, observations[1].semantics)
+            self.assertIs(session.command(producer), produced)
             self.assertEqual(session.processes_used, 6)
             with self.assertRaisesRegex(MakeProbeError, "descendant-process"):
                 with session.select_view(base):
@@ -2644,8 +2657,9 @@ class FoundationTests(unittest.TestCase):
         )
         command = Command((
             "/usr/bin/python3", "-c",
-            "import time\nfrom pathlib import Path\nvalue=Path('value').read_text()\n"
-            "Path('/work/started').write_text(value)\n"
+            "import os,time\nfrom pathlib import Path\nvalue=Path('value').read_text()\n"
+            "Path('/work/start-value').write_text(value)\n"
+            "os.link('/work/start-value','/work/started')\n"
             "while not Path('/work/release').exists(): time.sleep(0.01)\n"
             "print(value)\n",
         ), sources=("value",))
@@ -2663,6 +2677,8 @@ class FoundationTests(unittest.TestCase):
             backing = (original[2] / "value", session.tree / "value")
             run, remaining = session._sandbox_run, budget.remaining
             def capture_work(root, **kwargs):
+                self.assertEqual(kwargs["mode"], "command")
+                self.assertEqual(kwargs["argv"][-1], command.argv[-1])
                 work.append(Path(next(mount["source"] for mount in kwargs["mounts"] if mount["target"] == "/work")))
                 return run(root, **kwargs)
             def pause_owner():

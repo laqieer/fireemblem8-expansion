@@ -41,6 +41,32 @@ class ProducerTests(unittest.TestCase):
             ("/usr/bin/python3", "/repo/producer.py"), code=("producer.py",), outputs=("generated.txt",),
         )
 
+    def test_static_query_does_not_grant_or_copy_unused_publication_authority(self):
+        from scripts.validation_ownership.syscall_guard import Violation
+        self.fixture.add("Makefile", "all: ;\n")
+        configurations = []
+        with self.fixture.session() as session:
+            run = session.budget.run
+            def capture(argv, **kwargs):
+                if str(TRUSTED_ROOT / "sandbox_exec.py") in argv:
+                    configurations.append(json.loads(Path(argv[-1]).read_bytes()))
+                return run(argv, **kwargs)
+            with patch.object(session.budget, "run", capture):
+                observed = session.make("all")
+            self.assertEqual(observed.events, ())
+            self.assertEqual(len(configurations), 1)
+            self.assertIsNone(configurations[0]["reserved_paths"])
+            self.assertEqual(configurations[0]["publication_limit"], session.budget.limits.created_files)
+            self.assertTrue(configurations[0]["producer_endpoint"])
+        self.fixture.assert_clean(session)
+        policy, outputs = self.publication_policy(False)
+        policy.config["reserved_paths"] = configurations[0]["reserved_paths"]
+        with self.assertRaisesRegex(Violation, "query has no generated publication authority"):
+            policy.publish(1, owner="01"*32, outputs=list(outputs))
+        self.assertEqual(policy.created, 0)
+        self.assertEqual(policy.written, 0)
+        self.assertTrue(all(not (self.root / name).exists() for name in outputs))
+
     def test_runtime_capture_composes_with_live_remake_and_keeps_env_metadata_only(self):
         generated = "generated-" + self.fixture.directory.name + ".mk"
         absent = "/usr/include/" + generated
@@ -2231,11 +2257,11 @@ class ProducerTests(unittest.TestCase):
         (self.root / "generated.mk").unlink()
         values = []
         for through_sudo in (False, True):
-            with self.subTest(same_uid_sudo=through_sudo):
-                invocations = []
-                with self.fixture.session(seconds=45) as session:
-                    if session.sudo_drop:
-                        self.skipTest("the same-UID sudo control also requires the existing user-namespace route")
+            invocations = []
+            with self.fixture.session(seconds=45) as session:
+                if session.sudo_drop:
+                    self.skipTest("the same-UID sudo control also requires the existing user-namespace route")
+                with self.subTest(same_uid_sudo=through_sudo):
                     original = subprocess.Popen
                     def launch(argv, **kwargs):
                         if str(TRUSTED_ROOT / "sandbox_exec.py") in argv:
@@ -2260,14 +2286,156 @@ class ProducerTests(unittest.TestCase):
                     self.assertEqual(len(observed.events), 1)
                     self.assertGreaterEqual(len(invocations), 3)
                     values.append(observed.semantics)
-                self.fixture.assert_clean(session)
+            self.fixture.assert_clean(session)
         self.assertEqual(values[0], values[1])
+
+    def test_missing_same_uid_namespace_skips_the_whole_comparison(self):
+        from scripts.validation_ownership.make_probe import ProbeSession
+        tools, routes = ProbeSession._tools, []
+        def unavailable(session):
+            tools(session)
+            routes.append(session.sudo_drop)
+            # Model only this optional comparison's missing prerequisite.
+            # No capsule or credential transition is run under this value.
+            session.sudo_drop = True
+        case = ProducerTests("test_real_same_uid_sudo_keeps_static_make_and_live_remakes_channel_free")
+        result = unittest.TestResult()
+        with patch.object(ProbeSession, "_tools", unavailable):
+            case.run(result)
+        self.assertEqual(result.errors, [])
+        self.assertEqual(result.failures, [])
+        self.assertEqual(len(result.skipped), 1)
+        self.assertIs(result.skipped[0][0], case)
+        if not routes:
+            self.skipTest(result.skipped[0][1])
+        self.assertEqual(len(routes), 1)
+        self.assertEqual(
+            result.skipped[0][1],
+            "the same-UID sudo control also requires the existing user-namespace route",
+        )
+
+    def test_real_privileged_fallback_preserves_live_results_credentials_and_accounting(self):
+        if os.getuid() == 0 or os.getgid() == 0 or not Path("/usr/bin/sudo").is_file():
+            self.skipTest("the existing privileged route requires sudo and a non-root runner")
+        _, command, producer = self.include_fixture()
+        self.fixture.add("plain.mk", "all: ;\n")
+        session = self.fixture.session(seconds=60)
+        reports, invocations, peers, preflights = [], [], [], []
+        try:
+            available = session.budget.run(
+                [*foundation.NAMESPACE_LAUNCHER, "/usr/bin/true"],
+                env=ENVIRONMENT, privileged=True,
+            )
+            if available.returncode == 1 and (
+                available.stderr.startswith((b"sudo:", b"unshare: unshare failed:"))
+                or available.stderr.startswith(b"Sorry, user ") and b"not allowed" in available.stderr
+            ):
+                self.skipTest("existing privileged namespace route unavailable: " + available.stderr.decode("utf-8"))
+            self.assertEqual(available.returncode, 0, available.stderr)
+            run = session.budget.run
+            def fallback(argv, **kwargs):
+                result = run(argv, **kwargs)
+                if argv[0] == "/usr/bin/unshare" and "--user" in argv and argv[-1] == "/usr/bin/true":
+                    preflights.append(result.returncode)
+                    if not result.returncode:
+                        return subprocess.CompletedProcess(
+                            argv, 1, result.stdout, b"test-only user-namespace preflight denial",
+                        )
+                return result
+            launch, accept = subprocess.Popen, socket.socket.accept
+            def capture_launch(argv, **kwargs):
+                if str(TRUSTED_ROOT / "sandbox_exec.py") in argv:
+                    self.assertEqual(argv[:3], ["/usr/bin/sudo", "-n", "--"])
+                    self.assertNotIn("--user", argv)
+                    self.assertEqual(kwargs["pass_fds"], ())
+                    self.assertTrue(kwargs["close_fds"])
+                    self.assertEqual(kwargs["stdin"], subprocess.PIPE)
+                    config = json.loads(Path(argv[-1]).read_bytes())
+                    self.assertTrue(config["sudo_drop"])
+                    self.assertEqual((config["runner_uid"], config["runner_gid"]), (os.getuid(), os.getgid()))
+                    invocations.append(config["mode"])
+                return launch(argv, **kwargs)
+            def capture_peer(listener):
+                connection, address = accept(listener)
+                peers.append(struct.unpack("3i", connection.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, 12)))
+                return connection, address
+            with patch.object(session.budget, "run", fallback), session:
+                self.assertTrue(session.sudo_drop)
+                self.assertEqual(tuple(session.launcher), foundation.NAMESPACE_LAUNCHER)
+                with self.capture_reports(session, reports), patch(
+                    "subprocess.Popen", capture_launch,
+                ), patch.object(socket.socket, "accept", capture_peer):
+                    self.assertEqual(session.make("all", makefile="plain.mk").events, ())
+                    observed = session.make(
+                        "all", variables=("SELECTED", "MAKEFILE_LIST", "MAKE_RESTARTS"),
+                        commands={command: producer},
+                    )
+                    credentials = session.command(Command((
+                        "/usr/bin/python3", "-c",
+                        "import json,os;print(json.dumps([os.getresuid(),os.getresgid(),os.getgroups()]))",
+                    )))
+                self.assertEqual(observed.semantics["domains"]["SELECTED"]["value"], "observed")
+                self.assertEqual(observed.semantics["domains"]["MAKEFILE_LIST"]["value"], "Makefile generated.mk")
+                self.assertEqual(observed.semantics["domains"]["MAKE_RESTARTS"]["value"], "1")
+                self.assertEqual(len(observed.events), 1)
+                self.assertEqual(json.loads(credentials.stdout), [
+                    [os.getuid()]*3, [os.getgid()]*3, [],
+                ])
+                self.assertCountEqual(invocations, ["make", "make", "command", "command"])
+                self.assertEqual(len(peers), 2)
+                self.assertTrue(all(pid > 0 and pid != os.getpid() and uid == 0 for pid, uid, _ in peers))
+                self.assertEqual(len(preflights), 1)
+                self.assert_settled_reports(session, reports)
+                self.assertFalse((session.tree / "generated.mk").exists())
+                print("privileged route evidence:", json.dumps({
+                    "actual_user_namespace_preflight": preflights[0],
+                    "modeled_preflight_denial": preflights[0] == 0,
+                    "peer_uids": [uid for _, uid, _ in peers],
+                    "guest_credentials": json.loads(credentials.stdout),
+                    "processes": session.processes_used, "live_peak": session.live_process_peak,
+                    "memory_peak": session.memory_peak, "bytes": session.budget.bytes,
+                }, sort_keys=True))
+        finally:
+            session.budget.close()
+            self.fixture.assert_clean(session)
+
+    def test_privileged_preflight_runtime_fault_is_not_a_permission_skip(self):
+        if os.getuid() == 0 or os.getgid() == 0 or not Path("/usr/bin/sudo").is_file():
+            self.skipTest("the privileged-route control requires sudo and a non-root runner")
+        for status, diagnostic in (
+            (125, b"namespace watchdog: [Errno 9] Bad file descriptor\n"),
+            (1, b"Traceback: unexpected launcher failure\n"),
+        ):
+            with self.subTest(status=status):
+                calls, run = [], foundation.ProbeBudget.run
+                def failed_preflight(budget, argv, **kwargs):
+                    if tuple(argv) == (*foundation.NAMESPACE_LAUNCHER, "/usr/bin/true"):
+                        self.assertTrue(kwargs["privileged"])
+                        calls.append(argv)
+                        return subprocess.CompletedProcess(argv, status, b"", diagnostic)
+                    return run(budget, argv, **kwargs)
+                case = ProducerTests(
+                    "test_real_privileged_fallback_preserves_live_results_credentials_and_accounting",
+                )
+                result = unittest.TestResult()
+                with patch.object(foundation.ProbeBudget, "run", failed_preflight):
+                    case.run(result)
+                self.assertEqual(len(calls), 1)
+                self.assertEqual(result.skipped, [])
+                self.assertEqual(result.errors, [])
+                self.assertEqual(len(result.failures), 1)
+                self.assertIn(diagnostic.decode("ascii").strip(), result.failures[0][1])
 
     def test_private_rendezvous_rejects_foreign_peer_before_producer_execution(self):
         command = self.producer_fixture()
-        connections, executions = [], []
+        connections, executions, peers = [], [], []
         with self.fixture.session(seconds=30) as session:
             run, execute = session.budget.run, session.command
+            accept = socket.socket.accept
+            def capture_peer(listener):
+                connection, address = accept(listener)
+                peers.append(struct.unpack("3i", connection.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, 12)))
+                return connection, address
             def foreign_peer(argv, **kwargs):
                 channel = kwargs.get("producer_channel")
                 if channel is not None:
@@ -2283,16 +2451,76 @@ class ProducerTests(unittest.TestCase):
                 executions.append(value)
                 return execute(value)
             try:
-                with patch.object(session.budget, "run", foreign_peer), patch.object(session, "command", producer):
-                    with self.assertRaisesRegex(MakeProbeError, "foreign producer peer outside the owned launch"):
+                with patch.object(session.budget, "run", foreign_peer), patch.object(
+                    session, "command", producer,
+                ), patch.object(socket.socket, "accept", capture_peer):
+                    expected = (
+                        "foreign private producer peer credentials" if session.sudo_drop
+                        else "foreign producer peer outside the owned launch"
+                    )
+                    with self.assertRaisesRegex(MakeProbeError, expected):
                         session.make("all", commands={"python3 producer.py": command})
             finally:
                 for connection in connections:
                     connection.close()
             self.assertEqual(len(connections), 1)
+            self.assertEqual(peers, [(os.getpid(), os.getuid(), os.getgid())])
             self.assertEqual(executions, [])
             self.assertFalse((session.tree / "generated.txt").exists())
         self.fixture.assert_clean(session)
+
+    def test_same_uid_private_peer_must_belong_to_the_actual_live_launch(self):
+        connector = (
+            "import json,os,sys,time\nsys.path.insert(0,sys.argv[1])\n"
+            "from scripts.validation_ownership.producer_channel import ProducerChannel\n"
+            "peer=ProducerChannel.connect(json.loads(sys.argv[2]),owner_uid=int(sys.argv[3]),"
+            "server_pid=int(sys.argv[4]),deadline=time.monotonic()+10,limit=4096)\n"
+            "os.write(1,b'connected\\n');os.read(0,1);peer.close()\n"
+        )
+        for defect in ("launch", "credentials", "positive"):
+            with self.subTest(defect=defect):
+                directory = self.fixture.directory / ("same-uid-peer-" + defect)
+                directory.mkdir(mode=0o700)
+                listener = ProducerChannel.listen(directory, deadline=time.monotonic() + 10, limit=4096)
+                peers, accept = [], socket.socket.accept
+                def capture_peer(server):
+                    connection, address = accept(server)
+                    peers.append(struct.unpack("3i", connection.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, 12)))
+                    return connection, address
+                try:
+                    with self.fixture.owned_process([
+                        "/usr/bin/python3", "-I", "-S", "-B", "-c", "import os;os.read(0,1)",
+                    ]) as (other, _), self.fixture.owned_process([
+                        "/usr/bin/python3", "-I", "-S", "-B", "-c", connector, str(foundation.ROOT),
+                        json.dumps(listener.endpoint), str(os.getuid()), str(os.getpid()),
+                    ]) as (child, _):
+                        self.assertEqual(child.stdout.readline(), b"connected\n")
+                        self.assertIsNone(other.poll())
+                        self.assertIsNone(child.poll())
+                        kwargs = {
+                            "launcher_pid": other.pid if defect == "launch" else child.pid,
+                            "peer_uid": os.getuid() + (defect == "credentials"), "ancestry_limit": 32,
+                        }
+                        with patch.object(socket.socket, "accept", capture_peer):
+                            if defect == "positive":
+                                listener.accept(**kwargs)
+                                self.assertFalse(listener.listening)
+                            else:
+                                expected = (
+                                    "foreign private producer peer credentials" if defect == "credentials"
+                                    else "foreign producer peer outside the owned launch"
+                                )
+                                with self.assertRaisesRegex(ChannelError, expected):
+                                    listener.accept(**kwargs)
+                                self.assertTrue(listener.listening)
+                        self.assertEqual(peers, [(child.pid, os.getuid(), os.getgid())])
+                        child.stdin.write(b"x")
+                        child.stdin.flush()
+                        self.assertEqual(child.wait(timeout=5), 0, child.stderr.read())
+                finally:
+                    listener.close()
+                    (directory / "peer.sock").unlink()
+                    directory.rmdir()
 
     def test_private_rendezvous_binds_real_directory_socket_and_server_identity(self):
         for defect in ("positive", "directory", "mode", "socket", "symlink", "server"):

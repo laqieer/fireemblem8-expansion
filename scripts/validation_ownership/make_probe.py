@@ -955,7 +955,8 @@ class ProbeSession:
     def _sandbox_run(
         self, root, *, mode, argv, environment, mounts, code=(), sources=(),
         directories=(), executables=None, mapping_entries=(), metadata_validation=False,
-        producer_handler=None, publication_observer=None, dependency=None,
+        producer_handler=None, publication_observer=None, publication_allowed=True,
+        dependency=None,
     ):
         self.budget.remaining()
         if [item for item in mounts if item["target"] == "/repo"] != [self._mount(self.tree, "/repo")]:
@@ -1037,7 +1038,7 @@ class ProbeSession:
             if mode != "make":
                 raise MakeProbeError("live producer requests require native Make")
             config["producer_scope"] = self.base.name + "/" + root.name
-            config["reserved_paths"] = list(self.loader.entries)
+            config["reserved_paths"] = list(self.loader.entries) if publication_allowed else None
             config["publication_limit"] = self.budget.limits.created_files
             if self.published_sources:
                 config["published"] = self._publication_records()
@@ -1773,6 +1774,9 @@ class ProbeSession:
         generated_directories = self.generated_directories
         confirmed = 0
         depth = self.make_depth
+        # A query without registrations or inherited outputs has no publication
+        # authority. Do not copy the complete tree's unused reservation list.
+        publication_allowed = commands is not None or bool(self.published_sources)
         commands = {} if commands is None else commands
 
         def cleanup_generated():
@@ -1909,6 +1913,7 @@ class ProbeSession:
                     self._mount(Path("/dev/null"), "/dev/null", writable=True),
                 ],
                 producer_handler=produce, publication_observer=acknowledge,
+                publication_allowed=publication_allowed,
             )
             raw_events = self.budget.read_bytes(events_path, "event")
             native_events = b"".join(bytes.fromhex(item) for item in observed["events"])

@@ -69,6 +69,10 @@ proc child visibility, and ptrace vfork-completion stops are also required.
 Missing lifecycle primitives reject before a payload runs; there is no
 numeric-PID generation-check or unconfined fallback.
 Native C++ tool consumers additionally need the existing host C++ compiler.
+The producer suite's real graphics/linker controls also use libpng,
+pkg-config and ARM binutils; its extended Build owner installs those existing
+consumer prerequisites. They are not requirements of the standalone registry
+command above.
 The existing required `extended-host-tests` Build worker runs this complete
 process suite through `ownership-probe-test` in full Build mode, in parallel
 with the host localization work. Lightweight `tests/workflows` checks verify
@@ -872,6 +876,10 @@ newborns and suspended vfork ancestors. `Limits.descendants` bounds cumulative
 actual creation across every core capsule, command and replay.
 The old extra 32-total-per-capsule restriction is explicitly replaced by the
 live-capacity bound; none of the numerical maxima is increased.
+A cold live producer needs a third slot beside Make and its parked helper.
+With only two slots, callers can reuse a compatible pure result already
+executed under the same report, but cannot start another guest. Earlier work
+and repeated Make queries still count toward the descendant allowance.
 
 The caller passes `process_limit` and the remaining `descendant_limit`
 separately. Each admitted fork/vfork/clone/clone3 reserves capacity before kernel
@@ -900,6 +908,13 @@ no core dumps and a 4,096-creation aggregate cap. Limits may be lowered, not
 raised. Filesystem observations and serialized semantic results consume the
 same bounded control budget. Parallel calls to one session reject; a violation
 makes the entire session unusable.
+Static Make queries with neither registrations nor inherited publications keep
+their authenticated live handshake but explicitly deny publication. Their
+private configuration uses `reserved_paths: null` rather than repeatedly
+serializing an unused full-tree reservation list. Registered/inherited scopes
+keep all reservations. This does not remove any source capture, metadata
+buffer, observation charge or registry execution from the full CURRENT/BASE
+consumer pair.
 
 The existing pending-byte category is cumulative **lifetime traffic**, not a
 live outstanding-memory gauge: uncached command declarations, variant inputs,
@@ -1005,6 +1020,16 @@ claim a real sudo credential-transition positive. That route requires separate
 exact-candidate evidence on a host where the documented noninteractive sudo
 permission is available; never use a shared development host's credentials or
 change its namespace policy to manufacture the result.
+The producer suite has a separate real privileged-route control, conditional
+on that existing permission and namespace support. It observes root supervisor
+socket credentials, the non-root guest identities after the real drop, actual
+static/remade Make results and cumulative capsule reports. Its optional
+same-UID comparison remains distinct and skips as one whole comparison when
+user namespaces are unavailable. Actual foreign credentials and same-UID
+foreign ancestry have separate paired kernel-socket controls; no peer check is
+weakened to accommodate a different launch route.
+Watchdog status 125 or an unexpected preflight failure is a failed control, not
+an optional permission skip.
 
 ## Contract allocation and downstream integration
 
