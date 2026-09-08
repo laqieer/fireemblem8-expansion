@@ -72,6 +72,7 @@ class Snapshot:
             "scripts/__init__.py", "scripts/host_python.py",
             "scripts/workflow_pilot/__init__.py", "scripts/workflow_pilot/reporter.py",
             "scripts/workflow_pilot/isolated_launcher.py",
+            "scripts/workflow_pilot/raw_diff_check.py",
             "scripts/workflow_pilot/review_family.py",
             "scripts/workflow_pilot/review_subjects.py",
             "scripts/workflow_pilot/trusted_review_gate.py",

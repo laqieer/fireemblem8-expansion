@@ -172,7 +172,6 @@ class ProbeBudget:
         self.remaining()
         if (producer_channel is None) != (producer_handler is None):
             self.reject("incomplete private producer channel")
-        producer_fd = None if producer_channel is None else producer_channel.peer.fileno()
         self.runs += 1
         if self.runs > self.limits.runs:
             self.reject("aggregate process-launch budget exhausted")
@@ -210,7 +209,6 @@ class ProbeBudget:
                     str(Path(__file__).resolve().with_name("lifecycle.py")),
                     str(self.deadline),
                     *(["--stdin-fd", str(input_read)] if input_read is not None else []),
-                    *(["--producer-fd", str(producer_fd)] if producer_fd is not None else []),
                     "--", *argv,
                 ]
                 if privileged:
@@ -219,19 +217,13 @@ class ProbeBudget:
                 child = subprocess.Popen(
                     launcher, cwd=cwd, env=env, stdin=subprocess.PIPE,
                     stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                    pass_fds=(
-                        *((input_read,) if input_read is not None else ()),
-                        *((producer_fd,) if producer_fd is not None else ()),
-                    ),
+                    pass_fds=() if input_read is None else (input_read,),
                     close_fds=True, start_new_session=True,
                     preexec_fn=lambda: signal.pthread_sigmask(signal.SIG_SETMASK, mask),
                 )
                 if input_read is not None:
                     os.close(input_read)
                     input_read = None
-                if producer_fd is not None:
-                    producer_channel.close_peer()
-                    producer_fd = None
                 self.children[child] = privileged
             finally:
                 signal.pthread_sigmask(signal.SIG_SETMASK, mask)
@@ -250,6 +242,8 @@ class ProbeBudget:
                 count = 0
                 producer_finished = producer_channel is None
                 while selector.get_map():
+                    if producer_channel is not None and producer_channel.listening and child.poll() is not None:
+                        raise ChannelError("supervisor exited before private producer connection")
                     if (
                         producer_finished and all(key.data == 4 for key in selector.get_map().values())
                         and child.poll() is not None
@@ -262,6 +256,18 @@ class ProbeBudget:
                             key.fileobj.ensure_idle()
                             continue
                         if key.data == 3:
+                            if producer_channel.listening:
+                                selector.unregister(producer_channel)
+                                producer_channel.accept(
+                                    launcher_pid=child.pid, peer_uid=0 if privileged else os.getuid(),
+                                    ancestry_limit=self.limits.entries,
+                                )
+                                selector.register(producer_channel, selectors.EVENT_READ, 3)
+                                continue
+                            if producer_finished:
+                                if producer_channel.receive_eof():
+                                    selector.unregister(producer_channel)
+                                continue
                             packet = producer_channel.receive()
                             if packet is None:
                                 continue
@@ -289,7 +295,7 @@ class ProbeBudget:
                                 self.producer_waiters.pop()
                             if reply is None:
                                 producer_finished = True
-                                selector.unregister(producer_channel)
+                                producer_channel.shutdown_write()
                             else:
                                 producer_channel.send(reply)
                             continue
@@ -331,8 +337,6 @@ class ProbeBudget:
                 actions.append(lambda: os.close(input_write))
             if input_stream is not None:
                 actions.append(input_stream.close)
-            if producer_fd is not None:
-                actions.append(producer_channel.close_peer)
             try:
                 finish_cleanup(actions, primary=primary)
             except BaseException:

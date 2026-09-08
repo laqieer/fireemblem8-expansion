@@ -11,7 +11,9 @@ complete #180 integration or a full-root/domain/calibration result.
 `Command` retains exact argv, code, sources and directory permissions. The
 extension adds an optional session-issued `native_tool` and explicit relative
 `outputs`. `ProcessOutput.generated` contains captured `GeneratedFile` values:
-path, actual bytes and ordinary file mode.
+path, actual bytes and ordinary file mode. Its `input_identities` binds the
+resolved code/source paths, modes and bytes at actual execution; native build
+inputs and Make provenance use that receipt, not a later view's hashes.
 
 ```python
 producer = Command(
@@ -78,12 +80,24 @@ fulfilled receipt exactly.
 ## Isolation and the two-phase boundary
 
 The private per-call socket is between the driver and supervisor, not guest
-stdin, stdout or the watchdog lifetime pipe. It has no listening pathname,
-service or daemon. The watchdog forwards only the owned descriptor to the
-supervisor and closes its copy. Every candidate bootstrap closes nonstandard
-descriptors before exec; the supervisor checks the actual initial kernel FD
-set. The producer cannot read callback controls, choose a host callback, or
-acquire producer authority by issuing a private marker.
+stdin, stdout or the watchdog lifetime pipe. The existing driver listens only
+for that invocation in an owned mode-0700 report directory outside guest
+mounts; the mode-0600 Unix socket is removed by the same report cleanup. This
+is an ephemeral rendezvous, not a service or daemon. The supervisor opens it
+after the existing sudo/unshare boundary, so no callback descriptor has to
+survive sudo's descriptor-closing exec. No closefrom override or sudoers
+change is required. Nofollow directory/socket identities and kernel peer
+credentials bind the connection; the driver pins the connector's ancestry to
+its own live watchdog launch. A foreign connection fails, rather than causing
+another connection attempt. Short dirfd-relative `/proc/self/fd` paths avoid
+Unix socket pathname truncation without moving the channel outside owned
+storage.
+
+Every candidate bootstrap closes nonstandard descriptors before exec; the
+supervisor checks the actual initial kernel FD set. The producer cannot read
+callback controls, choose a host callback, or acquire producer authority by
+issuing a private marker. The watchdog remains solely the lifetime/stdio
+owner and reaper; it neither forwards nor interprets producer traffic.
 
 The producer sees readonly/noexec `/repo` and writable private `/work`.
 Publication follows successful exit and complete bounded capture. Writing
@@ -103,11 +117,15 @@ Only a normalized logical producer can replace its own generated output.
 Output-producing invocations execute genuinely for every actual dispatch.
 Identical storage/provenance can deduplicate, but that does not erase a call or
 publication effect. Pure reuse remains subject to complete current observations.
-Declared published-source bytes and modes also bind the cache key: a reader
-using only `open`/`read` must not reuse old output after its generated input is
-replaced, even when it made no metadata syscall on that input. Unchanged
-generated inputs retain valid reuse; identity storage and comparison spend the
-existing cache/control budgets.
+Resolved source membership and declared published code/source bytes and modes
+also bind the cache key: a reader using only `open`/`read` must not reuse old
+output after its generated input or code is replaced, even when it made no
+metadata syscall on that input. Explicitly declared generated code is admitted
+only while its actual published object exists; a cached result cannot extend
+that admission past cleanup. Unchanged inputs retain valid reuse, including
+unchanged glob membership. Identity storage and comparison spend the existing
+cache/control budgets. A cache hit retains its original execution receipt;
+current input hashes never relabel earlier stdout.
 The kernel's metadata on published objects is authoritative, not metadata
 copied from private output files.
 
@@ -130,11 +148,20 @@ declarations, output, mapping, cache and publication data spend their existing
 categories. No category refund/reset, second budget, cap increase or calibration
 is part of this implementation.
 
-Malformed, foreign, duplicate, stale or out-of-order traffic, EOF, unknown
-slots, parked-process death, callback failure and interruption are terminal.
+Malformed, foreign, duplicate, stale or out-of-order traffic, premature EOF,
+unknown slots, parked-process death, callback failure and interruption are terminal.
 A partially sent reply is never retried as another effectful request. Nested
 work monitors its ancestor channel, so losing the outer lifetime interrupts
-the producer rather than leaving it alive. Existing pidfd/watchdog/sole-reaper
+the producer rather than leaving it alive. The supervisor also monitors
+unsolicited traffic between requests while Make continues. At completion it
+waits for the driver's write-half EOF before accepting the final report: a
+separately delivered last reply or even one partial framing byte cannot hide
+after the final exchange. Unexpected trailing input is drained only within the
+existing byte/deadline bounds to preserve the failed report and its final
+counter delta; it still rejects. The driver rejects extra completion traffic,
+binds the completion notification to the actual transcript and waits for
+supervisor EOF after the report is written. This terminal barrier closes both
+directions without retrying work. Existing pidfd/watchdog/sole-reaper
 cleanup removes owned channels, private roots and generated paths.
 
 ## Evidence and remaining scope

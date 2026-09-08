@@ -1000,6 +1000,8 @@ class TesterCaseRegistryTests(unittest.TestCase):
                         "commands": {
                             "build/host-python/bin/python3 -I -m unittest discover "
                             "-s scripts/workflow_pilot/tests -t . -p 'test_*review*.py' -v",
+                            "build/host-python/bin/python3 -I -m unittest discover "
+                            "-s scripts/workflow_pilot/tests -t . -p 'test_review_process_cleanup.py' -v",
                             "python3 -m unittest "
                             "scripts.workflow_pilot.tests.arm_review_subjects -v",
                         },
@@ -1950,7 +1952,7 @@ class StructuralObjectCountClaimTests(unittest.TestCase):
 #   2. docs/framework-support.md said the item-ID-expansion checks were
 #      "gates 11-12" of the upstream verify gate set; the real, current
 #      scripts/upstream_port/verify.py gates() puts them at gates 20-21
-#      of exactly 28.
+#      of exactly 29.
 #
 # These tests prove: (a) every old phrase is flagged stale if it reappears,
 # (b) the current live doc/report text is stale-clean, (c) the historical,
@@ -2063,7 +2065,7 @@ class StaleIssue5StatusAndGateNumberRegressionTests(unittest.TestCase):
         finally:
             sys.modules.pop(spec.name, None)
 
-        self.assertEqual(len(all_gates), 28)
+        self.assertEqual(len(all_gates), 29)
         self.assertIn("itemexpansion", all_gates[19].name)
         self.assertIn("itemexpansion", all_gates[20].name)
         for index, gate in enumerate(all_gates):

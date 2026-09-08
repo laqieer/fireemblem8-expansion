@@ -18,7 +18,6 @@ import posixpath
 import re
 import resource
 import signal
-import socket
 import stat
 import time
 from collections import deque
@@ -979,7 +978,7 @@ class Policy:
             elif a == VO_PRODUCE:
                 if (
                     state.role != "helper" or state.helper_kind != VO_LIVE
-                    or not self.config.get("producer_fd") or state.producer_requested
+                    or not self.config.get("producer_endpoint") or state.producer_requested
                     or not 20 <= c <= SYSCALL_MEMORY_LIMIT
                 ):
                     raise Violation("unauthenticated or repeated producer request")
@@ -1142,7 +1141,7 @@ class Policy:
                     state.helper_kind = VO_VALUE if (
                         required or source == "/usr/bin/make" or self.fd(state, 1) == "<pipe>"
                     ) else VO_RECIPE
-                    if state.helper_kind == VO_VALUE and self.config.get("producer_fd"):
+                    if state.helper_kind == VO_VALUE and self.config.get("producer_endpoint"):
                         state.helper_kind = VO_LIVE
                     state.dispatch = None
                 else:
@@ -1371,12 +1370,11 @@ def supervise(config, drop_privileges):
         "descendant_limit", "syscall_limit", "write_limit", "creation_limit",
         "observation_count", "observation_limit", "process_limit", "memory_limit",
     )}
-    if config.get("producer_fd") is not None:
-        descriptor = config["producer_fd"]
-        if type(descriptor) is not int or descriptor < 3 or not stat.S_ISSOCK(os.fstat(descriptor).st_mode):
-            raise Violation("producer callback descriptor is not a private socket")
-        channel = ProducerChannel(
-            socket.socket(fileno=descriptor), deadline=config["deadline"], limit=config["file_limit"],
+    if config.get("producer_endpoint") is not None:
+        channel = ProducerChannel.connect(
+            config["producer_endpoint"],
+            owner_uid=config["runner_uid"] if config["sudo_drop"] else os.geteuid(),
+            server_pid=0, deadline=config["deadline"], limit=config["file_limit"],
         )
     processes = {}
     policy.processes = processes
@@ -1623,6 +1621,7 @@ def supervise(config, drop_privileges):
         if hashlib.sha256(stdout).hexdigest() != reply["stdout_sha256"]:
             raise Violation("producer stdout differs from its validated result")
         channel.require_live([record.pidfd for record in processes.values()] + list(newborn_stops.values()))
+        channel.ensure_idle()
         policy.publish(sequence - 1, owner=reply["owner"], outputs=reply["outputs"])
         policy.producer_completed = sequence
         state.producer_slot = sequence - 1
@@ -1650,6 +1649,8 @@ def supervise(config, drop_privileges):
         while processes:
             if time.monotonic() >= config["deadline"]:
                 raise Violation("aggregate probe deadline exhausted in syscall supervisor")
+            if channel is not None:
+                channel.ensure_idle()
             if policy.producer_requests and processes[policy.producer_requests[0]].producer_ready:
                 fulfill_producer()
                 continue
@@ -1712,14 +1713,20 @@ def supervise(config, drop_privileges):
             Path(config["report"]).write_text(
                 json.dumps(result, sort_keys=True, separators=(",", ":")), encoding="ascii",
             )
-        def close_channel():
+        def finish_channel():
+            nonlocal error
             if channel is not None:
                 try:
-                    channel.send(encoded({
+                    channel.finish(encoded({
                         "kind": "finished", "scope": config["producer_scope"],
                         "issued": policy.producer_issued, "completed": policy.producer_completed,
                     }))
-                finally:
-                    channel.close()
-        finish_cleanup([reap_owned, write_report, close_channel], primary=primary)
+                except BaseException as failure:
+                    if error is None:
+                        error = str(failure)
+                    raise
+        finish_cleanup([
+            reap_owned, finish_channel, write_report,
+            *([] if channel is None else [channel.close]),
+        ], primary=primary)
     return 0 if result["ok"] else 125

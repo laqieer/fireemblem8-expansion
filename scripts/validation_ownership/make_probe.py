@@ -14,7 +14,6 @@ import re
 import secrets
 import shutil
 import signal
-import socket
 import stat
 import struct
 import sys
@@ -94,6 +93,7 @@ class ProcessOutput:
     artifact: bytes | None = None
     metadata: tuple[tuple, ...] = ()
     generated: tuple[GeneratedFile, ...] = ()
+    input_identities: tuple[tuple[str, str, str], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -717,8 +717,9 @@ class ProbeSession:
         }
         settled = dict.fromkeys(counter_names, 0)
         sequence = 0
+        completion = None
         channel = None
-        parent = peer = None
+        channel_directory = self.base / f"producer-{self.serial}"
         if producer_handler is not None:
             if mode != "make":
                 raise MakeProbeError("live producer requests require native Make")
@@ -785,7 +786,7 @@ class ProbeSession:
             }
 
         def dispatch(packet):
-            nonlocal sequence
+            nonlocal sequence, completion
             request = parse_json(packet, "producer request")
             if not isinstance(request, dict) or request.get("scope") != config["producer_scope"]:
                 raise MakeProbeError("foreign producer request scope")
@@ -796,6 +797,7 @@ class ProbeSession:
                     or type(request["completed"]) is not int or not 0 <= request["completed"] <= sequence
                 ):
                     raise MakeProbeError("invalid producer completion notification")
+                completion = request["issued"], request["completed"]
                 return None
             if (
                 set(request) != {"kind", "scope", "sequence", "completed", "frame", "counters", "reserved"}
@@ -855,24 +857,19 @@ class ProbeSession:
         def close_channel():
             if channel is not None:
                 channel.close()
-            else:
-                if parent is not None:
-                    parent.close()
-                if peer is not None:
-                    peer.close()
         with cleanup_scope([
             lambda: report.unlink(missing_ok=True), lambda: config_path.unlink(missing_ok=True),
-            close_channel,
+            close_channel, lambda: _remove_owned_tree(channel_directory),
         ]):
             if producer_handler is not None:
                 mask = signal.pthread_sigmask(signal.SIG_BLOCK, (signal.SIGINT, signal.SIGTERM))
                 try:
-                    parent, peer = socket.socketpair()
-                    channel = ProducerChannel(
-                        parent, peer=peer, deadline=self.budget.deadline, limit=file_remaining,
+                    channel_directory.mkdir(mode=0o700)
+                    channel = ProducerChannel.listen(
+                        channel_directory, deadline=self.budget.deadline, limit=file_remaining,
                         charge=lambda size: self.budget.charge("control", size),
                     )
-                    config["producer_fd"] = peer.fileno()
+                    config["producer_endpoint"] = channel.endpoint
                 finally:
                     signal.pthread_sigmask(signal.SIG_SETMASK, mask)
             payload = encoded(config)
@@ -929,6 +926,7 @@ class ProbeSession:
                     not isinstance(final, dict) or set(final) != {"issued", "completed", "pending_peak"}
                     or any(type(value) is not int for value in final.values())
                     or final["issued"] != sequence or final["completed"] != sequence
+                    or completion != (final["issued"], final["completed"])
                     or not 0 <= final["pending_peak"] <= config["pending_limit"]
                 ):
                     raise MakeProbeError("partial or inconsistent live producer completion")
@@ -1090,19 +1088,20 @@ class ProbeSession:
         sources = self.sources(command.sources) if command.sources else ()
         directories = self._directories(command.directories)
         outputs = self._output_paths(command.outputs)
-        published_inputs = tuple(self.source_owners(set(sources) & self.published_sources.keys()))
+        for path in code:
+            relative_path(path)
+            if path not in self.snapshot.files and path not in self.published_sources:
+                raise MakeProbeError(f"unadmitted command code: {path}")
+        published_inputs = tuple(self.source_owners((set(code) | set(sources)) & self.published_sources.keys()))
         if published_inputs:
             self.budget.charge("control", len(encoded(published_inputs)))
-        key = (self.snapshot.digest, command, None if native is None else native.digest, published_inputs)
+        key = (self.snapshot.digest, command, None if native is None else native.digest, code, sources, published_inputs)
         if key in self.cache and not outputs:
             for cached in self.cache[key]:
                 if self._metadata_matches(cached.metadata):
                     return cached
         self.budget.charge("pending", len(encoded([command.argv, code, sources, directories, outputs])))
-        for path in code:
-            relative_path(path)
-            if path not in self.snapshot.files:
-                raise MakeProbeError(f"unadmitted command code: {path}")
+        input_identities = tuple(self.source_owners(set(code) | set(sources)))
         work = self.base / f"command-{self.serial + 1}"
         root_name = f"command-root-{self.serial + 1}"
         root = self.base / root_name
@@ -1137,6 +1136,7 @@ class ProbeSession:
                 None if compiler is None else self.budget.read_bytes(output / "tool", "control"),
                 observed["metadata"],
                 self._capture_outputs(output, outputs),
+                input_identities,
             )
             self.budget.charge(
                 "cache", len(completed.stdout) + len(completed.stderr)
@@ -1145,6 +1145,7 @@ class ProbeSession:
                 + sum(len(item.data) + len(os.fsencode(item.path)) + 64 for item in result.generated),
             )
             self.budget.charge("cache", len(encoded(result.metadata)))
+            self.budget.charge("cache", len(encoded(result.input_identities)))
             self.cache.setdefault(key, []).append(result)
             return result
 
@@ -1196,7 +1197,7 @@ class ProbeSession:
         binary = result.artifact
         self._validate_native(binary)
         digest = hashlib.sha256(binary).hexdigest()
-        inputs = tuple(self.snapshot.owners(command.code))
+        inputs = result.input_identities
         key = hashlib.sha256(encoded([digest, inputs])).hexdigest()
         if key not in self.native_tools:
             self.budget.charge("cache", len(encoded([digest, inputs])))
@@ -1346,10 +1347,10 @@ class ProbeSession:
                         if parent.as_posix() != "." and not (self.tree / parent).exists()
                     )
                 result = self.command(registration)
-                inputs = self.sources(registration.sources)
+                inputs = result.consumed
                 identity = {
                     "argv": list(registration.argv), "directories": sorted(set(registration.directories)),
-                    "inputs": self.source_owners(set(registration.code) | set(inputs)),
+                    "inputs": list(result.input_identities),
                 }
                 if registration.native_tool is not None:
                     tool = registration.native_tool

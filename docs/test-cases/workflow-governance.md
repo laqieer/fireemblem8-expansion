@@ -118,15 +118,18 @@ the consumers' independent protected-principal/deployment requirements.
 ## TC-WORKFLOW-REVIEW-FAMILY-001: Expand valid findings across complete sibling families
 
 - **Feature / originating issue:** `workflow-governance` /
-  [issue #179](https://github.com/laqieer/fireemblem8-expansion/issues/179).
-- **Supported configuration:** source checkout, the existing #216 locked
+  [issue #179](https://github.com/laqieer/fireemblem8-expansion/issues/179);
+  ordinary subprocess cleanup regression
+  [#223](https://github.com/laqieer/fireemblem8-expansion/issues/223).
+- **Supported configuration:** Linux source checkout, the existing #216 locked
   CPython 3.12 host environment, Git and native GCC for host coverage; the
   existing modern Build lane's ARM GCC/binutils for mandatory object positives.
 - **Prerequisites and starting state:** run from the repository root. Follow
   the [existing host setup](../workflow-pilot.md#isolated-host-python-dependencies)
   if needed. Tests create only owned source copies/Git histories below
-  `build/review-family-*`. No live PR, credential, ROM, emulator, protected
-  installation or new agent backend is needed. CLI fixtures invoke the
+  `build/review-family-*` and `build/review-process-tests-*`. No live PR,
+  credential, ROM, emulator, protected installation or new agent backend is
+  needed. CLI fixtures invoke the
   independently trusted test checkout's existing fixed launcher outside
   the owned candidate repository; they do not execute a candidate bootstrap.
 
@@ -138,6 +141,63 @@ the consumers' independent protected-principal/deployment requirements.
    build/host-python/bin/python3 -I -m unittest discover \
      -s scripts/workflow_pilot/tests -t . -p 'test_*review*.py' -v
    ```
+
+   For the #223 lifetime regression alone, select:
+
+   ```bash
+   build/host-python/bin/python3 -I -m unittest discover \
+     -s scripts/workflow_pilot/tests -t . -p 'test_review_process_cleanup.py' -v
+   ```
+
+   The preserved pre-fix control starts an ordinary sleeping grandchild through
+   the real command and staged `run_obligations` path: timeout used to leave it
+   live even as the staging directory was removed. The current fixtures shorten
+   only test deadlines and observe actual process identity/exit state before
+   directory cleanup. Repeat inner command/native and outer worker timeouts,
+   closed or inherited stdio, early leader exit, full or closed stdin, output
+   overage, `SIGINT` and normal `SIGTERM`. Every owned child must be terminated
+   and reaped before cleanup, while an unrelated process and the caller's group
+   remain alive. Positive byte input/output and real native 0/1/other exit
+   classifications must remain unchanged. An unavailable cleanup observation
+   retains staging and never supplies satisfied evidence.
+   At the real `Popen` boundary, deliver `SIGINT` and a handled `SIGTERM` after
+   successful creation but before the handle returns. Neither may bypass
+   cleanup protection: interruption propagates out of the runner only after
+   owned work is reaped, the caller's handler is restored, and the payload inherits no
+   unintended signal mask. Repeat with a real creation error. Deny the
+   kernel-handle termination operation after a real staged launch: pidfds must
+   show live owned work and the directory must remain until the test restores
+   termination and cleans its own processes.
+   Combine that real staged termination failure with a failed subreaper-state
+   restoration. Staging must still remain with nonterminal owned pidfds, and
+   its unavailable diagnostic must expose both failures. Restore-only failure
+   must still raise, while successful restoration returns the real output.
+   Force initial pidfd acquisition failure after a real staged launch, then
+   reject group termination. The pidfds held by the test must show live owned
+   work, staging must remain, and the unsafe diagnostic must retain its cause.
+   Repeat healthy fallback, `ESRCH`, timeout, failed wait and an already-reaped
+   leader; missing-leader evidence must not authorize a possibly reused group.
+   Exercise subsequent selector/descriptor/stream/mask/handler restoration
+   failures during unsafe cleanup. They must not erase the hold or the primary
+   diagnostic. Conversely, ordinary release errors after verified cleanup must
+   not retain staging. Restore fault injections before cleaning only owned
+   fixture processes and paths.
+   Run the complete operation-local timing matrix: after creation, during body
+   work, at normal/error cleanup entry, a second signal after the first
+   interruption, reaper/handler restoration and after positive cleanup
+   confirmation. Observe actual callback invocation, pidfd/exit state and the
+   directory cleanup boundary, not success-shaped labels. Nonraising caller
+   handlers must retain both successful output and ordinary timeout behavior;
+   unrelated processes, caller handlers and masks remain intact. Combine close
+   and restoration failures with genuinely unconfirmed termination.
+   Interrupt the actual cleanup transition with an ordinary error while real
+   children remain live: without the current runner's private positive cleanup
+   notification, staging must remain regardless of exception class. Verified
+   tool/timeout failures must still remove their owned staging.
+   Remove or corrupt the checkout helper and give the candidate a different
+   committed helper: both coordinator and staged worker must still execute the
+   exact selected tool-tree bytes. Overlapping tool module instances must also
+   restore the process-wide reaper setting after their owned work finishes.
 
 2. With the supported ARM compiler/binutils on PATH (or the resolved
    `MODERN_CC`, `MODERN_NM` and `MODERN_SIZE` environment paths), run the
@@ -164,7 +224,10 @@ the consumers' independent protected-principal/deployment requirements.
    target: its own selector must fail on geometry, then pass restored source.
    Enabled and disabled reference drivers and ARM object
    symbols/sections pass in their respective profiles, including formatting-only
-   source changes. Remove EWRAM placement from the core, reference, then both
+   source changes. The ARM selector also runs one mixed native/ARM/generated/host
+   staged scenario through the shared process runner; host-only discovery does
+   not acquire an ARM-tool installation requirement. Remove EWRAM placement
+   from the core, reference, then both
    in owned source revisions. Inspect the real compiled objects: each missing
    section must reject the enabled ARM member even though total EWRAM is
    below budget. Restored enabled placement, aggregate EWRAM/text budgets and
@@ -389,16 +452,17 @@ ROM/RAM, modern/archival, topology or required-context change occurs.
 
 ### Automation
 
-The command in step 1 runs the existing unittest runner against only the three
-review test modules. They exercise actual native/ARM, generated-data and
-source-reducer observations, closed CLI behavior, independent schema parity
+The commands in step 1 run the existing unittest runner against the host review
+test modules. Together with the ARM selector they exercise actual native/ARM,
+generated-data and source-reducer observations, closed CLI behavior, independent schema parity
 and coordinator task/GitHub adapters. No live task, remote mutation or broad
 ROM/profile matrix is part of this deterministic test case.
 
 ### Cleanup and limitations
 
 Tests remove only their owned fixtures; retain actual task work and diagnostic
-logs.
+logs. A reported unverified process cleanup retains its staged directory until
+owned work is confirmed terminal; never remove it merely to hide the diagnostic.
 
 The trusted reviewer/coordinator selects the authoritative finite model:
 filenames do not establish semantic completeness. Unknown or newly changed
@@ -407,7 +471,9 @@ tool revision in the same feature PR. A model is not another canonical case
 catalog or an installation prerequisite. Read-only roles/minimal environments
 are not hostile same-UID isolation. Applicable real gameplay runtime evidence
 remains required for an actual gameplay change. No manual-only criterion
-applies to this workflow case.
+applies to this workflow case. The ordinary cleanup regression does not promise
+containment of deliberately escaping descendants, abrupt coordinator `SIGKILL`
+or arbitrary concurrent host mutation, and does not reinstate #204/#210.
 
 ## TC-WORKFLOW-WORKTREE-CLEANUP-001: Remove only proven completed worktrees
 
@@ -1190,7 +1256,7 @@ while candidate eligibility remains bound to that prior full run.
 workflow and asserts exact trigger, job, head, worker-condition, summary, setup,
 pin, and environment semantics, including the pre-fix negative selection.
 
-`python3 -m unittest tests.upstream_port.test_verify -v` preserves the 28 local
+`python3 -m unittest tests.upstream_port.test_verify -v` preserves the 29 local
 gates while requiring complete eight-job source/target equivalence: the retained
 issue #176 jobs remain closed and the identity/router/classifier are closed
 setup-only jobs, never 29th/30th/31st local gates.
@@ -2154,7 +2220,7 @@ the exact branch and head; timeout or ambiguity fails before `gh run watch`.
    Run
    `python3 -m unittest tests.upstream_port.test_verify.VerifyCliCwdTests.test_metadata_event_setup_is_closed_and_not_a_local_gate -v`.
    Require the upstream verifier to accept the complete producer/output/marker
-   setup while retaining exactly 28 local gate commands. Remove, duplicate,
+   setup while retaining exactly 29 local gate commands. Remove, duplicate,
    relink or weaken either setup step, mutate event/run/attempt inputs, and
    fabricate proof in either no-proof branch: each must reject before gates
    execute. Equivalent command spacing and environment-mapping order must
@@ -2322,7 +2388,7 @@ positive, while a timestamp-only or watermark-only replacement must fail the
 delayed-earlier and same-second ambiguous-version controls.
 Before the coupled upstream integration fix, the verifier rejected the valid
 new router output before it could recognize the producer/marker setup, so the
-real `verify --dry-run` failed instead of listing its 28 gates. The regression
+real `verify --dry-run` failed instead of listing its then-28 gates. The regression
 must accept that complete setup without replacing the closed validator with an
 any-step or any-output allowance.
 
@@ -2682,10 +2748,26 @@ Start from a clean checkout; fixtures use only ignored `build/test-artifacts`.
    Inspect the returned native `localization-check` dependency on
    `localization-generate`, the actual output-directory value and the real
    chapterbundle registry result containing `src/data/ch2_bundle.json`.
+   For the live consumer, use the foundation guide's fresh linked worktree
+   without initialized submodules. The automated real-source fixture creates
+   its own checkout, changes the admitted output-directory assignment and
+   requires that actual live value. An initialized-gitlink CLI control must
+   reject explicit-admission absence, while explicitly admitted live paths and
+   immutable pinned inputs retain their distinct bytes. Do not borrow a CI
+   checkout's incidental submodule state as the positive fixture.
+   Registry controls must accept equivalent repository-relative and `/repo`
+   schema paths, reject parent/outside paths and absolute source arguments,
+   and retain exact observed source agreement. Two real gitlinks must resolve
+   their own different pins with only one shared common-directory lookup.
 2. Run `make -f scripts/validation_ownership/foundation.mk ownership-probe-test`.
    Positive fixtures use GNU Make include/define/eval, finite domain values,
    patterns, target variables and order-only prerequisites. Their typed
    observations must describe actual targets, not candidate stdout.
+   Build CI runs the same complete native suite in its existing required
+   `extended-host-tests` worker. The lightweight workflow contract compares
+   the public target's actual unittest selection with every native case and
+   rejects missing, duplicate, conditional or advisory ownership. The host
+   workflow discovery must not execute the native suite a second time.
 3. The same suite compiles benign pre-fix `load`/native-SHELL payloads and
    demonstrates actual writes to an explicitly inherited test FD. The confined
    payloads must reject without a forged byte. File/include/eval, supervisor
@@ -2697,6 +2779,10 @@ Start from a clean checkout; fixtures use only ignored `build/test-artifacts`.
    falsely reported source declarations, and symlink/FIFO controls. Every
    mismatch must fail closed. Real C/C++ candidate tools compile and run only
    in channel-free capsules; changed ELF handles and channel/FD access reject.
+   Compare complete returned `statx` buffers and reject a corrupted mount ID.
+   Different guest namespaces need not have equal mount IDs; do not infer
+   equality from an unchanged source inode or a successful serialized retry.
+   Namespace and filesystem-capacity records remain in production validation.
    The alias controls create a relative symlink from a deeper cwd and relocate
    a cwd/dirfd ancestor before a `..` lookup. All symlink and rename variants
    must reject before dispatch; they cannot hide an undeclared attempt under
@@ -3259,6 +3345,11 @@ See [live producers](../ownership-probe-producers.md).
    Replace a declared generated input between two readers that use only
    `open`/`read`, without stat on that input. Require new source bytes to
    invalidate reuse, while an intervening unchanged read reuses its real result.
+   Repeat for explicitly admitted generated code, a mode-only change and
+   changed glob membership. Require each result's recorded inputs and stdout
+   to belong to the same execution, never a new input hash attached to stale
+   output. After publication cleanup, generated code must lose admission before
+   another execution or cache return.
 3. Inspect actual nested launch configurations and complete supervisor reports.
    Parked Make/helper processes and every funded virtual-memory credit must
    remain reserved. Nested process/VM limits plus reservations equal the one
@@ -3273,6 +3364,10 @@ See [live producers](../ownership-probe-producers.md).
    length. Reject before producer execution. Corrupt replies and deliver a
    duplicate later request: earlier actual effects stay charged, no possibly
    effectful request is retried, and no partial transcript succeeds.
+   Let real Make continue after its last accepted reply, then separately send
+   a duplicate, partial, stale, foreign or unknown message. All reject. Repeat
+   immediately before the final write-half shutdown to cover the terminal EOF
+   barrier, with a normal no-extra-message counterpart.
 6. Kill only the test-owned parked helper through its pinned pidfd. Close only
    the owned outer lifetime during a started nested producer. Require terminal
    failure, no unconfirmed publication and complete cleanup of both lifetimes.
@@ -3293,6 +3388,15 @@ See [live producers](../ownership-probe-producers.md).
    old speculative empty-output pass to populate its cache. Keep separate
    actual-dispatch malformed/source/budget negatives and completed-transcript
    corruption controls.
+10. Where existing sudo policy allows the same-UID control, run both a static
+    Make query and a real include/remake through actual sudo and the watchdog,
+    with no inherited callback descriptor or closefrom override. Compare with
+    the direct route; both retain one restart, exact inputs and standard-only
+    guest descriptors. This measures real descriptor closing, not a root
+    credential transition. Reject a foreign peer outside the owned launch,
+    replaced/nonprivate directory or socket, and wrong listener credentials.
+    The long-path rendezvous must stay inside owned ignored storage and leave
+    no socket after either outcome.
 
 ### Expected result
 
@@ -3309,6 +3413,13 @@ source-ancestor link-count and explicit-directory timestamp controls produced
 stale all-matched results. Separate owned reconstruction evidence showed
 different generated inodes/ctime. Those failures are not replaced by a
 names-only hash or a synthetic restart count.
+
+The reviewed live checkpoint also had three actual controls: generated-source
+replacement returned `[1,1]` where ordinary Make returned `[1,2]`; real
+same-UID sudo closed the inherited callback descriptor and the watchdog exited
+125 with `EBADF`; a separately sent final reply succeeded after Make had
+continued. The retained failures are complemented by actual generated-code,
+mode/membership and terminal-handshake controls, not weaker error matching.
 
 Private `/work` output is deliberately not immediately visible through readonly
 `/repo` inside a producer. The measured same-code source/output namespace
@@ -3327,15 +3438,18 @@ content, modern/archival profile or ROM/RAM behavior changes.
 
 `python3 -m unittest scripts.validation_ownership.tests.test_producer -v`
 executes the real producer/control/resource cases through the existing host
-runner. Existing Build workflow discovery imports `ProducerTests`; no new job
-or standalone gate is added.
+runner. The existing `ownership-probe-test` target selects both foundation and
+producer modules exactly once in `extended-host-tests`. Lightweight workflow
+discovery checks that selection with `PlanCollector`; it does not import native
+test classes for execution in another job. No new job or standalone gate is added.
 
 ### Cleanup and limitations
 
 All owned source fixtures, captured outputs, channels, roots and children are
 removed on success or failure. No process-name killing or other-worktree
 cleanup occurs. This vertical checkpoint is not full P or root/112-domain
-acceptance, budget calibration or a claim of tested real sudo credentials.
+acceptance or budget calibration. The actual same-UID sudo control does not
+claim a tested root credential transition or change existing sudo policy.
 Nested generated publication currently rejects rather than reconstructing an
 outer context. Main owns the remaining independent review and delivery gates.
 

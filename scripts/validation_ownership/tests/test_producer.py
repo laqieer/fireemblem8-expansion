@@ -1,10 +1,13 @@
 """Real live-Make producer/publication controls, independent of extension V/R/D."""
 
+import hashlib
 import json
 import os
 import signal
+import socket
 import stat
 import subprocess
+import time
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -12,7 +15,7 @@ from unittest.mock import patch
 from scripts.validation_ownership.make_probe import Command, TRUSTED_ROOT
 from scripts.validation_ownership.budget import MakeProbeError
 from scripts.validation_ownership.authority import ENVIRONMENT
-from scripts.validation_ownership.producer_channel import ProducerChannel
+from scripts.validation_ownership.producer_channel import ChannelError, ProducerChannel
 from scripts.validation_ownership.syscall_guard import VO_PRODUCE
 from scripts.validation_ownership.tests import test_foundation as foundation
 
@@ -32,6 +35,24 @@ class ProducerTests(unittest.TestCase):
         return Command(
             ("/usr/bin/python3", "/repo/producer.py"), code=("producer.py",), outputs=("generated.txt",),
         )
+
+    def capture_reports(self, session, reports):
+        read = session.budget.read_bytes
+        def capture(path, category):
+            data = read(path, category)
+            if path.parent == session.base and path.name.startswith("report-") and path.suffix == ".json":
+                reports.append(json.loads(data))
+            return data
+        return patch.object(session.budget, "read_bytes", capture)
+
+    def assert_settled_reports(self, session, reports):
+        self.assertTrue(reports)
+        for field, attribute in (
+            ("processes", "processes_used"), ("syscalls", "syscalls_used"),
+            ("observations", "observations_used"), ("created_files", "files_created"),
+        ):
+            self.assertEqual(getattr(session, attribute), sum(report[field] for report in reports))
+        self.assertEqual(session.budget.bytes["sandbox"], sum(report["written_bytes"] for report in reports))
 
     def test_unreachable_producer_is_not_executed_by_an_empty_speculative_pass(self):
         self.fixture.add("choice.py", "print('observed')\n")
@@ -176,6 +197,294 @@ class ProducerTests(unittest.TestCase):
             self.assertEqual(calls, [command])
             self.assertFalse((session.tree / "generated.txt").exists())
         self.fixture.assert_clean(session)
+
+    def late_reply_control(self, defect):
+        command = self.producer_fixture()
+        marker = self.fixture.directory / ("make-after-reply-" + defect)
+        release = self.fixture.directory / ("reply-released-" + defect)
+        proxy = self.fixture.directory / ("supervisor-observer-" + defect + ".py")
+        proxy.write_text(
+            "import sys,time\nfrom pathlib import Path\n"
+            f"sys.path.insert(0,{str(TRUSTED_ROOT)!r})\n"
+            "import syscall_guard,sandbox_exec\noriginal=syscall_guard.Policy.entry\nseen=False\n"
+            "def observe(self,pid,state,registers):\n"
+            " global seen\n"
+            " if self.producer_completed==1 and state.role=='make' and not seen:\n"
+            f"  seen=True; Path({str(marker)!r}).write_text('native Make continued')\n"
+            "  deadline=time.monotonic()+5\n"
+            f"  while not Path({str(release)!r}).exists():\n"
+            "   if time.monotonic()>=deadline: raise RuntimeError('owned duplicate control timed out')\n"
+            "   time.sleep(0.001)\n"
+            " return original(self,pid,state,registers)\n"
+            "syscall_guard.Policy.entry=observe\nraise SystemExit(sandbox_exec.main())\n",
+        )
+        sent, executed, reports = ProducerChannel.send, [], []
+        with self.fixture.session(seconds=30) as session:
+            run, execute = session.budget.run, session.command
+            def supervised(argv, **kwargs):
+                if len(argv) >= 2 and argv[-2] == str(TRUSTED_ROOT / "sandbox_exec.py"):
+                    config = json.loads(Path(argv[-1]).read_bytes())
+                    if config["mode"] == "make":
+                        argv = [*argv[:-2], str(proxy), argv[-1]]
+                return run(argv, **kwargs)
+            def producer(value):
+                executed.append(value)
+                return execute(value)
+            def duplicate(channel, payload):
+                sent(channel, payload)
+                record = json.loads(payload)
+                if channel.charge is not None and record.get("kind") == "result":
+                    deadline = time.monotonic() + 5
+                    while not marker.exists():
+                        if time.monotonic() >= deadline:
+                            raise AssertionError("real Make did not continue after its accepted reply")
+                        time.sleep(0.001)
+                    if defect == "partial":
+                        channel.charge(1)
+                        self.assertEqual(channel.connection.send(b"\x08"), 1)
+                    elif defect != "positive":
+                        if defect == "stale":
+                            record["sequence"] = 0
+                        elif defect == "foreign":
+                            record["scope"] += "-foreign"
+                        elif defect == "unknown":
+                            record["kind"] = "unknown"
+                        sent(channel, json.dumps(record).encode())
+                    release.write_text("owned control released")
+            with patch.object(session.budget, "run", supervised), patch.object(
+                session, "command", producer,
+            ), patch.object(ProducerChannel, "send", duplicate), self.capture_reports(session, reports):
+                if defect == "positive":
+                    observed = session.make("all", variables=("VALUE",), commands={"python3 producer.py": command})
+                    self.assertEqual(observed.semantics["domains"]["VALUE"]["value"], "observed")
+                else:
+                    with self.assertRaisesRegex(MakeProbeError, "producer|rendezvous"):
+                        session.make("all", commands={"python3 producer.py": command})
+            self.assertEqual(executed, [command])
+            self.assertTrue(marker.exists())
+            self.assertTrue(release.exists())
+            self.assert_settled_reports(session, reports)
+        self.fixture.assert_clean(session)
+
+    def test_separately_sent_final_reply_is_rejected_while_make_continues(self):
+        self.late_reply_control("duplicate")
+
+    def test_late_reply_family_rejects_partial_stale_foreign_and_unknown_messages(self):
+        for defect in ("positive", "partial", "stale", "foreign", "unknown"):
+            with self.subTest(defect=defect):
+                self.late_reply_control(defect)
+
+    def test_terminal_eof_barrier_rejects_a_reply_after_the_last_native_stop(self):
+        command = self.producer_fixture()
+        for defect in ("positive", "duplicate", "partial"):
+            with self.subTest(defect=defect):
+                sent, shutdown = ProducerChannel.send, ProducerChannel.shutdown_write
+                replies, finished, executions, reports = [], [], [], []
+                def record(channel, payload):
+                    if channel.charge is not None and json.loads(payload).get("kind") == "result":
+                        replies.append(payload)
+                    return sent(channel, payload)
+                def late(channel):
+                    self.assertEqual(len(replies), 1)
+                    finished.append(True)
+                    if defect == "duplicate":
+                        sent(channel, replies[0])
+                    elif defect == "partial":
+                        channel.charge(1)
+                        self.assertEqual(channel.connection.send(b"\x08"), 1)
+                    return shutdown(channel)
+                with self.fixture.session(seconds=30) as session:
+                    execute = session.command
+                    def producer(value):
+                        executions.append(value)
+                        return execute(value)
+                    with patch.object(ProducerChannel, "send", record), patch.object(
+                        ProducerChannel, "shutdown_write", late,
+                    ), patch.object(session, "command", producer), self.capture_reports(session, reports):
+                        if defect == "positive":
+                            observed = session.make(
+                                "all", variables=("VALUE",), commands={"python3 producer.py": command},
+                            )
+                            self.assertEqual(observed.semantics["domains"]["VALUE"]["value"], "observed")
+                        else:
+                            with self.assertRaisesRegex(MakeProbeError, "producer|rendezvous"):
+                                session.make("all", commands={"python3 producer.py": command})
+                    self.assertEqual(executions, [command])
+                    self.assertEqual(finished, [True])
+                    self.assertFalse((session.tree / "generated.txt").exists())
+                    self.assert_settled_reports(session, reports)
+                self.fixture.assert_clean(session)
+
+    def test_final_notification_must_agree_with_the_actual_completed_transcript(self):
+        command = self.producer_fixture()
+        for defect in ("issued", "completed", "scope", "extra"):
+            with self.subTest(defect=defect):
+                received, executions, corrupted = ProducerChannel.receive, [], []
+                def corrupt(channel):
+                    payload = received(channel)
+                    if payload is not None and channel.charge is not None:
+                        record = json.loads(payload)
+                        if record.get("kind") == "finished":
+                            self.assertEqual((record["issued"], record["completed"]), (1, 1))
+                            if defect == "issued":
+                                record["issued"] += 1
+                            elif defect == "completed":
+                                record["completed"] = 0
+                            elif defect == "scope":
+                                record["scope"] += "-foreign"
+                            else:
+                                record["extra"] = True
+                            payload = json.dumps(record).encode()
+                            corrupted.append(True)
+                    return payload
+                with self.fixture.session(seconds=30) as session:
+                    execute = session.command
+                    def producer(value):
+                        executions.append(value)
+                        return execute(value)
+                    with patch.object(ProducerChannel, "receive", corrupt), patch.object(
+                        session, "command", producer,
+                    ):
+                        with self.assertRaisesRegex(MakeProbeError, "producer"):
+                            session.make("all", commands={"python3 producer.py": command})
+                    self.assertEqual(executions, [command])
+                    self.assertEqual(corrupted, [True])
+                    self.assertFalse((session.tree / "generated.txt").exists())
+                self.fixture.assert_clean(session)
+
+    def test_real_same_uid_sudo_keeps_static_make_and_live_remakes_channel_free(self):
+        if not Path("/usr/bin/sudo").is_file():
+            self.skipTest("the actual descriptor-closing control requires existing sudo")
+        sudo = ["/usr/bin/sudo", "-n", "-u", "#" + str(os.getuid()), "--"]
+        allowed = subprocess.run([*sudo, "/usr/bin/true"], capture_output=True, timeout=10)
+        if allowed.returncode:
+            self.skipTest("the existing sudo policy does not allow a same-UID control")
+        self.fixture.add("input.mk", "SELECTED := observed\nobserved: ;\n")
+        self.fixture.add("producer.py", (
+            "import sys\n"
+            "open(sys.argv[1],'wb').write(open('input.mk','rb').read())\n"
+        ))
+        self.fixture.add("plain.mk", "all: ;\n")
+        self.fixture.add("Makefile", (
+            "include generated.mk\n"
+            "generated.mk: input.mk\n\t@python3 producer.py generated.mk\n"
+            "all: $(SELECTED)\n"
+        ))
+        producer = Command(
+            ("/usr/bin/python3", "/repo/producer.py", "/work/generated.mk"),
+            code=("producer.py",), sources=("input.mk",), outputs=("generated.mk",),
+        )
+        ordinary = subprocess.run(
+            ["/usr/bin/make", "-f", "Makefile", "all"], cwd=self.root, env=ENVIRONMENT,
+            capture_output=True, check=True, timeout=10,
+        )
+        self.assertTrue((self.root / "generated.mk").is_file())
+        (self.root / "generated.mk").unlink()
+        values = []
+        for through_sudo in (False, True):
+            with self.subTest(same_uid_sudo=through_sudo):
+                invocations = []
+                with self.fixture.session(seconds=45) as session:
+                    if session.sudo_drop:
+                        self.skipTest("the same-UID sudo control also requires the existing user-namespace route")
+                    original = subprocess.Popen
+                    def launch(argv, **kwargs):
+                        if str(TRUSTED_ROOT / "sandbox_exec.py") in argv:
+                            self.assertEqual(kwargs["pass_fds"], ())
+                            self.assertTrue(kwargs["close_fds"])
+                            self.assertNotIn("--producer-fd", argv)
+                            invocations.append(argv)
+                            if through_sudo:
+                                argv = [*sudo, *argv]
+                        return original(argv, **kwargs)
+                    with patch("subprocess.Popen", launch):
+                        plain = session.make("all", makefile="plain.mk")
+                        self.assertEqual(plain.events, ())
+                        observed = session.make(
+                            "all", variables=("SELECTED", "MAKEFILE_LIST", "MAKE_RESTARTS"),
+                            commands={"python3 producer.py generated.mk": producer},
+                        )
+                    self.assertEqual(observed.stdout, ordinary.stdout)
+                    self.assertEqual(observed.semantics["domains"]["SELECTED"]["value"], "observed")
+                    self.assertEqual(observed.semantics["domains"]["MAKE_RESTARTS"]["value"], "1")
+                    self.assertEqual(observed.semantics["domains"]["MAKEFILE_LIST"]["value"], "Makefile generated.mk")
+                    self.assertEqual(len(observed.events), 1)
+                    self.assertGreaterEqual(len(invocations), 3)
+                    values.append(observed.semantics)
+                self.fixture.assert_clean(session)
+        self.assertEqual(values[0], values[1])
+
+    def test_private_rendezvous_rejects_foreign_peer_before_producer_execution(self):
+        command = self.producer_fixture()
+        connections, executions = [], []
+        with self.fixture.session(seconds=30) as session:
+            run, execute = session.budget.run, session.command
+            def foreign_peer(argv, **kwargs):
+                channel = kwargs.get("producer_channel")
+                if channel is not None:
+                    descriptor = os.open(channel.endpoint["directory"], os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+                    try:
+                        connection = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+                        connections.append(connection)
+                        connection.connect(f"/proc/self/fd/{descriptor}/peer.sock")
+                    finally:
+                        os.close(descriptor)
+                return run(argv, **kwargs)
+            def producer(value):
+                executions.append(value)
+                return execute(value)
+            try:
+                with patch.object(session.budget, "run", foreign_peer), patch.object(session, "command", producer):
+                    with self.assertRaisesRegex(MakeProbeError, "foreign producer peer outside the owned launch"):
+                        session.make("all", commands={"python3 producer.py": command})
+            finally:
+                for connection in connections:
+                    connection.close()
+            self.assertEqual(len(connections), 1)
+            self.assertEqual(executions, [])
+            self.assertFalse((session.tree / "generated.txt").exists())
+        self.fixture.assert_clean(session)
+
+    def test_private_rendezvous_binds_real_directory_socket_and_server_identity(self):
+        for defect in ("positive", "directory", "mode", "socket", "symlink", "server"):
+            with self.subTest(defect=defect):
+                directory = self.fixture.directory / ("channel-" + defect)
+                directory.mkdir(mode=0o700)
+                listener = ProducerChannel.listen(directory, deadline=time.monotonic() + 5, limit=4096)
+                endpoint = dict(listener.endpoint)
+                peer = None
+                try:
+                    if defect == "directory":
+                        endpoint["directory_inode"] += 1
+                    elif defect == "mode":
+                        directory.chmod(0o755)
+                    elif defect == "socket":
+                        (directory / "peer.sock").unlink()
+                        (directory / "peer.sock").write_bytes(b"not a socket")
+                    elif defect == "symlink":
+                        (directory / "peer.sock").unlink()
+                        (directory / "peer.sock").symlink_to(self.root)
+                    kwargs = {
+                        "owner_uid": os.getuid(), "server_pid": os.getpid() + (defect == "server"),
+                        "deadline": time.monotonic() + 5, "limit": 4096,
+                    }
+                    if defect == "positive":
+                        peer = ProducerChannel.connect(endpoint, **kwargs)
+                        with listener.connection.accept()[0] as received:
+                            peer.send(b"actual private bytes")
+                            received.settimeout(5)
+                            data = received.recv(64)
+                            self.assertEqual(int.from_bytes(data[:4], "little"), len(data[4:]))
+                            self.assertEqual(data[4:], b"actual private bytes")
+                    else:
+                        with self.assertRaisesRegex(ChannelError, "foreign|replaced"):
+                            ProducerChannel.connect(endpoint, **kwargs)
+                finally:
+                    if peer is not None:
+                        peer.close()
+                    listener.close()
+                    (directory / "peer.sock").unlink()
+                    directory.rmdir()
 
     def test_parked_make_resources_are_not_granted_again_to_the_producer(self):
         command = self.producer_fixture()
@@ -547,6 +856,206 @@ class ProducerTests(unittest.TestCase):
             )
             self.assertIs(readers[0], readers[1])
             self.assertIsNot(readers[1], readers[2])
+            identities = [
+                next(item for item in result.input_identities if item[0] == "generated/input")
+                for result in readers
+            ]
+            self.assertEqual(identities, [
+                ("generated/input", "100644", hashlib.sha256(value).hexdigest())
+                for value in (b"1", b"1", b"2")
+            ])
+            records = [
+                item for item in observed.semantics["dynamic_commands"]
+                if item["command"]["argv"] == list(registrations["python3 reader.py"].argv)
+            ]
+            self.assertEqual(len(records), 2)
+            self.assertEqual({
+                (next(item[2] for item in record["command"]["inputs"] if item[0] == "generated/input"),
+                 record["output_sha256"])
+                for record in records
+            }, {(hashlib.sha256(value).hexdigest(), hashlib.sha256(value).hexdigest()) for value in (b"1", b"2")})
+        self.fixture.assert_clean(session)
+
+    def test_generated_code_replacement_binds_bytes_mode_and_execution_provenance(self):
+        for change in ("bytes", "mode"):
+            with self.subTest(change=change):
+                self.fixture.add("state/current", "original")
+                code = "'print('+str(count)+')\\n'" if change == "bytes" else "'print(1)\\n'"
+                self.fixture.add("writer.py", (
+                    "from pathlib import Path\nimport os,sys\n"
+                    "count=len(os.listdir('state'))\n"
+                    "root=Path(sys.argv[1])/'generated'\nroot.mkdir(exist_ok=True)\n"
+                    f"(root/'code.py').write_text({code})\n"
+                    + (
+                        "fd=os.open(root/'code.py',os.O_WRONLY)\n"
+                        "os.fchmod(fd,0o644 if count==1 else 0o600); os.close(fd)\n"
+                        if change == "mode" else ""
+                    )
+                ))
+                self.fixture.add("marker.py", (
+                    "from pathlib import Path\nimport sys\nroot=Path(sys.argv[1])/'state'\n"
+                    "root.mkdir(exist_ok=True)\n(root/'new').write_text('new')\n"
+                ))
+                self.fixture.add("reader.py", (
+                    "import os\nfd=os.open('generated/code.py',os.O_RDONLY)\n"
+                    "code=os.read(fd,64)\nos.close(fd)\nexec(code)\n"
+                ))
+                self.fixture.add("Makefile", (
+                    "WRITE1 := $(shell python3 writer.py .)\n"
+                    "FIRST := $(shell python3 reader.py)\n"
+                    "UNCHANGED := $(shell python3 reader.py)\n"
+                    "MARK := $(shell python3 marker.py .)\n"
+                    "WRITE2 := $(shell python3 writer.py .)\n"
+                    "SECOND := $(shell python3 reader.py)\n"
+                    "all:\n\t@printf '%s\\n' '$(FIRST)' '$(UNCHANGED)' '$(SECOND)'\n"
+                ))
+                ordinary = subprocess.run(
+                    ["/usr/bin/make", "-f", "Makefile", "all"], cwd=self.root, env=ENVIRONMENT,
+                    capture_output=True, check=True, timeout=10,
+                )
+                expected = ["1", "1", "2" if change == "bytes" else "1"]
+                self.assertEqual(ordinary.stdout.decode().splitlines(), expected)
+                (self.root / "generated/code.py").unlink()
+                (self.root / "generated").rmdir()
+                (self.root / "state/new").unlink()
+                reader = Command(
+                    ("/usr/bin/python3", "/repo/reader.py"), code=("reader.py", "generated/code.py"),
+                )
+                registrations = {
+                    "python3 writer.py .": Command(
+                        ("/usr/bin/python3", "/repo/writer.py", "/work"),
+                        code=("writer.py",), directories=("state",), outputs=("generated/code.py",),
+                    ),
+                    "python3 marker.py .": Command(
+                        ("/usr/bin/python3", "/repo/marker.py", "/work"),
+                        code=("marker.py",), outputs=("state/new",),
+                    ),
+                    "python3 reader.py": reader,
+                }
+                with self.fixture.session(seconds=30) as session:
+                    execute, results = session.command, []
+                    def record(command):
+                        result = execute(command)
+                        if command is reader:
+                            results.append(result)
+                        return result
+                    with patch.object(session, "command", record):
+                        observed = session.make(
+                            "all", variables=("FIRST", "UNCHANGED", "SECOND"), commands=registrations,
+                        )
+                    self.assertEqual(
+                        [observed.semantics["domains"][name]["value"] for name in ("FIRST", "UNCHANGED", "SECOND")],
+                        expected,
+                    )
+                    self.assertIs(results[0], results[1])
+                    self.assertIsNot(results[1], results[2])
+                    for result in results:
+                        self.assertIn("generated/code.py", result.code_consumed)
+                        self.assertFalse(any(item[1] == "/repo/generated/code.py" for item in result.metadata))
+                    identities = [
+                        next(item for item in result.input_identities if item[0] == "generated/code.py")
+                        for result in results
+                    ]
+                    self.assertEqual(identities, [
+                        ("generated/code.py", "100600" if change == "mode" and index == 2 else "100644",
+                         hashlib.sha256(("print(" + value + ")\n").encode()).hexdigest())
+                        for index, value in enumerate(expected)
+                    ])
+                    records = [
+                        item for item in observed.semantics["dynamic_commands"]
+                        if item["command"]["argv"] == list(reader.argv)
+                    ]
+                    self.assertEqual(len(records), 2)
+                    self.assertEqual({
+                        (tuple(next(item for item in row["command"]["inputs"] if item[0] == "generated/code.py")),
+                         row["output_sha256"]) for row in records
+                    }, {
+                        (identity, hashlib.sha256((value + "\n").encode()).hexdigest())
+                        for identity, value in zip(identities, expected)
+                    })
+                    runs = session.budget.runs
+                    with self.assertRaisesRegex(MakeProbeError, "unadmitted command code: generated/code.py"):
+                        session.command(reader)
+                    self.assertEqual(session.budget.runs, runs)
+                self.fixture.assert_clean(session)
+
+    def test_generated_glob_membership_binds_resolved_sources_and_preserves_unchanged_reuse(self):
+        self.fixture.add("writer.py", (
+            "from pathlib import Path\nimport sys\n"
+            "root=Path(sys.argv[1])/'generated'\nroot.mkdir(exist_ok=True)\n"
+            "(root/(sys.argv[2]+'.txt')).write_text(sys.argv[2])\n"
+        ))
+        self.fixture.add("reader.py", (
+            "import os\nvalues=[]\n"
+            "for name in sorted(os.listdir('generated')):\n"
+            " if name.endswith('.txt'):\n"
+            "  fd=os.open('generated/'+name,os.O_RDONLY)\n"
+            "  values.append(os.read(fd,16).decode()); os.close(fd)\n"
+            "print(','.join(values))\n"
+        ))
+        self.fixture.add("Makefile", (
+            "WRITE1 := $(shell python3 writer.py . a)\n"
+            "FIRST := $(shell python3 reader.py)\n"
+            "UNCHANGED := $(shell python3 reader.py)\n"
+            "WRITE2 := $(shell python3 writer.py . b)\n"
+            "SECOND := $(shell python3 reader.py)\n"
+            "all:\n\t@printf '%s\\n' '$(FIRST)' '$(UNCHANGED)' '$(SECOND)'\n"
+        ))
+        ordinary = subprocess.run(
+            ["/usr/bin/make", "-f", "Makefile", "all"], cwd=self.root, env=ENVIRONMENT,
+            capture_output=True, check=True, timeout=10,
+        )
+        self.assertEqual(ordinary.stdout.splitlines(), [b"a", b"a", b"a,b"])
+        for name in ("a", "b"):
+            (self.root / ("generated/" + name + ".txt")).unlink()
+        (self.root / "generated").rmdir()
+        reader = Command(
+            ("/usr/bin/python3", "/repo/reader.py"), code=("reader.py",),
+            sources=("generated/*.txt",), directories=("generated",),
+        )
+        registrations = {
+            "python3 reader.py": reader,
+            **{
+                "python3 writer.py . " + name: Command(
+                    ("/usr/bin/python3", "/repo/writer.py", "/work", name),
+                    code=("writer.py",), outputs=("generated/" + name + ".txt",),
+                ) for name in ("a", "b")
+            },
+        }
+        with self.fixture.session(seconds=30) as session:
+            execute, results = session.command, []
+            def record(command):
+                result = execute(command)
+                if command is reader:
+                    results.append(result)
+                return result
+            with patch.object(session, "command", record):
+                observed = session.make(
+                    "all", variables=("FIRST", "UNCHANGED", "SECOND"), commands=registrations,
+                )
+            self.assertEqual(
+                [observed.semantics["domains"][name]["value"] for name in ("FIRST", "UNCHANGED", "SECOND")],
+                ["a", "a", "a,b"],
+            )
+            self.assertIs(results[0], results[1])
+            self.assertIsNot(results[1], results[2])
+            self.assertEqual([result.consumed for result in results], [
+                ("generated/a.txt",), ("generated/a.txt",), ("generated/a.txt", "generated/b.txt"),
+            ])
+            for result in results:
+                self.assertEqual(
+                    sorted(item[0] for item in result.input_identities),
+                    sorted((*result.consumed, "reader.py")),
+                )
+            records = [
+                item for item in observed.semantics["dynamic_commands"]
+                if item["command"]["argv"] == list(reader.argv)
+            ]
+            self.assertEqual(len(records), 2)
+            self.assertEqual(
+                {tuple(item[0] for item in record["command"]["inputs"]) for record in records},
+                {("generated/a.txt", "reader.py"), ("generated/a.txt", "generated/b.txt", "reader.py")},
+            )
         self.fixture.assert_clean(session)
 
     def test_live_include_preserves_actual_metadata_and_residual_resources(self):
