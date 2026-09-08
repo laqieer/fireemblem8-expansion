@@ -1190,7 +1190,7 @@ while candidate eligibility remains bound to that prior full run.
 workflow and asserts exact trigger, job, head, worker-condition, summary, setup,
 pin, and environment semantics, including the pre-fix negative selection.
 
-`python3 -m unittest tests.upstream_port.test_verify -v` preserves the 28 local
+`python3 -m unittest tests.upstream_port.test_verify -v` preserves the 29 local
 gates while requiring complete eight-job source/target equivalence: the retained
 issue #176 jobs remain closed and the identity/router/classifier are closed
 setup-only jobs, never 29th/30th/31st local gates.
@@ -2154,7 +2154,7 @@ the exact branch and head; timeout or ambiguity fails before `gh run watch`.
    Run
    `python3 -m unittest tests.upstream_port.test_verify.VerifyCliCwdTests.test_metadata_event_setup_is_closed_and_not_a_local_gate -v`.
    Require the upstream verifier to accept the complete producer/output/marker
-   setup while retaining exactly 28 local gate commands. Remove, duplicate,
+   setup while retaining exactly 29 local gate commands. Remove, duplicate,
    relink or weaken either setup step, mutate event/run/attempt inputs, and
    fabricate proof in either no-proof branch: each must reject before gates
    execute. Equivalent command spacing and environment-mapping order must
@@ -2322,7 +2322,7 @@ positive, while a timestamp-only or watermark-only replacement must fail the
 delayed-earlier and same-second ambiguous-version controls.
 Before the coupled upstream integration fix, the verifier rejected the valid
 new router output before it could recognize the producer/marker setup, so the
-real `verify --dry-run` failed instead of listing its 28 gates. The regression
+real `verify --dry-run` failed instead of listing its then-28 gates. The regression
 must accept that complete setup without replacing the closed validator with an
 any-step or any-output allowance.
 
