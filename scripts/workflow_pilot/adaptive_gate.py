@@ -13,6 +13,7 @@ import hashlib
 import json
 from pathlib import Path
 import re
+from types import SimpleNamespace
 from urllib.parse import quote, unquote_to_bytes
 
 from . import agent_handoff as handoff
@@ -40,6 +41,22 @@ def require(condition, message):
 
 
 @dataclass(frozen=True)
+class PilotControl:
+    repository: str
+    repository_id: int
+    default_ref: str
+    commit_sha: str
+    decision_oid: str
+    paused: bool
+    observed_at: str
+
+    @property
+    def identity(self):
+        return (self.repository, self.repository_id, self.default_ref,
+                self.commit_sha, self.decision_oid, self.paused)
+
+
+@dataclass(frozen=True)
 class GateDecision:
     head_sha: str
     decision_oid: str | None
@@ -48,6 +65,20 @@ class GateDecision:
     pre_review_required: bool
     known: bool
     paused: bool
+    control: PilotControl | None = None
+
+
+def validate_pilot_control(value):
+    handoff.fields(value, "repository repository_id default_ref commit_sha decision_oid paused observed_at")
+    handoff.text(value["repository"], maximum=256, pattern=observations.REPOSITORY_RE)
+    handoff.integer(value["repository_id"], minimum=1)
+    handoff.text(value["default_ref"], maximum=256)
+    require(event_classifier._is_git_branch_ref(value["default_ref"]), "invalid control ref")
+    handoff.sha(value["commit_sha"])
+    handoff.sha(value["decision_oid"])
+    handoff.boolean(value["paused"])
+    handoff.timestamp(value["observed_at"])
+    return value
 
 
 def select_mode(raw, *, number, head_sha, decision_oid, changed_lines,
@@ -140,6 +171,393 @@ def _decision_at(client, pr, revision):
     require(hashlib.sha1(f"blob {len(payload)}\0".encode() + payload).hexdigest() == oid,
             "decision bytes differ from the Git object")
     return reporter.parse_json(payload.decode("utf-8"), "committed adaptive decision"), oid
+
+
+def _baseline_numbers(repository):
+    baseline = reporter.load_json(Path(__file__).resolve().parents[2] / reporter.BASELINE_FIXTURE_PATH)
+    return ({item["number"] for item in baseline["pull_requests"]}
+            if baseline["repository"] == repository else set())
+
+
+def validate_control_collection(raw, revision, repository):
+    """Validate every #176 record, not just the first row that requests a pause."""
+    reporter.expect_object(raw, "current decision collection")
+    reporter.expect_keys(raw, "current decision collection", ("schema_version", "pull_requests", "artifacts"))
+    require(reporter.expect_int(raw["schema_version"], "decision schema", 1) == reporter.SCHEMA_VERSION,
+            "unknown current decision schema")
+    records = reporter.expect_list(raw["pull_requests"], "current decision records")
+    baseline = _baseline_numbers(repository)
+    paused = False
+    for item in records:
+        reporter.expect_object(item, "current decision")
+        number = reporter.expect_int(item["pull_request"], "current decision PR", 1)
+        record = reporter.historical_decision_record(raw, revision, number)
+        stack = record["stack"]
+        require((stack["depth"] == 0) == (stack["parent_pr"] is None)
+                and stack["parent_pr"] != number, "invalid current decision stack")
+        require(stack["depth"] < 3 or stack["exception_reason"] is not None,
+                "current deep stack lacks its exception")
+        if number in baseline:
+            require(record["pilot"] == {"included": False, "disposition": "baseline-only"},
+                    "frozen baseline record cannot become a current safety latch")
+        else:
+            paused |= record["pilot"]["disposition"] == "paused"
+    artifacts = reporter.expect_list(raw["artifacts"], "current artifact records")
+    ids, unique = [], []
+    for record in artifacts:
+        reporter.expect_object(record, "current artifact")
+        reporter.expect_keys(record, "current artifact", (
+            "artifact_id", "owner", "executable_consumer", "unique_decision", "consistency_check",
+            "max_maintenance_minutes", "estimated_maintenance_minutes", "deletion_criterion", "expires_at", "history"))
+        for key in ("artifact_id", "owner", "executable_consumer", "unique_decision",
+                    "consistency_check", "deletion_criterion"):
+            reporter.expect_string(record[key], "current artifact " + key)
+        ids.append(record["artifact_id"])
+        unique.append(record["unique_decision"])
+        maximum = reporter.expect_int(record["max_maintenance_minutes"], "artifact maximum", 1)
+        require(reporter.expect_int(record["estimated_maintenance_minutes"], "artifact estimate", 0) <= maximum,
+                "artifact exceeds its maintenance bound")
+        reporter.parse_time(record["expires_at"], "artifact expiry", nullable=True)
+        history = reporter.expect_list(record["history"], "artifact history")
+        require(bool(history), "artifact history is empty")
+        previous = None
+        for event in history:
+            reporter.expect_object(event, "artifact history entry")
+            reporter.expect_keys(event, "artifact history entry", ("recorded_at", "disposition", "reason"))
+            at = reporter.parse_time(event["recorded_at"], "artifact history time")
+            require(previous is None or previous < at, "artifact history is not chronological")
+            previous = at
+            reporter.expect_enum(event["disposition"], reporter.ARTIFACT_DISPOSITIONS, "artifact disposition")
+            reporter.expect_string(event["reason"], "artifact reason")
+    reporter.expect_unique(ids, "current artifact identities")
+    reporter.expect_unique(unique, "current artifact decisions")
+    return paused
+
+
+def _default_source(client, repository, repository_id=None):
+    github._repository(repository)
+    response = client.request("GET", github._endpoint(repository, "").rstrip("/"),
+                              label="pilot control repository")
+    require(not response.headers.get("link"), "pilot control repository response is incomplete")
+    data = response.payload
+    require(data["full_name"] == repository, "pilot control repository changed")
+    actual_id = github._positive_int(data["id"], "pilot control repository ID")
+    require(repository_id in (None, actual_id), "pilot control repository ID changed")
+    branch = data["default_branch"]
+    require(event_classifier._is_git_branch_ref(branch), "pilot control default ref is invalid")
+    response = client.request("GET", github._endpoint(repository, "git/ref/heads/" + quote(branch, safe="")),
+                              label="pilot control default ref")
+    require(not response.headers.get("link"), "pilot control ref response is incomplete")
+    reference = response.payload
+    require(reference["ref"] == "refs/heads/" + branch and reference["object"]["type"] == "commit",
+            "pilot control default ref is not the requested commit")
+    return actual_id, branch, reporter.expect_sha(reference["object"]["sha"], "pilot control commit")
+
+
+def _tree_entry(client, repository, tree, path):
+    response = client.request("GET", github._endpoint(repository, "git/trees/" + tree),
+                              label="pilot control tree")
+    data = response.payload
+    require(not response.headers.get("link") and data["sha"] == tree and data.get("truncated") is False,
+            "pilot control tree is incomplete")
+    entries = reporter.expect_list(data["tree"], "pilot control entries")
+    for entry in entries:
+        reporter.expect_object(entry, "pilot control entry")
+        reporter.expect_string(entry["path"], "pilot control entry path")
+    reporter.expect_unique([entry["path"] for entry in entries], "pilot control paths")
+    matches = [entry for entry in entries if entry["path"] == path]
+    require(len(matches) == 1, "pilot control path is missing or ambiguous")
+    reporter.expect_sha(matches[0]["sha"], "pilot control object")
+    return matches[0]
+
+
+def fetch_pilot_control(client, repository, repository_id=None):
+    """Fresh default-ref/commit/regular-blob observation; errors are not unpause."""
+    identity = _default_source(client, repository, repository_id)
+    actual_id, branch, revision = identity
+    response = client.request("GET", github._endpoint(repository, "git/commits/" + revision),
+                              label="pilot control commit")
+    require(not response.headers.get("link"), "pilot control commit response is incomplete")
+    commit = response.payload
+    require(commit["sha"] == revision, "pilot control commit identity changed")
+    root = reporter.expect_sha(commit["tree"]["sha"], "pilot control root tree")
+    directory = _tree_entry(client, repository, root, ".github")
+    require((directory["type"], directory["mode"]) == ("tree", "040000"),
+            "pilot control directory is not a regular tree")
+    entry = _tree_entry(client, repository, directory["sha"], reporter.DECISION_RECORD_PATH.name)
+    require(entry["type"] == "blob" and entry["mode"] in {"100644", "100755"},
+            "pilot control is not a regular decision blob")
+    raw, oid = _decision_at(client, SimpleNamespace(repository=repository), revision)
+    require(oid == entry["sha"], "pilot control contents differ from the selected tree")
+    paused = validate_control_collection(raw, revision, repository)
+    require(_default_source(client, repository, actual_id) == identity, "pilot control moved during observation")
+    return PilotControl(repository, actual_id, branch, revision, oid, paused, observations.utc_now())
+
+
+def validate_safety_publication(value):
+    handoff.fields(value, "operation event attribution control target_oid disposition")
+    handoff.choice(value["operation"], {"pause", "unpause"})
+    event = value["event"]
+    handoff.fields(event, "id type occurred_at pr_number sha")
+    handoff.text(event["id"])
+    handoff.choice(event["type"], {"security_finding", "escaped_defect", "broken_master"})
+    handoff.timestamp(event["occurred_at"])
+    handoff.integer(event["pr_number"], minimum=1)
+    handoff.sha(event["sha"])
+    handoff.validate_check(value["attribution"])
+    check = value["attribution"]
+    require(check["contract"] == "coordinator-check" and check["exit_code"] == 0
+            and check["completed_at"] is not None and check["pid"] is not None
+            and check["peak_rss_bytes"] is not None, "safety publication lacks actual attribution")
+    require(check["id"] == "safety"
+            and check["evidence_id"] == ("safety-attribution" if value["operation"] == "pause" else "safety-recovery")
+            and handoff.timestamp(check["completed_at"]) >= handoff.timestamp(event["occurred_at"]),
+            "safety attribution role or chronology differs")
+    if value["operation"] == "pause":
+        require(check["result_sha"] == event["sha"], "safety attribution names another incident head")
+    if value["control"] is not None:
+        validate_pilot_control(value["control"])
+    if value["target_oid"] is not None:
+        handoff.sha(value["target_oid"])
+        require(value["control"] is not None, "publication target lacks a control source")
+    handoff.choice(value["disposition"], reporter.PILOT_DISPOSITIONS - {"paused", "baseline-only"}
+                   if value["operation"] == "unpause" else {None})
+
+
+def _safety_event(raw_fixture, event_id, root):
+    data = reporter.validate_fixture(raw_fixture)
+    reporter.validate_repository_authority(root, data)
+    event = data["events"].get(event_id)
+    require(event is not None and event["type"] in {
+        "security_finding", "escaped_defect", "broken_master"}, "not a validated safety event")
+    pr = data["pull_requests"][event["pr_number"]]
+    require(pr["state"] == "merged" and pr["merge_sha"] is not None
+            and reporter.parse_time(event["occurred_at"], "incident") >=
+            reporter.parse_time(pr["merged_at"], "incident merge"),
+            "ordinary pre-merge findings are not attributable pilot incidents")
+    require(event["pr_number"] not in _baseline_numbers(data["fixture"]["repository"]),
+            "frozen baseline incidents cannot create a current latch")
+    reporter.run_git(root, "merge-base", "--is-ancestor", pr["merge_sha"], event["sha"])
+    return data, event, pr
+
+
+def _control_ancestor(client, repository, before, after):
+    response = client.request("GET", github._endpoint(repository, f"compare/{before}...{after}"),
+                              label="control publication ancestry")
+    require(not response.headers.get("link") and response.payload["base_commit"]["sha"] == before
+            and response.payload["merge_base_commit"]["sha"] == before,
+            "current control does not retain the accepted source history")
+
+
+def _master_run(client, repository, branch, head, run_id, attempt, *, success, repository_id):
+    handoff.integer(run_id, minimum=1)
+    handoff.integer(attempt, minimum=1)
+    workflow = github._workflow_authority(client, SimpleNamespace(repository=repository))
+    response = client.request(
+        "GET", github._endpoint(repository, f"actions/runs/{run_id}/attempts/{attempt}"),
+        label="actual automatic master Build")
+    run = response.payload
+    for key in ("id", "run_attempt", "workflow_id"):
+        github._positive_int(run[key], "master " + key)
+    require(run["id"] == run_id and run["run_attempt"] == attempt
+            and run["repository"]["full_name"] == repository
+            and github._positive_int(run["repository"]["id"], "master repository ID") == repository_id
+            and run["workflow_id"] == workflow.workflow_id and run["event"] == "push"
+            and run["head_branch"] == branch and run["head_sha"] == head
+            and run["path"] in {github.WORKFLOW_PATH, github.WORKFLOW_PATH + "@refs/heads/" + branch}
+            and run["status"] == "completed"
+            and run["conclusion"] == ("success" if success else "failure"),
+            "safety evidence is not the exact automatic master Build outcome")
+    times = [github._github_timestamp(run[name], "master " + name)
+             for name in ("created_at", "run_started_at", "updated_at")]
+    require(times == sorted(times), "master Build chronology is inconsistent")
+    if success:
+        rows = github._list_counted_pages(
+            client, endpoint_for_page=lambda page: github._query_endpoint(
+                repository, f"actions/runs/{run_id}/attempts/{attempt}/jobs",
+                [("per_page", "100"), ("page", str(page))]),
+            item_key="jobs", label="master recovery jobs", maximum=1000,
+            repository=repository, repository_id=repository_id)
+        jobs = tuple(github._parse_job(
+            row, state=SimpleNamespace(repository=repository), run_id=run_id, run_attempt=attempt,
+            head_sha=head, head_branch=branch, workflow=workflow, event="push",
+            run_created_at=times[0], run_started_at=times[1], run_updated_at=times[2]) for row in rows)
+        require({job.name for job in jobs} == candidate_evidence.KNOWN_JOB_IDS
+                and len(jobs) == len(candidate_evidence.KNOWN_JOB_IDS)
+                and len({job.job_id for job in jobs}) == len(jobs), "master recovery graph is incomplete")
+        github.require_full_success(SimpleNamespace(mode="full", status=run["status"],
+                                                    conclusion=run["conclusion"], jobs=jobs))
+    return run
+
+
+def _attribution(root, revision, parent, event, data, executor, *, recovery, master_run):
+    context = {
+        "allowed_worktree": str(root), "assigned_parent_sha": parent,
+        "required_checks": {"safety": {"contract": "coordinator-check",
+                                      "evidence_id": "safety-recovery" if recovery else "safety-attribution",
+                                      "inputs": []}},
+        "safety_event": copy.deepcopy(event),
+        "safety_events": tuple(copy.deepcopy(item) for item in data["events"].values()
+                               if item["type"] in {"security_finding", "escaped_defect", "broken_master"}
+                               and item["pr_number"] == event["pr_number"]),
+        "recovery": recovery,
+        "master_run": copy.deepcopy(master_run),
+    }
+    check = handoff.capture_check({"assignment": context, "checks": []}, "safety", revision,
+                                  executor, task_owned=False)
+    require(check["exit_code"] == 0 and check["pid"] is not None and check["peak_rss_bytes"] is not None,
+            "actual incident attribution/recovery check did not succeed")
+    return check
+
+
+def prepare_safety_publication(client, state_path, publication_root):
+    """Prepare only an ordinary owner branch; publication/merge stays with its owner."""
+    state = observations.load_json(state_path)
+    handoff.validate_state(state)
+    pending = state.get("safety_publication")
+    require(pending is not None, "no accepted safety publication")
+    control = fetch_pilot_control(client, state["repository"])
+    raw, oid = _decision_at(client, SimpleNamespace(repository=state["repository"]), control.commit_sha)
+    require(oid == control.decision_oid, "control source changed")
+    record = reporter.historical_decision_record(raw, control.commit_sha, pending["event"]["pr_number"])
+    require(record["pilot"]["disposition"] != "baseline-only"
+            and record["pull_request"] not in _baseline_numbers(state["repository"]),
+            "baseline records cannot become a live control")
+    before = copy.deepcopy(raw)
+    if pending["operation"] == "pause":
+        pause_for_safety(record, [pending["event"]])
+    else:
+        require(record["pilot"]["disposition"] == "paused", "unpause requires an explicit current latch")
+        require(pending["attribution"]["result_sha"] == control.commit_sha,
+                "unpause recovery is not the current default head")
+        record["pilot"]["disposition"] = pending["disposition"]
+    validate_control_collection(raw, control.commit_sha, state["repository"])
+    _control_ancestor(client, state["repository"], pending["event"]["sha"], control.commit_sha)
+    payload = reporter.normalized_json(raw)
+    target = (control.decision_oid if raw == before else
+              hashlib.sha1(f"blob {len(payload)}\0".encode() + payload).hexdigest())
+    with observations.locked_state(state_path) as current:
+        handoff.validate_state(current)
+        require(current["safety_publication"] == pending, "safety publication was replaced")
+        current["safety_publication"].update(control=asdict(control), target_oid=target)
+    if target != control.decision_oid:
+        root = Path(publication_root).resolve(strict=True)
+        actual = handoff.observe_git({"allowed_worktree": str(root)})
+        require(actual["branch"] is not None and actual["branch"] != control.default_ref
+                and not actual["dirty_paths"] and not actual["conflicting"],
+                "safety publication needs a clean ordinary non-default branch")
+        origin = reporter.run_git(root, "config", "--get", "remote.origin.url").decode().strip()
+        require(reporter._github_repository_from_remote(origin) == state["repository"],
+                "safety publication repository differs")
+        reporter.run_git(root, "merge-base", "--is-ancestor", control.commit_sha, actual["head"])
+        local_oid = reporter.run_git(root, "rev-parse", "HEAD:" + str(reporter.DECISION_RECORD_PATH)).decode().strip()
+        require(local_oid == control.decision_oid, "publication branch must retain the current control")
+        require(fetch_pilot_control(client, state["repository"]).identity == control.identity,
+                "control moved before publication preparation")
+        (root / reporter.DECISION_RECORD_PATH).write_bytes(payload)
+    return {"state": "publication-pending", "prepared": True, "target_oid": target,
+            "control": asdict(control), "global_visibility_confirmed": False}
+
+
+def _start_safety_publication(client, state_path, raw_fixture, event_id, attribution_root,
+                              publication_root, executor, *, recovery, disposition=None, master_run=None):
+    root = Path(attribution_root).resolve(strict=True)
+    data, event, pr = _safety_event(raw_fixture, event_id, root)
+    repository = data["fixture"]["repository"]
+    revision = event["sha"]
+    master = None
+    if recovery:
+        control = fetch_pilot_control(client, repository)
+        current, _ = _decision_at(client, SimpleNamespace(repository=repository), control.commit_sha)
+        current_record = reporter.historical_decision_record(current, control.commit_sha, event["pr_number"])
+        require(current_record["pilot"]["disposition"] == "paused",
+                "unpause needs this incident's explicit current latch")
+        revision = control.commit_sha
+        require(master_run is not None, "unpause requires current master recovery evidence")
+        master = _master_run(client, repository, control.default_ref, revision, *master_run,
+                             success=True, repository_id=control.repository_id)
+        checks = security_checks(client, SimpleNamespace(repository=repository, head_sha=revision,
+                                                         repository_id=control.repository_id))
+        require(len(checks) == len(SECURITY_CHECKS)
+                and {(check.name, check.app_id, check.app_slug) for check in checks} == SECURITY_CHECKS
+                and all(
+            check.status == "completed" and check.conclusion == "success"
+            and check.completed_at is not None for check in checks),
+            "unpause requires exact clean security")
+    elif event["type"] == "broken_master":
+        require(master_run is not None, "broken-master attribution requires its actual run")
+        repository_id, branch, _ = _default_source(client, repository)
+        master = _master_run(client, repository, branch, revision, *master_run,
+                             success=False, repository_id=repository_id)
+        reported = data["runs"].get(master_run[0])
+        require(reported is not None and reported["attempt"] == master_run[1]
+                and reported["workflow"] == "Build CI" and reported["event"] == "push"
+                and reported["head_sha"] == revision and reported["head_branch"] == branch
+                and reported["status"] == "completed" and reported["conclusion"] == "failure"
+                and reporter.parse_time(reported["created_at"], "reported master creation") ==
+                github._github_timestamp(master["created_at"], "master creation")
+                and reporter.parse_time(reported["started_at"], "reported master start") ==
+                github._github_timestamp(master["run_started_at"], "master start")
+                and reporter.parse_time(reported["completed_at"], "reported master completion") <=
+                reporter.parse_time(event["occurred_at"], "incident observation"),
+                "broken-master run differs from the validated incident snapshot")
+    check = _attribution(root, revision, pr["merge_sha"], event, data, executor,
+                         recovery=recovery, master_run=master)
+    if master is not None:
+        require(_master_run(client, repository,
+                            control.default_ref if recovery else branch, revision, *master_run,
+                            success=recovery, repository_id=control.repository_id if recovery else repository_id) == master,
+                "master safety evidence changed during attribution")
+    if recovery:
+        require(security_checks(client, SimpleNamespace(
+            repository=repository, head_sha=revision, repository_id=control.repository_id)) == checks,
+            "security recovery evidence changed during attribution")
+    pending = {"operation": "unpause" if recovery else "pause", "event": copy.deepcopy(event),
+               "attribution": check, "control": None, "target_oid": None, "disposition": disposition}
+    validate_safety_publication(pending)
+    with observations.locked_state(state_path) as state:
+        handoff.validate_state(state)
+        require(state["repository"] == repository and state.get("safety_publication") is None,
+                "another safety publication remains held")
+        state["safety_publication"] = pending
+    try:
+        return prepare_safety_publication(client, state_path, publication_root)
+    except (KeyError, TypeError, ValueError, OSError, reporter.PilotDataError) as error:
+        return {"state": "publication-pending", "prepared": False,
+                "global_visibility_confirmed": False, "detail": str(error)[:2048]}
+
+
+def pause_pilot(client, state_path, raw_fixture, event_id, attribution_root, publication_root,
+                trusted_attribution, *, master_run=None):
+    return _start_safety_publication(
+        client, state_path, raw_fixture, event_id, attribution_root, publication_root,
+        trusted_attribution, recovery=False, master_run=master_run)
+
+
+def unpause_pilot(client, state_path, raw_fixture, event_id, attribution_root, publication_root,
+                  trusted_recovery, *, disposition, master_run):
+    return _start_safety_publication(
+        client, state_path, raw_fixture, event_id, attribution_root, publication_root,
+        trusted_recovery, recovery=True, disposition=disposition, master_run=master_run)
+
+
+def confirm_safety_publication(client, state_path):
+    with observations.locked_state(state_path) as state:
+        handoff.validate_state(state)
+        pending = state.get("safety_publication")
+        require(pending is not None and pending["target_oid"] is not None,
+                "safety publication is not prepared")
+        control = fetch_pilot_control(client, state["repository"])
+        before = PilotControl(**pending["control"])
+        require((control.repository_id, control.default_ref, control.decision_oid) ==
+                (before.repository_id, before.default_ref, pending["target_oid"]),
+                "global safety publication is not confirmed")
+        _control_ancestor(client, state["repository"], before.commit_sha, control.commit_sha)
+        require(fetch_pilot_control(client, state["repository"]).identity == control.identity,
+                "control moved during publication confirmation")
+        del state["safety_publication"]
+    return {"state": "publication-confirmed", "control": asdict(control),
+            "event_id": pending["event"]["id"], "global_visibility_confirmed": True}
 
 
 def _review_snapshot(client, pr, model):
@@ -316,11 +734,21 @@ def fetch_decision(client, pr, changed_lines):
                            verify_override=lambda record: _verify_remote_override(client, pr, record, raw, changed_lines))
     if selected.known:
         try:
-            _validate_live_stack(client, pr, raw)
+            stack_default = _validate_live_stack(client, pr, raw)
         except (KeyError, TypeError, ValueError, reporter.PilotDataError, github.MetadataEditError) as error:
             return replace(selected, mode="concurrent", known=False, pre_review_required=True,
                            reason="unknown-decision: stack: " + str(error)[:480])
-    return selected
+    try:
+        control = fetch_pilot_control(client, pr.repository, pr.repository_id)
+        require(not selected.known or control.default_ref == stack_default,
+                "default branch changed between stack and control observations")
+    except (KeyError, TypeError, ValueError, OSError, reporter.PilotDataError, github.MetadataEditError) as error:
+        return replace(selected, mode="concurrent", known=False, pre_review_required=True,
+                       reason="unknown-pilot-control: " + str(error)[:480])
+    if control.paused:
+        selected = replace(selected, mode="concurrent", paused=True,
+                           reason="pilot-paused" if selected.known else selected.reason + "; pilot-paused")
+    return replace(selected, control=control)
 
 
 def _validate_live_stack(client, pr, raw):
@@ -368,6 +796,7 @@ def _validate_live_stack(client, pr, raw):
                     and frozen_base(client, before) == frozen_base(client, after),
                     "stack base changed during observation")
     require(repository() == default, "stack default branch changed")
+    return default
 
 
 def frozen_base(client, pr):
@@ -535,7 +964,8 @@ def validate_candidate_records(records):
                        "abandoned_reason dispatch_requested_at dispatch_sent_at watermark "
                        "full_run_id full_attempt"
                        + (" local_validation" if isinstance(record, dict) and "local_validation" in record else "")
-                       + (" dispatch_observed_at" if isinstance(record, dict) and "dispatch_observed_at" in record else ""))
+                       + (" dispatch_observed_at" if isinstance(record, dict) and "dispatch_observed_at" in record else "")
+                       + (" intake_control" if isinstance(record, dict) and "intake_control" in record else ""))
         if "local_validation" in record:
             validate_local_validation(record["local_validation"])
         handoff.integer(record["pr_number"], minimum=1)
@@ -549,6 +979,10 @@ def validate_candidate_records(records):
             if record[key] is not None:
                 handoff.timestamp(record[key])
         require(record["created_at"] is not None, "candidate creation observation missing")
+        if "intake_control" in record:
+            control = validate_pilot_control(record["intake_control"])
+            require(handoff.timestamp(control["observed_at"]) <= handoff.timestamp(record["created_at"]),
+                    "intake control postdates candidate registration")
         handoff.text(record["abandoned_reason"], nullable=True, maximum=2048)
         handoff.integer(record["watermark"])
         for key in ("full_run_id", "full_attempt"):
@@ -574,7 +1008,53 @@ def validate_candidate_records(records):
         seen.add(identity)
 
 
-def begin_candidate(state, pr, base, decision):
+def _history_lane(pr, base, runs):
+    require(runs is not None, "candidate intake requires a complete run observation")
+    relevant = []
+    observed = False
+    for run in runs:
+        if run.head_sha != pr.head_sha or run.head_branch != pr.head_ref:
+            continue
+        if run.candidate_binding not in (None, (pr.number, pr.head_sha, base)):
+            continue
+        if run.candidate_base_ref not in (None, pr.base_ref):
+            continue
+        observed = True
+        if run.mode in {"metadata-only", "active-metadata-only"}:
+            continue
+        require(run.candidate_binding is not None and run.candidate_base_ref is not None
+                and run.mode != "active-unknown", "candidate intake history is unproven")
+        relevant.append(run)
+    if not relevant:
+        require(not observed, "candidate intake has no initial full/preflight evidence")
+        return None
+    require(len({run.workflow_id for run in relevant}) == 1, "candidate intake workflow is ambiguous")
+    lanes = set()
+    for run in relevant:
+        if run.mode == "review-first" and candidate_evidence.preflight_success(
+                {job.name: (job.status, job.conclusion) for job in run.jobs}):
+            lanes.add("review-first")
+        elif run.mode in {"full", "active-full"} and run.event == "pull_request":
+            lanes.add("concurrent")
+    require(len(lanes) == 1, "candidate initial execution lane is unknown or ambiguous")
+    return next(iter(lanes))
+
+
+def _finalize_intake(record, pr, runs):
+    lane = _history_lane(pr, record["base_sha"], runs)
+    require(lane is not None, "initial execution lane has not been observed")
+    if "intake_control" in record:
+        control = record["intake_control"]
+        require((control["repository"], control["repository_id"]) == (pr.repository, pr.repository_id)
+                and record["full_run_id"] is None and record["dispatch_requested_at"] is None
+                and record["abandoned_reason"] is None, "provisional intake already claims authority")
+        record["mode"] = lane
+        del record["intake_control"]
+    else:
+        require(lane == record["mode"], "historical initial lane contradicts the observed run history")
+
+
+def begin_candidate(state, pr, base, decision, *, runs=None):
     handoff.validate_state(state)
     require(state["repository"] == pr.repository and decision.head_sha == pr.head_sha,
             "candidate coordinator identity mismatch")
@@ -584,7 +1064,16 @@ def begin_candidate(state, pr, base, decision):
     if any(candidate_identity(record) == key for record in records):
         record = find_candidate(state, key)
         require(record["decision_oid"] == decision.decision_oid, "decision identity changed")
+        if runs is not None:
+            _finalize_intake(record, pr, runs)
         return record
+    require(decision.known and decision.control is not None, "candidate intake control is unavailable")
+    validate_pilot_control(asdict(decision.control))
+    require(not decision.paused or decision.mode == "concurrent", "incoherent paused intake mode")
+    require(not decision.control.paused or decision.paused, "global pause was dropped at intake")
+    require((decision.control.repository, decision.control.repository_id) == (pr.repository, pr.repository_id),
+            "candidate intake control repository differs")
+    lane = _history_lane(pr, base, runs)
     require(len(records) < MAX_CANDIDATES, "candidate history bound reached")
     for record in records:
         if record["pr_number"] == pr.number and record["abandoned_reason"] is None:
@@ -594,13 +1083,31 @@ def begin_candidate(state, pr, base, decision):
                       and item["abandoned_reason"] not in (None, "superseded-head-or-base")), None)
     record = {
         "pr_number": pr.number, "head_sha": pr.head_sha, "base_sha": base, "base_ref": pr.base_ref,
-        "decision_oid": decision.decision_oid, "mode": decision.mode, "created_at": observations.utc_now(),
+        "decision_oid": decision.decision_oid, "mode": lane or decision.mode, "created_at": observations.utc_now(),
         "abandoned_reason": abandoned, "dispatch_requested_at": None, "dispatch_sent_at": None,
         "watermark": 0, "full_run_id": None, "full_attempt": None,
     }
+    if lane is None:
+        record["intake_control"] = asdict(decision.control)
     records.append(record)
     handoff.validate_state(state)
     return record
+
+
+def begin_observed_candidate(client, state, number):
+    """Intake from one refreshed candidate/control/run observation under the caller's lock."""
+    handoff.validate_state(state)
+    pr, lines = fetch_candidate(client, state["repository"], number)
+    decision = fetch_decision(client, pr, lines)
+    require(decision.known and decision.control is not None, "live intake authority is unavailable")
+    base = frozen_base(client, pr)
+    runs = github.list_candidate_runs(client, pr, include_dispatch=True)
+    after, _ = fetch_candidate(client, pr.repository, number)
+    require((after.head_sha, after.head_ref, after.base_ref) == (pr.head_sha, pr.head_ref, pr.base_ref)
+            and frozen_base(client, after) == base, "candidate changed during intake")
+    require(fetch_pilot_control(client, pr.repository, pr.repository_id).identity == decision.control.identity,
+            "pilot control changed during intake")
+    return begin_candidate(state, after, base, decision, runs=runs)
 
 
 def _validate_local_checks(checks):
@@ -831,6 +1338,19 @@ def assess_candidate(state, record, decision, pr, session, facts, triage, checks
                   and candidate_identity(item) != candidate_identity(record)
                   for item in state["candidates"])
     missing = []
+    scheduling = []
+    if not decision.known or decision.control is None:
+        scheduling.append("current-pilot-control")
+    elif (decision.control.repository, decision.control.repository_id) != (pr.repository, pr.repository_id):
+        scheduling.append("current-pilot-control")
+    if "intake_control" in record and (
+            record["intake_control"]["repository"], record["intake_control"]["repository_id"]) != (
+                pr.repository, pr.repository_id):
+        scheduling.append("unproven-initial-lane")
+    if state.get("safety_publication") is not None:
+        scheduling.append("safety-publication-pending")
+    if handoff.availability_errors(state, observations.utc_now()):
+        scheduling.append("coordinator-unavailable")
     try:
         ready, clean = session.review_state(facts, triage, pre_review_required=decision.pre_review_required)
         if not ready or not clean:
@@ -850,7 +1370,20 @@ def assess_candidate(state, record, decision, pr, session, facts, triage, checks
     except ValueError as error:
         missing.append("review: " + str(error)[:512])
     if session.rounds.hold is not None:
-        missing.append("architecture-hold")
+        scheduling.append("architecture-hold")
+    if decision.pre_review_required:
+        report, lease = session.report, session.lease
+        ownership = session.owners.records.get(id(session)) if session.owners is not None else None
+        if (report is None or lease is None or not lease.finished or lease.outcome != "completed"
+                or not report.completed or not report.read_only or report.subjects != session.scope
+                or report.owner in {session.coordinator, session.implementer}
+                or (lease.task, lease.owner, lease.head) != (report.task, report.owner, report.head)
+                or ownership is None or ownership[3]
+                or (ownership[0][:2], ownership[1], ownership[2]) != (
+                    session.identity[:2], report.head, report.subjects)
+                or (facts and reporter.parse_time(report.completed_at, "pre-review completion") >=
+                    min(reporter.parse_time(fact.submitted_at, "remote review") for fact in facts))):
+            scheduling.append("unbound-original-review-context")
     if not _local_ready(state, pr, record):
         missing.append("exact-local-handoff")
     security_ready = (
@@ -870,24 +1403,29 @@ def assess_candidate(state, record, decision, pr, session, facts, triage, checks
     # A raw base-tip mismatch cannot classify an unmarked run as unrelated.
     unknown = [run for run in current_runs if run.head_sha == pr.head_sha and run.head_branch == pr.head_ref
                and run.status in github.ACTIVE_RUN_STATUSES
+               and run.mode not in {"metadata-only", "active-metadata-only"}
                and run.candidate_binding in (None, expected_binding)
                and (run.candidate_binding is None or run.candidate_base_ref is None or run.mode == "active-unknown")]
     if unknown:
-        missing.append("unclassified-active-run")
+        scheduling.append("unclassified-active-run")
     visible = current_runs
     full = [run for run in current_runs if run.mode in {"full", "active-full"}]
     if any(run.head_sha != pr.head_sha for run in runs):
-        missing.append("stale-run")
+        scheduling.append("stale-run")
     if len({run.run_id for run in full}) != len(full) or len(full) > 1:
-        missing.append("duplicate-full-run")
+        scheduling.append("duplicate-full-run")
     preflight = any(run.mode == "review-first" and candidate_evidence.preflight_success(
         {job.name: (job.status, job.conclusion) for job in run.jobs}) for run in matching)
-    if decision.mode == "review-first" and not preflight:
-        missing.append("exact-preflight")
-    if record["mode"] != decision.mode:
-        missing.append("gate-mode-changed")
+    try:
+        _finalize_intake(record, pr, current_runs)
+    except ValueError:
+        scheduling.append("unproven-initial-lane")
+    if record["mode"] == "review-first" and not preflight:
+        scheduling.append("exact-preflight")
+    if record["mode"] != decision.mode and record["mode"] != "concurrent" and not decision.paused:
+        scheduling.append("gate-mode-changed")
     if record["abandoned_reason"] is not None:
-        missing.append("abandoned-candidate")
+        scheduling.append("abandoned-candidate")
     if not criteria_ready:
         missing.append("objective-or-manual-criteria")
     admitted = None
@@ -897,7 +1435,7 @@ def assess_candidate(state, record, decision, pr, session, facts, triage, checks
             missing.append("unbound-run-attempt")
         elif record["full_run_id"] not in (None, run.run_id):
             missing.append("wrong-full-run")
-        elif decision.mode == "review-first":
+        elif record["mode"] == "review-first":
             # GitHub creation times have second precision; retain the native reservation.
             if (not _reserved_dispatch(record, pr, run, matching)
                     or (record["dispatch_sent_at"] is None and record.get("dispatch_observed_at") is None)):
@@ -919,16 +1457,17 @@ def assess_candidate(state, record, decision, pr, session, facts, triage, checks
         except github.MetadataEditError:
             if admitted.status == "completed":
                 missing.append("full-Build-" + str(admitted.conclusion))
-    elif decision.mode == "concurrent":
+    elif record["mode"] == "concurrent":
         missing.append("full-Build-missing")
-    dispatchable = (not missing and decision.mode == "review-first" and not full
-                    and record["dispatch_requested_at"] is None)
+    dispatchable = (not scheduling and record["mode"] == "review-first" and not full
+                    and record["dispatch_requested_at"] is None and (decision.paused or not missing))
+    missing.extend(scheduling)
     phase = ("superseded" if record["abandoned_reason"] == "superseded-head-or-base" else
              "review-abandoned" if record["abandoned_reason"] else
              "merge-ready" if complete and not missing else
              "build-failed" if admitted and admitted.status == "completed" and not complete else
              "building" if admitted else
-             "review-first-preflight" if decision.mode == "review-first" and not preflight else
+             "review-first-preflight" if record["mode"] == "review-first" and not preflight else
              "dispatchable" if dispatchable else "review-pending")
     return {
         "repository": pr.repository, "pull_request": pr.number, "head_sha": pr.head_sha,
@@ -975,6 +1514,11 @@ def assess_observed(client, state, record, session, triage, review_tools, *,
     require(security_checks(client, after) == checks, "security evidence changed during assessment")
     require(github.list_candidate_runs(client, after, include_dispatch=True) == runs,
             "Build evidence changed during assessment")
+    control = fetch_pilot_control(client, after.repository, after.repository_id)
+    require(decision.control is not None and control.identity == decision.control.identity,
+            "pilot control changed during assessment")
+    if "intake_control" not in record:
+        begin_candidate(state, after, record["base_sha"], decision, runs=runs)
     assessment = assess_candidate(
         state, record, decision, after, session, facts, triage, checks, runs,
         family_evidence=family_evidence, accepted_security=accepted_security,
@@ -984,6 +1528,9 @@ def assess_observed(client, state, record, session, triage, review_tools, *,
 
 def reserve_full_dispatch(state, record, assessment, runs):
     handoff.validate_state(state)
+    require(state.get("safety_publication") is None
+            and not handoff.availability_errors(state, observations.utc_now()),
+            "coordinator coverage or safety publication holds scheduling")
     require(find_candidate(state, candidate_identity(record)) == record and assessment["record"] == record
             and assessment["dispatchable"], "candidate is not dispatchable")
     require(record["dispatch_requested_at"] is None and record["abandoned_reason"] is None,
@@ -1007,6 +1554,10 @@ def dispatch_full(client, state_path, pr, assess):
                 "dispatch branch identity changed")
         if current.base_sha != pr.base_sha:
             require(frozen_base(client, current) == identity[2], "dispatch frozen base changed")
+        control = fetch_pilot_control(client, current.repository, current.repository_id)
+        require(assessment["decision"].get("control") is not None
+                and control.identity == PilotControl(**assessment["decision"]["control"]).identity,
+                "pilot control changed before reservation")
         reservation = reserve_full_dispatch(state, record, assessment, runs)
     client.request("POST", github._endpoint(pr.repository, "actions/workflows/build.yml/dispatches"),
                    body={"ref": pr.head_ref}, label="one input-free full Build")
