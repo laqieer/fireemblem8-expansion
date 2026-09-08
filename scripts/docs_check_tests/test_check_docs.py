@@ -1148,6 +1148,12 @@ class TesterCaseRegistryTests(unittest.TestCase):
                             "make -f scripts/validation_ownership/foundation.mk ownership-probe-check",
                         },
                     },
+                    "TC-WORKFLOW-PROBE-PRODUCER-001": {
+                        "document": "docs/test-cases/workflow-governance.md",
+                        "commands": {
+                            "python3 -m unittest scripts.validation_ownership.tests.test_producer -v",
+                        },
+                    },
                     "TC-WORKFLOW-PROBE-RUNTIME-INPUTS-001": {
                         "document": "docs/test-cases/workflow-governance.md",
                         "commands": {

@@ -487,6 +487,7 @@
         "https://github.com/laqieer/fireemblem8-expansion/issues/181",
         "https://github.com/laqieer/fireemblem8-expansion/issues/199",
         "https://github.com/laqieer/fireemblem8-expansion/issues/206",
+        "https://github.com/laqieer/fireemblem8-expansion/issues/225",
         "https://github.com/laqieer/fireemblem8-expansion/issues/227",
         "https://github.com/laqieer/fireemblem8-expansion/issues/226",
         "https://github.com/laqieer/fireemblem8-expansion/issues/208",
@@ -505,6 +506,7 @@
         "TC-WORKFLOW-METADATA-EDIT-RACE-001",
         "TC-WORKFLOW-PILOT-BASELINE-001",
         "TC-WORKFLOW-OWNERSHIP-PROBE-SANDBOX-001",
+        "TC-WORKFLOW-PROBE-PRODUCER-001",
         "TC-WORKFLOW-PROBE-RUNTIME-INPUTS-001",
         "TC-WORKFLOW-PROBE-VIEWS-001",
         "TC-WORKFLOW-REVIEW-FAMILY-001",
@@ -3471,6 +3473,34 @@
         {
           "command": "make -f scripts/validation_ownership/foundation.mk ownership-probe-check",
           "evidence": "scripts/validation_ownership/consumer.py"
+        }
+      ]
+    },
+    {
+      "id": "TC-WORKFLOW-PROBE-PRODUCER-001",
+      "title": "Preserve live producer context and native remakes",
+      "feature_id": "workflow-governance",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/225"
+      ],
+      "document": "docs/test-cases/workflow-governance.md",
+      "anchor": "tc-workflow-probe-producer-001-preserve-live-producer-context-and-native-remakes",
+      "profiles": [
+        "Linux x86-64 source checkout, GNU Make 4.3, existing Python/C/C++ tools and private namespaces"
+      ],
+      "purpose": "Prove one live native Make producer rendezvous with isolated candidate execution, validated publication, actual metadata/restarts and one residual aggregate resource lifetime.",
+      "prerequisites": "Clean source checkout with existing C/C++, libpng/pkg-config and ARM-binutils consumer tools, installed by the one extended native owner. All source/output/channel/sentinel fixtures remain under owned ignored build directories; no ROM, emulator, credential or host-policy changes, or remote mutation.",
+      "actions": "Run the ProducerTests process suite. Compare ordinary Make with isolated producers, live publication, complete metadata and native restarts. Exercise real scaninc/native outputs, aliases, ownership, source/output rejection, traffic corruption, FD separation, death/lifetime and cumulative limits. Require the original noexec linker lookup to reject instead of returning empty INPUTS; compare explicit Python and all nine graphics-rule adaptations using actual argv/bytes/status/cleanup. Run both original V/P combinations against merged CURRENT/BASE selection and test active-publication view-switch rejection. Retain the complete two-registry CURRENT/BASE pair; static queries without registrations or inherited outputs must deny publication instead of copying unused full-tree reservations. Pair actual credential and same-UID launch controls, preserve whole-comparison prerequisite skips, and exercise real privileged fallback where its existing permissions permit.",
+      "expected_result": "Only authenticated real dispatches execute. Full source/output checks precede publication into the still-live readonly view; native Make owns include/restart behavior. Execute denial uses the actual access credentials and permission class: owned0641 is nonexecutable like0644, not a noexec-caused failure. Nested queries retain child outputs until outer completion and validate transferred ownership through readonly source, without rebuilding contexts. The producer has private work and no callback/control/source-write authority. All parked processes and funded VM remain reserved, monotonic deltas settle once, malformed or uncertain requests never retry, and failures clean without partial success.",
+      "negative_control": "Unapproved d9 reconstructs observed generated contexts and returns stale link counts/timestamps. Original gbagfx lookup fails before dispatch, while the original executable linker script receives stat-success/X_OK-EACCES and incorrectly authorizes empty INPUTS. First integrated CI also fails the complete pair's control budget, assumes a cold producer fits two parked slots, races ready-file creation against its write, indexes skipped same-UID results and expects ancestry rejection before actual foreign credentials. Preserve these failures and original limits/values. Same-directory read-own-publication remains outside the two-phase contract. Resource negatives reach their actual boundary rather than an unrelated earlier failure.",
+      "interactions": "Depends on core206 and composes with independently merged V226/PR230 and R227/PR231. Runtime inputs remain explicit and do not grant producer execution. D228 depends on P225 without a new V/R dependency. Issue180 retains complete domain/graph/oracle/lifecycle/public integration. No unrelated game/profile interaction.",
+      "save_compatibility": "Host-only producer infrastructure; no gameplay, save, config identity, localization, generated game content, ROM/RAM or modern/archival profile change.",
+      "cleanup": "The existing sole-reaper watchdog/supervisor owns both live Make and nested producer lifetimes. EOF, malformed data, death, interruption and budget failure close owned channels, reap children and remove only owned private/output state without retry or counter reset.",
+      "limitations": "Implementation checkpoints do not establish full P/root112/calibration/remote completion. Both original V/P combinations use the real merged selector and one budget. Identified direct consumers use explicit source-authored adaptations; arbitrary missing executables are not synthesized. Same-directory read-own-publication remains outside the two-phase contract. The extended worker installs existing ARM binutils for the tiny ordinary linker-output control. Same-UID sudo evidence is not a root credential-transition claim; only a completed separate actual privileged control establishes that route, and unavailable existing permissions stay explicit without host-policy changes. No manual-only criterion is asserted.",
+      "automation": [
+        {
+          "command": "python3 -m unittest scripts.validation_ownership.tests.test_producer -v",
+          "evidence": "scripts/validation_ownership/tests/test_producer.py"
         }
       ]
     },

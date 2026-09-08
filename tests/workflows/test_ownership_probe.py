@@ -13,6 +13,13 @@ ROOT = Path(__file__).resolve().parents[2]
 PROBE_COMMAND = (
     "make", "-f", "scripts/validation_ownership/foundation.mk", "ownership-probe-test",
 )
+PROBE_TEST_MODULES = (
+    "scripts.validation_ownership.tests.test_foundation",
+    "scripts.validation_ownership.tests.test_producer",
+)
+NATIVE_PACKAGES = frozenset({
+    "build-essential", "binutils-arm-none-eabi", "libpng-dev", "pkg-config", "python3-venv",
+})
 
 
 def case_ids(suite):
@@ -50,7 +57,10 @@ class ProbeExecutionOwnershipTests(unittest.TestCase):
         return step
 
     def test_full_parallel_owner_selects_every_native_case(self):
-        self.owner_step(topology.WORKFLOW.read_text(encoding="utf-8"))
+        from scripts.workflow_pilot.tests.test_adaptive_gate import WorkflowTests, workflow_condition
+
+        text = topology.WORKFLOW.read_text(encoding="utf-8")
+        self.owner_step(text)
         command = subprocess.run(
             [*PROBE_COMMAND, "--dry-run"], cwd=ROOT, check=True,
             capture_output=True, text=True, timeout=10,
@@ -64,21 +74,89 @@ class ProbeExecutionOwnershipTests(unittest.TestCase):
             testLoader=loader, testRunner=collector,
         )
         self.assertEqual(loader.errors, [])
-        foundation = importlib.import_module("scripts.validation_ownership.tests.test_foundation")
-        expected = list(case_ids(unittest.TestLoader().loadTestsFromModule(foundation)))
-        self.assertTrue(expected)
+        expected = []
+        for name in PROBE_TEST_MODULES:
+            selected = list(case_ids(unittest.TestLoader().loadTestsFromModule(importlib.import_module(name))))
+            self.assertTrue(selected, name)
+            expected.extend(selected)
+        self.assertEqual(len(expected), len(set(expected)))
         self.assertEqual(sorted(collector.selected), sorted(expected))
         self.assertEqual(len(collector.selected), len(set(collector.selected)))
+        condition = topology._direct_job_if(topology._job_blocks(text)["extended-host-tests"])
+        contexts = WorkflowTests()
+        for event, mode in (
+            ("pull_request", "full"), ("push", "full"), ("workflow_dispatch", "full"),
+            ("pull_request", "metadata-only"), ("pull_request", "review-first"),
+        ):
+            with self.subTest(event=event, mode=mode):
+                active = workflow_condition(condition, contexts.context(event, mode))
+                selected = collector.selected if active else []
+                self.assertEqual(sorted(selected), sorted(expected) if mode == "full" else [])
 
     def test_native_cases_are_not_duplicated_in_workflow_discovery(self):
-        foundation = importlib.import_module("scripts.validation_ownership.tests.test_foundation")
-        native = set(case_ids(unittest.TestLoader().loadTestsFromModule(foundation)))
+        native = set()
+        for name in PROBE_TEST_MODULES:
+            selected = set(case_ids(unittest.TestLoader().loadTestsFromModule(importlib.import_module(name))))
+            self.assertTrue(selected, name)
+            native.update(selected)
         loader = unittest.TestLoader()
         workflow = set(case_ids(loader.discover(str(ROOT / "tests/workflows"), pattern="test_*.py")))
         self.assertEqual(loader.errors, [])
         self.assertTrue(native)
         self.assertTrue(workflow)
         self.assertEqual(native & workflow, set())
+
+    def native_dependencies(self, text):
+        steps = topology._step_blocks(topology._job_blocks(text)["extended-host-tests"])
+        owner = self.owner_step(text)
+        installers = []
+        prefix = ["sudo", "apt-get", "update", "&&", "sudo", "apt-get", "install", "-y"]
+        for index, step in enumerate(steps):
+            for command in topology._run_block_commands(step):
+                words = shlex.split(command, comments=True)
+                if words[:len(prefix)] != prefix:
+                    continue
+                fields = topology._direct_step_mapping_fields(step)
+                self.assertIsNotNone(fields)
+                self.assertEqual(len(fields), len(set(fields)))
+                self.assertTrue({"name", "run"} <= set(fields) <= {"name", "run", "id"})
+                installers.append((index, words[len(prefix):]))
+        self.assertEqual(len(installers), 1)
+        index, packages = installers[0]
+        self.assertEqual(set(packages), NATIVE_PACKAGES)
+        self.assertLess(index, steps.index(owner))
+
+    def test_native_owner_installs_real_consumer_dependencies_before_execution(self):
+        text = topology.WORKFLOW.read_text(encoding="utf-8")
+        self.native_dependencies(text)
+        line = next(
+            command for command in topology._run_block_commands(
+                topology._job_blocks(text)["extended-host-tests"],
+            ) if "apt-get install" in command
+        )
+        for package in sorted(NATIVE_PACKAGES):
+            with self.subTest(missing_package=package):
+                with self.assertRaises(AssertionError):
+                    self.native_dependencies(text.replace(line, line.replace(" " + package, "", 1), 1))
+        changed = line[:line.index("build-essential")] + " ".join(
+            shlex.quote(package) for package in sorted(NATIVE_PACKAGES, reverse=True)
+        )
+        self.native_dependencies(text.replace(line, changed, 1))
+        installer = next(
+            step for step in topology._step_blocks(topology._job_blocks(text)["extended-host-tests"])
+            if line in topology._run_block_commands(step)
+        )
+        for replacement in (
+            installer.replace("      run:", "      if: false\n      run:", 1),
+            installer.replace("      run:", "      continue-on-error: true\n      run:", 1),
+            installer.replace(line, line + " || true"),
+        ):
+            with self.subTest(inactive_installer=replacement):
+                with self.assertRaises(AssertionError):
+                    self.native_dependencies(text.replace(installer, replacement, 1))
+        owner = self.owner_step(text)
+        with self.assertRaises(AssertionError):
+            self.native_dependencies(text.replace(installer, "", 1).replace(owner, owner + installer, 1))
 
     def test_missing_duplicate_or_disabled_owner_rejects(self):
         text = topology.WORKFLOW.read_text(encoding="utf-8")

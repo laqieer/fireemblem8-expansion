@@ -24,9 +24,13 @@ from functools import wraps
 from pathlib import Path, PurePosixPath
 from threading import get_ident, main_thread
 
-from .authority import AuthorityLoader, ENVIRONMENT, Snapshot, encoded, parse_json, relative_path
+from .authority import (
+    AuthorityLoader, ENVIRONMENT, Frames, Snapshot, _command_hash, _event_command,
+    _read_events, encoded, parse_json, relative_path,
+)
 from .budget import Limits, MakeProbeError, NAMESPACE_LAUNCHER, ProbeBudget, text
 from .lifecycle import cleanup_scope, finish_cleanup
+from .producer_channel import ChannelError, ProducerChannel
 
 
 TRUSTED_ROOT = Path(__file__).resolve().parent
@@ -71,6 +75,16 @@ class Command:
     code: tuple[str, ...] = ()
     sources: tuple[str, ...] = ()
     directories: tuple[str, ...] = ()
+    native_tool: NativeTool | None = None
+    outputs: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class GeneratedFile:
+    path: str
+    data: bytes
+    mode: int
+
 
 
 @dataclass(frozen=True)
@@ -93,6 +107,8 @@ class ProcessOutput:
     code_consumed: tuple[str, ...]
     artifact: bytes | None = None
     metadata: tuple[tuple, ...] = ()
+    generated: tuple[GeneratedFile, ...] = ()
+    input_identities: tuple[tuple[str, str, str], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -113,77 +129,6 @@ class MakeObservation:
     stdout: bytes
     stderr: bytes
     events: tuple[dict, ...]
-
-
-class Frames:
-    def __init__(self, raw: bytes):
-        self.raw = raw
-        self.offset = 0
-
-    def take(self, size: int):
-        if size > len(self.raw) - self.offset:
-            raise MakeProbeError("truncated native observation/event frame")
-        result = self.raw[self.offset:self.offset + size]
-        self.offset += size
-        return result
-
-    def integer(self):
-        return int.from_bytes(self.take(4), "little")
-
-    def string(self, boundary):
-        return text(self.take(self.integer()), boundary)
-
-    def done(self):
-        if self.offset != len(self.raw):
-            raise MakeProbeError("trailing native observation/event bytes")
-
-
-def _command_hash(command: str) -> str:
-    result = 14695981039346656037
-    for byte in command.encode("utf-8"):
-        result = ((result ^ byte) * 1099511628211) & ((1 << 64) - 1)
-    return f"{result:016x}"
-
-
-def _event_command(event: dict) -> str:
-    arguments = event["arguments"]
-    if arguments[0] in {"/bin/sh", "/bin/bash"}:
-        if len(arguments) != 3 or arguments[1] not in {"-c", "-ec"}:
-            raise MakeProbeError("SHELL/.SHELLFLAGS escaped the interceptor protocol")
-        return arguments[2]
-    program = arguments[0]
-    if program.startswith("/usr/bin/") and program != "/usr/bin/make":
-        program = program.removeprefix("/usr/bin/")
-    def quote(value):
-        if not value:
-            return '""'
-        if re.fullmatch(r"[A-Za-z0-9_@%+=:,./-]+", value):
-            return value
-        return "'" + value.replace("'", "'\"'\"'") + "'"
-    return " ".join(quote(value) for value in (program, *arguments[1:]))
-
-
-def _read_events(raw: bytes, *, expected_mapping_count: int):
-    reader = Frames(raw)
-    events = []
-    while reader.offset < len(raw):
-        match = struct.unpack("<i", reader.take(4))[0]
-        count = reader.integer()
-        hash_value = int.from_bytes(reader.take(8), "little")
-        argc = reader.integer()
-        if (
-            not -2 <= match < expected_mapping_count
-            or count != expected_mapping_count or not 1 <= argc <= 1024
-        ):
-            raise MakeProbeError("invalid trusted interceptor frame")
-        event = {
-            "match": match, "mapping_count": count,
-            "arguments": [reader.string("interceptor argv") for _ in range(argc)],
-        }
-        if int(_command_hash(_event_command(event)), 16) != hash_value:
-            raise MakeProbeError("interceptor command/hash mismatch")
-        events.append(event)
-    return events
 
 
 def _metadata_records(value, limit, *, runtime_paths=(), runtime_absent=()):
@@ -628,6 +573,14 @@ class ProbeSession:
         self.cache = {}
         self.mappings = {}
         self.native_tools = {}
+        self.published_sources = {}
+        self.published_versions = {}
+        self.publication_serial = 0
+        self.generated_paths = set()
+        self.generated_directories = set()
+        self.parked_capsules = []
+        self.memory_peak = 0
+        self.make_depth = 0
         self._views = []
         self.handlers = {}
         self.snapshot = None
@@ -708,7 +661,7 @@ class ProbeSession:
             or loader.revision is None or loader.entries.capture != (loader.root, loader.revision)
         ):
             raise MakeProbeError("view requires a same-report, same-repository immutable capture")
-        if self.budget.children or self.pending_commands:
+        if self.budget.children or self.pending_commands or self.make_depth:
             raise MakeProbeError("cannot select a view during active report execution")
         previous = (
             self.loader, self.snapshot, self.tree, self.cache, self.mappings, self.native_tools,
@@ -770,6 +723,11 @@ class ProbeSession:
             self.cache.clear()
             self.mappings.clear()
             self.native_tools.clear()
+            self.published_sources.clear()
+            self.published_versions.clear()
+            self.generated_paths.clear()
+            self.generated_directories.clear()
+            self.parked_capsules.clear()
             self.make_runtime = ()
             self.runtime_inputs = ()
             self.runtime_dispatch = ()
@@ -914,13 +872,30 @@ class ProbeSession:
             ):
                 raise MakeProbeError("source selector matches an unadmitted symlink/gitlink")
             matched = {
-                name for name in self.snapshot.files
+                name for name in self.snapshot.files.keys() | self.published_sources.keys()
                 if matches(name)
             }
             if not matched:
                 raise MakeProbeError(f"source declaration resolves no regular inputs: {pattern}")
             result.update(matched)
         return tuple(sorted(result))
+
+    def source_owners(self, paths):
+        selected = set(paths)
+        result = self.snapshot.owners(selected - self.published_sources.keys())
+        for name in sorted(selected & self.published_sources.keys()):
+            item = self.published_sources[name]
+            result.append((name, f"{stat.S_IFREG | item.mode:06o}", hashlib.sha256(item.data).hexdigest()))
+        return sorted(result)
+
+    def _publication_records(self, since=0):
+        result = []
+        for name, (owner, serial) in sorted(self.published_versions.items()):
+            self.budget.remaining()
+            if serial > since:
+                item = self.published_sources[name]
+                result.append([name, owner, item.mode, len(item.data), hashlib.sha256(item.data).hexdigest()])
+        return result
 
     def _new_root(self, name, *, make=False):
         root = self.base / name
@@ -964,6 +939,7 @@ class ProbeSession:
     def _sandbox_run(
         self, root, *, mode, argv, environment, mounts, code=(), sources=(),
         directories=(), executables=None, mapping_entries=(), metadata_validation=False,
+        producer_handler=None, publication_observer=None, publication_allowed=True,
     ):
         self.budget.remaining()
         if [item for item in mounts if item["target"] == "/repo"] != [self._mount(self.tree, "/repo")]:
@@ -1016,8 +992,8 @@ class ProbeSession:
             "metadata_validation": metadata_validation,
             "deadline": self.budget.deadline,
             "file_limit": file_remaining,
-            "memory_limit": self.budget.limits.address_space_bytes,
-            "process_limit": self.budget.limits.processes,
+            "memory_limit": self.budget.limits.address_space_bytes - sum(item["memory"] for item in self.parked_capsules),
+            "process_limit": self.budget.limits.processes - sum(item["processes"] for item in self.parked_capsules),
             "descendant_limit": self.budget.limits.descendants - self.processes_used,
             "syscall_limit": self.budget.limits.syscalls - self.syscalls_used,
             "write_limit": self.budget.limits.sandbox_bytes - self.budget.bytes.get("sandbox", 0),
@@ -1028,24 +1004,182 @@ class ProbeSession:
                 self.budget.limits.control_bytes - self.budget.bytes.get("control", 0),
             ),
         }
+        counter_names = {
+            "processes", "syscalls", "written_bytes", "created_files", "observation_bytes",
+            "observations", "live_process_peak", "memory_peak",
+        }
+        settled = dict.fromkeys(counter_names, 0)
+        sequence = 0
+        completion = None
+        channel = None
+        channel_directory = self.base / f"producer-{self.serial}"
+        if producer_handler is not None:
+            if mode != "make":
+                raise MakeProbeError("live producer requests require native Make")
+            config["producer_scope"] = self.base.name + "/" + root.name
+            config["reserved_paths"] = list(self.loader.entries) if publication_allowed else None
+            config["publication_limit"] = self.budget.limits.created_files
+            if self.published_sources:
+                config["published"] = self._publication_records()
+            config["pending_limit"] = self.budget.limits.pending - sum(
+                item["pending"] for item in self.parked_capsules
+            )
+            if config["pending_limit"] < 1:
+                self.budget.reject("pending producer capacity exhausted before launch")
+
+        def settle(values, *, failed=False):
+            if not isinstance(values, dict) or set(values) != counter_names or any(
+                type(values[name]) is not int or values[name] < settled[name] for name in counter_names
+            ):
+                raise MakeProbeError("nonmonotonic or malformed supervisor resource checkpoint")
+            prospective = {
+                "processes": self.processes_used + values["processes"] - settled["processes"],
+                "syscalls": self.syscalls_used + values["syscalls"] - settled["syscalls"],
+                "observations": self.observations_used + values["observations"] - settled["observations"],
+                "created": self.files_created + values["created_files"] - settled["created_files"],
+            }
+            if not failed and (
+                prospective["processes"] > self.budget.limits.descendants
+                or prospective["syscalls"] > self.budget.limits.syscalls
+                or prospective["observations"] > self.budget.limits.entries
+                or prospective["created"] > self.budget.limits.created_files
+                or values["live_process_peak"] > config["process_limit"]
+                or values["memory_peak"] > config["memory_limit"]
+                or values["observation_bytes"] < 128*values["observations"]
+            ):
+                self.budget.reject("supervisor checkpoint exceeds aggregate resource authority")
+            self.observations_used += values["observations"] - settled["observations"]
+            self.processes_used += values["processes"] - settled["processes"]
+            self.syscalls_used += values["syscalls"] - settled["syscalls"]
+            self.files_created += values["created_files"] - settled["created_files"]
+            self.live_process_peak = max(
+                self.live_process_peak, values["live_process_peak"] + sum(item["live"] for item in self.parked_capsules),
+            )
+            self.memory_peak = max(
+                self.memory_peak, values["memory_peak"] + sum(item["memory"] for item in self.parked_capsules),
+            )
+            self.budget.charge("sandbox", values["written_bytes"] - settled["written_bytes"])
+            self.budget.charge("control", values["observation_bytes"] - settled["observation_bytes"])
+            settled.update(values)
+
+        def grants(extra_control=0):
+            available = {
+                "descendant_limit": (settled["processes"], self.budget.limits.descendants - self.processes_used),
+                "syscall_limit": (settled["syscalls"], self.budget.limits.syscalls - self.syscalls_used),
+                "write_limit": (settled["written_bytes"], self.budget.limits.sandbox_bytes - self.budget.bytes.get("sandbox", 0)),
+                "creation_limit": (settled["created_files"], self.budget.limits.created_files - self.files_created),
+                "observation_count": (settled["observations"], self.budget.limits.entries - self.observations_used),
+                "observation_limit": (
+                    settled["observation_bytes"],
+                    self.budget.limits.control_bytes - self.budget.bytes.get("control", 0) - extra_control,
+                ),
+            }
+            if any(left < 0 for _, left in available.values()):
+                self.budget.reject("producer work exhausted an outer remaining allowance")
+            return {
+                **{name: min(config[name], used + left) for name, (used, left) in available.items()},
+                "process_limit": config["process_limit"], "memory_limit": config["memory_limit"],
+            }
+
+        def dispatch(packet):
+            nonlocal sequence, completion
+            request = parse_json(packet, "producer request")
+            if not isinstance(request, dict) or request.get("scope") != config["producer_scope"]:
+                raise MakeProbeError("foreign producer request scope")
+            if request.get("kind") == "finished":
+                if (
+                    set(request) != {"kind", "scope", "issued", "completed"}
+                    or type(request["issued"]) is not int or request["issued"] != sequence
+                    or type(request["completed"]) is not int or not 0 <= request["completed"] <= sequence
+                ):
+                    raise MakeProbeError("invalid producer completion notification")
+                completion = request["issued"], request["completed"]
+                return None
+            if (
+                set(request) != {"kind", "scope", "sequence", "completed", "frame", "counters", "reserved"}
+                or request["kind"] != "request" or type(request["sequence"]) is not int
+                or request["sequence"] != sequence + 1 or type(request["completed"]) is not int
+                or request["completed"] != sequence or not isinstance(request["frame"], str)
+                or len(request["frame"]) > 2*65536 or not re.fullmatch(r"(?:[0-9a-f]{2})+", request["frame"])
+            ):
+                raise MakeProbeError("malformed, stale or out-of-order producer request")
+            events = _read_events(bytes.fromhex(request["frame"]), expected_mapping_count=0)
+            if len(events) != 1 or events[0]["match"] != -1:
+                raise MakeProbeError("invalid producer request event")
+            reserved = request["reserved"]
+            if (
+                not isinstance(reserved, dict) or set(reserved) != {"live", "processes", "memory", "pending"}
+                or any(type(value) is not int for value in reserved.values())
+                or not 1 <= reserved["live"] <= reserved["processes"] <= config["process_limit"]
+                or not 1 <= reserved["memory"] <= config["memory_limit"]
+                or not 1 <= reserved["pending"] <= config["pending_limit"]
+            ):
+                raise MakeProbeError("invalid parked producer-context reservations")
+            settle(request["counters"])
+            if (
+                reserved["live"] > request["counters"]["live_process_peak"]
+                or reserved["live"] > request["counters"]["processes"]
+                or reserved["memory"] > request["counters"]["memory_peak"]
+            ):
+                raise MakeProbeError("parked reservations contradict measured supervisor state")
+            if publication_observer is not None:
+                publication_observer(sequence)
+            sequence += 1
+            self.pending_commands_peak = max(
+                self.pending_commands_peak, reserved["pending"] + sum(item["pending"] for item in self.parked_capsules),
+            )
+            self.parked_capsules.append(reserved)
+            try:
+                value = producer_handler(events[0], sequence)
+            finally:
+                self.parked_capsules.pop()
+            reply = {
+                "kind": "result", "scope": config["producer_scope"], "sequence": sequence,
+                **value, "limits": grants(),
+            }
+            bound = len(encoded(reply)) + 4
+            reply["limits"] = grants(bound)
+            data = encoded(reply)
+            if len(data) + 4 > bound:
+                raise MakeProbeError("producer resumption grant encoding exceeded its reservation")
+            return data
         if (
             config["process_limit"] < 1 or config["descendant_limit"] < 1
-            or config["syscall_limit"] < 1 or config["write_limit"] < 1
+            or config["syscall_limit"] < 1 or config["write_limit"] < 1 or config["memory_limit"] < 1
         ):
             self.budget.reject("aggregate capsule resource budget exhausted")
         if config["observation_count"] < 1:
             self.budget.reject("aggregate filesystem-observation budget exhausted before launch")
-        payload = encoded(config)
-        self.budget.charge("control", len(payload))
+        def close_channel():
+            if channel is not None:
+                channel.close()
         with cleanup_scope([
             lambda: report.unlink(missing_ok=True), lambda: config_path.unlink(missing_ok=True),
+            close_channel, lambda: _remove_owned_tree(channel_directory),
         ]):
+            if producer_handler is not None:
+                mask = signal.pthread_sigmask(signal.SIG_BLOCK, (signal.SIGINT, signal.SIGTERM))
+                try:
+                    channel_directory.mkdir(mode=0o700)
+                    channel = ProducerChannel.listen(
+                        channel_directory, deadline=self.budget.deadline, limit=file_remaining,
+                        charge=lambda size: self.budget.charge("control", size),
+                    )
+                    config["producer_endpoint"] = channel.endpoint
+                finally:
+                    signal.pthread_sigmask(signal.SIG_SETMASK, mask)
+            payload = encoded(config)
+            self.budget.charge("control", len(payload))
             config_path.write_bytes(payload)
-            result = self.budget.run(
-                [*self.launcher, "/usr/bin/python3", "-I", "-S", "-B",
-                 str(TRUSTED_ROOT / "sandbox_exec.py"), str(config_path)],
-                env=ENVIRONMENT, privileged=self.sudo_drop,
-            )
+            try:
+                result = self.budget.run(
+                    [*self.launcher, "/usr/bin/python3", "-I", "-S", "-B",
+                     str(TRUSTED_ROOT / "sandbox_exec.py"), str(config_path)],
+                    env=ENVIRONMENT, privileged=self.sudo_drop,
+                    producer_channel=channel, producer_handler=dispatch if channel is not None else None,
+                )
+            except ChannelError as error:
+                raise MakeProbeError(f"producer rendezvous failed: {error}") from error
             if not report.is_file():
                 raise MakeProbeError(f"sandbox supervisor produced no result: {result.stderr!r}")
             observed = parse_json(self.budget.read_bytes(report, "control"), "supervisor JSON")
@@ -1054,7 +1188,7 @@ class ProbeSession:
                 "processes", "syscalls", "written_bytes", "created_files",
                 "memory_peak", "observation_bytes", "live_process_peak", "observations",
                 "metadata", "events",
-            }:
+            } | ({"rendezvous"} if channel is not None else set()):
                 raise MakeProbeError("malformed supervisor result")
             observations = observed["observations"]
             collections = [observed[name] for name in ("consumed", "code_consumed", "accessed")]
@@ -1083,15 +1217,21 @@ class ProbeSession:
                 or mode != "make" and observed["events"]
             ):
                 raise MakeProbeError("malformed supervisor native event writes")
-            self.observations_used += observations
-            self.processes_used += observed["processes"]
-            self.live_process_peak = max(self.live_process_peak, observed["live_process_peak"])
-            self.syscalls_used += observed["syscalls"]
-            self.files_created += observed["created_files"]
-            self.budget.charge("sandbox", observed["written_bytes"])
-            self.budget.charge("control", observed["observation_bytes"])
+            settle({name: observed[name] for name in counter_names}, failed=observed["ok"] is not True)
             if result.returncode or observed["ok"] is not True:
                 raise MakeProbeError(f"confined {mode} probe rejected: {observed['error']}; {result.stderr!r}")
+            if channel is not None:
+                final = observed["rendezvous"]
+                if (
+                    not isinstance(final, dict) or set(final) != {"issued", "completed", "pending_peak"}
+                    or any(type(value) is not int for value in final.values())
+                    or final["issued"] != sequence or final["completed"] != sequence
+                    or completion != (final["issued"], final["completed"])
+                    or not 0 <= final["pending_peak"] <= config["pending_limit"]
+                ):
+                    raise MakeProbeError("partial or inconsistent live producer completion")
+                if publication_observer is not None:
+                    publication_observer(sequence)
             result.returncode = observed["returncode"]
             if metadata_validation and result.returncode not in {0, 1, 2}:
                 raise MakeProbeError("invalid trusted metadata comparison status")
@@ -1156,10 +1296,67 @@ class ProbeSession:
                 raise MakeProbeError(f"directory declaration is not an active directory: {path}")
         return result
 
+    def _output_paths(self, paths):
+        if len(paths) > 4096:
+            raise MakeProbeError("generated output count exceeds admission bound")
+        names = tuple(sorted(relative_path(path) for path in paths))
+        declared = set(names)
+        for index, name in enumerate(names):
+            self.budget.remaining()
+            if index and name == names[index - 1] or any(
+                parent.as_posix() in declared for parent in PurePosixPath(name).parents
+            ):
+                raise MakeProbeError("conflicting generated output declarations")
+            if any(
+                name == source or name.startswith(source + "/") or source.startswith(name + "/")
+                for source in self.loader.entries
+            ):
+                raise MakeProbeError("generated output conflicts with immutable source")
+        return names
+
+
+    def _capture_outputs(self, root, names):
+        if not names:
+            return ()
+        directories = {
+            parent.as_posix() for name in names for parent in PurePosixPath(name).parents
+            if parent.as_posix() != "."
+        }
+        pending, found = [root], {}
+        count = 0
+        while pending:
+            self.budget.remaining()
+            with os.scandir(pending.pop()) as entries:
+                for entry in entries:
+                    self.budget.remaining()
+                    count += 1
+                    if count > self.budget.limits.created_files:
+                        self.budget.reject("generated output tree exceeds creation bound")
+                    name = Path(entry.path).relative_to(root).as_posix()
+                    self.budget.charge("control", len(os.fsencode(name)) + 64)
+                    mode = entry.stat(follow_symlinks=False).st_mode
+                    if stat.S_ISDIR(mode) and name in directories:
+                        pending.append(Path(entry.path))
+                    elif stat.S_ISREG(mode) and name in names and not mode & 0o7000:
+                        found[name] = stat.S_IMODE(mode)
+                    else:
+                        raise MakeProbeError("undeclared or nonregular generated output")
+        if set(found) != set(names):
+            raise MakeProbeError("missing declared generated output")
+        return tuple(
+            GeneratedFile(name, self.budget.read_bytes(root / name, "output"), found[name])
+            for name in names
+        )
+
+
     def _command(self, command: Command, *, compiler=None, native=None):
         self.budget.remaining()
         if not isinstance(command, Command):
             raise MakeProbeError("registered command requires a typed Command")
+        if command.native_tool is not None:
+            if native is not None and native is not command.native_tool:
+                raise MakeProbeError("conflicting native execution authority")
+            native = command.native_tool
         programs = {"/usr/bin/python3", "/usr/bin/uname", "/usr/bin/printf"}
         if native is not None:
             if not isinstance(native, NativeTool) or not any(
@@ -1190,16 +1387,21 @@ class ProbeSession:
         code = tuple(sorted(set(command.code)))
         sources = self.sources(command.sources) if command.sources else ()
         directories = self._directories(command.directories)
-        key = (self.snapshot.digest, command, None if native is None else native.digest)
-        if key in self.cache:
+        outputs = self._output_paths(command.outputs)
+        for path in code:
+            relative_path(path)
+            if path not in self.snapshot.files and path not in self.published_sources:
+                raise MakeProbeError(f"unadmitted command code: {path}")
+        published_inputs = tuple(self.source_owners((set(code) | set(sources)) & self.published_sources.keys()))
+        if published_inputs:
+            self.budget.charge("control", len(encoded(published_inputs)))
+        key = (self.snapshot.digest, command, None if native is None else native.digest, code, sources, published_inputs)
+        if key in self.cache and not outputs:
             for cached in self.cache[key]:
                 if self._metadata_matches(cached.metadata):
                     return cached
-        self.budget.charge("pending", len(encoded([command.argv, code, sources, directories])))
-        for path in code:
-            relative_path(path)
-            if path not in self.snapshot.files:
-                raise MakeProbeError(f"unadmitted command code: {path}")
+        self.budget.charge("pending", len(encoded([command.argv, code, sources, directories, outputs])))
+        input_identities = tuple(self.source_owners(set(code) | set(sources)))
         work = self.base / f"command-{self.serial + 1}"
         root_name = f"command-root-{self.serial + 1}"
         root = self.base / root_name
@@ -1233,13 +1435,17 @@ class ProbeSession:
                 completed.stdout, completed.stderr, consumed, tuple(observed["code_consumed"]),
                 None if compiler is None else self.budget.read_bytes(output / "tool", "control"),
                 observed["metadata"],
+                self._capture_outputs(output, outputs),
+                input_identities,
             )
             self.budget.charge(
                 "cache", len(completed.stdout) + len(completed.stderr)
-                + len(encoded([self.snapshot.digest, command.argv, code, sources, directories]))
-                + (0 if result.artifact is None else len(result.artifact)),
+                + len(encoded([self.snapshot.digest, command.argv, code, sources, directories, published_inputs]))
+                + (0 if result.artifact is None else len(result.artifact))
+                + sum(len(item.data) + len(os.fsencode(item.path)) + 64 for item in result.generated),
             )
             self.budget.charge("cache", len(encoded(result.metadata)))
+            self.budget.charge("cache", len(encoded(result.input_identities)))
             self.cache.setdefault(key, []).append(result)
             return result
 
@@ -1291,7 +1497,7 @@ class ProbeSession:
         binary = result.artifact
         self._validate_native(binary)
         digest = hashlib.sha256(binary).hexdigest()
-        inputs = tuple(self.snapshot.owners(command.code))
+        inputs = result.input_identities
         key = hashlib.sha256(encoded([digest, inputs])).hexdigest()
         if key not in self.native_tools:
             self.budget.charge("cache", len(encoded([digest, inputs])))
@@ -1335,10 +1541,11 @@ class ProbeSession:
             raise MakeProbeError("native ELF has no loadable program")
 
     @terminal_failure
-    def native(self, tool: NativeTool, arguments=(), *, sources=(), directories=()):
+    def native(self, tool: NativeTool, arguments=(), *, sources=(), directories=(), outputs=()):
         return self._command(
             Command(
                 ("/native/tool", *arguments), sources=tuple(sources), directories=tuple(directories),
+                outputs=tuple(outputs),
             ),
             native=tool,
         )
@@ -1352,7 +1559,7 @@ class ProbeSession:
         if not TARGET.fullmatch(target) or target.startswith(("-", "/")) or ".." in target.split("/"):
             raise MakeProbeError("invalid requested Make target")
         relative_path(makefile)
-        if makefile not in self.snapshot.files:
+        if makefile not in self.snapshot.files and makefile not in self.published_sources:
             raise MakeProbeError("Makefile is not an admitted snapshot input")
         if len(variables) > 512 or len(assignments) > 512 or len(owner_inputs) > 4096:
             raise MakeProbeError("Make request count exceeds admission bound")
@@ -1385,13 +1592,129 @@ class ProbeSession:
         root_name = f"make-root-{self.serial + 1}"
         root = self.base / root_name
         control = self.base / f"control-{self.serial + 1}"
-        mappings = {}
+        receipts = {}
         command_results = {}
+        generated_paths = self.generated_paths
+        generated_directories = self.generated_directories
+        confirmed = 0
+        depth = self.make_depth
+        # A query without registrations or inherited outputs has no publication
+        # authority. Do not copy the complete tree's unused reservation list.
+        publication_allowed = commands is not None or bool(self.published_sources)
         commands = {} if commands is None else commands
+
+        def cleanup_generated():
+            if depth:
+                return
+            finish_cleanup([
+                *(lambda name=name: (self.tree / name).unlink(missing_ok=True) for name in generated_paths),
+                *(lambda name=name: (self.tree / name).rmdir() if (self.tree / name).exists() else None
+                  for name in sorted(generated_directories, key=lambda value: (-value.count("/"), value))),
+                generated_paths.clear, generated_directories.clear,
+                self.published_sources.clear, self.published_versions.clear,
+            ])
+
+        def acknowledge(completed):
+            nonlocal confirmed
+            if not confirmed <= completed <= len(receipts):
+                raise MakeProbeError("invalid producer publication acknowledgement")
+            for index in range(confirmed, completed):
+                for item in receipts[index][2].generated:
+                    self.publication_serial += 1
+                    version = receipts[index][3], self.publication_serial
+                    self.budget.charge("cache", len(encoded([item.path, version])))
+                    self.published_sources[item.path] = item
+                    self.published_versions[item.path] = version
+            confirmed = completed
+
+        def produce(event, sequence):
+            publication_start = self.publication_serial
+            command = _event_command(event)
+            if sequence != len(receipts) + 1:
+                raise MakeProbeError("producer request slot is stale or duplicated")
+            if command not in commands:
+                raise MakeProbeError(f"unregistered eager/recursive Make command: {command!r}")
+            pending = self.pending_commands
+            if pending >= self.budget.limits.pending:
+                self.budget.reject("registered-command pending count exceeds aggregate bound")
+            with cleanup_scope([lambda: setattr(self, "pending_commands", pending)]):
+                self.pending_commands = pending + 1
+                registration = commands[command]
+                if not isinstance(registration, Command):
+                    raise MakeProbeError("producer registration requires a typed Command")
+                outputs = self._output_paths(registration.outputs)
+                for name in outputs:
+                    if any(name.startswith(other + "/") or other.startswith(name + "/") for other in generated_paths):
+                        raise MakeProbeError("conflicting generated output namespaces")
+                    path = self.tree / name
+                    if (path.exists() or path.is_symlink()) and name not in generated_paths:
+                        raise MakeProbeError("generated output would replace an unowned source object")
+                    generated_paths.add(name)
+                    generated_directories.update(
+                        parent.as_posix() for parent in PurePosixPath(name).parents
+                        if parent.as_posix() != "." and not (self.tree / parent).exists()
+                    )
+                result = self.command(registration)
+                inputs = result.consumed
+                identity = {
+                    "argv": list(registration.argv), "directories": sorted(set(registration.directories)),
+                    "inputs": list(result.input_identities),
+                }
+                if registration.native_tool is not None:
+                    tool = registration.native_tool
+                    identity["native_tool"] = {"sha256": tool.digest, "inputs": list(tool.inputs)}
+                record = {
+                    "command": identity, "output_sha256": hashlib.sha256(result.stdout).hexdigest(),
+                }
+                if result.generated:
+                    record["generated_outputs"] = [
+                        (item.path, f"{stat.S_IFREG | item.mode:06o}", hashlib.sha256(item.data).hexdigest())
+                        for item in result.generated
+                    ]
+                producer = hashlib.sha256(encoded([
+                    registration.argv, sorted(set(registration.code)), inputs,
+                    sorted(set(registration.directories)), outputs,
+                    None if registration.native_tool is None else registration.native_tool.digest,
+                ])).hexdigest()
+                key = f"{sequence - 1:016x}"
+                self.budget.charge("mapping", len(command.encode("utf-8")) + len(result.stdout) + len(encoded(record)))
+                (mapping_path / (key + ".cmd")).write_bytes(command.encode("utf-8"))
+                (mapping_path / (key + ".out")).write_bytes(result.stdout)
+                if result.generated:
+                    frame = bytearray(b"VOGEN1\0\0" + bytes.fromhex(producer))
+                    frame.extend(struct.pack("<I", len(result.generated)))
+                    for item in result.generated:
+                        name = item.path.encode("utf-8")
+                        frame.extend(struct.pack("<III", len(name), item.mode, len(item.data)))
+                        frame.extend(name)
+                        frame.extend(item.data)
+                    if len(frame) > self.budget.limits.file_bytes:
+                        self.budget.reject("generated result mapping exceeds file byte bound")
+                    self.budget.charge("mapping", len(frame))
+                    (mapping_path / (key + ".files")).write_bytes(frame)
+                result_identity = hashlib.sha256(encoded(record)).hexdigest()
+                command_results.setdefault(result_identity, record)
+                receipts[sequence - 1] = (command, result_identity, result, producer)
+                reply = {
+                    "slot": sequence - 1, "owner": producer, "outputs": list(outputs),
+                    "stdout_sha256": record["output_sha256"],
+                }
+                adopted = self._publication_records(publication_start)
+                if adopted:
+                    data = encoded(adopted)
+                    if len(data) > self.budget.limits.file_bytes:
+                        self.budget.reject("nested publication mapping exceeds file byte bound")
+                    self.budget.charge("mapping", len(data))
+                    (mapping_path / (key + ".adopt")).write_bytes(data)
+                    reply["adopt_sha256"] = hashlib.sha256(data).hexdigest()
+                return reply
+
         with cleanup_scope([
-            mappings.clear,
+            cleanup_generated, receipts.clear,
             lambda: _remove_owned_tree(control), lambda: _remove_owned_tree(root),
+            lambda: setattr(self, "make_depth", depth),
         ]):
+            self.make_depth = depth + 1
             self._new_root(root_name, make=True)
             control.mkdir(mode=0o700)
             mapping_path = control / "map"
@@ -1400,139 +1723,59 @@ class ProbeSession:
             events_path.touch()
             result_path.touch()
             (control / "interceptor").touch()
-            for _ in range(MAX_DYNAMIC_PASSES):
-                self.budget.remaining()
-                (mapping_path / "count").write_bytes(len(mappings).to_bytes(4, "little"))
-                events_path.write_bytes(b"")
-                result_path.write_bytes(b"")
-                completed, observed = self._sandbox_run(
-                    root, mode="make",
-                    argv=[
-                        "/usr/bin/make", "-f", makefile, *cli, target,
-                    ],
-                    environment=environment,
-                    mounts=[
-                        self._mount(self.tree, "/repo"),
-                        self._mount(control, "/control", writable=True),
-                        self._mount(self.base / "interceptor", "/control/interceptor", executable=True),
-                        self._mount(Path("/dev/null"), "/dev/null", writable=True),
-                    ],
-                    mapping_entries=[
-                        {"key": _command_hash(command), "metadata": result.metadata}
-                        for command, identity, result in mappings.values()
-                    ],
-                )
-                raw_events = self.budget.read_bytes(events_path, "event")
-                native_events = b"".join(bytes.fromhex(item) for item in observed["events"])
-                self.budget.charge("control", len(native_events))
-                if raw_events != native_events:
-                    raise MakeProbeError("trusted interceptor frame differs from its native write")
-                events = _read_events(
-                    raw_events, expected_mapping_count=len(mappings),
-                )
-                needs_resolution = False
-                matched = set()
-                for event in events:
-                    self.budget.remaining()
-                    command = _event_command(event)
-                    if event["match"] >= 0:
-                        if mappings[event["match"]][0] != command:
-                            raise MakeProbeError("interceptor matched an unknown mapping")
-                        matched.add(mappings[event["match"]][1])
-                    elif event["match"] == -2:
-                        raise MakeProbeError(f"unsupported guest metadata reuse for Make command: {command!r}")
-                    else:
-                        needs_resolution = True
-                if not needs_resolution:
-                    if completed.returncode:
-                        raise MakeProbeError(
-                            f"GNU Make failed after confined replay: {completed.returncode}; {completed.stderr!r}"
-                        )
-                    semantics = _read_observation(
-                        self.budget.read_bytes(result_path, "control"), target, variables,
-                    )
-                    semantics["assignments"] = sorted(assignments, key=lambda item: item[1])
-                    recipe_sources = {
-                        record["source"] for record in semantics["files"] if record["source"]
-                    }
-                    owners = set(owner_inputs) | recipe_sources
-                    semantics["owner_inputs"] = self.snapshot.owners(owners)
-                    semantics["dynamic_commands"] = sorted(
-                        (command_results[key] for key in matched), key=encoded,
-                    )
-                    semantic_bytes = encoded(semantics)
-                    self.budget.charge("control", len(semantic_bytes))
-                    execution = self.snapshot.digest
-                    if self.runtime_inputs:
-                        runtime = [
-                            [item.path, item.canonical, item.mode, item.parents, item.aliases,
-                             None if item.data is None else hashlib.sha256(item.data).hexdigest()]
-                            for item in self.runtime_inputs
-                        ]
-                        execution = hashlib.sha256(encoded([execution, runtime])).hexdigest()
-                    return MakeObservation(
-                        target, semantics, execution,
-                        hashlib.sha256(semantic_bytes).hexdigest(),
-                        completed.stdout, completed.stderr, tuple(events),
-                    )
-                resolved = set()
-                for event in events:
-                    self.budget.remaining()
-                    command = _event_command(event)
-                    if event["match"] >= 0 or command in resolved:
-                        continue
-                    pending = self.pending_commands
-                    if pending >= self.budget.limits.pending:
-                        self.budget.reject("registered-command pending count exceeds aggregate bound")
-                    with cleanup_scope([lambda: setattr(self, "pending_commands", pending)]):
-                        self.pending_commands = pending + 1
-                        self.pending_commands_peak = max(self.pending_commands_peak, self.pending_commands)
-                        if command not in commands:
-                            raise MakeProbeError(f"unregistered eager/recursive Make command: {command!r}")
-                        registration = commands[command]
-                        result = self.command(registration)
-                        if any(
-                            mapped == command and old.metadata == result.metadata
-                            for mapped, identity, old in mappings.values()
-                        ):
-                            raise MakeProbeError(
-                                f"guest metadata cannot be reproduced in the native Make context: {command!r}; "
-                                f"{completed.stderr!r}"
-                            )
-                        output = result.stdout
-                        if any(
-                            mapped != command and _command_hash(mapped) == _command_hash(command)
-                            for mapped, identity, old in mappings.values()
-                        ):
-                            raise MakeProbeError("exact-command mapping collision")
-                        key = f"{len(mappings):016x}"
-                        if (mapping_path / (key + ".cmd")).exists():
-                            raise MakeProbeError("exact-command mapping collision")
-                        self.budget.charge("mapping", len(command.encode("utf-8")) + len(output) + 4)
-                        (mapping_path / (key + ".cmd")).write_bytes(command.encode("utf-8"))
-                        (mapping_path / (key + ".out")).write_bytes(output)
-                        metadata = _metadata_frame(result.metadata)
-                        if len(metadata) > self.budget.limits.file_bytes:
-                            self.budget.reject("metadata mapping exceeds file byte bound")
-                        self.budget.charge("mapping", len(metadata))
-                        (mapping_path / (key + ".meta")).write_bytes(metadata)
-                        command_identity = {
-                            "argv": list(registration.argv),
-                            "directories": sorted(set(registration.directories)),
-                            "inputs": self.snapshot.owners(
-                                set(registration.code) | set(self.sources(registration.sources))
-                            ),
-                        }
-                        command_result = {
-                            "command": command_identity,
-                            "output_sha256": hashlib.sha256(output).hexdigest(),
-                        }
-                        self.budget.charge("mapping", len(encoded(command_result)))
-                        identity = hashlib.sha256(encoded(command_result)).hexdigest()
-                        command_results.setdefault(identity, command_result)
-                        mappings[len(mappings)] = (command, identity, result)
-                        resolved.add(command)
-            raise MakeProbeError("Make dynamic replay exceeded the existing pass bound")
+            (mapping_path / "count").write_bytes((0).to_bytes(4, "little"))
+            completed, observed = self._sandbox_run(
+                root, mode="make", argv=["/usr/bin/make", "-f", makefile, *cli, target],
+                environment=environment,
+                mounts=[
+                    self._mount(self.tree, "/repo"),
+                    self._mount(control, "/control", writable=True),
+                    self._mount(self.base / "interceptor", "/control/interceptor", executable=True),
+                    self._mount(Path("/dev/null"), "/dev/null", writable=True),
+                ],
+                producer_handler=produce, publication_observer=acknowledge,
+                publication_allowed=publication_allowed,
+            )
+            raw_events = self.budget.read_bytes(events_path, "event")
+            native_events = b"".join(bytes.fromhex(item) for item in observed["events"])
+            self.budget.charge("control", len(native_events))
+            if raw_events != native_events:
+                raise MakeProbeError("trusted interceptor frame differs from its native write")
+            events = []
+            seen = set()
+            for raw in observed["events"]:
+                data = bytes.fromhex(raw)
+                if len(data) < 20:
+                    raise MakeProbeError("truncated live producer completion")
+                slot = int.from_bytes(data[:4], "little", signed=True)
+                event, = _read_events(data, expected_mapping_count=slot + 1)
+                if slot not in receipts or slot in seen or _event_command(event) != receipts[slot][0]:
+                    raise MakeProbeError("unknown or repeated live producer completion")
+                seen.add(slot)
+                events.append(event)
+            if seen != set(receipts) or confirmed != len(receipts):
+                raise MakeProbeError("incomplete live producer transcript")
+            if completed.returncode:
+                raise MakeProbeError(f"GNU Make failed after live producers: {completed.returncode}; {completed.stderr!r}")
+            semantics = _read_observation(self.budget.read_bytes(result_path, "control"), target, variables)
+            semantics["assignments"] = sorted(assignments, key=lambda item: item[1])
+            recipe_sources = {record["source"] for record in semantics["files"] if record["source"]}
+            semantics["owner_inputs"] = self.source_owners(set(owner_inputs) | recipe_sources)
+            semantics["dynamic_commands"] = sorted(command_results.values(), key=encoded)
+            semantic_bytes = encoded(semantics)
+            self.budget.charge("control", len(semantic_bytes))
+            execution = self.snapshot.digest
+            if self.runtime_inputs:
+                runtime = [
+                    [item.path, item.canonical, item.mode, item.parents, item.aliases,
+                     None if item.data is None else hashlib.sha256(item.data).hexdigest()]
+                    for item in self.runtime_inputs
+                ]
+                execution = hashlib.sha256(encoded([execution, runtime])).hexdigest()
+            return MakeObservation(
+                target, semantics, execution, hashlib.sha256(semantic_bytes).hexdigest(),
+                completed.stdout, completed.stderr, tuple(events),
+            )
 
     @terminal_failure
     def variants(self, target, states, **kwargs):
