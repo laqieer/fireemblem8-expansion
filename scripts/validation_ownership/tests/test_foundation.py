@@ -500,6 +500,136 @@ class FoundationTests(unittest.TestCase):
                 self.assert_clean(session)
                 self.assertEqual(set(os.listdir("/proc/self/fd")), descriptors)
 
+    def test_runtime_inputs_reject_canonical_duplicates_and_overlaps_in_both_orders(self):
+        original, canonical = "/bin/cat", "/usr/bin/cat"
+        absent = "/bin/ownership-duplicate-" + secrets.token_hex(12)
+        canonical_absent = "/usr/bin/" + Path(absent).name
+        self.assertEqual(Path("/bin").resolve(), Path("/usr/bin"))
+        self.assertTrue(stat.S_ISREG(Path(canonical).lstat().st_mode))
+        self.assertEqual(Path(canonical).stat().st_uid, 0)
+        self.assertFalse(Path(absent).exists())
+        self.assertFalse(Path(canonical_absent).exists())
+        self.add("Makefile", f"VALUE := $(wildcard {canonical})\nall: ;\n")
+        for path in (original, canonical):
+            with self.subTest(single=path):
+                with self.session(runtime_files=(path,)) as session:
+                    self.assertEqual(len(session.runtime_inputs), 1)
+                    self.assertEqual(session.runtime_inputs[0].data, Path(canonical).read_bytes())
+                    observed = session.make("all", variables=("VALUE",))
+                    self.assertEqual(observed.semantics["domains"]["VALUE"]["value"], canonical)
+                self.assert_clean(session)
+        for pair in (
+            (original, canonical),
+            (absent, canonical_absent),
+            (absent, canonical_absent + "/child.h"),
+            (canonical_absent, absent + "/child.h"),
+        ):
+            for requested in (pair, pair[::-1]):
+                with self.subTest(requested=requested):
+                    session = self.session(runtime_files=requested)
+                    with self.assertRaisesRegex(MakeProbeError, "^duplicate/overlapping optional runtime inputs$"):
+                        with session:
+                            self.fail("ordinary duplicate/overlap was admitted")
+                    self.assertEqual(session.processes_used, 0)
+                    self.assert_clean(session)
+        other = canonical_absent + "-other"
+        self.assertFalse(Path(other).exists())
+        self.add("Makefile", f"VALUE := $(wildcard {canonical_absent}/child.h {other}/child.h)\nall: ;\n")
+        for requested in ((absent, other), (other, absent)):
+            with self.subTest(distinct_components=requested):
+                with self.session(runtime_files=requested) as session:
+                    self.assertEqual(len(session.runtime_inputs), 2)
+                    observed = session.make("all", variables=("VALUE",))
+                    self.assertEqual(observed.semantics["domains"]["VALUE"]["value"], "")
+                self.assert_clean(session)
+
+    def test_stock_runtime_alias_preserves_absent_descendant_observations(self):
+        original = "/bin/ownership-absent-" + secrets.token_hex(12)
+        canonical = "/usr/bin/" + Path(original).name
+        for path in (original, canonical):
+            self.assertFalse(Path(path).exists())
+        queries = [prefix + suffix for prefix in (original, canonical)
+                   for suffix in ("", "/child.h", "/nested/child.h")]
+        self.add("Makefile", (
+            "MISSING := $(wildcard " + " ".join(queries) + ")\n"
+            f"READ := $(file <{original}/child.h)\nREAL := $(realpath {original}/nested/child.h)\n"
+            "all:\n\t@printf '%s|%s|%s\\n' '$(MISSING)' '$(READ)' '$(REAL)'\n"
+        ))
+        ordinary = subprocess.run(
+            ["/usr/bin/make", "-f", "Makefile", "all"], cwd=self.root,
+            env=ENVIRONMENT, capture_output=True, check=True, timeout=10,
+        )
+        self.assertEqual(ordinary.stdout, b"||\n")
+        with self.session(runtime_files=(original,)) as session:
+            runtime, backing, deadline = session.runtime_inputs, session.runtime_root, session.budget.deadline
+            item, = runtime
+            self.assertIsNone(item.data)
+            self.assertEqual(item.canonical, canonical)
+            self.assertEqual(item.aliases, (("/bin", "usr/bin"),))
+            reports, run = [], session._sandbox_run
+            def record(root, **kwargs):
+                result, observed = run(root, **kwargs)
+                if kwargs["mode"] == "make":
+                    reports.append(observed["metadata"])
+                return result, observed
+            with patch.object(session, "_sandbox_run", record):
+                first = session.make("all", variables=("MISSING", "READ", "REAL"))
+                used = session.budget.bytes["control"], session.processes_used
+                second = session.make("all", variables=("MISSING", "READ", "REAL"))
+            self.assertEqual(
+                [first.semantics["domains"][name]["value"] for name in ("MISSING", "READ", "REAL")],
+                ordinary.stdout.decode().strip().split("|"),
+            )
+            self.assertEqual(first.semantic_digest, second.semantic_digest)
+            self.assertEqual(first.events, ())
+            for suffix in ("", "/child.h", "/nested/child.h"):
+                self.assertTrue(any(
+                    row[1] == canonical + suffix and row[0] in {4, 6, 262}
+                    and row[4] == 144 and row[6] == -errno.ENOENT
+                    and len(bytes.fromhex(row[8])) == 144
+                    for row in reports[-1]
+                ), suffix)
+            self.assertTrue(session._metadata_matches(reports[-1]))
+            self.assertIs(session.runtime_inputs, runtime)
+            self.assertIs(session.runtime_root, backing)
+            self.assertEqual(session.budget.deadline, deadline)
+            self.assertGreater(session.budget.bytes["control"], used[0])
+            self.assertGreater(session.processes_used, used[1])
+            self.assertFalse((session.runtime_root / canonical.lstrip("/")).exists())
+        self.assert_clean(session)
+
+    def test_stock_runtime_alias_absence_keeps_component_and_operation_boundaries(self):
+        original = "/bin/ownership-absence-boundary-" + secrets.token_hex(12)
+        canonical = "/usr/bin/" + Path(original).name
+        self.assertFalse(Path(original).exists())
+        self.assertFalse(Path(canonical).exists())
+        self.assertFalse(Path(original + "-other").exists())
+        self.assertTrue(Path("/bin/rm").is_file())
+        for expression, requested, error in (
+            (f"$(wildcard {original}-other/child.h)", (original,), "unrequested stock runtime alias spelling"),
+            (f"$(wildcard {canonical}-other/child.h)", (original,), "uncaptured Make runtime access: metadata"),
+            (f"$(wildcard {original}/../child.h)", (original,), "unrequested stock runtime alias spelling"),
+            (f"$(wildcard /bin/../bin/{Path(original).name}/child.h)",
+             (original,), "unrequested stock runtime alias spelling"),
+            ("$(wildcard /bin/rm)", (original,), "unrequested stock runtime alias spelling"),
+            (f"$(file >{original}/child.h,changed)", (original,), "write outside private command output"),
+            ("$(wildcard /bin/*)", (original,), "uncaptured Make runtime access: read /usr/bin"),
+            (f"$(wildcard {original}/child.h)",
+             (canonical, "/bin/mkdir"), "unrequested stock runtime alias spelling"),
+            ("$(wildcard /bin/cat/child.h)", ("/bin/cat",), "unrequested stock runtime alias spelling"),
+        ):
+            with self.subTest(expression=expression, requested=requested):
+                self.add("Makefile", f"VALUE := {expression}\nall: ;\n")
+                with self.session(runtime_files=requested) as session:
+                    with self.assertRaisesRegex(MakeProbeError, re.escape(error)):
+                        session.make("all")
+                self.assert_clean(session)
+        self.add("Makefile", f"VALUE := $(wildcard {canonical}/child.h)\nall: ;\n")
+        with self.session(runtime_files=(canonical, "/bin/mkdir")) as session:
+            observed = session.make("all", variables=("VALUE",))
+            self.assertEqual(observed.semantics["domains"]["VALUE"]["value"], "")
+        self.assert_clean(session)
+
     def test_stock_runtime_alias_preserves_root_path_and_native_dispatch(self):
         self.assertEqual(Path("/bin").resolve(), Path("/usr/bin"))
         self.add("Makefile", (
@@ -659,11 +789,14 @@ class FoundationTests(unittest.TestCase):
                         session.make("all")
                 self.assert_clean(session)
         self.add("Makefile", "all: ;\n")
+        self.assertTrue(stat.S_ISREG(Path("/usr/bin/bash").lstat().st_mode))
         for collision in ("/usr/bin/python3", "/bin/make", "/usr/bin/bash"):
-            with self.subTest(collision=collision):
-                with self.assertRaisesRegex(MakeProbeError, "execution image|ordinary regular file"):
-                    with self.session(runtime_files=("/bin/env", collision)):
-                        self.fail("env request replaced an existing trusted image")
+            for requested in (("/bin/env", collision), (collision, "/bin/env")):
+                with self.subTest(requested=requested):
+                    with self.assertRaisesRegex(MakeProbeError, "execution image|ordinary regular file"):
+                        with self.session(runtime_files=requested):
+                            self.fail("env request replaced an existing trusted image")
+                    self.assertFalse(self.scratch.exists())
         from scripts.validation_ownership.make_probe import _capture_runtime_input
         original_stat, original_resolve = Path.lstat, Path.resolve
         def mutable(path):
@@ -682,12 +815,17 @@ class FoundationTests(unittest.TestCase):
         def absent(path, budget):
             return replace(_capture_runtime_input(path, budget), data=None, mode=None)
         with patch("scripts.validation_ownership.make_probe._capture_runtime_input", absent):
-            with self.session(runtime_files=("/usr/bin/env",)) as session:
-                self.assertEqual(session.runtime_dispatch, ())
-                observed = session.make("all", variables=("ENV",))
-                self.assertEqual(observed.semantics["domains"]["ENV"]["value"], "")
-                self.assertFalse((session.runtime_root / "usr/bin/env").exists())
-            self.assert_clean(session)
+            for requested in (
+                ("/usr/bin/env",), ("/bin/env",),
+                ("/bin/env", "/usr/bin/env"), ("/usr/bin/env", "/bin/env"),
+            ):
+                with self.subTest(requested=requested):
+                    with self.session(runtime_files=requested) as session:
+                        self.assertEqual(session.runtime_dispatch, ())
+                        observed = session.make("all", variables=("ENV",))
+                        self.assertEqual(observed.semantics["domains"]["ENV"]["value"], "")
+                        self.assertFalse((session.runtime_root / "usr/bin/env").exists())
+                    self.assert_clean(session)
 
     def gitlink_git(self, root, *args, input=None):
         return subprocess.run(

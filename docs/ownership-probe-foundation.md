@@ -254,7 +254,13 @@ be root-owned and not group/other writable. Capture accepts an ordinary regular
 file or **genuine absence**, not a directory, symlink, FIFO, device or
 set-id/sticky file. Duplicate/overlapping declarations, nonstock ancestors,
 changed captures, and collisions with mandatory images (including their
-canonical aliases) reject. The example's `build` and `.dep` declarations are
+canonical aliases) reject. Mandatory image reservations are separate from
+optional captures: ordinary original/canonical aliases of the same input
+(for example `/bin/cat` and `/usr/bin/cat`) and overlapping absent prefixes
+reject in either request order. The only dual-spelling exception is the
+explicit `/bin/env` plus `/usr/bin/env` pair with matching captured state;
+it cannot replace another mandatory image, including canonical bash.
+The example's `build` and `.dep` declarations are
 appropriate only when those paths are actually absent; never remove host
 contents to make an example pass.
 
@@ -265,6 +271,11 @@ ancestor presence. Regular files retain exact captured bytes and permission
 bits. An explicitly absent prefix also proves its descendants absent. No
 other missing name gains authority: an unrequested existing **or missing**
 file fails at its attempted operation instead of supplying an empty wildcard.
+An original stock capture such as `/bin/missing-tool` preserves genuine
+`/bin/missing-tool/child.h` and `/usr/bin/missing-tool/child.h` absence.
+Component boundaries remain exact: `missing-tool-other`, `..` spellings and
+unrelated aliases are not covered. A canonical-only capture does not add an
+unrequested original alias merely because another input uses the stock root.
 Parent metadata does not authorize content reads or directory enumeration.
 Requests never grant writes, arbitrary program dispatch, executable mappings
 of optional images, a library-prefix read, or candidate-phase loader probes.

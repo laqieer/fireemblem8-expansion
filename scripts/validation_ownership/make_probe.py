@@ -731,17 +731,22 @@ class ProbeSession:
                 any(path == other or path.startswith(other + "/") or other.startswith(path + "/")
                     for other in reserved)
                 or item.canonical in reserved and not intercepted
-                or any(
-                    item.canonical.startswith(other.canonical + "/")
-                    or other.canonical.startswith(item.canonical + "/")
-                    or item.canonical == other.canonical
-                    and (item.data, item.mode) != (other.data, other.mode)
-                    for other in captured
-                )
             ):
                 raise MakeProbeError("runtime input conflicts with trusted execution image")
+            for other in captured:
+                overlap = (
+                    item.canonical == other.canonical
+                    or item.canonical.startswith(other.canonical + "/")
+                    or other.canonical.startswith(item.canonical + "/")
+                )
+                env_spellings = (
+                    item.canonical == other.canonical == "/usr/bin/env"
+                    and {item.path, other.path} == {"/bin/env", "/usr/bin/env"}
+                    and (item.data, item.mode) == (other.data, other.mode)
+                )
+                if overlap and not env_spellings:
+                    raise MakeProbeError("duplicate/overlapping optional runtime inputs")
             captured.append(item)
-            reserved.add(path)
             if intercepted:
                 dispatch.append(path)
         self.runtime_inputs = tuple(captured)

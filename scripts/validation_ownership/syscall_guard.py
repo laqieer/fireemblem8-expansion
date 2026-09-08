@@ -435,10 +435,10 @@ class Policy:
             if follow_final or pending:
                 alias = "/" + "/".join((*resolved, part))
                 if (self.mode == "make" or self.config.get("metadata_validation")) and alias in self.config.get("runtime_aliases", ()):
-                    allowed = set(self.config["executables"]) | set(self.config.get("runtime_files", ())) | set(
-                        self.config.get("runtime_parents", ()),
-                    )
-                    if ".." in name.split("/") or posixpath.normpath(name) not in allowed:
+                    spelling = posixpath.normpath(name)
+                    if ".." in name.split("/") or (
+                        spelling not in self.config["executables"] and not self.runtime_metadata(spelling)
+                    ):
                         raise Violation(f"unrequested stock runtime alias spelling: {name}")
                 try:
                     target = os.readlink(Path(self.config["root"]).joinpath(*resolved, part))

@@ -3264,7 +3264,7 @@ Use a clean Linux x86-64 checkout with GNU Make 4.3, Python 3, glibc, a
 static-capable host C compiler and the core's working private namespaces,
 pidfd/ptrace and Linux 5.12+ recursive mount attributes. Stock controls require
 the actual root-owned `/bin -> /usr/bin` link and ordinary root-owned
-`/usr/bin/mkdir`, `/usr/bin/env` and `/usr/include/stdio.h` files. Do not create
+`/usr/bin/mkdir`, `/usr/bin/env`, `/usr/bin/cat` and `/usr/include/stdio.h` files. Do not create
 or replace system paths to satisfy a fixture. The newlib control observes the
 real header if present, or its genuine absence; it never installs newlib.
 The include-search controls require `/usr/include/build` and `/usr/include/.dep`
@@ -3298,14 +3298,19 @@ available; no additional Python package is required by this runtime family.
    root.mkdir(parents=True)
    header = "/usr/include/stdio.h"
    missing = "/usr/include/" + root.name
-   names = ("HEADER", "MISSING", "PATH", "MKDIR", "ENV")
+   missing_tool = "/bin/" + root.name
+   names = ("HEADER", "MISSING", "MISSING_TOOL", "MISSING_TOOL_CANON", "PATH", "MKDIR", "ENV")
    assert Path(header).is_file() and not Path(missing).exists()
+   assert not Path(missing_tool).exists() and not Path("/usr/bin/" + root.name).exists()
    assert Path("/bin").resolve() == Path("/usr/bin")
+   assert Path("/usr/bin/cat").is_file()
    try:
        makefile = (
            "TOOLCHAIN ?= $(DEVKITARM)\nexport PATH := $(TOOLCHAIN)/bin:$(PATH)\n"
            "export RUNTIME_INPUT_CASE := ordinary-only\n"
            f"HEADER := $(wildcard {header})\nMISSING := $(wildcard {missing})\n"
+           f"MISSING_TOOL := $(wildcard {missing_tool}/child.h)\n"
+           f"MISSING_TOOL_CANON := $(wildcard /usr/bin/{root.name}/child.h)\n"
            "MKDIR := $(realpath /bin/mkdir)\nENV := $(realpath /bin/env)\n"
            + "".join("$(info " + name + "=$(" + name + "))\n" for name in names)
            + "all:\n\t@mkdir -p owned-mkdir\n"
@@ -3333,7 +3338,7 @@ available; no additional Python package is required by this runtime family.
        git("init", "--quiet")
        git("add", "Makefile", "sentinel.py")
        revision = git("write-tree")
-       for requested in ((header, missing, "/bin/mkdir", "/bin/env", "/usr/bin/env"), ()):
+       for requested in ((header, missing, missing_tool, "/bin/mkdir", "/bin/env", "/usr/bin/env"), ()):
            budget = ProbeBudget()
            entries = git_tree_entries(root, revision, budget=budget)
            loader = AuthorityLoader(root, entries, revision, budget=budget)
@@ -3365,6 +3370,21 @@ available; no additional Python package is required by this runtime family.
            assert not (root / "build/probe").exists()
            assert session.runtime_inputs == () and session.runtime_root is None
            assert not budget.children
+       for requested in (("/bin/cat", "/usr/bin/cat"), ("/usr/bin/cat", "/bin/cat")):
+           budget = ProbeBudget()
+           entries = git_tree_entries(root, revision, budget=budget)
+           loader = AuthorityLoader(root, entries, revision, budget=budget)
+           session = ProbeSession(
+               loader, scratch_root=root / "build/probe", budget=budget,
+               runtime_files=requested,
+           )
+           try:
+               with session:
+                   raise AssertionError("ordinary canonical duplicate was admitted")
+           except MakeProbeError as error:
+               assert str(error) == "duplicate/overlapping optional runtime inputs", error
+               print("duplicate control:", requested, error)
+           assert not (root / "build/probe").exists() and not budget.children
        print("runtime input case: PASS; ordinary sentinel ran, confined sentinel did not")
    finally:
        shutil.rmtree(root)
@@ -3374,7 +3394,11 @@ available; no additional Python package is required by this runtime family.
 2. Run the focused automation command below. The ordinary/confined controls
    compare actual newlib wildcard/include-search behavior, explicit file bytes,
    original/canonical mkdir and env paths, variable values/origins/flavors,
-   native recipe text and both env declaration orders. Inspect its named test
+   native recipe text and both env declaration orders. Ordinary duplicate cat
+   aliases and overlapping original/canonical missing prefixes must reject in
+   both orders; distinct component names remain valid. Original and canonical
+   descendants of a genuinely captured `/bin` absence must both return real
+   absence. Inspect its named test
    results; an unsupported fixture or missing tool is not a passing negative.
 3. Check the named denial controls: unrequested existing **and missing**
    files, unrequested `/bin` aliases, escaping spellings, nonregular/replaced
@@ -3410,9 +3434,15 @@ not a names/types-only witness or a second optional-runtime predicate.
 
 The same fixture without `runtime_files` rejects its existing header lookup;
 it must not choose a false-absence branch. Explicitly captured true absence is
-a separate positive, not that denial. The historical absent-env materialization
+a separate positive, not that denial. On exact `2f48d7fa96a58020f2aceed8c509efd09a7ea88b`,
+ordinary `/bin/cat` plus `/usr/bin/cat` was accepted only in one order, while
+the other order was misclassified as a mandatory image collision. A captured
+missing `/bin` prefix also rejected its own descendant although the equivalent
+canonical descendant worked. The paired real Make controls must now agree,
+without accepting sibling names, `..`, writes or enumeration.
+The historical absent-env materialization
 unit control additionally models a host without env and must not install its
-interceptor. Actual true-absence assertions use the original absent paths,
+interceptor, including both env declaration orders. Actual true-absence assertions use the original absent paths,
 not that modeled environment. Eager, recursive and include-remake env recipes
 reject without an exact real registration; requesting env cannot produce
 unittest output. The real nonregular/replacement controls mutate only owned
