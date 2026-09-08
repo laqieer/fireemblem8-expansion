@@ -2682,6 +2682,17 @@ Start from a clean checkout; fixtures use only ignored `build/test-artifacts`.
    Inspect the returned native `localization-check` dependency on
    `localization-generate`, the actual output-directory value and the real
    chapterbundle registry result containing `src/data/ch2_bundle.json`.
+   For the live consumer, use the foundation guide's fresh linked worktree
+   without initialized submodules. The automated real-source fixture creates
+   its own checkout, changes the admitted output-directory assignment and
+   requires that actual live value. An initialized-gitlink CLI control must
+   reject explicit-admission absence, while explicitly admitted live paths and
+   immutable pinned inputs retain their distinct bytes. Do not borrow a CI
+   checkout's incidental submodule state as the positive fixture.
+   Registry controls must accept equivalent repository-relative and `/repo`
+   schema paths, reject parent/outside paths and absolute source arguments,
+   and retain exact observed source agreement. Two real gitlinks must resolve
+   their own different pins with only one shared common-directory lookup.
 2. Run `make -f scripts/validation_ownership/foundation.mk ownership-probe-test`.
    Positive fixtures use GNU Make include/define/eval, finite domain values,
    patterns, target variables and order-only prerequisites. Their typed
@@ -2697,6 +2708,10 @@ Start from a clean checkout; fixtures use only ignored `build/test-artifacts`.
    falsely reported source declarations, and symlink/FIFO controls. Every
    mismatch must fail closed. Real C/C++ candidate tools compile and run only
    in channel-free capsules; changed ELF handles and channel/FD access reject.
+   Compare complete returned `statx` buffers and reject a corrupted mount ID.
+   Different guest namespaces need not have equal mount IDs; do not infer
+   equality from an unchanged source inode or a successful serialized retry.
+   Namespace and filesystem-capacity records remain in production validation.
    The alias controls create a relative symlink from a deeper cwd and relocate
    a cwd/dirfd ancestor before a `..` lookup. All symlink and rename variants
    must reject before dispatch; they cannot hide an undeclared attempt under
