@@ -3397,6 +3397,32 @@ See [live producers](../ownership-probe-producers.md).
     replaced/nonprivate directory or socket, and wrong listener credentials.
     The long-path rendezvous must stay inside owned ignored storage and leave
     no socket after either outcome.
+11. Resolve a real nested Make query while its parent is parked. Compare the
+    ordinary compound's before/value/after results (`2`, `observed`, `3`),
+    require the child's genuine include restart, then let the parent consume
+    the still-present child output. Preserve all 13 file-stat fields across a
+    child return and readonly ownership adoption. Same-producer replacement
+    works in both directions; different producers reject. Corrupt the protected
+    transfer checksum, content binding, mode, duplicate entry or reserved/missing
+    path and require failure without a second execution. Generated Makefile
+    entry points lose admission when the outermost query cleans up.
+12. Exercise the complete generated-result family: parse-time includes have no
+    fabricated restart, remade includes preserve assignment argv order and
+    value/origin/flavor, native outputs use the same capture/publication path,
+    aliases retain binary bytes/modes and real effects, and ownership transfer
+    changes only newly created objects. Require the real publisher's recorded
+    denial when publication exhausts the global write budget. Repeat nested
+    work with insufficient residual process capacity, outer lifetime EOF and
+    SIGTERM after actual child publication; every owned output must disappear.
+    In the two-job control, deliver actual kernel stops so a vfork parent is
+    waiting in clone/clone3 while its child is stopped before exec. Both
+    requests must complete under the unchanged deadline, with all three
+    parked processes and their funded VM still reserved.
+13. Keep the dispatch boundary explicit. A missing direct native executable
+    must fail before consulting registrations; do not add a placeholder or
+    writable/executable source mount to make it appear present. The retained
+    shell-dispatched native case executes genuinely. An actual consumer needing
+    the missing direct form is unsupported, not a successful native result.
 
 ### Expected result
 
@@ -3404,7 +3430,9 @@ Real native requests alone cause producer work. The producer remains isolated,
 its complete successful source/output contract is checked, and validated files
 publish before the requesting helper returns. Native Make owns include loading
 and re-exec. Observed source objects are not reconstructed between observation
-and use. All resource/lifetime limits remain cumulative and unchanged.
+and use. Child publications remain in that same view until outer completion;
+ownership adoption reads only through the readonly mount. All resource/lifetime
+limits remain cumulative and unchanged.
 
 ### Negative control
 
@@ -3420,6 +3448,12 @@ same-UID sudo closed the inherited callback descriptor and the watchdog exited
 125 with `EBADF`; a separately sent final reply succeeded after Make had
 continued. The retained failures are complemented by actual generated-code,
 mode/membership and terminal-handshake controls, not weaker error matching.
+
+The earlier vertical implementation rejected a genuinely dispatched nested
+producer even though ordinary Make completed the same producer/reader
+composition. Keeping child files until outer completion fixes that boundary
+without recreating a source context. A separate direct-executable lookup
+failure still occurs before dispatch and remains explicitly unsupported.
 
 Private `/work` output is deliberately not immediately visible through readonly
 `/repo` inside a producer. The measured same-code source/output namespace
@@ -3448,11 +3482,13 @@ standalone gate is added.
 
 All owned source fixtures, captured outputs, channels, roots and children are
 removed on success or failure. No process-name killing or other-worktree
-cleanup occurs. This vertical checkpoint is not full P or root/112-domain
+cleanup occurs. Implementation evidence is not full P or root/112-domain
 acceptance or budget calibration. The actual same-UID sudo control does not
 claim a tested root credential transition or change existing sudo policy.
-Nested generated publication currently rejects rather than reconstructing an
-outer context. Main owns the remaining independent review and delivery gates.
+Nested queries share the active generated view; independent immutable-view
+selection and combined V/P cases remain separately allocated. Missing direct
+executables and unrestricted same-directory read-own-publication are not
+silently emulated. Main owns the remaining acceptance and delivery gates.
 
 ## TC-WORKFLOW-PROBE-DEPENDENCY-001: Observe real confined compiler dependencies
 

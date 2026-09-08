@@ -128,8 +128,9 @@ query.o: ;
 P publishes the validated `.d` only after the actual compiler exits
 successfully. Make then reads it and performs its own restart. Generated
 headers may be published first in that same live Make invocation; this is not
-a nested `session.make()` with generated outputs. P's separate nested
-publication restriction remains intact.
+a nested `session.make()` with generated outputs. Nested publication lifetime,
+source admission and vfork parking remain P-owned mechanisms, not additional
+requirements or privately duplicated fixes in D's standalone contract.
 
 Every output-producing dispatch executes genuinely, including repeated
 identical registrations. Compatible pure observations still use the existing
