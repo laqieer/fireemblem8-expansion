@@ -324,6 +324,74 @@ translates expected CLI timeout/launch errors once into its existing
 diagnostics. Unexpected programming exceptions are not relabeled as ordinary
 tool unavailability.
 
+### Owned review-process cleanup
+
+[Issue #223](https://github.com/laqieer/fireemblem8-expansion/issues/223) fixes
+ordinary subprocess lifetime, not the withdrawn #204 capsule. The current
+Linux runner in `raw_diff_check.py` is shared by the real command, native and
+staged-worker paths. Their execution deadlines remain **60, 20 and 240
+seconds**, respectively. It preserves real exit status and binary stdout/stderr,
+including successful diagnostics, and bounds combined output to 4 MiB.
+Its additive `input` option accepts at most 4 MiB of bytes, writes while draining
+output, delivers EOF, and handles a reader closing its pipe without deadlock.
+
+Each outer invocation creates its own session. Nested review commands use
+`new_session=False` to create a private child group inside that session, not a
+second session invisible to outer cancellation. The runner retains the
+waitable leader identity, signals only kernel handles whose session/group
+belongs to that invocation, and adopts/reaps ordinary descendants. Early leader
+exit and closed stdio are not proof that owned work has finished. Timeout,
+output overage and interruption finish this cleanup before returning or
+raising; the caller's group and unrelated processes remain untouched.
+Handled `SIGINT`/`SIGTERM` are recorded for the complete operation, not changed
+back to asynchronous exception-raising handlers during body work. The runner
+dispatches the caller's saved handler at explicit cleanup-protected checkpoints
+after creation and during bounded I/O/wait loops. A raising handler initiates
+cleanup; a nonraising handler keeps its normal behavior. Signals at success or
+error cleanup entry, second signals and restoration do not jump past owned
+cleanup. Pending delivery and caller-handler restoration occur after resource
+and subreaper cleanup attempts. The caller's mask is preserved, including in the
+payload; the runner never blocks creation-time signals across exec.
+Overlapping exact-tool module instances share only process-wide reaper resource
+accounting. These operational boundaries do not claim kernel-wide atomicity.
+
+Cleanup has a separate five-second confirmation bound. The staged adapter
+starts each dispatched operation unconfirmed. The exact trusted runner invokes
+one private `_on_cleanup` callback only after that invocation establishes no
+created child or successful owned termination and reaping. The callback is
+current in-process cooperation, not a candidate JSON Boolean, persisted receipt,
+authority service or changed public result schema. Staging deletion depends on
+this positive confirmation, never on the absence of a special exception type.
+Unknown cleanup retains staging and diagnostics even if an ordinary error or
+late interruption escapes. Verified cleanup still removes staging on tool,
+timeout or cancellation failure; ordinary timeouts remain unavailable/zero-check
+evidence and actual native assertion failures remain contract violations.
+If subreaper-state restoration also fails during unsafe process cleanup, the
+runner preserves `ProcessCleanupError`, includes both failures in the existing
+diagnostic, and chains the original cleanup error. Restoration failure alone
+still raises `OSError`; it is never converted into a successful result.
+Without a pidfd, the fallback first checks that the actual leader is still a
+waitable child before using its numeric group, then attempts group termination
+and the existing bounded wait. `ESRCH`, an unavailable wait status, a failed
+signal/wait, or even successful leader termination cannot prove the complete
+scope is empty: the result remains `ProcessCleanupError` with causal
+diagnostics. An already-reaped leader never authorizes a numeric group signal.
+The same unsafe error facts survive later selector, descriptor, stream,
+signal-mask, handler or subreaper-restoration errors. Remaining release steps
+are still attempted. Their diagnostics are retained even when a later cleanup
+attempt positively confirms termination. Once cleanup is verified, unrelated
+close/restoration failures do not force blanket staging retention.
+
+Both coordinator loading and worker staging obtain the shared runner from the
+selected exact **tool** Git tree. A missing, dirty or different candidate
+checkout helper cannot replace those bytes. There is no new JSON request field,
+case registry, package, job, publication control or #181 result contract.
+These are ordinary Linux process/session controls, not a PID registry, daemon,
+namespace/cgroup service, signer or hostile-code isolation system. Deliberate
+descendant escape, abrupt coordinator `SIGKILL` and arbitrary host mutation
+remain outside the contract. Game, save, generated-data, locale, ROM/RAM and
+modern/archival profiles are unaffected.
+
 ### Finite coverage and actual evidence
 
 | Family | Required roles |
