@@ -72,7 +72,7 @@
       },
       "pilot": {
         "included": false,
-        "disposition": "excluded"
+        "disposition": "paused"
       }
     }
   ],
