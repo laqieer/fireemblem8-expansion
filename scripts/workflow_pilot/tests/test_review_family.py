@@ -196,6 +196,24 @@ class RoleTests(unittest.TestCase):
             "coordinator", "implementer", self.scope, "b" * 40,
             clock=lambda: self.time, readers={"read-candidate": lambda: self.effects.append("read")})
 
+    def test_coordinator_implemented_candidate_requires_independent_reviewer(self):
+        owners = model.ReviewOwnership()
+        session = model.ReviewSession(
+            "coordinator", "coordinator", self.scope, "b" * 40,
+            identity=("owner/repo", 1, "a" * 40), owners=owners, clock=lambda: self.time)
+        with self.assertRaises(model.ReviewError):
+            session.begin(self.runtime, "coordinator", duration=10)
+        self.assertEqual(self.runtime.calls, [])
+        self.assertEqual(owners.records, {})
+        session.begin(self.runtime, "reviewer", duration=10)
+        report = session.finish(self.runtime)
+        self.assertEqual(report.owner, "reviewer")
+        self.assertTrue(report.read_only)
+        self.assertTrue(report.completed)
+        self.assertEqual(session.lease.outcome, "completed")
+        self.assertFalse(owners.records[id(session)][3])
+        self.assertEqual([call[0] for call in self.runtime.calls], ["start", "read"])
+
     def test_existing_runtime_task_and_read_tool_boundary(self):
         self.session.begin(self.runtime, "reviewer", duration=30)
         self.session.read_action("read-candidate")

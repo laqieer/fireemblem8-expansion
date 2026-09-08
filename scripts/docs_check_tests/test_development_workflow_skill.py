@@ -233,6 +233,19 @@ PUBLICATION_PROTOCOL_FIELDS = {
     "Final gates": {"unchanged"},
     "Push failure": {"explicit-blocker-no-success-claim"},
 }
+REVIEW_OWNERSHIP_FIELDS = {
+    "Reviewer": {"distinct-from-coordinator", "distinct-from-implementer", "read-only", "bounded"},
+    "Coordinator implementation": {"same-actual-owner-permitted", "no-aliases"},
+    "Delegated local proof": {"terminal-owner-handoff", "descendant-and-trailers", "assigned-scope-and-resources"},
+    "Coordinator local proof": {
+        "exact-git-and-worktree", "registered-complete-native-checks",
+        "incomplete-delegate-blocks", "no-fabricated-worker",
+    },
+    "Final criteria": {
+        "independent-review", "objective-and-manual", "rom-ram-protocol-profile",
+        "security", "candidate-Build", "master-Build", "bound-architecture-disposition", "remote-completion",
+    },
+}
 FLEET_COORDINATOR_GUIDANCE_PATHS = TRUSTED_PUSH_GUIDANCE_PATHS
 FOCUSED_LOCAL_VALIDATION_PATHS = TRUSTED_PUSH_GUIDANCE_PATHS
 BACKGROUND_AGENT_GUIDANCE_PATHS = TRUSTED_PUSH_GUIDANCE_PATHS
@@ -1295,6 +1308,17 @@ def publication_protocol_violations(text):
         values = [value.strip() for value in fields.get(name, "").split(",")]
         if len(values) != len(set(values)) or set(values) != expected:
             violations.append(f"publication field {name!r} is invalid")
+    return violations
+
+
+def review_ownership_violations(text):
+    """The named external CLI instruction fields, checked separately from runtime behavior."""
+    fields = parse_labeled_summary(text, "Sibling-family review convergence")
+    violations = [] if set(fields) == set(REVIEW_OWNERSHIP_FIELDS) else ["incomplete ownership contract"]
+    for name, expected in REVIEW_OWNERSHIP_FIELDS.items():
+        values = [value.strip() for value in fields.get(name, "").split(",")]
+        if len(values) != len(set(values)) or set(values) != expected:
+            violations.append(name)
     return violations
 
 
@@ -2695,6 +2719,52 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
         self.assertTrue(read_markdown_section(
             COPILOT_INSTRUCTIONS_PATH.read_text(encoding="utf-8"), "Bounded exact-SHA implementation handoffs",
         ))
+
+    def test_review_ownership_contract_and_actual_runtime_roles_agree(self):
+        from scripts.workflow_pilot import review_family
+        from scripts.workflow_pilot.tests.review_support import Runtime
+
+        for path in TRUSTED_PUSH_GUIDANCE_PATHS:
+            with self.subTest(path=path):
+                text = path.read_text(encoding="utf-8")
+                self.assertEqual(review_ownership_violations(text), [])
+                fields = parse_labeled_summary(text, "Sibling-family review convergence")
+
+                def document(values):
+                    return ("## Sibling-family review convergence\n\n"
+                            + "\n".join(f"- **{name}:** {value}" for name, value in values.items()) + "\n")
+
+                reordered = {name: ", ".join(reversed(value.split(", ")))
+                             for name, value in reversed(list(fields.items()))}
+                self.assertEqual(review_ownership_violations(document(reordered)), [])
+                for name in fields:
+                    self.assertTrue(review_ownership_violations(document(
+                        {key: value for key, value in fields.items() if key != name})))
+                    self.assertTrue(review_ownership_violations(document(
+                        {**fields, name: "all-three-distinct-or-local-ready-without-proof"})))
+
+        scope = frozenset({"TC-WORKFLOW-REVIEW-FAMILY-001/review-session"})
+        for implementer, reviewer, accepted in (
+            ("coordinator", "reviewer", True), ("implementer", "reviewer", True),
+            ("coordinator", "coordinator", False), ("implementer", "implementer", False),
+            ("implementer", "coordinator", False),
+        ):
+            with self.subTest(implementer=implementer, reviewer=reviewer):
+                owners = review_family.ReviewOwnership()
+                session = review_family.ReviewSession(
+                    "coordinator", implementer, scope, "b" * 40,
+                    identity=("owner/repo", 1, "a" * 40), owners=owners)
+                runtime = Runtime(session.head, scope)
+                if not accepted:
+                    with self.assertRaises(review_family.ReviewError):
+                        session.begin(runtime, reviewer, duration=1, max_files=3)
+                    self.assertEqual(runtime.calls, [])
+                else:
+                    session.begin(runtime, reviewer, duration=1, max_files=3)
+                    report = session.finish(runtime)
+                    self.assertTrue(report.read_only)
+                    self.assertEqual(report.owner, reviewer)
+                    self.assertEqual(session.lease.outcome, "completed")
 
     def test_immediate_publication_protocol(self):
         _, text = read_skill()
@@ -4479,6 +4549,7 @@ printf '%s\t%s\t%s\n' "$result" \
             "TC-WORKFLOW-AGENT-HANDOFF-001",
             "TC-WORKFLOW-HOST-PYTHON-DEPS-001",
             "TC-WORKFLOW-REVIEW-FAMILY-001",
+            "TC-WORKFLOW-REVIEW-FIRST-001",
             "TC-WORKFLOW-WORKTREE-CLEANUP-001",
             "TC-WORKFLOW-IMMEDIATE-PUSH-001",
             "TC-WORKFLOW-CI-WAIT-001",
