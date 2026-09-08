@@ -3671,8 +3671,8 @@ this dedicated foundation; broader validation remains required.
 
 Issue [#227](https://github.com/laqieer/fireemblem8-expansion/issues/227);
 the [explicit runtime-input contract](../ownership-probe-foundation.md#explicit-runtime-discovery-inputs)
-depends only on #206 / PR #212. While the parent is open, its immediate base
-is `delivery/d581-issue-206`, depth one. #226 is independent; #225 and #228 are
+depends only on the delivered #206 / PR #212 core. #227 is a standalone
+`master`-based root (depth zero). #226 is independent; #225 and #228 are
 not prerequisites. #180 / PR #186 owns complete-root integration, not this
 case.
 

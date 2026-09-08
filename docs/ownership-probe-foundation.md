@@ -357,9 +357,9 @@ above; stock-path controls require actual ordinary root-owned `mkdir`/`env`
 files and the stock `/bin` link. Nonstock layouts reject instead of guessing
 aliases. No ARM tools, ROM or subjective manual judgment is needed.
 
-This is a framework capability with immediate dependency **#206 / PR #212**,
-base `delivery/d581-issue-206` while open, depth one. #226 is an independent
-sibling, and #225/#228 are not prerequisites. #180 / PR #186 owns downstream
+This framework capability depends on the delivered **#206 / PR #212** core.
+#227 is a standalone `master`-based root (depth zero). #226 is independent,
+and #225/#228 are not prerequisites. #180 / PR #186 owns downstream
 complete-root integration. Shared runtime/dispatch/metadata/test/doc seams may
 need ordinary conflict refreshes, not artificial stack dependencies.
 Generated results, native Make registration, dependency-only compilation and
