@@ -109,11 +109,13 @@ jobs:
                   headRefName headRefOid baseRefName baseRefOid
                   headRepository{nameWithOwner} baseRepository{nameWithOwner}}}}}'
           projection='select(.errors == null) | .data.repository | select(.nameWithOwner == $repo) |
-            .pullRequests | select(.totalCount == 1 and .pageInfo.hasNextPage == false and
-              (.nodes | type) == "array" and (.nodes | length) == 1) | .nodes[0] |
-            select(.state == "OPEN" and .headRefName == $branch and .headRefOid == $head and
-              .headRepository.nameWithOwner == $repo and .baseRepository.nameWithOwner == $repo and
-              (.baseRefName | type) == "string") | [.number, .baseRefOid, .baseRefName]'
+            .pullRequests | select(.pageInfo.hasNextPage == false and
+              (.nodes | type) == "array" and (.nodes | length) <= 100 and
+              .totalCount == (.nodes | length) and all(.nodes[]; type == "object")) |
+            [.nodes[] | select(.state == "OPEN" and .headRefName == $branch and .headRefOid == $head and
+              .headRepository.nameWithOwner == $repo and .baseRepository.nameWithOwner == $repo)] |
+            select(length == 1) | .[0] | select((.baseRefName | type) == "string") |
+            [.number, .baseRefOid, .baseRefName]'
           if [[ "$GITHUB_REPOSITORY" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ && \
                 ${#branch} -le 1024 && "$branch" != "@" ]] && \
              response="$(/usr/bin/timeout 30 /usr/bin/gh api --hostname github.com graphql \
@@ -1590,7 +1592,10 @@ jobs:
         test "$ACTUAL_SHA" = "$EXPECTED_BUILD_SHA"
 
     - name: Install extended host dependencies
-      run: sudo apt-get update && sudo apt-get install -y build-essential
+      run: sudo apt-get update && sudo apt-get install -y build-essential python3-venv
+
+    - name: Run ownership-probe process suite
+      run: make -f scripts/validation_ownership/foundation.mk ownership-probe-test
 
     - name: Run CJK font gates
       run: make -f cjk_fonts.mk cjk-fonts-check cjk-fonts-test

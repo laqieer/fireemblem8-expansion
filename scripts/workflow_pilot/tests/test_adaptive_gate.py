@@ -1688,6 +1688,51 @@ class DispatchBootstrapTests(unittest.TestCase):
         self.assertEqual((observed.binding, observed.candidate_binding), ("explicit-same", parsed))
         github.require_full_success(observed)
 
+    def test_dispatch_discovery_counts_repository_qualified_candidates(self):
+        original = copy.deepcopy(self.query)
+        own = copy.deepcopy(original["data"]["repository"]["pullRequests"]["nodes"][0])
+        foreign = copy.deepcopy(own)
+        foreign["number"] += 1
+        foreign["headRepository"]["nameWithOwner"] = "foreign/repository"
+        other = copy.deepcopy(own)
+        other.update(number=own["number"] + 2, baseRefName="master", baseRefOid=self.default)
+        malformed = copy.deepcopy(own)
+        malformed["baseRefName"] = True
+        for label, nodes, count, next_page, accepted in (
+            ("own-only", [own], 1, False, True),
+            ("foreign-first", [foreign, own], 2, False, True),
+            ("foreign-last", [own, foreign], 2, False, True),
+            ("foreign-only", [foreign], 1, False, False),
+            ("two-eligible", [own, other], 2, False, False),
+            ("two-eligible-reversed", [other, own], 2, False, False),
+            ("malformed-eligible", [own, malformed], 2, False, False),
+            ("unknown-node", [own, None], 2, False, False),
+            ("count-mismatch", [own, foreign], 3, False, False),
+            ("incomplete-page", [own, foreign], 2, True, False),
+            ("over-response-bound", [own] + [foreign] * 100, 101, False, False),
+        ):
+            with self.subTest(case=label):
+                self.query = copy.deepcopy(original)
+                self.query["data"]["repository"]["pullRequests"].update(
+                    totalCount=count, nodes=nodes, pageInfo={"hasNextPage": next_page})
+                identity = self.identity()
+                result, values = self.classify(identity)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                if accepted:
+                    self.assertEqual(identity["classifier_ref"], self.base)
+                    self.assertEqual(identity["dispatch_pr_number"], str(self.m.PR_NUMBER))
+                    self.assertEqual(
+                        github._candidate_step({"steps": [{
+                            "name": values["candidate_binding"], "status": "completed",
+                            "conclusion": "success",
+                        }]}),
+                        (self.m.PR_NUMBER, self.head, self.base),
+                    )
+                else:
+                    self.assertEqual(identity["classifier_ref"], "refs/heads/master")
+                    self.assertEqual(identity["dispatch_pr_number"], "")
+                    self.assertNotIn("candidate_binding", values)
+
     def test_missing_ambiguous_or_invalid_bootstrap_metadata_remains_unbound(self):
         original = copy.deepcopy(self.query)
         for field, value in (

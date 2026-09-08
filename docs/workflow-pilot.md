@@ -198,6 +198,11 @@ After accepted clean review and security, the coordinator uses one input-free
 Before checkout, `event-identity` uses bounded authenticated GitHub metadata
 to resolve one open same-repository PR at that exact branch/head and selects
 its integration-base SHA, even when the default branch predates this feature.
+It first validates the complete bounded response and its cardinality, then
+requires one repository/head-qualified candidate. A same-named fork branch
+does not make that candidate ambiguous; multiple eligible same-repository
+candidates, unknown nodes, count mismatches and incomplete pages remain
+unbound. Invalid base/ref data cannot be dropped to choose another candidate.
 The router verifies that exact checkout; `route_dispatch` refreshes the PR and
 requires the same observed PR number, base SHA/ref and head/branch before
 emitting a binding. These are internal bootstrap observations, not dispatch
@@ -1882,7 +1887,7 @@ GitHub jobs API supplies this run-bound observation without an artifact,
 another job, extra permissions, or a mutable ledger. The consumer checks the
 step's number, uniqueness, success, digest format and job-bounded chronology.
 The upstream verifier independently validates both steps and their output link
-as closed CI setup; neither becomes one of its 28 locally executed gates.
+as closed CI setup; neither becomes one of its 29 locally executed gates.
 
 The fingerprint must match the authenticated intent/confirmation's exact
 transition. Its event metadata instant must identify the confirmed native

@@ -345,11 +345,13 @@ _IDENTITY_COMMANDS = (
      "          headRefName headRefOid baseRefName baseRefOid\n"
      "          headRepository{nameWithOwner} baseRepository{nameWithOwner}}}}}",),
     ('projection=select(.errors == null) | .data.repository | select(.nameWithOwner == $repo) |\n'
-     '    .pullRequests | select(.totalCount == 1 and .pageInfo.hasNextPage == false and\n'
-     '      (.nodes | type) == "array" and (.nodes | length) == 1) | .nodes[0] |\n'
-     '    select(.state == "OPEN" and .headRefName == $branch and .headRefOid == $head and\n'
-     '      .headRepository.nameWithOwner == $repo and .baseRepository.nameWithOwner == $repo and\n'
-     '      (.baseRefName | type) == "string") | [.number, .baseRefOid, .baseRefName]',),
+     '    .pullRequests | select(.pageInfo.hasNextPage == false and\n'
+     '      (.nodes | type) == "array" and (.nodes | length) <= 100 and\n'
+     '      .totalCount == (.nodes | length) and all(.nodes[]; type == "object")) |\n'
+     '    [.nodes[] | select(.state == "OPEN" and .headRefName == $branch and .headRefOid == $head and\n'
+     '      .headRepository.nameWithOwner == $repo and .baseRepository.nameWithOwner == $repo)] |\n'
+     '    select(length == 1) | .[0] | select((.baseRefName | type) == "string") |\n'
+     '    [.number, .baseRefOid, .baseRefName]',),
     ("if", "[[", "$GITHUB_REPOSITORY", "=~", "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$", "&&",
      "${#branch}", "-le", "1024", "&&", "$branch", "!=", "@", "]]", "&&",
      "response=$(/usr/bin/timeout 30 /usr/bin/gh api --hostname github.com graphql        "
@@ -1142,6 +1144,7 @@ _EXPECTED_STEP_ROLES = {
         ("setup", None),
         ("setup", "Verify checked-out revision"),
         ("setup", "Install extended host dependencies"),
+        ("gate", "Run ownership-probe process suite"),
         ("gate", "Run CJK font gates"),
         ("gate", "Run multilang texttools codec gates"),
         ("gate", "Run configuration and linker-budget gates"),
@@ -2586,6 +2589,16 @@ def gates(jobs: int = 2) -> List[Gate]:
                 "maximal-supported-features profile, then runs issue #168's "
                 "deterministic map-menu presentation scenario without reading "
                 "a base image, creating a patch, or publishing an artifact"
+            ),
+        ),
+        Gate(
+            name="ownership-probe-process-suite",
+            command=[
+                "make", "-f", "scripts/validation_ownership/foundation.mk", "ownership-probe-test",
+            ],
+            applicable_note=(
+                "complete native ownership-probe process suite, owned once by "
+                "the required extended host worker rather than serial host discovery"
             ),
         ),
         Gate(
