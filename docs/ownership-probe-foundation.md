@@ -5,9 +5,11 @@ a **framework capability**: one bounded execution and observation authority for
 GNU Make and declared generated-source consumers. It does **not** select,
 replace, or skip validation.
 
-This delivery is the static, single-view core. Optional producer, view,
-runtime-input and dependency-compiler contracts are allocated to #225--#228,
-not exposed as core APIs. See the [archived delivery allocation](https://github.com/laqieer/fireemblem8-expansion/blob/56e0a206ffae088b0dbc1fe8aa6339a8ee820f33/docs/ownership-probe-allocation.json)
+The default remains the static, single-view core. Issue #226 adds the narrow
+[same-report immutable view selector](#selecting-immutable-basecurrent-views-in-one-report).
+Optional producer, runtime-input and dependency-compiler contracts remain
+allocated to #225, #227 and #228, not exposed here.
+See the [archived delivery allocation](https://github.com/laqieer/fireemblem8-expansion/blob/56e0a206ffae088b0dbc1fe8aa6339a8ee820f33/docs/ownership-probe-allocation.json)
 and [downstream boundary](#contract-allocation-and-downstream-integration).
 
 ## Run the real consumer
@@ -439,7 +441,7 @@ registry calls retain successful-return source accounting. Explicit
 to identify their actual path/mode/content. An unrequested pin is not an owner.
 
 Pin admission requires a captured immutable superproject loader. Same-report
-CURRENT/BASE selection belongs to #226. Checked-out submodule files and moving branch HEADs never
+CURRENT/BASE selection uses #226's selector below. Checked-out submodule files and moving branch HEADs never
 substitute for the captured commit. New entry metadata, blob reads and
 materialization retain the original entry/byte/run/deadline bounds; no source
 inventory/hash ledger or live submodule mount is added.
@@ -526,6 +528,113 @@ distinct requests consume the same counters and quotas, including work already
 performed by Make. Even cached results cannot be reused after that report's
 deadline or a terminal budget failure. The production consumer passes the one
 budget used for tree capture through its Make session and registry helper.
+
+### Selecting immutable BASE/current views in one report
+
+Issue [#226](https://github.com/laqieer/fireemblem8-expansion/issues/226) is a
+framework capability for revision comparisons and deleted-source ownership.
+It depends on #206 / PR #212's source, session, metadata and lifecycle
+authority. While that parent is open its immediate base is
+`delivery/d581-issue-206`, at depth one. #180 / PR #186 consumes this seam for
+its broader report; #225, #227 and #228 are **not** dependencies.
+
+Deleted sources require the actual BASE declarations and bytes. Asking the
+CURRENT registry whether it owns a deleted BASE path can incorrectly classify
+that path as unowned. A union of paths, borrowed CURRENT classification,
+another report budget or rewritten guest prefixes cannot repair that answer.
+
+```python
+budget = ProbeBudget()
+current = AuthorityLoader(
+    root, git_tree_entries(root, current_revision, budget=budget),
+    current_revision, budget=budget)
+base = AuthorityLoader(
+    root, git_tree_entries(root, base_revision, budget=budget),
+    base_revision, budget=budget)
+with ProbeSession(current, scratch_root=root / "build/test-artifacts/probe",
+                  budget=budget) as probe:
+    current_record = probe_generated_registry(
+        current, command=current_command, session=probe)
+    with probe.select_view(base) as selected:
+        assert selected is probe
+        base_record = probe_generated_registry(
+            base, command=base_command, session=probe)
+    # The exact previous CURRENT loader, snapshot, backing and handles are active.
+```
+
+Use immutable revisions captured by `git_tree_entries` with the same explicit
+budget and repository root. Another clone/worktree, foreign budget, detached
+map, mutable alternate loader or wrong captured root/revision rejects before
+changing the active view. Moving refs and later checkout edits cannot replace
+captured Git object bytes. A default live session may select an immutable
+view, then restores its already frozen live bytes; live snapshots cannot
+certify immutable byte/storage reuse.
+
+`select_view` yields the same session. It prepares a complete immutable
+`Snapshot` and materialized source tree before switching loader, snapshot,
+backing, command cache, mappings and native-tool ownership together.
+Every capsule still mounts that complete view read-only/noexec at `/repo`.
+File/content declarations, directory types, enumeration rights and genuine
+absence checks remain separate. File-to-directory, directory-to-file,
+nonregular and presence changes use the selected authority, never sparse
+omission. The registry helper still rejects an unselected loader.
+
+Each selection reserves a state from the same report budget. The session's
+trusted runtime, interceptor, namespace route, signal handlers and sole reaper
+are shared. There is no per-view deadline, budget, process owner or global
+cache. Capture, selected-state metadata, new blob reads, copied storage,
+real metadata validation and candidate execution keep their cumulative byte,
+run, process, observation, syscall, creation and state costs. No refund, cap
+increase or accounting reset occurs on restoration.
+
+`Snapshot(loader, budget, reuse=previous_snapshot)` exposes only certified
+reuse. `reused_paths` identifies regular entries independently admitted by
+both immutable captures with identical root, budget, original path, mode,
+type, Git object ID and object-database origin. Their already funded immutable
+bytes can be shared; the selector hardlinks their owned storage. Different
+paths, modes, objects or missing entries require independent capture/storage.
+This preserves the unchanged capture envelope without another content ledger
+or duplicate loader. Per-view metadata and actual new work still cost budget.
+
+**Storage reuse is not metadata equality.** Linking/unlinking an unchanged
+file can change its link count or ctime; distinct view directories have their
+own inode/timestamps. Cached results remain selected-view-owned, even for
+identical snapshot/ELF bytes. Every cache lookup and native Make mapping keeps
+the core's complete operation-aware guest comparison, including returned
+buffers, namespace-sensitive UID/GID/mount fields, flags, masks and failures.
+Restoring CURRENT can therefore require genuine command execution, not reuse
+of its old result. Unsupported metadata reproduction fails closed; validation
+never repairs, masks or fabricates returned fields.
+
+Nested contexts restore their immediate predecessor. Each selected tree,
+cache and native file set is discarded on exit, not retained in a view
+registry. Only active nesting state is kept for complete outer cleanup.
+Default-view native handles survive a normal selection; suspended, foreign,
+forged and expired selected-view handles cannot execute in another view.
+Group related BASE queries in one context: re-entry performs new bounded
+capture/materialization work. Large changed or uncertified views may still
+exhaust the unchanged limits. Full-metadata validation can also exhaust the
+control budget on repeated registry queries even when immutable source storage
+fits comfortably; storage reuse is not a promise of unlimited result replay.
+
+Invalid admission leaves a healthy owner intact. Setup, body, interruption
+or teardown failures after admission are terminal and restore the prior
+selection without reopening its budget. Scopes must exit in nesting order;
+misnested exits close the report rather than restoring an invalid backing.
+Closing the outer session clears suspended caches/handles too. A late context
+exit cannot reactivate a closed session. Selection during active execution or
+from another worker rejects.
+
+The [indexed human procedure](test-cases/workflow-governance.md#tc-workflow-probe-views-001-select-immutable-ownership-views-with-one-report-budget)
+maps all deterministic checks, including real Git BASE/CURRENT registry
+declarations and renamed source bytes. No manual-only criterion, feature flag,
+game/profile conflict, ROM/RAM, save/config identity, locale, generated game
+output, modern/archival or workflow/publisher change applies. Generated
+publication/reconstruction and native Make registration belong to #225;
+optional runtime inputs to #227; dependency-only compilation to #228.
+Cross-extension scenarios and full CURRENT/BASE/112-domain/census/oracle/public
+acceptance remain #180's integration responsibility. Rollback is an ordinary
+revert of this selector layer, never a return to borrowed BASE semantics.
 
 The existing **3,600-second maximum is one monotonic deadline**, including
 snapshotting, compilation, all subprocesses and replay. Every subprocess gets
@@ -719,8 +828,9 @@ Shared safety remains in the lowest exposing layer. Core keeps `compile_native`
 and `native` isolation, mandatory runtime closure, exact source/gitlink input
 support and the original typed stdout-only command surface. It does not expose
 `Command.native_tool`, `Command.outputs`, `Command.dependency_only`,
-`ProcessOutput.generated`, `ProbeSession.select_view`, optional `runtime_files`,
-native output capture or `Snapshot(reuse=...)`.
+`ProcessOutput.generated`, optional `runtime_files` or native output capture.
+The #226 selector and `Snapshot(reuse=...)` are the explicit view layer above
+that unchanged default core; they do not enable the other allocated contracts.
 
 #225 remains explicitly held: its current physical delete/recreate replay does
 not preserve all allowed metadata. Its prior generated-listing successes do

@@ -17,6 +17,8 @@ import signal
 import stat
 import struct
 import sys
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from functools import wraps
 from pathlib import Path, PurePosixPath
@@ -523,6 +525,7 @@ class ProbeSession:
         self.cache = {}
         self.mappings = {}
         self.native_tools = {}
+        self._views = []
         self.handlers = {}
         self.snapshot = None
         self.make_runtime = ()
@@ -574,6 +577,78 @@ class ProbeSession:
     def _interrupt(self, signum, frame):
         raise KeyboardInterrupt(f"ownership probe interrupted by signal {signum}")
 
+    @contextmanager
+    def select_view(self, loader: AuthorityLoader) -> Iterator[ProbeSession]:
+        """Temporarily select an immutable capture on this report's authority."""
+        if self.base is None or self.snapshot is None:
+            raise MakeProbeError("probe session is not active")
+        if get_ident() != self.owner_thread:
+            self.budget.failed = True
+            raise MakeProbeError("a probe session has one bounded execution worker")
+        self.budget.remaining()
+        if (
+            not isinstance(loader, AuthorityLoader) or loader.budget is not self.budget
+            or loader.entries.budget is not self.budget or loader.root != self.loader.root
+            or loader.revision is None or loader.entries.capture != (loader.root, loader.revision)
+        ):
+            raise MakeProbeError("view requires a same-report, same-repository immutable capture")
+        if self.budget.children or self.pending_commands:
+            raise MakeProbeError("cannot select a view during active report execution")
+        previous = (
+            self.loader, self.snapshot, self.tree, self.cache, self.mappings, self.native_tools,
+        )
+        cache, mappings, tools = {}, {}, {}
+        selected = False
+
+        def restore():
+            if selected and self.base is not None and self.snapshot is not None:
+                if not self._views or self._views[-1] is not previous:
+                    error = MakeProbeError("view contexts must exit in nesting order")
+                    self.__exit__(type(error), error, None)
+                    raise error
+                self._views.pop()
+                (self.loader, self.snapshot, self.tree,
+                 self.cache, self.mappings, self.native_tools) = previous
+
+        try:
+            self.budget.plan(1)
+            self.serial += 1
+            root = self.base / f"view-{self.serial}"
+            tree = root / "tree"
+            with cleanup_scope([
+                cache.clear, mappings.clear, tools.clear, lambda: _remove_owned_tree(root), restore,
+            ]):
+                root.mkdir()
+                tree.mkdir()
+                snapshot = Snapshot(loader, self.budget, reuse=previous[1])
+                for name in sorted(snapshot.reused_paths):
+                    self.budget.remaining()
+                    target = tree / name
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    os.link(previous[2] / name, target, follow_symlinks=False)
+                copied = snapshot.files.keys() - snapshot.reused_paths
+                self.budget.charge("snapshot", sum(len(snapshot.files[name]) for name in copied))
+                snapshot.materialize(tree, copied, self.budget)
+                for name in sorted(snapshot.gitlink_roots):
+                    self.budget.remaining()
+                    (tree / name).mkdir(parents=True, exist_ok=True)
+                # No caller observes a partially prepared source/native/cache view.
+                mask = signal.pthread_sigmask(signal.SIG_BLOCK, self.handlers)
+                try:
+                    self._views.append(previous)
+                    (self.loader, self.snapshot, self.tree,
+                     self.cache, self.mappings, self.native_tools) = (
+                        loader, snapshot, tree, cache, mappings, tools,
+                    )
+                    selected = True
+                finally:
+                    signal.pthread_sigmask(signal.SIG_SETMASK, mask)
+                yield self
+        except BaseException as error:
+            self.budget.failed = True
+            finish_cleanup([self.budget.close], primary=error)
+            raise
+
     def __exit__(self, kind, value, traceback):
         def clear_state():
             self.cache.clear()
@@ -582,6 +657,14 @@ class ProbeSession:
             self.make_runtime = ()
             self.snapshot = None
             self.loader.live_modes.clear()
+            for loader, snapshot, tree, cache, mappings, tools in self._views:
+                loader.live_modes.clear()
+                cache.clear()
+                mappings.clear()
+                tools.clear()
+            if self._views:
+                self.loader = self._views[0][0]
+            self._views.clear()
         def remove_base():
             if self.base is not None:
                 _remove_owned_tree(self.base)

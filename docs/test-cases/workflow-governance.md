@@ -3234,6 +3234,180 @@ explicit downstream integration gates under #180. Unsupported native Make
 ABIs/platforms fail rather than running a weaker probe. Roll back by reverting
 this dedicated foundation; broader validation remains required.
 
+## TC-WORKFLOW-PROBE-VIEWS-001: Select immutable ownership views with one report budget
+
+### Feature and configuration
+
+Issue [#226](https://github.com/laqieer/fireemblem8-expansion/issues/226);
+Linux x86-64 source checkout with the
+[foundation prerequisites](../ownership-probe-foundation.md#run-the-real-consumer):
+GNU Make 4.3, Python 3, static-capable C/C++ host compilers and supported private
+namespaces. No ROM, emulator, feature flag, credentials or remote mutation.
+Use a clean checkout. All fixtures, Git commits and native outputs are owned
+under ignored `build/test-artifacts`; never use another checkout's report.
+
+### Actions
+
+1. Run the focused family:
+
+   ```sh
+   python3 -m unittest scripts.validation_ownership.tests.test_foundation -k immutable_view -v
+   ```
+
+   The principal case creates real BASE and CURRENT Git commits, using the
+   actual `SchemaRegistry`, `ShopsTableSchema`, JSON loader and record-count
+   implementation. BASE declares `src/data/deleted_generated.json` with a
+   shop record. CURRENT removes that path, declares
+   `src/data/current_generated.json` and contains an additional shop record.
+   These are disposable source inputs, not generated game output.
+
+2. Inspect the same real consumer directly from the source root:
+
+   ```sh
+   python3 - <<'PY'
+   import json
+   from dataclasses import replace
+   from scripts.validation_ownership.budget import ProbeBudget
+   from scripts.validation_ownership.make_probe import ProbeSession, probe_generated_registry
+   from scripts.validation_ownership.tests.test_foundation import FoundationTests
+
+   fixture = FoundationTests()
+   fixture.setUp()
+   budget = ProbeBudget()
+   try:
+       base, current, (old, new) = fixture.deleted_source_views(budget)
+       declarations = replace(new, argv=("/usr/bin/python3", "/repo/declarations.py"), sources=())
+       print("BASE", base.revision, "CURRENT", current.revision)
+       with ProbeSession(current, scratch_root=fixture.scratch, budget=budget) as probe:
+           previous = probe.snapshot, probe.tree
+           def observe(label, loader, command):
+               registry = probe_generated_registry(loader, command=command, session=probe)
+               owners = json.loads(probe.command(declarations).stdout)
+               print(label, json.dumps({"registry": registry, **owners}, sort_keys=True))
+           observe("CURRENT", current, new)
+           with probe.select_view(base) as selected:
+               assert selected is probe
+               observe("BASE", base, old)
+           assert (probe.snapshot, probe.tree) == previous
+           observe("RESTORED CURRENT", current, new)
+           print("cumulative", budget.runs, budget.states, budget.bytes, probe.observations_used)
+       fixture.assert_clean(probe)
+   finally:
+       budget.close()
+       fixture.tearDown()
+   PY
+   ```
+
+   CURRENT must classify the removed path as unowned; BASE must classify it
+   as owned by `shops`, report its original path and original record count,
+   and read its actual captured bytes. Restored CURRENT must match the first
+   CURRENT record/declarations. The automated case also obtains BASE and
+   restored CURRENT declarations through real confined GNU Make, with no
+   generated publication or native-command registration.
+
+3. Preserve the historical wrong-BASE shortcut as a negative: using CURRENT's
+   declarations for the removed path gives an empty owner list, whereas
+   BASE's real registry gives `["shops"]`. Before the selector, the core also
+   rejects a foreign-loader helper call, a second same-budget session and a
+   missing deleted input in CURRENT. The pre-feature positive composition
+   fails because `select_view` is absent. Do not repair that failure with a
+   union, fixture-only classification, separate budget or prefixed paths.
+
+4. Exercise nested selection, default-live restoration after an actual
+   post-capture edit, wrong root/revision, foreign budget/repository, detached
+   capture, mutable alternate and inactive/closed authority. Admission failures
+   leave the original healthy owner unchanged. Exceptions during snapshot
+   construction, materialization, body, interruption and teardown restore
+   the actual previous state but leave the report terminal. Late or misnested
+   context exits cannot revive closed state; outer cleanup clears suspended
+   caches and native handles, not just the currently selected dictionaries.
+
+5. Observe file-to-directory and directory-to-file changes, different file
+   values, complete selected directory listings, module presence/absence,
+   symlink/unadmitted-gitlink rejection and exact empty admitted gitlinks.
+   A directory declaration must not grant member bytes. Real renamed gitlink
+   paths must use their respective immutable pins, not checked-out contents.
+   Native tools compile/run in the selected channel-free view. Suspended,
+   copied/forged or expired handles reject even for identical ELF/snapshot
+   bytes; a normal restoration preserves the original CURRENT handle.
+
+6. Inspect certified storage reuse under the lowered fixture envelope:
+   unchanged original-path/mode/type/object entries share bytes and source
+   inodes; changed, missing or mode-different entries do not. Source writes
+   remain denied, and selected storage is removed on exit. Real stat/fstat
+   output must reflect the changed hardlink count/ctime and different directory
+   inodes. Restored CURRENT revalidates and executes afresh when its old
+   metadata changed, then supports compatible reuse.
+   Complete statx buffers must retain actual mount/UID/GID fields; access and
+   readlink retain actual status, flags, masks and unchanged caller buffer
+   tails. Altered namespace-field records cannot authorize reuse.
+   The unchanged-record core controls still prove native Make uses this same
+   complete backing and revalidation does not mutate metadata.
+   Retain the historical real HEAD/master capture-envelope control: run the
+   foundation's immutable localization/chapterbundle queries under one budget
+   with a selected second captured revision, not two `consumer.check` calls.
+   No increased cap or full graph claim follows from that small query pair.
+
+7. Exhaust existing state, snapshot-byte, launch, creation, observation and
+   descendant allowances across selection/restoration. Cache hits with no
+   metadata avoid new work only within their owning view; required metadata
+   validation remains charged. Make, capture and BASE work share the original
+   deadline and every cumulative counter. Failed/closed budgets reject before
+   another launch, with complete owned cleanup and no refunded work.
+
+### Expected result
+
+The same report yields genuine CURRENT, BASE and restored CURRENT results.
+BASE owns the deleted path through its own registry, with original consumed
+bytes and count. View state and handles restore correctly; complete actual
+metadata governs reuse even when storage is shared. All cumulative counters
+and the original deadline remain in force, with complete owned cleanup.
+
+### Negative control
+
+Retain the actual pre-feature missing-selector failure and wrong-loader,
+second-session and missing-CURRENT-source rejections. Borrowing CURRENT's
+owner list gives the wrong answer for the deleted BASE source. Unsupported
+types, stale metadata/handles, failed or closed budgets and exhausted
+resources must reject, never produce success-shaped replacement evidence.
+
+### Interactions and save compatibility
+
+Depends on #206 / PR #212; the genuine child base while open is
+`delivery/d581-issue-206`, depth one. #180 / PR #186 owns downstream integration.
+No dependency on independent #225 producer work, #227 runtime-input work or
+#228 dependency compilation. Their mixed historical tests retain their
+respective integration requirements: generated-context publication/remakes,
+optional runtime lifetime and dependency-header output are not enabled or
+claimed here. The view projections retain native/cache isolation, exact
+listing/absence, pins and all cumulative controls.
+
+Game/profile conflicts: **none**. No save/migration/config identity, generated
+game output, localization, ROM/RAM, modern debug/release, archival, workflow
+topology, patch publisher or default numerical limit changes. The default
+single-view API remains supported. Revert this layer normally if necessary;
+never restore borrowed CURRENT ownership for BASE.
+
+### Automation
+
+The focused command above maps every deterministic action to real Git,
+confined Python/Make/native processes, parsed JSON/ELF/metadata, counters and
+owned state. The existing core metadata, source and lifecycle tests remain
+neighboring evidence under the same runner.
+
+### Cleanup and limitations
+
+Fixtures and session roots clean themselves; remove only the empty owned
+test parent if desired.
+
+No manual-only criterion applies. Unsupported hosts or metadata reproduction
+reject instead of falling back. Large changed views can still exhaust the
+unchanged envelope, and repeated full-registry metadata can exhaust the
+control allowance even when source reuse fits. Neither the owned registry case nor a real
+localization/chapterbundle pair is complete #180 CURRENT/BASE/112-domain,
+census, graph, oracle, lifecycle or public-gate acceptance. User-namespace
+evidence does not imply a separately untested sudo credential transition.
+
 ## TC-WORKFLOW-AGENT-HANDOFF-001: Validate bounded exact-SHA agent handoffs
 
 - **Feature / originating issue:** `workflow-governance` /
