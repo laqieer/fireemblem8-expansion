@@ -195,6 +195,7 @@ class Process:
     producer_frame: bytes | None = None
     producer_slot: int | None = None
     producer_event_written: bool = False
+    path_context: tuple[str, int, str | None] | None = None
 
     def clone(self):
         return Process(
@@ -676,6 +677,13 @@ class Policy:
                     resolved.pop()
                 continue
             if follow_final or pending:
+                alias = "/" + "/".join((*resolved, part))
+                if (self.mode == "make" or self.config.get("metadata_validation")) and alias in self.config.get("runtime_aliases", ()):
+                    spelling = posixpath.normpath(name)
+                    if ".." in name.split("/") or (
+                        spelling not in self.config["executables"] and not self.runtime_metadata(spelling)
+                    ):
+                        raise Violation(f"unrequested stock runtime alias spelling: {name}")
                 try:
                     target = os.readlink(Path(self.config["root"]).joinpath(*resolved, part))
                 except OSError as error:
@@ -702,14 +710,16 @@ class Policy:
         if "\0" in name:
             raise Violation("embedded NUL path")
         if not name:
-            if dirfd == -100:
-                return state.cwd
-            return self.fd(state, dirfd)
+            base = state.cwd if dirfd == -100 else self.fd(state, dirfd)
+            state.path_context = (name, dirfd, base)
+            return base
+        spelling, base = name, None
         if not name.startswith("/"):
             base = state.cwd if dirfd == -100 else self.fd(state, dirfd)
             if base.startswith("<"):
                 raise Violation("relative path through a non-directory descriptor")
             name = base.rstrip("/") + "/" + name
+        state.path_context = (spelling, dirfd, base)
         return self.resolve(name, follow_final=follow_final)
 
     def fd(self, state, fd):
@@ -833,9 +843,12 @@ class Policy:
         return int(match[1])
 
     def begin_metadata(self, pid, state, r, path):
+        optional = self.runtime_metadata(
+            path, parents=self.mode == "make" or bool(self.config.get("metadata_validation")),
+        )
         if (
-            not (path == "/repo" or path.startswith("/repo/"))
-            or self.mode == "make" and state.role != "helper"
+            not (path == "/repo" or path.startswith("/repo/") or optional)
+            or self.mode == "make" and state.role != "helper" and not (optional and state.observer_ready)
         ):
             return
         number = r.orig_rax
@@ -870,7 +883,7 @@ class Policy:
                 raise Violation(f"metadata helper request exceeds its recorded operation: {path}")
             self.reserve_observation("accessed", "revalidation:" + repr(request))
             state.metadata_pending = (request, address, None)
-        elif self.mode != "make":
+        else:
             self.reserve_observation("accessed", "metadata-attempt:" + repr(request))
             seed = self.metadata_buffer(pid, address, size)
             state.metadata_pending = (request, address, seed)
@@ -904,6 +917,26 @@ class Policy:
         if index is None or not 0 <= index < len(entries):
             return ()
         return entries[index]["metadata"]
+
+    def runtime_metadata(self, path, *, parents=True):
+        return (
+            path in self.config.get("runtime_files", ())
+            or parents and path in self.config.get("runtime_parents", ())
+            or any(path.startswith(absent + "/") for absent in self.config.get("runtime_absent", ()))
+        )
+
+    def check_optional_make_spelling(self, state, path, operation):
+        if self.mode != "make" or state.role != "make" or state.path_context is None:
+            return
+        # Shared mandatory directory metadata does not need the optional grant.
+        if operation == "metadata" and path in self.runtime_directories:
+            return
+        spelling, dirfd, base = state.path_context
+        if ".." in spelling.split("/"):
+            raise Violation(
+                f"optional Make runtime parent spelling denied: {spelling!r} "
+                f"(dirfd={dirfd}, base={base!r})"
+            )
 
     def check_enumeration(self, path):
         if path not in self.enumerations:
@@ -988,6 +1021,19 @@ class Policy:
             if self.mode in {"command", "compile"} and (path == "/work" or path.startswith("/work/")):
                 return
             raise Violation(f"write outside private command output: {path}")
+        if self.mode == "make":
+            if operation == "read" and path in self.config.get("intercepted_runtime", ()):
+                raise Violation("intercepted runtime program is metadata/dispatch only")
+            if (
+                operation == "metadata" and self.runtime_metadata(path)
+                or operation == "read" and (
+                    path in self.config.get("runtime_files", ())
+                    or any(path.startswith(absent + "/") for absent in self.config.get("runtime_absent", ()))
+                )
+            ):
+                self.check_optional_make_spelling(state, path, operation)
+                self.defer_observation(state, "accessed", path)
+                return
         if self.mode == "make":
             if not (path == "/repo" or path.startswith("/repo/")):
                 self.make_runtime_access(state, path, operation)
@@ -1101,6 +1147,7 @@ class Policy:
         state.pending = None
         state.kernel_io = None
         state.metadata_pending = None
+        state.path_context = None
         state.observations.clear()
         state.observation_needs_bytes = False
         trusted = self.observer(state, r)
@@ -1149,6 +1196,8 @@ class Policy:
                     path = self.path(pid, state, b)
                     if path not in self.executable or path == "/control/interceptor" or c not in {0, 1}:
                         raise Violation(f"untrusted executable dispatch: {path}")
+                    if self.runtime_metadata(path, parents=False):
+                        self.check_optional_make_spelling(state, path, "execute")
                     state.dispatch = (path, c)
                 else:
                     if c:
@@ -1253,6 +1302,11 @@ class Policy:
                 # hardlinking the FD does not make /work immutable.
                 if path.startswith("<") or path == "/dev/null" or path == "/work" or path.startswith("/work/"):
                     raise Violation("mutable backing-file mappings/argument races are forbidden")
+                if (
+                    self.mode == "make" and c & PROT_EXEC
+                    and path not in self.executable | self.runtime_closure | {"/lib/vo-observer.so"}
+                ):
+                    raise Violation("optional runtime image execution denied")
                 if c & PROT_EXEC and path not in self.executable and not path.startswith(("/usr/", "/lib/", "/lib64/", "/bin/")):
                     raise Violation("candidate executable mmap denied")
             elif c & PROT_EXEC:
@@ -1275,6 +1329,8 @@ class Policy:
             path = self.path(pid, state, a)
             if path not in self.executable:
                 raise Violation(f"untrusted executable dispatch: {path}")
+            if self.runtime_metadata(path, parents=False):
+                self.check_optional_make_spelling(state, path, "execute")
             if self.mode == "make":
                 if state.bootstrap and path == "/usr/bin/make":
                     role = "make"

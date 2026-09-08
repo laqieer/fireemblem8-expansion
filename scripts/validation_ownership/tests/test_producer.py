@@ -41,6 +41,70 @@ class ProducerTests(unittest.TestCase):
             ("/usr/bin/python3", "/repo/producer.py"), code=("producer.py",), outputs=("generated.txt",),
         )
 
+    def test_runtime_capture_composes_with_live_remake_and_keeps_env_metadata_only(self):
+        generated = "generated-" + self.fixture.directory.name + ".mk"
+        absent = "/usr/include/" + generated
+        requested = ("/usr/include/stdio.h", "/usr/bin/env", absent)
+        self.assertTrue(Path(requested[0]).is_file())
+        self.assertFalse(Path(absent).exists())
+        for invalid in (False, True):
+            with self.subTest(invalid_optional_spelling=invalid):
+                _, command, producer = self.include_fixture(generated)
+                runtime = "/usr/bin/../bin/env" if invalid else requested[0]
+                self.fixture.add("producer.py", (self.root / "producer.py").read_text() + (
+                    "with output.open('a') as stream:\n"
+                    f" stream.write('RUNTIME := $(wildcard {runtime})\\n')\n"
+                ))
+                self.fixture.add("sentinel.py", "open('env-executed','w').write('ordinary only')\n")
+                self.fixture.add("Makefile", (
+                    f"include {generated}\n{generated}: choice.txt\n"
+                    f"\t@python3 producer.py {generated}\nall: $(SELECTED)\n"
+                    "\t@env /usr/bin/python3 sentinel.py\n"
+                ))
+                ordinary = subprocess.run(
+                    ["/usr/bin/make", "--no-print-directory", "-f", "Makefile", "all"],
+                    cwd=self.root, env=ENVIRONMENT, capture_output=True, check=True, timeout=10,
+                )
+                self.assertEqual(ordinary.stdout, b"")
+                self.assertEqual((self.root / "env-executed").read_text(), "ordinary only")
+                (self.root / "env-executed").unlink()
+                (self.root / generated).unlink()
+                with self.fixture.session(seconds=45, runtime_files=requested) as session:
+                    captured, backing = session.runtime_inputs, session.runtime_root
+                    if invalid:
+                        with self.assertRaisesRegex(MakeProbeError, "optional Make runtime parent spelling"):
+                            session.make("all", commands={command: producer})
+                    else:
+                        observed = session.make(
+                            "all", variables=("RUNTIME", "MAKE_RESTARTS"), commands={command: producer},
+                        )
+                        self.assertEqual(observed.semantics["domains"]["RUNTIME"]["value"], requested[0])
+                        self.assertEqual(observed.semantics["domains"]["MAKE_RESTARTS"]["value"], "1")
+                        self.assertEqual(len(observed.events), 1)
+                        self.assertNotEqual(observed.execution_digest, session.snapshot.digest)
+                        self.assertIs(session.runtime_inputs, captured)
+                        self.assertIs(session.runtime_root, backing)
+                    self.assertFalse((session.tree / generated).exists())
+                    self.assertFalse((session.tree / "env-executed").exists())
+                    self.assertFalse((self.root / "env-executed").exists())
+                self.fixture.assert_clean(session)
+                self.assertFalse(backing.exists())
+
+    def test_runtime_backing_preserves_nested_publication_and_source_metadata(self):
+        create = self.fixture.session
+        runtime = self.fixture.runtime_data_path()
+        def session(**limits):
+            return create(runtime_files=(runtime, "/usr/bin/env"), **limits)
+        with patch.object(self.fixture, "session", session):
+            self.test_nested_scope_inherits_ownership_and_preserves_all_file_stat_fields()
+
+    def test_runtime_backing_preserves_exact_generated_execute_permission(self):
+        create = self.fixture.session
+        def session(**limits):
+            return create(runtime_files=("/usr/include/stdio.h", "/usr/bin/env"), **limits)
+        with patch.object(self.fixture, "session", session):
+            self.test_generated_execute_denial_uses_owner_permissions_not_any_execute_bit()
+
     def test_original_linker_lookup_denies_instead_of_accepting_empty_output(self):
         path = "scripts/arm_compressing_linker.py"
         self.fixture.add(path, (foundation.ROOT / path).read_bytes(), mode="100755")

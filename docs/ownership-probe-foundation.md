@@ -8,8 +8,9 @@ replace, or skip validation.
 The default remains the static core. The merged #226 layer adds the narrow
 [same-report immutable view selector](#selecting-immutable-basecurrent-views-in-one-report).
 This branch also provides the [live producer and nested-publication
-extension](ownership-probe-producers.md) for #225. Optional runtime inputs and
-the dependency-only compiler remain separately allocated to #227 and #228.
+extension](ownership-probe-producers.md) for #225 and the independently merged
+#227 [explicit optional runtime inputs](#explicit-runtime-discovery-inputs).
+The dependency-only compiler remains separately allocated to #228.
 See the [archived delivery allocation](https://github.com/laqieer/fireemblem8-expansion/blob/56e0a206ffae088b0dbc1fe8aa6339a8ee820f33/docs/ownership-probe-allocation.json)
 and [downstream boundary](#contract-allocation-and-downstream-integration).
 
@@ -229,8 +230,147 @@ parents, not library-directory prefixes. Finite loader cache and architecture
 search probes are permitted only during trusted pre-observer startup and only
 for absent owned-view paths. Once the observer is ready, candidate evaluation
 cannot reuse that exception. Unrequested runtime files reject rather than
-silently becoming sparse absence. Optional explicit runtime inputs belong to
-#227; mandatory runtime closure remains in the core.
+silently becoming sparse absence. The explicit runtime-input layer below is
+optional; mandatory interpreter/ELF closure remains in the core and cannot be
+replaced by a declaration.
+
+### Explicit runtime discovery inputs
+
+Issue [#227](https://github.com/laqieer/fireemblem8-expansion/issues/227) adds the
+default-empty `ProbeSession(..., runtime_files=(... ,))` argument for Make's
+existing runtime discovery. It supports optional toolchain/header detection
+and metadata-only stock-tool recipe observation without host-directory grants:
+
+```python
+include_names = ("build-" + fixture.name, ".dep-" + fixture.name)
+with ProbeSession(
+    loader, scratch_root=scratch, budget=budget,
+    runtime_files=(
+        "/usr/include/newlib/stdlib.h",
+        *("/usr/include/" + name for name in include_names),
+        "/bin/mkdir",
+        "/bin/env",
+        "/usr/bin/env",
+    ),
+) as probe:
+    observation = probe.make("requested-target", commands=commands)
+```
+
+Each request is an exact, bounded absolute pathname below the trusted system
+tool/library roots or `/usr/include/`. The file and existing ancestors must
+be root-owned and not group/other writable. Capture accepts an ordinary regular
+file or **genuine absence**, not a directory, symlink, FIFO, device or
+set-id/sticky file. Duplicate/overlapping declarations, nonstock ancestors,
+changed captures, and collisions with mandatory images (including their
+canonical aliases) reject. Mandatory image reservations are separate from
+optional captures: ordinary original/canonical aliases of the same input
+(for example `/bin/cat` and `/usr/bin/cat`) and overlapping absent prefixes
+reject in either request order. The only dual-spelling exception is the
+explicit `/bin/env` plus `/usr/bin/env` pair with matching captured state;
+it cannot replace another mandatory image, including canonical bash.
+The example's relative include names come from a uniquely owned fixture
+directory and must also be used by that fixture's Makefile. Verify the resulting
+absolute paths are genuinely absent; ambient `/usr/include/build` or `.dep`
+entries are not test prerequisites. Never remove host contents to make a
+fixture pass.
+
+`probe.runtime_inputs` exposes frozen
+`RuntimeInput(path, data, mode, parents, canonical, aliases)` records during the
+session. `data is None` means captured absence; `parents` records actual
+ancestor presence. Regular files retain exact captured bytes and permission
+bits. An explicitly absent prefix also proves its descendants absent. No
+other missing name gains authority: an unrequested existing **or missing**
+file fails at its attempted operation instead of supplying an empty wildcard.
+An original stock capture such as `/bin/missing-tool` preserves genuine
+`/bin/missing-tool/child.h` and `/usr/bin/missing-tool/child.h` absence.
+Component boundaries remain exact: `missing-tool-other`, `..` spellings and
+unrelated aliases are not covered. A canonical-only capture does not add an
+unrequested original alias merely because another input uses the stock root.
+Parent metadata does not authorize content reads or directory enumeration.
+Requests never grant writes, arbitrary program dispatch, executable mappings
+of optional images, a library-prefix read, or candidate-phase loader probes.
+
+Parent components in an actual Make pathname cannot acquire optional runtime
+authority merely because guest resolution reaches a captured canonical path.
+The check retains the raw pathname and its dirfd/base context until that
+authorization boundary, including optional dispatch. Independently authorized
+registered-command runtime, source-parent and mandatory-runtime operations stay
+supported; shared mandatory directory metadata does not need an optional grant.
+This is not a global traversal ban in the guest resolver. Complete metadata
+comparison still uses the actual supported kernel results without masking.
+
+The owned optional runtime backing is constructed once and reused by Make and
+the existing trusted metadata helper. It is read-only, separate from the
+persistent complete read-only/noexec source backing, and removed with that
+session's owned scratch. Neither a live include tree nor a live Make runtime
+mount is introduced. Capture, materialization, request records, actual
+metadata, native comparison and output all spend the existing report budget;
+no limit or accounting meaning changes. `execution_digest` binds the runtime
+capture, while `semantic_digest` still reflects the actual observed owner.
+Omitting the argument preserves the default API and execution identity.
+
+Optional metadata uses the **same** complete syscall records and native
+comparison as [source metadata](#complete-metadata-and-static-reuse), including
+real status, flags/masks, inode, ownership, timestamps and returned buffers.
+This is actual guest metadata, not fabricated host inode/UID/stat values.
+The persistent optional backing permits unchanged Make observations to compare
+without recreating their files, directories or stock symlink.
+Changed metadata cannot match merely because names/types still agree.
+
+Registered commands retain their existing runtime, source and executable
+permissions; `runtime_files` does not grant them additional host paths.
+If an already permitted command observes an explicitly captured file, its
+operation joins the same metadata protocol. Compatible operations, such as
+read-access tests, can reuse their genuine result in Make. A live command
+runtime inode or permission failure may differ from Make's owned capture;
+complete comparison then rejects reuse or requires genuine execution, never
+normalizes away that difference. Filesystem-capacity fields and unsupported
+metadata retain the core's explicit unsupported-reuse boundary.
+
+### Stock runtime spelling and env recipes
+
+On the supported root-owned `/bin -> /usr/bin` layout,
+`runtime_files=("/bin/mkdir",)` captures the original path, canonical target
+and actual stock root link. The owned guest reproduces that confined relative
+link, preserving ordinary PATH, `realpath`, variable origins/flavors and native
+Make dispatch. It does not rewrite PATH or admit `/bin/rm`, `/bin/env`,
+escaping `..` spellings, or other unrequested aliases.
+
+A requested stock spelling of an existing intercepted program keeps the
+trusted interceptor image rather than overwriting it with the host program.
+It grants metadata/authenticated dispatch only; reading that substituted
+program image is forbidden. Explicit present `/bin/env`, `/usr/bin/env`, or
+both in either request order use the same narrow seam. Canonical access to the
+requested stock target is supported; a canonical-only request does not
+authorize its unrequested `/bin` spelling.
+
+Ordinary `env -u ... $(PYTHON) ...` recipes remain **observations**, not
+execution of `env`, Python or a unittest payload. The observer authenticates
+native dispatch and the existing interceptor suppresses the ordinary recipe.
+Captured absence does not materialize an env interceptor. Eager `$(shell ...)`,
+recursive recipes and include-remake invocations still need an exact
+registered real result. Public `Command` execution of env remains unsupported;
+capturing another program such as `cat` grants no dispatch permission.
+
+The complete human procedure and focused positive/adversarial automation are
+indexed as
+[`TC-WORKFLOW-PROBE-RUNTIME-INPUTS-001`](test-cases/workflow-governance.md#tc-workflow-probe-runtime-inputs-001-observe-explicit-runtime-inputs-without-executing-recipes).
+It uses the existing Linux/GNU Make/glibc/compiler/namespace prerequisites
+above; stock-path controls require actual ordinary root-owned `mkdir`/`env`
+files and the stock `/bin` link. Nonstock layouts reject instead of guessing
+aliases. No ARM tools, ROM or subjective manual judgment is needed.
+
+This framework capability depends on the delivered **#206 / PR #212** core.
+#227 is a standalone `master`-based root (depth zero). #226 is independent,
+and #225/#228 are not prerequisites. #180 / PR #186 owns downstream
+complete-root integration. Shared runtime/dispatch/metadata/test/doc seams may
+need ordinary conflict refreshes, not artificial stack dependencies.
+Generated results, native Make registration, dependency-only compilation and
+same-report view selection are non-goals. Game/profile conflicts are **none**:
+no ROM/RAM, save/migration, config identity, localization, generated game
+output, modern/archival profile, workflow/publisher, service or permission
+change. Rollback removes this optional layer or fixes it forward without
+widening the mandatory core's authority.
 
 ### Registered commands and native tools
 
@@ -372,7 +512,8 @@ source/code ancestors retain permitted metadata but do not become enumerable.
 Directory declarations are type-checked; names-only listing never grants member
 contents. The guard uses the mounted read-only view, never a writable alias.
 
-`ProcessOutput.metadata` contains operation-aware source observations:
+`ProcessOutput.metadata` contains operation-aware source observations and any
+already-permitted observations of explicitly captured runtime files:
 syscall number, canonical guest path, flags, mask, buffer size, directory
 offset, actual signed kernel result, and complete input/output buffer bytes.
 Stat/lstat/fstat/newfstatat, supported statx/fstatfs, access/readlink variants
@@ -618,6 +759,15 @@ cache. Capture, selected-state metadata, new blob reads, copied storage,
 real metadata validation and candidate execution keep their cumulative byte,
 run, process, observation, syscall, creation and state costs. No refund, cap
 increase or accounting reset occurs on restoration.
+
+When #227's explicit `runtime_files` are also requested, their captured bytes,
+absence, stock spellings and persistent runtime backing stay fixed across
+CURRENT/BASE selection and restoration. Only source-view ownership changes.
+`test_runtime_inputs_share_capture_and_control_quota_across_views` exercises
+real Make mapping/revalidation with changed source bytes, unchanged runtime
+inputs, metadata-only env dispatch and one cumulative control quota. The two
+APIs remain independent capabilities; their composition creates no new budget
+or prerequisite between their issues.
 
 `Snapshot(loader, budget, reuse=previous_snapshot)` exposes only certified
 reuse. `reused_paths` identifies regular entries independently admitted by
@@ -881,8 +1031,9 @@ and `native` isolation, mandatory runtime closure, exact source/gitlink input
 support and the original typed stdout-only command surface. The P extension
 adds `Command.native_tool`, `Command.outputs`, `ProcessOutput.generated` and
 native output capture. The merged #226 layer provides `ProbeSession.select_view`
-and `Snapshot(reuse=...)`. Neither introduces `Command.dependency_only` or
-optional `runtime_files`; those remain separate contracts.
+and `Snapshot(reuse=...)`. The merged #227 layer provides `runtime_files` and
+its captured records/metadata-only stock dispatch. These do not introduce
+`Command.dependency_only`, which remains a separate contract.
 
 #225's full delivery remains open. This branch replaces the unapproved
 delete/recreate implementation with live rendezvous and scoped nested publication; its

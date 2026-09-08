@@ -488,6 +488,7 @@
         "https://github.com/laqieer/fireemblem8-expansion/issues/199",
         "https://github.com/laqieer/fireemblem8-expansion/issues/206",
         "https://github.com/laqieer/fireemblem8-expansion/issues/225",
+        "https://github.com/laqieer/fireemblem8-expansion/issues/227",
         "https://github.com/laqieer/fireemblem8-expansion/issues/226",
         "https://github.com/laqieer/fireemblem8-expansion/issues/208",
         "https://github.com/laqieer/fireemblem8-expansion/issues/207",
@@ -506,6 +507,7 @@
         "TC-WORKFLOW-PILOT-BASELINE-001",
         "TC-WORKFLOW-OWNERSHIP-PROBE-SANDBOX-001",
         "TC-WORKFLOW-PROBE-PRODUCER-001",
+        "TC-WORKFLOW-PROBE-RUNTIME-INPUTS-001",
         "TC-WORKFLOW-PROBE-VIEWS-001",
         "TC-WORKFLOW-REVIEW-FAMILY-001",
         "TC-WORKFLOW-REVIEW-FIRST-001",
@@ -3491,7 +3493,7 @@
       "actions": "Run the ProducerTests process suite. Compare ordinary Make with isolated producers, live publication, complete metadata and native restarts. Exercise real scaninc/native outputs, aliases, ownership, source/output rejection, traffic corruption, FD separation, death/lifetime and cumulative limits. Require the original noexec linker lookup to reject instead of returning empty INPUTS; compare explicit Python and all nine graphics-rule adaptations using actual argv/bytes/status/cleanup. Run both original V/P combinations against merged CURRENT/BASE selection and test active-publication view-switch rejection.",
       "expected_result": "Only authenticated real dispatches execute. Full source/output checks precede publication into the still-live readonly view; native Make owns include/restart behavior. Execute denial uses the actual access credentials and permission class: owned0641 is nonexecutable like0644, not a noexec-caused failure. Nested queries retain child outputs until outer completion and validate transferred ownership through readonly source, without rebuilding contexts. The producer has private work and no callback/control/source-write authority. All parked processes and funded VM remain reserved, monotonic deltas settle once, malformed or uncertain requests never retry, and failures clean without partial success.",
       "negative_control": "Unapproved d9 reconstructs observed generated contexts and returns stale link counts/timestamps. Original gbagfx lookup fails before dispatch, while the original executable linker script receives stat-success/X_OK-EACCES and incorrectly authorizes empty INPUTS. These are retained failures, not substitutes for positive adaptation. Same-directory read-own-publication remains outside the two-phase contract. Resource negatives reach their actual boundary rather than an unrelated earlier failure.",
-      "interactions": "Depends on core206 and composes with merged V226/PR230. R227 remains separate; D228 depends on P225 without a new V/R dependency. Issue180 retains complete domain/graph/oracle/lifecycle/public integration. No unrelated game/profile interaction.",
+      "interactions": "Depends on core206 and composes with independently merged V226/PR230 and R227/PR231. Runtime inputs remain explicit and do not grant producer execution. D228 depends on P225 without a new V/R dependency. Issue180 retains complete domain/graph/oracle/lifecycle/public integration. No unrelated game/profile interaction.",
       "save_compatibility": "Host-only producer infrastructure; no gameplay, save, config identity, localization, generated game content, ROM/RAM or modern/archival profile change.",
       "cleanup": "The existing sole-reaper watchdog/supervisor owns both live Make and nested producer lifetimes. EOF, malformed data, death, interruption and budget failure close owned channels, reap children and remove only owned private/output state without retry or counter reset.",
       "limitations": "Implementation checkpoints do not establish full P/root112/calibration/remote completion. Both original V/P combinations use the real merged selector and one budget. Identified direct consumers use explicit source-authored adaptations; arbitrary missing executables are not synthesized. Same-directory read-own-publication remains outside the two-phase contract. The tiny ordinary linker-output control uses existing ARM binutils when available. Same-UID sudo evidence is not a root credential-transition claim; no manual-only criterion is asserted.",
@@ -3499,6 +3501,34 @@
         {
           "command": "python3 -m unittest scripts.validation_ownership.tests.test_producer -v",
           "evidence": "scripts/validation_ownership/tests/test_producer.py"
+        }
+      ]
+    },
+    {
+      "id": "TC-WORKFLOW-PROBE-RUNTIME-INPUTS-001",
+      "title": "Observe explicit runtime inputs without executing recipes",
+      "feature_id": "workflow-governance",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/227"
+      ],
+      "document": "docs/test-cases/workflow-governance.md",
+      "anchor": "tc-workflow-probe-runtime-inputs-001-observe-explicit-runtime-inputs-without-executing-recipes",
+      "profiles": [
+        "Linux x86-64 source checkout, GNU Make 4.3, Python 3, glibc/static-capable C compiler, private namespaces and root-owned stock /bin -> /usr/bin layout"
+      ],
+      "purpose": "Validate default-empty explicit runtime_files capture, authentic present/absent observations, stock path and env metadata-only dispatch through the existing bounded core.",
+      "prerequisites": "Clean checkout; ordinary root-owned stdio/mkdir/env fixtures and existing core host/kernel tools. Derive relative include names and genuinely absent absolute paths from the owned fixture identity, not ambient build/.dep names. Use only owned ignored build/test-artifacts fixtures; no host changes, packages, ROM or credentials.",
+      "actions": "Run the documented ordinary/confined Make sentinel procedure and focused runtime family. Compare present/absent original paths and descendants, canonical stock aliases, PATH and variable origins/flavors. Reject optional Make parent spellings with genuine intermediates while preserving independently authorized command FD-relative, source-parent and mandatory-runtime paths; retain raw pathname/dirfd scope and full native metadata comparison. Reject ordinary canonical duplicates/overlaps in both orders and preserve explicit env pairs and nonexecuted sentinel recipes. Exercise owned include-absence names, regular-Python/absent-multiarch fixture models, real owned nonregular/replacement controls, newlib search, bytes, every metadata/status/flag/mask, quotas and cleanup.",
+      "expected_result": "Actual native Make observations agree with ordinary requested-path/PATH/realpath semantics. Explicit env only reaches the authenticated trusted interceptor, never env/Python/unittest payload execution. Full optional guest metadata composes with the core comparator; compatible reuse succeeds while differing inode/status/flags/buffers reject. Mandatory closure, complete readonly/noexec source authority and all existing cumulative limits remain intact.",
+      "negative_control": "With runtime_files omitted the header rejects, not false absence. Exact 2f48 has order-dependent canonical duplicates and rejects original /bin absent descendants. Exact 415 still permits canonical-parent optional Make lookups that pass real revalidation, and its fixtures require unowned absent include names and host-specific Python/multiarch shapes. The new regressions reject exact-old-behavior mutations. Unrequested paths, sibling prefixes, optional parent spellings, unrelated aliases, nonregular/replaced inputs, image collisions/reads, writes, enumeration, unsupported dispatch and late loader probes reject; independently authorized parent operations remain positive. Ordinary env executes only its removed control sentinel; incompatible full metadata never matches by names/types.",
+      "interactions": "Depends only on the delivered #206/PR212 core; #227 is a standalone master-based root (depth zero). #226 is independent; #225/#228 are not prerequisites. #180/PR186 owns complete-root integration; shared seams require real conflict refreshes. No game/profile conflicts.",
+      "save_compatibility": "Host-only optional inputs; no game/save/migration/config identity, ROM/RAM, localization/generated game output, modern/archival profile or publisher change.",
+      "cleanup": "Remove only the ordinary owned sentinel and directory before confined comparison. Context exit, failure, interruption and quota exhaustion clear runtime records/caches and remove the owned source/runtime/control trees and children. The documented script removes its own disposable fixture in finally.",
+      "limitations": "The stock-alias procedure requires the actual root-owned /bin -> /usr/bin layout. No arbitrary runtime execution, global library-prefix grant, source admission expansion, new service or manual-only criterion. Command runtime permissions stay unchanged; metadata differing between an existing command runtime and Make's owned capture is unsupported for reuse, not virtualized. This is not the full #180 report or producer/view/dependency delivery.",
+      "automation": [
+        {
+          "command": "python3 -m unittest scripts.validation_ownership.tests.test_foundation -k runtime_inputs -k stock_runtime_alias -k explicit_env -k absent_captured_env -k make_uncaptured_runtime -v",
+          "evidence": "scripts/validation_ownership/tests/test_foundation.py"
         }
       ]
     },

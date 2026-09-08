@@ -73,6 +73,18 @@ are checked, not assumed. A non-owner extended ACL or unrepresentable/
 capability-bearing state rejects as unsupported instead of guessing.
 No credential, mode, access result, mount or metadata buffer is changed.
 
+The independently delivered R layer composes through explicit `runtime_files`;
+the default remains empty. Its captured runtime identity participates in the
+live Make execution digest, and full optional metadata uses the same
+revalidator. A generated include may query an explicitly captured runtime path
+after a real restart, but cannot acquire an unrequested spelling, image read
+or execution grant. An ordinary env recipe remains metadata-only alongside
+live producers. Runtime backing and source publications retain separate
+ownership and are cleaned by the same report lifetime.
+If the captured runtime makes an include-search directory present, the caller
+must also admit the exact legitimate search input or its actual absence; the
+producer contract does not grant a whole runtime include tree implicitly.
+
 ## One live native execution
 
 The native observer preserves Make's original target, arguments, variables,
@@ -273,8 +285,8 @@ does not grant arbitrary unadapted executables or unrestricted same-directory
 read-own-publication. No broad current/BASE/domain graph, public #180 completion
 or raised-budget diagnostic is claimed.
 
-P depends on #206 and composes with the merged V/#226 implementation from
-PR #230. R/#227 remains a separate core extension; D/#228 depends on P, not V/R.
+P depends on #206 and composes with the independently merged V/#226 and R/#227
+implementations from PRs #230 and #231. D/#228 depends on P, not V/R.
 No gameplay, save/config, locale, generated game content,
 modern/archival profile, package, privilege or Build-job change is introduced.
 Main owns publication, independent review and all remote delivery gates.
