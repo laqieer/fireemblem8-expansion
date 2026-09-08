@@ -3256,6 +3256,9 @@ See [live producers](../ownership-probe-producers.md).
    still-live source view before cleanup. Prime an older reader result first:
    publication must force valid current observation, not a stale cache/map.
    Repeat with two generated includes and require two genuine native restarts.
+   Replace a declared generated input between two readers that use only
+   `open`/`read`, without stat on that input. Require new source bytes to
+   invalidate reuse, while an intervening unchanged read reuses its real result.
 3. Inspect actual nested launch configurations and complete supervisor reports.
    Parked Make/helper processes and every funded virtual-memory credit must
    remain reserved. Nested process/VM limits plus reservations equal the one

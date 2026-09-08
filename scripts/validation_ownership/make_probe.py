@@ -1090,7 +1090,10 @@ class ProbeSession:
         sources = self.sources(command.sources) if command.sources else ()
         directories = self._directories(command.directories)
         outputs = self._output_paths(command.outputs)
-        key = (self.snapshot.digest, command, None if native is None else native.digest)
+        published_inputs = tuple(self.source_owners(set(sources) & self.published_sources.keys()))
+        if published_inputs:
+            self.budget.charge("control", len(encoded(published_inputs)))
+        key = (self.snapshot.digest, command, None if native is None else native.digest, published_inputs)
         if key in self.cache and not outputs:
             for cached in self.cache[key]:
                 if self._metadata_matches(cached.metadata):
@@ -1137,7 +1140,7 @@ class ProbeSession:
             )
             self.budget.charge(
                 "cache", len(completed.stdout) + len(completed.stderr)
-                + len(encoded([self.snapshot.digest, command.argv, code, sources, directories]))
+                + len(encoded([self.snapshot.digest, command.argv, code, sources, directories, published_inputs]))
                 + (0 if result.artifact is None else len(result.artifact))
                 + sum(len(item.data) + len(os.fsencode(item.path)) + 64 for item in result.generated),
             )

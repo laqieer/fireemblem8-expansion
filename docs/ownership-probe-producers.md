@@ -103,6 +103,11 @@ Only a normalized logical producer can replace its own generated output.
 Output-producing invocations execute genuinely for every actual dispatch.
 Identical storage/provenance can deduplicate, but that does not erase a call or
 publication effect. Pure reuse remains subject to complete current observations.
+Declared published-source bytes and modes also bind the cache key: a reader
+using only `open`/`read` must not reuse old output after its generated input is
+replaced, even when it made no metadata syscall on that input. Unchanged
+generated inputs retain valid reuse; identity storage and comparison spend the
+existing cache/control budgets.
 The kernel's metadata on published objects is authoritative, not metadata
 copied from private output files.
 

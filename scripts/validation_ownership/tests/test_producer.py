@@ -484,6 +484,71 @@ class ProducerTests(unittest.TestCase):
             self.assertFalse((session.tree / "two.txt").exists())
         self.fixture.assert_clean(session)
 
+    def test_generated_source_replacement_invalidates_a_reader_without_stat_calls(self):
+        self.fixture.add("state/current", "original")
+        self.fixture.add("writer.py", (
+            "from pathlib import Path\nimport os,sys\n"
+            "root=Path(sys.argv[1])/'generated'\nroot.mkdir(exist_ok=True)\n"
+            "(root/'input').write_text(str(len(os.listdir('state'))))\n"
+        ))
+        self.fixture.add("marker.py", (
+            "from pathlib import Path\nimport sys\nroot=Path(sys.argv[1])/'state'\n"
+            "root.mkdir(exist_ok=True)\n(root/'new').write_text('new')\n"
+        ))
+        self.fixture.add("reader.py", (
+            "import os,sys\nfd=os.open('generated/input',os.O_RDONLY)\n"
+            "sys.stdout.write(os.read(fd,16).decode())\nos.close(fd)\n"
+        ))
+        self.fixture.add("Makefile", (
+            "WRITE1 := $(shell python3 writer.py .)\n"
+            "FIRST := $(shell python3 reader.py)\n"
+            "UNCHANGED := $(shell python3 reader.py)\n"
+            "MARK := $(shell python3 marker.py .)\n"
+            "WRITE2 := $(shell python3 writer.py .)\n"
+            "SECOND := $(shell python3 reader.py)\n"
+            "all:\n\t@printf '%s\\n' '$(FIRST)' '$(SECOND)'\n"
+        ))
+        ordinary = subprocess.run(
+            ["/usr/bin/make", "-f", "Makefile", "all"], cwd=self.root, env=ENVIRONMENT,
+            capture_output=True, check=True, timeout=10,
+        )
+        self.assertEqual(ordinary.stdout.splitlines(), [b"1", b"2"])
+        (self.root / "generated/input").unlink()
+        (self.root / "generated").rmdir()
+        (self.root / "state/new").unlink()
+        registrations = {
+            "python3 writer.py .": Command(
+                ("/usr/bin/python3", "/repo/writer.py", "/work"),
+                code=("writer.py",), directories=("state",), outputs=("generated/input",),
+            ),
+            "python3 marker.py .": Command(
+                ("/usr/bin/python3", "/repo/marker.py", "/work"),
+                code=("marker.py",), outputs=("state/new",),
+            ),
+            "python3 reader.py": Command(
+                ("/usr/bin/python3", "/repo/reader.py"),
+                code=("reader.py",), sources=("generated/input",),
+            ),
+        }
+        with self.fixture.session(seconds=30) as session:
+            execute, readers = session.command, []
+            def record(command):
+                result = execute(command)
+                if command is registrations["python3 reader.py"]:
+                    readers.append(result)
+                return result
+            with patch.object(session, "command", record):
+                observed = session.make(
+                    "all", variables=("FIRST", "UNCHANGED", "SECOND"), commands=registrations,
+                )
+            self.assertEqual(
+                [observed.semantics["domains"][name]["value"] for name in ("FIRST", "UNCHANGED", "SECOND")],
+                ["1", "1", "2"],
+            )
+            self.assertIs(readers[0], readers[1])
+            self.assertIsNot(readers[1], readers[2])
+        self.fixture.assert_clean(session)
+
     def test_live_include_preserves_actual_metadata_and_residual_resources(self):
         add = self.fixture.add
         add("choice.txt", "observed")
