@@ -3234,6 +3234,207 @@ explicit downstream integration gates under #180. Unsupported native Make
 ABIs/platforms fail rather than running a weaker probe. Roll back by reverting
 this dedicated foundation; broader validation remains required.
 
+## TC-WORKFLOW-PROBE-RUNTIME-INPUTS-001: Observe explicit runtime inputs without executing recipes
+
+### Feature and configuration
+
+Issue [#227](https://github.com/laqieer/fireemblem8-expansion/issues/227);
+the [explicit runtime-input contract](../ownership-probe-foundation.md#explicit-runtime-discovery-inputs)
+depends only on #206 / PR #212. While the parent is open, its immediate base
+is `delivery/d581-issue-206`, depth one. #226 is independent; #225 and #228 are
+not prerequisites. #180 / PR #186 owns complete-root integration, not this
+case.
+
+Use a clean Linux x86-64 checkout with GNU Make 4.3, Python 3, glibc, a
+static-capable host C compiler and the core's working private namespaces,
+pidfd/ptrace and Linux 5.12+ recursive mount attributes. Stock controls require
+the actual root-owned `/bin -> /usr/bin` link and ordinary root-owned
+`/usr/bin/mkdir`, `/usr/bin/env` and `/usr/include/stdio.h` files. Do not create
+or replace system paths to satisfy a fixture. The newlib control observes the
+real header if present, or its genuine absence; it never installs newlib.
+The include-search controls require `/usr/include/build` and `/usr/include/.dep`
+to be genuinely absent, rather than existing directories.
+
+No ROM, ARM compiler, emulator, credentials, remote mutation or subjective
+judgment is required. Use the repository's existing locked host Python when
+available; no additional Python package is required by this runtime family.
+
+### Actions
+
+1. From the repository root, run this complete ordinary/confined comparison.
+   It creates a unique owned fixture below ignored `build/test-artifacts`,
+   captures a real Git tree, and removes only that fixture in `finally`.
+   The ordinary env recipe must first create a real sentinel with its selected
+   variable removed. That sentinel is removed **before** confined observation.
+
+   ```sh
+   python3 -B - <<'PY'
+   import json
+   import os
+   import secrets
+   import shutil
+   import subprocess
+   from pathlib import Path
+   from scripts.validation_ownership.authority import AuthorityLoader, ENVIRONMENT, git_tree_entries
+   from scripts.validation_ownership.budget import MakeProbeError, ProbeBudget
+   from scripts.validation_ownership.make_probe import ProbeSession
+
+   root = Path("build/test-artifacts").resolve() / ("runtime-case-" + secrets.token_hex(8))
+   root.mkdir(parents=True)
+   header = "/usr/include/stdio.h"
+   missing = "/usr/include/" + root.name
+   names = ("HEADER", "MISSING", "PATH", "MKDIR", "ENV")
+   assert Path(header).is_file() and not Path(missing).exists()
+   assert Path("/bin").resolve() == Path("/usr/bin")
+   try:
+       makefile = (
+           "TOOLCHAIN ?= $(DEVKITARM)\nexport PATH := $(TOOLCHAIN)/bin:$(PATH)\n"
+           "export RUNTIME_INPUT_CASE := ordinary-only\n"
+           f"HEADER := $(wildcard {header})\nMISSING := $(wildcard {missing})\n"
+           "MKDIR := $(realpath /bin/mkdir)\nENV := $(realpath /bin/env)\n"
+           + "".join("$(info " + name + "=$(" + name + "))\n" for name in names)
+           + "all:\n\t@mkdir -p owned-mkdir\n"
+           "\t@env -u RUNTIME_INPUT_CASE /usr/bin/python3 -I -S -B sentinel.py\n"
+       )
+       (root / "Makefile").write_text(makefile)
+       (root / "sentinel.py").write_text(
+           "import os\nfrom pathlib import Path\n"
+           "assert 'RUNTIME_INPUT_CASE' not in os.environ\n"
+           "Path('env-executed').write_text('ordinary payload ran')\n"
+       )
+       ordinary = subprocess.run(
+           ["/usr/bin/make", "-f", "Makefile", "all"], cwd=root,
+           env=ENVIRONMENT, capture_output=True, check=True, timeout=10,
+       )
+       expected = dict(line.split("=", 1) for line in ordinary.stdout.decode().splitlines())
+       assert (root / "env-executed").read_text() == "ordinary payload ran"
+       (root / "env-executed").unlink()
+       (root / "owned-mkdir").rmdir()
+       def git(*args):
+           return subprocess.run(
+               ["/usr/bin/git", *args], cwd=root, env=ENVIRONMENT,
+               capture_output=True, check=True, timeout=10,
+           ).stdout.decode().strip()
+       git("init", "--quiet")
+       git("add", "Makefile", "sentinel.py")
+       revision = git("write-tree")
+       for requested in ((header, missing, "/bin/mkdir", "/bin/env", "/usr/bin/env"), ()):
+           budget = ProbeBudget()
+           entries = git_tree_entries(root, revision, budget=budget)
+           loader = AuthorityLoader(root, entries, revision, budget=budget)
+           session = ProbeSession(
+               loader, scratch_root=root / "build/probe", budget=budget,
+               runtime_files=requested,
+           )
+           try:
+               with session:
+                   observed = session.make("all", variables=names)
+                   assert requested, "disabled lookup must not fabricate absence"
+                   actual = {name: observed.semantics["domains"][name]["value"] for name in names}
+                   assert actual == expected
+                   assert observed.events == () and observed.semantics["dynamic_commands"] == []
+                   assert not (session.tree / "env-executed").exists()
+                   assert not (session.tree / "owned-mkdir").exists()
+                   print(json.dumps({
+                       "requested": True, "ordinary_equals_confined": actual,
+                       "runs": budget.runs, "processes": session.processes_used,
+                       "live_peak": session.live_process_peak, "syscalls": session.syscalls_used,
+                       "observations": session.observations_used, "bytes": budget.bytes,
+                       "sudo_drop": session.sudo_drop,
+                   }))
+           except MakeProbeError as error:
+               assert not requested
+               assert f"uncaptured Make runtime access: metadata {header}" in str(error), error
+               print("disabled control:", error)
+           assert not (root / "env-executed").exists()
+           assert not (root / "build/probe").exists()
+           assert session.runtime_inputs == () and session.runtime_root is None
+           assert not budget.children
+       print("runtime input case: PASS; ordinary sentinel ran, confined sentinel did not")
+   finally:
+       shutil.rmtree(root)
+   PY
+   ```
+
+2. Run the focused automation command below. The ordinary/confined controls
+   compare actual newlib wildcard/include-search behavior, explicit file bytes,
+   original/canonical mkdir and env paths, variable values/origins/flavors,
+   native recipe text and both env declaration orders. Inspect its named test
+   results; an unsupported fixture or missing tool is not a passing negative.
+3. Check the named denial controls: unrequested existing **and missing**
+   files, unrequested `/bin` aliases, escaping spellings, nonregular/replaced
+   captures, readback of intercepted images, writes, directory enumeration,
+   and unsupported `cat`/env public dispatch. Make's directory wildcard is
+   denied at its actual unrequested directory open; its exact-file wildcard
+   counterpart succeeds. A requested `cat` is actually found before the
+   authenticated dispatch rejects it. No error-regex widening substitutes
+   for those positive counterparts.
+4. Inspect the metadata controls' real syscall evidence: full
+   stat/lstat/fstat/newfstatat/statx/fstatfs/access/readlink buffers, status and
+   flags/masks. Unchanged optional Make metadata and compatible registered
+   observations must pass the same native comparison as source records.
+   Changing an owned captured timestamp must invalidate the old full record
+   without validation changing atime. Different actual command-runtime
+   inode/status results must reject reuse, not be replaced with the captured
+   object's metadata.
+5. Confirm mandatory Make/interpreter/ELF closure and phase-bound loader
+   probes remain independent of the opt-in. Low existing capture/control
+   quotas and failures must terminate with no owned processes, descriptors,
+   source/runtime backing or control files left over.
+
+### Expected result
+
+The script prints the ordinary-equal header, missing path, PATH and canonical
+tool values, the precise disabled runtime denial, and its final `PASS`.
+The ordinary env sentinel demonstrably ran; neither that payload nor the mkdir
+recipe executes in the confined observation. All focused controls pass through
+the actual syscall/Make path. Full metadata goes through the core comparator,
+not a names/types-only witness or a second optional-runtime predicate.
+
+### Negative control
+
+The same fixture without `runtime_files` rejects its existing header lookup;
+it must not choose a false-absence branch. Explicitly captured true absence is
+a separate positive, not that denial. The historical absent-env materialization
+unit control additionally models a host without env and must not install its
+interceptor. Actual true-absence assertions use the original absent paths,
+not that modeled environment. Eager, recursive and include-remake env recipes
+reject without an exact real registration; requesting env cannot produce
+unittest output. The real nonregular/replacement controls mutate only owned
+test inodes, with host-root trust checks tested independently.
+
+### Interactions and save compatibility
+
+Reuses #206's source admission, persistent complete read-only/noexec source
+mount, authenticated dispatch, metadata frames/native comparison and aggregate
+lifecycle. The optional runtime capture is fixed for that session; selection
+across views is separately owned by #226, not a prerequisite here.
+No generated producer, native Make registration or dependency-only action is
+introduced. Game/profile conflicts are **none**. No save/migration, game/config
+identity, ROM/RAM, localization, generated game output, modern/archival profile,
+budget number, workflow topology/publisher, service or permission changes.
+
+### Automation
+
+```sh
+python3 -m unittest scripts.validation_ownership.tests.test_foundation -k runtime_inputs -k stock_runtime_alias -k explicit_env -k absent_captured_env -k make_uncaptured_runtime -v
+```
+
+The required core metadata/closure/lifecycle neighbors remain in their existing
+family; no duplicate channel-policy tests or whole-root report are introduced.
+
+### Cleanup and limitations
+
+The script and tests remove their own fixtures; session teardown also clears
+runtime records and removes persistent owned backing after failure or quota
+exhaustion. Do not remove or modify host includes, `/bin`, env or Make images.
+Unsupported layouts, metadata reuse and host/kernel facilities reject rather
+than falling back to live mounts, fabricated metadata or arbitrary execution.
+This proves the optional runtime contract, not the complete #180 report,
+producer/view/dependency integration or ROM behavior. No manual-only criterion
+remains; rollback removes the optional layer or fixes forward without widening
+the mandatory core.
+
 ## TC-WORKFLOW-AGENT-HANDOFF-001: Validate bounded exact-SHA agent handoffs
 
 - **Feature / originating issue:** `workflow-governance` /

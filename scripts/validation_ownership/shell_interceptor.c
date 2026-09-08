@@ -135,8 +135,8 @@ static int metadata_matches(int directory, const char *name)
         path_size = metadata_u32(&cursor);
         before_size = metadata_u32(&cursor);
         after_size = metadata_u32(&cursor);
-        if (path_size < 5 || path_size > 4096 || path_size > (size_t)(end - cursor)
-            || memcmp(cursor, "/repo", 5) || (path_size > 5 && cursor[5] != '/')
+        if (path_size < 1 || path_size > 4096 || path_size > (size_t)(end - cursor)
+            || cursor[0] != '/'
             || memchr(cursor, 0, path_size))
         {
             outcome = 125;

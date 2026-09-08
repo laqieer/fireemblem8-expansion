@@ -57,18 +57,22 @@ class FoundationTests(unittest.TestCase):
         destination.write_bytes(data)
         self.entries[path] = GitTreeEntry(path, mode, "blob", hashlib.sha1(data).hexdigest())
 
-    def session(self, **limits):
+    def session(self, *, runtime_files=(), **limits):
         budget = ProbeBudget(Limits(**limits))
         return ProbeSession(
             AuthorityLoader(self.root, GitTreeEntries(self.entries, budget=budget), budget=budget),
             scratch_root=self.scratch,
             budget=budget,
+            runtime_files=runtime_files,
         )
 
     def assert_clean(self, session):
         self.assertFalse(session.cache)
         self.assertFalse(session.mappings)
         self.assertFalse(session.make_runtime)
+        self.assertFalse(session.runtime_inputs)
+        self.assertFalse(session.runtime_dispatch)
+        self.assertIsNone(session.runtime_root)
         self.assertFalse(session.budget.children)
         self.assertIsNone(session.snapshot)
         self.assertIsNone(session.base)
@@ -134,6 +138,556 @@ class FoundationTests(unittest.TestCase):
                 with self.assertRaises(TypeError):
                     operation()
         self.assertFalse(self.scratch.exists())
+
+    def test_runtime_inputs_capture_real_present_absent_and_ancestor_search(self):
+        present = "/usr/include/stdio.h"
+        absent = "/usr/include/ownership-probe-" + secrets.token_hex(12)
+        self.assertTrue(Path(present).is_file())
+        self.assertFalse(Path(absent).exists())
+        self.add("Makefile", (
+            f"PRESENT := $(wildcard {present})\nABSENT := $(wildcard {absent})\n"
+            f"CHILD := $(wildcard {absent}/child.h)\n"
+            "all:\n\t@printf '%s\\n' '$(PRESENT)' '$(ABSENT)' '$(CHILD)'\n"
+        ))
+        ordinary = subprocess.run(
+            ["/usr/bin/make", "-f", "Makefile", "all"], cwd=self.root,
+            env=ENVIRONMENT, capture_output=True, check=True, timeout=10,
+        ).stdout.decode("ascii").splitlines()
+        with self.session(runtime_files=(present, absent)) as session:
+            captured = {item.path: item for item in session.runtime_inputs}
+            self.assertEqual(captured[present].data, Path(present).read_bytes())
+            self.assertEqual(captured[present].mode, stat.S_IMODE(Path(present).stat().st_mode))
+            self.assertIsNone(captured[absent].data)
+            self.assertIn(("/usr/include", True), captured[absent].parents)
+            output = session.make("all", variables=("PRESENT", "ABSENT", "CHILD"))
+            for name, value in zip(("PRESENT", "ABSENT", "CHILD"), ordinary):
+                self.assertEqual(output.semantics["domains"][name]["value"], value)
+            self.assertNotEqual(output.execution_digest, session.snapshot.digest)
+            self.assertFalse((session.tree / "usr/include").exists())
+        self.assert_clean(session)
+
+    def test_runtime_inputs_native_newlib_discovery_and_include_search(self):
+        present = "/usr/include/newlib/stdlib.h"
+        absent = ("/usr/include/build", "/usr/include/.dep")
+        for path in absent:
+            self.assertFalse(Path(path).exists(), path)
+        self.add("Makefile", (
+            "ifeq ($(origin MODERN_NEWLIB_INCLUDE),undefined)\n"
+            "  ifneq ($(wildcard /usr/include/newlib/stdlib.h),)\n"
+            "    MODERN_NEWLIB_INCLUDE := /usr/include/newlib\n"
+            "  else\n    MODERN_NEWLIB_INCLUDE :=\n  endif\nendif\n"
+            "-include build/optional.d .dep/optional.d\n"
+            "all:\n\t@printf '%s\\n' '$(MODERN_NEWLIB_INCLUDE)'\n"
+        ))
+        ordinary = subprocess.run(
+            ["/usr/bin/make", "-f", "Makefile", "all"], cwd=self.root,
+            env=ENVIRONMENT, capture_output=True, check=True, timeout=10,
+        )
+        self.assertEqual(ordinary.stdout.strip(), b"/usr/include/newlib" if Path(present).is_file() else b"")
+        with self.session(runtime_files=(present, *absent)) as session:
+            result = session.make("all", variables=("MODERN_NEWLIB_INCLUDE",))
+            self.assertEqual(result.semantics["domains"]["MODERN_NEWLIB_INCLUDE"]["value"],
+                             ordinary.stdout.decode().strip())
+            self.assertEqual(result.semantics["domains"]["MODERN_NEWLIB_INCLUDE"]["origin"], "file")
+            self.assertFalse((session.tree / "build/optional.d").exists())
+            self.assertFalse((session.tree / ".dep/optional.d").exists())
+        self.assert_clean(session)
+
+    def test_runtime_inputs_read_only_exact_bytes_and_capture_limits(self):
+        from scripts.validation_ownership.make_probe import _capture_runtime_input
+        path = "/usr/lib/x86_64-linux-gnu/libc.so"
+        expected = Path(path).read_bytes()
+        self.assertGreater(len(expected), 0)
+        self.add("Makefile", f"VALUE := $(file <{path})\n$(info $(VALUE))\nall: ;\n")
+        ordinary = subprocess.run(
+            ["/usr/bin/make", "-f", "Makefile", "all"], cwd=self.root,
+            env=ENVIRONMENT, capture_output=True, check=True, timeout=10,
+        )
+        with self.session(runtime_files=(path,)) as session:
+            captured, = session.runtime_inputs
+            self.assertEqual(captured.data, expected)
+            result = session.make("all", variables=("VALUE",))
+            self.assertEqual(result.stdout, ordinary.stdout)
+        self.assert_clean(session)
+        for limits, message in (
+            ({"control_bytes": len(expected) - 1}, "aggregate control byte"),
+            ({"file_bytes": len(expected) - 1}, "exceeds byte bound"),
+        ):
+            with self.subTest(limits=limits):
+                budget = ProbeBudget(Limits(**limits))
+                with self.assertRaisesRegex(MakeProbeError, message):
+                    _capture_runtime_input(path, budget)
+                self.assertTrue(budget.failed)
+                self.assertEqual(budget.runs, 0)
+                self.assertFalse(budget.children)
+        with self.assertRaisesRegex(MakeProbeError, "count/duplicates"):
+            self.session(runtime_files=(path, "/usr/include/stdio.h"), pending=1)
+        self.assertFalse(self.scratch.exists())
+
+    def test_runtime_inputs_keep_mandatory_closure_and_late_loader_guards(self):
+        for expression, error in (
+            ("$(wildcard /etc/ld.so.cache)", "uncaptured Make runtime access: metadata /etc/ld.so.cache"),
+            ("$(file </etc/ld.so.preload)", "uncaptured Make runtime access: read /etc/ld.so.preload"),
+            ("$(wildcard /usr/lib/x86_64-linux-gnu/glibc-hwcaps/x86-64-v3/libc.so.6)",
+             "uncaptured Make runtime access: metadata /usr/lib/x86_64-linux-gnu/glibc-hwcaps/x86-64-v3/libc.so.6"),
+        ):
+            with self.subTest(expression=expression):
+                self.add("Makefile", f"VALUE := {expression}\nall: ;\n")
+                with self.session(runtime_files=("/usr/include/stdio.h", "/bin/env")) as session:
+                    with self.assertRaisesRegex(MakeProbeError, re.escape(error)):
+                        session.make("all")
+                self.assert_clean(session)
+        self.add("Makefile", "VALUE := $(wildcard /usr/include/stdio.h)\nall: ;\n")
+        with self.session(runtime_files=("/usr/include/stdio.h",)) as session:
+            self.assertGreaterEqual(len(session.make_runtime), 3)
+            self.assertEqual(session.make("all", variables=("VALUE",)).semantics["domains"]["VALUE"]["value"],
+                             "/usr/include/stdio.h")
+        self.assert_clean(session)
+        closure = _make_runtime(ProbeBudget())
+        interpreter = _make_interpreter(dict(closure)["/usr/bin/make"])
+        for image in ("/usr/bin/make", str(Path(interpreter).resolve())):
+            with self.subTest(image=image):
+                with self.assertRaisesRegex(MakeProbeError, "execution image"):
+                    with self.session(runtime_files=("/usr/include/stdio.h", image)):
+                        self.fail("optional input replaced mandatory closure")
+                self.assertFalse(self.scratch.exists())
+
+    def test_runtime_inputs_do_not_admit_unrequested_paths_writes_or_enumeration(self):
+        missing = "/usr/include/ownership-unrequested-" + secrets.token_hex(12)
+        self.assertFalse(Path(missing).exists())
+        self.assertTrue(Path("/usr/include/stdlib.h").is_file())
+        for expression, expected in (
+            ("$(wildcard /usr/include/stdlib.h)", "uncaptured Make runtime access: metadata /usr/include/stdlib.h"),
+            (f"$(wildcard {missing})", "uncaptured Make runtime access: metadata " + missing),
+            ("$(file </usr/include/stdlib.h)", "uncaptured Make runtime access: read /usr/include/stdlib.h"),
+            ("$(wildcard /usr/include/*)", "uncaptured Make runtime access: read /usr/include"),
+            ("$(file >/usr/include/stdio.h,changed)", "write outside private command output"),
+        ):
+            with self.subTest(expression=expression):
+                self.add("Makefile", f"VALUE := {expression}\nall: ;\n")
+                session = self.session(runtime_files=("/usr/include/stdio.h",))
+                with self.assertRaisesRegex(MakeProbeError, re.escape(expected)):
+                    with session:
+                        session.make("all")
+                self.assert_clean(session)
+        for paths in (
+            ("/usr/include/stdio.h", "/usr/include/stdio.h"), ("/etc/passwd",),
+            ("/usr/include/../include/stdio.h",), ("/usr/include/*",),
+            ("/usr/include",), ("/usr/bin/make",), ("relative",),
+            ("/usr/include/stdio.h", "/usr/include/stdio.h/child"),
+        ):
+            with self.subTest(paths=paths):
+                with self.assertRaises((MakeProbeError, OSError)):
+                    with self.session(runtime_files=paths):
+                        self.fail("invalid runtime input accepted")
+                self.assertFalse(self.scratch.exists())
+
+    def test_runtime_inputs_share_capture_and_control_quota_across_calls(self):
+        self.add("Makefile", "HEADER := $(wildcard /usr/include/stdio.h)\nall: ;\n")
+        with self.session(runtime_files=("/usr/include/stdio.h",)) as session:
+            runtime, backing = session.runtime_inputs, session.runtime_root
+            first = session.make("all", variables=("HEADER",))
+            charged, deadline = session.budget.bytes["control"], session.budget.deadline
+            with patch(
+                "scripts.validation_ownership.make_probe._capture_runtime_input",
+                side_effect=AssertionError("runtime was captured again"),
+            ):
+                second = session.make("all", variables=("HEADER",))
+            self.assertEqual(first.semantic_digest, second.semantic_digest)
+            self.assertIs(session.runtime_inputs, runtime)
+            self.assertIs(session.runtime_root, backing)
+            self.assertGreater(session.budget.bytes["control"], charged)
+            self.assertEqual(session.budget.deadline, deadline)
+            remaining = session.budget.limits.control_bytes - session.budget.bytes["control"]
+            session.budget.charge("control", remaining - 1)
+            runs = session.budget.runs
+            with self.assertRaisesRegex(MakeProbeError, "control byte"):
+                session.make("all")
+            self.assertEqual(session.budget.runs, runs)
+        self.assert_clean(session)
+
+    def test_runtime_inputs_metadata_uses_shared_guest_revalidation(self):
+        present = "/usr/include/stdio.h"
+        absent = "/usr/include/ownership-metadata-" + secrets.token_hex(12)
+        library = "/usr/lib/x86_64-linux-gnu/libc.so"
+        self.assertTrue(Path(library).is_file())
+        self.assertFalse(Path(absent).exists())
+        self.add("data/value", "captured source")
+        self.add("reader.py", (
+            "import json,os\n"
+            f"print(json.dumps([os.access({library!r},os.R_OK),os.stat('data/value').st_ino]))\n"
+        ))
+        self.add("Makefile", (
+            f"PRESENT := $(wildcard {present})\nABSENT := $(wildcard {absent})\n"
+            "CANON := $(realpath /bin/mkdir)\nVALUE := $(shell python3 reader.py)\nall: ;\n"
+        ))
+        command = Command(
+            ("/usr/bin/python3", "/repo/reader.py"), code=("reader.py",), sources=("data/value",),
+        )
+        with self.session(runtime_files=(present, absent, library, "/bin/mkdir")) as session:
+            first = session.command(command)
+            self.assertTrue(json.loads(first.stdout)[0])
+            self.assertTrue(any(record[1] == library and record[6] == 0 for record in first.metadata))
+            self.assertIs(session.command(command), first)
+            reports, run = [], session._sandbox_run
+            def record(root, **kwargs):
+                completed, observed = run(root, **kwargs)
+                if kwargs["mode"] == "make":
+                    reports.append(observed)
+                return completed, observed
+            with patch.object(session, "_sandbox_run", record):
+                result = session.make(
+                    "all", variables=("PRESENT", "ABSENT", "CANON", "VALUE"),
+                    commands={"python3 reader.py": command},
+                )
+            self.assertEqual(result.semantics["domains"]["VALUE"]["value"], first.stdout.decode().strip())
+            self.assertTrue(all(event["match"] >= 0 for event in result.events))
+            metadata = reports[-1]["metadata"]
+            self.assertTrue({present, absent, "/bin", "/usr/bin/mkdir"} <= {row[1] for row in metadata})
+            header = next(row for row in metadata if row[1] == present and row[0] in {4, 262})
+            missing = next(row for row in metadata if row[1] == absent and row[0] in {4, 262})
+            self.assertEqual((header[4], header[6], len(bytes.fromhex(header[8]))), (144, 0, 144))
+            self.assertEqual(missing[6], -errno.ENOENT)
+            owned = session.runtime_root / present.lstrip("/")
+            self.assertEqual(struct.unpack_from("<Q", bytes.fromhex(header[8]), 8)[0], owned.stat().st_ino)
+            before = owned.stat()
+            combined = (*first.metadata, *metadata)
+            self.assertTrue(session._metadata_matches(combined))
+            self.assertEqual(owned.stat(), before)
+            os.utime(owned, ns=(before.st_atime_ns, before.st_mtime_ns + 1000000000))
+            changed = owned.stat()
+            self.assertFalse(session._metadata_matches(combined))
+            self.assertEqual(owned.stat(), changed)
+            with patch.object(session, "_sandbox_run", record):
+                session.make("all", variables=("PRESENT",), commands={"python3 reader.py": command})
+            self.assertNotEqual(reports[-1]["metadata"], metadata)
+            self.assertTrue(session._metadata_matches(reports[-1]["metadata"]))
+        self.assert_clean(session)
+
+    def test_runtime_inputs_capture_full_optional_buffers_status_flags_and_masks(self):
+        path = "/usr/lib/x86_64-linux-gnu/libc.so"
+        self.assertTrue(Path(path).is_file())
+        self.add("reader.py", (
+            "import ctypes,json,os\n"
+            "libc=ctypes.CDLL(None,use_errno=True); libc.syscall.restype=ctypes.c_long\n"
+            f"fd=os.open({path!r},os.O_RDONLY); path=ctypes.c_char_p({os.fsencode(path)!r}); results=[]\n"
+            "for number,flags,mask,size in "
+            "((4,0,0,144),(6,0,0,144),(5,0,0,144),(262,256,0,144),"
+            "(332,256,2047,256),(332,0,8191,256),(138,0,0,120),"
+            "(21,4,0,0),(269,0,4,0),(439,512,2,0),(89,0,0,32),(267,0,0,32)):\n"
+            " buffer=ctypes.create_string_buffer(bytes([165])*size,size) if size else None\n"
+            " target=ctypes.byref(buffer) if size else None\n"
+            " if number in (4,6): args=(path,target)\n"
+            " elif number in (5,138): args=(ctypes.c_long(fd),target)\n"
+            " elif number==262: args=(ctypes.c_long(-100),path,target,ctypes.c_ulong(flags))\n"
+            " elif number==332: args=(ctypes.c_long(-100),path,ctypes.c_ulong(flags),ctypes.c_ulong(mask),target)\n"
+            " elif number==21: args=(path,ctypes.c_ulong(flags))\n"
+            " elif number==269: args=(ctypes.c_long(-100),path,ctypes.c_ulong(mask))\n"
+            " elif number==439: args=(ctypes.c_long(-100),path,ctypes.c_ulong(mask),ctypes.c_ulong(flags))\n"
+            " elif number==89: args=(path,target,ctypes.c_ulong(size))\n"
+            " else: args=(ctypes.c_long(-100),path,target,ctypes.c_ulong(size))\n"
+            " ctypes.set_errno(0); result=libc.syscall(ctypes.c_long(number),*args)\n"
+            " results.append([number,flags,mask,result if result>=0 else -ctypes.get_errno(),"
+            " '' if buffer is None else buffer.raw.hex()])\n"
+            "os.close(fd); print(json.dumps(results))\n"
+        ))
+        command = Command(("/usr/bin/python3", "/repo/reader.py"), code=("reader.py",))
+        with self.session(runtime_files=(path,)) as session:
+            output = session.command(command)
+            returned = json.loads(output.stdout)
+            records = tuple(row for row in output.metadata if row[1] == path)
+            for number, flags, mask, status, data in returned:
+                with self.subTest(number=number, flags=flags, mask=mask):
+                    self.assertTrue(any(
+                        row[:4] == (number, path, flags, mask) and row[6] == status and row[8] == data
+                        for row in records
+                    ))
+            self.assertEqual([row[3] for row in returned[:9]], [0]*9)
+            self.assertIn(returned[9][3], (-errno.EACCES, -errno.EROFS))
+            self.assertEqual([row[3] for row in returned[10:]], [-errno.EINVAL]*2)
+            compatible = tuple(row for row in records if row[0] in {21, 269, 89, 267})
+            self.assertTrue(session._metadata_matches(compatible))
+            access = next(row for row in records if row[0] == 21)
+            wrong_status = (*access[:6], -errno.ENOENT, *access[7:])
+            write_access = (*access[:2], os.W_OK, *access[3:])
+            effective = next(row for row in records if row[0] == 269)
+            write_mask = (*effective[:3], os.W_OK, *effective[4:])
+            for mutation in (wrong_status, write_access, write_mask):
+                with self.subTest(mutation=mutation[:7]):
+                    self.assertFalse(session._metadata_matches((mutation,)))
+            # Existing command runtime rights still see their own real runtime,
+            # not a forged stat result for Make's captured inode.
+            self.assertNotEqual(
+                struct.unpack_from("<Q", bytes.fromhex(returned[0][4]), 8)[0],
+                (session.runtime_root / path.lstrip("/")).stat().st_ino,
+            )
+            self.assertFalse(session._metadata_matches(records))
+            self.assertIsNot(session.command(command), output)
+        self.assert_clean(session)
+
+    def test_runtime_inputs_reject_nonregular_and_replaced_capture(self):
+        from scripts.validation_ownership.make_probe import _capture_runtime_input
+        for path in ("/usr/bin/python3", "/usr/include/x86_64-linux-gnu"):
+            with self.subTest(path=path):
+                self.assertTrue(Path(path).exists())
+                with self.assertRaisesRegex(MakeProbeError, "ordinary regular file"):
+                    _capture_runtime_input(path, ProbeBudget())
+        owned = self.directory / "runtime-input"
+        owned.write_bytes(b"before")
+        # Keep the host-root trust check separate; mutate only this owned inode
+        # while exercising the real bounded capture/read and replacement checks.
+        def trusted(path, **kwargs):
+            self.assertEqual(path, str(owned))
+            return owned
+        with patch("scripts.validation_ownership.make_probe._trusted_runtime_path", trusted):
+            self.assertEqual(_capture_runtime_input(str(owned), ProbeBudget()).data, b"before")
+            for kind in ("directory", "symlink", "fifo"):
+                owned.unlink()
+                if kind == "directory":
+                    owned.mkdir()
+                elif kind == "symlink":
+                    owned.symlink_to("absent")
+                else:
+                    os.mkfifo(owned)
+                with self.subTest(kind=kind):
+                    with self.assertRaisesRegex(MakeProbeError, "ordinary regular file"):
+                        _capture_runtime_input(str(owned), ProbeBudget())
+                if kind == "directory":
+                    owned.rmdir()
+                else:
+                    owned.unlink()
+                owned.write_bytes(b"before")
+            budget = ProbeBudget()
+            read = budget.read_bytes
+            replacement = self.directory / "replacement"
+            replacement.write_bytes(b"after!")
+            def replaced(path, category):
+                data = read(path, category)
+                replacement.replace(owned)
+                return data
+            with patch.object(budget, "read_bytes", replaced):
+                with self.assertRaisesRegex(MakeProbeError, "changed during capture"):
+                    _capture_runtime_input(str(owned), budget)
+
+    def test_runtime_inputs_interrupted_setup_and_metadata_remove_owned_state(self):
+        self.add("Makefile", "all: ;\n")
+        self.add("reader.py", "import os\nprint(os.stat('Makefile').st_ino)\n")
+        for stage in ("runtime-setup", "metadata"):
+            with self.subTest(stage=stage):
+                session = self.session(runtime_files=("/usr/include/stdio.h", "/bin/env"))
+                build_root = session._new_root
+                descriptors = set(os.listdir("/proc/self/fd"))
+                def interrupted_root(name, **kwargs):
+                    root = build_root(name, **kwargs)
+                    if name == "runtime" and stage == "runtime-setup":
+                        raise KeyboardInterrupt("runtime setup interrupted")
+                    return root
+                with self.assertRaisesRegex(KeyboardInterrupt, "runtime .* interrupted"):
+                    with patch.object(session, "_new_root", interrupted_root):
+                        with session:
+                            command = Command(
+                                ("/usr/bin/python3", "/repo/reader.py"),
+                                code=("reader.py",), sources=("Makefile",),
+                            )
+                            session.command(command)
+                            run = session._sandbox_run
+                            def interrupted_validation(root, **kwargs):
+                                if kwargs.get("metadata_validation"):
+                                    raise KeyboardInterrupt("runtime metadata interrupted")
+                                return run(root, **kwargs)
+                            with patch.object(session, "_sandbox_run", interrupted_validation):
+                                session.command(command)
+                self.assert_clean(session)
+                self.assertEqual(set(os.listdir("/proc/self/fd")), descriptors)
+
+    def test_stock_runtime_alias_preserves_root_path_and_native_dispatch(self):
+        self.assertEqual(Path("/bin").resolve(), Path("/usr/bin"))
+        self.add("Makefile", (
+            "TOOLCHAIN ?= $(DEVKITARM)\nexport PATH := $(TOOLCHAIN)/bin:$(PATH)\n"
+            "CANON := $(realpath /bin/mkdir)\n$(info $(PATH))\n$(info $(CANON))\n"
+            "all:\n\t@mkdir -p build/owned\n"
+        ))
+        normal = subprocess.run(
+            ["/usr/bin/make", "-f", "Makefile", "all"], cwd=self.root,
+            env=ENVIRONMENT, capture_output=True, check=True, timeout=10,
+        ).stdout.decode().splitlines()
+        self.assertTrue((self.root / "build/owned").is_dir())
+        (self.root / "build/owned").rmdir()
+        with self.session(runtime_files=("/bin/mkdir",)) as session:
+            item, = session.runtime_inputs
+            self.assertEqual(item.canonical, "/usr/bin/mkdir")
+            self.assertIn(("/bin", "usr/bin"), item.aliases)
+            result = session.make("all", variables=("PATH", "CANON"))
+            self.assertEqual(result.semantics["domains"]["PATH"]["value"], normal[0])
+            self.assertEqual(result.semantics["domains"]["CANON"]["value"], normal[1])
+            self.assertEqual(result.events, ())
+            self.assertFalse((session.tree / "build/owned").exists())
+            self.assertFalse((self.root / "build/owned").exists())
+        self.assert_clean(session)
+
+    def test_stock_runtime_alias_rejects_unrequested_escape_read_and_collision(self):
+        for expression, message in (
+            ("$(wildcard /bin/rm)", "unrequested stock runtime alias"),
+            ("$(file </bin/mkdir)", "metadata/dispatch only"),
+            ("$(file >/bin/mkdir,changed)", "write outside"),
+            ("$(wildcard /bin/../bin/mkdir)", "unrequested stock runtime alias"),
+        ):
+            with self.subTest(expression=expression):
+                self.add("Makefile", f"VALUE := {expression}\nall: ;\n")
+                with self.assertRaisesRegex(MakeProbeError, message):
+                    with self.session(runtime_files=("/bin/mkdir",)) as session:
+                        session.make("all")
+                self.assert_clean(session)
+        self.add("Makefile", "all: ;\n")
+        with self.assertRaisesRegex(MakeProbeError, "execution image"):
+            with self.session(runtime_files=("/bin/make",)):
+                self.fail("stock alias replaced trusted Make")
+        from scripts.validation_ownership.make_probe import _capture_runtime_input
+        original_stat, original_resolve = Path.lstat, Path.resolve
+        def mutable(path):
+            info = original_stat(path)
+            return SimpleNamespace(st_uid=1000, st_mode=info.st_mode) if path == Path("/bin") else info
+        with patch.object(Path, "lstat", mutable):
+            with self.assertRaisesRegex(MakeProbeError, "mutable/untrusted"):
+                _capture_runtime_input("/bin/mkdir", ProbeBudget())
+        with patch.object(Path, "resolve", lambda path, **kw: self.root if path == Path("/bin") else original_resolve(path, **kw)):
+            with self.assertRaisesRegex(MakeProbeError, "nonstock/escaping"):
+                _capture_runtime_input("/bin/mkdir", ProbeBudget())
+
+    def env_recipe_fixture(self, program="env"):
+        cleared = (
+            "MAKEFLAGS", "MFLAGS", "MAKEOVERRIDES", "ASSET_MANIFEST", "ASSET_OUTPUT_DIR",
+            "EXPANSION_CUSTOM_SPELL_EFFECTS", "FE8_ITEM_ID_CAP",
+        )
+        recipe = program + " " + " ".join("-u " + name for name in cleared)
+        recipe += " $(PYTHON) -I -S -B sentinel.py"
+        self.add("sentinel.py", (
+            "import json,os\n"
+            "with open('env-executed','w') as output:\n"
+            " json.dump({name:os.environ.get(name) for name in " + repr(cleared) + "},output)\n"
+        ))
+        names = ("PATH", "CANON", "PYTHON", "SHELL", "MAKEFLAGS", "MFLAGS")
+        metadata = "".join(
+            "$(info $(" + form + name + "))\n"
+            for name in names for form in ("", "origin ", "flavor ")
+        )
+        path = "/bin/env" if program == "env" else program
+        self.add("Makefile", (
+            "TOOLCHAIN ?= $(DEVKITARM)\nexport PATH := $(TOOLCHAIN)/bin:$(PATH)\n"
+            "PYTHON := /usr/bin/python3\nexport ASSET_MANIFEST := observed-input\n"
+            "CANON := $(realpath " + path + ")\n" + metadata + "all:\n\t@" + recipe + "\n"
+        ))
+        return recipe, names, cleared
+
+    def test_explicit_env_recipe_preserves_native_context_without_executing_payload(self):
+        for program, requested in (
+            ("env", ("/bin/env",)),
+            ("/bin/env", ("/bin/env",)),
+            ("/usr/bin/env", ("/usr/bin/env",)),
+            ("env", ("/bin/env", "/usr/bin/env")),
+            ("env", ("/usr/bin/env", "/bin/env")),
+        ):
+            with self.subTest(program=program, requested=requested):
+                recipe, names, cleared = self.env_recipe_fixture(program)
+                ordinary = subprocess.run(
+                    ["/usr/bin/make", "-f", "Makefile", "all"], cwd=self.root,
+                    env=ENVIRONMENT, capture_output=True, check=True, timeout=10,
+                )
+                effect = self.root / "env-executed"
+                self.assertEqual(json.loads(effect.read_text()), {name: None for name in cleared})
+                effect.unlink()
+                values = ordinary.stdout.decode().splitlines()
+                self.assertEqual(len(values), 3*len(names))
+                expected = {
+                    name: dict(zip(("value", "origin", "flavor"), values[index*3:index*3+3]))
+                    for index, name in enumerate(names)
+                }
+                with self.session(runtime_files=requested) as session:
+                    image = (session.runtime_root / "usr/bin/env").read_bytes()
+                    self.assertEqual(image, (session.base / "interceptor").read_bytes())
+                    self.assertTrue(all(image != item.data for item in session.runtime_inputs))
+                    observed = session.make("all", variables=names)
+                    self.assertEqual(observed.semantics["domains"], expected)
+                    self.assertEqual(observed.semantics["files"][0]["recipe"], "@" + recipe + "\n")
+                    self.assertEqual(observed.semantics["files"][0]["source"], "Makefile")
+                    self.assertEqual(observed.events, ())
+                    self.assertEqual(observed.semantics["dynamic_commands"], [])
+                    self.assertFalse(effect.exists())
+                    self.assertFalse((session.tree / "env-executed").exists())
+                self.assert_clean(session)
+
+    def test_explicit_env_does_not_grant_eager_or_public_execution(self):
+        recipe, _, _ = self.env_recipe_fixture()
+        actual = recipe.replace("$(PYTHON)", "/usr/bin/python3")
+        for makefile in (
+            "VALUE := $(shell " + actual + ")\nall: ;\n",
+            "all:\n\t+@" + actual + "\n",
+            "include generated.mk\ngenerated.mk:\n\t@" + actual + "\nall: ;\n",
+        ):
+            with self.subTest(makefile=makefile):
+                self.add("Makefile", makefile)
+                with self.session(runtime_files=("/bin/env", "/usr/bin/env")) as session:
+                    with self.assertRaisesRegex(MakeProbeError, "unregistered eager/recursive"):
+                        session.make("all")
+                    self.assertFalse((session.tree / "env-executed").exists())
+                self.assert_clean(session)
+        for program in ("/bin/env", "/usr/bin/env"):
+            with self.subTest(program=program):
+                with self.session(runtime_files=("/bin/env", "/usr/bin/env")) as session:
+                    runs = session.budget.runs
+                    with self.assertRaisesRegex(MakeProbeError, "supported exact trusted argv"):
+                        session.command(Command((program, "/usr/bin/python3", "/repo/sentinel.py")))
+                    self.assertEqual(session.budget.runs, runs)
+                self.assert_clean(session)
+
+    def test_explicit_env_keeps_spelling_read_image_and_other_program_boundaries(self):
+        self.assertTrue(Path("/usr/bin/cat").is_file())
+        for content, requested, error in (
+            ("all:\n\t@/usr/bin/env /usr/bin/true\n", (), "uncaptured Make runtime access: metadata /usr/bin/env"),
+            ("all:\n\t@/bin/env /usr/bin/true\n",
+             ("/bin/mkdir", "/usr/bin/env"), "unrequested stock runtime alias"),
+            ("VALUE := $(file </bin/env)\nall: ;\n", ("/bin/env",), "metadata/dispatch only"),
+            ("VALUE := $(file </usr/bin/env)\nall: ;\n", ("/bin/env",), "metadata/dispatch only"),
+            ("VALUE := $(wildcard /bin/../bin/env)\nall: ;\n", ("/bin/env",), "unrequested stock runtime alias"),
+            ("VALUE := $(file >/usr/bin/env,changed)\nall: ;\n", ("/bin/env",), "write outside"),
+            ("all:\n\t@/usr/bin/cat Makefile\n", ("/bin/env", "/usr/bin/cat"), "untrusted executable dispatch"),
+        ):
+            with self.subTest(content=content, requested=requested):
+                self.add("Makefile", content)
+                with self.assertRaisesRegex(MakeProbeError, error):
+                    with self.session(runtime_files=requested) as session:
+                        session.make("all")
+                self.assert_clean(session)
+        self.add("Makefile", "all: ;\n")
+        for collision in ("/usr/bin/python3", "/bin/make", "/usr/bin/bash"):
+            with self.subTest(collision=collision):
+                with self.assertRaisesRegex(MakeProbeError, "execution image|ordinary regular file"):
+                    with self.session(runtime_files=("/bin/env", collision)):
+                        self.fail("env request replaced an existing trusted image")
+        from scripts.validation_ownership.make_probe import _capture_runtime_input
+        original_stat, original_resolve = Path.lstat, Path.resolve
+        def mutable(path):
+            info = original_stat(path)
+            return SimpleNamespace(st_uid=1000, st_mode=info.st_mode) if path == Path("/bin") else info
+        with patch.object(Path, "lstat", mutable):
+            with self.assertRaisesRegex(MakeProbeError, "mutable/untrusted"):
+                _capture_runtime_input("/bin/env", ProbeBudget())
+        with patch.object(Path, "resolve", lambda path, **kw: self.root if path == Path("/bin") else original_resolve(path, **kw)):
+            with self.assertRaisesRegex(MakeProbeError, "nonstock/escaping"):
+                _capture_runtime_input("/bin/env", ProbeBudget())
+
+    def test_absent_captured_env_does_not_materialize_an_interceptor(self):
+        from scripts.validation_ownership.make_probe import _capture_runtime_input
+        self.add("Makefile", "ENV := $(wildcard /usr/bin/env)\nall: ;\n")
+        def absent(path, budget):
+            return replace(_capture_runtime_input(path, budget), data=None, mode=None)
+        with patch("scripts.validation_ownership.make_probe._capture_runtime_input", absent):
+            with self.session(runtime_files=("/usr/bin/env",)) as session:
+                self.assertEqual(session.runtime_dispatch, ())
+                observed = session.make("all", variables=("ENV",))
+                self.assertEqual(observed.semantics["domains"]["ENV"]["value"], "")
+                self.assertFalse((session.runtime_root / "usr/bin/env").exists())
+            self.assert_clean(session)
 
     def gitlink_git(self, root, *args, input=None):
         return subprocess.run(
@@ -1429,6 +1983,10 @@ raise AssertionError("default termination was lost")
                 MakeProbeError, "uncaptured Make runtime access: metadata " + re.escape(path),
             ):
                 session.make("all", variables=("VALUE",))
+        self.assert_clean(session)
+        with self.session(runtime_files=(path,)) as session:
+            observed = session.make("all", variables=("VALUE",))
+            self.assertEqual(observed.semantics["domains"]["VALUE"]["value"], "selected")
         self.assert_clean(session)
 
     def test_make_runtime_probe_permissions_end_at_native_bootstrap(self):

@@ -433,6 +433,13 @@ class Policy:
                     resolved.pop()
                 continue
             if follow_final or pending:
+                alias = "/" + "/".join((*resolved, part))
+                if (self.mode == "make" or self.config.get("metadata_validation")) and alias in self.config.get("runtime_aliases", ()):
+                    allowed = set(self.config["executables"]) | set(self.config.get("runtime_files", ())) | set(
+                        self.config.get("runtime_parents", ()),
+                    )
+                    if ".." in name.split("/") or posixpath.normpath(name) not in allowed:
+                        raise Violation(f"unrequested stock runtime alias spelling: {name}")
                 try:
                     target = os.readlink(Path(self.config["root"]).joinpath(*resolved, part))
                 except OSError as error:
@@ -521,9 +528,12 @@ class Policy:
         return int(match[1])
 
     def begin_metadata(self, pid, state, r, path):
+        optional = self.runtime_metadata(
+            path, parents=self.mode == "make" or bool(self.config.get("metadata_validation")),
+        )
         if (
-            not (path == "/repo" or path.startswith("/repo/"))
-            or self.mode == "make" and state.role != "helper"
+            not (path == "/repo" or path.startswith("/repo/") or optional)
+            or self.mode == "make" and state.role != "helper" and not (optional and state.observer_ready)
         ):
             return
         number = r.orig_rax
@@ -558,7 +568,7 @@ class Policy:
                 raise Violation(f"metadata helper request exceeds its recorded operation: {path}")
             self.reserve_observation("accessed", "revalidation:" + repr(request))
             state.metadata_pending = (request, address, None)
-        elif self.mode != "make":
+        else:
             self.reserve_observation("accessed", "metadata-attempt:" + repr(request))
             seed = self.metadata_buffer(pid, address, size)
             state.metadata_pending = (request, address, seed)
@@ -592,6 +602,13 @@ class Policy:
         if index is None or not 0 <= index < len(entries):
             return ()
         return entries[index]["metadata"]
+
+    def runtime_metadata(self, path, *, parents=True):
+        return (
+            path in self.config.get("runtime_files", ())
+            or parents and path in self.config.get("runtime_parents", ())
+            or any(path.startswith(absent + "/") for absent in self.config.get("runtime_absent", ()))
+        )
 
     def check_enumeration(self, path):
         if path not in self.enumerations:
@@ -676,6 +693,18 @@ class Policy:
             if self.mode in {"command", "compile"} and (path == "/work" or path.startswith("/work/")):
                 return
             raise Violation(f"write outside private command output: {path}")
+        if self.mode == "make":
+            if operation == "read" and path in self.config.get("intercepted_runtime", ()):
+                raise Violation("intercepted runtime program is metadata/dispatch only")
+            if (
+                operation == "metadata" and self.runtime_metadata(path)
+                or operation == "read" and (
+                    path in self.config.get("runtime_files", ())
+                    or any(path.startswith(absent + "/") for absent in self.config.get("runtime_absent", ()))
+                )
+            ):
+                self.defer_observation(state, "accessed", path)
+                return
         if self.mode == "make":
             if not (path == "/repo" or path.startswith("/repo/")):
                 self.make_runtime_access(state, path, operation)
@@ -901,6 +930,11 @@ class Policy:
                 # hardlinking the FD does not make /work immutable.
                 if path.startswith("<") or path == "/dev/null" or path == "/work" or path.startswith("/work/"):
                     raise Violation("mutable backing-file mappings/argument races are forbidden")
+                if (
+                    self.mode == "make" and c & PROT_EXEC
+                    and path not in self.executable | self.runtime_closure | {"/lib/vo-observer.so"}
+                ):
+                    raise Violation("optional runtime image execution denied")
                 if c & PROT_EXEC and path not in self.executable and not path.startswith(("/usr/", "/lib/", "/lib64/", "/bin/")):
                     raise Violation("candidate executable mmap denied")
             elif c & PROT_EXEC:

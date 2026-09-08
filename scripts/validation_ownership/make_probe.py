@@ -39,6 +39,7 @@ ALIASES = (
         "true", "echo",
     )),
 )
+STOCK_RUNTIME_ALIASES = {"/bin": "/usr/bin"}
 METADATA_CALLS = {4, 5, 6, 21, 78, 89, 138, 217, 262, 267, 269, 332, 439}
 METADATA_HEADER = struct.Struct("<IIIQQqIII")
 
@@ -68,6 +69,18 @@ class Command:
     code: tuple[str, ...] = ()
     sources: tuple[str, ...] = ()
     directories: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class RuntimeInput:
+    """One explicitly captured system input, not candidate execution authority."""
+
+    path: str
+    data: bytes | None
+    mode: int | None
+    parents: tuple[tuple[str, bool], ...]
+    canonical: str = ""
+    aliases: tuple[tuple[str, str], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -171,7 +184,7 @@ def _read_events(raw: bytes, *, expected_mapping_count: int):
     return events
 
 
-def _metadata_records(value, limit):
+def _metadata_records(value, limit, *, runtime_paths=(), runtime_absent=()):
     if not isinstance(value, list) or len(value) > limit:
         raise MakeProbeError("malformed/excessive guest metadata records")
     records = []
@@ -182,8 +195,11 @@ def _metadata_records(value, limit):
         number, path, flags, mask, size, offset, result, before, after = record
         if (
             type(number) is not int or number not in METADATA_CALLS
-            or not isinstance(path, str) or not (path == "/repo" or path.startswith("/repo/"))
-            or path != "/repo" and relative_path(path[6:]) != path[6:]
+            or not isinstance(path, str) or not (
+                path == "/repo" or path.startswith("/repo/") or path in runtime_paths
+                or any(path.startswith(absent + "/") for absent in runtime_absent)
+            )
+            or not path.startswith("/") or path != "/" and relative_path(path[1:]) != path[1:]
             or any(type(item) is not int or not 0 <= item < 1 << 32 for item in (flags, mask))
             or any(type(item) is not int or not 0 <= item < 1 << 64 for item in (size, offset))
             or type(result) is not int or not -(1 << 63) <= result < 1 << 63
@@ -356,20 +372,26 @@ def _remove_owned_tree(path):
     finish_cleanup([remove])
 
 
-def _trusted_runtime_path(path: str):
+def _trusted_runtime_path(path: str, *, optional=False):
     requested = PurePosixPath(path)
     if not requested.is_absolute() or str(requested) != path or ".." in requested.parts:
         raise MakeProbeError("noncanonical trusted runtime path")
     roots = (
         "/usr/bin/", "/usr/lib/", "/usr/lib64/", "/lib/", "/lib64/",
+        *(("/usr/include/", "/bin/") if optional else ()),
     )
     if not path.startswith(roots):
         raise MakeProbeError(f"runtime is outside the trusted system tool/library roots: {path}")
-    resolved = Path(path).resolve(strict=True)
+    resolved = Path(path).resolve(strict=not optional)
     if not resolved.as_posix().startswith(roots):
         raise MakeProbeError(f"runtime is outside the trusted system tool/library roots: {path}")
     for entry in {Path(path), *Path(path).parents, resolved, *resolved.parents}:
-        mode = entry.lstat()
+        try:
+            mode = entry.lstat()
+        except FileNotFoundError:
+            if optional:
+                continue
+            raise
         if mode.st_uid != 0 or (
             not stat.S_ISLNK(mode.st_mode) and mode.st_mode & (stat.S_IWGRP | stat.S_IWOTH)
         ):
@@ -379,6 +401,66 @@ def _trusted_runtime_path(path: str):
 
 def _trusted_runtime_bytes(path: str, budget: ProbeBudget):
     return budget.read_bytes(_trusted_runtime_path(path), "control")
+
+
+def _capture_runtime_input(path, budget):
+    if (
+        not isinstance(path, str) or not path.startswith("/")
+        or any(character in path for character in "*?[")
+    ):
+        raise MakeProbeError("runtime input must be a bounded exact pathname")
+    relative_path(path[1:])
+    resolved = _trusted_runtime_path(path, optional=True)
+    parents, aliases, states = [], [], {}
+    for parent in Path(path).parents:
+        budget.remaining()
+        try:
+            info = parent.lstat()
+        except FileNotFoundError:
+            parents.append((str(parent), False))
+            states[parent] = None
+        else:
+            if stat.S_ISLNK(info.st_mode):
+                expected = STOCK_RUNTIME_ALIASES.get(str(parent))
+                if expected is None or parent.resolve().as_posix() != expected:
+                    raise MakeProbeError("runtime input has a nonstock/escaping ancestor alias")
+                aliases.append((str(parent), os.path.relpath(expected, str(parent.parent))))
+            elif not stat.S_ISDIR(info.st_mode):
+                raise MakeProbeError("runtime input has a non-directory/symlink ancestor")
+            parents.append((str(parent), True))
+            states[parent] = (info.st_dev, info.st_ino, info.st_mode, info.st_uid, info.st_gid)
+    try:
+        before = Path(path).lstat()
+    except FileNotFoundError:
+        data, mode = None, None
+        before = None
+    else:
+        if not stat.S_ISREG(before.st_mode) or before.st_mode & 0o7000:
+            raise MakeProbeError("runtime input is not an ordinary regular file")
+        data = budget.read_bytes(resolved, "control")
+        mode = stat.S_IMODE(before.st_mode)
+    try:
+        after = Path(path).lstat()
+    except FileNotFoundError:
+        after = None
+    def identity(info):
+        return None if info is None else (
+            info.st_dev, info.st_ino, info.st_mode, info.st_uid, info.st_gid,
+            info.st_size, info.st_mtime_ns, info.st_ctime_ns,
+        )
+    if identity(before) != identity(after) or _trusted_runtime_path(path, optional=True) != resolved:
+        raise MakeProbeError("runtime input changed during capture")
+    for parent, expected in states.items():
+        try:
+            info = parent.lstat()
+        except FileNotFoundError:
+            actual = None
+        else:
+            actual = (info.st_dev, info.st_ino, info.st_mode, info.st_uid, info.st_gid)
+        if actual != expected:
+            raise MakeProbeError("runtime ancestor changed during capture")
+    budget.charge("control", len(encoded([path, mode, parents, str(resolved), aliases])))
+    return RuntimeInput(path, data, mode, tuple(parents), str(resolved), tuple(aliases))
 
 
 def _make_interpreter(binary: bytes):
@@ -506,6 +588,7 @@ class ProbeSession:
 
     def __init__(
         self, loader: AuthorityLoader, *, scratch_root: Path, budget: ProbeBudget,
+        runtime_files: tuple[str, ...] = (),
     ):
         if not isinstance(loader, AuthorityLoader):
             raise MakeProbeError("probe requires its exact-tree authority loader")
@@ -526,6 +609,17 @@ class ProbeSession:
         self.handlers = {}
         self.snapshot = None
         self.make_runtime = ()
+        if (
+            not isinstance(runtime_files, (tuple, list))
+            or len(runtime_files) > budget.limits.pending
+            or any(not isinstance(path, str) for path in runtime_files)
+            or len(set(runtime_files)) != len(runtime_files)
+        ):
+            raise MakeProbeError("runtime input count/duplicates exceed admission contract")
+        self.runtime_paths = tuple(runtime_files)
+        self.runtime_inputs = ()
+        self.runtime_dispatch = ()
+        self.runtime_root = None
         self.serial = 0
         self.processes_used = 0
         self.live_process_peak = 0
@@ -566,6 +660,8 @@ class ProbeSession:
                 self.budget.remaining()
                 (self.tree / name).mkdir(parents=True, exist_ok=True)
             self._compile_interceptor()
+            if self.runtime_inputs:
+                self.runtime_root = self._new_root("runtime", make=True)
             return self
         except BaseException:
             self.__exit__(*sys.exc_info())
@@ -580,6 +676,9 @@ class ProbeSession:
             self.mappings.clear()
             self.native_tools.clear()
             self.make_runtime = ()
+            self.runtime_inputs = ()
+            self.runtime_dispatch = ()
+            self.runtime_root = None
             self.snapshot = None
             self.loader.live_modes.clear()
         def remove_base():
@@ -613,6 +712,40 @@ class ProbeSession:
         if version.returncode or version.stdout.splitlines()[0] != b"GNU Make 4.3":
             raise MakeProbeError("native observation ABI requires GNU Make 4.3")
         self.make_runtime = _make_runtime(self.budget)
+        reserved = {path for path, _ in self.make_runtime} | set(ALIASES) | {"/lib/vo-observer.so"}
+        if self.runtime_paths:
+            reserved.update(str(_trusted_runtime_path(path)) for path, _ in self.make_runtime)
+            reserved.update(
+                target + path.removeprefix(alias)
+                for path in ALIASES for alias, target in STOCK_RUNTIME_ALIASES.items()
+                if path.startswith(alias + "/")
+            )
+        captured, dispatch = [], []
+        for path in self.runtime_paths:
+            item = _capture_runtime_input(path, self.budget)
+            intercepted = item.data is not None and (
+                bool(item.aliases) and item.canonical in ALIASES
+                or item.canonical == "/usr/bin/env"
+            )
+            if (
+                any(path == other or path.startswith(other + "/") or other.startswith(path + "/")
+                    for other in reserved)
+                or item.canonical in reserved and not intercepted
+                or any(
+                    item.canonical.startswith(other.canonical + "/")
+                    or other.canonical.startswith(item.canonical + "/")
+                    or item.canonical == other.canonical
+                    and (item.data, item.mode) != (other.data, other.mode)
+                    for other in captured
+                )
+            ):
+                raise MakeProbeError("runtime input conflicts with trusted execution image")
+            captured.append(item)
+            reserved.add(path)
+            if intercepted:
+                dispatch.append(path)
+        self.runtime_inputs = tuple(captured)
+        self.runtime_dispatch = tuple(dispatch)
         python = self.budget.run(
             ["/usr/bin/python3", "-I", "-S", "-B", "-c",
              "import sys; print('%d.%d' % sys.version_info[:2])"],
@@ -688,14 +821,32 @@ class ProbeSession:
             (root / directory).mkdir()
         (root / "dev/null").touch()
         if make:
+            if self.runtime_root is not None:
+                return root
+            for alias, target in sorted({pair for item in self.runtime_inputs for pair in item.aliases}):
+                destination = root / alias.lstrip("/")
+                _mkdir_target(root, "/" + target, directory=True)
+                destination.rmdir()
+                destination.symlink_to(target)
             for target, data in self.make_runtime:
                 _mkdir_target(root, target).write_bytes(data)
                 (root / target.lstrip("/")).chmod(0o555)
             shutil.copyfile(self.base / "observer.so", _mkdir_target(root, "/lib/vo-observer.so"))
             (root / "lib/vo-observer.so").chmod(0o555)
-            for target in ALIASES:
+            for target in sorted(set(ALIASES) | {
+                item.canonical for item in self.runtime_inputs if item.path in self.runtime_dispatch
+            }):
                 shutil.copyfile(self.base / "interceptor", _mkdir_target(root, target))
                 (root / target.lstrip("/")).chmod(0o555)
+            for item in self.runtime_inputs:
+                for parent, present in reversed(item.parents):
+                    if present and parent != "/":
+                        _mkdir_target(root, parent, directory=True)
+                if item.data is not None and item.path not in self.runtime_dispatch:
+                    self.budget.charge("control", len(item.data))
+                    target = _mkdir_target(root, item.canonical)
+                    target.write_bytes(item.data)
+                    target.chmod(item.mode)
         else:
             for directory, target in (("bin", "usr/bin"), ("lib", "usr/lib"), ("lib64", "usr/lib64")):
                 (root / directory).rmdir()
@@ -709,10 +860,15 @@ class ProbeSession:
         self.budget.remaining()
         if [item for item in mounts if item["target"] == "/repo"] != [self._mount(self.tree, "/repo")]:
             raise MakeProbeError("incomplete/non-readonly source backing is not admitted")
+        if self.runtime_root is not None and (mode == "make" or metadata_validation):
+            mounts = [
+                self._mount(self.runtime_root, "/", executable=True),
+                *mounts,
+            ]
         self.serial += 1
         report = self.base / f"report-{self.serial}.json"
         config_path = self.base / f"launch-{self.serial}.json"
-        executable = ["/usr/bin/make", "/control/interceptor", *ALIASES] if mode == "make" else (
+        executable = ["/usr/bin/make", "/control/interceptor", *ALIASES, *self.runtime_dispatch] if mode == "make" else (
             [argv[0]] if executables is None else list(executables)
         )
         file_remaining = min(
@@ -735,6 +891,19 @@ class ProbeSession:
                 and path not in self.snapshot.absent_paths
             ],
             "runtime_closure": [name for name, _ in self.make_runtime] if mode == "make" else [],
+            "runtime_files": sorted({name for item in self.runtime_inputs for name in (item.path, item.canonical)}),
+            "runtime_aliases": sorted({alias for item in self.runtime_inputs for alias, _ in item.aliases}),
+            "intercepted_runtime": sorted({
+                item.canonical for item in self.runtime_inputs if item.path in self.runtime_dispatch
+            }),
+            "runtime_absent": sorted({
+                name for item in self.runtime_inputs if item.data is None for name in (item.path, item.canonical)
+            }),
+            "runtime_parents": sorted({
+                parent for item in self.runtime_inputs for parent in (
+                    *(name for name, _ in item.parents), *(str(name) for name in Path(item.canonical).parents),
+                )
+            }),
             "mapping_entries": mapping_entries,
             "metadata_validation": metadata_validation,
             "deadline": self.budget.deadline,
@@ -792,7 +961,11 @@ class ProbeSession:
                 or observed["observation_bytes"] < 128 * observations
             ):
                 raise MakeProbeError("malformed supervisor observation accounting")
-            observed["metadata"] = _metadata_records(observed["metadata"], config["observation_count"])
+            observed["metadata"] = _metadata_records(
+                observed["metadata"], config["observation_count"],
+                runtime_paths=set(config["runtime_files"]) | set(config["runtime_parents"]),
+                runtime_absent=config["runtime_absent"],
+            )
             if len(observed["metadata"]) > observations:
                 raise MakeProbeError("unaccounted guest metadata records")
             if (
@@ -1181,8 +1354,16 @@ class ProbeSession:
                     )
                     semantic_bytes = encoded(semantics)
                     self.budget.charge("control", len(semantic_bytes))
+                    execution = self.snapshot.digest
+                    if self.runtime_inputs:
+                        runtime = [
+                            [item.path, item.canonical, item.mode, item.parents, item.aliases,
+                             None if item.data is None else hashlib.sha256(item.data).hexdigest()]
+                            for item in self.runtime_inputs
+                        ]
+                        execution = hashlib.sha256(encoded([execution, runtime])).hexdigest()
                     return MakeObservation(
-                        target, semantics, self.snapshot.digest,
+                        target, semantics, execution,
                         hashlib.sha256(semantic_bytes).hexdigest(),
                         completed.stdout, completed.stderr, tuple(events),
                     )
