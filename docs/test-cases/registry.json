@@ -487,6 +487,7 @@
         "https://github.com/laqieer/fireemblem8-expansion/issues/181",
         "https://github.com/laqieer/fireemblem8-expansion/issues/199",
         "https://github.com/laqieer/fireemblem8-expansion/issues/206",
+        "https://github.com/laqieer/fireemblem8-expansion/issues/226",
         "https://github.com/laqieer/fireemblem8-expansion/issues/208",
         "https://github.com/laqieer/fireemblem8-expansion/issues/207",
         "https://github.com/laqieer/fireemblem8-expansion/issues/216",
@@ -503,6 +504,7 @@
         "TC-WORKFLOW-METADATA-EDIT-RACE-001",
         "TC-WORKFLOW-PILOT-BASELINE-001",
         "TC-WORKFLOW-OWNERSHIP-PROBE-SANDBOX-001",
+        "TC-WORKFLOW-PROBE-VIEWS-001",
         "TC-WORKFLOW-REVIEW-FAMILY-001",
         "TC-WORKFLOW-REVIEW-FIRST-001",
         "TC-WORKFLOW-AGENT-HANDOFF-001",
@@ -3467,6 +3469,42 @@
         {
           "command": "make -f scripts/validation_ownership/foundation.mk ownership-probe-check",
           "evidence": "scripts/validation_ownership/consumer.py"
+        }
+      ]
+    },
+    {
+      "id": "TC-WORKFLOW-PROBE-VIEWS-001",
+      "title": "Select immutable ownership views with one report budget",
+      "feature_id": "workflow-governance",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/226"
+      ],
+      "document": "docs/test-cases/workflow-governance.md",
+      "anchor": "tc-workflow-probe-views-001-select-immutable-ownership-views-with-one-report-budget",
+      "profiles": [
+        "Linux x86-64 source checkout, GNU Make 4.3, static-capable C/C++ host toolchain, Python 3 and supported private namespaces"
+      ],
+      "purpose": "Observe real immutable CURRENT/BASE declarations, source bytes and deleted-source classification with one ProbeBudget and ProbeSession, certified byte/storage reuse, full metadata revalidation and exact restoration.",
+      "prerequisites": "Clean source checkout; owned real Git BASE/CURRENT fixture and existing foundation tools. Fixtures and channels remain under ignored build/test-artifacts. No ROM, credentials, emulator or remote mutation.",
+      "actions": "Run the focused immutable_view family and documented direct real-schema consumer. Commit different BASE/CURRENT registry declarations with a renamed generated source, query CURRENT then selected BASE and restored CURRENT, and inspect actual declared/consumed/reported paths, bytes, counts and owners. Also run the discoverable full-tree query-pair test: resolve local HEAD/HEAD^1 once, capture their complete trees with existing gitlink/source declarations, execute CURRENT and selected BASE localization/chapterbundle pairs, restore CURRENT and query Make again under one default budget/session, with no third registry query. Exercise nested/live restoration, types/presence/nonregular/pins, full guest metadata and hardlink changes, native/cache ownership, invalid/closed authority, exceptions and cumulative resource exhaustion.",
+      "expected_result": "BASE classifies the deleted source using its own real registry and original bytes; CURRENT is restored unchanged as the selected authority. Only certified identical immutable entries share funded bytes/storage, never presumed metadata equality. Complete actual buffers/status/flags/masks and namespace fields govern cache and native Make reuse. The real HEAD/HEAD^1 workload completes two full-registry queries and restored CURRENT Make under default limits, with actual certified storage reuse and no historical file/byte census oracle. All selected-view handles, cumulative counters, deadline and cleanup retain their original ownership and limits.",
+      "negative_control": "CURRENT declarations classify the deleted BASE source as unowned while the real BASE registry identifies shops. The pre-feature core rejects foreign-loader, duplicate-session and missing-CURRENT-source shortcuts and lacks select_view. Before the owner-exit correction, a foreign normal exit deletes backing and clears/restores caches, exceptional exit closes the budget, and misnested exit attempts main-thread signal restoration. A real synchronized BASE command then completes into the restored CURRENT cache under its BASE key: broken ownership, not a demonstrated key collision. Stale metadata, suspended/foreign/forged/expired handles, file-directory changes, undeclared content, false absence, nonregular inputs, failed/closed/misnested scopes and resource exhaustion cannot supply successful substituted results.",
+      "interactions": "Depends on delivered core206/PR212; issue226 is now a standalone master-based root at depth zero. Dependent180/PR186 owns full integration. No dependency on P225, R227 or D228. Their generated publication/runtime/dependency combinations remain integration requirements, not features enabled by this layer. No independent game/profile conflicts.",
+      "save_compatibility": "Host-only selector; no save, migration, config identity, locale, generated game content, ROM/RAM, modern debug/release or archival change.",
+      "cleanup": "Correct-owner context exit discards selected storage/cache/native state and restores the genuine predecessor; post-admission errors are terminal. Foreign public exit and exception delivery reject before advancing/throwing into the context generator: only the existing failed-budget flag changes, with no foreign storage/cache/child/signal cleanup. The original worker can still unwind, including after rejection during a real synchronized command. Correct-owner misnested exit remains terminal. Closing the outer report clears suspended state too, and late exits cannot reactivate it. Fixtures join every owned thread, remove only their owned roots and retain cumulative charges.",
+      "limitations": "No generated publication/reconstruction, native Make registration, optional runtime input or dependency-only compiler. No full180 CURRENT/BASE/112-domain/census/graph/oracle/lifecycle/public-gate or budget-calibration claim. Unsupported hosts/metadata reject; no manual-only criterion.",
+      "automation": [
+        {
+          "command": "python3 -m unittest scripts.validation_ownership.tests.test_foundation -k immutable_view -v",
+          "evidence": "scripts/validation_ownership/tests/test_foundation.py"
+        },
+        {
+          "command": "python3 -m unittest scripts.validation_ownership.tests.test_foundation.FoundationTests.test_immutable_view_real_repository_query_pair -v",
+          "evidence": "scripts/validation_ownership/tests/test_foundation.py"
+        },
+        {
+          "command": "python3 -m unittest scripts.validation_ownership.tests.test_foundation.FoundationTests.test_immutable_view_foreign_exit_preserves_correct_owner_unwind scripts.validation_ownership.tests.test_foundation.FoundationTests.test_immutable_view_foreign_exit_during_command_preserves_backing_and_cache_owner -v",
+          "evidence": "scripts/validation_ownership/tests/test_foundation.py"
         }
       ]
     },
