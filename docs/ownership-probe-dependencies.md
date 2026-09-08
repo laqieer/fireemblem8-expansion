@@ -198,12 +198,16 @@ recorded in [#206's compiler checkpoint](https://github.com/laqieer/fireemblem8-
 The unapproved integrated d9 implementation is historical evidence, not an
 approval or restoration source.
 
-D depends on P/#225 and transitively the delivered core/#206; its immediate
-branch base is `delivery/d581-issue-225`, stack depth one. V/#226 and R/#227 are
+D depends on P/#225, merged through
+[PR #232](https://github.com/laqieer/fireemblem8-expansion/pull/232), and
+transitively the delivered core/#206. D's
+[PR #233](https://github.com/laqieer/fireemblem8-expansion/pull/233) now targets
+`master` as a root delivery unit, stack depth zero. V/#226 and R/#227 remain
 independent and not prerequisites. Shared compiler/source/result/test/docs
-contracts can conflict and require normal parent refresh. Complete P delivery
-still gates bottom-up merging; full #180/PR #186 CURRENT/BASE/domain integration
-and nested generated publication are separate. No other feature conflict,
+contracts can conflict and require normal refresh from `master`. P's post-merge
+verification and issue closure remain separately tracked by Main; the merged
+code dependency does not itself close #225. Full #180/PR #186 CURRENT/BASE/domain
+integration and nested generated publication are separate. No other feature conflict,
 manual criterion, gameplay, ROM/RAM, save/config, locale, generated game data,
 modern/archival profile, package, CI topology or publisher change is involved.
 On regression, revert D or fix forward without loosening the lower boundary.

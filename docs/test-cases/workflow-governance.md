@@ -4571,10 +4571,12 @@ negative without changing host files or weakening generic compiler tests.
 
 ### Interactions and save compatibility
 
-D depends on P/#225 and delivered core/#206, at depth one above the genuine
-producer branch. It has no V/#226 or R/#227 dependency. Complete P delivery
-still gates bottom-up merging; nested generated publication and complete
-#180/PR #186 CURRENT/BASE/domain integration remain separate.
+D depends on P/#225, merged through
+[PR #232](https://github.com/laqieer/fireemblem8-expansion/pull/232), and
+delivered core/#206. D/#233 now targets `master` as a root delivery unit at
+depth zero. It has no V/#226 or R/#227 dependency. P's post-merge verification
+and issue closure remain separate Main-owned gates; nested generated publication
+and complete #180/PR #186 CURRENT/BASE/domain integration remain separate.
 
 No manual criterion, gameplay, save/config, locale, generated game output,
 ROM/RAM, modern/archival profile, package or publisher change is involved.
