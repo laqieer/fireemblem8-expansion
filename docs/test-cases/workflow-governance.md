@@ -3671,7 +3671,9 @@ this dedicated foundation; broader validation remains required.
 
 Issue [#225](https://github.com/laqieer/fireemblem8-expansion/issues/225);
 the supported Linux x86-64/GNU Make 4.3 foundation host, Python and existing
-static-capable C/C++ toolchain. Start from a clean source checkout. All inputs,
+static-capable C/C++ toolchain, libpng/pkg-config and ARM binutils for the real
+graphics/linker controls. The existing extended worker installs those dependencies.
+Start from a clean source checkout. All inputs,
 sentinels and channels are owned fixtures under ignored `build/test-artifacts`.
 No ROM, emulator, credentials, remote workflow or new feature flag is needed.
 See [live producers](../ownership-probe-producers.md).
@@ -3705,6 +3707,11 @@ See [live producers](../ownership-probe-producers.md).
    request. Separately exhaust residual live-process and total-creation
    capacity before another guest launches. Never accept an unrelated earlier
    bootstrap failure as this control.
+   Keep the lowered view fixture at two live processes and nine descendants.
+   Genuinely execute a pure result before Make, reuse it in two native queries,
+   then select BASE and reach the original cumulative exhaustion/cleanup
+   boundary. Require the cold-producer counterpart to reject because both
+   live slots are already reserved; no parked process is discounted.
 5. Corrupt request scope, sequence, completion frontier, frame hash/count or
    length. Reject before producer execution. Corrupt replies and deliver a
    duplicate later request: earlier actual effects stay charged, no possibly
@@ -3733,13 +3740,28 @@ See [live producers](../ownership-probe-producers.md).
    old speculative empty-output pass to populate its cache. Keep separate
    actual-dispatch malformed/source/budget negatives and completed-transcript
    corruption controls.
-10. Where existing sudo policy allows the same-UID control, run both a static
+10. Where existing sudo policy and user namespaces allow the same-UID control, run both a static
     Make query and a real include/remake through actual sudo and the watchdog,
     with no inherited callback descriptor or closefrom override. Compare with
     the direct route; both retain one restart, exact inputs and standard-only
     guest descriptors. This measures real descriptor closing, not a root
-    credential transition. Reject a foreign peer outside the owned launch,
-    replaced/nonprivate directory or socket, and wrong listener credentials.
+    credential transition. If user namespaces are unavailable, require one
+    whole-comparison skip and no empty-result indexing error. Where the
+    existing privileged namespace route works, run the separate real
+    `test_real_privileged_fallback_preserves_live_results_credentials_and_accounting`
+    control. Require actual root supervisor peer credentials, dropped non-root
+    guest identities, one real restart, closed guest descriptors and summed
+    capsule counters. If user namespaces work locally, only their preliminary
+    route-selection result is modeled as denied; the downstream sudo/watchdog/
+    namespace/capsule execution remains real. Report unavailable sudo or
+    namespace permission explicitly, without changing host policy.
+    A watchdog status 125/`EBADF` or an unexpected launcher fault must fail,
+    not become an optional permission skip.
+    Reject a driver-UID foreign connection at the credential boundary on the
+    privileged route and at ancestry on the direct route. Independently pair
+    a real same-UID owned connector with wrong-credential and different-live-
+    launch controls. Retain replaced/nonprivate directory or socket and wrong
+    listener-credential rejections.
     The long-path rendezvous must stay inside owned ignored storage and leave
     no socket after either outcome.
 11. Resolve a real nested Make query while its parent is parked. Compare the
@@ -3795,6 +3817,15 @@ See [live producers](../ownership-probe-producers.md).
     execution digest, and repeat nested publication and owner-permission
     controls with the captured runtime backing. Both source and runtime state
     must clean on success and failure.
+16. A static query without registrations or inherited outputs retains its live
+    handshake but has no publication authority. Require `reserved_paths: null`
+    in its parsed private configuration and require the real publisher to
+    reject a generated mapping before creating output. Registered and inherited
+    scopes still reserve the complete original authority. Run the unchanged
+    full-tree CURRENT/BASE query pair: both complete registry executions and
+    restored CURRENT Make must fit the original default budget, with every
+    metadata buffer and observation charge retained. Do not replace that
+    workload with a smaller fixture, third registry query or raised limit.
 
 ### Expected result
 
@@ -3829,6 +3860,15 @@ before dispatch; the direct linker lookup was worse, returning a successful
 empty value. The required source-authored adaptations and narrow denial guard
 replace those failures without weakening source noexec or runtime closure.
 
+The first integrated CI also exposed a stale two-slot cold-producer fixture,
+unused full-tree publication inventory exhausting the complete pair's control
+budget, a ready-file creation/write race, an unavailable same-UID comparison
+indexing no results and an earlier real credential rejection on the sudo route.
+Preserve those failures. Their corrections use genuine prior-result reuse,
+an explicitly absent publication grant, a completed-value readiness marker,
+whole-comparison prerequisite handling and separate credential/ancestry controls,
+not cap or expected-value changes.
+
 Private `/work` output is deliberately not immediately visible through readonly
 `/repo` inside a producer. The measured same-code source/output namespace
 difference remains a documented two-phase boundary, not permission to expose
@@ -3853,6 +3893,9 @@ discovery checks that selection with `PlanCollector`; it does not import native
 test classes for execution in another job. The actual adaptive job condition
 selects both modules only in full mode and skips them for metadata-only and
 review-first preflight runs. No new job or standalone gate is added.
+Its dependency step supplies libpng, pkg-config and ARM binutils before native
+execution. Parsed owner/dependency controls reject missing, disabled, masked or
+late installation without duplicating the process suite.
 
 ### Cleanup and limitations
 
@@ -3860,7 +3903,9 @@ All owned source fixtures, captured outputs, channels, roots and children are
 removed on success or failure. No process-name killing or other-worktree
 cleanup occurs. Implementation evidence is not full P or root/112-domain
 acceptance or budget calibration. The actual same-UID sudo control does not
-claim a tested root credential transition or change existing sudo policy.
+claim a root credential transition. Only a completed separate real privileged
+control is evidence for that route; a missing existing sudo/namespace
+permission is an explicit unsupported outcome. No sudo policy changes occur.
 Nested queries share the active generated view. Both originally allocated V/P
 combinations now run against the real merged selector, not a copied view
 implementation. This does not grant arbitrary missing executables or
@@ -4274,7 +4319,8 @@ substituting another revision.
    be able to unwind the preserved context normally or exceptionally.
 
    In the active-command case, the genuine confined BASE child first reads
-   its source and writes an owned start marker, then waits on an owned
+   its source, closes an owned value file and hardlinks the ready marker to
+   that completed file, then waits on an owned
    release marker. Pause the owner at its existing budget check while the
    other thread attempts exit. Before releasing the owner/child, require
    intact BASE backing/cache/stack and the same live registered child with
@@ -4283,6 +4329,8 @@ substituting another revision.
    The synchronization is test-only, not a cross-thread production scheduler.
    Every reproduction thread must join and correct-owner cleanup must finish,
    including when exercising the pre-fix negative.
+   Merely observing a file's creation is not readiness: an empty file before
+   its write cannot trigger the foreign-exit action.
 
 5. Observe file-to-directory and directory-to-file changes, different file
    values, complete selected directory listings, module presence/absence,
@@ -4332,6 +4380,11 @@ substituting another revision.
    validation remains charged. Make, capture and BASE work share the original
    deadline and every cumulative counter. Failed/closed budgets reject before
    another launch, with complete owned cleanup and no refunded work.
+   The two-live-process/nine-descendant fixture executes a genuine pure result
+   before two native Make queries, allowing cache reuse beside the two parked
+   guests without launching a third. Its BASE work still reaches exactly the
+   original descendant limit. The separate cold-producer control rejects at
+   the two-slot reservation boundary rather than weakening it.
 
 ### Expected result
 

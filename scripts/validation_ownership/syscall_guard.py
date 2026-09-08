@@ -444,6 +444,9 @@ class Policy:
         state.process_reservation = True
 
     def publication_name(self, name):
+        reserved = self.config.get("reserved_paths")
+        if reserved is None:
+            raise Violation("query has no generated publication authority")
         if (
             not isinstance(name, str) or not 1 <= len(name.encode("utf-8")) <= 4096
             or name.startswith("/") or "\\" in name
@@ -453,7 +456,7 @@ class Policy:
             raise Violation("generated output path escapes the readonly view")
         if any(
             name == path or name.startswith(path + "/") or path.startswith(name + "/")
-            for path in self.config.get("reserved_paths", ())
+            for path in reserved
         ):
             raise Violation("generated result conflicts with admitted source authority")
 
