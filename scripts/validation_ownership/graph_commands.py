@@ -23,6 +23,12 @@ ROOT_RUNTIME_FILES = (
 )
 
 
+def python_import_directories(code):
+    return tuple(sorted({
+        ".", *(parent.as_posix() for path in code for parent in PurePosixPath(path).parents),
+    }))
+
+
 def python_command(session, body, arguments=(), *, sources=(), outputs=(), directories=(), code=()):
     modules = tuple(sorted({
         *code, *(path for path in session.snapshot.files
@@ -32,7 +38,7 @@ def python_command(session, body, arguments=(), *, sources=(), outputs=(), direc
         (PYTHON, "-I", "-S", "-B", "-c",
          "import sys;sys.path.insert(0,'/repo');" + body, *arguments),
         code=modules, sources=tuple(sources), outputs=tuple(outputs),
-        directories=tuple(directories),
+        directories=tuple(sorted(set(directories) | set(python_import_directories(modules)))),
     )
 
 

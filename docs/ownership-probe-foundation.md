@@ -196,6 +196,14 @@ same GNU Make 4.3/glibc ABI requirement. No candidate ELF, `ldd` script, ambient
 preload/library path or repository cwd participates in runtime discovery.
 Later capsules reuse the immutable capture, not mutable aliases or host reads.
 
+Make runtime permissions use those exact captured files and necessary metadata
+parents, not library-directory prefixes. Finite loader cache and architecture
+search probes are permitted only during trusted pre-observer startup and only
+for absent owned-view paths. Once the observer is ready, candidate evaluation
+cannot reuse that exception. Unrequested runtime files reject rather than
+silently becoming sparse absence; explicit runtime inputs retain their separate
+captured permission.
+
 ### Explicit runtime discovery inputs
 
 The optional `ProbeSession(..., runtime_files=(... ,))` admits exact regular
@@ -484,6 +492,16 @@ Undeclared data open, mmap, stat/access/readlink, directory/glob or dynamically
 constructed paths reject. Code imports have a separately admitted code set and
 bounded, absent import-cache probes.
 
+Python module and import-cache exceptions prove absence against the complete
+**active** owned source view, not the sparse command mount. An existing
+undeclared `__init__`, module variant or cache path rejects even when omitted
+from that sparse mount. Unadmitted nonregular namespaces reject before any
+absence claim. Truly absent related probes remain permitted and spend bounded
+attempt bookkeeping without successful-consumption credit. CURRENT/BASE
+selection and files published into the active generated view use the same
+predicate as dependency-negative probes; no live-checkout substitution or
+new import authority is introduced.
+
 Authorization remains entry-time and fail-closed, but source/code/Make-path
 evidence is committed only after a successful kernel return. A successful open
 is pathname/existence metadata; successful stat/access and file mappings also
@@ -530,8 +548,28 @@ bookkeeping without becoming consumed-source evidence.
 Access observation includes metadata and enumeration, not merely byte reads.
 A directory observation consumes only the declared names it exposes. Command
 success requires **declared = permitted = consumed** candidate sources.
+`Command.directories` explicitly authorizes source enumeration; `.` denotes
+the repository root. Code/source ancestors permit necessary metadata, not
+implicit directory listing. Imports that actually enumerate their code paths
+must declare those paths too.
+
+For an explicitly enumerating command, the existing read-only/noexec source
+mount uses the complete active owned view. The guard requires that same
+directory backing before returning entries and rejects incomplete sparse or
+nonregular namespaces. File reads still require their separate code/source
+declarations; listing a name does not grant its contents. CURRENT/BASE and
+published generated entries therefore cannot be hidden by sparsity.
+The standalone registry consumer declares its import/source directories and
+captures recorded gitlinks from already available local object databases so
+its root listing is complete. Missing databases/pins reject; no fetch or live
+submodule mount is introduced.
+
 Registry success additionally requires the typed reported `source_paths` to
 equal that set. Reported JSON is candidate data, not supervisor evidence.
+The generated-registry driver obtains cardinality through the selected schema's
+existing `manifest_record_count(records)` API. Structured records and
+sequence-backed tables therefore retain their schema-defined meaning; a schema
+missing that contract fails rather than falling back to container length.
 Malformed UTF-8, duplicate/nonfinite JSON, stale/omitted/extra paths, malformed
 frames and unused source declarations reject. Directory source selectors must
 be explicit: the foundation does not infer a generator's ownership from a
@@ -749,9 +787,27 @@ The existing **3,600-second maximum is one monotonic deadline**, including
 snapshotting, compilation, all subprocesses and replay. Every subprocess gets
 the remaining lifetime. Defaults bound 4,096 states/launches, 32 simultaneously
 live traced guest processes, 16,384 total guest-process creations per report,
-32 pending commands, two million
+32 pending command resolutions, two million
 syscalls and 32,768 snapshot entries. There are no futures or hidden worker
 queues. Variant plans are checked before any variant launch.
+
+Make validates the complete native event stream and protected-map associations
+before resolving work from it. It then streams unresolved commands in their
+original first-occurrence order, resolving and installing each actual result
+before admitting the next. The existing completed mapping deduplicates repeated
+events; there is no separate materialized backlog of pending command strings.
+Completed outputs, caches and mappings retain their existing byte charges.
+The entire valid batch is resolved within the same pass, followed by the
+unchanged native replay and final-pass-only identity selection.
+
+`ProbeSession.pending_commands` measures active resolutions, including nested
+registration work; `pending_commands_peak` retains their actual maximum, not
+the configured limit. Admission enforces `Limits.pending` before starting
+another resolution, and the existing signal-safe cleanup restores the prior
+count on success, failure or interruption. The former extra limit on the
+**whole observed per-pass backlog** is replaced by this bounded serial
+resolution. The pending/fanout maximum and dynamic-pass limit are not raised,
+and resolution windows do not add extra Make replay passes.
 
 `Limits.processes` bounds live capacity, including the capsule root, stopped
 newborns and suspended vfork ancestors. `Limits.descendants` bounds cumulative
@@ -778,7 +834,7 @@ evidence, not RSS. Failure and selection cannot reset any report allowance.
 
 Byte accounting is also aggregate: 768 MiB total, 384 MiB snapshot processing,
 64 MiB streamed output, 64 MiB capsule writes, 32 MiB each cache/mappings/control,
-16 MiB events, and 1 MiB pending requests. Individual candidate output is
+16 MiB events, and 1 MiB pending-request traffic. Individual candidate output is
 streamed with a 1 MiB cap; bounded files/observations are at most 16 MiB.
 Capsules have a 512 MiB **aggregate virtual-address-space** ceiling, 16 MiB
 maximum stack limits, 128 descriptors,
@@ -786,6 +842,13 @@ no core dumps and a 4,096-creation aggregate cap. Limits may be lowered, not
 raised. Filesystem observations and serialized semantic results consume the
 same bounded control budget. Parallel calls to one session reject; a violation
 makes the entire session unusable.
+
+The existing pending-byte category is cumulative **lifetime traffic**, not a
+live outstanding-memory gauge: uncached command declarations, variant inputs,
+binary stdin and subprocess launcher arguments spend it without refunds.
+Serial resolution does not reset that byte counter or reclassify completed
+traffic. A later pending-byte exhaustion is a distinct measured limit, not
+permission to increase it or silently turn it into a reusable credit pool.
 
 Virtual memory uses one funded credit pool, not independent per-process
 512 MiB limits or a sampled/RSS threshold. The supervisor assigns kernel
@@ -819,6 +882,13 @@ SIGINT/SIGTERM kill/reap the recorded process groups and traced descendants,
 clear caches, close channels and remove only the owned scratch tree. Scratch
 components and input leaves reject symlinks/FIFOs. No cleanup uses process
 names, other worktrees, global caches or system temporary directories.
+Owned-tree removal is iterative and descriptor-relative, with no Python
+recursion-depth dependency or new tree-depth limit. Nofollow component opens
+and directory identity checks prevent symlink traversal or removal of a
+replaced unrelated entry. Parent identities are checked when climbing back
+through an opened directory, so descriptor use stays bounded independently of
+tree depth. Cleanup does not change permissions to force traversal; errors
+remain visible, and the existing signal-safe lifetime closes every held FD.
 Scratch allocation retains directory FDs and local ownership of every new
 parent until the session takes over. A tracked component, inaccessible leaf,
 open/mkdir failure or interruption cleans partial allocation too, without

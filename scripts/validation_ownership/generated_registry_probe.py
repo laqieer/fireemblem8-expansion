@@ -20,5 +20,5 @@ sys.stdout.write(json.dumps({
     "name": schema.name,
     "version": schema.version,
     "source_paths": concrete,
-    "record_count": len(records),
+    "record_count": schema.manifest_record_count(records),
 }, sort_keys=True, separators=(",", ":")))

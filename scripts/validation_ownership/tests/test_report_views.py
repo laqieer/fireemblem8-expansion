@@ -200,6 +200,39 @@ class ReportViewTests(unittest.TestCase):
                     base_model=copy.deepcopy(model),
                 )
 
+    def test_registry_import_enumerates_complete_view_without_reading_extra_members(self):
+        self.registry("src/data/table.json")
+        self.add("src/data/table.json", "{}\n")
+        self.add("hidden.txt", "ungranted member bytes\n")
+        path = self.root / "scripts/generated_data/registry.py"
+        path.write_text(
+            "import os\n"
+            "assert 'hidden.txt' in os.listdir('/repo')\n"
+            "assert 'registry.py' in os.listdir('/repo/scripts/generated_data')\n"
+            + path.read_text()
+        )
+        loader = self.capture()
+        with ProbeSession(loader, scratch_root=self.root / "build/probe", budget=self.budget) as probe:
+            records, paths = reporter._generated_registry_records(loader, session=probe)
+            self.assertEqual(records[0]["name"], "table")
+            self.assertEqual(paths, {"src/data/table.json"})
+
+    def test_registry_directory_grant_does_not_grant_member_content(self):
+        self.registry("src/data/table.json")
+        self.add("src/data/table.json", "{}\n")
+        self.add("hidden.txt", "ungranted member bytes\n")
+        path = self.root / "scripts/generated_data/registry.py"
+        path.write_text(
+            "import os\n"
+            "assert 'hidden.txt' in os.listdir('/repo')\n"
+            "open('/repo/hidden.txt').read()\n"
+            + path.read_text()
+        )
+        loader = self.capture()
+        with ProbeSession(loader, scratch_root=self.root / "build/probe", budget=self.budget) as probe:
+            with self.assertRaisesRegex(reporter.OwnershipError, "undeclared source read"):
+                reporter._generated_registry_records(loader, session=probe)
+
 
 if __name__ == "__main__":
     unittest.main()

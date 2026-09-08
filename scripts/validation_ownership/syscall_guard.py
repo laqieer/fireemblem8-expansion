@@ -188,7 +188,7 @@ class Policy:
         self.mode = config["mode"]
         self.code = {"/repo/" + path for path in config["code"]}
         self.sources = {"/repo/" + path for path in config["sources"]}
-        self.enumerations = {"/repo/" + path for path in config["enumerations"]}
+        self.enumerations = {posixpath.normpath("/repo/" + path) for path in config["enumerations"]}
         self.consumed = set()
         self.code_consumed = set()
         self.accessed = set()
@@ -209,6 +209,27 @@ class Policy:
         self.published = {}
         self.executable = set(config["executables"])
         self.executable.update(self.resolve(path) for path in config["executables"])
+        self.runtime_closure = set(config.get("runtime_closure", ()))
+        self.runtime_directories = set()
+        for name in self.runtime_closure | self.executable | {"/lib/vo-observer.so"}:
+            parent = posixpath.dirname(name)
+            while parent:
+                self.runtime_directories.add(parent)
+                if parent == "/":
+                    break
+                parent = posixpath.dirname(parent)
+        libraries = {posixpath.basename(name) for name in self.runtime_closure if ".so" in posixpath.basename(name)}
+        search = {
+            "/lib", "/lib64", "/usr/lib", "/usr/lib64",
+            "/lib/x86_64-linux-gnu", "/usr/lib/x86_64-linux-gnu",
+            *(posixpath.dirname(name) for name in self.runtime_closure if ".so" in posixpath.basename(name)),
+        }
+        search |= {directory + "/glibc-hwcaps/" + level for directory in tuple(search)
+                   for level in ("x86-64-v2", "x86-64-v3", "x86-64-v4")}
+        self.loader_probes = {
+            "/etc/ld.so.cache", "/etc/ld.so.preload", *search,
+            *(directory + "/" + name for directory in search for name in libraries),
+        }
         version = config["python_version"]
         self.runtime_probes = {
             "/usr/bin/pybuilddir.txt", "/usr/bin/Modules/Setup.local",
@@ -556,6 +577,52 @@ class Policy:
             raise Violation(f"unavailable inherited/unknown descriptor {fd}")
         return state.fds[fd]
 
+    def source_mode(self, path):
+        for forbidden in self.config["forbidden_paths"]:
+            if path == forbidden or path.startswith(forbidden + "/"):
+                raise Violation(f"nonregular candidate source denied: {path}")
+        source_view = self.config.get("source_view")
+        if not source_view:
+            raise Violation("complete active source view is unavailable")
+        full = Path(source_view) / path.removeprefix("/repo").lstrip("/")
+        try:
+            return full.lstat().st_mode
+        except FileNotFoundError:
+            return None
+
+    def absent_source(self, state, path, operation):
+        if self.source_mode(path) is not None:
+            raise Violation(f"undeclared source {operation}: {path}")
+        self.defer_observation(state, "accessed", path)
+
+    def check_enumeration(self, path):
+        if path not in self.enumerations:
+            raise Violation(f"undeclared source directory enumeration: {path}")
+        mode = self.source_mode(path)
+        if mode is None or not stat.S_ISDIR(mode):
+            raise Violation(f"source enumeration has no complete active directory: {path}")
+        prefix = path.rstrip("/") + "/"
+        if any(name.startswith(prefix) for name in self.config["forbidden_paths"]):
+            raise Violation(f"nonregular namespace in source enumeration: {path}")
+        relative = path.removeprefix("/repo").lstrip("/")
+        full = Path(self.config["source_view"]) / relative
+        sparse = Path(self.config["root"]) / "repo" / relative
+        full_stat, sparse_stat = full.stat(), sparse.stat()
+        if (full_stat.st_dev, full_stat.st_ino) != (sparse_stat.st_dev, sparse_stat.st_ino):
+            raise Violation(f"incomplete sparse source enumeration: {path}")
+
+    def make_runtime_access(self, state, path, operation):
+        if operation in {"read", "metadata"} and path in self.runtime_closure | self.executable | {"/lib/vo-observer.so"}:
+            return
+        if operation == "metadata" and path in self.runtime_directories:
+            return
+        if not state.observer_ready and operation in {"read", "metadata"} and path in self.loader_probes:
+            try:
+                (Path(self.config["root"]) / path.lstrip("/")).lstat()
+            except FileNotFoundError:
+                return
+        raise Violation(f"uncaptured Make runtime access: {operation} {path}")
+
     def check(self, state, path, operation, *, observer=False):
         if path.startswith("<"):
             return
@@ -581,9 +648,13 @@ class Policy:
             if operation == "metadata" and path in {"/", "/bin", "/usr", "/usr/bin", "/proc/self/exe"}:
                 return
             raise Violation(f"interceptor attempted nonprotocol filesystem access: {path}")
+        if self.mode == "make" and state.role == "make" and not state.observer_ready:
+            if not (path == "/repo" or path.startswith("/repo/")):
+                self.make_runtime_access(state, path, operation)
+                return
         # These trusted runtime configuration probes are deliberately absent in
         # the chroot. No proc/etc mount or candidate-writable ancestor exists.
-        if path in {
+        if self.mode != "make" and path in {
             "/proc/sys/crypto/fips_enabled", "/proc/self/stat",
             "/etc/ssl/openssl.cnf", "/usr/lib/ssl/openssl.cnf",
         }:
@@ -615,12 +686,13 @@ class Policy:
         ):
             self.defer_observation(state, "accessed", path)
             return
+        if self.mode == "make":
+            if not (path == "/repo" or path.startswith("/repo/")):
+                self.make_runtime_access(state, path, operation)
+                return
         runtime = (
-            path.startswith(("/usr/lib/python3.", "/usr/lib/x86_64-linux-gnu/",
+            self.mode != "make" and path.startswith(("/usr/lib/python3.", "/usr/lib/x86_64-linux-gnu/",
                              "/lib/x86_64-linux-gnu/", "/lib64/"))
-            # Unlike command capsules, Make has only captured trusted ELF
-            # runtime files here, never a live /usr mount or candidate input.
-            or self.mode == "make" and path.startswith(("/usr/lib/", "/usr/lib64/", "/lib/"))
             or path in self.executable
             or path == "/lib/vo-observer.so"
         )
@@ -647,6 +719,13 @@ class Policy:
             if self.mode in {"command", "compile"}:
                 return
             raise Violation("Make/registry cannot use a command scratch directory")
+        if self.mode != "make" and operation == "directory":
+            self.check_enumeration(path)
+            return
+        if path.startswith("/repo/"):
+            for forbidden in self.config["forbidden_paths"]:
+                if path == forbidden or path.startswith(forbidden + "/"):
+                    raise Violation(f"nonregular candidate source denied: {path}")
         if self.mode == "make":
             if path == "/repo" or path.startswith("/repo/"):
                 for forbidden in self.config["forbidden_paths"]:
@@ -660,14 +739,9 @@ class Policy:
         elif path in self.code:
             self.defer_observation(state, "code_consumed", path.removeprefix("/repo/"))
             return
-        elif self.config.get("dependency_source_view") and path.startswith("/repo/") and operation in {"read", "metadata"}:
-            for forbidden in self.config["forbidden_paths"]:
-                if path == forbidden or path.startswith(forbidden + "/"):
-                    raise Violation(f"nonregular dependency source denied: {path}")
-            full = Path(self.config["dependency_source_view"]) / path.removeprefix("/repo/")
-            try:
-                mode = full.lstat().st_mode
-            except FileNotFoundError:
+        elif self.config.get("dependency_probe") and path.startswith("/repo/") and operation in {"read", "metadata"}:
+            mode = self.source_mode(path)
+            if mode is None:
                 self.defer_observation(state, "accessed", path)
                 return
             if operation == "metadata" and path in (
@@ -679,9 +753,8 @@ class Policy:
             return
         elif self.mode == "compile" and operation in {"metadata", "read"} and path in self.link_option_probes:
             return
-        elif path in self.code_dirs | self.source_dirs:
-            if operation != "directory" or path in self.code_dirs | self.enumerations:
-                return
+        elif path in self.code_dirs | self.source_dirs | self.enumerations:
+            return
         elif operation in {"metadata", "read"} and "__pycache__" in path.split("/"):
             # -B prevents cache writes; importlib may probe the absent cache
             # corresponding to an admitted code file, never a data directory.
@@ -692,6 +765,7 @@ class Policy:
                 path == parent + "/__pycache__"
                 or (match and parent + "/" + match[1] + ".py" in self.code)
             ):
+                self.absent_source(state, path, operation)
                 return
         elif operation == "metadata" and posixpath.dirname(path) in self.code_dirs:
             filename = posixpath.basename(path)
@@ -703,6 +777,7 @@ class Policy:
                 match[1] == "__init__"
                 or posixpath.dirname(path) + "/" + match[1] + ".py" in self.code
             ):
+                self.absent_source(state, path, operation)
                 return
         raise Violation(f"undeclared source {operation}: {path}")
 

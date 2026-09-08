@@ -75,6 +75,7 @@ class FoundationTests(unittest.TestCase):
         self.assertFalse(session.budget.children)
         self.assertIsNone(session.snapshot)
         self.assertIsNone(session.base)
+        self.assertEqual(session.pending_commands, 0)
         self.assertFalse(self.scratch.exists())
 
     def test_literal_source_selectors_are_repository_relative(self):
@@ -916,6 +917,8 @@ class FoundationTests(unittest.TestCase):
                 "    def load_records(self, source):\n"
                 "        assert Path(source) == Path('/repo') / self.default_source\n"
                 "        return json.loads(Path(source).read_text())\n"
+                "    def manifest_record_count(self, records):\n"
+                "        return len(records)\n"
                 "class Registry:\n"
                 "    def resolve(self, name):\n"
                 "        assert name == 'table'\n"
@@ -932,7 +935,7 @@ class FoundationTests(unittest.TestCase):
         current = self.capture_view(budget)
         commands = tuple(Command(
             ("/usr/bin/python3", "-I", "-S", "-B", "-c", driver, "table", source),
-            code=code, sources=(source,),
+            code=code, sources=(source,), directories=(".", "scripts", "scripts/generated_data"),
         ) for source in (old, new))
         return base, current, commands
 
@@ -1496,6 +1499,7 @@ int main(int argc,char **argv) {
                         self.assertNotEqual(result.returncode, 0)
 
     def test_session_teardown_defers_signals_until_owned_state_is_removed(self):
+        from scripts.validation_ownership import make_probe
         self.add("Makefile", "all: ;\n")
         for signum in (signal.SIGINT, signal.SIGTERM):
             for has_primary in (False, True):
@@ -1514,14 +1518,14 @@ int main(int argc,char **argv) {
                         ))
                         raise RuntimeError("owned deferred termination")
                     signal.signal(signum, caller_handler)
-                    remove = shutil.rmtree
+                    remove = make_probe._remove_owned_tree
                     def interrupted_remove(path, *args, **kwargs):
                         if base is not None and Path(path) == base:
                             os.kill(os.getpid(), signum)
                         return remove(path, *args, **kwargs)
                     try:
                         with self.assertRaises(MakeProbeError if has_primary else RuntimeError) as caught:
-                            with patch("shutil.rmtree", interrupted_remove):
+                            with patch.object(make_probe, "_remove_owned_tree", interrupted_remove):
                                 with session:
                                     base = session.base
                                     session.command(Command(("/usr/bin/printf", "cached")))
@@ -1565,6 +1569,7 @@ int main(int argc,char **argv) {
                 signal.signal(signum, value)
 
     def test_per_call_teardown_defers_signals_and_preserves_primary_errors(self):
+        from scripts.validation_ownership import make_probe
         self.add("Makefile", "all: ;\n")
         for boundary in ("report", "command-tree", "make-tree"):
             for failed in (False, True):
@@ -1577,7 +1582,7 @@ int main(int argc,char **argv) {
                     sent = False
                     with session:
                         base = session.base
-                        remove, unlink = shutil.rmtree, Path.unlink
+                        remove, unlink = make_probe._remove_owned_tree, Path.unlink
                         def signal_once():
                             nonlocal sent
                             if not sent:
@@ -1594,7 +1599,7 @@ int main(int argc,char **argv) {
                             if boundary == "report" and path.parent == base and path.name.startswith("report-"):
                                 signal_once()
                             return unlink(path, *args, **kwargs)
-                        with patch("shutil.rmtree", removing), patch.object(Path, "unlink", unlinking):
+                        with patch.object(make_probe, "_remove_owned_tree", removing), patch.object(Path, "unlink", unlinking):
                             with self.assertRaises(MakeProbeError if failed else KeyboardInterrupt) as caught:
                                 if boundary == "make-tree":
                                     session.make("all")
@@ -1632,6 +1637,7 @@ int main(int argc,char **argv) {
                 self.assert_clean(session)
 
     def test_setup_failure_remains_primary_during_deferred_exit_signal(self):
+        from scripts.validation_ownership import make_probe
         self.add("Makefile", "all: ;\n")
         session = self.session()
         primary = MakeProbeError("owned setup failure")
@@ -1641,13 +1647,13 @@ int main(int argc,char **argv) {
             seen.append(session.base is None and not self.scratch.exists())
             raise KeyboardInterrupt("deferred setup exit")
         signal.signal(signal.SIGTERM, handler)
-        remove = shutil.rmtree
+        remove = make_probe._remove_owned_tree
         def removing(path, *args, **kwargs):
             if session.base is not None and Path(path) == session.base:
                 os.kill(os.getpid(), signal.SIGTERM)
             return remove(path, *args, **kwargs)
         try:
-            with patch.object(session, "_tools", side_effect=primary), patch("shutil.rmtree", removing):
+            with patch.object(session, "_tools", side_effect=primary), patch.object(make_probe, "_remove_owned_tree", removing):
                 with self.assertRaises(MakeProbeError) as caught:
                     with session:
                         self.fail("failed setup entered")
@@ -1773,12 +1779,13 @@ print("delivered after reaping")
     def test_default_termination_is_delivered_only_after_owned_session_removal(self):
         self.add("Makefile", "all: ;\n")
         program = r'''
-import os,shutil,signal,sys
+import os,signal,sys
 from pathlib import Path
 sys.path.insert(0,sys.argv[1])
 from scripts.validation_ownership.authority import AuthorityLoader,GitTreeEntries,GitTreeEntry
 from scripts.validation_ownership.budget import ProbeBudget
 from scripts.validation_ownership.make_probe import ProbeSession
+from scripts.validation_ownership import make_probe
 root,scratch=map(Path,sys.argv[2:4])
 budget=ProbeBudget()
 entries=GitTreeEntries({"Makefile":GitTreeEntry("Makefile","100644","blob","0"*40)},budget=budget)
@@ -1788,12 +1795,12 @@ session=ProbeSession(AuthorityLoader(root,entries,budget=budget),scratch_root=sc
 session._tools=lambda:None
 session._compile_interceptor=lambda:None
 signal.signal(signal.SIGTERM,signal.SIG_DFL)
-original=shutil.rmtree
+original=make_probe._remove_owned_tree
 def removing(path,*args,**kwargs):
     if session.base is not None and Path(path)==session.base:
         os.kill(os.getpid(),signal.SIGTERM)
     return original(path,*args,**kwargs)
-shutil.rmtree=removing
+make_probe._remove_owned_tree=removing
 with session:
     pass
 raise AssertionError("default termination was lost")
@@ -1805,6 +1812,713 @@ raise AssertionError("default termination was lost")
             self.assertEqual(child.returncode, -signal.SIGTERM, child.stderr.read())
         self.assertFalse(self.scratch.exists())
         self.assertEqual((self.root / "Makefile").read_text(), "all: ;\n")
+
+    def test_make_uncaptured_runtime_file_cannot_select_a_false_absence_branch(self):
+        path = f"/usr/lib/python{sys.version_info.major}.{sys.version_info.minor}/os.py"
+        self.assertTrue(Path(path).is_file())
+        self.add("Makefile", "VALUE := $(if $(wildcard " + path + "),selected,omitted)\n"
+                 "all:\n\t@printf '%s\\n' '$(VALUE)'\n")
+        ordinary = subprocess.run(
+            ["/usr/bin/make", "-f", "Makefile", "all"], cwd=self.root, env=ENVIRONMENT,
+            capture_output=True, check=True, timeout=10,
+        )
+        self.assertEqual(ordinary.stdout, b"selected\n")
+        with self.session() as session:
+            with self.assertRaisesRegex(MakeProbeError, "runtime|undeclared"):
+                session.make("all", variables=("VALUE",))
+        self.assert_clean(session)
+        with self.session(runtime_files=(path,)) as session:
+            result = session.make("all", variables=("VALUE",))
+            self.assertEqual(result.semantics["domains"]["VALUE"]["value"], "selected")
+        self.assert_clean(session)
+
+    def test_make_runtime_probe_permissions_end_at_native_bootstrap(self):
+        from scripts.validation_ownership.syscall_guard import Policy, Process, Violation
+        closure = [path for path, _ in _make_runtime(ProbeBudget())]
+        config = {
+            "root": str(self.directory), "mode": "make", "code": [], "sources": [],
+            "enumerations": [], "executables": ["/usr/bin/make"], "python_version": "3.12",
+            "argv": [], "runtime_closure": closure, "forbidden_paths": [],
+        }
+        policy = Policy(config)
+        state = Process("make")
+        probes = (
+            "/etc/ld.so.cache", "/etc/ld.so.preload",
+            "/lib/x86_64-linux-gnu/glibc-hwcaps/x86-64-v3/libc.so.6",
+        )
+        for path in probes:
+            policy.check(state, path, "metadata")
+            policy.check(state, path, "read")
+        state.observer_ready = True
+        for path in probes:
+            for operation in ("read", "metadata", "directory", "write"):
+                with self.subTest(path=path, operation=operation):
+                    with self.assertRaises(Violation):
+                        policy.check(state, path, operation)
+        for path in closure:
+            policy.check(state, path, "metadata")
+        for ready in (False, True):
+            state.observer_ready = ready
+            for path in ("/usr/lib/unrequested", "/usr/lib64/unrequested", "/lib/unrequested"):
+                with self.assertRaisesRegex(Violation, "uncaptured Make runtime"):
+                    policy.check(state, path, "read")
+        state.observer_ready = False
+        present = self.directory / probes[0].lstrip("/")
+        present.parent.mkdir()
+        present.write_text("not captured")
+        with self.assertRaisesRegex(Violation, "uncaptured Make runtime"):
+            policy.check(state, probes[0], "read")
+        self.add("Makefile", "VALUE := $(wildcard /etc/ld.so.cache)\nall: ;\n")
+        with self.session() as session:
+            with self.assertRaisesRegex(MakeProbeError, "uncaptured Make runtime"):
+                session.make("all", variables=("VALUE",))
+        self.assert_clean(session)
+
+    def test_command_root_enumeration_requires_an_explicit_faithful_directory(self):
+        self.add("hidden.txt", "exists")
+        self.add("reader.py", (
+            "import json,os\n"
+            "print(json.dumps({'name':'selected' if 'hidden.txt' in os.listdir('.') else 'omitted',"
+            "'version':1,'record_count':0,'source_paths':[]}))\n"
+        ))
+        ordinary = subprocess.run(
+            ["/usr/bin/python3", "-I", "-S", "-B", "reader.py"], cwd=self.root, env=ENVIRONMENT,
+            capture_output=True, check=True, timeout=10,
+        )
+        self.assertEqual(json.loads(ordinary.stdout)["name"], "selected")
+        with self.session() as session:
+            with self.assertRaisesRegex(MakeProbeError, "enumerat|directory"):
+                session.registry(Command(("/usr/bin/python3", "/repo/reader.py"), code=("reader.py",)))
+        self.assert_clean(session)
+        command = Command(
+            ("/usr/bin/python3", "/repo/reader.py"), code=("reader.py",), directories=(".",),
+        )
+        with self.session() as session:
+            result = session.registry(command)
+            self.assertEqual(result["name"], "selected")
+            self.assertEqual(result["source_paths"], [])
+        self.assert_clean(session)
+        self.add("reader.py", "open('hidden.txt').read()\n")
+        with self.session() as session:
+            with self.assertRaisesRegex(MakeProbeError, "undeclared source read"):
+                session.command(command)
+        self.assert_clean(session)
+
+    def test_explicit_enumeration_rejects_incomplete_sparse_backing_and_undeclared_ancestors(self):
+        self.add("hidden.txt", "exists")
+        self.add("reader.py", "import os\nprint(os.listdir('.'))\n")
+        with self.session() as session:
+            run = session._sandbox_run
+            def incomplete(root, **kwargs):
+                work = root.parent / root.name.replace("command-root-", "command-")
+                kwargs["mounts"][0] = session._mount(work / "tree", "/repo")
+                return run(root, **kwargs)
+            with patch.object(session, "_sandbox_run", incomplete):
+                with self.assertRaisesRegex(MakeProbeError, "incomplete sparse"):
+                    session.command(Command(
+                        ("/usr/bin/python3", "/repo/reader.py"), code=("reader.py",), directories=(".",),
+                    ))
+        self.assert_clean(session)
+        self.add("pkg/code.py", "VALUE=7\n")
+        self.add("reader.py", "import os\nprint(os.listdir('pkg'))\n")
+        for directories in ((), (".",)):
+            with self.subTest(directories=directories):
+                with self.session() as session:
+                    with self.assertRaisesRegex(MakeProbeError, "undeclared source directory"):
+                        session.command(Command(
+                            ("/usr/bin/python3", "/repo/reader.py"), code=("reader.py", "pkg/code.py"),
+                            directories=directories,
+                        ))
+                self.assert_clean(session)
+        with self.session() as session:
+            result = session.command(Command(
+                ("/usr/bin/python3", "/repo/reader.py"), code=("reader.py", "pkg/code.py"),
+                directories=("pkg",),
+            ))
+            self.assertEqual(result.stdout, b"['code.py']\n")
+            self.assertIn("pkg/code.py", result.code_consumed)
+        self.assert_clean(session)
+
+    def test_explicit_enumeration_tracks_selected_and_generated_views_without_extra_reads(self):
+        self.add("data/base.txt", "base")
+        self.add("reader.py", "import os\nprint(' '.join(sorted(os.listdir('data'))))\n")
+        budget = ProbeBudget()
+        base = self.capture_view(budget)
+        (self.root / "data/base.txt").unlink()
+        del self.entries["data/base.txt"]
+        self.add("data/current.txt", "current")
+        current = self.capture_view(budget)
+        command = Command(
+            ("/usr/bin/python3", "/repo/reader.py"), code=("reader.py",), directories=("data",),
+        )
+        with ProbeSession(current, scratch_root=self.scratch, budget=budget) as session:
+            first = session.command(command)
+            self.assertEqual(first.stdout, b"current.txt\n")
+            with session.select_view(base):
+                self.assertEqual(session.command(command).stdout, b"base.txt\n")
+            self.assertIs(session.command(command), first)
+        self.assert_clean(session)
+        self.add("producer.py", (
+            "import os\nos.mkdir('/work/data')\n"
+            "open('/work/data/generated.txt','w').write('generated')\n"
+            "open('/work/trigger.mk','w').write('VALUE := $(shell python3 reader.py)\\n')\n"
+        ))
+        self.add("Makefile", "include trigger.mk\ntrigger.mk:\n\t@python3 producer.py\nall: ;\n")
+        with self.session() as session:
+            result = session.make("all", variables=("VALUE",), commands={
+                "python3 producer.py": Command(
+                    ("/usr/bin/python3", "/repo/producer.py"), code=("producer.py",),
+                    outputs=("trigger.mk", "data/generated.txt"),
+                ),
+                "python3 reader.py": command,
+            })
+            self.assertEqual(result.semantics["domains"]["VALUE"]["value"], "current.txt generated.txt")
+        self.assert_clean(session)
+
+    def test_explicit_enumeration_rejects_nonregular_namespaces(self):
+        self.add("reader.py", "import os\nprint(os.listdir('data'))\n")
+        self.add("data/real.txt", "real")
+        (self.root / "data/link").symlink_to(self.directory)
+        self.entries["data/link"] = GitTreeEntry("data/link", "120000", "blob", "0"*40)
+        with self.session() as session:
+            with self.assertRaisesRegex(MakeProbeError, "nonregular namespace"):
+                session.command(Command(
+                    ("/usr/bin/python3", "/repo/reader.py"), code=("reader.py",), directories=("data",),
+                ))
+        self.assert_clean(session)
+
+    def test_python_existing_initializer_cannot_be_reported_as_sparse_absence(self):
+        self.add("__init__.py", "")
+        self.add("reader.py", (
+            "import json,os\n"
+            "print(json.dumps({'name':'selected' if os.path.exists('__init__.py') else 'omitted',"
+            "'version':1,'record_count':0,'source_paths':[]}))\n"
+        ))
+        ordinary = subprocess.run(
+            ["/usr/bin/python3", "-I", "-S", "-B", "reader.py"],
+            cwd=self.root, env=ENVIRONMENT, capture_output=True, check=True, timeout=10,
+        )
+        self.assertEqual(json.loads(ordinary.stdout)["name"], "selected")
+        with self.session() as session:
+            with self.assertRaisesRegex(MakeProbeError, "undeclared source"):
+                session.registry(Command(
+                    ("/usr/bin/python3", "/repo/reader.py"), code=("reader.py",),
+                ))
+        self.assert_clean(session)
+
+    def test_python_module_and_cache_probes_distinguish_real_absence_from_undeclared_inputs(self):
+        paths = (
+            "__init__.py", "__init__.pyc", "__init__.abi3.so",
+            "__init__.cpython-312-x86_64-linux-gnu.so", "reader.pyc", "reader.abi3.so",
+            "reader.cpython-312-x86_64-linux-gnu.so", "__pycache__",
+            "__pycache__/reader.cpython-312.pyc", "__pycache__/reader.cpython-312.opt-1.pyc",
+        )
+        self.add("reader.py", (
+            "import os,sys\nprint(int(os.path.exists(sys.argv[1])))\n"
+        ))
+        with self.session() as session:
+            for path in paths:
+                result = session.command(Command(
+                    ("/usr/bin/python3", "/repo/reader.py", path), code=("reader.py",),
+                ))
+                self.assertEqual(result.stdout, b"0\n")
+                self.assertEqual(result.consumed, ())
+        self.assert_clean(session)
+        for path in paths:
+            with self.subTest(path=path):
+                leaf = path + "/kept" if path == "__pycache__" else path
+                self.add(leaf, "present")
+                with self.session() as session:
+                    with self.assertRaisesRegex(MakeProbeError, "undeclared source"):
+                        session.command(Command(
+                            ("/usr/bin/python3", "/repo/reader.py", path), code=("reader.py",),
+                        ))
+                self.assert_clean(session)
+                (self.root / leaf).unlink()
+                del self.entries[leaf]
+                if "/" in leaf:
+                    (self.root / leaf).parent.rmdir()
+        self.add("reader.py", "import os\nos.path.exists('unrelated.py')\n")
+        with self.session() as session:
+            with self.assertRaisesRegex(MakeProbeError, "undeclared source"):
+                session.command(Command(("/usr/bin/python3", "/repo/reader.py"), code=("reader.py",)))
+        self.assert_clean(session)
+
+    def test_python_negative_probes_follow_current_base_and_declared_code(self):
+        self.add("reader.py", "import os\nprint(int(os.path.exists('__init__.py')))\n")
+        self.add("__init__.py", "base")
+        budget = ProbeBudget()
+        base = self.capture_view(budget)
+        (self.root / "__init__.py").unlink()
+        del self.entries["__init__.py"]
+        current = self.capture_view(budget)
+        self.add("__init__.py", "live-only")
+        command = Command(("/usr/bin/python3", "/repo/reader.py"), code=("reader.py",))
+        with ProbeSession(current, scratch_root=self.scratch, budget=budget) as session:
+            absent = session.command(command)
+            self.assertEqual(absent.stdout, b"0\n")
+            with session.select_view(base):
+                allowed = session.command(replace(command, code=("reader.py", "__init__.py")))
+                self.assertEqual(allowed.stdout, b"1\n")
+                self.assertIn("__init__.py", allowed.code_consumed)
+                with self.assertRaisesRegex(MakeProbeError, "undeclared source"):
+                    session.command(command)
+            self.assertIs(session.loader, current)
+            self.assertTrue(budget.closed)
+        self.assert_clean(session)
+
+    def test_python_negative_probes_reject_nonregular_and_generated_active_namespaces(self):
+        self.add("reader.py", "import os,sys\nprint(int(os.path.exists(sys.argv[1])))\n")
+        for name, probe in (
+            ("__init__.py", "__init__.py"),
+            ("__pycache__", "__pycache__/reader.cpython-312.pyc"),
+        ):
+            with self.subTest(name=name):
+                (self.root / name).symlink_to(self.directory)
+                self.entries[name] = GitTreeEntry(name, "120000", "blob", "0"*40)
+                with self.session() as session:
+                    with self.assertRaisesRegex(MakeProbeError, "nonregular"):
+                        session.command(Command(
+                            ("/usr/bin/python3", "/repo/reader.py", probe), code=("reader.py",),
+                        ))
+                self.assert_clean(session)
+                (self.root / name).unlink()
+                del self.entries[name]
+        self.add("producer.py", (
+            "open('/work/trigger.mk','w').write('VALUE := $(shell python3 reader.py __init__.py)\\n')\n"
+            "open('/work/__init__.py','w').write('generated')\n"
+        ))
+        self.add("Makefile", "include trigger.mk\ntrigger.mk:\n\t@python3 producer.py\nall: ;\n")
+        with self.session() as session:
+            with self.assertRaisesRegex(MakeProbeError, "undeclared source"):
+                session.make("all", commands={
+                    "python3 producer.py": Command(
+                        ("/usr/bin/python3", "/repo/producer.py"), code=("producer.py",),
+                        outputs=("trigger.mk", "__init__.py"),
+                    ),
+                    "python3 reader.py __init__.py": Command(
+                        ("/usr/bin/python3", "/repo/reader.py", "__init__.py"), code=("reader.py",),
+                    ),
+                })
+            self.assertFalse((session.tree / "__init__.py").exists())
+            self.assertFalse((session.tree / "trigger.mk").exists())
+        self.assert_clean(session)
+
+    def test_owned_cleanup_removes_deep_admissible_tree_without_recursion(self):
+        from scripts.validation_ownership.make_probe import _remove_owned_tree
+        path = self.directory / "deep"
+        path.mkdir()
+        created = [path]
+        descriptor = os.open(path, os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            for _ in range(1050):
+                os.mkdir("a", 0o700, dir_fd=descriptor)
+                following = os.open("a", os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=descriptor)
+                os.close(descriptor)
+                descriptor = following
+                path /= "a"
+                created.append(path)
+        finally:
+            os.close(descriptor)
+        self.assertLess(len(os.fsencode(path)), 4096)
+        self.assertLess(len(created), Limits().created_files)
+        recursion_limit = sys.getrecursionlimit()
+        descriptors = set(os.listdir("/proc/self/fd"))
+        opened = set()
+        peak = 0
+        original_open, original_close = os.open, os.close
+        def opening(*args, **kwargs):
+            nonlocal peak
+            result = original_open(*args, **kwargs)
+            opened.add(result)
+            peak = max(peak, len(opened))
+            return result
+        def closing(descriptor):
+            try:
+                return original_close(descriptor)
+            finally:
+                opened.discard(descriptor)
+        try:
+            with patch("os.open", opening), patch("os.close", closing):
+                _remove_owned_tree(created[0])
+            self.assertFalse(created[0].exists())
+            self.assertEqual(sys.getrecursionlimit(), recursion_limit)
+            self.assertEqual(opened, set())
+            self.assertLessEqual(peak, 2)
+            self.assertEqual(set(os.listdir("/proc/self/fd")), descriptors)
+        finally:
+            for path in reversed(created):
+                try:
+                    os.rmdir(path)
+                except FileNotFoundError:
+                    pass
+
+    def test_owned_cleanup_preserves_symlink_targets_permissions_and_replaced_entries(self):
+        from scripts.validation_ownership.make_probe import _remove_owned_tree
+        outside = self.directory / "outside"
+        outside.mkdir()
+        (outside / "kept").write_bytes(b"unrelated")
+        root = self.directory / "owned"
+        root.mkdir()
+        (root / "link").symlink_to(outside, target_is_directory=True)
+        (root / "file").write_bytes(b"owned")
+        _remove_owned_tree(root)
+        self.assertEqual((outside / "kept").read_bytes(), b"unrelated")
+        alias = self.directory / "alias"
+        alias.symlink_to(outside, target_is_directory=True)
+        for path in (alias, alias / "nested"):
+            with self.subTest(path=path):
+                with self.assertRaises(OSError):
+                    _remove_owned_tree(path)
+                self.assertEqual((outside / "kept").read_bytes(), b"unrelated")
+        alias.unlink()
+        root.mkdir()
+        (root / "child").mkdir()
+        original = os.open
+        swapped = False
+        def replacing(path, *args, **kwargs):
+            nonlocal swapped
+            descriptor = original(path, *args, **kwargs)
+            if path == "child" and not swapped:
+                swapped = True
+                (root / "child").rename(root / "moved")
+                outside.rename(root / "child")
+            return descriptor
+        with patch("os.open", replacing):
+            with self.assertRaisesRegex(OSError, "cleanup entry changed"):
+                _remove_owned_tree(root)
+        self.assertEqual((root / "child/kept").read_bytes(), b"unrelated")
+        (root / "child").rename(outside)
+        _remove_owned_tree(root)
+        if os.geteuid() != 0:
+            root.mkdir()
+            locked = root / "locked"
+            locked.mkdir()
+            locked.chmod(0)
+            try:
+                with self.assertRaises(PermissionError):
+                    _remove_owned_tree(root)
+                self.assertEqual(stat.S_IMODE(locked.stat().st_mode), 0)
+            finally:
+                locked.chmod(0o700)
+                _remove_owned_tree(root)
+
+    def test_owned_cleanup_completes_actual_deep_native_output(self):
+        from scripts.validation_ownership import make_probe
+        self.add("deep.c", (
+            "#include <stdio.h>\n#include <sys/stat.h>\n#include <unistd.h>\n"
+            "int main(void) {\n int depth;\n if(chdir(\"/work\")) return 1;\n"
+            " for(depth=0;depth<1050;++depth) {\n"
+            "  if(mkdir(\"a\",0700)||chdir(\"a\")) return 2;\n }\n"
+            " printf(\"%d\\n\",depth);\n return 0;\n}\n"
+        ))
+        observed = []
+        with self.session() as session:
+            tool = session.compile_native(("deep.c",))
+            original = make_probe._remove_owned_tree
+            def removing(path):
+                leaf = Path(path) / "output" / Path(*(["a"]*1050))
+                if Path(path).name.startswith("command-") and leaf.is_dir():
+                    observed.append(len(os.fsencode(leaf)))
+                return original(path)
+            with patch.object(make_probe, "_remove_owned_tree", removing):
+                result = session.native(tool)
+            self.assertEqual(result.stdout, b"1050\n")
+            self.assertEqual(len(observed), 1)
+            self.assertLess(observed[0], 4096)
+            self.assertLessEqual(session.files_created, session.budget.limits.created_files)
+        self.assert_clean(session)
+
+    def test_generated_registry_uses_actual_structured_and_sequence_schema_counts(self):
+        from scripts.generated_data.registry import REGISTRY
+        from scripts.validation_ownership.consumer import registry_entries
+        budget = ProbeBudget()
+        scratch = self.directory / "registry-real"
+        scratch.mkdir()
+        loader = AuthorityLoader(
+            ROOT, registry_entries(ROOT, "HEAD", budget), "HEAD",
+            scratch_root=scratch, budget=budget,
+        )
+        driver = (TRUSTED_ROOT / "generated_registry_probe.py").read_text()
+        with ProbeSession(loader, scratch_root=scratch, budget=budget) as session:
+            code = tuple(sorted(
+                path for path in session.snapshot.files
+                if path.endswith(".py") and path.startswith(("scripts/generated_data/", "scripts/assets/"))
+            ))
+            directories = tuple(sorted({".", *(
+                parent.as_posix() for name in code for parent in Path(name).parents
+            )}))
+            for name in ("autoplaystrategies", "shops"):
+                with self.subTest(schema=name):
+                    schema = REGISTRY.resolve(name)
+                    source = schema.default_source
+                    records = schema.load_records(str(ROOT / source))
+                    expected = schema.manifest_record_count(records)
+                    if name == "autoplaystrategies":
+                        self.assertIsInstance(records, dict)
+                        self.assertNotEqual(len(records), expected)
+                    observed = session.registry(Command(
+                        ("/usr/bin/python3", "-c", driver, name, source),
+                        code=code, sources=(source,), directories=directories,
+                    ))
+                    self.assertEqual(observed["record_count"], expected)
+                    self.assertEqual(observed["source_paths"], [source])
+        self.assertFalse(session.cache)
+        self.assertFalse(budget.children)
+        self.assertEqual(list(scratch.iterdir()), [])
+        scratch.rmdir()
+
+    def test_generated_registry_requires_the_existing_schema_count_contract(self):
+        self.add("data/source.json", "[]")
+        self.add("scripts/generated_data/registry.py", (
+            "import json\nfrom pathlib import Path\n"
+            "class Schema:\n name='missing'\n version=1\n"
+            " def load_records(self,path): return json.loads(Path(path).read_text())\n"
+            "class Registry:\n"
+            " def resolve(self,name): return Schema()\n"
+            "REGISTRY=Registry()\n"
+        ))
+        driver = (TRUSTED_ROOT / "generated_registry_probe.py").read_text()
+        with self.session() as session:
+            with self.assertRaisesRegex(MakeProbeError, "manifest_record_count"):
+                session.registry(Command(
+                    ("/usr/bin/python3", "-c", driver, "missing", "data/source.json"),
+                    code=("scripts/generated_data/registry.py",), sources=("data/source.json",),
+                    directories=(".", "scripts", "scripts/generated_data"),
+                ))
+        self.assert_clean(session)
+
+    def resolution_batch_fixture(self, count=40):
+        self.add("data/prefix", "p")
+        self.add("worker.py", (
+            "import sys\nassert sys.argv[2:]==['word value','']\n"
+            "sys.stdout.write(open('data/prefix').read()+sys.argv[1]+'\\n')\n"
+        ))
+        order = [*reversed(range(count)), count - 1, 0]
+        self.add("Makefile", (
+            "VALUES := $(foreach n," + " ".join(map(str, order)) + ","
+            "$(shell python3 worker.py $(n) 'word value' \"\"))\n"
+            "all: $(VALUES)\n\t@printf '%s\\n' '$(VALUES)' '$+'\np%: ;\n"
+        ))
+        registrations = {
+            f"python3 worker.py {index} 'word value' \"\"": Command(
+                ("/usr/bin/python3", "/repo/worker.py", str(index), "word value", ""),
+                code=("worker.py",), sources=("data/prefix",),
+            )
+            for index in range(count)
+        }
+        return registrations, order
+
+    def test_serial_resolution_handles_large_batch_with_one_pending_item(self):
+        registrations, order = self.resolution_batch_fixture()
+        ordinary = subprocess.run(
+            ["/usr/bin/make", "-f", "Makefile", "all"], cwd=self.root,
+            env=ENVIRONMENT, capture_output=True, check=True, timeout=20,
+        ).stdout.decode().splitlines()
+        requested, capsules = [], []
+        class Commands:
+            def __contains__(self, command):
+                return command in registrations
+            def __getitem__(self, command):
+                requested.append(command)
+                return registrations[command]
+        with self.session(pending=1) as session:
+            original = session._sandbox_run
+            def record(root, **kwargs):
+                result, observed = original(root, **kwargs)
+                capsules.append((kwargs["mode"], getattr(session, "pending_commands", None)))
+                return result, observed
+            with patch.object(session, "_sandbox_run", record):
+                result = session.make("all", variables=("VALUES",), commands=Commands())
+            self.assertEqual(result.semantics["domains"]["VALUES"]["value"], ordinary[0])
+            self.assertEqual(
+                [item["name"] for item in result.semantics["files"][0]["prerequisites"]],
+                ordinary[1].split(),
+            )
+            self.assertEqual(requested, [
+                f"python3 worker.py {index} 'word value' \"\"" for index in dict.fromkeys(order)
+            ])
+            self.assertEqual(len(result.events), len(order))
+            self.assertTrue(all(event["match"] == 0 for event in result.events))
+            self.assertEqual(len(result.semantics["dynamic_commands"]), len(registrations))
+            self.assertEqual([mode for mode, _ in capsules].count("make"), 2)
+            self.assertEqual([mode for mode, _ in capsules].count("command"), len(registrations))
+            self.assertTrue(all(pending == 1 for mode, pending in capsules if mode == "command"))
+            self.assertEqual(session.pending_commands, 0)
+            self.assertEqual(session.pending_commands_peak, 1)
+            self.assertEqual(session.budget.states, 1)
+            self.assertGreater(session.budget.bytes["mapping"], 0)
+            self.assertGreater(session.budget.bytes["cache"], 0)
+        self.assertEqual(session.pending_commands, 0)
+        self.assert_clean(session)
+
+    def test_pending_request_bytes_accumulate_after_completed_commands(self):
+        self.add("Makefile", "all: ;\n")
+        program = "import sys;print(sum(map(ord,sys.argv[1])))"
+        with self.session(pending_bytes=32*1024) as session:
+            first = session.command(Command(("/usr/bin/python3", "-c", program, "A"*20000)))
+            self.assertEqual(first.stdout, str(65*20000).encode() + b"\n")
+            self.assertFalse(session.budget.children)
+            charged = session.budget.bytes["pending"]
+            self.assertGreater(charged, 20000)
+            runs = session.budget.runs
+            with self.assertRaisesRegex(MakeProbeError, "aggregate pending byte budget"):
+                session.command(Command(("/usr/bin/python3", "-c", program, "B"*20000)))
+            self.assertEqual(session.budget.bytes["pending"], charged)
+            self.assertEqual(session.budget.runs, runs)
+            self.assertTrue(session.budget.closed)
+        self.assert_clean(session)
+
+    def test_serial_resolution_validates_late_native_frames_before_any_worker(self):
+        registrations, _ = self.resolution_batch_fixture(count=3)
+        for defect in ("truncated", "hash", "mapping-count", "matched-unknown"):
+            with self.subTest(defect=defect):
+                requested = []
+                class Commands:
+                    def __contains__(self, command):
+                        return command in registrations
+                    def __getitem__(self, command):
+                        requested.append(command)
+                        return registrations[command]
+                with self.session(pending=1) as session:
+                    original = session.budget.read_bytes
+                    def corrupt(path, category):
+                        raw = original(path, category)
+                        if category != "event":
+                            return raw
+                        last, offset = 0, 0
+                        while offset < len(raw):
+                            last = offset
+                            count = int.from_bytes(raw[offset+16:offset+20], "little")
+                            offset += 20
+                            for _ in range(count):
+                                size = int.from_bytes(raw[offset:offset+4], "little")
+                                offset += 4 + size
+                        data = bytearray(raw)
+                        if defect == "truncated":
+                            return bytes(data[:-1])
+                        if defect == "hash":
+                            data[last+8] ^= 1
+                        elif defect == "mapping-count":
+                            data[last+4:last+8] = (99).to_bytes(4, "little")
+                        else:
+                            data[last:last+4] = (0).to_bytes(4, "little")
+                        return bytes(data)
+                    with patch.object(session.budget, "read_bytes", corrupt):
+                        with self.assertRaisesRegex(MakeProbeError, "frame|hash|unknown mapping"):
+                            session.make("all", commands=Commands())
+                    self.assertEqual(requested, [])
+                    self.assertEqual(session.pending_commands, 0)
+                    self.assertEqual(session.pending_commands_peak, 0)
+                self.assert_clean(session)
+
+    def test_serial_resolution_rejects_known_mapping_miss_without_rerunning_worker(self):
+        registrations, _ = self.resolution_batch_fixture(count=2)
+        requested = []
+        class Commands:
+            def __contains__(self, command):
+                return command in registrations
+            def __getitem__(self, command):
+                requested.append(command)
+                return registrations[command]
+        with self.session(pending=1) as session:
+            original = session.budget.read_bytes
+            def corrupt(path, category):
+                raw = original(path, category)
+                if category == "event" and len(requested) == 2:
+                    return b"\xff\xff\xff\xff" + raw[4:]
+                return raw
+            with patch.object(session.budget, "read_bytes", corrupt):
+                with self.assertRaisesRegex(MakeProbeError, "missed a known mapping"):
+                    session.make("all", commands=Commands())
+            self.assertEqual(len(requested), 2)
+            self.assertEqual(session.pending_commands, 0)
+            self.assertEqual(session.pending_commands_peak, 1)
+        self.assert_clean(session)
+
+    def test_serial_resolution_pending_depth_is_bounded_and_restored(self):
+        outer = "printf %s outer"
+        inner = "printf %s inner"
+        self.add("Makefile", "VALUE := $(shell " + outer + ")\nall: ;\n")
+        self.add("inner.mk", "VALUE := $(shell " + inner + ")\ninner: ;\n")
+        for limit in (1, 2):
+            with self.subTest(limit=limit):
+                with self.session(pending=limit) as session:
+                    class Commands:
+                        def __contains__(self, command):
+                            return command == outer
+                        def __getitem__(self, command):
+                            session.make("inner", makefile="inner.mk", commands={
+                                inner: Command(("/usr/bin/printf", "%s", "inner")),
+                            })
+                            return Command(("/usr/bin/printf", "%s", "outer"))
+                    if limit == 1:
+                        with self.assertRaisesRegex(MakeProbeError, "registered-command pending count"):
+                            session.make("all", commands=Commands())
+                    else:
+                        result = session.make("all", variables=("VALUE",), commands=Commands())
+                        self.assertEqual(result.semantics["domains"]["VALUE"]["value"], "outer")
+                    self.assertEqual(session.pending_commands, 0)
+                    self.assertEqual(session.pending_commands_peak, limit)
+                self.assertEqual(session.pending_commands, 0)
+                self.assert_clean(session)
+
+    def test_serial_resolution_cleans_after_worker_failure_interrupt_and_overflow(self):
+        for case, expected in (
+            ("failure", "unsuccessfully: 7"), ("interrupt", None), ("overflow", "streaming byte bound"),
+        ):
+            with self.subTest(case=case):
+                registrations, _ = self.resolution_batch_fixture(count=3)
+                action = {
+                    "failure": "sys.exit(7)",
+                    "interrupt": "print('ready',flush=True); time.sleep(20)",
+                    "overflow": "sys.stdout.write('X'*2048)",
+                }[case]
+                self.add("worker.py", (
+                    "import sys,time\nprefix=open('data/prefix').read()\n"
+                    "if sys.argv[1]=='1':\n " + action + "\nelse:\n print(prefix+sys.argv[1])\n"
+                ))
+                requested = []
+                class Commands:
+                    def __contains__(self, command):
+                        return command in registrations
+                    def __getitem__(self, command):
+                        requested.append(command)
+                        return registrations[command]
+                with self.session(pending=1, process_output_bytes=1024) as session:
+                    original_run, original_charge = session._sandbox_run, session.budget.charge
+                    in_worker, interrupted = False, False
+                    def running(root, **kwargs):
+                        nonlocal in_worker
+                        in_worker = kwargs["mode"] == "command" and "1" in kwargs["argv"]
+                        try:
+                            return original_run(root, **kwargs)
+                        finally:
+                            in_worker = False
+                    def charging(category, size):
+                        nonlocal interrupted
+                        result = original_charge(category, size)
+                        if case == "interrupt" and in_worker and category == "output" and size and not interrupted:
+                            interrupted = True
+                            os.kill(os.getpid(), signal.SIGTERM)
+                        return result
+                    with patch.object(session, "_sandbox_run", running), patch.object(session.budget, "charge", charging):
+                        if case == "interrupt":
+                            with self.assertRaises(KeyboardInterrupt):
+                                session.make("all", commands=Commands())
+                            self.assertTrue(interrupted)
+                        else:
+                            with self.assertRaisesRegex(MakeProbeError, expected):
+                                session.make("all", commands=Commands())
+                    self.assertEqual(requested, [
+                        "python3 worker.py 2 'word value' \"\"",
+                        "python3 worker.py 1 'word value' \"\"",
+                    ])
+                    self.assertEqual(session.pending_commands, 0)
+                    self.assertEqual(session.pending_commands_peak, 1)
+                    self.assertTrue(session.budget.closed)
+                self.assertEqual(session.pending_commands, 0)
+                self.assert_clean(session)
 
     def observation_command_fixture(self):
         self.add("data/a", "observed\n")
@@ -2180,7 +2894,7 @@ raise AssertionError("default termination was lost")
 
     def traced_observation(
         self, number, arguments, descriptors, *, buffer=None, mode="command",
-        observation_limit=1024*1024,
+        observation_limit=1024*1024, directories=("data",),
     ):
         from scripts.validation_ownership.syscall_guard import (
             GETREGS, SETOPTIONS, SYSCALL, Policy, Process, Registers, memory, ptrace, signed, trace_me,
@@ -2195,7 +2909,8 @@ raise AssertionError("default termination was lost")
             ptrace(SETOPTIONS, pid, 0, 0x100001)
             policy = Policy({
                 "root": str(self.directory), "mode": mode, "code": ["code.bin"],
-                "sources": ["data/a", "data/b"], "enumerations": ["data"],
+                "sources": ["data/a", "data/b"], "enumerations": list(directories),
+                "source_view": str(self.root),
                 "executables": [], "python_version": "3.12", "argv": [],
                 "memory_limit": 256*1024*1024, "syscall_limit": 1024,
                 "write_limit": 1024*1024, "observation_count": 1024,
@@ -2447,7 +3162,7 @@ raise AssertionError("default termination was lost")
         try:
             observed = self.traced_observation(
                 217, (descriptor, ctypes.addressof(buffer), 4096),
-                {descriptor: "/repo"}, buffer=ctypes.addressof(buffer),
+                {descriptor: "/repo"}, buffer=ctypes.addressof(buffer), directories=(".",),
             )
             self.assertGreater(observed["result"], 0)
             self.assertEqual(observed["code"], {"code.bin"})
@@ -5901,7 +6616,8 @@ int main(int argc, char **argv) {
             result = consumer.check(ROOT, "HEAD")
         self.assertEqual(len(sessions), 1)
         self.assertEqual(registry_sessions, sessions)
-        self.assertEqual(budgets, [sessions[0].budget])
+        self.assertTrue(budgets)
+        self.assertTrue(all(budget is sessions[0].budget for budget in budgets))
         self.assertEqual(result["scope"], "ownership-probe-foundation")
         self.assertEqual(result["make"]["target"], "localization-check")
         self.assertEqual(result["make"]["semantics"]["files"][0]["prerequisites"], [

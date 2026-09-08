@@ -28,6 +28,12 @@ read from candidate claims and is not a skip-validation switch. The shared
 executor must still enforce exact declared/consumed sources and declared
 private outputs. This consumer seam alone does not establish the full Make
 domain, graph, oracle or lifecycle acceptance.
+Python command registrations explicitly declare the repository root and their
+import directories through `Command.directories`. Enumeration uses the complete
+active immutable view, never a sparse code-only tree; seeing a member name does
+not grant permission to read its content. Registry and asset controls exercise
+both properties. Root enumeration admits gitlink namespaces only by capturing
+their actual recorded pins from the repository's common-Git module databases.
 Registry declaration execution now has an explicit shared-session entry:
 `graph_registry.observe_declarations(loader, session)`. The selected loader
 must be the active public view and own the same budget. It invokes the real

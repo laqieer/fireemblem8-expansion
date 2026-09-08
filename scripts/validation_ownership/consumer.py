@@ -5,14 +5,32 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from .authority import AuthorityLoader, encoded, git_tree_entries
+from .authority import AuthorityLoader, ENVIRONMENT, GitlinkSource, encoded, git_tree_entries
 from .budget import MakeProbeError, ProbeBudget
 from .make_probe import Command, ProbeSession, TRUSTED_ROOT, probe_generated_registry
 
 
+def registry_entries(root, revision, budget):
+    entries = git_tree_entries(root, revision, budget=budget)
+    gitlinks = []
+    for name, entry in entries.items():
+        if entry.mode != "160000":
+            continue
+        located = budget.run(
+            ["/usr/bin/git", "-C", str(root), "rev-parse", "--git-common-dir"],
+            env=ENVIRONMENT,
+        )
+        if located.returncode:
+            raise MakeProbeError("registry root enumeration requires its captured gitlink database")
+        directory = Path(located.stdout.decode("utf-8", "strict").strip())
+        directory = directory if directory.is_absolute() else root / directory
+        gitlinks.append(GitlinkSource(name, directory / "modules" / name))
+    return git_tree_entries(root, revision, budget=budget, gitlinks=tuple(gitlinks)) if gitlinks else entries
+
+
 def check(root: Path, revision: str | None):
     budget = ProbeBudget()
-    entries = git_tree_entries(root, revision or "HEAD", budget=budget)
+    entries = registry_entries(root, revision or "HEAD", budget)
     loader = AuthorityLoader(root, entries, revision, budget=budget)
     with ProbeSession(
         loader, scratch_root=root / "build/test-artifacts/ownership-probe", budget=budget,
@@ -25,11 +43,14 @@ def check(root: Path, revision: str | None):
             path for path in session.snapshot.files
             if path.endswith(".py") and path.startswith(("scripts/generated_data/", "scripts/assets/"))
         ))
+        directories = tuple(sorted({".", "src/data", *(
+            parent.as_posix() for name in code for parent in Path(name).parents
+        )}))
         registry = probe_generated_registry(loader, session=session, command=Command(
             ("/usr/bin/python3", "-I", "-S", "-B", "-c",
              (TRUSTED_ROOT / "generated_registry_probe.py").read_text(encoding="utf-8"),
              "chapterbundle", "src/data"),
-            code=code, sources=("src/data/*_bundle.json",), directories=("src/data",),
+            code=code, sources=("src/data/*_bundle.json",), directories=directories,
         ))
         return {
             "scope": "ownership-probe-foundation",

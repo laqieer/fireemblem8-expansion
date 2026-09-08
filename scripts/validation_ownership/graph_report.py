@@ -12,12 +12,15 @@ from .make_probe import ProbeSession
 
 def capture(root: Path, revision: str, budget: ProbeBudget, *, scratch_root=None):
     entries = git_tree_entries(root, revision, budget=budget)
-    if "mgfembp" in entries and entries["mgfembp"].mode == "160000":
+    gitlink_paths = [name for name, entry in entries.items() if entry.mode == "160000"]
+    if gitlink_paths:
         common = git(root, budget, "rev-parse", "--path-format=absolute", "--git-common-dir")
-        database = Path(common.decode("utf-8").strip()) / "modules/mgfembp"
-        entries = git_tree_entries(root, revision, budget=budget, gitlinks=(
-            GitlinkSource("mgfembp", database),
-        ))
+        directory = Path(common.decode("utf-8").strip())
+        entries = git_tree_entries(
+            root, revision, budget=budget,
+            gitlinks=tuple(GitlinkSource(name, directory / "modules" / name)
+                           for name in gitlink_paths),
+        )
     return AuthorityLoader(root, entries, revision, scratch_root=scratch_root, budget=budget)
 
 

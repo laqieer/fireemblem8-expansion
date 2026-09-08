@@ -5,6 +5,7 @@ from __future__ import annotations
 from .authority import AuthorityLoader, parse_json
 from .budget import MakeProbeError
 from .make_probe import Command, ProbeSession
+from .graph_commands import python_import_directories
 
 
 REGISTRY_DECLARATIONS = """
@@ -45,6 +46,6 @@ def observe_declarations(loader: AuthorityLoader, session: ProbeSession):
         raise MakeProbeError("generated-data registry has no captured Python authority")
     output = session.command(Command(
         ("/usr/bin/python3", "-I", "-S", "-B", "-c", REGISTRY_DECLARATIONS),
-        code=code,
+        code=code, directories=python_import_directories(code),
     ))
     return parse_json(output.stdout, "candidate generated-data registry declarations")
