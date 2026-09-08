@@ -15,17 +15,19 @@ def registry_entries(root, revision, budget):
     if revision is None:
         return entries
     gitlinks = []
+    directory = None
     for name, entry in entries.items():
         if entry.mode != "160000":
             continue
-        located = budget.run(
-            ["/usr/bin/git", "-C", str(root), "rev-parse", "--git-common-dir"],
-            env=ENVIRONMENT,
-        )
-        if located.returncode:
-            raise MakeProbeError("registry root enumeration requires its captured gitlink database")
-        directory = Path(located.stdout.decode("utf-8", "strict").strip())
-        directory = directory if directory.is_absolute() else root / directory
+        if directory is None:
+            located = budget.run(
+                ["/usr/bin/git", "-C", str(root), "rev-parse", "--git-common-dir"],
+                env=ENVIRONMENT,
+            )
+            if located.returncode:
+                raise MakeProbeError("registry root enumeration requires its captured gitlink database")
+            directory = Path(located.stdout.decode("utf-8", "strict").strip())
+            directory = directory if directory.is_absolute() else root / directory
         gitlinks.append(GitlinkSource(name, directory / "modules" / name))
     return git_tree_entries(root, revision, budget=budget, gitlinks=tuple(gitlinks)) if gitlinks else entries
 

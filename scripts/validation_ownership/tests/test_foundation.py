@@ -1102,8 +1102,19 @@ raise AssertionError("default termination was lost")
                     diagnostics.append(result[0].stderr)
                 return result
             with patch.object(session, "_sandbox_run", capture):
-                stable = tuple(record for record in output.metadata if record[0] != 138)
+                stable = tuple(record for record in output.metadata if record[0] not in {138, 332})
                 self.assertTrue(session._metadata_matches(stable), diagnostics)
+                # statx mount IDs belong to each guest namespace, not the
+                # persistent source inode. Full returned buffers stay checked.
+                namespace = tuple(record for record in output.metadata if record[0] == 332)
+                self.assertEqual(len(namespace), 2)
+                for record in namespace:
+                    with self.subTest(statx_flags=record[2], statx_mask=record[3]):
+                        data = bytearray.fromhex(record[8])
+                        self.assertNotEqual(data[144:152], b"\xff"*8)
+                        data[144:152] = b"\xff"*8
+                        changed = record[:8] + (data.hex(),) + record[9:]
+                        self.assertFalse(session._metadata_matches((changed,)))
                 # fstatfs includes shared filesystem capacity, not immutable
                 # source-only state. Production cache validation keeps this row.
                 filesystem = tuple(record for record in output.metadata if record[0] == 138)
@@ -1770,6 +1781,86 @@ raise AssertionError("default termination was lost")
             self.assertLess(observed[0], 4096)
             self.assertLessEqual(session.files_created, session.budget.limits.created_files)
         self.assert_clean(session)
+
+    def test_registry_driver_normalizes_only_repository_source_paths(self):
+        self.add("data/value.json", "[1]")
+        self.add("value.json", "[1,2]")
+        self.add("scripts/generated_data/registry.py", (
+            "import json\nfrom pathlib import Path\n"
+            "class Records(list): pass\n"
+            "class Schema:\n"
+            " version=1\n"
+            " def __init__(self,name): self.name=name\n"
+            " def load_records(self,source):\n"
+            "  path=Path(source)/'value.json'\n"
+            "  records=Records(json.loads(path.read_text()))\n"
+            "  reported=path\n"
+            "  if self.name=='relative': reported=path.relative_to('/repo')\n"
+            "  elif self.name=='parent': reported='/repo/../outside/value.json'\n"
+            "  elif self.name=='outside': reported='/outside/value.json'\n"
+            "  records.source_paths=[str(reported)]\n"
+            "  return records\n"
+            " def manifest_record_count(self,records): return len(records)\n"
+            "class Registry:\n"
+            " def resolve(self,name): return Schema(name)\n"
+            "REGISTRY=Registry()\n"
+        ))
+        driver = (TRUSTED_ROOT / "generated_registry_probe.py").read_text()
+        for name, source, accepted in (
+            ("absolute", "data", True), ("relative", "data", True),
+            ("relative", ".", True),
+            ("parent", "data", False), ("outside", "data", False),
+            ("absolute", "/repo/data", False), ("absolute", "data/../data", False),
+        ):
+            with self.subTest(name=name, source=source):
+                with self.session() as session:
+                    source_path = "value.json" if source == "." else "data/value.json"
+                    command = Command(
+                        ("/usr/bin/python3", "-I", "-S", "-B", "-c", driver, name, source),
+                        code=("scripts/generated_data/registry.py",), sources=(source_path,),
+                        directories=(".", "scripts", "scripts/generated_data"),
+                    )
+                    if accepted:
+                        observed = session.registry(command)
+                        self.assertEqual(observed, {
+                            "name": name, "version": 1, "record_count": 2 if source == "." else 1,
+                            "source_paths": [source_path],
+                        })
+                    else:
+                        with self.assertRaises(MakeProbeError):
+                            session.registry(command)
+                self.assert_clean(session)
+
+    def test_registry_gitlinks_share_only_the_common_directory_lookup(self):
+        from scripts.validation_ownership.consumer import registry_entries
+
+        module, pins = self.gitlink_fixture()
+        for name, pin in zip(("first", "second"), pins):
+            self.gitlink_git(self.root, "update-index", "--add", "--cacheinfo", f"160000,{pin},{name}")
+            self.gitlink_git(
+                self.root, "clone", "--quiet", "--bare", "--shared", str(module),
+                str(self.root / ".git/modules" / name),
+            )
+        revision = self.gitlink_git(self.root, "write-tree")
+        budget = ProbeBudget()
+        run, lookups = budget.run, []
+
+        def observe(argv, **kwargs):
+            if tuple(argv[-2:]) == ("rev-parse", "--git-common-dir"):
+                lookups.append(tuple(argv))
+            return run(argv, **kwargs)
+
+        try:
+            with patch.object(budget, "run", observe):
+                entries = registry_entries(self.root, revision, budget)
+            loader = AuthorityLoader(self.root, entries, revision, budget=budget)
+            self.assertEqual(loader.read_blob("first/include/value.h", "first"), b'#define VALUE "base"\n')
+            self.assertEqual(loader.read_blob("second/include/value.h", "second"), b'#define VALUE "current"\n')
+            self.assertEqual([entries[name].object_id for name in ("first", "second")], pins)
+            self.assertEqual(len(lookups), 1)
+        finally:
+            budget.close()
+        self.assertFalse(budget.children)
 
     def test_generated_registry_uses_actual_structured_and_sequence_schema_counts(self):
         from scripts.generated_data.registry import REGISTRY

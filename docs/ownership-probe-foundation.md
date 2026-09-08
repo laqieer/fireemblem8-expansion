@@ -336,7 +336,14 @@ declarations; listing a name does not grant its contents.
 The standalone registry consumer declares its import/source directories and
 captures recorded gitlinks from already available local object databases so
 its root listing is complete. Missing databases/pins reject; no fetch or live
-submodule mount is introduced.
+submodule mount is introduced. A capture resolves the common Git directory
+once, without omitting any individual gitlink pin/database checks or reads.
+
+The trusted registry driver accepts a repository-relative source argument.
+Schema-reported paths may be repository-relative or absolute beneath `/repo`;
+parent components and other absolute roots reject. Lexical normalization does
+not read the filesystem, infer a source-directory base, or replace the required
+exact agreement with actually consumed source paths.
 
 For `--worktree`, default admission uses HEAD paths, not the index or every
 nonignored live file. The admitted paths contribute actual live bytes,
