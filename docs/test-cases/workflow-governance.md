@@ -3438,10 +3438,11 @@ content, modern/archival profile or ROM/RAM behavior changes.
 
 `python3 -m unittest scripts.validation_ownership.tests.test_producer -v`
 executes the real producer/control/resource cases through the existing host
-runner. The existing `ownership-probe-test` target selects both foundation and
-producer modules exactly once in `extended-host-tests`. Lightweight workflow
-discovery checks that selection with `PlanCollector`; it does not import native
-test classes for execution in another job. No new job or standalone gate is added.
+runner. The existing `ownership-probe-test` target selects foundation, producer
+and dependency modules exactly once in `extended-host-tests`. Lightweight
+workflow discovery checks that selection with `PlanCollector`; it does not
+import native test classes for execution in another job. No new job or
+standalone gate is added.
 
 ### Cleanup and limitations
 
@@ -3452,6 +3453,108 @@ acceptance or budget calibration. The actual same-UID sudo control does not
 claim a tested root credential transition or change existing sudo policy.
 Nested generated publication currently rejects rather than reconstructing an
 outer context. Main owns the remaining independent review and delivery gates.
+
+## TC-WORKFLOW-PROBE-DEPENDENCY-001: Observe real confined compiler dependencies
+
+### Feature and configuration
+
+Issue [#228](https://github.com/laqieer/fireemblem8-expansion/issues/228);
+supported Linux x86-64, GNU Make 4.3, Python, the existing GNU HOST C driver
+and cc1, and the existing namespace/watchdog route. Start from a clean source
+checkout. See the [public command profile](../ownership-probe-dependencies.md).
+Fixtures and sentinel/output paths remain under owned ignored
+`build/test-artifacts`; no ROM, ARM/agbcc setup, package installation, remote
+workflow or generated game data is needed.
+
+### Actions
+
+1. Run the complete focused deterministic case:
+   `python3 -m unittest scripts.validation_ownership.tests.test_dependency -v`.
+   The fixture source includes a recursive quoted-header pair, a `priority.h`
+   selected through two ordered `-I` paths, an `ENABLED` conditional and
+   `future/generated.h`. The last header is initially genuinely absent.
+2. Compare ordinary `cc -E ... -MM -MG -MT query.o` stdout with the confined
+   command's declared `out/query.d` **raw bytes**. Require nonempty identical
+   output, ordinary mode, empty confined stdout, no ELF/native handle and
+   actual successful driver then cc1 exec receipts. Compare the union of
+   consumed source/header paths and its captured byte/mode identities.
+3. Reverse `first` and `second` include search order. Interleave
+   `-DENABLED=1`, `-UENABLED`, `-DENABLED=0`, and reverse that macro choice.
+   Reverse two `-iquote` directories using joined and separate values too.
+   Require the real corresponding priority/conditional headers and ordinary
+   byte equality. Inactive pool headers must not become provenance. Repeat
+   with the exact union declared as `sources` instead of an optional header
+   `code` pool.
+4. Repeat an identical valid query. Require genuine effectful executions and
+   compatible bytes/receipts while the session reuses only its resolved host
+   profile. Change a host header after the source snapshot was captured:
+   results must still bind the original captured source, not later host data.
+   Replace a published conditional header between identical compiler calls;
+   require two corresponding dependency receipts and fresh output from the
+   pure reader of the replaced `.d`.
+5. In one live Make, publish `quote/future/generated.h` from `header.in`,
+   then run the real dependency command and publish its declared `.d`.
+   Compare ordinary prerequisites, `MAKEFILE_LIST` and `MAKE_RESTARTS=1`.
+   Require one Make capsule and actual generated-header provenance. No nested
+   `session.make()` publication or guessed restart is involved.
+6. Include a header named `two words.h`. Require GCC's real escaped dependency
+   bytes and let ordinary/native GNU Make parse them. Confirm the resulting
+   prerequisite is the single filename, not words from a copied `.d` parser.
+7. Run the real `src/worldmap_tm_confront.c` dependency recipe with this
+   checkout's actual header bytes and original host argument/search order,
+   including the three asset include paths. Compare ordinary/confined raw
+   bytes and actual source/header receipts. Missing archival/generated
+   inputs remain genuine `-MG` missing inputs; this is not an archival build,
+   installation or full-root ownership report.
+8. Leave `dependency_only=False`, pass a non-boolean, remove a required mode,
+   add compilation/assembler/linker, response/plugin/specs/wrapper/output
+   flags, combine a forged native handle, or declare an escaping/wrong/multiple
+   output. Require rejection without a payload launch. Omitting `-MG` from
+   the real missing-header query must preserve the actual compiler failure.
+9. Omit an existing header from the admitted pool, including an
+   `__has_include` branch with its valid counterpart. Reject rather than
+   reporting false absence. Attempt a regular file as a directory ancestor
+   and a symlink header. Include-search metadata is not member-content or
+   directory-enumeration authority; unused required sources still reject.
+10. Exhaust the remaining aggregate output allowance after a successful
+    query and require the real repeated compiler result to fail capture.
+    Give a session enough live capacity for standalone driver/cc1 but not
+    for both alongside parked Make/helpers: require failure at that actual
+    nested compiler boundary. Corrupt its execution receipt and inject a
+    cleanup failure; neither may yield successful evidence.
+
+### Expected result
+
+Actual confined cc/cc1 execution produces one declared dependency file with
+ordinary-identical bytes and execution-bound source/header provenance. P's
+validated publication precedes authentic GNU Make consumption and restart.
+The default API, full metadata, noexec source, protected channels, exact
+handle/output checks and one aggregate lifetime remain intact. No compiler
+permission, numeric cap or CI topology is broadened.
+
+### Negative control and retained evidence
+
+At parent `974b1400c978892814c4bbefbdf0ec68e600f151`, constructing a command
+with `dependency_only=True` fails because the keyword does not exist.
+The original [host compiler checkpoint](https://github.com/laqieer/fireemblem8-expansion/issues/206#issuecomment-5563209086)
+also records ordinary host availability and the public unsupported-command
+rejection with zero payload launches. Preserve that default-false rejection,
+not a fake compiler result. The original integrated d9 comparisons remain
+historical, unapproved evidence rather than a restoration source.
+
+### Interactions, cleanup and limitations
+
+D depends on P/#225 and delivered core/#206, at depth one above the genuine
+producer branch. It has no V/#226 or R/#227 dependency. Complete P delivery
+still gates bottom-up merging; nested generated publication and complete
+#180/PR #186 CURRENT/BASE/domain integration remain separate.
+
+Tests reset their owned fixtures and clean session state, processes, caches,
+private outputs and generated publications after success or failure. Runtime
+uses the existing read-only host compiler/runtime policy, not an immutable
+runtime binary snapshot. Unsupported compiler platforms/modes fail closed.
+No manual criterion, gameplay, save/config, locale, generated game output,
+ROM/RAM, modern/archival profile, package or publisher change is involved.
 
 ## TC-WORKFLOW-AGENT-HANDOFF-001: Validate bounded exact-SHA agent handoffs
 

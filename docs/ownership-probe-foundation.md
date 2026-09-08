@@ -6,8 +6,9 @@ GNU Make and declared generated-source consumers. It does **not** select,
 replace, or skip validation.
 
 The #206 base is the static, single-view core. This branch adds the
-[live producer vertical slice](ownership-probe-producers.md) for #225.
-V/#226, R/#227 and D/#228 remain separately allocated, not exposed here.
+[live producer vertical slice](ownership-probe-producers.md) for #225 and the
+[dependency-only host compiler](ownership-probe-dependencies.md) for #228.
+V/#226 and R/#227 remain separately allocated, not exposed here.
 See the [archived delivery allocation](https://github.com/laqieer/fireemblem8-expansion/blob/56e0a206ffae088b0dbc1fe8aa6339a8ee820f33/docs/ownership-probe-allocation.json)
 and [downstream boundary](#contract-allocation-and-downstream-integration).
 
