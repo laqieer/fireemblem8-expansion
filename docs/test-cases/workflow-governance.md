@@ -145,6 +145,11 @@ the consumers' independent protected-principal/deployment requirements.
 
    An existing equivalent locked interpreter may be supplied instead; do not
    create another dependency bootstrap.
+   The dispatch-discovery controls run the actual embedded Bash/jq program
+   against owned Git and complete provider fixtures. One eligible candidate
+   plus a same-named fork must bind in either order. Multiple eligible
+   candidates, unknown nodes, mismatched counts and incomplete pages must stay
+   unbound; no real fork or repository mutation is needed for these controls.
 2. Select small/low-risk, exactly 2,000 lines, greater-than-2,000 lines and each
    named high risk. Expect concurrent for the first two and review-first for
    large/named-risk candidates. Missing/unknown records and paused decisions

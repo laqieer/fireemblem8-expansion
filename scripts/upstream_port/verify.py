@@ -345,11 +345,13 @@ _IDENTITY_COMMANDS = (
      "          headRefName headRefOid baseRefName baseRefOid\n"
      "          headRepository{nameWithOwner} baseRepository{nameWithOwner}}}}}",),
     ('projection=select(.errors == null) | .data.repository | select(.nameWithOwner == $repo) |\n'
-     '    .pullRequests | select(.totalCount == 1 and .pageInfo.hasNextPage == false and\n'
-     '      (.nodes | type) == "array" and (.nodes | length) == 1) | .nodes[0] |\n'
-     '    select(.state == "OPEN" and .headRefName == $branch and .headRefOid == $head and\n'
-     '      .headRepository.nameWithOwner == $repo and .baseRepository.nameWithOwner == $repo and\n'
-     '      (.baseRefName | type) == "string") | [.number, .baseRefOid, .baseRefName]',),
+     '    .pullRequests | select(.pageInfo.hasNextPage == false and\n'
+     '      (.nodes | type) == "array" and (.nodes | length) <= 100 and\n'
+     '      .totalCount == (.nodes | length) and all(.nodes[]; type == "object")) |\n'
+     '    [.nodes[] | select(.state == "OPEN" and .headRefName == $branch and .headRefOid == $head and\n'
+     '      .headRepository.nameWithOwner == $repo and .baseRepository.nameWithOwner == $repo)] |\n'
+     '    select(length == 1) | .[0] | select((.baseRefName | type) == "string") |\n'
+     '    [.number, .baseRefOid, .baseRefName]',),
     ("if", "[[", "$GITHUB_REPOSITORY", "=~", "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$", "&&",
      "${#branch}", "-le", "1024", "&&", "$branch", "!=", "@", "]]", "&&",
      "response=$(/usr/bin/timeout 30 /usr/bin/gh api --hostname github.com graphql        "

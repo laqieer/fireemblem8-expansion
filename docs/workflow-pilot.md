@@ -198,6 +198,11 @@ After accepted clean review and security, the coordinator uses one input-free
 Before checkout, `event-identity` uses bounded authenticated GitHub metadata
 to resolve one open same-repository PR at that exact branch/head and selects
 its integration-base SHA, even when the default branch predates this feature.
+It first validates the complete bounded response and its cardinality, then
+requires one repository/head-qualified candidate. A same-named fork branch
+does not make that candidate ambiguous; multiple eligible same-repository
+candidates, unknown nodes, count mismatches and incomplete pages remain
+unbound. Invalid base/ref data cannot be dropped to choose another candidate.
 The router verifies that exact checkout; `route_dispatch` refreshes the PR and
 requires the same observed PR number, base SHA/ref and head/branch before
 emitting a binding. These are internal bootstrap observations, not dispatch
