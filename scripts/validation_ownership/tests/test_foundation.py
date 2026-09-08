@@ -185,7 +185,8 @@ class FoundationTests(unittest.TestCase):
 
     def test_runtime_inputs_native_newlib_discovery_and_include_search(self):
         present = "/usr/include/newlib/stdlib.h"
-        absent = ("/usr/include/build", "/usr/include/.dep")
+        names = ("build-" + self.directory.name, ".dep-" + self.directory.name)
+        absent = tuple("/usr/include/" + name for name in names)
         for path in absent:
             self.assertFalse(Path(path).exists(), path)
         self.add("Makefile", (
@@ -193,7 +194,7 @@ class FoundationTests(unittest.TestCase):
             "  ifneq ($(wildcard /usr/include/newlib/stdlib.h),)\n"
             "    MODERN_NEWLIB_INCLUDE := /usr/include/newlib\n"
             "  else\n    MODERN_NEWLIB_INCLUDE :=\n  endif\nendif\n"
-            "-include build/optional.d .dep/optional.d\n"
+            f"-include {names[0]}/optional.d {names[1]}/optional.d\n"
             "all:\n\t@printf '%s\\n' '$(MODERN_NEWLIB_INCLUDE)'\n"
         ))
         ordinary = subprocess.run(
@@ -206,8 +207,8 @@ class FoundationTests(unittest.TestCase):
             self.assertEqual(result.semantics["domains"]["MODERN_NEWLIB_INCLUDE"]["value"],
                              ordinary.stdout.decode().strip())
             self.assertEqual(result.semantics["domains"]["MODERN_NEWLIB_INCLUDE"]["origin"], "file")
-            self.assertFalse((session.tree / "build/optional.d").exists())
-            self.assertFalse((session.tree / ".dep/optional.d").exists())
+            for name in names:
+                self.assertFalse((session.tree / name / "optional.d").exists())
         self.assert_clean(session)
 
     def test_runtime_inputs_read_only_exact_bytes_and_capture_limits(self):
@@ -450,11 +451,6 @@ class FoundationTests(unittest.TestCase):
 
     def test_runtime_inputs_reject_nonregular_and_replaced_capture(self):
         from scripts.validation_ownership.make_probe import _capture_runtime_input
-        for path in ("/usr/bin/python3", "/usr/include/x86_64-linux-gnu"):
-            with self.subTest(path=path):
-                self.assertTrue(Path(path).exists())
-                with self.assertRaisesRegex(MakeProbeError, "ordinary regular file"):
-                    _capture_runtime_input(path, ProbeBudget())
         owned = self.directory / "runtime-input"
         owned.write_bytes(b"before")
         # Keep the host-root trust check separate; mutate only this owned inode
@@ -491,6 +487,168 @@ class FoundationTests(unittest.TestCase):
             with patch.object(budget, "read_bytes", replaced):
                 with self.assertRaisesRegex(MakeProbeError, "changed during capture"):
                     _capture_runtime_input(str(owned), budget)
+
+    def test_runtime_inputs_owned_fixtures_ignore_unowned_host_shapes(self):
+        for occupied in ("/usr/include/build", "/usr/include/.dep"):
+            exists = Path.exists
+            def occupied_name(path):
+                return True if str(path) == occupied else exists(path)
+            with self.subTest(occupied=occupied), patch.object(Path, "exists", occupied_name):
+                self.test_runtime_inputs_native_newlib_discovery_and_include_search()
+        for shape in ("regular-python", "absent-multiarch"):
+            lstat, exists = Path.lstat, Path.exists
+            python_status = Path("/usr/bin/python3").stat()
+            def shaped_lstat(path):
+                if shape == "regular-python" and str(path) == "/usr/bin/python3":
+                    return python_status
+                return lstat(path)
+            def shaped_exists(path):
+                if shape == "absent-multiarch" and str(path) == "/usr/include/x86_64-linux-gnu":
+                    return False
+                return exists(path)
+            with self.subTest(shape=shape), patch.object(Path, "lstat", shaped_lstat), patch.object(
+                Path, "exists", shaped_exists,
+            ):
+                self.test_runtime_inputs_reject_nonregular_and_replaced_capture()
+
+    def runtime_spelling_fixture(self):
+        data = Path(self.runtime_data_path())
+        result = subprocess.run(
+            ["/usr/bin/python3", "-I", "-S", "-B", "-c", "import encodings; print(encodings.__file__)"],
+            cwd="/", env=ENVIRONMENT, capture_output=True, check=True, timeout=10,
+        )
+        child = Path(result.stdout.decode("utf-8").strip())
+        self.assertTrue(child.is_file())
+        self.assertEqual(child.parent.parent, data.parent)
+        missing = data.parent / ("ownership-spelling-" + self.directory.name)
+        self.assertFalse(missing.exists())
+        return data, child, missing
+
+    def test_runtime_inputs_make_parent_spellings_require_optional_authority(self):
+        data, child, missing = self.runtime_spelling_fixture()
+        parent_data = str(child.parent) + "/../" + data.name
+        parent_missing = str(child.parent) + "/../" + missing.name
+        stock_missing = "/bin/ownership-spelling-" + self.directory.name
+        self.assertFalse(Path(stock_missing).exists())
+        requested = (str(data), str(child), str(missing), "/bin/env", "/bin/mkdir", stock_missing)
+        for target in (str(data), parent_data, str(missing) + "/child.h", parent_missing + "/child.h"):
+            self.add("Makefile", f"VALUE := $(wildcard {target})\nall:\n\t@printf '%s\\n' '$(VALUE)'\n")
+            ordinary = subprocess.run(
+                ["/usr/bin/make", "-f", "Makefile", "all"], cwd=self.root,
+                env=ENVIRONMENT, capture_output=True, check=True, timeout=10,
+            )
+            self.assertEqual(ordinary.stdout.decode().strip(), target if target.endswith(data.name) else "")
+        cases = (
+            ("present-stat", f"$(wildcard {parent_data})"),
+            ("present-read", f"$(file <{parent_data})"),
+            ("absent-stat", f"$(wildcard {parent_missing})"),
+            ("absent-child-stat", f"$(wildcard {parent_missing}/child.h)"),
+            ("absent-read", f"$(file <{parent_missing})"),
+            ("absent-child-read", f"$(file <{parent_missing}/child.h)"),
+            ("multiple-parent", "$(wildcard " + str(child.parent) + "/../../" + data.parent.name + "/" + data.name + ")"),
+            ("env-stat", "$(wildcard /usr/bin/../bin/env)"),
+            ("mkdir-stat", "$(wildcard /usr/bin/../bin/mkdir)"),
+            ("stock-env-stat", "$(wildcard /bin/../bin/env)"),
+            ("canonical-stock-absent", f"$(wildcard /usr/bin/../bin/{Path(stock_missing).name}/child.h)"),
+            ("stock-absent-stat", f"$(wildcard /bin/../bin/{Path(stock_missing).name}/child.h)"),
+        )
+        for name, expression in cases:
+            with self.subTest(name=name):
+                self.add("Makefile", f"VALUE := {expression}\nall: ;\n")
+                with self.session(runtime_files=requested) as session:
+                    self.assertTrue((session.runtime_root / str(child.parent).lstrip("/")).is_dir())
+                    error = "unrequested stock runtime alias" if name.startswith("stock-") else "optional Make runtime parent spelling"
+                    with self.assertRaisesRegex(MakeProbeError, error):
+                        session.make("all")
+                self.assert_clean(session)
+        for program in ("/usr/bin/../bin/env", "/usr/bin/../bin/mkdir"):
+            with self.subTest(dispatch=program):
+                self.add("Makefile", f"all:\n\t@{program} /usr/bin/true\n")
+                with self.session(runtime_files=requested) as session:
+                    with self.assertRaisesRegex(MakeProbeError, "optional Make runtime parent spelling"):
+                        session.make("all")
+                self.assert_clean(session)
+        self.add("Makefile", (
+            f"PRESENT := $(wildcard {data})\nABSENT := $(wildcard {missing}/child.h)\n"
+            f"CONTENT := $(file <{data})\nall: ;\n"
+        ))
+        with self.session(runtime_files=requested) as session:
+            reports, run = [], session._sandbox_run
+            def record(root, **kwargs):
+                result, observed = run(root, **kwargs)
+                if kwargs["mode"] == "make":
+                    reports.append(observed["metadata"])
+                return result, observed
+            with patch.object(session, "_sandbox_run", record):
+                output = session.make("all", variables=("PRESENT", "ABSENT", "CONTENT"))
+            self.assertEqual(output.semantics["domains"]["PRESENT"]["value"], str(data))
+            self.assertEqual(output.semantics["domains"]["ABSENT"]["value"], "")
+            self.assertEqual(output.semantics["domains"]["CONTENT"]["value"], data.read_text().removesuffix("\n"))
+            self.assertTrue(session._metadata_matches(reports[-1]))
+        self.assert_clean(session)
+        self.add("Makefile", f"VALUE := $(wildcard {parent_data})\nall: ;\n")
+        with self.session(runtime_files=(str(child),)) as session:
+            self.assertTrue((session.runtime_root / str(child.parent).lstrip("/")).is_dir())
+            with self.assertRaisesRegex(MakeProbeError, "uncaptured Make runtime access: metadata"):
+                session.make("all")
+        self.assert_clean(session)
+
+    def test_runtime_inputs_parent_scope_preserves_command_source_and_mandatory_grants(self):
+        data = Path(self.runtime_data_path())
+        self.add("data/intermediate/keep", "actual intermediate")
+        self.add("data/value", "source parent remains authorized")
+        self.add("reader.py", (
+            "import json,os\n"
+            f"directory=os.open({str(data.parent)!r},os.O_RDONLY|os.O_DIRECTORY)\n"
+            f"name={'../' + data.parent.name + '/' + data.name!r}\n"
+            "descriptor=os.open(name,os.O_RDONLY,dir_fd=directory)\n"
+            "value=os.read(descriptor,32).hex(); status=os.stat(name,dir_fd=directory)\n"
+            "os.close(descriptor); os.close(directory)\n"
+            "print(json.dumps([value,status.st_ino,open('data/intermediate/../value').read()]))\n"
+        ))
+        self.add("Makefile", (
+            "SOURCE := $(file <data/intermediate/../value)\n"
+            "MAKE := $(wildcard /usr/bin/../bin/make)\n"
+            "DIRECTORY := $(wildcard /usr/bin/../bin)\nall: ;\n"
+        ))
+        with self.session(runtime_files=(str(data), "/bin/env")) as session:
+            output = session.command(Command(
+                ("/usr/bin/python3", "/repo/reader.py"),
+                code=("reader.py", "data/intermediate/keep"), sources=("data/value",),
+            ))
+            value, inode, source = json.loads(output.stdout)
+            self.assertEqual(value, data.read_bytes()[:32].hex())
+            self.assertEqual(inode, data.stat().st_ino)
+            self.assertEqual(source, "source parent remains authorized")
+            self.assertTrue(any(row[1] == str(data) and row[6] == 0 for row in output.metadata))
+            result = session.make("all", variables=("SOURCE", "MAKE", "DIRECTORY"))
+            self.assertEqual({name: row["value"] for name, row in result.semantics["domains"].items()}, {
+                "SOURCE": source, "MAKE": "/usr/bin/../bin/make", "DIRECTORY": "/usr/bin/../bin",
+            })
+        self.assert_clean(session)
+
+    def test_runtime_inputs_make_spelling_keeps_raw_dirfd_and_resets_per_syscall(self):
+        from scripts.validation_ownership.syscall_guard import Policy, Process, Registers, Violation
+        directory = self.directory / "usr/include/intermediate"
+        directory.mkdir(parents=True)
+        (directory.parent / "data").write_bytes(b"actual data")
+        policy = Policy({
+            "root": str(self.directory), "mode": "make", "code": [], "sources": [], "enumerations": [],
+            "executables": ["/usr/bin/make"], "python_version": "3.12", "argv": [], "forbidden_paths": [],
+            "runtime_files": ["/usr/include/data"], "runtime_parents": ["/usr", "/usr/include"],
+            "observation_limit": 65536, "observation_count": 128, "syscall_limit": 100, "write_limit": 65536,
+        })
+        state = Process("make", observer_ready=True, fds={7: "/usr/include/intermediate", 8: "/usr/include/data"})
+        with patch("scripts.validation_ownership.syscall_guard.cstring", return_value="../data"):
+            path = policy.path(1, state, 1, 7)
+        self.assertEqual(path, "/usr/include/data")
+        self.assertEqual(state.path_context, ("../data", 7, "/usr/include/intermediate"))
+        with self.assertRaisesRegex(Violation, "dirfd=7"):
+            policy.check(state, path, "metadata")
+        registers = Registers()
+        registers.orig_rax, registers.rdi = 0, 8
+        policy.entry(1, state, registers)
+        self.assertIsNone(state.path_context)
 
     def test_runtime_inputs_interrupted_setup_and_metadata_remove_owned_state(self):
         self.add("Makefile", "all: ;\n")

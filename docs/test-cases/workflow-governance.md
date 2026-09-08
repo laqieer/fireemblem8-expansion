@@ -3338,8 +3338,10 @@ the actual root-owned `/bin -> /usr/bin` link and ordinary root-owned
 `/usr/bin/mkdir`, `/usr/bin/env`, `/usr/bin/cat` and `/usr/include/stdio.h` files. Do not create
 or replace system paths to satisfy a fixture. The newlib control observes the
 real header if present, or its genuine absence; it never installs newlib.
-The include-search controls require `/usr/include/build` and `/usr/include/.dep`
-to be genuinely absent, rather than existing directories.
+The include-search controls derive matching relative and `/usr/include/`
+absence names from their uniquely owned fixture directory and verify actual
+absence. Legitimate ambient `build` or `.dep` include entries do not prevent
+the case from running; no host contents are deleted.
 
 No ROM, ARM compiler, emulator, credentials, remote mutation or subjective
 judgment is required. Use the repository's existing locked host Python when
@@ -3484,6 +3486,13 @@ skip an authority check to satisfy these tests.
    descendants of a genuinely captured `/bin` absence must both return real
    absence. Inspect its named test
    results; an unsupported fixture or missing tool is not a passing negative.
+   The spelling controls capture the discovered data and an actual nested
+   standard-library input so each traversed intermediate directory really
+   exists. Canonical present/absent Make `wildcard` and `file` lookups containing
+   parent components must reject when they need optional runtime authority,
+   like the stock-alias controls. Plain captured lookups pass full native
+   metadata revalidation. The separate FD-relative registered-command,
+   source-parent and mandatory-file/directory controls must still succeed.
 3. Check the named denial controls: unrequested existing **and missing**
    files, unrequested `/bin` aliases, escaping spellings, nonregular/replaced
    captures, readback of intercepted images, writes, directory enumeration,
@@ -3504,6 +3513,12 @@ skip an authority check to satisfy these tests.
    probes remain independent of the opt-in. Low existing capture/control
    quotas and failures must terminate with no owned processes, descriptors,
    source/runtime backing or control files left over.
+6. Run the same family's owned-fixture shape controls. Model each ambient
+   `/usr/include/build` and `.dep` entry as occupied and verify actual owned
+   include-search positives still run. Model a regular system Python and an
+   absent multiarch include directory; neither may prevent the owned regular
+   capture, real directory/symlink/FIFO denials or inode-replacement denial.
+   These models test fixture independence, not another native platform.
 
 ### Expected result
 
@@ -3524,13 +3539,21 @@ the other order was misclassified as a mandatory image collision. A captured
 missing `/bin` prefix also rejected its own descendant although the equivalent
 canonical descendant worked. The paired real Make controls must now agree,
 without accepting sibling names, `..`, writes or enumeration.
+On exact `415c7a5be36c329257271b12fc693005ef2939c6`, canonical parent spellings
+could still acquire optional Make authority: real present/content and absent
+queries with valid intermediate directories completed and passed native
+revalidation, while stock-alias equivalents rejected. The new scoped controls
+must reject these optional lookups without breaking independently authorized
+command/source/mandatory parent paths. Reverting that boundary or the owned
+fixture corrections must fail the corresponding regression family.
 The historical absent-env materialization
 unit control additionally models a host without env and must not install its
 interceptor, including both env declaration orders. Actual true-absence assertions use the original absent paths,
 not that modeled environment. Eager, recursive and include-remake env recipes
 reject without an exact real registration; requesting env cannot produce
 unittest output. The real nonregular/replacement controls mutate only owned
-test inodes, with host-root trust checks tested independently.
+test inodes, with host-root trust checks tested independently. They do not
+assume a Python executable is a symlink or require a Debian include directory.
 
 ### Interactions and save compatibility
 

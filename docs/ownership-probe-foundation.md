@@ -239,12 +239,12 @@ existing runtime discovery. It supports optional toolchain/header detection
 and metadata-only stock-tool recipe observation without host-directory grants:
 
 ```python
+include_names = ("build-" + fixture.name, ".dep-" + fixture.name)
 with ProbeSession(
     loader, scratch_root=scratch, budget=budget,
     runtime_files=(
         "/usr/include/newlib/stdlib.h",
-        "/usr/include/build",
-        "/usr/include/.dep",
+        *("/usr/include/" + name for name in include_names),
         "/bin/mkdir",
         "/bin/env",
         "/usr/bin/env",
@@ -265,9 +265,11 @@ optional captures: ordinary original/canonical aliases of the same input
 reject in either request order. The only dual-spelling exception is the
 explicit `/bin/env` plus `/usr/bin/env` pair with matching captured state;
 it cannot replace another mandatory image, including canonical bash.
-The example's `build` and `.dep` declarations are
-appropriate only when those paths are actually absent; never remove host
-contents to make an example pass.
+The example's relative include names come from a uniquely owned fixture
+directory and must also be used by that fixture's Makefile. Verify the resulting
+absolute paths are genuinely absent; ambient `/usr/include/build` or `.dep`
+entries are not test prerequisites. Never remove host contents to make a
+fixture pass.
 
 `probe.runtime_inputs` exposes frozen
 `RuntimeInput(path, data, mode, parents, canonical, aliases)` records during the
@@ -284,6 +286,15 @@ unrequested original alias merely because another input uses the stock root.
 Parent metadata does not authorize content reads or directory enumeration.
 Requests never grant writes, arbitrary program dispatch, executable mappings
 of optional images, a library-prefix read, or candidate-phase loader probes.
+
+Parent components in an actual Make pathname cannot acquire optional runtime
+authority merely because guest resolution reaches a captured canonical path.
+The check retains the raw pathname and its dirfd/base context until that
+authorization boundary, including optional dispatch. Independently authorized
+registered-command runtime, source-parent and mandatory-runtime operations stay
+supported; shared mandatory directory metadata does not need an optional grant.
+This is not a global traversal ban in the guest resolver. Complete metadata
+comparison still uses the actual supported kernel results without masking.
 
 The owned optional runtime backing is constructed once and reused by Make and
 the existing trusted metadata helper. It is read-only, separate from the
