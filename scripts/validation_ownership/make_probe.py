@@ -48,6 +48,8 @@ ALIASES = (
 STOCK_RUNTIME_ALIASES = {"/bin": "/usr/bin"}
 METADATA_CALLS = {4, 5, 6, 21, 78, 89, 138, 217, 262, 267, 269, 332, 439}
 METADATA_HEADER = struct.Struct("<IIIQQqIII")
+RUNTIME_TOOLCHAIN_ARCH = ("-mcpu=arm7tdmi", "-mthumb", "-mthumb-interwork")
+RUNTIME_TOOLCHAIN_QUERIES = {"-print-libgcc-file-name", "-print-file-name=libc.a"}
 
 
 def terminal_failure(method):
@@ -78,6 +80,8 @@ class Command:
     native_tool: NativeTool | None = None
     outputs: tuple[str, ...] = ()
     dependency_only: bool = False
+    runtime_tool: RuntimeTool | None = None
+    stdout_transform: str | None = None
 
 
 @dataclass(frozen=True)
@@ -101,6 +105,16 @@ class RuntimeInput:
 
 
 @dataclass(frozen=True)
+class RuntimeTool:
+    """A session-issued root-owned runtime executable and captured content identity."""
+
+    path: str
+    canonical: str
+    mode: int
+    digest: str
+
+
+@dataclass(frozen=True)
 class ProcessOutput:
     stdout: bytes
     stderr: bytes
@@ -111,6 +125,7 @@ class ProcessOutput:
     generated: tuple[GeneratedFile, ...] = ()
     input_identities: tuple[tuple[str, str, str], ...] = ()
     executed: tuple[str, ...] = ()
+    runtime_receipt: tuple[tuple[str, str, str], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -587,6 +602,7 @@ class ProbeSession:
         self.cache = {}
         self.mappings = {}
         self.native_tools = {}
+        self.runtime_tools = {}
         self.published_sources = {}
         self.published_versions = {}
         self.publication_serial = 0
@@ -601,6 +617,7 @@ class ProbeSession:
         self.make_runtime = ()
         self.dependency_compiler = None
         self.dependency_runtime = None
+        self.runtime_query_profiles = {}
         if (
             not isinstance(runtime_files, (tuple, list))
             or len(runtime_files) > budget.limits.pending
@@ -739,6 +756,7 @@ class ProbeSession:
             self.cache.clear()
             self.mappings.clear()
             self.native_tools.clear()
+            self.runtime_tools.clear()
             self.published_sources.clear()
             self.published_versions.clear()
             self.generated_paths.clear()
@@ -747,6 +765,7 @@ class ProbeSession:
             self.make_runtime = ()
             self.dependency_compiler = None
             self.dependency_runtime = None
+            self.runtime_query_profiles.clear()
             self.runtime_inputs = ()
             self.runtime_dispatch = ()
             self.runtime_root = None
@@ -853,6 +872,117 @@ class ProbeSession:
             if privileged.returncode:
                 raise MakeProbeError(f"required namespaces unavailable: {privileged.stderr!r}")
             self.sudo_drop = True
+
+    def runtime_tool(self, path):
+        """Issue one exact captured system executable for a typed confined command."""
+        self.budget.remaining()
+        for item in self.runtime_inputs:
+            if path not in {item.path, item.canonical}:
+                continue
+            if item.data is None or item.mode is None or not item.mode & 0o111:
+                raise MakeProbeError(f"trusted runtime tool is unavailable: {path}")
+            if item.canonical != str(_trusted_runtime_path(path)):
+                raise MakeProbeError(f"trusted runtime tool identity changed: {path}")
+            key = (
+                item.canonical, item.canonical, item.mode,
+                hashlib.sha256(item.data).hexdigest(),
+            )
+            tool = self.runtime_tools.get(key)
+            if tool is None:
+                tool = RuntimeTool(*key)
+                self.runtime_tools[key] = tool
+                self.budget.charge("control", len(encoded(key)))
+            return tool
+        raise MakeProbeError(f"runtime tool was not captured by this probe session: {path}")
+
+    def _verify_runtime_tool(self, tool):
+        if not isinstance(tool, RuntimeTool) or not any(
+            tool is issued for issued in self.runtime_tools.values()
+        ):
+            raise MakeProbeError("runtime tool is not issued by this exact probe session")
+        if str(_trusted_runtime_path(tool.path)) != tool.canonical:
+            raise MakeProbeError("trusted runtime tool path changed after capture")
+        try:
+            mode = stat.S_IMODE(Path(tool.path).lstat().st_mode)
+        except OSError as error:
+            raise MakeProbeError("trusted runtime tool became unavailable") from error
+        data = self.budget.read_bytes(Path(tool.canonical), "control")
+        if mode != tool.mode or hashlib.sha256(data).hexdigest() != tool.digest:
+            raise MakeProbeError("trusted runtime tool changed after capture")
+
+    @staticmethod
+    def _compiler_runtime_aliases():
+        first = Path("/usr/lib/arm-none-eabi/lib")
+        try:
+            first_info = first.lstat()
+        except FileNotFoundError:
+            return ()
+        if not stat.S_ISLNK(first_info.st_mode):
+            return ()
+        first_target = os.readlink(first)
+        second = Path(first_target)
+        if not second.is_absolute():
+            second = first.parent / second
+        second = Path(os.path.normpath(second))
+        resolved = first.resolve(strict=True)
+        if not resolved.is_relative_to("/usr/lib/arm-none-eabi"):
+            raise MakeProbeError("modern compiler runtime library alias escaped system newlib")
+        receipt = [(str(first), first_target, str(resolved))]
+        if second.is_relative_to("/usr"):
+            parents = {first.parent, resolved, resolved.parent}
+            for parent in parents:
+                info = parent.lstat()
+                if (
+                    not stat.S_ISDIR(info.st_mode) or info.st_uid != 0
+                    or info.st_mode & (stat.S_IWGRP | stat.S_IWOTH)
+                ):
+                    raise MakeProbeError("modern compiler runtime alias has a mutable ancestor")
+            return tuple(receipt)
+        if second != Path("/etc/alternatives/gcc-arm-none-eabi-lib"):
+            raise MakeProbeError("modern compiler runtime has an unsupported library alias")
+        try:
+            second_info = second.lstat()
+        except OSError as error:
+            raise MakeProbeError("modern compiler runtime library alias is unavailable") from error
+        second_target = os.readlink(second) if stat.S_ISLNK(second_info.st_mode) else ""
+        if (
+            first_info.st_uid != 0 or second_info.st_uid != 0
+            or not stat.S_ISLNK(second_info.st_mode)
+            or second_target != "/usr/lib/arm-none-eabi/newlib"
+            or second.resolve(strict=True) != Path(second_target)
+        ):
+            raise MakeProbeError("modern compiler runtime library alias is mutable or unsupported")
+        parents = {first.parent, second.parent, Path(second_target), Path(second_target).parent}
+        for parent in parents:
+            info = parent.lstat()
+            if (
+                not stat.S_ISDIR(info.st_mode) or info.st_uid != 0
+                or info.st_mode & (stat.S_IWGRP | stat.S_IWOTH)
+            ):
+                raise MakeProbeError("modern compiler runtime alias has a mutable ancestor")
+        receipt.append((str(second), second_target, str(second.resolve(strict=True))))
+        return tuple(receipt)
+
+    @staticmethod
+    def _runtime_tool_query(command):
+        if (
+            command.runtime_tool is None
+            or Path(command.runtime_tool.path).name not in {
+                "arm-none-eabi-gcc", "arm-none-eabi-gcc.exe",
+            }
+            or command.stdout_transform != "dirname"
+        ):
+            raise MakeProbeError("runtime tool lacks one supported typed metadata query")
+        arguments = command.argv[1:]
+        if arguments and arguments[0].startswith("-B"):
+            if arguments[0] not in {"-B/usr/bin/", "-B/bin/"}:
+                raise MakeProbeError("runtime tool metadata query escaped its binutils profile")
+            arguments = arguments[1:]
+        if (
+            tuple(arguments[:-1]) != RUNTIME_TOOLCHAIN_ARCH
+            or not arguments or arguments[-1] not in RUNTIME_TOOLCHAIN_QUERIES
+        ):
+            raise MakeProbeError("runtime tool metadata query escaped its exact profile")
 
     def _compile_interceptor(self):
         for source, flags, output in (
@@ -1432,10 +1562,23 @@ class ProbeSession:
             raise MakeProbeError("registered command requires a typed Command")
         if type(command.dependency_only) is not bool:
             raise MakeProbeError("dependency_only requires a boolean")
+        if command.stdout_transform not in {None, "dirname"}:
+            raise MakeProbeError("registered command has an unsupported stdout transform")
+        if command.stdout_transform is not None and command.runtime_tool is None:
+            raise MakeProbeError("stdout transform requires an issued runtime tool query")
         if command.dependency_only and (
             compiler is not None or native is not None or command.native_tool is not None
+            or command.runtime_tool is not None or command.stdout_transform is not None
         ):
             raise MakeProbeError("dependency profile cannot combine native or other compiler authority")
+        if command.runtime_tool is not None:
+            if compiler is not None or native is not None or command.native_tool is not None:
+                raise MakeProbeError("runtime tool cannot combine other execution authority")
+            self._runtime_tool_query(command)
+            self._verify_runtime_tool(command.runtime_tool)
+            if not command.argv or command.argv[0] != command.runtime_tool.path:
+                raise MakeProbeError("runtime tool execution requires its exact captured pathname")
+            compiler = (command.runtime_tool.path,)
         if command.native_tool is not None:
             if native is not None and native is not command.native_tool:
                 raise MakeProbeError("conflicting native execution authority")
@@ -1481,12 +1624,30 @@ class ProbeSession:
         published_inputs = tuple(self.source_owners((set(code) | set(sources)) & self.published_sources.keys()))
         if published_inputs:
             self.budget.charge("control", len(encoded(published_inputs)))
-        key = (self.snapshot.digest, command, None if native is None else native.digest, code, sources, published_inputs)
+        runtime_digest = None if command.runtime_tool is None else command.runtime_tool.digest
+        runtime_profile_key = runtime_profile = None
+        if command.runtime_tool is not None:
+            binutils = tuple(argument for argument in command.argv[1:] if argument.startswith("-B"))
+            runtime_profile_key = command.runtime_tool.digest, binutils
+            if runtime_profile_key not in self.runtime_query_profiles:
+                self.runtime_query_profiles[runtime_profile_key] = self._compiler_runtime_profile(
+                    (command.runtime_tool.path,), binutils,
+                )
+            runtime_profile = self.runtime_query_profiles[runtime_profile_key]
+            if tuple(self._compiler_runtime_aliases()) != tuple(runtime_profile["runtime_aliases"]):
+                raise MakeProbeError("modern compiler runtime aliases changed after capture")
+        key = (
+            self.snapshot.digest, command, None if native is None else native.digest,
+            runtime_digest, code, sources, published_inputs,
+        )
         if key in self.cache and not outputs:
             for cached in self.cache[key]:
                 if self._metadata_matches(cached.metadata):
                     return cached
-        self.budget.charge("pending", len(encoded([command.argv, code, sources, directories, outputs])))
+        self.budget.charge("pending", len(encoded([
+            command.argv, code, sources, directories, outputs, runtime_digest,
+            command.stdout_transform,
+        ])))
         input_identities = tuple(self.source_owners(set(code) | set(sources)))
         work = self.base / f"command-{self.serial + 1}"
         root_name = f"command-root-{self.serial + 1}"
@@ -1517,6 +1678,7 @@ class ProbeSession:
                     **self.dependency_runtime,
                     "executables": list(compiler),
                     "include_dirs": ["/repo" if path == "." else "/repo/" + path for path in include_dirs],
+                    "metadata_descendants": [],
                 }
                 parent = output
                 for part in PurePosixPath(outputs[0]).parts[:-1]:
@@ -1527,6 +1689,20 @@ class ProbeSession:
                     parent /= part
                     parent.mkdir()
                 argv.extend(("-MF", "/work/" + outputs[0]))
+            elif command.runtime_tool is not None:
+                dependency = {
+                    **runtime_profile,
+                    "executables": [command.runtime_tool.path],
+                    "include_dirs": [],
+                    "metadata_descendants": runtime_profile["compiler_search_directories"],
+                }
+                aliases = runtime_profile["runtime_aliases"]
+                for path, target, _ in aliases:
+                    if path.startswith("/usr/"):
+                        continue
+                    destination = root / path.lstrip("/")
+                    destination.parent.mkdir(parents=True, exist_ok=True)
+                    destination.symlink_to(target)
             if argv[0] == "/usr/bin/python3":
                 argv[1:1] = ["-I", "-S", "-B"]
             completed, observed = self._sandbox_run(
@@ -1549,17 +1725,30 @@ class ProbeSession:
                 if not set(observed["code_consumed"]) <= set(code):
                     raise MakeProbeError("dependency result names undeclared header code")
                 input_identities = tuple(item for item in input_identities if item[0] in used)
+            stdout, stderr = completed.stdout, completed.stderr
+            if command.stdout_transform == "dirname":
+                reported = text(stdout, "modern toolchain query output", "utf-8").rstrip("\n")
+                stdout, stderr = ((os.path.dirname(reported) or ".") + "\n").encode(), b""
+            if command.runtime_tool is not None:
+                self._verify_runtime_tool(command.runtime_tool)
+                if tuple(self._compiler_runtime_aliases()) != tuple(runtime_profile["runtime_aliases"]):
+                    raise MakeProbeError("modern compiler runtime aliases changed during query")
             result = ProcessOutput(
-                completed.stdout, completed.stderr, consumed, tuple(observed["code_consumed"]),
-                None if compiler is None or command.dependency_only else self.budget.read_bytes(output / "tool", "control"),
+                stdout, stderr, consumed, tuple(observed["code_consumed"]),
+                None if compiler is None or command.dependency_only or command.runtime_tool is not None
+                else self.budget.read_bytes(output / "tool", "control"),
                 observed["metadata"],
                 self._capture_outputs(output, outputs),
                 input_identities,
                 tuple(observed.get("executed", ())),
+                () if command.runtime_tool is None else tuple(runtime_profile["runtime_aliases"]),
             )
             self.budget.charge(
                 "cache", len(completed.stdout) + len(completed.stderr)
-                + len(encoded([self.snapshot.digest, command.argv, code, sources, directories, published_inputs]))
+                + len(encoded([
+                    self.snapshot.digest, command.argv, code, sources, directories,
+                    published_inputs, runtime_digest, command.stdout_transform,
+                ]))
                 + (0 if result.artifact is None else len(result.artifact))
                 + sum(len(item.data) + len(os.fsencode(item.path)) + 64 for item in result.generated),
             )
@@ -1567,13 +1756,15 @@ class ProbeSession:
             self.budget.charge("cache", len(encoded(result.input_identities)))
             if result.executed:
                 self.budget.charge("cache", len(encoded(result.executed)))
+            if result.runtime_receipt:
+                self.budget.charge("cache", len(encoded(result.runtime_receipt)))
             self.cache.setdefault(key, []).append(result)
             return result
 
-    def _dependency_runtime(self):
+    def _compiler_runtime_profile(self, compiler, search_arguments=()):
         interpreter = _make_interpreter(dict(self.make_runtime)["/usr/bin/make"])
-        runtime = {interpreter, *self.dependency_compiler}
-        for program in self.dependency_compiler:
+        runtime = {interpreter, *compiler}
+        for program in compiler:
             result = self.budget.run(
                 [interpreter, "--inhibit-cache", "--list", program], env=ENVIRONMENT, cwd=Path("/"),
             )
@@ -1586,7 +1777,8 @@ class ProbeSession:
         if len(runtime) > 64:
             raise MakeProbeError("dependency runtime closure exceeds the existing path bound")
         result = self.budget.run(
-            [self.dependency_compiler[0], "-print-search-dirs"], env=ENVIRONMENT, cwd=Path("/"),
+            [compiler[0], *search_arguments, "-print-search-dirs"],
+            env=ENVIRONMENT, cwd=Path("/"),
         )
         rows = text(result.stdout, "trusted compiler search directories", "utf-8").splitlines()
         if result.returncode or len(rows) != 3:
@@ -1616,8 +1808,10 @@ class ProbeSession:
         if len(directories) > 64:
             raise MakeProbeError("dependency compiler search count exceeds bound")
         probes = {
-            str(Path(path) / "specs")
-            for path in searches["libraries"] | {install, str(Path(install).parent)}
+            str(Path(path) / name)
+            for path in searches["libraries"] | searches["programs"]
+            | {install, str(Path(install).parent)}
+            for name in ("specs", "lto-wrapper")
         }
         libc = {
             str(_trusted_runtime_path(path, compiler=True))
@@ -1628,12 +1822,19 @@ class ProbeSession:
         profile = {
             "runtime_files": sorted(runtime),
             "runtime_directories": sorted(directories),
+            "compiler_search_directories": sorted(directories),
             "runtime_stat_probes": sorted(probes | {"/proc/self/exe"}),
             "runtime_interpreter": str(_trusted_runtime_path(interpreter, compiler=True)),
             "runtime_libc": libc.pop(),
+            "runtime_aliases": list(self._compiler_runtime_aliases()) if (
+                Path(compiler[0]).name in {"arm-none-eabi-gcc", "arm-none-eabi-gcc.exe"}
+            ) else [],
         }
         self.budget.charge("control", len(encoded(profile)))
         return profile
+
+    def _dependency_runtime(self):
+        return self._compiler_runtime_profile(self.dependency_compiler)
 
     def _compiler_tools(self, cxx, names):
         compiler = str(Path("/usr/bin/g++" if cxx else "/usr/bin/cc").resolve(strict=True))
@@ -1852,6 +2053,15 @@ class ProbeSession:
                 if registration.native_tool is not None:
                     tool = registration.native_tool
                     identity["native_tool"] = {"sha256": tool.digest, "inputs": list(tool.inputs)}
+                if registration.runtime_tool is not None:
+                    tool = registration.runtime_tool
+                    identity["runtime_tool"] = {
+                        "path": tool.path, "canonical": tool.canonical,
+                        "mode": tool.mode, "sha256": tool.digest,
+                        "aliases": [list(item) for item in result.runtime_receipt],
+                    }
+                if registration.stdout_transform is not None:
+                    identity["stdout_transform"] = registration.stdout_transform
                 record = {
                     "command": identity, "output_sha256": hashlib.sha256(result.stdout).hexdigest(),
                 }
@@ -1864,6 +2074,8 @@ class ProbeSession:
                     registration.argv, sorted(set(registration.code)), inputs,
                     sorted(set(registration.directories)), outputs,
                     None if registration.native_tool is None else registration.native_tool.digest,
+                    None if registration.runtime_tool is None else registration.runtime_tool.digest,
+                    registration.stdout_transform,
                 ])).hexdigest()
                 key = f"{sequence - 1:016x}"
                 self.budget.charge("mapping", len(command.encode("utf-8")) + len(result.stdout) + len(encoded(record)))

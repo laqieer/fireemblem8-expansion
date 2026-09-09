@@ -76,10 +76,22 @@ paths must agree there too. Discovery grants no directory-wide member contents,
 and matching bundle additions/deletions follow the selected CURRENT/BASE view;
 a nonmatching member is not classified as generated merely because it shares
 the directory.
-Modern link-library directory shells are adapted through one trusted
-`arm-none-eabi-gcc` query whose stdout is reduced with the ordinary shell
-`dirname` semantics before Make consumes it. Unsupported compiler names or
-binutils roots reject instead of widening the execution surface.
+Modern link-library directory shells preserve the selected compiler's complete
+optional `-B`, architecture and metadata-query argv. The root-owned system
+`arm-none-eabi-gcc` image and required library aliases are captured, revalidated
+and executed through the existing compiler confinement; the resulting stdout
+is reduced with ordinary shell `dirname` semantics before Make consumes it.
+The runtime receipt participates in the dynamic-command observation. A failed
+required query rejects with its real nonzero status instead of becoming a
+successful empty producer. Unsupported compiler modes, compiler names or
+binutils roots reject before execution.
+
+The build framework still supports checkout-local toolchain roots for ordinary
+modern builds. The ownership reporter does not execute a checkout-local
+filename match: those roots currently have no trusted installed-tool identity
+contract equivalent to the root-owned system package capture. Selecting one
+for an ownership-observed directory query therefore returns that precise
+compatibility error rather than granting candidate execution authority.
 
 Deleted-path resolution requires the selected BASE ownership model, not just
 BASE's filename inventory. It uses that model's graph rules, generated-source
