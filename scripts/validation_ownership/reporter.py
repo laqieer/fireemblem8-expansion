@@ -2104,6 +2104,17 @@ def _validate_semantics(
             raise OwnershipError(
                 f"path rule {rule['id']!r} duplicates a selector"
             )
+        for role in ("include", "exclude"):
+            for selector in rule[role]:
+                if (
+                    selector["kind"] == "exact"
+                    and selector["path"] not in entries
+                    and selector["path"] not in generated_paths
+                ):
+                    raise OwnershipError(
+                        f"path rule {rule['id']!r} has stale exact {role} "
+                        f"selector {selector['path']!r}"
+                    )
 
     exclusion_ids = set()
     for exclusion in graph["exclusions"]:

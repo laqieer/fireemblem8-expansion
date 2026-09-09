@@ -3131,6 +3131,12 @@ game behavior needs a compensating change.
    fail-closed external-enforcement exclusion without changing path rules or
    owner edges; every existing edge must invalidate. Reordering exclusions,
    selectors, or JSON keys with equal semantics must remain stable. Confirm
+   that deleting a real unprobed tracked path while retaining an exact
+   path-rule include or exclude selector rejects as stale. Removing that exact
+   selector must restore current validation while `resolve --changed` still
+   explains the deletion from the validated BASE model. Prefix selectors need
+   not match a current member, and valid generated-source selectors remain
+   admitted. Confirm
    outside sentinels survive and no
    external directory is created. Confirm direct
    GNU Make comparisons cover all 112 live CLI domains from the parsed
