@@ -82,6 +82,8 @@ ROM or make the archival lane a release requirement.
    `python3 -m unittest scripts.modernize.tests.test_archival_dependencies -v`.
 2. Run
    `python3 -m unittest discover -s scripts/modernize/tests -p "test_build_default_lane.py" -v`.
+3. Run
+   `python3 -m unittest scripts.localization.game_catalog.tests.test_final_delivery_gate -v`.
 
 ### Expected result
 
@@ -93,6 +95,9 @@ custom aliases, and `generated-data-link-check` still generate and include the
 needed dependency makefiles, build the generated header before compiling the
 native object, and rebuild after header or depfile churn. Mixed safe/unsafe
 goal lists retain the dependency behavior in either order.
+The existing game-localization final targets also skip archival remakes.
+Clearing only their suppression policy, without changing target names,
+reintroduces real preprocessing in the negative control.
 
 ### Negative control
 
@@ -113,6 +118,8 @@ or RAM behavior.
   — `scripts/modernize/tests/test_archival_dependencies.py`.
 - `python3 -m unittest discover -s scripts/modernize/tests -p "test_build_default_lane.py" -v`
   — `scripts/modernize/tests/test_build_default_lane.py`.
+- `python3 -m unittest scripts.localization.game_catalog.tests.test_final_delivery_gate -v`
+  — `scripts/localization/game_catalog/tests/test_final_delivery_gate.py`.
 
 ### Cleanup and limitations
 

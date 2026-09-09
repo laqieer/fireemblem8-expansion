@@ -1,18 +1,22 @@
 import re
 import subprocess
+import tempfile
 import unittest
 from pathlib import Path
+
+from scripts.modernize.tests.test_archival_dependencies import (
+    ArchivalDependencyFixture,
+    TMP_ROOT,
+)
 
 
 ROOT = Path(__file__).resolve().parents[4]
 GAME_LOCALIZATION_MK = ROOT / "game_localization.mk"
-MAKEFILE = ROOT / "Makefile"
 
 
 class FinalDeliveryGateTests(unittest.TestCase):
     def setUp(self):
         self.fragment = GAME_LOCALIZATION_MK.read_text(encoding="utf-8")
-        self.makefile = MAKEFILE.read_text(encoding="utf-8")
 
     def _prerequisites(self, target):
         match = re.search(
@@ -83,14 +87,24 @@ class FinalDeliveryGateTests(unittest.TestCase):
             "game-localization-final-font-check",
             "game-localization-final-check",
         )
-        block = re.search(
-            r"^MAKECMDGOALS_NODEP\s*:=.*?(?=^\n|^ifeq)",
-            self.makefile,
-            re.MULTILINE | re.DOTALL,
-        )
-        self.assertIsNotNone(block)
+        TMP_ROOT.mkdir(parents=True, exist_ok=True)
         for target in required:
-            self.assertIn(target, block.group(0))
+            with self.subTest(target=target):
+                temporary = tempfile.TemporaryDirectory(
+                    prefix="localization-dependencies-", dir=TMP_ROOT
+                )
+                self.addCleanup(temporary.cleanup)
+                fixture = ArchivalDependencyFixture(temporary, host_goals=required)
+                result = fixture.make(target)
+                self.assertEqual(result.returncode, 0, result.stdout)
+                self.assertTrue((fixture.root / (target + ".stamp")).exists())
+                self.assertFalse(fixture.depfile.exists(), result.stdout)
+                self.assertEqual(fixture.log_lines(fixture.cpp_log), [])
+
+                control = fixture.make(target, "MAKECMDGOALS_NODEP=")
+                self.assertEqual(control.returncode, 0, control.stdout)
+                self.assertTrue(fixture.depfile.exists(), control.stdout)
+                self.assertGreater(len(fixture.log_lines(fixture.cpp_log)), 0)
 
 
 if __name__ == "__main__":

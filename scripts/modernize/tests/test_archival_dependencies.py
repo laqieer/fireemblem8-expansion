@@ -17,7 +17,7 @@ TMP_ROOT = ROOT / "build" / "test-tmp"
 
 
 class ArchivalDependencyFixture:
-    def __init__(self, temporary):
+    def __init__(self, temporary, host_goals=()):
         self._temporary = temporary
         self.root = Path(temporary.name) / "fixture"
         self.root.mkdir(parents=True)
@@ -31,9 +31,10 @@ class ArchivalDependencyFixture:
         self.goal_log = self.root / "goal.log"
         self.customalias_bin = self.root / "customalias.bin"
         self.link_check_bin = self.root / "generated-data-link-check.bin"
-        self._write_fixture()
+        self._write_fixture(host_goals)
 
-    def _write_fixture(self) -> None:
+    def _write_fixture(self, host_goals) -> None:
+        extra_host_goals = " ".join(host_goals)
         shutil.copyfile(FRAGMENT, self.root / "archival_dependencies.mk")
         (self.root / "build" / "deps").mkdir(parents=True)
         (self.root / "generated").mkdir()
@@ -94,14 +95,14 @@ class ArchivalDependencyFixture:
                     assets-validate assets-generate assets-check assets-test \\
                     generated-data-validate generated-data-generate generated-data-check generated-data-test \\
                     localization-validate localization-generate localization-check localization-test localization-budget \\
-                    customalias generated-data-link-check
+                    customalias generated-data-link-check {extra_host_goals}
 
                 all: expansion-modern-clean
 
                 expansion-modern-clean \\
                 assets-validate assets-generate assets-check assets-test \\
                 generated-data-validate generated-data-generate generated-data-check generated-data-test \\
-                localization-validate localization-generate localization-check localization-test localization-budget:
+                localization-validate localization-generate localization-check localization-test localization-budget {extra_host_goals}:
                 	@printf '%s\\n' $@ >> $(CURDIR)/goal.log
                 	@touch $(CURDIR)/$@.stamp
 

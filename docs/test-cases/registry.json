@@ -1872,7 +1872,7 @@
       ],
       "purpose": "Prove pure host and default Make goals avoid unrelated archival dependency remakes while compiled or mixed goals keep full generated-header correctness.",
       "prerequisites": "Repository root with /usr/bin/make, /usr/bin/cpp, and /usr/bin/cc installed; the tests own build/test-tmp/ for temporary fixture state.",
-      "actions": "Run the focused archival dependency fixture tests, then the default-lane structural tests documented in the procedure.",
+      "actions": "Run the focused archival dependency fixture, default-lane structural, and game-localization final-delivery tests documented in the procedure.",
       "expected_result": "Pure host and default goals run without generating or refreshing unrelated archival .d files, including after a prior archival build and subsequent source edit, while explicit archival, custom alias, generated-data-link-check, and mixed safe/unsafe invocations still generate and load dependency fragments before compiling.",
       "negative_control": "Pre-fix host/default goals eagerly remade legacy depfiles, and a mixed safe modern goal plus legacy.o compiled before the generated header existed.",
       "interactions": "The supported default lane remains modern release only, the archival lane stays explicitly named, and mixed goal lists retain legacy dependency behavior in either goal order.",
@@ -1887,6 +1887,10 @@
         {
           "command": "python3 -m unittest discover -s scripts/modernize/tests -p \"test_build_default_lane.py\" -v",
           "evidence": "scripts/modernize/tests/test_build_default_lane.py"
+        },
+        {
+          "command": "python3 -m unittest scripts.localization.game_catalog.tests.test_final_delivery_gate -v",
+          "evidence": "scripts/localization/game_catalog/tests/test_final_delivery_gate.py"
         }
       ]
     },
