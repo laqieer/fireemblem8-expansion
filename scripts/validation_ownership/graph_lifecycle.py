@@ -45,6 +45,7 @@ def prove(root, graph, *, session, schema, oracle, model):
     triggers = {event["id"]: event for event in graph["lifecycle_events"]
                 if event["type"] in reporter.REQUIRED_PROOF_KINDS}
     proofs = [event for event in graph["lifecycle_events"] if event["type"] == "deletion_proof"]
+    checks = (graph["artifact"]["executable_consumer"], graph["artifact"]["consistency_check"])
     results = []
     for event in proofs:
         with tempfile.TemporaryDirectory(prefix="graph-lifecycle-", dir=session.base) as directory:
@@ -54,22 +55,26 @@ def prove(root, graph, *, session, schema, oracle, model):
             payload = encoded(graph)
             session.budget.charge("control", len(payload))
             path.write_bytes(payload)
-            check(artifact_root, "validation-ownership-check", session=session, graph=graph,
-                  schema=schema, oracle=oracle, model=model)
+            for check_id in checks:
+                check(artifact_root, check_id, session=session, graph=graph,
+                      schema=schema, oracle=oracle, model=model)
             backup = artifact_root / "graph.backup"
             path.replace(backup)
             try:
-                check(artifact_root, "validation-ownership-check", session=session, graph=graph,
-                      schema=schema, oracle=oracle, model=model)
-            except MakeProbeError as error:
-                if reporter.LIFECYCLE_FAILURE_REASON not in str(error):
-                    raise
-            else:
-                raise MakeProbeError("lifecycle artifact removal did not fail")
+                for check_id in checks:
+                    try:
+                        check(artifact_root, check_id, session=session, graph=graph,
+                              schema=schema, oracle=oracle, model=model)
+                    except MakeProbeError as error:
+                        if reporter.LIFECYCLE_FAILURE_REASON not in str(error):
+                            raise
+                    else:
+                        raise MakeProbeError("lifecycle artifact removal did not fail: " + check_id)
             finally:
                 backup.replace(path)
-            check(artifact_root, "validation-ownership-check", session=session, graph=graph,
-                  schema=schema, oracle=oracle, model=model)
+            for check_id in checks:
+                check(artifact_root, check_id, session=session, graph=graph,
+                      schema=schema, oracle=oracle, model=model)
         results.append({
             "trigger_event_id": event["trigger_event_id"],
             "trigger_type": triggers[event["trigger_event_id"]]["type"],

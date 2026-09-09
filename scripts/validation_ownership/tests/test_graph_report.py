@@ -7,7 +7,7 @@ import subprocess
 from types import SimpleNamespace
 from unittest import mock
 
-from scripts.validation_ownership import reporter
+from scripts.validation_ownership import graph_lifecycle, reporter
 from scripts.validation_ownership.budget import MakeProbeError, ProbeBudget
 from scripts.validation_ownership.graph_report import check
 from .report_fixture import ReportFixture
@@ -31,13 +31,26 @@ class GraphReportTests(unittest.TestCase):
     def test_real_complete_report_partition_oracle_and_lifecycle(self):
         removed = []
         replace = Path.replace
+        checks = {}
+        lifecycle_check = graph_lifecycle.check
 
         def observe_removal(path, target):
             if Path(target).name == "graph.backup":
                 removed.append(path)
             return replace(path, target)
 
-        with mock.patch.object(Path, "replace", new=observe_removal):
+        def observe_check(artifact_root, check_id, **arguments):
+            present = (artifact_root / reporter.GRAPH_PATH).is_file()
+            outcome = "fail"
+            try:
+                result = lifecycle_check(artifact_root, check_id, **arguments)
+                outcome = "pass"
+                return result
+            finally:
+                checks.setdefault(artifact_root, []).append((check_id, present, outcome))
+
+        with mock.patch.object(Path, "replace", new=observe_removal), \
+             mock.patch.object(graph_lifecycle, "check", new=observe_check):
             result = self.run_report(changed_paths=("Makefile",))
         self.assertFalse(result["policy"]["narrowing_authorized"])
         self.assertEqual(result["coverage"]["tracked_paths"], result["coverage"]["owned_paths"])
@@ -47,8 +60,42 @@ class GraphReportTests(unittest.TestCase):
         self.assertEqual(len(removed), len(result["artifact"]["executable_lifecycle"]))
         self.assertTrue(all(item["removal"] == "fail" and item["restoration"] == "pass"
                             for item in result["artifact"]["executable_lifecycle"]))
+        artifact = json.loads((self.fixture.root / reporter.GRAPH_PATH).read_text())["artifact"]
+        self.assertEqual(len(checks), len(removed))
+        for observations in checks.values():
+            for check_id in (artifact["executable_consumer"], artifact["consistency_check"]):
+                self.assertEqual(
+                    [(present, outcome) for route, present, outcome in observations
+                     if route == check_id],
+                    [(True, "pass"), (False, "fail"), (True, "pass")],
+                )
         self.assertEqual(result["resolutions"][0]["path"], "Makefile")
         self.assertGreater(result["execution"]["runs"], 0)
+
+    def test_both_declared_lifecycle_routes_require_removal_failure_and_restoration(self):
+        artifact = json.loads((self.fixture.root / reporter.GRAPH_PATH).read_text())["artifact"]
+        lifecycle_check = graph_lifecycle.check
+        for selected in (artifact["executable_consumer"], artifact["consistency_check"]):
+            for phase in ("removal", "restoration"):
+                with self.subTest(check=selected, phase=phase):
+                    absent = set()
+
+                    def broken_route(artifact_root, check_id, **arguments):
+                        if check_id == selected:
+                            if not (artifact_root / reporter.GRAPH_PATH).is_file():
+                                absent.add(artifact_root)
+                                if phase == "removal":
+                                    return 0
+                            elif artifact_root in absent and phase == "restoration":
+                                raise MakeProbeError("controlled restored artifact failure")
+                        return lifecycle_check(artifact_root, check_id, **arguments)
+
+                    expected = ("artifact removal did not fail" if phase == "removal"
+                                else "controlled restored artifact failure")
+                    with mock.patch.object(graph_lifecycle, "check", new=broken_route):
+                        with self.assertRaisesRegex(MakeProbeError, expected):
+                            self.run_report()
+                    self.assertTrue(absent)
 
     def test_each_lifecycle_trigger_requires_its_actual_removal_failure(self):
         replace = Path.replace

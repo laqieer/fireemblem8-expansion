@@ -3282,6 +3282,12 @@ authority change remains scoped to its affected edges.
 Observe one real removal/restoration cycle for every lifecycle trigger.
 Suppress a later removal while leaving the requested proof record intact:
 the report must fail rather than reuse an earlier trigger's successful cycle.
+For each trigger, observe both artifact-declared routes: the executable
+consumer and the tester-case consistency check must each pass before removal,
+fail while the actual graph is absent, and pass after restoration. In a
+controlled regression, make only one route accept removal or reject the
+restored artifact. The report must fail for either route independently;
+checking only the consumer reproduced the pre-fix consistency-route omission.
 The base-pinned verifier additionally requires every oracle-backed edge's
 resolved authority fingerprint to equal the exact base and rejects trusted
 edge invalidation even when the surface, evidence ID, and edge type stay fixed.

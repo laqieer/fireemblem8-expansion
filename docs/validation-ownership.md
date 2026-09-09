@@ -377,23 +377,23 @@ The graph uses issue #176's admission fields: one owner, executable consumer,
 unique decision, consistency check, bounded maintenance estimate, deletion
 criterion, expiry, and disposition history. Checkpoint, dependency-change, and
 pre-graduation triggers each have one later proof bound to the artifact,
-dependency edge or decision authority. The public check uses the #176-style
-bounded sandbox and isolated launcher: for each trigger it removes the graph,
-runs metadata integrity plus the declared consumer/consistency identities
-against the two executable artifact states. Removal must produce the fixed
-named semantic failure, restoration must pass, and those bounded behavioral
+dependency edge or decision authority. The public check uses its bounded
+session under the isolated launcher: for each trigger, both the declared
+executable consumer and consistency check run before removal, while the graph
+is absent, and after restoration. Each route must produce the fixed named
+semantic failure on removal and pass on restoration; those bounded behavioral
 results are attached to every trigger-specific proof record.
 Self-declared replacement reasons, fabricated authorities, stale timestamps,
 or non-restoring proofs reject.
 Each proof performs its own actual removal and restoration under the same
 report budget. One successful cycle is never copied into several trigger
 records; skipping a later removal must fail even if an earlier proof passed.
-The lifecycle consumer now calls the same nonrecursive complete
-`validate_graph` path as the public checker, then performs the independent
-oracle measurement. Make/workflow authorities and exact resolved owner pairs
-are therefore checked on every restored proof without invoking the lifecycle
-driver again. Broken/stale edges, owners, Make contracts, workflows, or oracle
-pairs fail the proof rather than passing an artifact-byte-only shortcut.
+Both routes validate the artifact schema, equality with the already measured
+graph, and independent oracle owner pairs using that same complete model.
+The consistency route also checks its actual captured tester-case registry.
+Neither route reruns Make or recursively invokes the lifecycle driver.
+Allowing removal or rejecting restoration in either route must fail the proof;
+the other route's success cannot substitute for it.
 
 The independently sealed oracle pins exact `(edge_type, evidence_id)` owner
 pairs for runtime, host-only, generated,
