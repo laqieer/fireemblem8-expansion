@@ -31,6 +31,10 @@ The graph reads generated include bytes from the completed
 `MAKEFILE_LIST`. Resolving a registration does not execute its producer
 in advance. Native dispatch, source receipts, replacement and cleanup remain
 owned by P; no preparatory sample supplies the graph's source census.
+Asset discovery additionally binds its logical digest to the actual captured
+manifest/source path, mode and content identities. Equal Git inputs remain
+stable across independent materializations despite different real mtimes;
+ordinary CLI stamping and full metadata/cache validation stay unchanged.
 
 Asset discovery reuses the existing
 [`load_discovery(..., tracked_sources=...)` and renderer](asset_manifest.md#captured-source-discovery)

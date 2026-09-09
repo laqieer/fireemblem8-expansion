@@ -505,6 +505,60 @@ class GraphCommandTests(unittest.TestCase):
         self.assertFalse(probe.budget.children)
         self.asset_view_evidence["cleanup"] = probe.base is None and not probe.budget.children
 
+    def test_asset_publication_is_stable_across_independent_materializations(self):
+        from scripts.assets.manifest import discovery_sources, load_manifest
+
+        source = "assets/manifest.json"
+        inputs = (source, *discovery_sources(load_manifest(str(ROOT / source))))
+        for path in inputs:
+            self.add(path, (ROOT / path).read_bytes())
+        for prefix in CODE_PREFIXES:
+            for path in (ROOT / prefix).rglob("*.py"):
+                self.add(path.relative_to(ROOT).as_posix(), path.read_bytes())
+        output = "build/generated/asset-discovery/current.mk"
+        command = (
+            'python3 -m scripts.assets --custom-spell-effects "0" --item-id-cap "0xCD" '
+            f'--manifest "{source}" --discovery-makefile "{output}" discovery-makefile'
+        )
+        self.add("Makefile", f"include {output}\n{output}:\n\t{command}\nall: ;\n")
+        results = []
+        identities = []
+        timestamps = []
+        for change in (None, None, "content", "mode"):
+            if change is not None:
+                path = "assets/portrait_registry.json"
+                data = (self.root / path).read_bytes()
+                self.add(
+                    path, data + b"\n" if change == "content" else data,
+                    "100755" if change == "mode" else "100644",
+                )
+            budget = ProbeBudget()
+            loader = self.capture_loader(budget)
+            with ProbeSession(loader, scratch_root=self.root / "build/scratch", budget=budget) as probe:
+                identities.append(probe.source_owners(inputs))
+                before = {path: (probe.tree / path).stat().st_mtime_ns for path in inputs}
+                observed = probe.make(
+                    "all", variables=("MAKE_RESTARTS",),
+                    commands={command: asset_discovery_command(probe, source, output)},
+                )
+                self.assertEqual(observed.semantics["domains"]["MAKE_RESTARTS"]["value"], "1")
+                self.assertEqual(
+                    {path: (probe.tree / path).stat().st_mtime_ns for path in inputs}, before,
+                )
+                timestamps.append(before)
+                results.append(observed)
+            self.assertIsNone(probe.base)
+            self.assertFalse(budget.children)
+        self.assertEqual(identities[0], identities[1])
+        self.assertNotEqual(timestamps[0], timestamps[1])
+        self.assertEqual(results[0].generated, results[1].generated)
+        self.assertEqual(results[0].semantics["dynamic_commands"], results[1].semantics["dynamic_commands"])
+        self.assertEqual(results[0].semantic_digest, results[1].semantic_digest)
+        for before, after in ((1, 2), (2, 3)):
+            self.assertNotEqual(identities[before], identities[after])
+            self.assertNotEqual(results[before].generated, results[after].generated)
+            self.assertNotEqual(results[before].semantic_digest, results[after].semantic_digest)
+
 
 if __name__ == "__main__":
     unittest.main()

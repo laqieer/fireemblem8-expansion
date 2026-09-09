@@ -188,15 +188,17 @@ def asset_discovery_command(session: ProbeSession, source: str, logical_output: 
     ):
         raise MakeProbeError("asset discovery returned an invalid concrete source list")
     sources = session.sources(tuple([source, *paths]))
+    identities = session.source_owners(sources)
     return python_command(
         session,
         "import json;from pathlib import Path;"
         "from scripts.assets.manifest import render_discovery_artifact;"
         "logical,content=render_discovery_artifact(sys.argv[1],sys.argv[2],"
-        "tracked_sources=frozenset(json.loads(sys.argv[3])));"
+        "tracked_sources=frozenset(json.loads(sys.argv[3])),"
+        "source_identities=json.loads(sys.argv[4]));"
         "out=Path('/work')/logical;out.parent.mkdir(parents=True,exist_ok=True);"
         "out.write_text(content)",
-        (source, logical_output, json.dumps(sources)),
+        (source, logical_output, json.dumps(sources), json.dumps(identities)),
         sources=sources, outputs=(logical_output,), code=("scripts/assets/manifest.py",),
     )
 
