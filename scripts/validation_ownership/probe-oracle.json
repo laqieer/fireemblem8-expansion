@@ -60,6 +60,56 @@
       ]
     },
     {
+      "path": "scripts/assets/manifest.py",
+      "expected_surface": "surface.asset-generator",
+      "expected_owners": [
+        {"edge_type": "adversarial-control", "evidence_id": "owner.host-build"},
+        {"edge_type": "compile-owner", "evidence_id": "owner.compile-modern"},
+        {"edge_type": "drift-check", "evidence_id": "owner.drift-assets"},
+        {"edge_type": "generated-by", "evidence_id": "owner.generator-assets"},
+        {"edge_type": "generated-consumer", "evidence_id": "owner.link-modern"},
+        {"edge_type": "link-owner", "evidence_id": "owner.link-modern"},
+        {"edge_type": "owns-test", "evidence_id": "owner.host-assets"}
+      ]
+    },
+    {
+      "path": "scripts/assets/cli.py",
+      "expected_surface": "surface.asset-generator",
+      "expected_owners": [
+        {"edge_type": "adversarial-control", "evidence_id": "owner.host-build"},
+        {"edge_type": "compile-owner", "evidence_id": "owner.compile-modern"},
+        {"edge_type": "drift-check", "evidence_id": "owner.drift-assets"},
+        {"edge_type": "generated-by", "evidence_id": "owner.generator-assets"},
+        {"edge_type": "generated-consumer", "evidence_id": "owner.link-modern"},
+        {"edge_type": "link-owner", "evidence_id": "owner.link-modern"},
+        {"edge_type": "owns-test", "evidence_id": "owner.host-assets"}
+      ]
+    },
+    {
+      "path": "assets.mk",
+      "expected_surface": "surface.asset-profile",
+      "expected_owners": [
+        {"edge_type": "adversarial-control", "evidence_id": "owner.host-config"},
+        {"edge_type": "compile-owner", "evidence_id": "owner.compile-modern"},
+        {"edge_type": "dependent-profile", "evidence_id": "owner.profile-modern"},
+        {"edge_type": "drift-check", "evidence_id": "owner.drift-assets"},
+        {"edge_type": "generated-by", "evidence_id": "owner.generator-assets"},
+        {"edge_type": "generated-consumer", "evidence_id": "owner.link-modern"},
+        {"edge_type": "link-owner", "evidence_id": "owner.link-modern"},
+        {"edge_type": "negative-control", "evidence_id": "owner.negative-config"},
+        {"edge_type": "owns-test", "evidence_id": "owner.validation-graph"},
+        {"edge_type": "target-scenario", "evidence_id": "owner.runtime-modern"}
+      ]
+    },
+    {
+      "path": "scripts/assets/tests/test_manifest.py",
+      "expected_surface": "surface.host",
+      "expected_owners": [
+        {"edge_type": "adversarial-control", "evidence_id": "owner.host-workflow"},
+        {"edge_type": "owns-test", "evidence_id": "owner.host-build"}
+      ]
+    },
+    {
       "path": "src/data/items.json",
       "expected_surface": "surface.generated",
       "expected_owners": [
@@ -294,5 +344,5 @@
       ]
     }
   ],
-  "seal": "49afe18ac2260f65521964946185a0801aab23af3ac7fe4bc81f48100b393e12"
+  "seal": "7d820e691be1f10fab3ec58645472dfc7e509001680fad02822f308c2e7bd4fb"
 }

@@ -124,6 +124,73 @@ class AssetOwnershipTests(unittest.TestCase):
                         reporter.validate_probe_oracle(self.oracle, changed, self.entries)
                         reporter._measure(self.oracle, changed, model)
 
+    def test_asset_implementation_and_profile_keep_complete_applicable_owners(self):
+        model = self.model()
+        pipeline = {
+            ("generated-by", "owner.generator-assets"),
+            ("drift-check", "owner.drift-assets"),
+            ("generated-consumer", "owner.link-modern"),
+        }
+        implementation = {
+            ("owns-test", "owner.host-assets"),
+            ("adversarial-control", "owner.host-build"),
+            ("compile-owner", "owner.compile-modern"),
+            ("link-owner", "owner.link-modern"),
+        } | pipeline
+        paths = [
+            path for path in self.entries
+            if path.startswith("scripts/assets/") and not path.startswith("scripts/assets/tests/")
+        ]
+        self.assertIn("scripts/assets/manifest.py", paths)
+        for path in paths:
+            with self.subTest(path=path):
+                selected = reporter._resolve_path(path, self.graph, model)
+                self.assertEqual(selected["surface"], "surface.asset-generator")
+                self.assertEqual(
+                    {(owner["edge_type"], owner["evidence_id"]) for owner in selected["owners"]},
+                    implementation,
+                )
+        profile = reporter._resolve_path("assets.mk", self.graph, model)
+        configuration = {
+            (edge["type"], edge["target"])
+            for edge in self.graph["edges"] if edge["source"] == "surface.configuration"
+        }
+        self.assertEqual(profile["surface"], "surface.asset-profile")
+        self.assertEqual(
+            {(owner["edge_type"], owner["evidence_id"]) for owner in profile["owners"]},
+            configuration | pipeline,
+        )
+        tests = reporter._resolve_path("scripts/assets/tests/test_manifest.py", self.graph, model)
+        self.assertEqual(tests["surface"], "surface.host")
+        authored = reporter._resolve_path("assets/tmx/Ch2Map.tmx", self.graph, model)
+        self.assertIn("manual-handoff", {owner["edge_type"] for owner in authored["owners"]})
+        path = "scripts/assets/unclassified_generator.py"
+        entries = {**self.entries, path: reporter.GitTreeEntry(path, "100644", "blob", "0" * 40)}
+        with self.assertRaisesRegex(reporter.OwnershipError, "semantic admission"):
+            self.model(entries=entries)
+
+    def test_asset_implementation_pipeline_removal_and_wrong_live_owners_reject(self):
+        wrong_targets = {
+            "generated-by": "owner.generator-generated",
+            "drift-check": "owner.drift-generated",
+            "generated-consumer": "owner.consumer-generated",
+        }
+        for surface in ("surface.asset-generator", "surface.asset-profile"):
+            for kind, wrong in wrong_targets.items():
+                edge = next(item for item in self.graph["edges"]
+                            if item["source"] == surface and item["type"] == kind)
+                for remove in (True, False):
+                    with self.subTest(surface=surface, kind=kind, remove=remove):
+                        graph = copy.deepcopy(self.graph)
+                        if remove:
+                            graph["edges"] = [item for item in graph["edges"] if item["id"] != edge["id"]]
+                        else:
+                            next(item for item in graph["edges"] if item["id"] == edge["id"])["target"] = wrong
+                        with self.assertRaises(reporter.OwnershipError):
+                            model = self.model(graph)
+                            reporter.validate_probe_oracle(self.oracle, graph, self.entries)
+                            reporter._measure(self.oracle, graph, model)
+
     def test_unknown_paths_modes_exclusions_and_prefix_admission_reject(self):
         model = self.model()
         for path in ("src/untracked.c", "../src/bm.c", "mgfembp", ".github/CODEOWNERS"):

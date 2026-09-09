@@ -3210,7 +3210,7 @@ game behavior needs a compensating change.
    consumers and immutable checker revision. Represent that complete scope as
    four bounded subjects: exact checker plus domain-separated canonical
    full-path, full-edge-ID and full-consumer-set digests, while retaining all
-   explicit arrays. Prove the actual 93-edge/18-consumer graph fits both
+   explicit arrays. Prove the complete actual graph fits both
    unchanged 40-subject schemas; any changed set/checker or legacy exploded
    subject list must reject. Register and capture the real
    standalone verifier with that qualification, then prove the same record is
@@ -3282,6 +3282,14 @@ checks in that module must still run. The host-only regression supplies an
 available compiler and intercepts the first mutating operation: host-only
 mode never reaches it, while normal mode still enters the unchanged build
 body. This is not a claim that the controlled normal-mode probe builds a ROM.
+
+Resolve the asset implementation package separately from its `tests/` namespace.
+Implementation paths must retain asset host, generation, drift, compilation
+and linked-consumer owners without inventing manual judgments. `assets.mk`
+must retain its existing configuration/default/profile/boot owners in addition
+to asset generation/drift/consumer evidence. Remove or redirect each new
+pipeline relationship to another live owner: the independent oracle must
+reject it. Authored asset manual routes and unrelated host tests remain intact.
 
 The exact main-title inputs select `expansion-modern-title-check`, whose
 title-progression scenario asserts four framebuffer checkpoints. Only the

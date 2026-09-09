@@ -181,6 +181,12 @@ script and returns the prerequisite list.
   Merely observing an arbitrary candidate command cannot grant it execution
   authority, and this registry never selects, skips, or narrows a validation
   gate.
+- The `scripts/assets/` implementation package retains asset generation, drift,
+  compilation and linked-consumer owners, separately from authored A/V
+  judgments. Its `tests/` namespace remains host-test code, matching the
+  existing `ASSET_TOOL_INPUTS` exclusion. `assets.mk` additionally preserves all
+  prior configuration/default-disabled/profile/boot owners while retaining
+  the asset pipeline relationships; this is not a weaker generic host mapping.
 - [`scripts/validation_ownership/reporter.py`](../scripts/validation_ownership/reporter.py)
   enumerates tracked paths through trusted Git, resolves live authorities,
   emits canonical JSON, and verifies that execution did not change Git state.

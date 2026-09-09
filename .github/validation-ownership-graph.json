@@ -296,6 +296,37 @@
       "dependencies": []
     },
     {
+      "id": "surface.asset-generator",
+      "kind": "surface",
+      "label": "Asset generator implementation and deterministic product formats",
+      "surface_type": "source",
+      "requirements": [
+        "positive",
+        "adversarial",
+        "compile",
+        "link",
+        "generated"
+      ],
+      "dependencies": []
+    },
+    {
+      "id": "surface.asset-profile",
+      "kind": "surface",
+      "label": "Asset Make integration and profile configuration",
+      "surface_type": "configuration",
+      "requirements": [
+        "positive",
+        "adversarial",
+        "default-disabled",
+        "compile",
+        "link",
+        "runtime",
+        "shared-contract",
+        "generated"
+      ],
+      "dependencies": []
+    },
+    {
       "id": "surface.asset-source",
       "kind": "surface",
       "label": "Manifest asset authoring with generated consumers but no single observing scenario",
@@ -1226,6 +1257,125 @@
       "reason": "Subjective portrait appearance remains supplementary to component and runtime-state checks."
     },
     {
+      "id": "asset-generator.owns-test",
+      "type": "owns-test",
+      "source": "surface.asset-generator",
+      "target": "owner.host-assets",
+      "reason": "Asset implementation changes retain real manifest, format, and adapter host tests."
+    },
+    {
+      "id": "asset-generator.adversarial",
+      "type": "adversarial-control",
+      "source": "surface.asset-generator",
+      "target": "owner.host-build",
+      "reason": "The host suite retains malformed asset inputs and generator failure controls."
+    },
+    {
+      "id": "asset-generator.compile",
+      "type": "compile-owner",
+      "source": "surface.asset-generator",
+      "target": "owner.compile-modern",
+      "reason": "Generator implementation must preserve compilation of its actual products."
+    },
+    {
+      "id": "asset-generator.link",
+      "type": "link-owner",
+      "source": "surface.asset-generator",
+      "target": "owner.link-modern",
+      "reason": "Asset generator changes retain modern linkage and resource constraints."
+    },
+    {
+      "id": "asset-generator.generator",
+      "type": "generated-by",
+      "source": "surface.asset-generator",
+      "target": "owner.generator-assets",
+      "reason": "The existing asset generator executes the changed implementation."
+    },
+    {
+      "id": "asset-generator.drift",
+      "type": "drift-check",
+      "source": "surface.asset-generator",
+      "target": "owner.drift-assets",
+      "reason": "Generated products must remain current after implementation changes."
+    },
+    {
+      "id": "asset-generator.consumer",
+      "type": "generated-consumer",
+      "source": "surface.asset-generator",
+      "target": "owner.link-modern",
+      "reason": "The modern link consumes the generated asset fragments and source-owned objects."
+    },
+    {
+      "id": "asset-profile.owns-test",
+      "type": "owns-test",
+      "source": "surface.asset-profile",
+      "target": "owner.validation-graph",
+      "reason": "Asset Make wiring retains its existing indexed configuration contract."
+    },
+    {
+      "id": "asset-profile.adversarial",
+      "type": "adversarial-control",
+      "source": "surface.asset-profile",
+      "target": "owner.host-config",
+      "reason": "Asset profile settings retain malformed configuration controls."
+    },
+    {
+      "id": "asset-profile.compile",
+      "type": "compile-owner",
+      "source": "surface.asset-profile",
+      "target": "owner.compile-modern",
+      "reason": "Asset profile wiring must preserve supported modern compilation."
+    },
+    {
+      "id": "asset-profile.link",
+      "type": "link-owner",
+      "source": "surface.asset-profile",
+      "target": "owner.link-modern",
+      "reason": "Asset profile wiring must preserve modern link and budget properties."
+    },
+    {
+      "id": "asset-profile.target",
+      "type": "target-scenario",
+      "source": "surface.asset-profile",
+      "target": "owner.runtime-modern",
+      "reason": "Asset Make configuration retains its existing target boot owner."
+    },
+    {
+      "id": "asset-profile.profile",
+      "type": "dependent-profile",
+      "source": "surface.asset-profile",
+      "target": "owner.profile-modern",
+      "reason": "Shared asset configuration retains existing debug and release profile coverage."
+    },
+    {
+      "id": "asset-profile.negative",
+      "type": "negative-control",
+      "source": "surface.asset-profile",
+      "target": "owner.negative-config",
+      "reason": "The default lane remains the asset configuration negative control."
+    },
+    {
+      "id": "asset-profile.generator",
+      "type": "generated-by",
+      "source": "surface.asset-profile",
+      "target": "owner.generator-assets",
+      "reason": "The selected asset generator exercises Make profile inputs."
+    },
+    {
+      "id": "asset-profile.drift",
+      "type": "drift-check",
+      "source": "surface.asset-profile",
+      "target": "owner.drift-assets",
+      "reason": "Profile-selected asset products retain deterministic drift validation."
+    },
+    {
+      "id": "asset-profile.consumer",
+      "type": "generated-consumer",
+      "source": "surface.asset-profile",
+      "target": "owner.link-modern",
+      "reason": "Asset Make fragments attach profile products to compiled modern consumers."
+    },
+    {
       "id": "asset-source.owns-test",
       "type": "owns-test",
       "source": "surface.asset-source",
@@ -1513,10 +1663,6 @@
         {
           "kind": "exact",
           "path": "asmdiff.sh"
-        },
-        {
-          "kind": "exact",
-          "path": "assets.mk"
         },
         {
           "kind": "exact",
@@ -1857,6 +2003,10 @@
         },
         {
           "kind": "prefix",
+          "path": "scripts/assets/"
+        },
+        {
+          "kind": "prefix",
           "path": "scripts/localization/"
         }
       ]
@@ -2105,6 +2255,44 @@
         {
           "kind": "exact",
           "path": "graphics/portrait/portrait_Eirika_tileset.png"
+        }
+      ],
+      "exclude": []
+    },
+    {
+      "id": "paths.asset-generator",
+      "surface": "surface.asset-generator",
+      "include": [
+        {
+          "kind": "prefix",
+          "path": "scripts/assets/"
+        }
+      ],
+      "exclude": [
+        {
+          "kind": "prefix",
+          "path": "scripts/assets/tests/"
+        }
+      ]
+    },
+    {
+      "id": "paths.asset-tests",
+      "surface": "surface.host",
+      "include": [
+        {
+          "kind": "prefix",
+          "path": "scripts/assets/tests/"
+        }
+      ],
+      "exclude": []
+    },
+    {
+      "id": "paths.asset-profile",
+      "surface": "surface.asset-profile",
+      "include": [
+        {
+          "kind": "exact",
+          "path": "assets.mk"
         }
       ],
       "exclude": []
