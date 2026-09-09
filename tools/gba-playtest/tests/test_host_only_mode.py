@@ -19,7 +19,7 @@ What is proven here:
 * normal mode is unchanged: the same class still probes and still captures;
 * a hermetic staged worktree (TemporaryDirectory) holding stale, mismatched
   debug/release/legacy ROM-shaped, ELF and save artifacts at the exact paths
-  the suite looks at: host-only skips all nine live classes, exits 0, and
+  the suite looks at: host-only skips all registered live classes, exits 0, and
   leaves every staged file byte-, size- and mtime-identical (nothing deleted,
   nothing rewritten), while the same tree in normal mode really opens the
   stale ROM and fails loudly.
@@ -668,6 +668,32 @@ class HostOnlyClassificationTests(unittest.TestCase):
                 for _test, reason in result.skipped:
                     self.assertIn("host-only mode", reason)
 
+    def test_full_project_profile_build_skips_before_cleanup_with_arm_tool_available(self):
+        module = importlib.import_module("test_custom_spell_effect")
+        test_class = module.CustomSpellProfileAssetIsolationTests
+        with mock.patch.object(module, "ARM_CC", "/usr/bin/arm-none-eabi-gcc"), \
+             mock.patch.object(module.shutil, "rmtree", side_effect=OSError("blocked cleanup")) as cleanup, \
+             mock.patch.object(module.subprocess, "Popen") as launch:
+            with _host_only():
+                result = _run_case(test_class)
+            self.assertEqual(result.errors, [])
+            self.assertEqual(result.failures, [])
+            self.assertEqual(result.testsRun, 0)
+            self.assertTrue(result.skipped)
+            cleanup.assert_not_called()
+            launch.assert_not_called()
+
+            with _normal_mode():
+                result = _run_case(test_class)
+            self.assertEqual(result.testsRun, 1)
+            self.assertEqual(len(result.errors), 1)
+            self.assertEqual(result.skipped, [])
+            cleanup.assert_called_once_with(
+                module.ROOT / "build" / "test-artifacts" / "custom-spell-profile-assets",
+                ignore_errors=True,
+            )
+            launch.assert_not_called()
+
     def test_live_modules_have_no_unregistered_live_entry_point(self):
         """Run EVERY class of the live modules in host-only mode with a
         poisoned capture: an unregistered/unguarded live test would reach
@@ -705,6 +731,7 @@ class HostOnlyClassificationTests(unittest.TestCase):
             ("test_save_load_scenario", "SaveLoadScenarioFilesTests"),
             ("test_tools_scenario", "ToolsReleaseNegativeFilesTests"),
             ("test_savesuspend_resume_scenario", "SavesuspendResumeScenarioFilesTests"),
+            ("test_custom_spell_effect", "CustomSpellConfigTests"),
         )
         for module_name, class_name in cases:
             with self.subTest(module=module_name, cls=class_name):

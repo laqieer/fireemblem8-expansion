@@ -8,6 +8,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+import host_mode
+
 ROOT = Path(__file__).resolve().parents[3]
 SOURCE = ROOT / "src" / "custom_spell_effect.c"
 DATA_SOURCE = ROOT / "src" / "data" / "custom_spell_effect_data.c"
@@ -560,6 +562,7 @@ class CustomSpellArmTests(unittest.TestCase):
             self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
 
 
+@host_mode.live_artifact_testcase("concurrent custom-spell full-project ROM builds")
 class CustomSpellProfileAssetIsolationTests(unittest.TestCase):
     def test_concurrent_enabled_disabled_full_modern_compiles_keep_assets_isolated(self):
         if ARM_CC is None:

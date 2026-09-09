@@ -3254,6 +3254,14 @@ targets, workflow jobs/steps, and tester cases rather than a duplicate command
 list. Both ownership commands are required, scrubbed `host-tests` gates and
 members of the complete 31-gate upstream mirror.
 
+With the ARM compiler installed for ownership metadata queries, the explicit
+host-only suite must still skip the concurrent custom-spell full-project
+build before artifact cleanup or process launch. Configuration and host
+checks in that module must still run. The host-only regression supplies an
+available compiler and intercepts the first mutating operation: host-only
+mode never reaches it, while normal mode still enters the unchanged build
+body. This is not a claim that the controlled normal-mode probe builds a ROM.
+
 The exact main-title inputs select `expansion-modern-title-check`, whose
 title-progression scenario asserts four framebuffer checkpoints. Only the
 three imported LORM_SP1_PROOF inputs select

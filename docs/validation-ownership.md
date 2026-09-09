@@ -222,7 +222,11 @@ library-directory queries. The ownership consumer also compiles native
 `gbagfx` against `png.h`, libpng and zlib, so the ARM compiler alone is
 insufficient; `libpng-dev` supplies its development dependency closure on the
 supported Ubuntu host, and its existing Makefile queries libpng through
-`pkg-config`. Use the existing
+`pkg-config`. Installing the query compiler does not opt the explicit
+`GBA_PLAYTEST_HOST_ONLY=1` suite into full project ROM builds. The concurrent
+custom-spell profile build uses the existing live-artifact class guard and
+registry; its configuration/host checks still run, and normal-mode build
+behavior is unchanged. Use the existing
 [pinned host Python environment](workflow-pilot.md) for local host tests.
 Both `user-namespace` and the supported `sudo-drop` launcher are valid
 observations. Missing native dependencies or unavailable confinement remain
