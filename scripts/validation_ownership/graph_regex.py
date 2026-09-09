@@ -21,7 +21,7 @@ def evaluate(budget: ProbeBudget, operation: str, payload):
         [
             "/usr/bin/python3", "-I", "-S", "-B", "-c", WORKER,
             operation, str(budget.limits.address_space_bytes),
-            str(budget.limits.pending_bytes), str(Path(__file__).resolve().parents[2]),
+            str(len(request)), str(Path(__file__).resolve().parents[2]),
         ],
         env=ENVIRONMENT, input_data=request,
     )

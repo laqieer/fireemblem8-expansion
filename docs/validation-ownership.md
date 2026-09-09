@@ -542,6 +542,10 @@ DOTALL semantics. It applies the existing address-space bound before parsing
 inputs or compiling patterns and retains the report's original deadline,
 launch/input/output budgets and owned cleanup. No engine, dependency, dialect,
 service or numeric allowance is added.
+The caller first validates the encoded request against the existing file and
+pending bounds, then gives the worker that exact message length as its input
+ceiling. A cumulative pending allowance is not an allocation request: small
+messages must not reserve the report-wide traffic budget before parsing.
 
 All command patterns are evaluated as one batch for a concrete command; exact
 completed match results are reused only within that matcher/report lifetime.

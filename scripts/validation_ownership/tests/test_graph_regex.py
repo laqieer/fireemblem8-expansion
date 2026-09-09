@@ -40,6 +40,33 @@ class GraphRegexTests(unittest.TestCase):
                 result.append(value)
         return result
 
+    def test_worker_input_bound_tracks_actual_request_not_aggregate_pending_budget(self):
+        budget = self.budget()
+        execute = budget.run
+        bounds = []
+
+        def observe(argv, **arguments):
+            result = execute(argv, **arguments)
+            bounds.append((int(argv[-2]), len(arguments["input_data"]), result.returncode))
+            return result
+
+        cases = (
+            ("compile", {"patterns": ["^ok$"]}, None),
+            ("compile", {"patterns": ["^" + "a" * 1024 + "$"]}, None),
+            ("fullmatch", {"patterns": ["^caf\u00e9$"], "command": "caf\u00e9"}, (0,)),
+            ("schema", ["ok", {"type": "string"}, {"type": "string"}], None),
+        )
+        with mock.patch.object(budget, "run", side_effect=observe):
+            for operation, payload, expected in cases:
+                with self.subTest(operation=operation, payload=payload):
+                    self.assertEqual(evaluate(budget, operation, payload), expected)
+        self.assertEqual(len(bounds), len(cases))
+        for limit, actual, status in bounds:
+            self.assertEqual(limit, actual)
+            self.assertLess(limit, budget.limits.pending_bytes)
+            self.assertEqual(status, 0)
+        self.assertFalse(budget.children)
+
     def test_catastrophic_command_match_enters_engine_and_obeys_same_report_deadline(self):
         budget = self.budget(seconds=0.75)
         matcher = CommandPatterns(budget, ("^(a+)+$",))
