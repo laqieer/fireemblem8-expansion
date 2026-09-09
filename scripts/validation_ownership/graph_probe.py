@@ -196,6 +196,14 @@ def source_census(sources):
 def _loaded_sources(session, observation):
     values = observation.semantics["domains"]["MAKEFILE_LIST"]["value"].split()
     generated = {item.path: item.data for item in observation.generated}
+    for resolved, spelling in observation.file_open_attempts:
+        try:
+            name = relative_path(resolved.removeprefix("/repo/"))
+            relative_path(spelling.removeprefix("/repo/"))
+        except MakeProbeError as error:
+            raise MakeProbeError(f"unadmitted Make file-open spelling: {spelling!r}") from error
+        if name not in session.snapshot.files and name not in generated:
+            raise MakeProbeError(f"unadmitted Make file-open: {spelling!r}")
     result = {}
     for name in values:
         name = name.removeprefix("/repo/")

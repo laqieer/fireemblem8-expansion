@@ -659,6 +659,15 @@ consume `semantic_digest`, not `execution_digest`. These are ephemeral
 execution/semantic boundaries, not committed source ledgers or ROM identity
 requirements.
 
+`MakeObservation.file_open_attempts` retains unique `(resolved_path,
+syscall_spelling)` pairs for the live Make process's repository file-open
+requests, including requests whose absence Make ignores. These are attempted
+opens, not successful reads; directory enumeration and actual kernel statuses
+retain their existing separate observations. The spelling is what Make passed
+to the syscall after its own normalization, not reconstructed Makefile text.
+The records use the existing protected observation channel and cumulative
+bookkeeping allowance, without granting additional access.
+
 ## Aggregate lifetime and resources
 
 Create **one** `ProbeBudget` before loading a report's tree, then share one

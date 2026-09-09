@@ -24,7 +24,7 @@ CODE_PREFIXES = (
 )
 ROOT_RUNTIME_FILES = (
     "/usr/include/newlib/stdlib.h", "/usr/include/build", "/usr/include/.dep",
-    "/bin/mkdir", "/bin/env", "/usr/bin/env",
+    "/bin/mkdir", "/bin/env", "/usr/bin/env", "/bin/arm-none-eabi-gcc",
 )
 MODERN_ARCH_QUERY_FLAGS = ("-mcpu=arm7tdmi", "-mthumb", "-mthumb-interwork")
 MODERN_COMPILER_NAMES = frozenset(("arm-none-eabi-gcc", "arm-none-eabi-gcc.exe"))
@@ -188,32 +188,29 @@ def asset_discovery_command(session: ProbeSession, source: str, logical_output: 
     ):
         raise MakeProbeError("asset discovery returned an invalid concrete source list")
     sources = session.sources(tuple([source, *paths]))
+    identities = session.source_owners(sources)
     return python_command(
         session,
         "import json;from pathlib import Path;"
         "from scripts.assets.manifest import render_discovery_artifact;"
         "logical,content=render_discovery_artifact(sys.argv[1],sys.argv[2],"
-        "tracked_sources=frozenset(json.loads(sys.argv[3])));"
+        "tracked_sources=frozenset(json.loads(sys.argv[3])),"
+        "source_identities=json.loads(sys.argv[4]));"
         "out=Path('/work')/logical;out.parent.mkdir(parents=True,exist_ok=True);"
         "out.write_text(content)",
-        (source, logical_output, json.dumps(sources)),
+        (source, logical_output, json.dumps(sources), json.dumps(identities)),
         sources=sources, outputs=(logical_output,), code=("scripts/assets/manifest.py",),
     )
 
 
-def _supported_modern_toolchain_roots(root):
-    return (
-        Path("/usr/bin"),
-        Path("/bin"),
-        root / "build/toolchain-root/usr/bin",
-        root / ".deps/arm-toolchain-root/usr/bin",
-    )
+def _supported_modern_toolchain_roots():
+    return (Path("/usr/bin"), Path("/bin"))
 
 
-def _resolve_modern_compiler(root, requested):
+def _resolve_modern_compiler(session, requested):
     if not isinstance(requested, str) or not requested:
         raise MakeProbeError("modern toolchain query requires one supported compiler")
-    allowed = tuple(path.resolve() for path in _supported_modern_toolchain_roots(root))
+    allowed = tuple(path.resolve() for path in _supported_modern_toolchain_roots())
 
     def supported(path):
         return (
@@ -226,35 +223,45 @@ def _resolve_modern_compiler(root, requested):
     if "/" in requested:
         candidate = Path(requested)
         if not candidate.is_absolute():
-            candidate = root / candidate
+            candidate = session.loader.root / candidate
         candidate = candidate.resolve()
         if supported(candidate):
-            return str(candidate)
+            return session.runtime_tool(str(candidate))
     else:
         found = shutil.which(requested, path=ENVIRONMENT["PATH"])
         if found:
             candidate = Path(found).resolve()
             if supported(candidate):
-                return str(candidate)
-        for directory in allowed[2:]:
-            candidate = (directory / requested).resolve()
-            if supported(candidate):
-                return str(candidate)
+                return session.runtime_tool(str(candidate))
+    local_roots = (
+        session.loader.root / "build/toolchain-root/usr/bin",
+        session.loader.root / ".deps/arm-toolchain-root/usr/bin",
+    )
+    requested_path = Path(requested)
+    if not requested_path.is_absolute():
+        requested_path = session.loader.root / requested_path
+    if any(
+        requested_path.resolve() == (directory / Path(requested).name).resolve()
+        for directory in local_roots
+    ) or "/" not in requested and any((directory / requested).exists() for directory in local_roots):
+        raise MakeProbeError(
+            "checkout-local modern compiler lacks a trusted installed-tool identity"
+        )
     raise MakeProbeError("modern toolchain query requires one supported arm-none-eabi-gcc compiler")
 
 
-def _resolve_modern_binutils_flag(root, argument):
+def _resolve_modern_binutils_flag(argument):
     if not argument.startswith("-B") or len(argument) <= 2:
         raise MakeProbeError("modern toolchain query has an invalid -B binutils directory")
     value = argument[2:]
     directory = Path(value)
     if not directory.is_absolute():
-        directory = root / directory
+        raise MakeProbeError("modern toolchain query escaped the supported binutils roots")
     directory = directory.resolve()
-    allowed = {path.resolve() for path in _supported_modern_toolchain_roots(root)}
+    allowed = {path.resolve() for path in _supported_modern_toolchain_roots()}
     if directory not in allowed:
         raise MakeProbeError("modern toolchain query escaped the supported binutils roots")
-    return "-B" + str(directory) + "/"
+    return argument
 
 
 def modern_toolchain_directory_command(session, command, contract):
@@ -269,25 +276,18 @@ def modern_toolchain_directory_command(session, command, contract):
     expected = MODERN_DIRECTORY_CONTRACTS[contract["id"]]
     if len(tokens) not in {len(MODERN_ARCH_QUERY_FLAGS) + 2, len(MODERN_ARCH_QUERY_FLAGS) + 3}:
         raise MakeProbeError("modern toolchain directory query differs from its declared flags")
-    compiler = _resolve_modern_compiler(session.loader.root, tokens[0])
     flags = tokens[1:-1]
+    binutils = ()
     if flags and flags[0].startswith("-B"):
-        flags = [_resolve_modern_binutils_flag(session.loader.root, flags[0]), *flags[1:]]
+        binutils = (_resolve_modern_binutils_flag(flags[0]),)
+        flags = flags[1:]
     if tuple(flags) != MODERN_ARCH_QUERY_FLAGS or tokens[-1] != expected:
         raise MakeProbeError("modern toolchain directory query differs from its declared flags")
-    result = session.budget.run(
-        [compiler, *flags, expected],
-        env={**ENVIRONMENT, "TMPDIR": str(session.base)},
-        cwd=session.loader.root,
-        output_limit=session.budget.limits.file_bytes,
+    compiler = _resolve_modern_compiler(session, tokens[0])
+    return Command(
+        (compiler.path, *binutils, *flags, expected),
+        code=(contract["tool"],), runtime_tool=compiler, stdout_transform="dirname",
     )
-    if result.returncode:
-        argv = ("/usr/bin/printf", "")
-    else:
-        reported = text(result.stdout, "modern toolchain query output", "utf-8").rstrip("\n")
-        directory = os.path.dirname(reported) or "."
-        argv = ("/usr/bin/printf", "%s\n", directory)
-    return Command(argv, code=(contract["tool"],))
 
 
 class MakeCommands:
@@ -302,6 +302,7 @@ class MakeCommands:
         self.requests = []
         self.registrations = {}
         self.scanner = None
+        self.scanner_directories = None
         self.includes = {}
 
     def _matches(self, command):
@@ -324,9 +325,49 @@ class MakeCommands:
         self.session.budget.charge("cache", len(encoded([
             registration.argv, registration.code, registration.sources,
             registration.directories, registration.outputs, registration.dependency_only,
+            None if registration.runtime_tool is None else (
+                registration.runtime_tool.path, registration.runtime_tool.canonical,
+                registration.runtime_tool.mode, registration.runtime_tool.digest,
+            ),
+            registration.stdout_transform,
         ])))
         self.registrations[command] = registration
         return registration
+
+    def _scaninc_candidate(self, spelling):
+        if (
+            not spelling or spelling.startswith("/") or "\\" in spelling
+            or len(spelling.encode("utf-8")) > 4096
+            or any(ord(character) < 32 or ord(character) == 127 for character in spelling)
+        ):
+            raise MakeProbeError("scaninc include must be canonical and repository-relative after search resolution")
+        parts = []
+        components = spelling.split("/")
+        for index, component in enumerate(components):
+            if component in {"", "."}:
+                continue
+            if component == "..":
+                if not parts:
+                    raise MakeProbeError("scaninc include must be canonical and repository-relative after search resolution")
+                parts.pop()
+                continue
+            parts.append(component)
+            path = "/".join(parts)
+            entry = self.session.loader.entries.get(path)
+            if entry is not None and (
+                entry.mode == "120000"
+                or entry.mode not in {"100644", "100755"} and path not in self.scanner_directories
+            ):
+                raise MakeProbeError("scaninc include resolves to an unadmitted source")
+            if index < len(components) - 1 and path not in self.scanner_directories:
+                return None
+        if not parts:
+            raise MakeProbeError("scaninc include resolves to an unadmitted source")
+        path = relative_path("/".join(parts))
+        entry = self.session.loader.entries.get(path)
+        if entry is not None and path not in self.session.snapshot.files:
+            raise MakeProbeError("scaninc include resolves to an unadmitted source")
+        return path if path in self.session.snapshot.files else None
 
     def scaninc(self, source):
         source = relative_path(source)
@@ -339,35 +380,44 @@ class MakeCommands:
                 headers=tuple(sorted(path for path in files if path.endswith(".h"))),
                 cxx=True, defines=("SCANINC_NO_MAIN",),
             )
-        pending = [source]
+            self.scanner_directories = {
+                parent.as_posix() for path in self.session.loader.entries
+                for parent in PurePosixPath(path).parents
+            }
+            self.session.budget.charge("cache", len(encoded(sorted(self.scanner_directories))))
+        pending = [(source, source)]
         sources = set()
+        spellings = {source}
+        visited = set()
         while pending:
             self.session.budget.remaining()
-            if len(sources) >= 4096:
+            if len(visited) >= 4096:
                 self.session.budget.reject("scaninc source closure exceeds declaration bound")
-            path = pending.pop()
-            if path in sources:
+            spelling, path = pending.pop()
+            if spelling in visited:
                 continue
+            visited.add(spelling)
             sources.add(path)
             if path not in self.includes:
                 result = self.session.native(self.scanner, ("includes", path), sources=(path,))
                 includes = text(result.stdout, "scaninc include names").splitlines()
                 if includes != sorted(set(includes)):
                     raise MakeProbeError("scaninc returned an invalid include set")
-                self.includes[path] = tuple(relative_path(name) for name in includes)
+                self.includes[path] = tuple(includes)
                 self.session.budget.charge("cache", len(encoded([path, includes])))
             for include in self.includes[path]:
-                for directory in ("include", "", str(PurePosixPath(path).parent)):
-                    candidate = include if directory in {"", "."} else directory + "/" + include
-                    entry = self.session.loader.entries.get(candidate)
-                    if entry is not None and candidate not in self.session.snapshot.files:
-                        raise MakeProbeError("scaninc include resolves to an unadmitted source")
-                    if candidate in self.session.snapshot.files:
-                        if candidate not in sources:
-                            pending.append(candidate)
+                source_directory = spelling.rpartition("/")[0]
+                for directory in ("include", "", source_directory):
+                    candidate = directory + "/" + include if directory else include
+                    resolved = self._scaninc_candidate(candidate)
+                    if resolved is not None:
+                        if candidate not in spellings:
+                            self.session.budget.charge("cache", len(encoded([candidate, resolved])))
+                            spellings.add(candidate)
+                            pending.append((candidate, resolved))
                         break
         return Command(
-            ("/native/tool", "scan", source, *sorted(sources)),
+            ("/native/tool", "scan", source, *sorted(spellings)),
             sources=tuple(sorted(sources)), native_tool=self.scanner,
         )
 

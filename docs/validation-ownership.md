@@ -26,11 +26,27 @@ lifecycle or public command. Registered native-tool results and generated Make
 include outputs must reach that shared observer through admitted APIs before
 this acceptance can pass; an older duplicate sandbox or fabricated empty
 command output is not a substitute.
+The primary-source discovery API from
+[#234 / #235](https://github.com/laqieer/fireemblem8-expansion/pull/235)
+is also a genuine prerequisite. It must be available in the actual selected
+BASE before directory-backed registry comparison is qualified. No CURRENT
+schema implementation is substituted into a historical BASE, and introducing
+the API does not claim that older trees already supplied it.
 The graph reads generated include bytes from the completed
 `MakeObservation.generated` result corresponding to the actual
 `MAKEFILE_LIST`. Resolving a registration does not execute its producer
 in advance. Native dispatch, source receipts, replacement and cleanup remain
 owned by P; no preparatory sample supplies the graph's source census.
+Asset discovery additionally binds its logical digest to the actual captured
+manifest/source path, mode and content identities. Equal Git inputs remain
+stable across independent materializations despite different real mtimes;
+ordinary CLI stamping and full metadata/cache validation stay unchanged.
+The graph also checks actual repository file-open attempts, not only the
+successfully loaded `MAKEFILE_LIST`. An unknown optional include cannot acquire
+authority merely because Make ignored its absence. Attempts must resolve to
+captured regular sources or actual completed producer outputs; known generated
+include/remake behavior remains valid. Syscall spellings and real metadata
+remain intact, rather than being inferred from a new Make parser.
 
 Asset discovery reuses the existing
 [`load_discovery(..., tracked_sources=...)` and renderer](asset_manifest.md#captured-source-discovery)
@@ -60,10 +76,26 @@ paths must agree there too. Discovery grants no directory-wide member contents,
 and matching bundle additions/deletions follow the selected CURRENT/BASE view;
 a nonmatching member is not classified as generated merely because it shares
 the directory.
-Modern link-library directory shells are adapted through one trusted
-`arm-none-eabi-gcc` query whose stdout is reduced with the ordinary shell
-`dirname` semantics before Make consumes it. Unsupported compiler names or
-binutils roots reject instead of widening the execution surface.
+Modern link-library directory shells preserve the selected compiler's complete
+optional `-B`, architecture and metadata-query argv. The root-owned system
+`arm-none-eabi-gcc` image and required library aliases are captured, revalidated
+and executed through the existing compiler confinement; the resulting stdout
+is reduced with ordinary shell `dirname` semantics before Make consumes it.
+The runtime receipt participates in the dynamic-command observation. A failed
+required query rejects with its real nonzero status instead of becoming a
+successful empty producer. Unsupported compiler modes, compiler names or
+binutils roots reject before execution.
+
+The build framework still supports checkout-local toolchain roots for ordinary
+modern builds. The ownership reporter does not execute a checkout-local
+filename match: those roots currently have no trusted installed-tool identity
+contract equivalent to the root-owned system package capture. Selecting one
+for an ownership-observed directory query therefore returns that precise
+compatibility error rather than granting candidate execution authority.
+The system compiler capture itself is optional at session setup: a host owner
+without the ARM package retains the genuine absent `/bin`/`/usr/bin` alias
+observation and can run non-toolchain graph controls. A directory query still
+requires the captured compiler and fails rather than fabricating coverage.
 
 Deleted-path resolution requires the selected BASE ownership model, not just
 BASE's filename inventory. It uses that model's graph rules, generated-source
@@ -90,6 +122,15 @@ open undeclared absent candidates such as
 invent dependency output. Missing initial inputs, escaping includes and
 symlink/gitlink matches fail. Native command consumption must equal its
 declaration, and the resulting dependency text must reach actual GNU Make.
+Include names are resolved only after joining each original search directory,
+so repository-contained parent components in real banim sources remain valid.
+The planner checks every intermediate component against the captured namespace
+before collapsing `..`; an absent or non-directory prefix cannot become a
+different existing file. Canonical paths bind source admission, while the
+original accepted search spellings are passed to the native traversal and
+retained in its ordinary output. Alias traversal remains bounded, and escaping
+or nonregular namespaces still reject. The line-framed include helper rejects
+embedded line breaks or NUL rather than splitting one pathname into claims.
 Ordinary-versus-adapted comparisons use equivalent captured input metadata, not
 an ambient worktree containing untracked files. Native adapter unit tests and
 standalone producer successes are not whole-root Make acceptance.
@@ -167,12 +208,14 @@ It is not a pre-evaluation boundary: GNU Make processes ambient `MAKEFILES`
 and command-line `--eval` before reading the root Makefile. Use the standalone
 entry above for untrusted evaluation; do not prepend a Make invocation.
 
-The host-only Build setup installs `build-essential`, `libmgba-dev`,
-`libpng-dev`, `python3-venv` and `pkg-config`. The ownership consumer compiles native
-`gbagfx` against `png.h`, libpng and zlib, so a compiler alone is insufficient;
-`libpng-dev` supplies its development dependency closure on the supported
-Ubuntu host, and its existing Makefile queries libpng through `pkg-config`.
-This does not require the ARM toolchain. Use the existing
+The host Build setup installs `build-essential`, `libmgba-dev`, `libpng-dev`,
+`python3-venv` and `pkg-config`, plus `binutils-arm-none-eabi`,
+`gcc-arm-none-eabi` and `libnewlib-arm-none-eabi` for the real sealed modern
+library-directory queries. The ownership consumer also compiles native
+`gbagfx` against `png.h`, libpng and zlib, so the ARM compiler alone is
+insufficient; `libpng-dev` supplies its development dependency closure on the
+supported Ubuntu host, and its existing Makefile queries libpng through
+`pkg-config`. Use the existing
 [pinned host Python environment](workflow-pilot.md) for local host tests.
 Both `user-namespace` and the supported `sudo-drop` launcher are valid
 observations. Missing native dependencies or unavailable confinement remain

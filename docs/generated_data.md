@@ -550,15 +550,16 @@ dependencies is visible as a one-line diff, not silent.
 
 `source_paths(source_path)` selects primary input paths without parsing their
 contents. The default returns the one supplied path. A directory-backed schema
-overrides it and shares that selector with `load_records`; chapter bundles use
-the same sorted `*_bundle.json` selection in both operations. Discovery does
+overrides it and shares that selector with `load_records`. Chapter bundles,
+chapter objectives and autoplay strategies use the same sorted `*_bundle.json`,
+`*_objectives.json` and `*_strategies.json` selections in both operations. Discovery does
 not bypass ordinary parse, validation, missing-source or empty-directory errors.
 
-The ownership consumer performs discovery with code and explicit directory
-metadata only, then admits the exact regular-file paths to the existing
-confined registry loader. Declared, reported and actually consumed inputs must
-agree. Returning a path is not permission to read it during discovery, and
-nonmatching directory members do not become generated sources.
+This API, introduced by issue #234, supports dependency planning before parsing
+and source-archive consumers. A returned path is a declaration, not permission
+to read it or proof that it was consumed. Isolated consumers must independently
+validate regular-file admission and their actual source reads. The ownership
+graph integration in #180 remains a separate dependent delivery.
 
 ### `TableSchema.dependency_tables()` (Batch B: cross-table validation)
 

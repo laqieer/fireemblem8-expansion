@@ -220,7 +220,8 @@ unsupported; the documented host migration tool owns it.
 ## TC-CORE-004: Generated data loop reports diagnostics
 
 - **Feature / originating issue:** `generated-data-platform` /
-  [#5](https://github.com/laqieer/fireemblem8-expansion/issues/5).
+  [#5](https://github.com/laqieer/fireemblem8-expansion/issues/5), with primary
+  source discovery from [#234](https://github.com/laqieer/fireemblem8-expansion/issues/234).
 - **Supported configuration or artifact:** clean source checkout with Python
   3; generated output is build-local.
 - **Prerequisites and clean starting state:** use a disposable worktree for
@@ -233,12 +234,21 @@ unsupported; the documented host migration tool owns it.
    `make generated-data-check`, and `make generated-data-test`.
 3. Deliberately use an invalid or dangling reference in the disposable copy
    and retain its file, line, column, and breadcrumb diagnostic before reset.
+4. Exercise the primary-source discovery control below for bundles, objectives
+   and strategies. In an owned directory, create two matching filenames with invalid JSON and a nonmatching
+   neighbor. The schema selector must return only the two matching paths in
+   deterministic order without parsing their contents; ordinary loading must
+   still fail on that invalid JSON. The base schema's single-file selector
+   returns its supplied path without reading it.
 
 ### Expected result
 
 Valid authored input generates deterministic C89 output and passes the drift
 gate. A bad cross-table, range, duplicate, or reference value reports an
 actionable source diagnostic instead of generating a partial success.
+Primary input discovery and ordinary loading share the same filename selector.
+Discovery never converts invalid source data into generated success or grants
+filesystem access to a returned path.
 
 ### Negative control
 
@@ -260,6 +270,8 @@ ID expansion must use the separate typed-ID contract.
   — `scripts/generated_data/tests/test_validators.py`.
 - `python3 -m unittest scripts.generated_data.tests.test_cli scripts.generated_data.tests.test_cli_new_tables scripts.generated_data.tests.test_validators -v`
   — `scripts/generated_data/tests/test_cli_new_tables.py`.
+- `python3 -m unittest scripts.generated_data.tests.test_chapterbundle_schema.ChapterBundleValidFixtureTests.test_source_path_discovery_does_not_parse_members_or_change_load_errors -v`
+  — `scripts/generated_data/tests/test_chapterbundle_schema.py`.
 
 ### Cleanup and limitations
 

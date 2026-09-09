@@ -70,6 +70,8 @@ class FoundationTests(unittest.TestCase):
         self.assertFalse(session.cache)
         self.assertFalse(session.mappings)
         self.assertFalse(session.native_tools)
+        self.assertFalse(session.runtime_tools)
+        self.assertFalse(session.runtime_query_profiles)
         self.assertFalse(session._views)
         self.assertFalse(session.make_runtime)
         self.assertFalse(session.runtime_inputs)
@@ -986,6 +988,39 @@ class FoundationTests(unittest.TestCase):
             self.assertGreater(session.processes_used, used[1])
             self.assertFalse((session.runtime_root / canonical.lstrip("/")).exists())
         self.assert_clean(session)
+
+    def test_absent_stock_dispatch_alias_remains_absent_without_weakening_image_conflicts(self):
+        from scripts.validation_ownership import make_probe
+
+        original = "/bin/ownership-absent-dispatch-" + secrets.token_hex(12)
+        canonical = "/usr/bin/" + Path(original).name
+        self.assertFalse(Path(original).exists())
+        self.assertFalse(Path(canonical).exists())
+        self.add("Makefile", (
+            f"ORIGINAL := $(wildcard {original})\n"
+            f"CANONICAL := $(wildcard {canonical})\n"
+            "all: ;\n"
+        ))
+        aliases = (*make_probe.ALIASES, canonical)
+        with patch.object(make_probe, "ALIASES", aliases):
+            with self.session(runtime_files=(original,)) as session:
+                captured, = session.runtime_inputs
+                self.assertIsNone(captured.data)
+                self.assertEqual(captured.canonical, canonical)
+                self.assertEqual(captured.aliases, (("/bin", "usr/bin"),))
+                self.assertNotIn(original, session.runtime_dispatch)
+                self.assertFalse((session.runtime_root / canonical.lstrip("/")).exists())
+                result = session.make("all", variables=("ORIGINAL", "CANONICAL"))
+                self.assertEqual(result.semantics["domains"]["ORIGINAL"]["value"], "")
+                self.assertEqual(result.semantics["domains"]["CANONICAL"]["value"], "")
+            self.assert_clean(session)
+            direct = self.session(runtime_files=(canonical,))
+            with self.assertRaisesRegex(
+                MakeProbeError, "^runtime input conflicts with trusted execution image$",
+            ):
+                with direct:
+                    self.fail("direct reserved helper image collision was admitted")
+            self.assert_clean(direct)
 
     def test_stock_runtime_alias_absence_keeps_component_and_operation_boundaries(self):
         original = "/bin/ownership-absence-boundary-" + secrets.token_hex(12)

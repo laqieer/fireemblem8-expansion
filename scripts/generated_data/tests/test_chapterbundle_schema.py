@@ -17,11 +17,14 @@ import os
 import shutil
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from scripts.generated_data.diagnostics import DiagnosticCollector, GeneratedDataError
 from scripts.generated_data.chapterbundle import schema as chapterbundle_schema
 from scripts.generated_data.eventlists import schema as eventlists_schema
 from scripts.generated_data.eventscripts import schema as eventscripts_schema
+from scripts.generated_data.json_loader import load_json_file
+from scripts.generated_data.registry import REGISTRY
 from scripts.generated_data.schema import DependencyGraph, TableSchema
 from scripts.generated_data.shops import schema as shops_schema
 from scripts.generated_data.supports import schema as supports_schema
@@ -91,17 +94,39 @@ def _messages(diagnostics):
 
 class ChapterBundleValidFixtureTests(unittest.TestCase):
     def test_source_path_discovery_does_not_parse_members_or_change_load_errors(self):
-        with scratch_dir() as temporary:
-            directory = Path(temporary)
-            bundle = directory / "one_bundle.json"
-            bundle.write_text("not valid JSON")
-            (directory / "unrelated.json").write_text("also not valid JSON")
-            schema = chapterbundle_schema.ChapterBundleTableSchema()
-            self.assertEqual(schema.source_paths(str(directory)), [str(bundle)])
-            with self.assertRaises(GeneratedDataError):
-                schema.load_records(str(directory))
-            missing = directory / "missing.json"
-            self.assertEqual(TableSchema().source_paths(str(missing)), (str(missing),))
+        for name, suffix in (
+            ("chapterbundle", "bundle"),
+            ("chapterobjectives", "objectives"),
+            ("autoplaystrategies", "strategies"),
+        ):
+            with self.subTest(schema=name), scratch_dir() as temporary:
+                directory = Path(temporary)
+                first = directory / ("one_" + suffix + ".json")
+                first.write_text("not valid JSON")
+                second = directory / ("two_" + suffix + ".json")
+                second.write_text("not valid JSON either")
+                (directory / "unrelated.json").write_text("also not valid JSON")
+                schema = REGISTRY.resolve(name)
+                empty = directory / "empty"
+                empty.mkdir()
+                missing = directory / "missing.json"
+                with mock.patch("builtins.open", side_effect=AssertionError("content open during discovery")) as opened, \
+                     mock.patch("io.open", side_effect=AssertionError("content open during discovery")) as io_opened, \
+                     mock.patch("os.open", side_effect=AssertionError("content open during discovery")) as os_opened:
+                    self.assertEqual(schema.source_paths(str(directory)), [str(first), str(second)])
+                    self.assertEqual(schema.source_paths(str(first)), [str(first)])
+                    with self.assertRaises(GeneratedDataError):
+                        schema.source_paths(str(empty))
+                    self.assertEqual(TableSchema().source_paths(str(missing)), (str(missing),))
+                opened.assert_not_called()
+                io_opened.assert_not_called()
+                os_opened.assert_not_called()
+                with self.assertRaises(GeneratedDataError) as parser_failure:
+                    load_json_file(str(first))
+                with self.assertRaises(GeneratedDataError) as load_failure:
+                    schema.load_records(str(directory))
+                self.assertEqual(load_failure.exception.message, parser_failure.exception.message)
+                self.assertEqual(str(load_failure.exception.location), str(parser_failure.exception.location))
 
     def test_single_bundle_uses_declared_sources_unless_test_hook_is_explicit(self):
         records = chapterbundle_schema.load_records(cb_fixture("valid.json"))

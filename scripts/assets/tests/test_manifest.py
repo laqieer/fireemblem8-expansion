@@ -31,6 +31,22 @@ TMX_FIXTURE_ROOT = os.path.join(
 )
 
 
+def captured_discovery_identities(source, records):
+    paths = {os.path.relpath(source, REPO_ROOT), *manifest.discovery_sources(records)}
+    identities = []
+    for path in sorted(paths):
+        absolute = os.path.join(REPO_ROOT, path)
+        with open(absolute, "rb") as handle:
+            hasher = hashlib.sha256()
+            for chunk in iter(lambda: handle.read(65536), b""):
+                hasher.update(chunk)
+            identities.append((
+                path, "{:06o}".format(os.fstat(handle.fileno()).st_mode),
+                hasher.hexdigest(),
+            ))
+    return identities
+
+
 def valid_record():
     return {
         "id": "CH2_MAIN_MAP",
@@ -715,16 +731,19 @@ class AssetManifestTests(unittest.TestCase):
     def test_discovery_artifact_uses_same_validation_rendering_and_logical_path(self):
         source = os.path.join(REPO_ROOT, "assets", "manifest.json")
         ordinary = manifest.load_discovery(source)
-        expected = manifest.render_discovery_makefile(ordinary)
+        identities = captured_discovery_identities(source, ordinary)
         tracked = frozenset(manifest.discovery_sources(ordinary))
         logical = "build/generated/asset-discovery/captured.mk"
+        expected = None
         for directory in (REPO_ROOT, TEST_ROOT, os.path.dirname(REPO_ROOT)):
             with self.subTest(directory=directory), contextlib.chdir(directory), mock.patch.object(
                 manifest.subprocess, "run", side_effect=AssertionError("unexpected Git subprocess"),
             ):
                 path, content = manifest.render_discovery_artifact(
-                    source, logical, tracked_sources=tracked,
+                    source, logical, tracked_sources=tracked, source_identities=identities,
                 )
+                if expected is None:
+                    expected = content
                 self.assertEqual(path, logical)
                 self.assertEqual(content, expected)
         self.assertEqual(len(ordinary), 3)
@@ -732,7 +751,9 @@ class AssetManifestTests(unittest.TestCase):
 
     def test_discovery_artifact_rejects_malformed_or_escaping_outputs(self):
         source = os.path.join(REPO_ROOT, "assets", "manifest.json")
-        tracked = frozenset(manifest.discovery_sources(manifest.load_discovery(source)))
+        records = manifest.load_discovery(source)
+        tracked = frozenset(manifest.discovery_sources(records))
+        identities = captured_discovery_identities(source, records)
         for logical in (
             "", "build", "src/forged.mk", "build/../../forged.mk",
             "/work/build/generated/asset-discovery/forged.mk", "build/bad\0.mk",
@@ -742,12 +763,14 @@ class AssetManifestTests(unittest.TestCase):
             with self.subTest(logical=logical):
                 with self.assertRaises(GeneratedDataError):
                     manifest.render_discovery_artifact(
-                        source, logical, tracked_sources=tracked,
+                        source, logical, tracked_sources=tracked, source_identities=identities,
                     )
 
     def test_discovery_artifact_requires_complete_captured_identity(self):
         source = os.path.join(REPO_ROOT, "assets", "manifest.json")
-        tracked = frozenset(manifest.discovery_sources(manifest.load_discovery(source)))
+        records = manifest.load_discovery(source)
+        tracked = frozenset(manifest.discovery_sources(records))
+        identities = captured_discovery_identities(source, records)
         with mock.patch.object(
             manifest.subprocess, "run", side_effect=AssertionError("unexpected Git subprocess"),
         ):
@@ -759,8 +782,37 @@ class AssetManifestTests(unittest.TestCase):
                     with self.assertRaises(error):
                         manifest.render_discovery_artifact(
                             source, "build/generated/asset-discovery/captured.mk",
-                            tracked_sources=admitted,
+                            tracked_sources=admitted, source_identities=identities,
                         )
+        changed_mode = list(identities)
+        path, mode, digest = changed_mode[0]
+        changed_mode[0] = (path, "100755" if mode != "100755" else "100644", digest)
+        changed_digest = list(identities)
+        changed_digest[0] = (path, mode, "0" * 64)
+        for supplied in (
+            None, [], identities[:-1], [*identities, ("extra.json", "100644", "0" * 64)],
+            [*identities[:-1], identities[0]], changed_mode, changed_digest,
+        ):
+            with self.subTest(identities=supplied), self.assertRaises(GeneratedDataError):
+                manifest.render_discovery_artifact(
+                    source, "build/generated/asset-discovery/captured.mk",
+                    tracked_sources=tracked, source_identities=supplied,
+                )
+
+    def test_discovery_artifact_does_not_require_new_hashlib_file_digest_api(self):
+        source = os.path.join(REPO_ROOT, "assets", "manifest.json")
+        records = manifest.load_discovery(source)
+        identities = captured_discovery_identities(source, records)
+        with mock.patch.dict(hashlib.__dict__):
+            hashlib.__dict__.pop("file_digest", None)
+            path, content = manifest.render_discovery_artifact(
+                source, "build/generated/asset-discovery/captured.mk",
+                tracked_sources=frozenset(manifest.discovery_sources(records)),
+                source_identities=identities,
+            )
+            self.assertEqual(captured_discovery_identities(source, records), identities)
+        self.assertEqual(path, "build/generated/asset-discovery/captured.mk")
+        self.assertIn("ASSET_MANIFEST_SOURCE_DIGEST := ", content)
 
     def test_discovery_artifact_make_behavior_uses_equivalent_input_metadata(self):
         source = os.path.join(REPO_ROOT, "assets", "manifest.json")
@@ -771,6 +823,7 @@ class AssetManifestTests(unittest.TestCase):
         _, adapted = manifest.render_discovery_artifact(
             source, "build/generated/asset-discovery/captured.mk",
             tracked_sources=frozenset(sources),
+            source_identities=captured_discovery_identities(source, records),
         )
         cli_output = os.path.join(TEST_ROOT, "ordinary-cli.mk")
         with contextlib.redirect_stdout(io.StringIO()):
@@ -784,7 +837,7 @@ class AssetManifestTests(unittest.TestCase):
             {path: os.stat(os.path.join(REPO_ROOT, path)).st_mtime_ns for path in sources},
             before,
         )
-        self.assertEqual(adapted, ordinary)
+        self.assertNotEqual(adapted, ordinary)
         variables = (
             "ASSET_MANIFEST_SOURCE_DIGEST", "ASSET_TMX_INCBIN_CONSUMERS",
             "ASSET_PORTRAIT_INCBIN_CONSUMERS", "ASSET_BANIM_INCBIN_CONSUMERS",
@@ -810,11 +863,17 @@ class AssetManifestTests(unittest.TestCase):
             return dict(zip(variables, completed.stdout.splitlines()))
 
         expected = observe(ordinary)
-        self.assertEqual(observe(adapted), expected)
-        self.assertEqual(observe("# Nonsemantic producer comment\n" + adapted), expected)
+        actual = observe(adapted)
+        ordinary_digest = expected.pop("ASSET_MANIFEST_SOURCE_DIGEST")
+        captured_digest = actual.pop("ASSET_MANIFEST_SOURCE_DIGEST")
+        self.assertNotEqual(captured_digest, ordinary_digest)
+        self.assertRegex(captured_digest, r"^[0-9a-f]{64}$")
+        self.assertEqual(actual, expected)
+        actual["ASSET_MANIFEST_SOURCE_DIGEST"] = captured_digest
+        self.assertEqual(observe("# Nonsemantic producer comment\n" + adapted), actual)
         self.assertEqual(expected["ASSET_TMX_INCBIN_CONSUMERS"], "CH2_MAIN_MAP")
         changed = observe(adapted + "ASSET_TMX_INCBIN_CONSUMERS := WRONG_CONSUMER\n")
-        self.assertNotEqual(changed, expected)
+        self.assertNotEqual(changed, actual)
 
     def test_make_supports_isolated_output_override_with_portrait_incbin_consumer(self):
         result = self.run_assets_make(

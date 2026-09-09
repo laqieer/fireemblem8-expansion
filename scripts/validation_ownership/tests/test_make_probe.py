@@ -90,6 +90,31 @@ class AuthoritativeMakeProbeTests(unittest.TestCase):
                 with self.assertRaises(MakeProbeError):
                     self.observe()
 
+    def test_unknown_optional_include_attempts_reject_even_when_make_ignores_absence(self):
+        for path in ("missing-untracked.mk", "./missing-untracked.mk", "/repo/missing-untracked.mk"):
+            with self.subTest(path=path):
+                self.add("Makefile", "-include " + path + "\nall: ;\n")
+                with self.assertRaisesRegex(MakeProbeError, "unadmitted Make file-open"):
+                    self.observe()
+
+    def test_optional_tracked_include_keeps_actual_source_ownership(self):
+        self.add("Makefile", "-include known.mk\nall: ;\n")
+        self.add("known.mk", "# Existing admitted source.\n")
+        result = self.observe()["all"]["record"]
+        self.assertEqual(result["includes"], ["Makefile", "known.mk"])
+
+    def test_native_open_attempts_keep_ignored_absence_and_raw_spelling(self):
+        self.add("Makefile", "-include /repo/missing-untracked.mk\nall: ;\n")
+        with self.session() as session:
+            observed = session.make("all", variables=("MAKEFILE_LIST",))
+            self.assertEqual(observed.semantics["domains"]["MAKEFILE_LIST"]["value"], "Makefile")
+            self.assertIn(
+                ("/repo/missing-untracked.mk", "/repo/missing-untracked.mk"),
+                observed.file_open_attempts,
+            )
+            self.assertIn(("/repo/Makefile", "Makefile"), observed.file_open_attempts)
+        self.assertFalse(session.budget.children)
+
     def test_unknown_eager_command_never_creates_its_marker(self):
         self.add("Makefile", "VALUE != touch marker\nall: ;\n")
         with self.assertRaises(MakeProbeError):
