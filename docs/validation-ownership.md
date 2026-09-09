@@ -39,12 +39,14 @@ read from candidate claims and is not a skip-validation switch. The shared
 executor must still enforce exact declared/consumed sources and declared
 private outputs. This consumer seam alone does not establish the full Make
 domain, graph, oracle or lifecycle acceptance.
-Python command registrations explicitly declare the repository root and their
-import directories through `Command.directories`. Enumeration uses the complete
-active immutable view, never a sparse code-only tree; seeing a member name does
-not grant permission to read its content. Registry and asset controls exercise
-both properties. Root enumeration admits gitlink namespaces only by capturing
-their actual recorded pins from the repository's common-Git module databases.
+Python command registrations explicitly declare the repository root, the
+adapted command's actual repository import closure, and the import directories
+needed for that closure through `Command.directories`. Enumeration uses the
+complete active immutable view, never a sparse code-only tree; seeing a member
+name does not grant permission to read its content. Registry and asset controls
+exercise both properties. Root enumeration admits gitlink namespaces only by
+capturing their actual recorded pins from the repository's common-Git module
+databases.
 Registry declaration execution now has an explicit shared-session entry:
 `graph_registry.observe_declarations(loader, session)`. The selected loader
 must be the active public view and own the same budget. It invokes the real
@@ -52,12 +54,16 @@ candidate `REGISTRY` through a confined `Command`; the reporter then validates
 the declaration fields and their captured source paths. A foreign view, stale
 source or invalid schema identity rejects rather than becoming an empty registry.
 Directory-backed primary inputs use the schema's metadata-only `source_paths`
-selector, shared with its ordinary loader. The reporter then invokes the
-existing strict registry consumer with exactly those captured paths. It grants
-no directory-wide member contents during discovery and requires declared,
-reported and consumed inputs to agree. Matching bundle additions/deletions
-follow the selected CURRENT/BASE view; a nonmatching member is not classified
-as generated merely because it shares the directory.
+selector, shared with its ordinary loader. File-backed primary inputs still run
+the existing strict `load_records` consumer, so declared, reported and consumed
+paths must agree there too. Discovery grants no directory-wide member contents,
+and matching bundle additions/deletions follow the selected CURRENT/BASE view;
+a nonmatching member is not classified as generated merely because it shares
+the directory.
+Modern link-library directory shells are adapted through one trusted
+`arm-none-eabi-gcc` query whose stdout is reduced with the ordinary shell
+`dirname` semantics before Make consumes it. Unsupported compiler names or
+binutils roots reject instead of widening the execution surface.
 
 Deleted-path resolution requires the selected BASE ownership model, not just
 BASE's filename inventory. It uses that model's graph rules, generated-source

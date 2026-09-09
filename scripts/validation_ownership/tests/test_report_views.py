@@ -43,7 +43,13 @@ class ReportViewTests(unittest.TestCase):
         path.write_text(content)
 
     def registry(self, source, *, pattern=None):
-        resolver = "" if pattern is None else (
+        resolver = (
+            " def load_records(self,source):\n"
+            "  path=Path(source)\n"
+            "  return {'source_paths':[str(path)],"
+            "'records':[json.loads(path.read_text())]}\n"
+            " def manifest_record_count(self,records): return len(records['records'])\n"
+        ) if pattern is None else (
             f" def source_paths(self,source): return sorted(Path(source).glob({pattern!r}))\n"
             " def load_records(self,source):\n"
             "  paths=self.source_paths(source)\n"
@@ -94,6 +100,16 @@ class ReportViewTests(unittest.TestCase):
         self.assertIsNone(probe.base)
         self.assertFalse(self.budget.children)
 
+    def test_file_backed_registry_loads_records_and_reports_source_paths(self):
+        self.registry("src/data/table.json")
+        self.add("src/data/table.json", '{"value":1}\n')
+        loader = self.capture()
+        with ProbeSession(loader, scratch_root=self.root / "build/probe", budget=self.budget) as probe:
+            records, paths = reporter._generated_registry_records(loader, session=probe)
+            self.assertEqual(paths, {"src/data/table.json"})
+            self.assertEqual(records[0]["source_paths"], ["src/data/table.json"])
+        self.assertFalse(self.budget.children)
+
     def test_directory_discovery_cannot_read_member_contents(self):
         self.registry("src/data", pattern="*_bundle.json")
         self.add("src/data/one_bundle.json", '{"version":1}\n')
@@ -123,6 +139,24 @@ class ReportViewTests(unittest.TestCase):
             " (Path(source)/'unreported.json').read_bytes()\n"
             " return original_load(self,source)\n"
             "Schema.load_records=read_unreported\n"
+        ))
+        loader = self.capture()
+        with ProbeSession(loader, scratch_root=self.root / "build/probe", budget=self.budget) as probe:
+            with self.assertRaisesRegex(reporter.OwnershipError, "undeclared source read"):
+                reporter._generated_registry_records(loader, session=probe)
+        self.assertFalse(self.budget.children)
+
+    def test_file_backed_loader_cannot_read_an_unreported_companion(self):
+        self.registry("src/data/table.json")
+        self.add("src/data/table.json", '{"version":1}\n')
+        self.add("src/data/extra.json", '{"hidden":true}\n')
+        path = self.root / "scripts/generated_data/registry.py"
+        path.write_text(path.read_text() + (
+            "\noriginal_load=Schema.load_records\n"
+            "def read_extra(self,source):\n"
+            " Path(source).with_name('extra.json').read_bytes()\n"
+            " return original_load(self,source)\n"
+            "Schema.load_records=read_extra\n"
         ))
         loader = self.capture()
         with ProbeSession(loader, scratch_root=self.root / "build/probe", budget=self.budget) as probe:

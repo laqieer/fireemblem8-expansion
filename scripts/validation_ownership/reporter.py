@@ -430,7 +430,7 @@ def _generated_registry_records(
 ) -> tuple[list[dict[str, Any]], set[str]]:
     try:
         from scripts.validation_ownership.graph_registry import (
-            observe_declarations, observe_directory_sources,
+            observe_declarations, observe_source_paths,
         )
         from scripts.validation_ownership.budget import MakeProbeError
 
@@ -501,18 +501,19 @@ def _generated_registry_records(
                 raise OwnershipError(
                     f"generated-data schema {name!r} has malformed {field}"
                 )
-            if candidate in loader.entries:
-                loader.entry(candidate, f"generated-data schema {name!r} {field}")
-                paths.add(candidate)
-            elif field == "default_source" and any(
-                path.startswith(candidate.rstrip("/") + "/") for path in loader.entries
+            if field == "default_source" and (
+                candidate in loader.entries
+                or any(path.startswith(candidate.rstrip("/") + "/") for path in loader.entries)
             ):
                 try:
-                    resolved = observe_directory_sources(loader, session, record)
+                    resolved = observe_source_paths(loader, session, record)
                 except MakeProbeError as error:
                     raise OwnershipError(str(error)) from error
                 paths.update(resolved)
                 record["source_paths"] = resolved
+            elif candidate in loader.entries:
+                loader.entry(candidate, f"generated-data schema {name!r} {field}")
+                paths.add(candidate)
             else:
                 raise OwnershipError(
                     f"generated-data schema {name!r} references stale {field} "

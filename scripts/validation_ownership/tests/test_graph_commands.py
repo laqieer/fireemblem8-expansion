@@ -304,6 +304,110 @@ class GraphCommandTests(unittest.TestCase):
             self.assertTrue(actual.events)
             self.assertTrue(all(event["match"] == 0 for event in actual.events))
 
+    @unittest.skipUnless(shutil.which("arm-none-eabi-gcc"), "requires arm-none-eabi-gcc")
+    def test_modern_toolchain_directory_queries_match_ordinary_shell_and_make(self):
+        compiler = str(Path(shutil.which("arm-none-eabi-gcc")).resolve())
+        self.add("scripts/shiftcheck/modern_toolchain.sh",
+                 (ROOT / "scripts/shiftcheck/modern_toolchain.sh").read_bytes(), "100755")
+        cases = (
+            ("modern-libgcc-directory",
+             f'p=$("{compiler}" -mcpu=arm7tdmi -mthumb -mthumb-interwork '
+             '-print-libgcc-file-name 2>/dev/null) && dirname "$p"'),
+            ("modern-libc-directory",
+             f'p=$("{compiler}" -mcpu=arm7tdmi -mthumb -mthumb-interwork '
+             '-print-file-name=libc.a 2>/dev/null) && dirname "$p"'),
+        )
+        for contract_id, command in cases:
+            with self.subTest(contract=contract_id):
+                contract = next(item for item in self.contracts.values() if item["id"] == contract_id)
+                shell = subprocess.run(
+                    ["/bin/sh", "-c", command], cwd=self.root,
+                    env={**ENVIRONMENT, "TMPDIR": str(self.directory)},
+                    capture_output=True, check=True, timeout=15,
+                ).stdout
+                make_command = command.replace("$", "$$")
+                self.add("Makefile", 'VALUE := $(shell ' + make_command + ')\nall:\n\t@printf "%s" "$(VALUE)"\n')
+                ordinary = subprocess.run(
+                    ["/usr/bin/make", "--no-print-directory", "-f", "Makefile", "all"],
+                    cwd=self.root, env={**ENVIRONMENT, "TMPDIR": str(self.directory)},
+                    capture_output=True, check=True, timeout=15,
+                ).stdout
+                with self.session() as probe:
+                    commands = MakeCommands(probe, {contract["expression"]: contract})
+                    registration = commands[command]
+                    self.assertEqual(probe.command(registration).stdout, shell)
+                    observed = probe.make("all", variables=("VALUE",), commands=commands)
+                    self.assertEqual(observed.semantics["domains"]["VALUE"]["value"], ordinary.decode())
+                    self.assertEqual(len(observed.semantics["dynamic_commands"]), 1)
+                    self.assertEqual(observed.stderr, b"")
+
+    def test_modern_toolchain_directory_queries_reject_unsupported_driver_and_binutils_paths(self):
+        self.add("scripts/shiftcheck/modern_toolchain.sh",
+                 (ROOT / "scripts/shiftcheck/modern_toolchain.sh").read_bytes(), "100755")
+        cases = (
+            ('p=$("/usr/bin/cc" -mcpu=arm7tdmi -mthumb -mthumb-interwork '
+             '-print-libgcc-file-name 2>/dev/null) && dirname "$p"',
+             "supported arm-none-eabi-gcc compiler"),
+            ('p=$("arm-none-eabi-gcc" "-B/opt/toolchain/bin/" -mcpu=arm7tdmi -mthumb -mthumb-interwork '
+             '-print-file-name=libc.a 2>/dev/null) && dirname "$p"',
+             "supported binutils roots"),
+        )
+        with self.session() as probe:
+            commands = MakeCommands(probe, self.contracts)
+            for command, expected in cases:
+                with self.subTest(command=command):
+                    with self.assertRaisesRegex(MakeProbeError, expected):
+                        commands[command]
+
+    def test_python_adapters_track_only_their_actual_import_closure(self):
+        for name, data in (
+            ("scripts/__init__.py", ""),
+            ("scripts/generated_data/__init__.py", ""),
+            ("scripts/generated_data/helper.py", "VALUE = 7\n"),
+            ("scripts/generated_data/unrelated.py", "VALUE = 99\n"),
+            ("scripts/generated_data/tool.py",
+             "from scripts.generated_data import helper\nprint(helper.VALUE)\n"),
+        ):
+            self.add(name, data)
+        inline = {
+            "inline-python": {
+                "id": "inline-python",
+                "command_regex": r'^python3 -c "import scripts\.generated_data\.helper as h; print\(h\.VALUE\)"$',
+                "input_files": [],
+                "input_variables": [],
+                "automatic_inputs": [],
+                "resolved_value": None,
+                "owning_evidence_ids": ["owner"],
+            },
+        }
+        script = {
+            "script-python": {
+                "id": "script-python",
+                "command_regex": r"^python3 scripts/generated_data/tool\.py$",
+                "input_files": [],
+                "input_variables": [],
+                "automatic_inputs": [],
+                "resolved_value": None,
+                "owning_evidence_ids": ["owner"],
+            },
+        }
+        with self.session() as probe:
+            inline_registration = MakeCommands(probe, inline)[
+                'python3 -c "import scripts.generated_data.helper as h; print(h.VALUE)"'
+            ]
+            self.assertIn("scripts/generated_data/helper.py", inline_registration.code)
+            self.assertNotIn("scripts/generated_data/unrelated.py", inline_registration.code)
+            self.assertEqual(probe.command(inline_registration).stdout, b"7\n")
+
+            script_registration = MakeCommands(probe, script)["python3 scripts/generated_data/tool.py"]
+            self.assertIn("scripts/generated_data/tool.py", script_registration.code)
+            self.assertIn("scripts/generated_data/helper.py", script_registration.code)
+            self.assertNotIn("scripts/generated_data/unrelated.py", script_registration.code)
+            inputs = {item[0] for item in probe.command(script_registration).input_identities}
+            self.assertIn("scripts/generated_data/tool.py", inputs)
+            self.assertIn("scripts/generated_data/helper.py", inputs)
+            self.assertNotIn("scripts/generated_data/unrelated.py", inputs)
+
     def test_three_record_asset_discovery_reaches_make_and_restarts_once(self):
         from scripts.assets.manifest import discovery_sources, load_manifest
 

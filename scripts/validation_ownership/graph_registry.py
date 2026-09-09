@@ -85,3 +85,23 @@ def observe_directory_sources(loader: AuthorityLoader, session: ProbeSession, re
     if result["name"] != record["name"] or result["version"] != record["version"]:
         raise MakeProbeError("resolved registry identity differs from its declaration")
     return result["source_paths"]
+
+
+def observe_source_paths(loader: AuthorityLoader, session: ProbeSession, record):
+    code = registry_code(loader, session)
+    source = relative_path(record["default_source"])
+    directories = python_import_directories(code)
+    argv = ("/usr/bin/python3", "-I", "-S", "-B", "-c",
+            text(
+                session.budget.read_bytes(TRUSTED_ROOT / "generated_registry_probe.py", "control"),
+                "generated registry driver",
+            ),
+            record["name"], source)
+    if source in session.snapshot.files:
+        result = probe_generated_registry(loader, session=session, command=Command(
+            argv, code=code, sources=(source,), directories=directories,
+        ))
+        if result["name"] != record["name"] or result["version"] != record["version"]:
+            raise MakeProbeError("resolved registry identity differs from its declaration")
+        return result["source_paths"]
+    return observe_directory_sources(loader, session, record)

@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+import ast
+import importlib.util
 import json
-from pathlib import PurePosixPath
+import os
+from pathlib import Path, PurePosixPath
 import re
 import shlex
+import shutil
 
-from .authority import encoded, parse_json, relative_path
+from .authority import ENVIRONMENT, encoded, parse_json, relative_path
 from .budget import MakeProbeError, text
 from .make_probe import Command, ProbeSession
 from .graph_regex import CommandPatterns
@@ -22,6 +26,12 @@ ROOT_RUNTIME_FILES = (
     "/usr/include/newlib/stdlib.h", "/usr/include/build", "/usr/include/.dep",
     "/bin/mkdir", "/bin/env", "/usr/bin/env",
 )
+MODERN_ARCH_QUERY_FLAGS = ("-mcpu=arm7tdmi", "-mthumb", "-mthumb-interwork")
+MODERN_COMPILER_NAMES = frozenset(("arm-none-eabi-gcc", "arm-none-eabi-gcc.exe"))
+MODERN_DIRECTORY_CONTRACTS = {
+    "modern-libgcc-directory": "-print-libgcc-file-name",
+    "modern-libc-directory": "-print-file-name=libc.a",
+}
 
 
 def python_import_directories(code):
@@ -30,11 +40,128 @@ def python_import_directories(code):
     }))
 
 
+def _python_package_name(path):
+    path = relative_path(path)
+    if path.endswith("/__init__.py"):
+        return path[:-12].replace("/", ".")
+    parent = PurePosixPath(path).parent.as_posix()
+    return "" if parent == "." else parent.replace("/", ".")
+
+
+def _python_package_inits(path, available):
+    result = []
+    current = PurePosixPath(relative_path(path)).parent
+    while current.as_posix() != ".":
+        init = current.as_posix() + "/__init__.py"
+        if init in available and init != path:
+            result.append(init)
+        current = current.parent
+    return tuple(reversed(result))
+
+
+def _python_module_paths(available, module, *, main=False):
+    if not module or module.split(".", 1)[0] != "scripts":
+        return ()
+    base = module.replace(".", "/")
+    candidates = ([base + "/__main__.py"] if main else []) + [base + ".py", base + "/__init__.py"]
+    for candidate in candidates:
+        if candidate in available:
+            return (*_python_package_inits(candidate, available), candidate)
+    return ()
+
+
+def _python_import_targets(tree, package=""):
+    modules = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            modules.update(alias.name for alias in node.names)
+            continue
+        if not isinstance(node, ast.ImportFrom):
+            continue
+        if node.level:
+            if not package:
+                continue
+            try:
+                base = importlib.util.resolve_name(
+                    "." * node.level + (node.module or ""), package,
+                )
+            except ImportError:
+                continue
+        else:
+            base = node.module or ""
+        if base:
+            modules.add(base)
+        for alias in node.names:
+            if alias.name != "*" and base:
+                modules.add(base + "." + alias.name)
+    return modules
+
+
+def _available_python_paths(session):
+    return {
+        path for path in session.snapshot.files
+        if path.endswith(".py") and path.startswith("scripts/")
+    }
+
+
+def _python_source_paths(session, source, package=""):
+    available = _available_python_paths(session)
+    try:
+        tree = ast.parse(source)
+    except SyntaxError as error:
+        raise MakeProbeError(f"trusted Python adapter body is not valid Python: {error}") from error
+    result = []
+    for module in _python_import_targets(tree, package):
+        result.extend(_python_module_paths(available, module))
+    return tuple(dict.fromkeys(result))
+
+
+def python_code_closure(session, body, code=()):
+    available = _available_python_paths(session)
+    explicit = tuple(dict.fromkeys(relative_path(path) for path in code))
+    result = set(explicit)
+    pending = []
+
+    def add_path(path):
+        path = relative_path(path)
+        if path in result:
+            return
+        result.add(path)
+        if path.endswith(".py") and path in available:
+            pending.append(path)
+        for init in _python_package_inits(path, available):
+            if init not in result:
+                result.add(init)
+                pending.append(init)
+
+    for path in explicit:
+        if path.endswith(".py") and path in available:
+            pending.append(path)
+        for init in _python_package_inits(path, available):
+            if init not in result:
+                result.add(init)
+                pending.append(init)
+
+    for path in _python_source_paths(session, body):
+        add_path(path)
+
+    while pending:
+        path = pending.pop()
+        try:
+            tree = ast.parse(
+                text(session.snapshot.files[path], f"graph Python code {path}", "utf-8"),
+                filename=path,
+            )
+        except SyntaxError as error:
+            raise MakeProbeError(f"graph Python code {path!r} is not valid Python: {error}") from error
+        for module in _python_import_targets(tree, _python_package_name(path)):
+            for imported in _python_module_paths(available, module):
+                add_path(imported)
+    return tuple(sorted(result))
+
+
 def python_command(session, body, arguments=(), *, sources=(), outputs=(), directories=(), code=()):
-    modules = tuple(sorted({
-        *code, *(path for path in session.snapshot.files
-                 if path.endswith(".py") and path.startswith(CODE_PREFIXES)),
-    }))
+    modules = python_code_closure(session, body, code)
     return Command(
         (PYTHON, "-I", "-S", "-B", "-c",
          "import sys;sys.path.insert(0,'/repo');" + body, *arguments),
@@ -51,6 +178,7 @@ def asset_discovery_command(session: ProbeSession, source: str, logical_output: 
         "import json;from scripts.assets.manifest import load_manifest,discovery_sources;"
         "print(json.dumps(discovery_sources(load_manifest(sys.argv[1]))))",
         (source,), sources=(source,),
+        code=("scripts/assets/manifest.py",),
     )
     paths = parse_json(session.command(discovery).stdout, "asset discovery sources")
     if (
@@ -69,8 +197,97 @@ def asset_discovery_command(session: ProbeSession, source: str, logical_output: 
         "out=Path('/work')/logical;out.parent.mkdir(parents=True,exist_ok=True);"
         "out.write_text(content)",
         (source, logical_output, json.dumps(sources)),
-        sources=sources, outputs=(logical_output,),
+        sources=sources, outputs=(logical_output,), code=("scripts/assets/manifest.py",),
     )
+
+
+def _supported_modern_toolchain_roots(root):
+    return (
+        Path("/usr/bin"),
+        Path("/bin"),
+        root / "build/toolchain-root/usr/bin",
+        root / ".deps/arm-toolchain-root/usr/bin",
+    )
+
+
+def _resolve_modern_compiler(root, requested):
+    if not isinstance(requested, str) or not requested:
+        raise MakeProbeError("modern toolchain query requires one supported compiler")
+    allowed = tuple(path.resolve() for path in _supported_modern_toolchain_roots(root))
+
+    def supported(path):
+        return (
+            path.is_file()
+            and os.access(path, os.X_OK)
+            and path.name in MODERN_COMPILER_NAMES
+            and any(path.parent == directory for directory in allowed)
+        )
+
+    if "/" in requested:
+        candidate = Path(requested)
+        if not candidate.is_absolute():
+            candidate = root / candidate
+        candidate = candidate.resolve()
+        if supported(candidate):
+            return str(candidate)
+    else:
+        found = shutil.which(requested, path=ENVIRONMENT["PATH"])
+        if found:
+            candidate = Path(found).resolve()
+            if supported(candidate):
+                return str(candidate)
+        for directory in allowed[2:]:
+            candidate = (directory / requested).resolve()
+            if supported(candidate):
+                return str(candidate)
+    raise MakeProbeError("modern toolchain query requires one supported arm-none-eabi-gcc compiler")
+
+
+def _resolve_modern_binutils_flag(root, argument):
+    if not argument.startswith("-B") or len(argument) <= 2:
+        raise MakeProbeError("modern toolchain query has an invalid -B binutils directory")
+    value = argument[2:]
+    directory = Path(value)
+    if not directory.is_absolute():
+        directory = root / directory
+    directory = directory.resolve()
+    allowed = {path.resolve() for path in _supported_modern_toolchain_roots(root)}
+    if directory not in allowed:
+        raise MakeProbeError("modern toolchain query escaped the supported binutils roots")
+    return "-B" + str(directory) + "/"
+
+
+def modern_toolchain_directory_command(session, command, contract):
+    prefix = "p=$("
+    suffix = ') && dirname "$p"'
+    if not command.startswith(prefix) or not command.endswith(suffix):
+        raise MakeProbeError("modern toolchain directory query differs from its declared command")
+    inner = command[len(prefix):-len(suffix)]
+    if not inner.endswith(" 2>/dev/null"):
+        raise MakeProbeError("modern toolchain directory query must suppress stderr explicitly")
+    tokens = shlex.split(inner[:-len(" 2>/dev/null")])
+    expected = MODERN_DIRECTORY_CONTRACTS[contract["id"]]
+    if len(tokens) not in {len(MODERN_ARCH_QUERY_FLAGS) + 2, len(MODERN_ARCH_QUERY_FLAGS) + 3}:
+        raise MakeProbeError("modern toolchain directory query differs from its declared flags")
+    compiler = _resolve_modern_compiler(session.loader.root, tokens[0])
+    flags = tokens[1:-1]
+    if flags and flags[0].startswith("-B"):
+        flags = [_resolve_modern_binutils_flag(session.loader.root, flags[0]), *flags[1:]]
+    if tuple(flags) != MODERN_ARCH_QUERY_FLAGS or tokens[-1] != expected:
+        raise MakeProbeError("modern toolchain directory query differs from its declared flags")
+    result = session.budget.run(
+        [compiler, *flags, expected],
+        env={**ENVIRONMENT, "TMPDIR": str(session.base)},
+        cwd=session.loader.root,
+        output_limit=session.budget.limits.file_bytes,
+    )
+    if result.returncode:
+        argv = ("/usr/bin/printf", "")
+    else:
+        reported = text(result.stdout, "modern toolchain query output", "utf-8").rstrip("\n")
+        directory = os.path.dirname(reported) or "."
+        argv = ("/usr/bin/printf", "%s\n", directory)
+    return Command(argv, code=(contract["tool"],))
 
 
 class MakeCommands:
@@ -188,6 +405,8 @@ class MakeCommands:
             return Command(("/usr/bin/uname",))
         if contract["id"] == "legacy-dependency-dry-run-recipes":
             return self.dependency(command)
+        if contract["id"] in MODERN_DIRECTORY_CONTRACTS:
+            return modern_toolchain_directory_command(self.session, command, contract)
         tokens = shlex.split(command)
         while tokens and tokens[-1] in {"2>&1", "2>/dev/null"}:
             tokens.pop()
@@ -265,15 +484,26 @@ class MakeCommands:
         if stdin is not None:
             prefix += "import io;sys.stdin=io.StringIO(" + repr(stdin) + ");"
         arguments = tokens[1:]
+        python_code = tuple(
+            path for path in contract["input_files"]
+            if path.endswith(".py")
+        )
         if arguments[:1] == ["-c"]:
+            python_code = (*python_code, *_python_source_paths(self.session, arguments[1]))
             body = prefix + "sys.argv=['-c']+" + repr(arguments[2:]) + ";exec(" + repr(arguments[1]) + ")"
         elif arguments[:1] == ["-m"]:
+            python_code = (*python_code, *_python_module_paths(
+                _available_python_paths(self.session),
+                arguments[1],
+                main=True,
+            ))
             body = (
                 prefix + "import runpy;sys.argv=" + repr(arguments[1:]) + ";"
                 "runpy.run_module(" + repr(arguments[1]) + ",run_name='__main__')"
             )
         elif arguments and arguments[0].endswith(".py"):
             path = relative_path(arguments[0])
+            python_code = (*python_code, path)
             body = (
                 prefix + "import runpy;sys.argv=" + repr(arguments) + ";"
                 "runpy.run_path('/repo/'+" + repr(path) + ",run_name='__main__')"
@@ -286,4 +516,6 @@ class MakeCommands:
         ]
         if contract["id"] == "modern-expansion-config-resolution":
             sources.append("config.mk")
-        return python_command(self.session, body, sources=tuple(sorted(set(sources))))
+        return python_command(
+            self.session, body, sources=tuple(sorted(set(sources))), code=python_code,
+        )
