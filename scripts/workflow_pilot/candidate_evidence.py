@@ -17,6 +17,7 @@ KNOWN_JOB_IDS = frozenset(WORKER_JOB_IDS) | {
 FULL_CLASSIFIER = "event-classifier"
 FULL_ATTESTATION = "summary"
 METADATA_CLASSIFIER = "metadata-classifier"
+PREFLIGHT_CLASSIFIER = "review-first-classifier"
 METADATA_ATTESTATION = FULL_ATTESTATION
 REQUIRED_BUILD_CONTEXTS = frozenset({"build", "host-tests", FULL_ATTESTATION})
 
@@ -100,6 +101,8 @@ def _mode(contexts: dict[str, tuple[str, str]]) -> str:
         return "full"
     if classifier[0] == METADATA_CLASSIFIER:
         return "metadata-only"
+    if classifier[0] == PREFLIGHT_CLASSIFIER:
+        return "review-first"
     raise CandidateEvidenceError("classifier and summary attest different modes")
 
 
@@ -125,7 +128,7 @@ def _validate_mode_contexts(
         raise CandidateEvidenceError(
             "legacy patch-release context must be canonical skipped"
         )
-    if mode == "metadata-only":
+    if mode in {"metadata-only", "review-first"}:
         if contexts["event-classifier"][1] != "success":
             raise CandidateEvidenceError(
                 "metadata classifier must stay successful"
@@ -169,6 +172,20 @@ def run_mode(run: dict) -> str:
     mode = _mode(contexts)
     _validate_mode_contexts(contexts, mode)
     return mode
+
+
+def preflight_success(jobs: dict[str, tuple[str, str | None]]) -> bool:
+    expected = {
+        "event-identity": ("completed", "success"),
+        "event-router": ("completed", "success"),
+        PREFLIGHT_CLASSIFIER: ("completed", "success"),
+        "host-tests": ("completed", "success"),
+        "build": ("completed", "success"),
+        "extended-host-tests": ("completed", "skipped"),
+        "legacy": ("completed", "skipped"),
+        "summary": ("completed", "failure"),
+    }
+    return jobs == expected
 
 
 def evaluate_candidate_runs(

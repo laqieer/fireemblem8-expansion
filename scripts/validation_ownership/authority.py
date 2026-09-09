@@ -7,10 +7,14 @@ import json
 import os
 import re
 import stat
+import struct
 from dataclasses import dataclass
 from pathlib import Path
 
-from .budget import MakeProbeError, ProbeBudget, text
+if __package__:
+    from .budget import MakeProbeError, ProbeBudget, text
+else:
+    from budget import MakeProbeError, ProbeBudget, text
 
 
 ENVIRONMENT = {
@@ -65,6 +69,74 @@ def parse_json(data: bytes, boundary: str):
 
 def encoded(value) -> bytes:
     return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode("ascii")
+
+
+class Frames:
+    def __init__(self, raw: bytes):
+        self.raw = raw
+        self.offset = 0
+
+    def take(self, size: int):
+        if size > len(self.raw) - self.offset:
+            raise MakeProbeError("truncated native observation/event frame")
+        result = self.raw[self.offset:self.offset + size]
+        self.offset += size
+        return result
+
+    def integer(self):
+        return int.from_bytes(self.take(4), "little")
+
+    def string(self, boundary):
+        return text(self.take(self.integer()), boundary)
+
+    def done(self):
+        if self.offset != len(self.raw):
+            raise MakeProbeError("trailing native observation/event bytes")
+
+def _command_hash(command: str) -> str:
+    result = 14695981039346656037
+    for byte in command.encode("utf-8"):
+        result = ((result ^ byte) * 1099511628211) & ((1 << 64) - 1)
+    return f"{result:016x}"
+
+def _event_command(event: dict) -> str:
+    arguments = event["arguments"]
+    if arguments[0] in {"/bin/sh", "/bin/bash"}:
+        if len(arguments) != 3 or arguments[1] not in {"-c", "-ec"}:
+            raise MakeProbeError("SHELL/.SHELLFLAGS escaped the interceptor protocol")
+        return arguments[2]
+    program = arguments[0]
+    if program.startswith("/usr/bin/") and program != "/usr/bin/make":
+        program = program.removeprefix("/usr/bin/")
+    def quote(value):
+        if not value:
+            return '""'
+        if re.fullmatch(r"[A-Za-z0-9_@%+=:,./-]+", value):
+            return value
+        return "'" + value.replace("'", "'\"'\"'") + "'"
+    return " ".join(quote(value) for value in (program, *arguments[1:]))
+
+def _read_events(raw: bytes, *, expected_mapping_count: int):
+    reader = Frames(raw)
+    events = []
+    while reader.offset < len(raw):
+        match = struct.unpack("<i", reader.take(4))[0]
+        count = reader.integer()
+        hash_value = int.from_bytes(reader.take(8), "little")
+        argc = reader.integer()
+        if (
+            not -2 <= match < expected_mapping_count
+            or count != expected_mapping_count or not 1 <= argc <= 1024
+        ):
+            raise MakeProbeError("invalid trusted interceptor frame")
+        event = {
+            "match": match, "mapping_count": count,
+            "arguments": [reader.string("interceptor argv") for _ in range(argc)],
+        }
+        if int(_command_hash(_event_command(event)), 16) != hash_value:
+            raise MakeProbeError("interceptor command/hash mismatch")
+        events.append(event)
+    return events
 
 
 def git_command(root: Path, git_dir: Path | None = None):
@@ -125,7 +197,8 @@ class GitTreeEntries(dict[str, GitTreeEntry]):
         budget.remaining()
         super().__init__(entries)
         self.budget = budget
-        self.capture: tuple[Path, str] | None = None
+        self.capture: tuple[Path, str | None] | None = None
+        self.live_directories: set[str] = set()
 
 
 def _tree_entries(root, revision, budget, *, git_dir=None):
@@ -144,12 +217,95 @@ def _tree_entries(root, revision, budget, *, git_dir=None):
     return result
 
 
+def _live_tree_entries(root, budget):
+    root = Path(os.path.abspath(root))
+    admitted = _tree_entries(root, "HEAD", budget)
+    result = {}
+    directories = set()
+    for name, entry in admitted.items():
+        budget.remaining()
+        mode = _live_mode(root, name)
+        budget.charge("snapshot", len(name.encode("utf-8")) + 128)
+        if mode is None:
+            result[name] = entry
+        elif entry.mode == "160000":
+            if not stat.S_ISDIR(mode):
+                raise MakeProbeError("live gitlink is not an actual directory")
+            _require_empty_live_gitlink(root, name)
+            directories.add(name)
+            result[name] = entry
+        elif stat.S_ISREG(mode):
+            result[name] = GitTreeEntry(name, "100755" if mode & stat.S_IXUSR else "100644", "blob", entry.object_id)
+        elif stat.S_ISLNK(mode):
+            result[name] = GitTreeEntry(name, "120000", "blob", entry.object_id)
+        else:
+            raise MakeProbeError("admitted live source changed to an unsupported nonregular type")
+    if not result:
+        raise MakeProbeError("empty live authority tree")
+    captured = GitTreeEntries(result, budget=budget)
+    captured.capture = (root, None)
+    captured.live_directories = directories
+    budget.charge("control", len(encoded([str(root), None, sorted(directories)])))
+    return captured
+
+
+def _live_mode(root, name):
+    descriptor = os.open(root, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    try:
+        parts = relative_path(name).split("/")
+        for part in parts[:-1]:
+            following = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=descriptor)
+            os.close(descriptor)
+            descriptor = following
+        return os.stat(parts[-1], dir_fd=descriptor, follow_symlinks=False).st_mode
+    except FileNotFoundError:
+        return None
+    except OSError as error:
+        raise MakeProbeError("unsafe live source inventory") from error
+    finally:
+        os.close(descriptor)
+
+
+def _require_empty_live_gitlink(root, name):
+    descriptor = os.open(root, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    directory = None
+    try:
+        parts = relative_path(name).split("/")
+        for part in parts[:-1]:
+            following = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=descriptor)
+            os.close(descriptor)
+            descriptor = following
+        directory = os.open(parts[-1], os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=descriptor)
+        before = os.fstat(directory)
+        with os.scandir(directory) as stream:
+            if next(stream, None) is not None:
+                raise MakeProbeError("nonempty live gitlink requires explicit source-path admission")
+        after = os.fstat(directory)
+        current = os.stat(parts[-1], dir_fd=descriptor, follow_symlinks=False)
+        if (
+            (before.st_dev, before.st_ino, before.st_mtime_ns, before.st_ctime_ns)
+            != (after.st_dev, after.st_ino, after.st_mtime_ns, after.st_ctime_ns)
+            or (current.st_dev, current.st_ino) != (after.st_dev, after.st_ino)
+        ):
+            raise MakeProbeError("live gitlink changed while checking its empty namespace")
+    except OSError as error:
+        raise MakeProbeError("live gitlink is not an actual stable directory") from error
+    finally:
+        if directory is not None:
+            os.close(directory)
+        os.close(descriptor)
+
+
 def git_tree_entries(
-    root: Path, revision: str = "HEAD", *, budget: ProbeBudget,
+    root: Path, revision: str | None = "HEAD", *, budget: ProbeBudget,
     gitlinks: tuple[GitlinkSource, ...] = (),
 ):
     if not isinstance(budget, ProbeBudget):
         raise MakeProbeError("authority capture requires an explicit report budget")
+    if revision is None:
+        if gitlinks:
+            raise MakeProbeError("live capture does not substitute immutable gitlink databases")
+        return _live_tree_entries(root, budget)
     result = _tree_entries(root, revision, budget)
     if not result:
         raise MakeProbeError("empty authority tree")
@@ -209,6 +365,8 @@ class AuthorityLoader:
         self.scratch_root = scratch_root
         self.budget = budget
         self.live_modes = {}
+        if entries.live_directories and (revision is not None or entries.capture != (self.root, None)):
+            raise MakeProbeError("live directory admission requires its actual live capture")
         if any(entry.git_dir is not None for entry in entries.values()) and (
             revision is None or entries.capture != (self.root, revision)
         ):
@@ -291,13 +449,15 @@ class Snapshot:
 
     def __init__(self, loader: AuthorityLoader, budget: ProbeBudget, *, reuse: Snapshot | None = None):
         if (
-            not isinstance(budget, ProbeBudget) or budget is not loader.budget
+            not isinstance(loader, AuthorityLoader)
+            or not isinstance(budget, ProbeBudget) or budget is not loader.budget
             or budget is not loader.entries.budget
         ):
             raise MakeProbeError("snapshot requires its authority's report budget")
         budget.remaining()
         if reuse is not None and (
             not isinstance(reuse, Snapshot) or reuse.budget is not budget
+            or reuse.loader.budget is not budget or reuse.loader.entries.budget is not budget
             or reuse.loader.root != loader.root
             or loader.revision is None or loader.entries.capture != (loader.root, loader.revision)
         ):
@@ -307,10 +467,11 @@ class Snapshot:
         self.files = {}
         self.modes = {}
         self.reused_paths = set()
+        self.absent_paths = set()
         self.gitlink_roots = {
             name for name, entry in loader.entries.items()
             if entry.mode == "160000" and entry.object_type == "commit" and entry.git_dir is not None
-        }
+        } | loader.entries.live_directories
         records = []
         if not 1 <= len(loader.entries) <= budget.limits.entries:
             budget.reject("snapshot entry count exceeds aggregate bound")
@@ -324,6 +485,7 @@ class Snapshot:
                 reuse.loader.entries.capture == (loader.root, reuse.loader.revision)
             ):
                 for entry in entries:
+                    budget.remaining()
                     if reuse.loader.entries.get(entry.path) == entry and entry.path in reuse.files:
                         if len(reuse.files[entry.path]) > budget.limits.file_bytes:
                             raise MakeProbeError("reused immutable blob exceeds file bound")
@@ -364,6 +526,16 @@ class Snapshot:
         for name, entry in sorted(loader.entries.items()):
             budget.remaining()
             relative_path(name)
+            if loader.revision is None and _live_mode(loader.root, name) is None:
+                self.absent_paths.add(name)
+                self.gitlink_roots.discard(name)
+                budget.charge("snapshot", len(name.encode("utf-8")) + 64)
+                records.append((name, "absent"))
+                continue
+            if loader.revision is None and entry.mode == "160000":
+                if name not in loader.entries.live_directories:
+                    raise MakeProbeError("live gitlink presence changed after admission")
+                _require_empty_live_gitlink(loader.root, name)
             if entry.mode in {"100644", "100755"} and entry.object_type == "blob":
                 data = immutable[name] if loader.revision is not None else loader.read_blob(name, "execution snapshot")
                 budget.charge(
@@ -380,7 +552,10 @@ class Snapshot:
             else:
                 # Gitlinks/symlinks participate in integrity but are not executable
                 # or silently dereferenced. A consumer must explicitly admit them.
-                identity = (entry.object_id, "admitted") if name in self.gitlink_roots else entry.object_id
+                identity = (
+                    (entry.object_id, "live-directory") if name in loader.entries.live_directories
+                    else (entry.object_id, "admitted") if name in self.gitlink_roots else entry.object_id
+                )
             records.append((name, self.modes.get(name, entry.mode), entry.object_type, identity))
         self.digest = hashlib.sha256(encoded(records)).hexdigest()
 
@@ -405,7 +580,11 @@ class Snapshot:
         for name in sorted(set(paths)):
             relative_path(name)
             if name in self.gitlink_roots:
-                result.append((name, "160000", self.loader.entries[name].object_id))
+                if name in self.loader.entries.live_directories:
+                    children = self.owners(path for path in self.files if path.startswith(name + "/"))
+                    result.append((name, "040000", hashlib.sha256(encoded(children)).hexdigest()))
+                else:
+                    result.append((name, "160000", self.loader.entries[name].object_id))
                 continue
             if name not in self.files:
                 raise MakeProbeError(f"missing declared owner input {name!r}")

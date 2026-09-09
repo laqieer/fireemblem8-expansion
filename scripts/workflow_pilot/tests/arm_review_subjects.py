@@ -26,6 +26,14 @@ class ArmSubjectTests(SubjectTestCase):
     def test_complete_aoe_subject_has_native_and_arm_objects(self):
         self.assert_complete_aoe(self.tools.members(self.scope("aoe")), self.repo.base)
 
+    def test_mixed_native_arm_generated_and_host_staging(self):
+        data = self.scope("session")
+        data["subjects"].extend(self.scope("aoe")["subjects"])
+        data["subjects"].extend(self.scope("generated")["subjects"])
+        result = self.tools.run_obligations(self.tools.members(data), self.repo.base)
+        self.assert_satisfied(result)
+        self.assertEqual({item.kind for item in result}, {"native", "arm-object", "parsed", "host"})
+
     def test_each_enabled_object_requires_actual_ewram_placement(self):
         paths = ("src/expansion_aoe.c", "src/expansion_aoe_reference.c")
         originals = {path: (self.repo.root / path).read_text() for path in paths}
@@ -37,7 +45,7 @@ class ArmSubjectTests(SubjectTestCase):
             members = tuple(item for item in self.tools.members(self.scope("aoe", revision))
                             if item.family == "resource")
             payload = json.dumps([item.probe for item in members]).encode()
-            run = subprocess.run
+            run = self.tools.subjects.run_process
             sections = {}
 
             def inspect(*args, **kwargs):
@@ -45,13 +53,13 @@ class ArmSubjectTests(SubjectTestCase):
                 if kwargs.get("input") == payload:
                     for index, path in enumerate(paths):
                         obj = Path(kwargs["cwd"]) / f"build/arm-True-{index}.o"
-                        actual = run(
+                        actual = subprocess.run(
                             [self.tools.arm_tools["MODERN_SIZE"], "-A", str(obj)],
                             capture_output=True, text=True, check=True, timeout=20)
                         sections[path] = actual.stdout
                 return completed
 
-            with patch.object(subprocess, "run", side_effect=inspect):
+            with patch.object(self.tools.subjects, "run_process", side_effect=inspect):
                 observations = self.tools.run_obligations(members, revision)
             self.section_observations.append({
                 "removed": removed, "revision": revision, "sections": sections,

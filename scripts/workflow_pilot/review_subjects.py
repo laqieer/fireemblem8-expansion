@@ -8,11 +8,11 @@ import json
 import os
 from pathlib import Path
 import re
-import subprocess
 import sys
 import types
 
 from scripts.workflow_pilot import review_family as review
+from scripts.workflow_pilot.raw_diff_check import ProcessCleanupError, run_process
 
 
 @dataclass(frozen=True)
@@ -236,7 +236,8 @@ def check(condition, message):
 
 
 def command(argv, *, stdin=None):
-    result = subprocess.run(argv, input=stdin, capture_output=True, timeout=60)
+    result = run_process(argv, input=stdin, cwd=Path.cwd(), env=os.environ.copy(),
+                         timeout=60, new_session=False)
     if result.returncode:
         raise RuntimeError("tool execution unavailable: " + result.stderr.decode(errors="replace")[-2000:])
     return result.stdout
@@ -285,7 +286,8 @@ def _native(probe: str) -> dict:
     if enabled:
         review.require(selector is not None, "unknown native selector")
         args.append(selector)
-    result = subprocess.run(args, capture_output=True, timeout=20)
+    result = run_process(args, cwd=Path.cwd(), env=os.environ.copy(),
+                         timeout=20, new_session=False)
     review.require(result.returncode in (0, 1), "native execution unavailable")
     check(result.returncode == 0, result.stderr.decode(errors="replace")[-2000:])
     return {"kind": "native", "checks": 1, "detail": "selected native assertions satisfied"}

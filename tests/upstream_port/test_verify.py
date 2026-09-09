@@ -9,6 +9,7 @@ import unittest
 from unittest import mock
 
 from scripts.upstream_port import cli, verify as verify_mod
+from scripts.workflow_pilot import metadata_event
 from tests.workflows import test_build_ci_topology as topology_tests
 
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
@@ -18,7 +19,7 @@ UPSTREAM_PORTING_PATH = os.path.join(REPO_ROOT, "docs", "upstream-porting.md")
 # Issues #7/#17 remediation: the documentation step is a genuine required
 # workflow gate, but it is the sole correctness step deliberately excluded
 # from verify.gates(). Its exact commands and position are asserted separately
-# below; localization remains part of the current 30-gate candidate mirror.
+# below; localization remains part of the current 31-gate candidate mirror.
 _DOCS_GOVERNANCE_STEP_NAME = "Check documentation (issues #7/#17)"
 _CODEQL_ALERTS_STEP_NAME = "Run CodeQL alert regression suite (issue #84)"
 _LOCALIZATION_HOST_STEP_NAME = "Run localization host test suite (issue #18)"
@@ -158,7 +159,7 @@ class VerifyGatesMirrorWorkflowTests(unittest.TestCase):
         )
 
     def test_issue_7_17_docs_governance_is_a_standalone_workflow_step_not_a_verify_gate(self):
-        """Docs governance stays outside the current 30-gate candidate mirror
+        """Docs governance stays outside the current 31-gate candidate mirror
         while remaining required, argv-identical, and immediately after the
         artifact guard in build.yml."""
         names = [g.name for g in verify_mod.gates()]
@@ -464,7 +465,7 @@ class VerifyGatesMirrorWorkflowTests(unittest.TestCase):
         )
 
     def test_gate_list_full_ordered_names(self):
-        # All 30 current candidate Build gates remain; docs governance is
+        # All 31 current candidate Build gates remain; docs governance is
         # deliberately absent and asserted as a standalone workflow step.
         names = [g.name for g in verify_mod.gates()]
         self.assertEqual(
@@ -494,6 +495,7 @@ class VerifyGatesMirrorWorkflowTests(unittest.TestCase):
                 "modern-itemexpansion-check-debug",
                 "modern-itemexpansion-check-release",
                 "modern-all-locales-all-features-profile",
+                "ownership-probe-process-suite",
                 "cjk-font-gates",
                 "multilang-codec-gates",
                 "expansion-config-gates",
@@ -546,7 +548,7 @@ class VerifyGatesMirrorWorkflowTests(unittest.TestCase):
 
     def test_dry_run_never_executes_subprocess(self):
         results = verify_mod.run_gates(REPO_ROOT, dry_run=True)
-        self.assertEqual(len(results), 30)
+        self.assertEqual(len(results), 31)
         self.assertTrue(all(r.ran is False for r in results))
         self.assertTrue(all(r.passed is False for r in results))  # not-ran != passed
 
@@ -557,7 +559,7 @@ class VerifyGatesMirrorWorkflowTests(unittest.TestCase):
         dry = [r.gate.name for r in verify_mod.run_gates(REPO_ROOT, dry_run=True)]
         real_names = [g.name for g in verify_mod.gates()]
         self.assertEqual(dry, real_names)
-        self.assertEqual(len(dry), 30)
+        self.assertEqual(len(dry), 31)
 
 
 class VerifyGateSelectionRemovedTests(unittest.TestCase):
@@ -622,7 +624,7 @@ class VerifyGateSelectionRemovedTests(unittest.TestCase):
             self.assertIn(name, printed)
         # Every line for a dry-run gate is explicitly marked SKIPPED(dry-run)
         # -- never silently omitted, never marked PASS/FAIL without running.
-        self.assertEqual(printed.count("[SKIPPED(dry-run)]"), 30)
+        self.assertEqual(printed.count("[SKIPPED(dry-run)]"), 31)
 
 
 class HostOnlyEnvGateMirrorTests(unittest.TestCase):
@@ -744,9 +746,9 @@ class HostOnlyEnvGateMirrorTests(unittest.TestCase):
                 "run_gates must not mutate the parent environment",
             )
 
-        self.assertEqual(len(results), 30)
+        self.assertEqual(len(results), 31)
         self.assertTrue(all(result.passed for result in results))
-        self.assertEqual(len(seen), 30)
+        self.assertEqual(len(seen), 31)
 
         host_argv, host_env = seen[0]
         self.assertEqual(host_argv[0], "python3")
@@ -790,7 +792,7 @@ class HostOnlyEnvGateMirrorTests(unittest.TestCase):
         self.assertEqual([argv for argv, _ in seen], expected_argv)
         self.assertEqual(
             [kwargs["cwd"] for _, kwargs in seen],
-            [REPO_ROOT] * 30,
+            [REPO_ROOT] * 31,
         )
         baseline_argv = seen[
             [gate.name for gate in verify_mod.gates()].index(
@@ -991,10 +993,10 @@ class VerifyCliCwdTests(unittest.TestCase):
                     ):
                         self.assertEqual(cli.main(arguments), 0)
 
-                    self.assertEqual(len(seen), 30)
+                    self.assertEqual(len(seen), 31)
                     self.assertEqual(
                         [kwargs["cwd"] for _, kwargs in seen],
-                        [expected_root] * 30,
+                        [expected_root] * 31,
                     )
                     baseline = seen[
                         [gate.name for gate in verify_mod.gates()].index(
@@ -1024,7 +1026,7 @@ class VerifyCliCwdTests(unittest.TestCase):
                 original = handle.read()
             self.assertEqual(
                 len(verify_mod.run_gates(target_root, dry_run=True)),
-                30,
+                31,
             )
 
             upstream_step = (
@@ -1132,7 +1134,7 @@ class VerifyCliCwdTests(unittest.TestCase):
                 "summary",
             ),
         )
-        self.assertEqual(len(verify_mod.gates()), 30)
+        self.assertEqual(len(verify_mod.gates()), 31)
         gate_jobs = {
             job_name
             for job_name, _, _ in verify_mod._workflow_gate_contract(
@@ -1227,23 +1229,28 @@ class VerifyCliCwdTests(unittest.TestCase):
         jobs = {name: (dict(context), steps) for name, context, steps in structure[2]}
         router, router_steps = jobs["event-router"]
         marker_steps = jobs["event-classifier"][1]
+        marker_name = metadata_event.STEP_PREFIX + "${{ needs.event-router.outputs.metadata_event_digest }}"
+        marker_step = next(step for step in marker_steps if step[1] == marker_name)
         self.assertEqual(
             dict(router["outputs"])["metadata_event_digest"],
             "${{ steps.metadata-event.outputs.digest }}",
         )
         self.assertEqual(router_steps[-1][:2], ("setup", "Bind immutable metadata event"))
-        self.assertEqual(marker_steps[-1][0], "setup")
+        self.assertEqual(marker_step[0], "setup")
         self.assertEqual(
-            dict(marker_steps[-1][2])["env"],
+            dict(marker_step[2])["env"],
             (("METADATA_EVENT_DIGEST", "${{ needs.event-router.outputs.metadata_event_digest }}"),),
         )
         gate_jobs = {job for job, _, _ in verify_mod._workflow_gate_contract(structure)}
         self.assertTrue({"event-router", "event-classifier"}.isdisjoint(gate_jobs))
-        self.assertEqual(len(verify_mod.run_gates(REPO_ROOT, dry_run=True)), 30)
+        self.assertEqual(len(verify_mod.run_gates(REPO_ROOT, dry_run=True)), 31)
 
         blocks = topology_tests._job_blocks(original)
         producer = topology_tests._step_blocks(blocks["event-router"])[-1]
-        marker = topology_tests._step_blocks(blocks["event-classifier"])[-1]
+        marker = next(
+            step for step in topology_tests._step_blocks(blocks["event-classifier"])
+            if topology_tests._step_name(step) == marker_name
+        )
         mutations = {
             "wrong-output": original.replace(
                 "steps.metadata-event.outputs.digest", "steps.classify.outputs.expected_head"
@@ -1418,6 +1425,13 @@ class VerifyCliCwdTests(unittest.TestCase):
             )
             with open(workflow_path, "r", encoding="utf-8") as handle:
                 original = handle.read()
+            host_adapter = next(
+                step for step in topology_tests._step_blocks(
+                    topology_tests._job_blocks(original)["host-tests"]
+                )
+                if topology_tests._step_name(step) ==
+                "Attest metadata-only branch-protection continuity"
+            )
             mutations = {
                 "extra-python-command": self.replace_in_job(
                     original,
@@ -1503,14 +1517,8 @@ class VerifyCliCwdTests(unittest.TestCase):
                 "uniform-python-heredoc-indent": self.replace_in_job(
                     original,
                     "host-tests",
-                    topology_tests._step_blocks(
-                        topology_tests._job_blocks(original)["host-tests"]
-                    )[0],
-                    topology_tests._indent_metadata_adapter_heredoc_in_step(
-                        topology_tests._step_blocks(
-                            topology_tests._job_blocks(original)["host-tests"]
-                        )[0]
-                    ),
+                    host_adapter,
+                    topology_tests._indent_metadata_adapter_heredoc_in_step(host_adapter),
                 ),
                 "nbsp": self.replace_in_job(
                     original,
@@ -1620,7 +1628,7 @@ class VerifyCliCwdTests(unittest.TestCase):
                 original = handle.read()
             self.assertEqual(
                 len(verify_mod.run_gates(target_root, dry_run=True)),
-                30,
+                31,
             )
 
             for job_name in verify_mod._COMBINED_JOBS:
@@ -1862,7 +1870,7 @@ class VerifyCliCwdTests(unittest.TestCase):
     def test_source_root_gate_equivalence_remains_supported(self):
         self.assertEqual(
             len(verify_mod.run_gates(REPO_ROOT, dry_run=True)),
-            30,
+            31,
         )
 
     def test_dry_run_and_normal_cli_select_the_same_target_root(self):
@@ -1908,7 +1916,7 @@ class VerifyCliCwdTests(unittest.TestCase):
             text=True,
         )
         self.assertEqual(completed.returncode, 0, completed.stderr)
-        self.assertEqual(completed.stdout.count("[SKIPPED(dry-run)]"), 30)
+        self.assertEqual(completed.stdout.count("[SKIPPED(dry-run)]"), 31)
 
     def test_invalid_explicit_repo_is_a_normal_cli_error(self):
         cases = (

@@ -947,6 +947,36 @@ class TesterCaseRegistryTests(unittest.TestCase):
     def test_real_repository_complete_registry_passes(self):
         self.assertEqual(check_docs.check_test_case_registry(REAL_REPO_ROOT), [])
 
+    def test_runtime_inputs_case_is_indexed_with_focused_procedure(self):
+        registry, errors = check_docs.parse_test_case_registry(REAL_REPO_ROOT)
+        self.assertEqual(errors, [])
+        case_id = "TC-WORKFLOW-PROBE-RUNTIME-INPUTS-001"
+        feature = next(item for item in registry["features"] if item["id"] == "workflow-governance")
+        case, = [item for item in registry["cases"] if item["id"] == case_id]
+        self.assertEqual(feature["required_cases"].count(case_id), 1)
+        self.assertEqual(case["issue_urls"], ["https://github.com/laqieer/fireemblem8-expansion/issues/227"])
+        selected = {
+            "schema_version": registry["schema_version"],
+            "coverage": {"mode": "complete", "expected_feature_ids": [feature["id"]], "deferred_issues": []},
+            "features": [{**feature, "required_cases": [case_id]}],
+            "cases": [case],
+        }
+        with mock.patch.object(check_docs, "parse_test_case_registry", return_value=(selected, [])):
+            self.assertEqual(check_docs.check_test_case_registry(REAL_REPO_ROOT), [])
+        self.assertEqual(case["automation"], [{
+            "command": "python3 -m unittest scripts.validation_ownership.tests.test_foundation "
+                       "-k runtime_inputs -k stock_runtime_alias -k explicit_env "
+                       "-k absent_captured_env -k make_uncaptured_runtime -v",
+            "evidence": "scripts/validation_ownership/tests/test_foundation.py",
+        }])
+        with open(os.path.join(REAL_REPO_ROOT, case["document"]), encoding="utf-8") as stream:
+            section = markdown_section(stream.read(), case_id + ": " + case["title"])
+        for heading in (
+            "Feature and configuration", "Actions", "Expected result", "Negative control",
+            "Interactions and save compatibility", "Automation", "Cleanup and limitations",
+        ):
+            self.assertTrue(markdown_section(section, heading), heading)
+
     def test_late_shipped_contracts_are_complete_and_fail_closed(self):
         registry_path = os.path.join(REAL_REPO_ROOT, check_docs.TEST_CASE_REGISTRY_PATH)
         with open(registry_path, encoding="utf-8") as stream:
@@ -995,11 +1025,21 @@ class TesterCaseRegistryTests(unittest.TestCase):
                             "tests.upstream_port.test_verify.VerifyGatesMirrorWorkflowTests -v",
                         },
                     },
+                    "TC-WORKFLOW-REVIEW-FIRST-001": {
+                        "document": "docs/test-cases/workflow-governance.md",
+                        "commands": {
+                            "build/host-python/bin/python3 -I -c 'import sys, unittest; "
+                            'sys.path.insert(0, "."); unittest.main(module=None)\' '
+                            "scripts.workflow_pilot.tests.test_adaptive_gate -v",
+                        },
+                    },
                     "TC-WORKFLOW-REVIEW-FAMILY-001": {
                         "document": "docs/test-cases/workflow-governance.md",
                         "commands": {
                             "build/host-python/bin/python3 -I -m unittest discover "
                             "-s scripts/workflow_pilot/tests -t . -p 'test_*review*.py' -v",
+                            "build/host-python/bin/python3 -I -m unittest discover "
+                            "-s scripts/workflow_pilot/tests -t . -p 'test_review_process_cleanup.py' -v",
                             "python3 -m unittest "
                             "scripts.workflow_pilot.tests.arm_review_subjects -v",
                         },
@@ -1116,6 +1156,33 @@ class TesterCaseRegistryTests(unittest.TestCase):
                             "python3 -m unittest "
                             "scripts.validation_ownership.tests.test_foundation -v",
                             "make -f scripts/validation_ownership/foundation.mk ownership-probe-check",
+                        },
+                    },
+                    "TC-WORKFLOW-PROBE-PRODUCER-001": {
+                        "document": "docs/test-cases/workflow-governance.md",
+                        "commands": {
+                            "python3 -m unittest scripts.validation_ownership.tests.test_producer -v",
+                        },
+                    },
+                    "TC-WORKFLOW-PROBE-DEPENDENCY-001": {
+                        "document": "docs/test-cases/workflow-governance.md",
+                        "commands": {
+                            "python3 -m unittest scripts.validation_ownership.tests.test_dependency -v",
+                        },
+                    },
+                    "TC-WORKFLOW-PROBE-RUNTIME-INPUTS-001": {
+                        "document": "docs/test-cases/workflow-governance.md",
+                        "commands": {
+                            "python3 -m unittest scripts.validation_ownership.tests.test_foundation "
+                            "-k runtime_inputs -k stock_runtime_alias -k explicit_env "
+                            "-k absent_captured_env -k make_uncaptured_runtime -v",
+                        },
+                    },
+                    "TC-WORKFLOW-PROBE-VIEWS-001": {
+                        "document": "docs/test-cases/workflow-governance.md",
+                        "commands": {
+                            "python3 -m unittest "
+                            "scripts.validation_ownership.tests.test_foundation -k immutable_view -v",
                         },
                     },
                 },
@@ -1954,7 +2021,7 @@ class StructuralObjectCountClaimTests(unittest.TestCase):
 #   2. docs/framework-support.md said the item-ID-expansion checks were
 #      "gates 11-12" of the upstream verify gate set; the real, current
 #      scripts/upstream_port/verify.py gates() puts them at gates 22-23
-#      of exactly 30.
+#      of exactly 31.
 #
 # These tests prove: (a) every old phrase is flagged stale if it reappears,
 # (b) the current live doc/report text is stale-clean, (c) the historical,
@@ -2067,7 +2134,7 @@ class StaleIssue5StatusAndGateNumberRegressionTests(unittest.TestCase):
         finally:
             sys.modules.pop(spec.name, None)
 
-        self.assertEqual(len(all_gates), 30)
+        self.assertEqual(len(all_gates), 31)
         self.assertIn("itemexpansion", all_gates[21].name)
         self.assertIn("itemexpansion", all_gates[22].name)
         for index, gate in enumerate(all_gates):

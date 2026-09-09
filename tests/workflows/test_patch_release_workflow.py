@@ -45,7 +45,7 @@ def workflow_jobs():
 class PatchReleaseWorkflowTests(unittest.TestCase):
     def test_packaging_is_in_the_existing_build_and_not_a_local_gate(self):
         jobs = workflow_jobs()
-        self.assertEqual(len(verify.gates(jobs=1)), 30)
+        self.assertEqual(len(verify.gates(jobs=1)), 31)
         self.assertNotIn("patch-release", jobs)
         steps = jobs["build"]
         canonical = []

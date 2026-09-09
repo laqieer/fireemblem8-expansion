@@ -1,0 +1,6 @@
+{
+  "issue": 223,
+  "category": "fixed",
+  "summary": "Terminate and reap ordinary review command and worker descendants before staging cleanup, preserving bounded stdin, exact tool-source loading and existing evidence classifications.",
+  "semver_impact": "none"
+}

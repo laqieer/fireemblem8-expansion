@@ -288,7 +288,7 @@ surface remains bounded by its live reference and evidence report.
 - **#10 typed IDs:** DEFAULT committed and ACTIVE build-local contracts,
   consumer census, and modern-only item cap `0xCE` pilot are supported; its
   debug/release runtime commands are gates 22-23 of the current-master
-  30-gate upstream-port verifier; gate 24 builds the all-locales/all-features
+  31-gate upstream-port verifier; gate 24 builds the all-locales/all-features
   patch profile once and runs the required map-menu presentation scenario.
   There is no class/chapter/unit/character
   widening

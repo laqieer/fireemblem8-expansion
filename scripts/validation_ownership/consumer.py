@@ -12,25 +12,29 @@ from .make_probe import Command, ProbeSession, TRUSTED_ROOT, probe_generated_reg
 
 def registry_entries(root, revision, budget):
     entries = git_tree_entries(root, revision, budget=budget)
+    if revision is None:
+        return entries
     gitlinks = []
+    directory = None
     for name, entry in entries.items():
         if entry.mode != "160000":
             continue
-        located = budget.run(
-            ["/usr/bin/git", "-C", str(root), "rev-parse", "--git-common-dir"],
-            env=ENVIRONMENT,
-        )
-        if located.returncode:
-            raise MakeProbeError("registry root enumeration requires its captured gitlink database")
-        directory = Path(located.stdout.decode("utf-8", "strict").strip())
-        directory = directory if directory.is_absolute() else root / directory
+        if directory is None:
+            located = budget.run(
+                ["/usr/bin/git", "-C", str(root), "rev-parse", "--git-common-dir"],
+                env=ENVIRONMENT,
+            )
+            if located.returncode:
+                raise MakeProbeError("registry root enumeration requires its captured gitlink database")
+            directory = Path(located.stdout.decode("utf-8", "strict").strip())
+            directory = directory if directory.is_absolute() else root / directory
         gitlinks.append(GitlinkSource(name, directory / "modules" / name))
     return git_tree_entries(root, revision, budget=budget, gitlinks=tuple(gitlinks)) if gitlinks else entries
 
 
 def check(root: Path, revision: str | None):
     budget = ProbeBudget()
-    entries = registry_entries(root, revision or "HEAD", budget)
+    entries = registry_entries(root, revision, budget)
     loader = AuthorityLoader(root, entries, revision, budget=budget)
     with ProbeSession(
         loader, scratch_root=root / "build/test-artifacts/ownership-probe", budget=budget,

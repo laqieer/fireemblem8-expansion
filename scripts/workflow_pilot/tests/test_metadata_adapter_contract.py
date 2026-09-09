@@ -4,51 +4,17 @@ from __future__ import annotations
 
 import ast
 import copy
-import re
 import subprocess
 import unittest
 from pathlib import Path
 from unittest import mock
 
 from scripts.workflow_pilot import metadata_adapter_contract
+from tests.workflows.test_build_ci_topology import _metadata_adapter_scripts
 
 
 ROOT = Path(__file__).resolve().parents[3]
 WORKFLOW = ROOT / ".github" / "workflows" / "build.yml"
-
-
-def _job_blocks(text: str) -> dict[str, str]:
-    jobs_start = text.index("\njobs:\n") + len("\njobs:\n")
-    jobs_text = text[jobs_start:]
-    matches = list(
-        re.finditer(r"^  (?P<name>[A-Za-z][A-Za-z0-9_-]*):\n", jobs_text, re.MULTILINE)
-    )
-    return {
-        match.group("name"): jobs_text[
-            match.end() : matches[index + 1].start() if index + 1 < len(matches) else len(jobs_text)
-        ]
-        for index, match in enumerate(matches)
-    }
-
-
-def _step_blocks(job: str) -> list[str]:
-    matches = list(re.finditer(r"^    -(?:[ \t]|\Z)", job, re.MULTILINE))
-    return [
-        job[
-            match.start() : matches[index + 1].start() if index + 1 < len(matches) else len(job)
-        ]
-        for index, match in enumerate(matches)
-    ]
-
-
-def _literal_run_script(step: str) -> str:
-    lines = step.split("\n")
-    run_index = lines.index("      run: |")
-    return "\n".join(
-        line[8:] if line else ""
-        for line in lines[run_index + 1 :]
-        if not line or line.startswith("        ")
-    ) + "\n"
 
 
 def _legacy_ast_clone(node: object) -> object:
@@ -69,11 +35,7 @@ def _legacy_ast_clone(node: object) -> object:
 class MetadataAdapterContractTests(unittest.TestCase):
     def test_real_workflow_adapters_share_the_reviewed_contract(self):
         text = WORKFLOW.read_text(encoding="utf-8")
-        jobs = _job_blocks(text)
-        scripts = {
-            job_name: _literal_run_script(_step_blocks(jobs[job_name])[0])
-            for job_name in ("host-tests", "build")
-        }
+        scripts = _metadata_adapter_scripts(text)
         self.assertEqual(len(set(scripts.values())), 1)
         for job_name, script in scripts.items():
             with self.subTest(job=job_name):
@@ -81,7 +43,7 @@ class MetadataAdapterContractTests(unittest.TestCase):
 
     def test_shell_parser_rejects_trailing_whitespace_after_continuation_backslash(self):
         text = WORKFLOW.read_text(encoding="utf-8")
-        script = _literal_run_script(_step_blocks(_job_blocks(text)["host-tests"])[0])
+        script = _metadata_adapter_scripts(text)["host-tests"]
         mutations = (
             script.replace(
                 'if [ "$CLASSIFIER_RESULT" != "success" ] || \\\n',
@@ -109,7 +71,7 @@ class MetadataAdapterContractTests(unittest.TestCase):
 
     def test_raw_identity_rejects_nonsemantic_whitespace_and_comment_drift(self):
         text = WORKFLOW.read_text(encoding="utf-8")
-        script = _literal_run_script(_step_blocks(_job_blocks(text)["host-tests"])[0])
+        script = _metadata_adapter_scripts(text)["host-tests"]
         whitespace_mutated = script.replace("fi\n", "fi   \n", 1)
         comment_mutated = script.replace(
             "import sys\n",
@@ -137,7 +99,7 @@ class MetadataAdapterContractTests(unittest.TestCase):
 
     def test_shell_parser_rejects_unreviewed_heredoc_introducers(self):
         text = WORKFLOW.read_text(encoding="utf-8")
-        script = _literal_run_script(_step_blocks(_job_blocks(text)["host-tests"])[0])
+        script = _metadata_adapter_scripts(text)["host-tests"]
         mutations = (
             "/usr/bin/python3 -I - <<PY\n",
             '/usr/bin/python3 -I - <<"PY"\n',
@@ -157,7 +119,7 @@ class MetadataAdapterContractTests(unittest.TestCase):
 
     def test_ascii_shell_boundary_rejects_unicode_whitespace_and_controls(self):
         text = WORKFLOW.read_text(encoding="utf-8")
-        script = _literal_run_script(_step_blocks(_job_blocks(text)["host-tests"])[0])
+        script = _metadata_adapter_scripts(text)["host-tests"]
         mutations = {
             "nbsp": ('/usr/bin/python3 -I - <<\'PY\'\n', "/usr/bin/python3 -I - <<'PY'\u00a0\n"),
             "em-space": ('/usr/bin/python3 -I - <<\'PY\'\n', "/usr/bin/python3 -I - <<'PY'\u2003\n"),
@@ -184,7 +146,7 @@ class MetadataAdapterContractTests(unittest.TestCase):
 
     def test_python_validator_rejects_uniform_extra_heredoc_indentation(self):
         text = WORKFLOW.read_text(encoding="utf-8")
-        script = _literal_run_script(_step_blocks(_job_blocks(text)["host-tests"])[0])
+        script = _metadata_adapter_scripts(text)["host-tests"]
         source = metadata_adapter_contract.metadata_adapter_python_source(script)
         mutated = script.replace(
             source,
@@ -235,7 +197,7 @@ class MetadataAdapterContractTests(unittest.TestCase):
 
     def test_semantic_ast_digest_is_stable_across_empty_type_params_compatibility(self):
         text = WORKFLOW.read_text(encoding="utf-8")
-        script = _literal_run_script(_step_blocks(_job_blocks(text)["host-tests"])[0])
+        script = _metadata_adapter_scripts(text)["host-tests"]
         source = metadata_adapter_contract.metadata_adapter_python_source(script)
         tree = ast.parse(source)
         legacy = _legacy_ast_clone(tree)
@@ -250,7 +212,7 @@ class MetadataAdapterContractTests(unittest.TestCase):
 
     def test_semantic_ast_rejects_nonempty_compatibility_fields(self):
         text = WORKFLOW.read_text(encoding="utf-8")
-        script = _literal_run_script(_step_blocks(_job_blocks(text)["host-tests"])[0])
+        script = _metadata_adapter_scripts(text)["host-tests"]
         source = metadata_adapter_contract.metadata_adapter_python_source(script)
         tree = ast.parse(source)
         function = next(node for node in ast.walk(tree) if isinstance(node, ast.FunctionDef))
@@ -387,7 +349,7 @@ class MetadataAdapterContractTests(unittest.TestCase):
                 metadata_adapter_contract.validate_metadata_adapter_python("result = 0\n")
 
         text = WORKFLOW.read_text(encoding="utf-8")
-        script = _literal_run_script(_step_blocks(_job_blocks(text)["host-tests"])[0])
+        script = _metadata_adapter_scripts(text)["host-tests"]
         source = metadata_adapter_contract.metadata_adapter_python_source(script)
         with mock.patch.object(
             metadata_adapter_contract,
