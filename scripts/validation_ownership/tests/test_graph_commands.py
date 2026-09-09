@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from dataclasses import replace
 from pathlib import Path
 import secrets
 import shlex
@@ -15,8 +16,9 @@ from scripts.validation_ownership.authority import (
 )
 from scripts.validation_ownership.budget import MakeProbeError, ProbeBudget
 from scripts.validation_ownership.graph_commands import (
-    CODE_PREFIXES, MakeCommands, asset_discovery_command,
+    CODE_PREFIXES, ROOT_RUNTIME_FILES, MakeCommands, asset_discovery_command,
 )
+from scripts.validation_ownership import make_probe
 from scripts.validation_ownership.make_probe import Command, ProbeSession
 from scripts.validation_ownership.graph_probe import run_probe
 
@@ -460,6 +462,36 @@ class GraphCommandTests(unittest.TestCase):
             with mock.patch.object(shutil, "which", return_value=None):
                 with self.assertRaisesRegex(MakeProbeError, "supported binutils roots"):
                     commands[bad_binutils]
+
+    def test_root_runtime_capture_preserves_actual_absent_compiler_alias(self):
+        self.add("Makefile", "all: ;\n")
+        capture = make_probe._capture_runtime_input
+
+        def absent_compiler(path, budget):
+            item = capture(path, budget)
+            if path == "/bin/arm-none-eabi-gcc":
+                return replace(item, data=None, mode=None)
+            return item
+
+        with mock.patch.object(make_probe, "_capture_runtime_input", absent_compiler):
+            with self.session(runtime_files=ROOT_RUNTIME_FILES) as probe:
+                compiler = next(
+                    item for item in probe.runtime_inputs
+                    if item.path == "/bin/arm-none-eabi-gcc"
+                )
+                self.assertIsNone(compiler.data)
+                self.assertIsNone(compiler.mode)
+                self.assertEqual(compiler.canonical, "/usr/bin/arm-none-eabi-gcc")
+                self.assertEqual(compiler.aliases, (("/bin", "usr/bin"),))
+                self.assertNotIn(compiler.path, probe.runtime_dispatch)
+                self.assertFalse(
+                    (probe.runtime_root / compiler.canonical.lstrip("/")).exists()
+                )
+                observed = probe.make("all")
+                self.assertEqual(observed.stderr, b"")
+        self.assertIsNone(probe.base)
+        self.assertFalse(probe.runtime_inputs)
+        self.assertFalse(probe.budget.children)
 
     def test_modern_toolchain_directory_query_never_executes_checkout_local_name_match(self):
         tool = self.root / "build/toolchain-root/usr/bin/arm-none-eabi-gcc"
