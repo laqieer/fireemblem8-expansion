@@ -1159,6 +1159,19 @@ def validate_review_qualification(value):
             handoff.text(item, maximum=256, pattern=handoff.ID_RE)
     for item in handoff.items(value["review_scope"], minimum=4, maximum=40, unique=True):
         handoff.text(item, maximum=1024)
+    try:
+        from scripts.validation_ownership.coordinator_capture import reviewed_evolution_scope
+
+        expected_scope = sorted(reviewed_evolution_scope(
+            value["checker_revision"],
+            value["changed_paths"],
+            value["changed_edge_ids"],
+            value["affected_consumers"],
+        ))
+    except RuntimeError as error:
+        raise ValueError(str(error)) from error
+    require(value["review_scope"] == expected_scope,
+            "review qualification scope differs from its complete explicit arrays")
     for key in ("review_task", "reviewer"):
         handoff.text(value[key], maximum=256)
     handoff.text(value["coordinator_id"], maximum=128, pattern=handoff.ID_RE)
@@ -1374,6 +1387,8 @@ def _local_ready(state, pr, record, review_qualification=None):
         return False
     if "local_validation" in record:
         return coordinator_local_ready(state, record, pr, review_qualification)
+    if review_qualification is not None:
+        return False
     for entry in delegated:
         if (entry["validation"]["result_sha"] == pr.head_sha
                 and entry["assignment"]["expected_branch"] == pr.head_ref):

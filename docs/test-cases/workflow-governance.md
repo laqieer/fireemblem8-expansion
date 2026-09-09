@@ -3195,7 +3195,12 @@ game behavior needs a compensating change.
    guard must reject both, while a nonsemantic YAML comment remains stable.
    For a reviewed graph evolution, complete one actual independent
    `ReviewSession` over the exact changed paths, invalidated edges, affected
-   consumers and immutable checker revision. Register and capture the real
+   consumers and immutable checker revision. Represent that complete scope as
+   four bounded subjects: exact checker plus domain-separated canonical
+   full-path, full-edge-ID and full-consumer-set digests, while retaining all
+   explicit arrays. Prove the actual 93-edge/18-consumer graph fits both
+   unchanged 40-subject schemas; any changed set/checker or legacy exploded
+   subject list must reject. Register and capture the real
    standalone verifier with that qualification, then prove the same record is
    carried through the production `assess_observed` refresh and required by
    local readiness, review-first dispatch, and final `workflow_dispatch`
@@ -3207,6 +3212,10 @@ game behavior needs a compensating change.
    path/surface, complete owner and dependency edges, and coherent oracle;
    BASE and candidate use their respective immutable oracles and preserve
    truthful document-aware invalidation.
+   Separately complete a real valid delegated handoff with no local validation:
+   it remains ready without reviewed qualification, but supplying an actual
+   live qualification must produce `exact-local-handoff` and deny dispatch
+   until the coordinator-owned qualified capture exists.
 7. For the focused A/V correction, run
    `python3 -m unittest scripts.validation_ownership.tests.test_reporter.AssetOwnershipTests`.
    Inspect positive title/package selections, incorrect runtime-owner and

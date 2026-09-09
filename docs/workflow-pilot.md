@@ -398,7 +398,12 @@ API. The coordinator first creates a live qualification from the actual
 independent `ReviewSession`, immutable `ReviewTools` revision/tester-case
 binding, exact candidate record and clean worktree. Registration stores that
 qualification beside the normal definitions; the trusted verifier capture
-joins it to the actual repository/PR/BASE/head assignment. Calls to
+joins it to the actual repository/PR/BASE/head assignment. Its review scope is
+four subjects: exact checker revision and domain-separated canonical digests
+of the complete explicit path, edge-ID, and affected-consumer arrays. All
+arrays keep their existing 256-item bounds and exact ordering/duplicate/type
+validation; the unchanged 40-subject review and handoff caps are not raised.
+Calls to
 `coordinator_local_ready` and `assess_candidate` must supply that same live
 qualification. Missing, partial, stale or different review/checker/path/edge/
 consumer scope therefore keeps local readiness, review-first dispatch and
@@ -411,6 +416,10 @@ Build observation and into `assess_candidate`. It is never serialized into a
 candidate request or reconstructed from the persisted local record. Omitting
 that live argument leaves the captured reviewed evolution visibly
 `exact-local-handoff` incomplete.
+Supplying the live qualification also requires `candidate.local_validation`;
+the ordinary delegated-handoff fallback is not a qualified capture and is
+therefore ineligible in that case. With no reviewed qualification, valid
+delegated handoffs preserve their existing readiness behavior.
 
 Every registered check must finish successfully at the same head/base/worktree.
 Each observation retains the complete registered definition set, so changing,

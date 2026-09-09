@@ -560,6 +560,24 @@ class GateTests(unittest.TestCase):
         self.assertFalse(self.assess(facts=(replace(self.fact, head="a" * 40),))["dispatchable"])
         self.dispatched()
         self.assertTrue(self.assess()["merge_eligible"])
+
+    def test_live_review_qualification_cannot_use_delegated_readiness_without_local_capture(self):
+        self.assertNotIn("local_validation", self.record)
+        self.assertTrue(gate._local_ready(self.state, self.pr, self.record))
+        from scripts.validation_ownership.tests.test_coordinator_capture import (
+            ReviewedEvolutionCaptureTests,
+        )
+
+        owner = ReviewedEvolutionCaptureTests()
+        owner.setUp()
+        self.addCleanup(owner.doCleanups)
+        qualification = owner.coordinator()[5]
+        self.assertFalse(gate._local_ready(
+            self.state, self.pr, self.record, qualification,
+        ))
+        assessment = self.assess(local_qualification=qualification)
+        self.assertFalse(assessment["dispatchable"])
+        self.assertIn("exact-local-handoff", assessment["missing"])
         for run in (
             replace(self.runs[-1], head_sha="a" * 40),
             replace(self.runs[-1], candidate_binding=(191, self.pr.head_sha, "b" * 40)),

@@ -20,6 +20,7 @@ REVIEW_CHECKER_PATHS = (
     "scripts/validation_ownership/ci_verifier.py",
     "scripts/validation_ownership/coordinator_capture.py",
 )
+REVIEW_SCOPE_DOMAIN = b"fe8-validation-ownership-reviewed-scope-v1\0"
 
 
 def _sorted_scope(values, label):
@@ -34,14 +35,25 @@ def _sorted_scope(values, label):
 
 
 def reviewed_evolution_scope(checker_revision, paths, edge_ids, consumer_ids):
-    return frozenset(
-        {
-            f"{REVIEW_CASE_ID}/checker:{checker_revision}",
-            *(f"{REVIEW_CASE_ID}/path:{path}" for path in paths),
-            *(f"{REVIEW_CASE_ID}/edge:{edge_id}" for edge_id in edge_ids),
-            *(f"{REVIEW_CASE_ID}/consumer:{consumer_id}" for consumer_id in consumer_ids),
-        }
+    if not re.fullmatch(r"[0-9a-f]{40}", checker_revision):
+        raise MakeProbeError("reviewed evolution scope requires an exact checker revision")
+    members = (
+        ("paths", _sorted_scope(paths, "changed path")),
+        ("edges", _sorted_scope(edge_ids, "changed edge")),
+        ("consumers", _sorted_scope(consumer_ids, "affected consumer")),
     )
+    subjects = {f"{REVIEW_CASE_ID}/checker:{checker_revision}"}
+    for domain, values in members:
+        payload = json.dumps(
+            list(values),
+            ensure_ascii=True,
+            separators=(",", ":"),
+        ).encode("ascii")
+        digest = hashlib.sha256(
+            REVIEW_SCOPE_DOMAIN + domain.encode("ascii") + b"\0" + payload
+        ).hexdigest()
+        subjects.add(f"{REVIEW_CASE_ID}/{domain}-sha256:{digest}")
+    return frozenset(subjects)
 
 
 @dataclass(frozen=True)

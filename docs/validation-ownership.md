@@ -646,7 +646,14 @@ actual `ReviewSession` task result and immutable `ReviewTools` tester-case
 binding. The completed read-only reviewer must be independent of the
 coordinator/implementer, and its exact scope binds repository/PR/BASE/head,
 worktree identity, reviewed checker revision and required paths, changed tracked
-paths, invalidated relationships, and every affected consumer. That
+paths, invalidated relationships, and every affected consumer. The review
+session uses exactly four subjects under the unchanged bound: the exact
+checker revision plus domain-separated SHA-256 identities of the canonical
+complete path, edge-ID, and affected-consumer sets. The full sorted arrays
+remain explicit in the qualification and verifier selection; the digests only
+give the bounded review scope an identity and are not source-content ledgers,
+truncation, sampling, or independent authority. The same builder validates the
+live session/report/lease/ownership scope and the persisted record. That
 qualification is stored with `candidate.local_validation`, joined back to the
 actual candidate record and capture assignment, and included in the generated
 `ownership-reviewed-*` evidence ID. A candidate field, copied result, mode
@@ -680,6 +687,10 @@ review-first assessment, reservation, dispatch and full-run admission require
 the same live qualification that produced the local capture. Production
 refresh passes that object explicitly through `assess_observed`; the persisted
 record is only the bound comparison target and cannot recreate qualification.
+If a live qualification is supplied but the candidate has no coordinator-owned
+`local_validation`, delegated handoff readiness cannot substitute for the
+qualified ownership capture. Ordinary delegated candidates with no reviewed
+qualification retain their existing readiness path.
 Git remains the identity authority; no source ledger, new service, signer,
 privileged PR event or human approval is introduced.
 
