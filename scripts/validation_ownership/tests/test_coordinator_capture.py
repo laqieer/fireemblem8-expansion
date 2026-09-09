@@ -262,6 +262,9 @@ class ReviewedEvolutionCaptureTests(unittest.TestCase):
 
     def test_actual_reviewed_evolution_capture_passes_and_defines_local_check(self):
         state, record, pr, _, _, qualification, expected = self.coordinator()
+        qualification_record = qualification.record()
+        self.assertEqual(qualification_record["checker_revision"], self.case["base"])
+        self.assertNotIn("checker_objects", qualification_record)
         entry = {
             "assignment": {
                 "repository": pr.repository,
@@ -270,7 +273,7 @@ class ReviewedEvolutionCaptureTests(unittest.TestCase):
                 "assigned_parent_sha": self.case["base"],
                 "max_lifetime_seconds": 300,
                 "required_checks": {CHECK_ID: expected.check_definition()},
-                "review_qualification": qualification.record(),
+                "review_qualification": qualification_record,
             },
             "checks": [],
         }
