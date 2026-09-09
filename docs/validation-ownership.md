@@ -612,7 +612,10 @@ schema/oracle/authority invalidation; dependency edges are covered only when
 both endpoint surfaces have complete oracle probes. The independently
 qualified path, edge and affected-consumer scopes must match the actual Git
 diff and invalidation exactly. Unreviewed exact-base retargets still fail, and
-a workflow-dispatch or PR-only N/A status alone is not that authority. Final
+the PR-only hosted invocation remains strict: it accepts no candidate-supplied
+review mode or scope, and its failed exact-base evolution observation is not
+rewritten. The managed input-free workflow dispatch keeps that PR-only step
+not-applicable; neither the dispatch event nor N/A status is authority. Final
 review-first assessment, reservation, dispatch and full-run admission require
 the same live qualification that produced the local capture. Git remains the
 identity authority; no source ledger, new service, signer, privileged PR event

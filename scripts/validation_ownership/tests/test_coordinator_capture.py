@@ -19,7 +19,7 @@ from scripts.validation_ownership.coordinator_capture import (
 from scripts.validation_ownership.budget import MakeProbeError
 from scripts.workflow_pilot import adaptive_gate as gate, agent_handoff as handoff
 from scripts.workflow_pilot import candidate_evidence, coordinator_observations as observations
-from scripts.workflow_pilot import pr_metadata as github, review_family as review
+from scripts.workflow_pilot import pr_metadata as github, raw_diff_check as raw, review_family as review
 from scripts.workflow_pilot.tests.coordinator_support import at_offset, decisions, model_control
 from scripts.workflow_pilot.tests.review_support import Runtime
 from scripts.workflow_pilot.trusted_review_gate import GitTree, ReviewTools
@@ -408,6 +408,36 @@ class ReviewedEvolutionCaptureTests(unittest.TestCase):
 
     def test_actual_qualified_capture_controls_dispatch_and_final_admission(self):
         state, record, pr, decision, session, qualification, expected = self.coordinator()
+        strict_root = self.fixture.directory / "strict-pr-event-checker"
+        strict_root.mkdir()
+        self.addCleanup(lambda: strict_root.exists() and shutil.rmtree(strict_root))
+        with tarfile.open(fileobj=BytesIO(self.fixture.git("archive", self.case["base"]))) as archive:
+            archive.extractall(strict_root, filter="data")
+        strict = raw.run_process(
+            [
+                "/usr/bin/python3",
+                "-I",
+                "-S",
+                "-B",
+                str(strict_root / "scripts/validation_ownership/ci_verifier.py"),
+                "--trusted-root",
+                str(strict_root),
+                "--repository-root",
+                str(self.fixture.root),
+                "--base-sha",
+                self.case["base"],
+                "--candidate-sha",
+                self.case["head"],
+            ],
+            cwd=strict_root,
+            env=raw.git_environment(),
+            timeout=180,
+        )
+        self.assertNotEqual(strict.returncode, 0)
+        self.assertGreater(strict.pid, 0)
+        self.assertGreater(strict.peak_rss_bytes, 0)
+        self.assertIn(b"leaves graph surfaces unprobed", strict.stderr)
+
         gate.register_local_validation(state, record, pr, self.fixture.root, {
             "raw": {"contract": "git-diff-check", "evidence_id": "raw", "inputs": []},
             CHECK_ID: expected.check_definition(),
@@ -494,6 +524,7 @@ class ReviewedEvolutionCaptureTests(unittest.TestCase):
         saved = observations.load_json(state_path)
         selected = gate.find_candidate(saved, gate.candidate_identity(record))
         full = self.build_run(pr, 2, "full")
+        self.assertEqual(full.event, "workflow_dispatch")
         admitted = gate.assess_candidate(
             saved,
             selected,

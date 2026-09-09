@@ -193,6 +193,19 @@ retain the full graph immediately. Exact-head security and Copilot are
 requested/observed concurrently by the existing delivery coordinator, not a
 new reviewer service.
 
+The PR-only exact-base ownership step intentionally receives no
+`reviewed-evolution` mode or scope from candidate YAML. A strict PR-event
+observation of a legitimate evolution therefore remains a failed exact-base
+observation; it is never relabeled as update authority. Review-first
+candidates instead use the coordinator-owned independent qualification and
+local verifier capture described below. The later input-free
+`workflow_dispatch` runs the complete Build while its PR-only ownership step
+reports not-applicable. Neither that event nor the not-applicable result is
+authority: `assess_candidate`, dispatch reservation, and final full-run
+admission all require the same qualified local capture. Thus candidate flags
+cannot authorize evolution, and the complete managed final lane can admit an
+independently reviewed update without weakening the strict PR fallback.
+
 After accepted clean review and security, the coordinator uses one input-free
 `workflow_dispatch` on the actual candidate branch. All eight jobs run.
 Before checkout, `event-identity` uses bounded authenticated GitHub metadata
@@ -2111,7 +2124,7 @@ exact `.github/workflow-pilot-decisions.json` blob IDs from hydrated trees,
 and fetches those blobs explicitly without hydrating unrelated blobs. Both
 bounded phases recheck that `HEAD`, refs, and FETCH_HEAD are unchanged and
 that `HEAD` still equals `EXPECTED_BUILD_SHA`. This hydration is environment
-setup, not a 31st local semantic gate; local
+setup, not an additional local semantic gate; local
 `scripts.upstream_port verify` remains network-independent.
 The deterministic read-only owner handoff is:
 
