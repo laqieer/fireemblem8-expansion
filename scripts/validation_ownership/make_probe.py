@@ -131,6 +131,7 @@ class MakeObservation:
     stdout: bytes
     stderr: bytes
     events: tuple[dict, ...]
+    generated: tuple[GeneratedFile, ...] = ()
 
 
 def _metadata_records(value, limit, *, runtime_paths=(), runtime_absent=()):
@@ -1962,6 +1963,7 @@ class ProbeSession:
             return MakeObservation(
                 target, semantics, execution, hashlib.sha256(semantic_bytes).hexdigest(),
                 completed.stdout, completed.stderr, tuple(events),
+                tuple(self.published_sources[path] for path in sorted(self.published_sources)),
             )
 
     @terminal_failure

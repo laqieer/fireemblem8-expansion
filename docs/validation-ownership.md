@@ -26,6 +26,11 @@ lifecycle or public command. Registered native-tool results and generated Make
 include outputs must reach that shared observer through admitted APIs before
 this acceptance can pass; an older duplicate sandbox or fabricated empty
 command output is not a substitute.
+The graph reads generated include bytes from the completed
+`MakeObservation.generated` result corresponding to the actual
+`MAKEFILE_LIST`. Resolving a registration does not execute its producer
+in advance. Native dispatch, source receipts, replacement and cleanup remain
+owned by P; no preparatory sample supplies the graph's source census.
 
 Asset discovery reuses the existing
 [`load_discovery(..., tracked_sources=...)` and renderer](asset_manifest.md#captured-source-discovery)

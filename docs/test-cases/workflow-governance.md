@@ -3328,6 +3328,10 @@ session/deadline reset. Wildcard-visible paths, modes, source bytes and generate
 outputs retain their actual captured identity. BASE registry/models are measured
 in one grouped public view, and lifecycle removal/restoration reuses that
 already validated model without recursive report execution.
+Count actual output-producing dispatches through the graph consumer: a single
+dependency-include remake must execute once, not once for registration and
+again for Make. The completed observation must retain the real final bytes
+used by the source census while the temporary publication is removed.
 For a directory-backed table, add and remove matching bundle members between
 CURRENT and BASE while retaining a nonmatching JSON neighbor. Only the schema's
 real selected members receive generated-source ownership. Discovery must not

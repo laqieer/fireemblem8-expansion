@@ -166,6 +166,13 @@ results reject. Publication uses bounded nofollow descriptor-relative handling
 and retains the runner-ownership rule for new objects on the sudo route.
 Only a normalized logical producer can replace its own generated output.
 
+`MakeObservation.generated` retains the final confirmed `GeneratedFile`
+objects, including their actual bytes and modes, after publication cleanup.
+It is empty for a query with no published output. Replacements retain the last
+confirmed version; nested observations retain the outputs visible at their
+own completion. These immutable results reuse already charged output objects,
+not a second execution, publisher or persistent source-worktree artifact.
+
 Output-producing invocations execute genuinely for every actual dispatch.
 Identical storage/provenance can deduplicate, but that does not erase a call or
 publication effect. Pure reuse remains subject to complete current observations.

@@ -146,16 +146,17 @@ def source_census(sources):
     }
 
 
-def _loaded_sources(session, commands, observation):
+def _loaded_sources(session, observation):
     values = observation.semantics["domains"]["MAKEFILE_LIST"]["value"].split()
+    generated = {item.path: item.data for item in observation.generated}
     result = {}
     for name in values:
         name = name.removeprefix("/repo/")
         relative_path(name)
         if name in session.snapshot.files:
             result[name] = session.snapshot.files[name]
-        elif name in commands.generated:
-            result[name] = commands.generated[name]
+        elif name in generated:
+            result[name] = generated[name]
         else:
             raise MakeProbeError(f"GNU Make loaded an unadmitted include: {name}")
     return result
@@ -241,7 +242,7 @@ def run_probe(
                 continue
             visited.add(identity)
             observation = session.make(target, variables=variables, assignments=state, commands=commands)
-            loaded = _loaded_sources(session, commands, observation)
+            loaded = _loaded_sources(session, observation)
             source_union.update(loaded)
             usage = source_census(loaded)
             usages.append(usage)

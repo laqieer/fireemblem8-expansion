@@ -84,7 +84,6 @@ class MakeCommands:
         )
         self.requests = []
         self.registrations = {}
-        self.generated = {}
         self.scanner = None
         self.includes = {}
 
@@ -110,11 +109,6 @@ class MakeCommands:
             registration.directories, registration.outputs, registration.dependency_only,
         ])))
         self.registrations[command] = registration
-        if registration.outputs:
-            produced = self.session.command(registration)
-            for output in produced.generated:
-                self.session.budget.charge("cache", len(output.data) + len(output.path.encode()))
-                self.generated[output.path] = output.data
         return registration
 
     def scaninc(self, source):

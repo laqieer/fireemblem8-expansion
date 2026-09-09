@@ -8,6 +8,7 @@ import shlex
 import shutil
 import subprocess
 import unittest
+from unittest import mock
 
 from scripts.validation_ownership.authority import (
     AuthorityLoader, ENVIRONMENT, GitTreeEntries, GitTreeEntry, git_tree_entries,
@@ -15,6 +16,7 @@ from scripts.validation_ownership.authority import (
 from scripts.validation_ownership.budget import MakeProbeError, ProbeBudget
 from scripts.validation_ownership.graph_commands import CODE_PREFIXES, MakeCommands, asset_discovery_command
 from scripts.validation_ownership.make_probe import ProbeSession
+from scripts.validation_ownership.graph_probe import run_probe
 
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -230,6 +232,52 @@ class GraphCommandTests(unittest.TestCase):
             with self.assertRaises(MakeProbeError):
                 probe.command(registration)
             self.assertEqual(probe.budget.runs, before)
+
+    def test_graph_uses_actual_published_bytes_without_preexecuting_the_producer(self):
+        self.add("src/input.c", "int input;\n")
+        self.add("static.mk", "all: ;\n")
+        command = (
+            "mkdir -p .dep/src/ && cc -E -nostdinc -undef "
+            "src/input.c -MM -MG -MT src/input.o > .dep/src/input.d"
+        )
+        self.add("Makefile", (
+            "include .dep/src/input.d\n"
+            ".dep/src/input.d: src/input.c\n\t" + command + "\n"
+            "src/input.o: ;\n"
+        ))
+        with self.session() as probe:
+            outputs = []
+            observations = []
+            execute = probe.command
+            make = probe.make
+
+            def observe_command(registration):
+                result = execute(registration)
+                if registration.outputs:
+                    outputs.append(result)
+                return result
+
+            def observe_make(*arguments, **options):
+                result = make(*arguments, **options)
+                observations.append(result)
+                return result
+
+            with mock.patch.object(probe, "command", new=observe_command):
+                with mock.patch.object(probe, "make", new=observe_make):
+                    result = run_probe(
+                        probe.loader, {"src/input.o"}, {}, self.contracts, session=probe,
+                    )
+            self.assertEqual(len(outputs), 1)
+            self.assertEqual(len(observations), 1)
+            self.assertEqual(observations[0].generated, outputs[0].generated)
+            self.assertEqual(outputs[0].generated[0].data, b"src/input.o: src/input.c\n")
+            self.assertEqual(
+                result["src/input.o"]["record"]["includes"], [".dep/src/input.d", "Makefile"],
+            )
+            self.assertFalse((probe.tree / ".dep/src/input.d").exists())
+            self.assertEqual(probe.make("all", makefile="static.mk").generated, ())
+        self.assertIsNone(probe.base)
+        self.assertFalse(probe.budget.children)
 
     def test_real_linker_discovery_uses_explicit_python_and_reaches_make(self):
         path = "scripts/arm_compressing_linker.py"
