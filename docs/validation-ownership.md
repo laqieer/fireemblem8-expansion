@@ -456,6 +456,10 @@ contracts have explicit selectors in the existing host and documentation
 rules. The original introduction cohort is unchanged; another new path under
 those prefixes, including a new changelog fragment, still requires its own
 semantic admission.
+The pure `scripts/workflow_pilot/tests/coordinator_support.py` helper is
+explicitly classified with the existing host owners. An unclassified adjacent
+helper still rejects; neither its directory nor the introduction cohort is
+expanded to admit it.
 
 All report observations share the existing deadline and cumulative resource
 accounting. BASE uses one public `select_view` block, the same original source

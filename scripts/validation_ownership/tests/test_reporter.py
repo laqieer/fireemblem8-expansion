@@ -71,6 +71,15 @@ class AssetOwnershipTests(unittest.TestCase):
         measured = reporter._measure(self.oracle, self.graph, model)
         self.assertEqual(measured["false_positive_selections"], 0)
         self.assertEqual(measured["false_negative_selections"], 0)
+        helper = reporter._resolve_path(
+            "scripts/workflow_pilot/tests/coordinator_support.py", self.graph, model,
+        )
+        self.assertEqual(helper["surface"], "surface.host")
+        self.assertEqual(helper["admission"], "exact-ownership-rule")
+        self.assertEqual(
+            {(owner["edge_type"], owner["evidence_id"]) for owner in helper["owners"]},
+            {("owns-test", "owner.host-build"), ("adversarial-control", "owner.host-workflow")},
+        )
         for path, surface, target in (
             ("graphics/titlescreen/title_main_background_1.png", "surface.title-visual", "expansion-modern-title-check"),
             ("assets/banim/lorm_sp1/script.txt", "surface.banim-package", "expansion-modern-banim-package-runtime-check"),
@@ -127,6 +136,7 @@ class AssetOwnershipTests(unittest.TestCase):
         for path in (
             "src/foo.c", "scripts/unclassified.py", "docs/unclassified.md",
             "graphics/unclassified.png", "changelog_fragments/unclassified.json",
+            "scripts/workflow_pilot/tests/unclassified_support.py",
         ):
             entries = {**self.entries, path: reporter.GitTreeEntry(path, "100644", "blob", "0" * 40)}
             with self.subTest(path=path), self.assertRaisesRegex(reporter.OwnershipError, "semantic admission"):
