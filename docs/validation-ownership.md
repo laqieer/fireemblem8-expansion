@@ -316,6 +316,13 @@ unknown, multiple rule/exclusion matches are ambiguous, and a prefix-only
 new path lacks semantic admission. All three are errors. Admission is checked
 for whole-tree coverage before Make-authority execution and again when
 resolving a current path; successful resolutions report the admission kind.
+Every exact path-rule selector, in either the include or exclude role, must
+name a current captured-tree member or an explicitly admitted generated-source
+member. Deleting that member without removing the selector is a stale ownership
+target and rejects even when no oracle probe names the path. Prefix selectors
+are namespaces and need not currently match. Removing the stale exact selector
+is the repair; deleted-path reporting still resolves through the separately
+validated BASE graph/model and reports `selected-base-tree`.
 
 This avoids a hand-maintained list of more than ten thousand files while
 keeping overlap and unknown namespaces deterministic. Mode `120000` symlinks

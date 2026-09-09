@@ -247,6 +247,81 @@ class GraphReportTests(unittest.TestCase):
         with self.assertRaisesRegex(MakeProbeError, "semantic admission"):
             self.run_report()
 
+    def test_stale_exact_include_and_exclude_require_current_membership(self):
+        for role in ("include", "exclude"):
+            with self.subTest(role=role):
+                fixture = ReportFixture()
+                self.addCleanup(fixture.close)
+                path = f"docs/exact-{role}/unprobed.md"
+                fixture.add(path, role + " exact selector\n")
+                graph_path = fixture.root / reporter.GRAPH_PATH
+                graph = json.loads(graph_path.read_text())
+                source = next(rule for rule in graph["path_rules"] if rule["id"] == "paths.source")
+                if role == "include":
+                    source["include"].append({"kind": "exact", "path": path})
+                else:
+                    source["exclude"].append({"kind": "exact", "path": path})
+                    schema = next(rule for rule in graph["path_rules"] if rule["id"] == "paths.schema")
+                    schema["include"].append({"kind": "exact", "path": path})
+                    graph["path_rules"].sort(key=lambda rule: rule["id"] != "paths.source")
+                graph_path.write_text(json.dumps(graph))
+                base = fixture.commit("Add real unprobed exact selector")
+
+                budget = ProbeBudget()
+                try:
+                    check(fixture.root, budget=budget, runtime_files=(), lifecycle=False)
+                finally:
+                    budget.close()
+                (fixture.root / path).unlink()
+                fixture.commit("Delete exact-selected source only")
+                budget = ProbeBudget()
+                try:
+                    with self.assertRaisesRegex(MakeProbeError, f"stale exact {role}"):
+                        check(
+                            fixture.root,
+                            budget=budget,
+                            base_revision=base,
+                            runtime_files=(),
+                            lifecycle=False,
+                        )
+                finally:
+                    budget.close()
+
+                graph = json.loads(graph_path.read_text())
+                source = next(rule for rule in graph["path_rules"] if rule["id"] == "paths.source")
+                source[role] = [
+                    selector for selector in source[role]
+                    if selector != {"kind": "exact", "path": path}
+                ]
+                if role == "exclude":
+                    schema = next(rule for rule in graph["path_rules"] if rule["id"] == "paths.schema")
+                    schema["include"] = [
+                        selector for selector in schema["include"]
+                        if selector != {"kind": "exact", "path": path}
+                    ]
+                graph_path.write_text(json.dumps(graph))
+                fixture.commit("Remove stale exact selector")
+                budget = ProbeBudget()
+                try:
+                    result = check(
+                        fixture.root,
+                        budget=budget,
+                        base_revision=base,
+                        changed_paths=(path,),
+                        runtime_files=(),
+                        lifecycle=False,
+                    )
+                finally:
+                    budget.close()
+                resolution = next(item for item in result["resolutions"] if item["path"] == path)
+                self.assertEqual(resolution["admission"], "selected-base-tree")
+                self.assertEqual(
+                    resolution["surface"],
+                    "surface.source" if role == "include" else "surface.schema",
+                )
+                self.assertTrue(resolution["owners"])
+                self.assertTrue(all(owner["reason"] for owner in resolution["owners"]))
+
     def test_edge_loss_and_owner_redirection_reject(self):
         path = self.fixture.root / reporter.GRAPH_PATH
         graph = json.loads(path.read_text())
