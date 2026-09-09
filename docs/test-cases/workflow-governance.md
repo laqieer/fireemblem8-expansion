@@ -3193,8 +3193,11 @@ game behavior needs a compensating change.
    `ReviewSession` over the exact changed paths, invalidated edges, affected
    consumers and immutable checker revision. Register and capture the real
    standalone verifier with that qualification, then prove the same record is
-   required by local readiness, review-first dispatch, and final
-   `workflow_dispatch` admission. Wrong repository/PR/BASE/head/worktree,
+   carried through the production `assess_observed` refresh and required by
+   local readiness, review-first dispatch, and final `workflow_dispatch`
+   admission. Repeating the same observed assessment without its live
+   qualification must report `exact-local-handoff` and deny both dispatch and
+   final admission. Wrong repository/PR/BASE/head/worktree,
    omitted consumers, stale review scope, a candidate-only reseal and a
    freshly copied counterfeit checker must reject. The positive adds a real
    path/surface, complete owner and dependency edges, and coherent oracle;

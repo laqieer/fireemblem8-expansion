@@ -660,9 +660,11 @@ review mode or scope, and its failed exact-base evolution observation is not
 rewritten. The managed input-free workflow dispatch keeps that PR-only step
 not-applicable; neither the dispatch event nor N/A status is authority. Final
 review-first assessment, reservation, dispatch and full-run admission require
-the same live qualification that produced the local capture. Git remains the
-identity authority; no source ledger, new service, signer, privileged PR event
-or human approval is introduced.
+the same live qualification that produced the local capture. Production
+refresh passes that object explicitly through `assess_observed`; the persisted
+record is only the bound comparison target and cannot recreate qualification.
+Git remains the identity authority; no source ledger, new service, signer,
+privileged PR event or human approval is introduced.
 
 Domain-separated seals continue to cover the strict schema, probe oracle,
 complete graph, resolved edges, and live evidence-authority fingerprints.

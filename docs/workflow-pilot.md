@@ -404,6 +404,13 @@ qualification. Missing, partial, stale or different review/checker/path/edge/
 consumer scope therefore keeps local readiness, review-first dispatch and
 final full-run admission false. A freshly copied candidate checker is not
 trusted merely because its revision equals the candidate.
+Live GitHub refresh uses the same boundary:
+`assess_observed(..., local_qualification=qualification)` carries the
+coordinator-owned in-memory object through the two-phase PR/review/security/
+Build observation and into `assess_candidate`. It is never serialized into a
+candidate request or reconstructed from the persisted local record. Omitting
+that live argument leaves the captured reviewed evolution visibly
+`exact-local-handoff` incomplete.
 
 Every registered check must finish successfully at the same head/base/worktree.
 Each observation retains the complete registered definition set, so changing,
