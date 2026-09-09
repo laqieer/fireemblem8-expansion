@@ -302,6 +302,7 @@ class MakeCommands:
         self.requests = []
         self.registrations = {}
         self.scanner = None
+        self.scanner_directories = None
         self.includes = {}
 
     def _matches(self, command):
@@ -333,6 +334,41 @@ class MakeCommands:
         self.registrations[command] = registration
         return registration
 
+    def _scaninc_candidate(self, spelling):
+        if (
+            not spelling or spelling.startswith("/") or "\\" in spelling
+            or len(spelling.encode("utf-8")) > 4096
+            or any(ord(character) < 32 or ord(character) == 127 for character in spelling)
+        ):
+            raise MakeProbeError("scaninc include must be canonical and repository-relative after search resolution")
+        parts = []
+        components = spelling.split("/")
+        for index, component in enumerate(components):
+            if component in {"", "."}:
+                continue
+            if component == "..":
+                if not parts:
+                    raise MakeProbeError("scaninc include must be canonical and repository-relative after search resolution")
+                parts.pop()
+                continue
+            parts.append(component)
+            path = "/".join(parts)
+            entry = self.session.loader.entries.get(path)
+            if entry is not None and (
+                entry.mode == "120000"
+                or entry.mode not in {"100644", "100755"} and path not in self.scanner_directories
+            ):
+                raise MakeProbeError("scaninc include resolves to an unadmitted source")
+            if index < len(components) - 1 and path not in self.scanner_directories:
+                return None
+        if not parts:
+            raise MakeProbeError("scaninc include resolves to an unadmitted source")
+        path = relative_path("/".join(parts))
+        entry = self.session.loader.entries.get(path)
+        if entry is not None and path not in self.session.snapshot.files:
+            raise MakeProbeError("scaninc include resolves to an unadmitted source")
+        return path if path in self.session.snapshot.files else None
+
     def scaninc(self, source):
         source = relative_path(source)
         if self.scanner is None:
@@ -344,35 +380,44 @@ class MakeCommands:
                 headers=tuple(sorted(path for path in files if path.endswith(".h"))),
                 cxx=True, defines=("SCANINC_NO_MAIN",),
             )
-        pending = [source]
+            self.scanner_directories = {
+                parent.as_posix() for path in self.session.loader.entries
+                for parent in PurePosixPath(path).parents
+            }
+            self.session.budget.charge("cache", len(encoded(sorted(self.scanner_directories))))
+        pending = [(source, source)]
         sources = set()
+        spellings = {source}
+        visited = set()
         while pending:
             self.session.budget.remaining()
-            if len(sources) >= 4096:
+            if len(visited) >= 4096:
                 self.session.budget.reject("scaninc source closure exceeds declaration bound")
-            path = pending.pop()
-            if path in sources:
+            spelling, path = pending.pop()
+            if spelling in visited:
                 continue
+            visited.add(spelling)
             sources.add(path)
             if path not in self.includes:
                 result = self.session.native(self.scanner, ("includes", path), sources=(path,))
                 includes = text(result.stdout, "scaninc include names").splitlines()
                 if includes != sorted(set(includes)):
                     raise MakeProbeError("scaninc returned an invalid include set")
-                self.includes[path] = tuple(relative_path(name) for name in includes)
+                self.includes[path] = tuple(includes)
                 self.session.budget.charge("cache", len(encoded([path, includes])))
             for include in self.includes[path]:
-                for directory in ("include", "", str(PurePosixPath(path).parent)):
-                    candidate = include if directory in {"", "."} else directory + "/" + include
-                    entry = self.session.loader.entries.get(candidate)
-                    if entry is not None and candidate not in self.session.snapshot.files:
-                        raise MakeProbeError("scaninc include resolves to an unadmitted source")
-                    if candidate in self.session.snapshot.files:
-                        if candidate not in sources:
-                            pending.append(candidate)
+                source_directory = spelling.rpartition("/")[0]
+                for directory in ("include", "", source_directory):
+                    candidate = directory + "/" + include if directory else include
+                    resolved = self._scaninc_candidate(candidate)
+                    if resolved is not None:
+                        if candidate not in spellings:
+                            self.session.budget.charge("cache", len(encoded([candidate, resolved])))
+                            spellings.add(candidate)
+                            pending.append((candidate, resolved))
                         break
         return Command(
-            ("/native/tool", "scan", source, *sorted(sources)),
+            ("/native/tool", "scan", source, *sorted(spellings)),
             sources=tuple(sorted(sources)), native_tool=self.scanner,
         )
 

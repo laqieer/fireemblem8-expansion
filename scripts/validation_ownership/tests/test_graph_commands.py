@@ -136,6 +136,39 @@ class GraphCommandTests(unittest.TestCase):
                 b"asset.bin", b"include/leaf.inc", b"include/nested.inc", b"nested.bin",
             ])
 
+    def test_real_banim_parent_includes_preserve_ordinary_search_spelling(self):
+        source = "banim/banim_lorm_sp1_motion.s"
+        includes = ("include/banim_sheet.inc", "include/banim_code.inc", "include/banim_code_frame.inc")
+        for path in (source, *includes):
+            self.add(path, (ROOT / path).read_bytes())
+        ordinary = self.ordinary_scaninc(source)
+        command = f'tools/scaninc/scaninc -I include -I "" {source}'
+        self.add("Makefile", f"INPUTS := $(shell {command})\nall: ;\n")
+        with self.session() as probe:
+            commands = MakeCommands(probe, self.contracts)
+            output = probe.command(commands[command])
+            self.assertEqual(output.stdout, ordinary)
+            self.assertEqual(set(output.consumed), {source, *includes})
+            observed = probe.make("all", variables=("INPUTS",), commands=commands)
+            self.assertEqual(
+                observed.semantics["domains"]["INPUTS"]["value"],
+                " ".join(ordinary.decode().splitlines()),
+            )
+        self.assertFalse(probe.budget.children)
+
+    def test_scaninc_does_not_collapse_an_absent_intermediate_directory(self):
+        self.add("src/root.s", '.include "../include/leaf.inc"\n.include "missing/../leaf.inc"\n')
+        self.add("include/leaf.inc", '.incbin "first.bin"\n')
+        self.add("src/leaf.inc", '.incbin "second.bin"\n')
+        self.add("src/missing/anchor", "directory member\n")
+        ordinary = self.ordinary_scaninc("src/root.s")
+        with self.session() as probe:
+            output = probe.command(MakeCommands(probe, self.contracts).scaninc("src/root.s"))
+            self.assertEqual(output.stdout, ordinary)
+            self.assertIn(b"src/missing/../leaf.inc", output.stdout.splitlines())
+            self.assertEqual(set(output.consumed), {"src/root.s", "include/leaf.inc", "src/leaf.inc"})
+        self.assertFalse(probe.budget.children)
+
     def test_scaninc_rejects_escaping_and_unadmitted_sources(self):
         for content, expected in (
             ('.include "../outside.inc"\n', "canonical and repository-relative"),

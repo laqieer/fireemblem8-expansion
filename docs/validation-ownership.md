@@ -118,6 +118,15 @@ open undeclared absent candidates such as
 invent dependency output. Missing initial inputs, escaping includes and
 symlink/gitlink matches fail. Native command consumption must equal its
 declaration, and the resulting dependency text must reach actual GNU Make.
+Include names are resolved only after joining each original search directory,
+so repository-contained parent components in real banim sources remain valid.
+The planner checks every intermediate component against the captured namespace
+before collapsing `..`; an absent or non-directory prefix cannot become a
+different existing file. Canonical paths bind source admission, while the
+original accepted search spellings are passed to the native traversal and
+retained in its ordinary output. Alias traversal remains bounded, and escaping
+or nonregular namespaces still reject. The line-framed include helper rejects
+embedded line breaks or NUL rather than splitting one pathname into claims.
 Ordinary-versus-adapted comparisons use equivalent captured input metadata, not
 an ambient worktree containing untracked files. Native adapter unit tests and
 standalone producer successes are not whole-root Make acceptance.

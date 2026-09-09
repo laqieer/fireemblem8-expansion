@@ -13,7 +13,12 @@ int main(int argc, char **argv)
     {
         SourceFile source(argv[2]);
         for (const auto &path : source.GetIncludes())
+        {
+            if (path.empty() || path.find_first_of("\r\n") != std::string::npos
+                || path.find('\0') != std::string::npos)
+                return 2;
             std::printf("%s\n", path.c_str());
+        }
         return 0;
     }
     if (argc >= 4 && std::strcmp(argv[1], "scan") == 0)

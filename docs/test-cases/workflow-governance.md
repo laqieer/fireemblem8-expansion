@@ -3144,6 +3144,11 @@ game behavior needs a compensating change.
    not a substitute dependency parser. Require real consumed sources and final
    Make command provenance; a successful standalone producer with an empty
    Make value or missing dispatch event is a failure, not adoption evidence.
+   Include the actual `banim/banim_lorm_sp1_motion.s` parent-component inputs.
+   Require the same ordinary dependency bytes/search spellings and canonical
+   consumed-source set. A missing intermediate directory before `..` must
+   remain a failed candidate lookup rather than collapsing to an existing
+   file; repository escape and nonregular boundaries still reject.
    For the asset producer, capture the real three-record manifest as BASE,
    remove its battle record and script from CURRENT, then inspect both generated
    includes through one shared session and one BASE view. CURRENT must omit the
