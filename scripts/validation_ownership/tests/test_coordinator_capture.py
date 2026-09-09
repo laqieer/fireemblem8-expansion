@@ -488,32 +488,33 @@ class ReviewedEvolutionCaptureTests(unittest.TestCase):
         session.triage(review.Triage(fact, "clean"))
         checks = self.security(pr.head_sha)
         preflight = self.build_run(pr, 1, "review-first")
-        ready = gate.assess_candidate(
-            state,
-            record,
-            decision,
-            pr,
-            session,
-            (fact,),
-            tuple(session.rounds.events),
-            checks,
-            (preflight,),
-            criteria_ready=True,
-            local_qualification=qualification,
-        )
+        tools = qualification.review_tools
+
+        def observed(saved, runs, selected_qualification):
+            with (
+                patch.object(gate, "fetch_candidate", return_value=(pr, 10)),
+                patch.object(gate, "fetch_decision", return_value=decision),
+                patch.object(gate, "_review_snapshot",
+                             return_value=((pr.base_sha, pr.head_sha), (fact,))),
+                patch.object(gate, "security_checks", return_value=checks),
+                patch.object(github, "list_candidate_runs", return_value=runs),
+                patch.object(gate, "fetch_pilot_control", return_value=decision.control),
+            ):
+                return gate.assess_observed(
+                    object(),
+                    saved,
+                    gate.find_candidate(saved, gate.candidate_identity(record)),
+                    session,
+                    tuple(session.rounds.events),
+                    tools,
+                    criteria_ready=True,
+                    local_qualification=selected_qualification,
+                )
+
+        ready, actual_preflight = observed(state, (preflight,), qualification)
         self.assertTrue(ready["dispatchable"], ready)
-        without = gate.assess_candidate(
-            state,
-            record,
-            decision,
-            pr,
-            session,
-            (fact,),
-            tuple(session.rounds.events),
-            checks,
-            (preflight,),
-            criteria_ready=True,
-        )
+        self.assertEqual(actual_preflight, (preflight,))
+        without, _ = observed(state, (preflight,), None)
         self.assertFalse(without["dispatchable"])
         self.assertIn("exact-local-handoff", without["missing"])
 
@@ -527,20 +528,8 @@ class ReviewedEvolutionCaptureTests(unittest.TestCase):
 
         def assess(saved):
             selected = gate.find_candidate(saved, gate.candidate_identity(record))
-            current = gate.assess_candidate(
-                saved,
-                selected,
-                decision,
-                pr,
-                session,
-                (fact,),
-                tuple(session.rounds.events),
-                checks,
-                (preflight,),
-                criteria_ready=True,
-                local_qualification=qualification,
-            )
-            return selected, current, (preflight,)
+            current, actual_runs = observed(saved, (preflight,), qualification)
+            return selected, current, actual_runs
 
         with (
             patch.object(gate, "frozen_base", return_value=pr.base_sha),
@@ -554,32 +543,11 @@ class ReviewedEvolutionCaptureTests(unittest.TestCase):
         selected = gate.find_candidate(saved, gate.candidate_identity(record))
         full = self.build_run(pr, 2, "full")
         self.assertEqual(full.event, "workflow_dispatch")
-        admitted = gate.assess_candidate(
-            saved,
-            selected,
-            decision,
-            pr,
-            session,
-            (fact,),
-            tuple(session.rounds.events),
-            checks,
-            (preflight, full),
-            criteria_ready=True,
-            local_qualification=qualification,
-        )
+        admitted, actual_full = observed(saved, (preflight, full), qualification)
+        self.assertEqual(actual_full, (preflight, full))
         self.assertTrue(admitted["merge_eligible"], admitted)
-        self.assertFalse(gate.assess_candidate(
-            saved,
-            selected,
-            decision,
-            pr,
-            session,
-            (fact,),
-            tuple(session.rounds.events),
-            checks,
-            (preflight, full),
-            criteria_ready=True,
-        )["merge_eligible"])
+        unqualified, _ = observed(saved, (preflight, full), None)
+        self.assertFalse(unqualified["merge_eligible"])
 
 
 if __name__ == "__main__":

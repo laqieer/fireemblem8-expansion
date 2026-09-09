@@ -10,10 +10,11 @@ from .budget import MakeProbeError
 def check(artifact_root, check_id, *, session, graph, schema, oracle, model):
     from . import reporter
 
-    if check_id not in reporter.LIFECYCLE_CHECKS:
-        raise MakeProbeError("lifecycle check is not allowlisted")
     if session is None or session.base is None or model.get("graph") != graph:
         raise MakeProbeError("lifecycle requires the active validated report model")
+    definition = graph["artifact"]
+    if check_id not in (definition["executable_consumer"], definition["consistency_check"]):
+        raise MakeProbeError("lifecycle check is not allowlisted")
     artifact_root = Path(artifact_root).resolve(strict=True)
     allowed = (
         session.base,
@@ -32,7 +33,8 @@ def check(artifact_root, check_id, *, session, graph, schema, oracle, model):
         raise MakeProbeError("lifecycle artifact differs from the measured graph")
     reporter.validate_probe_oracle(oracle, actual, model["entries"])
     reporter._measure(oracle, actual, model)
-    if check_id != "validation-ownership-check" and check_id not in reporter._load_test_case_registry(session.loader):
+    if (check_id == definition["consistency_check"]
+            and check_id not in reporter._load_test_case_registry(session.loader)):
         raise MakeProbeError("ownership consistency tester case is stale")
     return 0
 

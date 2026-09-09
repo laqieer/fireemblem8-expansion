@@ -3193,8 +3193,11 @@ game behavior needs a compensating change.
    `ReviewSession` over the exact changed paths, invalidated edges, affected
    consumers and immutable checker revision. Register and capture the real
    standalone verifier with that qualification, then prove the same record is
-   required by local readiness, review-first dispatch, and final
-   `workflow_dispatch` admission. Wrong repository/PR/BASE/head/worktree,
+   carried through the production `assess_observed` refresh and required by
+   local readiness, review-first dispatch, and final `workflow_dispatch`
+   admission. Repeating the same observed assessment without its live
+   qualification must report `exact-local-handoff` and deny both dispatch and
+   final admission. Wrong repository/PR/BASE/head/worktree,
    omitted consumers, stale review scope, a candidate-only reseal and a
    freshly copied counterfeit checker must reject. The positive adds a real
    path/surface, complete owner and dependency edges, and coherent oracle;
@@ -3288,6 +3291,9 @@ fail while the actual graph is absent, and pass after restoration. In a
 controlled regression, make only one route accept removal or reject the
 restored artifact. The report must fail for either route independently;
 checking only the consumer reproduced the pre-fix consistency-route omission.
+Repeat the qualified evolution capture with a valid non-default Make consumer.
+Both lifecycle routes must retain their declared roles; an unrelated check ID
+must reject rather than acquiring authority from the new consumer.
 The base-pinned verifier additionally requires every oracle-backed edge's
 resolved authority fingerprint to equal the exact base and rejects trusted
 edge invalidation even when the surface, evidence ID, and edge type stay fixed.

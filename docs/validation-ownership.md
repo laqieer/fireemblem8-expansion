@@ -391,6 +391,9 @@ records; skipping a later removal must fail even if an earlier proof passed.
 Both routes validate the artifact schema, equality with the already measured
 graph, and independent oracle owner pairs using that same complete model.
 The consistency route also checks its actual captured tester-case registry.
+The allowed identities come only from that validated artifact's two declared
+roles. A valid reviewed Make-consumer change retains its consumer role rather
+than being mistaken for a tester-case ID; undeclared routes still reject.
 Neither route reruns Make or recursively invokes the lifecycle driver.
 Allowing removal or rejecting restoration in either route must fail the proof;
 the other route's success cannot substitute for it.
@@ -660,9 +663,11 @@ review mode or scope, and its failed exact-base evolution observation is not
 rewritten. The managed input-free workflow dispatch keeps that PR-only step
 not-applicable; neither the dispatch event nor N/A status is authority. Final
 review-first assessment, reservation, dispatch and full-run admission require
-the same live qualification that produced the local capture. Git remains the
-identity authority; no source ledger, new service, signer, privileged PR event
-or human approval is introduced.
+the same live qualification that produced the local capture. Production
+refresh passes that object explicitly through `assess_observed`; the persisted
+record is only the bound comparison target and cannot recreate qualification.
+Git remains the identity authority; no source ledger, new service, signer,
+privileged PR event or human approval is introduced.
 
 Domain-separated seals continue to cover the strict schema, probe oracle,
 complete graph, resolved edges, and live evidence-authority fingerprints.

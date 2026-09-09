@@ -53,10 +53,6 @@ REQUIRED_PROOF_KINDS = {
 LIFECYCLE_FAILURE_REASON = (
     "removal loses the issue #180 validation ownership invariant"
 )
-LIFECYCLE_CHECKS = {
-    "validation-ownership-check",
-    "TC-WORKFLOW-GATE-OWNERSHIP-001",
-}
 LIFECYCLE_TIMEOUT_SECONDS = 30
 REQUIREMENT_EDGES = {
     "positive": {"owns-test"},

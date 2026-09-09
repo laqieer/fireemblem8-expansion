@@ -1604,7 +1604,8 @@ def evidence_comment(assessment, preserved_text=""):
 
 
 def assess_observed(client, state, record, session, triage, review_tools, *,
-                    family_evidence=None, accepted_security=(), criteria_ready=False):
+                    family_evidence=None, accepted_security=(), criteria_ready=False,
+                    local_qualification=None):
     """Refresh through #177/#179 and validate the unique actual Git merge base."""
     pr, lines = fetch_candidate(client, state["repository"], record["pr_number"])
     decision = fetch_decision(client, pr, lines)
@@ -1635,7 +1636,7 @@ def assess_observed(client, state, record, session, triage, review_tools, *,
     assessment = assess_candidate(
         state, record, decision, after, session, facts, triage, checks, runs,
         family_evidence=family_evidence, accepted_security=accepted_security,
-        criteria_ready=criteria_ready)
+        criteria_ready=criteria_ready, local_qualification=local_qualification)
     return assessment, runs
 
 

@@ -42,6 +42,9 @@ class GraphReportTests(unittest.TestCase):
         def observe_check(artifact_root, check_id, **arguments):
             present = (artifact_root / reporter.GRAPH_PATH).is_file()
             outcome = "fail"
+            if not checks:
+                with self.assertRaisesRegex(MakeProbeError, "check is not allowlisted"):
+                    lifecycle_check(artifact_root, "not-a-declared-lifecycle-route", **arguments)
             try:
                 result = lifecycle_check(artifact_root, check_id, **arguments)
                 outcome = "pass"
