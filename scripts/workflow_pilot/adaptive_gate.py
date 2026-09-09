@@ -1160,8 +1160,9 @@ def validate_review_qualification(value):
     for item in handoff.items(value["review_scope"], minimum=4, maximum=40, unique=True):
         handoff.text(item, maximum=1024)
     try:
-        from scripts.validation_ownership.coordinator_capture import reviewed_evolution_scope
+        from scripts.validation_ownership.coordinator_capture import REVIEW_CASE_ID, reviewed_evolution_scope
 
+        require(value["case_id"] == REVIEW_CASE_ID, "review qualification case identity changed")
         expected_scope = sorted(reviewed_evolution_scope(
             value["checker_revision"],
             value["changed_paths"],

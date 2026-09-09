@@ -261,17 +261,20 @@ class CoordinatorLocalTests(unittest.TestCase):
             (ROOT / "scripts/workflow_pilot/agent_handoff.schema.json").read_text()))
         self.assertTrue(validator.is_valid(self.state))
         handoff.validate_state(self.state)
-        for field in ("repository", "pull_request", "candidate_sha", "base_sha", "worktree",
+        for field in ("case_id", "repository", "pull_request", "candidate_sha", "base_sha", "worktree",
                       "coordinator_id", "git_identity"):
             changed = copy.deepcopy(self.state)
             changed["candidates"][0]["local_validation"]["review_qualification"][field] = (
-                "other/repository" if field == "repository"
+                "TC-WORKFLOW-OTHER-001" if field == "case_id"
+                else "other/repository" if field == "repository"
                 else 999 if field == "pull_request"
                 else "f" * 40 if field in {"candidate_sha", "base_sha"}
                 else "/" if field == "worktree"
                 else "other" if field == "coordinator_id"
                 else {**qualification["git_identity"], "inode": qualification["git_identity"]["inode"] + 1}
             )
+            if field == "case_id":
+                self.assertFalse(validator.is_valid(changed))
             with self.assertRaises(ValueError):
                 handoff.validate_state(changed)
 

@@ -3558,13 +3558,14 @@ Real docs and generated-schema paths ensure every graph surface and every
 non-dependency owner edge is oracle-backed. Removing either probe, omitting
 `generated-schema.owns-test`, or changing an unrepresented dependency edge
 fails before exact-base authority can succeed.
-This introducing PR emits the explicit
-`bootstrap-not-authoritative` state with no claimed authority because its base
-lacks every package/graph/oracle marker, while candidate tests/public checks
-continue and direct adversarial review supplies introduction evidence. The
-candidate-staged local verifier must report the same mode for that exact base.
-A future complete base selects `exact-base-pinned`; any partial base package
-rejects instead of downgrading, including a base containing only the
+For this introducing PR, the complete merged foundation-only BASE selects
+`foundation-introduction`; its independently selected verifier source and
+actual exact-head capture must report that mode, not authority-none bootstrap.
+A genuine earlier base lacking every package/graph/oracle marker instead emits
+`bootstrap-not-authoritative` with no claimed graph authority. Preserve that
+separate historical/negative case rather than treating it as this PR's current
+base. A complete graph-bearing base selects `exact-base-pinned`; partial
+authority rejects instead of downgrading, including a base containing only the
 Make-dynamics marker. Before the first Git command, the hosted step must unset
 the exact ten path-bearing Git redirects while retaining its config,
 replacement, and lazy-fetch scrubs. Missing/changed base staging, candidate
@@ -3579,16 +3580,14 @@ during trusted bootstrap. The exact sole goal skips every normal config,
 generated, asset, and dependency include; plain and allowed parallel public
 invocations execute the checker rather than printing success.
 
-The lifecycle `validation-ownership-check` consumer calls complete
-nonrecursive graph validation, Make/workflow authority validation, and exact
-oracle measurement on the artifact copy. Redirected/stale edges or owners and
-broken Make registry/workflow mutations therefore fail removal/restoration
-proofs; the consumer never invokes the lifecycle driver recursively. Trigger
-metadata is validated independently, while the bounded executable loop
-exercises the two artifact states once each: missing graph must fail with the
-named reason and restored graph must pass, and those behavioral results are
-bound back onto every checkpoint, dependency-change, and pre-graduation proof
-record.
+Lifecycle checks reuse the report's already validated complete model and
+recheck the copied artifact's schema, graph identity and exact oracle pairs;
+the consistency route also checks its captured tester-case registry. The
+driver never recursively repeats the whole report. Every trigger has its own
+real removal/restoration cycle, and both declared routes run before removal,
+while absent and after restoration. Missing graph must fail with the named
+reason and restoration must pass; no earlier trigger's successful cycle can
+stand in for a later checkpoint, dependency-change or pre-graduation proof.
 
 Exact current/base Git mode and provenance is mandatory. Symlinks, synthetic
 gitlinks under owned prefixes, untracked/ignored/nonexistent changed paths,
