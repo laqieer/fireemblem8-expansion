@@ -77,6 +77,7 @@ class Command:
     directories: tuple[str, ...] = ()
     native_tool: NativeTool | None = None
     outputs: tuple[str, ...] = ()
+    dependency_only: bool = False
 
 
 @dataclass(frozen=True)
@@ -109,6 +110,7 @@ class ProcessOutput:
     metadata: tuple[tuple, ...] = ()
     generated: tuple[GeneratedFile, ...] = ()
     input_identities: tuple[tuple[str, str, str], ...] = ()
+    executed: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -319,12 +321,13 @@ def _remove_owned_tree(path):
     finish_cleanup([remove])
 
 
-def _trusted_runtime_path(path: str, *, optional=False):
+def _trusted_runtime_path(path: str, *, optional=False, compiler=False):
     requested = PurePosixPath(path)
     if not requested.is_absolute() or str(requested) != path or ".." in requested.parts:
         raise MakeProbeError("noncanonical trusted runtime path")
     roots = (
         "/usr/bin/", "/usr/lib/", "/usr/lib64/", "/lib/", "/lib64/",
+        *(("/usr/libexec/",) if compiler else ()),
         *(("/usr/include/", "/bin/") if optional else ()),
     )
     if not path.startswith(roots):
@@ -436,6 +439,23 @@ def _make_interpreter(binary: bytes):
     return interpreter
 
 
+def _runtime_library_paths(raw, existing):
+    known = set(existing)
+    result = []
+    for row in text(raw, "trusted runtime listing", "ascii").splitlines():
+        row = row.strip()
+        if re.fullmatch(r"linux-vdso\.so\.1 \(0x[0-9a-f]+\)", row):
+            continue
+        match = re.fullmatch(r"(?:[A-Za-z0-9_.+-]+ => )?(/[^ \t]+) \(0x[0-9a-f]+\)", row)
+        if match is None or len(known) >= 64:
+            raise MakeProbeError("unresolved/malformed trusted runtime closure")
+        path = match[1]
+        if path not in known:
+            result.append(path)
+            known.add(path)
+    return tuple(result)
+
+
 def _make_runtime(budget: ProbeBudget):
     binary = _trusted_runtime_bytes("/usr/bin/make", budget)
     interpreter = _make_interpreter(binary)
@@ -448,16 +468,8 @@ def _make_runtime(budget: ProbeBudget):
     result = budget.run([interpreter, "--list", "/usr/bin/make"], env=ENVIRONMENT, cwd=Path("/"))
     if result.returncode:
         raise MakeProbeError(f"cannot resolve trusted Make runtime: {result.stderr!r}")
-    for row in text(result.stdout, "trusted Make runtime listing", "ascii").splitlines():
-        row = row.strip()
-        if re.fullmatch(r"linux-vdso\.so\.1 \(0x[0-9a-f]+\)", row):
-            continue
-        match = re.fullmatch(r"(?:[A-Za-z0-9_.+-]+ => )?(/[^ \t]+) \(0x[0-9a-f]+\)", row)
-        if match is None or len(runtime) >= 64:
-            raise MakeProbeError("unresolved/malformed trusted Make runtime closure")
-        path = match[1]
-        if path not in runtime:
-            runtime[path] = _trusted_runtime_bytes(path, budget)
+    for path in _runtime_library_paths(result.stdout, runtime):
+        runtime[path] = _trusted_runtime_bytes(path, budget)
     if len(runtime) < 3:
         raise MakeProbeError("trusted Make runtime closure is incomplete")
     return tuple(sorted(runtime.items()))
@@ -585,6 +597,8 @@ class ProbeSession:
         self.handlers = {}
         self.snapshot = None
         self.make_runtime = ()
+        self.dependency_compiler = None
+        self.dependency_runtime = None
         if (
             not isinstance(runtime_files, (tuple, list))
             or len(runtime_files) > budget.limits.pending
@@ -729,6 +743,8 @@ class ProbeSession:
             self.generated_directories.clear()
             self.parked_capsules.clear()
             self.make_runtime = ()
+            self.dependency_compiler = None
+            self.dependency_runtime = None
             self.runtime_inputs = ()
             self.runtime_dispatch = ()
             self.runtime_root = None
@@ -940,6 +956,7 @@ class ProbeSession:
         self, root, *, mode, argv, environment, mounts, code=(), sources=(),
         directories=(), executables=None, mapping_entries=(), metadata_validation=False,
         producer_handler=None, publication_observer=None, publication_allowed=True,
+        dependency=None,
     ):
         self.budget.remaining()
         if [item for item in mounts if item["target"] == "/repo"] != [self._mount(self.tree, "/repo")]:
@@ -1004,6 +1021,10 @@ class ProbeSession:
                 self.budget.limits.control_bytes - self.budget.bytes.get("control", 0),
             ),
         }
+        if dependency is not None:
+            if mode != "compile":
+                raise MakeProbeError("dependency profile requires compiler confinement")
+            config["dependency"] = dependency
         counter_names = {
             "processes", "syscalls", "written_bytes", "created_files", "observation_bytes",
             "observations", "live_process_peak", "memory_peak",
@@ -1188,7 +1209,9 @@ class ProbeSession:
                 "processes", "syscalls", "written_bytes", "created_files",
                 "memory_peak", "observation_bytes", "live_process_peak", "observations",
                 "metadata", "events",
-            } | ({"rendezvous"} if channel is not None else set()):
+            } | ({"rendezvous"} if channel is not None else set()) | (
+                {"executed"} if dependency is not None else set()
+            ):
                 raise MakeProbeError("malformed supervisor result")
             observations = observed["observations"]
             collections = [observed[name] for name in ("consumed", "code_consumed", "accessed")]
@@ -1220,6 +1243,8 @@ class ProbeSession:
             settle({name: observed[name] for name in counter_names}, failed=observed["ok"] is not True)
             if result.returncode or observed["ok"] is not True:
                 raise MakeProbeError(f"confined {mode} probe rejected: {observed['error']}; {result.stderr!r}")
+            if dependency is not None and observed["executed"] != dependency["executables"]:
+                raise MakeProbeError("dependency result lacks its actual driver/cc1 execution")
             if channel is not None:
                 final = observed["rendezvous"]
                 if (
@@ -1348,11 +1373,67 @@ class ProbeSession:
             for name in names
         )
 
+    @staticmethod
+    def _dependency_options(command, sources, outputs):
+        if (
+            command.argv[0] != "/usr/bin/cc" or command.native_tool is not None
+            or len(outputs) != 1 or not outputs[0].endswith(".d")
+        ):
+            raise MakeProbeError("dependency profile requires host cc and one declared .d output")
+        modes = set()
+        includes = []
+        translation_unit = target = None
+        arguments = iter(command.argv[1:])
+        for argument in arguments:
+            if argument in {"-E", "-MM", "-MG", "-nostdinc", "-undef"}:
+                if argument in modes:
+                    raise MakeProbeError("duplicate dependency mode")
+                modes.add(argument)
+                continue
+            option = next(
+                (name for name in ("-iquote", "-MT", "-I", "-D", "-U") if argument.startswith(name)),
+                None,
+            )
+            if option is not None:
+                value = argument[len(option):] if argument != option else next(arguments, "")
+                if not value or value.startswith("@") or "\n" in value or "\r" in value:
+                    raise MakeProbeError("invalid or missing dependency option value")
+                if option in {"-I", "-iquote"}:
+                    if value.startswith(("=", "$SYSROOT")):
+                        raise MakeProbeError("sysroot-special dependency include operand is unsupported")
+                    if value.startswith("-"):
+                        raise MakeProbeError("dependency include path is not repository-relative")
+                    includes.append(value if value == "." else relative_path(value))
+                elif option in {"-D", "-U"}:
+                    name, separator, _ = value.partition("=")
+                    if not VARIABLE.fullmatch(name) or option == "-U" and separator:
+                        raise MakeProbeError("dependency macro requires a symbolic name")
+                else:
+                    if target is not None or not TARGET.fullmatch(value) or value.startswith("-"):
+                        raise MakeProbeError("invalid or duplicate dependency target")
+                    target = relative_path(value)
+                continue
+            if argument.startswith(("-", "@")) or translation_unit is not None or not argument.endswith(".c"):
+                raise MakeProbeError("unsupported dependency compiler option or source")
+            translation_unit = relative_path(argument)
+        if (
+            not {"-E", "-MM", "-nostdinc", "-undef"} <= modes
+            or target is None or translation_unit not in sources
+        ):
+            raise MakeProbeError("dependency profile requires exact modes, target and declared C source")
+        return tuple(dict.fromkeys(includes))
+
 
     def _command(self, command: Command, *, compiler=None, native=None):
         self.budget.remaining()
         if not isinstance(command, Command):
             raise MakeProbeError("registered command requires a typed Command")
+        if type(command.dependency_only) is not bool:
+            raise MakeProbeError("dependency_only requires a boolean")
+        if command.dependency_only and (
+            compiler is not None or native is not None or command.native_tool is not None
+        ):
+            raise MakeProbeError("dependency profile cannot combine native or other compiler authority")
         if command.native_tool is not None:
             if native is not None and native is not command.native_tool:
                 raise MakeProbeError("conflicting native execution authority")
@@ -1370,6 +1451,8 @@ class ProbeSession:
             programs.add("/native/tool")
         if compiler is not None:
             programs.update(compiler)
+        if command.dependency_only:
+            programs.add("/usr/bin/cc")
         if (
             not command.argv
             or command.argv[0] not in programs
@@ -1388,6 +1471,7 @@ class ProbeSession:
         sources = self.sources(command.sources) if command.sources else ()
         directories = self._directories(command.directories)
         outputs = self._output_paths(command.outputs)
+        include_dirs = self._dependency_options(command, sources, outputs) if command.dependency_only else ()
         for path in code:
             relative_path(path)
             if path not in self.snapshot.files and path not in self.published_sources:
@@ -1414,6 +1498,33 @@ class ProbeSession:
                 shutil.copyfile(native.path, _mkdir_target(root, "/native/tool"))
                 (root / "native/tool").chmod(0o555)
             argv = list(command.argv)
+            dependency = None
+            if command.dependency_only:
+                if self.dependency_compiler is None:
+                    driver, programs = self._compiler_tools(False, ("cc1",))
+                    programs = tuple(sorted({str(_trusted_runtime_path(path, compiler=True)) for path in programs}))
+                    frontends = tuple(path for path in programs if path != driver)
+                    if len(frontends) != 1:
+                        raise MakeProbeError("dependency profile requires one resolved C frontend")
+                    self.dependency_compiler = driver, frontends[0]
+                    self.budget.charge("control", len(encoded(self.dependency_compiler)))
+                    self.dependency_runtime = self._dependency_runtime()
+                argv[0] = self.dependency_compiler[0]
+                compiler = self.dependency_compiler
+                dependency = {
+                    **self.dependency_runtime,
+                    "executables": list(compiler),
+                    "include_dirs": ["/repo" if path == "." else "/repo/" + path for path in include_dirs],
+                }
+                parent = output
+                for part in PurePosixPath(outputs[0]).parts[:-1]:
+                    self.budget.remaining()
+                    if self.files_created >= self.budget.limits.created_files:
+                        self.budget.reject("aggregate dependency directory-creation budget exhausted")
+                    self.files_created += 1
+                    parent /= part
+                    parent.mkdir()
+                argv.extend(("-MF", "/work/" + outputs[0]))
             if argv[0] == "/usr/bin/python3":
                 argv[1:1] = ["-I", "-S", "-B"]
             completed, observed = self._sandbox_run(
@@ -1426,17 +1537,23 @@ class ProbeSession:
                     self._mount(Path("/dev/null"), "/dev/null", writable=True),
                 ],
                 code=code, sources=sources, directories=directories,
-                executables=compiler,
+                executables=compiler, dependency=dependency,
             )
             consumed = tuple(observed["consumed"])
             if consumed != sources:
                 raise MakeProbeError(f"declared/consumed source mismatch: declared={sources!r}, consumed={consumed!r}")
+            if command.dependency_only:
+                used = set(consumed) | set(observed["code_consumed"])
+                if not set(observed["code_consumed"]) <= set(code):
+                    raise MakeProbeError("dependency result names undeclared header code")
+                input_identities = tuple(item for item in input_identities if item[0] in used)
             result = ProcessOutput(
                 completed.stdout, completed.stderr, consumed, tuple(observed["code_consumed"]),
-                None if compiler is None else self.budget.read_bytes(output / "tool", "control"),
+                None if compiler is None or command.dependency_only else self.budget.read_bytes(output / "tool", "control"),
                 observed["metadata"],
                 self._capture_outputs(output, outputs),
                 input_identities,
+                tuple(observed.get("executed", ())),
             )
             self.budget.charge(
                 "cache", len(completed.stdout) + len(completed.stderr)
@@ -1446,8 +1563,75 @@ class ProbeSession:
             )
             self.budget.charge("cache", len(encoded(result.metadata)))
             self.budget.charge("cache", len(encoded(result.input_identities)))
+            if result.executed:
+                self.budget.charge("cache", len(encoded(result.executed)))
             self.cache.setdefault(key, []).append(result)
             return result
+
+    def _dependency_runtime(self):
+        interpreter = _make_interpreter(dict(self.make_runtime)["/usr/bin/make"])
+        runtime = {interpreter, *self.dependency_compiler}
+        for program in self.dependency_compiler:
+            result = self.budget.run(
+                [interpreter, "--inhibit-cache", "--list", program], env=ENVIRONMENT, cwd=Path("/"),
+            )
+            if result.returncode:
+                raise MakeProbeError(f"cannot resolve dependency compiler runtime: {result.stderr!r}")
+            runtime.update(_runtime_library_paths(result.stdout, runtime))
+        runtime.update(
+            str(_trusted_runtime_path(path, compiler=True)) for path in tuple(runtime)
+        )
+        if len(runtime) > 64:
+            raise MakeProbeError("dependency runtime closure exceeds the existing path bound")
+        result = self.budget.run(
+            [self.dependency_compiler[0], "-print-search-dirs"], env=ENVIRONMENT, cwd=Path("/"),
+        )
+        rows = text(result.stdout, "trusted compiler search directories", "utf-8").splitlines()
+        if result.returncode or len(rows) != 3:
+            raise MakeProbeError("unresolved dependency compiler search directories")
+        searches = {}
+        for expected, row in zip(("install", "programs", "libraries"), rows):
+            name, separator, value = row.partition(": ")
+            if name != expected or not separator:
+                raise MakeProbeError("malformed dependency compiler search directories")
+            paths = value.removeprefix("=").split(":")
+            if not paths or len(paths) > 64:
+                raise MakeProbeError("dependency compiler search count exceeds bound")
+            normalized = set()
+            for path in paths:
+                if not path.startswith(("/usr/", "/lib/", "/lib64/")):
+                    raise MakeProbeError("dependency compiler search escapes system roots")
+                canonical = os.path.normpath(path)
+                if canonical not in {"/usr", "/lib", "/lib64"} and not canonical.startswith(("/usr/", "/lib/", "/lib64/")):
+                    raise MakeProbeError("dependency compiler search escapes system roots")
+                relative_path(canonical[1:])
+                normalized.add(canonical)
+            searches[name] = normalized
+        if len(searches["install"]) != 1:
+            raise MakeProbeError("dependency compiler requires one installation directory")
+        install, = searches["install"]
+        directories = set().union(*searches.values())
+        if len(directories) > 64:
+            raise MakeProbeError("dependency compiler search count exceeds bound")
+        probes = {
+            str(Path(path) / "specs")
+            for path in searches["libraries"] | {install, str(Path(install).parent)}
+        }
+        libc = {
+            str(_trusted_runtime_path(path, compiler=True))
+            for path in runtime if Path(path).name == "libc.so.6"
+        }
+        if len(libc) != 1:
+            raise MakeProbeError("dependency runtime requires one resolved libc image")
+        profile = {
+            "runtime_files": sorted(runtime),
+            "runtime_directories": sorted(directories),
+            "runtime_stat_probes": sorted(probes | {"/proc/self/exe"}),
+            "runtime_interpreter": str(_trusted_runtime_path(interpreter, compiler=True)),
+            "runtime_libc": libc.pop(),
+        }
+        self.budget.charge("control", len(encoded(profile)))
+        return profile
 
     def _compiler_tools(self, cxx, names):
         compiler = str(Path("/usr/bin/g++" if cxx else "/usr/bin/cc").resolve(strict=True))
@@ -1660,6 +1844,9 @@ class ProbeSession:
                     "argv": list(registration.argv), "directories": sorted(set(registration.directories)),
                     "inputs": list(result.input_identities),
                 }
+                if registration.dependency_only:
+                    identity["dependency_only"] = True
+                    identity["executed"] = list(result.executed)
                 if registration.native_tool is not None:
                     tool = registration.native_tool
                     identity["native_tool"] = {"sha256": tool.digest, "inputs": list(tool.inputs)}

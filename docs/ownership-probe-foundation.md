@@ -8,9 +8,11 @@ replace, or skip validation.
 The default remains the static core. The merged #226 layer adds the narrow
 [same-report immutable view selector](#selecting-immutable-basecurrent-views-in-one-report).
 This branch also provides the [live producer and nested-publication
-extension](ownership-probe-producers.md) for #225 and the independently merged
-#227 [explicit optional runtime inputs](#explicit-runtime-discovery-inputs).
-The dependency-only compiler remains separately allocated to #228.
+extension](ownership-probe-producers.md) for #225, the independently merged
+#227 [explicit optional runtime inputs](#explicit-runtime-discovery-inputs),
+and the
+[dependency-only host compiler](ownership-probe-dependencies.md) for #228.
+D depends on P, not on the optional view or runtime-input APIs.
 See the [archived delivery allocation](https://github.com/laqieer/fireemblem8-expansion/blob/56e0a206ffae088b0dbc1fe8aa6339a8ee820f33/docs/ownership-probe-allocation.json)
 and [downstream boundary](#contract-allocation-and-downstream-integration).
 
@@ -72,10 +74,11 @@ pkg-config and ARM binutils; its extended Build owner installs those existing
 consumer prerequisites. They are not requirements of the standalone registry
 command above.
 The existing required `extended-host-tests` Build worker runs this complete
-process suite through `ownership-probe-test`, in parallel with the host
-localization work. Lightweight `tests/workflows` checks verify the single
-unconditional owner, complete unittest selection and absence of duplicate
-native discovery in the host job. The protected host command sequence, job
+process suite through `ownership-probe-test` in full Build mode, in parallel
+with the host localization work. Lightweight `tests/workflows` checks verify
+the single full-mode owner, complete unittest selection and absence of duplicate
+native discovery in the host job. Metadata-only and review-first preflight runs
+do not execute that native owner. The protected host command sequence, job
 timeouts, combined summary and all candidate/master requirements are unchanged;
 there is no added workflow, job or required-context name.
 
@@ -1057,12 +1060,15 @@ support and the original typed stdout-only command surface. The P extension
 adds `Command.native_tool`, `Command.outputs`, `ProcessOutput.generated` and
 native output capture. The merged #226 layer provides `ProbeSession.select_view`
 and `Snapshot(reuse=...)`. The merged #227 layer provides `runtime_files` and
-its captured records/metadata-only stock dispatch. These do not introduce
-`Command.dependency_only`, which remains a separate contract.
+its captured records/metadata-only stock dispatch. The separate D extension
+adds `Command.dependency_only`
+and actual driver/cc1 execution receipts through P's producer contract, without
+requiring the view selector or optional runtime inputs.
 
-#225's full delivery remains open. This branch replaces the unapproved
-delete/recreate implementation with live rendezvous and scoped nested publication; its
-remaining complete acceptance is not inferred from a partial checkpoint.
+P/#225's implementation is merged through PR #232 and is included in this
+master-based D root. It uses live rendezvous and scoped nested publication
+instead of the unapproved delete/recreate model. P's final delivery evidence
+is tracked in #225; code inclusion here does not substitute for those gates.
 Prior generated-listing successes do not replace the retained nlink/timestamp
 and reconstruction counterexamples.
 All old positive/adversarial cases stay with that complete contract. No

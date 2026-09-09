@@ -1154,6 +1154,12 @@ class TesterCaseRegistryTests(unittest.TestCase):
                             "python3 -m unittest scripts.validation_ownership.tests.test_producer -v",
                         },
                     },
+                    "TC-WORKFLOW-PROBE-DEPENDENCY-001": {
+                        "document": "docs/test-cases/workflow-governance.md",
+                        "commands": {
+                            "python3 -m unittest scripts.validation_ownership.tests.test_dependency -v",
+                        },
+                    },
                     "TC-WORKFLOW-PROBE-RUNTIME-INPUTS-001": {
                         "document": "docs/test-cases/workflow-governance.md",
                         "commands": {

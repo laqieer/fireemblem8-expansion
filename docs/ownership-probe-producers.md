@@ -43,7 +43,9 @@ The tool still executes only in a channel-free native capsule, never in Make.
 Changed/foreign handles, unsupported argv, incomplete source consumption and
 invalid output declarations reject. The producer extension grants no optional
 runtime inputs or dependency-compiler authority. The independently merged view
-selector is exercised with P below.
+selector is exercised with P below. D's separately allocated
+[dependency-only compiler command](ownership-probe-dependencies.md) reuses this
+same output/publication contract without requiring that selector.
 
 Registration is applied at actual native dispatch; it does not change Make's
 executable lookup. The repository's linker discovery and link recipe explicitly
@@ -265,7 +267,7 @@ cleanup removes owned channels, private roots and generated paths.
 
 The deterministic procedure is
 [`TC-WORKFLOW-PROBE-PRODUCER-001`](test-cases/workflow-governance.md#tc-workflow-probe-producer-001-preserve-live-producer-context-and-native-remakes).
-Both foundation and producer modules belong to the one existing
+Foundation, producer and dependency modules belong to the one existing
 `extended-host-tests` owner in full Build mode. Metadata-only and review-first
 preflight runs skip that owner; their attestations are not full native evidence.
 That owner installs the existing libpng/pkg-config and ARM-binutils prerequisites

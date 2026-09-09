@@ -3887,12 +3887,13 @@ content, modern/archival profile or ROM/RAM behavior changes.
 
 `python3 -m unittest scripts.validation_ownership.tests.test_producer -v`
 executes the real producer/control/resource cases through the existing host
-runner. The existing `ownership-probe-test` target selects both foundation and
-producer modules exactly once in `extended-host-tests`. Lightweight workflow
-discovery checks that selection with `PlanCollector`; it does not import native
-test classes for execution in another job. The actual adaptive job condition
-selects both modules only in full mode and skips them for metadata-only and
-review-first preflight runs. No new job or standalone gate is added.
+runner. The existing `ownership-probe-test` target selects foundation, producer
+and dependency modules exactly once in `extended-host-tests`. Lightweight
+workflow discovery checks that selection with `PlanCollector`; it does not
+import native test classes for execution in another job. The actual adaptive
+job condition selects all three modules only in full mode and skips them for
+metadata-only and review-first preflight runs. No new job or standalone gate
+is added.
 Its dependency step supplies libpng, pkg-config and ARM binutils before native
 execution. Parsed owner/dependency controls reject missing, disabled, masked or
 late installation without duplicating the process suite.
@@ -4448,6 +4449,214 @@ control allowance even when source reuse fits. Neither the owned registry case n
 localization/chapterbundle pair is complete #180 CURRENT/BASE/112-domain,
 census, graph, oracle, lifecycle or public-gate acceptance. User-namespace
 evidence does not imply a separately untested sudo credential transition.
+
+## TC-WORKFLOW-PROBE-DEPENDENCY-001: Observe real confined compiler dependencies
+
+### Feature and configuration
+
+Issue [#228](https://github.com/laqieer/fireemblem8-expansion/issues/228);
+supported Linux x86-64, GNU Make 4.3, Python, the existing GNU HOST C driver
+and cc1, and the existing namespace/watchdog route. Start from a clean source
+checkout. See the [public command profile](../ownership-probe-dependencies.md).
+Fixtures and sentinel/output paths remain under owned ignored
+`build/test-artifacts`; no ROM, ARM/agbcc setup, package installation, remote
+workflow or generated game data is needed.
+
+### Actions
+
+1. Run the complete focused deterministic case:
+   `python3 -m unittest scripts.validation_ownership.tests.test_dependency -v`.
+   The fixture source includes a recursive quoted-header pair, a `priority.h`
+   selected through two ordered `-I` paths, an `ENABLED` conditional and
+   `future/generated.h`. The last header is initially genuinely absent.
+2. Compare ordinary `cc -E ... -MM -MG -MT query.o` stdout with the confined
+   command's declared `out/query.d` **raw bytes**. Require nonempty identical
+   output, ordinary mode, empty confined stdout, no ELF/native handle and
+   actual successful driver then cc1 exec receipts. Compare the union of
+   consumed source/header paths and its captured byte/mode identities.
+3. Reverse `first` and `second` include search order. Interleave
+   `-DENABLED=1`, `-UENABLED`, `-DENABLED=0`, and reverse that macro choice.
+   Reverse two `-iquote` directories using joined and separate values too.
+   Require the real corresponding priority/conditional headers and ordinary
+   byte equality. Inactive pool headers must not become provenance. Repeat
+   with the exact union declared as `sources` instead of an optional header
+   `code` pool.
+4. Repeat an identical valid query. Require genuine effectful executions and
+   compatible bytes/receipts while the session reuses only its resolved host
+   profile. Change a checkout header after the source snapshot was captured:
+   results must still bind the original captured source, not later host data.
+   Replace a published conditional header between identical compiler calls;
+   require two corresponding dependency receipts and fresh output from the
+   pure reader of the replaced `.d`.
+5. In one live Make, publish `quote/future/generated.h` from `header.in`,
+   then run the real dependency command and publish its declared `.d`.
+   Compare ordinary prerequisites, `MAKEFILE_LIST` and `MAKE_RESTARTS=1`.
+   Require one Make capsule and actual generated-header provenance. No nested
+   `session.make()` publication or guessed restart is involved.
+6. Include a header named `two words.h`. Require GCC's real escaped dependency
+   bytes and let ordinary/native GNU Make parse them. Confirm the resulting
+   prerequisite is the single filename, not words from a copied `.d` parser.
+7. Run the real `src/worldmap_tm_confront.c` dependency recipe with this
+   checkout's actual header bytes and original host argument/search order,
+   including the three asset include paths. Compare ordinary/confined raw
+   bytes and actual source/header receipts. Missing archival/generated
+   inputs remain genuine `-MG` missing inputs; this is not an archival build,
+   installation or full-root ownership report.
+8. Leave `dependency_only=False`, pass a non-boolean, remove a required mode,
+   add compilation/assembler/linker, response/plugin/specs/wrapper/output
+   flags, combine a forged native handle, or declare an escaping/wrong/multiple
+   output. Require rejection without a payload launch. Omitting `-MG` from
+   the real missing-header query must preserve the actual compiler failure.
+9. Omit an existing header from the admitted pool, including an
+   `__has_include` branch with its valid counterpart. Reject rather than
+   reporting false absence. Attempt a regular file as a directory ancestor
+   and a symlink header. Include-search metadata is not member-content or
+   directory-enumeration authority; unused required sources still reject.
+10. Exhaust the remaining aggregate output allowance after a successful
+    query and require the real repeated compiler result to fail capture.
+    Give a session enough live capacity for standalone driver/cc1 but not
+    for both alongside parked Make/helpers: require failure at that actual
+    nested compiler boundary. Corrupt its execution receipt and inject a
+    cleanup failure; neither may yield successful evidence.
+11. Attempt an actual host `#include` and an `__has_include` branch selecting
+    an admitted repository header. Include through a declared recursive
+    header too. Ordinary GCC can consume the host file, but the D command
+    must reject before returning dependency evidence. Cover system/local
+    includes, GCC private/include-fixed/libexec paths, library/sysroot trees,
+    Python data, extensionless files, aliases, parent spellings, missing
+    names and wrong types. Necessary resolved driver/interpreter/library
+    paths and bounded runtime probes must still execute successfully.
+12. Run the owned mutation control that bypasses only D's host decision while
+    retaining its `/repo` source policy. It must reproduce the old accepted
+    host branch with the host input absent from source identities. Restoring
+    the decision must reject the same query. A post-hoc `.d` parser is not
+    a repair, because `__has_include` need not emit the host probe at all.
+13. For joined/separate `-I` and `-iquote`, try `=`, `=include`, `=/include`,
+    `$SYSROOT`, `$SYSROOTinclude` and `$SYSROOT/include`: reject all before
+    a payload launch. Compare real ordinary/confined success with canonical
+    literal names containing those characters internally. Keep `./`, `..`
+    and explicit `--sysroot` negatives. This closes profile ambiguity; the
+    observed default sysroot is empty, and the ordinary nonempty-sysroot
+    controls do not establish another confined escape on that default.
+14. Read a real repository `before.h`, then use
+    `__has_include("/etc/ld.so.cache")` to select `present.h` or `absent.h`.
+    Where the host cache exists, ordinary GCC selects `present.h`; D must
+    reject the source probe instead of treating its bootstrap-view absence
+    as source evidence. Exercise the other negative loader-probe names too,
+    including ones genuinely absent on both sides. Restore the old
+    path/operation-only negative rule in an owned mutation and require that
+    the ordinary/confined branch mismatch reappears.
+15. Keep real loader `ENOENT` probes and driver specs/search metadata working.
+    Bind each exception to the actual executable and mapped syscall origin:
+    resolved interpreter for loader probes, verified driver/driver-or-libc
+    for driver metadata. Spoof a claimed executable, PID or instruction
+    pointer and require rejection. Changing only mapping pathname labels
+    must not change the result; invalid mapping identities must reject.
+16. After `before.h` has actually been consumed, read an admitted libc image
+    and retain ordinary-identical dependency results. Keep an explicit
+    `Command.directories` enumeration positive and its undeclared-content
+    negative. These are intended capabilities; do not close every runtime
+    grant after the first source access or reject all directory declarations.
+    Unexpected owned cache files/directories, source reads of specs or
+    directories, and unlisted neighboring names must remain denied.
+17. Return malformed trusted-runtime listings to the existing Make and
+    dependency callers. Both must fail terminally before candidate payload
+    execution with owned cleanup. A shared diagnostic is not proof of a new
+    source-authority defect.
+18. In the owned mapping-record models, replace the matching mapping offset
+    with malformed, unsupported-range, unaligned and beyond-image values.
+    Require rejection while retaining the actual PID, stopped instruction
+    and executable. Substitute a valid interpreter device/inode into the late
+    libc mapping record: its implied instruction position must fit that image
+    and match its bounded file bytes, not merely its pathname or identity.
+    Restore only the old omission of offset/span verification and require the
+    modeled acceptance/mismatch to reappear. Separately use actual owned file
+    descriptors to reject a substituted object, wrong instruction bytes and
+    a file changed during the bounded read, with descriptor cleanup.
+
+### Expected result
+
+Actual confined cc/cc1 execution produces one declared dependency file with
+ordinary-identical bytes and execution-bound source/header provenance. P's
+validated publication precedes authentic GNU Make consumption and restart.
+The default API, full metadata, noexec source, protected channels, exact
+handle/output checks and one aggregate lifetime remain intact. No compiler
+permission, numeric cap or CI topology is broadened.
+Host access is decided against D's finite necessary runtime before either
+generic runtime prefix branch; other host preprocessing cannot become an
+unreported input or a falsely successful missing-header branch.
+Negative exceptions additionally require verified executable/mapping purpose
+at the actual stopped syscall, while late admitted runtime-file access and
+explicit directory capabilities remain valid.
+The matching map's bounded file offset and instruction span are checked
+against the revalidated opened runtime image. Kernel/procfs remains trusted;
+this is bounded consistency verification, not a general hostile-kernel claim.
+
+### Negative control and retained evidence
+
+At parent `974b1400c978892814c4bbefbdf0ec68e600f151`, constructing a command
+with `dependency_only=True` fails because the keyword does not exist.
+The original [host compiler checkpoint](https://github.com/laqieer/fireemblem8-expansion/issues/206#issuecomment-5563209086)
+also records ordinary host availability and the public unsupported-command
+rejection with zero payload launches. Preserve that default-false rejection,
+not a fake compiler result. The original integrated d9 comparisons remain
+historical, unapproved evidence rather than a restoration source.
+
+At `11848c4e0294d6397eda6733850dfb382a1d0a1b`, real
+`#include "/usr/include/linux/version.h"` produced ordinary-identical
+dependency bytes and successful driver/cc1 receipts, but the source/header
+union contained only `src/query.c`. A real `__has_include` query selected
+`quote/enabled.h` while omitting the host probe even from the `.d`.
+The host decision now rejects both; the owned mutation retains this original
+negative without changing host files or weakening generic compiler tests.
+
+The distinct remaining purpose defect at
+`b05f5c871fdce9ee9dbf31301c744dc46dad4595` accepted
+`query.o: query.c before.h absent.h` where ordinary GCC returned
+`query.o: query.c before.h present.h`. The kernel's cache `ENOENT` was real;
+the error was using loader absence as a source-level fact after `before.h`.
+The purpose correction rejects that source probe while preserving bootstrap
+negatives. Admitted runtime files after source reads and explicit directory
+declarations remain by design, not additional defects.
+
+The unmodified `bba829e5d8081c5bcb0170ca3dbc0c31862d9e0d` purpose guard rejects
+the real cache-source mismatch. Its narrower mapping-consistency controls
+accepted malformed/impossible offsets, and an injected valid-image identity
+at a late libc IP implied offset `1159843` beyond a `236616`-byte nominated
+interpreter. Those measured values are historical fault-injection evidence;
+the tests derive current mapping/image values rather than pinning a distro
+version or claiming a candidate-C/kernel exploit.
+
+### Interactions and save compatibility
+
+D depends on P/#225, merged through
+[PR #232](https://github.com/laqieer/fireemblem8-expansion/pull/232), and
+delivered core/#206. D/#233 now targets `master` as a root delivery unit at
+depth zero. It has no V/#226 or R/#227 dependency. P's post-merge verification
+and issue closure remain separate Main-owned gates; nested generated publication
+and complete #180/PR #186 CURRENT/BASE/domain integration remain separate.
+
+No manual criterion, gameplay, save/config, locale, generated game output,
+ROM/RAM, modern/archival profile, package or publisher change is involved.
+
+### Automation
+
+Run the complete mapped host case:
+
+```bash
+python3 -m unittest scripts.validation_ownership.tests.test_dependency -v
+```
+
+The suite executes the real compiler and Make paths described above, including
+their positive, rejection, resource and cleanup controls.
+
+### Cleanup and limitations
+
+Tests reset their owned fixtures and clean session state, processes, caches,
+private outputs and generated publications after success or failure. Runtime
+uses the existing read-only host model with D's finite runtime/source
+decision, not an immutable runtime binary snapshot. Generic compiler/native
+policy is unchanged. Unsupported compiler platforms/modes fail closed.
 
 ## TC-WORKFLOW-AGENT-HANDOFF-001: Validate bounded exact-SHA agent handoffs
 
