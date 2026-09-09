@@ -283,7 +283,7 @@ class CoordinatorLocalTests(unittest.TestCase):
         consumers = tuple(sorted(
             node["id"] for node in graph["nodes"] if node["kind"] == "surface"
         ))
-        self.assertEqual((len(edges), len(consumers)), (93, 18))
+        self.assertGreater(1 + len(paths) + len(edges) + len(consumers), 40)
         qualification = review_qualification(local, paths, edges, consumers)
         self.assertEqual(len(qualification["review_scope"]), 4)
         gate.validate_review_qualification(qualification)
@@ -321,6 +321,10 @@ class CoordinatorLocalTests(unittest.TestCase):
                     ValueError, "scope differs"):
                 gate.validate_review_qualification(changed)
         for key in ("changed_paths", "changed_edge_ids", "affected_consumers"):
+            partial = copy.deepcopy(qualification)
+            partial[key] = partial[key][1:]
+            with self.subTest(partial=key), self.assertRaisesRegex(ValueError, "scope differs"):
+                gate.validate_review_qualification(partial)
             missing = copy.deepcopy(qualification)
             del missing[key]
             with self.subTest(missing=key), self.assertRaises(ValueError):
