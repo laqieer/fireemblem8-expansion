@@ -1,11 +1,16 @@
 import copy
-from io import BytesIO
+import errno
+from io import BytesIO, StringIO
 import json
+import os
 from pathlib import Path
+import secrets
 import shutil
 import subprocess
 import tarfile
+from types import SimpleNamespace
 import unittest
+from unittest.mock import patch
 
 from scripts.validation_ownership import ci_verifier, reporter
 from scripts.validation_ownership.authority import ENVIRONMENT
@@ -14,6 +19,121 @@ from .report_fixture import ReportFixture, reviewed_evolution_case, reviewed_exc
 
 
 class BasePinnedVerifierTests(unittest.TestCase):
+    def runtime_root(self):
+        root = (
+            Path(__file__).resolve().parents[3]
+            / "build/test-artifacts/verifier-runtime-cleanup"
+            / secrets.token_hex(12)
+        )
+        root.mkdir(parents=True)
+        self.addCleanup(lambda: root.exists() and shutil.rmtree(root))
+        return root
+
+    def test_runtime_root_repeats_and_rejects_preexisting_content(self):
+        trusted = self.runtime_root()
+        for _ in range(2):
+            owned = ci_verifier._prepare_trusted_runtime_root(trusted)
+            self.assertTrue(owned.path.is_dir())
+            ci_verifier._cleanup_trusted_runtime_root(owned)
+            self.assertFalse(owned.path.exists())
+        runtime = trusted / ".validation-ownership-runtime"
+        runtime.mkdir()
+        marker = runtime / "unknown"
+        marker.write_text("retain")
+        with self.assertRaisesRegex(
+            reporter.OwnershipError, "cannot create trusted verifier runtime root",
+        ):
+            ci_verifier._prepare_trusted_runtime_root(trusted)
+        self.assertEqual(marker.read_text(), "retain")
+
+    def test_runtime_root_cleanup_rejects_substitution_and_residual_work(self):
+        for replacement in ("directory", "symlink", "residual"):
+            with self.subTest(replacement=replacement):
+                trusted = self.runtime_root()
+                owned = ci_verifier._prepare_trusted_runtime_root(trusted)
+                if replacement == "residual":
+                    marker = owned.path / "unknown"
+                    marker.write_text("retain")
+                    with self.assertRaisesRegex(
+                        reporter.OwnershipError, "cannot remove trusted verifier runtime root",
+                    ):
+                        ci_verifier._cleanup_trusted_runtime_root(owned)
+                    self.assertEqual(marker.read_text(), "retain")
+                    continue
+                displaced = trusted / "owned-displaced"
+                owned.path.rename(displaced)
+                marker = trusted / "replacement-marker"
+                marker.write_text("retain")
+                if replacement == "directory":
+                    owned.path.mkdir()
+                    retained = owned.path / "unknown"
+                    retained.write_text("retain")
+                else:
+                    owned.path.symlink_to(marker)
+                with self.assertRaisesRegex(
+                    reporter.OwnershipError, "identity changed before cleanup",
+                ):
+                    ci_verifier._cleanup_trusted_runtime_root(owned)
+                self.assertTrue(displaced.is_dir())
+                if replacement == "directory":
+                    self.assertEqual(retained.read_text(), "retain")
+                else:
+                    self.assertTrue(owned.path.is_symlink())
+                    self.assertEqual(marker.read_text(), "retain")
+
+    def test_runtime_root_partial_setup_closes_created_workspace(self):
+        trusted = self.runtime_root()
+        runtime = trusted / ".validation-ownership-runtime"
+        opening = os.open
+        failed = False
+
+        def fail_once(path, flags, *arguments, **options):
+            nonlocal failed
+            if (
+                path == runtime.name
+                and options.get("dir_fd") is not None
+                and not failed
+            ):
+                failed = True
+                raise OSError(errno.EIO, "controlled runtime open failure")
+            return opening(path, flags, *arguments, **options)
+
+        with patch.object(ci_verifier.os, "open", side_effect=fail_once):
+            with self.assertRaisesRegex(
+                reporter.OwnershipError, "cannot create trusted verifier runtime root",
+            ):
+                ci_verifier._prepare_trusted_runtime_root(trusted)
+        self.assertTrue(failed)
+        self.assertFalse(runtime.exists())
+
+    def test_main_reports_cleanup_failure_without_replacing_primary_failure(self):
+        arguments = SimpleNamespace(
+            trusted_root=Path("/trusted"),
+            repository_root=Path("/candidate"),
+            base_sha="1" * 40,
+            candidate_sha="2" * 40,
+            trusted_sha=None,
+            expected_mode="exact-base-pinned",
+            reviewed_repository=None,
+            reviewed_pull_request=None,
+            reviewed_paths=None,
+            reviewed_edge_ids=None,
+            reviewed_consumers=None,
+        )
+        error = reporter.OwnershipError("primary verifier failure")
+        error.cleanup_errors = (
+            "after owned cleanup: OwnershipError: retained unknown workspace",
+        )
+        stderr = StringIO()
+        with (
+            patch.object(ci_verifier, "parse_args", return_value=arguments),
+            patch.object(ci_verifier, "verify", side_effect=error),
+            patch("sys.stderr", stderr),
+        ):
+            self.assertEqual(ci_verifier.main(), 1)
+        self.assertIn("primary verifier failure", stderr.getvalue())
+        self.assertIn("retained unknown workspace", stderr.getvalue())
+
     def test_base_step_guard_rejects_inert_and_duplicate_decoys(self):
         root = Path(__file__).resolve().parents[3]
         text = (root / reporter.BUILD_WORKFLOW_PATH).read_text()
@@ -124,6 +244,60 @@ class ReviewedEvolutionVerifierTests(unittest.TestCase):
             text=True,
             timeout=180,
         )
+
+    def exact_arguments(self, base, candidate):
+        return (
+            "--base-sha", base,
+            "--candidate-sha", candidate,
+            "--trusted-sha", base,
+            "--expected-mode", "exact-base-pinned",
+        )
+
+    def test_exact_verifier_reuses_one_trusted_tree_for_two_actual_captures(self):
+        revision = self.fixture.git("rev-parse", "HEAD").decode().strip()
+        trusted = self.trusted_root(revision)
+        self.addCleanup(lambda: trusted.exists() and shutil.rmtree(trusted))
+        runtime = trusted / ".validation-ownership-runtime"
+        results = []
+        for _ in range(2):
+            completed = self.verify(trusted, *self.exact_arguments(revision, revision))
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            self.assertFalse(runtime.exists())
+            results.append(json.loads(completed.stdout))
+        self.assertEqual(results[0]["oracle_pairs_sha256"],
+                         results[1]["oracle_pairs_sha256"])
+        self.assertEqual(results[0]["oracle_authority_sha256"],
+                         results[1]["oracle_authority_sha256"])
+
+    def test_failed_actual_capture_cleans_before_valid_retry(self):
+        base = self.fixture.git("rev-parse", "HEAD").decode().strip()
+        trusted = self.trusted_root(base)
+        self.addCleanup(lambda: trusted.exists() and shutil.rmtree(trusted))
+        runtime = trusted / ".validation-ownership-runtime"
+        workflow = (self.fixture.root / reporter.BUILD_WORKFLOW_PATH).read_text()
+        self.fixture.add(
+            reporter.BUILD_WORKFLOW_PATH.as_posix(),
+            workflow.replace(
+                ci_verifier.BASE_STEP_NAME,
+                "Disabled ownership exact-base verifier",
+                1,
+            ),
+        )
+        failed_head = self.fixture.commit("Break exact-base verifier step")
+        failed = self.verify(trusted, *self.exact_arguments(base, failed_head))
+        self.assertNotEqual(failed.returncode, 0)
+        self.assertIn(
+            "Build verifier staging authority is invalid",
+            failed.stderr,
+        )
+        first_failure = failed.stderr
+        self.assertFalse(runtime.exists())
+        self.fixture.add(reporter.BUILD_WORKFLOW_PATH.as_posix(), workflow)
+        restored = self.fixture.commit("Restore exact-base verifier step")
+        retried = self.verify(trusted, *self.exact_arguments(base, restored))
+        self.assertEqual(retried.returncode, 0, retried.stderr)
+        self.assertFalse(runtime.exists())
+        self.assertIn("verifier", first_failure)
 
     def test_reviewed_evolution_accepts_exact_new_surface_and_authority_change(self):
         case = reviewed_evolution_case(self.fixture)

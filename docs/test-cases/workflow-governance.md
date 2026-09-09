@@ -3253,6 +3253,15 @@ game behavior needs a compensating change.
    direct resolution must both reject unknown additions, before Make authority
    executes. The initial admitted cohort comes from the unique graph-introduction
    Git tree; no inventory, content hash or duplicate commit pin is stored.
+10. Run the exact-base verifier twice against the same immutable trusted tree
+    and small real Git fixture. Require both captures to return identical oracle
+    identities and leave `.validation-ownership-runtime` absent. Break the real
+    BASE verifier step after runtime creation, retain that first failure, restore
+    the fixture, and require a valid retry using the same trusted tree. Replace
+    an owned runtime workspace with a directory and symlink, leave nonempty
+    residual work, and pre-create unknown content. Cleanup must reject without
+    deleting any replacement, residual, pre-existing path, or the trusted tree;
+    partial setup must remove only the workspace whose identity it captured.
 
 ### Expected result
 

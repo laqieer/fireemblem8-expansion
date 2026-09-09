@@ -4,9 +4,11 @@
 from __future__ import annotations
 
 import argparse
+from dataclasses import dataclass
 import hashlib
 import json
 import os
+import stat
 import subprocess
 import sys
 import re
@@ -32,6 +34,7 @@ from scripts.validation_ownership.authority import AuthorityLoader, ENVIRONMENT,
 from scripts.validation_ownership.budget import ProbeBudget
 from scripts.validation_ownership.graph_report import capture, inventory
 from scripts.validation_ownership.graph_commands import ROOT_RUNTIME_FILES
+from scripts.validation_ownership.lifecycle import finish_cleanup
 from scripts.validation_ownership.make_probe import ProbeSession
 
 
@@ -92,35 +95,125 @@ def _exact_commit(root: Path, value: str, label: str, *, budget: ProbeBudget) ->
     return resolved
 
 
-def _prepare_trusted_runtime_root(trusted_root: Path) -> Path:
+@dataclass(frozen=True)
+class _OwnedRuntimeRoot:
+    path: Path
+    parent_device: int
+    parent_inode: int
+    device: int
+    inode: int
+    uid: int
+    mode: int
+
+
+def _cleanup_trusted_runtime_root(owned: _OwnedRuntimeRoot) -> None:
+    flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+    parent_descriptor = descriptor = -1
+    try:
+        parent_descriptor = os.open(owned.path.parent, flags)
+        parent = os.fstat(parent_descriptor)
+        if (parent.st_dev, parent.st_ino) != (
+            owned.parent_device, owned.parent_inode,
+        ):
+            raise reporter.OwnershipError(
+                "trusted verifier runtime root parent identity changed"
+            )
+        current = os.stat(
+            owned.path.name, dir_fd=parent_descriptor, follow_symlinks=False,
+        )
+        if (
+            not stat.S_ISDIR(current.st_mode)
+            or (current.st_dev, current.st_ino) != (owned.device, owned.inode)
+            or current.st_uid != owned.uid
+            or stat.S_IMODE(current.st_mode) != owned.mode
+        ):
+            raise reporter.OwnershipError(
+                "trusted verifier runtime root identity changed before cleanup"
+            )
+        descriptor = os.open(owned.path.name, flags, dir_fd=parent_descriptor)
+        opened = os.fstat(descriptor)
+        if (opened.st_dev, opened.st_ino) != (owned.device, owned.inode):
+            raise reporter.OwnershipError(
+                "trusted verifier runtime root changed while opening for cleanup"
+            )
+        os.rmdir(owned.path.name, dir_fd=parent_descriptor)
+        try:
+            os.stat(owned.path.name, dir_fd=parent_descriptor, follow_symlinks=False)
+        except FileNotFoundError:
+            pass
+        else:
+            raise reporter.OwnershipError(
+                "trusted verifier runtime root was replaced during cleanup"
+            )
+    except reporter.OwnershipError:
+        raise
+    except OSError as error:
+        raise reporter.OwnershipError(
+            f"cannot remove trusted verifier runtime root: {error}"
+        ) from error
+    finally:
+        for file_descriptor in (descriptor, parent_descriptor):
+            if file_descriptor >= 0:
+                os.close(file_descriptor)
+
+
+def _prepare_trusted_runtime_root(trusted_root: Path) -> _OwnedRuntimeRoot:
     if not hasattr(os, "O_NOFOLLOW"):
         raise reporter.OwnershipError(
             "trusted verifier runtime root requires O_NOFOLLOW"
         )
+    trusted_root = trusted_root.resolve(strict=True)
     runtime_root = trusted_root / ".validation-ownership-runtime"
+    flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+    parent_descriptor = descriptor = -1
+    owned = None
+    primary = None
     try:
-        os.mkdir(runtime_root, mode=0o700)
-        entry_stat = os.lstat(runtime_root)
-        flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
-        descriptor = os.open(runtime_root, flags)
-    except OSError as error:
-        raise reporter.OwnershipError(
-            f"cannot create trusted verifier runtime root: {error}"
-        ) from error
-    try:
+        parent_descriptor = os.open(trusted_root, flags)
+        parent_stat = os.fstat(parent_descriptor)
+        os.mkdir(runtime_root.name, mode=0o700, dir_fd=parent_descriptor)
+        entry_stat = os.stat(
+            runtime_root.name, dir_fd=parent_descriptor, follow_symlinks=False,
+        )
+        owned = _OwnedRuntimeRoot(
+            runtime_root,
+            parent_stat.st_dev,
+            parent_stat.st_ino,
+            entry_stat.st_dev,
+            entry_stat.st_ino,
+            entry_stat.st_uid,
+            stat.S_IMODE(entry_stat.st_mode),
+        )
+        descriptor = os.open(runtime_root.name, flags, dir_fd=parent_descriptor)
         opened_stat = os.fstat(descriptor)
         if (
-            opened_stat.st_dev != entry_stat.st_dev
+            not stat.S_ISDIR(entry_stat.st_mode)
+            or opened_stat.st_dev != entry_stat.st_dev
             or opened_stat.st_ino != entry_stat.st_ino
             or opened_stat.st_uid != os.getuid()
-            or opened_stat.st_mode & 0o777 != 0o700
+            or stat.S_IMODE(opened_stat.st_mode) != 0o700
         ):
             raise reporter.OwnershipError(
                 "trusted verifier runtime root identity is invalid"
             )
+        return owned
+    except reporter.OwnershipError as error:
+        primary = error
+        raise
+    except OSError as error:
+        primary = reporter.OwnershipError(
+            f"cannot create trusted verifier runtime root: {error}"
+        )
+        raise primary from error
     finally:
-        os.close(descriptor)
-    return runtime_root
+        actions = [
+            lambda file_descriptor=file_descriptor: os.close(file_descriptor)
+            for file_descriptor in (descriptor, parent_descriptor)
+            if file_descriptor >= 0
+        ]
+        if primary is not None and owned is not None:
+            actions.append(lambda: _cleanup_trusted_runtime_root(owned))
+        finish_cleanup(actions, primary=primary)
 
 
 def _base_authority_mode(
@@ -664,6 +757,8 @@ def verify(
     reviewed_consumers: list[str] | None = None,
 ) -> dict[str, Any]:
     budget = ProbeBudget()
+    runtime_owner = []
+    primary = None
     try:
         return _verify(
             trusted_root, repository_root, base_sha, candidate_sha,
@@ -674,15 +769,22 @@ def verify(
             reviewed_paths=reviewed_paths,
             reviewed_edge_ids=reviewed_edge_ids,
             reviewed_consumers=reviewed_consumers,
-            budget=budget,
+            budget=budget, runtime_owner=runtime_owner,
         )
+    except BaseException as error:
+        primary = error
+        raise
     finally:
-        budget.close()
+        finish_cleanup([
+            budget.close,
+            *(lambda owned=owned: _cleanup_trusted_runtime_root(owned)
+              for owned in runtime_owner),
+        ], primary=primary)
 
 
 def _verify(trusted_root, repository_root, base_sha, candidate_sha, *,
             trusted_sha, expected_mode, reviewed_repository, reviewed_pull_request,
-            reviewed_paths, reviewed_edge_ids, reviewed_consumers, budget):
+            reviewed_paths, reviewed_edge_ids, reviewed_consumers, budget, runtime_owner):
     trusted_root = trusted_root.resolve(strict=True)
     repository_root = reporter.validate_repository_root(repository_root, budget=budget)
     if repository_root == trusted_root:
@@ -756,7 +858,9 @@ def _verify(trusted_root, repository_root, base_sha, candidate_sha, *,
         reviewed_consumers,
     )):
         raise reporter.OwnershipError("non-reviewed verification cannot declare reviewed evolution scope")
-    runtime_root = _prepare_trusted_runtime_root(trusted_root)
+    owned_runtime = _prepare_trusted_runtime_root(trusted_root)
+    runtime_owner.append(owned_runtime)
+    runtime_root = owned_runtime.path
     source_loader = capture(repository_root, source_sha, budget, scratch_root=runtime_root)
     base_loader = capture(repository_root, base_sha, budget, scratch_root=runtime_root)
     loader = capture(repository_root, candidate_sha, budget, scratch_root=runtime_root)
@@ -884,7 +988,9 @@ def main() -> int:
             reviewed_consumers=arguments.reviewed_consumers,
         )
     except (OSError, ValueError, reporter.OwnershipError) as error:
-        print(f"validation-ownership-base-verifier: {error}", file=sys.stderr)
+        cleanup = getattr(error, "cleanup_errors", ())
+        detail = "; ".join((str(error), *cleanup))
+        print(f"validation-ownership-base-verifier: {detail}", file=sys.stderr)
         return 1
     print(json.dumps(result, sort_keys=True, separators=(",", ":")))
     return 0

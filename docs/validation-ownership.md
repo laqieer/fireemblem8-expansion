@@ -717,6 +717,17 @@ If a live qualification is supplied but the candidate has no coordinator-owned
 `local_validation`, delegated handoff readiness cannot substitute for the
 qualified ownership capture. Ordinary delegated candidates with no reviewed
 qualification retain their existing readiness path.
+
+The exact-base verifier owns one private `.validation-ownership-runtime`
+workspace inside its immutable trusted source root. Its captured parent,
+device, inode, owner and mode identity is removed only after the shared budget,
+owned processes and `ProbeSession` have terminated. Successful and failed
+captures therefore leave the trusted tree reusable. A pre-existing workspace,
+swapped directory or symlink, changed parent identity, or nonempty residual
+workspace rejects without deleting the unknown path or trusted source tree.
+Cleanup failure rejects success; when validation already failed, the original
+failure remains primary and the cleanup failure is reported alongside it.
+
 Git remains the identity authority; no source ledger, new service, signer,
 privileged PR event or human approval is introduced.
 
