@@ -1873,11 +1873,11 @@
       "purpose": "Prove pure host and default Make goals avoid unrelated archival dependency remakes while compiled or mixed goals keep full generated-header correctness.",
       "prerequisites": "Repository root with /usr/bin/make, /usr/bin/cpp, and /usr/bin/cc installed; the tests own build/test-tmp/ for temporary fixture state.",
       "actions": "Run the focused archival dependency fixture tests, then the default-lane structural tests documented in the procedure.",
-      "expected_result": "Pure host and default goals run without generating unrelated archival .d files, while explicit archival, custom alias, generated-data-link-check, and mixed safe/unsafe invocations still generate and load dependency fragments before compiling.",
+      "expected_result": "Pure host and default goals run without generating or refreshing unrelated archival .d files, including after a prior archival build and subsequent source edit, while explicit archival, custom alias, generated-data-link-check, and mixed safe/unsafe invocations still generate and load dependency fragments before compiling.",
       "negative_control": "Pre-fix host/default goals eagerly remade legacy depfiles, and a mixed safe modern goal plus legacy.o compiled before the generated header existed.",
       "interactions": "The supported default lane remains modern release only, the archival lane stays explicitly named, and mixed goal lists retain legacy dependency behavior in either goal order.",
       "save_compatibility": "No save bytes, layout, migration, or compatibility epoch change.",
-      "cleanup": "Temporary fixture directories under build/test-tmp/ clean automatically; remove the parent only if a failed run leaves it behind.",
+      "cleanup": "Temporary fixture directories under build/test-tmp/ clean automatically; after a failed run, remove only that run's identified residual fixture directory.",
       "limitations": "This is a host-side Make dependency contract and does not replace the separate modern ROM/link/runtime gates.",
       "automation": [
         {

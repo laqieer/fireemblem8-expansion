@@ -1,4 +1,5 @@
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -33,6 +34,7 @@ class ArchivalDependencyFixture:
         self._write_fixture()
 
     def _write_fixture(self) -> None:
+        shutil.copyfile(FRAGMENT, self.root / "archival_dependencies.mk")
         (self.root / "build" / "deps").mkdir(parents=True)
         (self.root / "generated").mkdir()
         (self.root / "include").mkdir()
@@ -86,7 +88,7 @@ class ArchivalDependencyFixture:
                 CFILES_GENERATED :=
                 MODERN_GOALS := expansion-modern-clean
 
-                include {FRAGMENT}
+                include archival_dependencies.mk
 
                 .PHONY: all expansion-modern-clean \\
                     assets-validate assets-generate assets-check assets-test \\
@@ -135,6 +137,7 @@ class ArchivalDependencyFixture:
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             check=False,
+            timeout=30,
         )
 
     def log_lines(self, path: Path) -> list[str]:
@@ -217,6 +220,8 @@ class ArchivalDependencyFragmentTests(unittest.TestCase):
         for goals in (
             ("expansion-modern-clean", "legacy.o"),
             ("legacy.o", "expansion-modern-clean"),
+            ("assets-test", "legacy.o"),
+            ("legacy.o", "assets-test"),
         ):
             with self.subTest(goals=goals):
                 fixture = self.make_fixture()
@@ -224,8 +229,9 @@ class ArchivalDependencyFragmentTests(unittest.TestCase):
                 self.assertEqual(result.returncode, 0, result.stdout)
                 self.assertTrue(fixture.depfile.exists(), result.stdout)
                 self.assertTrue(fixture.object_file.exists(), result.stdout)
+                safe_goal = next(goal for goal in goals if goal != "legacy.o")
                 self.assertTrue(
-                    (fixture.root / "expansion-modern-clean.stamp").exists(), result.stdout
+                    (fixture.root / (safe_goal + ".stamp")).exists(), result.stdout
                 )
                 self.assertEqual(
                     fixture.log_lines(fixture.events_log),
@@ -248,6 +254,22 @@ class ArchivalDependencyFragmentTests(unittest.TestCase):
             fixture.log_lines(fixture.events_log),
             ["generated-header", "compile", "compile"],
         )
+
+    def test_host_goals_do_not_refresh_existing_unrelated_dependency_files(self):
+        fixture = self.make_fixture()
+        first = fixture.make("legacy.o")
+        self.assertEqual(first.returncode, 0, first.stdout)
+        dependency = fixture.depfile.read_bytes(), fixture.depfile.stat().st_mtime_ns
+        cpp_calls = fixture.log_lines(fixture.cpp_log)
+        with (fixture.root / "legacy.c").open("a", encoding="utf-8") as source:
+            source.write("\nint unrelated_new_declaration;\n")
+        hosted = fixture.make("assets-test", "localization-test")
+        self.assertEqual(hosted.returncode, 0, hosted.stdout)
+        self.assertEqual(
+            (fixture.depfile.read_bytes(), fixture.depfile.stat().st_mtime_ns),
+            dependency,
+        )
+        self.assertEqual(fixture.log_lines(fixture.cpp_log), cpp_calls)
 
     def test_missing_depfile_and_generated_header_still_rebuild_existing_object(self):
         fixture = self.make_fixture()

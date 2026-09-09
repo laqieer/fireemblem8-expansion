@@ -86,8 +86,9 @@ ROM or make the archival lane a release requirement.
 ### Expected result
 
 Bare `make`, explicit `make all`, and the inspected pure host
-asset/generated-data/localization goals execute without creating unrelated
-archival `.d` files or preprocessing legacy C. Explicit archival/object goals,
+asset/generated-data/localization goals execute without creating or refreshing
+unrelated archival `.d` files or preprocessing legacy C, including when legacy
+sources change after a prior archival build. Explicit archival/object goals,
 custom aliases, and `generated-data-link-check` still generate and include the
 needed dependency makefiles, build the generated header before compiling the
 native object, and rebuild after header or depfile churn. Mixed safe/unsafe
@@ -115,10 +116,10 @@ or RAM behavior.
 
 ### Cleanup and limitations
 
-The fixture cleans its owned directories automatically; remove
-`build/test-tmp/` only if a failed local run leaves it behind. This case proves
-host-side Make dependency behavior only; it does not replace the separate
-modern ROM/link/runtime gates.
+The fixture cleans its owned directories automatically. If a failed local run
+leaves one behind, remove only that run's identified fixture directory under
+`build/test-tmp/`. This case proves host-side Make dependency behavior only; it
+does not replace the separate modern ROM/link/runtime gates.
 
 ## TC-BUILD-GCC14-MENU-RETURN-001: GCC 14 menu callback return compatibility
 
