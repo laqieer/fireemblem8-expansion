@@ -207,8 +207,8 @@ def _load_records_file(source_path):
     }
 
 
-def load_records(source_path):
-    """Load one strategy file or every ``*_strategies.json`` file in a directory."""
+def source_paths(source_path):
+    """Select strategy input names without parsing their contents."""
     if os.path.isdir(source_path):
         source_paths = sorted(glob.glob(os.path.join(source_path, "*_strategies.json")))
         if not source_paths:
@@ -219,17 +219,22 @@ def load_records(source_path):
             )
     else:
         source_paths = [source_path]
+    return source_paths
 
+
+def load_records(source_path):
+    """Load one strategy file or every ``*_strategies.json`` file in a directory."""
+    paths = source_paths(source_path)
     strategies = []
     chapters = []
-    for path in source_paths:
+    for path in paths:
         records = _load_records_file(path)
         strategies.extend(records["strategies"])
         chapters.extend(records["chapters"])
     return {
         "strategies": strategies,
         "chapters": chapters,
-        "source_paths": tuple(_canonical_source_path(path) for path in source_paths),
+        "source_paths": tuple(_canonical_source_path(path) for path in paths),
     }
 
 
@@ -754,6 +759,9 @@ class AutoplayStrategiesTableSchema(TableSchema):
 
     def dependency_tables(self):
         return ("chapterobjectives", "chapterbundle")
+
+    def source_paths(self, source_path):
+        return source_paths(source_path)
 
     def load_records(self, source_path):
         return load_records(source_path)

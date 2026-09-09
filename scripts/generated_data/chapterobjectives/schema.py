@@ -294,8 +294,8 @@ def _load_records_file(source_path):
     return records
 
 
-def load_records(source_path):
-    """Load one objective file or every ``*_objectives.json`` file in a directory."""
+def source_paths(source_path):
+    """Select objective input names without parsing their contents."""
     if os.path.isdir(source_path):
         source_paths = sorted(glob.glob(os.path.join(source_path, "*_objectives.json")))
         if not source_paths:
@@ -304,10 +304,16 @@ def load_records(source_path):
             )
     else:
         source_paths = [source_path]
+    return source_paths
+
+
+def load_records(source_path):
+    """Load one objective file or every ``*_objectives.json`` file in a directory."""
+    paths = source_paths(source_path)
     records = []
-    for path in source_paths:
+    for path in paths:
         records.extend(_load_records_file(path))
-    return ChapterObjectivesRecords(records, [_canonical_source_path(path) for path in source_paths])
+    return ChapterObjectivesRecords(records, [_canonical_source_path(path) for path in paths])
 
 
 def _err(message, loc, ref):
@@ -1169,6 +1175,9 @@ class ChapterObjectivesTableSchema(TableSchema):
 
     def dependency_tables(self):
         return ("units", "chapterbundle")
+
+    def source_paths(self, source_path):
+        return source_paths(source_path)
 
     def load_records(self, source_path):
         return load_records(source_path)
