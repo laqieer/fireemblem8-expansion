@@ -46,6 +46,13 @@ must be the active public view and own the same budget. It invokes the real
 candidate `REGISTRY` through a confined `Command`; the reporter then validates
 the declaration fields and their captured source paths. A foreign view, stale
 source or invalid schema identity rejects rather than becoming an empty registry.
+Directory-backed primary inputs use the schema's metadata-only `source_paths`
+selector, shared with its ordinary loader. The reporter then invokes the
+existing strict registry consumer with exactly those captured paths. It grants
+no directory-wide member contents during discovery and requires declared,
+reported and consumed inputs to agree. Matching bundle additions/deletions
+follow the selected CURRENT/BASE view; a nonmatching member is not classified
+as generated merely because it shares the directory.
 
 Deleted-path resolution requires the selected BASE ownership model, not just
 BASE's filename inventory. It uses that model's graph rules, generated-source

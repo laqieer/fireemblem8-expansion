@@ -429,7 +429,9 @@ def _generated_registry_records(
     session,
 ) -> tuple[list[dict[str, Any]], set[str]]:
     try:
-        from scripts.validation_ownership.graph_registry import observe_declarations
+        from scripts.validation_ownership.graph_registry import (
+            observe_declarations, observe_directory_sources,
+        )
         from scripts.validation_ownership.budget import MakeProbeError
 
         records = observe_declarations(loader, session)
@@ -502,10 +504,16 @@ def _generated_registry_records(
             if candidate in loader.entries:
                 loader.entry(candidate, f"generated-data schema {name!r} {field}")
                 paths.add(candidate)
-            elif not any(
-                path.startswith(candidate.rstrip("/") + "/")
-                for path in loader.entries
+            elif field == "default_source" and any(
+                path.startswith(candidate.rstrip("/") + "/") for path in loader.entries
             ):
+                try:
+                    resolved = observe_directory_sources(loader, session, record)
+                except MakeProbeError as error:
+                    raise OwnershipError(str(error)) from error
+                paths.update(resolved)
+                record["source_paths"] = resolved
+            else:
                 raise OwnershipError(
                     f"generated-data schema {name!r} references stale {field} "
                     f"{candidate!r}"

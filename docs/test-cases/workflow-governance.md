@@ -3328,6 +3328,11 @@ session/deadline reset. Wildcard-visible paths, modes, source bytes and generate
 outputs retain their actual captured identity. BASE registry/models are measured
 in one grouped public view, and lifecycle removal/restoration reuses that
 already validated model without recursive report execution.
+For a directory-backed table, add and remove matching bundle members between
+CURRENT and BASE while retaining a nonmatching JSON neighbor. Only the schema's
+real selected members receive generated-source ownership. Discovery must not
+read member contents; the subsequent loader must reject an unreported read.
+Ordinary bundle loading and inventory results remain unchanged.
 Inspect the real graph discovery plan alongside the required
 `ownership-probe-test` selection. Foundation, producer and dependency cases
 must remain in their one extended-host owner, absent from both graph and

@@ -42,9 +42,19 @@ class ReportViewTests(unittest.TestCase):
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(content)
 
-    def registry(self, source):
+    def registry(self, source, *, pattern=None):
+        resolver = "" if pattern is None else (
+            f" def source_paths(self,source): return sorted(Path(source).glob({pattern!r}))\n"
+            " def load_records(self,source):\n"
+            "  paths=self.source_paths(source)\n"
+            "  return {'source_paths':[str(path) for path in paths],"
+            "'records':[json.loads(path.read_text()) for path in paths]}\n"
+            " def manifest_record_count(self,records): return len(records['records'])\n"
+        )
         self.add("scripts/generated_data/registry.py", (
+            "from pathlib import Path\nimport json\n"
             "class Schema:\n"
+            " name='table'\n"
             " version=1\n"
             f" default_source={source!r}\n"
             " default_hand_source=None\n"
@@ -52,6 +62,7 @@ class ReportViewTests(unittest.TestCase):
             " default_inventory_path=None\n"
             " def dependencies(self): return ()\n"
             " def dependency_tables(self): return ()\n"
+            + resolver +
             "class Registry:\n"
             " def all_names(self): return ('table',)\n"
             " def resolve(self,name):\n"
@@ -59,6 +70,65 @@ class ReportViewTests(unittest.TestCase):
             "  return Schema()\n"
             "REGISTRY=Registry()\n"
         ))
+
+    def test_directory_registry_resolves_only_real_consumed_members_in_both_views(self):
+        self.registry("src/data", pattern="*_bundle.json")
+        self.add("src/data/old_bundle.json", '{"version":1}\n')
+        self.add("src/data/shared_bundle.json", '{"version":1}\n')
+        self.add("src/data/unrelated.json", '{"unrelated":true}\n')
+        base = self.capture()
+        (self.root / "src/data/old_bundle.json").unlink()
+        self.add("src/data/new_bundle.json", '{"version":2}\n')
+        current = self.capture()
+        with ProbeSession(
+            current, scratch_root=self.root / "build/probe", budget=self.budget,
+        ) as probe:
+            _, paths = reporter._generated_registry_records(current, session=probe)
+            self.assertEqual(paths, {"src/data/new_bundle.json", "src/data/shared_bundle.json"})
+            with probe.select_view(base):
+                _, old_paths = reporter._generated_registry_records(base, session=probe)
+                self.assertEqual(old_paths, {"src/data/old_bundle.json", "src/data/shared_bundle.json"})
+            _, restored = reporter._generated_registry_records(current, session=probe)
+            self.assertEqual(restored, paths)
+            self.assertNotIn("src/data/unrelated.json", paths | old_paths)
+        self.assertIsNone(probe.base)
+        self.assertFalse(self.budget.children)
+
+    def test_directory_discovery_cannot_read_member_contents(self):
+        self.registry("src/data", pattern="*_bundle.json")
+        self.add("src/data/one_bundle.json", '{"version":1}\n')
+        path = self.root / "scripts/generated_data/registry.py"
+        path.write_text(path.read_text() + (
+            "\noriginal_paths=Schema.source_paths\n"
+            "def read_during_discovery(self,source):\n"
+            " paths=original_paths(self,source)\n"
+            " paths[0].read_bytes()\n"
+            " return paths\n"
+            "Schema.source_paths=read_during_discovery\n"
+        ))
+        loader = self.capture()
+        with ProbeSession(loader, scratch_root=self.root / "build/probe", budget=self.budget) as probe:
+            with self.assertRaisesRegex(reporter.OwnershipError, "undeclared source read"):
+                reporter._generated_registry_records(loader, session=probe)
+        self.assertFalse(self.budget.children)
+
+    def test_directory_loader_cannot_read_an_unreported_member(self):
+        self.registry("src/data", pattern="*_bundle.json")
+        self.add("src/data/one_bundle.json", '{"version":1}\n')
+        self.add("src/data/unreported.json", '{"hidden":true}\n')
+        path = self.root / "scripts/generated_data/registry.py"
+        path.write_text(path.read_text() + (
+            "\noriginal_load=Schema.load_records\n"
+            "def read_unreported(self,source):\n"
+            " (Path(source)/'unreported.json').read_bytes()\n"
+            " return original_load(self,source)\n"
+            "Schema.load_records=read_unreported\n"
+        ))
+        loader = self.capture()
+        with ProbeSession(loader, scratch_root=self.root / "build/probe", budget=self.budget) as probe:
+            with self.assertRaisesRegex(reporter.OwnershipError, "undeclared source read"):
+                reporter._generated_registry_records(loader, session=probe)
+        self.assertFalse(self.budget.children)
 
     def capture(self):
         self.git("add", "-A", "--", ".")

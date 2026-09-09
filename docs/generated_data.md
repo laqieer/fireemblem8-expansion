@@ -546,6 +546,20 @@ future multi-table generation ordering) and a stable sha256 digest that
 is embedded in the committed inventory report -- so a change in a table's
 dependencies is visible as a one-line diff, not silent.
 
+### `TableSchema.source_paths()` (primary input discovery)
+
+`source_paths(source_path)` selects primary input paths without parsing their
+contents. The default returns the one supplied path. A directory-backed schema
+overrides it and shares that selector with `load_records`; chapter bundles use
+the same sorted `*_bundle.json` selection in both operations. Discovery does
+not bypass ordinary parse, validation, missing-source or empty-directory errors.
+
+The ownership consumer performs discovery with code and explicit directory
+metadata only, then admits the exact regular-file paths to the existing
+confined registry loader. Declared, reported and actually consumed inputs must
+agree. Returning a path is not permission to read it during discovery, and
+nonmatching directory members do not become generated sources.
+
 ### `TableSchema.dependency_tables()` (Batch B: cross-table validation)
 
 Batch A's tables validate purely against headers (enum constants, item
