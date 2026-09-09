@@ -3350,6 +3350,11 @@ source mtimes must remain untouched. A real source content/mode/membership
 change must still affect the captured digest. Preserve ordinary CLI stamping
 and consumer behavior; do not compare its mtime digest as if it were the
 captured identity digest.
+Exercise unknown optional includes in relative, `./` and `/repo/` forms.
+Native Make may ignore the real absence, but the graph must reject the
+unadmitted attempted input even when `MAKEFILE_LIST` omits it. A tracked include
+and a genuine producer-created include still pass. The captured syscall
+spelling is not claimed to be the original pre-normalization Makefile token.
 For a directory-backed table, add and remove matching bundle members between
 CURRENT and BASE while retaining a nonmatching JSON neighbor. Only the schema's
 real selected members receive generated-source ownership. Discovery must not

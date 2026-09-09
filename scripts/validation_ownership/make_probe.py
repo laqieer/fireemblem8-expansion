@@ -132,6 +132,7 @@ class MakeObservation:
     stderr: bytes
     events: tuple[dict, ...]
     generated: tuple[GeneratedFile, ...] = ()
+    file_open_attempts: tuple[tuple[str, str], ...] = ()
 
 
 def _metadata_records(value, limit, *, runtime_paths=(), runtime_absent=()):
@@ -1945,6 +1946,18 @@ class ProbeSession:
                 raise MakeProbeError("incomplete live producer transcript")
             if completed.returncode:
                 raise MakeProbeError(f"GNU Make failed after live producers: {completed.returncode}; {completed.stderr!r}")
+            file_open_attempts = []
+            for entry in observed["accessed"]:
+                if not entry.startswith("make-open:"):
+                    continue
+                record = parse_json(entry[len("make-open:"):].encode("ascii"), "Make file-open observation")
+                if (
+                    not isinstance(record, list) or len(record) != 2
+                    or any(not isinstance(value, str) or len(value.encode("utf-8")) > 4096 for value in record)
+                    or not (record[0] == "/repo" or record[0].startswith("/repo/"))
+                ):
+                    raise MakeProbeError("malformed Make file-open observation")
+                file_open_attempts.append(tuple(record))
             semantics = _read_observation(self.budget.read_bytes(result_path, "control"), target, variables)
             semantics["assignments"] = sorted(assignments, key=lambda item: item[1])
             recipe_sources = {record["source"] for record in semantics["files"] if record["source"]}
@@ -1964,6 +1977,7 @@ class ProbeSession:
                 target, semantics, execution, hashlib.sha256(semantic_bytes).hexdigest(),
                 completed.stdout, completed.stderr, tuple(events),
                 tuple(self.published_sources[path] for path in sorted(self.published_sources)),
+                tuple(file_open_attempts),
             )
 
     @terminal_failure

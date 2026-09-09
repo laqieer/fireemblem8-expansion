@@ -1413,6 +1413,12 @@ class Policy:
             writing = creating or bool(flags & (os.O_WRONLY | os.O_RDWR | os.O_TRUNC))
             operation = "write" if writing else "metadata" if state.role == "helper" and flags & os.O_PATH else "read"
             self.check(state, path, operation, observer=trusted)
+            if (
+                state.role == "make" and state.observer_ready and operation == "read"
+                and not flags & (os.O_DIRECTORY | os.O_PATH)
+                and (path == "/repo" or path.startswith("/repo/"))
+            ):
+                self.observe("accessed", "make-open:" + encoded([path, state.path_context[0]]).decode("ascii"))
             if creating:
                 self.reserve_creation()
             state.pending = ("open", path)

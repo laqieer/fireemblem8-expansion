@@ -41,6 +41,12 @@ Asset discovery additionally binds its logical digest to the actual captured
 manifest/source path, mode and content identities. Equal Git inputs remain
 stable across independent materializations despite different real mtimes;
 ordinary CLI stamping and full metadata/cache validation stay unchanged.
+The graph also checks actual repository file-open attempts, not only the
+successfully loaded `MAKEFILE_LIST`. An unknown optional include cannot acquire
+authority merely because Make ignored its absence. Attempts must resolve to
+captured regular sources or actual completed producer outputs; known generated
+include/remake behavior remains valid. Syscall spellings and real metadata
+remain intact, rather than being inferred from a new Make parser.
 
 Asset discovery reuses the existing
 [`load_discovery(..., tracked_sources=...)` and renderer](asset_manifest.md#captured-source-discovery)
