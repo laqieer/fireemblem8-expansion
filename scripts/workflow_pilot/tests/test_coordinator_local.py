@@ -222,3 +222,49 @@ class CoordinatorLocalTests(unittest.TestCase):
             self.assertFalse(validator.is_valid(state))
             with self.assertRaises(ValueError):
                 handoff.validate_state(state)
+
+    def test_review_qualification_uses_the_existing_local_record_schema(self):
+        local = self.complete()
+        qualification = {
+            "schema_version": 1,
+            "case_id": "TC-WORKFLOW-GATE-OWNERSHIP-001",
+            "repository": local["repository"],
+            "pull_request": local["pr_number"],
+            "base_sha": local["base_sha"],
+            "candidate_sha": local["head_sha"],
+            "worktree": local["worktree"],
+            "checker_revision": local["base_sha"],
+            "changed_paths": [".github/validation-ownership-graph.json"],
+            "changed_edge_ids": ["source.owns-test"],
+            "affected_consumers": ["surface.source"],
+            "review_scope": [
+                "TC-WORKFLOW-GATE-OWNERSHIP-001/checker:" + local["base_sha"],
+                "TC-WORKFLOW-GATE-OWNERSHIP-001/path:.github/validation-ownership-graph.json",
+                "TC-WORKFLOW-GATE-OWNERSHIP-001/edge:source.owns-test",
+                "TC-WORKFLOW-GATE-OWNERSHIP-001/consumer:surface.source",
+            ],
+            "review_task": "actual runtime task",
+            "reviewer": "independent reviewer",
+            "review_started_at": local["registered_at"],
+            "review_completed_at": observations.utc_now(),
+            "coordinator_id": local["coordinator_id"],
+            "git_identity": copy.deepcopy(local["git_identity"]),
+        }
+        local["review_qualification"] = qualification
+        validator = Draft202012Validator(json.loads(
+            (ROOT / "scripts/workflow_pilot/agent_handoff.schema.json").read_text()))
+        self.assertTrue(validator.is_valid(self.state))
+        handoff.validate_state(self.state)
+        for field in ("repository", "pull_request", "candidate_sha", "base_sha", "worktree",
+                      "coordinator_id", "git_identity"):
+            changed = copy.deepcopy(self.state)
+            changed["candidates"][0]["local_validation"]["review_qualification"][field] = (
+                "other/repository" if field == "repository"
+                else 999 if field == "pull_request"
+                else "f" * 40 if field in {"candidate_sha", "base_sha"}
+                else "/" if field == "worktree"
+                else "other" if field == "coordinator_id"
+                else {**qualification["git_identity"], "inode": qualification["git_identity"]["inode"] + 1}
+            )
+            with self.assertRaises(ValueError):
+                handoff.validate_state(changed)

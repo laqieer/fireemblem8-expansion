@@ -6,7 +6,7 @@ import sys
 import tempfile
 import time
 import unittest
-from datetime import datetime, timedelta, timezone
+from datetime import timedelta
 from pathlib import Path
 from unittest import mock
 
@@ -15,16 +15,13 @@ from jsonschema import Draft202012Validator, FormatChecker, ValidationError
 from scripts.workflow_pilot import agent_handoff as handoff
 from scripts.workflow_pilot import coordinator_observations as observations
 from scripts.workflow_pilot import raw_diff_check as raw
+from scripts.workflow_pilot.tests.coordinator_support import at_offset
 from scripts.workflow_pilot import reporter
 
 
 ROOT = Path(__file__).resolve().parents[3]
 ARTIFACTS = ROOT / "build/test-artifacts"
 SESSION = "test-session"
-
-
-def at_offset(seconds):
-    return (datetime.now(timezone.utc) + timedelta(seconds=seconds)).isoformat().replace("+00:00", "Z")
 
 
 def write_json(path, value):

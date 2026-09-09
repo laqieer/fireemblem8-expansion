@@ -380,6 +380,18 @@ parsed measurements. Candidate JSON cannot supply commands or a passed flag.
 Native PID/exit/RSS belongs to the **check process**, not an LLM owner.
 Unmeasured quantities remain `null`, not guessed zeroes or resource claims.
 
+Reviewed ownership evolution adds no generic receipt or passed label to this
+API. The coordinator first creates a live qualification from the actual
+independent `ReviewSession`, immutable `ReviewTools` revision/tester-case
+binding, exact candidate record and clean worktree. Registration stores that
+qualification beside the normal definitions; the trusted verifier capture
+joins it to the actual repository/PR/BASE/head assignment. Calls to
+`coordinator_local_ready` and `assess_candidate` must supply that same live
+qualification. Missing, partial, stale or different review/checker/path/edge/
+consumer scope therefore keeps local readiness, review-first dispatch and
+final full-run admission false. A freshly copied candidate checker is not
+trusted merely because its revision equals the candidate.
+
 Every registered check must finish successfully at the same head/base/worktree.
 Each observation retains the complete registered definition set, so changing,
 adding or removing a criterion invalidates even the remaining captures.

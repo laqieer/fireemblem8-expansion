@@ -26,26 +26,12 @@ from scripts.workflow_pilot import coordinator_observations as observations
 from scripts.workflow_pilot import pr_metadata as github
 from scripts.workflow_pilot import reporter, review_family as review
 from scripts.workflow_pilot import event_classifier
+from scripts.workflow_pilot.tests.coordinator_support import decisions, model_control
 from scripts.workflow_pilot.tests.review_support import Runtime
 from scripts.workflow_pilot.tests.test_agent_handoff import GitFixture, at_offset, write_json, git
 
 
 ROOT = Path(__file__).resolve().parents[3]
-
-
-def decisions(number=191, risks=("none",), mode="concurrent", *, paused=False):
-    return {"schema_version": 1, "artifacts": [], "pull_requests": [{
-        "pull_request": number, "risk_boundaries": list(risks), "gate_mode": mode,
-        "threshold": {"triggers": ["none"], "override_history": []},
-        "stack": {"depth": 0, "parent_pr": None, "exception_reason": None},
-        "pilot": {"included": False, "disposition": "paused" if paused else "excluded"},
-    }]}
-
-
-def model_control(decision, pr):
-    """Explicit typed observation for reducer-only fixtures, not provider evidence."""
-    return replace(decision, control=gate.PilotControl(
-        pr.repository, pr.repository_id, "master", pr.base_sha, "c" * 40, False, at_offset(-150)))
 
 
 def git_scope_files(root, base, head):

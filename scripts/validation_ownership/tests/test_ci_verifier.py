@@ -145,6 +145,8 @@ class ReviewedEvolutionVerifierTests(unittest.TestCase):
             "186",
             *(item for path in case["reviewed_paths"] for item in ("--reviewed-path", path)),
             *(item for edge_id in case["reviewed_edges"] for item in ("--reviewed-edge", edge_id)),
+            *(item for consumer_id in case["affected_consumers"]
+              for item in ("--reviewed-consumer", consumer_id)),
         )
         self.assertEqual(completed.returncode, 0, completed.stderr)
         result = json.loads(completed.stdout)
@@ -154,6 +156,11 @@ class ReviewedEvolutionVerifierTests(unittest.TestCase):
         self.assertEqual(result["candidate_changed_paths"], case["reviewed_paths"])
         self.assertEqual(result["reviewed_evolution"]["repository"], "owner/repository")
         self.assertEqual(result["reviewed_evolution"]["pull_request"], 186)
+        self.assertEqual(
+            result["reviewed_evolution"]["affected_consumers"],
+            case["affected_consumers"],
+        )
+        self.assertIn("docs-source.depends", result["reviewed_evolution"]["changed_edge_ids"])
         self.assertEqual(result["review_invalidation"], {
             "invalidated": True,
             "reason": "authoritative-graph-edge-change",
@@ -195,6 +202,8 @@ class ReviewedEvolutionVerifierTests(unittest.TestCase):
             "186",
             *(item for path in case["reviewed_paths"][1:] for item in ("--reviewed-path", path)),
             *(item for edge_id in case["reviewed_edges"] for item in ("--reviewed-edge", edge_id)),
+            *(item for consumer_id in case["affected_consumers"]
+              for item in ("--reviewed-consumer", consumer_id)),
         )
         self.assertNotEqual(wrong_paths.returncode, 0)
         self.assertIn("path scope differs", wrong_paths.stderr)
@@ -214,9 +223,37 @@ class ReviewedEvolutionVerifierTests(unittest.TestCase):
             "186",
             *(item for path in case["reviewed_paths"] for item in ("--reviewed-path", path)),
             *(item for edge_id in case["reviewed_edges"][:-1] for item in ("--reviewed-edge", edge_id)),
+            *(item for consumer_id in case["affected_consumers"]
+              for item in ("--reviewed-consumer", consumer_id)),
         )
         self.assertNotEqual(wrong_edges.returncode, 0)
         self.assertIn("relationship scope differs", wrong_edges.stderr)
+        consumer_trusted = self.fixture.directory / ("trusted-consumers-" + case["head"][:12])
+        consumer_trusted.mkdir()
+        self.addCleanup(lambda: consumer_trusted.exists() and shutil.rmtree(consumer_trusted))
+        with tarfile.open(fileobj=BytesIO(self.fixture.git("archive", case["head"]))) as archive:
+            archive.extractall(consumer_trusted, filter="data")
+        wrong_consumers = self.verify(
+            consumer_trusted,
+            "--base-sha",
+            case["base"],
+            "--candidate-sha",
+            case["head"],
+            "--trusted-sha",
+            case["head"],
+            "--expected-mode",
+            "reviewed-evolution",
+            "--reviewed-repository",
+            "owner/repository",
+            "--reviewed-pull-request",
+            "186",
+            *(item for path in case["reviewed_paths"] for item in ("--reviewed-path", path)),
+            *(item for edge_id in case["reviewed_edges"] for item in ("--reviewed-edge", edge_id)),
+            *(item for consumer_id in case["affected_consumers"][:-1]
+              for item in ("--reviewed-consumer", consumer_id)),
+        )
+        self.assertNotEqual(wrong_consumers.returncode, 0)
+        self.assertIn("consumer scope differs", wrong_consumers.stderr)
 
 
 if __name__ == "__main__":

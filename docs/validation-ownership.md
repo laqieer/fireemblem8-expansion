@@ -581,10 +581,18 @@ existing #178 `coordinator-check` assignment and always calls the real
 standalone verifier through `capture_check`/`trusted_executor` before managed
 admission. The coordinator owns the trusted source/root, actual PR BASE,
 candidate/worktree and expected mode outside candidate control. For a reviewed
-graph evolution it also binds the exact repository/PR, changed tracked-path
-scope and invalidated relationship scope into the generated
-`ownership-reviewed-*` evidence ID, so changing the candidate, checker, or
-qualified scope invalidates the old local capture. The actual
+graph evolution, `qualify_reviewed_evolution` first consumes the coordinator's
+actual `ReviewSession` task result and immutable `ReviewTools` tester-case
+binding. The completed read-only reviewer must be independent of the
+coordinator/implementer, and its exact scope binds repository/PR/BASE/head,
+worktree identity, reviewed checker revision and required paths, changed tracked
+paths, invalidated relationships, and every affected consumer. That
+qualification is stored with `candidate.local_validation`, joined back to the
+actual candidate record and capture assignment, and included in the generated
+`ownership-reviewed-*` evidence ID. A candidate field, copied result, mode
+claim, matching SHA, or freshly archived candidate checker cannot construct
+it. Changing the candidate, checker, scope, task observation, or worktree
+invalidates the old local capture. The actual
 bounded process result, PID, exit and RSS are retained by the existing handoff
 contract. Missing, stale, failed or mismatched captures and candidate pass
 labels cannot grant acceptance.
@@ -596,13 +604,19 @@ selected immutable graph-verifier source. It reports `explicit-introduction`,
 not a fabricated BASE verifier or exact-base proof. Partial graph authority
 fails instead of downgrading. A complete graph BASE uses `exact-base-pinned`
 and exact BASE verifier source. A coordinator-qualified graph update may use
-`reviewed-evolution`: the trusted verifier source is the exact candidate SHA in
-a separate immutable tree, BASE and candidate each validate against their own
-immutable oracle, and the independently qualified changed path/edge scopes must
-match the actual Git diff and review invalidation exactly. Unreviewed exact-base
-retargets still fail, and a workflow-dispatch or PR-only N/A status alone is
-not that authority. Git remains the identity authority; no source ledger, new
-service, signer, privileged PR event or human approval is introduced.
+`reviewed-evolution`: the verifier comes from the independently reviewed
+revision selected by the qualification, not from candidate/revision equality.
+BASE and candidate each validate against their own immutable schema, oracle,
+graph and model. The shared document-aware authority comparison supplies
+schema/oracle/authority invalidation; dependency edges are covered only when
+both endpoint surfaces have complete oracle probes. The independently
+qualified path, edge and affected-consumer scopes must match the actual Git
+diff and invalidation exactly. Unreviewed exact-base retargets still fail, and
+a workflow-dispatch or PR-only N/A status alone is not that authority. Final
+review-first assessment, reservation, dispatch and full-run admission require
+the same live qualification that produced the local capture. Git remains the
+identity authority; no source ledger, new service, signer, privileged PR event
+or human approval is introduced.
 
 Domain-separated seals continue to cover the strict schema, probe oracle,
 complete graph, resolved edges, and live evidence-authority fingerprints.

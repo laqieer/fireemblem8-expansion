@@ -48,7 +48,17 @@ class ReportFixture:
             "REGISTRY=Registry()\n"
         ))
         self.add("docs/test-cases/registry.json", json.dumps({
-            "cases": [{"id": "TC-WORKFLOW-GATE-OWNERSHIP-001", "title": "Controlled ownership case"}],
+            "cases": [{
+                "id": "TC-WORKFLOW-GATE-OWNERSHIP-001",
+                "title": "Controlled ownership case",
+                "automation": [{
+                    "command": (
+                        "/usr/bin/python3 -I -S -B "
+                        "scripts/validation_ownership/isolated_launcher.py tests"
+                    ),
+                    "evidence": "scripts/validation_ownership/tests/test_coordinator_capture.py",
+                }],
+            }],
         }))
         original = reporter.load_json(ROOT / reporter.GRAPH_PATH)
         graph = {
@@ -172,7 +182,7 @@ def reviewed_evolution_case(fixture: ReportFixture):
             "label": "Reviewed documentation surface",
             "surface_type": "source",
             "requirements": ["positive", "adversarial"],
-            "dependencies": [],
+            "dependencies": ["surface.source"],
         }
     )
     graph["edges"].extend(
@@ -190,6 +200,13 @@ def reviewed_evolution_case(fixture: ReportFixture):
                 "source": "surface.docs",
                 "target": "owner.case",
                 "reason": "Reviewed documentation keeps the exact adversarial control",
+            },
+            {
+                "id": "docs-source.depends",
+                "type": "depends-on",
+                "source": "surface.docs",
+                "target": "surface.source",
+                "reason": "Reviewed documentation depends on the measured source consumer",
             },
         )
     )
@@ -234,12 +251,8 @@ def reviewed_evolution_case(fixture: ReportFixture):
             )
         ),
         "reviewed_edges": sorted(
-            (
-                "docs.adversarial-control",
-                "docs.owns-test",
-                "schema.owns-test",
-                "source.adversarial-control",
-                "source.owns-test",
-            )
+            edge["id"]
+            for edge in graph["edges"]
         ),
+        "affected_consumers": ["surface.docs", "surface.schema", "surface.source"],
     }
