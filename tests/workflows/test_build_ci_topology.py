@@ -1647,10 +1647,11 @@ def _protected_host_prefix_errors(host: str) -> list[str]:
         ),
         _run_step_is_exact(
             steps[4],
-            "Install host-only dependencies (no arm-none-eabi toolchain)",
+            "Install host and ownership-query dependencies",
             (
                 "sudo apt-get update && sudo apt-get install -y "
-                "build-essential libmgba-dev libpng-dev python3-venv pkg-config",
+                "build-essential binutils-arm-none-eabi gcc-arm-none-eabi "
+                "libmgba-dev libnewlib-arm-none-eabi libpng-dev python3-venv pkg-config",
                 "/usr/bin/python3 -I scripts/host_python.py create",
             ),
             if_expression=FULL_WORKER_STEP_CONDITION,
@@ -2720,9 +2721,9 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
             ),
             self.text.replace(
                 "sudo apt-get update && sudo apt-get install -y "
-                "build-essential libmgba-dev",
+                "build-essential binutils-arm-none-eabi",
                 "sudo apt-get update && sudo apt-get install -y "
-                "build-essential libmgba-dev && "
+                "build-essential binutils-arm-none-eabi && "
                 'echo build/bin >> "$GITHUB_PATH"',
                 1,
             ),
@@ -2764,7 +2765,7 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
         )
         protected_names = (
             "Verify checked-out revision",
-            "Install host-only dependencies (no arm-none-eabi toolchain)",
+            "Install host and ownership-query dependencies",
             "Run gba-playtest host test suite",
             "Run upstream-port tooling test suite",
             "Run workflow contract test suite",
@@ -5881,15 +5882,16 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
 
         _, _, jobs = verify._parse_workflow_structure_text(self.text)
         host = next(steps for name, _, steps in jobs if name == "host-tests")
-        setup_name = "Install host-only dependencies (no arm-none-eabi toolchain)"
+        setup_name = "Install host and ownership-query dependencies"
         setup = next(dict(fields) for _, name, fields in host if name == setup_name)
         self.assertEqual(
             setup["run"],
             (
                 (
                     "sudo", "apt-get", "update", "&&", "sudo", "apt-get", "install",
-                    "-y", "build-essential", "libmgba-dev", "libpng-dev", "python3-venv",
-                    "pkg-config",
+                    "-y", "build-essential", "binutils-arm-none-eabi",
+                    "gcc-arm-none-eabi", "libmgba-dev", "libnewlib-arm-none-eabi",
+                    "libpng-dev", "python3-venv", "pkg-config",
                 ),
                 ("/usr/bin/python3", "-I", "scripts/host_python.py", "create"),
             ),
@@ -5912,7 +5914,13 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                 "        /usr/bin/python3 -I scripts/host_python.py create\n", "", 1
             ),
             self.text.replace("libpng-dev python3-venv", "libpng-dev", 1),
-            self.text.replace("libmgba-dev libpng-dev", "libmgba-dev", 1),
+            self.text.replace("libnewlib-arm-none-eabi libpng-dev",
+                              "libnewlib-arm-none-eabi", 1),
+            self.text.replace("binutils-arm-none-eabi gcc-arm-none-eabi",
+                              "gcc-arm-none-eabi", 1),
+            self.text.replace("gcc-arm-none-eabi libmgba-dev", "libmgba-dev", 1),
+            self.text.replace("libmgba-dev libnewlib-arm-none-eabi",
+                              "libmgba-dev", 1),
             self.text.replace("python3-venv pkg-config", "python3-venv", 1),
             self.text.replace(
                 '"$GITHUB_WORKSPACE/build/host-python/bin/python3"',

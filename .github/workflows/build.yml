@@ -899,10 +899,10 @@ jobs:
         PYTHONPATH: ''
       run: /usr/bin/python3 -I scripts/workflow_pilot/isolated_launcher.py hydrate --repository-root "$GITHUB_WORKSPACE" --fixture scripts/workflow_pilot/tests/fixtures/baseline.json --decisions .github/workflow-pilot-decisions.json --expected-head "$EXPECTED_BUILD_SHA"
 
-    - name: Install host-only dependencies (no arm-none-eabi toolchain)
+    - name: Install host and ownership-query dependencies
       if: ${{ needs.event-classifier.result == 'failure' || needs.event-classifier.outputs.classification == 'full' }}
       run: |
-        sudo apt-get update && sudo apt-get install -y build-essential libmgba-dev libpng-dev python3-venv pkg-config
+        sudo apt-get update && sudo apt-get install -y build-essential binutils-arm-none-eabi gcc-arm-none-eabi libmgba-dev libnewlib-arm-none-eabi libpng-dev python3-venv pkg-config
         /usr/bin/python3 -I scripts/host_python.py create
 
     # GBA_PLAYTEST_HOST_ONLY=1 is the single public switch that makes this a

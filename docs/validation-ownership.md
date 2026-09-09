@@ -92,6 +92,10 @@ filename match: those roots currently have no trusted installed-tool identity
 contract equivalent to the root-owned system package capture. Selecting one
 for an ownership-observed directory query therefore returns that precise
 compatibility error rather than granting candidate execution authority.
+The system compiler capture itself is optional at session setup: a host owner
+without the ARM package retains the genuine absent `/bin`/`/usr/bin` alias
+observation and can run non-toolchain graph controls. A directory query still
+requires the captured compiler and fails rather than fabricating coverage.
 
 Deleted-path resolution requires the selected BASE ownership model, not just
 BASE's filename inventory. It uses that model's graph rules, generated-source
@@ -204,12 +208,14 @@ It is not a pre-evaluation boundary: GNU Make processes ambient `MAKEFILES`
 and command-line `--eval` before reading the root Makefile. Use the standalone
 entry above for untrusted evaluation; do not prepend a Make invocation.
 
-The host-only Build setup installs `build-essential`, `libmgba-dev`,
-`libpng-dev`, `python3-venv` and `pkg-config`. The ownership consumer compiles native
-`gbagfx` against `png.h`, libpng and zlib, so a compiler alone is insufficient;
-`libpng-dev` supplies its development dependency closure on the supported
-Ubuntu host, and its existing Makefile queries libpng through `pkg-config`.
-This does not require the ARM toolchain. Use the existing
+The host Build setup installs `build-essential`, `libmgba-dev`, `libpng-dev`,
+`python3-venv` and `pkg-config`, plus `binutils-arm-none-eabi`,
+`gcc-arm-none-eabi` and `libnewlib-arm-none-eabi` for the real sealed modern
+library-directory queries. The ownership consumer also compiles native
+`gbagfx` against `png.h`, libpng and zlib, so the ARM compiler alone is
+insufficient; `libpng-dev` supplies its development dependency closure on the
+supported Ubuntu host, and its existing Makefile queries libpng through
+`pkg-config`. Use the existing
 [pinned host Python environment](workflow-pilot.md) for local host tests.
 Both `user-namespace` and the supported `sudo-drop` launcher are valid
 observations. Missing native dependencies or unavailable confinement remain

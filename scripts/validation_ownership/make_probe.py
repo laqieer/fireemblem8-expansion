@@ -821,14 +821,16 @@ class ProbeSession:
         captured, dispatch = [], []
         for path in self.runtime_paths:
             item = _capture_runtime_input(path, self.budget)
+            stock_dispatch_alias = bool(item.aliases) and item.canonical in ALIASES
             intercepted = item.data is not None and (
-                bool(item.aliases) and item.canonical in ALIASES
+                stock_dispatch_alias
                 or item.canonical == "/usr/bin/env"
             )
+            absent_dispatch_alias = item.data is None and stock_dispatch_alias
             if (
                 any(path == other or path.startswith(other + "/") or other.startswith(path + "/")
                     for other in reserved)
-                or item.canonical in reserved and not intercepted
+                or item.canonical in reserved and not (intercepted or absent_dispatch_alias)
             ):
                 raise MakeProbeError("runtime input conflicts with trusted execution image")
             for other in captured:
@@ -1064,8 +1066,11 @@ class ProbeSession:
                 (root / target.lstrip("/")).chmod(0o555)
             shutil.copyfile(self.base / "observer.so", _mkdir_target(root, "/lib/vo-observer.so"))
             (root / "lib/vo-observer.so").chmod(0o555)
-            for target in sorted(set(ALIASES) | {
+            for target in sorted((set(ALIASES) | {
                 item.canonical for item in self.runtime_inputs if item.path in self.runtime_dispatch
+            }) - {
+                item.canonical for item in self.runtime_inputs
+                if item.data is None and item.aliases and item.canonical in ALIASES
             }):
                 shutil.copyfile(self.base / "interceptor", _mkdir_target(root, target))
                 (root / target.lstrip("/")).chmod(0o555)
