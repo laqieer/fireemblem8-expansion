@@ -134,6 +134,17 @@ embedded line breaks or NUL rather than splitting one pathname into claims.
 Ordinary-versus-adapted comparisons use equivalent captured input metadata, not
 an ambient worktree containing untracked files. Native adapter unit tests and
 standalone producer successes are not whole-root Make acceptance.
+Registered `find ... -type f -name ...` discovery keeps the real depth-first
+directory traversal and captured source equality, but issues bounded Linux
+`getdents64` requests directly instead of inheriting Python `scandir`'s 32 KiB
+readdir buffer. Each request is 4096 bytes; the supervisor still records and
+accounts for the complete requested before/after buffers, offsets, results and
+EOF calls. Regular-file filtering does not follow symlinks, and `DT_UNKNOWN`
+entries use an exact no-follow metadata fallback. Nested, Unicode,
+nonmatching, multi-batch, missing and nonregular controls compare against the
+ordinary `find` behavior. The small-directory traffic proof requires at least
+a 50 percent real control/metadata reduction under unchanged production
+limits; it is not a claim that the complete ownership report now fits.
 The host C dependency adapter preserves the original ordered `cc -E -MM`
 include/define arguments and the declared `.dep` destination through
 `Command(dependency_only=True)`. An explicit captured header-code pool discovers
