@@ -2942,8 +2942,11 @@ def validate_executable_lifecycle(
     return prove(root, graph, session=session, schema=schema, oracle=oracle, model=model)
 
 
-def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
+def build_arg_parser(
+    *,
+    parser_class: type[argparse.ArgumentParser] = argparse.ArgumentParser,
+) -> argparse.ArgumentParser:
+    parser = parser_class(
         description=(
             "Validate whole-repository ownership and explain additive gates; "
             "this reporter never narrows or executes validation."
@@ -2962,7 +2965,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--base-revision",
         help="compare authoritative graph edges with a Git revision",
     )
-    return parser.parse_args(argv)
+    return parser
+
+
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    return build_arg_parser().parse_args(argv)
 
 
 def main(argv: list[str] | None = None) -> int:

@@ -31,15 +31,23 @@ class StandaloneLauncherTests(unittest.TestCase):
         # inherited preloads and dry-run controls observable at the boundary.
         (package / "reporter.py").write_text(
             "import argparse, json, os, subprocess\n"
-            "def main(arguments):\n"
-            "    parser = argparse.ArgumentParser()\n"
+            "def build_arg_parser(*, parser_class=argparse.ArgumentParser):\n"
+            "    parser = parser_class()\n"
             "    parser.add_argument('--repository-root', required=True)\n"
-            "    parser.parse_args(arguments)\n"
+            "    parser.add_argument('--changed', action='append', default=[])\n"
+            "    parser.add_argument('--revision', default='HEAD')\n"
+            "    parser.add_argument('--base-revision')\n"
+            "    return parser\n"
+            "def parse_args(arguments):\n"
+            "    return build_arg_parser().parse_args(arguments)\n"
+            "def main(arguments):\n"
+            "    parsed = parse_args(arguments)\n"
             "    result = subprocess.run(['/usr/bin/make', '-f', 'payload.mk', 'all'],\n"
             "                            capture_output=True, env=os.environ)\n"
-            "    print(json.dumps({key: os.environ[key] for key in "
+            "    print(json.dumps({'controls': {key: os.environ[key] for key in "
             + repr(CONTROLS)
-            + " if key in os.environ}))\n"
+            + " if key in os.environ}, 'repository_root': parsed.repository_root, "
+            "'changed': parsed.changed}))\n"
             "    return result.returncode\n",
             encoding="utf-8",
         )
@@ -54,9 +62,9 @@ class StandaloneLauncherTests(unittest.TestCase):
         }
         self.environment.update({"PATH": "/usr/bin:/bin", "LC_ALL": "C"})
 
-    def launch(self, environment, *, flags=("-I", "-S", "-B"), extra=()):
+    def launch(self, environment, *, mode="check", flags=("-I", "-S", "-B"), extra=()):
         return subprocess.run(
-            [sys.executable, *flags, str(self.launcher), "check",
+            [sys.executable, *flags, str(self.launcher), mode,
              "--repository-root", str(self.root), *extra],
             cwd=self.root, env={**self.environment, **environment},
             capture_output=True, text=True, timeout=10,
@@ -78,7 +86,7 @@ class StandaloneLauncherTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertFalse(marker.exists())
         self.assertEqual((self.root / "payload.marker").read_text(), "payload-ran")
-        self.assertEqual(json.loads(result.stdout), {})
+        self.assertEqual(json.loads(result.stdout)["controls"], {})
 
     def test_standalone_removes_all_make_controls_without_skipping_payload(self):
         for name in CONTROLS:
@@ -88,7 +96,7 @@ class StandaloneLauncherTests(unittest.TestCase):
                 value = str(self.poison) if name == "MAKEFILES" else "-n"
                 result = self.launch({name: value})
                 self.assertEqual(result.returncode, 0, result.stderr)
-                self.assertEqual(json.loads(result.stdout), {})
+                self.assertEqual(json.loads(result.stdout)["controls"], {})
                 self.assertEqual((self.root / "payload.marker").read_text(), "payload-ran")
                 self.assertFalse((self.root / "preloaded.marker").exists())
                 (self.root / "payload.marker").unlink()
@@ -115,6 +123,41 @@ class StandaloneLauncherTests(unittest.TestCase):
                 (self.root / "payload.marker").unlink(missing_ok=True)
                 result = self.launch({}, flags=flags)
                 self.assertNotEqual(result.returncode, 0)
+                self.assertFalse((self.root / "payload.marker").exists())
+
+    def test_check_mode_rejects_parser_accepted_changed_spellings_before_payload(self):
+        for extra in (("--changed=src/data/file.json",), ("--cha", "src/data/file.json")):
+            with self.subTest(extra=extra):
+                (self.root / "payload.marker").unlink(missing_ok=True)
+                result = self.launch({}, extra=extra)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("check mode does not accept --changed", result.stderr)
+                self.assertFalse((self.root / "payload.marker").exists())
+
+    def test_resolve_mode_accepts_equals_and_abbreviated_changed_options(self):
+        result = self.launch(
+            {}, mode="resolve",
+            extra=("--changed=src/data/file.json", "--cha", "src/data/other.json"),
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual((self.root / "payload.marker").read_text(), "payload-ran")
+        payload = json.loads(result.stdout)
+        self.assertEqual(payload["controls"], {})
+        self.assertEqual(payload["repository_root"], str(self.root))
+        self.assertEqual(payload["changed"], ["src/data/file.json", "src/data/other.json"])
+
+    def test_last_repository_root_value_controls_the_precheck(self):
+        other = self.root / "other-root"
+        other.mkdir()
+        for extra in (
+            ("--repository-root=" + str(other),),
+            ("--repo=" + str(other),),
+        ):
+            with self.subTest(extra=extra):
+                (self.root / "payload.marker").unlink(missing_ok=True)
+                result = self.launch({}, extra=extra)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("controlled source root", result.stderr)
                 self.assertFalse((self.root / "payload.marker").exists())
 
     def test_owned_gate_starts_python_instead_of_make(self):

@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import argparse
 import os
 import sys
 import unittest
@@ -22,19 +23,33 @@ def _clear_ambient_execution_environment() -> None:
             del os.environ[name]
 
 
-def _controlled_root(arguments: list[str]) -> None:
-    positions = [
-        index
-        for index, argument in enumerate(arguments)
-        if argument == "--repository-root"
-    ]
-    if len(positions) != 1 or positions[0] + 1 >= len(arguments):
-        raise ValueError("mode requires exactly one --repository-root")
-    root = Path(arguments[positions[0] + 1]).resolve(strict=True)
+class _LauncherArgumentParserError(ValueError):
+    pass
+
+
+class _LauncherArgumentParser(argparse.ArgumentParser):
+    def error(self, message):
+        raise _LauncherArgumentParserError(message)
+
+
+def _controlled_root(argument: str) -> None:
+    root = Path(argument).resolve(strict=True)
     if root != ROOT:
         raise ValueError(
             f"--repository-root must identify controlled source root {ROOT}"
         )
+
+
+def _parse_reporter_arguments(arguments: list[str]):
+    if str(ROOT) not in sys.path:
+        sys.path.insert(0, str(ROOT))
+    from scripts.validation_ownership import reporter
+
+    parser = reporter.build_arg_parser(parser_class=_LauncherArgumentParser)
+    try:
+        return reporter, parser.parse_args(arguments)
+    except _LauncherArgumentParserError as error:
+        raise ValueError(str(error)) from error
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -60,11 +75,14 @@ def main(argv: list[str] | None = None) -> int:
     mode = arguments.pop(0)
     try:
         if mode in {"check", "resolve"}:
-            _controlled_root(arguments)
-        if mode == "check" and "--changed" in arguments:
-            raise ValueError("check mode does not accept --changed")
-        if mode == "resolve" and "--changed" not in arguments:
-            raise ValueError("resolve mode requires at least one --changed")
+            reporter, parsed = _parse_reporter_arguments(arguments)
+            _controlled_root(parsed.repository_root)
+            if mode == "check" and parsed.changed:
+                raise ValueError("check mode does not accept --changed")
+            if mode == "resolve" and not parsed.changed:
+                raise ValueError("resolve mode requires at least one --changed")
+        else:
+            reporter = None
         _clear_ambient_execution_environment()
         os.chdir(ROOT)
         sys.path.insert(0, str(ROOT))
@@ -78,7 +96,8 @@ def main(argv: list[str] | None = None) -> int:
             )
             result = unittest.TextTestRunner(verbosity=2).run(suite)
             return 0 if result.wasSuccessful() else 1
-        from scripts.validation_ownership import reporter
+        if reporter is None:
+            from scripts.validation_ownership import reporter
 
         if mode == "lifecycle-check":
             if len(arguments) != 6 or arguments[::2] != [
