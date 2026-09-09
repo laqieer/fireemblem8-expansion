@@ -9,6 +9,7 @@ import json
 import os
 import subprocess
 import sys
+import re
 from pathlib import Path
 from types import ModuleType
 from typing import Any
@@ -27,7 +28,7 @@ if __name__ == "__main__":
     isolated_launcher._clear_ambient_execution_environment()
 
 from scripts.validation_ownership import reporter
-from scripts.validation_ownership.authority import AuthorityLoader, ENVIRONMENT, git_command
+from scripts.validation_ownership.authority import AuthorityLoader, ENVIRONMENT, git_command, relative_path
 from scripts.validation_ownership.budget import ProbeBudget
 from scripts.validation_ownership.graph_report import capture, inventory
 from scripts.validation_ownership.graph_commands import ROOT_RUNTIME_FILES
@@ -36,6 +37,13 @@ from scripts.validation_ownership.make_probe import ProbeSession
 
 TRUSTED_PREFIX = "scripts/validation_ownership/"
 BASE_STEP_MARKER = "    - name: Validate ownership with exact PR-base verifier\n"
+REVIEWED_REPOSITORY_RE = re.compile(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+")
+EXPECTED_MODES = ("exact-base-pinned", "foundation-introduction", "reviewed-evolution")
+AUTHORITY_BY_MODE = {
+    "exact-base-pinned": "exact-base",
+    "foundation-introduction": "explicit-introduction",
+    "reviewed-evolution": "reviewed-evolution",
+}
 TRUSTED_RUNTIME_PATHS = frozenset(
     {
         f"{TRUSTED_PREFIX}ci_gate.mk",
@@ -406,6 +414,163 @@ def _verify_oracle_pairs(
     )
 
 
+def _candidate_changed_paths(
+    repository_root: Path,
+    base_sha: str,
+    candidate_sha: str,
+    *,
+    budget: ProbeBudget,
+) -> list[str]:
+    completed = _git(
+        repository_root,
+        "diff",
+        "--name-only",
+        "--no-renames",
+        base_sha,
+        candidate_sha,
+        budget=budget,
+    )
+    if completed.returncode != 0:
+        raise reporter.OwnershipError("candidate change scope is unavailable")
+    paths = [relative_path(line) for line in completed.stdout.decode("utf-8").splitlines() if line]
+    if len(paths) != len(set(paths)):
+        raise reporter.OwnershipError("candidate change scope duplicates a path")
+    return sorted(paths)
+
+
+def _reviewed_evolution_selection(
+    repository: str | None,
+    pull_request: int | None,
+    changed_paths: list[str] | None,
+    changed_edge_ids: list[str] | None,
+) -> dict[str, Any]:
+    if not isinstance(repository, str) or not REVIEWED_REPOSITORY_RE.fullmatch(repository):
+        raise reporter.OwnershipError("reviewed evolution requires an exact repository/owner")
+    if type(pull_request) is not int or pull_request < 1:
+        raise reporter.OwnershipError("reviewed evolution requires a positive pull request number")
+    if (
+        not isinstance(changed_paths, list)
+        or not changed_paths
+        or changed_paths != sorted(set(changed_paths))
+    ):
+        raise reporter.OwnershipError("reviewed evolution requires a sorted exact changed path scope")
+    if (
+        not isinstance(changed_edge_ids, list)
+        or not changed_edge_ids
+        or changed_edge_ids != sorted(set(changed_edge_ids))
+        or any(not isinstance(edge_id, str) or not edge_id for edge_id in changed_edge_ids)
+    ):
+        raise reporter.OwnershipError("reviewed evolution requires a sorted exact changed edge scope")
+    return {
+        "repository": repository,
+        "pull_request": pull_request,
+        "changed_paths": changed_paths,
+        "changed_edge_ids": changed_edge_ids,
+    }
+
+
+def _reviewed_evolution_authority(
+    base_oracle: dict[str, Any],
+    base_graph: dict[str, Any],
+    base_model: dict[str, Any],
+    candidate_oracle: dict[str, Any],
+    candidate_graph: dict[str, Any],
+    candidate_model: dict[str, Any],
+) -> tuple[str, str, dict[str, Any]]:
+    base_pairs = reporter._measure(base_oracle, base_graph, base_model)
+    candidate_pairs = reporter._measure(candidate_oracle, candidate_graph, candidate_model)
+
+    def authority_records(
+        oracle: dict[str, Any],
+        selected_graph: dict[str, Any],
+        selected_model: dict[str, Any],
+    ) -> tuple[list[dict[str, Any]], set[str]]:
+        records = []
+        oracle_edge_ids = set()
+        for probe in oracle["probes"]:
+            if "expected_exclusion" in probe:
+                continue
+            owners = []
+            for expected_owner in sorted(
+                probe["expected_owners"],
+                key=lambda item: (item["edge_type"], item["evidence_id"]),
+            ):
+                matches = [
+                    edge
+                    for edge in selected_graph["edges"]
+                    if edge["source"] == probe["expected_surface"]
+                    and edge["type"] == expected_owner["edge_type"]
+                    and edge["target"] == expected_owner["evidence_id"]
+                ]
+                if len(matches) != 1:
+                    raise reporter.OwnershipError(
+                        "reviewed oracle owner pair does not resolve to one exact graph edge"
+                    )
+                evidence_id = expected_owner["evidence_id"]
+                authority = selected_model["authorities"].get(evidence_id)
+                if authority is None:
+                    raise reporter.OwnershipError(
+                        f"reviewed oracle owner {evidence_id!r} lacks resolved authority"
+                    )
+                owners.append(
+                    {
+                        "edge_id": matches[0]["id"],
+                        "edge_type": expected_owner["edge_type"],
+                        "evidence_id": evidence_id,
+                        "authority": authority,
+                    }
+                )
+                oracle_edge_ids.add(matches[0]["id"])
+            records.append(
+                {
+                    "path": probe["path"],
+                    "surface": probe["expected_surface"],
+                    "owners": owners,
+                }
+            )
+        owned_edge_ids = {
+            edge["id"]
+            for edge in selected_graph["edges"]
+            if edge["type"] != "depends-on"
+        }
+        missing = sorted(owned_edge_ids - oracle_edge_ids)
+        if missing:
+            raise reporter.OwnershipError(
+                f"reviewed oracle leaves owned edges unprobed: {missing}"
+            )
+        return records, oracle_edge_ids
+
+    base_records, base_oracle_edges = authority_records(base_oracle, base_graph, base_model)
+    candidate_records, candidate_oracle_edges = authority_records(
+        candidate_oracle, candidate_graph, candidate_model,
+    )
+    changed_authorities = {
+        node_id
+        for node_id in (set(base_model["authorities"]) | set(candidate_model["authorities"]))
+        if base_model["authorities"].get(node_id) != candidate_model["authorities"].get(node_id)
+    }
+    authority_edges = {
+        edge["id"]
+        for selected_graph in (base_graph, candidate_graph)
+        for edge in selected_graph["edges"]
+        if edge["target"] in changed_authorities
+    }
+    invalidation = reporter.compare_graph_edges(candidate_graph, base_graph, authority_edges)
+    uncovered = sorted(
+        set(invalidation["changed_edge_ids"]) - (base_oracle_edges | candidate_oracle_edges)
+    )
+    if uncovered:
+        raise reporter.OwnershipError(
+            "reviewed evolution leaves invalidated edges without oracle coverage: "
+            f"{uncovered}"
+        )
+    return (
+        hashlib.sha256(reporter.normalized_json(candidate_pairs["probes"])).hexdigest(),
+        hashlib.sha256(reporter.normalized_json(candidate_records)).hexdigest(),
+        invalidation,
+    )
+
+
 def verify(
     trusted_root: Path,
     repository_root: Path,
@@ -414,19 +579,30 @@ def verify(
     *,
     trusted_sha: str | None = None,
     expected_mode: str = "exact-base-pinned",
+    reviewed_repository: str | None = None,
+    reviewed_pull_request: int | None = None,
+    reviewed_paths: list[str] | None = None,
+    reviewed_edge_ids: list[str] | None = None,
 ) -> dict[str, Any]:
     budget = ProbeBudget()
     try:
         return _verify(
             trusted_root, repository_root, base_sha, candidate_sha,
-            trusted_sha=trusted_sha, expected_mode=expected_mode, budget=budget,
+            trusted_sha=trusted_sha,
+            expected_mode=expected_mode,
+            reviewed_repository=reviewed_repository,
+            reviewed_pull_request=reviewed_pull_request,
+            reviewed_paths=reviewed_paths,
+            reviewed_edge_ids=reviewed_edge_ids,
+            budget=budget,
         )
     finally:
         budget.close()
 
 
 def _verify(trusted_root, repository_root, base_sha, candidate_sha, *,
-            trusted_sha, expected_mode, budget):
+            trusted_sha, expected_mode, reviewed_repository, reviewed_pull_request,
+            reviewed_paths, reviewed_edge_ids, budget):
     trusted_root = trusted_root.resolve(strict=True)
     repository_root = reporter.validate_repository_root(repository_root, budget=budget)
     if repository_root == trusted_root:
@@ -465,15 +641,37 @@ def _verify(trusted_root, repository_root, base_sha, candidate_sha, *,
             "mode": base_mode,
             "reason": "exact base predates validation ownership authority",
         }
-    if expected_mode not in {"exact-base-pinned", "foundation-introduction"} or expected_mode != base_mode:
+    if expected_mode not in EXPECTED_MODES:
+        raise reporter.OwnershipError("verifier result mode differs from the independently expected mode")
+    if expected_mode == "reviewed-evolution":
+        if base_mode != "exact-base-pinned":
+            raise reporter.OwnershipError("reviewed evolution requires an exact-base authority")
+    elif expected_mode != base_mode:
         raise reporter.OwnershipError("verifier result mode differs from the independently expected mode")
     source_sha = base_sha if trusted_sha is None else _exact_commit(
         repository_root, trusted_sha, "trusted source SHA", budget=budget,
     )
     if base_mode == "exact-base-pinned" and source_sha != base_sha:
-        raise reporter.OwnershipError("exact-base verification requires exact BASE verifier source")
+        if expected_mode != "reviewed-evolution":
+            raise reporter.OwnershipError("exact-base verification requires exact BASE verifier source")
     if base_mode == "foundation-introduction" and trusted_sha is None:
         raise reporter.OwnershipError("graph introduction requires independently selected verifier source")
+    reviewed = None
+    candidate_changed_paths = _candidate_changed_paths(repository_root, base_sha, candidate_sha, budget=budget)
+    if expected_mode == "reviewed-evolution":
+        reviewed = _reviewed_evolution_selection(
+            reviewed_repository, reviewed_pull_request, reviewed_paths, reviewed_edge_ids,
+        )
+        if source_sha != candidate_sha:
+            raise reporter.OwnershipError(
+                "reviewed evolution requires the independently reviewed verifier source at the exact candidate SHA"
+            )
+        if candidate_changed_paths != reviewed["changed_paths"]:
+            raise reporter.OwnershipError("reviewed evolution path scope differs from the exact base/candidate diff")
+    elif any(value is not None for value in (
+        reviewed_repository, reviewed_pull_request, reviewed_paths, reviewed_edge_ids,
+    )):
+        raise reporter.OwnershipError("non-reviewed verification cannot declare reviewed evolution scope")
     runtime_root = _prepare_trusted_runtime_root(trusted_root)
     source_loader = capture(repository_root, source_sha, budget, scratch_root=runtime_root)
     base_loader = capture(repository_root, base_sha, budget, scratch_root=runtime_root)
@@ -484,43 +682,67 @@ def _verify(trusted_root, repository_root, base_sha, candidate_sha, *,
         path for path in trusted_paths
         if loader.entries.get(path) != source_loader.entries[path]
     )
-    if base_mode == "exact-base-pinned":
+    if expected_mode == "exact-base-pinned":
         _verify_base_step(loader, base_loader)
     entries = inventory(loader)
     with ProbeSession(loader, scratch_root=runtime_root, budget=budget,
                       runtime_files=ROOT_RUNTIME_FILES) as session:
         graph = loader.read_json(reporter.GRAPH_PATH, "candidate ownership graph")
-        schema = source_loader.read_json(reporter.SCHEMA_PATH, "trusted ownership schema")
-        oracle = source_loader.read_json(reporter.PROBE_ORACLE_PATH, "trusted ownership oracle")
-        reporter.validate_probe_oracle(oracle, graph, entries)
-        model = reporter.validate_graph(graph, schema, loader, entries, session=session)
+        candidate_schema = source_loader.read_json(reporter.SCHEMA_PATH, "trusted ownership schema")
+        candidate_oracle = source_loader.read_json(reporter.PROBE_ORACLE_PATH, "trusted ownership oracle")
+        reporter.validate_probe_oracle(candidate_oracle, graph, entries)
+        model = reporter.validate_graph(graph, candidate_schema, loader, entries, session=session)
         lifecycle = reporter.validate_executable_lifecycle(
-            repository_root, graph, session=session, schema=schema, oracle=oracle, model=model,
+            repository_root, graph, session=session, schema=candidate_schema, oracle=candidate_oracle, model=model,
         )
+        invalidation = {
+            "invalidated": False,
+            "reason": "comparison-not-requested",
+            "changed_edge_ids": [],
+        }
         if base_mode == "exact-base-pinned":
             with session.select_view(base_loader):
                 base_graph = base_loader.read_json(reporter.GRAPH_PATH, "BASE ownership graph")
-                reporter.validate_probe_oracle(oracle, base_graph, inventory(base_loader))
+                base_schema = base_loader.read_json(reporter.SCHEMA_PATH, "BASE ownership schema")
+                base_oracle = base_loader.read_json(reporter.PROBE_ORACLE_PATH, "BASE ownership oracle")
+                reporter.validate_probe_oracle(base_oracle, base_graph, inventory(base_loader))
                 base_model = reporter.validate_graph(
-                    base_graph, schema, base_loader, inventory(base_loader), session=session,
+                    base_graph, base_schema, base_loader, inventory(base_loader), session=session,
                 )
-            pairs, authorities = _verify_oracle_pairs(oracle, graph, model, base_graph, base_model)
+            if expected_mode == "reviewed-evolution":
+                pairs, authorities, invalidation = _reviewed_evolution_authority(
+                    base_oracle, base_graph, base_model, candidate_oracle, graph, model,
+                )
+                if not invalidation["invalidated"]:
+                    raise reporter.OwnershipError("reviewed evolution requires an actual authoritative graph change")
+                if invalidation["changed_edge_ids"] != reviewed["changed_edge_ids"]:
+                    raise reporter.OwnershipError(
+                        "reviewed evolution relationship scope differs from actual invalidation"
+                    )
+            else:
+                pairs, authorities = _verify_oracle_pairs(
+                    base_oracle, graph, model, base_graph, base_model,
+                )
         else:
-            measured = reporter._measure(oracle, graph, model)
+            measured = reporter._measure(candidate_oracle, graph, model)
             pairs = hashlib.sha256(reporter.normalized_json(measured["probes"])).hexdigest()
             authorities = hashlib.sha256(reporter.normalized_json(model["authorities"])).hexdigest()
         loaded_after = _verify_loaded_modules(trusted_root, source_loader)
         result = {
-            "authority": "exact-base" if base_mode == "exact-base-pinned" else "explicit-introduction",
+            "authority": AUTHORITY_BY_MODE[expected_mode],
             "base_sha": base_sha, "candidate_sha": candidate_sha, "trusted_sha": source_sha,
             "candidate_trusted_changes": candidate_changes,
+            "candidate_changed_paths": candidate_changed_paths,
             "coverage_paths": len(model["coverage"]), "evidence_authorities": len(model["authorities"]),
-            "mode": base_mode, "oracle_authority_sha256": authorities, "oracle_pairs_sha256": pairs,
+            "mode": expected_mode, "oracle_authority_sha256": authorities, "oracle_pairs_sha256": pairs,
             "trusted_modules": sorted(set(loaded_before) | set(loaded_after)),
             "trusted_package_files": len(trusted_paths),
             "runs": budget.runs, "states": budget.states, "processes": session.processes_used,
             "lifecycle": lifecycle,
+            "review_invalidation": invalidation,
         }
+        if reviewed is not None:
+            result["reviewed_evolution"] = reviewed
     return result
 
 
@@ -531,8 +753,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--base-sha", required=True)
     parser.add_argument("--candidate-sha", required=True)
     parser.add_argument("--trusted-sha")
-    parser.add_argument("--expected-mode", choices=("exact-base-pinned", "foundation-introduction"),
+    parser.add_argument("--expected-mode", choices=EXPECTED_MODES,
                         default="exact-base-pinned")
+    parser.add_argument("--reviewed-repository")
+    parser.add_argument("--reviewed-pull-request", type=int)
+    parser.add_argument("--reviewed-path", action="append", dest="reviewed_paths", default=None)
+    parser.add_argument("--reviewed-edge", action="append", dest="reviewed_edge_ids", default=None)
     return parser.parse_args()
 
 
@@ -545,6 +771,10 @@ def main() -> int:
             arguments.base_sha,
             arguments.candidate_sha,
             trusted_sha=arguments.trusted_sha, expected_mode=arguments.expected_mode,
+            reviewed_repository=arguments.reviewed_repository,
+            reviewed_pull_request=arguments.reviewed_pull_request,
+            reviewed_paths=arguments.reviewed_paths,
+            reviewed_edge_ids=arguments.reviewed_edge_ids,
         )
     except (OSError, ValueError, reporter.OwnershipError) as error:
         print(f"validation-ownership-base-verifier: {error}", file=sys.stderr)

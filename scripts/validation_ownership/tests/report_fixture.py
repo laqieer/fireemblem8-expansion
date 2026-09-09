@@ -33,10 +33,15 @@ class ReportFixture:
         self.add("Makefile", "validation-ownership-check:\n\t@true\n")
         self.add("src/data/table.json", '{"version":1}\n')
         self.add("scripts/generated_data/registry.py", (
+            "import json\nfrom pathlib import Path\n"
             "class Schema:\n"
-            " version=1\n default_source='src/data/table.json'\n"
+            " name='table'\n version=1\n default_source='src/data/table.json'\n"
             " default_hand_source=None\n default_inventory_path=None\n default_output_name='table.c'\n"
             " def dependencies(self): return ()\n def dependency_tables(self): return ()\n"
+            " def load_records(self, source):\n"
+            "  path=Path(source)\n"
+            "  return {'source_paths':[str(path)], 'records':[json.loads(path.read_text())]}\n"
+            " def manifest_record_count(self, records): return len(records['records'])\n"
             "class Registry:\n"
             " def all_names(self): return ('table',)\n"
             " def resolve(self,name): return Schema()\n"
@@ -143,3 +148,98 @@ class ReportFixture:
 
     def close(self):
         shutil.rmtree(self.directory)
+
+
+def reviewed_evolution_case(fixture: ReportFixture):
+    """Create one exact-head reviewed evolution with a new surface and authority."""
+    base = fixture.git("rev-parse", "HEAD").decode().strip()
+    path = "docs/reviewed_evolution.md"
+    fixture.add(path, "Reviewed evolution fixture path\n")
+    fixture.add(
+        "Makefile",
+        "validation-ownership-check:\n\t@true\nvalidation-ownership-reviewed:\n\t@true\n",
+    )
+    graph = reporter.load_json(fixture.root / reporter.GRAPH_PATH)
+    for node in graph["nodes"]:
+        if node["id"] == "owner.make":
+            node["authority"]["target"] = "validation-ownership-reviewed"
+            break
+    graph["artifact"]["executable_consumer"] = "validation-ownership-reviewed"
+    graph["nodes"].append(
+        {
+            "id": "surface.docs",
+            "kind": "surface",
+            "label": "Reviewed documentation surface",
+            "surface_type": "source",
+            "requirements": ["positive", "adversarial"],
+            "dependencies": [],
+        }
+    )
+    graph["edges"].extend(
+        (
+            {
+                "id": "docs.owns-test",
+                "type": "owns-test",
+                "source": "surface.docs",
+                "target": "owner.make",
+                "reason": "Reviewed documentation remains owned by the managed Make authority",
+            },
+            {
+                "id": "docs.adversarial-control",
+                "type": "adversarial-control",
+                "source": "surface.docs",
+                "target": "owner.case",
+                "reason": "Reviewed documentation keeps the exact adversarial control",
+            },
+        )
+    )
+    for rule in graph["path_rules"]:
+        if rule["id"] == "paths.source":
+            rule["exclude"].append({"kind": "exact", "path": path})
+            break
+    graph["path_rules"].append(
+        {
+            "id": "paths.docs",
+            "surface": "surface.docs",
+            "include": [{"kind": "exact", "path": path}],
+            "exclude": [],
+        }
+    )
+    fixture.add(reporter.GRAPH_PATH, json.dumps(graph))
+    oracle = reporter.load_json(fixture.root / reporter.PROBE_ORACLE_PATH)
+    oracle["probes"].append(
+        {
+            "path": path,
+            "expected_surface": "surface.docs",
+            "expected_owners": [
+                {"edge_type": "owns-test", "evidence_id": "owner.make"},
+                {"edge_type": "adversarial-control", "evidence_id": "owner.case"},
+            ],
+        }
+    )
+    oracle["seal"] = reporter._sha256(
+        reporter.PROBE_SEAL_DOMAIN, reporter.canonical_probe_oracle_payload(oracle),
+    )
+    fixture.add(reporter.PROBE_ORACLE_PATH, json.dumps(oracle))
+    head = fixture.commit("Reviewed evolution fixture")
+    return {
+        "base": base,
+        "head": head,
+        "reviewed_paths": sorted(
+            (
+                "Makefile",
+                reporter.GRAPH_PATH.as_posix(),
+                reporter.PROBE_ORACLE_PATH.as_posix(),
+                path,
+            )
+        ),
+        "reviewed_edges": sorted(
+            (
+                "docs.adversarial-control",
+                "docs.owns-test",
+                "schema.owns-test",
+                "source.adversarial-control",
+                "source.owns-test",
+            )
+        ),
+    }

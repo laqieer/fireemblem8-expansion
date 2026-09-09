@@ -1,8 +1,15 @@
 import copy
+from io import BytesIO
+import json
+import shutil
+import subprocess
+import tarfile
 import unittest
 
 from scripts.validation_ownership import ci_verifier, reporter
+from scripts.validation_ownership.authority import ENVIRONMENT
 from scripts.validation_ownership.budget import MakeProbeError
+from .report_fixture import ReportFixture, reviewed_evolution_case
 
 
 class BasePinnedVerifierTests(unittest.TestCase):
@@ -58,6 +65,133 @@ class BasePinnedVerifierTests(unittest.TestCase):
         changed["nodes"][1]["authority"]["target"] = "different"
         with self.assertRaisesRegex(MakeProbeError, "retargets"):
             ci_verifier._verify_oracle_pairs(oracle, changed, model, graph, model)
+
+
+class ReviewedEvolutionVerifierTests(unittest.TestCase):
+    def setUp(self):
+        self.fixture = ReportFixture()
+        self.addCleanup(self.fixture.close)
+
+    def trusted_root(self, revision):
+        trusted = self.fixture.directory / ("trusted-" + revision[:12])
+        trusted.mkdir()
+        with tarfile.open(fileobj=BytesIO(self.fixture.git("archive", revision))) as archive:
+            archive.extractall(trusted, filter="data")
+        return trusted
+
+    def verify(self, trusted, *arguments):
+        return subprocess.run(
+            [
+                "/usr/bin/python3",
+                "-I",
+                "-S",
+                "-B",
+                str(trusted / "scripts/validation_ownership/ci_verifier.py"),
+                "--trusted-root",
+                str(trusted),
+                "--repository-root",
+                str(self.fixture.root),
+                *arguments,
+            ],
+            cwd=trusted,
+            env=ENVIRONMENT,
+            capture_output=True,
+            text=True,
+            timeout=180,
+        )
+
+    def test_reviewed_evolution_accepts_exact_new_surface_and_authority_change(self):
+        case = reviewed_evolution_case(self.fixture)
+        trusted = self.trusted_root(case["head"])
+        self.addCleanup(lambda: trusted.exists() and shutil.rmtree(trusted))
+        completed = self.verify(
+            trusted,
+            "--base-sha",
+            case["base"],
+            "--candidate-sha",
+            case["head"],
+            "--trusted-sha",
+            case["head"],
+            "--expected-mode",
+            "reviewed-evolution",
+            "--reviewed-repository",
+            "owner/repository",
+            "--reviewed-pull-request",
+            "186",
+            *(item for path in case["reviewed_paths"] for item in ("--reviewed-path", path)),
+            *(item for edge_id in case["reviewed_edges"] for item in ("--reviewed-edge", edge_id)),
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        result = json.loads(completed.stdout)
+        self.assertEqual(result["authority"], "reviewed-evolution")
+        self.assertEqual(result["mode"], "reviewed-evolution")
+        self.assertEqual(result["trusted_sha"], case["head"])
+        self.assertEqual(result["candidate_changed_paths"], case["reviewed_paths"])
+        self.assertEqual(result["reviewed_evolution"]["repository"], "owner/repository")
+        self.assertEqual(result["reviewed_evolution"]["pull_request"], 186)
+        self.assertEqual(result["review_invalidation"], {
+            "invalidated": True,
+            "reason": "authoritative-graph-edge-change",
+            "changed_edge_ids": case["reviewed_edges"],
+        })
+
+    def test_exact_base_and_mismatched_reviewed_scope_reject_evolution(self):
+        case = reviewed_evolution_case(self.fixture)
+        trusted = self.trusted_root(case["head"])
+        base_trusted = self.trusted_root(case["base"])
+        self.addCleanup(lambda: trusted.exists() and shutil.rmtree(trusted))
+        self.addCleanup(lambda: base_trusted.exists() and shutil.rmtree(base_trusted))
+        strict = self.verify(
+            base_trusted,
+            "--base-sha",
+            case["base"],
+            "--candidate-sha",
+            case["head"],
+            "--trusted-sha",
+            case["base"],
+            "--expected-mode",
+            "exact-base-pinned",
+        )
+        self.assertNotEqual(strict.returncode, 0)
+        self.assertIn("leaves graph surfaces unprobed", strict.stderr)
+        wrong_paths = self.verify(
+            trusted,
+            "--base-sha",
+            case["base"],
+            "--candidate-sha",
+            case["head"],
+            "--trusted-sha",
+            case["head"],
+            "--expected-mode",
+            "reviewed-evolution",
+            "--reviewed-repository",
+            "owner/repository",
+            "--reviewed-pull-request",
+            "186",
+            *(item for path in case["reviewed_paths"][1:] for item in ("--reviewed-path", path)),
+            *(item for edge_id in case["reviewed_edges"] for item in ("--reviewed-edge", edge_id)),
+        )
+        self.assertNotEqual(wrong_paths.returncode, 0)
+        self.assertIn("path scope differs", wrong_paths.stderr)
+        wrong_edges = self.verify(
+            trusted,
+            "--base-sha",
+            case["base"],
+            "--candidate-sha",
+            case["head"],
+            "--trusted-sha",
+            case["head"],
+            "--expected-mode",
+            "reviewed-evolution",
+            "--reviewed-repository",
+            "owner/repository",
+            "--reviewed-pull-request",
+            "186",
+            *(item for path in case["reviewed_paths"] for item in ("--reviewed-path", path)),
+            *(item for edge_id in case["reviewed_edges"][:-1] for item in ("--reviewed-edge", edge_id)),
+        )
+        self.assertNotEqual(wrong_edges.returncode, 0)
+        self.assertIn("relationship scope differs", wrong_edges.stderr)
 
 
 if __name__ == "__main__":

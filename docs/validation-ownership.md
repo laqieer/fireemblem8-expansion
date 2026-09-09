@@ -572,7 +572,11 @@ whether verification ran. `coordinator_capture.validate_handoff` requires the
 existing #178 `coordinator-check` assignment and always calls the real
 standalone verifier through `capture_check`/`trusted_executor` before managed
 admission. The coordinator owns the trusted source/root, actual PR BASE,
-candidate/worktree and expected mode outside candidate control. The actual
+candidate/worktree and expected mode outside candidate control. For a reviewed
+graph evolution it also binds the exact repository/PR, changed tracked-path
+scope and invalidated relationship scope into the generated
+`ownership-reviewed-*` evidence ID, so changing the candidate, checker, or
+qualified scope invalidates the old local capture. The actual
 bounded process result, PID, exit and RSS are retained by the existing handoff
 contract. Missing, stale, failed or mismatched captures and candidate pass
 labels cannot grant acceptance.
@@ -583,9 +587,14 @@ the explicit `foundation-introduction` transition and needs independently
 selected immutable graph-verifier source. It reports `explicit-introduction`,
 not a fabricated BASE verifier or exact-base proof. Partial graph authority
 fails instead of downgrading. A complete graph BASE uses `exact-base-pinned`
-and exact BASE verifier source. Git remains the identity authority; no
-source ledger, new service, signer, privileged PR event or human approval is
-introduced.
+and exact BASE verifier source. A coordinator-qualified graph update may use
+`reviewed-evolution`: the trusted verifier source is the exact candidate SHA in
+a separate immutable tree, BASE and candidate each validate against their own
+immutable oracle, and the independently qualified changed path/edge scopes must
+match the actual Git diff and review invalidation exactly. Unreviewed exact-base
+retargets still fail, and a workflow-dispatch or PR-only N/A status alone is
+not that authority. Git remains the identity authority; no source ledger, new
+service, signer, privileged PR event or human approval is introduced.
 
 Domain-separated seals continue to cover the strict schema, probe oracle,
 complete graph, resolved edges, and live evidence-authority fingerprints.
