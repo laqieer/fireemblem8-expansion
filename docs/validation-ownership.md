@@ -26,6 +26,12 @@ lifecycle or public command. Registered native-tool results and generated Make
 include outputs must reach that shared observer through admitted APIs before
 this acceptance can pass; an older duplicate sandbox or fabricated empty
 command output is not a substitute.
+The primary-source discovery API from
+[#234 / #235](https://github.com/laqieer/fireemblem8-expansion/pull/235)
+is also a genuine prerequisite. It must be available in the actual selected
+BASE before directory-backed registry comparison is qualified. No CURRENT
+schema implementation is substituted into a historical BASE, and introducing
+the API does not claim that older trees already supplied it.
 The graph reads generated include bytes from the completed
 `MakeObservation.generated` result corresponding to the actual
 `MAKEFILE_LIST`. Resolving a registration does not execute its producer

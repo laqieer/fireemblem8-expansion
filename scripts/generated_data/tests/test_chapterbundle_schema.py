@@ -95,9 +95,11 @@ class ChapterBundleValidFixtureTests(unittest.TestCase):
             directory = Path(temporary)
             bundle = directory / "one_bundle.json"
             bundle.write_text("not valid JSON")
+            second = directory / "two_bundle.json"
+            second.write_text("not valid JSON either")
             (directory / "unrelated.json").write_text("also not valid JSON")
             schema = chapterbundle_schema.ChapterBundleTableSchema()
-            self.assertEqual(schema.source_paths(str(directory)), [str(bundle)])
+            self.assertEqual(schema.source_paths(str(directory)), [str(bundle), str(second)])
             with self.assertRaises(GeneratedDataError):
                 schema.load_records(str(directory))
             missing = directory / "missing.json"
