@@ -134,6 +134,10 @@ script and returns the prerequisite list.
   is resolved before changing directory, and the same normalized namespace is
   passed to the reporter. Relative roots, equals forms and accepted
   abbreviations cannot acquire a different meaning through a second parse.
+  The BASE-staging guard uses the existing parsed workflow structure to select
+  one verifier in `host-tests` and compare its full step and job context.
+  An inert or duplicate textual copy cannot stand in for that executed step;
+  independent coordinator invocation remains a separate mandatory boundary.
 
 Validate whole-repository coverage without selecting or running any owner:
 

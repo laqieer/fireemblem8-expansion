@@ -36,7 +36,8 @@ from scripts.validation_ownership.make_probe import ProbeSession
 
 
 TRUSTED_PREFIX = "scripts/validation_ownership/"
-BASE_STEP_MARKER = "    - name: Validate ownership with exact PR-base verifier\n"
+BASE_STEP_NAME = "Validate ownership with exact PR-base verifier"
+BASE_STEP_MARKER = f"    - name: {BASE_STEP_NAME}\n"
 REVIEWED_REPOSITORY_RE = re.compile(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+")
 EXPECTED_MODES = ("exact-base-pinned", "foundation-introduction", "reviewed-evolution")
 AUTHORITY_BY_MODE = {
@@ -226,14 +227,22 @@ def _verify_loaded_modules(
     return result
 
 
-def _base_step(text: str) -> str:
-    start = text.find(BASE_STEP_MARKER)
-    if start < 0:
+def _base_step(text: str) -> tuple:
+    try:
+        _, _, jobs = reporter.workflow_verify._parse_workflow_structure_text(text)
+    except ValueError as error:
+        raise reporter.OwnershipError(f"Build verifier staging authority is invalid: {error}") from error
+    matches = [
+        (job, context, role, fields)
+        for job, context, steps in jobs
+        for role, name, fields in steps
+        if name == BASE_STEP_NAME
+    ]
+    if len(matches) != 1 or matches[0][0] != "host-tests":
         raise reporter.OwnershipError(
-            "Build workflow lacks the exact PR-base verifier step"
+            "Build workflow requires one PR-base verifier in host-tests"
         )
-    end = text.find("\n    - name:", start + len(BASE_STEP_MARKER))
-    return text[start:] if end < 0 else text[start:end + 1]
+    return matches[0][1:]
 
 
 def _verify_base_step(

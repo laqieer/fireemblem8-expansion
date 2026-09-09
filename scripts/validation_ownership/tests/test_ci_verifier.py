@@ -1,6 +1,7 @@
 import copy
 from io import BytesIO
 import json
+from pathlib import Path
 import shutil
 import subprocess
 import tarfile
@@ -13,6 +14,30 @@ from .report_fixture import ReportFixture, reviewed_evolution_case
 
 
 class BasePinnedVerifierTests(unittest.TestCase):
+    def test_base_step_guard_rejects_inert_and_duplicate_decoys(self):
+        root = Path(__file__).resolve().parents[3]
+        text = (root / reporter.BUILD_WORKFLOW_PATH).read_text()
+        marker = ci_verifier.BASE_STEP_MARKER
+        start = text.index(marker)
+        end = text.index("\n    - name:", start + len(marker))
+        step = text[start:end + 1]
+        ci_verifier._base_step(text)
+        disabled = step.replace(marker, marker + "      if: false\n", 1)
+        decoy = "  ownership-decoy:\n    if: false\n    runs-on: ubuntu-latest\n    steps:\n" + step
+        for candidate in (
+            text.replace(step, disabled, 1).replace("  host-tests:\n", decoy + "  host-tests:\n", 1),
+            text.replace(step, step + step, 1),
+        ):
+            with self.subTest(candidate=candidate[:120]), self.assertRaises(MakeProbeError):
+                ci_verifier._base_step(candidate)
+
+    def test_base_step_guard_ignores_nonsemantic_yaml_comments(self):
+        root = Path(__file__).resolve().parents[3]
+        text = (root / reporter.BUILD_WORKFLOW_PATH).read_text()
+        marker = ci_verifier.BASE_STEP_MARKER
+        changed = text.replace(marker, marker + "      # Same executed step mapping.\n", 1)
+        self.assertEqual(ci_verifier._base_step(text), ci_verifier._base_step(changed))
+
     def test_base_mode_distinguishes_bootstrap_foundation_and_partial_authority(self):
         self.assertEqual(ci_verifier._base_authority_mode({}), "bootstrap-not-authoritative")
         foundation = {

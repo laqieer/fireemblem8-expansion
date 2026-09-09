@@ -3181,6 +3181,9 @@ game behavior needs a compensating change.
    Invoke the actual launcher/reporter from the repository's parent using
    both absolute and relative repository-root arguments. Require the same
    complete report coverage; a symlink root must still reject before payload.
+   Prepend an inert copied verifier step while disabling the real host step,
+   then duplicate the verifier within its host job. The structural staging
+   guard must reject both, while a nonsemantic YAML comment remains stable.
 7. For the focused A/V correction, run
    `python3 -m unittest scripts.validation_ownership.tests.test_reporter.AssetOwnershipTests`.
    Inspect positive title/package selections, incorrect runtime-owner and
