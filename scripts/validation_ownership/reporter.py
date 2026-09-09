@@ -2253,6 +2253,20 @@ def edge_declaration_records(graph: dict[str, Any]) -> list[dict[str, Any]]:
     return sorted(records, key=lambda item: item.get("id", ""))
 
 
+def exclusion_declaration_records(graph: dict[str, Any]) -> list[dict[str, Any]]:
+    records = []
+    for exclusion in graph.get("exclusions", []):
+        if not isinstance(exclusion, dict):
+            continue
+        record = dict(exclusion)
+        record["include"] = sorted(
+            exclusion.get("include", []),
+            key=normalized_json,
+        )
+        records.append(record)
+    return sorted(records, key=lambda record: record.get("id", ""))
+
+
 def compare_graph_edges(
     current: dict[str, Any],
     prior: dict[str, Any] | None,
@@ -2326,6 +2340,13 @@ def compare_graph_edges(
             and isinstance(edge.get("id"), str)
         )
     changed.extend(authority_changed_edge_ids)
+    if exclusion_declaration_records(current) != exclusion_declaration_records(prior):
+        changed.extend(
+            edge.get("id")
+            for graph in (current, prior)
+            for edge in graph.get("edges", [])
+            if isinstance(edge, dict) and isinstance(edge.get("id"), str)
+        )
     changed = sorted(set(changed))
     return {
         "invalidated": bool(changed),

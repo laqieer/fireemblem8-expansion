@@ -3127,7 +3127,11 @@ game behavior needs a compensating change.
    owners, remove dependents, replace targets with stale identities, introduce
    symlink/gitlink modes, replace every scratch path component with an external
    symlink, retarget an oracle owner to another live workflow step, and
-   disconnect each lifecycle trigger. Confirm outside sentinels survive and no
+   disconnect each lifecycle trigger. Add, remove, and change a valid
+   fail-closed external-enforcement exclusion without changing path rules or
+   owner edges; every existing edge must invalidate. Reordering exclusions,
+   selectors, or JSON keys with equal semantics must remain stable. Confirm
+   outside sentinels survive and no
    external directory is created. Confirm direct
    GNU Make comparisons cover all 112 live CLI domains from the parsed
    `.github/validation-ownership-make-dynamics.json` prerequisite model

@@ -256,3 +256,29 @@ def reviewed_evolution_case(fixture: ReportFixture):
         ),
         "affected_consumers": ["surface.docs", "surface.schema", "surface.source"],
     }
+
+
+def reviewed_exclusion_case(fixture: ReportFixture):
+    """Create an exact-head exclusion-only evolution with no path-rule or owner edit."""
+    base = fixture.git("rev-parse", "HEAD").decode().strip()
+    path = "external-policy.txt"
+    fixture.add(path, "External enforcement policy\n")
+    graph = reporter.load_json(fixture.root / reporter.GRAPH_PATH)
+    graph["exclusions"].append(
+        {
+            "id": "exclude.external-policy",
+            "include": [{"kind": "exact", "path": path}],
+            "reason": "Controlled external enforcement exclusion",
+            "fail_closed": True,
+            "applies_to": "external-enforcement",
+        }
+    )
+    fixture.add(reporter.GRAPH_PATH, json.dumps(graph))
+    head = fixture.commit("Reviewed exclusion evolution fixture")
+    return {
+        "base": base,
+        "head": head,
+        "reviewed_paths": sorted((reporter.GRAPH_PATH.as_posix(), path)),
+        "reviewed_edges": sorted(edge["id"] for edge in graph["edges"]),
+        "affected_consumers": ["surface.schema", "surface.source"],
+    }

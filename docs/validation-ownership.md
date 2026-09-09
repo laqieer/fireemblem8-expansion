@@ -162,7 +162,14 @@ script and returns the prerequisite list.
 - [`.github/validation-ownership-make-dynamics.json`](../.github/validation-ownership-make-dynamics.json)
   is the sealed allowlist for reachable shell-derived Make dependencies. Each
   expression binds tracked tools, input files/variables, automatic inputs,
-  optional nonexecuting resolved values, and exact evidence owners.
+  optional nonexecuting resolved values, and exact evidence owners. Its
+  expressions and command patterns are confined execution-admission contracts,
+  not a second inventory of validation gates. Authoritative GNU Make emits the
+  actual expanded command; exactly one sealed pattern must select a typed
+  adapter, which then validates its argv and source closure before execution.
+  Merely observing an arbitrary candidate command cannot grant it execution
+  authority, and this registry never selects, skips, or narrows a validation
+  gate.
 - [`scripts/validation_ownership/reporter.py`](../scripts/validation_ownership/reporter.py)
   enumerates tracked paths through trusted Git, resolves live authorities,
   emits canonical JSON, and verifies that execution did not change Git state.
@@ -254,8 +261,11 @@ structures. Review invalidation reports only edge IDs whose endpoint, type,
 owner, target authority, path mapping, or referenced target/job semantics
 changed. A semantic change to the schema or the independently sealed oracle
 invalidates every current edge, even when the graph declarations and owner
-fingerprints remain unchanged. JSON whitespace and object-key serialization
-changes with equal parsed values do not invalidate review.
+fingerprints remain unchanged. Adding, removing, or semantically changing a
+fail-closed exclusion likewise invalidates every existing edge: exclusion
+authority is part of whole-tree admission even when no oracle probe names the
+new exclusion. Exclusion-list, selector-list, JSON whitespace, and object-key
+reordering with equal parsed semantics do not invalidate review.
 
 The closed edge families are:
 

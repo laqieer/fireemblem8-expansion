@@ -170,6 +170,77 @@ class GraphReportTests(unittest.TestCase):
         self.assertFalse(result["review_invalidation"]["invalidated"])
         self.assertEqual(result["review_invalidation"]["changed_edge_ids"], [])
 
+    def test_added_removed_and_changed_exclusions_invalidate_all_edges(self):
+        graph_path = self.fixture.root / reporter.GRAPH_PATH
+        path = "external-policy.txt"
+        exclusion = {
+            "id": "exclude.external-policy",
+            "include": [{"kind": "exact", "path": path}],
+            "reason": "Controlled external enforcement exclusion",
+            "fail_closed": True,
+            "applies_to": "external-enforcement",
+        }
+
+        base = self.fixture.git("rev-parse", "HEAD").decode().strip()
+        self.fixture.add(path, "External enforcement policy\n")
+        graph = json.loads(graph_path.read_text())
+        graph["exclusions"].append(exclusion)
+        graph_path.write_text(json.dumps(graph))
+        self.fixture.commit("Add external exclusion")
+        self.assert_all_edges_invalidated(base)
+
+        base = self.fixture.git("rev-parse", "HEAD").decode().strip()
+        (self.fixture.root / path).unlink()
+        graph = json.loads(graph_path.read_text())
+        graph["exclusions"] = []
+        graph_path.write_text(json.dumps(graph))
+        self.fixture.commit("Remove external exclusion")
+        self.assert_all_edges_invalidated(base)
+
+        self.fixture.add(path, "External enforcement policy\n")
+        graph["exclusions"] = [exclusion]
+        graph_path.write_text(json.dumps(graph))
+        self.fixture.commit("Restore external exclusion")
+        base = self.fixture.git("rev-parse", "HEAD").decode().strip()
+        graph["exclusions"][0]["reason"] = "Changed external enforcement reason"
+        graph_path.write_text(json.dumps(graph))
+        self.fixture.commit("Change external exclusion")
+        self.assert_all_edges_invalidated(base)
+
+    def test_exclusion_and_selector_reordering_does_not_invalidate(self):
+        graph_path = self.fixture.root / reporter.GRAPH_PATH
+        for path in ("external-a.txt", "external-b.txt", "external-c.txt"):
+            self.fixture.add(path, path + "\n")
+        graph = json.loads(graph_path.read_text())
+        graph["exclusions"] = [
+            {
+                "id": "exclude.external-ab",
+                "include": [
+                    {"kind": "exact", "path": "external-a.txt"},
+                    {"kind": "exact", "path": "external-b.txt"},
+                ],
+                "reason": "Controlled paired external exclusion",
+                "fail_closed": True,
+                "applies_to": "external-enforcement",
+            },
+            {
+                "id": "exclude.external-c",
+                "include": [{"kind": "exact", "path": "external-c.txt"}],
+                "reason": "Controlled single external exclusion",
+                "fail_closed": True,
+                "applies_to": "external-enforcement",
+            },
+        ]
+        graph_path.write_text(json.dumps(graph))
+        base = self.fixture.commit("Add reorderable exclusions")
+        graph["exclusions"].reverse()
+        graph["exclusions"][1]["include"].reverse()
+        graph_path.write_text(json.dumps(graph, indent=1, sort_keys=True))
+        self.fixture.commit("Reorder exclusion serialization")
+        result = self.run_report(base_revision=base, lifecycle=False)
+        self.assertFalse(result["review_invalidation"]["invalidated"])
+        self.assertEqual(result["review_invalidation"]["changed_edge_ids"], [])
+
     def test_unknown_current_path_cannot_be_admitted_by_prefix(self):
         self.fixture.add("src/foo.c", "int unknown;\n")
         self.fixture.commit("Add unadmitted source")

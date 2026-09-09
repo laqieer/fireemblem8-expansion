@@ -10,7 +10,7 @@ import unittest
 from scripts.validation_ownership import ci_verifier, reporter
 from scripts.validation_ownership.authority import ENVIRONMENT
 from scripts.validation_ownership.budget import MakeProbeError
-from .report_fixture import ReportFixture, reviewed_evolution_case
+from .report_fixture import ReportFixture, reviewed_evolution_case, reviewed_exclusion_case
 
 
 class BasePinnedVerifierTests(unittest.TestCase):
@@ -254,6 +254,51 @@ class ReviewedEvolutionVerifierTests(unittest.TestCase):
         )
         self.assertNotEqual(wrong_consumers.returncode, 0)
         self.assertIn("consumer scope differs", wrong_consumers.stderr)
+
+    def test_exclusion_evolution_rejects_strict_default_and_invalidates_all_edges(self):
+        case = reviewed_exclusion_case(self.fixture)
+        base_trusted = self.trusted_root(case["base"])
+        reviewed_trusted = self.fixture.directory / ("trusted-exclusion-" + case["head"][:12])
+        reviewed_trusted.mkdir()
+        with tarfile.open(fileobj=BytesIO(self.fixture.git("archive", case["head"]))) as archive:
+            archive.extractall(reviewed_trusted, filter="data")
+        self.addCleanup(lambda: base_trusted.exists() and shutil.rmtree(base_trusted))
+        self.addCleanup(lambda: reviewed_trusted.exists() and shutil.rmtree(reviewed_trusted))
+        strict = self.verify(
+            base_trusted,
+            "--base-sha",
+            case["base"],
+            "--candidate-sha",
+            case["head"],
+            "--trusted-sha",
+            case["base"],
+            "--expected-mode",
+            "exact-base-pinned",
+        )
+        self.assertNotEqual(strict.returncode, 0)
+        self.assertIn("retargets exact-base oracle authority", strict.stderr)
+        reviewed = self.verify(
+            reviewed_trusted,
+            "--base-sha",
+            case["base"],
+            "--candidate-sha",
+            case["head"],
+            "--trusted-sha",
+            case["head"],
+            "--expected-mode",
+            "reviewed-evolution",
+            "--reviewed-repository",
+            "owner/repository",
+            "--reviewed-pull-request",
+            "186",
+            *(item for path in case["reviewed_paths"] for item in ("--reviewed-path", path)),
+            *(item for edge_id in case["reviewed_edges"] for item in ("--reviewed-edge", edge_id)),
+            *(item for consumer_id in case["affected_consumers"]
+              for item in ("--reviewed-consumer", consumer_id)),
+        )
+        self.assertEqual(reviewed.returncode, 0, reviewed.stderr)
+        result = json.loads(reviewed.stdout)
+        self.assertEqual(result["review_invalidation"]["changed_edge_ids"], case["reviewed_edges"])
 
 
 if __name__ == "__main__":
