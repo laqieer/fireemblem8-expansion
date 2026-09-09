@@ -32,6 +32,81 @@ MODERN_DIRECTORY_CONTRACTS = {
     "modern-libgcc-directory": "-print-libgcc-file-name",
     "modern-libc-directory": "-print-file-name=libc.a",
 }
+FIND_DIRECTORY_BODY = r"""
+import ctypes
+import errno
+import fnmatch
+import os
+import stat
+import sys
+
+BUFFER_SIZE = 4096
+GETDENTS64 = 217
+DT_UNKNOWN = 0
+DT_DIR = 4
+DT_REG = 8
+libc = ctypes.CDLL(None, use_errno=True)
+libc.syscall.restype = ctypes.c_long
+
+
+def entries(descriptor, path):
+    buffer = ctypes.create_string_buffer(BUFFER_SIZE)
+    while True:
+        ctypes.set_errno(0)
+        count = libc.syscall(
+            ctypes.c_long(GETDENTS64), ctypes.c_int(descriptor),
+            ctypes.c_void_p(ctypes.addressof(buffer)), ctypes.c_size_t(BUFFER_SIZE),
+        )
+        if count < 0:
+            error = ctypes.get_errno()
+            raise OSError(error, os.strerror(error), path)
+        if count == 0:
+            return
+        if count > BUFFER_SIZE:
+            raise OSError(errno.EIO, "oversized getdents64 result", path)
+        data = buffer.raw[:count]
+        offset = 0
+        while offset < count:
+            if count - offset < 20:
+                raise OSError(errno.EIO, "truncated getdents64 record", path)
+            length = int.from_bytes(data[offset + 16:offset + 18], "little")
+            if length < 20 or length > count - offset:
+                raise OSError(errno.EIO, "invalid getdents64 record length", path)
+            record = data[offset:offset + length]
+            end = record.find(b"\0", 19)
+            if end <= 19:
+                raise OSError(errno.EIO, "unterminated getdents64 name", path)
+            name = record[19:end].decode("utf-8", "strict")
+            kind = record[18]
+            offset += length
+            if name not in {".", ".."}:
+                yield name, kind
+
+
+def visit(path):
+    descriptor = os.open(
+        path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC,
+    )
+    try:
+        for name, kind in entries(descriptor, path):
+            child = path + "/" + name
+            if kind == DT_UNKNOWN:
+                mode = os.stat(name, dir_fd=descriptor, follow_symlinks=False).st_mode
+                directory = stat.S_ISDIR(mode)
+                regular = stat.S_ISREG(mode)
+            else:
+                directory = kind == DT_DIR
+                regular = kind == DT_REG
+            if directory:
+                visit(child)
+            elif regular and fnmatch.fnmatchcase(name, sys.argv[2]):
+                print(child)
+    finally:
+        os.close(descriptor)
+
+
+visit(sys.argv[1])
+"""
 
 
 def python_import_directories(code):
@@ -496,18 +571,8 @@ class MakeCommands:
                 root, *(str(parent) for path in sources for parent in PurePosixPath(path).parents
                         if str(parent) != "."),
             })
-            body = (
-                "import fnmatch,os,sys\n"
-                "def visit(path):\n"
-                "    with os.scandir(path) as entries:\n"
-                "        for entry in entries:\n"
-                "            if entry.is_dir(follow_symlinks=False): visit(entry.path)\n"
-                "            elif entry.is_file(follow_symlinks=False) and "
-                "fnmatch.fnmatchcase(entry.name,sys.argv[2]): print(entry.path)\n"
-                "visit(sys.argv[1])"
-            )
             return Command(
-                (PYTHON, "-I", "-S", "-B", "-c", body, root, pattern),
+                (PYTHON, "-I", "-S", "-B", "-c", FIND_DIRECTORY_BODY, root, pattern),
                 sources=sources, directories=tuple(directories),
             )
         if tokens[:2] == ["mkdir", "-p"] and contract["id"] in {

@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 from dataclasses import replace
+import os
 from pathlib import Path
 import secrets
 import shlex
@@ -12,11 +13,12 @@ import unittest
 from unittest import mock
 
 from scripts.validation_ownership.authority import (
-    AuthorityLoader, ENVIRONMENT, GitTreeEntries, GitTreeEntry, git_tree_entries,
+    AuthorityLoader, ENVIRONMENT, GitTreeEntries, GitTreeEntry, encoded, git_tree_entries,
 )
 from scripts.validation_ownership.budget import MakeProbeError, ProbeBudget
 from scripts.validation_ownership.graph_commands import (
-    CODE_PREFIXES, ROOT_RUNTIME_FILES, MakeCommands, asset_discovery_command,
+    CODE_PREFIXES, FIND_DIRECTORY_BODY, ROOT_RUNTIME_FILES, MakeCommands,
+    asset_discovery_command,
 )
 from scripts.validation_ownership import make_probe
 from scripts.validation_ownership.make_probe import Command, ProbeSession
@@ -347,6 +349,204 @@ class GraphCommandTests(unittest.TestCase):
             self.assertEqual(len(actual.semantics["dynamic_commands"]), 1)
             self.assertTrue(actual.events)
             self.assertTrue(all(event["match"] == 0 for event in actual.events))
+
+    def test_registered_find_matches_real_find_with_nested_unicode_and_multiple_batches(self):
+        descriptors = set(os.listdir("/proc/self/fd"))
+        paths = [
+            "texts/a.txt",
+            "texts/empty/nonmatching.bin",
+            "texts/nested/deep.txt",
+            "texts/nested/ignored.md",
+            "texts/nested/" + "x" * 240 + ".txt",
+            "texts/日本語.txt",
+            *(f"texts/many/{index:03d}.txt" for index in range(256)),
+        ]
+        for path in sorted(paths):
+            self.add(path, path + "\n")
+        command = 'find texts -type f -name "*.txt"'
+        contract = next(
+            item for item in self.contracts.values()
+            if item["id"] == "legacy-text-source-discovery"
+        )
+        self.add("Makefile", (
+            "TEXT_DIR := texts\n"
+            f"TEXTS := {contract['expression']}\n"
+            "all: ;\n"
+        ))
+        ordinary = subprocess.run(
+            ["/usr/bin/find", "texts", "-type", "f", "-name", "*.txt"],
+            cwd=self.root, env={**ENVIRONMENT, "TMPDIR": str(self.directory)},
+            capture_output=True, check=True, timeout=15,
+        ).stdout
+        with self.session() as probe:
+            commands = MakeCommands(probe, {contract["expression"]: contract})
+            registration = commands[command]
+            result = probe.command(registration)
+            self.assertEqual(result.stdout, ordinary)
+            self.assertEqual(result.consumed, registration.sources)
+            unknown_types = Command(
+                (
+                    *registration.argv[:5],
+                    registration.argv[5].replace(
+                        "kind = record[18]", "kind = DT_UNKNOWN",
+                    ),
+                    *registration.argv[6:],
+                ),
+                sources=registration.sources, directories=registration.directories,
+            )
+            fallback = probe.command(unknown_types)
+            self.assertEqual(fallback.stdout, ordinary)
+            self.assertEqual(fallback.consumed, registration.sources)
+            records = [record for record in result.metadata if record[0] == 217]
+            self.assertTrue(records)
+            self.assertTrue(all(record[4] == 4096 for record in records))
+            self.assertTrue(all(
+                len(record[7]) == len(record[8]) == 2 * record[4]
+                for record in records
+            ))
+            root_batches = [
+                record for record in records
+                if record[1] == "/repo/texts/many" and record[6] > 0
+            ]
+            self.assertGreater(len(root_batches), 1)
+            self.assertIn("texts/日本語.txt\n".encode(), result.stdout)
+            self.assertNotIn(b"nonmatching.bin", result.stdout)
+            self.assertNotIn(b"ignored.md", result.stdout)
+            observed = probe.make("all", variables=("TEXTS",), commands=commands)
+            self.assertEqual(
+                observed.semantics["domains"]["TEXTS"]["value"],
+                " ".join(ordinary.decode().splitlines()),
+            )
+            self.assertEqual(len(observed.semantics["dynamic_commands"]), 1)
+        self.assertIsNone(probe.base)
+        self.assertFalse(probe.budget.children)
+        self.assertEqual(set(os.listdir("/proc/self/fd")), descriptors)
+
+    def test_registered_find_reduces_actual_directory_observation_traffic(self):
+        self.add("Makefile", "all: ;\n")
+        for index in range(21):
+            path = f"texts/d{index:02d}/entry.txt"
+            self.add(path, path + "\n")
+        command = 'find texts -type f -name "*.txt"'
+        contract = next(
+            item for item in self.contracts.values()
+            if item["id"] == "legacy-text-source-discovery"
+        )
+        scandir_body = (
+            "import fnmatch,os,sys\n"
+            "def visit(path):\n"
+            "    with os.scandir(path) as entries:\n"
+            "        for entry in entries:\n"
+            "            if entry.is_dir(follow_symlinks=False): visit(entry.path)\n"
+            "            elif entry.is_file(follow_symlinks=False) and "
+            "fnmatch.fnmatchcase(entry.name,sys.argv[2]): print(entry.path)\n"
+            "visit(sys.argv[1])"
+        )
+        observations = {}
+        for name in ("scandir", "getdents4096"):
+            with self.session() as probe:
+                registration = MakeCommands(
+                    probe, {contract["expression"]: contract},
+                )[command]
+                selected = registration if name == "getdents4096" else Command(
+                    ("/usr/bin/python3", "-I", "-S", "-B", "-c",
+                     scandir_body, "texts", "*.txt"),
+                    sources=registration.sources, directories=registration.directories,
+                )
+                before = probe.budget.bytes.get("control", 0)
+                result = probe.command(selected)
+                observations[name] = {
+                    "output": result.stdout,
+                    "control": probe.budget.bytes["control"] - before,
+                    "metadata": result.metadata,
+                }
+            self.assertIsNone(probe.base)
+            self.assertFalse(probe.budget.children)
+        self.assertEqual(observations["getdents4096"]["output"],
+                         observations["scandir"]["output"])
+        old_records = [
+            record for record in observations["scandir"]["metadata"] if record[0] == 217
+        ]
+        new_records = [
+            record for record in observations["getdents4096"]["metadata"]
+            if record[0] == 217
+        ]
+        self.assertEqual(len(old_records), 44)
+        self.assertEqual(len(new_records), 44)
+        self.assertTrue(all(record[4] == 32768 for record in old_records))
+        self.assertTrue(all(record[4] == 4096 for record in new_records))
+        for records in (old_records, new_records):
+            self.assertTrue(all(
+                len(record[7]) == len(record[8]) == 2 * record[4]
+                for record in records
+            ))
+        old_control = observations["scandir"]["control"]
+        new_control = observations["getdents4096"]["control"]
+        self.assertLessEqual(2 * new_control, old_control)
+        self.assertLess(
+            len(encoded(observations["getdents4096"]["metadata"])),
+            len(encoded(observations["scandir"]["metadata"])) // 2,
+        )
+
+    def test_registered_find_rejects_escaping_missing_and_nonregular_roots(self):
+        self.add("Makefile", "all: ;\n")
+        contract = next(
+            item for item in self.contracts.values()
+            if item["id"] == "legacy-text-source-discovery"
+        )
+        with self.session() as probe:
+            with self.assertRaisesRegex(MakeProbeError, "exactly one sealed domain"):
+                MakeCommands(probe, {contract["expression"]: contract})[
+                    'find ../texts -type f -name "*.txt"'
+                ]
+        self.assertIsNone(probe.base)
+        for shape, expected in (
+            ("missing", "directory declaration is absent"),
+            ("nonregular", "nonregular source namespace"),
+        ):
+            if shape == "nonregular":
+                self.add("texts", "target", mode="120000")
+                (self.root / "texts").unlink()
+                (self.root / "texts").symlink_to("target")
+            command = 'find texts -type f -name "*.txt"'
+            with self.session() as probe:
+                registration = MakeCommands(
+                    probe, {contract["expression"]: contract},
+                )[command]
+                with self.assertRaisesRegex(MakeProbeError, expected):
+                    probe.command(registration)
+            self.assertIsNone(probe.base)
+            self.assertFalse(probe.budget.children)
+
+    def test_registered_find_does_not_follow_nonregular_descendants(self):
+        self.add("Makefile", "all: ;\n")
+        self.add("texts/regular.txt", "regular\n")
+        self.add("outside.txt", "outside\n")
+        self.add("texts/link.txt", "../outside.txt", mode="120000")
+        link = self.root / "texts/link.txt"
+        link.unlink()
+        link.symlink_to("../outside.txt")
+        ordinary = subprocess.run(
+            ["/usr/bin/find", "texts", "-type", "f", "-name", "*.txt"],
+            cwd=self.root, env={**ENVIRONMENT, "TMPDIR": str(self.directory)},
+            capture_output=True, check=True, timeout=15,
+        )
+        self.assertEqual(ordinary.stdout, b"texts/regular.txt\n")
+        contract = next(
+            item for item in self.contracts.values()
+            if item["id"] == "legacy-text-source-discovery"
+        )
+        command = 'find texts -type f -name "*.txt"'
+        with self.session() as probe:
+            registration = MakeCommands(
+                probe, {contract["expression"]: contract},
+            )[command]
+            with self.assertRaisesRegex(
+                MakeProbeError, "nonregular namespace in source enumeration",
+            ):
+                probe.command(registration)
+        self.assertIsNone(probe.base)
+        self.assertFalse(probe.budget.children)
 
     @unittest.skipUnless(shutil.which("arm-none-eabi-gcc"), "requires arm-none-eabi-gcc")
     def test_modern_toolchain_directory_queries_match_ordinary_shell_and_make(self):
