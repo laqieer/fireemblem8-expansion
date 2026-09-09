@@ -89,6 +89,21 @@ inode identities. Mapping labels, pathname claims, syscall ordering and a
 "first source read" phase flag are not authority. These bounded observations
 spend the same metadata budget.
 
+For the matching executable mapping, the file offset must have bounded procfs
+hexadecimal syntax, fit the supported signed file-offset range and be
+page-aligned. Mapping start plus that offset locates the stopped two-byte
+syscall instruction in the nominated image. The supervisor opens the already
+resolved image without following a replacement final symlink, checks the real
+opened object's device/inode and regular-file type, bounds the span by its
+size, reads only those instruction bytes, and revalidates the same descriptor.
+The bytes must match the stopped instruction. No whole-image snapshot,
+content-hash ledger or additional privilege is involved.
+
+Malformed offsets, beyond-image spans and inconsistent valid-image
+attributions are explicit consistency failures. Their regression controls
+inject mapping records in owned tests; they do not claim that candidate C can
+forge procfs or defeat the kernel, which remains a trusted boundary.
+
 A source-level `__has_include("/etc/ld.so.cache")` cannot reuse the loader's
 capsule absence. That lookup comes from cc1/libc, not the loader, and rejects
 even when the kernel would genuinely return `ENOENT`. No errno is changed.
@@ -220,7 +235,9 @@ approval or restoration source.
 The purpose regression retains the ordinary-present/confined-absent cache
 counterexample after a real `before.h` read, an old path-only-rule mutation,
 actual loader/specs status controls, and late admitted-runtime/directory
-positives. Malformed runtime listings use a neutral shared diagnostic and
+positives. Controlled offset/image substitutions and an exact old-offset
+mutation cover the bounded instruction-span verification separately from
+the actual source-cache defect. Malformed runtime listings use a neutral shared diagnostic and
 remain terminal with zero candidate payloads for both Make and D callers;
 the former Make-specific label was not a separate authority defect.
 

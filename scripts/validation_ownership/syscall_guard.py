@@ -1012,6 +1012,42 @@ class Policy:
         ):
             raise Violation("dependency executable differs from its verified image")
 
+    def verify_dependency_mapping_span(self, image, start, end, raw_offset, ip, instruction):
+        if not re.fullmatch(rb"[0-9a-fA-F]{1,16}", raw_offset):
+            raise Violation("dependency mapping offset is malformed")
+        offset = int(raw_offset, 16)
+        maximum = (1 << 63) - 1
+        if offset > maximum or offset % os.sysconf("SC_PAGE_SIZE"):
+            raise Violation("dependency mapping offset is outside the supported range")
+        if not 0 <= start <= ip - len(instruction) < ip < end <= 1 << 64:
+            raise Violation("dependency instruction span escapes its mapping")
+        position = offset + ip - len(instruction) - start
+        if not 0 <= position <= maximum - len(instruction):
+            raise Violation("dependency instruction offset is outside the supported range")
+        path = Path(self.config["root"]) / image.lstrip("/")
+        try:
+            descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC)
+            with os.fdopen(descriptor, "rb") as source:
+                self.charge_metadata(144)
+                before = os.fstat(source.fileno())
+                if not stat.S_ISREG(before.st_mode) or (
+                    before.st_dev, before.st_ino
+                ) != self.dependency_image_ids[image]:
+                    raise Violation("opened dependency mapping image has a different identity")
+                if position > before.st_size - len(instruction):
+                    raise Violation("dependency instruction span exceeds its runtime image")
+                self.charge_metadata(len(instruction))
+                actual = os.pread(source.fileno(), len(instruction), position)
+                self.charge_metadata(144)
+                after = os.fstat(source.fileno())
+                fields = ("st_dev", "st_ino", "st_mode", "st_size", "st_mtime_ns", "st_ctime_ns")
+                if any(getattr(before, field) != getattr(after, field) for field in fields):
+                    raise Violation("dependency mapping image changed during its bounded read")
+                if actual != instruction:
+                    raise Violation("dependency mapped instruction differs from its runtime image")
+        except OSError as error:
+            raise Violation("dependency runtime instruction span is unavailable") from error
+
     def dependency_negative_purpose(self, state, path, operation):
         if state.dependency_stop is None or state.dependency_image not in self.config["dependency"]["executables"]:
             raise Violation("dependency negative probe has no verified syscall context")
@@ -1030,7 +1066,8 @@ class Policy:
         ):
             raise Violation("dependency negative probe lost its actual syscall-entry stop")
         self.charge_metadata(2)
-        if memory(pid, ip - 2, 2) != b"\x0f\x05":
+        instruction = memory(pid, ip - 2, 2)
+        if instruction != b"\x0f\x05":
             raise Violation("dependency negative probe has an unsupported syscall instruction")
         self.verify_dependency_image(pid, state.dependency_image)
         with open(f"/proc/{pid}/maps", "rb") as source:
@@ -1038,7 +1075,7 @@ class Policy:
         self.charge_metadata(len(data))
         if len(data) > SYSCALL_MEMORY_LIMIT:
             raise Violation("dependency syscall mapping exceeds the observation bound")
-        origin = None
+        origin = mapping = None
         for line in data.splitlines():
             fields = line.split(None, 5)
             if len(fields) < 5:
@@ -1053,6 +1090,7 @@ class Policy:
                 if fields[1] != b"r-xp" or inode <= 0 or origin is not None:
                     raise Violation("dependency syscall origin is not one readonly executable image")
                 origin = os.makedev(major, minor), inode
+                mapping = start, end, fields[2]
         if origin is None:
             raise Violation("dependency syscall origin has no executable mapping")
         for image in (self.dependency_interpreter, self.dependency_libc):
@@ -1071,7 +1109,14 @@ class Policy:
                 self.dependency_image_ids[self.dependency_libc],
             }
         )
-        return loader or driver
+        if loader:
+            image = self.dependency_interpreter
+        elif driver:
+            image = state.dependency_image if origin == self.dependency_image_ids[state.dependency_image] else self.dependency_libc
+        else:
+            return False
+        self.verify_dependency_mapping_span(image, *mapping, ip, instruction)
+        return True
 
     def dependency_runtime_access(self, state, path, operation):
         full = Path(self.config["root"]) / path.lstrip("/")

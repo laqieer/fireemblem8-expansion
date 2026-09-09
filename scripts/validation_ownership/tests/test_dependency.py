@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+import os
 import shlex
 import subprocess
 import unittest
@@ -436,6 +437,140 @@ class DependencyTests(unittest.TestCase):
                         else:
                             self.assertEqual(session.command(command).generated[0].data, self.ordinary(command))
                     self.assert_clean(session)
+
+    def mapping_offset_model(self, kind, raw_offset=b"0", *, old_behavior=False):
+        body = ""
+        if old_behavior:
+            body += (
+                "import ast,inspect,textwrap\n"
+                "tree=ast.parse(textwrap.dedent(inspect.getsource(guard.Policy.dependency_negative_purpose)))\n"
+                "class OldOffsetBehavior(ast.NodeTransformer):\n"
+                " def visit_Expr(self,node):\n"
+                "  value=node.value\n"
+                "  if isinstance(value,ast.Call) and isinstance(value.func,ast.Attribute) and value.func.attr=='verify_dependency_mapping_span':\n"
+                "   return ast.copy_location(ast.Pass(),node)\n"
+                "  return self.generic_visit(node)\n"
+                "namespace={}\n"
+                "exec(compile(ast.fix_missing_locations(OldOffsetBehavior().visit(tree)),'owned-old-offset-mutation','exec'),guard.__dict__,namespace)\n"
+                "guard.Policy.dependency_negative_purpose=namespace['dependency_negative_purpose']\n"
+            )
+        body += (
+            "import io\npurpose,original_open=guard.Policy.dependency_negative_purpose,open\n"
+            "current=None;recorded=False\n"
+            "def scoped(self,state,path,operation):\n"
+            " global current\n current=(self,state,path)\n"
+            " try: return purpose(self,state,path,operation)\n"
+            " finally: current=None\n"
+            "def modeled(name,*args,**kwargs):\n"
+            " global recorded\n stream=original_open(name,*args,**kwargs)\n"
+            " if current is None or not str(name).startswith('/proc/') or not str(name).endswith('/maps'): return stream\n"
+            " policy,state,path=current\n late='before.h' in policy.code_consumed\n"
+            f" if path!='/etc/ld.so.cache' or ({kind!r}=='wrong-image' and not late): return stream\n"
+            " with stream: data=stream.read(guard.SYSCALL_MEMORY_LIMIT+1)\n"
+            " pid,number,ip=state.dependency_stop;lines=[]\n"
+            " for line in data.splitlines():\n"
+            "  fields=line.split(None,5);start,end=(int(x,16) for x in fields[0].split(b'-'))\n"
+            "  if start<=ip-2<ip<end:\n"
+            f"   if {kind!r}=='wrong-image':\n"
+            "    device,inode=policy.dependency_image_ids[policy.dependency_interpreter]\n"
+            "    fields[3]=('%x:%x'%(os.major(device),os.minor(device))).encode();fields[4]=str(inode).encode()\n"
+            "    info=(Path(policy.config['root'])/policy.dependency_interpreter.lstrip('/')).stat()\n"
+            "    if not recorded:\n"
+            "     print('MAPPING_OFFSET_MODEL='+json.dumps({'implied_offset':int(fields[2],16)+ip-2-start,'image_size':info.st_size,'source_read':late,'actual_executable':state.dependency_image}),file=sys.stderr)\n"
+            "     recorded=True\n"
+            f"   else: fields[2]={raw_offset!r}\n"
+            "  lines.append(b' '.join(fields))\n"
+            " return io.BytesIO(b'\\n'.join(lines)+b'\\n')\n"
+            "guard.Policy.dependency_negative_purpose=scoped;guard.open=modeled\n"
+        )
+        return self.purpose_supervisor(body)
+
+    def test_mapping_offset_models_reject_malformed_out_of_range_and_beyond_image(self):
+        command = self.purpose_fixture()
+        self.fixture.add("query.c", '#include "before.h"\n#include "present.h"\n')
+        for offset, expected in (
+            (b"not-hex", "offset is malformed"),
+            (b"-1", "offset is malformed"),
+            (b"+1000", "offset is malformed"),
+            (b"0x1000", "offset is malformed"),
+            (b"10000000000000000", "offset is malformed"),
+            (b"8000000000000000", "outside the supported range"),
+            (b"00000001", "outside the supported range"),
+            (b"7ffffffffffff000", "outside the supported range"),
+            (b"4000000000000000", "span exceeds its runtime image"),
+        ):
+            with self.subTest(controlled_mapping_offset=offset):
+                with self.mapping_offset_model("offset", offset):
+                    with self.fixture.session(seconds=45) as session:
+                        with self.assertRaisesRegex(MakeProbeError, expected):
+                            session.command(command)
+                    self.assert_clean(session)
+
+    def test_valid_wrong_image_mapping_model_cannot_restore_the_source_cache_mismatch(self):
+        command = self.purpose_fixture()
+        self.assertIn(b"present.h", self.ordinary(command))
+        with self.mapping_offset_model("wrong-image"):
+            with self.fixture.session(seconds=45) as session:
+                with self.assertRaisesRegex(MakeProbeError, "span exceeds its runtime image"):
+                    session.command(command)
+            self.assert_clean(session)
+        for kind, offset in (("offset", b"not-hex"), ("wrong-image", b"0")):
+            with self.subTest(restore_old_offset_behavior=kind):
+                if kind == "offset":
+                    self.fixture.add("query.c", '#include "before.h"\n#include "present.h"\n')
+                else:
+                    command = self.purpose_fixture()
+                with self.mapping_offset_model(kind, offset, old_behavior=True):
+                    with self.fixture.session(seconds=45) as session:
+                        result = session.command(command)
+                        self.assertEqual(result.executed, session.dependency_compiler)
+                        if kind == "wrong-image":
+                            self.assertEqual(result.generated[0].data, b"query.o: query.c before.h absent.h\n")
+                            prefix = b"MAPPING_OFFSET_MODEL="
+                            record = json.loads(next(line[len(prefix):] for line in result.stderr.splitlines() if line.startswith(prefix)))
+                            self.assertTrue(record["source_read"])
+                            self.assertGreater(record["implied_offset"], record["image_size"])
+                            self.assertEqual(record["actual_executable"], session.dependency_compiler[1])
+                        else:
+                            self.assertEqual(result.generated[0].data, self.ordinary(command))
+                    self.assert_clean(session)
+
+    def test_instruction_span_revalidates_real_opened_objects_bytes_and_descriptor_cleanup(self):
+        from scripts.validation_ownership.syscall_guard import Violation
+
+        image = self.fixture.directory / "runtime-image"
+        other = self.fixture.directory / "other-image"
+        image.write_bytes(b"\x0f\x05")
+        other.write_bytes(b"\x0f\x05")
+        policy = self.fixture.observation_policy(mode="compile")
+        info = image.stat()
+        policy.dependency_image_ids = {"/runtime-image": (info.st_dev, info.st_ino)}
+        arguments = ("/runtime-image", 0x1000, 0x2000, b"00000000", 0x1002, b"\x0f\x05")
+        policy.verify_dependency_mapping_span(*arguments)
+        actual_open, descriptors = os.open, []
+        def replaced(path, flags, *args, **kwargs):
+            descriptor = actual_open(other if Path(path) == image else path, flags, *args, **kwargs)
+            descriptors.append(descriptor)
+            return descriptor
+        with patch.object(os, "open", replaced):
+            with self.assertRaisesRegex(Violation, "different identity"):
+                policy.verify_dependency_mapping_span(*arguments)
+        self.assertTrue(descriptors)
+        for descriptor in descriptors:
+            with self.assertRaises(OSError):
+                os.fstat(descriptor)
+        image.write_bytes(b"\x90\x90")
+        with self.assertRaisesRegex(Violation, "mapped instruction differs"):
+            policy.verify_dependency_mapping_span(*arguments)
+        image.write_bytes(b"\x0f\x05")
+        actual_read = os.pread
+        def changed(descriptor, size, position):
+            image.write_bytes(b"")
+            return actual_read(descriptor, size, position)
+        with patch.object(os, "pread", changed):
+            with self.assertRaisesRegex(Violation, "changed during its bounded read"):
+                policy.verify_dependency_mapping_span(*arguments)
+        self.assertLess(policy.observation_bytes, policy.config["observation_limit"])
 
     def test_late_admitted_runtime_and_explicit_directory_capabilities_remain_valid(self):
         libc = self.compiler_path("-print-file-name=libc.so.6")

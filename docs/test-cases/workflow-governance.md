@@ -4563,6 +4563,16 @@ workflow or generated game data is needed.
     dependency callers. Both must fail terminally before candidate payload
     execution with owned cleanup. A shared diagnostic is not proof of a new
     source-authority defect.
+18. In the owned mapping-record models, replace the matching mapping offset
+    with malformed, unsupported-range, unaligned and beyond-image values.
+    Require rejection while retaining the actual PID, stopped instruction
+    and executable. Substitute a valid interpreter device/inode into the late
+    libc mapping record: its implied instruction position must fit that image
+    and match its bounded file bytes, not merely its pathname or identity.
+    Restore only the old omission of offset/span verification and require the
+    modeled acceptance/mismatch to reappear. Separately use actual owned file
+    descriptors to reject a substituted object, wrong instruction bytes and
+    a file changed during the bounded read, with descriptor cleanup.
 
 ### Expected result
 
@@ -4578,6 +4588,9 @@ unreported input or a falsely successful missing-header branch.
 Negative exceptions additionally require verified executable/mapping purpose
 at the actual stopped syscall, while late admitted runtime-file access and
 explicit directory capabilities remain valid.
+The matching map's bounded file offset and instruction span are checked
+against the revalidated opened runtime image. Kernel/procfs remains trusted;
+this is bounded consistency verification, not a general hostile-kernel claim.
 
 ### Negative control and retained evidence
 
@@ -4605,6 +4618,14 @@ the error was using loader absence as a source-level fact after `before.h`.
 The purpose correction rejects that source probe while preserving bootstrap
 negatives. Admitted runtime files after source reads and explicit directory
 declarations remain by design, not additional defects.
+
+The unmodified `bba829e5d8081c5bcb0170ca3dbc0c31862d9e0d` purpose guard rejects
+the real cache-source mismatch. Its narrower mapping-consistency controls
+accepted malformed/impossible offsets, and an injected valid-image identity
+at a late libc IP implied offset `1159843` beyond a `236616`-byte nominated
+interpreter. Those measured values are historical fault-injection evidence;
+the tests derive current mapping/image values rather than pinning a distro
+version or claiming a candidate-C/kernel exploit.
 
 ### Interactions and save compatibility
 
