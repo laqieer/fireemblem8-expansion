@@ -595,6 +595,30 @@ class GateTests(unittest.TestCase):
         self.assertFalse(assessment["dispatchable"])
         self.assertIn("exact-local-handoff", assessment["missing"])
 
+    def test_legacy_reviewed_evidence_cannot_become_ordinary_delegated_readiness(self):
+        fixture_type = GitFixture
+
+        def legacy_fixture():
+            fixture = fixture_type(assign=False)
+            evidence = "ownership-reviewed-" + "0" * 16
+            fixture.assignment["required_checks"] = {
+                "validation-ownership": {"contract": "git-diff-check", "evidence_id": evidence, "inputs": []},
+            }
+            fixture.assignment["acceptance_criteria"]["case-one"]["evidence_ids"] = [evidence]
+            fixture.entry = handoff.assign(fixture.state, fixture.assignment)
+            return fixture
+
+        legacy = GateTests()
+        self.addCleanup(legacy.doCleanups)
+        with patch(__name__ + ".GitFixture", side_effect=legacy_fixture):
+            legacy.setUp()
+        self.assertTrue(legacy.fixture.entry["validation"]["handoff_ready"])
+        self.assertNotIn("local_validation", legacy.record)
+        self.assertFalse(gate._local_ready(legacy.state, legacy.pr, legacy.record))
+        self.assertFalse(legacy.assess()["dispatchable"])
+        self.assertIn("exact-local-handoff", legacy.assess()["missing"])
+        self.assertTrue(gate._local_ready(self.state, self.pr, self.record))
+
     def test_unrelated_live_base_movement_does_not_cancel_a_candidate(self):
         from scripts.workflow_pilot.trusted_review_gate import GitTree, ReviewTools
         root = self.fixture.repository

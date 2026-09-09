@@ -338,7 +338,8 @@ unknown, multiple rule/exclusion matches are ambiguous, and a prefix-only
 new path lacks semantic admission. All three are errors. Admission is checked
 for whole-tree coverage before Make-authority execution and again when
 resolving a current path; successful resolutions report the admission kind.
-Every exact path-rule selector, in either the include or exclude role, must
+Every exact path-rule selector, in either the include or exclude role, and
+every exact top-level exclusion selector must
 name a current captured-tree member or an explicitly admitted generated-source
 member. Deleting that member without removing the selector is a stale ownership
 target and rejects even when no oracle probe names the path. Prefix selectors
@@ -701,6 +702,12 @@ remain explicit in the qualification and verifier selection; the digests only
 give the bounded review scope an identity and are not source-content ledgers,
 truncation, sampling, or independent authority. The same builder validates the
 live session/report/lease/ownership scope and the persisted record. That
+scope is delivered before review, not reconstructed from hashes afterward:
+`reviewed_evolution_context` supplies the complete explicit selection and
+repository/PR/BASE/head/worktree/checker identity to `ReviewSession.begin`.
+The existing request-byte bound applies, and the native task observation must
+carry the same dispatched context before it can become the immutable lease/
+report binding. A missing or different context cannot qualify any scope. That
 qualification is stored with `candidate.local_validation`, joined back to the
 actual candidate record and capture assignment, and included in the generated
 `ownership-reviewed-*` evidence ID. A candidate field, copied result, mode
@@ -738,6 +745,11 @@ If a live qualification is supplied but the candidate has no coordinator-owned
 `local_validation`, delegated handoff readiness cannot substitute for the
 qualified ownership capture. Ordinary delegated candidates with no reviewed
 qualification retain their existing readiness path.
+Reviewed capture assignments must contain the exact qualification record;
+the ordinary delegation schema cannot strip it into unqualified acceptance.
+Legacy delegated ownership checks bearing a reviewed evidence identity are
+held from delegated-only readiness even if the live argument is omitted.
+That identity can block a stale record, never grant review authority.
 
 The exact-base verifier owns one private `.validation-ownership-runtime`
 workspace inside its immutable trusted source root. Its captured parent,

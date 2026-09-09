@@ -420,6 +420,15 @@ Supplying the live qualification also requires `candidate.local_validation`;
 the ordinary delegated-handoff fallback is not a qualified capture and is
 therefore ineligible in that case. With no reviewed qualification, valid
 delegated handoffs preserve their existing readiness behavior.
+Before review starts, the coordinator passes the bounded explicit ownership
+context through `ReviewSession.begin(..., context=...)`, including the complete
+arrays and immutable candidate/checker/worktree identities. The native runtime
+must return its actual dispatched context observation; mismatches or missing
+context reject before qualification. The lease/report retain a canonical
+immutable copy under the existing request-byte limit.
+Reviewed ownership capture also requires its exact qualification record.
+Legacy reviewed-labelled delegations cannot use ordinary delegated readiness
+when that live coordinator-local binding is absent.
 
 Every registered check must finish successfully at the same head/base/worktree.
 Each observation retains the complete registered definition set, so changing,

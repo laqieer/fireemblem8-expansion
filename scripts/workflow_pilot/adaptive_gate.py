@@ -1387,7 +1387,13 @@ def _local_ready(state, pr, record, review_qualification=None):
         return False
     if "local_validation" in record:
         return coordinator_local_ready(state, record, pr, review_qualification)
-    if review_qualification is not None:
+    from scripts.validation_ownership.coordinator_capture import REVIEWED_EVIDENCE_PREFIX
+
+    if review_qualification is not None or any(
+        entry["assignment"]["required_checks"].get(OWNERSHIP_CHECK_ID, {}).get(
+            "evidence_id", "",
+        ).startswith(REVIEWED_EVIDENCE_PREFIX) for entry in delegated
+    ):
         return False
     for entry in delegated:
         if (entry["validation"]["result_sha"] == pr.head_sha

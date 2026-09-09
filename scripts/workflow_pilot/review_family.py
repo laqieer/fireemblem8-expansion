@@ -35,6 +35,16 @@ class ReviewError(ValueError):
     pass
 
 
+def encoded_review_context(value):
+    require(isinstance(value, dict), "review context must be an object")
+    try:
+        encoded = json.dumps(value, sort_keys=True, separators=(",", ":"), allow_nan=False)
+    except (TypeError, ValueError, RecursionError) as error:
+        raise ReviewError("review context is not bounded JSON data") from error
+    require(len(encoded.encode("utf-8")) <= MAX_REQUEST_BYTES, "review context exceeds request bound")
+    return encoded
+
+
 def require(condition: bool, message: str) -> None:
     if not condition:
         raise ReviewError(message)
@@ -307,6 +317,7 @@ class _ReviewReport:
     findings: tuple[Finding, ...]
     started_at: str
     completed_at: str
+    context: str | None = None
 
 
 @dataclass
@@ -398,6 +409,7 @@ class ReviewLease:
     max_files: int
     finished: bool = False
     outcome: str | None = None
+    context: str | None = None
 
 
 class ReviewOwnership:
@@ -460,7 +472,7 @@ class ReviewSession:
         self.rounds = RoundState()
         self.accepted: dict[str, Finding] = {}
 
-    def begin(self, runtime, owner: str, *, duration=1200, max_files=MAX_REVIEW_FILES):
+    def begin(self, runtime, owner: str, *, duration=1200, max_files=MAX_REVIEW_FILES, context=None):
         require(self.lease is None, "duplicate or overlapping reviewer ownership")
         require(isinstance(owner, str) and bool(owner.strip())
                 and owner not in {self.coordinator, self.implementer},
@@ -468,14 +480,19 @@ class ReviewSession:
         require(type(duration) is int and 0 < duration <= MAX_REVIEW_SECONDS
                 and type(max_files) is int and 0 < max_files <= MAX_REVIEW_FILES,
                 "invalid review bounds")
+        binding = None if context is None else encoded_review_context(context)
         if self.owners is not None:
             self.owners.reserve(self)
         try:
-            task = runtime.start(
+            request = dict(
                 role="code-review", owner=owner, candidate=self.head,
                 subjects=tuple(sorted(self.scope)), actions=tuple(sorted(READ_ACTIONS)),
                 duration=duration, max_files=max_files, max_findings=MAX_FINDINGS,
             )
+            if binding is not None:
+                request["context"] = json.loads(binding)
+                encoded_review_context(request)
+            task = runtime.start(**request)
             require(isinstance(task, str) and bool(task.strip()),
                     "runtime task identity must be a nonblank string")
         except Exception:
@@ -484,7 +501,7 @@ class ReviewSession:
             raise
         started = self.clock()
         self.lease = ReviewLease(task, owner, self.head, self.scope,
-                                 started, started + duration, max_files)
+                                 started, started + duration, max_files, context=binding)
         return task
 
     def read_action(self, action: str, *args):
@@ -509,6 +526,9 @@ class ReviewSession:
                 and result.role == "code-review" and result.head == lease.head
                 and frozenset(result.subjects) == lease.scope
                 and type(result.completed) is bool, "wrong or stale runtime task observation")
+        if lease.context is not None:
+            require(encoded_review_context(getattr(result, "context", None)) == lease.context,
+                    "runtime review context differs from the dispatched request")
         return result
 
     def _retire(self, result, outcome):
@@ -567,7 +587,8 @@ class ReviewSession:
             frozenset(result.actions), result.files,
             tuple(Finding(item.id, item.subject, item.family, item.member,
                           item.origin, item.source_path, item.review_id) for item in findings),
-            getattr(result, "started_at", None), getattr(result, "completed_at", None))
+            getattr(result, "started_at", None), getattr(result, "completed_at", None),
+            context=lease.context)
         require(self._retire(report, "completed") == "completed", "review exceeded duration bound")
         self.local_findings = {finding.id: finding for finding in report.findings}
         self.report = report

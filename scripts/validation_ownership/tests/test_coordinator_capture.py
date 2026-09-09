@@ -1,4 +1,5 @@
 from io import BytesIO
+import copy
 from dataclasses import replace
 from datetime import datetime, timezone
 import json
@@ -14,6 +15,7 @@ from scripts.validation_ownership.coordinator_capture import (
     VerifierExpectation,
     capture,
     qualify_reviewed_evolution,
+    reviewed_evolution_context,
     reviewed_evolution_scope,
     trusted_executor,
 )
@@ -189,7 +191,11 @@ class ReviewedEvolutionCaptureTests(unittest.TestCase):
         runtime.result.files = len(paths) + 2
         for key, value in (session_changes or {}).items():
             setattr(runtime.result, key, value)
-        session.begin(runtime, "independent-reviewer")
+        context = reviewed_evolution_context(
+            checker_revision, paths, edges, consumers, repository=pr.repository,
+            pull_request=pr.number, base_sha=pr.base_sha, candidate_sha=head, worktree=self.fixture.root,
+        )
+        session.begin(runtime, "independent-reviewer", context=context)
         session.finish(runtime)
         tools = ReviewTools(GitTree(self.fixture.root, checker_revision), self.fixture.root)
         qualification = qualify_reviewed_evolution(
@@ -283,6 +289,68 @@ class ReviewedEvolutionCaptureTests(unittest.TestCase):
         self.assertEqual(captured["evidence_id"], expected.evidence_id())
         self.assertGreater(captured["pid"], 0)
         self.assertEqual(captured["parent_sha"], record["base_sha"])
+
+    def test_explicit_review_context_is_delivered_before_qualification(self):
+        started = []
+        original = Runtime.start
+
+        def observe(runtime, **arguments):
+            started.append(copy.deepcopy(arguments))
+            return original(runtime, **arguments)
+
+        with patch.object(Runtime, "start", new=observe):
+            state, record, pr, _, session, qualification, _ = self.coordinator()
+        self.assertIn("context", started[0])
+        context = started[0]["context"]
+        self.assertEqual(context["changed_paths"], list(qualification.changed_paths))
+        self.assertEqual(context["changed_edge_ids"], list(qualification.changed_edge_ids))
+        self.assertEqual(context["affected_consumers"], list(qualification.affected_consumers))
+        self.assertEqual(context["checker_revision"], qualification.checker_revision)
+        self.assertEqual(context["repository"], pr.repository)
+        self.assertEqual(context["candidate_sha"], pr.head_sha)
+        self.assertEqual(context["worktree"], str(self.fixture.root))
+        self.assertEqual(json.loads(session.lease.context), context)
+        self.assertEqual(json.loads(session.report.context), context)
+        qualification.validate_binding(state, record, pr)
+        session.report = replace(session.report, context=None)
+        with self.assertRaisesRegex(MakeProbeError, "explicit review context"):
+            qualification.validate_binding(state, record, pr)
+
+    def test_reviewed_capture_requires_exact_assignment_record(self):
+        _, _, pr, _, _, qualification, expected = self.coordinator()
+        for marker in ("missing", None, {}):
+            entry = {"assignment": {
+                "repository": pr.repository, "pull_request": pr.number,
+                "allowed_worktree": str(self.fixture.root),
+                "assigned_parent_sha": self.case["base"],
+                "max_lifetime_seconds": 300,
+                "required_checks": {CHECK_ID: expected.check_definition()},
+            }, "checks": []}
+            if marker != "missing":
+                entry["assignment"]["review_qualification"] = marker
+            with self.subTest(marker=marker):
+                with self.assertRaisesRegex(MakeProbeError, "assignment"):
+                    capture(entry, expected)
+                self.assertEqual(entry["checks"], [])
+
+    def test_review_context_rejects_missing_or_changed_runtime_observation(self):
+        original = Runtime.read
+        for missing in (True, False):
+            def observe(runtime, task):
+                result = copy.copy(original(runtime, task))
+                if missing:
+                    del result.context
+                else:
+                    result.context = {**result.context, "changed_paths": ["wrong/path"]}
+                return result
+            with self.subTest(missing=missing), patch.object(Runtime, "read", new=observe):
+                with self.assertRaisesRegex(ValueError, "context"):
+                    self.coordinator()
+        runtime = Runtime(self.case["head"], frozenset({"scope"}))
+        session = review.ReviewSession("coordinator", "implementer", frozenset({"scope"}), self.case["head"])
+        with self.assertRaisesRegex(ValueError, "request bound"):
+            session.begin(runtime, "reviewer", context={"oversized": "x" * review.MAX_REQUEST_BYTES})
+        self.assertEqual(runtime.calls, [])
 
     def test_local_validation_consumes_the_shared_reviewed_evolution_executor(self):
         state, record, pr, _, session, qualification, expected = self.coordinator()

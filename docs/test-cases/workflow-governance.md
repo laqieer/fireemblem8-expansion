@@ -3143,6 +3143,10 @@ game behavior needs a compensating change.
    explains the deletion from the validated BASE model. Prefix selectors need
    not match a current member, and valid generated-source selectors remain
    admitted. Confirm
+   that exact external-enforcement and gitlink exclusions also reject when
+   their current target disappears. Removing stale CURRENT exclusion metadata
+   repairs whole-tree validation without weakening explicit BASE fail-closed
+   deleted-path explanations. Confirm
    outside sentinels survive and no
    external directory is created. Confirm direct
    GNU Make comparisons cover all 112 live CLI domains from the parsed
@@ -3228,6 +3232,12 @@ game behavior needs a compensating change.
    it remains ready without reviewed qualification, but supplying an actual
    live qualification must produce `exact-local-handoff` and deny dispatch
    until the coordinator-owned qualified capture exists.
+   Observe the actual review start request: it must contain the complete
+   explicit path/edge/consumer sets and immutable identities, not only hashes.
+   Missing or changed native context observations must reject. Remove the
+   qualification marker from a reviewed capture assignment and exercise a
+   legacy reviewed-labelled delegation without a live object: neither can
+   become ordinary delegated readiness.
 7. For the focused A/V correction, run
    `python3 -m unittest scripts.validation_ownership.tests.test_reporter.AssetOwnershipTests`.
    Inspect positive title/package selections, incorrect runtime-owner and

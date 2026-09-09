@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
+import copy
 from pathlib import Path
 import shutil
 import subprocess
@@ -49,6 +50,8 @@ class Runtime:
 
     def start(self, **arguments):
         self.calls.append(("start", arguments))
+        if "context" in arguments:
+            self.result.context = copy.deepcopy(arguments["context"])
         return self.result.task
 
     def read(self, task):

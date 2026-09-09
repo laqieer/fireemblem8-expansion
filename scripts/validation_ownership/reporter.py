@@ -1940,6 +1940,14 @@ def _path_admission(path: str, rule: dict[str, Any], sources: dict[str, set[str]
     )
 
 
+def _stale_exact_selector(selector, entries, generated_paths):
+    return (
+        selector["kind"] == "exact"
+        and selector["path"] not in entries
+        and selector["path"] not in generated_paths
+    )
+
+
 def _validate_semantics(
     graph: dict[str, Any],
     loader: AuthorityLoader,
@@ -2106,11 +2114,7 @@ def _validate_semantics(
             )
         for role in ("include", "exclude"):
             for selector in rule[role]:
-                if (
-                    selector["kind"] == "exact"
-                    and selector["path"] not in entries
-                    and selector["path"] not in generated_paths
-                ):
+                if _stale_exact_selector(selector, entries, generated_paths):
                     raise OwnershipError(
                         f"path rule {rule['id']!r} has stale exact {role} "
                         f"selector {selector['path']!r}"
@@ -2121,6 +2125,12 @@ def _validate_semantics(
         if exclusion["id"] in exclusion_ids or exclusion["id"] in rule_ids:
             raise OwnershipError(f"duplicate exclusion {exclusion['id']!r}")
         exclusion_ids.add(exclusion["id"])
+        for selector in exclusion["include"]:
+            if _stale_exact_selector(selector, entries, generated_paths):
+                raise OwnershipError(
+                    f"exclusion {exclusion['id']!r} has stale exact exclusion "
+                    f"selector {selector['path']!r}"
+                )
 
     coverage = {}
     for path, entry in sorted(entries.items()):

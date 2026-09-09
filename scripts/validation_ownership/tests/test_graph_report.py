@@ -433,6 +433,25 @@ class GraphReportTests(unittest.TestCase):
         with self.assertRaisesRegex(MakeProbeError, "missing owner"):
             self.run_report()
 
+    def test_stale_external_exclusion_rejects_and_base_remains_fail_closed(self):
+        case = report_fixture.reviewed_exclusion_case(self.fixture)
+        base = case["head"]
+        self.run_report(lifecycle=False)
+        (self.fixture.root / "external-policy.txt").unlink()
+        self.fixture.commit("Delete the excluded current source only")
+        with self.assertRaisesRegex(MakeProbeError, "stale exact exclusion"):
+            self.run_report(base_revision=base, lifecycle=False)
+        path = self.fixture.root / reporter.GRAPH_PATH
+        graph = json.loads(path.read_text())
+        graph["exclusions"] = []
+        path.write_text(json.dumps(graph))
+        self.fixture.commit("Remove the stale exclusion")
+        self.run_report(base_revision=base, lifecycle=False)
+        with self.assertRaisesRegex(MakeProbeError, "fail-closed external enforcement"):
+            self.run_report(
+                base_revision=base, changed_paths=("external-policy.txt",), lifecycle=False,
+            )
+
 
 class GitFixtureTests(unittest.TestCase):
     def test_fixture_git_never_starts_automatic_maintenance_even_if_locally_enabled(self):

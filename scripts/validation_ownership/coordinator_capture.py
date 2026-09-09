@@ -21,6 +21,7 @@ REVIEW_CHECKER_PATHS = (
     "scripts/validation_ownership/coordinator_capture.py",
 )
 REVIEW_SCOPE_DOMAIN = b"fe8-validation-ownership-reviewed-scope-v1\0"
+REVIEWED_EVIDENCE_PREFIX = "ownership-reviewed-"
 
 
 def _sorted_scope(values, label):
@@ -56,6 +57,18 @@ def reviewed_evolution_scope(checker_revision, paths, edge_ids, consumer_ids):
     return frozenset(subjects)
 
 
+def reviewed_evolution_context(checker_revision, paths, edge_ids, consumer_ids, *,
+                               repository, pull_request, base_sha, candidate_sha, worktree):
+    return {
+        "case_id": REVIEW_CASE_ID, "repository": repository, "pull_request": pull_request,
+        "base_sha": base_sha, "candidate_sha": candidate_sha, "worktree": str(worktree),
+        "checker_revision": checker_revision,
+        "changed_paths": list(_sorted_scope(paths, "changed path")),
+        "changed_edge_ids": list(_sorted_scope(edge_ids, "changed edge")),
+        "affected_consumers": list(_sorted_scope(consumer_ids, "affected consumer")),
+    }
+
+
 @dataclass(frozen=True)
 class ReviewedEvolutionQualification:
     repository: str
@@ -89,6 +102,13 @@ class ReviewedEvolutionQualification:
             self.affected_consumers,
         )
 
+    def review_context(self):
+        return reviewed_evolution_context(
+            self.checker_revision, self.changed_paths, self.changed_edge_ids, self.affected_consumers,
+            repository=self.repository, pull_request=self.pull_request, base_sha=self.base_sha,
+            candidate_sha=self.candidate_sha, worktree=self.worktree,
+        )
+
     def record(self):
         self.validate_review()
         report = self.session.report
@@ -114,9 +134,11 @@ class ReviewedEvolutionQualification:
         digest = hashlib.sha256(
             json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
         ).hexdigest()[:16]
-        return "ownership-reviewed-" + digest
+        return REVIEWED_EVIDENCE_PREFIX + digest
 
     def validate_review(self):
+        from scripts.workflow_pilot.review_family import encoded_review_context
+
         for value in (self.base_sha, self.candidate_sha, self.checker_revision):
             if not re.fullmatch(r"[0-9a-f]{40}", value):
                 raise MakeProbeError("reviewed evolution qualification requires exact SHA identities")
@@ -165,6 +187,9 @@ class ReviewedEvolutionQualification:
             != (session.identity, self.candidate_sha, self.review_scope())
         ):
             raise MakeProbeError("reviewed evolution lacks its actual independent review observation")
+        context = encoded_review_context(self.review_context())
+        if lease.context != context or report.context != context:
+            raise MakeProbeError("reviewed evolution lacks its dispatched explicit review context")
         tools = self.review_tools
         if (
             getattr(getattr(tools, "tool_tree", None), "revision", None) != self.checker_revision
@@ -208,7 +233,7 @@ class ReviewedEvolutionQualification:
             or assignment.get("pull_request") != self.pull_request
             or assignment.get("assigned_parent_sha") != self.base_sha
             or Path(assignment.get("allowed_worktree", "")).resolve() != self.worktree
-            or assignment.get("review_qualification") not in (None, self.record())
+            or assignment.get("review_qualification") != self.record()
         ):
             raise MakeProbeError("reviewed evolution capture differs from its actual assignment")
 

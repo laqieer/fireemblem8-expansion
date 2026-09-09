@@ -285,6 +285,22 @@ class AssetOwnershipTests(unittest.TestCase):
         with self.assertRaises(reporter.OwnershipError):
             reporter._resolve_path(path, self.graph, model, base)
 
+    def test_actual_gitlink_exclusion_requires_current_membership(self):
+        self.assertEqual(self.entries["mgfembp"].mode, "160000")
+        entries = {path: entry for path, entry in self.entries.items() if path != "mgfembp"}
+        with self.assertRaisesRegex(reporter.OwnershipError, "stale exact exclusion"):
+            self.model(entries=entries)
+        graph = copy.deepcopy(self.graph)
+        graph["exclusions"] = [
+            exclusion for exclusion in graph["exclusions"]
+            if not any(selector.get("path") == "mgfembp" for selector in exclusion["include"])
+        ]
+        model = self.model(graph, entries)
+        with self.assertRaises(reporter.OwnershipError):
+            reporter._resolve_path(
+                "mgfembp", graph, model, self.entries, base_model=self.model(),
+            )
+
     def test_title_check_has_asserted_framebuffer_behavior(self):
         scenario = self.playtest.load_scenario(ROOT / "tools/gba-playtest/scenarios/title-progression.json")
         for config in ("debug", "release"):
