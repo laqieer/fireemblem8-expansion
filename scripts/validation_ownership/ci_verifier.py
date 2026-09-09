@@ -452,6 +452,7 @@ def _reviewed_evolution_selection(
     pull_request: int | None,
     changed_paths: list[str] | None,
     changed_edge_ids: list[str] | None,
+    affected_consumers: list[str] | None,
 ) -> dict[str, Any]:
     if not isinstance(repository, str) or not REVIEWED_REPOSITORY_RE.fullmatch(repository):
         raise reporter.OwnershipError("reviewed evolution requires an exact repository/owner")
@@ -470,21 +471,75 @@ def _reviewed_evolution_selection(
         or any(not isinstance(edge_id, str) or not edge_id for edge_id in changed_edge_ids)
     ):
         raise reporter.OwnershipError("reviewed evolution requires a sorted exact changed edge scope")
+    if (
+        not isinstance(affected_consumers, list)
+        or not affected_consumers
+        or affected_consumers != sorted(set(affected_consumers))
+        or any(not isinstance(consumer_id, str) or not consumer_id for consumer_id in affected_consumers)
+    ):
+        raise reporter.OwnershipError("reviewed evolution requires a sorted exact affected consumer scope")
     return {
         "repository": repository,
         "pull_request": pull_request,
         "changed_paths": changed_paths,
         "changed_edge_ids": changed_edge_ids,
+        "affected_consumers": affected_consumers,
     }
+
+
+def _affected_consumers(
+    candidate_graph: dict[str, Any],
+    base_graph: dict[str, Any],
+    changed_edge_ids: list[str],
+) -> list[str]:
+    selected_edges = {}
+    for graph in (base_graph, candidate_graph):
+        for edge in graph["edges"]:
+            selected_edges.setdefault(edge["id"], []).append(edge)
+    surfaces = {
+        node["id"]
+        for graph in (base_graph, candidate_graph)
+        for node in graph["nodes"]
+        if node["kind"] == "surface"
+    }
+    affected = set()
+    for edge_id in changed_edge_ids:
+        edges = selected_edges.get(edge_id)
+        if edges is None:
+            raise reporter.OwnershipError(
+                f"reviewed evolution changed edge {edge_id!r} has no affected consumer"
+            )
+        for edge in edges:
+            if edge["source"] in surfaces:
+                affected.add(edge["source"])
+            if edge["type"] == "depends-on" and edge["target"] in surfaces:
+                affected.add(edge["target"])
+    dependencies = {}
+    for graph in (base_graph, candidate_graph):
+        for node in graph["nodes"]:
+            if node["kind"] == "surface":
+                dependencies.setdefault(node["id"], set()).update(node["dependencies"])
+    changed = True
+    while changed:
+        before = len(affected)
+        affected.update(
+            consumer
+            for consumer, required in dependencies.items()
+            if required & affected
+        )
+        changed = len(affected) != before
+    return sorted(affected)
 
 
 def _reviewed_evolution_authority(
     base_oracle: dict[str, Any],
     base_graph: dict[str, Any],
     base_model: dict[str, Any],
+    base_loader: reporter.AuthorityLoader,
     candidate_oracle: dict[str, Any],
     candidate_graph: dict[str, Any],
     candidate_model: dict[str, Any],
+    candidate_loader: reporter.AuthorityLoader,
 ) -> tuple[str, str, dict[str, Any]]:
     base_pairs = reporter._measure(base_oracle, base_graph, base_model)
     candidate_pairs = reporter._measure(candidate_oracle, candidate_graph, candidate_model)
@@ -493,12 +548,14 @@ def _reviewed_evolution_authority(
         oracle: dict[str, Any],
         selected_graph: dict[str, Any],
         selected_model: dict[str, Any],
-    ) -> tuple[list[dict[str, Any]], set[str]]:
+    ) -> tuple[list[dict[str, Any]], set[str], set[str]]:
         records = []
         oracle_edge_ids = set()
+        oracle_surfaces = set()
         for probe in oracle["probes"]:
             if "expected_exclusion" in probe:
                 continue
+            oracle_surfaces.add(probe["expected_surface"])
             owners = []
             for expected_owner in sorted(
                 probe["expected_owners"],
@@ -547,26 +604,38 @@ def _reviewed_evolution_authority(
             raise reporter.OwnershipError(
                 f"reviewed oracle leaves owned edges unprobed: {missing}"
             )
-        return records, oracle_edge_ids
+        dependency_edge_ids = {
+            edge["id"]
+            for edge in selected_graph["edges"]
+            if edge["type"] == "depends-on"
+            and edge["source"] in oracle_surfaces
+            and edge["target"] in oracle_surfaces
+        }
+        return records, oracle_edge_ids, dependency_edge_ids
 
-    base_records, base_oracle_edges = authority_records(base_oracle, base_graph, base_model)
-    candidate_records, candidate_oracle_edges = authority_records(
+    base_records, base_oracle_edges, base_dependency_edges = authority_records(
+        base_oracle, base_graph, base_model,
+    )
+    candidate_records, candidate_oracle_edges, candidate_dependency_edges = authority_records(
         candidate_oracle, candidate_graph, candidate_model,
     )
-    changed_authorities = {
-        node_id
-        for node_id in (set(base_model["authorities"]) | set(candidate_model["authorities"]))
-        if base_model["authorities"].get(node_id) != candidate_model["authorities"].get(node_id)
-    }
-    authority_edges = {
-        edge["id"]
-        for selected_graph in (base_graph, candidate_graph)
-        for edge in selected_graph["edges"]
-        if edge["target"] in changed_authorities
-    }
+    authority_edges = reporter._authority_changed_edges(
+        candidate_graph,
+        base_graph,
+        candidate_model,
+        candidate_loader,
+        base_loader,
+        base_model=base_model,
+    )
     invalidation = reporter.compare_graph_edges(candidate_graph, base_graph, authority_edges)
     uncovered = sorted(
-        set(invalidation["changed_edge_ids"]) - (base_oracle_edges | candidate_oracle_edges)
+        set(invalidation["changed_edge_ids"])
+        - (
+            base_oracle_edges
+            | candidate_oracle_edges
+            | base_dependency_edges
+            | candidate_dependency_edges
+        )
     )
     if uncovered:
         raise reporter.OwnershipError(
@@ -592,6 +661,7 @@ def verify(
     reviewed_pull_request: int | None = None,
     reviewed_paths: list[str] | None = None,
     reviewed_edge_ids: list[str] | None = None,
+    reviewed_consumers: list[str] | None = None,
 ) -> dict[str, Any]:
     budget = ProbeBudget()
     try:
@@ -603,6 +673,7 @@ def verify(
             reviewed_pull_request=reviewed_pull_request,
             reviewed_paths=reviewed_paths,
             reviewed_edge_ids=reviewed_edge_ids,
+            reviewed_consumers=reviewed_consumers,
             budget=budget,
         )
     finally:
@@ -611,7 +682,7 @@ def verify(
 
 def _verify(trusted_root, repository_root, base_sha, candidate_sha, *,
             trusted_sha, expected_mode, reviewed_repository, reviewed_pull_request,
-            reviewed_paths, reviewed_edge_ids, budget):
+            reviewed_paths, reviewed_edge_ids, reviewed_consumers, budget):
     trusted_root = trusted_root.resolve(strict=True)
     repository_root = reporter.validate_repository_root(repository_root, budget=budget)
     if repository_root == trusted_root:
@@ -669,16 +740,20 @@ def _verify(trusted_root, repository_root, base_sha, candidate_sha, *,
     candidate_changed_paths = _candidate_changed_paths(repository_root, base_sha, candidate_sha, budget=budget)
     if expected_mode == "reviewed-evolution":
         reviewed = _reviewed_evolution_selection(
-            reviewed_repository, reviewed_pull_request, reviewed_paths, reviewed_edge_ids,
+            reviewed_repository,
+            reviewed_pull_request,
+            reviewed_paths,
+            reviewed_edge_ids,
+            reviewed_consumers,
         )
-        if source_sha != candidate_sha:
-            raise reporter.OwnershipError(
-                "reviewed evolution requires the independently reviewed verifier source at the exact candidate SHA"
-            )
         if candidate_changed_paths != reviewed["changed_paths"]:
             raise reporter.OwnershipError("reviewed evolution path scope differs from the exact base/candidate diff")
     elif any(value is not None for value in (
-        reviewed_repository, reviewed_pull_request, reviewed_paths, reviewed_edge_ids,
+        reviewed_repository,
+        reviewed_pull_request,
+        reviewed_paths,
+        reviewed_edge_ids,
+        reviewed_consumers,
     )):
         raise reporter.OwnershipError("non-reviewed verification cannot declare reviewed evolution scope")
     runtime_root = _prepare_trusted_runtime_root(trusted_root)
@@ -697,8 +772,13 @@ def _verify(trusted_root, repository_root, base_sha, candidate_sha, *,
     with ProbeSession(loader, scratch_root=runtime_root, budget=budget,
                       runtime_files=ROOT_RUNTIME_FILES) as session:
         graph = loader.read_json(reporter.GRAPH_PATH, "candidate ownership graph")
-        candidate_schema = source_loader.read_json(reporter.SCHEMA_PATH, "trusted ownership schema")
-        candidate_oracle = source_loader.read_json(reporter.PROBE_ORACLE_PATH, "trusted ownership oracle")
+        authority_loader = loader if expected_mode == "reviewed-evolution" else source_loader
+        candidate_schema = authority_loader.read_json(
+            reporter.SCHEMA_PATH, "trusted candidate ownership schema",
+        )
+        candidate_oracle = authority_loader.read_json(
+            reporter.PROBE_ORACLE_PATH, "trusted candidate ownership oracle",
+        )
         reporter.validate_probe_oracle(candidate_oracle, graph, entries)
         model = reporter.validate_graph(graph, candidate_schema, loader, entries, session=session)
         lifecycle = reporter.validate_executable_lifecycle(
@@ -720,13 +800,29 @@ def _verify(trusted_root, repository_root, base_sha, candidate_sha, *,
                 )
             if expected_mode == "reviewed-evolution":
                 pairs, authorities, invalidation = _reviewed_evolution_authority(
-                    base_oracle, base_graph, base_model, candidate_oracle, graph, model,
+                    base_oracle,
+                    base_graph,
+                    base_model,
+                    base_loader,
+                    candidate_oracle,
+                    graph,
+                    model,
+                    loader,
                 )
                 if not invalidation["invalidated"]:
                     raise reporter.OwnershipError("reviewed evolution requires an actual authoritative graph change")
                 if invalidation["changed_edge_ids"] != reviewed["changed_edge_ids"]:
                     raise reporter.OwnershipError(
                         "reviewed evolution relationship scope differs from actual invalidation"
+                    )
+                consumers = _affected_consumers(
+                    graph,
+                    base_graph,
+                    invalidation["changed_edge_ids"],
+                )
+                if consumers != reviewed["affected_consumers"]:
+                    raise reporter.OwnershipError(
+                        "reviewed evolution affected consumer scope differs from actual invalidation"
                     )
             else:
                 pairs, authorities = _verify_oracle_pairs(
@@ -768,6 +864,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--reviewed-pull-request", type=int)
     parser.add_argument("--reviewed-path", action="append", dest="reviewed_paths", default=None)
     parser.add_argument("--reviewed-edge", action="append", dest="reviewed_edge_ids", default=None)
+    parser.add_argument("--reviewed-consumer", action="append", dest="reviewed_consumers", default=None)
     return parser.parse_args()
 
 
@@ -784,6 +881,7 @@ def main() -> int:
             reviewed_pull_request=arguments.reviewed_pull_request,
             reviewed_paths=arguments.reviewed_paths,
             reviewed_edge_ids=arguments.reviewed_edge_ids,
+            reviewed_consumers=arguments.reviewed_consumers,
         )
     except (OSError, ValueError, reporter.OwnershipError) as error:
         print(f"validation-ownership-base-verifier: {error}", file=sys.stderr)

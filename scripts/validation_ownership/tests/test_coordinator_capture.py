@@ -1,15 +1,29 @@
 from io import BytesIO
+from dataclasses import replace
+from datetime import datetime, timezone
 import json
 from pathlib import Path
 import shutil
 import tarfile
 import unittest
+from unittest.mock import patch
 
-from scripts.validation_ownership.coordinator_capture import CHECK_ID, VerifierExpectation, capture, trusted_executor
+from scripts.validation_ownership import ci_verifier, reporter
+from scripts.validation_ownership.coordinator_capture import (
+    CHECK_ID,
+    VerifierExpectation,
+    capture,
+    qualify_reviewed_evolution,
+    reviewed_evolution_scope,
+    trusted_executor,
+)
 from scripts.validation_ownership.budget import MakeProbeError
 from scripts.workflow_pilot import adaptive_gate as gate, agent_handoff as handoff
-from scripts.workflow_pilot.tests.test_adaptive_gate import decisions, model_control
-from scripts.workflow_pilot.tests.test_agent_handoff import at_offset
+from scripts.workflow_pilot import candidate_evidence, coordinator_observations as observations
+from scripts.workflow_pilot import pr_metadata as github, raw_diff_check as raw, review_family as review
+from scripts.workflow_pilot.tests.coordinator_support import at_offset, decisions, model_control
+from scripts.workflow_pilot.tests.review_support import Runtime
+from scripts.workflow_pilot.trusted_review_gate import GitTree, ReviewTools
 from .report_fixture import ReportFixture, reviewed_evolution_case
 
 
@@ -126,42 +140,14 @@ class ReviewedEvolutionCaptureTests(unittest.TestCase):
         self.trusted = self.fixture.directory / "trusted-reviewed"
         self.trusted.mkdir()
         self.addCleanup(lambda: self.trusted.exists() and shutil.rmtree(self.trusted))
-        with tarfile.open(fileobj=BytesIO(self.fixture.git("archive", self.case["head"]))) as archive:
+        with tarfile.open(fileobj=BytesIO(self.fixture.git("archive", self.case["base"]))) as archive:
             archive.extractall(self.trusted, filter="data")
 
-    def expectation(self, **changes):
-        values = {
-            "repository_root": self.fixture.root,
-            "trusted_root": self.trusted,
-            "base_sha": self.case["base"],
-            "candidate_sha": self.case["head"],
-            "trusted_sha": self.case["head"],
-            "mode": "reviewed-evolution",
-            "reviewed_repository": "owner/repository",
-            "reviewed_pull_request": 186,
-            "reviewed_paths": tuple(self.case["reviewed_paths"]),
-            "reviewed_edge_ids": tuple(self.case["reviewed_edges"]),
-        }
-        values.update(changes)
-        return VerifierExpectation(**values)
-
-    def test_actual_reviewed_evolution_capture_passes_and_defines_local_check(self):
-        expected = self.expectation()
-        entry = {
-            "assignment": {
-                "allowed_worktree": str(self.fixture.root),
-                "assigned_parent_sha": self.case["base"],
-                "max_lifetime_seconds": 300,
-                "required_checks": {CHECK_ID: expected.check_definition()},
-            },
-            "checks": [],
-        }
-        captured = capture(entry, expected)
-        self.assertEqual(captured["exit_code"], 0, captured)
-        self.assertEqual(captured["evidence_id"], expected.evidence_id())
-        self.assertGreater(captured["pid"], 0)
-
-    def test_local_validation_consumes_the_shared_reviewed_evolution_executor(self):
+    def coordinator(self, *, head=None, paths=None, edges=None, consumers=None, session_changes=None):
+        head = head or self.case["head"]
+        paths = tuple(paths or self.case["reviewed_paths"])
+        edges = tuple(edges or self.case["reviewed_edges"])
+        consumers = tuple(consumers or self.case["affected_consumers"])
         state = handoff.new_state("owner/repository", "coordinator-one", {
             "mode": "plan", "observed_at": at_offset(-10),
             "valid_until": at_offset(300),
@@ -172,27 +158,179 @@ class ReviewedEvolutionCaptureTests(unittest.TestCase):
             "repository": "owner/repository",
             "repository_id": 1,
             "number": 186,
-            "head_sha": self.case["head"],
+            "head_sha": head,
             "head_ref": "candidate",
             "base_sha": self.case["base"],
             "base_ref": "master",
         })()
         decision = gate.select_mode(
-            decisions(number=186), number=186, head_sha=pr.head_sha,
-            decision_oid="a" * 40, changed_lines=10,
+            decisions(number=186, risks=("lifecycle",), mode="review-first"),
+            number=186,
+            head_sha=pr.head_sha,
+            decision_oid="a" * 40,
+            changed_lines=10,
         )
-        record = gate.begin_candidate(state, pr, pr.base_sha, model_control(decision, pr), runs=())
-        expected = self.expectation()
+        decision = model_control(decision, pr)
+        record = gate.begin_candidate(state, pr, pr.base_sha, decision, runs=())
+        checker_revision = self.case["base"]
+        scope = reviewed_evolution_scope(checker_revision, paths, edges, consumers)
+        owners = review.ReviewOwnership()
+        session = review.ReviewSession(
+            state["coordinator_id"],
+            state["coordinator_id"],
+            scope,
+            head,
+            identity=(pr.repository, pr.number, pr.base_sha),
+            owners=owners,
+        )
+        runtime = Runtime(head, scope)
+        runtime.result.task = "ownership-review-" + head[:12]
+        runtime.result.owner = "independent-reviewer"
+        runtime.result.files = len(paths) + 2
+        for key, value in (session_changes or {}).items():
+            setattr(runtime.result, key, value)
+        session.begin(runtime, "independent-reviewer")
+        session.finish(runtime)
+        tools = ReviewTools(GitTree(self.fixture.root, checker_revision), self.fixture.root)
+        qualification = qualify_reviewed_evolution(
+            state,
+            record,
+            pr,
+            self.fixture.root,
+            session,
+            tools,
+            checker_revision=checker_revision,
+            changed_paths=paths,
+            changed_edge_ids=edges,
+            affected_consumers=consumers,
+        )
+        expected = VerifierExpectation(
+            self.fixture.root,
+            self.trusted,
+            self.case["base"],
+            head,
+            checker_revision,
+            "reviewed-evolution",
+            qualification,
+        )
+        return state, record, pr, decision, session, qualification, expected
+
+    def build_run(self, pr, number, mode):
+        now = datetime.now(timezone.utc).replace(microsecond=0)
+        preflight = mode == "review-first"
+        jobs = []
+        for index, key in enumerate(sorted(candidate_evidence.KNOWN_JOB_IDS), 1):
+            name = gate.PREFLIGHT_CLASSIFIER if preflight and key == "event-classifier" else key
+            skipped = preflight and key in {"extended-host-tests", "legacy"}
+            failure = preflight and key == "summary"
+            jobs.append(github.JobState(
+                number * 100 + index,
+                number,
+                name,
+                "completed",
+                "skipped" if skipped else "failure" if failure else "success",
+                None if skipped else "fixture-runner",
+                now,
+                None if skipped else now,
+                now,
+            ))
+        return github.RunState(
+            number,
+            77,
+            number,
+            1,
+            pr.head_ref,
+            now,
+            now,
+            now,
+            "completed",
+            "failure" if preflight else "success",
+            "explicit-same",
+            mode,
+            tuple(jobs),
+            event="pull_request" if preflight else "workflow_dispatch",
+            head_sha=pr.head_sha,
+            candidate_binding=(pr.number, pr.head_sha, pr.base_sha),
+            candidate_base_ref=pr.base_ref,
+        )
+
+    def security(self, head):
+        now = observations.utc_now()
+        return tuple(
+            gate.SecurityCheck(index, name, app, slug, head, "completed", "success", now, now)
+            for index, (name, app, slug) in enumerate(sorted(gate.SECURITY_CHECKS), 1)
+        )
+
+    def test_actual_reviewed_evolution_capture_passes_and_defines_local_check(self):
+        state, record, pr, _, _, qualification, expected = self.coordinator()
+        qualification_record = qualification.record()
+        self.assertEqual(qualification_record["checker_revision"], self.case["base"])
+        self.assertNotIn("checker_objects", qualification_record)
+        entry = {
+            "assignment": {
+                "repository": pr.repository,
+                "pull_request": pr.number,
+                "allowed_worktree": str(self.fixture.root),
+                "assigned_parent_sha": self.case["base"],
+                "max_lifetime_seconds": 300,
+                "required_checks": {CHECK_ID: expected.check_definition()},
+                "review_qualification": qualification_record,
+            },
+            "checks": [],
+        }
+        captured = capture(entry, expected)
+        self.assertEqual(captured["exit_code"], 0, captured)
+        self.assertEqual(captured["evidence_id"], expected.evidence_id())
+        self.assertGreater(captured["pid"], 0)
+        self.assertEqual(captured["parent_sha"], record["base_sha"])
+
+    def test_local_validation_consumes_the_shared_reviewed_evolution_executor(self):
+        state, record, pr, _, session, qualification, expected = self.coordinator()
         gate.register_local_validation(state, record, pr, self.fixture.root, {
             "raw": {"contract": "git-diff-check", "evidence_id": "raw", "inputs": []},
             CHECK_ID: expected.check_definition(),
-        })
+        }, review_qualification=qualification.record())
         gate.capture_local_check(state, record, pr, "raw")
         check = gate.capture_local_check(state, record, pr, CHECK_ID, trusted_executor(expected))
         self.assertEqual(check["exit_code"], 0, check)
-        self.assertTrue(gate.coordinator_local_ready(state, record, pr))
-        record["local_validation"]["required_checks"][CHECK_ID]["evidence_id"] = "ownership-reviewed-stale"
         self.assertFalse(gate.coordinator_local_ready(state, record, pr))
+        self.assertTrue(gate.coordinator_local_ready(state, record, pr, qualification))
+        session.advance("f" * 40)
+        self.assertFalse(gate.coordinator_local_ready(state, record, pr, qualification))
+        session.advance(pr.head_sha)
+        record["local_validation"]["required_checks"][CHECK_ID]["evidence_id"] = "ownership-reviewed-stale"
+        self.assertFalse(gate.coordinator_local_ready(state, record, pr, qualification))
+
+    def test_missing_wrong_identity_partial_scope_and_unqualified_expectations_reject(self):
+        state, record, pr, _, session, qualification, expected = self.coordinator()
+        with self.assertRaisesRegex(MakeProbeError, "actual independent qualification"):
+            VerifierExpectation(
+                self.fixture.root,
+                self.trusted,
+                self.case["base"],
+                self.case["head"],
+                self.case["base"],
+                "reviewed-evolution",
+            ).validate()
+        wrong_pr = type("PR", (), {
+            "repository": "other/repository",
+            "repository_id": pr.repository_id,
+            "number": 999,
+            "head_sha": pr.head_sha,
+            "head_ref": pr.head_ref,
+            "base_sha": pr.base_sha,
+            "base_ref": pr.base_ref,
+        })()
+        with self.assertRaises((MakeProbeError, ValueError)):
+            qualification.validate_binding(state, record, wrong_pr)
+        partial = replace(
+            qualification,
+            affected_consumers=tuple(self.case["affected_consumers"][:-1]),
+        )
+        with self.assertRaisesRegex(MakeProbeError, "review observation"):
+            partial.validate_binding(state, record, pr)
+        self.assertEqual(expected.reviewed_evolution()["repository"], pr.repository)
+        self.assertEqual(session.report.owner, "independent-reviewer")
 
     def test_reviewed_evolution_capture_remains_independent_of_candidate_pr_step_removal(self):
         path = self.fixture.root / ".github/workflows/build.yml"
@@ -206,30 +344,242 @@ class ReviewedEvolutionCaptureTests(unittest.TestCase):
         self.addCleanup(lambda: trusted.exists() and shutil.rmtree(trusted))
         with tarfile.open(fileobj=BytesIO(self.fixture.git("archive", head))) as archive:
             archive.extractall(trusted, filter="data")
+        paths = tuple(sorted((*self.case["reviewed_paths"], ".github/workflows/build.yml")))
+        state, record, pr, _, _, qualification, _ = self.coordinator(head=head, paths=paths)
         updated = VerifierExpectation(
-            self.fixture.root,
-            trusted,
-            self.case["base"],
-            head,
-            head,
-            "reviewed-evolution",
-            reviewed_repository="owner/repository",
-            reviewed_pull_request=186,
-            reviewed_paths=tuple(sorted((*self.case["reviewed_paths"], ".github/workflows/build.yml"))),
-            reviewed_edge_ids=tuple(self.case["reviewed_edges"]),
+            self.fixture.root, self.trusted, self.case["base"], head, self.case["base"],
+            "reviewed-evolution", qualification,
         )
         entry = {
             "assignment": {
+                "repository": pr.repository,
+                "pull_request": pr.number,
                 "allowed_worktree": str(self.fixture.root),
                 "assigned_parent_sha": self.case["base"],
                 "max_lifetime_seconds": 300,
                 "required_checks": {CHECK_ID: updated.check_definition()},
+                "review_qualification": qualification.record(),
             },
             "checks": [],
         }
         captured = capture(entry, updated)
         self.assertNotEqual(captured["exit_code"], 0, captured)
         self.assertGreater(captured["pid"], 0)
+
+    def test_candidate_counterfeit_checker_cannot_become_the_trusted_source(self):
+        marker = self.fixture.root / "candidate-counterfeit-ran"
+        self.fixture.add(
+            "scripts/validation_ownership/ci_verifier.py",
+            f"from pathlib import Path\nPath({str(marker)!r}).write_text('ran')\n",
+        )
+        head = self.fixture.commit("Counterfeit candidate checker")
+        paths = tuple(sorted((*self.case["reviewed_paths"], "scripts/validation_ownership/ci_verifier.py")))
+        state, record, pr, _, _, qualification, expected = self.coordinator(head=head, paths=paths)
+        entry = {
+            "assignment": {
+                "repository": pr.repository,
+                "pull_request": pr.number,
+                "allowed_worktree": str(self.fixture.root),
+                "assigned_parent_sha": self.case["base"],
+                "max_lifetime_seconds": 300,
+                "required_checks": {CHECK_ID: expected.check_definition()},
+                "review_qualification": qualification.record(),
+            },
+            "checks": [],
+        }
+        captured = capture(entry, expected)
+        self.assertEqual(captured["exit_code"], 0, captured)
+        self.assertFalse(marker.exists())
+
+        copied = self.fixture.directory / "counterfeit-copy"
+        copied.mkdir()
+        self.addCleanup(lambda: copied.exists() and shutil.rmtree(copied))
+        with tarfile.open(fileobj=BytesIO(self.fixture.git("archive", head))) as archive:
+            archive.extractall(copied, filter="data")
+        with self.assertRaisesRegex(MakeProbeError, "differs from its qualification"):
+            VerifierExpectation(
+                self.fixture.root,
+                copied,
+                self.case["base"],
+                head,
+                head,
+                "reviewed-evolution",
+                qualification,
+            ).validate()
+
+    def test_actual_qualified_capture_controls_dispatch_and_final_admission(self):
+        state, record, pr, decision, session, qualification, expected = self.coordinator()
+        workflow = (self.fixture.root / reporter.BUILD_WORKFLOW_PATH).read_text()
+        job_fields, role, step_fields = ci_verifier._base_step(workflow)
+        job = dict(job_fields)
+        step = dict(step_fields)
+        self.assertEqual(role, "setup")
+        self.assertIn("workflow_dispatch", job["if"])
+        self.assertIn("classification == 'full'", step["if"])
+        verifier_commands = [
+            command
+            for command in step["run"]
+            if "/usr/bin/python3" in command and "--trusted-root" in command
+        ]
+        self.assertEqual(len(verifier_commands), 1)
+        self.assertNotIn("--expected-mode", verifier_commands[0])
+        self.assertNotIn("--trusted-sha", verifier_commands[0])
+        self.assertFalse(any(str(argument).startswith("--reviewed-")
+                             for argument in verifier_commands[0]))
+        self.assertEqual(
+            step["run"][1:5],
+            (
+                ("if", "[", "$BUILD_EVENT_NAME", "!=", "pull_request", "];", "then"),
+                ("printf", "validation-ownership: exact-base verifier not applicable to %s\\n",
+                 "$BUILD_EVENT_NAME"),
+                ("exit", "0"),
+                ("fi",),
+            ),
+        )
+
+        strict_root = self.fixture.directory / "strict-pr-event-checker"
+        strict_root.mkdir()
+        self.addCleanup(lambda: strict_root.exists() and shutil.rmtree(strict_root))
+        with tarfile.open(fileobj=BytesIO(self.fixture.git("archive", self.case["base"]))) as archive:
+            archive.extractall(strict_root, filter="data")
+        strict = raw.run_process(
+            [
+                "/usr/bin/python3",
+                "-I",
+                "-S",
+                "-B",
+                str(strict_root / "scripts/validation_ownership/ci_verifier.py"),
+                "--trusted-root",
+                str(strict_root),
+                "--repository-root",
+                str(self.fixture.root),
+                "--base-sha",
+                self.case["base"],
+                "--candidate-sha",
+                self.case["head"],
+            ],
+            cwd=strict_root,
+            env=raw.git_environment(),
+            timeout=180,
+        )
+        self.assertNotEqual(strict.returncode, 0)
+        self.assertGreater(strict.pid, 0)
+        self.assertGreater(strict.peak_rss_bytes, 0)
+        self.assertIn(b"leaves graph surfaces unprobed", strict.stderr)
+
+        gate.register_local_validation(state, record, pr, self.fixture.root, {
+            "raw": {"contract": "git-diff-check", "evidence_id": "raw", "inputs": []},
+            CHECK_ID: expected.check_definition(),
+        }, review_qualification=qualification.record())
+        gate.capture_local_check(state, record, pr, "raw")
+        captured = gate.capture_local_check(
+            state, record, pr, CHECK_ID, trusted_executor(expected),
+        )
+        self.assertEqual(captured["exit_code"], 0, captured)
+        fact = review.ReviewFact(
+            "review-clean",
+            pr.head_sha,
+            "BOT_kgDOCnlnWA",
+            "APPROVED",
+            at_offset(-1),
+            "Complete exact-head review",
+            (),
+        )
+        session.triage(review.Triage(fact, "clean"))
+        checks = self.security(pr.head_sha)
+        preflight = self.build_run(pr, 1, "review-first")
+        ready = gate.assess_candidate(
+            state,
+            record,
+            decision,
+            pr,
+            session,
+            (fact,),
+            tuple(session.rounds.events),
+            checks,
+            (preflight,),
+            criteria_ready=True,
+            local_qualification=qualification,
+        )
+        self.assertTrue(ready["dispatchable"], ready)
+        without = gate.assess_candidate(
+            state,
+            record,
+            decision,
+            pr,
+            session,
+            (fact,),
+            tuple(session.rounds.events),
+            checks,
+            (preflight,),
+            criteria_ready=True,
+        )
+        self.assertFalse(without["dispatchable"])
+        self.assertIn("exact-local-handoff", without["missing"])
+
+        state_path = self.fixture.directory / "reviewed-evolution-state.json"
+        state_path.write_bytes(observations.json_bytes(state))
+        posts = []
+
+        class Client:
+            def request(self, method, endpoint, **kwargs):
+                posts.append((method, endpoint, kwargs))
+
+        def assess(saved):
+            selected = gate.find_candidate(saved, gate.candidate_identity(record))
+            current = gate.assess_candidate(
+                saved,
+                selected,
+                decision,
+                pr,
+                session,
+                (fact,),
+                tuple(session.rounds.events),
+                checks,
+                (preflight,),
+                criteria_ready=True,
+                local_qualification=qualification,
+            )
+            return selected, current, (preflight,)
+
+        with (
+            patch.object(gate, "frozen_base", return_value=pr.base_sha),
+            patch.object(github, "fetch_pull_request", return_value=pr),
+            patch.object(gate, "fetch_pilot_control", return_value=decision.control),
+        ):
+            dispatched = gate.dispatch_full(Client(), state_path, pr, assess)
+        self.assertEqual(dispatched["state"], "dispatch-observation-pending")
+        self.assertEqual(len(posts), 1)
+        saved = observations.load_json(state_path)
+        selected = gate.find_candidate(saved, gate.candidate_identity(record))
+        full = self.build_run(pr, 2, "full")
+        self.assertEqual(full.event, "workflow_dispatch")
+        admitted = gate.assess_candidate(
+            saved,
+            selected,
+            decision,
+            pr,
+            session,
+            (fact,),
+            tuple(session.rounds.events),
+            checks,
+            (preflight, full),
+            criteria_ready=True,
+            local_qualification=qualification,
+        )
+        self.assertTrue(admitted["merge_eligible"], admitted)
+        self.assertFalse(gate.assess_candidate(
+            saved,
+            selected,
+            decision,
+            pr,
+            session,
+            (fact,),
+            tuple(session.rounds.events),
+            checks,
+            (preflight, full),
+            criteria_ready=True,
+        )["merge_eligible"])
 
 
 if __name__ == "__main__":

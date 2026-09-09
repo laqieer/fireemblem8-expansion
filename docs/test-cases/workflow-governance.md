@@ -3189,6 +3189,17 @@ game behavior needs a compensating change.
    Prepend an inert copied verifier step while disabling the real host step,
    then duplicate the verifier within its host job. The structural staging
    guard must reject both, while a nonsemantic YAML comment remains stable.
+   For a reviewed graph evolution, complete one actual independent
+   `ReviewSession` over the exact changed paths, invalidated edges, affected
+   consumers and immutable checker revision. Register and capture the real
+   standalone verifier with that qualification, then prove the same record is
+   required by local readiness, review-first dispatch, and final
+   `workflow_dispatch` admission. Wrong repository/PR/BASE/head/worktree,
+   omitted consumers, stale review scope, a candidate-only reseal and a
+   freshly copied counterfeit checker must reject. The positive adds a real
+   path/surface, complete owner and dependency edges, and coherent oracle;
+   BASE and candidate use their respective immutable oracles and preserve
+   truthful document-aware invalidation.
 7. For the focused A/V correction, run
    `python3 -m unittest scripts.validation_ownership.tests.test_reporter.AssetOwnershipTests`.
    Inspect positive title/package selections, incorrect runtime-owner and
