@@ -8,6 +8,7 @@ import tarfile
 import unittest
 from unittest.mock import patch
 
+from scripts.validation_ownership import ci_verifier, reporter
 from scripts.validation_ownership.coordinator_capture import (
     CHECK_ID,
     VerifierExpectation,
@@ -408,6 +409,34 @@ class ReviewedEvolutionCaptureTests(unittest.TestCase):
 
     def test_actual_qualified_capture_controls_dispatch_and_final_admission(self):
         state, record, pr, decision, session, qualification, expected = self.coordinator()
+        workflow = (self.fixture.root / reporter.BUILD_WORKFLOW_PATH).read_text()
+        job_fields, role, step_fields = ci_verifier._base_step(workflow)
+        job = dict(job_fields)
+        step = dict(step_fields)
+        self.assertEqual(role, "setup")
+        self.assertIn("workflow_dispatch", job["if"])
+        self.assertIn("classification == 'full'", step["if"])
+        verifier_commands = [
+            command
+            for command in step["run"]
+            if "/usr/bin/python3" in command and "--trusted-root" in command
+        ]
+        self.assertEqual(len(verifier_commands), 1)
+        self.assertNotIn("--expected-mode", verifier_commands[0])
+        self.assertNotIn("--trusted-sha", verifier_commands[0])
+        self.assertFalse(any(str(argument).startswith("--reviewed-")
+                             for argument in verifier_commands[0]))
+        self.assertEqual(
+            step["run"][1:5],
+            (
+                ("if", "[", "$BUILD_EVENT_NAME", "!=", "pull_request", "];", "then"),
+                ("printf", "validation-ownership: exact-base verifier not applicable to %s\\n",
+                 "$BUILD_EVENT_NAME"),
+                ("exit", "0"),
+                ("fi",),
+            ),
+        )
+
         strict_root = self.fixture.directory / "strict-pr-event-checker"
         strict_root.mkdir()
         self.addCleanup(lambda: strict_root.exists() and shutil.rmtree(strict_root))
