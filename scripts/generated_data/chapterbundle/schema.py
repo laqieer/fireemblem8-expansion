@@ -376,8 +376,8 @@ def _load_record(source_path, repository_root=REPO_ROOT):
     )
 
 
-def load_records(source_path, repository_root=REPO_ROOT):
-    """Load one bundle file or every ``*_bundle.json`` file in a directory."""
+def source_paths(source_path, repository_root=REPO_ROOT):
+    """Select the same bundle inputs without parsing their contents."""
     source_path = _source_path(source_path, repository_root)
     if os.path.isdir(source_path):
         source_paths = sorted(glob.glob(os.path.join(source_path, "*_bundle.json")))
@@ -387,9 +387,15 @@ def load_records(source_path, repository_root=REPO_ROOT):
             )
     else:
         source_paths = [source_path]
+    return source_paths
+
+
+def load_records(source_path, repository_root=REPO_ROOT):
+    """Load one bundle file or every ``*_bundle.json`` file in a directory."""
+    paths = source_paths(source_path, repository_root)
     return ChapterBundleRecords(
-        [_load_record(path, repository_root) for path in source_paths],
-        [_source_path(path, repository_root) for path in source_paths],
+        [_load_record(path, repository_root) for path in paths],
+        [_source_path(path, repository_root) for path in paths],
     )
 
 
@@ -1256,6 +1262,9 @@ class ChapterBundleTableSchema(TableSchema):
 
     def dependency_tables(self):
         return DEPENDENCY_TABLE_NAMES
+
+    def source_paths(self, source_path):
+        return source_paths(source_path)
 
     def load_records(self, source_path):
         return load_records(source_path)

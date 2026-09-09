@@ -121,6 +121,14 @@ class TableSchema:
         """
         return ()
 
+    def source_paths(self, source_path):
+        """Select primary input paths without reading their contents.
+
+        Directory-backed schemas share this selector with ``load_records``.
+        Consumers still validate the returned paths and actual consumption.
+        """
+        return (source_path,)
+
     def load_records(self, source_path):
         raise NotImplementedError
 
