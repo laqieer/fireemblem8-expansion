@@ -14,8 +14,10 @@ from scripts.validation_ownership.authority import (
     AuthorityLoader, ENVIRONMENT, GitTreeEntries, GitTreeEntry, git_tree_entries,
 )
 from scripts.validation_ownership.budget import MakeProbeError, ProbeBudget
-from scripts.validation_ownership.graph_commands import CODE_PREFIXES, MakeCommands, asset_discovery_command
-from scripts.validation_ownership.make_probe import ProbeSession
+from scripts.validation_ownership.graph_commands import (
+    CODE_PREFIXES, MakeCommands, asset_discovery_command,
+)
+from scripts.validation_ownership.make_probe import Command, ProbeSession
 from scripts.validation_ownership.graph_probe import run_probe
 
 
@@ -50,10 +52,13 @@ class GraphCommandTests(unittest.TestCase):
         path.chmod(0o755 if mode == "100755" else 0o644)
         self.entries[name] = GitTreeEntry(name, mode, "blob", hashlib.sha1(data).hexdigest())
 
-    def session(self):
+    def session(self, *, runtime_files=()):
         budget = ProbeBudget()
         loader = AuthorityLoader(self.root, GitTreeEntries(self.entries, budget=budget), budget=budget)
-        return ProbeSession(loader, scratch_root=self.root / "build/scratch", budget=budget)
+        return ProbeSession(
+            loader, scratch_root=self.root / "build/scratch", budget=budget,
+            runtime_files=runtime_files,
+        )
 
     def capture_loader(self, budget):
         def git(*arguments):
@@ -109,6 +114,8 @@ class GraphCommandTests(unittest.TestCase):
             self.assertTrue(observed.semantics["dynamic_commands"][0]["command"]["native_tool"])
             self.assertTrue(all(event["match"] == 0 for event in observed.events))
         self.assertIsNone(probe.base)
+        self.assertFalse(probe.runtime_tools)
+        self.assertFalse(probe.runtime_query_profiles)
         self.assertFalse(probe.budget.children)
 
     def test_scaninc_uses_real_parser_search_order_and_recursive_include_closure(self):
@@ -277,6 +284,8 @@ class GraphCommandTests(unittest.TestCase):
             self.assertFalse((probe.tree / ".dep/src/input.d").exists())
             self.assertEqual(probe.make("all", makefile="static.mk").generated, ())
         self.assertIsNone(probe.base)
+        self.assertFalse(probe.runtime_tools)
+        self.assertFalse(probe.runtime_query_profiles)
         self.assertFalse(probe.budget.children)
 
     def test_real_linker_discovery_uses_explicit_python_and_reaches_make(self):
@@ -309,37 +318,86 @@ class GraphCommandTests(unittest.TestCase):
         compiler = str(Path(shutil.which("arm-none-eabi-gcc")).resolve())
         self.add("scripts/shiftcheck/modern_toolchain.sh",
                  (ROOT / "scripts/shiftcheck/modern_toolchain.sh").read_bytes(), "100755")
-        cases = (
-            ("modern-libgcc-directory",
-             f'p=$("{compiler}" -mcpu=arm7tdmi -mthumb -mthumb-interwork '
-             '-print-libgcc-file-name 2>/dev/null) && dirname "$p"'),
-            ("modern-libc-directory",
-             f'p=$("{compiler}" -mcpu=arm7tdmi -mthumb -mthumb-interwork '
-             '-print-file-name=libc.a 2>/dev/null) && dirname "$p"'),
-        )
-        for contract_id, command in cases:
-            with self.subTest(contract=contract_id):
-                contract = next(item for item in self.contracts.values() if item["id"] == contract_id)
-                shell = subprocess.run(
-                    ["/bin/sh", "-c", command], cwd=self.root,
-                    env={**ENVIRONMENT, "TMPDIR": str(self.directory)},
-                    capture_output=True, check=True, timeout=15,
-                ).stdout
-                make_command = command.replace("$", "$$")
-                self.add("Makefile", 'VALUE := $(shell ' + make_command + ')\nall:\n\t@printf "%s" "$(VALUE)"\n')
-                ordinary = subprocess.run(
+        contracts = {
+            item["id"]: item for item in self.contracts.values()
+            if item["id"] in {"modern-libgcc-directory", "modern-libc-directory"}
+        }
+        for label, binutils in (("no-B", ""), ("valid-B", '"-B/usr/bin/"')):
+            with self.subTest(profile=label):
+                queries = {
+                    "LIBGCC": (
+                        "modern-libgcc-directory", "-print-libgcc-file-name",
+                    ),
+                    "LIBC": (
+                        "modern-libc-directory", "-print-file-name=libc.a",
+                    ),
+                }
+                makefile = [
+                    f"MODERN_CC := {compiler}",
+                    f"MODERN_BINUTILS_FLAG := {binutils}",
+                    "MODERN_ARCH_FLAGS := -mcpu=arm7tdmi -mthumb -mthumb-interwork",
+                ]
+                expected = {}
+                for variable, (contract_id, query) in queries.items():
+                    makefile.append(f"{variable} := {contracts[contract_id]['expression']}")
+                    makefile.append(f"{variable}_STATUS := $(.SHELLSTATUS)")
+                    command = (
+                        f'p=$("{compiler}" {binutils + " " if binutils else ""}'
+                        f'-mcpu=arm7tdmi -mthumb -mthumb-interwork {query} '
+                        '2>/dev/null) && dirname "$p"'
+                    )
+                    ordinary = subprocess.run(
+                        ["/bin/sh", "-c", command], cwd=self.root,
+                        env={**ENVIRONMENT, "TMPDIR": str(self.directory)},
+                        capture_output=True, timeout=15,
+                    )
+                    self.assertEqual(ordinary.returncode, 0, ordinary.stderr)
+                    expected[variable] = ordinary.stdout.decode().strip()
+                makefile.append("all: ;")
+                self.add("Makefile", "\n".join(makefile) + "\n")
+                ordinary_make = subprocess.run(
                     ["/usr/bin/make", "--no-print-directory", "-f", "Makefile", "all"],
                     cwd=self.root, env={**ENVIRONMENT, "TMPDIR": str(self.directory)},
-                    capture_output=True, check=True, timeout=15,
-                ).stdout
-                with self.session() as probe:
-                    commands = MakeCommands(probe, {contract["expression"]: contract})
-                    registration = commands[command]
-                    self.assertEqual(probe.command(registration).stdout, shell)
-                    observed = probe.make("all", variables=("VALUE",), commands=commands)
-                    self.assertEqual(observed.semantics["domains"]["VALUE"]["value"], ordinary.decode())
-                    self.assertEqual(len(observed.semantics["dynamic_commands"]), 1)
+                    capture_output=True, timeout=15,
+                )
+                self.assertEqual(ordinary_make.returncode, 0, ordinary_make.stderr)
+                with self.session(runtime_files=("/bin/arm-none-eabi-gcc",)) as probe:
+                    commands = MakeCommands(
+                        probe, {item["expression"]: item for item in contracts.values()},
+                    )
+                    observed = probe.make(
+                        "all", variables=("LIBGCC", "LIBGCC_STATUS", "LIBC", "LIBC_STATUS"),
+                        commands=commands,
+                    )
+                    self.assertEqual(
+                        observed.semantics["domains"]["LIBGCC"]["value"], expected["LIBGCC"],
+                    )
+                    self.assertEqual(
+                        observed.semantics["domains"]["LIBC"]["value"], expected["LIBC"],
+                    )
+                    self.assertEqual(observed.semantics["domains"]["LIBGCC_STATUS"]["value"], "0")
+                    self.assertEqual(observed.semantics["domains"]["LIBC_STATUS"]["value"], "0")
+                    self.assertEqual(len(observed.semantics["dynamic_commands"]), 2)
+                    for record in observed.semantics["dynamic_commands"]:
+                        command = record["command"]
+                        self.assertEqual(command["argv"][0], compiler)
+                        self.assertEqual(command["argv"][1:-1], (
+                            ([] if not binutils else ["-B/usr/bin/"])
+                            + ["-mcpu=arm7tdmi", "-mthumb", "-mthumb-interwork"]
+                        ))
+                        self.assertEqual(command["stdout_transform"], "dirname")
+                        self.assertEqual(command["runtime_tool"]["path"], compiler)
+                        self.assertEqual(command["runtime_tool"]["canonical"], compiler)
+                        self.assertEqual(
+                            command["runtime_tool"]["mode"],
+                            Path(compiler).stat().st_mode & 0o777,
+                        )
+                        self.assertRegex(command["runtime_tool"]["sha256"], r"^[0-9a-f]{64}$")
                     self.assertEqual(observed.stderr, b"")
+                self.assertIsNone(probe.base)
+                self.assertFalse(probe.runtime_tools)
+                self.assertFalse(probe.runtime_query_profiles)
+                self.assertFalse(probe.budget.children)
 
     def test_modern_toolchain_directory_queries_reject_unsupported_driver_and_binutils_paths(self):
         self.add("scripts/shiftcheck/modern_toolchain.sh",
@@ -348,9 +406,12 @@ class GraphCommandTests(unittest.TestCase):
             ('p=$("/usr/bin/cc" -mcpu=arm7tdmi -mthumb -mthumb-interwork '
              '-print-libgcc-file-name 2>/dev/null) && dirname "$p"',
              "supported arm-none-eabi-gcc compiler"),
-            ('p=$("arm-none-eabi-gcc" "-B/opt/toolchain/bin/" -mcpu=arm7tdmi -mthumb -mthumb-interwork '
-             '-print-file-name=libc.a 2>/dev/null) && dirname "$p"',
-             "supported binutils roots"),
+            ('p=$("arm-none-eabi-gcc" -v -mcpu=arm7tdmi -mthumb -mthumb-interwork '
+             '-print-libgcc-file-name 2>/dev/null) && dirname "$p"',
+             "declared flags"),
+            ('p=$("arm-none-eabi-gcc" -mthumb -mcpu=arm7tdmi -mthumb-interwork '
+             '-print-libgcc-file-name 2>/dev/null) && dirname "$p"',
+             "declared flags"),
         )
         with self.session() as probe:
             commands = MakeCommands(probe, self.contracts)
@@ -358,6 +419,93 @@ class GraphCommandTests(unittest.TestCase):
                 with self.subTest(command=command):
                     with self.assertRaisesRegex(MakeProbeError, expected):
                         commands[command]
+            bad_binutils = (
+                'p=$("arm-none-eabi-gcc" "-B/opt/toolchain/bin/" '
+                '-mcpu=arm7tdmi -mthumb -mthumb-interwork '
+                '-print-file-name=libc.a 2>/dev/null) && dirname "$p"'
+            )
+            with mock.patch.object(shutil, "which", return_value=None):
+                with self.assertRaisesRegex(MakeProbeError, "supported binutils roots"):
+                    commands[bad_binutils]
+
+    def test_modern_toolchain_directory_query_never_executes_checkout_local_name_match(self):
+        tool = self.root / "build/toolchain-root/usr/bin/arm-none-eabi-gcc"
+        marker = self.root / "candidate-executed"
+        self.add(
+            tool.relative_to(self.root).as_posix(),
+            f"#!/bin/sh\nprintf executed > {marker}\nexit 7\n",
+            "100755",
+        )
+        self.add("scripts/shiftcheck/modern_toolchain.sh",
+                 (ROOT / "scripts/shiftcheck/modern_toolchain.sh").read_bytes(), "100755")
+        command = (
+            f'p=$("{tool}" -mcpu=arm7tdmi -mthumb -mthumb-interwork '
+            '-print-libgcc-file-name 2>/dev/null) && dirname "$p"'
+        )
+        contract = next(
+            item for item in self.contracts.values() if item["id"] == "modern-libgcc-directory"
+        )
+        self.add("Makefile", (
+            f"MODERN_CC := {tool}\n"
+            "MODERN_BINUTILS_FLAG :=\n"
+            "MODERN_ARCH_FLAGS := -mcpu=arm7tdmi -mthumb -mthumb-interwork\n"
+            f"VALUE := {contract['expression']}\n"
+            "STATUS := $(.SHELLSTATUS)\n"
+            "all:\n\t@printf 'VALUE=%s\\nSTATUS=%s\\n' '$(VALUE)' '$(STATUS)'\n"
+        ))
+        ordinary = subprocess.run(
+            ["/usr/bin/make", "--no-print-directory", "-f", "Makefile", "all"],
+            cwd=self.root,
+            env={**ENVIRONMENT, "TMPDIR": str(self.directory)},
+            capture_output=True, timeout=15,
+        )
+        self.assertEqual(ordinary.returncode, 0)
+        self.assertEqual(ordinary.stdout, b"VALUE=\nSTATUS=7\n")
+        self.assertTrue(marker.is_file())
+        marker.unlink()
+        with self.session() as probe:
+            commands = MakeCommands(probe, {contract["expression"]: contract})
+            with self.assertRaisesRegex(
+                MakeProbeError, "checkout-local modern compiler lacks a trusted installed-tool identity",
+            ):
+                commands[command]
+            self.assertFalse(marker.exists())
+        self.assertIsNone(probe.base)
+        self.assertFalse(probe.runtime_tools)
+        self.assertFalse(probe.runtime_query_profiles)
+        self.assertFalse(probe.budget.children)
+
+    @unittest.skipUnless(shutil.which("arm-none-eabi-gcc"), "requires arm-none-eabi-gcc")
+    def test_modern_toolchain_runtime_receipt_cannot_authorize_other_compiler_modes(self):
+        compiler = str(Path(shutil.which("arm-none-eabi-gcc")).resolve())
+        self.add("scripts/shiftcheck/modern_toolchain.sh",
+                 (ROOT / "scripts/shiftcheck/modern_toolchain.sh").read_bytes(), "100755")
+        with self.session(runtime_files=("/bin/arm-none-eabi-gcc",)) as probe:
+            tool = probe.runtime_tool(compiler)
+            with self.assertRaisesRegex(
+                MakeProbeError, "metadata query escaped its exact profile",
+            ):
+                probe.command(Command(
+                    (compiler, "--version"), runtime_tool=tool, stdout_transform="dirname",
+                ))
+        self.assertIsNone(probe.base)
+        self.assertFalse(probe.budget.children)
+
+    def test_modern_toolchain_directory_query_rejects_shell_injection_before_execution(self):
+        self.add("scripts/shiftcheck/modern_toolchain.sh",
+                 (ROOT / "scripts/shiftcheck/modern_toolchain.sh").read_bytes(), "100755")
+        marker = self.root / "injected"
+        command = (
+            'p=$("arm-none-eabi-gcc" -mcpu=arm7tdmi -mthumb -mthumb-interwork '
+            '-print-libgcc-file-name 2>/dev/null) && dirname "$p"; '
+            f'printf injected > "{marker}"'
+        )
+        with self.session() as probe:
+            with self.assertRaisesRegex(MakeProbeError, "exactly one sealed domain"):
+                MakeCommands(probe, self.contracts)[command]
+            self.assertFalse(marker.exists())
+        self.assertIsNone(probe.base)
+        self.assertFalse(probe.budget.children)
 
     def test_python_adapters_track_only_their_actual_import_closure(self):
         for name, data in (

@@ -70,6 +70,8 @@ class FoundationTests(unittest.TestCase):
         self.assertFalse(session.cache)
         self.assertFalse(session.mappings)
         self.assertFalse(session.native_tools)
+        self.assertFalse(session.runtime_tools)
+        self.assertFalse(session.runtime_query_profiles)
         self.assertFalse(session._views)
         self.assertFalse(session.make_runtime)
         self.assertFalse(session.runtime_inputs)

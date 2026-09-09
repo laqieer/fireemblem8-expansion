@@ -24,7 +24,7 @@ CODE_PREFIXES = (
 )
 ROOT_RUNTIME_FILES = (
     "/usr/include/newlib/stdlib.h", "/usr/include/build", "/usr/include/.dep",
-    "/bin/mkdir", "/bin/env", "/usr/bin/env",
+    "/bin/mkdir", "/bin/env", "/usr/bin/env", "/bin/arm-none-eabi-gcc",
 )
 MODERN_ARCH_QUERY_FLAGS = ("-mcpu=arm7tdmi", "-mthumb", "-mthumb-interwork")
 MODERN_COMPILER_NAMES = frozenset(("arm-none-eabi-gcc", "arm-none-eabi-gcc.exe"))
@@ -203,19 +203,14 @@ def asset_discovery_command(session: ProbeSession, source: str, logical_output: 
     )
 
 
-def _supported_modern_toolchain_roots(root):
-    return (
-        Path("/usr/bin"),
-        Path("/bin"),
-        root / "build/toolchain-root/usr/bin",
-        root / ".deps/arm-toolchain-root/usr/bin",
-    )
+def _supported_modern_toolchain_roots():
+    return (Path("/usr/bin"), Path("/bin"))
 
 
-def _resolve_modern_compiler(root, requested):
+def _resolve_modern_compiler(session, requested):
     if not isinstance(requested, str) or not requested:
         raise MakeProbeError("modern toolchain query requires one supported compiler")
-    allowed = tuple(path.resolve() for path in _supported_modern_toolchain_roots(root))
+    allowed = tuple(path.resolve() for path in _supported_modern_toolchain_roots())
 
     def supported(path):
         return (
@@ -228,35 +223,45 @@ def _resolve_modern_compiler(root, requested):
     if "/" in requested:
         candidate = Path(requested)
         if not candidate.is_absolute():
-            candidate = root / candidate
+            candidate = session.loader.root / candidate
         candidate = candidate.resolve()
         if supported(candidate):
-            return str(candidate)
+            return session.runtime_tool(str(candidate))
     else:
         found = shutil.which(requested, path=ENVIRONMENT["PATH"])
         if found:
             candidate = Path(found).resolve()
             if supported(candidate):
-                return str(candidate)
-        for directory in allowed[2:]:
-            candidate = (directory / requested).resolve()
-            if supported(candidate):
-                return str(candidate)
+                return session.runtime_tool(str(candidate))
+    local_roots = (
+        session.loader.root / "build/toolchain-root/usr/bin",
+        session.loader.root / ".deps/arm-toolchain-root/usr/bin",
+    )
+    requested_path = Path(requested)
+    if not requested_path.is_absolute():
+        requested_path = session.loader.root / requested_path
+    if any(
+        requested_path.resolve() == (directory / Path(requested).name).resolve()
+        for directory in local_roots
+    ) or "/" not in requested and any((directory / requested).exists() for directory in local_roots):
+        raise MakeProbeError(
+            "checkout-local modern compiler lacks a trusted installed-tool identity"
+        )
     raise MakeProbeError("modern toolchain query requires one supported arm-none-eabi-gcc compiler")
 
 
-def _resolve_modern_binutils_flag(root, argument):
+def _resolve_modern_binutils_flag(argument):
     if not argument.startswith("-B") or len(argument) <= 2:
         raise MakeProbeError("modern toolchain query has an invalid -B binutils directory")
     value = argument[2:]
     directory = Path(value)
     if not directory.is_absolute():
-        directory = root / directory
+        raise MakeProbeError("modern toolchain query escaped the supported binutils roots")
     directory = directory.resolve()
-    allowed = {path.resolve() for path in _supported_modern_toolchain_roots(root)}
+    allowed = {path.resolve() for path in _supported_modern_toolchain_roots()}
     if directory not in allowed:
         raise MakeProbeError("modern toolchain query escaped the supported binutils roots")
-    return "-B" + str(directory) + "/"
+    return argument
 
 
 def modern_toolchain_directory_command(session, command, contract):
@@ -271,25 +276,18 @@ def modern_toolchain_directory_command(session, command, contract):
     expected = MODERN_DIRECTORY_CONTRACTS[contract["id"]]
     if len(tokens) not in {len(MODERN_ARCH_QUERY_FLAGS) + 2, len(MODERN_ARCH_QUERY_FLAGS) + 3}:
         raise MakeProbeError("modern toolchain directory query differs from its declared flags")
-    compiler = _resolve_modern_compiler(session.loader.root, tokens[0])
     flags = tokens[1:-1]
+    binutils = ()
     if flags and flags[0].startswith("-B"):
-        flags = [_resolve_modern_binutils_flag(session.loader.root, flags[0]), *flags[1:]]
+        binutils = (_resolve_modern_binutils_flag(flags[0]),)
+        flags = flags[1:]
     if tuple(flags) != MODERN_ARCH_QUERY_FLAGS or tokens[-1] != expected:
         raise MakeProbeError("modern toolchain directory query differs from its declared flags")
-    result = session.budget.run(
-        [compiler, *flags, expected],
-        env={**ENVIRONMENT, "TMPDIR": str(session.base)},
-        cwd=session.loader.root,
-        output_limit=session.budget.limits.file_bytes,
+    compiler = _resolve_modern_compiler(session, tokens[0])
+    return Command(
+        (compiler.path, *binutils, *flags, expected),
+        code=(contract["tool"],), runtime_tool=compiler, stdout_transform="dirname",
     )
-    if result.returncode:
-        argv = ("/usr/bin/printf", "")
-    else:
-        reported = text(result.stdout, "modern toolchain query output", "utf-8").rstrip("\n")
-        directory = os.path.dirname(reported) or "."
-        argv = ("/usr/bin/printf", "%s\n", directory)
-    return Command(argv, code=(contract["tool"],))
 
 
 class MakeCommands:
@@ -326,6 +324,11 @@ class MakeCommands:
         self.session.budget.charge("cache", len(encoded([
             registration.argv, registration.code, registration.sources,
             registration.directories, registration.outputs, registration.dependency_only,
+            None if registration.runtime_tool is None else (
+                registration.runtime_tool.path, registration.runtime_tool.canonical,
+                registration.runtime_tool.mode, registration.runtime_tool.digest,
+            ),
+            registration.stdout_transform,
         ])))
         self.registrations[command] = registration
         return registration

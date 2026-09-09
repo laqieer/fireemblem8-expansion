@@ -285,6 +285,9 @@ class Policy:
             self.dependency_stat_probes = {
                 self.resolve(path) for path in dependency["runtime_stat_probes"]
             }
+            self.dependency_metadata_descendants = {
+                self.resolve(path).rstrip("/") for path in dependency["metadata_descendants"]
+            }
             self.dependency_loader_probes = {self.resolve(path) for path in self.loader_probes}
             self.dependency_interpreter = self.resolve(dependency["runtime_interpreter"])
             self.dependency_libc = self.resolve(dependency["runtime_libc"])
@@ -1102,7 +1105,13 @@ class Policy:
         )
         driver = (
             operation == "metadata"
-            and path in self.dependency_stat_probes | self.dependency_directories
+            and (
+                path in self.dependency_stat_probes | self.dependency_directories
+                or any(
+                    path.startswith(directory + "/")
+                    for directory in self.dependency_metadata_descendants
+                )
+            )
             and state.dependency_image == self.config["dependency"]["executables"][0]
             and origin in {
                 self.dependency_image_ids[state.dependency_image],
@@ -1131,8 +1140,14 @@ class Policy:
             and mode is not None and stat.S_ISREG(mode)
             or operation == "metadata" and path in self.dependency_directories
             and mode is not None and stat.S_ISDIR(mode)
+            or operation == "metadata" and path in self.dependency_stat_probes
+            and self.dependency_negative_purpose(state, path, operation)
+            or operation == "metadata" and any(
+                path.startswith(directory + "/")
+                for directory in self.dependency_metadata_descendants
+            ) and self.dependency_negative_purpose(state, path, operation)
             or mode is None and (
-                operation == "metadata" and path in self.dependency_stat_probes | self.dependency_directories
+                operation == "metadata" and path in self.dependency_directories
                 or operation in {"read", "metadata"} and path in self.dependency_loader_probes
             ) and self.dependency_negative_purpose(state, path, operation)
         )
