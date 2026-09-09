@@ -347,7 +347,10 @@ def _captured_source_digest(manifest_path, records, identities):
             descriptor = os.open(os.path.join(REPO_ROOT, relative), os.O_RDONLY | os.O_NOFOLLOW)
             with os.fdopen(descriptor, "rb") as source:
                 before = os.fstat(source.fileno())
-                digest = hashlib.file_digest(source, "sha256").hexdigest()
+                hasher = hashlib.sha256()
+                for chunk in iter(lambda: source.read(65536), b""):
+                    hasher.update(chunk)
+                digest = hasher.hexdigest()
                 after = os.fstat(source.fileno())
         except OSError as error:
             raise GeneratedDataError("cannot read captured discovery source '{}': {}".format(path, error)) from error

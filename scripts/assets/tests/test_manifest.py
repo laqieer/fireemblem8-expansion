@@ -37,9 +37,12 @@ def captured_discovery_identities(source, records):
     for path in sorted(paths):
         absolute = os.path.join(REPO_ROOT, path)
         with open(absolute, "rb") as handle:
+            hasher = hashlib.sha256()
+            for chunk in iter(lambda: handle.read(65536), b""):
+                hasher.update(chunk)
             identities.append((
                 path, "{:06o}".format(os.fstat(handle.fileno()).st_mode),
-                hashlib.file_digest(handle, "sha256").hexdigest(),
+                hasher.hexdigest(),
             ))
     return identities
 
@@ -795,6 +798,21 @@ class AssetManifestTests(unittest.TestCase):
                     source, "build/generated/asset-discovery/captured.mk",
                     tracked_sources=tracked, source_identities=supplied,
                 )
+
+    def test_discovery_artifact_does_not_require_new_hashlib_file_digest_api(self):
+        source = os.path.join(REPO_ROOT, "assets", "manifest.json")
+        records = manifest.load_discovery(source)
+        identities = captured_discovery_identities(source, records)
+        with mock.patch.dict(hashlib.__dict__):
+            hashlib.__dict__.pop("file_digest", None)
+            path, content = manifest.render_discovery_artifact(
+                source, "build/generated/asset-discovery/captured.mk",
+                tracked_sources=frozenset(manifest.discovery_sources(records)),
+                source_identities=identities,
+            )
+            self.assertEqual(captured_discovery_identities(source, records), identities)
+        self.assertEqual(path, "build/generated/asset-discovery/captured.mk")
+        self.assertIn("ASSET_MANIFEST_SOURCE_DIGEST := ", content)
 
     def test_discovery_artifact_make_behavior_uses_equivalent_input_metadata(self):
         source = os.path.join(REPO_ROOT, "assets", "manifest.json")
