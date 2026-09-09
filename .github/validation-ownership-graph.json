@@ -1800,6 +1800,50 @@
         {
           "kind": "exact",
           "path": "scripts/workflow_pilot/worktree_cleanup.py"
+        },
+        {
+          "kind": "exact",
+          "path": "scripts/validation_ownership/producer_channel.py"
+        },
+        {
+          "kind": "exact",
+          "path": "scripts/validation_ownership/tests/test_dependency.py"
+        },
+        {
+          "kind": "exact",
+          "path": "scripts/validation_ownership/tests/test_producer.py"
+        },
+        {
+          "kind": "exact",
+          "path": "scripts/workflow_pilot/adaptive_gate.py"
+        },
+        {
+          "kind": "exact",
+          "path": "scripts/workflow_pilot/tests/test_adaptive_gate.py"
+        },
+        {
+          "kind": "exact",
+          "path": "scripts/workflow_pilot/tests/test_candidate_identity.py"
+        },
+        {
+          "kind": "exact",
+          "path": "scripts/workflow_pilot/tests/test_coordinator_local.py"
+        },
+        {
+          "kind": "exact",
+          "path": "scripts/workflow_pilot/tests/test_live_pause.py"
+        },
+        {
+          "kind": "exact",
+          "path": "scripts/workflow_pilot/tests/test_live_stack.py"
+        },
+        {
+          "kind": "exact",
+          "path": "scripts/workflow_pilot/tests/test_refless_runs.py"
+        },
+        {
+          "kind": "exact",
+          "path": "scripts/workflow_pilot/tests/test_review_process_cleanup.py"
         }
       ],
       "exclude": [
@@ -1820,6 +1864,18 @@
         {
           "kind": "exact",
           "path": "docs/ownership-probe-foundation.md"
+        },
+        {
+          "kind": "exact",
+          "path": "docs/ownership-probe-dependencies.md"
+        },
+        {
+          "kind": "exact",
+          "path": "docs/ownership-probe-producers.md"
+        },
+        {
+          "kind": "exact",
+          "path": "changelog_fragments/0223-review-process-cleanup.json"
         },
         {
           "kind": "prefix",

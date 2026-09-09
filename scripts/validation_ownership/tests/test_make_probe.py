@@ -155,6 +155,55 @@ class AuthoritativeMakeProbeTests(unittest.TestCase):
         self.assertIn("MODE", census["graph"])
         self.assertIn("ALIAS", census["graph"])
 
+    def test_computed_introspection_cannot_hide_a_real_prerequisite_domain(self):
+        self.add("Makefile", (
+            "NAME ?= CHOICE\nCHOICE ?= one\n"
+            "all: $(value $(NAME))\none two: ;\n"
+        ))
+        with self.session() as session:
+            actual = {
+                session.make(
+                    "all", assignments=(("command-line", "CHOICE", value),),
+                ).semantics["files"][0]["prerequisites"][0]["name"]
+                for value in ("one", "two")
+            }
+            self.assertEqual(actual, {"one", "two"})
+        with self.assertRaisesRegex(MakeProbeError, "computed Make introspection"):
+            self.observe({
+                "NAME": {"kind": "tracked-fallback"},
+                "CHOICE": {"kind": "explicit", "values": ["one", "two"]},
+            })
+
+    def test_quoted_recipe_hash_preserves_its_real_variable_census(self):
+        self.add("Makefile", "GUARD ?= FIRST\nall:\n\t@printf '#define $(GUARD) 1\\n'\n")
+        first = self.observe(external={"GUARD"}, symbolic_recipe_names={"GUARD"})["all"]["record"]
+        self.assertEqual(first["symbolic_recipe_names"], ["GUARD"])
+        self.add("Makefile", "GUARD ?= SECOND\nall:\n\t@printf '#define $(GUARD) 1\\n'\n")
+        second = self.observe(external={"GUARD"}, symbolic_recipe_names={"GUARD"})["all"]["record"]
+        self.assertNotEqual(first, second)
+
+    def test_inline_recipe_and_unused_debug_introspection_remain_recipe_context(self):
+        self.add("Makefile", (
+            "GUARD ?= FIRST\n"
+            "all: ; @printf '#define $(GUARD) 1\\n'\n"
+            "print-%: ; $(info $* is a $(flavor $*) variable) @true\n"
+        ))
+        record = self.observe(
+            external={"GUARD"}, symbolic_recipe_names={"GUARD"},
+            scoped_variable_names={"*"},
+        )["all"]["record"]
+        self.assertEqual(record["symbolic_recipe_names"], ["GUARD"])
+        self.assertEqual(record["variants"][0]["record"]["domains"]["GUARD"]["value"], "FIRST")
+
+    def test_function_semicolon_follows_native_recipe_interpretation(self):
+        self.add("Makefile", "all: $(if yes,selected;@true,other)\n")
+        self.add("selected", "data\n")
+        record = self.observe()["all"]["record"]["variants"][0]["record"]
+        self.assertEqual(record["files"][0]["prerequisites"], [
+            {"name": "selected", "order_only": False},
+        ])
+        self.assertEqual(record["files"][0]["recipe"].strip(), "@true")
+
     def test_recipe_variable_change_is_measured_and_comment_only_is_stable(self):
         self.add("Makefile", "INNER = one\nOUTER = $(INNER)\nall:\n\t@echo $(OUTER)\n")
         first = self.observe()["all"]["record"]

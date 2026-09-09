@@ -24,7 +24,8 @@ REFERENCE = re.compile(
     rf"|\{{(?P<brace>{IDENTIFIER})(?=[:}}])|(?P<short>[A-Za-z]))"
 )
 SCOPED = re.compile(r"(?<!\$)\$(?:\(([@%*+<?^|](?:D|F)?|[0-9])\)|\{([@%*+<?^|](?:D|F)?|[0-9])\}|([@%*+<?^|0-9]))")
-INTROSPECTION = re.compile(rf"\$\((?:flavor|origin|value)\s+({IDENTIFIER})\)")
+INTROSPECTION = re.compile(rf"\$[({{](?:flavor|origin|value)\s+({IDENTIFIER})[)}}]")
+INTROSPECTION_CALL = re.compile(r"(?<!\$)\$[({](?:flavor|origin|value)[ \t]+([^)}]*)")
 CONDITIONAL = re.compile(rf"^\s*(?:ifdef|ifndef)\s+({IDENTIFIER})")
 ASSIGNMENT = re.compile(
     rf"^\s*(?:(?:export|override|private)\s+)*(?P<name>{IDENTIFIER})\s*"
@@ -47,6 +48,45 @@ def strip_comment(line):
         result.append(character)
         escaped = not escaped if character == "\\" else False
     return "".join(result)
+
+
+def computed_introspection(line):
+    return any(
+        not re.fullmatch(IDENTIFIER, match[1].strip())
+        for match in INTROSPECTION_CALL.finditer(line)
+    )
+
+
+def split_inline_recipe(line):
+    if ASSIGNMENT.match(line) or TARGET_ASSIGNMENT.match(line):
+        return line, ""
+    stack = []
+    escaped = False
+    rule = False
+    for index, character in enumerate(line):
+        if escaped:
+            escaped = False
+            continue
+        if character == "\\":
+            escaped = True
+            continue
+        if stack:
+            if character == stack[-1]:
+                stack.pop()
+            elif character in "({" and (character == "(" and stack[-1] == ")" or
+                                       character == "{" and stack[-1] == "}" or
+                                       index and line[index - 1] == "$"):
+                stack.append(")" if character == "(" else "}")
+            continue
+        if character in "({" and index and line[index - 1] == "$":
+            stack.append(")" if character == "(" else "}")
+        elif character == "#":
+            break
+        elif character == ":":
+            rule = True
+        elif character == ";" and rule:
+            return line[:index], line[index + 1:]
+    return line, ""
 
 
 def references(line):
@@ -80,7 +120,14 @@ def source_census(sources):
             raise MakeProbeError(f"Make census source is not UTF-8: {path}") from error
         defining = None
         for raw in lines:
-            line = strip_comment(raw)
+            statement, inline_recipe = (raw, "") if raw.startswith("\t") else split_inline_recipe(raw)
+            line = statement if raw.startswith("\t") else strip_comment(statement)
+            if not raw.startswith("\t") and computed_introspection(line.replace("$$", "$")):
+                raise MakeProbeError(f"computed Make introspection lacks a sealed literal selector: {path}")
+            if inline_recipe:
+                inline_names = references(inline_recipe)
+                all_names.update(inline_names)
+                recipe.update(inline_names)
             start = DEFINE.match(line)
             if start and defining is None:
                 defining = start.group(1)
@@ -180,6 +227,8 @@ def _semantic(semantics):
 
 def _recipe_domains(session, target, state, commands, observation, usage, observed_names):
     """Measure referenced recipe values through bounded native variable pages."""
+    if any(computed_introspection(entry["recipe"]) for entry in observation.semantics["files"]):
+        raise MakeProbeError("computed Make introspection in a consumed recipe lacks a sealed literal selector")
     names = closure(
         {name for entry in observation.semantics["files"] for name in references(entry["recipe"])},
         usage["dependencies"],

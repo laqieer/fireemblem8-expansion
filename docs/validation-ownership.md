@@ -367,6 +367,22 @@ remakes use the declared real command/output adapters. The graph planner
 retains actual generated include bytes for its census. It does not create a
 second sandbox, interceptor, source loader or process executor.
 
+The census preserves complete recipe text, including quoted shell `#`
+characters. Make comments are stripped only from non-recipe statements;
+inline recipes are separated without treating semicolons inside Make
+references as lexical separators. Native Make still determines the actual
+recipe and prerequisites after expansion.
+Computed `value`, `origin` or `flavor` selectors in graph expressions or
+consumed recipes reject rather than silently omit a possible prerequisite
+domain. Literal selectors remain supported. An unconsumed debug recipe does
+not become a graph input or force its symbolic values to expand.
+
+New paths brought in by the delivered producer/dependency/adaptive/cleanup
+contracts have explicit selectors in the existing host and documentation
+rules. The original introduction cohort is unchanged; another new path under
+those prefixes, including a new changelog fragment, still requires its own
+semantic admission.
+
 All report observations share the existing deadline and cumulative resource
 accounting. BASE uses one public `select_view` block, the same original source
 paths and independently captured BASE registry/model. Global graph/target

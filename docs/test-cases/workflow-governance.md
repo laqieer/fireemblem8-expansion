@@ -3322,6 +3322,11 @@ result is attributed to another target. Referenced recipe variables are
 observed through bounded native variable pages, and inconsistent graph or
 command provenance across pages rejects. A semantic recipe-variable change
 must change its authority while a comment-only refactor remains stable.
+Preserve references after a quoted recipe `#`, including inline recipes.
+Use a computed `value`/`origin`/`flavor` selector whose native prerequisites
+change under a sealed domain: the graph must reject the unsupported selector
+instead of reporting an incomplete successful census. Unconsumed debug
+recipes and semicolons inside Make expressions retain native behavior.
 The shared foundation owns snapshot/command caches within the report and
 selected immutable view; there is no reporter-global graph cache or per-target
 session/deadline reset. Wildcard-visible paths, modes, source bytes and generated

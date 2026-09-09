@@ -124,7 +124,10 @@ class AssetOwnershipTests(unittest.TestCase):
             with self.subTest(mode=mode), self.assertRaises(reporter.OwnershipError):
                 entries = {**self.entries, "src/bm.c": reporter.GitTreeEntry("src/bm.c", mode, kind, "0" * 40)}
                 self.model(entries=entries)
-        for path in ("src/foo.c", "scripts/unclassified.py", "docs/unclassified.md", "graphics/unclassified.png"):
+        for path in (
+            "src/foo.c", "scripts/unclassified.py", "docs/unclassified.md",
+            "graphics/unclassified.png", "changelog_fragments/unclassified.json",
+        ):
             entries = {**self.entries, path: reporter.GitTreeEntry(path, "100644", "blob", "0" * 40)}
             with self.subTest(path=path), self.assertRaisesRegex(reporter.OwnershipError, "semantic admission"):
                 self.model(entries=entries)
