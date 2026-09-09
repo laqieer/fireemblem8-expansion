@@ -2,12 +2,90 @@
 
 from __future__ import annotations
 
+
+def _worker():
+    import json
+    import resource
+    import sys
+    import zlib
+
+    resource.setrlimit(resource.RLIMIT_AS, (int(sys.argv[2]), int(sys.argv[2])))
+    operation, limit = sys.argv[1], int(sys.argv[3])
+
+    def phase(name):
+        print(json.dumps({
+            "phase": name,
+            "address_space_bytes": resource.getrlimit(resource.RLIMIT_AS)[0],
+        }, separators=(",", ":")), flush=True)
+
+    try:
+        raw = sys.stdin.buffer.read(limit + 1)
+        if len(raw) > limit:
+            raise ValueError("input byte bound")
+        decoded_limit = int(sys.argv[6])
+        if decoded_limit < 0:
+            raise ValueError("decoded input bound")
+        if sys.argv[5] == "zlib":
+            decoder = zlib.decompressobj()
+            raw = decoder.decompress(raw, decoded_limit + 1)
+            if decoder.unconsumed_tail or decoder.unused_data or not decoder.eof:
+                raise ValueError("incomplete or trailing compressed input")
+        elif sys.argv[5] != "identity":
+            raise ValueError("unsupported input encoding")
+        if len(raw) != decoded_limit:
+            raise ValueError("decoded input byte bound")
+        payload = json.loads(raw)
+        if operation == "schema":
+            phase("schema-start")
+            sys.path.insert(0, sys.argv[4])
+            from scripts.validation_ownership.reporter import _validate_json_schema
+
+            started = [False]
+
+            def pattern_started():
+                if not started[0]:
+                    started[0] = True
+                    phase("schema-pattern-start")
+
+            _validate_json_schema(*payload, _pattern_started=pattern_started)
+            result = {"ok": True}
+        else:
+            import re
+
+            phase("compile-start")
+            flags = re.DOTALL if operation == "fullmatch" else 0
+            patterns = [re.compile(pattern, flags) for pattern in payload["patterns"]]
+            if operation == "fullmatch":
+                phase("match-start")
+                result = {
+                    "ok": True,
+                    "indices": [index for index, pattern in enumerate(patterns)
+                                if pattern.fullmatch(payload["command"]) is not None],
+                }
+            else:
+                result = {"ok": True}
+        print(json.dumps(result, sort_keys=True, separators=(",", ":")), flush=True)
+    except Exception as error:
+        print(json.dumps({
+            "ok": False, "error": type(error).__name__ + ": " + str(error)[:1024],
+        }, sort_keys=True, separators=(",", ":")), flush=True)
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(_worker())
+
+
 import json
 from pathlib import Path
 import sys
+import zlib
 
 from .authority import ENVIRONMENT, encoded, parse_json
 from .budget import MakeProbeError, ProbeBudget
+
+WORKER_PATH = Path(__file__).resolve()
 
 
 def evaluate(budget: ProbeBudget, operation: str, payload):
@@ -17,13 +95,17 @@ def evaluate(budget: ProbeBudget, operation: str, payload):
     request = encoded(payload)
     if len(request) > min(budget.limits.file_bytes, budget.limits.pending_bytes):
         budget.reject("ownership regex request exceeds the existing input byte bound")
+    compressed = zlib.compress(request)
+    encoding = "zlib" if len(compressed) < len(request) else "identity"
+    wire = compressed if encoding == "zlib" else request
     completed = budget.run(
         [
-            "/usr/bin/python3", "-I", "-S", "-B", "-c", WORKER,
+            "/usr/bin/python3", "-I", "-S", "-B", str(WORKER_PATH),
             operation, str(budget.limits.address_space_bytes),
-            str(len(request)), str(Path(__file__).resolve().parents[2]),
+            str(len(wire)), str(Path(__file__).resolve().parents[2]),
+            encoding, str(len(request)),
         ],
-        env=ENVIRONMENT, input_data=request,
+        env=ENVIRONMENT, input_data=wire,
     )
     records = [parse_json(line, "ownership regex worker") for line in completed.stdout.splitlines()]
     if not records or not isinstance(records[-1], dict):
@@ -100,44 +182,3 @@ class CommandPatterns:
             self.budget.charge("cache", len(command.encode("utf-8")) + len(encoded(indices)))
             self.matches[command] = indices
         return self.matches[command]
-
-
-WORKER = r"""
-import json,resource,sys
-resource.setrlimit(resource.RLIMIT_AS,(int(sys.argv[2]),int(sys.argv[2])))
-operation,limit=sys.argv[1],int(sys.argv[3])
-def phase(name):
-    print(json.dumps({"phase":name,"address_space_bytes":resource.getrlimit(resource.RLIMIT_AS)[0]},
-                     separators=(",",":")),flush=True)
-try:
-    raw=sys.stdin.buffer.read(limit+1)
-    if len(raw)>limit: raise ValueError("input byte bound")
-    payload=json.loads(raw)
-    if operation=="schema":
-        phase("schema-start")
-        sys.path.insert(0,sys.argv[4])
-        from scripts.validation_ownership.reporter import _validate_json_schema
-        started=[False]
-        def pattern_started():
-            if not started[0]:
-                started[0]=True
-                phase("schema-pattern-start")
-        _validate_json_schema(*payload,_pattern_started=pattern_started)
-        result={"ok":True}
-    else:
-        import re
-        phase("compile-start")
-        flags=re.DOTALL if operation=="fullmatch" else 0
-        patterns=[re.compile(pattern,flags) for pattern in payload["patterns"]]
-        if operation=="fullmatch":
-            phase("match-start")
-            result={"ok":True,"indices":[index for index,pattern in enumerate(patterns)
-                                       if pattern.fullmatch(payload["command"]) is not None]}
-        else:
-            result={"ok":True}
-    print(json.dumps(result,sort_keys=True,separators=(",",":")),flush=True)
-except Exception as error:
-    print(json.dumps({"ok":False,"error":type(error).__name__+": "+str(error)[:1024]},
-                     sort_keys=True,separators=(",",":")),flush=True)
-    raise SystemExit(1)
-"""

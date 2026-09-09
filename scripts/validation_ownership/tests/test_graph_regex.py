@@ -5,11 +5,13 @@ import signal
 import threading
 import time
 import unittest
+import zlib
 from unittest import mock
 
 from scripts.validation_ownership import budget as budget_module, reporter
+from scripts.validation_ownership.authority import ENVIRONMENT, encoded
 from scripts.validation_ownership.budget import Limits, MakeProbeError, ProbeBudget
-from scripts.validation_ownership.graph_regex import CommandPatterns, evaluate, validate_patterns
+from scripts.validation_ownership.graph_regex import CommandPatterns, WORKER_PATH, evaluate, validate_patterns
 
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -47,7 +49,10 @@ class GraphRegexTests(unittest.TestCase):
 
         def observe(argv, **arguments):
             result = execute(argv, **arguments)
-            bounds.append((int(argv[-2]), len(arguments["input_data"]), result.returncode))
+            wire = arguments["input_data"]
+            decoded = zlib.decompress(wire) if argv[-2] == "zlib" else wire
+            bounds.append((int(argv[-4]), len(wire), int(argv[-1]), len(decoded),
+                           argv[-2], result.returncode))
             return result
 
         cases = (
@@ -61,11 +66,67 @@ class GraphRegexTests(unittest.TestCase):
                 with self.subTest(operation=operation, payload=payload):
                     self.assertEqual(evaluate(budget, operation, payload), expected)
         self.assertEqual(len(bounds), len(cases))
-        for limit, actual, status in bounds:
+        for limit, actual, decoded_limit, decoded_size, encoding, status in bounds:
             self.assertEqual(limit, actual)
+            self.assertEqual(decoded_limit, decoded_size)
             self.assertLess(limit, budget.limits.pending_bytes)
             self.assertEqual(status, 0)
+        self.assertEqual(bounds[0][4], "identity")
+        self.assertEqual(bounds[1][4], "zlib")
         self.assertFalse(budget.children)
+
+    def test_lossless_worker_transport_reduces_actual_pattern_request_traffic(self):
+        contracts = json.loads((ROOT / reporter.MAKE_DYNAMIC_PATH).read_bytes())["contracts"]
+        patterns = tuple(item["command_regex"] for item in contracts)
+        identity = self.budget()
+        packed = self.budget()
+        commands = ("uname", 'find texts -type f -name "*.txt"', "unregistered-command")
+        for command in commands:
+            payload = {"patterns": patterns, "command": command}
+            raw = encoded(payload)
+            baseline = identity.run(
+                [
+                    "/usr/bin/python3", "-I", "-S", "-B", str(WORKER_PATH),
+                    "fullmatch", str(identity.limits.address_space_bytes),
+                    str(len(raw)), str(ROOT), "identity", str(len(raw)),
+                ],
+                env=ENVIRONMENT, input_data=raw,
+            )
+            self.assertEqual(baseline.returncode, 0, baseline.stderr)
+            expected = json.loads(baseline.stdout.splitlines()[-1])
+            self.assertTrue(expected["ok"])
+            self.assertEqual(evaluate(packed, "fullmatch", payload), tuple(expected["indices"]))
+        self.assertLessEqual(2 * packed.bytes["pending"], identity.bytes["pending"])
+        self.assertFalse(identity.children)
+        self.assertFalse(packed.children)
+
+    def test_worker_rejects_truncated_trailing_and_oversized_decoded_input(self):
+        budget = self.budget()
+        raw = encoded({"patterns": ["^ok$"]})
+        packed = zlib.compress(raw)
+        cases = (
+            ("zlib", packed[:-1], len(raw)),
+            ("zlib", packed + b"trailing", len(raw)),
+            ("zlib", zlib.compress(b"x" * 100000), len(raw)),
+            ("identity", raw, len(raw) - 1),
+            ("unsupported", raw, len(raw)),
+        )
+        for encoding, wire, decoded_length in cases:
+            with self.subTest(encoding=encoding, wire_length=len(wire)):
+                result = budget.run(
+                    [
+                        "/usr/bin/python3", "-I", "-S", "-B", str(WORKER_PATH),
+                        "compile", str(budget.limits.address_space_bytes),
+                        str(len(wire)), str(ROOT), encoding, str(decoded_length),
+                    ],
+                    env=ENVIRONMENT, input_data=wire,
+                )
+                self.assertNotEqual(result.returncode, 0)
+                records = [json.loads(line) for line in result.stdout.splitlines()]
+                self.assertEqual(len(records), 1)
+                self.assertFalse(records[0]["ok"])
+                self.assertIn("error", records[0])
+                self.assertFalse(budget.children)
 
     def test_catastrophic_command_match_enters_engine_and_obeys_same_report_deadline(self):
         budget = self.budget(seconds=0.75)

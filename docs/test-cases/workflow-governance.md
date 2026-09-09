@@ -3433,7 +3433,12 @@ Run the bounded-regex controls under one report lifetime. The
 worker input ceiling must follow the actual validated encoded message length,
 not the cumulative pending allowance. Exercise differently sized compile,
 Unicode fullmatch, and schema requests through the real worker under unchanged
-limits; preserve oversized-input and output-bound rejection. The catastrophic
+limits; preserve oversized-input and output-bound rejection. The
+worker transport must reconstruct the complete original JSON before execution.
+Compare real identity and lossless transports for the same repository pattern
+requests and require reduced actual pending traffic; truncated, trailing or
+over-expanding compressed input must fail. Identity transport remains available
+when compression would grow the message. The catastrophic
 command input and candidate-schema pattern must actually enter their worker
 before the report deadline terminates them. Verify preserved ordinary and
 multiline matches, standard-engine syntax, the actual address-space limit,

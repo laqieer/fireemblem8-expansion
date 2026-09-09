@@ -560,10 +560,20 @@ DOTALL semantics. It applies the existing address-space bound before parsing
 inputs or compiling patterns and retains the report's original deadline,
 launch/input/output budgets and owned cleanup. No engine, dependency, dialect,
 service or numeric allowance is added.
-The caller first validates the encoded request against the existing file and
-pending bounds, then gives the worker that exact message length as its input
+The caller first validates the encoded JSON against the existing file and
+pending bounds, then gives the worker the actual wire length as its input
 ceiling. A cumulative pending allowance is not an allocation request: small
 messages must not reserve the report-wide traffic budget before parsing.
+Repeated pattern batches use lossless zlib transport only when it is smaller
+than the identity representation. The original decoded JSON still satisfies
+the same per-request bounds, the actual wire length bounds the stdin read,
+and decoding is limited to the declared original length plus one byte before
+requiring exact length, complete stream and no trailing data. Regex/schema
+execution sees every original byte; the existing pending ledger charges the
+bytes actually transmitted, with no refunds or omitted observations.
+The worker executes from this same verified module file rather than repeating
+its program text in every argv; isolated startup and the pre-parse memory
+limit remain in force.
 
 All command patterns are evaluated as one batch for a concrete command; exact
 completed match results are reused only within that matcher/report lifetime.
