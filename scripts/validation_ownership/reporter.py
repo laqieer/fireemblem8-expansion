@@ -2972,8 +2972,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     return build_arg_parser().parse_args(argv)
 
 
-def main(argv: list[str] | None = None) -> int:
-    arguments = parse_args(argv)
+def run_parsed(arguments: argparse.Namespace) -> int:
     budget = ProbeBudget()
     try:
         from .graph_report import check
@@ -2989,6 +2988,10 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     finally:
         budget.close()
+
+
+def main(argv: list[str] | None = None) -> int:
+    return run_parsed(parse_args(argv))
 
 
 if __name__ == "__main__":

@@ -32,12 +32,16 @@ class _LauncherArgumentParser(argparse.ArgumentParser):
         raise _LauncherArgumentParserError(message)
 
 
-def _controlled_root(argument: str) -> None:
-    root = Path(argument).resolve(strict=True)
+def _controlled_root(argument: str) -> Path:
+    candidate = Path(argument)
+    if candidate.is_symlink():
+        raise ValueError("repository root must be a non-symlink directory")
+    root = candidate.resolve(strict=True)
     if root != ROOT:
         raise ValueError(
             f"--repository-root must identify controlled source root {ROOT}"
         )
+    return root
 
 
 def _parse_reporter_arguments(arguments: list[str]):
@@ -76,7 +80,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if mode in {"check", "resolve"}:
             reporter, parsed = _parse_reporter_arguments(arguments)
-            _controlled_root(parsed.repository_root)
+            parsed.repository_root = _controlled_root(parsed.repository_root)
             if mode == "check" and parsed.changed:
                 raise ValueError("check mode does not accept --changed")
             if mode == "resolve" and not parsed.changed:
@@ -114,7 +118,7 @@ def main(argv: list[str] | None = None) -> int:
                 )
             except reporter.OwnershipError as error:
                 raise ValueError(str(error)) from error
-        return reporter.main(arguments)
+        return reporter.run_parsed(parsed)
     except (OSError, ValueError) as error:
         print(f"validation-ownership-launcher: {error}", file=sys.stderr)
         return 2

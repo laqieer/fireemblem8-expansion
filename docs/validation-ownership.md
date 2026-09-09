@@ -130,6 +130,10 @@ script and returns the prerequisite list.
   `resolve`, `tests`, and the closed lifecycle-check graph modes after isolated
   no-site Python startup. It removes ambient `GIT_*`, Make preload/flag/override,
   and shell-startup controls before entering its payload.
+  Report options are parsed once. The controlled non-symlink repository root
+  is resolved before changing directory, and the same normalized namespace is
+  passed to the reporter. Relative roots, equals forms and accepted
+  abbreviations cannot acquire a different meaning through a second parse.
 
 Validate whole-repository coverage without selecting or running any owner:
 

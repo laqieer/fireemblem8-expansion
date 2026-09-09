@@ -3178,6 +3178,9 @@ game behavior needs a compensating change.
    `make -n validation-ownership-check compare`. Require a parse-time bootstrap
    failure before that convenience branch's configurable includes or dependency
    suppression, not before Make's own startup evaluation.
+   Invoke the actual launcher/reporter from the repository's parent using
+   both absolute and relative repository-root arguments. Require the same
+   complete report coverage; a symlink root must still reject before payload.
 7. For the focused A/V correction, run
    `python3 -m unittest scripts.validation_ownership.tests.test_reporter.AssetOwnershipTests`.
    Inspect positive title/package selections, incorrect runtime-owner and

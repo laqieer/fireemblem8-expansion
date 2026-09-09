@@ -40,13 +40,12 @@ class StandaloneLauncherTests(unittest.TestCase):
             "    return parser\n"
             "def parse_args(arguments):\n"
             "    return build_arg_parser().parse_args(arguments)\n"
-            "def main(arguments):\n"
-            "    parsed = parse_args(arguments)\n"
+            "def run_parsed(parsed):\n"
             "    result = subprocess.run(['/usr/bin/make', '-f', 'payload.mk', 'all'],\n"
             "                            capture_output=True, env=os.environ)\n"
             "    print(json.dumps({'controls': {key: os.environ[key] for key in "
             + repr(CONTROLS)
-            + " if key in os.environ}, 'repository_root': parsed.repository_root, "
+            + " if key in os.environ}, 'repository_root': str(parsed.repository_root), "
             "'changed': parsed.changed}))\n"
             "    return result.returncode\n",
             encoding="utf-8",
@@ -159,6 +158,38 @@ class StandaloneLauncherTests(unittest.TestCase):
                 self.assertNotEqual(result.returncode, 0)
                 self.assertIn("controlled source root", result.stderr)
                 self.assertFalse((self.root / "payload.marker").exists())
+
+    def test_actual_reporter_keeps_relative_root_meaning_after_launcher_chdir(self):
+        from scripts.validation_ownership.tests.report_fixture import ReportFixture
+
+        fixture = ReportFixture()
+        self.addCleanup(fixture.close)
+        launcher = fixture.root / "scripts/validation_ownership/isolated_launcher.py"
+        reports = []
+        for root_argument in (str(fixture.root), fixture.root.name):
+            result = subprocess.run(
+                [sys.executable, "-I", "-S", "-B", str(launcher), "check",
+                 "--repository-root", root_argument],
+                cwd=fixture.root.parent, env=self.environment,
+                capture_output=True, text=True, timeout=60,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            report = json.loads(result.stdout)
+            self.assertFalse(report["policy"]["narrowing_authorized"])
+            self.assertEqual(report["coverage"]["tracked_paths"], report["coverage"]["owned_paths"])
+            reports.append(report["coverage"])
+        self.assertEqual(reports[0], reports[1])
+        alias = fixture.root.parent / "alias"
+        alias.symlink_to(fixture.root, target_is_directory=True)
+        rejected = subprocess.run(
+            [sys.executable, "-I", "-S", "-B", str(launcher), "check",
+             "--repository-root", str(alias)],
+            cwd=fixture.root.parent, env=self.environment,
+            capture_output=True, text=True, timeout=60,
+        )
+        self.assertNotEqual(rejected.returncode, 0)
+        self.assertEqual(rejected.stdout, "")
+        self.assertIn("non-symlink directory", rejected.stderr)
 
     def test_owned_gate_starts_python_instead_of_make(self):
         gate = next(gate for gate in verify.gates(jobs=1) if gate.name == "validation-ownership-check")
