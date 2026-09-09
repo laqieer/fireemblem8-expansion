@@ -3193,7 +3193,7 @@ game behavior needs a compensating change.
    must still explain the nonempty host owner pair. A `patch-release` job
    authority must reject as stale. Run
    `python3 -m unittest tests.workflows.test_patch_release_workflow -v`
-   to exercise the parsed eight-job/30-gate contract and the actual packaging
+   to exercise the parsed eight-job/31-gate contract and the actual packaging
    helper with owned synthetic inputs. Require one profile build, no build by
    packaging, authenticated master-only publication, correct source/profile,
    real BPS round trip, patch-only outputs, private cleanup and visible
@@ -3223,7 +3223,7 @@ external-enforcement exclusion only. Generated paths derive from
 the typed generated-data registry; gate commands derive from existing Make
 targets, workflow jobs/steps, and tester cases rather than a duplicate command
 list. Both ownership commands are required, scrubbed `host-tests` gates and
-members of the complete 30-gate upstream mirror.
+members of the complete 31-gate upstream mirror.
 
 The exact main-title inputs select `expansion-modern-title-check`, whose
 title-progression scenario asserts four framebuffer checkpoints. Only the
@@ -3251,6 +3251,15 @@ workflow owners are mismatches and failed public checks.
 Domain-separated graph, schema, and resolved-edge seals change when semantic
 authority changes. Comparing a prior Git revision invalidates review from
 authoritative edge or target-authority changes, not filenames or commit prose.
+Compare two valid graph-bearing revisions with unchanged graph declarations:
+a meaningful schema constraint change or a valid resealed oracle coverage
+change must invalidate every current edge. Reformatting either JSON document
+without changing its parsed value must leave invalidation empty. A tester-case
+authority change remains scoped to its affected edges.
+
+Observe one real removal/restoration cycle for every lifecycle trigger.
+Suppress a later removal while leaving the requested proof record intact:
+the report must fail rather than reuse an earlier trigger's successful cycle.
 The base-pinned verifier additionally requires every oracle-backed edge's
 resolved authority fingerprint to equal the exact base and rejects trusted
 edge invalidation even when the surface, evidence ID, and edge type stay fixed.
@@ -3319,6 +3328,11 @@ session/deadline reset. Wildcard-visible paths, modes, source bytes and generate
 outputs retain their actual captured identity. BASE registry/models are measured
 in one grouped public view, and lifecycle removal/restoration reuses that
 already validated model without recursive report execution.
+Inspect the real graph discovery plan alongside the required
+`ownership-probe-test` selection. Foundation, producer and dependency cases
+must remain in their one extended-host owner, absent from both graph and
+workflow discovery. The union must still contain every allocated case;
+neither duplicate execution nor omitting a case is an acceptable correction.
 Owned Git fixture commands disable automatic maintenance/GC, detachment and
 hooks through per-command configuration. A real Trace2 control with locally
 enabled maintenance must show ordinary Git spawning maintenance while the

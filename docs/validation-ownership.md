@@ -12,6 +12,12 @@ but those checks only validate this contract. Any use for narrower validation
 requires a later independently accepted issue with non-inferiority evidence.
 Issue #181 is parallel and does not consume or authorize this graph.
 
+Graph test discovery uses unittest's package `load_tests` protocol to exclude
+the foundation, producer and dependency modules. Those modules run once in
+the required `ownership-probe-test` owner in `extended-host-tests`; they are
+not repeated by the graph gate or workflow discovery. The parsed discovery
+partition requires every test ID to retain exactly one execution owner.
+
 Complete integration of the shared
 [issue #206 / PR #212 foundation](https://github.com/laqieer/fireemblem8-expansion/pull/212)
 is a required dependency, not optional hardening. Its small real consumer and
@@ -177,7 +183,10 @@ assignment reordering, operator changes, and false/different conditional
 wrapping do. Workflow fingerprints are job/step-specific normalized
 structures. Review invalidation reports only edge IDs whose endpoint, type,
 owner, target authority, path mapping, or referenced target/job semantics
-changed.
+changed. A semantic change to the schema or the independently sealed oracle
+invalidates every current edge, even when the graph declarations and owner
+fingerprints remain unchanged. JSON whitespace and object-key serialization
+changes with equal parsed values do not invalidate review.
 
 The closed edge families are:
 
@@ -307,6 +316,9 @@ named semantic failure, restoration must pass, and those bounded behavioral
 results are attached to every trigger-specific proof record.
 Self-declared replacement reasons, fabricated authorities, stale timestamps,
 or non-restoring proofs reject.
+Each proof performs its own actual removal and restoration under the same
+report budget. One successful cycle is never copied into several trigger
+records; skipping a later removal must fail even if an earlier proof passed.
 The lifecycle consumer now calls the same nonrecursive complete
 `validate_graph` path as the public checker, then performs the independent
 oracle measurement. Make/workflow authorities and exact resolved owner pairs

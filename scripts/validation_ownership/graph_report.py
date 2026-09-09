@@ -72,14 +72,9 @@ def check(root, *, budget: ProbeBudget, revision="HEAD", base_revision=None, cha
                     )
         changed_edges = set()
         if base_model is not None and prior is not None:
-            changed_owners = {
-                name for name in model["authorities"].keys() | base_model["authorities"].keys()
-                if model["authorities"].get(name) != base_model["authorities"].get(name)
-            }
-            changed_edges = {
-                edge["id"] for candidate in (graph, prior) for edge in candidate["edges"]
-                if edge["target"] in changed_owners
-            }
+            changed_edges = reporter._authority_changed_edges(
+                graph, prior, model, loader, base_loader, base_model=base_model,
+            )
         result = reporter.build_report(
             graph, schema, oracle, loader, entries, changed_paths,
             prior_graph=prior, review_comparison_requested=base_revision is not None,

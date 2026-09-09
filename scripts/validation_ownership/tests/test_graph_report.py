@@ -29,16 +29,43 @@ class GraphReportTests(unittest.TestCase):
             budget.close()
 
     def test_real_complete_report_partition_oracle_and_lifecycle(self):
-        result = self.run_report(changed_paths=("Makefile",))
+        removed = []
+        replace = Path.replace
+
+        def observe_removal(path, target):
+            if Path(target).name == "graph.backup":
+                removed.append(path)
+            return replace(path, target)
+
+        with mock.patch.object(Path, "replace", new=observe_removal):
+            result = self.run_report(changed_paths=("Makefile",))
         self.assertFalse(result["policy"]["narrowing_authorized"])
         self.assertEqual(result["coverage"]["tracked_paths"], result["coverage"]["owned_paths"])
         self.assertEqual(result["measurement"]["false_positive_selections"], 0)
         self.assertEqual(result["measurement"]["false_negative_selections"], 0)
         self.assertEqual(len(result["artifact"]["executable_lifecycle"]), 3)
+        self.assertEqual(len(removed), len(result["artifact"]["executable_lifecycle"]))
         self.assertTrue(all(item["removal"] == "fail" and item["restoration"] == "pass"
                             for item in result["artifact"]["executable_lifecycle"]))
         self.assertEqual(result["resolutions"][0]["path"], "Makefile")
         self.assertGreater(result["execution"]["runs"], 0)
+
+    def test_each_lifecycle_trigger_requires_its_actual_removal_failure(self):
+        replace = Path.replace
+        removals = []
+
+        def skip_one_removal(path, target):
+            if Path(target).name == "graph.backup":
+                removals.append(path)
+                if len(removals) == 2:
+                    Path(target).write_bytes(path.read_bytes())
+                    return Path(target)
+            return replace(path, target)
+
+        with mock.patch.object(Path, "replace", new=skip_one_removal):
+            with self.assertRaisesRegex(MakeProbeError, "artifact removal did not fail"):
+                self.run_report()
+        self.assertEqual(len(removals), 2)
 
     def test_current_and_base_models_share_report_and_invalidate_real_case_change(self):
         base = self.fixture.git("rev-parse", "HEAD").decode().strip()
@@ -49,6 +76,49 @@ class GraphReportTests(unittest.TestCase):
         result = self.run_report(base_revision=base)
         self.assertTrue(result["review_invalidation"]["invalidated"])
         self.assertIn("source.adversarial-control", result["review_invalidation"]["changed_edge_ids"])
+
+    def assert_all_edges_invalidated(self, base):
+        result = self.run_report(base_revision=base, lifecycle=False)
+        graph = json.loads((self.fixture.root / reporter.GRAPH_PATH).read_text())
+        self.assertTrue(result["review_invalidation"]["invalidated"])
+        self.assertEqual(
+            set(result["review_invalidation"]["changed_edge_ids"]),
+            {edge["id"] for edge in graph["edges"]},
+        )
+
+    def test_valid_schema_constraint_change_invalidates_all_edges(self):
+        base = self.fixture.git("rev-parse", "HEAD").decode().strip()
+        path = self.fixture.root / reporter.SCHEMA_PATH
+        schema = json.loads(path.read_text())
+        self.assertEqual(schema["$defs"]["nonempty"]["minLength"], 1)
+        schema["$defs"]["nonempty"]["minLength"] = 2
+        path.write_text(json.dumps(schema))
+        self.fixture.commit("Tighten a valid graph schema constraint")
+        self.assert_all_edges_invalidated(base)
+
+    def test_valid_oracle_coverage_change_invalidates_all_edges(self):
+        base = self.fixture.git("rev-parse", "HEAD").decode().strip()
+        path = self.fixture.root / reporter.PROBE_ORACLE_PATH
+        oracle = json.loads(path.read_text())
+        probe = copy.deepcopy(oracle["probes"][0])
+        probe["path"] = "src/data/table.json"
+        oracle["probes"].append(probe)
+        oracle["seal"] = reporter._sha256(
+            reporter.PROBE_SEAL_DOMAIN, reporter.canonical_probe_oracle_payload(oracle),
+        )
+        path.write_text(json.dumps(oracle))
+        self.fixture.commit("Extend valid oracle coverage without changing owners")
+        self.assert_all_edges_invalidated(base)
+
+    def test_document_serialization_without_semantic_change_does_not_invalidate(self):
+        base = self.fixture.git("rev-parse", "HEAD").decode().strip()
+        for name in (reporter.SCHEMA_PATH, reporter.PROBE_ORACLE_PATH):
+            path = self.fixture.root / name
+            path.write_text(json.dumps(json.loads(path.read_text()), indent=1, sort_keys=True))
+        self.fixture.commit("Change only ownership document serialization")
+        result = self.run_report(base_revision=base, lifecycle=False)
+        self.assertFalse(result["review_invalidation"]["invalidated"])
+        self.assertEqual(result["review_invalidation"]["changed_edge_ids"], [])
 
     def test_unknown_current_path_cannot_be_admitted_by_prefix(self):
         self.fixture.add("src/foo.c", "int unknown;\n")
