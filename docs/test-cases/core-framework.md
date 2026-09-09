@@ -234,8 +234,8 @@ unsupported; the documented host migration tool owns it.
    `make generated-data-check`, and `make generated-data-test`.
 3. Deliberately use an invalid or dangling reference in the disposable copy
    and retain its file, line, column, and breadcrumb diagnostic before reset.
-4. Exercise the primary-source discovery control below. In an owned directory,
-   create two matching bundle filenames with invalid JSON and a nonmatching
+4. Exercise the primary-source discovery control below for bundles, objectives
+   and strategies. In an owned directory, create two matching filenames with invalid JSON and a nonmatching
    neighbor. The schema selector must return only the two matching paths in
    deterministic order without parsing their contents; ordinary loading must
    still fail on that invalid JSON. The base schema's single-file selector
