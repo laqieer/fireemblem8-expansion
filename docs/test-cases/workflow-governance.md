@@ -3131,6 +3131,12 @@ game behavior needs a compensating change.
    fail-closed external-enforcement exclusion without changing path rules or
    owner edges; every existing edge must invalidate. Reordering exclusions,
    selectors, or JSON keys with equal semantics must remain stable. Confirm
+   that valid artifact consumer/consistency redirects, owner changes and
+   lifecycle-authority edits invalidate every owner edge. The actual strict
+   BASE verifier must reject an unreviewed artifact-only change, while the
+   exact reviewed mode accepts it with truthful complete invalidation.
+   Reordering the same lifecycle event set or artifact object keys remains
+   stable. Confirm
    that deleting a real unprobed tracked path while retaining an exact
    path-rule include or exclude selector rejects as stale. Removing that exact
    selector must restore current validation while `resolve --changed` still

@@ -2278,6 +2278,13 @@ def exclusion_declaration_records(graph: dict[str, Any]) -> list[dict[str, Any]]
     return sorted(records, key=lambda record: record.get("id", ""))
 
 
+def artifact_declaration_record(graph: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "artifact": graph.get("artifact"),
+        "lifecycle_events": sorted(graph.get("lifecycle_events", []), key=normalized_json),
+    }
+
+
 def compare_graph_edges(
     current: dict[str, Any],
     prior: dict[str, Any] | None,
@@ -2351,7 +2358,10 @@ def compare_graph_edges(
             and isinstance(edge.get("id"), str)
         )
     changed.extend(authority_changed_edge_ids)
-    if exclusion_declaration_records(current) != exclusion_declaration_records(prior):
+    if (
+        exclusion_declaration_records(current) != exclusion_declaration_records(prior)
+        or artifact_declaration_record(current) != artifact_declaration_record(prior)
+    ):
         changed.extend(
             edge.get("id")
             for graph in (current, prior)

@@ -281,6 +281,11 @@ fail-closed exclusion likewise invalidates every existing edge: exclusion
 authority is part of whole-tree admission even when no oracle probe names the
 new exclusion. Exclusion-list, selector-list, JSON whitespace, and object-key
 reordering with equal parsed semantics do not invalidate review.
+The artifact's ownership/consumer/consistency/disposition record and lifecycle
+event authority are also part of this comparison. A valid change to either
+invalidates all existing owner edges, even if edge declarations themselves
+are unchanged. Event-set and object-key ordering are nonsemantic; artifact
+history ordering and every authoritative record field remain significant.
 
 The closed edge families are:
 

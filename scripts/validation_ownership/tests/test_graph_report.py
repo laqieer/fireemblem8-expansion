@@ -1,13 +1,17 @@
 import copy
+from datetime import datetime, timedelta
+from io import BytesIO
 import json
 import unittest
 from pathlib import Path
 import tempfile
 import subprocess
+import tarfile
 from types import SimpleNamespace
 from unittest import mock
 
 from scripts.validation_ownership import graph_lifecycle, reporter
+from scripts.validation_ownership.authority import ENVIRONMENT
 from scripts.validation_ownership.budget import MakeProbeError, ProbeBudget
 from scripts.validation_ownership.graph_report import check
 from .report_fixture import ReportFixture
@@ -240,6 +244,104 @@ class GraphReportTests(unittest.TestCase):
         result = self.run_report(base_revision=base, lifecycle=False)
         self.assertFalse(result["review_invalidation"]["invalidated"])
         self.assertEqual(result["review_invalidation"]["changed_edge_ids"], [])
+
+    def test_artifact_routes_and_lifecycle_authority_invalidate_all_edges(self):
+        path = self.fixture.root / reporter.GRAPH_PATH
+        graph = json.loads(path.read_text())
+        self.fixture.add(
+            "Makefile",
+            "validation-ownership-check:\n\t@true\nalternate-ownership-check:\n\t@true\n",
+        )
+        graph["nodes"].extend((
+            {"id": "owner.alternate-make", "kind": "evidence", "label": "Alternate existing consumer",
+             "evidence_type": "host",
+             "authority": {"kind": "make-target", "target": "alternate-ownership-check"}},
+            {"id": "owner.alternate-case", "kind": "evidence", "label": "Alternate existing case",
+             "evidence_type": "host",
+             "authority": {"kind": "tester-case", "case_id": "TC-WORKFLOW-ALTERNATE-001"}},
+        ))
+        registry_path = self.fixture.root / reporter.TEST_CASE_REGISTRY_PATH
+        registry = json.loads(registry_path.read_text())
+        alternate = copy.deepcopy(registry["cases"][0])
+        alternate["id"] = "TC-WORKFLOW-ALTERNATE-001"
+        registry["cases"].append(alternate)
+        registry_path.write_text(json.dumps(registry))
+        path.write_text(json.dumps(graph))
+        base = self.fixture.commit("Provide valid alternate lifecycle authorities")
+        variants = []
+        for key, value in (
+            ("executable_consumer", "alternate-ownership-check"),
+            ("consistency_check", "TC-WORKFLOW-ALTERNATE-001"),
+            ("owner", "changed-workflow-owner"),
+        ):
+            changed = copy.deepcopy(graph)
+            changed["artifact"][key] = value
+            variants.append((key, changed))
+        changed = copy.deepcopy(graph)
+        event = next(item for item in changed["lifecycle_events"]
+                     if item["type"] == "artifact_checkpoint")
+        event["occurred_at"] = (
+            datetime.fromisoformat(event["occurred_at"].replace("Z", "+00:00"))
+            + timedelta(seconds=1)
+        ).isoformat().replace("+00:00", "Z")
+        variants.append(("lifecycle", changed))
+        for label, changed in variants:
+            with self.subTest(authority=label):
+                path.write_text(json.dumps(changed))
+                self.fixture.commit("Change valid " + label + " authority")
+                self.assert_all_edges_invalidated(base)
+
+    def test_lifecycle_event_and_artifact_key_reordering_does_not_invalidate(self):
+        base = self.fixture.git("rev-parse", "HEAD").decode().strip()
+        path = self.fixture.root / reporter.GRAPH_PATH
+        graph = json.loads(path.read_text())
+        graph["lifecycle_events"].reverse()
+        path.write_text(json.dumps(graph, indent=1, sort_keys=True))
+        self.fixture.commit("Reorder equivalent lifecycle serialization")
+        result = self.run_report(base_revision=base, lifecycle=False)
+        self.assertFalse(result["review_invalidation"]["invalidated"])
+        self.assertEqual(result["review_invalidation"]["changed_edge_ids"], [])
+
+    def test_artifact_authority_change_requires_reviewed_verifier_mode(self):
+        base = self.fixture.git("rev-parse", "HEAD").decode().strip()
+        graph_path = self.fixture.root / reporter.GRAPH_PATH
+        graph = json.loads(graph_path.read_text())
+        graph["artifact"]["owner"] = "changed-workflow-owner"
+        graph_path.write_text(json.dumps(graph))
+        head = self.fixture.commit("Change artifact authority without changing edges")
+        edges = sorted(edge["id"] for edge in graph["edges"])
+        for mode, revision in (("exact-base-pinned", base), ("reviewed-evolution", head)):
+            trusted = self.fixture.directory / ("artifact-verifier-" + mode)
+            trusted.mkdir()
+            with tarfile.open(fileobj=BytesIO(self.fixture.git("archive", revision))) as archive:
+                archive.extractall(trusted, filter="data")
+            command = [
+                "/usr/bin/python3", "-I", "-S", "-B",
+                str(trusted / "scripts/validation_ownership/ci_verifier.py"),
+                "--trusted-root", str(trusted), "--repository-root", str(self.fixture.root),
+                "--base-sha", base, "--candidate-sha", head,
+                "--trusted-sha", revision, "--expected-mode", mode,
+            ]
+            if mode == "reviewed-evolution":
+                command.extend((
+                    "--reviewed-repository", "owner/repository",
+                    "--reviewed-pull-request", "186",
+                    "--reviewed-path", reporter.GRAPH_PATH.as_posix(),
+                    *(item for edge in edges for item in ("--reviewed-edge", edge)),
+                    "--reviewed-consumer", "surface.schema",
+                    "--reviewed-consumer", "surface.source",
+                ))
+            result = subprocess.run(
+                command, cwd=trusted, env=ENVIRONMENT, capture_output=True, text=True, timeout=120,
+            )
+            with self.subTest(mode=mode):
+                if mode == "exact-base-pinned":
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertIn("retargets exact-base oracle authority", result.stderr)
+                else:
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    observed = json.loads(result.stdout)
+                    self.assertEqual(observed["review_invalidation"]["changed_edge_ids"], edges)
 
     def test_unknown_current_path_cannot_be_admitted_by_prefix(self):
         self.fixture.add("src/foo.c", "int unknown;\n")
