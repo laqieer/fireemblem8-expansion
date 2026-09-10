@@ -17,6 +17,7 @@ import signal
 import stat
 import struct
 import sys
+from collections import Counter
 from collections.abc import Iterator
 from contextlib import AbstractContextManager, contextmanager
 from dataclasses import dataclass
@@ -26,7 +27,7 @@ from threading import get_ident, main_thread
 
 from .authority import (
     AuthorityLoader, ENVIRONMENT, Frames, Snapshot, _command_hash, _event_command,
-    _read_events, encoded, parse_json, relative_path,
+    _read_event_frames, _read_events, encoded, parse_json, relative_path,
 )
 from .budget import Limits, MakeProbeError, NAMESPACE_LAUNCHER, ProbeBudget, text
 from .lifecycle import cleanup_scope, finish_cleanup
@@ -1884,22 +1885,25 @@ class ProbeSession:
                 publication_allowed=publication_allowed,
             )
             raw_events = self.budget.read_bytes(events_path, "event")
-            native_events = b"".join(bytes.fromhex(item) for item in observed["events"])
-            self.budget.charge("control", len(native_events))
-            if raw_events != native_events:
-                raise MakeProbeError("trusted interceptor frame differs from its native write")
+            native_events = Counter(bytes.fromhex(item) for item in observed["events"])
+            self.budget.charge(
+                "control", sum(len(frame) * count for frame, count in native_events.items()),
+            )
             events = []
             seen = set()
-            for raw in observed["events"]:
-                data = bytes.fromhex(raw)
+            for data, event in _read_event_frames(raw_events, expected_mapping_count=None):
+                if native_events[data] == 0:
+                    raise MakeProbeError("trusted interceptor frame differs from its native write")
+                native_events[data] -= 1
                 if len(data) < 20:
                     raise MakeProbeError("truncated live producer completion")
                 slot = int.from_bytes(data[:4], "little", signed=True)
-                event, = _read_events(data, expected_mapping_count=slot + 1)
                 if slot not in receipts or slot in seen or _event_command(event) != receipts[slot][0]:
                     raise MakeProbeError("unknown or repeated live producer completion")
                 seen.add(slot)
                 events.append(event)
+            if any(native_events.values()):
+                raise MakeProbeError("trusted interceptor frame differs from its native write")
             if seen != set(receipts) or confirmed != len(receipts):
                 raise MakeProbeError("incomplete live producer transcript")
             if completed.returncode:

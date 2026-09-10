@@ -4779,7 +4779,7 @@ raise AssertionError("default termination was lost")
                     return b"\xff\xff\xff\xff" + raw[4:]
                 return raw
             with patch.object(session.budget, "read_bytes", corrupt):
-                with self.assertRaisesRegex(MakeProbeError, "trusted interceptor frame differs from its native write"):
+                with self.assertRaisesRegex(MakeProbeError, "invalid trusted interceptor frame"):
                     session.make("all", commands=Commands())
             self.assertEqual(requested, [
                 f"python3 worker.py {index} 'word value' \"\"" for index in order
@@ -8338,6 +8338,7 @@ int main(int argc, char **argv) {
         self.assert_clean(session)
 
     def test_strict_named_protocols_reject_binary_and_truncated_frames(self):
+        from scripts.validation_ownership.syscall_guard import Policy, Process, Registers, Violation
         self.add("reader.py", "import os\nos.write(1,b'\\xff\\x00\\r\\n')\n")
         session = self.session()
         with self.assertRaisesRegex(MakeProbeError, "strict utf-8"):
@@ -8352,6 +8353,14 @@ int main(int argc, char **argv) {
         for raw in (b"x", b"\xff" * 20, b"\0" * 20):
             with self.assertRaises(MakeProbeError):
                 _read_events(raw, expected_mapping_count=0)
+        policy = self.observation_policy(mode="make")
+        state = Process("helper")
+        state.pending = ("event", b"x" * 20)
+        with self.assertRaisesRegex(Violation, "partial native event write"):
+            policy.leave(0, state, Registers(rax=19))
+        state.pending = ("event", b"x" * 20)
+        policy.leave(0, state, Registers(rax=20))
+        self.assertEqual(policy.events, [(b"x" * 20).hex()])
 
     def test_worktree_symlink_escape_and_invalid_limit_values_fail(self):
         self.add("Makefile", "all: ;\n")

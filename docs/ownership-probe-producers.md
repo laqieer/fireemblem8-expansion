@@ -189,8 +189,16 @@ pure readers still use the core's complete current metadata revalidator.
 There is no speculative empty-return pass. Unreachable producers do not run.
 All actually dispatched work remains authorized, charged and included in the
 one native run's provenance; a later invalid request fails the entire report.
-Final native writes must match the supervisor's recorded bytes and each
-fulfilled receipt exactly.
+Each helper still emits one complete frame with one `O_APPEND` write. The
+physical append stream is the authoritative event order: complete frames are
+parsed through the shared wire decoder, matched one-to-one by exact bytes and
+multiplicity against successful full-write observations, then validated in
+physical order against their fulfilled receipt slots and commands. Ptrace exit
+notifications may arrive in another order without changing the append order.
+Missing, extra, duplicate, partial, corrupt or forged frames and observations
+still reject. Identical frame bytes cannot bypass the unique receipt-slot
+check. Event, control, raw-observation, cache and replay accounting and limits
+are unchanged.
 
 ## Isolation and the two-phase boundary
 

@@ -497,7 +497,8 @@
         "https://github.com/laqieer/fireemblem8-expansion/issues/208",
         "https://github.com/laqieer/fireemblem8-expansion/issues/207",
         "https://github.com/laqieer/fireemblem8-expansion/issues/216",
-        "https://github.com/laqieer/fireemblem8-expansion/issues/223"
+        "https://github.com/laqieer/fireemblem8-expansion/issues/223",
+        "https://github.com/laqieer/fireemblem8-expansion/issues/246"
       ],
       "reference": ".github/skills/development-workflow/SKILL.md",
       "status": "current",
@@ -511,6 +512,7 @@
         "TC-WORKFLOW-PILOT-BASELINE-001",
         "TC-WORKFLOW-OWNERSHIP-PROBE-SANDBOX-001",
         "TC-WORKFLOW-PROBE-PRODUCER-001",
+        "TC-PROBE-NATIVE-EVENT-ORDER-001",
         "TC-PROBE-METADATA-TRANSPORT-001",
         "TC-PROBE-PYTHON-PRODUCERS-001",
         "TC-PROBE-DEPENDENCY-FUSION-001",
@@ -3551,6 +3553,38 @@
         {
           "command": "python3 -m unittest scripts.validation_ownership.tests.test_producer -v",
           "evidence": "scripts/validation_ownership/tests/test_producer.py"
+        }
+      ]
+    },
+    {
+      "id": "TC-PROBE-NATIVE-EVENT-ORDER-001",
+      "title": "Validate native events in physical append order",
+      "feature_id": "workflow-governance",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/246"
+      ],
+      "document": "docs/test-cases/workflow-governance.md",
+      "anchor": "tc-probe-native-event-order-001-validate-native-events-in-physical-append-order",
+      "profiles": [
+        "Linux x86-64 source checkout, GNU Make, Python 3 and the existing ownership-probe native producer tools"
+      ],
+      "purpose": "Prove complete native producer frames are validated and returned in authoritative physical append order even when successful ptrace write-exit notifications arrive in the reverse order.",
+      "prerequisites": "Clean source checkout with the existing namespace/watchdog, interceptor and producer route. Keep all fixtures and deterministic schedule proofs under owned ignored build/test-artifacts; no ROM, graph query, package installation, remote action or limit change.",
+      "actions": "Run the focused workflow-governance procedure. Execute the real two-helper Make fixture under a deterministic test supervisor that preserves both single O_APPEND writes and reverses only their successful exit-stop delivery. Compare exact physical and observed frame bytes with multiplicity; require physical-order returned events, distinct slots and both outputs. Repeat ordinary behavior and inject missing, extra, duplicate, bit-flipped, partial, trailing, wrong-slot, wrong-mapping-count, wrong-command and wrong-hash transcripts, plus existing incomplete publication and cleanup controls.",
+      "expected_result": "The controlled run retains equal exact frame multisets but deliberately different physical and exit-observation sequences, succeeds with both authentic receipts, and returns events in physical file order. Ordinary parallel dispatch remains valid. Existing full-write, parser, slot/command/hash/mapping-count, receipt/publication, accounting, budget and cleanup guards remain fail closed.",
+      "negative_control": "The pre-fix sequence comparison rejects the legitimate reversed-exit schedule. Missing, extra, duplicate, corrupt, partial or trailing physical/observed frames reject; identical frames cannot bypass slot uniqueness, and consistently mutated slot, mapping-count, command or hash bytes cannot pass parsing and receipt validation. Incomplete publication, partial writes and exhausted event/control budgets yield no partial success.",
+      "interactions": "Depends on #206/#212 and #225/#232, composes with #240/#241, and is independent of #242/#245 and #243/#244. #180/#186 and other native callers consume the same corrected foundation. No feature/profile conflicts or ABI, append, scheduling, parking, privilege, dependency, service or numeric-limit changes.",
+      "save_compatibility": "Host-only validation fix; no gameplay, save/migration/config identity, generated game data, localization, ROM/RAM, modern debug/release or archival profile impact.",
+      "cleanup": "Existing ProbeSession/watchdog cleanup removes only owned fixtures, schedule proof and generated publications. Every corrupt or incomplete transcript closes the budget and leaves no partial output.",
+      "limitations": "The deterministic wrapper changes ptrace notification delivery only, not production writes, bytes, receipt IDs or authority. No manual-only criterion applies; this focused case does not claim complete #180/#186 graph integration or remote completion.",
+      "automation": [
+        {
+          "command": "python3 -m unittest scripts.validation_ownership.tests.test_producer.ProducerTests.test_native_parallel_events_follow_physical_append_order_not_exit_stop_order scripts.validation_ownership.tests.test_producer.ProducerTests.test_native_parallel_dispatch_keeps_distinct_request_receipts scripts.validation_ownership.tests.test_producer.ProducerTests.test_native_event_stream_and_write_observations_match_exact_bytes_with_multiplicity scripts.validation_ownership.tests.test_producer.ProducerTests.test_parked_helper_death_aborts_without_publication scripts.validation_ownership.tests.test_producer.ProducerTests.test_nested_publication_transfer_rejects_corruption_and_never_retries_work -v",
+          "evidence": "scripts/validation_ownership/tests/test_producer.py"
+        },
+        {
+          "command": "python3 -m unittest scripts.validation_ownership.tests.test_foundation.FoundationTests.test_serial_resolution_rejects_known_mapping_miss_without_rerunning_worker scripts.validation_ownership.tests.test_foundation.FoundationTests.test_strict_named_protocols_reject_binary_and_truncated_frames scripts.validation_ownership.tests.test_foundation.FoundationTests.test_event_mapping_and_pending_byte_bounds_cover_real_commands -v",
+          "evidence": "scripts/validation_ownership/tests/test_foundation.py"
         }
       ]
     },

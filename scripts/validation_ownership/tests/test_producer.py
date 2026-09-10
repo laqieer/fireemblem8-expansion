@@ -12,6 +12,7 @@ import subprocess
 import time
 import unittest
 import zlib
+from collections import Counter
 from pathlib import Path
 from dataclasses import replace
 from types import SimpleNamespace
@@ -19,7 +20,10 @@ from unittest.mock import mock_open, patch
 
 from scripts.validation_ownership.make_probe import Command, NativeTool, TRUSTED_ROOT
 from scripts.validation_ownership.budget import MakeProbeError
-from scripts.validation_ownership.authority import ENVIRONMENT, parse_json, relative_path
+from scripts.validation_ownership.authority import (
+    ENVIRONMENT, _command_hash, _event_command, _read_event_frames, parse_json,
+    relative_path,
+)
 from scripts.validation_ownership.producer_channel import ChannelError, ProducerChannel
 from scripts.validation_ownership.python_commands import (
     GENERATED_DEPENDENCY_MODULES,
@@ -3338,7 +3342,7 @@ class ProducerTests(unittest.TestCase):
             self.assertEqual(len(result.semantics["dynamic_commands"]), 2)
         self.fixture.assert_clean(session)
 
-    def test_native_parallel_dispatch_keeps_distinct_request_receipts(self):
+    def parallel_dispatch_fixture(self):
         self.fixture.add("producer.py", (
             "import sys\n"
             "open('/work/'+sys.argv[1]+'.txt','w').write(sys.argv[1])\n"
@@ -3355,6 +3359,10 @@ class ProducerTests(unittest.TestCase):
                 code=("producer.py",), outputs=(name + ".txt",),
             ) for name in ("one", "two")
         }
+        return registrations
+
+    def test_native_parallel_dispatch_keeps_distinct_request_receipts(self):
+        registrations = self.parallel_dispatch_fixture()
         with self.fixture.session(seconds=30) as session:
             observed = session.make("all", commands=registrations)
             self.assertEqual(set(observed.stdout.splitlines()), {b"one", b"two"})
@@ -3365,6 +3373,195 @@ class ProducerTests(unittest.TestCase):
             self.assertFalse((session.tree / "one.txt").exists())
             self.assertFalse((session.tree / "two.txt").exists())
         self.fixture.assert_clean(session)
+
+    def test_native_parallel_events_follow_physical_append_order_not_exit_stop_order(self):
+        registrations = self.parallel_dispatch_fixture()
+        proxy = self.fixture.directory / "event-order-supervisor.py"
+        proof = self.fixture.directory / "event-order-proof.json"
+        proxy.write_text(
+            "import ctypes,inspect,json,os,signal,sys\nfrom pathlib import Path\n"
+            f"sys.path.insert(0,{str(TRUSTED_ROOT)!r})\n"
+            "import syscall_guard as guard,sandbox_exec\n"
+            "config=json.loads(Path(sys.argv[1]).read_bytes())\n"
+            "events=Path(config['root'])/'control/events'; wait=os.waitpid\n"
+            "entry=None; entry_returned=False; blocked=None; held=None; release=[]\n"
+            f"proof=Path({str(proof)!r}); record={{'leave_order':[]}}\n"
+            "def save(): proof.write_text(json.dumps(record,sort_keys=True))\n"
+            "def event_stop(values,child,status):\n"
+            " state=values['processes'].get(child)\n"
+            " if state is None or state.role!='helper' or not os.WIFSTOPPED(status) or "
+            "os.WSTOPSIG(status)!=(signal.SIGTRAP|0x80): return None\n"
+            " info=(ctypes.c_ubyte*128)(); guard.ptrace(0x420E,child,128,ctypes.byref(info))\n"
+            " regs=guard.Registers(); guard.ptrace(guard.GETREGS,child,0,ctypes.byref(regs))\n"
+            " if regs.orig_rax!=1: return None\n"
+            " if info[0]==1 and state.fds.get(regs.rdi)=='/control/events':\n"
+            "  return 'entry',state,guard.memory(child,regs.rsi,regs.rdx)\n"
+            " if info[0]==2 and state.pending is not None and state.pending[0]=='event':\n"
+            "  return 'exit',state,state.pending[1]\n"
+            " return None\n"
+            "def ordered_wait(pid,options):\n"
+            " global entry,entry_returned,blocked,held\n"
+            " caller=inspect.currentframe().f_back\n"
+            " if caller.f_code.co_name not in ('supervise','fulfill_producer') or not options&os.WNOHANG:\n"
+            "  return wait(pid,options)\n"
+            " if release: return release.pop(0)[:2]\n"
+            " while True:\n"
+            "  child,status=wait(pid,options)\n"
+            "  if not child: return child,status\n"
+            "  item=event_stop(caller.f_locals,child,status)\n"
+            "  if item is None: return child,status\n"
+            "  phase,state,frame=item\n"
+            "  if phase=='entry':\n"
+            "   if entry is None: entry=(child,status,frame); continue\n"
+            "   if child!=entry[0] and not entry_returned:\n"
+            "    blocked=(child,status,frame); entry_returned=True; return entry[:2]\n"
+            "   return child,status\n"
+            "  raw=events.read_bytes()\n"
+            "  if child==entry[0] and held is None:\n"
+            "   if raw!=frame: raise RuntimeError('first physical append differs from its write')\n"
+            "   held=(child,status,frame); record['physical_after_first']=raw.hex(); save()\n"
+            "   if blocked is not None:\n"
+            "    value=blocked; blocked=None; return value[:2]\n"
+            "   continue\n"
+            "  if held is not None and child!=held[0]:\n"
+            "   if raw!=held[2]+frame: raise RuntimeError('physical append order changed')\n"
+            "   record['physical']=raw.hex(); release.append(held); held=None; save(); return child,status\n"
+            "  return child,status\n"
+            "leave=guard.Policy.leave\n"
+            "def recorded_leave(self,pid,state,regs):\n"
+            " operation=state.pending[0] if state.pending is not None else None\n"
+            " frame=state.pending[1] if operation=='event' else None\n"
+            " result=leave(self,pid,state,regs)\n"
+            " if operation=='event': record['leave_order'].append(frame.hex()); save()\n"
+            " return result\n"
+            "guard.os.waitpid=ordered_wait; guard.Policy.leave=recorded_leave\n"
+            "raise SystemExit(sandbox_exec.main())\n",
+        )
+        original = foundation.ProbeBudget.run
+        reports = []
+        def supervise(budget, argv, **kwargs):
+            if len(argv) >= 2 and argv[-2] == str(TRUSTED_ROOT / "sandbox_exec.py"):
+                config = json.loads(Path(argv[-1]).read_bytes())
+                if config["mode"] == "make":
+                    argv = [*argv[:-2], str(proxy), argv[-1]]
+            return original(budget, argv, **kwargs)
+        with self.fixture.session(seconds=30) as session:
+            with patch.object(foundation.ProbeBudget, "run", supervise), self.capture_reports(session, reports):
+                observed = session.make("all", commands=registrations)
+            record = json.loads(proof.read_bytes())
+            physical_raw = bytes.fromhex(record["physical"])
+            physical = list(_read_event_frames(physical_raw, expected_mapping_count=None))
+            exits = [bytes.fromhex(frame) for frame in record["leave_order"]]
+            self.assertEqual(Counter(frame for frame, _ in physical), Counter(exits))
+            self.assertEqual([frame for frame, _ in physical], list(reversed(exits)))
+            self.assertEqual(
+                [_event_command(event) for _, event in physical],
+                [_event_command(event) for event in observed.events],
+            )
+            self.assertEqual(set(observed.stdout.splitlines()), {b"one", b"two"})
+            self.assertEqual({event["match"] for event in observed.events}, {0, 1})
+            self.assertEqual(len(observed.semantics["dynamic_commands"]), 2)
+            self.assertEqual(session.budget.bytes["event"], len(physical_raw))
+            self.assertEqual(reports[-1]["events"], record["leave_order"])
+            self.assertGreaterEqual(reports[-1]["written_bytes"], len(physical_raw))
+            self.assert_settled_reports(session, reports)
+            self.assertFalse((session.tree / "one.txt").exists())
+            self.assertFalse((session.tree / "two.txt").exists())
+        self.fixture.assert_clean(session)
+
+    def test_native_event_stream_and_write_observations_match_exact_bytes_with_multiplicity(self):
+        registrations = self.parallel_dispatch_fixture()
+        cases = (
+            "observation-missing", "observation-extra", "observation-duplicate",
+            "observation-bitflip", "physical-missing", "physical-extra",
+            "physical-duplicate", "physical-bitflip", "physical-partial",
+            "physical-trailing", "matched-duplicate", "wrong-slot",
+            "wrong-mapping-count", "wrong-hash", "wrong-command",
+        )
+        for defect in cases:
+            with self.subTest(defect=defect):
+                target = {}
+                with self.fixture.session(seconds=30) as session:
+                    read = session.budget.read_bytes
+                    def transform(frame):
+                        data = bytearray(frame)
+                        if defect == "wrong-slot":
+                            slot = int.from_bytes(data[:4], "little", signed=True)
+                            replacement = 1 - slot
+                            data[:4] = replacement.to_bytes(4, "little", signed=True)
+                            data[4:8] = (replacement + 1).to_bytes(4, "little")
+                        elif defect == "wrong-mapping-count":
+                            data[4:8] = (int.from_bytes(data[4:8], "little") + 1).to_bytes(4, "little")
+                        elif defect == "wrong-hash":
+                            data[8] ^= 1
+                        elif defect == "wrong-command":
+                            event = next(_read_event_frames(frame, expected_mapping_count=None))[1]
+                            old = event["arguments"][-1]
+                            new = "two" if old == "one" else "one"
+                            data[-len(old):] = new.encode()
+                            event["arguments"][-1] = new
+                            data[8:16] = int(
+                                _command_hash(_event_command(event)), 16,
+                            ).to_bytes(8, "little")
+                        return bytes(data)
+                    def corrupt(path, category):
+                        raw = read(path, category)
+                        if path.parent == session.base and path.name.startswith("report-"):
+                            report = json.loads(raw)
+                            events = report["events"]
+                            if events:
+                                target["frame"] = bytes.fromhex(events[0])
+                                if defect == "observation-missing":
+                                    events.pop(0)
+                                elif defect == "observation-extra":
+                                    events.append(events[0])
+                                elif defect == "observation-duplicate":
+                                    events[1] = events[0]
+                                elif defect == "matched-duplicate":
+                                    events[1] = events[0]
+                                elif defect == "observation-bitflip":
+                                    frame = bytearray.fromhex(events[0]); frame[-1] ^= 1
+                                    events[0] = frame.hex()
+                                elif defect.startswith("wrong-"):
+                                    events[0] = transform(target["frame"]).hex()
+                            return json.dumps(report).encode()
+                        if category != "event":
+                            return raw
+                        frames = [frame for frame, _ in _read_event_frames(
+                            raw, expected_mapping_count=None,
+                        )]
+                        if defect == "physical-missing":
+                            return b"".join(frames[1:])
+                        if defect == "physical-extra":
+                            return raw + frames[0]
+                        if defect == "physical-duplicate":
+                            return frames[0] + frames[0]
+                        if defect == "matched-duplicate":
+                            return target["frame"] + target["frame"]
+                        if defect == "physical-bitflip":
+                            data = bytearray(raw); data[-1] ^= 1; return bytes(data)
+                        if defect == "physical-partial":
+                            return raw[:-1]
+                        if defect == "physical-trailing":
+                            return raw + b"\0"
+                        if defect.startswith("wrong-"):
+                            replacement = transform(target["frame"])
+                            return raw.replace(target["frame"], replacement, 1)
+                        return raw
+                    with patch.object(session.budget, "read_bytes", corrupt):
+                        if defect == "matched-duplicate":
+                            with self.assertRaisesRegex(
+                                MakeProbeError, "unknown or repeated live producer completion",
+                            ):
+                                session.make("all", commands=registrations)
+                        else:
+                            with self.assertRaises(MakeProbeError):
+                                session.make("all", commands=registrations)
+                    self.assertTrue(session.budget.closed)
+                    self.assertFalse(session.budget.children)
+                    self.assertFalse((session.tree / "one.txt").exists())
+                    self.assertFalse((session.tree / "two.txt").exists())
+                self.fixture.assert_clean(session)
 
     def test_parallel_vfork_parent_can_park_while_its_child_waits_at_exec(self):
         proxy = self.fixture.directory / "ordered-supervisor.py"
