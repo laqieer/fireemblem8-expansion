@@ -57,6 +57,10 @@ METADATA_EDIT_RACE_CASE_HEADING = (
     "TC-WORKFLOW-METADATA-EDIT-RACE-001: "
     "Defer metadata edits and reconcile continuity"
 )
+REVIEW_PATHS_CASE_HEADING = (
+    "TC-WORKFLOW-REVIEW-PATHS-001: "
+    "Bind coverage to actual immutable candidate-file reads"
+)
 CANDIDATE_EVIDENCE_MARKER = "<!-- workflow-pilot-candidate-evidence -->"
 EVOLVING_PR_BODY_FIELDS = (
     "## Validation commands",
@@ -2720,6 +2724,28 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
             COPILOT_INSTRUCTIONS_PATH.read_text(encoding="utf-8"), "Bounded exact-SHA implementation handoffs",
         ))
 
+    def test_review_path_coverage_case_is_indexed_and_required(self):
+        registry = json.loads(TEST_CASE_REGISTRY_PATH.read_text(encoding="utf-8"))
+        case_id = "TC-WORKFLOW-REVIEW-PATHS-001"
+        case = next(item for item in registry["cases"] if item["id"] == case_id)
+        feature = next(item for item in registry["features"] if item["id"] == case["feature_id"])
+        self.assertIn(case_id, feature["required_cases"])
+        self.assertEqual(case["feature_id"], "workflow-governance")
+        self.assertEqual(case["issue_urls"], [
+            "https://github.com/laqieer/fireemblem8-expansion/issues/243"
+        ])
+        document = ROOT / case["document"]
+        section = "\n".join(read_markdown_section(
+            document.read_text(encoding="utf-8"),
+            REVIEW_PATHS_CASE_HEADING,
+        ))
+        for heading in ("Actions", "Expected result", "Negative control",
+                        "Interactions and save compatibility", "Automation",
+                        "Cleanup and limitations"):
+            self.assertTrue(read_markdown_section(section, heading))
+        for evidence in case["automation"]:
+            self.assertTrue((ROOT / evidence["evidence"]).is_file())
+
     def test_review_ownership_contract_and_actual_runtime_roles_agree(self):
         from scripts.workflow_pilot import review_family
         from scripts.workflow_pilot.tests.review_support import Runtime
@@ -4549,6 +4575,7 @@ printf '%s\t%s\t%s\n' "$result" \
             "TC-WORKFLOW-AGENT-HANDOFF-001",
             "TC-WORKFLOW-HOST-PYTHON-DEPS-001",
             "TC-WORKFLOW-REVIEW-FAMILY-001",
+            "TC-WORKFLOW-REVIEW-PATHS-001",
             "TC-WORKFLOW-REVIEW-FIRST-001",
             "TC-WORKFLOW-WORKTREE-CLEANUP-001",
             "TC-WORKFLOW-IMMEDIATE-PUSH-001",

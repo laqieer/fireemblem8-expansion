@@ -7,7 +7,7 @@ if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
 import copy
-from dataclasses import replace
+from dataclasses import FrozenInstanceError, replace
 import io
 import json
 import os
@@ -34,6 +34,36 @@ def response(base, head, body="Complete review content", *, actor=None):
         }]},
         "reviewThreads": {"pageInfo": {"hasNextPage": False}, "nodes": []},
     }}}}
+
+
+def candidate_fixture(repo):
+    prefix = "candidate-gate-review-paths"
+    base = repo.commit({
+        f"{prefix}/modify.txt": "base revision\n",
+        f"{prefix}/delete.txt": "delete from base\n",
+        f"{prefix}/mode.sh": "#!/bin/sh\necho shared\n",
+    }, parent=repo.base)
+    git(repo.root, "reset", "--hard", base)
+    root = repo.root / prefix
+    (root / "modify.txt").write_text("head revision\n")
+    (root / "delete.txt").unlink()
+    (root / "added.txt").write_text("added in head\n")
+    os.chmod(root / "mode.sh", 0o755)
+    git(repo.root, "add", "-A")
+    git(repo.root, "update-index", "--chmod=+x", f"{prefix}/mode.sh")
+    git(repo.root, "commit", "-qm", "candidate gate fixture")
+    head = git(repo.root, "rev-parse", "HEAD")
+    git(repo.root, "reset", "--hard", repo.base)
+    return {
+        "base": base,
+        "head": head,
+        "paths": {
+            "added": f"{prefix}/added.txt",
+            "deleted": f"{prefix}/delete.txt",
+            "mode": f"{prefix}/mode.sh",
+            "modified": f"{prefix}/modify.txt",
+        },
+    }
 
 
 class ObservedGitHub(gate.GitHub):
@@ -785,6 +815,68 @@ runpy.run_path(sys.argv[0], run_name="__main__")
         self.assertEqual(report["untriaged_review_ids"], ["review-1"])
         self.assertFalse(report["handoff_eligible"])
         self.assertTrue(report["coordinator_observations_required"])
+
+    def test_candidate_reader_public_api_binds_exact_bytes_and_check_mode_stays_local(self):
+        with snapshot() as repo:
+            fixture = candidate_fixture(repo)
+            tools = gate.ReviewTools(gate.GitTree(repo.root, fixture["head"]), repo.root)
+            reader = tools.candidate_reader(fixture["base"], fixture["head"])
+            self.assertEqual(
+                reader.preview(fixture["paths"]["deleted"], "base"),
+                {
+                    "path": fixture["paths"]["deleted"],
+                    "side": "base",
+                    "revision": fixture["base"],
+                },
+            )
+            changes = tools.candidate_changes(
+                fixture["base"], fixture["head"],
+                paths=[fixture["paths"]["added"], fixture["paths"]["deleted"],
+                       fixture["paths"]["mode"], fixture["paths"]["modified"]],
+                require_both=(fixture["paths"]["modified"],))
+            self.assertEqual(
+                [item["path"] for item in changes],
+                sorted(fixture["paths"].values()),
+            )
+            described = {
+                (item["path"], tuple(item["required_sides"]))
+                for item in changes
+            }
+            self.assertIn((fixture["paths"]["deleted"], ()), described)
+            self.assertIn((fixture["paths"]["modified"], ("base", "head")), described)
+            git(repo.root, "reset", "--hard", fixture["head"])
+            drift = repo.root / fixture["paths"]["modified"]
+            drift.write_text("working tree drift\n")
+            git(repo.root, "add", fixture["paths"]["modified"])
+            modified_base = reader(fixture["paths"]["modified"], "base")
+            modified_head = reader(fixture["paths"]["modified"])
+            mode_base = reader(fixture["paths"]["mode"], "base")
+            mode_head = reader(fixture["paths"]["mode"])
+            deleted_head = reader(fixture["paths"]["deleted"])
+            self.assertEqual(modified_base["data"], b"base revision\n")
+            self.assertEqual(modified_head["data"], b"head revision\n")
+            self.assertEqual((mode_base["mode"], mode_head["mode"]), ("100644", "100755"))
+            self.assertEqual(mode_base["oid"], mode_head["oid"])
+            self.assertFalse(deleted_head["present"])
+            self.assertEqual(deleted_head["data"], None)
+            with self.assertRaisesRegex(ValueError, "candidate path must be canonical"):
+                reader("../escape.txt")
+            data = request(base=fixture["base"], head=fixture["head"])
+            path = repo.root / "request.json"
+            path.write_text(json.dumps(data))
+            output = io.StringIO()
+            with patch.object(gate, "GitHub", return_value=ObservedGitHub(
+                    response(fixture["base"], fixture["head"]))), redirect_stdout(output):
+                code = gate.main([
+                    "--repository-root", str(repo.root), "--subject-root", str(repo.root),
+                    "--tool-revision", fixture["head"], "--candidate", fixture["head"],
+                    "--request", str(path), "--mode", "check"])
+            self.assertEqual(code, 0)
+            report = json.loads(output.getvalue())
+            self.assertTrue(report["source_audit_complete"])
+            self.assertFalse(report["handoff_eligible"])
+            self.assertTrue(report["coordinator_observations_required"])
+            self.assertEqual(report["candidate_sha"], fixture["head"])
 
 
 if __name__ == "__main__":

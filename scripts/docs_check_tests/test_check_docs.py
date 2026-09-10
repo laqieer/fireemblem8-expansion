@@ -972,7 +972,54 @@ class TesterCaseRegistryTests(unittest.TestCase):
         with open(os.path.join(REAL_REPO_ROOT, case["document"]), encoding="utf-8") as stream:
             section = markdown_section(stream.read(), case_id + ": " + case["title"])
         for heading in (
-            "Feature and configuration", "Actions", "Expected result", "Negative control",
+            "Actions", "Expected result", "Negative control",
+            "Interactions and save compatibility", "Automation", "Cleanup and limitations",
+        ):
+            self.assertTrue(markdown_section(section, heading), heading)
+
+    def test_review_path_coverage_case_is_indexed_with_focused_procedure(self):
+        registry, errors = check_docs.parse_test_case_registry(REAL_REPO_ROOT)
+        self.assertEqual(errors, [])
+        case_id = "TC-WORKFLOW-REVIEW-PATHS-001"
+        feature = next(item for item in registry["features"] if item["id"] == "workflow-governance")
+        case, = [item for item in registry["cases"] if item["id"] == case_id]
+        self.assertEqual(feature["required_cases"].count(case_id), 1)
+        self.assertEqual(case["issue_urls"], ["https://github.com/laqieer/fireemblem8-expansion/issues/243"])
+        selected = {
+            "schema_version": registry["schema_version"],
+            "coverage": {"mode": "complete", "expected_feature_ids": [feature["id"]], "deferred_issues": []},
+            "features": [{**feature, "required_cases": [case_id]}],
+            "cases": [case],
+        }
+        with mock.patch.object(check_docs, "parse_test_case_registry", return_value=(selected, [])):
+            self.assertEqual(check_docs.check_test_case_registry(REAL_REPO_ROOT), [])
+        self.assertEqual(case["automation"], [{
+            "command": "build/host-python/bin/python3 -I -c "
+                       "'import sys, unittest; sys.path.insert(0, \".\"); "
+                       "unittest.main(module=None)' "
+                       "scripts.workflow_pilot.tests.test_review_family.CandidateCoverageTests -v",
+            "evidence": "scripts/workflow_pilot/tests/test_review_family.py",
+        }, {
+            "command": "build/host-python/bin/python3 -I -c "
+                       "'import sys, unittest; sys.path.insert(0, \".\"); "
+                       "unittest.main(module=None)' "
+                       "scripts.workflow_pilot.tests.test_github_review."
+                       "GitHubReviewTests.test_candidate_reader_public_api_binds_exact_bytes_and_check_mode_stays_local -v",
+            "evidence": "scripts/workflow_pilot/tests/test_github_review.py",
+        }, {
+            "command": "python3 -m unittest scripts.docs_check_tests.test_check_docs."
+                       "TesterCaseRegistryTests.test_review_path_coverage_case_is_indexed_with_focused_procedure "
+                       "scripts.docs_check_tests.test_development_workflow_skill."
+                       "DevelopmentWorkflowSkillTests.test_review_path_coverage_case_is_indexed_and_required -v",
+            "evidence": "scripts/docs_check_tests/test_check_docs.py",
+        }, {
+            "command": "python3 scripts/check_docs.py --check",
+            "evidence": "scripts/check_docs.py",
+        }])
+        with open(os.path.join(REAL_REPO_ROOT, case["document"]), encoding="utf-8") as stream:
+            section = markdown_section(stream.read(), case_id + ": " + case["title"])
+        for heading in (
+            "Actions", "Expected result", "Negative control",
             "Interactions and save compatibility", "Automation", "Cleanup and limitations",
         ):
             self.assertTrue(markdown_section(section, heading), heading)
@@ -1042,6 +1089,26 @@ class TesterCaseRegistryTests(unittest.TestCase):
                             "-s scripts/workflow_pilot/tests -t . -p 'test_review_process_cleanup.py' -v",
                             "python3 -m unittest "
                             "scripts.workflow_pilot.tests.arm_review_subjects -v",
+                        },
+                    },
+                    "TC-WORKFLOW-REVIEW-PATHS-001": {
+                        "document": "docs/test-cases/workflow-governance.md",
+                        "commands": {
+                            "build/host-python/bin/python3 -I -c "
+                            "'import sys, unittest; sys.path.insert(0, \".\"); "
+                            "unittest.main(module=None)' "
+                            "scripts.workflow_pilot.tests.test_review_family.CandidateCoverageTests -v",
+                            "build/host-python/bin/python3 -I -c "
+                            "'import sys, unittest; sys.path.insert(0, \".\"); "
+                            "unittest.main(module=None)' "
+                            "scripts.workflow_pilot.tests.test_github_review."
+                            "GitHubReviewTests.test_candidate_reader_public_api_binds_exact_bytes_and_check_mode_stays_local -v",
+                            "python3 -m unittest "
+                            "scripts.docs_check_tests.test_check_docs."
+                            "TesterCaseRegistryTests.test_review_path_coverage_case_is_indexed_with_focused_procedure "
+                            "scripts.docs_check_tests.test_development_workflow_skill."
+                            "DevelopmentWorkflowSkillTests.test_review_path_coverage_case_is_indexed_and_required -v",
+                            "python3 scripts/check_docs.py --check",
                         },
                     },
                     "TC-WORKFLOW-WORKTREE-CLEANUP-001": {
