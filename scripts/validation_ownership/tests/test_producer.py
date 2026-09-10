@@ -19,9 +19,16 @@ from unittest.mock import mock_open, patch
 
 from scripts.validation_ownership.make_probe import Command, NativeTool, TRUSTED_ROOT
 from scripts.validation_ownership.budget import MakeProbeError
-from scripts.validation_ownership.authority import ENVIRONMENT
+from scripts.validation_ownership.authority import ENVIRONMENT, parse_json, relative_path
 from scripts.validation_ownership.producer_channel import ChannelError, ProducerChannel
 from scripts.validation_ownership.python_commands import (
+    GENERATED_DEPENDENCY_MODULES,
+    _chapterbundle_support,
+    _generated_dependency_option_values,
+    _generated_dependency_source_paths,
+    _python_module_code,
+    _repository_report_path,
+    directory_python_command,
     generated_dependency_command,
     python_code_closure,
     python_command,
@@ -161,6 +168,221 @@ class ProducerTests(unittest.TestCase):
             },
         ]
 
+    def add_compact_generated_dependency_fixture(self):
+        for path in (
+            "scripts/generated_data/chapterbundle",
+            "scripts/generated_data/chapterobjectives",
+            "scripts/generated_data/autoplaystrategies",
+            "scripts/generated_data/eventlists",
+            "scripts/generated_data/units",
+        ):
+            self.fixture.add(path + "/__init__.py", "")
+        self.fixture.add("scripts/generated_data/character_refs.py", (
+            "import os\n"
+            "REPO_ROOT=os.path.realpath('/repo')\n"
+            "CHARACTERS_HEADER=os.path.join(REPO_ROOT,'include','constants','characters.h')\n"
+        ))
+        selector = (
+            "import glob,os\n"
+            "def source_paths(source):\n"
+            " if os.path.isdir(source):\n"
+            "  paths=sorted(glob.glob(os.path.join(source,'*.json')))\n"
+            "  if not paths:\n"
+            "   raise ValueError('directory has no sources')\n"
+            "  return paths\n"
+            " return [source]\n"
+        )
+        self.fixture.add("scripts/generated_data/autoplaystrategies/schema.py", selector)
+        self.fixture.add("scripts/generated_data/chapterobjectives/schema.py", (
+            "import glob,os\n"
+            "from .. import character_refs\n"
+            "REPO_ROOT=os.path.realpath('/repo')\n"
+            "CHAPTERS_HEADER=os.path.join(REPO_ROOT,'include','constants','chapters.h')\n"
+            "EVENT_FLAGS_HEADER=os.path.join(REPO_ROOT,'include','constants','event-flags.h')\n"
+            "def source_paths(source):\n"
+            " if os.path.isdir(source):\n"
+            "  paths=sorted(glob.glob(os.path.join(source,'*.json')))\n"
+            "  if not paths:\n"
+            "   raise ValueError('directory has no sources')\n"
+            "  return paths\n"
+            " return [source]\n"
+        ))
+        self.fixture.add("scripts/generated_data/units/schema.py", "MARKER = 'units'\n")
+        self.fixture.add("scripts/generated_data/chapterbundle/schema.py", (
+            "import glob,importlib,json,os\n"
+            "from types import SimpleNamespace\n"
+            "REPO_ROOT=os.path.realpath('/repo')\n"
+            "ASSET_MANIFEST_PATH=os.path.join(REPO_ROOT,'assets','manifest.json')\n"
+            "CHAPTER_DATA_ASSET_TABLE_SOURCE=os.path.join(REPO_ROOT,'src','data','chapter_data.c')\n"
+            "CHAPTER_SETTINGS_JSON=os.path.join(REPO_ROOT,'src','data','chapter_settings.json')\n"
+            "MAP_LAYOUT_DIR=os.path.join(REPO_ROOT,'graphics','map','layout')\n"
+            "DEPENDENCY_SCHEMA_MODULES={'units':'scripts.generated_data.units.schema'}\n"
+            "def _canonical(path):\n"
+            " return os.path.normcase(os.path.realpath(os.path.abspath(path)))\n"
+            "def source_paths(source_path, repository_root=REPO_ROOT):\n"
+            " source_path=_canonical(source_path)\n"
+            " if os.path.isdir(source_path):\n"
+            "  paths=sorted(glob.glob(os.path.join(source_path,'*.json')))\n"
+            "  if not paths:\n"
+            "   raise ValueError('directory has no sources')\n"
+            "  return paths\n"
+            " return [source_path]\n"
+            "def load_records(source_path, repository_root=REPO_ROOT):\n"
+            " records=[]\n"
+            " for path in source_paths(source_path, repository_root):\n"
+            "  raw=json.load(open(path))\n"
+            "  tables=[SimpleNamespace(source=entry['source']) for entry in raw['tables']]\n"
+            "  support=SimpleNamespace(source=raw['supportOwners']['source'])\n"
+            "  records.append(SimpleNamespace(tables=tables,support_owners=support))\n"
+            " return records\n"
+            "def dependency_module_paths():\n"
+            " paths=set([_canonical(__file__)])\n"
+            " for name in sorted(DEPENDENCY_SCHEMA_MODULES.values()):\n"
+            "  module=importlib.import_module(name)\n"
+            "  if getattr(module,'__file__',None):\n"
+            "   paths.add(_canonical(module.__file__))\n"
+            " return tuple(sorted(paths))\n"
+        ))
+        self.fixture.add("scripts/generated_data/chapterobjectives/deps.py", (
+            "import glob,os,sys\n"
+            "from . import schema as objectives_schema\n"
+            "from ..chapterbundle import schema as bundle_schema\n"
+            "def _canonical(path):\n"
+            " return os.path.normcase(os.path.realpath(os.path.abspath(path)))\n"
+            "def _implementation_module_paths():\n"
+            " package_root=_canonical(os.path.join(bundle_schema.REPO_ROOT,'scripts','generated_data'))\n"
+            " bundle_schema.dependency_module_paths()\n"
+            " paths=set()\n"
+            " for module in tuple(sys.modules.values()):\n"
+            "  module_path=getattr(module,'__file__',None)\n"
+            "  if module_path is None:\n"
+            "   continue\n"
+            "  module_path=_canonical(module_path)\n"
+            "  if module_path.startswith(package_root + os.sep) and '/tests/' not in module_path:\n"
+            "   paths.add(module_path)\n"
+            " return tuple(sorted(paths))\n"
+            "def collect_input_paths(objectives_source,bundle_source):\n"
+            " bundles=bundle_schema.load_records(bundle_source)\n"
+            " paths=set(objectives_schema.source_paths(objectives_source))\n"
+            " paths.update(bundle_schema.source_paths(bundle_source))\n"
+            " paths.update(_implementation_module_paths())\n"
+            " paths.update((_canonical(objectives_source),_canonical(bundle_source),\n"
+            "              _canonical(objectives_schema.CHAPTERS_HEADER),\n"
+            "              _canonical(objectives_schema.EVENT_FLAGS_HEADER),\n"
+            "              _canonical(objectives_schema.character_refs.CHARACTERS_HEADER),\n"
+            "              _canonical(bundle_schema.ASSET_MANIFEST_PATH),\n"
+            "              _canonical(bundle_schema.CHAPTER_DATA_ASSET_TABLE_SOURCE),\n"
+            "              _canonical(bundle_schema.CHAPTER_SETTINGS_JSON),\n"
+            "              _canonical(os.path.dirname(bundle_schema.ASSET_MANIFEST_PATH)),\n"
+            "              _canonical(bundle_schema.MAP_LAYOUT_DIR),\n"
+            "              _canonical(os.path.join(bundle_schema.REPO_ROOT,'assets','tmx'))))\n"
+            " paths.update(_canonical(path) for path in glob.glob(os.path.join(bundle_schema.REPO_ROOT,'assets','tmx','*.tmx')))\n"
+            " paths.update(_canonical(path) for path in glob.glob(os.path.join(bundle_schema.MAP_LAYOUT_DIR,'*.json')))\n"
+            " for bundle in bundles:\n"
+            "  for table in bundle.tables:\n"
+            "   paths.add(_canonical(os.path.join(bundle_schema.REPO_ROOT, table.source)))\n"
+            "  paths.add(_canonical(os.path.join(bundle_schema.REPO_ROOT, bundle.support_owners.source)))\n"
+            " return tuple(sorted(paths))\n"
+            "def render_depfile(target, inputs):\n"
+            " return target+': '+' '.join(inputs)+'\\n'\n"
+        ))
+        self.fixture.add("scripts/generated_data/autoplaystrategies/deps.py", (
+            "import os\n"
+            "from ..chapterobjectives import deps as objectives_deps\n"
+            "from . import schema as strategies_schema\n"
+            "def _canonical(path):\n"
+            " return os.path.normcase(os.path.realpath(os.path.abspath(path)))\n"
+            "def collect_input_paths(strategy_source, objectives_source, bundle_source):\n"
+            " paths=set(objectives_deps.collect_input_paths(objectives_source, bundle_source))\n"
+            " paths.update(strategies_schema.source_paths(strategy_source))\n"
+            " paths.add(_canonical(strategy_source))\n"
+            " return tuple(sorted(paths))\n"
+            "def render_depfile(target, inputs):\n"
+            " return target+': '+' '.join(inputs)+'\\n'\n"
+        ))
+        self.fixture.add("scripts/generated_data/eventlists/deps.py", (
+            "import os\n"
+            "from ..autoplaystrategies import schema as strategies_schema\n"
+            "from ..chapterbundle import schema as bundle_schema\n"
+            "def _canonical(path):\n"
+            " return os.path.normcase(os.path.realpath(os.path.abspath(path)))\n"
+            "def collect_input_paths(strategy_source, bundle_source):\n"
+            " paths=set(strategies_schema.source_paths(strategy_source))\n"
+            " paths.update(bundle_schema.source_paths(bundle_source))\n"
+            " paths.add(_canonical(strategy_source))\n"
+            " paths.add(_canonical(bundle_source))\n"
+            " return tuple(sorted(paths))\n"
+            "def render_depfile(target, inputs):\n"
+            " return target+': '+' '.join(inputs)+'\\n'\n"
+        ))
+        for path, data in (
+            ("include/constants/characters.h", "#define CHARACTER_EIRIKA 1\n"),
+            ("include/constants/chapters.h", "#define CHAPTER_L_1 1\n"),
+            ("include/constants/event-flags.h", "#define EVFLAG_TMP(n) (n)\n"),
+            ("assets/manifest.json", "{}\n"),
+            ("assets/tmx/Map.json", "{}\n"),
+            ("assets/tmx/Map.tmx", "<map/>\n"),
+            ("graphics/map/layout/Map.json", "{}\n"),
+            ("src/data/chapter_settings.json", "{\"chapters\":[]}\n"),
+            ("src/data/chapter_data.c", "const int gChapterDataAssetTable = 0;\n"),
+            ("data/deps_units.json", "{\"value\":\"units\"}\n"),
+            ("data/deps_supports.json", "{\"value\":\"supports\"}\n"),
+            ("data/objectives/ch1_objectives.json", "{\"value\":\"objectives\"}\n"),
+            ("data/strategies/ch1_strategies.json", "{\"value\":\"strategies\"}\n"),
+            ("data/bundles/ch1_bundle.json", "{\"tables\":[{\"source\":\"data/deps_units.json\"}],\"supportOwners\":{\"source\":\"data/deps_supports.json\"}}\n"),
+        ):
+            self.fixture.add(path, data)
+        return [
+            {
+                "name": "chapterobjectives",
+                "module": "scripts.generated_data.chapterobjectives.deps",
+                "options": {"--source": "data/objectives", "--bundle-source": "data/bundles"},
+                "make_target": "build/generated/data/objectives.c",
+                "depfile": "build/generated/data/chapterobjectives.inputs.mk",
+                "command": (
+                    'python3 -m scripts.generated_data.chapterobjectives.deps --source "data/objectives" '
+                    '--bundle-source "data/bundles" --make-target "build/generated/data/objectives.c" '
+                    '--depfile "build/generated/data/chapterobjectives.inputs.mk"'
+                ),
+            },
+            {
+                "name": "autoplaystrategies",
+                "module": "scripts.generated_data.autoplaystrategies.deps",
+                "options": {
+                    "--source": "data/strategies/ch1_strategies.json",
+                    "--objectives-source": "data/objectives/ch1_objectives.json",
+                    "--bundle-source": "data/bundles/ch1_bundle.json",
+                },
+                "make_target": "build/generated/data/strategies.c",
+                "depfile": "build/generated/data/autoplay.inputs.mk",
+                "command": (
+                    'python3 -m scripts.generated_data.autoplaystrategies.deps '
+                    '--source "data/strategies/ch1_strategies.json" '
+                    '--objectives-source "data/objectives/ch1_objectives.json" '
+                    '--bundle-source "data/bundles/ch1_bundle.json" '
+                    '--make-target "build/generated/data/strategies.c" '
+                    '--depfile "build/generated/data/autoplay.inputs.mk"'
+                ),
+            },
+            {
+                "name": "eventlists",
+                "module": "scripts.generated_data.eventlists.deps",
+                "options": {
+                    "--strategy-source": "data/strategies/ch1_strategies.json",
+                    "--bundle-source": "data/bundles",
+                },
+                "make_target": "build/generated/data/eventlists.validated",
+                "depfile": "build/generated/data/eventlists.inputs.mk",
+                "command": (
+                    'python3 -m scripts.generated_data.eventlists.deps '
+                    '--strategy-source "data/strategies/ch1_strategies.json" '
+                    '--bundle-source "data/bundles" '
+                    '--make-target "build/generated/data/eventlists.validated" '
+                    '--depfile "build/generated/data/eventlists.inputs.mk"'
+                ),
+            },
+        ]
+
     def rewrite_generated_dependency_bundle(self, *, units_source):
         bundle_path = self.root / "testdata/bundles/el_bundle.json"
         bundle = json.loads(bundle_path.read_text(encoding="utf-8"))
@@ -186,6 +408,134 @@ class ProducerTests(unittest.TestCase):
         revision = git("write-tree").decode().strip()
         entries = registry_entries(self.root, revision, budget)
         return foundation.AuthorityLoader(self.root, entries, revision, budget=budget)
+
+    def legacy_generated_dependency_command(self, session, case):
+        details = GENERATED_DEPENDENCY_MODULES[case["module"]]
+        selector_arguments = _generated_dependency_option_values(case["module"], details, case["options"])
+        python_code = list(_python_module_code(session, case["module"], main=True))
+        directories = set()
+        discovery_sources = []
+        bundle_sources = ()
+        bundle_source = None
+        for (option, selector), source in zip(details["selectors"], selector_arguments):
+            paths = _generated_dependency_source_paths(session, selector, source)
+            discovery_sources.extend(paths)
+            if option == "--bundle-source":
+                bundle_source = source
+                bundle_sources = paths
+            source = relative_path(source)
+            if paths == (source,) and source not in session.snapshot.files:
+                directories.add(source)
+            elif source not in session.snapshot.files and (session.tree / source).is_dir():
+                directories.add(source)
+        if details["support_from_bundle"]:
+            implementation_code, bundle_refs, dependency_directories, dependency_members, dependency_sources = (
+                _chapterbundle_support(session, case["module"], bundle_source, bundle_sources)
+            )
+            python_code.extend(implementation_code)
+            directories.update(dependency_directories)
+            directories.update(("assets", "graphics", "include", "include/constants", "src", "src/data"))
+            discovery_sources.extend(bundle_refs)
+            discovery_sources.extend(dependency_members)
+            discovery_sources.extend(dependency_sources)
+        observed = session.command(directory_python_command(
+            session,
+            (
+                "import importlib,json\n"
+                "from pathlib import Path\n"
+                "module=importlib.import_module(sys.argv[1])\n"
+                "arguments=json.loads(sys.argv[2])\n"
+                "def rooted(value):\n"
+                " path=Path(value)\n"
+                " return str(Path('/repo') / path)\n"
+                "def report(value):\n"
+                " path=Path(value)\n"
+                " if path.is_absolute():\n"
+                "  path=path.relative_to('/repo')\n"
+                " if '..' in path.parts:\n"
+                "  raise ValueError('dependency source must be repository-relative without parent components')\n"
+                " return '/repo/' + path.as_posix()\n"
+                "print(json.dumps([\n"
+                " report(path)\n"
+                " for path in module.collect_input_paths(*(rooted(value) for value in arguments))\n"
+                "],separators=(',',':')))\n"
+            ),
+            (case["module"], json.dumps(selector_arguments, separators=(",", ":"))),
+            sources=tuple(sorted(set(discovery_sources))),
+            directories=tuple(sorted(directories)),
+            code=tuple(sorted(set(python_code))),
+        ))
+        discovery = parse_json(observed.stdout, "generated dependency input discovery")
+        if (
+            not isinstance(discovery, list) or not discovery
+            or any(not isinstance(path, str) or not path for path in discovery)
+        ):
+            raise MakeProbeError("generated dependency discovery returned no inputs")
+        files = []
+        declared_directories = set(directories)
+        for path in discovery:
+            relative = _repository_report_path(path)
+            if relative.endswith(".py"):
+                python_code.append(relative)
+            elif relative in session.snapshot.files:
+                files.append(relative)
+            else:
+                declared_directories.add(relative)
+        files = tuple(sorted(set(files)))
+        source_identities = session.source_owners(files)
+        return directory_python_command(
+            session,
+            (
+                "import hashlib,importlib,json,stat\n"
+                "from pathlib import Path\n"
+                "module=importlib.import_module(sys.argv[1])\n"
+                "inputs=json.loads(sys.argv[4])\n"
+                "tracked=json.loads(sys.argv[5])\n"
+                "identities={row[0]:tuple(row[1:]) for row in json.loads(sys.argv[6])}\n"
+                "if set(identities) != set(tracked):\n"
+                " raise ValueError('dependency publication source identities must match tracked inputs exactly')\n"
+                "for path in tracked:\n"
+                " source=Path('/repo') / Path(path)\n"
+                " status=source.stat()\n"
+                " digest=hashlib.sha256(source.read_bytes()).hexdigest()\n"
+                " mode=f'{stat.S_IFREG | stat.S_IMODE(status.st_mode):06o}'\n"
+                " if (mode,digest) != identities[path]:\n"
+                "  raise ValueError(f'captured source identity changed: {path}')\n"
+                "def rooted(value):\n"
+                " path=Path(value)\n"
+                " if path.is_absolute():\n"
+                "  return '/repo/' + path.relative_to('/repo').as_posix()\n"
+                " return '/repo/' + path.as_posix()\n"
+                "output=Path('/work') / Path(sys.argv[2])\n"
+                "output.parent.mkdir(parents=True,exist_ok=True)\n"
+                "content=module.render_depfile(sys.argv[3],[rooted(path) for path in inputs])\n"
+                "output.write_text(content,encoding='utf-8')\n"
+            ),
+            (
+                case["module"],
+                relative_path(case["depfile"]),
+                case["make_target"],
+                json.dumps(tuple(discovery), separators=(",", ":")),
+                json.dumps(files, separators=(",", ":")),
+                json.dumps(source_identities, separators=(",", ":")),
+            ),
+            sources=files,
+            outputs=(relative_path(case["depfile"]),),
+            directories=tuple(sorted(declared_directories)),
+            code=tuple(sorted(set(python_code))),
+        )
+
+    def capture_command_capsules(self, session, callback):
+        seen = []
+        run = session._sandbox_run
+
+        def record(root, **kwargs):
+            seen.append((kwargs["mode"], tuple(kwargs["argv"])))
+            return run(root, **kwargs)
+
+        with patch.object(session, "_sandbox_run", record):
+            result = callback()
+        return result, seen
 
     def test_static_query_does_not_grant_or_copy_unused_publication_authority(self):
         from scripts.validation_ownership.syscall_guard import Violation
@@ -3595,7 +3945,7 @@ class ProducerTests(unittest.TestCase):
             )
             self.assertEqual(canonical.sources, reordered.sources)
             self.assertEqual(canonical.directories, reordered.directories)
-            self.assertEqual(json.loads(canonical.argv[9]), json.loads(reordered.argv[9]))
+            self.assertEqual(json.loads(canonical.argv[7]), json.loads(reordered.argv[7]))
         self.fixture.assert_clean(session)
         with self.fixture.session(seconds=60) as session:
             with self.assertRaisesRegex(MakeProbeError, "missing --objectives-source"):
@@ -3623,6 +3973,116 @@ class ProducerTests(unittest.TestCase):
                     depfile=cases["autoplaystrategies"]["depfile"],
                 )
         self.fixture.assert_clean(session)
+
+    def test_generated_dependency_command_keeps_nonselected_directory_files_ungranted(self):
+        cases = {
+            case["name"]: case for case in self.add_compact_generated_dependency_fixture()
+        }
+        for path in (
+            "data/objectives/ignored.txt",
+            "data/bundles/ignored.txt",
+            "assets/tmx/ignored.txt",
+            "graphics/map/layout/ignored.txt",
+        ):
+            self.fixture.add(path, "ignored\n")
+        with self.fixture.session(seconds=60) as session:
+            command = generated_dependency_command(
+                session,
+                cases["chapterobjectives"]["module"],
+                option_values=cases["chapterobjectives"]["options"],
+                make_target=cases["chapterobjectives"]["make_target"],
+                depfile=cases["chapterobjectives"]["depfile"],
+            )
+            for path in (
+                "data/objectives/ignored.txt",
+                "data/bundles/ignored.txt",
+                "assets/tmx/ignored.txt",
+                "graphics/map/layout/ignored.txt",
+            ):
+                self.assertNotIn(path, command.sources)
+            result = session.command(command)
+            tracked = {row[0] for row in result.input_identities}
+            self.assertIn("data/objectives/ch1_objectives.json", tracked)
+            self.assertIn("data/bundles/ch1_bundle.json", tracked)
+            self.assertIn("assets/tmx/Map.tmx", tracked)
+            self.assertIn("graphics/map/layout/Map.json", tracked)
+            self.assertNotIn("data/objectives/ignored.txt", tracked)
+            self.assertNotIn("data/bundles/ignored.txt", tracked)
+            self.assertNotIn("assets/tmx/ignored.txt", tracked)
+            self.assertNotIn("graphics/map/layout/ignored.txt", tracked)
+        self.fixture.assert_clean(session)
+
+    def test_generated_dependency_repeated_output_registration_executes_and_publishes_twice(self):
+        case = next(
+            item for item in self.add_compact_generated_dependency_fixture()
+            if item["name"] == "eventlists"
+        )
+        primary = case["command"]
+        alias = primary + "; printf ''"
+        self.fixture.add("Makefile", (
+            "FIRST := $(shell " + primary + ")\n"
+            "SECOND := $(shell " + alias + ")\n"
+            "all: ;\n"
+        ))
+        with self.fixture.session(seconds=60) as session:
+            command = generated_dependency_command(
+                session,
+                case["module"],
+                option_values=case["options"],
+                make_target=case["make_target"],
+                depfile=case["depfile"],
+            )
+            run = session._sandbox_run
+            executed = []
+
+            def count(root, **kwargs):
+                if kwargs["mode"] == "command" and tuple(kwargs["argv"][-7:]) == command.argv[-7:]:
+                    executed.append(tuple(kwargs["argv"]))
+                return run(root, **kwargs)
+
+            with patch.object(session, "_sandbox_run", count):
+                observed = session.make("all", commands={primary: command, alias: command})
+            self.assertEqual(len(executed), 2)
+            self.assertEqual(len(observed.events), 2)
+            self.assertEqual(len(observed.semantics["dynamic_commands"]), 1)
+        self.fixture.assert_clean(session)
+
+    def test_generated_dependency_fusion_uses_one_fewer_capsule_for_all_three_modules(self):
+        cases = {case["name"]: dict(case) for case in self.add_compact_generated_dependency_fixture()}
+        expected_counts = {
+            "chapterobjectives": (5, 4),
+            "autoplaystrategies": (3, 2),
+            "eventlists": (3, 2),
+        }
+        for name, case in cases.items():
+            with self.subTest(module=name):
+                with self.fixture.session(seconds=60) as session:
+                    def produce_legacy():
+                        command = self.legacy_generated_dependency_command(session, case)
+                        return command, session.command(command)
+                    (legacy_command, legacy_result), legacy_calls = self.capture_command_capsules(
+                        session, produce_legacy,
+                    )
+                    self.assertEqual(len(legacy_result.generated), 1)
+                    self.assertEqual(sum(mode == "command" for mode, _ in legacy_calls), expected_counts[name][0])
+                self.fixture.assert_clean(session)
+                with self.fixture.session(seconds=60) as session:
+                    def produce():
+                        command = generated_dependency_command(
+                            session,
+                            case["module"],
+                            option_values=case["options"],
+                            make_target=case["make_target"],
+                            depfile=case["depfile"],
+                        )
+                        return command, session.command(command)
+                    (command, result), calls = self.capture_command_capsules(session, produce)
+                    self.assertEqual(len(result.generated), 1)
+                    self.assertEqual(sum(mode == "command" for mode, _ in calls), expected_counts[name][1])
+                    self.assertEqual(result.generated[0].data, legacy_result.generated[0].data)
+                    self.assertEqual(command.sources, legacy_command.sources)
+                    self.assertEqual(result.input_identities, legacy_result.input_identities)
+                self.fixture.assert_clean(session)
 
     def test_generated_dependency_factory_follows_current_base_current_code_and_inputs(self):
         case = {
@@ -3705,6 +4165,87 @@ class ProducerTests(unittest.TestCase):
         finally:
             budget.close()
 
+    def test_generated_dependency_factory_support_modules_follow_current_base_current_inputs(self):
+        cases = {
+            case["name"]: case for case in self.add_compact_generated_dependency_fixture()
+            if case["name"] in {"chapterobjectives", "autoplaystrategies"}
+        }
+        bundle_path = "data/bundles/ch1_bundle.json"
+        dependency_module_path = "scripts/generated_data/units/schema.py"
+        for name, case in cases.items():
+            with self.subTest(module=name):
+                if name == "chapterobjectives":
+                    case = dict(case)
+                    case["options"] = {
+                        "--source": "data/objectives/ch1_objectives.json",
+                        "--bundle-source": "data/bundles/ch1_bundle.json",
+                    }
+                module_path = case["module"].replace(".", "/") + ".py"
+                original_bundle = json.loads((self.root / bundle_path).read_text(encoding="utf-8"))
+                original_module = (self.root / module_path).read_text(encoding="utf-8")
+                original_dependency = (self.root / dependency_module_path).read_text(encoding="utf-8")
+                self.fixture.add(bundle_path, json.dumps(original_bundle, indent=4) + "\n")
+                self.fixture.add(
+                    module_path,
+                    original_module
+                    + "\n_original_renderer = render_depfile\n"
+                    + "def render_depfile(target, inputs):\n"
+                    + "    return _original_renderer(target, inputs) + '# base renderer\\n'\n",
+                )
+                self.fixture.add(dependency_module_path, original_dependency + "\n# base support\n")
+                budget = foundation.ProbeBudget()
+                base_loader = self.capture_complete_loader(budget)
+                self.fixture.add(bundle_path, json.dumps(original_bundle, indent=2) + "\n")
+                self.fixture.add(
+                    module_path,
+                    original_module
+                    + "\n_original_renderer = render_depfile\n"
+                    + "def render_depfile(target, inputs):\n"
+                    + "    return _original_renderer(target, inputs) + '# current renderer\\n'\n",
+                )
+                self.fixture.add(dependency_module_path, original_dependency + "\n# current support\n")
+                current_loader = self.capture_complete_loader(budget)
+                restored_budget = foundation.ProbeBudget()
+                restored_loader = self.capture_complete_loader(restored_budget)
+
+                def produce(session):
+                    command = generated_dependency_command(
+                        session, case["module"], option_values=case["options"],
+                        make_target=case["make_target"], depfile=case["depfile"],
+                    )
+                    result = session.command(command)
+                    self.assertEqual(len(result.generated), 1)
+                    return command, {row[0]: row[1:] for row in result.input_identities}, result.generated[0].data
+
+                try:
+                    with foundation.ProbeSession(
+                        current_loader, scratch_root=self.fixture.scratch, budget=budget,
+                    ) as session:
+                        first = produce(session)
+                        with session.select_view(base_loader):
+                            base = produce(session)
+                        self.assertNotEqual(first, base)
+                        self.assertIn(b"# current renderer\n", first[2])
+                        self.assertIn(b"# base renderer\n", base[2])
+                        for path in (
+                            bundle_path,
+                            module_path,
+                            dependency_module_path,
+                        ):
+                            self.assertIn(path, first[1])
+                            self.assertIn(path, base[1])
+                            self.assertNotEqual(first[1][path], base[1][path])
+                    self.fixture.assert_clean(session)
+                    with foundation.ProbeSession(
+                        restored_loader, scratch_root=self.fixture.scratch, budget=restored_budget,
+                    ) as session:
+                        restored = produce(session)
+                        self.assertEqual(first, restored)
+                    self.fixture.assert_clean(session)
+                finally:
+                    budget.close()
+                    restored_budget.close()
+
     def test_generated_dependency_factory_rejects_malformed_sources_without_publication(self):
         cases = {case["name"]: case for case in self.add_generated_dependency_fixture()}
         for name, path in (
@@ -3726,6 +4267,54 @@ class ProducerTests(unittest.TestCase):
                     self.assertFalse((self.root / case["depfile"]).exists())
                 self.fixture.assert_clean(session)
                 self.fixture.add(path, original)
+
+    def test_generated_dependency_command_rejects_collected_input_drift_before_publication(self):
+        self.add_compact_generated_dependency_fixture()
+        self.fixture.add("data/extra.json", '{"value":"extra"}\n')
+        case = {
+            "module": "scripts.generated_data.eventlists.deps",
+            "options": {"--strategy-source": "data/strategies/ch1_strategies.json", "--bundle-source": "data/bundles/ch1_bundle.json"},
+            "make_target": "build/generated/validated",
+            "depfile": "build/generated/inputs.mk",
+        }
+        variants = {
+            "omitted": (
+                " return (os.path.realpath(strategy),)\n",
+                "dependency collection differs from admitted selector/support evidence",
+            ),
+            "unexpected": (
+                " return tuple(sorted({os.path.realpath(strategy), os.path.realpath(bundle), os.path.realpath('data/extra.json')}))\n",
+                "undeclared source metadata: /repo/data/extra.json|dependency collection differs from admitted selector/support evidence",
+            ),
+            "duplicate": (
+                " return (os.path.realpath(strategy), os.path.realpath(bundle), os.path.realpath(bundle))\n",
+                "dependency collection must be canonical, unique and sorted",
+            ),
+            "escape": (
+                " return (os.path.realpath(strategy), '/repo/../escape.json')\n",
+                "dependency source must be repository-relative without parent components",
+            ),
+        }
+        for name, (return_line, error) in variants.items():
+            with self.subTest(variant=name):
+                self.fixture.add(
+                    "scripts/generated_data/eventlists/deps.py",
+                    "import os\n"
+                    "def collect_input_paths(strategy, bundle):\n"
+                    + return_line
+                    + "def render_depfile(target, inputs):\n"
+                    + " return target+': '+' '.join(inputs)+'\\n'\n",
+                )
+                with self.fixture.session(seconds=60) as session:
+                    command = generated_dependency_command(
+                        session, case["module"], option_values=case["options"],
+                        make_target=case["make_target"], depfile=case["depfile"],
+                    )
+                    with self.assertRaisesRegex(MakeProbeError, error):
+                        session.command(command)
+                    self.assertFalse(session.published_sources)
+                    self.assertFalse((self.root / case["depfile"]).exists())
+                self.fixture.assert_clean(session)
 
     def test_generated_dependency_command_rejects_missing_or_conflicting_outputs(self):
         cases = {case["name"]: case for case in self.add_generated_dependency_fixture()}

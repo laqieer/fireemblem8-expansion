@@ -713,16 +713,14 @@ class GraphCommandTests(unittest.TestCase):
             self.assertEqual(completed.returncode, 0, completed.stderr)
             ordinary[label] = (self.root / cases["autoplaystrategies"]["output"]).read_bytes()
         self.assertEqual(ordinary["reordered"], ordinary["canonical"])
-        with self.session() as probe:
-            canonical_command = MakeCommands(probe, self.contracts)[canonical]
-            canonical_inputs = json.loads(canonical_command.argv[9])
-            canonical_sources = canonical_command.sources
-            canonical_directories = canonical_command.directories
-        with self.session() as probe:
-            reordered_command = MakeCommands(probe, self.contracts)[reordered]
-            self.assertEqual(json.loads(reordered_command.argv[9]), canonical_inputs)
-            self.assertEqual(reordered_command.sources, canonical_sources)
-            self.assertEqual(reordered_command.directories, canonical_directories)
+        actual = []
+        for spelling in (canonical, reordered):
+            with self.session() as probe:
+                registration = MakeCommands(probe, self.contracts)[spelling]
+                output, = probe.command(registration).generated
+                self.assertEqual(output.data, self.normalize_repo_bytes(ordinary["canonical"]))
+                actual.append((registration.sources, registration.directories, output))
+        self.assertEqual(actual[0], actual[1])
         for bad, expected in (
             (
                 canonical.replace(
@@ -745,8 +743,6 @@ class GraphCommandTests(unittest.TestCase):
     def test_generated_dependency_adapter_respects_selected_views_and_missing_companions(self):
         cases = {case["name"]: case for case in self.add_generated_dependency_fixture()}
         removed = "assets/tmx/Example.tmx"
-        base_budget = ProbeBudget()
-        base_loader = self.capture_loader(base_budget)
         select_budget = ProbeBudget()
         base_again = self.capture_loader(select_budget)
         (self.root / removed).unlink()
@@ -760,7 +756,8 @@ class GraphCommandTests(unittest.TestCase):
             current_loader, scratch_root=self.root / "build/scratch", budget=current_budget,
         ) as probe:
             current = MakeCommands(probe, self.contracts)[command]
-            reported = json.loads(current.argv[9])
+            output, = probe.command(current).generated
+            reported = output.data.decode("utf-8").split()
             self.assertNotIn(marker, reported)
         self.assertIsNone(probe.base)
         self.assertFalse(probe.budget.children)
@@ -770,11 +767,11 @@ class GraphCommandTests(unittest.TestCase):
             with probe.select_view(base_again) as selected:
                 self.assertIs(selected, probe)
                 base = MakeCommands(probe, self.contracts)[command]
-                reported = json.loads(base.argv[9])
+                output, = probe.command(base).generated
+                reported = output.data.decode("utf-8").split()
                 self.assertIn(marker, reported)
         self.assertIsNone(probe.base)
         self.assertFalse(probe.budget.children)
-        base_budget.close()
         current_budget.close()
         missing = "assets/manifest.json"
         (self.root / missing).unlink()
