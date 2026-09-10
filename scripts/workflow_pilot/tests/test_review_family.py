@@ -290,6 +290,22 @@ class CandidateCoverageTests(unittest.TestCase):
                     report, changes, base_sha=fixture["head"], head_sha=fixture["base"],
                     resolved_root=str(repo.root.resolve()))
 
+    def test_empty_path_requirements_cannot_qualify_a_review(self):
+        with snapshot() as repo:
+            fixture = candidate_fixture(repo)
+            tools = gate.ReviewTools(gate.GitTree(repo.root, fixture["head"]), repo.root)
+            for read_path in (None, fixture["paths"]["modified"]):
+                with self.subTest(read_path=read_path):
+                    session, runtime = self.start_session(tools, fixture["base"], fixture["head"])
+                    if read_path is not None:
+                        session.read_action("read-candidate", read_path)
+                    report = session.finish(runtime)
+                    self.assertEqual(len(report.candidate_reads), int(read_path is not None))
+                    with self.assertRaisesRegex(tools.model.ReviewError, "nonempty"):
+                        tools.model.require_candidate_path_coverage(
+                            report, [], base_sha=fixture["base"], head_sha=fixture["head"],
+                            resolved_root=str(repo.root.resolve()))
+
     def test_deleted_head_absence_one_sided_mode_and_generic_reads_remain_uncovered(self):
         with snapshot() as repo:
             fixture = candidate_fixture(repo)

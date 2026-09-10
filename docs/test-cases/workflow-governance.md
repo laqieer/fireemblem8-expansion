@@ -854,6 +854,9 @@ or arbitrary concurrent host mutation, and does not reinstate #204/#210.
    blobs, not the drifted working copy. Preserve the negatives: runtime file
    counts, equal-count unrelated reads, `read-evidence` calls and a final
    runtime `reviewed_paths` list cannot prove required-path coverage.
+   An empty requirement set must fail the coverage assertion both with no
+   candidate reads and after a real read; generic report completion remains
+   available without claiming coverage.
 3. Exercise deleted and explicit two-sided negatives in the same session API.
    Head-side absence for a deleted path, a one-sided explicit mode/change
    read, wrong pair/root/revision/path/mode/object/bytes, unsupported Git
@@ -910,7 +913,8 @@ for handoff admission.
 ### Negative control
 
 Runtime file counts, unrelated support reads, `read-evidence`, final runtime
-path lists, stale/wrong candidate pairs, wrong same-SHA checkout roots,
+path lists, empty coverage requirements, stale/wrong candidate pairs,
+wrong same-SHA checkout roots,
 deleted-head absence, one-sided explicit coverage, wrong
 bytes/mode/object/revision/path, unsupported object kinds, failed/partial
 reads and a 201st logical path must not supply trusted coverage. Existing

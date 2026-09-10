@@ -396,7 +396,8 @@ def require_candidate_path_coverage(report, changes, *, base_sha: str, head_sha:
             "review candidate path coverage root mismatch")
     require((coverage.base, coverage.head) == (base_sha, head_sha),
             "review candidate path coverage pair mismatch")
-    require(isinstance(changes, (tuple, list)), "candidate path requirements must be a list")
+    require(isinstance(changes, (tuple, list)) and bool(changes),
+            "candidate path requirements must be a nonempty list")
     expected = tuple(validate_candidate_change(item) for item in changes)
     unique([item.path for item in expected], "candidate path requirements")
     observed = {(item.path, item.side): item for item in coverage.reads}
