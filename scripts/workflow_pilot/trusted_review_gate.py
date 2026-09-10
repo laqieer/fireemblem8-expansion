@@ -146,11 +146,32 @@ class CandidateReader:
     review_candidate_reader = True
 
     def __init__(self, root: Path, base_revision: str, head_revision: str):
-        self.root = root.resolve(strict=True)
-        self.base = base_revision
-        self.head = head_revision
-        self.base_tree = GitTree(self.root, base_revision)
-        self.head_tree = GitTree(self.root, head_revision)
+        resolved_root = root.resolve(strict=True)
+        self._root = resolved_root
+        self._base = base_revision
+        self._head = head_revision
+        self.base_tree = GitTree(resolved_root, base_revision)
+        self.head_tree = GitTree(resolved_root, head_revision)
+
+    @property
+    def root(self):
+        return self._root
+
+    @property
+    def base(self):
+        return self._base
+
+    @property
+    def head(self):
+        return self._head
+
+    @property
+    def candidate_binding(self):
+        return {
+            "resolved_root": str(self.root),
+            "base": self.base,
+            "head": self.head,
+        }
 
     def preview(self, path, side="head"):
         path = _canonical_review_path(path)

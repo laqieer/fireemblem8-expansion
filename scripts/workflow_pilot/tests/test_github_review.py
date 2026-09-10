@@ -847,12 +847,21 @@ runpy.run_path(sys.argv[0], run_name="__main__")
             fixture = candidate_fixture(repo)
             tools = gate.ReviewTools(gate.GitTree(repo.root, fixture["head"]), repo.root)
             reader = tools.candidate_reader(fixture["base"], fixture["head"])
+            original_binding = dict(reader.candidate_binding)
             self.assertEqual(
                 reader.preview(fixture["paths"]["deleted"], "base"),
                 {
                     "path": fixture["paths"]["deleted"],
                     "side": "base",
                     "revision": fixture["base"],
+                },
+            )
+            self.assertEqual(
+                original_binding,
+                {
+                    "resolved_root": str(repo.root.resolve()),
+                    "base": fixture["base"],
+                    "head": fixture["head"],
                 },
             )
             changes = tools.candidate_changes(
@@ -887,6 +896,14 @@ runpy.run_path(sys.argv[0], run_name="__main__")
             self.assertEqual(deleted_head["data"], None)
             with self.assertRaisesRegex(ValueError, "candidate path must be canonical"):
                 reader("../escape.txt")
+            for field, value in (
+                ("root", repo.root / "other"),
+                ("base", fixture["head"]),
+                ("head", fixture["base"]),
+            ):
+                with self.subTest(field=field), self.assertRaises(AttributeError):
+                    setattr(reader, field, value)
+            self.assertEqual(dict(reader.candidate_binding), original_binding)
             data = request(base=fixture["base"], head=fixture["head"])
             scope = frozenset({tools.model.subject_key(data["subjects"][0])})
             session = tools.model.ReviewSession(

@@ -282,6 +282,32 @@ class CandidateCoverage:
     reads: tuple[CandidateReadSummary, ...]
 
 
+def validate_candidate_binding(value: Any, label: str) -> CandidateBinding:
+    return CandidateBinding(
+        resolved_repo_root(field_value(value, "resolved_root"), label + " root", must_exist=True),
+        sha(field_value(value, "base")),
+        sha(field_value(value, "head")),
+    )
+
+
+def candidate_tree_binding(reader: Any) -> CandidateBinding | None:
+    base_tree = field_value(reader, "base_tree")
+    head_tree = field_value(reader, "head_tree")
+    if base_tree is _MISSING or head_tree is _MISSING:
+        return None
+    binding = CandidateBinding(
+        resolved_repo_root(field_value(base_tree, "root"),
+                           "trusted candidate reader Git tree root", must_exist=True),
+        sha(field_value(base_tree, "revision")),
+        sha(field_value(head_tree, "revision")),
+    )
+    require(binding.resolved_root == resolved_repo_root(
+        field_value(head_tree, "root"),
+        "trusted candidate reader Git tree root", must_exist=True),
+        "trusted candidate reader Git trees disagree about root")
+    return binding
+
+
 def validate_candidate_read_request(value: Any, *, base_sha: str, head_sha: str) -> CandidateReadRequest:
     base_sha = sha(base_sha)
     head_sha = sha(head_sha)
@@ -757,15 +783,24 @@ class ReviewSession:
         describe = getattr(reader, "describe", None)
         require(callable(preview), "trusted candidate reader preview is unavailable")
         require(callable(describe), "trusted candidate reader description is unavailable")
-        binding = CandidateBinding(
-            resolved_repo_root(getattr(reader, "root", None),
-                               "trusted candidate reader root", must_exist=True),
-            sha(getattr(reader, "base", None)),
-            sha(getattr(reader, "head", None)),
-        )
+        source = field_value(reader, "candidate_binding")
+        binding = (validate_candidate_binding(source, "trusted candidate reader binding")
+                   if source is not _MISSING else CandidateBinding(
+                       resolved_repo_root(getattr(reader, "root", None),
+                                          "trusted candidate reader root", must_exist=True),
+                       sha(getattr(reader, "base", None)),
+                       sha(getattr(reader, "head", None)),
+                   ))
         if self.candidate_binding is not None:
             require(binding == self.candidate_binding,
                     "trusted candidate reader root/base/head changed after review start")
+        tree_binding = candidate_tree_binding(reader)
+        if tree_binding is not None:
+            if self.candidate_binding is not None:
+                require(tree_binding == self.candidate_binding,
+                        "trusted candidate reader immutable Git tree binding changed after review start")
+            require(binding == tree_binding,
+                    "trusted candidate reader binding differs from immutable Git tree binding")
         return reader, preview, describe, binding
 
     def begin(self, runtime, owner: str, *, duration=1200, max_files=MAX_REVIEW_FILES):

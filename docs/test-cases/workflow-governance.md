@@ -845,10 +845,11 @@ or arbitrary concurrent host mutation, and does not reinstate #204/#210.
    executable-mode-only paths. Route every covered read through
    `ReviewSession.read_action("read-candidate", path, side)` and the bound
    immutable `trusted_review_gate.CandidateReader`. Freeze its resolved
-   checkout root together with the exact BASE/head pair at `session.begin`.
-   Confirm returned bytes, mode, object ID, side and revision for head/base
-   selections, including one explicit two-sided requirement and an unrelated
-   support read.
+   checkout root together with the exact BASE/head pair at `session.begin`,
+   deriving that binding from the reader's immutable Git-tree identity rather
+   than mutable public copies. Confirm returned bytes, mode, object ID, side
+   and revision for head/base selections, including one explicit two-sided
+   requirement and an unrelated support read.
 2. In the same suite, mutate the live worktree and index after freezing the
    candidate pair. The returned bytes must remain the selected immutable Git
    blobs, not the drifted working copy. Preserve the negatives: runtime file
@@ -886,9 +887,11 @@ or arbitrary concurrent host mutation, and does not reinstate #204/#210.
    `trusted_review_gate.main([...])` in local check mode. Pass
    `resolved_root=str(reader.root)` to
    `require_candidate_path_coverage(...)`. A same-SHA report from another
-   checkout must still fail that check. The diagnostic may prove source-audit
-   coverage, but it cannot authenticate coordinator task provenance or
-   manufacture handoff eligibility from request JSON.
+   checkout must still fail that check, and pre-begin tampering of mutable
+   wrapper claims must reject before the review starts when those claims
+   diverge from the reader's actual Git trees. The diagnostic may prove
+   source-audit coverage, but it cannot authenticate coordinator task
+   provenance or manufacture handoff eligibility from request JSON.
    Programmatic `main([...])` calls must reject outside isolated Python just
    like the CLI; the paired isolated call must still return its actual plan.
 5. Validate the human case, catalog entry and mirrored membership:
