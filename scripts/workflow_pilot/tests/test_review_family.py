@@ -409,6 +409,44 @@ class CandidateCoverageTests(unittest.TestCase):
                         session.read_action("read-candidate", fixture["paths"]["added"])
                     self.assertEqual(reader.calls, 0)
 
+    def test_same_side_repeats_preserve_coverage_and_reject_changed_duplicates(self):
+        with snapshot() as repo:
+            fixture = candidate_fixture(repo, support_paths=1)
+            tools = gate.ReviewTools(gate.GitTree(repo.root, fixture["head"]), repo.root)
+            delegate = tools.candidate_reader(fixture["base"], fixture["head"])
+            reader = WrappedCandidateReader(delegate)
+            session, runtime = self.start_session(
+                tools, fixture["base"], fixture["head"], max_files=2,
+                readers={"read-candidate": reader})
+            path = fixture["paths"]["modified"]
+            first = session.read_action("read-candidate", path)
+            self.assertEqual(session.read_action("read-candidate", path, "head"), first)
+            self.assertEqual(len(session.candidate_reads), 1)
+            session.read_action("read-candidate", fixture["paths"]["added"])
+            self.assertEqual(reader.calls, 3)
+            with self.assertRaisesRegex(tools.model.ReviewError, "budget exceeded"):
+                session.read_action("read-candidate", fixture["support_paths"][0])
+            self.assertEqual(reader.calls, 3)
+            runtime.result.files = 2
+            report = session.finish(runtime)
+            self.assertEqual(len(report.candidate_reads), 2)
+            self.assertEqual(sum(item.path == path and item.side == "head"
+                                 for item in report.candidate_reads), 1)
+
+            reader = WrappedCandidateReader(delegate)
+            session, _ = self.start_session(
+                tools, fixture["base"], fixture["head"], max_files=1,
+                readers={"read-candidate": reader})
+            original = session.read_action("read-candidate", path)
+            reader.mutate = lambda row: {**row, "mode": "100755"}
+            with patch.object(reader, "describe", side_effect=lambda *args, **kwargs: {
+                **delegate.describe(*args, **kwargs), "mode": "100755",
+            }):
+                with self.assertRaisesRegex(tools.model.ReviewError, "changed across duplicate"):
+                    session.read_action("read-candidate", path)
+            self.assertEqual(reader.calls, 2)
+            self.assertEqual(session.candidate_reads, {(path, "head"): original.summary()})
+
     def test_candidate_reads_reject_invalid_results_and_budget_before_backend_read(self):
         with snapshot() as repo:
             fixture = candidate_fixture(repo, extra_head_paths=201, include_symlink=True)

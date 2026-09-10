@@ -860,12 +860,16 @@ or arbitrary concurrent host mutation, and does not reinstate #204/#210.
    object kinds, partial/failed reads and noncanonical paths must reject or
    remain uncovered. Generic existing `read_action("read-candidate", ...)`
    callers may still finish, but without trusted candidate coverage.
+   Repeat the same path and side: it must retain one summary and one logical
+   slot, leaving room for another path below the unchanged cap. A changed
+   duplicate observation must reject without replacing the original summary.
 4. Exercise the public gate adapter locally:
 
    ```bash
    build/host-python/bin/python3 -I -c \
      'import sys, unittest; sys.path.insert(0, "."); unittest.main(module=None)' \
-     scripts.workflow_pilot.tests.test_github_review.GitHubReviewTests.test_candidate_reader_public_api_binds_exact_bytes_and_check_mode_stays_local -v
+     scripts.workflow_pilot.tests.test_github_review.GitHubReviewTests.test_candidate_reader_public_api_binds_exact_bytes_and_check_mode_stays_local \
+     scripts.workflow_pilot.tests.test_github_review.GitHubReviewTests.test_programmatic_gate_requires_isolated_startup -v
    ```
 
    Describe the immutable change set through `ReviewTools.candidate_changes`,
@@ -876,6 +880,8 @@ or arbitrary concurrent host mutation, and does not reinstate #204/#210.
    checkout must still fail that check. The diagnostic may prove source-audit
    coverage, but it cannot authenticate coordinator task provenance or
    manufacture handoff eligibility from request JSON.
+   Programmatic `main([...])` calls must reject outside isolated Python just
+   like the CLI; the paired isolated call must still return its actual plan.
 5. Validate the human case, catalog entry and mirrored membership:
 
    ```bash
@@ -927,7 +933,8 @@ build/host-python/bin/python3 -I -c \
   scripts.workflow_pilot.tests.test_review_family.CandidateCoverageTests -v
 build/host-python/bin/python3 -I -c \
   'import sys, unittest; sys.path.insert(0, "."); unittest.main(module=None)' \
-  scripts.workflow_pilot.tests.test_github_review.GitHubReviewTests.test_candidate_reader_public_api_binds_exact_bytes_and_check_mode_stays_local -v
+  scripts.workflow_pilot.tests.test_github_review.GitHubReviewTests.test_candidate_reader_public_api_binds_exact_bytes_and_check_mode_stays_local \
+  scripts.workflow_pilot.tests.test_github_review.GitHubReviewTests.test_programmatic_gate_requires_isolated_startup -v
 python3 -m unittest \
   scripts.docs_check_tests.test_check_docs.TesterCaseRegistryTests.test_review_path_coverage_case_is_indexed_with_focused_procedure \
   scripts.docs_check_tests.test_development_workflow_skill.DevelopmentWorkflowSkillTests.test_review_path_coverage_case_is_indexed_and_required -v

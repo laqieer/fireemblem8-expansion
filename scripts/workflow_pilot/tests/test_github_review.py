@@ -798,6 +798,32 @@ runpy.run_path(sys.argv[0], run_name="__main__")
         result = subprocess.run(command, env=ENV, capture_output=True, timeout=30)
         self.assertNotEqual(result.returncode, 0)
 
+    def test_programmatic_gate_requires_isolated_startup(self):
+        path = self.repo.root / "isolation-request.json"
+        path.write_text(json.dumps(request(base=self.repo.base, head=self.repo.base)))
+        arguments = [
+            "--repository-root", str(self.repo.root), "--subject-root", str(self.repo.root),
+            "--tool-revision", self.repo.base, "--candidate", self.repo.base,
+            "--request", str(path), "--mode", "plan",
+        ]
+        program = (
+            f"import sys; sys.path.insert(0, {str(ROOT)!r}); "
+            "from scripts.workflow_pilot.trusted_review_gate import main; "
+            "raise SystemExit(main(sys.argv[1:]))"
+        )
+        for flags in ([], ["-I"]):
+            with self.subTest(flags=flags):
+                result = subprocess.run(
+                    [sys.executable, *flags, "-c", program, *arguments],
+                    cwd=ROOT, env=ENV, capture_output=True, timeout=30)
+                if flags:
+                    self.assertEqual(result.returncode, 0, result.stderr.decode())
+                    self.assertEqual(json.loads(result.stdout)["candidate_sha"], self.repo.base)
+                else:
+                    self.assertEqual(result.returncode, 2, result.stdout.decode())
+                    self.assertEqual(result.stdout, b"")
+                    self.assertIn(b"isolated startup is required", result.stderr)
+
     def test_check_cli_runs_probes_but_cannot_authenticate_task_from_json(self):
         data = request(base=self.repo.base, head=self.repo.base)
         path = self.repo.root / "request.json"

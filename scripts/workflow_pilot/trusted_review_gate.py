@@ -523,7 +523,7 @@ def main(argv=None):
     parser.add_argument("--mode", choices=("plan", "check"), required=True)
     args = parser.parse_args(argv)
     try:
-        if argv is None and not sys.flags.isolated:
+        if not sys.flags.isolated:
             raise ValueError("isolated startup is required")
         tools = ReviewTools(GitTree(args.repository_root, args.tool_revision), args.subject_root)
         tools.model.require(stat.S_ISREG(args.request.lstat().st_mode),

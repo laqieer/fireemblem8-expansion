@@ -1004,7 +1004,9 @@ class TesterCaseRegistryTests(unittest.TestCase):
                        "'import sys, unittest; sys.path.insert(0, \".\"); "
                        "unittest.main(module=None)' "
                        "scripts.workflow_pilot.tests.test_github_review."
-                       "GitHubReviewTests.test_candidate_reader_public_api_binds_exact_bytes_and_check_mode_stays_local -v",
+                       "GitHubReviewTests.test_candidate_reader_public_api_binds_exact_bytes_and_check_mode_stays_local "
+                       "scripts.workflow_pilot.tests.test_github_review."
+                       "GitHubReviewTests.test_programmatic_gate_requires_isolated_startup -v",
             "evidence": "scripts/workflow_pilot/tests/test_github_review.py",
         }, {
             "command": "python3 -m unittest scripts.docs_check_tests.test_check_docs."
