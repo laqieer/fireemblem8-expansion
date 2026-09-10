@@ -804,11 +804,15 @@ endif
 
 ifeq ($(NODEP),1)
 asm/%.o:      data_dep :=
+else ifeq ($(ARCHIVAL_SCANINC_NODEP),1)
+asm/%.o:      data_dep :=
 else
 asm/%.o:      data_dep = $(shell $(SCANINC) -I include -I "" $*.s)
 endif
 
 ifeq ($(NODEP),1)
+src/%.o:      data_dep :=
+else ifeq ($(ARCHIVAL_SCANINC_NODEP),1)
 src/%.o:      data_dep :=
 else
 src/%.o:      data_dep = $(shell $(SCANINC) -I include -I "" $*.s)
@@ -816,11 +820,15 @@ endif
 
 ifeq ($(NODEP),1)
 src/data/%.o: data_dep :=
+else ifeq ($(ARCHIVAL_SCANINC_NODEP),1)
+src/data/%.o: data_dep :=
 else
 src/data/%.o: data_dep = $(shell $(SCANINC) -I include -I "" $(if $(wildcard $*.c),$*.c,$*.s))
 endif
 
 ifeq ($(NODEP),1)
+data/%.o:     data_dep :=
+else ifeq ($(ARCHIVAL_SCANINC_NODEP),1)
 data/%.o:     data_dep :=
 else
 data/%.o:     data_dep = $(shell $(SCANINC) -I include -I "" $*.s)
@@ -828,11 +836,15 @@ endif
 
 ifeq ($(NODEP),1)
 banim/%.o:    data_dep :=
+else ifeq ($(ARCHIVAL_SCANINC_NODEP),1)
+banim/%.o:    data_dep :=
 else
 banim/%.o:    data_dep = $(shell $(SCANINC) -I include -I "" $*.s)
 endif
 
 ifeq ($(NODEP),1)
+sound/%.o:    data_dep :=
+else ifeq ($(ARCHIVAL_SCANINC_NODEP),1)
 sound/%.o:    data_dep :=
 else
 sound/%.o:    data_dep = $(shell $(SCANINC) -I include -I "" $*.s)

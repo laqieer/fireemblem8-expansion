@@ -157,18 +157,20 @@ name.
 | `make expansion-modern-localization-budget-check MODERN_CONFIG=... MODERN_ABI=aapcs` | Issue #18 catalog/resolver/UI source+linker budget and real region headroom | No new ROM beyond its linked prerequisite | No |
 | `python3 -m scripts.upstream_port {scan,drift,report,verify,...}` | Upstream-drift tracking (see [`docs/upstream-porting.md`](upstream-porting.md)) | No for `scan`/`drift`/`report`; `verify` builds the full gate set | No for `scan`/`drift`/`report`; depends on the gate set for `verify` |
 
-The pure host asset/generated-data/localization targets above do not select the
-archival lane or pay unrelated archival C dependency remakes on their own.
-Bare `make`/`make all` still resolve to the modern release boot-check path, and
+The pure host asset/generated-data/localization targets above, plus bare
+`make`/`make all` and the explicit modern phony goals, do not select the
+archival lane or eagerly trigger unrelated archival C depfile remakes or
+scaninc expansions from the legacy object rules on their own.
 `make legacy`/`make fireemblem8.gba` remain the explicit archival selectors.
 When a command line mixes one of those safe goals with an archival/C-object or
-unknown goal, GNU Make still generates and includes the archival dependency
-files before compiling the legacy object.
-The known non-C assembly, MIDI, and banim object inventories are also safe
-direct goals: the modern build's recursive `NODEP=0` preparation keeps scaninc
-and asset freshness without remaking unrelated C dependencies. C object names,
-including overlaps with those inventories, are explicitly excluded from that
-exception. Arbitrary `.o` names and custom aliases are not assumed safe.
+unknown goal, GNU Make still generates/includes the archival dependency files
+and restores the legacy scaninc prerequisites before compiling the legacy
+object.
+The known non-C assembly, MIDI, and banim object inventories are safe only for
+the depfile side of that policy: the modern build's recursive `NODEP=0`
+preparation still keeps their real scaninc and asset freshness, while C object
+names (including overlaps with those inventories), arbitrary `.o` names, and
+custom aliases never gain that host/default scan suppression accidentally.
 
 **ABI contract:** `MODERN_ABI=aapcs` is the only supported choice for every
 linked, ROM-producing, or runtime-gate target above (`expansion-modern-elf`,
