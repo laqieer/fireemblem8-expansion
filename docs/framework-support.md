@@ -148,6 +148,7 @@ name.
 | `make expansion-modern-linker-check MODERN_CONFIG=... MODERN_ABI=aapcs` | Boot-check plus budget/shift/overlay/title-fingerprint gates | Yes | Yes |
 | `make legacy` / `make fireemblem8.gba` | Archival agbcc `fireemblem8.gba` | Yes | No (agbcc, fetched on first use) |
 | `make clean` / `make clean_fast` | Removes build artifacts (see [`README.md`](../README.md)) | — | — |
+| `make assets-validate` / `make assets-generate` / `make assets-check` / `make assets-test` | Asset-manifest authoring, generation, drift checks, and host tests (see [`asset_manifest.md`](asset_manifest.md)) | No | No |
 | `make generated-data-validate` / `-generate` / `-check` / `-test` | Structured content authoring (see [`docs/generated_data_tutorial.md`](generated_data_tutorial.md)) | No | No |
 | `make localization-validate` / `make localization-generate` / `make localization-check` / `make localization-test` | Expansion locale registry/catalog authoring and host tests (see [`localization.md`](localization.md)) | No | No |
 | `make expansion-modern-starter-runtime-check MODERN_CONFIG=... MODERN_ABI=aapcs` | Issue #6 enabled/disabled mechanics + Danger runtime matrix | Yes | Yes |
@@ -155,6 +156,31 @@ name.
 | `make expansion-modern-hq-mixer-check MODERN_CONFIG=... MODERN_ABI=aapcs` | Issue #83 enabled/disabled HQ PCM mixer, linker budget, and libmGBA PCM/interrupt-buffer matrix | Yes | Yes |
 | `make expansion-modern-localization-budget-check MODERN_CONFIG=... MODERN_ABI=aapcs` | Issue #18 catalog/resolver/UI source+linker budget and real region headroom | No new ROM beyond its linked prerequisite | No |
 | `python3 -m scripts.upstream_port {scan,drift,report,verify,...}` | Upstream-drift tracking (see [`docs/upstream-porting.md`](upstream-porting.md)) | No for `scan`/`drift`/`report`; `verify` builds the full gate set | No for `scan`/`drift`/`report`; depends on the gate set for `verify` |
+
+The pure host asset/generated-data/localization targets above, plus bare
+`make`/`make all` and modern goals explicitly registered in `MODERN_GOALS`, do not select the
+archival lane or eagerly trigger unrelated archival C depfile remakes or
+scaninc expansions from the legacy object rules on their own.
+`make legacy`/`make fireemblem8.gba` remain the explicit archival selectors.
+Other targets, including unregistered modern-named entrypoints, retain
+conservative dependency handling; the policy does not infer safety from a
+target's name.
+When a command line mixes one of those safe goals with an archival/C-object or
+unknown goal, GNU Make still generates/includes the archival dependency files
+and restores the legacy scaninc prerequisites before compiling the legacy
+object.
+The same safe registry also covers the recursive pure-modern localization
+profile helpers used by
+`expansion-modern-localization-profile-headroom-check`, so that chain does not
+drop back into unrelated archival dependency remakes between sub-makes.
+That includes mixed requests such as `make expansion-modern-clean asm/arm.o`:
+the pure modern goal still avoids unrelated depfile remakes, but the explicit
+legacy non-C object keeps its scaninc-based include freshness.
+The known non-C assembly, MIDI, and banim object inventories are safe only for
+the depfile side of that policy: the modern build's recursive `NODEP=0`
+preparation still keeps their real scaninc and asset freshness, while C object
+names (including overlaps with those inventories), arbitrary `.o` names, and
+custom aliases never gain that host/default scan suppression accidentally.
 
 **ABI contract:** `MODERN_ABI=aapcs` is the only supported choice for every
 linked, ROM-producing, or runtime-gate target above (`expansion-modern-elf`,
@@ -282,14 +308,16 @@ surface remains bounded by its live reference and evidence report.
   `FE8_ITEM_ID_CAP>=0xCE`. The mechanics registry has typed callbacks, eight
   slots, copied key/label storage, deterministic order, explicit error codes,
   and a reentrancy guard. Debug and release both run enabled and default-disabled runtime negatives;
-  the content profile rides gates 20-21 of the current
+  the content profile rides `modern-itemexpansion-check-debug` and
+  `modern-itemexpansion-check-release` in the current
   `scripts/upstream_port/verify.py` sequence. See
   [`starter_features.md`](starter_features.md).
 - **#10 typed IDs:** DEFAULT committed and ACTIVE build-local contracts,
   consumer census, and modern-only item cap `0xCE` pilot are supported; its
-  debug/release runtime commands are gates 20-21 of the current-master
-  29-gate upstream-port verifier; gate 22 builds the all-locales/all-features
-  patch profile once and runs the required map-menu presentation scenario.
+  debug/release runtime commands are `modern-itemexpansion-check-debug` and
+  `modern-itemexpansion-check-release` in the current upstream-port verifier.
+  `modern-all-locales-all-features-profile` builds the patch profile once and
+  runs the required map-menu presentation scenario.
   There is no class/chapter/unit/character
   widening
   or implied save migration. See

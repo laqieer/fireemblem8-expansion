@@ -346,12 +346,14 @@
         "https://github.com/laqieer/fireemblem8-expansion/issues/28",
         "https://github.com/laqieer/fireemblem8-expansion/issues/57",
         "https://github.com/laqieer/fireemblem8-expansion/issues/102",
-        "https://github.com/laqieer/fireemblem8-expansion/issues/197"
+        "https://github.com/laqieer/fireemblem8-expansion/issues/197",
+        "https://github.com/laqieer/fireemblem8-expansion/issues/236"
       ],
       "reference": "docs/quickstart.md",
       "status": "current",
       "required_cases": [
         "TC-CORE-001",
+        "TC-BUILD-HOST-DEPENDENCIES-001",
         "TC-BUILD-GCC14-MENU-RETURN-001"
       ]
     },
@@ -1852,6 +1854,43 @@
         {
           "command": "make expansion-modern-linker-check MODERN_CONFIG=release MODERN_ABI=aapcs",
           "evidence": "tools/gba-playtest/scenarios/boot.json"
+        }
+      ]
+    },
+    {
+      "id": "TC-BUILD-HOST-DEPENDENCIES-001",
+      "title": "Pure host Make goals skip unrelated archival dependencies",
+      "feature_id": "modern-framework-build",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/236"
+      ],
+      "document": "docs/test-cases/core-framework.md",
+      "anchor": "tc-build-host-dependencies-001-pure-host-make-goals-skip-unrelated-archival-dependencies",
+      "profiles": [
+        "Owned native-Make fixture with the repository archival dependency fragment",
+        "Supported-host default-lane structural probe"
+      ],
+      "purpose": "Prove pure host and default Make goals avoid unrelated archival dependency remakes while compiled or mixed goals keep full generated-header correctness.",
+      "prerequisites": "Repository root with /usr/bin/make, /usr/bin/cpp, /usr/bin/cc, /usr/bin/as, and /usr/bin/g++ installed; the tests own build/test-tmp/ and compile the repository scaninc in a temporary fixture.",
+      "actions": "Run the focused archival dependency fixture, default-lane structural, and game-localization final-delivery tests documented in the procedure.",
+      "expected_result": "Pure host and default goals avoid unrelated C depfiles and archival scanner demand before their recipes. Actual localization/non-C recursion and known non-C inventory goals avoid unrelated C depfiles, while NODEP=0 scaninc still rebuilds native assembly objects after include edits. C/data-C overlaps, archival, custom alias, generated-data-link-check, and mixed unsafe invocations retain dependency loading before compilation.",
+      "negative_control": "Pre-fix host/default goals eagerly remade legacy depfiles, and a mixed safe modern goal plus legacy.o compiled before the generated header existed.",
+      "interactions": "The supported default lane remains modern release only, the archival lane stays explicitly named, and mixed goal lists retain legacy dependency behavior in either goal order.",
+      "save_compatibility": "No save bytes, layout, migration, or compatibility epoch change.",
+      "cleanup": "Temporary fixture directories under build/test-tmp/ clean automatically; after a failed run, remove only that run's identified residual fixture directory.",
+      "limitations": "This is a host-side dependency contract: recursion uses actual resolved Make recipes with reduced intermediate targets and native assembly; unrelated Python catalog commands and MIDI/banim conversion are not exercised. It does not replace modern ROM/link/runtime gates.",
+      "automation": [
+        {
+          "command": "python3 -m unittest scripts.modernize.tests.test_archival_dependencies -v",
+          "evidence": "scripts/modernize/tests/test_archival_dependencies.py"
+        },
+        {
+          "command": "python3 -m unittest discover -s scripts/modernize/tests -p \"test_build_default_lane.py\" -v",
+          "evidence": "scripts/modernize/tests/test_build_default_lane.py"
+        },
+        {
+          "command": "python3 -m unittest scripts.localization.game_catalog.tests.test_final_delivery_gate -v",
+          "evidence": "scripts/localization/game_catalog/tests/test_final_delivery_gate.py"
         }
       ]
     },
