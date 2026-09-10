@@ -770,40 +770,40 @@ class ReviewFixtureGitTests(unittest.TestCase):
     def test_review_support_git_disables_background_maintenance_and_still_runs_real_git(self):
         with tempfile.TemporaryDirectory(prefix="review-support-git-", dir=ROOT / "build") as directory:
             repo = Path(directory)
-            commands = []
-            run = support.subprocess.run
 
-            def observe(command, **kwargs):
-                if command and command[0] == "/usr/bin/git":
-                    commands.append(tuple(command))
-                return run(command, **kwargs)
+            def raw_git(*args):
+                completed = subprocess.run(
+                    ["/usr/bin/git", "-C", str(repo), *args],
+                    env=support.ENV, capture_output=True, check=True, text=True)
+                return completed.stdout.strip()
 
-            with patch.object(support.subprocess, "run", side_effect=observe):
-                support.git(repo, "init", "-q")
-                support.git(repo, "config", "user.email", "fixture@example.invalid")
-                support.git(repo, "config", "user.name", "Fixture Test")
-                (repo / "tracked.txt").write_text("fixture\n")
-                support.git(repo, "add", "tracked.txt")
-                support.git(repo, "commit", "-qm", "fixture commit")
-                head = support.git(repo, "rev-parse", "HEAD")
+            raw_git("init", "-q")
+            raw_git("config", "user.email", "fixture@example.invalid")
+            raw_git("config", "user.name", "Fixture Test")
+            raw_git("config", "--local", "gc.auto", "7")
+            raw_git("config", "--local", "maintenance.auto", "true")
+            raw_git("config", "--local", "gc.autoDetach", "true")
+            raw_git("config", "--local", "maintenance.autoDetach", "true")
 
+            self.assertEqual(raw_git("config", "--local", "--get", "gc.auto"), "7")
+            self.assertEqual(raw_git("config", "--local", "--get", "maintenance.auto"), "true")
+            self.assertEqual(raw_git("config", "--local", "--type=bool", "--get", "gc.autoDetach"), "true")
+            self.assertEqual(raw_git("config", "--local", "--type=bool", "--get", "maintenance.autoDetach"), "true")
+
+            self.assertEqual(support.git(repo, "config", "--get", "gc.auto"), "0")
+            self.assertEqual(support.git(repo, "config", "--get", "maintenance.auto"), "0")
+            self.assertEqual(support.git(repo, "config", "--type=bool", "--get", "gc.autoDetach"), "false")
+            self.assertEqual(
+                support.git(repo, "config", "--type=bool", "--get", "maintenance.autoDetach"), "false")
+
+            (repo / "tracked.txt").write_text("fixture\n")
+            support.git(repo, "add", "tracked.txt")
+            support.git(repo, "commit", "-qm", "fixture commit")
+            head = support.git(repo, "rev-parse", "HEAD")
             self.assertRegex(head, r"^[0-9a-f]{40}$")
-            expected_prefix = (
-                "/usr/bin/git", "--no-optional-locks",
-                "-c", "core.fsmonitor=false",
-                "-c", "core.hooksPath=/dev/null",
-                "-c", "gc.auto=0",
-                "-c", "maintenance.auto=0",
-                "-c", "gc.autoDetach=false",
-                "-c", "maintenance.autoDetach=false",
-                "-C", str(repo),
-            )
-            for command in commands:
-                self.assertEqual(command[:len(expected_prefix)], expected_prefix)
-            without_maintenance = tuple(
-                item for item in expected_prefix if item != "maintenance.auto=0"
-            )
-            self.assertNotEqual(commands[0][:len(expected_prefix)], without_maintenance)
+            self.assertEqual(support.git(repo, "show", "HEAD:tracked.txt"), "fixture")
+            self.assertEqual(raw_git("config", "--local", "--get", "gc.auto"), "7")
+            self.assertEqual(raw_git("config", "--local", "--get", "maintenance.auto"), "true")
 
 
 class RoundTests(unittest.TestCase):
