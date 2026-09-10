@@ -339,12 +339,14 @@ graphics assets that modern GCC cannot consume directly. Each one is compiled
 in two steps: `tools/preproc` expands the `INCBIN_*` macros into an
 intermediate `<name>.pre.c` file (leaving `#include` directives untouched),
 and modern GCC then compiles that intermediate with its own `-MMD`/`-MP`
-header tracking. Because `expansion-modern-all` is one of the modern goals
-that forces `NODEP=1` to skip the legacy dependency machinery, it does not
-gate its own asset tracking on `NODEP` — doing so would silently disable
-INCBIN rebuild detection for the modern build itself. Instead, for every data
-C source `tools/scaninc` scans the original, un-preprocessed source once and
-generates a deterministic `<name>.assets.d` file declaring `<name>.pre.c`'s
+header tracking. Because a pure `expansion-modern-all` request inherits the
+implicit `NODEP=1` suppression that skips the legacy dependency machinery, it
+does not gate its own asset tracking on `NODEP` — doing so would silently
+disable INCBIN rebuild detection for the modern build itself. Mixed requests
+that also name a direct legacy non-C object deliberately keep that object's
+scaninc freshness. Instead, for every data C source `tools/scaninc` scans the
+original, un-preprocessed source once and generates a deterministic
+`<name>.assets.d` file declaring `<name>.pre.c`'s
 real prerequisites (`<name>.c` plus every scanned `INCBIN_*`/`#include`
 path); ordinary (non-data) C sources get a parallel `<name>.headers.d` file
 generated with GCC's own `cpp -MM -MG` ("assume missing headers are

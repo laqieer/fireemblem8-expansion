@@ -22,6 +22,17 @@ MAKECMDGOALS_NOSCANINC := all clean tag codeql-alerts-test codeql-fanalyzer-test
 MAKECMDGOALS_NODEP := $(MAKECMDGOALS_NOSCANINC) \
 	$(filter-out $(C_OBJECTS) $(DATA_SRC_C_OBJECTS),$(ASM_OBJECTS) $(MID_OBJECTS) $(BANIM_OBJECT))
 
+# Preserve explicit user NODEP settings. Otherwise, only all-safe pure
+# modern/host requests inherit the implicit NODEP=1 suppression; mixed
+# requests with direct legacy non-C objects keep real scaninc freshness.
+ifeq ($(origin NODEP), undefined)
+ifneq ($(strip $(MAKECMDGOALS)),)
+ifeq (,$(filter-out $(MAKECMDGOALS_NOSCANINC),$(MAKECMDGOALS)))
+NODEP := 1
+endif
+endif
+endif
+
 ARCHIVAL_SCANINC_NODEP := 1
 
 ifneq ($(strip $(MAKECMDGOALS)),)

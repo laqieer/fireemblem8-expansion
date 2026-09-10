@@ -78,9 +78,6 @@ MODERN_GOALS := \
 	expansion-modern-aoe-check \
 	expansion-modern-idspace-active-check \
 	expansion-modern-clean
-ifneq (,$(filter $(MODERN_GOALS),$(MAKECMDGOALS)))
-  NODEP := 1
-endif
 
 MODERN_CONFIG ?= debug
 MODERN_ABI ?= aapcs
@@ -1234,9 +1231,12 @@ $(MODERN_ALL_DATA_OBJECTS): $(MODERN_OUTPUT_DIR)/%.o: $(MODERN_OUTPUT_DIR)/%.pre
 # one build later.
 #
 # Deliberately not gated on NODEP, for the same reason this scaninc-based
-# tracking never was: every modern goal above forces NODEP=1, so gating
+# tracking never was: an all-safe pure modern request still inherits the
+# implicit NODEP=1 suppression from archival_dependencies.mk, so gating
 # this on NODEP would permanently disable INCBIN readiness tracking for
-# the modern build. A data source whose INCBIN references no derivable
+# those modern builds. A mixed request that also names a direct legacy
+# non-C object deliberately keeps scaninc freshness on that object instead.
+# A data source whose INCBIN references no derivable
 # source (no matching .png/.bin and no rule to build one) fails with GNU
 # Make's own actionable "No rule to make target '<asset>', needed by
 # '<pre.c>'" error, naming both the missing asset and the .pre.c that
@@ -2546,8 +2546,9 @@ $(MODERN_ELF_LINK_SETTINGS): FORCE_MODERN_ELF_LINK_SETTINGS
 	fi
 
 # Ensure legacy non-C objects are fresh with full scaninc tracking.
-# The outer expansion-modern-elf runs under NODEP=1 which disables
-# scaninc for legacy rules.  This phony step invokes a single recursive
+# A pure expansion-modern-elf request inherits implicit NODEP=1, which
+# suppresses legacy scaninc in the outer invocation. This phony step invokes
+# a single recursive
 # $(MAKE) with NODEP=0 to rebuild only the non-C assembly and MIDI
 # objects with proper asset dependency tracking.  The standard recursive
 # $(MAKE) invocation propagates the jobserver without forcing execution
