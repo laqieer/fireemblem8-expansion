@@ -511,6 +511,7 @@
         "TC-WORKFLOW-PILOT-BASELINE-001",
         "TC-WORKFLOW-OWNERSHIP-PROBE-SANDBOX-001",
         "TC-WORKFLOW-PROBE-PRODUCER-001",
+        "TC-PROBE-METADATA-TRANSPORT-001",
         "TC-PROBE-PYTHON-PRODUCERS-001",
         "TC-PROBE-DEPENDENCY-FUSION-001",
         "TC-WORKFLOW-PROBE-DEPENDENCY-001",
@@ -3550,6 +3551,46 @@
         {
           "command": "python3 -m unittest scripts.validation_ownership.tests.test_producer -v",
           "evidence": "scripts/validation_ownership/tests/test_producer.py"
+        }
+      ]
+    },
+    {
+      "id": "TC-PROBE-METADATA-TRANSPORT-001",
+      "title": "Transport native metadata losslessly",
+      "feature_id": "workflow-governance",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/240"
+      ],
+      "document": "docs/test-cases/workflow-governance.md",
+      "anchor": "tc-probe-metadata-transport-001-transport-native-metadata-losslessly",
+      "profiles": [
+        "Linux x86-64 source checkout, GNU Make 4.3, Python 3 and the existing ownership-probe native tools"
+      ],
+      "purpose": "Prove the bounded metadata transport prototype preserves the public legacy metadata records, unchanged replay ABI/accounting and a positive conservative control-byte saving on representative native captures.",
+      "prerequisites": "Clean source checkout with the existing ownership-probe namespace/watchdog route. Use only owned ignored build/test-artifacts fixtures and the existing extended native owner; no ROM, graph planner, new runtime/job, remote mutation or quota change.",
+      "actions": "Run the focused metadata transport command in the workflow-governance test case. Exercise pure codec round trips and corruption negatives, then run real static Make/source metadata, mixed syscall, runtime-input, directory enumeration, selected CURRENT/BASE view, modeled privileged-lifecycle and producer absence/metadata controls. Capture raw supervisor report bytes, compare the decoded envelope with the public legacy tuples, rerun unchanged metadata replay, and measure old full-report JSON versus new full-report JSON plus decoded-frame reservation F and retained encoded-payload reservation P.",
+      "expected_result": "Supervisor reports carry metadata only as the strict `vo-metadata-frame` envelope. The parent charges decoded-frame F and retained encoded-payload P before bounded decompression, reconstructs the same legacy tuples exposed in `ProcessOutput.metadata`, keeps replay on the unchanged `validate.meta` frame, and retains the original raw observation, legacy dedupe and cache-charge meanings. Representative mixed-syscall and directory captures show `old_report_bytes > new_report_bytes + frame_bytes + retained_payload_bytes` without truncating buffers or weakening provenance.",
+      "negative_control": "Unknown envelope fields/version/encoding, invalid base64, invalid/incomplete/trailing or concatenated zlib payloads, decoded-size/count mismatches, duplicate records, noncanonical frame paths, ABI-size mutations, tampered replay bytes and over-limit decoded frames reject rather than falling back to the old list transport. Exhausted F or P control reservation rejects before decoding; extra decoded output never grows the reserved frame, while a valid split footer succeeds. Savings must not omit F or P or be claimed from envelope bytes alone, and raw observation or replay costs must not be refunded, moved or masked.",
+      "interactions": "Depends on the delivered ownership-probe foundations #206/#225/#226/#227/#228 and composes with the shared Python producer API from #238/#239. It deliberately leaves the public metadata tuples, selected-view semantics, producer result slots, workflow topology and downstream #180/#186 graph consumers unchanged.",
+      "save_compatibility": "Host-only probe transport; no gameplay, save migration, config identity, localization, generated game content, ROM/RAM or modern/archival profile change.",
+      "cleanup": "The existing ProbeSession/watchdog lifecycle removes only owned fixture, scratch, control and output state. Decode failures, replay failures and modeled privileged-route failures stay terminal and clean without retry, fallback or counter reset.",
+      "limitations": "This bounded prototype does not claim full #180/#186 graph fit, attributed full-query savings or remote completion. The 4096-byte trusted scratch buffer is an implementation bound, not a transport savings term, and broader integration remains a downstream gate.",
+      "automation": [
+        {
+          "command": "python3 -m unittest scripts.validation_ownership.tests.test_metadata_transport -v",
+          "evidence": "scripts/validation_ownership/tests/test_metadata_transport.py"
+        },
+        {
+          "command": "python3 -m unittest scripts.validation_ownership.tests.test_foundation.FoundationTests.test_static_metadata_uses_persistent_objects_for_cache_and_native_make scripts.validation_ownership.tests.test_foundation.FoundationTests.test_metadata_captures_complete_syscall_buffers_status_flags_and_masks scripts.validation_ownership.tests.test_foundation.FoundationTests.test_runtime_inputs_capture_full_optional_buffers_status_flags_and_masks scripts.validation_ownership.tests.test_foundation.FoundationTests.test_metadata_transport_preserves_mixed_syscalls_cache_and_replay scripts.validation_ownership.tests.test_foundation.FoundationTests.test_metadata_transport_preserves_directory_enumeration_offsets_and_savings scripts.validation_ownership.tests.test_foundation.FoundationTests.test_metadata_transport_keeps_selected_view_metadata_boundaries scripts.validation_ownership.tests.test_foundation.FoundationTests.test_metadata_report_validation_rejects_malformed_buffers_and_native_writes scripts.validation_ownership.tests.test_foundation.FoundationTests.test_directory_observation_transfer_and_buffer_limits_are_bounded scripts.validation_ownership.tests.test_foundation.FoundationTests.test_sudo_preflight_and_capsules_share_the_privileged_lifecycle_contract -v",
+          "evidence": "scripts/validation_ownership/tests/test_foundation.py"
+        },
+        {
+          "command": "python3 -m unittest scripts.validation_ownership.tests.test_producer.ProducerTests.test_make_lookup_guard_preserves_ordinary_absence_nonexecutables_and_metadata -v",
+          "evidence": "scripts/validation_ownership/tests/test_producer.py"
+        },
+        {
+          "command": "make -f scripts/validation_ownership/foundation.mk ownership-probe-test",
+          "evidence": "scripts/validation_ownership/foundation.mk"
         }
       ]
     },

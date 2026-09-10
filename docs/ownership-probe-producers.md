@@ -277,6 +277,11 @@ budgets. All parked ancestors keep their process and funded-VM reservations.
 Same-producer replacement works across nested queries; another producer cannot
 take over a child's or parent's outputs. Failure, parent lifetime loss or
 interruption tears down the entire active scope with the existing sole reaper.
+The producer path shares the same closed metadata transport as ordinary
+commands and Make: supervisor reports carry one
+`vo-metadata-frame`/`zlib-base64` envelope whose decoded bytes are the
+unchanged replay frame, while result slots, `stdout_sha256`, adoption hashes
+and publication ownership semantics remain unchanged.
 
 ## One resource ledger and lifetime
 
@@ -308,7 +313,12 @@ The same deadline, launches/states, pending count, descendants, syscalls,
 observations, creation limits and all byte budgets remain. Callback frames,
 declarations, output, mapping, cache and publication data spend their existing
 categories. No category refund/reset, second budget, cap increase or calibration
-is part of this implementation.
+is part of this implementation. The metadata transport savings term is the
+old complete report minus the new report, one charged decoded frame and the
+additional encoded-payload retention reservation at the parent. Both
+reservations precede decoding; fixed streaming scratch is not counted as a
+saving. Raw metadata observation, cached legacy records and helper replay
+costs do not move or shrink.
 
 Malformed, foreign, duplicate, stale or out-of-order traffic, premature EOF,
 unknown slots, parked-process death, callback failure and interruption are terminal.
