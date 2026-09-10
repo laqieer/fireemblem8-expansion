@@ -33,37 +33,6 @@ MODERN_DIRECTORY_CONTRACTS = {
     "modern-libgcc-directory": "-print-libgcc-file-name",
     "modern-libc-directory": "-print-file-name=libc.a",
 }
-# Trusted helpers cannot hand root-directory enumeration to candidate import
-# discovery on this repository, so they load the exact captured package chain
-# from its real __init__.py/module files instead.
-TRUSTED_REPO_MODULE_LOADER = (
-    "import importlib.util,os,sys,types\n"
-    "def load_repo_module(name):\n"
-    " parts=name.split('.')\n"
-    " directory='/repo'\n"
-    " prefix=[]\n"
-    " for part in parts[:-1]:\n"
-    "  prefix.append(part)\n"
-    "  directory += '/' + part\n"
-    "  package='.'.join(prefix)\n"
-    "  if package not in sys.modules:\n"
-    "   init=directory + '/__init__.py'\n"
-    "   if os.path.isfile(init):\n"
-    "    spec=importlib.util.spec_from_file_location(package,init,submodule_search_locations=[directory])\n"
-    "    module=importlib.util.module_from_spec(spec)\n"
-    "    sys.modules[package]=module\n"
-    "    spec.loader.exec_module(module)\n"
-    "   else:\n"
-    "    module=types.ModuleType(package)\n"
-    "    module.__path__=[directory]\n"
-    "    sys.modules[package]=module\n"
-    " path='/repo/' + name.replace('.', '/') + '.py'\n"
-    " spec=importlib.util.spec_from_file_location(name,path)\n"
-    " module=importlib.util.module_from_spec(spec)\n"
-    " sys.modules[name]=module\n"
-    " spec.loader.exec_module(module)\n"
-    " return module\n"
-)
 GENERATED_DEPENDENCY_MODULES = {
     "scripts.generated_data.autoplaystrategies.deps": {
         "needs_chapterbundle_support": True,
@@ -369,52 +338,20 @@ def _directory_closure(paths):
     }))
 
 
-def _python_registration(
-    session,
-    body,
-    arguments=(),
-    *,
-    sources=(),
-    outputs=(),
-    directories=(),
-    code=(),
-    prepend_repo_path,
-    close_directories=False,
-):
-    modules = python_code_closure(session, body, code)
-    if prepend_repo_path:
-        body = "import sys;sys.path.insert(0,'/repo');" + body
-    import_directories = set(python_import_directories(modules))
-    if not prepend_repo_path:
-        import_directories.discard(".")
-    declared = set(_directory_closure(directories) if close_directories else directories)
-    return Command(
-        (PYTHON, "-I", "-S", "-B", "-c", body, *arguments),
-        code=modules, sources=tuple(sources), outputs=tuple(outputs),
-        directories=tuple(sorted(declared | import_directories)),
-    )
-
-
-def _run_trusted_python(session, body, arguments=(), *, sources=(), outputs=(), directories=(), code=()):
-    return session.command(_python_registration(
-        session, body, arguments, sources=sources, outputs=outputs,
-        directories=directories, code=code, prepend_repo_path=False,
-        close_directories=True,
-    ))
-
-
-def _trusted_python_command(session, body, arguments=(), *, sources=(), outputs=(), directories=(), code=()):
-    return _python_registration(
-        session, body, arguments, sources=sources, outputs=outputs,
-        directories=directories, code=code, prepend_repo_path=False,
-        close_directories=True,
-    )
-
-
 def python_command(session, body, arguments=(), *, sources=(), outputs=(), directories=(), code=()):
-    return _python_registration(
+    modules = python_code_closure(session, body, code)
+    return Command(
+        (PYTHON, "-I", "-S", "-B", "-c",
+         "import sys;sys.path.insert(0,'/repo');" + body, *arguments),
+        code=modules, sources=tuple(sources), outputs=tuple(outputs),
+        directories=tuple(sorted(set(directories) | set(python_import_directories(modules)))),
+    )
+
+
+def directory_python_command(session, body, arguments=(), *, sources=(), outputs=(), directories=(), code=()):
+    return python_command(
         session, body, arguments, sources=sources, outputs=outputs,
-        directories=directories, code=code, prepend_repo_path=True,
+        directories=_directory_closure(directories), code=code,
     )
 
 
@@ -720,11 +657,10 @@ class MakeCommands:
             if bundle_source not in self.session.snapshot.files:
                 bundle_directories = (*bundle_directories, bundle_source)
             body = (
-                TRUSTED_REPO_MODULE_LOADER
-                + "import glob,json\n"
+                "import glob,json\n"
                 "from pathlib import Path\n"
-                "bundle_schema=load_repo_module('scripts.generated_data.chapterbundle.schema')\n"
-                "objectives_schema=load_repo_module('scripts.generated_data.chapterobjectives.schema')\n"
+                "from scripts.generated_data.chapterbundle import schema as bundle_schema\n"
+                "from scripts.generated_data.chapterobjectives import schema as objectives_schema\n"
                 "root=Path(bundle_schema.REPO_ROOT)\n"
                 "records=bundle_schema.load_records(str(Path('/repo') / Path(sys.argv[1])))\n"
                 "def rel(value):\n"
@@ -758,14 +694,14 @@ class MakeCommands:
                 "},sort_keys=True,separators=(',',':')))\n"
             )
             result = parse_json(
-                _run_trusted_python(
+                self.session.command(directory_python_command(
                     self.session,
                     body,
                     (bundle_source,),
                     sources=bundle_sources,
                     directories=bundle_directories,
                     code=code,
-                ).stdout,
+                )).stdout,
                 "chapterbundle dependency support",
             )
             if (
@@ -822,9 +758,9 @@ class MakeCommands:
         if not pending:
             return resolved
         body = (
-            TRUSTED_REPO_MODULE_LOADER
-            + "import json\n"
+            "import json\n"
             "from pathlib import Path\n"
+            "import importlib\n"
             "queries=json.loads(sys.argv[1])\n"
             "def rel(value):\n"
             " path=Path(value)\n"
@@ -835,19 +771,19 @@ class MakeCommands:
             " return path.as_posix()\n"
             "resolved={}\n"
             "for option,module_name,source_name in queries:\n"
-            " module=load_repo_module(module_name)\n"
+            " module=importlib.import_module(module_name)\n"
             " source=str(Path('/repo') / Path(source_name))\n"
             " resolved[option]=sorted(rel(path) for path in module.source_paths(source))\n"
             "print(json.dumps(resolved,sort_keys=True,separators=(',',':')))\n"
         )
         output = parse_json(
-            _run_trusted_python(
+            self.session.command(directory_python_command(
                 self.session,
                 body,
                 (json.dumps(pending, separators=(",", ":")),),
                 directories=tuple(directories),
                 code=tuple(sorted(set(code))),
-            ).stdout,
+            )).stdout,
             "generated dependency primary source selection",
         )
         if not isinstance(output, dict) or set(output) != {item[0] for item in pending}:
@@ -904,13 +840,12 @@ class MakeCommands:
             discovery_sources.extend(dependency_members)
             discovery_sources.extend(dependency_sources)
         discovery = parse_json(
-            _run_trusted_python(
+            self.session.command(directory_python_command(
                 self.session,
                 (
-                    TRUSTED_REPO_MODULE_LOADER
-                    + "import json\n"
+                    "import json\n"
                     "from pathlib import Path\n"
-                    + f"module=load_repo_module({module!r})\n"
+                    + f"from {module.rpartition('.')[0]} import {module.rpartition('.')[2]} as module\n"
                     "arguments=json.loads(sys.argv[1])\n"
                     "def rooted(value):\n"
                     " path=Path(value)\n"
@@ -929,7 +864,7 @@ class MakeCommands:
                 sources=tuple(sorted(set(discovery_sources))),
                 directories=tuple(sorted(directories)),
                 code=tuple(sorted(set(code))),
-            ).stdout,
+            )).stdout,
             "generated dependency input discovery",
         )
         if (
@@ -951,10 +886,9 @@ class MakeCommands:
         files = tuple(sorted(set(files)))
         source_identities = self.session.source_owners(files)
         body = (
-            TRUSTED_REPO_MODULE_LOADER
-            + "import hashlib,json,stat\n"
+            "import hashlib,json,stat\n"
             "from pathlib import Path\n"
-            + f"module=load_repo_module({module!r})\n"
+            + f"from {module.rpartition('.')[0]} import {module.rpartition('.')[2]} as module\n"
             "inputs=json.loads(sys.argv[3])\n"
             "tracked=json.loads(sys.argv[4])\n"
             "identities={row[0]:tuple(row[1:]) for row in json.loads(sys.argv[5])}\n"
@@ -982,7 +916,7 @@ class MakeCommands:
             "if existing != content:\n"
             " output.write_text(content,encoding='utf-8')\n"
         )
-        return _trusted_python_command(
+        return directory_python_command(
             self.session,
             body,
             (

@@ -18,8 +18,9 @@ from scripts.validation_ownership.authority import (
 from scripts.validation_ownership.budget import MakeProbeError, ProbeBudget
 from scripts.validation_ownership.graph_commands import (
     CODE_PREFIXES, FIND_DIRECTORY_BODY, ROOT_RUNTIME_FILES, MakeCommands,
-    TRUSTED_REPO_MODULE_LOADER, _trusted_python_command, asset_discovery_command,
+    asset_discovery_command, python_command,
 )
+from scripts.validation_ownership import graph_report
 from scripts.validation_ownership import make_probe
 from scripts.validation_ownership.make_probe import Command, ProbeSession
 from scripts.validation_ownership.graph_probe import run_probe
@@ -77,6 +78,18 @@ class GraphCommandTests(unittest.TestCase):
         entries = git_tree_entries(self.root, revision, budget=budget)
         self.assertEqual(set(entries), set(self.entries))
         return AuthorityLoader(self.root, entries, revision, budget=budget)
+
+    def capture_complete_loader(self, budget):
+        def git(*arguments):
+            return subprocess.run(
+                ["/usr/bin/git", "-C", str(self.root), *arguments],
+                env={**ENVIRONMENT, "TMPDIR": str(self.directory)},
+                capture_output=True, check=True, timeout=15,
+            ).stdout
+        git("init", "--quiet")
+        git("add", "-A", "--", ".")
+        revision = git("write-tree").decode().strip()
+        return graph_report.capture(self.root, revision, budget)
 
     def ordinary_scaninc(self, source):
         output = self.directory / "scaninc"
@@ -310,54 +323,53 @@ class GraphCommandTests(unittest.TestCase):
             ):
                 MakeCommands(probe, contract)['python3 -c "print(1)"\npython3 -c "print(2)"']
 
-    def test_trusted_repo_module_loader_matches_ordinary_package_imports(self):
-        for name, data in (
-            ("scripts/__init__.py", "ROOT_VALUE='root-init'\n"),
-            ("scripts/generated_data/__init__.py", "DATA_VALUE='generated-init'\n"),
-            ("scripts/generated_data/demo/__init__.py", "DEMO_VALUE='demo-init'\n"),
-            ("scripts/generated_data/demo/helper.py",
-             "from . import DEMO_VALUE\nfrom scripts.generated_data import DATA_VALUE\n"
-             "HELPER_VALUE = DEMO_VALUE + ':' + DATA_VALUE\n"),
-            ("scripts/generated_data/demo/tool.py",
-             "from scripts import ROOT_VALUE\nfrom .helper import HELPER_VALUE\n"
-             "RESULT = ROOT_VALUE + ':' + HELPER_VALUE\n"),
-        ):
-            self.add(name, data)
+    def test_standard_python_command_preserves_namespace_import_behavior(self):
+        self.add(
+            "scripts/generated_data/demo/helper.py",
+            "VALUE = 'helper'\n",
+        )
+        self.add(
+            "scripts/generated_data/demo/tool.py",
+            "from .helper import VALUE\nRESULT = VALUE + ':ok'\n",
+        )
         ordinary = subprocess.run(
             [
                 "/usr/bin/python3", "-I", "-S", "-B", "-c",
-                "import sys;sys.path.insert(0,'.');"
-                "from scripts.generated_data.demo import tool;print(tool.RESULT)",
+                "import json,sys;sys.path.insert(0,'.');import scripts;"
+                "from scripts.generated_data.demo import tool;"
+                "print(json.dumps({'loader':type(scripts.__spec__.loader).__name__,"
+                "'origin':scripts.__spec__.origin,'paths':list(scripts.__path__),"
+                "'result':tool.RESULT},sort_keys=True))",
             ],
             cwd=self.root, env={**ENVIRONMENT, "TMPDIR": str(self.directory)},
             capture_output=True, check=True, timeout=15,
         )
-        with self.session() as probe:
-            command = _trusted_python_command(
+        expected = json.loads(ordinary.stdout)
+        expected["paths"] = [path.replace(str(self.root), "/repo") for path in expected["paths"]]
+        budget = ProbeBudget()
+        loader = self.capture_complete_loader(budget)
+        with ProbeSession(loader, scratch_root=self.root / "build/scratch", budget=budget) as probe:
+            actual = probe.command(python_command(
                 probe,
-                TRUSTED_REPO_MODULE_LOADER
-                + "module=load_repo_module('scripts.generated_data.demo.tool');"
-                "print(module.RESULT)",
+                "import json, scripts;"
+                "from scripts.generated_data.demo import tool;"
+                "print(json.dumps({'loader':type(scripts.__spec__.loader).__name__,"
+                "'origin':scripts.__spec__.origin,'paths':list(scripts.__path__),"
+                "'result':tool.RESULT},sort_keys=True))",
                 code=(
-                    "scripts/__init__.py",
-                    "scripts/generated_data/__init__.py",
-                    "scripts/generated_data/demo/__init__.py",
                     "scripts/generated_data/demo/helper.py",
                     "scripts/generated_data/demo/tool.py",
                 ),
-            )
-            actual = probe.command(command)
-            self.assertEqual(actual.stdout, ordinary.stdout)
+            ))
+            self.assertEqual(json.loads(actual.stdout), expected)
             self.assertEqual(
                 set(actual.code_consumed),
                 {
-                    "scripts/__init__.py",
-                    "scripts/generated_data/__init__.py",
-                    "scripts/generated_data/demo/__init__.py",
                     "scripts/generated_data/demo/helper.py",
                     "scripts/generated_data/demo/tool.py",
                 },
             )
+        self.assertFalse(budget.children)
 
     def test_scaninc_uses_real_parser_search_order_and_recursive_include_closure(self):
         self.add("data/root.s", '.include "leaf.inc"\n.include "missing.inc"\n.incbin "asset.bin"\n')
@@ -763,14 +775,15 @@ class GraphCommandTests(unittest.TestCase):
         self.assertEqual(ordinary["reordered"], ordinary["canonical"])
         with self.session() as probe:
             canonical_command = MakeCommands(probe, self.contracts)[canonical]
-            canonical_output = probe.command(canonical_command).generated[0].data
             canonical_inputs = json.loads(canonical_command.argv[-3])
+            canonical_sources = canonical_command.sources
+            canonical_dirs = canonical_command.directories
         with self.session() as probe:
             reordered_command = MakeCommands(probe, self.contracts)[reordered]
-            reordered_output = probe.command(reordered_command).generated[0].data
             reordered_inputs = json.loads(reordered_command.argv[-3])
-            self.assertEqual(reordered_output, canonical_output)
             self.assertEqual(reordered_inputs, canonical_inputs)
+            self.assertEqual(reordered_command.sources, canonical_sources)
+            self.assertEqual(reordered_command.directories, canonical_dirs)
             for bad, expected in (
                 (
                     canonical.replace(
