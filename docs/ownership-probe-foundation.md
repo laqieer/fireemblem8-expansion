@@ -493,6 +493,13 @@ captures recorded gitlinks from already available local object databases so
 its root listing is complete. Missing databases/pins reject; no fetch or live
 submodule mount is introduced. A capture resolves the common Git directory
 once, without omitting any individual gitlink pin/database checks or reads.
+The shared `scripts/validation_ownership/python_commands.py` helper keeps that
+same ordinary import model: it prepends `/repo` for Python's normal resolver
+rather than synthesizing package objects. A raw immutable tree lacking gitlink
+admission therefore still fails at the actual root enumeration boundary, while
+the complete capture plus explicitly declared source ancestors succeeds with
+the standard namespace-package `NamespaceLoader`, `__spec__.origin is None`,
+and the real `/repo/scripts` namespace path.
 
 The trusted registry driver accepts a repository-relative source argument.
 Schema-reported paths may be repository-relative or absolute beneath `/repo`;
