@@ -71,7 +71,9 @@ ROM or make the archival lane a release requirement.
   [#236](https://github.com/laqieer/fireemblem8-expansion/issues/236).
 - **Supported configuration or artifact:** owned clean native-Make fixture
   that includes the repository's `archival_dependencies.mk` fragment and uses
-  `/usr/bin/make`, `/usr/bin/cpp`, and `/usr/bin/cc`.
+  `/usr/bin/make`, `/usr/bin/cpp`, `/usr/bin/cc`, `/usr/bin/as`, and
+  `/usr/bin/g++`. The recursive assembly case builds the real repository
+  scaninc tool in its owned fixture.
 - **Prerequisites and clean starting state:** repository root on a host with
   the native build tools above installed; the test suite owns and cleans its
   temporary directories under `build/test-tmp/`.
@@ -90,7 +92,7 @@ ROM or make the archival lane a release requirement.
 Bare `make`, explicit `make all`, and the inspected pure host
 asset/generated-data/localization goals execute without creating or refreshing
 unrelated archival `.d` files or preprocessing legacy C, including when legacy
-sources change after a prior archival build. Explicit archival/object goals,
+sources change after a prior archival build. Explicit archival/C-object goals,
 custom aliases, and `generated-data-link-check` still generate and include the
 needed dependency makefiles, build the generated header before compiling the
 native object, and rebuild after header or depfile churn. Mixed safe/unsafe
@@ -98,12 +100,27 @@ goal lists retain the dependency behavior in either order.
 The existing game-localization final targets also skip archival remakes.
 Clearing only their suppression policy, without changing target names,
 reintroduces real preprocessing in the negative control.
+The real localization-test recipe's recursive width/text-edit children also
+avoid C dependency remakes. Its unrelated Python catalog commands are replaced
+only inside this dependency fixture; their correctness is not claimed by it.
+
+The fixture executes the actual GNU-Make-resolved `all` and
+`expansion-modern-legacy-ready` recipes, with a reduced intermediate boot target
+and native assembly inputs. A bare/default recursion with outer `NODEP=1`
+retains the real inner `NODEP=0` scaninc behavior: changing an included assembly
+file rebuilds native object bytes, without preprocessing unrelated C. Known
+MIDI/banim inventory goals exercise only dependency selection in this fixture,
+not real asset conversion or compression. The actual root Make database must
+admit the complete non-C inventory and exclude all C/data-C objects. Mixed
+assembly/C goals still load C dependency files and generated headers.
 
 ### Negative control
 
 Before the fix, bare/default and pure host goals eagerly remade archival `.d`
 files, and a mixed invocation containing a safe modern goal plus `legacy.o`
 tried to compile before the generated header existed.
+Before the recursive correction, both actual recipe chains caused native CPP
+to generate the unrelated legacy dependency file.
 
 ### Interactions and save compatibility
 
