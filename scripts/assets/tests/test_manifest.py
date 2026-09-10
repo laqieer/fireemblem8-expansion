@@ -759,6 +759,8 @@ class AssetManifestTests(unittest.TestCase):
             "/work/build/generated/asset-discovery/forged.mk", "build/bad\0.mk",
             os.path.join(REPO_ROOT, "build/generated/asset-discovery/forged.mk"),
             None, 3, b"build/generated/asset-discovery/forged.mk",
+            *("build/generated/asset-discovery/" + part + "/selected.mk"
+              for part in (".", "dir/..", "dir/", "dir\\name", "bad\nname", "bad\tname", "bad\x7fname")),
         ):
             with self.subTest(logical=logical):
                 with self.assertRaises(GeneratedDataError):

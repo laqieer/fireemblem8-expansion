@@ -13,7 +13,7 @@ requires a later independently accepted issue with non-inferiority evidence.
 Issue #181 is parallel and does not consume or authorize this graph.
 
 Graph test discovery uses unittest's package `load_tests` protocol to exclude
-the foundation, producer and dependency modules. Those modules run once in
+the foundation, producer, dependency and metadata codec modules. They run once in
 the required `ownership-probe-test` owner in `extended-host-tests`; they are
 not repeated by the graph gate or workflow discovery. The parsed discovery
 partition requires every test ID to retain exactly one execution owner.
@@ -37,10 +37,6 @@ The graph reads generated include bytes from the completed
 `MAKEFILE_LIST`. Resolving a registration does not execute its producer
 in advance. Native dispatch, source receipts, replacement and cleanup remain
 owned by P; no preparatory sample supplies the graph's source census.
-Asset discovery additionally binds its logical digest to the actual captured
-manifest/source path, mode and content identities. Equal Git inputs remain
-stable across independent materializations despite different real mtimes;
-ordinary CLI stamping and full metadata/cache validation stay unchanged.
 The graph also checks actual repository file-open attempts, not only the
 successfully loaded `MAKEFILE_LIST`. An unknown optional include cannot acquire
 authority merely because Make ignored its absence. Attempts must resolve to
@@ -48,13 +44,11 @@ captured regular sources or actual completed producer outputs; known generated
 include/remake behavior remains valid. Syscall spellings and real metadata
 remain intact, rather than being inferred from a new Make parser.
 
-Asset discovery reuses the existing
-[`load_discovery(..., tracked_sources=...)` and renderer](asset_manifest.md#captured-source-discovery)
-with the selected immutable capture's regular-file identities. The set is not
-read from candidate claims and is not a skip-validation switch. The shared
-executor must still enforce exact declared/consumed sources and declared
-private outputs. This consumer seam alone does not establish the full Make
-domain, graph, oracle or lifecycle acceptance.
+Asset discovery uses the [captured-source API](asset_manifest.md#captured-source-discovery)
+with immutable path/mode/content identities, not candidate claims or validation
+bypasses. Its digest is stable across equal Git materializations; ordinary CLI
+stamping and full metadata/cache validation remain unchanged. Exact declared/
+consumed inputs and private outputs stay enforced.
 Issue [#238](https://github.com/laqieer/fireemblem8-expansion/issues/238)
 now owns the reusable Python command closure, registry-source selection and
 generated-dependency publication API in

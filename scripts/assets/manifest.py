@@ -580,11 +580,13 @@ def _output_path(path, out_dir, *, repository_relative=False):
         raise GeneratedDataError("generated output must be a nonempty path") from error
     if not isinstance(path, str) or not path or "\0" in path:
         raise GeneratedDataError("generated output must be a nonempty path without NUL bytes")
-    if repository_relative:
-        if os.path.isabs(path):
-            raise GeneratedDataError("logical generated output must be repository-relative")
-        path = os.path.join(REPO_ROOT, path)
-    requested = os.path.abspath(path)
+    if repository_relative and (
+        os.path.isabs(path) or "\\" in path
+        or any(part in ("", ".", "..") for part in path.split("/"))
+        or any(ord(char) < 32 or ord(char) == 127 for char in path)
+    ):
+        raise GeneratedDataError("logical generated output must be a canonical repository-relative POSIX path")
+    requested = os.path.abspath(os.path.join(REPO_ROOT, path) if repository_relative else path)
     if requested == out_dir or os.path.commonpath((out_dir, requested)) != out_dir:
         raise GeneratedDataError(
             "generated output '{}' must stay under {}".format(path, out_dir)
