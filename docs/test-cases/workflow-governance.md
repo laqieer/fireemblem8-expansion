@@ -857,6 +857,9 @@ or arbitrary concurrent host mutation, and does not reinstate #204/#210.
    An empty requirement set must fail the coverage assertion both with no
    candidate reads and after a real read; generic report completion remains
    available without claiming coverage.
+   Validated preview paths still spend the existing logical-path budget even
+   if describe/backend later fails, while coverage remains empty until a
+   complete read succeeds.
 3. Exercise deleted and explicit two-sided negatives in the same session API.
    Head-side absence for a deleted path, a one-sided explicit mode/change
    read, wrong pair/root/revision/path/mode/object/bytes, unsupported Git
@@ -866,6 +869,9 @@ or arbitrary concurrent host mutation, and does not reinstate #204/#210.
    Repeat the same path and side: it must retain one summary and one logical
    slot, leaving room for another path below the unchanged cap. A changed
    duplicate observation must reject without replacing the original summary.
+   Two distinct validated failures at a lower `max_files` bound must spend
+   both slots, so a third distinct path rejects before describe/backend. A
+   retry of an already attempted path may still succeed inside that same slot.
 4. Exercise the public gate adapter locally:
 
    ```bash
@@ -908,7 +914,9 @@ base blob, and mode-only or explicit two-sided requirements need both sides.
 Coverage is tied to one exact resolved checkout root plus BASE/head pair, the
 finished report remains immutable, duplicate reads do not inflate logical-path
 counts, and the public check adapter stays local-only and non-authoritative
-for handoff admission.
+for handoff admission. Attempted logical-path capacity is stricter than
+coverage: failed validated reads spend a slot, but only successful complete
+reads enter the finished coverage report.
 
 ### Negative control
 
