@@ -7,7 +7,7 @@ if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
 import copy
-from dataclasses import replace
+from dataclasses import FrozenInstanceError, replace
 import io
 import json
 import os
@@ -34,6 +34,38 @@ def response(base, head, body="Complete review content", *, actor=None):
         }]},
         "reviewThreads": {"pageInfo": {"hasNextPage": False}, "nodes": []},
     }}}}
+
+
+def candidate_fixture(repo):
+    prefix = "candidate-gate-review-paths"
+    base = repo.commit({
+        f"{prefix}/modify.txt": "base revision\n",
+        f"{prefix}/delete.txt": "delete from base\n",
+        f"{prefix}/mode.sh": "#!/bin/sh\necho shared\n",
+        f"{prefix}/support.txt": "unchanged support\n",
+    }, parent=repo.base)
+    git(repo.root, "reset", "--hard", base)
+    root = repo.root / prefix
+    (root / "modify.txt").write_text("head revision\n")
+    (root / "delete.txt").unlink()
+    (root / "added.txt").write_text("added in head\n")
+    os.chmod(root / "mode.sh", 0o755)
+    git(repo.root, "add", "-A")
+    git(repo.root, "update-index", "--chmod=+x", f"{prefix}/mode.sh")
+    git(repo.root, "commit", "-qm", "candidate gate fixture")
+    head = git(repo.root, "rev-parse", "HEAD")
+    git(repo.root, "reset", "--hard", repo.base)
+    return {
+        "base": base,
+        "head": head,
+        "paths": {
+            "added": f"{prefix}/added.txt",
+            "deleted": f"{prefix}/delete.txt",
+            "mode": f"{prefix}/mode.sh",
+            "modified": f"{prefix}/modify.txt",
+            "support": f"{prefix}/support.txt",
+        },
+    }
 
 
 class ObservedGitHub(gate.GitHub):
@@ -768,6 +800,32 @@ runpy.run_path(sys.argv[0], run_name="__main__")
         result = subprocess.run(command, env=ENV, capture_output=True, timeout=30)
         self.assertNotEqual(result.returncode, 0)
 
+    def test_programmatic_gate_requires_isolated_startup(self):
+        path = self.repo.root / "isolation-request.json"
+        path.write_text(json.dumps(request(base=self.repo.base, head=self.repo.base)))
+        arguments = [
+            "--repository-root", str(self.repo.root), "--subject-root", str(self.repo.root),
+            "--tool-revision", self.repo.base, "--candidate", self.repo.base,
+            "--request", str(path), "--mode", "plan",
+        ]
+        program = (
+            f"import sys; sys.path.insert(0, {str(ROOT)!r}); "
+            "from scripts.workflow_pilot.trusted_review_gate import main; "
+            "raise SystemExit(main(sys.argv[1:]))"
+        )
+        for flags in ([], ["-I"]):
+            with self.subTest(flags=flags):
+                result = subprocess.run(
+                    [sys.executable, *flags, "-c", program, *arguments],
+                    cwd=ROOT, env=ENV, capture_output=True, timeout=30)
+                if flags:
+                    self.assertEqual(result.returncode, 0, result.stderr.decode())
+                    self.assertEqual(json.loads(result.stdout)["candidate_sha"], self.repo.base)
+                else:
+                    self.assertEqual(result.returncode, 2, result.stdout.decode())
+                    self.assertEqual(result.stdout, b"")
+                    self.assertIn(b"isolated startup is required", result.stderr)
+
     def test_check_cli_runs_probes_but_cannot_authenticate_task_from_json(self):
         data = request(base=self.repo.base, head=self.repo.base)
         path = self.repo.root / "request.json"
@@ -785,6 +843,145 @@ runpy.run_path(sys.argv[0], run_name="__main__")
         self.assertEqual(report["untriaged_review_ids"], ["review-1"])
         self.assertFalse(report["handoff_eligible"])
         self.assertTrue(report["coordinator_observations_required"])
+
+    def test_candidate_reader_public_api_binds_exact_bytes_and_check_mode_stays_local(self):
+        with snapshot() as repo:
+            fixture = candidate_fixture(repo)
+            tools = gate.ReviewTools(gate.GitTree(repo.root, fixture["head"]), repo.root)
+            reader = tools.candidate_reader(fixture["base"], fixture["head"])
+            original_binding = dict(reader.candidate_binding)
+            self.assertEqual(
+                reader.preview(fixture["paths"]["deleted"], "base"),
+                {
+                    "path": fixture["paths"]["deleted"],
+                    "side": "base",
+                    "revision": fixture["base"],
+                },
+            )
+            self.assertEqual(
+                original_binding,
+                {
+                    "resolved_root": str(repo.root.resolve()),
+                    "base": fixture["base"],
+                    "head": fixture["head"],
+                },
+            )
+            changes = tools.candidate_changes(
+                fixture["base"], fixture["head"],
+                paths=[fixture["paths"]["added"], fixture["paths"]["deleted"],
+                       fixture["paths"]["mode"], fixture["paths"]["modified"]],
+                require_both=(fixture["paths"]["modified"],))
+            self.assertEqual(
+                [item.path for item in changes.changes],
+                sorted(value for key, value in fixture["paths"].items() if key != "support"),
+            )
+            self.assertEqual(
+                (changes.resolved_root, changes.base, changes.head),
+                (str(repo.root.resolve()), fixture["base"], fixture["head"]),
+            )
+            described = {
+                (item.path, item.required_sides)
+                for item in changes.changes
+            }
+            self.assertIn((fixture["paths"]["deleted"], ()), described)
+            self.assertIn((fixture["paths"]["modified"], ("base", "head")), described)
+            default_changes = tools.candidate_changes(fixture["base"], fixture["head"])
+            expected_paths = {
+                fixture["paths"]["added"],
+                fixture["paths"]["deleted"],
+                fixture["paths"]["mode"],
+                fixture["paths"]["modified"],
+            }
+            self.assertEqual(
+                {item.path for item in default_changes.changes},
+                expected_paths,
+            )
+            self.assertEqual(
+                (default_changes.resolved_root, default_changes.base, default_changes.head),
+                (str(repo.root.resolve()), fixture["base"], fixture["head"]),
+            )
+            self.assertNotIn(fixture["paths"]["support"], {item.path for item in default_changes.changes})
+            self.assertNotEqual(
+                {item.path for item in default_changes.changes if item.path != fixture["paths"]["mode"]},
+                expected_paths,
+            )
+            git(repo.root, "reset", "--hard", fixture["head"])
+            drift = repo.root / fixture["paths"]["modified"]
+            drift.write_text("working tree drift\n")
+            git(repo.root, "add", fixture["paths"]["modified"])
+            modified_base = reader(fixture["paths"]["modified"], "base")
+            modified_head = reader(fixture["paths"]["modified"])
+            mode_base = reader(fixture["paths"]["mode"], "base")
+            mode_head = reader(fixture["paths"]["mode"])
+            deleted_head = reader(fixture["paths"]["deleted"])
+            self.assertEqual(modified_base["data"], b"base revision\n")
+            self.assertEqual(modified_head["data"], b"head revision\n")
+            self.assertEqual((mode_base["mode"], mode_head["mode"]), ("100644", "100755"))
+            self.assertEqual(mode_base["oid"], mode_head["oid"])
+            self.assertFalse(deleted_head["present"])
+            self.assertEqual(deleted_head["data"], None)
+            with self.assertRaisesRegex(ValueError, "candidate path must be canonical"):
+                reader("../escape.txt")
+            for field, value in (
+                ("root", repo.root / "other"),
+                ("base", fixture["head"]),
+                ("head", fixture["base"]),
+            ):
+                with self.subTest(field=field), self.assertRaises(AttributeError):
+                    setattr(reader, field, value)
+            self.assertEqual(dict(reader.candidate_binding), original_binding)
+            data = request(base=fixture["base"], head=fixture["head"])
+            scope = frozenset({tools.model.subject_key(data["subjects"][0])})
+            session = tools.model.ReviewSession(
+                "coordinator", "implementer", scope, fixture["head"],
+                identity=("owner/repo", 1, fixture["base"]),
+                owners=tools.model.ReviewOwnership(),
+                readers={"read-candidate": tools.candidate_reader(fixture["base"], fixture["head"])},
+            )
+            runtime = Runtime(fixture["head"], scope)
+            session.begin(runtime, "reviewer", max_files=3)
+            session.read_action("read-candidate", fixture["paths"]["added"])
+            session.read_action("read-candidate", fixture["paths"]["deleted"], "base")
+            session.read_action("read-candidate", fixture["paths"]["modified"], "base")
+            session.read_action("read-candidate", fixture["paths"]["modified"])
+            runtime.result.files = 3
+            report = session.finish(runtime)
+            coverage = tools.model.require_candidate_path_coverage(
+                report,
+                tools.candidate_changes(
+                    fixture["base"], fixture["head"],
+                    paths=[fixture["paths"]["added"], fixture["paths"]["deleted"],
+                           fixture["paths"]["modified"]],
+                    require_both=(fixture["paths"]["modified"],),
+                ),
+            )
+            self.assertEqual(coverage.resolved_root, str(repo.root.resolve()))
+            path = repo.root / "request.json"
+            path.write_text(json.dumps(data))
+            program = "\n".join((
+                "import json, sys",
+                f"sys.path.insert(0, {str(ROOT)!r})",
+                "from scripts.workflow_pilot import trusted_review_gate as gate",
+                f"base = {fixture['base']!r}",
+                f"head = {fixture['head']!r}",
+                "class FakeGitHub:",
+                "    def snapshot(self, repository, number, model):",
+                "        return ((base, head), ())",
+                "gate.GitHub = FakeGitHub",
+                "raise SystemExit(gate.main(sys.argv[1:]))",
+            ))
+            result = subprocess.run(
+                [sys.executable, "-I", "-c", program,
+                 "--repository-root", str(repo.root), "--subject-root", str(repo.root),
+                 "--tool-revision", fixture["head"], "--candidate", fixture["head"],
+                 "--request", str(path), "--mode", "check"],
+                cwd=ROOT, env=ENV, capture_output=True, timeout=30)
+            self.assertEqual(result.returncode, 0, result.stderr.decode())
+            report = json.loads(result.stdout)
+            self.assertTrue(report["source_audit_complete"])
+            self.assertFalse(report["handoff_eligible"])
+            self.assertTrue(report["coordinator_observations_required"])
+            self.assertEqual(report["candidate_sha"], fixture["head"])
 
 
 if __name__ == "__main__":

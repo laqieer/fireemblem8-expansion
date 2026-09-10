@@ -21,6 +21,8 @@ from scripts.workflow_pilot import reporter
 
 COPILOT = ("Bot", "BOT_kgDOCnlnWA", "copilot-pull-request-reviewer")
 MODULES = ("review_family", "review_subjects")
+REVIEW_SIDES = ("base", "head")
+REVIEW_BLOB_MODES = {"100644", "100755"}
 WORKER_CODE = """
 import json, sys
 sys.path.insert(0, sys.argv[1])
@@ -120,6 +122,136 @@ class GitTree:
             output = root / name
             output.parent.mkdir(parents=True, exist_ok=True)
             output.write_bytes(payload)
+
+
+def _canonical_review_path(path):
+    if not isinstance(path, str) or not path:
+        raise ValueError("candidate path must be a nonempty string")
+    relative = PurePosixPath(path)
+    if ("\0" in path or "\\" in path or relative.is_absolute() or path in {"", "."} or
+            "." in relative.parts or ".." in relative.parts or relative.as_posix() != path):
+        raise ValueError("candidate path must be canonical and repository-relative")
+    return path
+
+
+def _review_side(side):
+    if side not in REVIEW_SIDES:
+        raise ValueError("candidate side must be base or head")
+    return side
+
+
+class CandidateReader:
+    """Trusted exact-blob reader bound to one immutable candidate base/head pair."""
+
+    review_candidate_reader = True
+
+    def __init__(self, root: Path, base_revision: str, head_revision: str):
+        resolved_root = root.resolve(strict=True)
+        self._root = resolved_root
+        self._base = base_revision
+        self._head = head_revision
+        self.base_tree = GitTree(resolved_root, base_revision)
+        self.head_tree = GitTree(resolved_root, head_revision)
+
+    @property
+    def root(self):
+        return self._root
+
+    @property
+    def base(self):
+        return self._base
+
+    @property
+    def head(self):
+        return self._head
+
+    @property
+    def candidate_binding(self):
+        return {
+            "resolved_root": str(self.root),
+            "base": self.base,
+            "head": self.head,
+        }
+
+    def preview(self, path, side="head"):
+        path = _canonical_review_path(path)
+        side = _review_side(side)
+        return {
+            "path": path,
+            "side": side,
+            "revision": self.base if side == "base" else self.head,
+        }
+
+    def describe(self, path, side="head"):
+        record = self.preview(path, side)
+        tree = self.base_tree if record["side"] == "base" else self.head_tree
+        path = record["path"]
+        if path not in tree.entries:
+            return {
+                **record,
+                "present": False,
+                "mode": None,
+                "kind": None,
+                "oid": None,
+            }
+        mode, kind, oid = tree.entries[path]
+        return {
+            **record,
+            "present": True,
+            "mode": mode,
+            "kind": kind,
+            "oid": oid,
+        }
+
+    def __call__(self, path, side="head"):
+        record = self.describe(path, side)
+        if not record["present"]:
+            return {
+                **record,
+                "data": None,
+            }
+        if record["mode"] not in REVIEW_BLOB_MODES or record["kind"] != "blob":
+            raise ValueError(f"candidate source is not a regular Git blob: {path}")
+        tree = self.base_tree if record["side"] == "base" else self.head_tree
+        return {
+            **record,
+            "data": tree.read(path),
+        }
+
+
+def describe_candidate_changes(root: Path, base_revision: str, head_revision: str,
+                               *, paths=None, require_both=()):
+    reader = CandidateReader(root, base_revision, head_revision)
+    if paths is None:
+        selected = sorted(path for path in (set(reader.base_tree.entries) | set(reader.head_tree.entries))
+                          if reader.base_tree.entries.get(path) != reader.head_tree.entries.get(path))
+    else:
+        selected = [_canonical_review_path(path) for path in paths]
+        if len(selected) != len(set(selected)):
+            raise ValueError("duplicate candidate changed paths")
+        selected = sorted(selected)
+    explicit = {_canonical_review_path(path) for path in require_both}
+    if not explicit <= set(selected):
+        raise ValueError("explicit two-sided candidate path is outside the selected diff")
+    changes = []
+    for path in selected:
+        base_entry = reader.base_tree.entries.get(path)
+        head_entry = reader.head_tree.entries.get(path)
+        if base_entry == head_entry:
+            raise ValueError(f"candidate path is unchanged: {path}")
+        changes.append({
+            "path": path,
+            "base_present": base_entry is not None,
+            "base_mode": None if base_entry is None else base_entry[0],
+            "base_kind": None if base_entry is None else base_entry[1],
+            "base_oid": None if base_entry is None else base_entry[2],
+            "head_present": head_entry is not None,
+            "head_mode": None if head_entry is None else head_entry[0],
+            "head_kind": None if head_entry is None else head_entry[1],
+            "head_oid": None if head_entry is None else head_entry[2],
+            "required_sides": [] if path not in explicit else ["base", "head"],
+        })
+    return tuple(changes)
 
 
 def load_tools(tree: GitTree):
@@ -238,6 +370,17 @@ class ReviewTools:
 
     def tree(self, revision):
         return GitTree(self.subject_root, revision)
+
+    def candidate_reader(self, base_revision, head_revision):
+        return CandidateReader(self.subject_root, base_revision, head_revision)
+
+    def candidate_changes(self, base_revision, head_revision, *, paths=None, require_both=()):
+        reader = self.candidate_reader(base_revision, head_revision)
+        changes = tuple(self.model.validate_candidate_change(item) for item in describe_candidate_changes(
+            self.subject_root, base_revision, head_revision,
+            paths=paths, require_both=require_both))
+        return self.model.CandidateRequirements(
+            str(reader.root), reader.base, reader.head, changes)
 
     def members(self, request, origins=()):
         model = self.model

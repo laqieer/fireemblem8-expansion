@@ -819,6 +819,159 @@ applies to this workflow case. The ordinary cleanup regression does not promise
 containment of deliberately escaping descendants, abrupt coordinator `SIGKILL`
 or arbitrary concurrent host mutation, and does not reinstate #204/#210.
 
+## TC-WORKFLOW-REVIEW-PATHS-001: Bind coverage to actual immutable candidate-file reads
+
+- **Feature / originating issue:** `workflow-governance` /
+  [issue #243](https://github.com/laqieer/fireemblem8-expansion/issues/243).
+- **Supported configuration:** Linux source checkout, the existing #216 locked
+  CPython 3.12 host environment, Git, and the current workflow-pilot review
+  APIs. No emulator, ROM, new runtime service or graph import is required.
+- **Prerequisites and starting state:** run from the repository root. Follow
+  the [existing host setup](../workflow-pilot.md#isolated-host-python-dependencies)
+  if needed. Tests create only owned snapshot repositories and staging below
+  `build/review-family-*`. No remote mutation is required.
+
+### Actions
+
+1. Run the focused model/session coverage suite:
+
+   ```bash
+   build/host-python/bin/python3 -I -c \
+     'import sys, unittest; sys.path.insert(0, "."); unittest.main(module=None)' \
+     scripts.workflow_pilot.tests.test_review_family.CandidateCoverageTests -v
+   ```
+
+   Use real Git BASE/head fixtures with added, modified, deleted and
+   executable-mode-only paths. Route every covered read through
+   `ReviewSession.read_action("read-candidate", path, side)` and the bound
+   immutable `trusted_review_gate.CandidateReader`.
+   Every marked candidate reader must expose both immutable Git-tree bindings;
+   omitting either must reject before review launch. Unmarked generic readers
+   remain compatible but cannot provide candidate coverage.
+   Freeze its resolved checkout root with the exact BASE/head pair at `session.begin`,
+   deriving that binding from the reader's immutable Git-tree identity rather
+   than mutable public copies. Confirm returned bytes, mode, object ID, side
+   and revision for head/base selections, including one explicit two-sided
+   requirement and an unrelated support read.
+2. In the same suite, mutate the live worktree and index after freezing the
+   candidate pair. The returned bytes must remain the selected immutable Git
+   blobs, not the drifted working copy. Preserve the negatives: runtime file
+   counts, equal-count unrelated reads, `read-evidence` calls and a final
+   runtime `reviewed_paths` list cannot prove required-path coverage.
+   An empty requirement set must fail the coverage assertion both with no
+   candidate reads and after a real read; generic report completion remains
+   available without claiming coverage.
+   Validated preview paths still spend the existing logical-path budget even
+   if describe/backend later fails, while coverage remains empty until a
+   complete read succeeds.
+3. Exercise deleted and explicit two-sided negatives in the same session API.
+   Head-side absence for a deleted path, a one-sided explicit mode/change
+   read, wrong pair/root/revision/path/mode/object/bytes, unsupported Git
+   object kinds, partial/failed reads and noncanonical or NUL paths must reject or
+   remain uncovered. Generic existing `read_action("read-candidate", ...)`
+   callers may still finish, but without trusted candidate coverage.
+   Repeat the same path and side: it must retain one summary and one logical
+   slot, leaving room for another path below the unchanged cap. A changed
+   duplicate observation must reject without replacing the original summary.
+   Two distinct validated failures at a lower `max_files` bound must spend
+   both slots, so a third distinct path rejects before describe/backend. A
+   retry of an already attempted path may still succeed inside that same slot.
+4. Exercise the public gate adapter locally:
+
+   ```bash
+   build/host-python/bin/python3 -I -c \
+     'import sys, unittest; sys.path.insert(0, "."); unittest.main(module=None)' \
+     scripts.workflow_pilot.tests.test_github_review.GitHubReviewTests.test_candidate_reader_public_api_binds_exact_bytes_and_check_mode_stays_local \
+     scripts.workflow_pilot.tests.test_github_review.GitHubReviewTests.test_programmatic_gate_requires_isolated_startup -v
+   ```
+
+   Describe the immutable change set through `ReviewTools.candidate_changes`,
+   read exact bytes through `ReviewTools.candidate_reader`, and run
+   `trusted_review_gate.main([...])` in local check mode. Pass the typed
+   immutable requirements object returned by `ReviewTools.candidate_changes`
+   directly to `require_candidate_path_coverage(report, requirements)`.
+   A same-SHA report from another checkout must still fail that check, and
+   pre-begin tampering of mutable wrapper claims must reject before the review
+   starts when those claims diverge from the reader's actual Git trees. Raw
+   list/dict/namespace requirement echoes cannot qualify coverage. The
+   diagnostic may prove source-audit coverage, but it cannot authenticate
+   coordinator task provenance or manufacture handoff eligibility from request
+   JSON.
+   Programmatic `main([...])` calls must reject outside isolated Python just
+   like the CLI; the paired isolated call must still return its actual plan.
+5. Validate the human case, catalog entry and mirrored membership:
+
+   ```bash
+   python3 -m unittest \
+     scripts.docs_check_tests.test_check_docs.TesterCaseRegistryTests.test_review_path_coverage_case_is_indexed_with_focused_procedure \
+     scripts.docs_check_tests.test_development_workflow_skill.DevelopmentWorkflowSkillTests.test_review_path_coverage_case_is_indexed_and_required -v
+   python3 scripts/check_docs.py --check
+   ```
+
+   Keep one real evidence path per automation record. The live host
+   orchestrator must route actual reviewer reads through the seam; after-the-fact
+   reads, historical fixtures and final path lists do not prove the current
+   review head.
+
+### Expected result
+
+Only successful complete reads served by the bound immutable candidate reader
+accumulate canonical path/side/revision/mode/object summaries. Added and
+modified head-present paths require a head read, deleted paths require the
+base blob, and mode-only or explicit two-sided requirements need both sides.
+Coverage is tied to one exact resolved checkout root plus BASE/head pair, the
+finished report remains immutable, duplicate reads do not inflate logical-path
+counts, and the public check adapter stays local-only and non-authoritative
+for handoff admission. Attempted logical-path capacity is stricter than
+coverage: failed validated reads spend a slot, but only successful complete
+reads enter the finished coverage report.
+
+### Negative control
+
+Runtime file counts, unrelated support reads, `read-evidence`, final runtime
+path lists, empty coverage requirements, stale/wrong candidate pairs,
+wrong same-SHA checkout roots,
+deleted-head absence, one-sided explicit coverage, wrong
+bytes/mode/object/revision/path, unsupported object kinds, failed/partial
+reads and a 201st logical path must not supply trusted coverage. Existing
+generic reviews can still complete, but remain uncovered.
+
+### Interactions and save compatibility
+
+Depends on the delivered #179 review-family and #181/#221 trusted orchestration
+contracts and on the existing immutable GitTree reader. Dependent #180 owns
+the live outside-candidate adapter exercise; this case does not invent a
+second backend or qualify that downstream integration. No gameplay, save,
+config identity, localization, generated game-data, ROM/RAM, modern profile
+or archival interaction exists.
+
+### Automation
+
+```bash
+build/host-python/bin/python3 -I -c \
+  'import sys, unittest; sys.path.insert(0, "."); unittest.main(module=None)' \
+  scripts.workflow_pilot.tests.test_review_family.CandidateCoverageTests -v
+build/host-python/bin/python3 -I -c \
+  'import sys, unittest; sys.path.insert(0, "."); unittest.main(module=None)' \
+  scripts.workflow_pilot.tests.test_github_review.GitHubReviewTests.test_candidate_reader_public_api_binds_exact_bytes_and_check_mode_stays_local \
+  scripts.workflow_pilot.tests.test_github_review.GitHubReviewTests.test_programmatic_gate_requires_isolated_startup -v
+python3 -m unittest \
+  scripts.docs_check_tests.test_check_docs.TesterCaseRegistryTests.test_review_path_coverage_case_is_indexed_with_focused_procedure \
+  scripts.docs_check_tests.test_development_workflow_skill.DevelopmentWorkflowSkillTests.test_review_path_coverage_case_is_indexed_and_required -v
+python3 scripts/check_docs.py --check
+```
+
+Real Git objects, returned bytes, modes, object IDs and validated registry
+records are the evidence, not source-text echoes or final runtime summaries.
+
+### Cleanup and limitations
+
+Tests remove only their own snapshot repositories and staging roots. No manual
+criterion applies. The case validates the reusable reader/session/report/check
+API only; #180 still owns the live coordinator adapter proof that routes
+actual outside-candidate reviewer reads through this seam on an exact
+candidate.
+
 ## TC-WORKFLOW-WORKTREE-CLEANUP-001: Remove only proven completed worktrees
 
 - **Feature / originating issue:** `workflow-governance` /
