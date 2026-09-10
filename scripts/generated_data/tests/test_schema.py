@@ -13,6 +13,18 @@ class DummySchema(TableSchema):
     version = 1
 
 
+class StrSubclass(str):
+    pass
+
+
+class UnhashableStrSubclass(str):
+    __hash__ = None
+
+
+class IntSubclass(int):
+    pass
+
+
 class DependencyGraphTests(unittest.TestCase):
     def test_topo_order_respects_dependencies(self):
         graph = DependencyGraph()
@@ -148,10 +160,13 @@ class SchemaRegistryTests(unittest.TestCase):
             ({}, 1),
             (1, 1),
             (1.5, 1),
+            (StrSubclass("other"), 1),
+            (UnhashableStrSubclass("other"), 1),
             ("other", []),
             ("other", {}),
             ("other", "1"),
             ("other", 1.5),
+            ("other", IntSubclass(1)),
             ("other", True),
             ("other", False),
             ("other", 0),
@@ -190,6 +205,53 @@ class SchemaRegistryTests(unittest.TestCase):
         self.assertEqual(calls, ["dummy", "dummy"])
         self.assertIs(registry.resolve("dummy"), resolved)
         self.assertEqual(calls, ["dummy", "dummy"])
+
+    def test_lazy_factory_rejects_malformed_returned_key_attributes_without_caching(self):
+        registry = SchemaRegistry()
+        calls = []
+
+        class ReturnedSchema(TableSchema):
+            pass
+
+        invalid = [
+            (StrSubclass("dummy"), 1),
+            (UnhashableStrSubclass("dummy"), 1),
+            ("dummy", IntSubclass(1)),
+            ("dummy", True),
+            ("dummy", 1.0),
+            ("dummy", 0),
+            ("dummy", -1),
+        ]
+
+        for name, version in invalid:
+            calls.clear()
+
+            def invalid_factory(name=name, version=version):
+                calls.append((name, version))
+                schema = ReturnedSchema()
+                schema.name = name
+                schema.version = version
+                return schema
+
+            registry = SchemaRegistry()
+            registry.register_factory("dummy", 1, invalid_factory)
+            with self.subTest(name=name, version=version):
+                with self.assertRaises(GeneratedDataError):
+                    registry.resolve("dummy")
+                self.assertEqual(calls, [(name, version)])
+
+                def valid_factory():
+                    calls.append(("dummy", 1))
+                    schema = ReturnedSchema()
+                    schema.name = "dummy"
+                    schema.version = 1
+                    return schema
+
+                registry._factories[("dummy", 1)] = valid_factory
+                resolved = registry.resolve("dummy")
+                self.assertEqual((resolved.name, resolved.version), ("dummy", 1))
+                self.assertEqual(calls[-1], ("dummy", 1))
+                self.assertIs(registry.resolve("dummy"), resolved)
 
     def test_lazy_factory_failure_is_not_cached(self):
         registry = SchemaRegistry()
@@ -254,10 +316,13 @@ class SchemaRegistryTests(unittest.TestCase):
             ("", None),
             ([], None),
             ({}, None),
+            (StrSubclass("dummy"), None),
+            (UnhashableStrSubclass("dummy"), None),
             ("dummy", []),
             ("dummy", {}),
             ("dummy", "1"),
             ("dummy", 1.5),
+            ("dummy", IntSubclass(1)),
             ("dummy", True),
             ("dummy", False),
             ("dummy", 0),
