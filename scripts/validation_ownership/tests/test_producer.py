@@ -3537,7 +3537,7 @@ class ProducerTests(unittest.TestCase):
                         if defect == "physical-duplicate":
                             return frames[0] + frames[0]
                         if defect == "matched-duplicate":
-                            return frames[0] + frames[0]
+                            return target["frame"] + target["frame"]
                         if defect == "physical-bitflip":
                             data = bytearray(raw); data[-1] ^= 1; return bytes(data)
                         if defect == "physical-partial":
@@ -3549,8 +3549,14 @@ class ProducerTests(unittest.TestCase):
                             return raw.replace(target["frame"], replacement, 1)
                         return raw
                     with patch.object(session.budget, "read_bytes", corrupt):
-                        with self.assertRaises(MakeProbeError):
-                            session.make("all", commands=registrations)
+                        if defect == "matched-duplicate":
+                            with self.assertRaisesRegex(
+                                MakeProbeError, "unknown or repeated live producer completion",
+                            ):
+                                session.make("all", commands=registrations)
+                        else:
+                            with self.assertRaises(MakeProbeError):
+                                session.make("all", commands=registrations)
                     self.assertTrue(session.budget.closed)
                     self.assertFalse(session.budget.children)
                     self.assertFalse((session.tree / "one.txt").exists())
