@@ -13,6 +13,14 @@ from unittest import mock
 CHECK_DOCS_PATH = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "check_docs.py"
 )
+REVIEW_PATH_GATE_COMMAND = (
+    "build/host-python/bin/python3 -I -c "
+    "'import sys, unittest; sys.path.insert(0, \".\"); unittest.main(module=None)' "
+    "scripts.workflow_pilot.tests.test_github_review."
+    "GitHubReviewTests.test_candidate_reader_public_api_binds_exact_bytes_and_check_mode_stays_local "
+    "scripts.workflow_pilot.tests.test_github_review."
+    "GitHubReviewTests.test_programmatic_gate_requires_isolated_startup -v"
+)
 
 _spec = importlib.util.spec_from_file_location("check_docs", CHECK_DOCS_PATH)
 check_docs = importlib.util.module_from_spec(_spec)
@@ -1000,13 +1008,7 @@ class TesterCaseRegistryTests(unittest.TestCase):
                        "scripts.workflow_pilot.tests.test_review_family.CandidateCoverageTests -v",
             "evidence": "scripts/workflow_pilot/tests/test_review_family.py",
         }, {
-            "command": "build/host-python/bin/python3 -I -c "
-                       "'import sys, unittest; sys.path.insert(0, \".\"); "
-                       "unittest.main(module=None)' "
-                       "scripts.workflow_pilot.tests.test_github_review."
-                       "GitHubReviewTests.test_candidate_reader_public_api_binds_exact_bytes_and_check_mode_stays_local "
-                       "scripts.workflow_pilot.tests.test_github_review."
-                       "GitHubReviewTests.test_programmatic_gate_requires_isolated_startup -v",
+            "command": REVIEW_PATH_GATE_COMMAND,
             "evidence": "scripts/workflow_pilot/tests/test_github_review.py",
         }, {
             "command": "python3 -m unittest scripts.docs_check_tests.test_check_docs."
@@ -1100,11 +1102,7 @@ class TesterCaseRegistryTests(unittest.TestCase):
                             "'import sys, unittest; sys.path.insert(0, \".\"); "
                             "unittest.main(module=None)' "
                             "scripts.workflow_pilot.tests.test_review_family.CandidateCoverageTests -v",
-                            "build/host-python/bin/python3 -I -c "
-                            "'import sys, unittest; sys.path.insert(0, \".\"); "
-                            "unittest.main(module=None)' "
-                            "scripts.workflow_pilot.tests.test_github_review."
-                            "GitHubReviewTests.test_candidate_reader_public_api_binds_exact_bytes_and_check_mode_stays_local -v",
+                            REVIEW_PATH_GATE_COMMAND,
                             "python3 -m unittest "
                             "scripts.docs_check_tests.test_check_docs."
                             "TesterCaseRegistryTests.test_review_path_coverage_case_is_indexed_with_focused_procedure "
