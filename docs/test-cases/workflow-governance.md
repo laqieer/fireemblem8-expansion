@@ -887,14 +887,16 @@ or arbitrary concurrent host mutation, and does not reinstate #204/#210.
 
    Describe the immutable change set through `ReviewTools.candidate_changes`,
    read exact bytes through `ReviewTools.candidate_reader`, and run
-   `trusted_review_gate.main([...])` in local check mode. Pass
-   `resolved_root=str(reader.root)` to
-   `require_candidate_path_coverage(...)`. A same-SHA report from another
-   checkout must still fail that check, and pre-begin tampering of mutable
-   wrapper claims must reject before the review starts when those claims
-   diverge from the reader's actual Git trees. The diagnostic may prove
-   source-audit coverage, but it cannot authenticate coordinator task
-   provenance or manufacture handoff eligibility from request JSON.
+   `trusted_review_gate.main([...])` in local check mode. Pass the typed
+   immutable requirements object returned by `ReviewTools.candidate_changes`
+   directly to `require_candidate_path_coverage(report, requirements)`.
+   A same-SHA report from another checkout must still fail that check, and
+   pre-begin tampering of mutable wrapper claims must reject before the review
+   starts when those claims diverge from the reader's actual Git trees. Raw
+   list/dict/namespace requirement echoes cannot qualify coverage. The
+   diagnostic may prove source-audit coverage, but it cannot authenticate
+   coordinator task provenance or manufacture handoff eligibility from request
+   JSON.
    Programmatic `main([...])` calls must reject outside isolated Python just
    like the CLI; the paired isolated call must still return its actual plan.
 5. Validate the human case, catalog entry and mirrored membership:

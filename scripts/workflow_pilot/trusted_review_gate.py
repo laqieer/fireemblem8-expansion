@@ -375,9 +375,12 @@ class ReviewTools:
         return CandidateReader(self.subject_root, base_revision, head_revision)
 
     def candidate_changes(self, base_revision, head_revision, *, paths=None, require_both=()):
-        return describe_candidate_changes(
+        reader = self.candidate_reader(base_revision, head_revision)
+        changes = tuple(self.model.validate_candidate_change(item) for item in describe_candidate_changes(
             self.subject_root, base_revision, head_revision,
-            paths=paths, require_both=require_both)
+            paths=paths, require_both=require_both))
+        return self.model.CandidateRequirements(
+            str(reader.root), reader.base, reader.head, changes)
 
     def members(self, request, origins=()):
         model = self.model

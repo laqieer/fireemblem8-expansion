@@ -870,12 +870,16 @@ runpy.run_path(sys.argv[0], run_name="__main__")
                        fixture["paths"]["mode"], fixture["paths"]["modified"]],
                 require_both=(fixture["paths"]["modified"],))
             self.assertEqual(
-                [item["path"] for item in changes],
+                [item.path for item in changes.changes],
                 sorted(fixture["paths"].values()),
             )
+            self.assertEqual(
+                (changes.resolved_root, changes.base, changes.head),
+                (str(repo.root.resolve()), fixture["base"], fixture["head"]),
+            )
             described = {
-                (item["path"], tuple(item["required_sides"]))
-                for item in changes
+                (item.path, item.required_sides)
+                for item in changes.changes
             }
             self.assertIn((fixture["paths"]["deleted"], ()), described)
             self.assertIn((fixture["paths"]["modified"], ("base", "head")), described)
@@ -928,9 +932,6 @@ runpy.run_path(sys.argv[0], run_name="__main__")
                            fixture["paths"]["modified"]],
                     require_both=(fixture["paths"]["modified"],),
                 ),
-                base_sha=fixture["base"],
-                head_sha=fixture["head"],
-                resolved_root=str(repo.root.resolve()),
             )
             self.assertEqual(coverage.resolved_root, str(repo.root.resolve()))
             path = repo.root / "request.json"
