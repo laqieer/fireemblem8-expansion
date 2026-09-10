@@ -73,8 +73,8 @@ ROM or make the archival lane a release requirement.
   that includes the repository's `archival_dependencies.mk` fragment and uses
   `/usr/bin/make`, `/usr/bin/cpp`, `/usr/bin/cc`, `/usr/bin/as`, and
   `/usr/bin/g++`. The ordinary-Make scan-demand control reuses the root
-  `.SECONDEXPANSION`/`data_dep` rule shape with a native log-only scaninc
-  wrapper, and the recursive assembly case builds the real repository scaninc
+  `.SECONDEXPANSION`/`data_dep` rule shape with a logging scaninc stand-in,
+  and the recursive assembly case builds the real repository scaninc
   tool in its owned fixture.
 - **Prerequisites and clean starting state:** repository root on a host with
   the native build tools above installed; the test suite owns and cleans its
