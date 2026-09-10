@@ -2463,6 +2463,21 @@ def gates(jobs: int = 2) -> List[Gate]:
             ),
         ),
         Gate(
+            name="archival-dependencies-check",
+            command=[
+                "python3",
+                "-m",
+                "unittest",
+                "scripts.modernize.tests.test_archival_dependencies",
+                "-v",
+            ],
+            applicable_note=(
+                "issue #236 closure: keeps the source-owned host/default "
+                "dependency policy bound to actual pure-modern helper chains, "
+                "mixed legacy object freshness, and recursive NODEP=0 controls"
+            ),
+        ),
+        Gate(
             name="quickstart-legacy-check",
             command=[
                 "python3",

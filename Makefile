@@ -754,24 +754,7 @@ codeql-fanalyzer-test:
 
 # Automatic dependency generation
 
-MAKEDEP = mkdir -p $(DEPS_DIR)/$(dir $*) && $(CPP) $(CPPFLAGS) $< -MM -MG -MT $*.o > $(DEPS_DIR)/$*.d
-
-MAKECMDGOALS_NODEP := clean tag codeql-alerts-test codeql-fanalyzer-test $(MODERN_GOALS) \
-	game-localization-validate game-localization-generate \
-	game-localization-check game-localization-test game-localization-budget \
-	game-localization-leakage-audit game-localization-leakage-check \
-	game-localization-final-authored-check \
-	game-localization-final-mapping-check \
-	game-localization-final-raw-closure-check \
-	game-localization-final-leakage-audit \
-	game-localization-final-font-check game-localization-final-check
-
-ifeq (,$(filter $(MAKECMDGOALS),$(MAKECMDGOALS_NODEP)))
--include $(addprefix $(DEPS_DIR)/,$(patsubst %.c,%.d,$(filter-out $(CFILES_GENERATED),$(CFILES))))
-endif
-
-$(DEPS_DIR)/%.d: %.c
-	@$(MAKEDEP)
+include archival_dependencies.mk
 
 # FORCE (not just $(ALL_OBJECTS)) makes this rule's recipe *always* run,
 # even when every object file in $(ALL_OBJECTS) already exists and is
@@ -821,11 +804,15 @@ endif
 
 ifeq ($(NODEP),1)
 asm/%.o:      data_dep :=
+else ifeq ($(ARCHIVAL_SCANINC_NODEP),1)
+asm/%.o:      data_dep :=
 else
 asm/%.o:      data_dep = $(shell $(SCANINC) -I include -I "" $*.s)
 endif
 
 ifeq ($(NODEP),1)
+src/%.o:      data_dep :=
+else ifeq ($(ARCHIVAL_SCANINC_NODEP),1)
 src/%.o:      data_dep :=
 else
 src/%.o:      data_dep = $(shell $(SCANINC) -I include -I "" $*.s)
@@ -833,11 +820,15 @@ endif
 
 ifeq ($(NODEP),1)
 src/data/%.o: data_dep :=
+else ifeq ($(ARCHIVAL_SCANINC_NODEP),1)
+src/data/%.o: data_dep :=
 else
 src/data/%.o: data_dep = $(shell $(SCANINC) -I include -I "" $(if $(wildcard $*.c),$*.c,$*.s))
 endif
 
 ifeq ($(NODEP),1)
+data/%.o:     data_dep :=
+else ifeq ($(ARCHIVAL_SCANINC_NODEP),1)
 data/%.o:     data_dep :=
 else
 data/%.o:     data_dep = $(shell $(SCANINC) -I include -I "" $*.s)
@@ -845,11 +836,15 @@ endif
 
 ifeq ($(NODEP),1)
 banim/%.o:    data_dep :=
+else ifeq ($(ARCHIVAL_SCANINC_NODEP),1)
+banim/%.o:    data_dep :=
 else
 banim/%.o:    data_dep = $(shell $(SCANINC) -I include -I "" $*.s)
 endif
 
 ifeq ($(NODEP),1)
+sound/%.o:    data_dep :=
+else ifeq ($(ARCHIVAL_SCANINC_NODEP),1)
 sound/%.o:    data_dep :=
 else
 sound/%.o:    data_dep = $(shell $(SCANINC) -I include -I "" $*.s)

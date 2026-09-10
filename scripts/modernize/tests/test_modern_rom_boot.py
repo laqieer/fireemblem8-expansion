@@ -637,7 +637,7 @@ class ModernRomBootTargetTests(unittest.TestCase):
 
     def test_rom_and_boot_check_are_modern_goals(self):
         """expansion-modern-rom/-boot-check must be in MODERN_GOALS so that
-        NODEP=1 applies to them like every other modern goal."""
+        pure modern requests still inherit implicit NODEP=1 suppression."""
         mk = (ROOT / "modern.mk").read_text(encoding="utf-8")
         goals_block = mk.split("MODERN_GOALS :=", 1)[1].split(
             "ifneq", 1

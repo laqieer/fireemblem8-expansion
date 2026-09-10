@@ -45,7 +45,16 @@ def workflow_jobs():
 class PatchReleaseWorkflowTests(unittest.TestCase):
     def test_packaging_is_in_the_existing_build_and_not_a_local_gate(self):
         jobs = workflow_jobs()
-        self.assertEqual(len(verify.gates(jobs=1)), 29)
+        structure = verify._parse_workflow_structure_text(WORKFLOW.read_text())
+        standalone = sum(
+            len(dict(fields)["run"])
+            for steps in jobs.values() for role, _, fields in steps
+            if role == "standalone-gate"
+        )
+        self.assertEqual(
+            len(verify.gates(jobs=1)) + standalone,
+            len(verify._workflow_gate_contract(structure)),
+        )
         self.assertNotIn("patch-release", jobs)
         steps = jobs["build"]
         canonical = []
