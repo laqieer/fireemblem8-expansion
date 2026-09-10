@@ -972,7 +972,7 @@ class TesterCaseRegistryTests(unittest.TestCase):
         with open(os.path.join(REAL_REPO_ROOT, case["document"]), encoding="utf-8") as stream:
             section = markdown_section(stream.read(), case_id + ": " + case["title"])
         for heading in (
-            "Actions", "Expected result", "Negative control",
+            "Feature and configuration", "Actions", "Expected result", "Negative control",
             "Interactions and save compatibility", "Automation", "Cleanup and limitations",
         ):
             self.assertTrue(markdown_section(section, heading), heading)

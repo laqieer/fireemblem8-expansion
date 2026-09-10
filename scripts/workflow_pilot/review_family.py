@@ -6,7 +6,8 @@ from dataclasses import dataclass, field
 from datetime import datetime
 import hashlib
 import json
-from pathlib import PurePosixPath
+import os
+from pathlib import Path, PurePosixPath
 import re
 import time
 from typing import Any
@@ -92,6 +93,18 @@ def git_mode(value: Any, label: str, *, regular_only=False) -> str:
     if regular_only:
         require(value in REVIEW_BLOB_MODES, f"unsupported {label}")
     return value
+
+
+def resolved_repo_root(value: Any, label: str, *, must_exist: bool) -> str:
+    require(isinstance(value, (str, os.PathLike)) and not isinstance(value, bytes),
+            f"invalid {label}")
+    try:
+        candidate = Path(value).resolve(strict=must_exist)
+    except (OSError, RuntimeError, TypeError) as error:
+        raise ReviewError(f"invalid {label}") from error
+    require(candidate.is_absolute() and (not must_exist or candidate.is_dir()),
+            f"invalid {label}")
+    return str(candidate)
 
 
 def unique(values, label: str) -> None:
@@ -255,7 +268,15 @@ class CandidatePathChange:
 
 
 @dataclass(frozen=True)
+class CandidateBinding:
+    resolved_root: str
+    base: str
+    head: str
+
+
+@dataclass(frozen=True)
 class CandidateCoverage:
+    resolved_root: str
     base: str
     head: str
     reads: tuple[CandidateReadSummary, ...]
@@ -343,25 +364,36 @@ def validate_candidate_change(value: Any) -> CandidatePathChange:
 
 
 def candidate_coverage(report) -> CandidateCoverage | None:
-    base = getattr(report, "candidate_base", None)
-    reads = getattr(report, "candidate_reads", ())
+    require(type(report) is _ReviewReport, "actual immutable review report required")
+    require(report.completed is True and report.read_only is True and report.role == "code-review",
+            "review report is not a completed immutable review")
+    root = report.candidate_root
+    base = report.candidate_base
+    reads = report.candidate_reads
     if base is None:
-        require(reads in ((), [], None), "review report has unexpected candidate coverage state")
+        require(root is None and reads == (), "review report has unexpected candidate coverage state")
         return None
+    root = resolved_repo_root(root, "candidate coverage root", must_exist=False)
     base = sha(base)
-    head = sha(getattr(report, "head", None))
-    require(isinstance(reads, (tuple, list)), "candidate coverage must be a list or tuple")
-    validated = tuple(validate_candidate_read_summary(item, base_sha=base, head_sha=head)
-                      for item in reads)
+    head = sha(report.head)
+    require(type(reads) is tuple, "candidate coverage must be an immutable tuple")
+    require(all(type(item) is CandidateReadSummary for item in reads),
+            "candidate coverage rows must be exact candidate read summaries")
+    validated = tuple(validate_candidate_read_summary(item, base_sha=base, head_sha=head) for item in reads)
     unique([(item.path, item.side) for item in validated], "candidate read coverage")
-    return CandidateCoverage(base, head, validated)
+    return CandidateCoverage(root, base, head, validated)
 
 
-def require_candidate_path_coverage(report, changes, *, base_sha: str, head_sha: str) -> CandidateCoverage:
+def require_candidate_path_coverage(report, changes, *, base_sha: str, head_sha: str,
+                                    resolved_root: str) -> CandidateCoverage:
     base_sha = sha(base_sha)
     head_sha = sha(head_sha)
+    resolved_root = resolved_repo_root(
+        resolved_root, "expected candidate coverage root", must_exist=True)
     coverage = candidate_coverage(report)
     require(coverage is not None, "review report has no trusted candidate path coverage")
+    require(coverage.resolved_root == resolved_root,
+            "review candidate path coverage root mismatch")
     require((coverage.base, coverage.head) == (base_sha, head_sha),
             "review candidate path coverage pair mismatch")
     require(isinstance(changes, (tuple, list)), "candidate path requirements must be a list")
@@ -557,6 +589,7 @@ class _ReviewReport:
     findings: tuple[Finding, ...]
     started_at: str
     completed_at: str
+    candidate_root: str | None = None
     candidate_base: str | None = None
     candidate_reads: tuple[CandidateReadSummary, ...] = ()
 
@@ -712,6 +745,7 @@ class ReviewSession:
         self.rounds = RoundState()
         self.accepted: dict[str, Finding] = {}
         self.candidate_reads: dict[tuple[str, str], CandidateReadSummary] = {}
+        self.candidate_binding: CandidateBinding | None = None
 
     def _candidate_reader(self):
         reader = self.readers.get("read-candidate")
@@ -721,9 +755,16 @@ class ReviewSession:
         describe = getattr(reader, "describe", None)
         require(callable(preview), "trusted candidate reader preview is unavailable")
         require(callable(describe), "trusted candidate reader description is unavailable")
-        base = sha(getattr(reader, "base", None))
-        head = sha(getattr(reader, "head", None))
-        return reader, preview, describe, base, head
+        binding = CandidateBinding(
+            resolved_repo_root(getattr(reader, "root", None),
+                               "trusted candidate reader root", must_exist=True),
+            sha(getattr(reader, "base", None)),
+            sha(getattr(reader, "head", None)),
+        )
+        if self.candidate_binding is not None:
+            require(binding == self.candidate_binding,
+                    "trusted candidate reader root/base/head changed after review start")
+        return reader, preview, describe, binding
 
     def begin(self, runtime, owner: str, *, duration=1200, max_files=MAX_REVIEW_FILES):
         require(self.lease is None, "duplicate or overlapping reviewer ownership")
@@ -734,12 +775,15 @@ class ReviewSession:
                 and type(max_files) is int and 0 < max_files <= MAX_REVIEW_FILES,
                 "invalid review bounds")
         candidate_reader = self._candidate_reader()
+        self.candidate_binding = None
         if candidate_reader is not None:
-            _, _, _, base, head = candidate_reader
-            require(head == self.head, "trusted candidate reader head differs from the active review")
+            _, _, _, binding = candidate_reader
+            require(binding.head == self.head,
+                    "trusted candidate reader head differs from the active review")
             if self.identity is not None:
-                require(base == self.identity[2],
+                require(binding.base == self.identity[2],
                         "trusted candidate reader base differs from the frozen review identity")
+            self.candidate_binding = binding
         if self.owners is not None:
             self.owners.reserve(self)
         try:
@@ -770,19 +814,21 @@ class ReviewSession:
         candidate_reader = self._candidate_reader()
         if candidate_reader is None:
             return reader(*args, **kwargs)
-        _, preview, describe, base, head = candidate_reader
-        require(head == self.head, "trusted candidate reader head differs from the active review")
+        _, preview, describe, binding = candidate_reader
+        require(binding.head == self.head,
+                "trusted candidate reader head differs from the active review")
         if self.identity is not None:
-            require(base == self.identity[2],
+            require(binding.base == self.identity[2],
                     "trusted candidate reader base differs from the frozen review identity")
         request = validate_candidate_read_request(
-            preview(*args, **kwargs), base_sha=base, head_sha=head)
+            preview(*args, **kwargs), base_sha=binding.base, head_sha=binding.head)
         logical_paths = {item.path for item in self.candidate_reads.values()}
         require(request.path in logical_paths or len(logical_paths) < self.lease.max_files,
                 "review file budget exceeded")
         expected = validate_candidate_read_summary(
-            describe(*args, **kwargs), base_sha=base, head_sha=head)
-        observed = validate_candidate_read(reader(*args, **kwargs), base_sha=base, head_sha=head)
+            describe(*args, **kwargs), base_sha=binding.base, head_sha=binding.head)
+        observed = validate_candidate_read(
+            reader(*args, **kwargs), base_sha=binding.base, head_sha=binding.head)
         require((observed.path, observed.side, observed.revision)
                 == (request.path, request.side, request.revision),
                 "candidate read result differs from the requested path or side")
@@ -863,13 +909,15 @@ class ReviewSession:
                     "local finding has wrong task, head or scope")
         unique([finding.id for finding in findings], "local report findings")
         candidate_reader = self._candidate_reader()
+        binding = self.candidate_binding if candidate_reader is not None else None
         report = _ReviewReport(
             str(lease.task), lease.owner, "code-review", lease.head, lease.scope, True, True,
             frozenset(result.actions), result.files,
             tuple(Finding(item.id, item.subject, item.family, item.member,
                           item.origin, item.source_path, item.review_id) for item in findings),
             getattr(result, "started_at", None), getattr(result, "completed_at", None),
-            None if candidate_reader is None else candidate_reader[3],
+            None if binding is None else binding.resolved_root,
+            None if binding is None else binding.base,
             tuple(self.candidate_reads[key] for key in sorted(self.candidate_reads)))
         require(self._retire(report, "completed") == "completed", "review exceeded duration bound")
         self.local_findings = {finding.id: finding for finding in report.findings}

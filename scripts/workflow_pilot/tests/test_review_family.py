@@ -2,7 +2,10 @@
 
 import os
 from pathlib import Path
+import subprocess
 import sys
+import tempfile
+from types import SimpleNamespace
 
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
@@ -147,6 +150,7 @@ class WrappedCandidateReader:
 
     def __init__(self, delegate, *, mutate=None, failure=None):
         self.delegate = delegate
+        self.root = delegate.root
         self.base = delegate.base
         self.head = delegate.head
         self.mutate = mutate
@@ -219,12 +223,17 @@ class CandidateCoverageTests(unittest.TestCase):
                        fixture["paths"]["deleted"], fixture["paths"]["mode"]],
                 require_both=(fixture["paths"]["modified"],))
             coverage = tools.model.require_candidate_path_coverage(
-                report, changes, base_sha=fixture["base"], head_sha=fixture["head"])
-            self.assertEqual((coverage.base, coverage.head), (fixture["base"], fixture["head"]))
+                report, changes, base_sha=fixture["base"], head_sha=fixture["head"],
+                resolved_root=str(repo.root.resolve()))
+            self.assertEqual(
+                (coverage.resolved_root, coverage.base, coverage.head),
+                (str(repo.root.resolve()), fixture["base"], fixture["head"]),
+            )
             self.assertEqual(
                 {(item.path, item.side, item.mode, item.oid) for item in coverage.reads},
                 {(item.path, item.side, item.mode, item.oid) for item in report.candidate_reads},
             )
+            self.assertEqual(report.candidate_root, str(repo.root.resolve()))
             self.assertEqual(report.candidate_base, fixture["base"])
             self.assertEqual(len(report.candidate_reads), 7)
             self.assertTrue(all(isinstance(item, tools.model.CandidateReadSummary)
@@ -254,7 +263,8 @@ class CandidateCoverageTests(unittest.TestCase):
             with self.assertRaisesRegex(
                     tools.model.ReviewError, "missing candidate path coverage"):
                 tools.model.require_candidate_path_coverage(
-                    report, changes, base_sha=fixture["base"], head_sha=fixture["head"])
+                    report, changes, base_sha=fixture["base"], head_sha=fixture["head"],
+                    resolved_root=str(repo.root.resolve()))
             readers = {
                 "read-candidate": tools.candidate_reader(fixture["base"], fixture["head"]),
                 "read-evidence": lambda: {"reviewed_paths": list(runtime_claim)},
@@ -272,11 +282,13 @@ class CandidateCoverageTests(unittest.TestCase):
             with self.assertRaisesRegex(
                     tools.model.ReviewError, "missing candidate path coverage"):
                 tools.model.require_candidate_path_coverage(
-                    report, changes, base_sha=fixture["base"], head_sha=fixture["head"])
+                    report, changes, base_sha=fixture["base"], head_sha=fixture["head"],
+                    resolved_root=str(repo.root.resolve()))
             with self.assertRaisesRegex(
                     tools.model.ReviewError, "pair mismatch"):
                 tools.model.require_candidate_path_coverage(
-                    report, changes, base_sha=fixture["head"], head_sha=fixture["base"])
+                    report, changes, base_sha=fixture["head"], head_sha=fixture["base"],
+                    resolved_root=str(repo.root.resolve()))
 
     def test_deleted_head_absence_one_sided_mode_and_generic_reads_remain_uncovered(self):
         with snapshot() as repo:
@@ -295,7 +307,8 @@ class CandidateCoverageTests(unittest.TestCase):
             with self.assertRaisesRegex(
                     tools.model.ReviewError, "missing candidate path coverage"):
                 tools.model.require_candidate_path_coverage(
-                    report, changes, base_sha=fixture["base"], head_sha=fixture["head"])
+                    report, changes, base_sha=fixture["base"], head_sha=fixture["head"],
+                    resolved_root=str(repo.root.resolve()))
             data = request(base=fixture["base"], head=fixture["head"])
             scope = frozenset({tools.model.subject_key(data["subjects"][0])})
             generic = tools.model.ReviewSession(
@@ -312,7 +325,89 @@ class CandidateCoverageTests(unittest.TestCase):
             with self.assertRaisesRegex(
                     tools.model.ReviewError, "no trusted candidate path coverage"):
                 tools.model.require_candidate_path_coverage(
-                    report, changes, base_sha=fixture["base"], head_sha=fixture["head"])
+                    report, changes, base_sha=fixture["base"], head_sha=fixture["head"],
+                    resolved_root=str(repo.root.resolve()))
+
+    def test_only_actual_immutable_reports_and_exact_summaries_count_for_coverage(self):
+        with snapshot() as repo:
+            fixture = candidate_fixture(repo)
+            tools = gate.ReviewTools(gate.GitTree(repo.root, fixture["head"]), repo.root)
+            session, runtime = self.start_session(tools, fixture["base"], fixture["head"], max_files=1)
+            session.read_action("read-candidate", fixture["paths"]["added"])
+            runtime.result.files = 1
+            report = session.finish(runtime)
+            changes = tools.candidate_changes(
+                fixture["base"], fixture["head"], paths=[fixture["paths"]["added"]])
+            tools.model.require_candidate_path_coverage(
+                report, changes, base_sha=fixture["base"], head_sha=fixture["head"],
+                resolved_root=str(repo.root.resolve()))
+            namespace = SimpleNamespace(
+                head=report.head,
+                candidate_root=report.candidate_root,
+                candidate_base=report.candidate_base,
+                candidate_reads=report.candidate_reads,
+                completed=report.completed,
+                read_only=report.read_only,
+                role=report.role,
+            )
+            with self.assertRaisesRegex(tools.model.ReviewError, "immutable review report"):
+                tools.model.require_candidate_path_coverage(
+                    namespace, changes, base_sha=fixture["base"], head_sha=fixture["head"],
+                    resolved_root=str(repo.root.resolve()))
+            summary = report.candidate_reads[0]
+            object.__setattr__(report, "candidate_reads", [summary])
+            with self.assertRaisesRegex(tools.model.ReviewError, "immutable tuple"):
+                tools.model.candidate_coverage(report)
+            object.__setattr__(report, "candidate_reads", ({
+                "path": summary.path,
+                "side": summary.side,
+                "revision": summary.revision,
+                "present": summary.present,
+                "mode": summary.mode,
+                "oid": summary.oid,
+            },))
+            with self.assertRaisesRegex(tools.model.ReviewError, "exact candidate read summaries"):
+                tools.model.candidate_coverage(report)
+
+    def test_candidate_root_binding_freezes_begin_checkout_and_rejects_same_sha_other_root(self):
+        with snapshot() as repo:
+            fixture = candidate_fixture(repo)
+            tools = gate.ReviewTools(gate.GitTree(repo.root, fixture["head"]), repo.root)
+            changes = tools.candidate_changes(
+                fixture["base"], fixture["head"], paths=[fixture["paths"]["added"]])
+            session, runtime = self.start_session(tools, fixture["base"], fixture["head"], max_files=1)
+            session.read_action("read-candidate", fixture["paths"]["added"])
+            runtime.result.files = 1
+            report = session.finish(runtime)
+            coverage = tools.model.require_candidate_path_coverage(
+                report, changes, base_sha=fixture["base"], head_sha=fixture["head"],
+                resolved_root=str(repo.root.resolve()))
+            self.assertEqual(coverage.resolved_root, str(repo.root.resolve()))
+            with tempfile.TemporaryDirectory(prefix="review-root-binding-", dir=ROOT / "build") as directory:
+                other_root = Path(directory) / "clone"
+                subprocess.run(["git", "clone", "--quiet", str(repo.root), str(other_root)], check=True)
+                other_tools = gate.ReviewTools(gate.GitTree(other_root, fixture["head"]), other_root)
+                other_changes = other_tools.candidate_changes(
+                    fixture["base"], fixture["head"], paths=[fixture["paths"]["added"]])
+                with self.assertRaisesRegex(tools.model.ReviewError, "root mismatch"):
+                    tools.model.require_candidate_path_coverage(
+                        report, other_changes, base_sha=fixture["base"], head_sha=fixture["head"],
+                        resolved_root=str(other_root.resolve()))
+                for field, value in (
+                    ("root", other_root),
+                    ("base", fixture["head"]),
+                    ("head", fixture["base"]),
+                ):
+                    reader = WrappedCandidateReader(tools.candidate_reader(
+                        fixture["base"], fixture["head"]))
+                    session, _ = self.start_session(
+                        tools, fixture["base"], fixture["head"], max_files=1,
+                        readers={"read-candidate": reader})
+                    setattr(reader, field, value)
+                    with self.subTest(field=field), self.assertRaisesRegex(
+                            tools.model.ReviewError, "changed after review start"):
+                        session.read_action("read-candidate", fixture["paths"]["added"])
+                    self.assertEqual(reader.calls, 0)
 
     def test_candidate_reads_reject_invalid_results_and_budget_before_backend_read(self):
         with snapshot() as repo:

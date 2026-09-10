@@ -862,6 +862,34 @@ runpy.run_path(sys.argv[0], run_name="__main__")
             with self.assertRaisesRegex(ValueError, "candidate path must be canonical"):
                 reader("../escape.txt")
             data = request(base=fixture["base"], head=fixture["head"])
+            scope = frozenset({tools.model.subject_key(data["subjects"][0])})
+            session = tools.model.ReviewSession(
+                "coordinator", "implementer", scope, fixture["head"],
+                identity=("owner/repo", 1, fixture["base"]),
+                owners=tools.model.ReviewOwnership(),
+                readers={"read-candidate": tools.candidate_reader(fixture["base"], fixture["head"])},
+            )
+            runtime = Runtime(fixture["head"], scope)
+            session.begin(runtime, "reviewer", max_files=3)
+            session.read_action("read-candidate", fixture["paths"]["added"])
+            session.read_action("read-candidate", fixture["paths"]["deleted"], "base")
+            session.read_action("read-candidate", fixture["paths"]["modified"], "base")
+            session.read_action("read-candidate", fixture["paths"]["modified"])
+            runtime.result.files = 3
+            report = session.finish(runtime)
+            coverage = tools.model.require_candidate_path_coverage(
+                report,
+                tools.candidate_changes(
+                    fixture["base"], fixture["head"],
+                    paths=[fixture["paths"]["added"], fixture["paths"]["deleted"],
+                           fixture["paths"]["modified"]],
+                    require_both=(fixture["paths"]["modified"],),
+                ),
+                base_sha=fixture["base"],
+                head_sha=fixture["head"],
+                resolved_root=str(repo.root.resolve()),
+            )
+            self.assertEqual(coverage.resolved_root, str(repo.root.resolve()))
             path = repo.root / "request.json"
             path.write_text(json.dumps(data))
             output = io.StringIO()

@@ -844,9 +844,11 @@ or arbitrary concurrent host mutation, and does not reinstate #204/#210.
    Use real Git BASE/head fixtures with added, modified, deleted and
    executable-mode-only paths. Route every covered read through
    `ReviewSession.read_action("read-candidate", path, side)` and the bound
-   immutable `trusted_review_gate.CandidateReader`. Confirm returned bytes,
-   mode, object ID, side and revision for head/base selections, including one
-   explicit two-sided requirement and an unrelated support read.
+   immutable `trusted_review_gate.CandidateReader`. Freeze its resolved
+   checkout root together with the exact BASE/head pair at `session.begin`.
+   Confirm returned bytes, mode, object ID, side and revision for head/base
+   selections, including one explicit two-sided requirement and an unrelated
+   support read.
 2. In the same suite, mutate the live worktree and index after freezing the
    candidate pair. The returned bytes must remain the selected immutable Git
    blobs, not the drifted working copy. Preserve the negatives: runtime file
@@ -854,10 +856,10 @@ or arbitrary concurrent host mutation, and does not reinstate #204/#210.
    runtime `reviewed_paths` list cannot prove required-path coverage.
 3. Exercise deleted and explicit two-sided negatives in the same session API.
    Head-side absence for a deleted path, a one-sided explicit mode/change
-   read, wrong pair/revision/path/mode/object/bytes, unsupported Git object
-   kinds, partial/failed reads and noncanonical paths must reject or remain
-   uncovered. Generic existing `read_action("read-candidate", ...)` callers
-   may still finish, but without trusted candidate coverage.
+   read, wrong pair/root/revision/path/mode/object/bytes, unsupported Git
+   object kinds, partial/failed reads and noncanonical paths must reject or
+   remain uncovered. Generic existing `read_action("read-candidate", ...)`
+   callers may still finish, but without trusted candidate coverage.
 4. Exercise the public gate adapter locally:
 
    ```bash
@@ -868,9 +870,12 @@ or arbitrary concurrent host mutation, and does not reinstate #204/#210.
 
    Describe the immutable change set through `ReviewTools.candidate_changes`,
    read exact bytes through `ReviewTools.candidate_reader`, and run
-   `trusted_review_gate.main([...])` in local check mode. The diagnostic may
-   prove source-audit coverage, but it cannot authenticate coordinator task
-   provenance or manufacture handoff eligibility from request JSON.
+   `trusted_review_gate.main([...])` in local check mode. Pass
+   `resolved_root=str(reader.root)` to
+   `require_candidate_path_coverage(...)`. A same-SHA report from another
+   checkout must still fail that check. The diagnostic may prove source-audit
+   coverage, but it cannot authenticate coordinator task provenance or
+   manufacture handoff eligibility from request JSON.
 5. Validate the human case, catalog entry and mirrored membership:
 
    ```bash
@@ -891,17 +896,19 @@ Only successful complete reads served by the bound immutable candidate reader
 accumulate canonical path/side/revision/mode/object summaries. Added and
 modified head-present paths require a head read, deleted paths require the
 base blob, and mode-only or explicit two-sided requirements need both sides.
-Coverage is tied to one exact BASE/head pair, the finished report remains
-immutable, duplicate reads do not inflate logical-path counts, and the public
-check adapter stays local-only and non-authoritative for handoff admission.
+Coverage is tied to one exact resolved checkout root plus BASE/head pair, the
+finished report remains immutable, duplicate reads do not inflate logical-path
+counts, and the public check adapter stays local-only and non-authoritative
+for handoff admission.
 
 ### Negative control
 
 Runtime file counts, unrelated support reads, `read-evidence`, final runtime
-path lists, stale/wrong candidate pairs, deleted-head absence, one-sided
-explicit coverage, wrong bytes/mode/object/revision/path, unsupported object
-kinds, failed/partial reads and a 201st logical path must not supply trusted
-coverage. Existing generic reviews can still complete, but remain uncovered.
+path lists, stale/wrong candidate pairs, wrong same-SHA checkout roots,
+deleted-head absence, one-sided explicit coverage, wrong
+bytes/mode/object/revision/path, unsupported object kinds, failed/partial
+reads and a 201st logical path must not supply trusted coverage. Existing
+generic reviews can still complete, but remain uncovered.
 
 ### Interactions and save compatibility
 
