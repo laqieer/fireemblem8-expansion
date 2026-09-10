@@ -2019,17 +2019,16 @@ class StructuralObjectCountClaimTests(unittest.TestCase):
 #      now CLOSED (closed 2026-07-25), with completion commit
 #      ac0ee5d7f17eb8e70175576cb46d9f320d8013cd merged into master.
 #   2. docs/framework-support.md said the item-ID-expansion checks were
-#      "gates 11-12" of the upstream verify gate set; the real, current
-#      scripts/upstream_port/verify.py gates() puts them at gates 22-23
-#      of exactly 31.
+#      "gates 11-12" of the upstream verify gate set. The named debug/release
+#      commands must instead match the actual gates() inventory.
 #
 # These tests prove: (a) every old phrase is flagged stale if it reappears,
 # (b) the current live doc/report text is stale-clean, (c) the historical,
 # batch-scoped technical boundary wording (which looks similar but is not a
 # live current-status claim) is NOT flagged, (d) the current docs/report
 # state #5 CLOSED with the real completion commit as merged evidence, and
-# (e) the "gates 22-23" claim is source-backed against the real
-# scripts/upstream_port/verify.py gates() ordering -- never a hardcoded
+# (e) the named command claims are backed by the real
+# scripts/upstream_port/verify.py gates() inventory -- never a hardcoded
 # fake substitute.
 # ---------------------------------------------------------------------------
 
@@ -2108,7 +2107,12 @@ class StaleIssue5StatusAndGateNumberRegressionTests(unittest.TestCase):
         framework_support_text = check_docs.read_text(
             os.path.join(REAL_REPO_ROOT, "docs", "framework-support.md")
         )
-        self.assertIn("gates 22-23 of", framework_support_text)
+        for name in (
+            "modern-itemexpansion-check-debug",
+            "modern-itemexpansion-check-release",
+            "modern-all-locales-all-features-profile",
+        ):
+            self.assertIn(name, framework_support_text)
         self.assertNotIn("gates 18-19 of", framework_support_text)
         self.assertNotIn("gates 17-18 of", framework_support_text)
         self.assertNotIn("gates 12-13 of", framework_support_text)
@@ -2117,8 +2121,8 @@ class StaleIssue5StatusAndGateNumberRegressionTests(unittest.TestCase):
 
     def test_verify_gates_item_expansion_entries_precede_patch_profile(self):
         # Safe, standalone, no-network import of the live verify module
-        # straight off disk -- proves gates 22-23 against the real,
-        # current scripts/upstream_port/verify.py gates() ordering rather
+        # straight off disk -- proves the commands against the real,
+        # current scripts/upstream_port/verify.py gates() inventory rather
         # than a hardcoded fake substitute.
         verify_path = os.path.join(
             REAL_REPO_ROOT, "scripts", "upstream_port", "verify.py"
@@ -2134,16 +2138,19 @@ class StaleIssue5StatusAndGateNumberRegressionTests(unittest.TestCase):
         finally:
             sys.modules.pop(spec.name, None)
 
-        self.assertEqual(len(all_gates), 31)
-        self.assertIn("itemexpansion", all_gates[21].name)
-        self.assertIn("itemexpansion", all_gates[22].name)
-        for index, gate in enumerate(all_gates):
-            if index not in (21, 22):
-                self.assertNotIn("itemexpansion", gate.name)
+        by_name = {gate.name: gate for gate in all_gates}
         self.assertEqual(
-            all_gates[23].name,
-            "modern-all-locales-all-features-profile",
+            {gate.name for gate in all_gates if "itemexpansion" in gate.name},
+            {"modern-itemexpansion-check-debug", "modern-itemexpansion-check-release"},
         )
+        profile = by_name["modern-all-locales-all-features-profile"]
+        for config in ("debug", "release"):
+            gate = by_name["modern-itemexpansion-check-" + config]
+            self.assertIn("make", gate.command)
+            self.assertIn("expansion-modern-itemexpansion-check", gate.command)
+            self.assertIn("FE8_ITEM_ID_CAP=0xCE", gate.command)
+            self.assertIn("MODERN_CONFIG=" + config, gate.command)
+            self.assertLess(all_gates.index(gate), all_gates.index(profile))
 
 
 class ABIFactualDocContractTests(unittest.TestCase):

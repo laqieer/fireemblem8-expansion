@@ -232,27 +232,24 @@ STALE_PHRASE_RULES = [
     # Issues #7/#17 independent-verifier finding: docs/framework-support.md
     # said the item-ID-expansion checks were "gates 10-11" of the upstream
     # verify gate set. The actual, current scripts/upstream_port/verify.py
-    # gates() ordering (mirrored by docs/upstream-porting.md) puts the two
-    # item-expansion gates (modern-itemexpansion-check-debug/-release) at
-    # indexes 22-23 of exactly 31 gates, not 10-11. This exact stale gate
-    # numbering must never reappear verbatim.
+    # Keep known obsolete ordinal claims out of current prose. Point to the
+    # canonical command inventory rather than duplicating its changing indexes.
     (
         re.compile(re.escape("gates 10-11 of the current-master")),
-        "stale claim: the item-ID-expansion checks are gates 22-23 of the "
-        "exact 31-gate scripts/upstream_port/verify.py gates() set, not "
-        "gates 10-11 -- see docs/upstream-porting.md",
+        "stale claim: use the named debug/release item-ID-expansion checks in "
+        "scripts/upstream_port/verify.py, not retired gates 10-11 -- "
+        "see docs/upstream-porting.md",
     ),
     (
         re.compile(re.escape("gates 18-19 of the current")),
-        "stale claim: the two workflow-pilot host gates moved the "
-        "item-ID-expansion checks to gates 22-23 of the exact 31-gate "
-        "scripts/upstream_port/verify.py gates() set -- see "
-        "docs/upstream-porting.md",
+        "stale claim: use the named debug/release item-ID-expansion checks "
+        "in the current scripts/upstream_port/verify.py inventory -- "
+        "see docs/upstream-porting.md",
     ),
     (
         re.compile(re.escape("26-gate upstream-port verifier")),
-        "stale claim: scripts/upstream_port/verify.py now mirrors 31 gates, "
-        "including workflow-pilot, validation-ownership and the native probe suite",
+        "stale claim: scripts/upstream_port/verify.py mirrors the complete "
+        "current Build command inventory -- see docs/upstream-porting.md",
     ),
 ]
 

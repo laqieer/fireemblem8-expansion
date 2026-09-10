@@ -2566,7 +2566,7 @@ the exact branch and head; timeout or ambiguity fails before `gh run watch`.
    Run
    `python3 -m unittest tests.upstream_port.test_verify.VerifyCliCwdTests.test_metadata_event_setup_is_closed_and_not_a_local_gate -v`.
    Require the upstream verifier to accept the complete producer/output/marker
-   setup while retaining exactly 31 local gate commands. Remove, duplicate,
+   setup while retaining the complete local gate commands. Remove, duplicate,
    relink or weaken either setup step, mutate event/run/attempt inputs, and
    fabricate proof in either no-proof branch: each must reject before gates
    execute. Equivalent command spacing and environment-mapping order must
@@ -3253,7 +3253,7 @@ game behavior needs a compensating change.
    must still explain the nonempty host owner pair. A `patch-release` job
    authority must reject as stale. Run
    `python3 -m unittest tests.workflows.test_patch_release_workflow -v`
-   to exercise the parsed eight-job/31-gate contract and the actual packaging
+   to exercise the parsed eight-job/full-gate contract and the actual packaging
    helper with owned synthetic inputs. Require one profile build, no build by
    packaging, authenticated master-only publication, correct source/profile,
    real BPS round trip, patch-only outputs, private cleanup and visible
@@ -3296,7 +3296,7 @@ external-enforcement exclusion only. Generated paths derive from
 the typed generated-data registry; gate commands derive from existing Make
 targets, workflow jobs/steps, and tester cases rather than a duplicate command
 list. Both ownership commands are required, scrubbed `host-tests` gates and
-members of the complete 31-gate upstream mirror.
+members of the complete upstream gate inventory.
 
 With the ARM compiler installed for ownership metadata queries, the explicit
 host-only suite must still skip the concurrent custom-spell full-project

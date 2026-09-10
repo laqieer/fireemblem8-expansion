@@ -366,8 +366,8 @@ tests, and `.github/PULL_REQUEST_TEMPLATE.md` to documentation governance.
 named fail-closed external-GitHub-enforcement exclusion rather than a circular
 ownership-test claim.
 
-The eight-job Build retains both ownership host gates and all 31 mirrored
-local gates. Patch packaging is a master-only step in `build`, not a separate
+The eight-job Build retains both ownership host gates and the complete mirrored
+local gate inventory. Patch packaging is a master-only step in `build`, not a separate
 publisher job or local gate. The existing `surface.host` mapping covers
 `scripts/modernize/package_ci_patch.sh` and
 `tests/workflows/test_patch_release_workflow.py`: the host job runs the
