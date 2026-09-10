@@ -5,7 +5,9 @@ import unittest
 
 
 def load_tests(loader, standard_tests, pattern):
-    native_modules = {"test_foundation", "test_producer", "test_dependency"}
+    native_modules = {
+        "test_foundation", "test_producer", "test_dependency", "test_metadata_transport",
+    }
     suite = unittest.TestSuite()
     for path in sorted(Path(__file__).parent.glob(pattern or "test_*.py")):
         if path.stem not in native_modules:
