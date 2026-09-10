@@ -3616,6 +3616,109 @@ class ProducerTests(unittest.TestCase):
                 )
         self.fixture.assert_clean(session)
 
+    def test_generated_dependency_factory_follows_current_base_current_code_and_inputs(self):
+        case = {
+            "module": "scripts.generated_data.eventlists.deps",
+            "options": {"--strategy-source": "data/strategy.json", "--bundle-source": "data/bundles/state.json"},
+            "make_target": "build/generated/validated",
+            "depfile": "build/generated/inputs.mk",
+        }
+        selector = (
+            "import glob,os\n"
+            "def source_paths(source):\n"
+            " return sorted(glob.glob(source+'/*.json')) if os.path.isdir(source) else [source]\n"
+        )
+        for name in ("autoplaystrategies", "chapterbundle"):
+            self.fixture.add("scripts/generated_data/" + name + "/schema.py", selector)
+        self.fixture.add("data/strategy.json", '{"value":"strategy"}\n')
+        bundle_path = "data/bundles/state.json"
+        self.fixture.add(bundle_path, '{"value":"base"}\n')
+        module_path = "scripts/generated_data/eventlists/deps.py"
+        original_code = (
+            "import json,os\n"
+            "from ..autoplaystrategies.schema import source_paths as strategies\n"
+            "from ..chapterbundle.schema import source_paths as bundles\n"
+            "def collect_input_paths(strategy, bundle):\n"
+            " paths=strategies(strategy)+bundles(bundle)\n"
+            " for path in paths:\n"
+            "  with open(path) as stream: json.load(stream)['value']\n"
+            " return tuple(sorted(os.path.realpath(path) for path in paths))\n"
+            "def render_depfile(target, inputs):\n"
+            " return target+': '+' '.join(inputs)+'\\n'\n"
+        )
+        def renderer_code(version):
+            return original_code + (
+                "\n_original_renderer = render_depfile\n"
+                "def render_depfile(target, inputs):\n"
+                f"    return _original_renderer(target, inputs) + '# {version} renderer\\n'\n"
+            )
+        self.fixture.add(module_path, renderer_code("base"))
+        budget = foundation.ProbeBudget()
+        base_loader = self.capture_complete_loader(budget)
+        self.fixture.add(bundle_path, '{"value":"current"}\n')
+        self.fixture.add(module_path, renderer_code("current"))
+        current_loader = self.capture_complete_loader(budget)
+
+        def produce(session):
+            command = generated_dependency_command(
+                session, case["module"], option_values=case["options"],
+                make_target=case["make_target"], depfile=case["depfile"],
+            )
+            result = session.command(command)
+            self.assertEqual(len(result.generated), 1)
+            return command.sources, result.input_identities, result.generated[0].data
+
+        try:
+            with foundation.ProbeSession(
+                current_loader, scratch_root=self.fixture.scratch, budget=budget,
+            ) as session:
+                first = produce(session)
+                with session.select_view(base_loader):
+                    base = produce(session)
+                restored = produce(session)
+                self.assertEqual(first, restored)
+                self.assertNotEqual(first, base)
+                expected = (bundle_path, "data/strategy.json")
+                self.assertEqual(first[0], expected)
+                self.assertEqual(base[0], expected)
+                current_identities = {row[0]: row[1:] for row in first[1]}
+                base_identities = {row[0]: row[1:] for row in base[1]}
+                self.assertNotEqual(
+                    current_identities[bundle_path],
+                    base_identities[bundle_path],
+                )
+                self.assertNotEqual(current_identities[module_path], base_identities[module_path])
+                self.assertIn(b"# current renderer\n", first[2])
+                self.assertIn(b"# base renderer\n", base[2])
+                for path in expected:
+                    self.assertIn(("/repo/" + path).encode(), first[2])
+                    self.assertIn(("/repo/" + path).encode(), base[2])
+            self.fixture.assert_clean(session)
+        finally:
+            budget.close()
+
+    def test_generated_dependency_factory_rejects_malformed_sources_without_publication(self):
+        cases = {case["name"]: case for case in self.add_generated_dependency_fixture()}
+        for name, path in (
+            ("chapterobjectives", "testdata/objectives/el_objectives.json"),
+            ("autoplaystrategies", "testdata/strategies/el_strategies.json"),
+            ("eventlists", "testdata/bundles/el_bundle.json"),
+        ):
+            with self.subTest(module=name):
+                case = cases[name]
+                original = (self.root / path).read_bytes()
+                self.fixture.add(path, b'{"malformed":')
+                with self.fixture.session() as session:
+                    with self.assertRaises(MakeProbeError):
+                        session.command(generated_dependency_command(
+                            session, case["module"], option_values=case["options"],
+                            make_target=case["make_target"], depfile=case["depfile"],
+                        ))
+                    self.assertFalse(session.published_sources)
+                    self.assertFalse((self.root / case["depfile"]).exists())
+                self.fixture.assert_clean(session)
+                self.fixture.add(path, original)
+
     def test_generated_dependency_command_rejects_missing_or_conflicting_outputs(self):
         cases = {case["name"]: case for case in self.add_generated_dependency_fixture()}
         with self.fixture.session(seconds=60) as session:

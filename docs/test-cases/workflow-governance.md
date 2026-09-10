@@ -4472,7 +4472,10 @@ workflow job is involved.
 2. Exercise the shared `python_command(...)` closure in small owned fixtures.
    Import one helper through another Python module and require only the actual
    imported code paths in the closure and execution receipt; unrelated modules
-   must stay outside the declaration.
+   must stay outside the declaration. Repeat with a repository package under
+   `tools/`. A body with no repository code or explicit root directory must
+   not enumerate `/repo`; explicitly requesting `directories=(".",)` permits
+   that root listing without accepting noncanonical aliases.
 3. Use a real top-level gitlink fixture plus standard `import scripts`.
    A raw immutable capture without admitted gitlink sources must still fail at
    `nonregular namespace in source enumeration: /repo`. The same command under
@@ -4481,6 +4484,8 @@ workflow job is involved.
 4. Run the metadata-only registry source selector through the shared command
    helper. The schema's public `source_paths(...)` must drive the returned
    bundle list; `load_records(...)` must not execute for the selector path.
+   An attempted read of an unrelated test module must reject, not gain code
+   authority merely because it is under `scripts/generated_data/`.
 5. Capture BASE, change the same source file and helper module path in CURRENT,
    then run the same `python_command(...)` before, during and after
    `select_view(BASE)`. Require CURRENT bytes, BASE bytes, then restored
@@ -4496,6 +4501,13 @@ workflow job is involved.
 8. Reject an output path that collides with an immutable source and a missing
    admitted companion such as `assets/manifest.json`. No helper may fabricate
    depfile output, widen admission or rewrite metadata when those negatives fail.
+9. Repeat CURRENT/BASE/CURRENT through the actual generated-dependency factory
+   in a bounded file-input fixture with changed same-path module and source
+   bytes. Verify the discovered paths, actual input identities and depfile
+   bytes on all three visits; restoration must match the first CURRENT result.
+10. Pass malformed objective, strategy and bundle JSON through the respective
+    real dependency tools. Require failure, no published depfile and complete
+    session cleanup.
 
 ### Expected result
 
@@ -4539,6 +4551,11 @@ All owned fixture trees, selected views, depfiles and private session roots
 clean through the existing watchdog/session cleanup. This case does not prove
 #180's graph dispatch, shell-line continuation normalization, full repository
 query fit or resource calibration. No manual-only criterion applies.
+The view-identity case uses small executable source-only modules with the same
+factory signatures, separately from the real three-module publication and
+malformed-input cases. It proves view binding, not whole-repository resource
+fit; larger attempted view fixtures that hit unchanged resource limits are
+not counted as successful acceptance.
 
 ## TC-WORKFLOW-PROBE-DEPENDENCY-001: Observe real confined compiler dependencies
 
