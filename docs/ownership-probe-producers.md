@@ -113,7 +113,11 @@ from scripts.validation_ownership.python_commands import (
 - `generated_dependency_command(...)` adapts the three audited generated-data
   dependency CLIs (`chapterobjectives`, `autoplaystrategies`, `eventlists`)
   into one typed producer command using the modules' real `source_paths`,
-  `collect_input_paths` and `render_depfile`/writer contracts.
+  `collect_input_paths` and `render_depfile`/writer contracts. The helper keeps
+  the existing source-selection and bundle-support capsules, then runs one final
+  output-producing command that re-checks the module's actual
+  `collect_input_paths(...)` result against the caller-derived exact admitted
+  set before rendering. It does not launch a second cold collector command.
 
 The helper does **not** add a second importer, import mode or package shim.
 Normal namespace-package behavior is preserved: with a complete gitlink-aware
@@ -133,6 +137,13 @@ publication come from the real module render/writer behavior, not guessed
 filenames or fabricated empty output. The same API is reusable for asset
 discovery/publication, registry source selection and later graph adoption
 without importing graph-specific code into the foundation.
+For chapterobjectives/autoplay, the support capsule also returns the actual
+implementation-module `.py` inputs discovered through
+`chapterobjectives.deps._implementation_module_paths()` after the admitted
+target deps module and bundle dependency modules are normally imported in the
+selected snapshot. Static code closure remains the admission envelope; the
+actual implementation-module paths remain ordinary collected inputs that must
+match before output is published.
 Each command writes the real renderer's bytes into its fresh private output
 directory; the existing native publication protocol owns installation into
 Make's source view. The ordinary CLI writer's temporary-file rename is not
