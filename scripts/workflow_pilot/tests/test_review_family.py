@@ -780,6 +780,9 @@ class CandidateCoverageTests(unittest.TestCase):
                 ("wrong-revision", WrappedCandidateReader(
                     delegate, mutate=lambda row: {**row, "revision": fixture["base"]}),
                  tools.model.ReviewError),
+                ("wrong-side", WrappedCandidateReader(
+                    delegate, mutate=lambda row: {**row, "side": "base", "revision": fixture["base"]}),
+                 tools.model.ReviewError),
                 ("wrong-mode", WrappedCandidateReader(
                     delegate, mutate=lambda row: {**row, "mode": "100755"}),
                  tools.model.ReviewError),
