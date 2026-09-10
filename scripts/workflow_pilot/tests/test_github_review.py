@@ -42,6 +42,7 @@ def candidate_fixture(repo):
         f"{prefix}/modify.txt": "base revision\n",
         f"{prefix}/delete.txt": "delete from base\n",
         f"{prefix}/mode.sh": "#!/bin/sh\necho shared\n",
+        f"{prefix}/support.txt": "unchanged support\n",
     }, parent=repo.base)
     git(repo.root, "reset", "--hard", base)
     root = repo.root / prefix
@@ -62,6 +63,7 @@ def candidate_fixture(repo):
             "deleted": f"{prefix}/delete.txt",
             "mode": f"{prefix}/mode.sh",
             "modified": f"{prefix}/modify.txt",
+            "support": f"{prefix}/support.txt",
         },
     }
 
@@ -871,7 +873,7 @@ runpy.run_path(sys.argv[0], run_name="__main__")
                 require_both=(fixture["paths"]["modified"],))
             self.assertEqual(
                 [item.path for item in changes.changes],
-                sorted(fixture["paths"].values()),
+                sorted(value for key, value in fixture["paths"].items() if key != "support"),
             )
             self.assertEqual(
                 (changes.resolved_root, changes.base, changes.head),
@@ -883,6 +885,26 @@ runpy.run_path(sys.argv[0], run_name="__main__")
             }
             self.assertIn((fixture["paths"]["deleted"], ()), described)
             self.assertIn((fixture["paths"]["modified"], ("base", "head")), described)
+            default_changes = tools.candidate_changes(fixture["base"], fixture["head"])
+            expected_paths = {
+                fixture["paths"]["added"],
+                fixture["paths"]["deleted"],
+                fixture["paths"]["mode"],
+                fixture["paths"]["modified"],
+            }
+            self.assertEqual(
+                {item.path for item in default_changes.changes},
+                expected_paths,
+            )
+            self.assertEqual(
+                (default_changes.resolved_root, default_changes.base, default_changes.head),
+                (str(repo.root.resolve()), fixture["base"], fixture["head"]),
+            )
+            self.assertNotIn(fixture["paths"]["support"], {item.path for item in default_changes.changes})
+            self.assertNotEqual(
+                {item.path for item in default_changes.changes if item.path != fixture["paths"]["mode"]},
+                expected_paths,
+            )
             git(repo.root, "reset", "--hard", fixture["head"])
             drift = repo.root / fixture["paths"]["modified"]
             drift.write_text("working tree drift\n")
@@ -936,15 +958,26 @@ runpy.run_path(sys.argv[0], run_name="__main__")
             self.assertEqual(coverage.resolved_root, str(repo.root.resolve()))
             path = repo.root / "request.json"
             path.write_text(json.dumps(data))
-            output = io.StringIO()
-            with patch.object(gate, "GitHub", return_value=ObservedGitHub(
-                    response(fixture["base"], fixture["head"]))), redirect_stdout(output):
-                code = gate.main([
-                    "--repository-root", str(repo.root), "--subject-root", str(repo.root),
-                    "--tool-revision", fixture["head"], "--candidate", fixture["head"],
-                    "--request", str(path), "--mode", "check"])
-            self.assertEqual(code, 0)
-            report = json.loads(output.getvalue())
+            program = "\n".join((
+                "import json, sys",
+                f"sys.path.insert(0, {str(ROOT)!r})",
+                "from scripts.workflow_pilot import trusted_review_gate as gate",
+                f"base = {fixture['base']!r}",
+                f"head = {fixture['head']!r}",
+                "class FakeGitHub:",
+                "    def snapshot(self, repository, number, model):",
+                "        return ((base, head), ())",
+                "gate.GitHub = FakeGitHub",
+                "raise SystemExit(gate.main(sys.argv[1:]))",
+            ))
+            result = subprocess.run(
+                [sys.executable, "-I", "-c", program,
+                 "--repository-root", str(repo.root), "--subject-root", str(repo.root),
+                 "--tool-revision", fixture["head"], "--candidate", fixture["head"],
+                 "--request", str(path), "--mode", "check"],
+                cwd=ROOT, env=ENV, capture_output=True, timeout=30)
+            self.assertEqual(result.returncode, 0, result.stderr.decode())
+            report = json.loads(result.stdout)
             self.assertTrue(report["source_audit_complete"])
             self.assertFalse(report["handoff_eligible"])
             self.assertTrue(report["coordinator_observations_required"])

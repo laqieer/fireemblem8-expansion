@@ -407,6 +407,51 @@ class CandidateCoverageTests(unittest.TestCase):
                     tools.model.ReviewError, "no trusted candidate path coverage"):
                 tools.model.require_candidate_path_coverage(report, changes)
 
+    def test_mode_only_default_requirements_need_both_sides_without_explicit_require_both(self):
+        with snapshot() as repo:
+            fixture = candidate_fixture(repo)
+            tools = gate.ReviewTools(gate.GitTree(repo.root, fixture["head"]), repo.root)
+            changes = tools.candidate_changes(
+                fixture["base"], fixture["head"], paths=[fixture["paths"]["mode"]])
+            self.assertEqual(len(changes.changes), 1)
+            self.assertEqual(changes.changes[0].required_sides, ())
+
+            session, runtime = self.start_session(tools, fixture["base"], fixture["head"], max_files=1)
+            session.read_action("read-candidate", fixture["paths"]["mode"])
+            runtime.result.files = 1
+            report = session.finish(runtime)
+            with self.assertRaisesRegex(
+                    tools.model.ReviewError, r"missing candidate path coverage: .* \[base\]"):
+                tools.model.require_candidate_path_coverage(report, changes)
+
+            session, runtime = self.start_session(tools, fixture["base"], fixture["head"], max_files=1)
+            session.read_action("read-candidate", fixture["paths"]["mode"], "base")
+            session.read_action("read-candidate", fixture["paths"]["mode"], "head")
+            runtime.result.files = 1
+            report = session.finish(runtime)
+            coverage = tools.model.require_candidate_path_coverage(report, changes)
+            self.assertEqual(
+                [(item.path, item.side) for item in coverage.reads],
+                [(fixture["paths"]["mode"], "base"), (fixture["paths"]["mode"], "head")],
+            )
+
+            weakened = tools.model.CandidateRequirements(
+                changes.resolved_root, changes.base, changes.head,
+                (tools.model.validate_candidate_change({
+                    "path": fixture["paths"]["mode"],
+                    "base_present": True,
+                    "base_mode": "100644",
+                    "base_kind": "blob",
+                    "base_oid": coverage.reads[0].oid,
+                    "head_present": True,
+                    "head_mode": "100755",
+                    "head_kind": "blob",
+                    "head_oid": coverage.reads[1].oid,
+                    "required_sides": ["head"],
+                }),))
+            with self.assertRaisesRegex(tools.model.ReviewError, "coverage weakened"):
+                tools.model.require_candidate_path_coverage(report, weakened)
+
     def test_only_actual_immutable_reports_and_exact_summaries_count_for_coverage(self):
         with snapshot() as repo:
             fixture = candidate_fixture(repo)
