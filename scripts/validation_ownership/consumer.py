@@ -7,7 +7,8 @@ from pathlib import Path
 
 from .authority import AuthorityLoader, ENVIRONMENT, GitlinkSource, encoded, git_tree_entries
 from .budget import MakeProbeError, ProbeBudget
-from .make_probe import Command, ProbeSession, TRUSTED_ROOT, probe_generated_registry
+from .make_probe import ProbeSession, probe_generated_registry
+from .python_commands import generated_registry_command
 
 
 def registry_entries(root, revision, budget):
@@ -43,19 +44,10 @@ def check(root: Path, revision: str | None):
             "localization-check", makefile="localization.mk",
             variables=("LOCALIZATION_OUT_DIR",), owner_inputs=("localization.mk",),
         )
-        code = tuple(sorted(
-            path for path in session.snapshot.files
-            if path.endswith(".py") and path.startswith(("scripts/generated_data/", "scripts/assets/"))
-        ))
-        directories = tuple(sorted({".", "src/data", *(
-            parent.as_posix() for name in code for parent in Path(name).parents
-        )}))
-        registry = probe_generated_registry(loader, session=session, command=Command(
-            ("/usr/bin/python3", "-I", "-S", "-B", "-c",
-             (TRUSTED_ROOT / "generated_registry_probe.py").read_text(encoding="utf-8"),
-             "chapterbundle", "src/data"),
-            code=code, sources=("src/data/*_bundle.json",), directories=directories,
-        ))
+        registry = probe_generated_registry(
+            loader, session=session,
+            command=generated_registry_command(session, "chapterbundle", "src/data"),
+        )
         return {
             "scope": "ownership-probe-foundation",
             "execution_snapshot": session.snapshot.digest,

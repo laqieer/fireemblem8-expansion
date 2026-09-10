@@ -511,6 +511,7 @@
         "TC-WORKFLOW-PILOT-BASELINE-001",
         "TC-WORKFLOW-OWNERSHIP-PROBE-SANDBOX-001",
         "TC-WORKFLOW-PROBE-PRODUCER-001",
+        "TC-PROBE-PYTHON-PRODUCERS-001",
         "TC-WORKFLOW-PROBE-DEPENDENCY-001",
         "TC-WORKFLOW-PROBE-RUNTIME-INPUTS-001",
         "TC-WORKFLOW-PROBE-VIEWS-001",
@@ -3548,6 +3549,34 @@
         {
           "command": "python3 -m unittest scripts.validation_ownership.tests.test_producer -v",
           "evidence": "scripts/validation_ownership/tests/test_producer.py"
+        }
+      ]
+    },
+    {
+      "id": "TC-PROBE-PYTHON-PRODUCERS-001",
+      "title": "Share source-only Python producer commands",
+      "feature_id": "workflow-governance",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/238"
+      ],
+      "document": "docs/test-cases/workflow-governance.md",
+      "anchor": "tc-probe-python-producers-001-share-source-only-python-producer-commands",
+      "profiles": [
+        "Linux x86-64 source checkout, GNU Make 4.3, Python 3, existing generated-data schemas and private namespaces"
+      ],
+      "purpose": "Prove the shared source-only Python command helpers preserve standard imports, exact captured closures and real generated dependency publication for the three audited modules.",
+      "prerequisites": "Clean checkout with the existing ownership-probe native tools. Use owned ignored build/test-artifacts fixtures and exact immutable captures; no ROM, package installation, remote action, graph planner or source-ledger mutation.",
+      "actions": "Run the existing ownership-probe native test owner. Exercise the shared `python_command` import closure, namespace-package behavior under raw versus complete gitlink capture, metadata-only generated-registry `source_paths` selection, same-path CURRENT/BASE code+source changes through `select_view`, and the typed `generated_dependency_command` for chapter objectives, autoplay strategies and event lists. Compare ordinary CLI depfile bytes with the confined publication hashes, require one real Make restart for the three generated includes, reorder named options without changing semantic inputs, and reject missing/extra options, conflicting outputs and missing companion sources.",
+      "expected_result": "Standard Python imports remain authoritative, including repository packages outside scripts/: complete gitlink-aware capture plus declared ancestors succeeds, while incomplete capture and unrequested root enumeration reject. Registry source selection uses source_paths and actual imported code, not unrelated test trees. Generated dependency commands bind selected inputs, code and outputs; real depfiles match ordinary output and restart Make once. Same-path code/data changes follow CURRENT/BASE/CURRENT identities and bytes; malformed JSON fails without publication and cleans the session.",
+      "negative_control": "A raw immutable capture without admitted gitlink sources cannot import through `/repo` successfully. Missing source ancestors, unrelated code, missing/extra named options, conflicting outputs and missing asset/bundle companions reject rather than fabricating selection or depfile output. Reordered named options preserve identical semantic inputs. CURRENT and BASE must not reuse stale same-path code/source bytes across `select_view`.",
+      "interactions": "Depends on the delivered core206, producer225, views226, runtime227, dependency228 and source-selection234 foundations. #180/#186 and #196 consume this API later; no graph/oracle/coordinator code, gameplay, save/config identity, localization, generated game content, ROM/RAM, workflow topology or resource-budget change lands here.",
+      "save_compatibility": "Host-only source/probe API; no gameplay, save migration, config identity, locale, generated game content, ROM/RAM or modern/archival profile change.",
+      "cleanup": "Use the existing ProbeSession/watchdog cleanup. Successful and failing source-only commands remove only owned fixture/scratch/output state, keep one budget/session authority, and preserve selected-view restoration without retry or metadata rewriting.",
+      "limitations": "This API does not deliver #180's graph dispatch, shell normalization or full repository resource fit. The bounded factory view case uses executable fixture modules with the same API signatures; real three-module publication and malformed-input cases are separate. Larger resource-limited fixture attempts are not successful evidence. No manual-only criterion applies.",
+      "automation": [
+        {
+          "command": "make -f scripts/validation_ownership/foundation.mk ownership-probe-test",
+          "evidence": "scripts/validation_ownership/foundation.mk"
         }
       ]
     },

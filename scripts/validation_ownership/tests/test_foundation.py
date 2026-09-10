@@ -34,6 +34,12 @@ from scripts.validation_ownership.make_probe import (
     Command, NativeTool, ProbeSession, TRUSTED_ROOT, _command_hash, _event_command, _make_interpreter, _make_runtime,
     _read_events, _read_observation, _trusted_runtime_bytes, probe_generated_registry,
 )
+from scripts.validation_ownership.python_commands import (
+    directory_python_command,
+    generated_registry_source_paths_command,
+    generated_registry_source_paths,
+    python_command,
+)
 
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -3497,6 +3503,7 @@ raise AssertionError("default termination was lost")
             "import json\nfrom pathlib import Path\n"
             "class Records(list): pass\n"
             "class Schema:\n name='chapterbundle'\n version=1\n"
+            " def source_paths(self, source): return [str(Path(source)/'ch2_bundle.json')]\n"
             " def load_records(self, source):\n"
             "  path=Path(source)/'ch2_bundle.json'\n"
             "  records=Records(json.loads(path.read_text()))\n"
@@ -4220,6 +4227,187 @@ raise AssertionError("default termination was lost")
         self.assertFalse(budget.children)
         self.assertEqual(list(scratch.iterdir()), [])
         scratch.rmdir()
+
+    def test_python_command_root_enumeration_requires_declaration(self):
+        self.add("data/value.txt", "captured")
+        body = "import os;print(','.join(sorted(os.listdir('.'))))"
+        with self.session() as session:
+            with self.assertRaisesRegex(MakeProbeError, "undeclared source directory enumeration"):
+                session.command(python_command(session, body))
+        self.assert_clean(session)
+        with self.session() as session:
+            result = session.command(directory_python_command(session, body, directories=(".",)))
+            self.assertEqual(result.stdout, b"data\n")
+        self.assert_clean(session)
+
+    def test_python_command_tracks_repository_packages_outside_scripts(self):
+        self.add("tools/pkg/helper.py", "VALUE=7\n")
+        self.add("tools/pkg/producer.py", "from .helper import VALUE\n")
+        self.add("tools/pkg/unrelated.py", "raise AssertionError('not imported')\n")
+        with self.session() as session:
+            command = python_command(
+                session, "from tools.pkg.producer import VALUE;print(VALUE)",
+                code=("tools/pkg/producer.py",),
+            )
+            result = session.command(command)
+            self.assertEqual(result.stdout, b"7\n")
+            self.assertNotIn("tools/pkg/unrelated.py", command.code)
+        self.assert_clean(session)
+
+    def test_registry_command_does_not_admit_unrelated_test_code(self):
+        self.add("data/a_bundle.json", "{}")
+        self.add("scripts/generated_data/tests/unrelated.py", "VALUE=1\n")
+        source = (
+            "import glob\nfrom pathlib import Path\n"
+            "class Schema:\n"
+            " def source_paths(self, source):\n"
+            "  Path('/repo/scripts/generated_data/tests/unrelated.py').read_text()\n"
+            "  return sorted(glob.glob(source + '/*_bundle.json'))\n"
+            "class Registry:\n"
+            " def resolve(self, name): return Schema()\n"
+            "REGISTRY=Registry()\n"
+        )
+        self.add("scripts/generated_data/registry.py", source)
+        with self.session() as session:
+            command = generated_registry_source_paths_command(session, "chapterbundle", "data")
+            with self.assertRaises(MakeProbeError):
+                session.command(command)
+        self.assert_clean(session)
+        self.add(
+            "scripts/generated_data/registry.py",
+            source.replace("  Path('/repo/scripts/generated_data/tests/unrelated.py').read_text()\n", ""),
+        )
+        with self.session() as session:
+            command = generated_registry_source_paths_command(session, "chapterbundle", "data")
+            result = session.command(command)
+            self.assertEqual(json.loads(result.stdout), ["data/a_bundle.json"])
+            self.assertNotIn("scripts/generated_data/tests/unrelated.py", command.code)
+        self.assert_clean(session)
+
+    def test_directory_python_command_preserves_root_marker_and_rejects_aliases(self):
+        self.add("data/value.txt", "captured")
+        with self.session() as session:
+            command = directory_python_command(
+                session,
+                "import json,os;from pathlib import Path;"
+                "print(json.dumps([sorted(os.listdir('.')),Path('data/value.txt').read_text()]))",
+                sources=("data/value.txt",), directories=(".", "data"),
+            )
+            result = session.command(command)
+            self.assertEqual(json.loads(result.stdout), [["data"], "captured"])
+            self.assertEqual(result.consumed, ("data/value.txt",))
+            for path in ("/repo", "../outside", "./data", "data/../data"):
+                with self.subTest(path=path), self.assertRaises(MakeProbeError):
+                    directory_python_command(session, "print('not run')", directories=(path,))
+        self.assert_clean(session)
+
+    def test_standard_python_command_requires_complete_gitlink_capture_for_namespace_imports(self):
+        module, (base, _current) = self.gitlink_fixture()
+        self.add("scripts/generated_data/demo/helper.py", "VALUE='fixture'\n")
+        self.add("scripts/generated_data/demo/tool.py", "from .helper import VALUE\n")
+        self.gitlink_git(self.root, "add", "--all")
+        body = (
+            "import json, scripts\n"
+            "from scripts.generated_data.demo import tool\n"
+            "print(json.dumps({"
+            "'namespace_origin':scripts.__spec__.origin,"
+            "'namespace_loader':type(scripts.__spec__.loader).__name__,"
+            "'namespace_paths':list(scripts.__path__),"
+            "'value':tool.VALUE"
+            "},sort_keys=True))\n"
+        )
+        raw_budget = ProbeBudget()
+        raw_loader = self.gitlink_loader(raw_budget, module / ".git", base, admit=False)
+        with ProbeSession(raw_loader, scratch_root=self.scratch, budget=raw_budget) as session:
+            with self.assertRaisesRegex(
+                MakeProbeError, "nonregular namespace in source enumeration: /repo",
+            ):
+                session.command(python_command(
+                    session, body, code=("scripts/generated_data/demo/tool.py",),
+                ))
+        self.assert_clean(session)
+        raw_budget.close()
+
+        complete_budget = ProbeBudget()
+        complete_loader = self.gitlink_loader(complete_budget, module / ".git", base)
+        with ProbeSession(complete_loader, scratch_root=self.scratch, budget=complete_budget) as session:
+            result = session.command(python_command(
+                session, body, code=("scripts/generated_data/demo/tool.py",),
+            ))
+            self.assertEqual(json.loads(result.stdout), {
+                "namespace_loader": "NamespaceLoader",
+                "namespace_origin": None,
+                "namespace_paths": ["/repo/scripts"],
+                "value": "fixture",
+            })
+        self.assert_clean(session)
+        complete_budget.close()
+
+    def test_generated_registry_source_paths_uses_schema_selector_without_loading_records(self):
+        self.add("data/a_bundle.json", "{}")
+        self.add("data/b_bundle.json", "{}")
+        self.add("data/ignored.json", "{}")
+        self.add("scripts/generated_data/registry.py", (
+            "import glob\n"
+            "class Schema:\n"
+            " name='chapterbundle'\n version=1\n"
+            " def source_paths(self, source):\n"
+            "  return sorted(glob.glob(source + '/*_bundle.json'))\n"
+            " def load_records(self, source):\n"
+            "  raise AssertionError('load_records must not run for --source-paths')\n"
+            " def manifest_record_count(self, records): return 0\n"
+            "class Registry:\n"
+            " def resolve(self, name): return Schema()\n"
+            "REGISTRY=Registry()\n"
+        ))
+        with self.session() as session:
+            paths = generated_registry_source_paths(session, "chapterbundle", "data")
+            self.assertEqual(paths, ("data/a_bundle.json", "data/b_bundle.json"))
+        self.assert_clean(session)
+
+    def test_python_command_selected_view_uses_same_path_changed_code_and_source_bytes(self):
+        self.add("data/value.txt", "old\n")
+        self.add("scripts/generated_data/demo/helper.py", "VALUE = 'base'\n")
+        self.add(
+            "scripts/generated_data/demo/tool.py",
+            "from scripts.generated_data.demo.helper import VALUE\n"
+            "print(VALUE + ':' + open('data/value.txt').read().strip())\n",
+        )
+        budget = ProbeBudget()
+        base_entries, base_revision = self.capture_tree(budget)
+        base_loader = AuthorityLoader(self.root, base_entries, base_revision, budget=budget)
+        self.add("data/value.txt", "current\n")
+        self.add("scripts/generated_data/demo/helper.py", "VALUE = 'current'\n")
+        current_entries, current_revision = self.capture_tree(budget)
+        current_loader = AuthorityLoader(self.root, current_entries, current_revision, budget=budget)
+        with ProbeSession(current_loader, scratch_root=self.scratch, budget=budget) as session:
+            command = python_command(
+                session,
+                "from scripts.generated_data.demo.tool import VALUE\n",
+                code=("scripts/generated_data/demo/tool.py",),
+                sources=("data/value.txt",),
+                directories=("data",),
+            )
+            self.assertEqual(session.command(command).stdout, b"current:current\n")
+            with session.select_view(base_loader) as selected:
+                self.assertIs(selected, session)
+                base = python_command(
+                    session,
+                    "from scripts.generated_data.demo.tool import VALUE\n",
+                    code=("scripts/generated_data/demo/tool.py",),
+                    sources=("data/value.txt",),
+                    directories=("data",),
+                )
+                self.assertEqual(session.command(base).stdout, b"base:old\n")
+            restored = python_command(
+                session,
+                "from scripts.generated_data.demo.tool import VALUE\n",
+                code=("scripts/generated_data/demo/tool.py",),
+                sources=("data/value.txt",),
+                directories=("data",),
+            )
+            self.assertEqual(session.command(restored).stdout, b"current:current\n")
+        self.assert_clean(session)
 
     def test_generated_registry_requires_the_existing_schema_count_contract(self):
         self.add("data/source.json", "[]")

@@ -17,16 +17,24 @@ def repository_path(value, *, reported=False):
 
 source = Path("/repo") / repository_path(sys.argv[2])
 schema = REGISTRY.resolve(sys.argv[1])
-records = schema.load_records(str(source))
-paths = getattr(records, "source_paths", None)
-if paths is None and isinstance(records, dict):
-    paths = records.get("source_paths")
-if paths is None:
-    paths = [str(source)]
-concrete = sorted(repository_path(path, reported=True).as_posix() for path in paths)
-sys.stdout.write(json.dumps({
-    "name": schema.name,
-    "version": schema.version,
-    "source_paths": concrete,
-    "record_count": schema.manifest_record_count(records),
-}, sort_keys=True, separators=(",", ":")))
+if sys.argv[3:] == ["--source-paths"]:
+    paths = schema.source_paths(str(source))
+    sys.stdout.write(json.dumps(sorted(
+        repository_path(path, reported=True).as_posix() for path in paths
+    ), separators=(",", ":")))
+elif len(sys.argv) == 3:
+    records = schema.load_records(str(source))
+    paths = getattr(records, "source_paths", None)
+    if paths is None and isinstance(records, dict):
+        paths = records.get("source_paths")
+    if paths is None:
+        paths = [str(source)]
+    concrete = sorted(repository_path(path, reported=True).as_posix() for path in paths)
+    sys.stdout.write(json.dumps({
+        "name": schema.name,
+        "version": schema.version,
+        "source_paths": concrete,
+        "record_count": schema.manifest_record_count(records),
+    }, sort_keys=True, separators=(",", ":")))
+else:
+    raise ValueError("unsupported generated registry probe arguments")
