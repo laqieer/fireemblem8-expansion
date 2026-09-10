@@ -4395,40 +4395,250 @@ raise AssertionError("default termination was lost")
         scratch.rmdir()
 
     def test_real_generated_registry_commands_keep_lazy_runtime_imports_and_complete_static_code_admission(self):
+        from scripts.generated_data.autoplaystrategies.schema import AutoplayStrategiesTableSchema
+        from scripts.generated_data.shops.schema import ShopsTableSchema
         from scripts.validation_ownership.consumer import registry_entries
-        budget = ProbeBudget()
-        scratch = self.directory / "registry-receipts-shops-command"
-        scratch.mkdir()
-        loader = AuthorityLoader(
-            ROOT, registry_entries(ROOT, "HEAD", budget), "HEAD",
-            scratch_root=scratch, budget=budget,
+
+        def observe_registry(name, source, expected_record_count, included, excluded):
+            budget = ProbeBudget()
+            scratch = self.directory / ("registry-receipts-" + name)
+            scratch.mkdir()
+            loader = AuthorityLoader(
+                ROOT, registry_entries(ROOT, "HEAD", budget), "HEAD",
+                scratch_root=scratch, budget=budget,
+            )
+            try:
+                with ProbeSession(loader, scratch_root=scratch, budget=budget) as session:
+                    command = generated_registry_command(session, name, source)
+                    self.assertIn("scripts/generated_data/shops/schema.py", command.code)
+                    self.assertIn("scripts/generated_data/autoplaystrategies/schema.py", command.code)
+                    self.assertIn("scripts/generated_data/chapterbundle/schema.py", command.code)
+                    result = session.command(command)
+                    self.assertEqual(parse_json(result.stdout, "generated registry receipt"), {
+                        "name": name,
+                        "version": 1,
+                        "record_count": expected_record_count,
+                        "source_paths": [source],
+                    })
+                    self.assertEqual(result.consumed, (source,))
+                    for path in included:
+                        self.assertIn(path, result.code_consumed)
+                    for path in excluded:
+                        self.assertNotIn(path, result.code_consumed)
+                self.assertFalse(budget.children)
+                self.assertEqual(list(scratch.iterdir()), [])
+            finally:
+                budget.close()
+                if scratch.exists():
+                    scratch.rmdir()
+
+        shops_schema = ShopsTableSchema()
+        shops_records = shops_schema.load_records(str(ROOT / "src/data/ch2_shops.json"))
+        observe_registry(
+            "shops",
+            "src/data/ch2_shops.json",
+            shops_schema.manifest_record_count(shops_records),
+            {
+                "scripts/generated_data/registry.py",
+                "scripts/generated_data/schema.py",
+                "scripts/generated_data/diagnostics.py",
+                "scripts/generated_data/json_loader.py",
+                "scripts/generated_data/shops/schema.py",
+            },
+            {
+                "scripts/generated_data/autoplaystrategies/schema.py",
+            },
         )
-        try:
-            with ProbeSession(loader, scratch_root=scratch, budget=budget) as session:
-                resolve = python_command(
-                    session,
-                    "from scripts.generated_data.registry import REGISTRY\n"
-                    "print(REGISTRY.resolve('autoplaystrategies').name)\n",
-                    code=("scripts/generated_data/registry.py",),
-                )
-                self.assertIn("scripts/generated_data/shops/schema.py", resolve.code)
-                self.assertIn("scripts/generated_data/autoplaystrategies/schema.py", resolve.code)
-                self.assertIn("scripts/generated_data/chapterbundle/schema.py", resolve.code)
-                shops_registry = generated_registry_command(session, "shops", "src/data/ch2_shops.json")
-                shops_result = session.command(shops_registry)
-                self.assertEqual(parse_json(shops_result.stdout, "shops registry source receipt"), {
-                    "name": "shops",
-                    "version": 1,
-                    "record_count": 1,
-                    "source_paths": ["src/data/ch2_shops.json"],
-                })
-                self.assertEqual(shops_result.consumed, ("src/data/ch2_shops.json",))
-            self.assertFalse(budget.children)
-            self.assertEqual(list(scratch.iterdir()), [])
-        finally:
-            budget.close()
-            if scratch.exists():
-                scratch.rmdir()
+
+        autoplay_schema = AutoplayStrategiesTableSchema()
+        autoplay_records = autoplay_schema.load_records(str(ROOT / "src/data/autoplay_strategies.json"))
+        observe_registry(
+            "autoplaystrategies",
+            "src/data/autoplay_strategies.json",
+            autoplay_schema.manifest_record_count(autoplay_records),
+            {
+                "scripts/generated_data/registry.py",
+                "scripts/generated_data/schema.py",
+                "scripts/generated_data/diagnostics.py",
+                "scripts/generated_data/json_loader.py",
+                "scripts/generated_data/autoplaystrategies/schema.py",
+                "scripts/generated_data/chapterobjectives/schema.py",
+                "scripts/generated_data/chapterbundle/schema.py",
+            },
+            {
+                "scripts/generated_data/shops/schema.py",
+            },
+        )
+
+    def test_lazy_generated_registry_shops_generation_publishes_expected_outputs_through_make(self):
+        from scripts.generated_data.shops.schema import ShopsTableSchema
+
+        def add_repo_file(path):
+            self.add(path, (ROOT / path).read_bytes())
+
+        for path in (
+            "scripts/generated_data/__init__.py",
+            "scripts/generated_data/cgen.py",
+            "scripts/generated_data/diagnostics.py",
+            "scripts/generated_data/json_loader.py",
+            "scripts/generated_data/registry.py",
+            "scripts/generated_data/schema.py",
+            "scripts/generated_data/validators.py",
+            "scripts/generated_data/shops/__init__.py",
+            "scripts/generated_data/shops/generate.py",
+            "scripts/generated_data/shops/inventory.py",
+            "scripts/generated_data/shops/schema.py",
+            "include/constants/items.h",
+            "src/data/ch2_shops.json",
+        ):
+            add_repo_file(path)
+
+        out_c = "build/generated/data/data_ch2_shops.c"
+        out_inventory = "build/generated/data/generated_data_shops_inventory.md"
+        schema = ShopsTableSchema()
+        records = schema.load_records(str(ROOT / "src/data/ch2_shops.json"))
+        expected_c = schema.generate_c(records, "src/data/ch2_shops.json").encode("utf-8")
+        expected_inventory = schema.build_inventory(records).encode("utf-8")
+        script_body = (
+            "from pathlib import Path\n"
+            "import sys\n"
+            "sys.path.insert(0, '/repo')\n"
+            "from scripts.generated_data.diagnostics import DiagnosticCollector\n"
+            "from scripts.generated_data.registry import REGISTRY\n"
+            "source = sys.argv[1]\n"
+            "schema = REGISTRY.resolve('shops')\n"
+            "records = schema.load_records(str(Path('/repo') / Path(source)))\n"
+            "diagnostics = DiagnosticCollector()\n"
+            "schema.validate(records, diagnostics)\n"
+            "if diagnostics.errors:\n"
+            " raise diagnostics.errors[0]\n"
+            "outputs = (\n"
+            " (sys.argv[2], schema.generate_c(records, source)),\n"
+            " (sys.argv[3], schema.build_inventory(records)),\n"
+            ")\n"
+            "for relative, content in outputs:\n"
+            " path = Path('/work') / Path(relative)\n"
+            " path.parent.mkdir(parents=True, exist_ok=True)\n"
+            " path.write_text(content, encoding='utf-8')\n"
+        )
+        self.add("generate_shops.py", script_body)
+        body = (
+            "from pathlib import Path\n"
+            "import sys\n"
+            "sys.path.insert(0, '/repo')\n"
+            "from scripts.generated_data.diagnostics import DiagnosticCollector\n"
+            "from scripts.generated_data.registry import REGISTRY\n"
+            "source = sys.argv[1]\n"
+            "schema = REGISTRY.resolve('shops')\n"
+            "records = schema.load_records(str(Path('/repo') / Path(source)))\n"
+            "diagnostics = DiagnosticCollector()\n"
+            "schema.validate(records, diagnostics)\n"
+            "if diagnostics.errors:\n"
+            " raise diagnostics.errors[0]\n"
+            "outputs = (\n"
+            " (sys.argv[2], schema.generate_c(records, source)),\n"
+            " (sys.argv[3], schema.build_inventory(records)),\n"
+            ")\n"
+            "for relative, content in outputs:\n"
+            " path = Path('/work') / Path(relative)\n"
+            " path.parent.mkdir(parents=True, exist_ok=True)\n"
+            " path.write_text(content, encoding='utf-8')\n"
+        )
+        with self.session(seconds=60) as planning_session:
+            planning = python_command(
+                planning_session,
+                body,
+                ("src/data/ch2_shops.json", out_c, out_inventory),
+                sources=("src/data/ch2_shops.json", "include/constants/items.h"),
+                outputs=(out_c, out_inventory),
+                code=("generate_shops.py",),
+            )
+            command = replace(
+                planning,
+                argv=(
+                    "/usr/bin/python3", "-I", "-S", "-B", "/repo/generate_shops.py",
+                    "src/data/ch2_shops.json", out_c, out_inventory,
+                ),
+            )
+            event = (
+                "python3 -I -S -B /repo/generate_shops.py "
+                "src/data/ch2_shops.json " + out_c + " " + out_inventory
+            )
+        self.assert_clean(planning_session)
+        self.add("Makefile", (
+            "ifeq ($(wildcard " + out_c + "),)\n"
+            "GENERATED := $(shell " + event + ")\n"
+            "endif\n"
+            "all: " + out_c + " " + out_inventory + "\n"
+            "\t@printf '%s\\n' '$+' '$(MAKE_RESTARTS)'\n"
+        ))
+        with self.session(seconds=60) as session:
+            planning = python_command(
+                session,
+                body,
+                ("src/data/ch2_shops.json", out_c, out_inventory),
+                sources=("src/data/ch2_shops.json", "include/constants/items.h"),
+                outputs=(out_c, out_inventory),
+                code=("generate_shops.py",),
+            )
+            command = replace(
+                planning,
+                argv=(
+                    "/usr/bin/python3", "-I", "-S", "-B", "/repo/generate_shops.py",
+                    "src/data/ch2_shops.json", out_c, out_inventory,
+                ),
+            )
+            produced_result = session.command(command)
+            self.assertEqual(
+                set(produced_result.consumed),
+                {"src/data/ch2_shops.json", "include/constants/items.h"},
+            )
+            self.assertIn("scripts/generated_data/registry.py", produced_result.code_consumed)
+            self.assertIn("scripts/generated_data/shops/schema.py", produced_result.code_consumed)
+            self.assertIn("scripts/generated_data/shops/generate.py", produced_result.code_consumed)
+            self.assertIn("scripts/generated_data/shops/inventory.py", produced_result.code_consumed)
+            self.assertNotIn("scripts/generated_data/autoplaystrategies/schema.py", produced_result.code_consumed)
+            self.assertEqual(
+                {(item.path, item.data) for item in produced_result.generated},
+                {
+                    (out_c, expected_c),
+                    (out_inventory, expected_inventory),
+                },
+            )
+        self.assert_clean(session)
+        with self.session(seconds=60) as session:
+            planning = python_command(
+                session,
+                body,
+                ("src/data/ch2_shops.json", out_c, out_inventory),
+                sources=("src/data/ch2_shops.json", "include/constants/items.h"),
+                outputs=(out_c, out_inventory),
+                code=("generate_shops.py",),
+            )
+            command = replace(
+                planning,
+                argv=(
+                    "/usr/bin/python3", "-I", "-S", "-B", "/repo/generate_shops.py",
+                    "src/data/ch2_shops.json", out_c, out_inventory,
+                ),
+            )
+            observed = session.make(
+                "all", variables=("MAKE_RESTARTS",), owner_inputs=("Makefile",), commands={event: command},
+            )
+            self.assertEqual(
+                {item["name"] for item in observed.semantics["files"][0]["prerequisites"]},
+                {out_c, out_inventory},
+            )
+            dynamic, = observed.semantics["dynamic_commands"]
+            self.assertEqual(
+                {path: digest for path, _mode, digest in dynamic["generated_outputs"]},
+                {
+                    out_c: hashlib.sha256(expected_c).hexdigest(),
+                    out_inventory: hashlib.sha256(expected_inventory).hexdigest(),
+                },
+            )
+            self.assertFalse((session.tree / "build").exists())
+        self.assert_clean(session)
 
     def test_python_command_root_enumeration_requires_declaration(self):
         self.add("data/value.txt", "captured")

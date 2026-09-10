@@ -39,6 +39,14 @@ class SchemaRegistry:
     def _declared_versions(self, name):
         return sorted(version for declared_name, version in self._declared if declared_name == name)
 
+    def _validate_declared_name(self, name):
+        if not isinstance(name, str) or not name:
+            raise GeneratedDataError("schema name must be a nonempty string")
+
+    def _validate_declared_version(self, version):
+        if isinstance(version, bool) or not isinstance(version, int) or version < 1:
+            raise GeneratedDataError("schema version must be a positive integer")
+
     def register(self, schema):
         key = (schema.name, schema.version)
         self._declare_key(key)
@@ -46,6 +54,8 @@ class SchemaRegistry:
         return schema
 
     def register_factory(self, name, version, factory):
+        self._validate_declared_name(name)
+        self._validate_declared_version(version)
         key = (name, version)
         if key in self._declared:
             raise GeneratedDataError(
@@ -60,6 +70,7 @@ class SchemaRegistry:
         return factory
 
     def resolve(self, name, version=None):
+        self._validate_declared_name(name)
         if version is None:
             candidates = self._declared_versions(name)
             if not candidates:
@@ -69,6 +80,8 @@ class SchemaRegistry:
                     )
                 )
             version = candidates[-1]
+        else:
+            self._validate_declared_version(version)
         key = (name, version)
         if key in self._schemas:
             return self._schemas[key]

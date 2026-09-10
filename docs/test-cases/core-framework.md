@@ -447,7 +447,7 @@ not proof that broader ownership graphs fit their budgets.
   — `scripts/generated_data/tests/test_schema.py`.
 - `python3 -m unittest scripts.generated_data.tests.test_cli_new_tables.CliShopsTests.test_lazy_registry_shops_cli_matches_direct_eager_schema_outputs -v`
   — `scripts/generated_data/tests/test_cli_new_tables.py`.
-- `python3 -m unittest scripts.validation_ownership.tests.test_foundation.FoundationTests.test_real_generated_registry_commands_keep_lazy_runtime_imports_and_complete_static_code_admission -v`
+- `python3 -m unittest scripts.validation_ownership.tests.test_foundation.FoundationTests.test_real_generated_registry_commands_keep_lazy_runtime_imports_and_complete_static_code_admission scripts.validation_ownership.tests.test_foundation.FoundationTests.test_lazy_generated_registry_shops_generation_publishes_expected_outputs_through_make -v`
   — `scripts/validation_ownership/tests/test_foundation.py`.
 - `python3 -m unittest scripts.docs_check_tests.test_check_docs.TesterCaseRegistryTests.test_generated_data_platform_cases_are_indexed_with_complete_procedures -v`
   — `scripts/docs_check_tests/test_check_docs.py`.

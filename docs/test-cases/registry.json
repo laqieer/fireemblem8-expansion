@@ -2073,7 +2073,7 @@
           "evidence": "scripts/generated_data/tests/test_cli_new_tables.py"
         },
         {
-          "command": "python3 -m unittest scripts.validation_ownership.tests.test_foundation.FoundationTests.test_real_generated_registry_commands_keep_lazy_runtime_imports_and_complete_static_code_admission -v",
+          "command": "python3 -m unittest scripts.validation_ownership.tests.test_foundation.FoundationTests.test_real_generated_registry_commands_keep_lazy_runtime_imports_and_complete_static_code_admission scripts.validation_ownership.tests.test_foundation.FoundationTests.test_lazy_generated_registry_shops_generation_publishes_expected_outputs_through_make -v",
           "evidence": "scripts/validation_ownership/tests/test_foundation.py"
         },
         {

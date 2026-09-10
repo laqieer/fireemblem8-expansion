@@ -134,6 +134,39 @@ class SchemaRegistryTests(unittest.TestCase):
         with self.assertRaises(GeneratedDataError):
             registry.register_factory("dummy", 1, object())
 
+    def test_register_factory_rejects_malformed_declared_keys_without_mutation(self):
+        registry = SchemaRegistry()
+        schema = registry.register(DummySchema())
+
+        class OtherSchema(TableSchema):
+            name = "other"
+            version = 1
+
+        for name, version in (
+            ("", 1),
+            ([], 1),
+            ({}, 1),
+            (1, 1),
+            (1.5, 1),
+            ("other", []),
+            ("other", {}),
+            ("other", "1"),
+            ("other", 1.5),
+            ("other", True),
+            ("other", False),
+            ("other", 0),
+            ("other", -1),
+        ):
+            with self.subTest(name=name, version=version):
+                with self.assertRaises(GeneratedDataError):
+                    registry.register_factory(name, version, lambda: OtherSchema())
+                self.assertEqual(registry.all_names(), ["dummy"])
+                self.assertIs(registry.resolve("dummy"), schema)
+        factory = registry.register_factory("other", 1, OtherSchema)
+        self.assertIs(factory, OtherSchema)
+        self.assertEqual(registry.all_names(), ["dummy", "other"])
+        self.assertEqual((registry.resolve("other").name, registry.resolve("other").version), ("other", 1))
+
     def test_lazy_factory_wrong_identity_is_not_cached(self):
         registry = SchemaRegistry()
         calls = []
@@ -213,6 +246,31 @@ class SchemaRegistryTests(unittest.TestCase):
             registry.resolve("dummy", 1)
         self.assertIn("unknown schema 'dummy' version 1", str(ctx.exception))
         self.assertIn("('dummy', 2)", str(ctx.exception))
+
+    def test_resolve_rejects_malformed_requested_keys_without_mutation(self):
+        registry = SchemaRegistry()
+        schema = registry.register(DummySchema())
+        for name, version in (
+            ("", None),
+            ([], None),
+            ({}, None),
+            ("dummy", []),
+            ("dummy", {}),
+            ("dummy", "1"),
+            ("dummy", 1.5),
+            ("dummy", True),
+            ("dummy", False),
+            ("dummy", 0),
+            ("dummy", -1),
+        ):
+            with self.subTest(name=name, version=version):
+                with self.assertRaises(GeneratedDataError):
+                    if version is None:
+                        registry.resolve(name)
+                    else:
+                        registry.resolve(name, version)
+                self.assertEqual(registry.all_names(), ["dummy"])
+                self.assertIs(registry.resolve("dummy"), schema)
 
     def test_real_registry_declares_same_16_table_names(self):
         from scripts.generated_data import registry  # noqa: F401  (registers schemas)
