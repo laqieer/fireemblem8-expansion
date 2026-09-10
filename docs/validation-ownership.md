@@ -711,8 +711,10 @@ session uses exactly four subjects under the unchanged bound: the exact
 checker revision plus domain-separated SHA-256 identities of the canonical
 complete path, edge-ID, and affected-consumer sets. The full sorted arrays
 remain explicit in the qualification and verifier selection; the digests only
-give the bounded review scope an identity and are not source-content ledgers,
-truncation, sampling, or independent authority. The same builder validates the
+give the bounded review scope an identity, not source-content ledgers,
+truncation, sampling, or independent authority. Paths are capped at the single
+review's200-file capacity before launch; edge/consumer arrays remain256.
+Every path still needs review. The same builder validates the
 live session/report/lease/ownership scope and the persisted record. That
 scope is delivered before review, not reconstructed from hashes afterward:
 `reviewed_evolution_context` supplies the complete explicit selection and

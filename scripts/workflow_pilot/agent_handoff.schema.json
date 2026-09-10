@@ -353,7 +353,7 @@
         "worktree": {"$ref": "#/$defs/absolute"},
         "checker_revision": {"$ref": "#/$defs/sha"},
         "changed_paths": {
-          "type": "array", "minItems": 1, "maxItems": 256,
+          "type": "array", "minItems": 1, "maxItems": 200,
           "uniqueItems": true, "items": {"$ref": "#/$defs/path"}
         },
         "changed_edge_ids": {

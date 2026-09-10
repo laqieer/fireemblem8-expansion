@@ -10,6 +10,7 @@ import re
 from typing import Any
 
 from scripts.workflow_pilot import agent_handoff, raw_diff_check
+from scripts.workflow_pilot.review_family import MAX_REVIEW_FILES
 from .authority import parse_json
 from .budget import MakeProbeError
 
@@ -24,10 +25,11 @@ REVIEW_SCOPE_DOMAIN = b"fe8-validation-ownership-reviewed-scope-v1\0"
 REVIEWED_EVIDENCE_PREFIX = "ownership-reviewed-"
 
 
-def _sorted_scope(values, label):
+def _sorted_scope(values, label, maximum=256):
     values = tuple(values)
     if (
         not values
+        or len(values) > maximum
         or tuple(sorted(set(values))) != values
         or any(not isinstance(value, str) or not value for value in values)
     ):
@@ -39,7 +41,7 @@ def reviewed_evolution_scope(checker_revision, paths, edge_ids, consumer_ids):
     if not re.fullmatch(r"[0-9a-f]{40}", checker_revision):
         raise MakeProbeError("reviewed evolution scope requires an exact checker revision")
     members = (
-        ("paths", _sorted_scope(paths, "changed path")),
+        ("paths", _sorted_scope(paths, "changed path", MAX_REVIEW_FILES)),
         ("edges", _sorted_scope(edge_ids, "changed edge")),
         ("consumers", _sorted_scope(consumer_ids, "affected consumer")),
     )
@@ -63,7 +65,7 @@ def reviewed_evolution_context(checker_revision, paths, edge_ids, consumer_ids, 
         "case_id": REVIEW_CASE_ID, "repository": repository, "pull_request": pull_request,
         "base_sha": base_sha, "candidate_sha": candidate_sha, "worktree": str(worktree),
         "checker_revision": checker_revision,
-        "changed_paths": list(_sorted_scope(paths, "changed path")),
+        "changed_paths": list(_sorted_scope(paths, "changed path", MAX_REVIEW_FILES)),
         "changed_edge_ids": list(_sorted_scope(edge_ids, "changed edge")),
         "affected_consumers": list(_sorted_scope(consumer_ids, "affected consumer")),
     }
@@ -142,9 +144,6 @@ class ReviewedEvolutionQualification:
         for value in (self.base_sha, self.candidate_sha, self.checker_revision):
             if not re.fullmatch(r"[0-9a-f]{40}", value):
                 raise MakeProbeError("reviewed evolution qualification requires exact SHA identities")
-        _sorted_scope(self.changed_paths, "changed path")
-        _sorted_scope(self.changed_edge_ids, "changed edge")
-        _sorted_scope(self.affected_consumers, "affected consumer")
         if (
             not isinstance(self.repository, str)
             or not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", self.repository)

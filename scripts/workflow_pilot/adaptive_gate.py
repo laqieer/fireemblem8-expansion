@@ -22,6 +22,7 @@ from . import coordinator_observations as observations
 from . import event_classifier
 from . import pr_metadata as github
 from . import reporter
+from .review_family import MAX_REVIEW_FILES
 
 
 HIGH_RISKS = frozenset({"protocol", "replay", "transport", "security", "save",
@@ -1152,7 +1153,7 @@ def validate_review_qualification(value):
     for key in ("base_sha", "candidate_sha", "checker_revision"):
         handoff.sha(value[key])
     handoff.absolute_path(value["worktree"])
-    for path in handoff.items(value["changed_paths"], minimum=1, maximum=256, unique=True):
+    for path in handoff.items(value["changed_paths"], minimum=1, maximum=MAX_REVIEW_FILES, unique=True):
         handoff.path(path)
     for key in ("changed_edge_ids", "affected_consumers"):
         for item in handoff.items(value[key], minimum=1, maximum=256, unique=True):

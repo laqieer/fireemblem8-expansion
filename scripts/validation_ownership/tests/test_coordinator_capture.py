@@ -293,13 +293,16 @@ class ReviewedEvolutionCaptureTests(unittest.TestCase):
     def test_explicit_review_context_is_delivered_before_qualification(self):
         started = []
         original = Runtime.start
+        paths = tuple(f"scope/file-{index:03d}.txt" for index in range(review.MAX_REVIEW_FILES))
 
         def observe(runtime, **arguments):
             started.append(copy.deepcopy(arguments))
             return original(runtime, **arguments)
 
         with patch.object(Runtime, "start", new=observe):
-            state, record, pr, _, session, qualification, _ = self.coordinator()
+            state, record, pr, _, session, qualification, _ = self.coordinator(
+                paths=paths, session_changes={"files": review.MAX_REVIEW_FILES},
+            )
         self.assertIn("context", started[0])
         context = started[0]["context"]
         self.assertEqual(context["changed_paths"], list(qualification.changed_paths))
@@ -312,6 +315,14 @@ class ReviewedEvolutionCaptureTests(unittest.TestCase):
         self.assertEqual(json.loads(session.lease.context), context)
         self.assertEqual(json.loads(session.report.context), context)
         qualification.validate_binding(state, record, pr)
+        report = session.report
+        session.report = replace(report, files=len(paths) - 1)
+        with self.assertRaises(MakeProbeError):
+            qualification.validate_binding(state, record, pr)
+        session.report = report
+        with patch.object(Runtime, "start") as launch, self.assertRaises(MakeProbeError):
+            self.coordinator(paths=(*paths, "scope/overflow.txt"))
+        launch.assert_not_called()
         session.report = replace(session.report, context=None)
         with self.assertRaisesRegex(MakeProbeError, "explicit review context"):
             qualification.validate_binding(state, record, pr)

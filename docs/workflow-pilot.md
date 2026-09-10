@@ -400,9 +400,10 @@ binding, exact candidate record and clean worktree. Registration stores that
 qualification beside the normal definitions; the trusted verifier capture
 joins it to the actual repository/PR/BASE/head assignment. Its review scope is
 four subjects: exact checker revision and domain-separated canonical digests
-of the complete explicit path, edge-ID, and affected-consumer arrays. All
-arrays keep their existing 256-item bounds and exact ordering/duplicate/type
-validation; the unchanged 40-subject review and handoff caps are not raised.
+of the complete explicit path, edge-ID, and affected-consumer arrays. Paths
+are limited to the single review's 200-file capacity before launch; edge and
+consumer arrays remain bounded at256, with exact ordering/duplicate/type
+validation. The 40-subject caps and all-path coverage requirement are unchanged.
 Calls to
 `coordinator_local_ready` and `assess_candidate` must supply that same live
 qualification. Missing, partial, stale or different review/checker/path/edge/

@@ -343,6 +343,19 @@ class CoordinatorLocalTests(unittest.TestCase):
             "findings": [],
         }
         self.assertTrue(review_schema.is_valid(request))
+        boundary = review_qualification(
+            local, tuple(f"scope/file-{index:03d}" for index in range(200)),
+            tuple(f"edge-{index:03d}" for index in range(256)),
+            tuple(f"consumer-{index:03d}" for index in range(256)),
+        )
+        local["review_qualification"] = boundary
+        self.assertTrue(handoff_schema.is_valid(self.state))
+        handoff.validate_state(self.state)
+        boundary["changed_paths"].append("scope/overflow")
+        self.assertFalse(handoff_schema.is_valid(self.state))
+        with self.assertRaises(ValueError):
+            handoff.validate_state(self.state)
+        local["review_qualification"] = qualification
 
         for key, changed_value in (
             ("checker_revision", "f" * 40),
