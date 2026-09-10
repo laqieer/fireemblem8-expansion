@@ -293,6 +293,20 @@ class ReviewedEvolutionVerifierTests(unittest.TestCase):
             "--expected-mode", "exact-base-pinned",
         )
 
+    def test_complete_direct_verifier_needs_used_authority_not_auxiliary_make_gate(self):
+        (self.fixture.root / "scripts/validation_ownership/ci_gate.mk").unlink(missing_ok=True)
+        self.fixture.add("src/data/table.json", '{"version":2}\n')
+        revision = self.fixture.commit("Exercise direct verifier without auxiliary Make gate")
+        trusted = self.trusted_root(revision)
+        self.addCleanup(lambda: trusted.exists() and shutil.rmtree(trusted))
+        completed = self.verify(trusted, *self.exact_arguments(revision, revision))
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertEqual(json.loads(completed.stdout)["mode"], "exact-base-pinned")
+        (trusted / "scripts/validation_ownership/reporter.py").unlink()
+        missing_authority = self.verify(trusted, *self.exact_arguments(revision, revision))
+        self.assertNotEqual(missing_authority.returncode, 0)
+        self.assertFalse(missing_authority.stdout.strip())
+
     def test_exact_verifier_reuses_one_trusted_tree_for_two_actual_captures(self):
         revision = self.fixture.git("rev-parse", "HEAD").decode().strip()
         trusted = self.trusted_root(revision)

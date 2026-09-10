@@ -1184,8 +1184,8 @@ def validate_review_qualification(value):
     handoff.fields(value["git_identity"], "worktree git_dir common_dir device inode")
     for key in ("worktree", "git_dir", "common_dir"):
         handoff.absolute_path(value["git_identity"][key])
-    for key in ("device", "inode"):
-        handoff.integer(value["git_identity"][key])
+    handoff.integer(value["git_identity"]["device"])
+    handoff.integer(value["git_identity"]["inode"], minimum=1)
 
 
 def validate_local_validation(local):
@@ -1207,8 +1207,8 @@ def validate_local_validation(local):
     handoff.fields(local["git_identity"], "worktree git_dir common_dir device inode")
     for key in ("worktree", "git_dir", "common_dir"):
         handoff.absolute_path(local["git_identity"][key])
-    for key in ("device", "inode"):
-        handoff.integer(local["git_identity"][key])
+    handoff.integer(local["git_identity"]["device"])
+    handoff.integer(local["git_identity"]["inode"], minimum=1)
     _validate_local_checks(local["required_checks"])
     if "review_qualification" in local:
         validate_review_qualification(local["review_qualification"])

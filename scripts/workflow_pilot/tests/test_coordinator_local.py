@@ -278,6 +278,38 @@ class CoordinatorLocalTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 handoff.validate_state(changed)
 
+    def test_local_and_review_git_identity_match_schema_numeric_bounds(self):
+        self.complete()
+        validator = Draft202012Validator(json.loads(
+            (ROOT / "scripts/workflow_pilot/agent_handoff.schema.json").read_text()))
+        for qualified in (False, True):
+            valid = copy.deepcopy(self.state)
+            local = valid["candidates"][0]["local_validation"]
+            local["git_identity"].update(device=0, inode=1)
+            if qualified:
+                local["review_qualification"] = review_qualification(
+                    local, (".github/validation-ownership-graph.json",),
+                    ("source.owns-test",), ("surface.source",),
+                )
+                gate.validate_review_qualification(local["review_qualification"])
+            self.assertTrue(validator.is_valid(valid))
+            handoff.validate_state(valid)
+            for field, value in (
+                ("inode", 0), ("inode", -1), ("inode", False),
+                ("device", -1), ("device", False),
+            ):
+                with self.subTest(qualified=qualified, field=field, value=value):
+                    changed = copy.deepcopy(valid)
+                    changed_local = changed["candidates"][0]["local_validation"]
+                    changed_local["git_identity"][field] = value
+                    if qualified:
+                        changed_local["review_qualification"]["git_identity"][field] = value
+                        with self.assertRaises(ValueError):
+                            gate.validate_review_qualification(changed_local["review_qualification"])
+                    self.assertFalse(validator.is_valid(changed))
+                    with self.assertRaises(ValueError):
+                        handoff.validate_state(changed)
+
     def test_actual_full_graph_scope_fits_both_unchanged_subject_caps(self):
         local = self.complete()
         graph = json.loads((ROOT / ".github/validation-ownership-graph.json").read_text())

@@ -656,9 +656,9 @@ clean base tree there. It never removes or creates a verifier staging path
 through the candidate checkout; base and candidate Make/registry probes use a
 mode-`0700` runtime child under the same external trusted root, and cleanup
 removes only that unchanged external identity. CI starts the extracted
-`ci_verifier.py` directly with `-I -S -B`, not through `ci_gate.mk` or another
-Make invocation. The Make-based base gate remains a trusted-invocation
-convenience only. The standalone base verifier verifies every
+`ci_verifier.py` directly with `-I -S -B`, before any Make invocation.
+The root Make target remains a trusted-invocation convenience only.
+The standalone base verifier verifies every
 staged verifier package file and every loaded transitive `scripts.*` module
 against independently selected immutable source, excludes the candidate
 checkout from `sys.path`, and reads CURRENT and BASE through separate real

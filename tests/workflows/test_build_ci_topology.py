@@ -272,7 +272,6 @@ VALIDATION_OWNERSHIP_TEMP_ENV = (
 VALIDATION_OWNERSHIP_BASE_REQUIRED_PATHS = (
     ".github/validation-ownership-graph.json",
     ".github/validation-ownership-make-dynamics.json",
-    "scripts/validation_ownership/ci_gate.mk",
     "scripts/validation_ownership/ci_verifier.py",
     "scripts/validation_ownership/generated_registry_probe.py",
     "scripts/validation_ownership/graph.schema.json",

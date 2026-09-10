@@ -50,7 +50,6 @@ AUTHORITY_BY_MODE = {
 }
 TRUSTED_RUNTIME_PATHS = frozenset(
     {
-        f"{TRUSTED_PREFIX}ci_gate.mk",
         f"{TRUSTED_PREFIX}ci_verifier.py",
         f"{TRUSTED_PREFIX}generated_registry_probe.py",
         f"{TRUSTED_PREFIX}graph.schema.json",

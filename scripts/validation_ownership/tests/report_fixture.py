@@ -23,7 +23,7 @@ class ReportFixture:
             if "build" not in path.relative_to(ROOT).parts and "__pycache__" not in path.parts:
                 self.add(path.relative_to(ROOT).as_posix(), path.read_text())
         for name in ("dispatch.h", "make_observer.c", "shell_interceptor.c",
-                     "scaninc_sources.cpp", "graph.schema.json", "ci_gate.mk"):
+                     "scaninc_sources.cpp", "graph.schema.json"):
             self.add("scripts/validation_ownership/" + name,
                      (ROOT / "scripts/validation_ownership" / name).read_text())
         for name in ("scaninc.cpp", "scaninc.h", "source_file.cpp", "source_file.h",
