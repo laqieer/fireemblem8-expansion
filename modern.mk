@@ -38,6 +38,12 @@ MODERN_GOALS := \
 	expansion-modern-localization-budget \
 	expansion-modern-localization-budget-check \
 	expansion-modern-localization-profile-headroom-check \
+	expansion-modern-localization-profile-en-ja \
+	expansion-modern-localization-profile-en-zh-hans \
+	expansion-modern-localization-profile-en-ja-zh-hans \
+	expansion-modern-localization-profile-en-ja-zh-hans-qps \
+	expansion-modern-localization-profile-en-fr-de-es-it \
+	expansion-modern-localization-profile-all \
 	expansion-modern-localization-runtime-debug-check \
 	expansion-modern-localization-runtime-release-check \
 	expansion-modern-localization-runtime-multi-check \

@@ -166,6 +166,10 @@ When a command line mixes one of those safe goals with an archival/C-object or
 unknown goal, GNU Make still generates/includes the archival dependency files
 and restores the legacy scaninc prerequisites before compiling the legacy
 object.
+The same safe registry also covers the recursive pure-modern localization
+profile helpers used by
+`expansion-modern-localization-profile-headroom-check`, so that chain does not
+drop back into unrelated archival dependency remakes between sub-makes.
 That includes mixed requests such as `make expansion-modern-clean asm/arm.o`:
 the pure modern goal still avoids unrelated depfile remakes, but the explicit
 legacy non-C object keeps its scaninc-based include freshness.

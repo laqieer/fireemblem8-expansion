@@ -1,4 +1,5 @@
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -19,6 +20,21 @@ MAKE = Path("/usr/bin/make")
 CPP = Path("/usr/bin/cpp")
 CC = Path("/usr/bin/cc")
 TMP_ROOT = ROOT / "build" / "test-tmp"
+
+
+def recursive_make_targets(rule: str) -> tuple[str, ...]:
+    targets = []
+    for line in rule.splitlines():
+        stripped = line.strip()
+        if not stripped.startswith("+$(MAKE) "):
+            continue
+        for word in stripped.split()[1:]:
+            if word.startswith("expansion-modern-"):
+                targets.append(word)
+                continue
+            if "=" in word:
+                break
+    return tuple(dict.fromkeys(targets))
 
 
 class ArchivalDependencyFixture:
@@ -229,6 +245,11 @@ class ArchivalDependencyFragmentTests(unittest.TestCase):
         self.addCleanup(temporary.cleanup)
         return ArchivalDependencyFixture(temporary, **options)
 
+    def root_make_database(self) -> str:
+        result = self.make_fixture().make("-rR", "-np", "expansion-modern-clean", cwd=ROOT)
+        self.assertEqual(result.returncode, 0, result.stdout[-4000:])
+        return result.stdout
+
     def test_safe_host_and_default_goals_skip_archival_dependency_generation(self):
         cases = [
             ((), "expansion-modern-clean.stamp"),
@@ -404,9 +425,8 @@ class ArchivalDependencyFragmentTests(unittest.TestCase):
             "game-localization-text-edits-check",
         )
         fixture = self.make_fixture(make_prelude="PYTHON3 := true")
-        database = fixture.make("-rR", "-np", "expansion-modern-clean", cwd=ROOT)
-        self.assertEqual(database.returncode, 0, database.stdout[-4000:])
-        rule = make_database_rule(database.stdout, "game-localization-test")
+        database = self.root_make_database()
+        rule = make_database_rule(database, "game-localization-test")
         self.assertIsNotNone(rule)
         with (fixture.root / "Makefile").open("a", encoding="utf-8") as makefile:
             makefile.write("\n.PHONY: game-localization-test\n" + rule + "\n")
@@ -416,6 +436,100 @@ class ArchivalDependencyFragmentTests(unittest.TestCase):
         self.assertEqual(fixture.log_lines(fixture.goal_log), list(children))
         self.assertEqual(fixture.log_lines(fixture.cpp_log), [], result.stdout)
         self.assertFalse(fixture.depfile.exists())
+
+    def test_recursive_modern_helper_targets_are_closed_over_modern_goal_registry(self):
+        database = self.root_make_database()
+        headroom_rule = make_database_rule(
+            database, "expansion-modern-localization-profile-headroom-check"
+        )
+        self.assertIsNotNone(headroom_rule)
+        recursive_targets = recursive_make_targets(headroom_rule)
+        self.assertEqual(
+            recursive_targets,
+            (
+                "expansion-modern-localization-profile-en-ja",
+                "expansion-modern-localization-profile-en-zh-hans",
+                "expansion-modern-localization-profile-en-ja-zh-hans",
+                "expansion-modern-localization-profile-en-ja-zh-hans-qps",
+            ),
+        )
+        modern_goals = make_database_variable(database, "MODERN_GOALS")
+        self.assertIsNotNone(modern_goals)
+        modern_goal_set = set(re.findall(r"expansion-modern-[A-Za-z0-9_-]+", modern_goals))
+        self.assertTrue(set(recursive_targets) <= modern_goal_set)
+        scan_safe = make_database_variable(database, "MAKECMDGOALS_NOSCANINC")
+        self.assertIsNotNone(scan_safe)
+        self.assertTrue(set(recursive_targets) <= set(scan_safe.split()))
+
+    def test_recursive_modern_helper_chain_skips_archival_scaninc(self):
+        database = self.root_make_database()
+        headroom_target = "expansion-modern-localization-profile-headroom-check"
+        helper_targets = recursive_make_targets(
+            make_database_rule(database, headroom_target)
+        )
+        fixture = self.make_fixture(
+            make_prelude=(
+                "MODERN_GOALS += expansion-modern-rom "
+                "expansion-modern-localization-profile-headroom-check "
+                + " ".join(helper_targets)
+                + "\n"
+                "MODERN_CONFIG ?= debug\n"
+                "MODERN_ABI ?= aapcs\n"
+                "PYTHON := /bin/true\n"
+                "MODERN_READELF := /usr/bin/true\n"
+                "MODERN_LOCALE_PROFILE_EN_JA_ROOT := build/en-ja\n"
+                "MODERN_LOCALE_PROFILE_EN_ZH_HANS_ROOT := build/en-zh-hans\n"
+                "MODERN_LOCALE_PROFILE_EN_JA_ZH_HANS_ROOT := build/en-ja-zh-hans\n"
+                "MODERN_LOCALE_PROFILE_EN_JA_ZH_HANS_QPS_ROOT := build/en-ja-zh-hans-qps\n"
+                "MODERN_LOCALE_PROFILE_EN_JA_OUTPUT_DIR := $(MODERN_LOCALE_PROFILE_EN_JA_ROOT)/$(MODERN_CONFIG)/$(MODERN_ABI)\n"
+                "MODERN_LOCALE_PROFILE_EN_ZH_HANS_OUTPUT_DIR := $(MODERN_LOCALE_PROFILE_EN_ZH_HANS_ROOT)/$(MODERN_CONFIG)/$(MODERN_ABI)\n"
+                "MODERN_LOCALE_PROFILE_EN_JA_ZH_HANS_OUTPUT_DIR := $(MODERN_LOCALE_PROFILE_EN_JA_ZH_HANS_ROOT)/$(MODERN_CONFIG)/$(MODERN_ABI)\n"
+                "MODERN_LOCALE_PROFILE_EN_JA_ZH_HANS_QPS_OUTPUT_DIR := $(MODERN_LOCALE_PROFILE_EN_JA_ZH_HANS_QPS_ROOT)/$(MODERN_CONFIG)/$(MODERN_ABI)\n"
+            )
+        )
+        with (fixture.root / "Makefile").open("a", encoding="utf-8") as makefile:
+            makefile.write(
+                "\n.PHONY: expansion-modern-rom "
+                + " ".join((headroom_target, *helper_targets))
+                + "\n"
+            )
+            for target in (*helper_targets, headroom_target):
+                rule = make_database_rule(database, target)
+                self.assertIsNotNone(rule, target)
+                makefile.write(rule + "\n\n")
+            makefile.write(
+                "expansion-modern-rom:\n"
+                "\t@printf 'rom %s\\n' \"$(MODERN_BUILD_ROOT)\" >> $(CURDIR)/goal.log\n"
+                "\t@mkdir -p \"$(MODERN_BUILD_ROOT)/$(MODERN_CONFIG)/$(MODERN_ABI)\"\n"
+                "\t@touch \"$(MODERN_BUILD_ROOT)/$(MODERN_CONFIG)/$(MODERN_ABI)/fireemblem8.elf\"\n"
+                "\t@touch \"$(MODERN_BUILD_ROOT)/$(MODERN_CONFIG)/$(MODERN_ABI)/fireemblem8.map\"\n"
+            )
+
+        result = fixture.make(headroom_target)
+        self.assertEqual(result.returncode, 0, result.stdout)
+        self.assertEqual(fixture.log_lines(fixture.scan_log), [])
+        self.assertFalse(fixture.depfile.exists(), result.stdout)
+        self.assertEqual(
+            fixture.log_lines(fixture.goal_log),
+            [
+                "rom build/en-ja",
+                "rom build/en-zh-hans",
+                "rom build/en-ja-zh-hans",
+                "rom build/en-ja-zh-hans-qps",
+            ],
+        )
+
+        fixture.scan_log.unlink(missing_ok=True)
+        control = fixture.make(
+            headroom_target,
+            "NODEP=",
+            "ARCHIVAL_SCANINC_NODEP=",
+            "MAKECMDGOALS_NOSCANINC=expansion-modern-localization-profile-headroom-check",
+        )
+        self.assertEqual(control.returncode, 0, control.stdout)
+        scan_calls = fixture.log_lines(fixture.scan_log)
+        self.assertIn('-I include -I  asm/scan_fixture.s', scan_calls)
+        self.assertIn('-I include -I  src/data/scan_fixture.c', scan_calls)
 
     def test_mixed_modern_and_non_c_goals_preserve_incremental_scaninc_rebuilds(self):
         for tool in (Path("/usr/bin/as"), Path("/usr/bin/g++")):
@@ -492,9 +606,8 @@ class ArchivalDependencyFragmentTests(unittest.TestCase):
                 "MODERN_GOALS += expansion-modern-boot-check expansion-modern-legacy-ready\n"
             ),
         )
-        database = fixture.make("-rR", "-np", "expansion-modern-clean", cwd=ROOT)
-        self.assertEqual(database.returncode, 0, database.stdout[-4000:])
-        rules = [make_database_rule(database.stdout, name) for name in (
+        database = self.root_make_database()
+        rules = [make_database_rule(database, name) for name in (
             "all", "expansion-modern-legacy-ready",
         )]
         self.assertTrue(all(rule is not None for rule in rules))
@@ -554,7 +667,7 @@ class ArchivalDependencyFragmentTests(unittest.TestCase):
             "MODERN_ELF_LEGACY_MIDI", "BANIM_OBJECT", "C_OBJECTS",
             "DATA_SRC_C_OBJECTS",
         ):
-            value = make_database_variable(database.stdout, name)
+            value = make_database_variable(database, name)
             self.assertIsNotNone(value, name)
             inventories[name] = set(value.split())
         non_c_goals = (
