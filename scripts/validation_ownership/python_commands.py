@@ -526,12 +526,7 @@ def generated_dependency_command(
             "output=Path('/work') / Path(sys.argv[2])\n"
             "output.parent.mkdir(parents=True,exist_ok=True)\n"
             "content=module.render_depfile(sys.argv[3],[rooted(path) for path in inputs])\n"
-            "try:\n"
-            " existing=output.read_text(encoding='utf-8')\n"
-            "except OSError:\n"
-            " existing=None\n"
-            "if existing != content:\n"
-            " output.write_text(content,encoding='utf-8')\n"
+            "output.write_text(content,encoding='utf-8')\n"
         ),
         (
             module,

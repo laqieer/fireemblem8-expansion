@@ -127,6 +127,11 @@ publication come from the real module render/writer behavior, not guessed
 filenames or fabricated empty output. The same API is reusable for asset
 discovery/publication, registry source selection and later graph adoption
 without importing graph-specific code into the foundation.
+Each command writes the real renderer's bytes into its fresh private output
+directory; the existing native publication protocol owns installation into
+Make's source view. The ordinary CLI writer's temporary-file rename is not
+invoked inside the command capsule, where directory-entry relocation remains
+forbidden. No existing-output read error is swallowed by this adapter.
 
 ## One live native execution
 
