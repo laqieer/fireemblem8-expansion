@@ -4510,6 +4510,15 @@ refund raw observation cost, move charges to another category, or materialize a
 second complete decoded frame at the parent. Unsupported metadata replay and
 selected-view mismatches must still reject or re-execute exactly as before.
 
+### Interactions and save compatibility
+
+Depends on the delivered source authority, native producer, immutable-view,
+runtime-input and dependency-compiler contracts (#206, #225, #226, #227 and
+#228). Cached native commands and Python producers share this transport;
+#180/#186 consumes it downstream. No additional feature conflicts apply. Save
+formats, configuration identity, generated game data, localization, ROM/RAM,
+modern/archival profiles and existing replay ABI remain unchanged.
+
 ### Automation
 
 The focused command above runs the real command, Make, runtime-input,
