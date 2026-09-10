@@ -5187,6 +5187,99 @@ parents if desired. No manual-only criterion applies. This bounded prototype
 does not claim full #180/#186 graph fit, attributed producer accounting or
 remote completion; broader integration remains a downstream gate.
 
+## TC-PROBE-NATIVE-EVENT-ORDER-001: Validate native events in physical append order
+
+### Feature and configuration
+
+Issue [#246](https://github.com/laqieer/fireemblem8-expansion/issues/246);
+the supported Linux x86-64/GNU Make ownership-probe foundation with its
+existing native producer interceptor, ptrace supervisor and private namespace
+route. Start from a clean source checkout. Fixtures and deterministic schedule
+proofs remain under owned ignored `build/test-artifacts`; no ROM, graph query,
+new service, privilege, dependency, runtime platform, remote action or limit
+change is involved.
+
+### Actions
+
+1. Run the focused automation below.
+2. Execute the real two-helper `make -j2` producer fixture with the deterministic
+   test supervisor. Let both helpers issue their unchanged single complete
+   `O_APPEND` writes, but return the successful ptrace write-exit stops in the
+   reverse order. Record the physical file bytes and the supervisor's exact
+   successful-write bytes without rewriting either.
+3. Decode the physical stream with the production wire parser. Compare exact
+   frame bytes with multiplicity against the successful full-write
+   observations, then verify the returned events, distinct slots, output values
+   and publication receipts follow physical append order.
+4. Run the ordinary unscheduled parallel case. Inject missing, extra,
+   duplicated and bit-flipped physical frames and observations, plus partial
+   and trailing physical bytes. Pair consistent mutations for wrong slot,
+   mapping count, command and hash so no sequence-only mismatch hides the
+   underlying receipt or frame guard.
+5. Reuse the existing parked-helper, malformed producer request, nested
+   publication-transfer, event/control budget and cleanup controls. Require
+   every invalid transcript to terminate without partial success or retained
+   output.
+
+### Expected result
+
+The controlled run succeeds with both real output values and two distinct
+receipts. Exact physical frame bytes and successful write observations have
+equal multisets, while their deliberately reversed sequences differ. Returned
+events follow the physical file sequence. The ordinary case remains supported,
+and successful full-write checks, slot/command/hash/mapping-count validation,
+publication acknowledgement, cumulative accounting and owned cleanup retain
+their existing behavior.
+
+### Negative control
+
+The pre-fix implementation rejects the controlled legitimate schedule with
+`trusted interceptor frame differs from its native write`. Missing, extra,
+duplicate, corrupt, partial or trailing physical/observed data must still
+reject. A duplicated exact frame cannot satisfy two receipt slots; consistently
+rewritten slot, command, hash or mapping-count bytes cannot pass the existing
+wire and receipt checks. Partial writes, incomplete producer/publication
+evidence, exhausted event/control budgets and failed cleanup never become
+success-shaped output.
+
+### Interactions and save compatibility
+
+Depends on the delivered #206/#212 foundation and #225/#232 native producer
+protocol, and composes with delivered #240/#241 metadata transport. #242/#245
+and #243/#244 are independent. #180/#186 and other native consumers use the
+same corrected foundation. Conflicts: **none**. The on-disk/supervisor ABI,
+atomic append, scheduling, parking, privileges, public APIs and all numeric
+limits remain unchanged.
+
+No gameplay, save/migration/config identity, generated game data, localization,
+ROM/RAM, modern debug/release or archival profile changes apply.
+
+### Automation
+
+```sh
+python3 -m unittest \
+  scripts.validation_ownership.tests.test_producer.ProducerTests.test_native_parallel_events_follow_physical_append_order_not_exit_stop_order \
+  scripts.validation_ownership.tests.test_producer.ProducerTests.test_native_parallel_dispatch_keeps_distinct_request_receipts \
+  scripts.validation_ownership.tests.test_producer.ProducerTests.test_native_event_stream_and_write_observations_match_exact_bytes_with_multiplicity \
+  scripts.validation_ownership.tests.test_foundation.FoundationTests.test_serial_resolution_rejects_known_mapping_miss_without_rerunning_worker \
+  scripts.validation_ownership.tests.test_foundation.FoundationTests.test_strict_named_protocols_reject_binary_and_truncated_frames \
+  scripts.validation_ownership.tests.test_foundation.FoundationTests.test_event_mapping_and_pending_byte_bounds_cover_real_commands \
+  scripts.validation_ownership.tests.test_producer.ProducerTests.test_parked_helper_death_aborts_without_publication \
+  scripts.validation_ownership.tests.test_producer.ProducerTests.test_nested_publication_transfer_rejects_corruption_and_never_retries_work -v
+```
+
+This single focused path owns the deterministic reversed-exit proof, ordinary
+parallel behavior, exact-byte/multiplicity adversaries, shared parser framing,
+incomplete publication evidence, unchanged budgets and cleanup.
+
+### Cleanup and limitations
+
+The tests remove only their owned fixture roots, generated publications and
+schedule proof. No manual-only criterion applies. The schedule controls ptrace
+notification delivery only; it does not alter helper frame bytes, receipt IDs,
+kernel writes, producer authority or production scheduling. This focused case
+does not claim complete #180/#186 graph integration or remote completion.
+
 ## TC-PROBE-PYTHON-PRODUCERS-001: Share source-only Python producer commands
 
 ### Feature and configuration

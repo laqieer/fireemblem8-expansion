@@ -18,6 +18,7 @@ from unittest.mock import patch
 
 from scripts.workflow_pilot import review_family as model
 from scripts.workflow_pilot import trusted_review_gate as gate
+from scripts.workflow_pilot.tests import review_support as support
 from scripts.workflow_pilot.tests.review_support import ROOT, Runtime, git, request, snapshot
 
 
@@ -763,6 +764,46 @@ class CandidateCoverageTests(unittest.TestCase):
                 session.read_action("read-candidate", fixture["paths"]["symlink"])
             self.assertEqual(session.candidate_reads, {})
             self.assertEqual(session.attempted_candidate_paths, {fixture["paths"]["symlink"]})
+
+
+class ReviewFixtureGitTests(unittest.TestCase):
+    def test_review_support_git_disables_background_maintenance_and_still_runs_real_git(self):
+        with tempfile.TemporaryDirectory(prefix="review-support-git-", dir=ROOT / "build") as directory:
+            repo = Path(directory)
+
+            def raw_git(*args):
+                completed = subprocess.run(
+                    ["/usr/bin/git", "-C", str(repo), *args],
+                    env=support.ENV, capture_output=True, check=True, text=True)
+                return completed.stdout.strip()
+
+            raw_git("init", "-q")
+            raw_git("config", "user.email", "fixture@example.invalid")
+            raw_git("config", "user.name", "Fixture Test")
+            raw_git("config", "--local", "gc.auto", "7")
+            raw_git("config", "--local", "maintenance.auto", "true")
+            raw_git("config", "--local", "gc.autoDetach", "true")
+            raw_git("config", "--local", "maintenance.autoDetach", "true")
+
+            self.assertEqual(raw_git("config", "--local", "--get", "gc.auto"), "7")
+            self.assertEqual(raw_git("config", "--local", "--get", "maintenance.auto"), "true")
+            self.assertEqual(raw_git("config", "--local", "--type=bool", "--get", "gc.autoDetach"), "true")
+            self.assertEqual(raw_git("config", "--local", "--type=bool", "--get", "maintenance.autoDetach"), "true")
+
+            self.assertEqual(support.git(repo, "config", "--get", "gc.auto"), "0")
+            self.assertEqual(support.git(repo, "config", "--get", "maintenance.auto"), "0")
+            self.assertEqual(support.git(repo, "config", "--type=bool", "--get", "gc.autoDetach"), "false")
+            self.assertEqual(
+                support.git(repo, "config", "--type=bool", "--get", "maintenance.autoDetach"), "false")
+
+            (repo / "tracked.txt").write_text("fixture\n")
+            support.git(repo, "add", "tracked.txt")
+            support.git(repo, "commit", "-qm", "fixture commit")
+            head = support.git(repo, "rev-parse", "HEAD")
+            self.assertRegex(head, r"^[0-9a-f]{40}$")
+            self.assertEqual(support.git(repo, "show", "HEAD:tracked.txt"), "fixture")
+            self.assertEqual(raw_git("config", "--local", "--get", "gc.auto"), "7")
+            self.assertEqual(raw_git("config", "--local", "--get", "maintenance.auto"), "true")
 
 
 class RoundTests(unittest.TestCase):
