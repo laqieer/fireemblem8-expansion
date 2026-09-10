@@ -1181,6 +1181,12 @@ class TesterCaseRegistryTests(unittest.TestCase):
                             "make -f scripts/validation_ownership/foundation.mk ownership-probe-test",
                         },
                     },
+                    "TC-PROBE-METADATA-TRANSPORT-001": {
+                        "document": "docs/test-cases/workflow-governance.md",
+                        "commands": {
+                            "make -f scripts/validation_ownership/foundation.mk ownership-probe-test",
+                        },
+                    },
                 },
             },
         }
