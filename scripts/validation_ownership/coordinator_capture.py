@@ -141,9 +141,6 @@ class ReviewedEvolutionQualification:
     def validate_review(self):
         from scripts.workflow_pilot.review_family import encoded_review_context
 
-        for value in (self.base_sha, self.candidate_sha, self.checker_revision):
-            if not re.fullmatch(r"[0-9a-f]{40}", value):
-                raise MakeProbeError("reviewed evolution qualification requires exact SHA identities")
         if (
             not isinstance(self.repository, str)
             or not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", self.repository)
@@ -172,9 +169,6 @@ class ReviewedEvolutionQualification:
             or lease is None
             or not lease.finished
             or lease.outcome != "completed"
-            or not report.completed
-            or not report.read_only
-            or report.head != self.candidate_sha
             or report.subjects != self.review_scope()
             or report.owner in {session.coordinator, session.implementer}
             or report.files < len(self.changed_paths)
@@ -205,6 +199,13 @@ class ReviewedEvolutionQualification:
             raise MakeProbeError("reviewed evolution lacks its immutable tester-case binding")
         for path in REVIEW_CHECKER_PATHS:
             tools.tool_tree.oid(path)
+        try:
+            tools.model.require_candidate_path_coverage(
+                report, tools.candidate_changes(self.base_sha, self.candidate_sha, paths=self.changed_paths),
+                base_sha=self.base_sha, head_sha=self.candidate_sha, resolved_root=str(self.worktree),
+            )
+        except (AttributeError, ValueError) as error:
+            raise MakeProbeError(f"reviewed evolution lacks actual changed-path coverage: {error}") from error
 
     def validate_binding(self, state, record, pr):
         from scripts.workflow_pilot import adaptive_gate

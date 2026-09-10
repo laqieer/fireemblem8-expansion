@@ -25,7 +25,7 @@ from scripts.workflow_pilot import candidate_evidence, coordinator_observations 
 from scripts.workflow_pilot import pr_metadata as github, raw_diff_check as raw, review_family as review
 from scripts.workflow_pilot.tests.coordinator_support import at_offset, decisions, model_control
 from scripts.workflow_pilot.tests.review_support import Runtime
-from scripts.workflow_pilot.trusted_review_gate import GitTree, ReviewTools
+from scripts.workflow_pilot.trusted_review_gate import CandidateReader, GitTree, ReviewTools
 from .report_fixture import ReportFixture, reviewed_evolution_case
 
 
@@ -145,7 +145,8 @@ class ReviewedEvolutionCaptureTests(unittest.TestCase):
         with tarfile.open(fileobj=BytesIO(self.fixture.git("archive", self.case["base"]))) as archive:
             archive.extractall(self.trusted, filter="data")
 
-    def coordinator(self, *, head=None, paths=None, edges=None, consumers=None, session_changes=None):
+    def coordinator(self, *, head=None, paths=None, edges=None, consumers=None, session_changes=None,
+                    reads=None, reader=None):
         head = head or self.case["head"]
         paths = tuple(paths or self.case["reviewed_paths"])
         edges = tuple(edges or self.case["reviewed_edges"])
@@ -176,14 +177,16 @@ class ReviewedEvolutionCaptureTests(unittest.TestCase):
         record = gate.begin_candidate(state, pr, pr.base_sha, decision, runs=())
         checker_revision = self.case["base"]
         scope = reviewed_evolution_scope(checker_revision, paths, edges, consumers)
-        owners = review.ReviewOwnership()
-        session = review.ReviewSession(
+        tools = ReviewTools(GitTree(self.fixture.root, checker_revision), self.fixture.root)
+        owners = tools.model.ReviewOwnership()
+        session = tools.model.ReviewSession(
             state["coordinator_id"],
             state["coordinator_id"],
             scope,
             head,
             identity=(pr.repository, pr.number, pr.base_sha),
             owners=owners,
+            readers={"read-candidate": reader or tools.candidate_reader(pr.base_sha, head)},
         )
         runtime = Runtime(head, scope)
         runtime.result.task = "ownership-review-" + head[:12]
@@ -196,8 +199,15 @@ class ReviewedEvolutionCaptureTests(unittest.TestCase):
             pull_request=pr.number, base_sha=pr.base_sha, candidate_sha=head, worktree=self.fixture.root,
         )
         session.begin(runtime, "independent-reviewer", context=context)
+        if reads is None:
+            changes = tools.candidate_changes(pr.base_sha, head, paths=paths)
+            reads = [
+                (change["path"], side) for change in changes
+                for side in tools.model.validate_candidate_change(change).required_reads()
+            ]
+        for path, side in reads:
+            session.read_action("read-candidate", path, side)
         session.finish(runtime)
-        tools = ReviewTools(GitTree(self.fixture.root, checker_revision), self.fixture.root)
         qualification = qualify_reviewed_evolution(
             state,
             record,
@@ -293,7 +303,12 @@ class ReviewedEvolutionCaptureTests(unittest.TestCase):
     def test_explicit_review_context_is_delivered_before_qualification(self):
         started = []
         original = Runtime.start
-        paths = tuple(f"scope/file-{index:03d}.txt" for index in range(review.MAX_REVIEW_FILES))
+        added = tuple(f"scope/file-{index:03d}.txt"
+                      for index in range(review.MAX_REVIEW_FILES - len(self.case["reviewed_paths"])))
+        for path in added:
+            self.fixture.add(path, "reviewed source\n")
+        head = self.fixture.commit("Add actual 200-path review scope")
+        paths = tuple(sorted((*self.case["reviewed_paths"], *added)))
 
         def observe(runtime, **arguments):
             started.append(copy.deepcopy(arguments))
@@ -301,7 +316,7 @@ class ReviewedEvolutionCaptureTests(unittest.TestCase):
 
         with patch.object(Runtime, "start", new=observe):
             state, record, pr, _, session, qualification, _ = self.coordinator(
-                paths=paths, session_changes={"files": review.MAX_REVIEW_FILES},
+                head=head, paths=paths, session_changes={"files": review.MAX_REVIEW_FILES},
             )
         self.assertIn("context", started[0])
         context = started[0]["context"]
@@ -321,11 +336,39 @@ class ReviewedEvolutionCaptureTests(unittest.TestCase):
             qualification.validate_binding(state, record, pr)
         session.report = report
         with patch.object(Runtime, "start") as launch, self.assertRaises(MakeProbeError):
-            self.coordinator(paths=(*paths, "scope/overflow.txt"))
+            self.coordinator(head=head, paths=(*paths, "scope/overflow.txt"))
         launch.assert_not_called()
         session.report = replace(session.report, context=None)
         with self.assertRaisesRegex(MakeProbeError, "explicit review context"):
             qualification.validate_binding(state, record, pr)
+
+    def test_required_path_coverage_rejects_counts_wrong_paths_and_another_root(self):
+        unrelated = (
+            "scripts/bash_parser.py", "scripts/validation_ownership/authority.py",
+            "scripts/validation_ownership/budget.py", "scripts/validation_ownership/make_probe.py",
+        )
+        for reads in ((), tuple((path, "head") for path in unrelated)):
+            with self.subTest(reads=reads), self.assertRaisesRegex(MakeProbeError, "changed-path coverage"):
+                self.coordinator(reads=reads, session_changes={"files": len(self.case["reviewed_paths"])})
+        other = self.fixture.directory / "other-checkout"
+        self.fixture.git("clone", "--quiet", "--no-local", str(self.fixture.root), str(other))
+        with self.assertRaisesRegex(MakeProbeError, "coverage root mismatch"):
+            self.coordinator(reader=CandidateReader(other, self.case["base"], self.case["head"]))
+
+    def test_deleted_and_mode_only_paths_require_actual_correct_side_reads(self):
+        deleted, mode = "src/data/table.json", "scripts/bash_parser.py"
+        (self.fixture.root / deleted).unlink()
+        (self.fixture.root / mode).chmod(0o755)
+        head = self.fixture.commit("Delete source and change executable mode")
+        paths = tuple(sorted((*self.case["reviewed_paths"], deleted, mode)))
+        _, _, _, _, session, _, _ = self.coordinator(head=head, paths=paths)
+        reads = tuple((item.path, item.side) for item in session.report.candidate_reads)
+        for missing in ((deleted, "base"), (mode, "base"), (mode, "head")):
+            selected = tuple(item for item in reads if item != missing)
+            if missing[0] == deleted:
+                selected += ((deleted, "head"),)
+            with self.subTest(missing=missing), self.assertRaisesRegex(MakeProbeError, "changed-path coverage"):
+                self.coordinator(head=head, paths=paths, reads=selected)
 
     def test_reviewed_capture_requires_exact_assignment_record(self):
         _, _, pr, _, _, qualification, expected = self.coordinator()

@@ -498,7 +498,8 @@
         "https://github.com/laqieer/fireemblem8-expansion/issues/208",
         "https://github.com/laqieer/fireemblem8-expansion/issues/207",
         "https://github.com/laqieer/fireemblem8-expansion/issues/216",
-        "https://github.com/laqieer/fireemblem8-expansion/issues/223"
+        "https://github.com/laqieer/fireemblem8-expansion/issues/223",
+        "https://github.com/laqieer/fireemblem8-expansion/issues/243"
       ],
       "reference": ".github/skills/development-workflow/SKILL.md",
       "status": "current",
@@ -519,6 +520,7 @@
         "TC-WORKFLOW-PROBE-RUNTIME-INPUTS-001",
         "TC-WORKFLOW-PROBE-VIEWS-001",
         "TC-WORKFLOW-REVIEW-FAMILY-001",
+        "TC-WORKFLOW-REVIEW-PATHS-001",
         "TC-WORKFLOW-REVIEW-FIRST-001",
         "TC-WORKFLOW-AGENT-HANDOFF-001",
         "TC-WORKFLOW-WORKTREE-CLEANUP-001",
@@ -2384,6 +2386,46 @@
         {
           "command": "python3 -m unittest tests.workflows.test_build_ci_topology tests.upstream_port.test_verify.VerifyGatesMirrorWorkflowTests -v",
           "evidence": "tests/workflows/test_build_ci_topology.py"
+        }
+      ]
+    },
+    {
+      "id": "TC-WORKFLOW-REVIEW-PATHS-001",
+      "title": "Bind coverage to actual immutable candidate-file reads",
+      "feature_id": "workflow-governance",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/243"
+      ],
+      "document": "docs/test-cases/workflow-governance.md",
+      "anchor": "tc-workflow-review-paths-001-bind-coverage-to-actual-immutable-candidate-file-reads",
+      "profiles": [
+        "Linux source checkout with the issue #216 locked host Python environment, Git, and local workflow-pilot review APIs"
+      ],
+      "purpose": "Bind trusted review coverage to actual immutable candidate-file reads from one resolved checkout root rather than runtime file counts or final path lists.",
+      "prerequisites": "Run from the repository root with the existing host-python setup if needed. Tests create only owned snapshot repositories and staging below build/review-family-*; no live PR, ROM, emulator, graph import or remote mutation is required.",
+      "actions": "Run the focused review-family coverage suite against real Git BASE/head fixtures with added, modified, deleted, executable-mode-only and unsupported-object paths; route reads through ReviewSession.read_action and the bound trusted CandidateReader; freeze its resolved checkout root together with the exact BASE/head pair at session.begin; preserve worktree/index drift, equal-count unrelated reads, read-evidence-only, deleted-head absence, one-sided explicit coverage, wrong pair/root/revision/path/mode/object/bytes, partial/failed reads, noncanonical paths, generic callers, and 200/201 logical-path bounds. Then exercise the public ReviewTools reader/change API and local check-mode adapter with resolved_root=str(reader.root), plus the mirrored docs/registry membership checks and catalog validator.",
+      "expected_result": "Only successful complete immutable candidate reads accumulate canonical path/side/revision/mode/object summaries for one exact resolved checkout root plus BASE/head pair. Added and modified head-present paths require a head read, deleted paths require the base blob, explicit two-sided and mode-only requirements need both sides, duplicate reads do not inflate logical-path counts, and the finished report remains immutable.",
+      "negative_control": "Runtime file counts, empty coverage requirements, unrelated support reads, read-evidence, final runtime path lists, stale/wrong pairs, wrong same-SHA checkout roots, deleted-head absence, one-sided explicit coverage, wrong bytes/mode/object/revision/path, unsupported object kinds, failed/partial reads and a 201st logical path cannot supply trusted coverage. Generic existing reviews may still finish but remain uncovered.",
+      "interactions": "Depends on the delivered #179 review-family and #181/#221 trusted orchestration contracts plus the existing immutable GitTree reader. Dependent #180 owns the live outside-candidate adapter exercise; this case does not add a second backend. No gameplay, save/config identity, localization, generated game-data, ROM/RAM, modern profile or archival interaction applies.",
+      "save_compatibility": "Host-only workflow governance; no game save, migration, configuration, ROM/RAM, localization, generated-game-data, modern release or archival impact.",
+      "cleanup": "Tests remove only their own snapshot repositories and staging roots. No remote state or unrelated worktree changes occur.",
+      "limitations": "This case validates the reusable reader/session/report/check API only. It does not qualify #180's live coordinator adapter exercise and does not claim a new runtime, service, signer or manual-only criterion.",
+      "automation": [
+        {
+          "command": "build/host-python/bin/python3 -I -c 'import sys, unittest; sys.path.insert(0, \".\"); unittest.main(module=None)' scripts.workflow_pilot.tests.test_review_family.CandidateCoverageTests -v",
+          "evidence": "scripts/workflow_pilot/tests/test_review_family.py"
+        },
+        {
+          "command": "build/host-python/bin/python3 -I -c 'import sys, unittest; sys.path.insert(0, \".\"); unittest.main(module=None)' scripts.workflow_pilot.tests.test_github_review.GitHubReviewTests.test_candidate_reader_public_api_binds_exact_bytes_and_check_mode_stays_local scripts.workflow_pilot.tests.test_github_review.GitHubReviewTests.test_programmatic_gate_requires_isolated_startup -v",
+          "evidence": "scripts/workflow_pilot/tests/test_github_review.py"
+        },
+        {
+          "command": "python3 -m unittest scripts.docs_check_tests.test_check_docs.TesterCaseRegistryTests.test_review_path_coverage_case_is_indexed_with_focused_procedure scripts.docs_check_tests.test_development_workflow_skill.DevelopmentWorkflowSkillTests.test_review_path_coverage_case_is_indexed_and_required -v",
+          "evidence": "scripts/docs_check_tests/test_check_docs.py"
+        },
+        {
+          "command": "python3 scripts/check_docs.py --check",
+          "evidence": "scripts/check_docs.py"
         }
       ]
     },

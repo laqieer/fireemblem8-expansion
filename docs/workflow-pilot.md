@@ -393,43 +393,10 @@ parsed measurements. Candidate JSON cannot supply commands or a passed flag.
 Native PID/exit/RSS belongs to the **check process**, not an LLM owner.
 Unmeasured quantities remain `null`, not guessed zeroes or resource claims.
 
-Reviewed ownership evolution adds no generic receipt or passed label to this
-API. The coordinator first creates a live qualification from the actual
-independent `ReviewSession`, immutable `ReviewTools` revision/tester-case
-binding, exact candidate record and clean worktree. Registration stores that
-qualification beside the normal definitions; the trusted verifier capture
-joins it to the actual repository/PR/BASE/head assignment. Its review scope is
-four subjects: exact checker revision and domain-separated canonical digests
-of the complete explicit path, edge-ID, and affected-consumer arrays. Paths
-are limited to the single review's 200-file capacity before launch; edge and
-consumer arrays remain bounded at 256, with exact ordering/duplicate/type
-validation. The 40-subject caps and all-path coverage requirement are unchanged.
-Calls to
-`coordinator_local_ready` and `assess_candidate` must supply that same live
-qualification. Missing, partial, stale or different review/checker/path/edge/
-consumer scope therefore keeps local readiness, review-first dispatch and
-final full-run admission false. A freshly copied candidate checker is not
-trusted merely because its revision equals the candidate.
-Live GitHub refresh uses the same boundary:
-`assess_observed(..., local_qualification=qualification)` carries the
-coordinator-owned in-memory object through the two-phase PR/review/security/
-Build observation and into `assess_candidate`. It is never serialized into a
-candidate request or reconstructed from the persisted local record. Omitting
-that live argument leaves the captured reviewed evolution visibly
-`exact-local-handoff` incomplete.
-Supplying the live qualification also requires `candidate.local_validation`;
-the ordinary delegated-handoff fallback is not a qualified capture and is
-therefore ineligible in that case. With no reviewed qualification, valid
-delegated handoffs preserve their existing readiness behavior.
-Before review starts, the coordinator passes the bounded explicit ownership
-context through `ReviewSession.begin(..., context=...)`, including the complete
-arrays and immutable candidate/checker/worktree identities. The native runtime
-must return its actual dispatched context observation; mismatches or missing
-context reject before qualification. The lease/report retain a canonical
-immutable copy under the existing request-byte limit.
-Reviewed ownership capture also requires its exact qualification record.
-Legacy reviewed-labelled delegations cannot use ordinary delegated readiness
-when that live coordinator-local binding is absent.
+Ownership evolution follows the
+[canonical ownership contract](validation-ownership.md#coordinator-owned-review-and-capture)
+using this coordinator-check seam. `coordinator_local_ready`, `assess_observed`
+and `assess_candidate` require the same live qualification.
 
 Every registered check must finish successfully at the same head/base/worktree.
 Each observation retains the complete registered definition set, so changing,

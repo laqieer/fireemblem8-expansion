@@ -695,6 +695,8 @@ no-replacement, and no-lazy-fetch settings. Empty or hostile inherited
 `GIT_DIR`, work-tree, common-dir, index, namespace, object, replace-ref,
 ceiling, exec-path, and alternate-object variables therefore cannot redirect
 or break candidate/base identity checks.
+### Coordinator-owned review and capture
+
 Candidate YAML is redundant drift protection, not the authority to decide
 whether verification ran. `coordinator_capture.validate_handoff` requires the
 existing #178 `coordinator-check` assignment and always calls the real
@@ -713,8 +715,14 @@ complete path, edge-ID, and affected-consumer sets. The full sorted arrays
 remain explicit in the qualification and verifier selection; the digests only
 give the bounded review scope an identity, not source-content ledgers,
 truncation, sampling, or independent authority. Paths are capped at the single
-review's200-file capacity before launch; edge/consumer arrays remain256.
-Every path still needs review. The same builder validates the
+review's200-file capacity before launch; edge/consumer arrays remain256 and
+the subject cap remains40. Every path needs actual read coverage from the
+same immutable root/BASE/head pair through the same `ReviewTools.model`
+that created the session. Qualification invokes the shared
+`require_candidate_path_coverage` over `candidate_changes`: added/modified
+paths need head reads, deleted paths need base blobs, and mode-only changes
+need both sides. Empty or unrelated read sets, wrong roots and runtime file
+counts cannot substitute. The same builder validates the
 live session/report/lease/ownership scope and the persisted record. That
 scope is delivered before review, not reconstructed from hashes afterward:
 `reviewed_evolution_context` supplies the complete explicit selection and
@@ -753,8 +761,8 @@ rewritten. The managed input-free workflow dispatch keeps that PR-only step
 not-applicable; neither the dispatch event nor N/A status is authority. Final
 review-first assessment, reservation, dispatch and full-run admission require
 the same live qualification that produced the local capture. Production
-refresh passes that object explicitly through `assess_observed`; the persisted
-record is only the bound comparison target and cannot recreate qualification.
+refresh passes that object through `assess_observed(..., local_qualification=...)`;
+the persisted record is only the bound comparison target and cannot recreate qualification.
 If a live qualification is supplied but the candidate has no coordinator-owned
 `local_validation`, delegated handoff readiness cannot substitute for the
 qualified ownership capture. Ordinary delegated candidates with no reviewed

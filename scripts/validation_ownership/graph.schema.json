@@ -86,27 +86,11 @@
       "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$))[^\\u0000]+$"
     },
     "policy": {
-      "type": "object",
-      "required": [
-        "classification",
-        "validation_effect",
-        "narrowing_authorized",
-        "review_invalidation"
-      ],
-      "additionalProperties": false,
-      "properties": {
-        "classification": {
-          "const": "framework-capability"
-        },
-        "validation_effect": {
-          "const": "report-only"
-        },
-        "narrowing_authorized": {
-          "const": false
-        },
-        "review_invalidation": {
-          "const": "resolved-edge-authority"
-        }
+      "const": {
+        "classification": "framework-capability",
+        "validation_effect": "report-only",
+        "narrowing_authorized": false,
+        "review_invalidation": "resolved-edge-authority"
       }
     },
     "history": {
