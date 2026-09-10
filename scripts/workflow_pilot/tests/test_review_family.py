@@ -255,6 +255,30 @@ class CandidateCoverageTests(unittest.TestCase):
             with self.assertRaises(FrozenInstanceError):
                 report.candidate_reads[0].path = "changed"
 
+    def test_marked_candidate_readers_require_both_tree_bindings_before_launch(self):
+        with snapshot() as repo:
+            fixture = candidate_fixture(repo)
+            tools = gate.ReviewTools(gate.GitTree(repo.root, fixture["head"]), repo.root)
+            delegate = tools.candidate_reader(fixture["base"], fixture["head"])
+            for missing in ({"base_tree"}, {"head_tree"}, {"base_tree", "head_tree"}):
+                class IncompleteReader:
+                    review_candidate_reader = True
+
+                    def __getattr__(self, name):
+                        if name in missing:
+                            raise AttributeError(name)
+                        return getattr(delegate, name)
+
+                    def __call__(self, *args, **kwargs):
+                        return delegate(*args, **kwargs)
+
+                with self.subTest(missing=missing), patch.object(Runtime, "start", return_value="task-1") as start:
+                    with self.assertRaisesRegex(tools.model.ReviewError, "Git tree"):
+                        self.start_session(
+                            tools, fixture["base"], fixture["head"],
+                            readers={"read-candidate": IncompleteReader()})
+                    start.assert_not_called()
+
     def test_modified_path_default_coverage_needs_only_its_head_read(self):
         with snapshot() as repo:
             fixture = candidate_fixture(repo)

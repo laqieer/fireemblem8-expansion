@@ -844,8 +844,11 @@ or arbitrary concurrent host mutation, and does not reinstate #204/#210.
    Use real Git BASE/head fixtures with added, modified, deleted and
    executable-mode-only paths. Route every covered read through
    `ReviewSession.read_action("read-candidate", path, side)` and the bound
-   immutable `trusted_review_gate.CandidateReader`. Freeze its resolved
-   checkout root together with the exact BASE/head pair at `session.begin`,
+   immutable `trusted_review_gate.CandidateReader`.
+   Every marked candidate reader must expose both immutable Git-tree bindings;
+   omitting either must reject before review launch. Unmarked generic readers
+   remain compatible but cannot provide candidate coverage.
+   Freeze its resolved checkout root with the exact BASE/head pair at `session.begin`,
    deriving that binding from the reader's immutable Git-tree identity rather
    than mutable public copies. Confirm returned bytes, mode, object ID, side
    and revision for head/base selections, including one explicit two-sided
