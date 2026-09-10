@@ -1,8 +1,11 @@
 MAKEDEP = mkdir -p $(DEPS_DIR)/$(dir $*) && $(CPP) $(CPPFLAGS) $< -MM -MG -MT $*.o > $(DEPS_DIR)/$*.d
 
-MAKECMDGOALS_NODEP := all clean tag codeql-alerts-test codeql-fanalyzer-test \
+# Pure host/default modern entrypoints must not eagerly remake unrelated
+# archival dependency files or expand the explicit legacy object rules'
+# scaninc prerequisites. Direct non-C object goals still need scaninc-based
+# freshness, so they extend only the depfile-safe list, not the scan-safe one.
+MAKECMDGOALS_NOSCANINC := all clean tag codeql-alerts-test codeql-fanalyzer-test \
 	validation-ownership-check $(MODERN_GOALS) \
-	$(filter-out $(C_OBJECTS) $(DATA_SRC_C_OBJECTS),$(ASM_OBJECTS) $(MID_OBJECTS) $(BANIM_OBJECT)) \
 	assets-validate assets-generate assets-check assets-test \
 	generated-data-validate generated-data-generate generated-data-check generated-data-test \
 	localization-validate localization-generate localization-check localization-test localization-budget \
@@ -17,7 +20,15 @@ MAKECMDGOALS_NODEP := all clean tag codeql-alerts-test codeql-fanalyzer-test \
 	game-localization-final-leakage-audit \
 	game-localization-final-font-check game-localization-final-check
 
+MAKECMDGOALS_NODEP := $(MAKECMDGOALS_NOSCANINC) \
+	$(filter-out $(C_OBJECTS) $(DATA_SRC_C_OBJECTS),$(ASM_OBJECTS) $(MID_OBJECTS) $(BANIM_OBJECT))
+
+ARCHIVAL_SCANINC_NODEP := 1
+
 ifneq ($(strip $(MAKECMDGOALS)),)
+ifneq (,$(filter-out $(MAKECMDGOALS_NOSCANINC),$(MAKECMDGOALS)))
+ARCHIVAL_SCANINC_NODEP :=
+endif
 ifneq (,$(filter-out $(MAKECMDGOALS_NODEP),$(MAKECMDGOALS)))
 -include $(addprefix $(DEPS_DIR)/,$(patsubst %.c,%.d,$(filter-out $(CFILES_GENERATED),$(CFILES))))
 endif

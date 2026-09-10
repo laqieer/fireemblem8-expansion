@@ -72,8 +72,10 @@ ROM or make the archival lane a release requirement.
 - **Supported configuration or artifact:** owned clean native-Make fixture
   that includes the repository's `archival_dependencies.mk` fragment and uses
   `/usr/bin/make`, `/usr/bin/cpp`, `/usr/bin/cc`, `/usr/bin/as`, and
-  `/usr/bin/g++`. The recursive assembly case builds the real repository
-  scaninc tool in its owned fixture.
+  `/usr/bin/g++`. The ordinary-Make scan-demand control reuses the root
+  `.SECONDEXPANSION`/`data_dep` rule shape with a logging scaninc stand-in,
+  and the recursive assembly case builds the real repository scaninc
+  tool in its owned fixture.
 - **Prerequisites and clean starting state:** repository root on a host with
   the native build tools above installed; the test suite owns and cleans its
   temporary directories under `build/test-tmp/`.
@@ -97,6 +99,9 @@ custom aliases, and `generated-data-link-check` still generate and include the
 needed dependency makefiles, build the generated header before compiling the
 native object, and rebuild after header or depfile churn. Mixed safe/unsafe
 goal lists retain the dependency behavior in either order.
+The same pure host/default requests also avoid the ordinary GNU Make eager
+scaninc demand that the explicit archival asm/data object rules would
+otherwise trigger before the host recipe starts.
 The existing game-localization final targets also skip archival remakes.
 Clearing only their suppression policy, without changing target names,
 reintroduces real preprocessing in the negative control.
@@ -119,6 +124,9 @@ assembly/C goals still load C dependency files and generated headers.
 Before the fix, bare/default and pure host goals eagerly remade archival `.d`
 files, and a mixed invocation containing a safe modern goal plus `legacy.o`
 tried to compile before the generated header existed.
+Before the scan-demand follow-through, clearing only `ARCHIVAL_SCANINC_NODEP`
+made those same host/default requests execute the unrelated ordinary-Make
+scaninc probes again.
 Before the recursive correction, both actual recipe chains caused native CPP
 to generate the unrelated legacy dependency file.
 

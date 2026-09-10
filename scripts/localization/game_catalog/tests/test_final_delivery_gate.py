@@ -100,6 +100,7 @@ class FinalDeliveryGateTests(unittest.TestCase):
                 self.assertTrue((fixture.root / (target + ".stamp")).exists())
                 self.assertFalse(fixture.depfile.exists(), result.stdout)
                 self.assertEqual(fixture.log_lines(fixture.cpp_log), [])
+                self.assertEqual(fixture.log_lines(fixture.scan_log), [])
 
                 control = fixture.make(target, "MAKECMDGOALS_NODEP=")
                 self.assertEqual(control.returncode, 0, control.stdout)
