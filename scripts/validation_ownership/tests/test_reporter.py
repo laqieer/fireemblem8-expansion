@@ -100,6 +100,28 @@ class AssetOwnershipTests(unittest.TestCase):
                 actual = reporter._resolve_path(path, self.graph, model)
                 self.assertNotIn("target-scenario", {owner["edge_type"] for owner in actual["owners"]})
 
+    def test_archival_dependency_sources_keep_precise_existing_owners(self):
+        model = self.model()
+        for path, reference in (
+            ("archival_dependencies.mk", "Makefile"),
+            ("scripts/modernize/tests/test_archival_dependencies.py",
+             "scripts/modernize/tests/test_build_default_lane.py"),
+        ):
+            with self.subTest(path=path):
+                actual = reporter._resolve_path(path, self.graph, model)
+                existing = reporter._resolve_path(reference, self.graph, model)
+                self.assertEqual(actual["surface"], existing["surface"])
+                self.assertEqual(actual["owners"], existing["owners"])
+                self.assertEqual(actual["admission"], "exact-ownership-rule")
+                changed = copy.deepcopy(self.graph)
+                for rule in changed["path_rules"]:
+                    rule["include"] = [
+                        item for item in rule["include"]
+                        if item != {"kind": "exact", "path": path}
+                    ]
+                with self.assertRaises(reporter.OwnershipError):
+                    self.model(changed)
+
     def test_every_edge_family_removal_and_live_owner_redirect_reject(self):
         for edge in self.graph["edges"]:
             with self.subTest(edge=edge["id"], mutation="remove"):
@@ -204,6 +226,7 @@ class AssetOwnershipTests(unittest.TestCase):
             "src/foo.c", "scripts/unclassified.py", "docs/unclassified.md",
             "graphics/unclassified.png", "changelog_fragments/unclassified.json",
             "scripts/workflow_pilot/tests/unclassified_support.py",
+            "scripts/modernize/tests/unclassified_dependencies.py",
         ):
             entries = {**self.entries, path: reporter.GitTreeEntry(path, "100644", "blob", "0" * 40)}
             with self.subTest(path=path), self.assertRaisesRegex(reporter.OwnershipError, "semantic admission"):

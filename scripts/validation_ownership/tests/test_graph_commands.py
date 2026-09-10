@@ -218,11 +218,11 @@ class GraphCommandTests(unittest.TestCase):
             env={**ENVIRONMENT, "TMPDIR": str(self.directory)},
             capture_output=True, check=True, timeout=15,
         )
-        self.add("Makefile", (
+        self.add("archival_dependencies.mk", (
             "include .dep/src/input.d\n"
             ".dep/src/input.d: src/input.c\n\t" + command + "\n"
-            "src/input.o: ;\n"
         ))
+        self.add("Makefile", "include archival_dependencies.mk\nsrc/input.o: ;\n")
         with self.session() as probe:
             registration = MakeCommands(probe, self.contracts)[command]
             self.assertTrue(registration.dependency_only)
@@ -236,10 +236,14 @@ class GraphCommandTests(unittest.TestCase):
                 "include/config.h", "include/first/selected.h", "include/first/deep.h",
             })
             observed = probe.make(
-                "src/input.o", variables=("MAKE_RESTARTS",),
+                "src/input.o", variables=("MAKEFILE_LIST", "MAKE_RESTARTS"),
                 commands={command: registration},
             )
             self.assertEqual(observed.semantics["domains"]["MAKE_RESTARTS"]["value"], "1")
+            self.assertIn(
+                "archival_dependencies.mk",
+                observed.semantics["domains"]["MAKEFILE_LIST"]["value"].split(),
+            )
             self.assertEqual(
                 [entry["name"] for entry in observed.semantics["files"][0]["prerequisites"]],
                 ["src/input.c", "include/config.h", "include/first/selected.h", "include/first/deep.h"],

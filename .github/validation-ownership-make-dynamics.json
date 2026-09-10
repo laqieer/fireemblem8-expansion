@@ -614,7 +614,7 @@
     {
       "id": "legacy-dependency-dry-run-recipes",
       "expression": "$(shell <legacy-dependency-dry-run-recipes>)",
-      "tool": "Makefile",
+      "tool": "archival_dependencies.mk",
       "input_files": [],
       "input_variables": [
         "CPP",
@@ -1439,5 +1439,5 @@
     "value_policy": "finite-exact-or-tracked-fallback",
     "target_policy": "defined-pattern-or-tracked-tree"
   },
-  "seal": "eb59715cb7bd1340fcfae890215017727741d2300ecd46923ebf3b652ed951a2"
+  "seal": "a33f4b31f8ec5582d0164d142470d427107432928f9386a3f9ed207aabf9ec61"
 }

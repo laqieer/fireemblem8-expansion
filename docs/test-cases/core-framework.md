@@ -65,6 +65,69 @@ Use `make clean_fast` only to remove build artifacts. This proves the modern
 release framework boundary; it does not claim byte identity with the original
 ROM or make the archival lane a release requirement.
 
+## TC-BUILD-HOST-DEPENDENCIES-001: Pure host Make goals skip unrelated archival dependencies
+
+- **Feature / originating issue:** `modern-framework-build` /
+  [#236](https://github.com/laqieer/fireemblem8-expansion/issues/236).
+- **Supported configuration or artifact:** owned clean native-Make fixture
+  that includes the repository's `archival_dependencies.mk` fragment and uses
+  `/usr/bin/make`, `/usr/bin/cpp`, and `/usr/bin/cc`.
+- **Prerequisites and clean starting state:** repository root on a host with
+  the native build tools above installed; the test suite owns and cleans its
+  temporary directories under `build/test-tmp/`.
+
+### Actions
+
+1. Run
+   `python3 -m unittest scripts.modernize.tests.test_archival_dependencies -v`.
+2. Run
+   `python3 -m unittest discover -s scripts/modernize/tests -p "test_build_default_lane.py" -v`.
+3. Run
+   `python3 -m unittest scripts.localization.game_catalog.tests.test_final_delivery_gate -v`.
+
+### Expected result
+
+Bare `make`, explicit `make all`, and the inspected pure host
+asset/generated-data/localization goals execute without creating or refreshing
+unrelated archival `.d` files or preprocessing legacy C, including when legacy
+sources change after a prior archival build. Explicit archival/object goals,
+custom aliases, and `generated-data-link-check` still generate and include the
+needed dependency makefiles, build the generated header before compiling the
+native object, and rebuild after header or depfile churn. Mixed safe/unsafe
+goal lists retain the dependency behavior in either order.
+The existing game-localization final targets also skip archival remakes.
+Clearing only their suppression policy, without changing target names,
+reintroduces real preprocessing in the negative control.
+
+### Negative control
+
+Before the fix, bare/default and pure host goals eagerly remade archival `.d`
+files, and a mixed invocation containing a safe modern goal plus `legacy.o`
+tried to compile before the generated header existed.
+
+### Interactions and save compatibility
+
+The supported default lane remains the modern release build, and the archival
+lane remains reachable only by its explicit target names. This Make dependency
+selection changes no save bytes, save layout, migration, generated data, ROM,
+or RAM behavior.
+
+### Automation
+
+- `python3 -m unittest scripts.modernize.tests.test_archival_dependencies -v`
+  — `scripts/modernize/tests/test_archival_dependencies.py`.
+- `python3 -m unittest discover -s scripts/modernize/tests -p "test_build_default_lane.py" -v`
+  — `scripts/modernize/tests/test_build_default_lane.py`.
+- `python3 -m unittest scripts.localization.game_catalog.tests.test_final_delivery_gate -v`
+  — `scripts/localization/game_catalog/tests/test_final_delivery_gate.py`.
+
+### Cleanup and limitations
+
+The fixture cleans its owned directories automatically. If a failed local run
+leaves one behind, remove only that run's identified fixture directory under
+`build/test-tmp/`. This case proves host-side Make dependency behavior only; it
+does not replace the separate modern ROM/link/runtime gates.
+
 ## TC-BUILD-GCC14-MENU-RETURN-001: GCC 14 menu callback return compatibility
 
 - **Feature / originating issue:** `modern-framework-build` /

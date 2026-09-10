@@ -148,6 +148,7 @@ name.
 | `make expansion-modern-linker-check MODERN_CONFIG=... MODERN_ABI=aapcs` | Boot-check plus budget/shift/overlay/title-fingerprint gates | Yes | Yes |
 | `make legacy` / `make fireemblem8.gba` | Archival agbcc `fireemblem8.gba` | Yes | No (agbcc, fetched on first use) |
 | `make clean` / `make clean_fast` | Removes build artifacts (see [`README.md`](../README.md)) | — | — |
+| `make assets-validate` / `make assets-generate` / `make assets-check` / `make assets-test` | Asset-manifest authoring, generation, drift checks, and host tests (see [`asset_manifest.md`](asset_manifest.md)) | No | No |
 | `make generated-data-validate` / `-generate` / `-check` / `-test` | Structured content authoring (see [`docs/generated_data_tutorial.md`](generated_data_tutorial.md)) | No | No |
 | `make localization-validate` / `make localization-generate` / `make localization-check` / `make localization-test` | Expansion locale registry/catalog authoring and host tests (see [`localization.md`](localization.md)) | No | No |
 | `make expansion-modern-starter-runtime-check MODERN_CONFIG=... MODERN_ABI=aapcs` | Issue #6 enabled/disabled mechanics + Danger runtime matrix | Yes | Yes |
@@ -155,6 +156,14 @@ name.
 | `make expansion-modern-hq-mixer-check MODERN_CONFIG=... MODERN_ABI=aapcs` | Issue #83 enabled/disabled HQ PCM mixer, linker budget, and libmGBA PCM/interrupt-buffer matrix | Yes | Yes |
 | `make expansion-modern-localization-budget-check MODERN_CONFIG=... MODERN_ABI=aapcs` | Issue #18 catalog/resolver/UI source+linker budget and real region headroom | No new ROM beyond its linked prerequisite | No |
 | `python3 -m scripts.upstream_port {scan,drift,report,verify,...}` | Upstream-drift tracking (see [`docs/upstream-porting.md`](upstream-porting.md)) | No for `scan`/`drift`/`report`; `verify` builds the full gate set | No for `scan`/`drift`/`report`; depends on the gate set for `verify` |
+
+The pure host asset/generated-data/localization targets above do not select the
+archival lane or pay unrelated archival C dependency remakes on their own.
+Bare `make`/`make all` still resolve to the modern release boot-check path, and
+`make legacy`/`make fireemblem8.gba` remain the explicit archival selectors.
+When a command line mixes one of those safe goals with an archival/object or
+unknown goal, GNU Make still generates and includes the archival dependency
+files before compiling the legacy object.
 
 **ABI contract:** `MODERN_ABI=aapcs` is the only supported choice for every
 linked, ROM-producing, or runtime-gate target above (`expansion-modern-elf`,
