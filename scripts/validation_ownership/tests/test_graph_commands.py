@@ -6,12 +6,12 @@ from dataclasses import replace
 import os
 from pathlib import Path
 import secrets
-import shlex
 import shutil
 import subprocess
 import unittest
 from unittest import mock
 
+from scripts.bash_parser import parse_bash_script_commands
 from scripts.validation_ownership.authority import (
     AuthorityLoader, ENVIRONMENT, GitTreeEntries, GitTreeEntry, encoded, git_tree_entries,
 )
@@ -94,6 +94,149 @@ class GraphCommandTests(unittest.TestCase):
             cwd=self.root, env=environment, capture_output=True, check=True, timeout=10,
         ).stdout
 
+    def add_repo_file(self, path):
+        source = ROOT / path
+        mode = "100755" if source.stat().st_mode & 0o111 else "100644"
+        self.add(path, source.read_bytes(), mode)
+
+    def add_generated_dependency_fixture(self):
+        if (ROOT / "scripts/__init__.py").is_file():
+            self.add_repo_file("scripts/__init__.py")
+        for path in (ROOT / "scripts" / "generated_data").rglob("*.py"):
+            if "tests" not in path.relative_to(ROOT).parts:
+                self.add_repo_file(path.relative_to(ROOT).as_posix())
+        for name in ("scripts/assets/__init__.py", "scripts/assets/tmx.py"):
+            if (ROOT / name).is_file():
+                self.add_repo_file(name)
+
+        fixture_root = ROOT / "scripts" / "generated_data" / "tests" / "fixtures"
+        chapterbundle = fixture_root / "chapterbundle"
+        self.add(
+            "include/constants/characters.h",
+            "#define CHARACTER_EIRIKA 1\n",
+        )
+        self.add(
+            "include/constants/event-flags.h",
+            "#define EVFLAG_TMP(n) (n)\n",
+        )
+        self.add("include/bmunit.h", "#define FACTION_ID_BLUE 0\n")
+        self.add_repo_file("scripts/generated_data/tests/fixtures/chapterbundle/chapters.h")
+        self.add(
+            "include/constants/chapters.h",
+            (chapterbundle / "chapters.h").read_bytes(),
+        )
+        self.add(
+            "src/data/chapter_settings.json",
+            (chapterbundle / "chapter_settings.json").read_bytes(),
+        )
+        self.add(
+            "src/data/data_8B363C.c",
+            (chapterbundle / "data_8B363C.c").read_bytes(),
+        )
+        self.add("assets/manifest.json", "{}\n")
+        self.add("assets/tmx/Example.tmx", "<map width='1' height='1'/>\n")
+        self.add("assets/tmx/placeholder.txt", "keep\n")
+        self.add("graphics/map/layout/Example.json", "{}\n")
+
+        for name in (
+            "deps_units.json",
+            "deps_shops.json",
+            "deps_traps.json",
+            "deps_eventscripts.json",
+            "deps_eventlists.json",
+            "deps_supports.json",
+        ):
+            self.add(
+                "testdata/deps/" + name,
+                (chapterbundle / name).read_bytes(),
+            )
+        self.add(
+            "testdata/objectives/el_objectives.json",
+            (chapterbundle / "deps_chapterobjectives.json").read_bytes(),
+        )
+        self.add(
+            "testdata/strategies/el_strategies.json",
+            (chapterbundle / "deps_autoplaystrategies.json").read_bytes(),
+        )
+        bundle = json.loads((chapterbundle / "valid.json").read_text(encoding="utf-8"))
+        for table in bundle["tables"].values():
+            table["source"] = "testdata/deps/" + Path(table["source"]).name
+        bundle["supportOwners"]["source"] = "testdata/deps/deps_supports.json"
+        self.add(
+            "testdata/bundles/el_bundle.json",
+            json.dumps(bundle, indent=2) + "\n",
+        )
+
+        cases = [
+            {
+                "name": "chapterobjectives",
+                "arguments": ("testdata/objectives", "testdata/bundles"),
+                "command": (
+                    'python3 -m scripts.generated_data.chapterobjectives.deps \\\n'
+                    '\t--source "testdata/objectives" \\\n'
+                    '\t--bundle-source "testdata/bundles" \\\n'
+                    '\t--make-target "build/generated/data/data_chapter_objectives.c" \\\n'
+                    '\t--depfile "build/generated/data/chapterobjectives.inputs.mk"'
+                ),
+                "make_command": (
+                    'python3 -m scripts.generated_data.chapterobjectives.deps --source '
+                    '"testdata/objectives" --bundle-source "testdata/bundles" '
+                    '--make-target "build/generated/data/data_chapter_objectives.c" '
+                    '--depfile "build/generated/data/chapterobjectives.inputs.mk"'
+                ),
+                "output": "build/generated/data/chapterobjectives.inputs.mk",
+                "target": "build/generated/data/data_chapter_objectives.c",
+            },
+            {
+                "name": "autoplaystrategies",
+                "arguments": (
+                    "testdata/strategies",
+                    "testdata/objectives",
+                    "testdata/bundles",
+                ),
+                "command": (
+                    'python3 -m scripts.generated_data.autoplaystrategies.deps \\\n'
+                    '\t--source "testdata/strategies" \\\n'
+                    '\t--objectives-source "testdata/objectives" \\\n'
+                    '\t--bundle-source "testdata/bundles" \\\n'
+                    '\t--make-target "build/generated/data/data_autoplay_strategies.c" \\\n'
+                    '\t--depfile "build/generated/data/autoplaystrategies.inputs.mk"'
+                ),
+                "make_command": (
+                    'python3 -m scripts.generated_data.autoplaystrategies.deps --source '
+                    '"testdata/strategies" --objectives-source '
+                    '"testdata/objectives" --bundle-source "testdata/bundles" '
+                    '--make-target "build/generated/data/data_autoplay_strategies.c" '
+                    '--depfile "build/generated/data/autoplaystrategies.inputs.mk"'
+                ),
+                "output": "build/generated/data/autoplaystrategies.inputs.mk",
+                "target": "build/generated/data/data_autoplay_strategies.c",
+            },
+            {
+                "name": "eventlists",
+                "arguments": ("testdata/strategies", "testdata/bundles"),
+                "command": (
+                    'python3 -m scripts.generated_data.eventlists.deps \\\n'
+                    '\t--strategy-source "testdata/strategies" \\\n'
+                    '\t--bundle-source "testdata/bundles" \\\n'
+                    '\t--make-target "build/generated/data/.ch2-eventlists.validated" \\\n'
+                    '\t--depfile "build/generated/data/eventlists.inputs.mk"'
+                ),
+                "make_command": (
+                    'python3 -m scripts.generated_data.eventlists.deps --strategy-source '
+                    '"testdata/strategies" --bundle-source "testdata/bundles" '
+                    '--make-target "build/generated/data/.ch2-eventlists.validated" '
+                    '--depfile "build/generated/data/eventlists.inputs.mk"'
+                ),
+                "output": "build/generated/data/eventlists.inputs.mk",
+                "target": "build/generated/data/.ch2-eventlists.validated",
+            },
+        ]
+        return cases
+
+    def normalize_repo_bytes(self, data):
+        return data.replace(os.fsencode(str(self.root)), b"/repo")
+
     def test_real_voice_source_and_native_make_agree_with_ordinary_scanner(self):
         source = "sound/voicegroups/voicegroup038.s"
         included = "asm/macros/music_voice.inc"
@@ -121,6 +264,42 @@ class GraphCommandTests(unittest.TestCase):
         self.assertFalse(probe.runtime_tools)
         self.assertFalse(probe.runtime_query_profiles)
         self.assertFalse(probe.budget.children)
+
+    def test_bash_parser_matches_shell_continuations_and_rejects_multi_command_registration(self):
+        script = (
+            'python3 -c "import json,sys;print(json.dumps(sys.argv[1:]))" \\\n'
+            '\talph\\\n'
+            'a \\\n'
+            '\t"double\\\n'
+            'quoted" \'single\\\n'
+            'quoted\' "slash\\\\keep"'
+        )
+        ordinary = subprocess.run(
+            ["/bin/sh", "-c", script],
+            cwd=self.root, env={**ENVIRONMENT, "TMPDIR": str(self.directory)},
+            capture_output=True, check=True, timeout=15,
+        )
+        parsed, = parse_bash_script_commands(script, "fixture")
+        self.assertEqual(json.loads(ordinary.stdout), list(parsed[3:]))
+        self.assertEqual(parsed[3:], (
+            "alpha", "doublequoted", "single\\\nquoted", "slash\\keep",
+        ))
+        contract = {
+            "multi-python": {
+                "id": "multi-python",
+                "command_regex": r"(?s)^python3.*$",
+                "input_files": [],
+                "input_variables": [],
+                "automatic_inputs": [],
+                "resolved_value": None,
+                "owning_evidence_ids": ["owner"],
+            },
+        }
+        with self.session() as probe:
+            with self.assertRaisesRegex(
+                MakeProbeError, "unsupported multi-command shell shape",
+            ):
+                MakeCommands(probe, contract)['python3 -c "print(1)"\npython3 -c "print(2)"']
 
     def test_scaninc_uses_real_parser_search_order_and_recursive_include_closure(self):
         self.add("data/root.s", '.include "leaf.inc"\n.include "missing.inc"\n.incbin "asset.bin"\n')
@@ -207,11 +386,16 @@ class GraphCommandTests(unittest.TestCase):
         self.add("include/first/deep.h", "#define SELECTED 1\n")
         self.add("include/second/selected.h", "#error wrong search order\n")
         command = (
+            "mkdir -p .dep/src/ && cc -E -Iinclude/first \\\n"
+            "\t-I include/second -iquote include -nostdinc -undef \\\n"
+            "\t-DACTIVE=1 src/input.c -MM -MG -MT src/input.o > .dep/src/input.d"
+        )
+        make_command = (
             "mkdir -p .dep/src/ && cc -E -Iinclude/first -I include/second "
             "-iquote include -nostdinc -undef -DACTIVE=1 "
             "src/input.c -MM -MG -MT src/input.o > .dep/src/input.d"
         )
-        tokens = shlex.split(command)
+        tokens, = parse_bash_script_commands(command, "dependency fixture")
         arguments = tokens[4:-2]
         ordinary = subprocess.run(
             ["/usr/bin/cc", *arguments[1:]], cwd=self.root,
@@ -220,7 +404,7 @@ class GraphCommandTests(unittest.TestCase):
         )
         self.add("archival_dependencies.mk", (
             "include .dep/src/input.d\n"
-            ".dep/src/input.d: src/input.c\n\t" + command + "\n"
+            ".dep/src/input.d: src/input.c\n\t" + make_command + "\n"
         ))
         self.add("Makefile", "include archival_dependencies.mk\nsrc/input.o: ;\n")
         with self.session() as probe:
@@ -237,7 +421,7 @@ class GraphCommandTests(unittest.TestCase):
             })
             observed = probe.make(
                 "src/input.o", variables=("MAKEFILE_LIST", "MAKE_RESTARTS"),
-                commands={command: registration},
+                commands={make_command: registration},
             )
             self.assertEqual(observed.semantics["domains"]["MAKE_RESTARTS"]["value"], "1")
             self.assertIn(
@@ -434,6 +618,107 @@ class GraphCommandTests(unittest.TestCase):
         self.assertFalse(probe.budget.children)
         self.assertEqual(set(os.listdir("/proc/self/fd")), descriptors)
 
+    def test_generated_dependency_remakes_publish_real_depfiles_and_restart_make(self):
+        cases = self.add_generated_dependency_fixture()
+        lines = [f"-include {case['output']}" for case in cases]
+        lines.extend((".PHONY: all force", "ifeq ($(MAKE_RESTARTS),)"))
+        for case in cases:
+            lines.append(f"{case['output']}: force\n\t{case['make_command']}")
+        lines.append("else")
+        for case in cases:
+            lines.append(f"{case['output']}: ;")
+        lines.append("endif")
+        for case in cases:
+            lines.append(f"{case['target']}: ;")
+        lines.append("all: " + " ".join(case["target"] for case in cases))
+        lines.append("force: ;")
+        self.add("Makefile", "\n".join(lines) + "\n")
+        ordinary = {}
+        for case in cases:
+            completed = subprocess.run(
+                ["/bin/sh", "-c", case["command"]],
+                cwd=self.root, env={**ENVIRONMENT, "TMPDIR": str(self.directory)},
+                capture_output=True, timeout=60,
+            )
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            ordinary[case["output"]] = self.normalize_repo_bytes(
+                (self.root / case["output"]).read_bytes()
+            )
+        commands = {}
+        for case in cases:
+            with self.session() as probe:
+                commands[case["make_command"]] = MakeCommands(probe, self.contracts)[case["command"]]
+            self.assertIsNone(probe.base)
+            self.assertFalse(probe.budget.children)
+        with self.session() as probe:
+            observed = probe.make("all", variables=("MAKE_RESTARTS",), commands=commands)
+            self.assertEqual(observed.semantics["domains"]["MAKE_RESTARTS"]["value"], "1")
+            self.assertEqual(
+                {item.path: item.data for item in observed.generated},
+                ordinary,
+            )
+            self.assertEqual(
+                {
+                    output[0]
+                    for record in observed.semantics["dynamic_commands"]
+                    for output in record["generated_outputs"]
+                },
+                {case["output"] for case in cases},
+            )
+            self.assertEqual(len(observed.semantics["dynamic_commands"]), 3)
+            current = {item.path: item for item in observed.generated}
+            self.assertIn(
+                b"/repo/assets/manifest.json",
+                current["build/generated/data/chapterobjectives.inputs.mk"].data,
+            )
+            self.assertIn(
+                b"/repo/testdata/objectives/el_objectives.json",
+                current["build/generated/data/autoplaystrategies.inputs.mk"].data,
+            )
+            self.assertIn(
+                b"/repo/testdata/bundles/el_bundle.json",
+                current["build/generated/data/eventlists.inputs.mk"].data,
+            )
+        self.assertIsNone(probe.base)
+        self.assertFalse(probe.budget.children)
+
+    def test_generated_dependency_adapter_respects_selected_views_and_missing_companions(self):
+        cases = {case["name"]: case for case in self.add_generated_dependency_fixture()}
+        removed = "assets/tmx/Example.tmx"
+        base_budget = ProbeBudget()
+        base_loader = self.capture_loader(base_budget)
+        select_budget = ProbeBudget()
+        base_again = self.capture_loader(select_budget)
+        (self.root / removed).unlink()
+        del self.entries[removed]
+        current_budget = ProbeBudget()
+        current_loader = self.capture_loader(current_budget)
+        command = cases["chapterobjectives"]["command"]
+        marker = f"/repo/{removed}".encode()
+        with ProbeSession(
+            current_loader, scratch_root=self.root / "build/scratch", budget=current_budget,
+        ) as probe:
+            current = MakeCommands(probe, self.contracts)[command]
+            reported = json.loads(current.argv[-3])
+            self.assertNotIn(marker.decode(), reported)
+        current_for_base = self.capture_loader(select_budget)
+        with ProbeSession(
+            current_for_base, scratch_root=self.root / "build/scratch", budget=select_budget,
+        ) as probe:
+            with probe.select_view(base_again) as selected:
+                self.assertIs(selected, probe)
+                base = MakeCommands(probe, self.contracts)[command]
+                reported = json.loads(base.argv[-3])
+                self.assertIn(marker.decode(), reported)
+        missing = "assets/manifest.json"
+        (self.root / missing).unlink()
+        del self.entries[missing]
+        with self.session() as probe:
+            with self.assertRaisesRegex(
+                MakeProbeError, r"(missing declared owner input 'assets/manifest\.json'|source declaration resolves no regular inputs: assets/manifest\.json)",
+            ):
+                MakeCommands(probe, self.contracts)[command]
+
     def test_registered_find_reduces_actual_directory_observation_traffic(self):
         self.add("Makefile", "all: ;\n")
         for index in range(21):
@@ -590,7 +875,8 @@ class GraphCommandTests(unittest.TestCase):
                     makefile.append(f"{variable}_STATUS := $(.SHELLSTATUS)")
                     command = (
                         f'p=$("{compiler}" {binutils + " " if binutils else ""}'
-                        f'-mcpu=arm7tdmi -mthumb -mthumb-interwork {query} '
+                        '-mcpu=arm7tdmi \\\n\t'
+                        f'-mthumb -mthumb-interwork {query} '
                         '2>/dev/null) && dirname "$p"'
                     )
                     ordinary = subprocess.run(
@@ -612,6 +898,18 @@ class GraphCommandTests(unittest.TestCase):
                     commands = MakeCommands(
                         probe, {item["expression"]: item for item in contracts.values()},
                     )
+                    for variable, expected_value in expected.items():
+                        _, query = queries[variable]
+                        command = (
+                            f'p=$("{compiler}" {binutils + " " if binutils else ""}'
+                            '-mcpu=arm7tdmi \\\n\t'
+                            f'-mthumb -mthumb-interwork {query} 2>/dev/null) && dirname "$p"'
+                        )
+                        registration = commands[command]
+                        self.assertEqual(
+                            probe.command(registration).stdout.decode().strip(),
+                            expected_value,
+                        )
                     observed = probe.make(
                         "all", variables=("LIBGCC", "LIBGCC_STATUS", "LIBC", "LIBC_STATUS"),
                         commands=commands,

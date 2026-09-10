@@ -8,8 +8,9 @@ import json
 import os
 from pathlib import Path, PurePosixPath
 import re
-import shlex
 import shutil
+
+from scripts.bash_parser import normalize_bash_script_commands, parse_bash_script_commands
 
 from .authority import ENVIRONMENT, encoded, parse_json, relative_path
 from .budget import MakeProbeError, text
@@ -31,6 +32,58 @@ MODERN_COMPILER_NAMES = frozenset(("arm-none-eabi-gcc", "arm-none-eabi-gcc.exe")
 MODERN_DIRECTORY_CONTRACTS = {
     "modern-libgcc-directory": "-print-libgcc-file-name",
     "modern-libc-directory": "-print-file-name=libc.a",
+}
+TRUSTED_REPO_MODULE_LOADER = (
+    "import importlib.util,os,sys,types\n"
+    "def load_repo_module(name):\n"
+    " parts=name.split('.')\n"
+    " directory='/repo'\n"
+    " prefix=[]\n"
+    " for part in parts[:-1]:\n"
+    "  prefix.append(part)\n"
+    "  directory += '/' + part\n"
+    "  package='.'.join(prefix)\n"
+    "  if package not in sys.modules:\n"
+    "   init=directory + '/__init__.py'\n"
+    "   if os.path.isfile(init):\n"
+    "    spec=importlib.util.spec_from_file_location(package,init,submodule_search_locations=[directory])\n"
+    "    module=importlib.util.module_from_spec(spec)\n"
+    "    sys.modules[package]=module\n"
+    "    spec.loader.exec_module(module)\n"
+    "   else:\n"
+    "    module=types.ModuleType(package)\n"
+    "    module.__path__=[directory]\n"
+    "    sys.modules[package]=module\n"
+    " path='/repo/' + name.replace('.', '/') + '.py'\n"
+    " spec=importlib.util.spec_from_file_location(name,path)\n"
+    " module=importlib.util.module_from_spec(spec)\n"
+    " sys.modules[name]=module\n"
+    " spec.loader.exec_module(module)\n"
+    " return module\n"
+)
+GENERATED_DEPENDENCY_MODULES = {
+    "scripts.generated_data.autoplaystrategies.deps": {
+        "needs_chapterbundle_support": True,
+        "selectors": (
+            ("--source", "scripts.generated_data.autoplaystrategies.schema"),
+            ("--objectives-source", "scripts.generated_data.chapterobjectives.schema"),
+            ("--bundle-source", "scripts.generated_data.chapterbundle.schema"),
+        ),
+    },
+    "scripts.generated_data.chapterobjectives.deps": {
+        "needs_chapterbundle_support": True,
+        "selectors": (
+            ("--source", "scripts.generated_data.chapterobjectives.schema"),
+            ("--bundle-source", "scripts.generated_data.chapterbundle.schema"),
+        ),
+    },
+    "scripts.generated_data.eventlists.deps": {
+        "needs_chapterbundle_support": False,
+        "selectors": (
+            ("--strategy-source", "scripts.generated_data.autoplaystrategies.schema"),
+            ("--bundle-source", "scripts.generated_data.chapterbundle.schema"),
+        ),
+    },
 }
 FIND_DIRECTORY_BODY = r"""
 import ctypes
@@ -235,6 +288,88 @@ def python_code_closure(session, body, code=()):
     return tuple(sorted(result))
 
 
+def _python_module_code(session, module, *, main=False):
+    result = _python_module_paths(_available_python_paths(session), module, main=main)
+    if not result:
+        raise MakeProbeError(f"registered Python module source is missing: {module}")
+    return result
+
+
+def _repository_report_path(path):
+    if path == "/repo":
+        return "."
+    if path.startswith("/repo/"):
+        path = path[6:]
+    return relative_path(path)
+
+
+def _shell_commands(command, label):
+    try:
+        return parse_bash_script_commands(command, label)
+    except ValueError as error:
+        raise MakeProbeError(str(error)) from error
+
+
+def _normalized_shell_commands(command, label):
+    try:
+        return normalize_bash_script_commands(command, label)
+    except ValueError:
+        return ()
+
+
+def _shell_tokens(command, label):
+    commands = _shell_commands(command, label)
+    if len(commands) != 1:
+        raise MakeProbeError(f"{label} uses an unsupported multi-command shell shape")
+    return list(commands[0])
+
+
+def _long_option_values(arguments, label):
+    values = {}
+    if len(arguments) % 2:
+        raise MakeProbeError(f"{label} has an unsupported option shape")
+    pairs = iter(arguments)
+    for option, value in zip(pairs, pairs):
+        if not option.startswith("--") or option in values or not value or "\n" in value or "\r" in value:
+            raise MakeProbeError(f"{label} has an unsupported option shape")
+        values[option] = value
+    return values
+
+
+def _directory_closure(paths):
+    return tuple(sorted({
+        relative_path(path)
+        for directory in paths
+        for path in (
+            directory,
+            *(parent.as_posix() for parent in PurePosixPath(relative_path(directory)).parents),
+        )
+        if path != "."
+    }))
+
+
+def _run_trusted_python(session, body, arguments=(), *, sources=(), outputs=(), directories=(), code=()):
+    modules = python_code_closure(session, body, code)
+    declared = _directory_closure(directories)
+    imports = tuple(path for path in python_import_directories(modules) if path != ".")
+    return session.command(Command(
+        (PYTHON, "-I", "-S", "-B", "-c", body, *arguments),
+        code=modules, sources=tuple(sources), outputs=tuple(outputs),
+        directories=tuple(sorted(set(declared) | set(imports))),
+    ))
+
+
+def _trusted_python_command(session, body, arguments=(), *, sources=(), outputs=(), directories=(), code=()):
+    modules = python_code_closure(session, body, code)
+    declared = _directory_closure(directories)
+    imports = tuple(path for path in python_import_directories(modules) if path != ".")
+    return Command(
+        (PYTHON, "-I", "-S", "-B", "-c", body, *arguments),
+        code=modules, sources=tuple(sources), outputs=tuple(outputs),
+        directories=tuple(sorted(set(declared) | set(imports))),
+    )
+
+
 def python_command(session, body, arguments=(), *, sources=(), outputs=(), directories=(), code=()):
     modules = python_code_closure(session, body, code)
     return Command(
@@ -347,7 +482,7 @@ def modern_toolchain_directory_command(session, command, contract):
     inner = command[len(prefix):-len(suffix)]
     if not inner.endswith(" 2>/dev/null"):
         raise MakeProbeError("modern toolchain directory query must suppress stderr explicitly")
-    tokens = shlex.split(inner[:-len(" 2>/dev/null")])
+    tokens = _shell_tokens(inner[:-len(" 2>/dev/null")], "modern toolchain directory query")
     expected = MODERN_DIRECTORY_CONTRACTS[contract["id"]]
     if len(tokens) not in {len(MODERN_ARCH_QUERY_FLAGS) + 2, len(MODERN_ARCH_QUERY_FLAGS) + 3}:
         raise MakeProbeError("modern toolchain directory query differs from its declared flags")
@@ -378,10 +513,17 @@ class MakeCommands:
         self.registrations = {}
         self.scanner = None
         self.scanner_directories = None
+        self.chapterbundle_support = None
         self.includes = {}
 
     def _matches(self, command):
-        return [self.contracts[index] for index in self.patterns.fullmatch(command)]
+        matches = [self.contracts[index] for index in self.patterns.fullmatch(command)]
+        if matches:
+            return matches
+        normalized = _normalized_shell_commands(command, "registered command")
+        if len(normalized) == 1 and normalized[0] != command:
+            return [self.contracts[index] for index in self.patterns.fullmatch(normalized[0])]
+        return matches
 
     def __contains__(self, command):
         return len(self._matches(command)) == 1
@@ -497,7 +639,7 @@ class MakeCommands:
         )
 
     def dependency(self, command):
-        tokens = shlex.split(command)
+        tokens = _shell_tokens(command, "dependency producer")
         if (
             tokens[:2] != ["mkdir", "-p"] or len(tokens) < 8
             or tokens[3] != "&&" or tokens[-2] != ">"
@@ -525,6 +667,302 @@ class MakeCommands:
             outputs=(output,), dependency_only=True,
         )
 
+    def _chapterbundle_dependency_support(self, bundle_source, bundle_sources):
+        key = relative_path(bundle_source), tuple(bundle_sources)
+        if self.chapterbundle_support is None or self.chapterbundle_support[0] != key:
+            code = (
+                *_python_module_code(self.session, "scripts.generated_data.chapterbundle.schema"),
+                *_python_module_code(self.session, "scripts.generated_data.chapterobjectives.schema"),
+            )
+            bundle_directories = ("assets/tmx", "graphics/map/layout")
+            if bundle_source not in self.session.snapshot.files:
+                bundle_directories = (*bundle_directories, bundle_source)
+            body = (
+                TRUSTED_REPO_MODULE_LOADER
+                + "import glob,json\n"
+                "from pathlib import Path\n"
+                "bundle_schema=load_repo_module('scripts.generated_data.chapterbundle.schema')\n"
+                "objectives_schema=load_repo_module('scripts.generated_data.chapterobjectives.schema')\n"
+                "root=Path(bundle_schema.REPO_ROOT)\n"
+                "records=bundle_schema.load_records(str(Path('/repo') / Path(sys.argv[1])))\n"
+                "def rel(value):\n"
+                " path=Path(value)\n"
+                " if path.is_absolute():\n"
+                "  path=path.relative_to(root)\n"
+                " return path.as_posix()\n"
+                "bundle_refs=set()\n"
+                "for bundle in records:\n"
+                " for table in bundle.tables:\n"
+                "  bundle_refs.add(rel(table.source))\n"
+                " bundle_refs.add(rel(bundle.support_owners.source))\n"
+                "print(json.dumps({\n"
+                " 'dependency_modules':sorted(bundle_schema.DEPENDENCY_SCHEMA_MODULES.values()),\n"
+                " 'directories':sorted({\n"
+                "  rel(Path(bundle_schema.ASSET_MANIFEST_PATH).parent),\n"
+                "  rel(root / 'assets' / 'tmx'),\n"
+                "  rel(bundle_schema.MAP_LAYOUT_DIR),\n"
+                " }),\n"
+                " 'bundle_refs':sorted(bundle_refs),\n"
+                " 'members':sorted({rel(path) for path in glob.glob(str(root / 'assets' / 'tmx' / '*.tmx'))}\n"
+                "          | {rel(path) for path in glob.glob(str(root / 'graphics' / 'map' / 'layout' / '*.json'))}),\n"
+                " 'sources':sorted({\n"
+                "  rel(bundle_schema.ASSET_MANIFEST_PATH),\n"
+                "  rel(bundle_schema.CHAPTER_DATA_ASSET_TABLE_SOURCE),\n"
+                "  rel(bundle_schema.CHAPTER_SETTINGS_JSON),\n"
+                "  rel(objectives_schema.CHAPTERS_HEADER),\n"
+                "  rel(objectives_schema.EVENT_FLAGS_HEADER),\n"
+                "  rel(objectives_schema.character_refs.CHARACTERS_HEADER),\n"
+                " })\n"
+                "},sort_keys=True,separators=(',',':')))\n"
+            )
+            result = parse_json(
+                _run_trusted_python(
+                    self.session,
+                    body,
+                    (bundle_source,),
+                    sources=bundle_sources,
+                    directories=bundle_directories,
+                    code=code,
+                ).stdout,
+                "chapterbundle dependency support",
+            )
+            if (
+                not isinstance(result, dict)
+                or set(result) != {
+                    "bundle_refs", "dependency_modules", "directories", "members", "sources",
+                }
+                or not isinstance(result["dependency_modules"], list)
+                or not isinstance(result["bundle_refs"], list)
+                or not isinstance(result["directories"], list)
+                or not isinstance(result["members"], list)
+                or not isinstance(result["sources"], list)
+                or any(not isinstance(name, str) or not name for name in result["dependency_modules"])
+                or any(not isinstance(path, str) or not path for path in result["bundle_refs"])
+                or any(not isinstance(path, str) or not path for path in result["directories"])
+                or any(not isinstance(path, str) or not path for path in result["members"])
+                or any(not isinstance(path, str) or not path for path in result["sources"])
+            ):
+                raise MakeProbeError("chapterbundle dependency support is malformed")
+            code_paths = []
+            for module in result["dependency_modules"]:
+                code_paths.extend(_python_module_code(self.session, module))
+            self.chapterbundle_support = (
+                key,
+                tuple(sorted(set(code_paths))),
+                tuple(sorted(relative_path(path) for path in result["bundle_refs"])),
+                tuple(sorted(relative_path(path) for path in result["directories"])),
+                tuple(sorted(relative_path(path) for path in result["members"])),
+                tuple(sorted(relative_path(path) for path in result["sources"])),
+            )
+        return self.chapterbundle_support[1:]
+
+    def _generated_dependency_primary_sources(self, details, values):
+        resolved = {}
+        pending = []
+        code = []
+        pools = {}
+        directories = []
+        for option, selector in details["selectors"]:
+            source = relative_path(values[option])
+            if source in self.session.snapshot.files:
+                resolved[option] = (source,)
+                continue
+            pool = tuple(sorted(
+                path for path in self.session.snapshot.files
+                if path.startswith(source + "/")
+            ))
+            if not pool:
+                resolved[option] = (source,)
+                continue
+            pending.append((option, selector, source))
+            pools[option] = set(pool)
+            directories.append(source)
+            code.extend(_python_module_code(self.session, selector))
+        if not pending:
+            return resolved
+        body = (
+            TRUSTED_REPO_MODULE_LOADER
+            + "import json\n"
+            "from pathlib import Path\n"
+            "queries=json.loads(sys.argv[1])\n"
+            "def rel(value):\n"
+            " path=Path(value)\n"
+            " if path.is_absolute():\n"
+            "  path=path.relative_to('/repo')\n"
+            " if '..' in path.parts:\n"
+            "  raise ValueError('dependency source must be repository-relative without parent components')\n"
+            " return path.as_posix()\n"
+            "resolved={}\n"
+            "for option,module_name,source_name in queries:\n"
+            " module=load_repo_module(module_name)\n"
+            " source=str(Path('/repo') / Path(source_name))\n"
+            " resolved[option]=sorted(rel(path) for path in module.source_paths(source))\n"
+            "print(json.dumps(resolved,sort_keys=True,separators=(',',':')))\n"
+        )
+        output = parse_json(
+            _run_trusted_python(
+                self.session,
+                body,
+                (json.dumps(pending, separators=(",", ":")),),
+                directories=tuple(directories),
+                code=tuple(sorted(set(code))),
+            ).stdout,
+            "generated dependency primary source selection",
+        )
+        if not isinstance(output, dict) or set(output) != {item[0] for item in pending}:
+            raise MakeProbeError("generated dependency source selector returned invalid concrete inputs")
+        for option, _selector, _source in pending:
+            paths = output[option]
+            if (
+                not isinstance(paths, list) or not paths
+                or any(not isinstance(path, str) for path in paths)
+            ):
+                raise MakeProbeError("generated dependency source selector returned no concrete inputs")
+            converted = tuple(_repository_report_path(path) for path in paths)
+            if converted != tuple(sorted(set(converted))) or not set(converted) <= pools[option]:
+                raise MakeProbeError("generated dependency source selector returned invalid concrete inputs")
+            resolved[option] = converted
+        return resolved
+
+    def _generated_dependency(self, module, arguments, contract):
+        details = GENERATED_DEPENDENCY_MODULES.get(module)
+        if details is None:
+            raise MakeProbeError(f"unsupported generated dependency module: {module}")
+        values = _long_option_values(arguments, module)
+        if "--make-target" not in values or "--depfile" not in values:
+            raise MakeProbeError("generated dependency producer requires declared target and depfile")
+        code = list(
+            path for path in contract["input_files"]
+            if path.endswith(".py")
+        )
+        code.extend(_python_module_code(self.session, module, main=True))
+        directories = set()
+        discovery_sources = []
+        bundle_sources = ()
+        bundle_source = None
+        primary = self._generated_dependency_primary_sources(details, values)
+        for option, _selector in details["selectors"]:
+            if option not in values:
+                raise MakeProbeError(f"generated dependency producer is missing {option}")
+            paths = primary[option]
+            discovery_sources.extend(paths)
+            if option == "--bundle-source":
+                bundle_source = values[option]
+                bundle_sources = paths
+            if paths == (relative_path(values[option]),) and paths[0] not in self.session.snapshot.files:
+                directories.add(paths[0])
+            elif values[option] not in self.session.snapshot.files and (
+                self.session.tree / relative_path(values[option])
+            ).is_dir():
+                directories.add(relative_path(values[option]))
+        if details["needs_chapterbundle_support"]:
+            dependency_code, bundle_refs, dependency_directories, dependency_members, dependency_sources = (
+                self._chapterbundle_dependency_support(bundle_source, bundle_sources)
+            )
+            code.extend(dependency_code)
+            directories.update(dependency_directories)
+            directories.update(("assets", "graphics", "include", "include/constants", "src", "src/data"))
+            discovery_sources.extend(bundle_refs)
+            discovery_sources.extend(dependency_members)
+            discovery_sources.extend(dependency_sources)
+        discovery = parse_json(
+            _run_trusted_python(
+                self.session,
+                (
+                    TRUSTED_REPO_MODULE_LOADER
+                    + "import json\n"
+                    "from pathlib import Path\n"
+                    + f"module=load_repo_module({module!r})\n"
+                    "arguments=json.loads(sys.argv[1])\n"
+                    "def rooted(value):\n"
+                    " path=Path(value)\n"
+                    " return str(Path('/repo') / path)\n"
+                    "def report(value):\n"
+                    " path=Path(value)\n"
+                    " if path.is_absolute():\n"
+                    "  return '/repo/' + path.relative_to('/repo').as_posix()\n"
+                    " return '/repo/' + path.as_posix()\n"
+                    "print(json.dumps([\n"
+                    " report(path)\n"
+                    " for path in module.collect_input_paths(*(rooted(value) for value in arguments))\n"
+                    "],separators=(',',':')))\n"
+                ),
+                (json.dumps([
+                    value for key, value in zip(arguments[::2], arguments[1::2])
+                    if key not in {"--make-target", "--depfile"}
+                ], separators=(",", ":")),),
+                sources=tuple(sorted(set(discovery_sources))),
+                directories=tuple(sorted(directories)),
+                code=tuple(sorted(set(code))),
+            ).stdout,
+            "generated dependency input discovery",
+        )
+        if (
+            not isinstance(discovery, list) or not discovery
+            or any(not isinstance(path, str) or not path for path in discovery)
+        ):
+            raise MakeProbeError("generated dependency discovery returned no inputs")
+        reported = tuple(discovery)
+        files = []
+        declared_directories = set(directories)
+        for path in reported:
+            relative = _repository_report_path(path)
+            if relative.endswith(".py"):
+                code.append(relative)
+            elif relative in self.session.snapshot.files:
+                files.append(relative)
+            else:
+                declared_directories.add(relative)
+        files = tuple(sorted(set(files)))
+        source_identities = self.session.source_owners(files)
+        body = (
+            TRUSTED_REPO_MODULE_LOADER
+            + "import hashlib,json,stat\n"
+            "from pathlib import Path\n"
+            + f"module=load_repo_module({module!r})\n"
+            "inputs=json.loads(sys.argv[3])\n"
+            "tracked=json.loads(sys.argv[4])\n"
+            "identities={row[0]:tuple(row[1:]) for row in json.loads(sys.argv[5])}\n"
+            "if set(identities) != set(tracked):\n"
+            " raise ValueError('dependency publication source identities must match tracked inputs exactly')\n"
+            "for path in tracked:\n"
+            " source=Path('/repo') / Path(path)\n"
+            " status=source.stat()\n"
+            " digest=hashlib.sha256(source.read_bytes()).hexdigest()\n"
+            " mode=f'{stat.S_IFREG | stat.S_IMODE(status.st_mode):06o}'\n"
+            " if (mode,digest) != identities[path]:\n"
+            "  raise ValueError(f'captured source identity changed: {path}')\n"
+            "def rooted(value):\n"
+            " path=Path(value)\n"
+            " if path.is_absolute():\n"
+            "  return '/repo/' + path.relative_to('/repo').as_posix()\n"
+            " return '/repo/' + path.as_posix()\n"
+            "output=Path('/work') / Path(sys.argv[1])\n"
+            "output.parent.mkdir(parents=True,exist_ok=True)\n"
+            "content=module.render_depfile(sys.argv[2],[rooted(path) for path in inputs])\n"
+            "try:\n"
+            " existing=output.read_text(encoding='utf-8')\n"
+            "except OSError:\n"
+            " existing=None\n"
+            "if existing != content:\n"
+            " output.write_text(content,encoding='utf-8')\n"
+        )
+        return _trusted_python_command(
+            self.session,
+            body,
+            (
+                relative_path(values["--depfile"]),
+                values["--make-target"],
+                json.dumps(reported, separators=(",", ":")),
+                json.dumps(files, separators=(",", ":")),
+                json.dumps(source_identities, separators=(",", ":")),
+            ),
+            sources=files,
+            outputs=(relative_path(values["--depfile"]),),
+            directories=tuple(sorted(declared_directories)),
+            code=tuple(sorted(set(code))),
+        )
+
     def _register(self, command, contract):
         if contract["id"] == "host-uname":
             return Command(("/usr/bin/uname",))
@@ -532,7 +970,7 @@ class MakeCommands:
             return self.dependency(command)
         if contract["id"] in MODERN_DIRECTORY_CONTRACTS:
             return modern_toolchain_directory_command(self.session, command, contract)
-        tokens = shlex.split(command)
+        tokens = _shell_tokens(command, "registered command")
         while tokens and tokens[-1] in {"2>&1", "2>/dev/null"}:
             tokens.pop()
         environment = {}
@@ -607,6 +1045,10 @@ class MakeCommands:
             python_code = (*python_code, *_python_source_paths(self.session, arguments[1]))
             body = prefix + "sys.argv=['-c']+" + repr(arguments[2:]) + ";exec(" + repr(arguments[1]) + ")"
         elif arguments[:1] == ["-m"]:
+            if arguments[1] in GENERATED_DEPENDENCY_MODULES:
+                if environment or stdin is not None:
+                    raise MakeProbeError("generated dependency producer uses an unsupported shell wrapper")
+                return self._generated_dependency(arguments[1], arguments[2:], contract)
             python_code = (*python_code, *_python_module_paths(
                 _available_python_paths(self.session),
                 arguments[1],

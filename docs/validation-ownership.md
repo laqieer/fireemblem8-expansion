@@ -55,6 +55,12 @@ read from candidate claims and is not a skip-validation switch. The shared
 executor must still enforce exact declared/consumed sources and declared
 private outputs. This consumer seam alone does not establish the full Make
 domain, graph, oracle or lifecycle acceptance.
+Generated-data dependency remakes follow the same ownership split. Directory-
+backed table roots are selected through the table's metadata-only
+`source_paths` API, the complete prerequisite list still comes from the live
+`deps.collect_input_paths(...)` function, and depfile bytes are published from
+that captured result plus the selected tracked identities rather than by
+reopening an uncontrolled checkout output path.
 Python command registrations explicitly declare the repository root, the
 adapted command's actual repository import closure, and the import directories
 needed for that closure through `Command.directories`. Enumeration uses the
