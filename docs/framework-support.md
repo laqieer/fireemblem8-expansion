@@ -158,10 +158,13 @@ name.
 | `python3 -m scripts.upstream_port {scan,drift,report,verify,...}` | Upstream-drift tracking (see [`docs/upstream-porting.md`](upstream-porting.md)) | No for `scan`/`drift`/`report`; `verify` builds the full gate set | No for `scan`/`drift`/`report`; depends on the gate set for `verify` |
 
 The pure host asset/generated-data/localization targets above, plus bare
-`make`/`make all` and the explicit modern phony goals, do not select the
+`make`/`make all` and modern goals explicitly registered in `MODERN_GOALS`, do not select the
 archival lane or eagerly trigger unrelated archival C depfile remakes or
 scaninc expansions from the legacy object rules on their own.
 `make legacy`/`make fireemblem8.gba` remain the explicit archival selectors.
+Other targets, including unregistered modern-named entrypoints, retain
+conservative dependency handling; the policy does not infer safety from a
+target's name.
 When a command line mixes one of those safe goals with an archival/C-object or
 unknown goal, GNU Make still generates/includes the archival dependency files
 and restores the legacy scaninc prerequisites before compiling the legacy
