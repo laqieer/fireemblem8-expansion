@@ -2,6 +2,7 @@
 
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -554,6 +555,45 @@ class CandidateCoverageTests(unittest.TestCase):
                             tools.model.ReviewError, "changed after review start"):
                         session.read_action("read-candidate", fixture["paths"]["added"])
                     self.assertEqual(reader.calls, 0)
+
+    def test_frozen_root_strings_do_not_reresolve_after_owned_path_replacement(self):
+        with snapshot() as repo:
+            fixture = candidate_fixture(repo)
+            scratch = repo.root.parent
+            alias = scratch / (repo.root.name + "-alias")
+            clone = scratch / (repo.root.name + "-clone")
+            moved = scratch / (repo.root.name + "-moved")
+            original_root = str(repo.root.resolve())
+            os.symlink(repo.root, alias)
+            try:
+                tools = gate.ReviewTools(gate.GitTree(alias, fixture["head"]), alias)
+                changes = tools.candidate_changes(
+                    fixture["base"], fixture["head"], paths=[fixture["paths"]["added"]])
+                self.assertEqual(changes.resolved_root, original_root)
+                session, runtime = self.start_session(tools, fixture["base"], fixture["head"], max_files=1)
+                session.read_action("read-candidate", fixture["paths"]["added"])
+                runtime.result.files = 1
+                report = session.finish(runtime)
+                self.assertEqual(report.candidate_root, original_root)
+                subprocess.run(["git", "clone", "--quiet", str(repo.root), str(clone)], check=True)
+                os.unlink(alias)
+                shutil.move(str(repo.root), str(moved))
+                os.symlink(str(clone), str(repo.root))
+                try:
+                    coverage = tools.model.require_candidate_path_coverage(report, changes)
+                    self.assertEqual(coverage.resolved_root, original_root)
+                    wrong_root = tools.model.CandidateRequirements(
+                        str(clone.resolve()), fixture["base"], fixture["head"], changes.changes)
+                    with self.assertRaisesRegex(tools.model.ReviewError, "root mismatch"):
+                        tools.model.require_candidate_path_coverage(report, wrong_root)
+                finally:
+                    os.unlink(repo.root)
+                    shutil.move(str(moved), str(repo.root))
+                    shutil.rmtree(clone)
+                    os.symlink(repo.root, alias)
+            finally:
+                if alias.is_symlink():
+                    os.unlink(alias)
 
     def test_prebegin_candidate_binding_tamper_is_rejected_or_assignment_raises(self):
         with snapshot() as repo:
