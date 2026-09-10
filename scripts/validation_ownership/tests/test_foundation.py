@@ -35,6 +35,7 @@ from scripts.validation_ownership.make_probe import (
     _read_events, _read_observation, _trusted_runtime_bytes, probe_generated_registry,
 )
 from scripts.validation_ownership.python_commands import (
+    directory_python_command,
     generated_registry_source_paths,
     python_command,
 )
@@ -4260,6 +4261,23 @@ raise AssertionError("default termination was lost")
         self.assertFalse(budget.children)
         self.assertEqual(list(scratch.iterdir()), [])
         scratch.rmdir()
+
+    def test_directory_python_command_preserves_root_marker_and_rejects_aliases(self):
+        self.add("data/value.txt", "captured")
+        with self.session() as session:
+            command = directory_python_command(
+                session,
+                "import json,os;from pathlib import Path;"
+                "print(json.dumps([sorted(os.listdir('.')),Path('data/value.txt').read_text()]))",
+                sources=("data/value.txt",), directories=(".", "data"),
+            )
+            result = session.command(command)
+            self.assertEqual(json.loads(result.stdout), [["data"], "captured"])
+            self.assertEqual(result.consumed, ("data/value.txt",))
+            for path in ("/repo", "../outside", "./data", "data/../data"):
+                with self.subTest(path=path), self.assertRaises(MakeProbeError):
+                    directory_python_command(session, "print('not run')", directories=(path,))
+        self.assert_clean(session)
 
     def test_standard_python_command_requires_complete_gitlink_capture_for_namespace_imports(self):
         module, (base, _current) = self.gitlink_fixture()

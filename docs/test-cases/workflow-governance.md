@@ -5030,7 +5030,7 @@ localization/chapterbundle pair is complete #180 CURRENT/BASE/112-domain,
 census, graph, oracle, lifecycle or public-gate acceptance. User-namespace
 evidence does not imply a separately untested sudo credential transition.
 
-## TC-WORKFLOW-PROBE-PYTHON-PRODUCERS-001: Share source-only Python producer commands
+## TC-PROBE-PYTHON-PRODUCERS-001: Share source-only Python producer commands
 
 ### Feature and configuration
 

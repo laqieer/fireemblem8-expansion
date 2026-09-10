@@ -180,6 +180,7 @@ def _directory_closure(paths):
     return tuple(sorted({
         relative_path(path)
         for directory in paths
+        if directory != "."
         for path in (
             directory,
             *(parent.as_posix() for parent in PurePosixPath(relative_path(directory)).parents),
