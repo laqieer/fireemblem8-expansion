@@ -359,9 +359,9 @@ class ArchivalDependencyFragmentTests(unittest.TestCase):
 
     def test_clearing_scaninc_suppression_reintroduces_ordinary_make_demand(self):
         for goals, stamp_name in (
-            (("assets-test", "ARCHIVAL_SCANINC_NODEP="), "assets-test.stamp"),
-            (("localization-test", "ARCHIVAL_SCANINC_NODEP="), "localization-test.stamp"),
-            (("all", "ARCHIVAL_SCANINC_NODEP="), "expansion-modern-clean.stamp"),
+            (("assets-test", "NODEP=", "ARCHIVAL_SCANINC_NODEP="), "assets-test.stamp"),
+            (("localization-test", "NODEP=", "ARCHIVAL_SCANINC_NODEP="), "localization-test.stamp"),
+            (("all", "NODEP=", "ARCHIVAL_SCANINC_NODEP="), "expansion-modern-clean.stamp"),
         ):
             with self.subTest(goals=goals):
                 fixture = self.make_fixture()
@@ -417,6 +417,64 @@ class ArchivalDependencyFragmentTests(unittest.TestCase):
         self.assertEqual(fixture.log_lines(fixture.cpp_log), [], result.stdout)
         self.assertFalse(fixture.depfile.exists())
 
+    def test_mixed_modern_and_non_c_goals_preserve_incremental_scaninc_rebuilds(self):
+        for tool in (Path("/usr/bin/as"), Path("/usr/bin/g++")):
+            if not tool.exists():
+                self.skipTest(f"missing required native tool: {tool}")
+        fixture = self.make_fixture(
+            host_goals=("native-midi.o",),
+            make_prelude=(
+                "C_OBJECTS := legacy.o\n"
+                "DATA_SRC_C_OBJECTS := native-data.o\n"
+                "ASM_OBJECTS := asm/native.o\n"
+                "MID_OBJECTS := native-midi.o\n"
+                "MODERN_GOALS += expansion-modern-clean\n"
+            ),
+        )
+        scanner = subprocess.run(
+            ["/usr/bin/g++", "-std=c++11", "-O2",
+             *map(str, sorted((ROOT / "tools/scaninc").glob("*.cpp"))),
+             "-o", str(fixture.root / "scaninc")],
+            text=True, capture_output=True, check=False, timeout=60,
+        )
+        self.assertEqual(scanner.returncode, 0, scanner.stdout + scanner.stderr)
+        (fixture.root / "asm").mkdir(exist_ok=True)
+        (fixture.root / "asm/native.s").write_text(
+            '.section .rodata\n.globl native_fixture\nnative_fixture:\n'
+            '.include "include/native.inc"\n', encoding="utf-8",
+        )
+        include = fixture.root / "include/native.inc"
+        include.write_text(".byte 1\n", encoding="utf-8")
+        with (fixture.root / "Makefile").open("a", encoding="utf-8") as makefile:
+            makefile.write(dedent("""\
+                ifeq ($(NODEP),1)
+                asm/native.o: data_dep :=
+                else ifeq ($(ARCHIVAL_SCANINC_NODEP),1)
+                asm/native.o: data_dep :=
+                else
+                asm/native.o: data_dep = $(shell ./scaninc -I include -I "" asm/native.s)
+                endif
+                .SECONDEXPANSION:
+                asm/native.o: asm/native.s $$(data_dep)
+                \t/usr/bin/as $< -o $@
+                """))
+
+        first = fixture.make("asm/native.o")
+        self.assertEqual(first.returncode, 0, first.stdout)
+        assembled = fixture.root / "asm/native.o"
+        before = assembled.read_bytes()
+
+        include.write_text(".byte 9\n", encoding="utf-8")
+        mixed = fixture.make("expansion-modern-clean", "asm/native.o")
+        self.assertEqual(mixed.returncode, 0, mixed.stdout)
+        rebuilt = assembled.read_bytes()
+        self.assertNotEqual(before, rebuilt)
+
+        include.write_text(".byte 1\n", encoding="utf-8")
+        forced = fixture.make("NODEP=1", "expansion-modern-clean", "asm/native.o")
+        self.assertEqual(forced.returncode, 0, forced.stdout)
+        self.assertEqual(assembled.read_bytes(), rebuilt)
+
     def test_recursive_default_non_c_requests_preserve_scanned_include_rebuilds(self):
         for tool in (Path("/usr/bin/as"), Path("/usr/bin/g++")):
             if not tool.exists():
@@ -432,7 +490,6 @@ class ArchivalDependencyFragmentTests(unittest.TestCase):
                 "MODERN_ELF_LEGACY_ASM := asm/native.o\n"
                 "MODERN_ELF_LEGACY_MIDI := native-midi.o\n"
                 "MODERN_GOALS += expansion-modern-boot-check expansion-modern-legacy-ready\n"
-                "NODEP ?= 1\n"
             ),
         )
         database = fixture.make("-rR", "-np", "expansion-modern-clean", cwd=ROOT)

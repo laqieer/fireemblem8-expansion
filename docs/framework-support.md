@@ -166,6 +166,9 @@ When a command line mixes one of those safe goals with an archival/C-object or
 unknown goal, GNU Make still generates/includes the archival dependency files
 and restores the legacy scaninc prerequisites before compiling the legacy
 object.
+That includes mixed requests such as `make expansion-modern-clean asm/arm.o`:
+the pure modern goal still avoids unrelated depfile remakes, but the explicit
+legacy non-C object keeps its scaninc-based include freshness.
 The known non-C assembly, MIDI, and banim object inventories are safe only for
 the depfile side of that policy: the modern build's recursive `NODEP=0`
 preparation still keeps their real scaninc and asset freshness, while C object

@@ -117,16 +117,21 @@ file rebuilds native object bytes, without preprocessing unrelated C. Known
 MIDI/banim inventory goals exercise only dependency selection in this fixture,
 not real asset conversion or compression. The actual root Make database must
 admit the complete non-C inventory and exclude all C/data-C objects. Mixed
-assembly/C goals still load C dependency files and generated headers.
+assembly/C goals still load C dependency files and generated headers, while a
+mixed modern plus direct legacy assembly request keeps scaninc active and
+rebuilds the native object after an included file changes.
 
 ### Negative control
 
 Before the fix, bare/default and pure host goals eagerly remade archival `.d`
 files, and a mixed invocation containing a safe modern goal plus `legacy.o`
 tried to compile before the generated header existed.
-Before the scan-demand follow-through, clearing only `ARCHIVAL_SCANINC_NODEP`
-made those same host/default requests execute the unrelated ordinary-Make
-scaninc probes again.
+Before the mixed-goal follow-up, an explicit `NODEP=` plus
+`ARCHIVAL_SCANINC_NODEP=` user override made those same host/default requests
+execute the unrelated ordinary-Make scaninc probes again.
+Before the mixed-goal follow-up, any `MODERN_GOALS` member implicitly forced
+`NODEP=1`, so a request such as `make expansion-modern-clean asm/native.o`
+left the explicitly requested object stale after an included assembly edit.
 Before the recursive correction, both actual recipe chains caused native CPP
 to generate the unrelated legacy dependency file.
 

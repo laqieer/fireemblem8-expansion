@@ -195,6 +195,30 @@ class BareMakeDryRunTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stdout[-4000:])
             self.assertFalse(scan_log.exists(), result.stdout[-4000:])
 
+    def test_mixed_modern_and_direct_legacy_object_dry_run_keeps_scaninc(self):
+        TMP_ROOT.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(
+            prefix="mixed-modern-scaninc-", dir=TMP_ROOT
+        ) as temporary:
+            wrapper = Path(temporary) / "scaninc_wrapper.py"
+            scan_log = Path(temporary) / "scan.log"
+            wrapper.write_text(
+                "#!/usr/bin/env python3\n"
+                "from pathlib import Path\n"
+                "import sys\n"
+                f"path = Path({str(scan_log)!r})\n"
+                "with path.open('a', encoding='utf-8') as stream:\n"
+                "    stream.write(' '.join(sys.argv[1:]) + '\\n')\n",
+                encoding="utf-8",
+            )
+            wrapper.chmod(0o755)
+            result = run_make(
+                ["-n", "expansion-modern-clean", "asm/arm.o", f"SCANINC={wrapper}"]
+            )
+            self.assertEqual(result.returncode, 0, result.stdout[-4000:])
+            self.assertTrue(scan_log.exists(), result.stdout[-4000:])
+            self.assertIn("asm/arm.s", scan_log.read_text(encoding="utf-8"))
+
     def test_bare_make_dry_run_never_mentions_agbcc(self):
         result = run_make(["-n"])
         self.assertEqual(result.returncode, 0, result.stdout[-4000:])
