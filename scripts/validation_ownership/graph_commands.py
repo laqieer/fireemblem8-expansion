@@ -2,19 +2,20 @@
 
 from __future__ import annotations
 
-import ast
-import importlib.util
 import json
 import os
 from pathlib import Path, PurePosixPath
 import re
-import shlex
 import shutil
 
+from scripts.bash_parser import normalize_bash_script_commands, parse_bash_script_commands
+
+from . import python_commands as shared_python_commands
 from .authority import ENVIRONMENT, encoded, parse_json, relative_path
 from .budget import MakeProbeError, text
 from .make_probe import Command, ProbeSession
 from .graph_regex import CommandPatterns
+from .python_commands import GENERATED_DEPENDENCY_MODULES, generated_dependency_command
 
 
 PYTHON = "/usr/bin/python3"
@@ -109,140 +110,12 @@ visit(sys.argv[1])
 """
 
 
-def python_import_directories(code):
-    return tuple(sorted({
-        ".", *(parent.as_posix() for path in code for parent in PurePosixPath(path).parents),
-    }))
-
-
-def _python_package_name(path):
-    path = relative_path(path)
-    if path.endswith("/__init__.py"):
-        return path[:-12].replace("/", ".")
-    parent = PurePosixPath(path).parent.as_posix()
-    return "" if parent == "." else parent.replace("/", ".")
-
-
-def _python_package_inits(path, available):
-    result = []
-    current = PurePosixPath(relative_path(path)).parent
-    while current.as_posix() != ".":
-        init = current.as_posix() + "/__init__.py"
-        if init in available and init != path:
-            result.append(init)
-        current = current.parent
-    return tuple(reversed(result))
-
-
-def _python_module_paths(available, module, *, main=False):
-    if not module or module.split(".", 1)[0] != "scripts":
-        return ()
-    base = module.replace(".", "/")
-    candidates = ([base + "/__main__.py"] if main else []) + [base + ".py", base + "/__init__.py"]
-    for candidate in candidates:
-        if candidate in available:
-            return (*_python_package_inits(candidate, available), candidate)
-    return ()
-
-
-def _python_import_targets(tree, package=""):
-    modules = set()
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Import):
-            modules.update(alias.name for alias in node.names)
-            continue
-        if not isinstance(node, ast.ImportFrom):
-            continue
-        if node.level:
-            if not package:
-                continue
-            try:
-                base = importlib.util.resolve_name(
-                    "." * node.level + (node.module or ""), package,
-                )
-            except ImportError:
-                continue
-        else:
-            base = node.module or ""
-        if base:
-            modules.add(base)
-        for alias in node.names:
-            if alias.name != "*" and base:
-                modules.add(base + "." + alias.name)
-    return modules
-
-
-def _available_python_paths(session):
-    return {
-        path for path in session.snapshot.files
-        if path.endswith(".py") and path.startswith("scripts/")
-    }
-
-
-def _python_source_paths(session, source, package=""):
-    available = _available_python_paths(session)
-    try:
-        tree = ast.parse(source)
-    except SyntaxError as error:
-        raise MakeProbeError(f"trusted Python adapter body is not valid Python: {error}") from error
-    result = []
-    for module in _python_import_targets(tree, package):
-        result.extend(_python_module_paths(available, module))
-    return tuple(dict.fromkeys(result))
-
-
-def python_code_closure(session, body, code=()):
-    available = _available_python_paths(session)
-    explicit = tuple(dict.fromkeys(relative_path(path) for path in code))
-    result = set(explicit)
-    pending = []
-
-    def add_path(path):
-        path = relative_path(path)
-        if path in result:
-            return
-        result.add(path)
-        if path.endswith(".py") and path in available:
-            pending.append(path)
-        for init in _python_package_inits(path, available):
-            if init not in result:
-                result.add(init)
-                pending.append(init)
-
-    for path in explicit:
-        if path.endswith(".py") and path in available:
-            pending.append(path)
-        for init in _python_package_inits(path, available):
-            if init not in result:
-                result.add(init)
-                pending.append(init)
-
-    for path in _python_source_paths(session, body):
-        add_path(path)
-
-    while pending:
-        path = pending.pop()
-        try:
-            tree = ast.parse(
-                text(session.snapshot.files[path], f"graph Python code {path}", "utf-8"),
-                filename=path,
-            )
-        except SyntaxError as error:
-            raise MakeProbeError(f"graph Python code {path!r} is not valid Python: {error}") from error
-        for module in _python_import_targets(tree, _python_package_name(path)):
-            for imported in _python_module_paths(available, module):
-                add_path(imported)
-    return tuple(sorted(result))
-
-
-def python_command(session, body, arguments=(), *, sources=(), outputs=(), directories=(), code=()):
-    modules = python_code_closure(session, body, code)
-    return Command(
-        (PYTHON, "-I", "-S", "-B", "-c",
-         "import sys;sys.path.insert(0,'/repo');" + body, *arguments),
-        code=modules, sources=tuple(sources), outputs=tuple(outputs),
-        directories=tuple(sorted(set(directories) | set(python_import_directories(modules)))),
-    )
+python_import_directories = shared_python_commands.python_import_directories
+python_code_closure = shared_python_commands.python_code_closure
+python_command = shared_python_commands.python_command
+_available_python_paths = shared_python_commands._available_python_paths
+_python_module_paths = shared_python_commands._python_module_paths
+_python_source_paths = shared_python_commands._python_source_paths
 
 
 def asset_discovery_command(session: ProbeSession, source: str, logical_output: str):
@@ -275,6 +148,61 @@ def asset_discovery_command(session: ProbeSession, source: str, logical_output: 
         "out.write_text(content)",
         (source, logical_output, json.dumps(sources), json.dumps(identities)),
         sources=sources, outputs=(logical_output,), code=("scripts/assets/manifest.py",),
+    )
+
+
+def _shell_commands(command, label):
+    try:
+        return parse_bash_script_commands(command, label)
+    except ValueError as error:
+        raise MakeProbeError(str(error)) from error
+
+
+def _normalized_shell_commands(command, label):
+    try:
+        return normalize_bash_script_commands(command, label)
+    except ValueError:
+        return ()
+
+
+def _shell_tokens(command, label):
+    commands = _shell_commands(command, label)
+    if len(commands) != 1:
+        raise MakeProbeError(f"{label} uses an unsupported multi-command shell shape")
+    return list(commands[0])
+
+
+def _long_option_values(arguments, label):
+    values = {}
+    if len(arguments) % 2:
+        raise MakeProbeError(f"{label} has an unsupported option shape")
+    pairs = iter(arguments)
+    for option, value in zip(pairs, pairs):
+        if not option.startswith("--") or option in values or not value or "\n" in value or "\r" in value:
+            raise MakeProbeError(f"{label} has an unsupported option shape")
+        values[option] = value
+    return values
+
+
+def _generated_dependency_selector_options(module, details, values):
+    expected = {option for option, _selector in details["selectors"]}
+    expected.update(("--make-target", "--depfile"))
+    actual = set(values)
+    if actual != expected:
+        missing = sorted(expected - actual)
+        extra = sorted(actual - expected)
+        detail = []
+        if missing:
+            detail.append("missing " + ", ".join(missing))
+        if extra:
+            detail.append("extra " + ", ".join(extra))
+        raise MakeProbeError(
+            f"{module} options differ from the declared command contract ({'; '.join(detail)})"
+        )
+    return (
+        {option: values[option] for option, _selector in details["selectors"]},
+        values["--make-target"],
+        values["--depfile"],
     )
 
 
@@ -347,7 +275,7 @@ def modern_toolchain_directory_command(session, command, contract):
     inner = command[len(prefix):-len(suffix)]
     if not inner.endswith(" 2>/dev/null"):
         raise MakeProbeError("modern toolchain directory query must suppress stderr explicitly")
-    tokens = shlex.split(inner[:-len(" 2>/dev/null")])
+    tokens = _shell_tokens(inner[:-len(" 2>/dev/null")], "modern toolchain directory query")
     expected = MODERN_DIRECTORY_CONTRACTS[contract["id"]]
     if len(tokens) not in {len(MODERN_ARCH_QUERY_FLAGS) + 2, len(MODERN_ARCH_QUERY_FLAGS) + 3}:
         raise MakeProbeError("modern toolchain directory query differs from its declared flags")
@@ -381,7 +309,13 @@ class MakeCommands:
         self.includes = {}
 
     def _matches(self, command):
-        return [self.contracts[index] for index in self.patterns.fullmatch(command)]
+        matches = [self.contracts[index] for index in self.patterns.fullmatch(command)]
+        if matches:
+            return matches
+        normalized = _normalized_shell_commands(command, "registered command")
+        if len(normalized) == 1 and normalized[0] != command:
+            return [self.contracts[index] for index in self.patterns.fullmatch(normalized[0])]
+        return matches
 
     def __contains__(self, command):
         return len(self._matches(command)) == 1
@@ -497,7 +431,7 @@ class MakeCommands:
         )
 
     def dependency(self, command):
-        tokens = shlex.split(command)
+        tokens = _shell_tokens(command, "dependency producer")
         if (
             tokens[:2] != ["mkdir", "-p"] or len(tokens) < 8
             or tokens[3] != "&&" or tokens[-2] != ">"
@@ -532,7 +466,7 @@ class MakeCommands:
             return self.dependency(command)
         if contract["id"] in MODERN_DIRECTORY_CONTRACTS:
             return modern_toolchain_directory_command(self.session, command, contract)
-        tokens = shlex.split(command)
+        tokens = _shell_tokens(command, "registered command")
         while tokens and tokens[-1] in {"2>&1", "2>/dev/null"}:
             tokens.pop()
         environment = {}
@@ -607,6 +541,21 @@ class MakeCommands:
             python_code = (*python_code, *_python_source_paths(self.session, arguments[1]))
             body = prefix + "sys.argv=['-c']+" + repr(arguments[2:]) + ";exec(" + repr(arguments[1]) + ")"
         elif arguments[:1] == ["-m"]:
+            if arguments[1] in GENERATED_DEPENDENCY_MODULES:
+                if environment or stdin is not None:
+                    raise MakeProbeError("generated dependency producer uses an unsupported shell wrapper")
+                values = _long_option_values(arguments[2:], arguments[1])
+                option_values, make_target, depfile = _generated_dependency_selector_options(
+                    arguments[1], GENERATED_DEPENDENCY_MODULES[arguments[1]], values,
+                )
+                return generated_dependency_command(
+                    self.session,
+                    arguments[1],
+                    option_values=option_values,
+                    make_target=make_target,
+                    depfile=depfile,
+                    code=python_code,
+                )
             python_code = (*python_code, *_python_module_paths(
                 _available_python_paths(self.session),
                 arguments[1],

@@ -272,11 +272,13 @@ VALIDATION_OWNERSHIP_TEMP_ENV = (
 VALIDATION_OWNERSHIP_BASE_REQUIRED_PATHS = (
     ".github/validation-ownership-graph.json",
     ".github/validation-ownership-make-dynamics.json",
+    "scripts/bash_parser.py",
     "scripts/validation_ownership/ci_verifier.py",
     "scripts/validation_ownership/generated_registry_probe.py",
     "scripts/validation_ownership/graph.schema.json",
     "scripts/validation_ownership/isolated_launcher.py",
     "scripts/validation_ownership/make_probe.py",
+    "scripts/validation_ownership/python_commands.py",
     "scripts/validation_ownership/probe-oracle.json",
     "scripts/validation_ownership/reporter.py",
     "scripts/validation_ownership/sandbox_exec.py",

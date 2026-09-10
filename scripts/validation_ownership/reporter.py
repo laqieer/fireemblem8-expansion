@@ -2440,8 +2440,10 @@ def _authority_changed_edges(
             if edge["target"] in make_nodes
         }
     probe_paths = {
+        "scripts/bash_parser.py",
         "scripts/validation_ownership/generated_registry_probe.py",
         "scripts/validation_ownership/make_probe.py",
+        "scripts/validation_ownership/python_commands.py",
         "scripts/validation_ownership/sandbox_exec.py",
         "scripts/validation_ownership/shell_interceptor.c",
     }

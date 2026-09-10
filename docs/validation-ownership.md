@@ -55,6 +55,13 @@ read from candidate claims and is not a skip-validation switch. The shared
 executor must still enforce exact declared/consumed sources and declared
 private outputs. This consumer seam alone does not establish the full Make
 domain, graph, oracle or lifecycle acceptance.
+Issue [#238](https://github.com/laqieer/fireemblem8-expansion/issues/238)
+now owns the reusable Python command closure, registry-source selection and
+generated-dependency publication API in
+`scripts/validation_ownership/python_commands.py`. The graph consumes that
+shared seam rather than carrying its own duplicate importer/depfile adapters.
+Shell continuation normalization is still graph-local integration because it
+binds the sealed Make-command spellings to the shared typed registrations.
 Python command registrations explicitly declare the repository root, the
 adapted command's actual repository import closure, and the import directories
 needed for that closure through `Command.directories`. Enumeration uses the

@@ -55,6 +55,8 @@ TRUSTED_RUNTIME_PATHS = frozenset(
         f"{TRUSTED_PREFIX}graph.schema.json",
         f"{TRUSTED_PREFIX}isolated_launcher.py",
         f"{TRUSTED_PREFIX}make_probe.py",
+        "scripts/bash_parser.py",
+        f"{TRUSTED_PREFIX}python_commands.py",
         f"{TRUSTED_PREFIX}reporter.py",
         f"{TRUSTED_PREFIX}sandbox_exec.py",
         f"{TRUSTED_PREFIX}shell_interceptor.c",

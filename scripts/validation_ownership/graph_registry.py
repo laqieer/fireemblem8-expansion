@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 from .authority import AuthorityLoader, parse_json, relative_path
-from .budget import MakeProbeError, text
-from .make_probe import Command, ProbeSession, TRUSTED_ROOT, probe_generated_registry
-from .graph_commands import python_import_directories
+from .budget import MakeProbeError
+from .make_probe import ProbeSession, probe_generated_registry
+from .python_commands import (
+    generated_registry_command,
+    python_command,
+)
 
 
 REGISTRY_DECLARATIONS = """
@@ -49,59 +52,29 @@ def registry_code(loader: AuthorityLoader, session: ProbeSession):
 
 def observe_declarations(loader: AuthorityLoader, session: ProbeSession):
     code = registry_code(loader, session)
-    output = session.command(Command(
-        ("/usr/bin/python3", "-I", "-S", "-B", "-c", REGISTRY_DECLARATIONS),
-        code=code, directories=python_import_directories(code),
-    ))
+    output = session.command(python_command(session, REGISTRY_DECLARATIONS, code=code))
     return parse_json(output.stdout, "candidate generated-data registry declarations")
 
 
 def observe_directory_sources(loader: AuthorityLoader, session: ProbeSession, record):
-    code = registry_code(loader, session)
     source = relative_path(record["default_source"])
-    pool = tuple(sorted(path for path in session.snapshot.files if path.startswith(source + "/")))
-    if not pool:
-        raise MakeProbeError("registry directory has no captured source candidates")
-    directories = python_import_directories((*code, *pool))
-    driver = text(
-        session.budget.read_bytes(TRUSTED_ROOT / "generated_registry_probe.py", "control"),
-        "generated registry driver",
+    result = probe_generated_registry(
+        loader, session=session,
+        command=generated_registry_command(session, record["name"], source),
     )
-    argv = ("/usr/bin/python3", "-I", "-S", "-B", "-c", driver, record["name"], source)
-    observed = session.command(Command(
-        (*argv, "--source-paths"), code=code, directories=directories,
-    ))
-    paths = parse_json(observed.stdout, "registry directory source discovery")
-    if (
-        not isinstance(paths, list) or not paths
-        or any(not isinstance(path, str) for path in paths)
-        or paths != sorted(set(paths))
-        or not set(paths) <= set(pool)
-    ):
-        raise MakeProbeError("registry directory discovery names invalid source candidates")
-    result = probe_generated_registry(loader, session=session, command=Command(
-        argv, code=code, sources=tuple(paths), directories=directories,
-    ))
     if result["name"] != record["name"] or result["version"] != record["version"]:
         raise MakeProbeError("resolved registry identity differs from its declaration")
     return result["source_paths"]
 
 
 def observe_source_paths(loader: AuthorityLoader, session: ProbeSession, record):
-    code = registry_code(loader, session)
     source = relative_path(record["default_source"])
-    directories = python_import_directories(code)
-    argv = ("/usr/bin/python3", "-I", "-S", "-B", "-c",
-            text(
-                session.budget.read_bytes(TRUSTED_ROOT / "generated_registry_probe.py", "control"),
-                "generated registry driver",
-            ),
-            record["name"], source)
-    if source in session.snapshot.files:
-        result = probe_generated_registry(loader, session=session, command=Command(
-            argv, code=code, sources=(source,), directories=directories,
-        ))
-        if result["name"] != record["name"] or result["version"] != record["version"]:
-            raise MakeProbeError("resolved registry identity differs from its declaration")
-        return result["source_paths"]
-    return observe_directory_sources(loader, session, record)
+    if source not in session.snapshot.files:
+        return observe_directory_sources(loader, session, record)
+    result = probe_generated_registry(
+        loader, session=session,
+        command=generated_registry_command(session, record["name"], source),
+    )
+    if result["name"] != record["name"] or result["version"] != record["version"]:
+        raise MakeProbeError("resolved registry identity differs from its declaration")
+    return result["source_paths"]
