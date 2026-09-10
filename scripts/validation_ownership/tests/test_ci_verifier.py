@@ -213,6 +213,16 @@ class BasePinnedVerifierTests(unittest.TestCase):
             "exact-base-pinned",
         )
 
+    def test_bootstrap_sentinels_do_not_require_newer_runtime_helpers(self):
+        self.assertIn(ci_verifier.CI_VERIFIER_PATH, ci_verifier.BASE_BOOTSTRAP_SENTINELS)
+        for path in (
+            "scripts/bash_parser.py",
+            "scripts/validation_ownership/python_commands.py",
+        ):
+            with self.subTest(path=path):
+                self.assertIn(path, ci_verifier.BASE_AUTHORITY_PATHS)
+                self.assertNotIn(path, ci_verifier.BASE_BOOTSTRAP_SENTINELS)
+
     def test_exact_owner_pair_authority_comparison_rejects_redirects(self):
         graph = {
             "nodes": [

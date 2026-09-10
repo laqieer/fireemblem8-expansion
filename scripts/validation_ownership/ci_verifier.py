@@ -48,9 +48,28 @@ AUTHORITY_BY_MODE = {
     "foundation-introduction": "explicit-introduction",
     "reviewed-evolution": "reviewed-evolution",
 }
+CI_VERIFIER_PATH = f"{TRUSTED_PREFIX}ci_verifier.py"
+FOUNDATION_BOOTSTRAP_PATHS = frozenset(
+    f"{TRUSTED_PREFIX}{name}" for name in (
+        "authority.py", "budget.py", "make_probe.py", "syscall_guard.py",
+        "sandbox_exec.py", "shell_interceptor.c", "make_observer.c", "lifecycle.py",
+    )
+)
+GRAPH_BOOTSTRAP_MARKERS = frozenset(
+    {
+        reporter.GRAPH_PATH.as_posix(),
+        reporter.SCHEMA_PATH.as_posix(),
+        reporter.MAKE_DYNAMIC_PATH.as_posix(),
+        reporter.PROBE_ORACLE_PATH.as_posix(),
+        f"{TRUSTED_PREFIX}reporter.py",
+    }
+)
+BASE_BOOTSTRAP_SENTINELS = frozenset(
+    {CI_VERIFIER_PATH, *FOUNDATION_BOOTSTRAP_PATHS, *GRAPH_BOOTSTRAP_MARKERS}
+)
 TRUSTED_RUNTIME_PATHS = frozenset(
     {
-        f"{TRUSTED_PREFIX}ci_verifier.py",
+        CI_VERIFIER_PATH,
         f"{TRUSTED_PREFIX}generated_registry_probe.py",
         f"{TRUSTED_PREFIX}graph.schema.json",
         f"{TRUSTED_PREFIX}isolated_launcher.py",
@@ -227,18 +246,10 @@ def _base_authority_mode(
     present_authority = BASE_AUTHORITY_PATHS & set(base_entries)
     if not has_validation_package and not present_authority:
         return "bootstrap-not-authoritative"
-    graph_markers = {
-        reporter.GRAPH_PATH.as_posix(), reporter.SCHEMA_PATH.as_posix(),
-        reporter.MAKE_DYNAMIC_PATH.as_posix(), reporter.PROBE_ORACLE_PATH.as_posix(),
-        f"{TRUSTED_PREFIX}reporter.py", f"{TRUSTED_PREFIX}ci_verifier.py",
-    }
-    foundation = {
-        f"{TRUSTED_PREFIX}{name}" for name in (
-            "authority.py", "budget.py", "make_probe.py", "syscall_guard.py",
-            "sandbox_exec.py", "shell_interceptor.c", "make_observer.c", "lifecycle.py",
-        )
-    }
-    if not graph_markers & set(base_entries) and foundation <= set(base_entries):
+    if CI_VERIFIER_PATH not in base_entries and (
+        FOUNDATION_BOOTSTRAP_PATHS <= set(base_entries)
+        and not GRAPH_BOOTSTRAP_MARKERS & set(base_entries)
+    ):
         return "foundation-introduction"
     missing = sorted(BASE_AUTHORITY_PATHS - set(base_entries))
     if missing:

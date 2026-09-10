@@ -656,7 +656,12 @@ dry-run effects, not a source-spelling assertion.
 
 Candidate CI does not use these candidate-authored modules as its own trust
 root. On pull requests, `host-tests` first checks the exact GitHub PR-base
-commit for the complete verifier package. When present, it creates an
+commit for only the stable bootstrap sentinels needed to distinguish
+no-authority, foundation-only, and verifier-owned BASE states. When the BASE
+already carries `scripts/validation_ownership/ci_verifier.py`, the hosted step
+archives that exact BASE and lets its own verifier package validate the
+complete authority set. Newer candidate-only runtime helpers therefore do not
+become preflight requirements for older exact bases. When the verifier is present, it creates an
 unpredictable mode-`0700` directory under the lstat-checked GitHub runner
 temporary root, records its device/inode identity, and archives the complete
 clean base tree there. It never removes or creates a verifier staging path

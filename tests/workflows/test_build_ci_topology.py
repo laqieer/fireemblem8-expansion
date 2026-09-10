@@ -269,26 +269,16 @@ VALIDATION_OWNERSHIP_CANDIDATE_SHA_ENV = (
 VALIDATION_OWNERSHIP_TEMP_ENV = (
     "        VALIDATION_OWNERSHIP_TEMP: ${{ runner.temp }}"
 )
-VALIDATION_OWNERSHIP_BASE_REQUIRED_PATHS = (
+VALIDATION_OWNERSHIP_BASE_BOOTSTRAP_PATHS = (
+    "scripts/validation_ownership/ci_verifier.py",
     ".github/validation-ownership-graph.json",
     ".github/validation-ownership-make-dynamics.json",
-    "scripts/bash_parser.py",
-    "scripts/validation_ownership/ci_verifier.py",
-    "scripts/validation_ownership/generated_registry_probe.py",
     "scripts/validation_ownership/graph.schema.json",
-    "scripts/validation_ownership/isolated_launcher.py",
-    "scripts/validation_ownership/make_probe.py",
-    "scripts/validation_ownership/python_commands.py",
     "scripts/validation_ownership/probe-oracle.json",
     "scripts/validation_ownership/reporter.py",
-    "scripts/validation_ownership/sandbox_exec.py",
-    "scripts/validation_ownership/shell_interceptor.c",
     *("scripts/validation_ownership/" + name for name in (
-        "authority.py", "budget.py", "lifecycle.py", "syscall_guard.py",
-        "make_observer.c", "dispatch.h", "graph_commands.py", "graph_registry.py",
-        "graph_probe.py", "graph_report.py", "graph_lifecycle.py", "scaninc_sources.cpp",
-        "coordinator_capture.py",
-        "graph_regex.py",
+        "authority.py", "budget.py", "make_probe.py", "syscall_guard.py",
+        "sandbox_exec.py", "shell_interceptor.c", "make_observer.c", "lifecycle.py",
     )),
 )
 VALIDATION_OWNERSHIP_GIT_PATH_REDIRECTS = (
@@ -321,11 +311,14 @@ VALIDATION_OWNERSHIP_BASE_CONTRACT = (
     'validation-ownership-base.XXXXXXXXXX',
     '/bin/rm -rf --one-file-system -- "$trusted_root"',
     "unset GIT_ALTERNATE_OBJECT_DIRECTORIES",
-    "base_validation_present=0",
-    "base_validation_missing=0",
-    'if [ "$base_validation_present" -eq 0 ]; then',
-    'elif [ "$base_validation_missing" -ne 0 ]; then',
-    *VALIDATION_OWNERSHIP_BASE_REQUIRED_PATHS,
+    "base_verifier_present=0",
+    "foundation_present=0",
+    "foundation_missing=0",
+    "graph_marker_present=0",
+    'if [ "$base_verifier_present" -ne 0 ]; then',
+    'elif [ "$foundation_present" -eq 0 ] && [ "$graph_marker_present" -eq 0 ]; then',
+    'elif [ "$foundation_missing" -eq 0 ] && [ "$graph_marker_present" -eq 0 ]; then',
+    *VALIDATION_OWNERSHIP_BASE_BOOTSTRAP_PATHS,
     "validation-ownership: bootstrap-not-authoritative",
 )
 EXPECTED_BUILD_SHA_EXPRESSION = (
@@ -1447,7 +1440,7 @@ def _step_has_scrubbed_environment(step: str) -> bool:
     return _step_env_entries(step) == SCRUBBED_STEP_ENV
 
 
-def _base_step_has_complete_authority_loop(step: str) -> bool:
+def _base_step_has_bootstrap_sentinel_loop(step: str) -> bool:
     script = _multiline_step_script(step)
     matched = re.search(r"(?ms)^for required in(?P<paths>.*?)^do\s*$", script)
     if matched is None:
@@ -1456,7 +1449,7 @@ def _base_step_has_complete_authority_loop(step: str) -> bool:
         paths = shlex.split(matched["paths"].replace("\\\n", " "))
     except ValueError:
         return False
-    return len(paths) == len(set(paths)) and set(paths) == set(VALIDATION_OWNERSHIP_BASE_REQUIRED_PATHS)
+    return len(paths) == len(set(paths)) and set(paths) == set(VALIDATION_OWNERSHIP_BASE_BOOTSTRAP_PATHS)
 
 
 def _base_step_has_scrubbed_environment(step: str) -> bool:
@@ -2528,7 +2521,7 @@ def _errors(text: str, retired_workflow_exists: bool) -> list[str]:
         or "scripts/validation_ownership/ci_verifier.py"
         not in base_steps[0]
         or not _base_step_has_scrubbed_environment(base_steps[0])
-        or not _base_step_has_complete_authority_loop(base_steps[0])
+        or not _base_step_has_bootstrap_sentinel_loop(base_steps[0])
     ):
         errors.append(
             "candidate host lost exact PR-base validation ownership authority"
@@ -6007,8 +6000,8 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
     def test_validation_ownership_verifier_is_exact_base_pinned(self):
         host_tests = _job_blocks(self.text)["host-tests"]
         self.assertEqual(
-            set(VALIDATION_OWNERSHIP_BASE_REQUIRED_PATHS),
-            set(ownership_ci_verifier.BASE_AUTHORITY_PATHS),
+            set(VALIDATION_OWNERSHIP_BASE_BOOTSTRAP_PATHS),
+            set(ownership_ci_verifier.BASE_BOOTSTRAP_SENTINELS),
         )
         self.assertLess(
             host_tests.index(VALIDATION_OWNERSHIP_BASE_STEP),
@@ -6068,8 +6061,8 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                 'test -d "$VALIDATION_OWNERSHIP_TEMP"',
             ),
             (
-                "base_validation_present=0",
-                "base_validation_present=1",
+                "base_verifier_present=0",
+                "base_verifier_present=1",
             ),
             (
                 "unset GIT_ALTERNATE_OBJECT_DIRECTORIES",
@@ -6189,7 +6182,7 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
             with tempfile.TemporaryDirectory(dir=scratch.path) as directory:
                 base = Path(directory)
 
-                def run_case(name, base_files):
+                def run_case(name, base_files, candidate_files=None):
                     repository = base / name / "repository"
                     runner_temp = base / name / "runner-temp"
                     repository.mkdir(parents=True)
@@ -6211,6 +6204,7 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                         "base.txt": "base\n",
                         **base_files,
                     }
+                    candidate_files = candidate_files or {}
                     for relative, content in files.items():
                         target = repository / relative
                         target.parent.mkdir(parents=True, exist_ok=True)
@@ -6235,6 +6229,10 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                         "candidate\n",
                         encoding="ascii",
                     )
+                    for relative, content in candidate_files.items():
+                        target = repository / relative
+                        target.parent.mkdir(parents=True, exist_ok=True)
+                        target.write_text(content, encoding="ascii")
                     subprocess.run(
                         ["git", "add", "."],
                         cwd=repository,
@@ -6314,6 +6312,70 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                 self.assertIn(
                     "validation-ownership: incomplete exact-base authority",
                     partial.stderr,
+                )
+
+                exact_base = run_case(
+                    "exact-base-runtime",
+                    {
+                        "scripts/validation_ownership/ci_verifier.py": (
+                            "import argparse\n"
+                            "from pathlib import Path\n"
+                            "import sys\n"
+                            "trusted_root = Path(__file__).resolve().parents[2]\n"
+                            "if str(trusted_root) not in sys.path:\n"
+                            "    sys.path.insert(0, str(trusted_root))\n"
+                            "from scripts.validation_ownership import verifier_runtime\n"
+                            "parser = argparse.ArgumentParser()\n"
+                            "parser.add_argument('--trusted-root', required=True)\n"
+                            "parser.add_argument('--repository-root', required=True)\n"
+                            "parser.add_argument('--base-sha', required=True)\n"
+                            "parser.add_argument('--candidate-sha', required=True)\n"
+                            "args = parser.parse_args()\n"
+                            "runtime = Path(args.trusted_root) / 'scripts/validation_ownership/verifier_runtime.py'\n"
+                            "if not runtime.is_file():\n"
+                            "    raise SystemExit('missing trusted verifier runtime')\n"
+                            "if verifier_runtime.VALUE != 'base-runtime':\n"
+                            "    raise SystemExit('unexpected trusted verifier runtime')\n"
+                            "print('validation-ownership: exact-base-pinned helper=base-runtime')\n"
+                        ),
+                        "scripts/validation_ownership/verifier_runtime.py": (
+                            "VALUE = 'base-runtime'\n"
+                        ),
+                    },
+                    candidate_files={
+                        "scripts/validation_ownership/current_only_helper.py": (
+                            "VALUE = 'candidate-only'\n"
+                        ),
+                    },
+                )
+                self.assertEqual(exact_base.returncode, 0, exact_base.stderr)
+                self.assertIn(
+                    "validation-ownership: exact-base-pinned helper=base-runtime",
+                    exact_base.stdout,
+                )
+
+                missing_runtime = run_case(
+                    "exact-base-missing-runtime",
+                    {
+                        "scripts/validation_ownership/ci_verifier.py": (
+                            "import argparse\n"
+                            "from pathlib import Path\n"
+                            "parser = argparse.ArgumentParser()\n"
+                            "parser.add_argument('--trusted-root', required=True)\n"
+                            "parser.add_argument('--repository-root', required=True)\n"
+                            "parser.add_argument('--base-sha', required=True)\n"
+                            "parser.add_argument('--candidate-sha', required=True)\n"
+                            "args = parser.parse_args()\n"
+                            "runtime = Path(args.trusted_root) / 'scripts/validation_ownership/verifier_runtime.py'\n"
+                            "if not runtime.is_file():\n"
+                            "    raise SystemExit('missing trusted verifier runtime')\n"
+                        ),
+                    },
+                )
+                self.assertNotEqual(missing_runtime.returncode, 0)
+                self.assertIn(
+                    "missing trusted verifier runtime",
+                    missing_runtime.stderr,
                 )
         finally:
             ownership_reporter.cleanup_validation_scratch(scratch)
