@@ -2,11 +2,14 @@ MAKEDEP = mkdir -p $(DEPS_DIR)/$(dir $*) && $(CPP) $(CPPFLAGS) $< -MM -MG -MT $*
 
 MAKECMDGOALS_NODEP := all clean tag codeql-alerts-test codeql-fanalyzer-test \
 	validation-ownership-check $(MODERN_GOALS) \
+	$(filter-out $(C_OBJECTS) $(DATA_SRC_C_OBJECTS),$(ASM_OBJECTS) $(MID_OBJECTS) $(BANIM_OBJECT)) \
 	assets-validate assets-generate assets-check assets-test \
 	generated-data-validate generated-data-generate generated-data-check generated-data-test \
 	localization-validate localization-generate localization-check localization-test localization-budget \
 	game-localization-validate game-localization-generate \
 	game-localization-check game-localization-test game-localization-budget \
+	game-localization-width-check game-localization-text-edits-generate \
+	game-localization-text-edits-check game-localization-eu-check \
 	game-localization-leakage-audit game-localization-leakage-check \
 	game-localization-final-authored-check \
 	game-localization-final-mapping-check \

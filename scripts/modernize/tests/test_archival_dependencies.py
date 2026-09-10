@@ -7,6 +7,11 @@ import unittest
 from pathlib import Path
 from textwrap import dedent
 
+from scripts.modernize.tests.make_database import (
+    make_database_rule,
+    make_database_variable,
+)
+
 
 ROOT = Path(__file__).resolve().parents[3]
 FRAGMENT = ROOT / "archival_dependencies.mk"
@@ -17,7 +22,7 @@ TMP_ROOT = ROOT / "build" / "test-tmp"
 
 
 class ArchivalDependencyFixture:
-    def __init__(self, temporary, host_goals=()):
+    def __init__(self, temporary, host_goals=(), make_prelude=""):
         self._temporary = temporary
         self.root = Path(temporary.name) / "fixture"
         self.root.mkdir(parents=True)
@@ -31,10 +36,11 @@ class ArchivalDependencyFixture:
         self.goal_log = self.root / "goal.log"
         self.customalias_bin = self.root / "customalias.bin"
         self.link_check_bin = self.root / "generated-data-link-check.bin"
-        self._write_fixture(host_goals)
+        self._write_fixture(host_goals, make_prelude)
 
-    def _write_fixture(self, host_goals) -> None:
+    def _write_fixture(self, host_goals, make_prelude) -> None:
         extra_host_goals = " ".join(host_goals)
+        indented_prelude = make_prelude.replace("\n", "\n                ")
         shutil.copyfile(FRAGMENT, self.root / "archival_dependencies.mk")
         (self.root / "build" / "deps").mkdir(parents=True)
         (self.root / "generated").mkdir()
@@ -88,6 +94,7 @@ class ArchivalDependencyFixture:
                 CFILES := legacy.c
                 CFILES_GENERATED :=
                 MODERN_GOALS := expansion-modern-clean
+                {indented_prelude}
 
                 include archival_dependencies.mk
 
@@ -95,6 +102,8 @@ class ArchivalDependencyFixture:
                     assets-validate assets-generate assets-check assets-test \\
                     generated-data-validate generated-data-generate generated-data-check generated-data-test \\
                     localization-validate localization-generate localization-check localization-test localization-budget \\
+                    game-localization-width-check game-localization-text-edits-generate \\
+                    game-localization-text-edits-check game-localization-eu-check \\
                     customalias generated-data-link-check {extra_host_goals}
 
                 all: expansion-modern-clean
@@ -102,37 +111,39 @@ class ArchivalDependencyFixture:
                 expansion-modern-clean \\
                 assets-validate assets-generate assets-check assets-test \\
                 generated-data-validate generated-data-generate generated-data-check generated-data-test \\
-                localization-validate localization-generate localization-check localization-test localization-budget {extra_host_goals}:
-                	@printf '%s\\n' $@ >> $(CURDIR)/goal.log
-                	@touch $(CURDIR)/$@.stamp
+                localization-validate localization-generate localization-check localization-test localization-budget \\
+                game-localization-width-check game-localization-text-edits-generate \\
+                game-localization-text-edits-check game-localization-eu-check {extra_host_goals}:
+                \t@printf '%s\\n' $@ >> $(CURDIR)/goal.log
+                \t@touch $(CURDIR)/$@.stamp
 
                 customalias: legacy.o
-                	@printf '%s\\n' $@ >> $(CURDIR)/goal.log
-                	@cp legacy.o $(CURDIR)/customalias.bin
+                \t@printf '%s\\n' $@ >> $(CURDIR)/goal.log
+                \t@cp legacy.o $(CURDIR)/customalias.bin
 
                 generated-data-link-check: legacy.o
-                	@printf '%s\\n' $@ >> $(CURDIR)/goal.log
-                	@cp legacy.o $(CURDIR)/generated-data-link-check.bin
+                \t@printf '%s\\n' $@ >> $(CURDIR)/goal.log
+                \t@cp legacy.o $(CURDIR)/generated-data-link-check.bin
 
                 generated/fixture_generated.h: generated/input.txt
-                	@printf 'generated-header\\n' >> $(CURDIR)/events.log
-                	@printf '#define GENERATED_VALUE %s\\n' "$$(cat $<)" > $@
+                \t@printf 'generated-header\\n' >> $(CURDIR)/events.log
+                \t@printf '#define GENERATED_VALUE %s\\n' "$$(cat $<)" > $@
 
                 legacy.o: legacy.c $(DEPS_DIR)/legacy.d
-                	@printf 'compile\\n' >> $(CURDIR)/events.log
-                	$(CC) $(CFLAGS) -c $< -o $@
+                \t@printf 'compile\\n' >> $(CURDIR)/events.log
+                \t$(CC) $(CFLAGS) -c $< -o $@
                 """
             ),
             encoding="utf-8",
         )
 
-    def make(self, *arguments: str) -> subprocess.CompletedProcess[str]:
+    def make(self, *arguments: str, cwd=None) -> subprocess.CompletedProcess[str]:
         env = os.environ.copy()
         env.pop("MAKEFLAGS", None)
         env["TMPDIR"] = str(TMP_ROOT)
         return subprocess.run(
             [str(MAKE), "--no-print-directory", *arguments],
-            cwd=self.root,
+            cwd=self.root if cwd is None else cwd,
             env=env,
             text=True,
             stdout=subprocess.PIPE,
@@ -157,12 +168,12 @@ class ArchivalDependencyFragmentTests(unittest.TestCase):
         if missing:
             raise unittest.SkipTest(f"missing required host tools: {missing}")
 
-    def make_fixture(self) -> ArchivalDependencyFixture:
+    def make_fixture(self, **options) -> ArchivalDependencyFixture:
         temporary = tempfile.TemporaryDirectory(
             prefix="archival-dependencies-", dir=TMP_ROOT
         )
         self.addCleanup(temporary.cleanup)
-        return ArchivalDependencyFixture(temporary)
+        return ArchivalDependencyFixture(temporary, **options)
 
     def test_safe_host_and_default_goals_skip_archival_dependency_generation(self):
         cases = [
@@ -181,6 +192,10 @@ class ArchivalDependencyFragmentTests(unittest.TestCase):
             (("localization-check",), "localization-check.stamp"),
             (("localization-test",), "localization-test.stamp"),
             (("localization-budget",), "localization-budget.stamp"),
+            (("game-localization-width-check",), "game-localization-width-check.stamp"),
+            (("game-localization-text-edits-generate",), "game-localization-text-edits-generate.stamp"),
+            (("game-localization-text-edits-check",), "game-localization-text-edits-check.stamp"),
+            (("game-localization-eu-check",), "game-localization-eu-check.stamp"),
         ]
 
         for goals, stamp_name in cases:
@@ -294,4 +309,118 @@ class ArchivalDependencyFragmentTests(unittest.TestCase):
         self.assertEqual(
             fixture.log_lines(fixture.events_log),
             ["generated-header", "compile", "generated-header", "compile"],
+        )
+
+    def test_recursive_localization_host_children_skip_archival_dependencies(self):
+        children = (
+            "game-localization-width-check",
+            "game-localization-text-edits-check",
+        )
+        fixture = self.make_fixture(make_prelude="PYTHON3 := true")
+        database = fixture.make("-rR", "-np", "expansion-modern-clean", cwd=ROOT)
+        self.assertEqual(database.returncode, 0, database.stdout[-4000:])
+        rule = make_database_rule(database.stdout, "game-localization-test")
+        self.assertIsNotNone(rule)
+        with (fixture.root / "Makefile").open("a", encoding="utf-8") as makefile:
+            makefile.write("\n.PHONY: game-localization-test\n" + rule + "\n")
+
+        result = fixture.make("game-localization-test")
+        self.assertEqual(result.returncode, 0, result.stdout)
+        self.assertEqual(fixture.log_lines(fixture.goal_log), list(children))
+        self.assertEqual(fixture.log_lines(fixture.cpp_log), [], result.stdout)
+        self.assertFalse(fixture.depfile.exists())
+
+    def test_recursive_default_non_c_requests_preserve_scanned_include_rebuilds(self):
+        for tool in (Path("/usr/bin/as"), Path("/usr/bin/g++")):
+            if not tool.exists():
+                self.skipTest(f"missing required native tool: {tool}")
+        fixture = self.make_fixture(
+            host_goals=("native-midi.o", "native-banim.o"),
+            make_prelude=(
+                "C_OBJECTS := legacy.o\n"
+                "DATA_SRC_C_OBJECTS := native-data.o\n"
+                "ASM_OBJECTS := asm/native.o legacy.o native-data.o\n"
+                "MID_OBJECTS := native-midi.o\n"
+                "BANIM_OBJECT := native-banim.o\n"
+                "MODERN_ELF_LEGACY_ASM := asm/native.o\n"
+                "MODERN_ELF_LEGACY_MIDI := native-midi.o\n"
+                "MODERN_GOALS += expansion-modern-boot-check expansion-modern-legacy-ready\n"
+                "NODEP ?= 1\n"
+            ),
+        )
+        database = fixture.make("-rR", "-np", "expansion-modern-clean", cwd=ROOT)
+        self.assertEqual(database.returncode, 0, database.stdout[-4000:])
+        rules = [make_database_rule(database.stdout, name) for name in (
+            "all", "expansion-modern-legacy-ready",
+        )]
+        self.assertTrue(all(rule is not None for rule in rules))
+        scanner = subprocess.run(
+            ["/usr/bin/g++", "-std=c++11", "-O2",
+             *map(str, sorted((ROOT / "tools/scaninc").glob("*.cpp"))),
+             "-o", str(fixture.root / "scaninc")],
+            text=True, capture_output=True, check=False, timeout=60,
+        )
+        self.assertEqual(scanner.returncode, 0, scanner.stdout + scanner.stderr)
+        (fixture.root / "asm").mkdir()
+        (fixture.root / "asm/native.s").write_text(
+            '.section .rodata\n.globl native_fixture\nnative_fixture:\n'
+            '.include "include/native.inc"\n', encoding="utf-8",
+        )
+        include = fixture.root / "include/native.inc"
+        include.write_text(".byte 1\n", encoding="utf-8")
+        with (fixture.root / "Makefile").open("a", encoding="utf-8") as makefile:
+            makefile.write("\n" + "\n\n".join(rules) + "\n")
+            makefile.write(dedent("""\
+                .PHONY: expansion-modern-boot-check expansion-modern-legacy-ready
+                expansion-modern-boot-check: expansion-modern-legacy-ready
+                ifeq ($(NODEP),1)
+                asm/native.o: data_dep :=
+                else
+                asm/native.o: data_dep = $(shell ./scaninc -I include -I "" asm/native.s)
+                endif
+                .SECONDEXPANSION:
+                asm/native.o: asm/native.s $$(data_dep)
+                \t/usr/bin/as $< -o $@
+                """))
+
+        first = fixture.make("NODEP=1")
+        self.assertEqual(first.returncode, 0, first.stdout)
+        self.assertEqual(fixture.log_lines(fixture.cpp_log), [], first.stdout)
+        self.assertFalse(fixture.depfile.exists())
+        assembled = fixture.root / "asm/native.o"
+        before = assembled.read_bytes()
+        include.write_text(".byte 9\n", encoding="utf-8")
+        second = fixture.make("all", "NODEP=1")
+        self.assertEqual(second.returncode, 0, second.stdout)
+        self.assertNotEqual(assembled.read_bytes(), before)
+        non_c = fixture.make("native-banim.o", "native-midi.o", "NODEP=0")
+        self.assertEqual(non_c.returncode, 0, non_c.stdout)
+        self.assertEqual(fixture.log_lines(fixture.cpp_log), [], non_c.stdout)
+        self.assertFalse(fixture.depfile.exists())
+
+        mixed = fixture.make("asm/native.o", "legacy.o", "NODEP=0")
+        self.assertEqual(mixed.returncode, 0, mixed.stdout)
+        self.assertTrue(fixture.depfile.exists())
+        self.assertTrue(fixture.generated_header.exists())
+        self.assertGreater(len(fixture.log_lines(fixture.cpp_log)), 0)
+
+        inventories = {}
+        for name in (
+            "MAKECMDGOALS_NODEP", "MODERN_ELF_LEGACY_ASM",
+            "MODERN_ELF_LEGACY_MIDI", "BANIM_OBJECT", "C_OBJECTS",
+            "DATA_SRC_C_OBJECTS",
+        ):
+            value = make_database_variable(database.stdout, name)
+            self.assertIsNotNone(value, name)
+            inventories[name] = set(value.split())
+        non_c_goals = (
+            inventories["MODERN_ELF_LEGACY_ASM"]
+            | inventories["MODERN_ELF_LEGACY_MIDI"]
+            | inventories["BANIM_OBJECT"]
+        )
+        self.assertTrue(non_c_goals)
+        self.assertTrue(non_c_goals <= inventories["MAKECMDGOALS_NODEP"])
+        self.assertFalse(
+            (inventories["C_OBJECTS"] | inventories["DATA_SRC_C_OBJECTS"])
+            & inventories["MAKECMDGOALS_NODEP"]
         )

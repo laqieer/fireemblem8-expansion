@@ -161,9 +161,14 @@ The pure host asset/generated-data/localization targets above do not select the
 archival lane or pay unrelated archival C dependency remakes on their own.
 Bare `make`/`make all` still resolve to the modern release boot-check path, and
 `make legacy`/`make fireemblem8.gba` remain the explicit archival selectors.
-When a command line mixes one of those safe goals with an archival/object or
+When a command line mixes one of those safe goals with an archival/C-object or
 unknown goal, GNU Make still generates and includes the archival dependency
 files before compiling the legacy object.
+The known non-C assembly, MIDI, and banim object inventories are also safe
+direct goals: the modern build's recursive `NODEP=0` preparation keeps scaninc
+and asset freshness without remaking unrelated C dependencies. C object names,
+including overlaps with those inventories, are explicitly excluded from that
+exception. Arbitrary `.o` names and custom aliases are not assumed safe.
 
 **ABI contract:** `MODERN_ABI=aapcs` is the only supported choice for every
 linked, ROM-producing, or runtime-gate target above (`expansion-modern-elf`,
