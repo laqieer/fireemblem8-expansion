@@ -15,6 +15,7 @@ PROBE_COMMAND = (
 )
 PROBE_TEST_MODULES = (
     "scripts.validation_ownership.tests.test_foundation",
+    "scripts.validation_ownership.tests.test_metadata_transport",
     "scripts.validation_ownership.tests.test_producer",
     "scripts.validation_ownership.tests.test_dependency",
 )

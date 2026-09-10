@@ -402,7 +402,7 @@ joins it to the actual repository/PR/BASE/head assignment. Its review scope is
 four subjects: exact checker revision and domain-separated canonical digests
 of the complete explicit path, edge-ID, and affected-consumer arrays. Paths
 are limited to the single review's 200-file capacity before launch; edge and
-consumer arrays remain bounded at256, with exact ordering/duplicate/type
+consumer arrays remain bounded at 256, with exact ordering/duplicate/type
 validation. The 40-subject caps and all-path coverage requirement are unchanged.
 Calls to
 `coordinator_local_ready` and `assess_candidate` must supply that same live

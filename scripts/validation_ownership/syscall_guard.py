@@ -27,10 +27,12 @@ from pathlib import Path
 if __package__:
     from .authority import _event_command, _read_events, encoded, parse_json
     from .lifecycle import finish_cleanup
+    from .metadata_transport import encode_metadata_transport
     from .producer_channel import ProducerChannel
 else:
     from authority import _event_command, _read_events, encoded, parse_json
     from lifecycle import finish_cleanup
+    from metadata_transport import encode_metadata_transport
     from producer_channel import ProducerChannel
 
 
@@ -2174,7 +2176,7 @@ def supervise(config, drop_privileges):
                 "memory_peak": policy.memory_peak,
                 "observation_bytes": policy.observation_bytes,
                 "observations": sum(map(len, policy.observation_attempts.values())),
-                "metadata": policy.metadata,
+                "metadata": encode_metadata_transport(policy.metadata),
                 "events": policy.events,
             }
             if config.get("dependency"):
