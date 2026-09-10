@@ -23,7 +23,10 @@ ENV = {
 def git(root, *args):
     completed = subprocess.run(
         ["/usr/bin/git", "--no-optional-locks", "-c", "core.fsmonitor=false",
-         "-c", "core.hooksPath=/dev/null", "-C", str(root), *args],
+         "-c", "core.hooksPath=/dev/null",
+         "-c", "gc.auto=0", "-c", "maintenance.auto=0",
+         "-c", "gc.autoDetach=false", "-c", "maintenance.autoDetach=false",
+         "-C", str(root), *args],
         env=ENV, capture_output=True, check=True)
     return completed.stdout.decode().strip()
 

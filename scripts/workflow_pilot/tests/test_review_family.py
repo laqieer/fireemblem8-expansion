@@ -18,6 +18,7 @@ from unittest.mock import patch
 
 from scripts.workflow_pilot import review_family as model
 from scripts.workflow_pilot import trusted_review_gate as gate
+from scripts.workflow_pilot.tests import review_support as support
 from scripts.workflow_pilot.tests.review_support import ROOT, Runtime, git, request, snapshot
 
 
@@ -763,6 +764,46 @@ class CandidateCoverageTests(unittest.TestCase):
                 session.read_action("read-candidate", fixture["paths"]["symlink"])
             self.assertEqual(session.candidate_reads, {})
             self.assertEqual(session.attempted_candidate_paths, {fixture["paths"]["symlink"]})
+
+
+class ReviewFixtureGitTests(unittest.TestCase):
+    def test_review_support_git_disables_background_maintenance_and_still_runs_real_git(self):
+        with tempfile.TemporaryDirectory(prefix="review-support-git-", dir=ROOT / "build") as directory:
+            repo = Path(directory)
+            commands = []
+            run = support.subprocess.run
+
+            def observe(command, **kwargs):
+                if command and command[0] == "/usr/bin/git":
+                    commands.append(tuple(command))
+                return run(command, **kwargs)
+
+            with patch.object(support.subprocess, "run", side_effect=observe):
+                support.git(repo, "init", "-q")
+                support.git(repo, "config", "user.email", "fixture@example.invalid")
+                support.git(repo, "config", "user.name", "Fixture Test")
+                (repo / "tracked.txt").write_text("fixture\n")
+                support.git(repo, "add", "tracked.txt")
+                support.git(repo, "commit", "-qm", "fixture commit")
+                head = support.git(repo, "rev-parse", "HEAD")
+
+            self.assertRegex(head, r"^[0-9a-f]{40}$")
+            expected_prefix = (
+                "/usr/bin/git", "--no-optional-locks",
+                "-c", "core.fsmonitor=false",
+                "-c", "core.hooksPath=/dev/null",
+                "-c", "gc.auto=0",
+                "-c", "maintenance.auto=0",
+                "-c", "gc.autoDetach=false",
+                "-c", "maintenance.autoDetach=false",
+                "-C", str(repo),
+            )
+            for command in commands:
+                self.assertEqual(command[:len(expected_prefix)], expected_prefix)
+            without_maintenance = tuple(
+                item for item in expected_prefix if item != "maintenance.auto=0"
+            )
+            self.assertNotEqual(commands[0][:len(expected_prefix)], without_maintenance)
 
 
 class RoundTests(unittest.TestCase):
