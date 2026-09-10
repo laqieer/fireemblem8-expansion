@@ -558,7 +558,11 @@ class ReviewedEvolutionCaptureTests(unittest.TestCase):
         self.assertNotEqual(strict.returncode, 0)
         self.assertGreater(strict.pid, 0)
         self.assertGreater(strict.peak_rss_bytes, 0)
-        self.assertIn(b"leaves graph surfaces unprobed", strict.stderr)
+        self.assertIn(
+            b"candidate trusted sources differ from selected source: "
+            b"['scripts/validation_ownership/probe-oracle.json']",
+            strict.stderr,
+        )
 
         gate.register_local_validation(state, record, pr, self.fixture.root, {
             "raw": {"contract": "git-diff-check", "evidence_id": "raw", "inputs": []},
