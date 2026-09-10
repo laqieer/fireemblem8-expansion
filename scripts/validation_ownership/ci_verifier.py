@@ -282,28 +282,39 @@ def _scaninc_build_contract(source: str):
     assignments, rules = set(), {}
     target = default = None
     error = reporter.OwnershipError("unsupported trusted scanner Makefile build contract")
-    for raw in source.replace("\\\n", " ").splitlines():
-        line = re.sub(r"\$\{(\w+|@)\}", r"$(\1)", raw.partition("#")[0].strip()).replace("$(@)", "$@")
+
+    tokens = re.compile(r"[^ \t]+").findall
+    if "\0" in source or "\r" in source:
+        raise error
+    for raw in source.replace("\\\n", " ").split("\n"):
+        if re.search(r"[\x00-\x08\x0B-\x1F\x7F]", raw):
+            raise error
+        executable = raw.partition("#")[0]
+        if not executable.isascii():
+            raise error
+        line = re.sub(
+            r"\$\{([A-Za-z0-9_]+|@)\}", r"$(\1)", executable.strip(" \t"),
+        ).replace("$(@)", "$@")
         if not line:
             continue
         if raw.startswith("\t"):
-            if target is None or rules[target] or tuple(line.removeprefix("@").split()) != recipes[target]:
+            if target is None or rules[target] or tuple(tokens(line.removeprefix("@"))) != recipes[target]:
                 raise error
             rules[target] = True
             continue
         target = None
-        assignment = re.fullmatch(r"(\w+)\s*(?::=|=)\s*(.*)", line)
+        assignment = re.fullmatch(r"([A-Za-z0-9_]+)[ \t]*(?::=|=)[ \t]*(.*)", line)
         if assignment is not None:
             name, value = assignment.groups()
-            if name not in variables or sorted(value.split()) != sorted(variables[name]):
+            if name not in variables or sorted(tokens(value)) != sorted(variables[name]):
                 raise error
             assignments.add(name)
             continue
-        rule = re.fullmatch(r"(\.PHONY|scaninc|clean)\s*:\s*(.*)", line)
+        rule = re.fullmatch(r"(\.PHONY|scaninc|clean)[ \t]*:[ \t]*(.*)", line)
         if rule is None:
             raise error
         target, dependencies = rule.groups()
-        if target in rules or tuple(sorted(dependencies.split())) != prerequisites[target]:
+        if target in rules or tuple(sorted(tokens(dependencies))) != prerequisites[target]:
             raise error
         if target == "scaninc" and not {"SRCS", "HEADERS"} <= assignments:
             raise error

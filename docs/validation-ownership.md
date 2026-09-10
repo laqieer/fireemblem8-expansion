@@ -134,10 +134,11 @@ separate. This is a narrow compiler-code authority boundary, not a whole-tree
 identity gate or a committed content-hash ledger.
 The named scanner-build contract admits literal `=`/`:=` assignments, the
 four-source/four-header `g++` profile and the existing scaninc/clean recipes.
-It is parsed before any Make evaluation: extra flags, sources, functions or
-recipes cannot execute. Comments, assignment order and equivalent variable
-braces retain ordinary Make behavior; unsupported build forms require reviewed
-contract evolution rather than speculative execution.
+Executable text permits only ASCII space, tab and LF grammar; NUL, CR,
+non-ASCII separators and non-Make controls reject, while printable Unicode is
+inert only after an ASCII `#`. Parsing precedes Make evaluation, so extra
+flags, sources, functions or recipes cannot execute. Assignment order,
+equivalent braces and safe comments retain ordinary behavior.
 Include names are resolved only after joining each original search directory,
 so repository-contained parent components in real banim sources remain valid.
 The planner checks every intermediate component against the captured namespace

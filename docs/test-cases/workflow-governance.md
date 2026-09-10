@@ -3348,29 +3348,16 @@ game behavior needs a compensating change.
    real BPS round trip, patch-only outputs, private cleanup and visible
    failures. This does not prove actual private-base publication or the still
    blocked full112-domain ownership acceptance.
-9. Exercise the new-path admission fixtures. They create immutable Git trees
-   with newly tracked `src/foo.c`, script, documentation and graphics paths
-   without writing those files into the source worktree. A matching broad
-   prefix must not admit them. Add an exact selector to the existing semantic
-   rule and require its complete owner set; renaming/reordering the prefix or
-   adding another prefix must still reject. Existing generated-source and
-   verifier-runtime registries remain valid semantic admissions. Coverage and
-   direct resolution must both reject unknown additions, before Make authority
-   executes. The initial admitted cohort comes from the unique graph-introduction
-   Git tree; no inventory, content hash or duplicate commit pin is stored.
-10. Run the exact-base verifier twice against the same immutable trusted tree
-    and small real Git fixture. Require both captures to return identical oracle
-    identities and leave `.validation-ownership-runtime` absent. Break the real
-    BASE verifier step after runtime creation, retain that first failure, restore
-    the fixture, and require a valid retry using the same trusted tree. Replace
-    an owned runtime workspace with a directory and symlink, leave nonempty
-    residual work, and pre-create unknown content. Cleanup must reject without
-    deleting any replacement, residual, pre-existing path, or the trusted tree;
-    partial setup must remove only the workspace whose identity it captured.
-    Keep a real owned process alive while termination is deliberately reported
-    unconfirmed: even an empty runtime workspace must remain, with the primary
-    failure and cleanup diagnostics intact. Only successful budget teardown
-    may proceed to workspace removal.
+9. Exercise the canonical path-admission fixtures: broad prefixes must reject
+   immutable new source/script/documentation/graphics members until an exact
+   selector supplies complete ownership. Generated-source and verifier-runtime
+   registry admissions remain valid; no duplicate inventory or commit pin is
+   introduced.
+10. Exercise the canonical trusted-runtime reuse and cleanup fixtures. Repeated
+    captures and failure/retry must preserve identities and remove only a
+    successfully terminated, unchanged owned workspace. Pre-existing,
+    substituted, residual, or unconfirmed-process work must remain untouched
+    and reject with primary and cleanup diagnostics preserved.
 
 ### Expected result
 
@@ -3420,36 +3407,14 @@ ROM compile/link/runtime observation. Handoff JSON itself selects governance
 host checks. No reliable deterministic automation is replaced by a manual
 criterion, and all broader checks remain mandatory.
 
-The canonical JSON report explains each selected gate, reports zero false
-positive and false negative exact `(edge_type, evidence_id)` owner-pair
-selections against the independently sealed probe oracle, and records bounded
-maintenance cost through the issue #176 artifact shape. Pair reordering
-normalizes; duplicate pairs, same-type owner substitution, and swapped
-workflow owners are mismatches and failed public checks.
-Domain-separated graph, schema, and resolved-edge seals change when semantic
-authority changes. Comparing a prior Git revision invalidates review from
-authoritative edge or target-authority changes, not filenames or commit prose.
-Compare two valid graph-bearing revisions with unchanged graph declarations:
-a meaningful schema constraint change or a valid resealed oracle coverage
-change must invalidate every current edge. Reformatting either JSON document
-without changing its parsed value must leave invalidation empty. A tester-case
-authority change remains scoped to its affected edges.
-
-Observe one real removal/restoration cycle for every lifecycle trigger.
-Suppress a later removal while leaving the requested proof record intact:
-the report must fail rather than reuse an earlier trigger's successful cycle.
-For each trigger, observe both artifact-declared routes: the executable
-consumer and the tester-case consistency check must each pass before removal,
-fail while the actual graph is absent, and pass after restoration. In a
-controlled regression, make only one route accept removal or reject the
-restored artifact. The report must fail for either route independently;
-checking only the consumer reproduced the pre-fix consistency-route omission.
-Repeat the qualified evolution capture with a valid non-default Make consumer.
-Both lifecycle routes must retain their declared roles; an unrelated check ID
-must reject rather than acquiring authority from the new consumer.
-The base-pinned verifier additionally requires every oracle-backed edge's
-resolved authority fingerprint to equal the exact base and rejects trusted
-edge invalidation even when the surface, evidence ID, and edge type stay fixed.
+The canonical report and lifecycle results must satisfy the complete
+[artifact lifecycle, measurement, and seal contract](../validation-ownership.md#artifact-lifecycle-measurements-and-seals):
+zero oracle pair mismatches, semantic-only seal/invalidation changes, and one
+real removal/restoration cycle for both declared routes at every trigger.
+Either route failing independently, stale proof reuse, unrelated check
+substitution, or exact-base authority-fingerprint drift must reject. Equivalent
+parsed reordering remains stable, and tester-case authority changes remain
+scoped to their affected edges.
 
 ### Negative control
 

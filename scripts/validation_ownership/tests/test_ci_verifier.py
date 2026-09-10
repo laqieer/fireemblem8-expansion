@@ -202,6 +202,17 @@ class BasePinnedVerifierTests(unittest.TestCase):
     def test_scanner_build_contract_preserves_make_semantics_and_rejects_redirects(self):
         root = Path(__file__).resolve().parents[3]
         original = (root / ci_verifier.SCANINC_MAKEFILE).read_text()
+
+        def make_dry_run(source):
+            fixture = self.runtime_root()
+            (fixture / "Makefile").write_text(source)
+            for path in ci_verifier.SCANINC_SOURCES:
+                (fixture / Path(path).name).touch()
+            return subprocess.run(
+                ["make", "--no-print-directory", "-n"], cwd=fixture,
+                env=ENVIRONMENT, capture_output=True, text=True, check=True, timeout=15,
+            ).stdout
+
         lines = original.splitlines()
         assignments = [line for line in lines if "=" in line]
         changed = "\n".join([
@@ -213,20 +224,28 @@ class BasePinnedVerifierTests(unittest.TestCase):
         commands = []
         for source in (original, changed):
             ci_verifier._scaninc_build_contract(source)
-            fixture = self.runtime_root()
-            (fixture / "Makefile").write_text(source)
-            for path in ci_verifier.SCANINC_SOURCES:
-                (fixture / Path(path).name).touch()
-            result = subprocess.run(
-                ["make", "--no-print-directory", "-n"], cwd=fixture,
-                env=ENVIRONMENT, capture_output=True, text=True, check=True, timeout=15,
-            )
-            argv = result.stdout.split()
+            argv = make_dry_run(source).split()
             commands.append((argv[0], sorted(argv[1:-2]), argv[-2:]))
         self.assertEqual(commands[0], commands[1])
+        safe_comment = "# Unicode remains inert after the ASCII comment boundary: café\u2028still comment\n"
+        ci_verifier._scaninc_build_contract(safe_comment + original)
+        self.assertEqual(make_dry_run(safe_comment + original), make_dry_run(original))
+        for name, mutated in {
+            "nbsp-assignment": original.replace("CXXFLAGS =", "CXXFLAGS\u00a0="),
+            "vt-assignment": original.replace("-Wall -Werror", "-Wall\v-Werror"),
+            "nbsp-recipe": original.replace("$(CXX) $(CXXFLAGS)", "$(CXX)\u00a0$(CXXFLAGS)"),
+            "vt-recipe": original.replace("$(CXX) $(CXXFLAGS)", "$(CXX)\v$(CXXFLAGS)"),
+            "vt-comment-assignment": original.replace("CXXFLAGS =", "# comment\vCXXFLAGS ="),
+        }.items():
+            with self.subTest(unicode_separator=name):
+                self.assertNotEqual(make_dry_run(mutated), make_dry_run(original))
+                with self.assertRaisesRegex(MakeProbeError, "build contract"):
+                    ci_verifier._scaninc_build_contract(mutated)
         for old, new in (
             ("CXX = g++", "CXX = clang++"),
             ("CXX = g++", "CXX := $(shell printf g++)"),
+            ("CXX = g++", "CXX = g++\0"),
+            ("CXX = g++", "CXX = g++\r"),
             ("-O2", "-O2 -DUNAPPROVED"),
             ("-O2", "-O2 -include injected.h"),
             ("asm_file.cpp", "unlisted.cpp"),
