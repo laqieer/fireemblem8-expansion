@@ -512,6 +512,7 @@
         "TC-WORKFLOW-OWNERSHIP-PROBE-SANDBOX-001",
         "TC-WORKFLOW-PROBE-PRODUCER-001",
         "TC-PROBE-PYTHON-PRODUCERS-001",
+        "TC-PROBE-DEPENDENCY-FUSION-001",
         "TC-WORKFLOW-PROBE-DEPENDENCY-001",
         "TC-WORKFLOW-PROBE-RUNTIME-INPUTS-001",
         "TC-WORKFLOW-PROBE-VIEWS-001",
@@ -3574,6 +3575,38 @@
       "cleanup": "Use the existing ProbeSession/watchdog cleanup. Successful and failing source-only commands remove only owned fixture/scratch/output state, keep one budget/session authority, and preserve selected-view restoration without retry or metadata rewriting.",
       "limitations": "This API does not deliver #180's graph dispatch, shell normalization or full repository resource fit. The bounded factory view case uses executable fixture modules with the same API signatures; real three-module publication and malformed-input cases are separate. Larger resource-limited fixture attempts are not successful evidence. No manual-only criterion applies.",
       "automation": [
+        {
+          "command": "make -f scripts/validation_ownership/foundation.mk ownership-probe-test",
+          "evidence": "scripts/validation_ownership/foundation.mk"
+        }
+      ]
+    },
+    {
+      "id": "TC-PROBE-DEPENDENCY-FUSION-001",
+      "title": "Fuse generated dependency producer stages",
+      "feature_id": "workflow-governance",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/242"
+      ],
+      "document": "docs/test-cases/workflow-governance.md",
+      "anchor": "tc-probe-dependency-fusion-001-fuse-generated-dependency-producer-stages",
+      "profiles": [
+        "Linux x86-64 source checkout, GNU Make 4.3, Python 3 and the existing ownership-probe native tools"
+      ],
+      "purpose": "Prove the shared generated_dependency_command helper removes only the redundant cold collector stage while preserving exact selector/support authority, native Make publication and selected-view binding.",
+      "prerequisites": "Clean source checkout with the existing ownership-probe namespace/watchdog route. Use only owned ignored build/test-artifacts fixtures; no ROM, remote mutation, graph query, new runtime/importer, feature flag or quota change.",
+      "actions": "Run the producer-native owner. Compare the corrected helper with a legacy three-stage reconstruction for chapterobjectives, autoplaystrategies and an eventlists file-plus-bundle-directory case; require exactly one fewer command capsule in each case. Compare confined depfile bytes with the ordinary CLI and consume them through native Make with the same include/restart behavior. Preserve support-from-bundle CURRENT/BASE/CURRENT binding for chapterobjectives and autoplay, and reject omitted, unexpected, duplicate or escaping collected paths before publication.",
+      "expected_result": "The helper keeps the existing selector and chapterbundle-support capsules, derives the exact expected input set from that admitted evidence, then runs one final output command that normally imports the real module, requires exact canonical duplicate-free agreement from collect_input_paths, validates tracked source identities and writes fresh private output. Output-producing registrations still execute/publish twice; only the separate collector stage disappears.",
+      "negative_control": "Do not add a new router, namespace shim, whole-tree grant, runtime service, output cache bypass or Make-side workaround. Missing/extra options, omitted/unexpected/duplicate/escaping collected paths, missing companions, conflicting outputs and forbidden rename behavior must still reject before publication, and repeated output registrations must still execute twice.",
+      "interactions": "Depends on the delivered core206, producer225, views226, runtime227, dependency228 and Python producer238 foundations. Metadata transport240 is independent because the public producer ABI and metadata replay remain unchanged. #180/#186 consumes this helper later; full graph fit and broader resource acceptance remain outside this issue.",
+      "save_compatibility": "Host-only helper correction; no gameplay, save migration, config identity, localization, generated game content, ROM/RAM or modern/archival profile change.",
+      "cleanup": "Owned fixtures, depfiles, selected views and private session roots clean through the existing watchdog/session cleanup. Rejections occur before publication and do not widen authority or leave partial generated state behind.",
+      "limitations": "This case proves the helper correction only; it does not claim a fresh full graph query, resource calibration, metadata-transport delivery or any manual-only criterion. Wider integration remains under the existing native owner and downstream issue #180.",
+      "automation": [
+        {
+          "command": "python3 -m unittest scripts.validation_ownership.tests.test_producer -v",
+          "evidence": "scripts/validation_ownership/tests/test_producer.py"
+        },
         {
           "command": "make -f scripts/validation_ownership/foundation.mk ownership-probe-test",
           "evidence": "scripts/validation_ownership/foundation.mk"
