@@ -1221,6 +1221,29 @@ class TesterCaseRegistryTests(unittest.TestCase):
                             "python3 -m unittest scripts.validation_ownership.tests.test_producer -v",
                         },
                     },
+                    "TC-PROBE-NATIVE-EVENT-ORDER-001": {
+                        "document": "docs/test-cases/workflow-governance.md",
+                        "commands": {
+                            "python3 -m unittest "
+                            "scripts.validation_ownership.tests.test_producer."
+                            "ProducerTests.test_native_parallel_events_follow_physical_append_order_not_exit_stop_order "
+                            "scripts.validation_ownership.tests.test_producer."
+                            "ProducerTests.test_native_parallel_dispatch_keeps_distinct_request_receipts "
+                            "scripts.validation_ownership.tests.test_producer."
+                            "ProducerTests.test_native_event_stream_and_write_observations_match_exact_bytes_with_multiplicity "
+                            "scripts.validation_ownership.tests.test_producer."
+                            "ProducerTests.test_parked_helper_death_aborts_without_publication "
+                            "scripts.validation_ownership.tests.test_producer."
+                            "ProducerTests.test_nested_publication_transfer_rejects_corruption_and_never_retries_work -v",
+                            "python3 -m unittest "
+                            "scripts.validation_ownership.tests.test_foundation."
+                            "FoundationTests.test_serial_resolution_rejects_known_mapping_miss_without_rerunning_worker "
+                            "scripts.validation_ownership.tests.test_foundation."
+                            "FoundationTests.test_strict_named_protocols_reject_binary_and_truncated_frames "
+                            "scripts.validation_ownership.tests.test_foundation."
+                            "FoundationTests.test_event_mapping_and_pending_byte_bounds_cover_real_commands -v",
+                        },
+                    },
                     "TC-WORKFLOW-PROBE-DEPENDENCY-001": {
                         "document": "docs/test-cases/workflow-governance.md",
                         "commands": {
