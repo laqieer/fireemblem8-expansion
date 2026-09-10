@@ -2565,7 +2565,7 @@ the exact branch and head; timeout or ambiguity fails before `gh run watch`.
    Run
    `python3 -m unittest tests.upstream_port.test_verify.VerifyCliCwdTests.test_metadata_event_setup_is_closed_and_not_a_local_gate -v`.
    Require the upstream verifier to accept the complete producer/output/marker
-   setup while retaining exactly 29 local gate commands. Remove, duplicate,
+   setup while retaining the complete local gate commands. Remove, duplicate,
    relink or weaken either setup step, mutate event/run/attempt inputs, and
    fabricate proof in either no-proof branch: each must reject before gates
    execute. Equivalent command spacing and environment-mapping order must
