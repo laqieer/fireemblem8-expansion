@@ -120,6 +120,11 @@ admit the complete non-C inventory and exclude all C/data-C objects. Mixed
 assembly/C goals still load C dependency files and generated headers, while a
 mixed modern plus direct legacy assembly request keeps scaninc active and
 rebuilds the native object after an included file changes.
+The actual recursive
+`expansion-modern-localization-profile-headroom-check` helper chain must also
+remain closed over the same safe goal registry: its profile sub-makes execute
+without unrelated archival scaninc, while an override that removes those helper
+targets from the safe registry reproduces the pre-fix scan demand.
 
 ### Negative control
 
@@ -146,6 +151,11 @@ or RAM behavior.
 
 - `python3 -m unittest scripts.modernize.tests.test_archival_dependencies -v`
   — `scripts/modernize/tests/test_archival_dependencies.py`.
+- Build CI `build` job step
+  `Check default build lane and quickstart legacy glue (issue #15)`
+  includes
+  `python3 -m unittest scripts.modernize.tests.test_archival_dependencies -v`
+  before the linker gates.
 - `python3 -m unittest discover -s scripts/modernize/tests -p "test_build_default_lane.py" -v`
   — `scripts/modernize/tests/test_build_default_lane.py`.
 - `python3 -m unittest scripts.localization.game_catalog.tests.test_final_delivery_gate -v`

@@ -19,7 +19,7 @@ UPSTREAM_PORTING_PATH = os.path.join(REPO_ROOT, "docs", "upstream-porting.md")
 # Issues #7/#17 remediation: the documentation step is a genuine required
 # workflow gate, but it is the sole correctness step deliberately excluded
 # from verify.gates(). Its exact commands and position are asserted separately
-# below; localization remains part of the current 29-gate candidate mirror.
+# below; localization remains part of the current 30-gate candidate mirror.
 _DOCS_GOVERNANCE_STEP_NAME = "Check documentation (issues #7/#17)"
 _CODEQL_ALERTS_STEP_NAME = "Run CodeQL alert regression suite (issue #84)"
 _LOCALIZATION_HOST_STEP_NAME = "Run localization host test suite (issue #18)"
@@ -153,7 +153,7 @@ class VerifyGatesMirrorWorkflowTests(unittest.TestCase):
         )
 
     def test_issue_7_17_docs_governance_is_a_standalone_workflow_step_not_a_verify_gate(self):
-        """Docs governance stays outside the current 29-gate candidate mirror
+        """Docs governance stays outside the current 30-gate candidate mirror
         while remaining required, argv-identical, and immediately after the
         artifact guard in build.yml."""
         names = [g.name for g in verify_mod.gates()]
@@ -426,6 +426,7 @@ class VerifyGatesMirrorWorkflowTests(unittest.TestCase):
     def test_issue_15_default_lane_and_quickstart_gates_present(self):
         names = [g.name for g in verify_mod.gates()]
         self.assertIn("default-lane-check", names)
+        self.assertIn("archival-dependencies-check", names)
         self.assertIn("quickstart-legacy-check", names)
 
         by_name = {g.name: g for g in verify_mod.gates()}
@@ -440,6 +441,16 @@ class VerifyGatesMirrorWorkflowTests(unittest.TestCase):
                 "scripts/modernize/tests",
                 "-p",
                 "test_build_default_lane.py",
+                "-v",
+            ],
+        )
+        self.assertEqual(
+            by_name["archival-dependencies-check"].command,
+            [
+                "python3",
+                "-m",
+                "unittest",
+                "scripts.modernize.tests.test_archival_dependencies",
                 "-v",
             ],
         )
@@ -459,7 +470,7 @@ class VerifyGatesMirrorWorkflowTests(unittest.TestCase):
         )
 
     def test_gate_list_full_ordered_names(self):
-        # All 29 current candidate Build gates remain; docs governance is
+        # All 30 current candidate Build gates remain; docs governance is
         # deliberately absent and asserted as a standalone workflow step.
         names = [g.name for g in verify_mod.gates()]
         self.assertEqual(
@@ -479,6 +490,7 @@ class VerifyGatesMirrorWorkflowTests(unittest.TestCase):
                 "artifact-guard",
                 "codeql-alerts-test",
                 "default-lane-check",
+                "archival-dependencies-check",
                 "quickstart-legacy-check",
                 "generated-data-test",
                 "generated-data-check",
