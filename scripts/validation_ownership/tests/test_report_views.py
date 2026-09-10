@@ -10,7 +10,7 @@ import unittest
 
 from scripts.validation_ownership import reporter
 from scripts.validation_ownership.authority import AuthorityLoader, ENVIRONMENT, git_tree_entries
-from scripts.validation_ownership.budget import ProbeBudget
+from scripts.validation_ownership.budget import MakeProbeError, ProbeBudget
 from scripts.validation_ownership.make_probe import ProbeSession
 
 
@@ -108,6 +108,24 @@ class ReportViewTests(unittest.TestCase):
             records, paths = reporter._generated_registry_records(loader, session=probe)
             self.assertEqual(paths, {"src/data/table.json"})
             self.assertEqual(records[0]["source_paths"], ["src/data/table.json"])
+        self.assertFalse(self.budget.children)
+
+    def test_registry_declarations_do_not_grant_unrelated_test_code(self):
+        from scripts.validation_ownership.graph_registry import observe_declarations
+
+        self.registry("src/data/table.json")
+        self.add("src/data/table.json", '{"value":1}\n')
+        self.add("scripts/generated_data/tests/unrelated.py", "VALUE=1\n")
+        path = self.root / "scripts/generated_data/registry.py"
+        path.write_text(
+            path.read_text()
+            + "\nPath('scripts/generated_data/tests/unrelated.py').read_text()\n"
+        )
+        loader = self.capture()
+        with ProbeSession(loader, scratch_root=self.root / "build/probe", budget=self.budget) as probe:
+            with self.assertRaises(MakeProbeError):
+                observe_declarations(loader, probe)
+        self.assertIsNone(probe.base)
         self.assertFalse(self.budget.children)
 
     def test_directory_discovery_cannot_read_member_contents(self):

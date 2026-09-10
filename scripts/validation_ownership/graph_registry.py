@@ -7,6 +7,7 @@ from .budget import MakeProbeError
 from .make_probe import ProbeSession, probe_generated_registry
 from .python_commands import (
     generated_registry_command,
+    python_code_closure,
     python_command,
 )
 
@@ -38,16 +39,9 @@ def registry_code(loader: AuthorityLoader, session: ProbeSession):
         or session.loader is not loader or session.budget is not loader.budget
     ):
         raise MakeProbeError("registry declarations require the selected shared report view")
-    code = tuple(sorted(
-        path for path in session.snapshot.files
-        if path.endswith(".py") and (
-            path.startswith(("scripts/generated_data/", "scripts/assets/"))
-            or path == "scripts/__init__.py"
-        )
-    ))
-    if "scripts/generated_data/registry.py" not in code:
+    if "scripts/generated_data/registry.py" not in session.snapshot.files:
         raise MakeProbeError("generated-data registry has no captured Python authority")
-    return code
+    return python_code_closure(session, REGISTRY_DECLARATIONS)
 
 
 def observe_declarations(loader: AuthorityLoader, session: ProbeSession):
