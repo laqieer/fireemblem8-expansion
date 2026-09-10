@@ -303,9 +303,11 @@ observations, creation limits and all byte budgets remain. Callback frames,
 declarations, output, mapping, cache and publication data spend their existing
 categories. No category refund/reset, second budget, cap increase or calibration
 is part of this implementation. The metadata transport savings term is the
-smaller serialized report plus one charged decoded-frame reservation at the
-parent; raw metadata observation, cached legacy records and helper replay costs
-do not move or shrink.
+old complete report minus the new report, one charged decoded frame and the
+additional encoded-payload retention reservation at the parent. Both
+reservations precede decoding; fixed streaming scratch is not counted as a
+saving. Raw metadata observation, cached legacy records and helper replay
+costs do not move or shrink.
 
 Malformed, foreign, duplicate, stale or out-of-order traffic, premature EOF,
 unknown slots, parked-process death, callback failure and interruption are terminal.

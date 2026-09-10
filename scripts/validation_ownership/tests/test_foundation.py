@@ -122,21 +122,27 @@ class FoundationTests(unittest.TestCase):
             reserve=reserved.append,
         )
         self.assertEqual(decoded, metadata)
-        self.assertEqual(reserved, [len(frame)])
+        payload_bytes = len(report["metadata"]["payload"])
+        self.assertEqual(reserved, [len(frame), payload_bytes])
         self.assertEqual(report["metadata"]["record_count"], len(metadata))
         self.assertEqual(report["metadata"]["decoded_size"], len(frame))
         self.assertIn(("cache", len(encoded(metadata))), [call.args for call in charges])
+        self.assertIn(("control", len(frame)), [call.args for call in charges])
+        self.assertIn(("control", payload_bytes), [call.args for call in charges])
         legacy_report = {**report, "metadata": metadata}
         old_report_bytes = len(encoded(legacy_report))
         new_report_bytes = len(report_bytes)
         envelope_bytes = len(encoded(report["metadata"]))
-        self.assertGreater(old_report_bytes, new_report_bytes + len(frame))
+        control_saving = old_report_bytes - new_report_bytes - len(frame) - payload_bytes
+        self.assertGreater(control_saving, 0)
         return {
             "old_report_bytes": old_report_bytes,
             "new_report_bytes": new_report_bytes,
             "envelope_bytes": envelope_bytes,
             "frame_bytes": len(frame),
+            "retained_payload_bytes": payload_bytes,
             "scratch_bytes": HEX_DECODE_SCRATCH_BYTES,
+            "control_saving_bytes": control_saving,
         }
 
     def test_literal_source_selectors_are_repository_relative(self):
@@ -3541,7 +3547,7 @@ raise AssertionError("default termination was lost")
                         for record in output.metadata
                     ))
             sizes = self.assert_metadata_transport(session, report, report_bytes, charges, output.metadata)
-            self.assertGreater(sizes["old_report_bytes"] - sizes["new_report_bytes"], sizes["frame_bytes"])
+            self.assertGreater(sizes["control_saving_bytes"], 0)
             self.assertLess(sizes["envelope_bytes"], len(encoded(output.metadata)))
             stable = tuple(record for record in output.metadata if record[0] not in {138, 332})
             self.assertTrue(session._metadata_matches(stable))
@@ -3580,7 +3586,7 @@ raise AssertionError("default termination was lost")
             self.assertGreater(records[-1][5], 0)
             self.assertTrue(all(len(record[7]) == len(record[8]) == 2*record[4] for record in records))
             sizes = self.assert_metadata_transport(session, report, report_bytes, charges, output.metadata)
-            self.assertGreater(sizes["old_report_bytes"] - sizes["new_report_bytes"], sizes["frame_bytes"])
+            self.assertGreater(sizes["control_saving_bytes"], 0)
             self.assertTrue(session._metadata_matches(output.metadata))
             self.assertIs(session.command(command), output)
         self.assert_clean(session)
@@ -4724,10 +4730,16 @@ raise AssertionError("default termination was lost")
         for field, value in (
             ("metadata", None),
             ("metadata", [[1, "/repo/data", 0, 0, 0, 0, 0, "", ""]]),
-            ("metadata", [[262, "/repo/../data", 0, 0, 144, 0, 0, "00"*144, "00"*144]]),
-            ("metadata", [[262, "/repo/data", True, 0, 144, 0, 0, "00"*144, "00"*144]]),
-            ("metadata", [[262, "/repo/data", 0, 0, 1, 0, 0, "00", "00"]]),
-            ("metadata", [[262, "/repo/data", 0, 0, 144, 0, 0, "gg"*144, "00"*144]]),
+            ("metadata", encode_metadata_transport([[1, "/repo/data", 0, 0, 0, 0, 0, "", ""]])),
+            ("metadata", encode_metadata_transport([
+                [262, "/repo/../data", 0, 0, 144, 0, 0, "00"*144, "00"*144],
+            ])),
+            ("metadata", {**encode_metadata_transport([]), "record_count": True}),
+            ("metadata", encode_metadata_transport([[262, "/repo/data", 0, 0, 1, 0, 0, "00", "00"]])),
+            ("metadata", encode_metadata_transport([
+                [262, "/repo/data", 0, 0, 144, 0, 0, "00"*143, "00"*144],
+            ])),
+            ("metadata", {**encode_metadata_transport([]), "payload": "bm90LXpsaWI="}),
             ("events", None),
             ("events", [True]),
             ("events", ["00"]),

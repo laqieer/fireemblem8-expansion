@@ -63,13 +63,13 @@ def validate_legacy_metadata_records(value, limit, *, runtime_paths=(), runtime_
     return tuple(records)
 
 
-def _decode_hex_chunk_into(data: str, scratch: bytearray) -> memoryview:
-    size = len(data) // 2
+def _decode_hex_chunk_into(data: str, start: int, stop: int, scratch: bytearray) -> memoryview:
+    size = (stop - start) // 2
     if size > len(scratch):
         raise MakeProbeError("metadata transport scratch chunk exceeded its bound")
     for index in range(size):
-        hi = _HEX_NIBBLES.get(ord(data[2*index]))
-        lo = _HEX_NIBBLES.get(ord(data[2*index + 1]))
+        hi = _HEX_NIBBLES.get(ord(data[start + 2*index]))
+        lo = _HEX_NIBBLES.get(ord(data[start + 2*index + 1]))
         if hi is None or lo is None:
             raise MakeProbeError("malformed guest metadata buffer")
         scratch[index] = (hi << 4) | lo
@@ -103,7 +103,8 @@ def _visit_metadata_frame_parts(records, visitor) -> int:
                 continue
             decoded_size += len(data) // 2
             for start in range(0, len(data), 2*len(scratch)):
-                visitor(_decode_hex_chunk_into(data[start:start + 2*len(scratch)], scratch))
+                stop = min(start + 2*len(scratch), len(data))
+                visitor(_decode_hex_chunk_into(data, start, stop, scratch))
     return decoded_size
 
 
@@ -114,15 +115,26 @@ def metadata_frame(records) -> bytes:
 
 
 def _push_base64(parts: list[str], carry: bytes, data: bytes, *, final: bool) -> bytes:
-    combined = carry + data
-    if final:
-        if combined:
-            parts.append(base64.b64encode(combined).decode("ascii"))
+    offset = 0
+    if carry:
+        offset = min(3 - len(carry), len(data))
+        carry += data[:offset]
+        if len(carry) < 3:
+            if final:
+                parts.append(base64.b64encode(carry).decode("ascii"))
+                return b""
+            return carry
+        parts.append(base64.b64encode(carry).decode("ascii"))
+    used = offset + (len(data) - offset) // 3 * 3
+    view = memoryview(data)
+    chunk_size = HEX_DECODE_SCRATCH_BYTES // 3 * 3
+    for start in range(offset, used, chunk_size):
+        parts.append(base64.b64encode(view[start:min(start + chunk_size, used)]).decode("ascii"))
+    carry = data[used:]
+    if final and carry:
+        parts.append(base64.b64encode(carry).decode("ascii"))
         return b""
-    used = len(combined) // 3 * 3
-    if used:
-        parts.append(base64.b64encode(combined[:used]).decode("ascii"))
-    return combined[used:]
+    return carry
 
 
 def encode_metadata_transport(records) -> dict[str, object]:
@@ -132,8 +144,7 @@ def encode_metadata_transport(records) -> dict[str, object]:
 
     def visitor(chunk):
         nonlocal carry
-        raw = bytes(chunk) if isinstance(chunk, memoryview) else chunk
-        compressed = compressor.compress(raw)
+        compressed = compressor.compress(chunk)
         if compressed:
             carry = _push_base64(payload_parts, carry, compressed, final=False)
 
@@ -165,21 +176,18 @@ def _transport_header(value, limit, decoded_limit):
         or not 4 <= value["decoded_size"] <= decoded_limit
     ):
         raise MakeProbeError("guest metadata transport exceeds its byte bound")
-    if not isinstance(value["payload"], str):
+    if not isinstance(value["payload"], str) or not value["payload"].isascii():
         raise MakeProbeError("malformed guest metadata transport")
-    try:
-        value["payload"].encode("ascii")
-    except UnicodeEncodeError as error:
-        raise MakeProbeError("malformed guest metadata transport") from error
     return value["record_count"], value["decoded_size"], value["payload"]
 
 
-def _decode_payload(payload: str, decoded_size: int) -> bytes:
+def _decode_payload(payload: str, decoded_size: int) -> bytearray:
     if len(payload) % 4:
         raise MakeProbeError("malformed guest metadata transport")
     frame = bytearray(decoded_size)
     written = 0
     decoder = zlib.decompressobj()
+    chunk_limit = min(HEX_DECODE_SCRATCH_BYTES, decoded_size // 2)
     for start in range(0, len(payload), 8192):
         chunk = payload[start:start + 8192]
         if start + 8192 < len(payload) and "=" in chunk:
@@ -190,36 +198,34 @@ def _decode_payload(payload: str, decoded_size: int) -> bytes:
             raise MakeProbeError("malformed guest metadata transport") from error
         if decoder.eof and compressed:
             raise MakeProbeError("trailing guest metadata transport data")
-        while compressed:
-            piece = decoder.decompress(compressed, decoded_size - written)
+        while True:
+            # A positive one-byte sentinel permits a split footer, never extra output.
+            maximum = min(chunk_limit, max(1, decoded_size - written))
+            try:
+                piece = decoder.decompress(compressed, maximum)
+            except zlib.error as error:
+                raise MakeProbeError("invalid guest metadata transport zlib stream") from error
             end = written + len(piece)
+            if end > decoded_size:
+                raise MakeProbeError("guest metadata transport size mismatch")
             frame[written:end] = piece
             written = end
             compressed = decoder.unconsumed_tail
-            if compressed and written == decoded_size:
-                raise MakeProbeError("guest metadata transport size mismatch")
-        if decoder.unused_data:
-            raise MakeProbeError("trailing guest metadata transport data")
-    remaining = decoded_size - written
-    try:
-        tail = decoder.flush() if remaining == 0 else decoder.flush(remaining)
-    except zlib.error as error:
-        raise MakeProbeError("invalid guest metadata transport zlib stream") from error
-    end = written + len(tail)
-    if end > decoded_size:
-        raise MakeProbeError("guest metadata transport size mismatch")
-    frame[written:end] = tail
+            if decoder.unused_data:
+                raise MakeProbeError("trailing guest metadata transport data")
+            if decoder.eof or not compressed and len(piece) < maximum:
+                break
     if (
         not decoder.eof
         or decoder.unused_data
         or decoder.unconsumed_tail
-        or end != decoded_size
+        or written != decoded_size
     ):
         raise MakeProbeError("incomplete or trailing guest metadata transport stream")
-    return bytes(frame)
+    return frame
 
 
-def _read_u32(frame: bytes, cursor: int) -> tuple[int, int]:
+def _read_u32(frame: memoryview, cursor: int) -> tuple[int, int]:
     if cursor + 4 > len(frame):
         raise MakeProbeError("truncated guest metadata frame")
     return struct.unpack_from("<I", frame, cursor)[0], cursor + 4
@@ -231,7 +237,7 @@ def _read_u64(frame: bytes, cursor: int) -> tuple[int, int]:
     return struct.unpack_from("<Q", frame, cursor)[0], cursor + 8
 
 
-def _decode_metadata_frame(frame: bytes, record_count: int):
+def _decode_metadata_frame(frame: memoryview, record_count: int):
     count, cursor = _read_u32(frame, 0)
     if count != record_count:
         raise MakeProbeError("guest metadata record count mismatch")
@@ -255,7 +261,7 @@ def _decode_metadata_frame(frame: bytes, record_count: int):
         path_bytes = frame[cursor:cursor + path_size]
         cursor += path_size
         try:
-            path = path_bytes.decode("utf-8")
+            path = str(path_bytes, "utf-8")
         except UnicodeDecodeError as error:
             raise MakeProbeError("malformed guest metadata frame") from error
         buffers = []
@@ -263,7 +269,7 @@ def _decode_metadata_frame(frame: bytes, record_count: int):
             if encoded_size == 0xFFFFFFFF:
                 buffers.append(None)
                 continue
-            if encoded_size != size or cursor + encoded_size > len(frame):
+            if encoded_size != size or encoded_size > 65536 or cursor + encoded_size > len(frame):
                 raise MakeProbeError("malformed guest metadata frame")
             buffers.append(frame[cursor:cursor + encoded_size].hex())
             cursor += encoded_size
@@ -285,8 +291,11 @@ def decode_metadata_transport(
     record_count, decoded_size, payload = _transport_header(value, limit, decoded_limit)
     if reserve is not None:
         reserve(decoded_size)
+        # Joining the streamed encoded parts can retain one additional payload.
+        reserve(len(payload))
     frame = _decode_payload(payload, decoded_size)
-    records = _decode_metadata_frame(frame, record_count)
+    records = _decode_metadata_frame(memoryview(frame), record_count)
+    del frame
     return validate_legacy_metadata_records(
         records, limit, runtime_paths=runtime_paths, runtime_absent=runtime_absent,
     )

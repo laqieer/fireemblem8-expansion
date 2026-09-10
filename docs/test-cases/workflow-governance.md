@@ -4466,24 +4466,28 @@ graph planner, extra runtime or remote action is involved.
 
 ### Actions
 
-1. Run the focused prototype coverage:
-   `python3 -m unittest scripts.validation_ownership.tests.test_metadata_transport scripts.validation_ownership.tests.test_foundation.FoundationTests.test_static_metadata_uses_persistent_objects_for_cache_and_native_make scripts.validation_ownership.tests.test_foundation.FoundationTests.test_metadata_captures_complete_syscall_buffers_status_flags_and_masks scripts.validation_ownership.tests.test_foundation.FoundationTests.test_runtime_inputs_capture_full_optional_buffers_status_flags_and_masks scripts.validation_ownership.tests.test_foundation.FoundationTests.test_metadata_transport_preserves_mixed_syscalls_cache_and_replay scripts.validation_ownership.tests.test_foundation.FoundationTests.test_metadata_transport_preserves_directory_enumeration_offsets_and_savings scripts.validation_ownership.tests.test_foundation.FoundationTests.test_metadata_transport_keeps_selected_view_metadata_boundaries scripts.validation_ownership.tests.test_foundation.FoundationTests.test_sudo_preflight_and_capsules_share_the_privileged_lifecycle_contract scripts.validation_ownership.tests.test_producer.ProducerTests.test_make_lookup_guard_preserves_ordinary_absence_nonexecutables_and_metadata -v`
+1. Run the focused prototype coverage below.
 2. Exercise a real mixed-source metadata reader with complete before/after
    buffers, failures, flags and masks, plus a real 4096-byte directory
    enumeration capture with recorded offsets. For both captures, compare the
    decoded public records with the original supervisor envelope, run unchanged
    metadata replay, and verify the legacy cache charge still uses
    `encoded(ProcessOutput.metadata)`.
-3. Measure the exact old full-report JSON size, the new full-report JSON size,
-   the envelope JSON size, the decoded binary frame size and the fixed 4096-byte
-   trusted scratch bound. Require a positive conservative saving where
-   `old_report > new_report + decoded_frame` on the representative native
-   captures; do not count the scratch buffer as a savings term.
+3. Measure the exact old full-report JSON size, new full-report JSON size,
+   envelope JSON size, decoded binary frame F, encoded-payload retention P and
+   fixed 4096-byte trusted scratch bound. Require a positive conservative saving
+   where `old_report > new_report + F + P` on the representative native captures.
+   F and P must be charged before decoding; scratch and bounded transient codec
+   chunks are not savings terms or the existing guest `memory_peak` metric.
 4. Corrupt envelope fields, version, encoding, base64, truncated or trailing
    zlib streams, decoded-size/count claims, frame paths, duplicate records and
    ABI sizes. Require fail-closed rejection before unsafe allocation or replay.
-   Keep the modeled privileged-lifecycle control on the new envelope and prove
-   owned cleanup on failure.
+   Include base64-valid non-zlib data and a stream whose decoded-size boundary
+   precedes more output in the next input chunk. It must not grow the reserved
+   frame. A valid split footer with no extra output must still succeed. Exercise
+   the single-frame allocation, direct scratch reuse and pre-decode control
+   exhaustion controls. Keep the modeled privileged-lifecycle control on the
+   new envelope and prove owned cleanup on failure.
 5. Reuse the unchanged metadata replay path through cache validation and
    CURRENT/BASE view selection. Compatible records must still replay and reuse;
    incompatible namespace or source changes must still force fresh execution
@@ -4520,6 +4524,21 @@ formats, configuration identity, generated game data, localization, ROM/RAM,
 modern/archival profiles and existing replay ABI remain unchanged.
 
 ### Automation
+
+```sh
+python3 -m unittest \
+  scripts.validation_ownership.tests.test_metadata_transport \
+  scripts.validation_ownership.tests.test_foundation.FoundationTests.test_static_metadata_uses_persistent_objects_for_cache_and_native_make \
+  scripts.validation_ownership.tests.test_foundation.FoundationTests.test_metadata_captures_complete_syscall_buffers_status_flags_and_masks \
+  scripts.validation_ownership.tests.test_foundation.FoundationTests.test_runtime_inputs_capture_full_optional_buffers_status_flags_and_masks \
+  scripts.validation_ownership.tests.test_foundation.FoundationTests.test_metadata_transport_preserves_mixed_syscalls_cache_and_replay \
+  scripts.validation_ownership.tests.test_foundation.FoundationTests.test_metadata_transport_preserves_directory_enumeration_offsets_and_savings \
+  scripts.validation_ownership.tests.test_foundation.FoundationTests.test_metadata_transport_keeps_selected_view_metadata_boundaries \
+  scripts.validation_ownership.tests.test_foundation.FoundationTests.test_metadata_report_validation_rejects_malformed_buffers_and_native_writes \
+  scripts.validation_ownership.tests.test_foundation.FoundationTests.test_directory_observation_transfer_and_buffer_limits_are_bounded \
+  scripts.validation_ownership.tests.test_foundation.FoundationTests.test_sudo_preflight_and_capsules_share_the_privileged_lifecycle_contract \
+  scripts.validation_ownership.tests.test_producer.ProducerTests.test_make_lookup_guard_preserves_ordinary_absence_nonexecutables_and_metadata -v
+```
 
 The focused command above runs the real command, Make, runtime-input,
 selected-view, producer and modeled privileged-lifecycle scenarios together
