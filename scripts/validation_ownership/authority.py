@@ -116,26 +116,42 @@ def _event_command(event: dict) -> str:
         return "'" + value.replace("'", "'\"'\"'") + "'"
     return " ".join(quote(value) for value in (program, *arguments[1:]))
 
-def _read_events(raw: bytes, *, expected_mapping_count: int):
+def _read_event(reader: Frames, *, expected_mapping_count: int | None):
+    match = struct.unpack("<i", reader.take(4))[0]
+    count = reader.integer()
+    if expected_mapping_count is None:
+        expected_mapping_count = match + 1
+    hash_value = int.from_bytes(reader.take(8), "little")
+    argc = reader.integer()
+    if (
+        not -2 <= match < expected_mapping_count
+        or count != expected_mapping_count or not 1 <= argc <= 1024
+    ):
+        raise MakeProbeError("invalid trusted interceptor frame")
+    event = {
+        "match": match, "mapping_count": count,
+        "arguments": [reader.string("interceptor argv") for _ in range(argc)],
+    }
+    if int(_command_hash(_event_command(event)), 16) != hash_value:
+        raise MakeProbeError("interceptor command/hash mismatch")
+    return event
+
+
+def _read_event_frames(raw: bytes, *, expected_mapping_count: int | None):
     reader = Frames(raw)
-    events = []
     while reader.offset < len(raw):
-        match = struct.unpack("<i", reader.take(4))[0]
-        count = reader.integer()
-        hash_value = int.from_bytes(reader.take(8), "little")
-        argc = reader.integer()
-        if (
-            not -2 <= match < expected_mapping_count
-            or count != expected_mapping_count or not 1 <= argc <= 1024
-        ):
-            raise MakeProbeError("invalid trusted interceptor frame")
-        event = {
-            "match": match, "mapping_count": count,
-            "arguments": [reader.string("interceptor argv") for _ in range(argc)],
-        }
-        if int(_command_hash(_event_command(event)), 16) != hash_value:
-            raise MakeProbeError("interceptor command/hash mismatch")
-        events.append(event)
+        start = reader.offset
+        event = _read_event(reader, expected_mapping_count=expected_mapping_count)
+        yield raw[start:reader.offset], event
+
+
+def _read_events(raw: bytes, *, expected_mapping_count: int):
+    events = [
+        event
+        for _, event in _read_event_frames(
+            raw, expected_mapping_count=expected_mapping_count,
+        )
+    ]
     return events
 
 
