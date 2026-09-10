@@ -425,6 +425,103 @@ class CandidateCoverageTests(unittest.TestCase):
                         session.read_action("read-candidate", fixture["paths"]["added"])
                     self.assertEqual(reader.calls, 0)
 
+    def test_distinct_failed_describe_paths_spend_capacity_before_describe_and_allow_retry(self):
+        with snapshot() as repo:
+            fixture = candidate_fixture(repo, support_paths=1)
+            tools = gate.ReviewTools(gate.GitTree(repo.root, fixture["head"]), repo.root)
+            delegate = tools.candidate_reader(fixture["base"], fixture["head"])
+            reader = WrappedCandidateReader(delegate)
+            session, runtime = self.start_session(
+                tools, fixture["base"], fixture["head"], max_files=2,
+                readers={"read-candidate": reader})
+            failing = {fixture["paths"]["modified"], fixture["paths"]["added"]}
+            describe_calls = []
+
+            def describe(path, side="head"):
+                describe_calls.append((path, side))
+                if path in failing:
+                    raise OSError("describe failed")
+                return delegate.describe(path, side)
+
+            with patch.object(reader, "describe", side_effect=describe):
+                with self.assertRaisesRegex(OSError, "describe failed"):
+                    session.read_action("read-candidate", fixture["paths"]["modified"])
+                self.assertEqual(reader.calls, 0)
+                self.assertEqual(session.candidate_reads, {})
+                self.assertEqual(session.attempted_candidate_paths, {fixture["paths"]["modified"]})
+                with self.assertRaisesRegex(OSError, "describe failed"):
+                    session.read_action("read-candidate", fixture["paths"]["modified"])
+                self.assertEqual(session.attempted_candidate_paths, {fixture["paths"]["modified"]})
+                with self.assertRaisesRegex(OSError, "describe failed"):
+                    session.read_action("read-candidate", fixture["paths"]["added"])
+                self.assertEqual(
+                    session.attempted_candidate_paths,
+                    {fixture["paths"]["modified"], fixture["paths"]["added"]},
+                )
+                with self.assertRaisesRegex(tools.model.ReviewError, "budget exceeded"):
+                    session.read_action("read-candidate", fixture["support_paths"][0])
+                self.assertEqual(len(describe_calls), 3)
+                failing.remove(fixture["paths"]["modified"])
+                observed = session.read_action("read-candidate", fixture["paths"]["modified"])
+                self.assertEqual(observed.data, b"head revision\n")
+                self.assertEqual(session.attempted_candidate_paths,
+                                 {fixture["paths"]["modified"], fixture["paths"]["added"]})
+                self.assertEqual(len(session.candidate_reads), 1)
+                runtime.result.files = 1
+                report = session.finish(runtime)
+                self.assertEqual(len(report.candidate_reads), 1)
+
+    def test_distinct_failed_backend_paths_spend_capacity_before_backend_and_allow_retry(self):
+        with snapshot() as repo:
+            fixture = candidate_fixture(repo, support_paths=1)
+            tools = gate.ReviewTools(gate.GitTree(repo.root, fixture["head"]), repo.root)
+            delegate = tools.candidate_reader(fixture["base"], fixture["head"])
+            reader = WrappedCandidateReader(delegate)
+            session, runtime = self.start_session(
+                tools, fixture["base"], fixture["head"], max_files=2,
+                readers={"read-candidate": reader})
+            failing = {fixture["paths"]["modified"], fixture["paths"]["added"]}
+            describe_calls = []
+
+            def describe(path, side="head"):
+                describe_calls.append((path, side))
+                return delegate.describe(path, side)
+
+            def backend(row):
+                if row["path"] in failing:
+                    raise OSError("backend failed")
+                return row
+
+            reader.mutate = backend
+            with patch.object(reader, "describe", side_effect=describe):
+                with self.assertRaisesRegex(OSError, "backend failed"):
+                    session.read_action("read-candidate", fixture["paths"]["modified"])
+                self.assertEqual(reader.calls, 1)
+                self.assertEqual(session.candidate_reads, {})
+                self.assertEqual(session.attempted_candidate_paths, {fixture["paths"]["modified"]})
+                with self.assertRaisesRegex(OSError, "backend failed"):
+                    session.read_action("read-candidate", fixture["paths"]["modified"])
+                self.assertEqual(reader.calls, 2)
+                with self.assertRaisesRegex(OSError, "backend failed"):
+                    session.read_action("read-candidate", fixture["paths"]["added"])
+                self.assertEqual(reader.calls, 3)
+                self.assertEqual(
+                    session.attempted_candidate_paths,
+                    {fixture["paths"]["modified"], fixture["paths"]["added"]},
+                )
+                with self.assertRaisesRegex(tools.model.ReviewError, "budget exceeded"):
+                    session.read_action("read-candidate", fixture["support_paths"][0])
+                self.assertEqual(reader.calls, 3)
+                self.assertEqual(len(describe_calls), 3)
+                failing.remove(fixture["paths"]["modified"])
+                observed = session.read_action("read-candidate", fixture["paths"]["modified"])
+                self.assertEqual(reader.calls, 4)
+                self.assertEqual(observed.data, b"head revision\n")
+                self.assertEqual(len(session.candidate_reads), 1)
+                runtime.result.files = 1
+                report = session.finish(runtime)
+                self.assertEqual(len(report.candidate_reads), 1)
+
     def test_same_side_repeats_preserve_coverage_and_reject_changed_duplicates(self):
         with snapshot() as repo:
             fixture = candidate_fixture(repo, support_paths=1)
@@ -524,6 +621,7 @@ class CandidateCoverageTests(unittest.TestCase):
                 with self.subTest(label=label), self.assertRaises(error):
                     session.read_action("read-candidate", fixture["paths"]["added"])
                 self.assertEqual(session.candidate_reads, {})
+                self.assertEqual(session.attempted_candidate_paths, {fixture["paths"]["added"]})
             session, _ = self.start_session(
                 tools, fixture["base"], fixture["head"], max_files=1,
                 readers={"read-candidate": WrappedCandidateReader(delegate)})
@@ -531,6 +629,7 @@ class CandidateCoverageTests(unittest.TestCase):
                     tools.model.ReviewError, "unsupported candidate summary mode"):
                 session.read_action("read-candidate", fixture["paths"]["symlink"])
             self.assertEqual(session.candidate_reads, {})
+            self.assertEqual(session.attempted_candidate_paths, {fixture["paths"]["symlink"]})
 
 
 class RoundTests(unittest.TestCase):

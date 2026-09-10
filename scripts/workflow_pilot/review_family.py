@@ -757,6 +757,7 @@ class ReviewSession:
         self.local_triage: dict[str, tuple[bool, str]] = {}
         self.rounds = RoundState()
         self.accepted: dict[str, Finding] = {}
+        self.attempted_candidate_paths: set[str] = set()
         self.candidate_reads: dict[tuple[str, str], CandidateReadSummary] = {}
         self.candidate_binding: CandidateBinding | None = None
 
@@ -840,9 +841,10 @@ class ReviewSession:
                     "trusted candidate reader base differs from the frozen review identity")
         request = validate_candidate_read_request(
             preview(*args, **kwargs), base_sha=binding.base, head_sha=binding.head)
-        logical_paths = {item.path for item in self.candidate_reads.values()}
-        require(request.path in logical_paths or len(logical_paths) < self.lease.max_files,
+        require(request.path in self.attempted_candidate_paths
+                or len(self.attempted_candidate_paths) < self.lease.max_files,
                 "review file budget exceeded")
+        self.attempted_candidate_paths.add(request.path)
         expected = validate_candidate_read_summary(
             describe(*args, **kwargs), base_sha=binding.base, head_sha=binding.head)
         observed = validate_candidate_read(
