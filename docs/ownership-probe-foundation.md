@@ -454,6 +454,16 @@ another capsule rejects before launch. A terminal failure also forbids cached
 replay. The separate captured-source entry bound still uses `Limits.entries`;
 source capture is not a filesystem-observation charge.
 
+Raw metadata observation accounting is unchanged: requested before/after
+buffers, null/EFAULT failures and per-record legacy JSON dedupe all still spend
+the original observation budget. Cache retention still charges
+`encoded(ProcessOutput.metadata)`, and replay still charges the unchanged
+binary-frame write/read plus helper observation. The transport delta is only
+the complete supervisor report bytes versus the envelope plus the parent's
+decoded-frame control reservation. The trusted supervisor streams frame parts
+through zlib and reuses one bounded 4096-byte hex-decoding scratch buffer
+instead of materializing a second full metadata frame.
+
 Only compile-mode **metadata** probes of exact `/proc/self/exe` pass the
 compiler exception before the general namespace denial. The capsule has no
 proc mount or fabricated executable link: stat/lstat/access/readlink return
@@ -535,6 +545,15 @@ and directory results retain their actual supported ABI data. Failed operations
 keep their status without becoming successful source consumption. Unreadable
 buffers and unsupported requests are explicit, not empty successful records.
 
+The supervisor-to-parent transport for those records is now a strict metadata
+envelope:
+`{"format":"vo-metadata-frame","version":1,"encoding":"zlib-base64","record_count":...,"decoded_size":...,"payload":...}`.
+The payload inflates to the same canonical binary frame used by
+`validate.meta`; the parent decodes that frame back into the public legacy
+list/tuple records, so `ProcessOutput.metadata`, cache keys, replay inputs and
+consumer semantics stay unchanged. There is no same-package fallback to the old
+list-valued supervisor field.
+
 The fixed native comparison routine in the existing interceptor serves
 command-cache checks. It reissues the
 recorded operations in the authoritative guest context, using the complete
@@ -548,6 +567,11 @@ not a registered candidate command and exposes no control channel to candidate
 code. Metadata paths/operations are constrained by the selected completed
 record. Ordinary candidate capsules remain channel-free. Live Make requests
 obtain actual isolated results through the producer rendezvous, never a Python
+substitution or fabricated replay. The parent reserves the decoded frame size
+as control before decompression, keeps at most one complete decoded frame, and
+reuses the unchanged binary frame for helper replay. Malformed envelope fields,
+base64, zlib streams, decoded-size/count mismatches, noncanonical frames and
+tampered replay inputs fail closed before execution.
 executor inside Make. Reusable results still use this complete comparison.
 
 Native event writes are recorded only after complete successful kernel writes

@@ -4450,6 +4450,81 @@ localization/chapterbundle pair is complete #180 CURRENT/BASE/112-domain,
 census, graph, oracle, lifecycle or public-gate acceptance. User-namespace
 evidence does not imply a separately untested sudo credential transition.
 
+## TC-PROBE-METADATA-TRANSPORT-001: Transport native metadata losslessly
+
+### Feature and configuration
+
+Issue [#240](https://github.com/laqieer/fireemblem8-expansion/issues/240);
+the supported Linux x86-64/GNU Make 4.3 ownership-probe foundation with the
+existing namespace/watchdog route and one extended native owner. Start from a
+clean source checkout. The public legacy surface remains
+`ProcessOutput.metadata`; only the supervisor-parent transport changes to the
+closed `vo-metadata-frame` envelope described in the
+[foundation contract](../ownership-probe-foundation.md#complete-metadata-and-static-reuse).
+Fixtures stay under owned ignored `build/test-artifacts`; no ROM, new job,
+graph planner, extra runtime or remote action is involved.
+
+### Actions
+
+1. Run the focused prototype coverage:
+   `python3 -m unittest scripts.validation_ownership.tests.test_metadata_transport scripts.validation_ownership.tests.test_foundation.FoundationTests.test_static_metadata_uses_persistent_objects_for_cache_and_native_make scripts.validation_ownership.tests.test_foundation.FoundationTests.test_metadata_captures_complete_syscall_buffers_status_flags_and_masks scripts.validation_ownership.tests.test_foundation.FoundationTests.test_runtime_inputs_capture_full_optional_buffers_status_flags_and_masks scripts.validation_ownership.tests.test_foundation.FoundationTests.test_metadata_transport_preserves_mixed_syscalls_cache_and_replay scripts.validation_ownership.tests.test_foundation.FoundationTests.test_metadata_transport_preserves_directory_enumeration_offsets_and_savings scripts.validation_ownership.tests.test_foundation.FoundationTests.test_metadata_transport_keeps_selected_view_metadata_boundaries scripts.validation_ownership.tests.test_foundation.FoundationTests.test_sudo_preflight_and_capsules_share_the_privileged_lifecycle_contract scripts.validation_ownership.tests.test_producer.ProducerTests.test_make_lookup_guard_preserves_ordinary_absence_nonexecutables_and_metadata -v`
+2. Exercise a real mixed-source metadata reader with complete before/after
+   buffers, failures, flags and masks, plus a real 4096-byte directory
+   enumeration capture with recorded offsets. For both captures, compare the
+   decoded public records with the original supervisor envelope, run unchanged
+   metadata replay, and verify the legacy cache charge still uses
+   `encoded(ProcessOutput.metadata)`.
+3. Measure the exact old full-report JSON size, the new full-report JSON size,
+   the envelope JSON size, the decoded binary frame size and the fixed 4096-byte
+   trusted scratch bound. Require a positive conservative saving where
+   `old_report > new_report + decoded_frame` on the representative native
+   captures; do not count the scratch buffer as a savings term.
+4. Corrupt envelope fields, version, encoding, base64, truncated or trailing
+   zlib streams, decoded-size/count claims, frame paths, duplicate records and
+   ABI sizes. Require fail-closed rejection before unsafe allocation or replay.
+   Keep the modeled privileged-lifecycle control on the new envelope and prove
+   owned cleanup on failure.
+5. Reuse the unchanged metadata replay path through cache validation and
+   CURRENT/BASE view selection. Compatible records must still replay and reuse;
+   incompatible namespace or source changes must still force fresh execution
+   rather than stale acceptance.
+
+### Expected result
+
+Supervisor reports serialize metadata as one strict
+`{"format":"vo-metadata-frame","version":1,"encoding":"zlib-base64",...}`
+object. Decoding that envelope yields the same legacy tuples previously
+returned to consumers, with unchanged raw observation accounting, unchanged
+legacy per-record dedupe/hashes, unchanged cache charges on
+`encoded(ProcessOutput.metadata)`, and unchanged `validate.meta` replay bytes.
+Representative native captures show a positive conservative control saving
+without truncating buffers or weakening authority checks.
+
+### Negative control
+
+Do not accept mixed legacy-list fallback, unknown transport fields or versions,
+invalid base64, incomplete or concatenated zlib data, decoded-size or
+record-count mismatches, duplicate records, noncanonical frame paths, ABI-size
+changes or tampered replay bytes. Do not claim savings from wire payload alone,
+refund raw observation cost, move charges to another category, or materialize a
+second complete decoded frame at the parent. Unsupported metadata replay and
+selected-view mismatches must still reject or re-execute exactly as before.
+
+### Automation
+
+The focused command above runs the real command, Make, runtime-input,
+selected-view, producer and modeled privileged-lifecycle scenarios together
+with pure codec corruption coverage. The integrated native owner remains
+`make -f scripts/validation_ownership/foundation.mk ownership-probe-test`; no
+new worker or job is introduced.
+
+### Cleanup and limitations
+
+Fixtures and session roots clean themselves; remove only the empty owned test
+parents if desired. No manual-only criterion applies. This bounded prototype
+does not claim full #180/#186 graph fit, attributed producer accounting or
+remote completion; broader integration remains a downstream gate.
+
 ## TC-PROBE-PYTHON-PRODUCERS-001: Share source-only Python producer commands
 
 ### Feature and configuration
