@@ -128,7 +128,7 @@ def _canonical_review_path(path):
     if not isinstance(path, str) or not path:
         raise ValueError("candidate path must be a nonempty string")
     relative = PurePosixPath(path)
-    if ("\\" in path or relative.is_absolute() or path in {"", "."} or
+    if ("\0" in path or "\\" in path or relative.is_absolute() or path in {"", "."} or
             "." in relative.parts or ".." in relative.parts or relative.as_posix() != path):
         raise ValueError("candidate path must be canonical and repository-relative")
     return path

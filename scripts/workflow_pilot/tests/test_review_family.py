@@ -641,7 +641,10 @@ class CandidateCoverageTests(unittest.TestCase):
             with self.assertRaisesRegex(tools.model.ReviewError, "budget exceeded"):
                 session.read_action("read-candidate", fixture["paths"]["added"])
             for path in ("/absolute.txt", "../escape.txt",
-                         "candidate-review-paths/./added.txt", "candidate-review-paths//added.txt"):
+                         "candidate-review-paths/./added.txt", "candidate-review-paths//added.txt",
+                         "candidate-review-paths/bad\0.txt"):
+                with self.subTest(boundary="model", path=path), self.assertRaises(ValueError):
+                    tools.model.repo_path(path, "candidate path")
                 reader = WrappedCandidateReader(delegate)
                 session, _ = self.start_session(
                     tools, fixture["base"], fixture["head"], max_files=1,

@@ -864,7 +864,7 @@ or arbitrary concurrent host mutation, and does not reinstate #204/#210.
 3. Exercise deleted and explicit two-sided negatives in the same session API.
    Head-side absence for a deleted path, a one-sided explicit mode/change
    read, wrong pair/root/revision/path/mode/object/bytes, unsupported Git
-   object kinds, partial/failed reads and noncanonical paths must reject or
+   object kinds, partial/failed reads and noncanonical or NUL paths must reject or
    remain uncovered. Generic existing `read_action("read-candidate", ...)`
    callers may still finish, but without trusted candidate coverage.
    Repeat the same path and side: it must retain one summary and one logical

@@ -75,7 +75,7 @@ def integer(value):
 def repo_path(value: Any, label: str) -> str:
     require(isinstance(value, str) and bool(value), f"invalid {label}")
     candidate = PurePosixPath(value)
-    require("\\" not in value and not candidate.is_absolute() and
+    require("\0" not in value and "\\" not in value and not candidate.is_absolute() and
             value not in {"", "."} and
             "." not in candidate.parts and ".." not in candidate.parts and
             candidate.as_posix() == value, f"invalid {label}")
