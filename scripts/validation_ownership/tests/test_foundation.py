@@ -4396,8 +4396,15 @@ raise AssertionError("default termination was lost")
 
     def test_real_generated_registry_commands_keep_lazy_runtime_imports_and_complete_static_code_admission(self):
         from scripts.generated_data.autoplaystrategies.schema import AutoplayStrategiesTableSchema
+        from scripts.generated_data.registry import REGISTRY
         from scripts.generated_data.shops.schema import ShopsTableSchema
         from scripts.validation_ownership.consumer import registry_entries
+
+        schema_sources = {
+            type(REGISTRY.resolve(name)).__module__.replace(".", "/") + ".py"
+            for name in REGISTRY.all_names()
+        }
+        self.assertEqual(len(schema_sources), 16)
 
         def observe_registry(name, source, expected_record_count, included, excluded):
             budget = ProbeBudget()
@@ -4410,9 +4417,7 @@ raise AssertionError("default termination was lost")
             try:
                 with ProbeSession(loader, scratch_root=scratch, budget=budget) as session:
                     command = generated_registry_command(session, name, source)
-                    self.assertIn("scripts/generated_data/shops/schema.py", command.code)
-                    self.assertIn("scripts/generated_data/autoplaystrategies/schema.py", command.code)
-                    self.assertIn("scripts/generated_data/chapterbundle/schema.py", command.code)
+                    self.assertEqual(schema_sources & set(command.code), schema_sources)
                     result = session.command(command)
                     self.assertEqual(parse_json(result.stdout, "generated registry receipt"), {
                         "name": name,
@@ -4499,29 +4504,6 @@ raise AssertionError("default termination was lost")
         records = schema.load_records(str(ROOT / "src/data/ch2_shops.json"))
         expected_c = schema.generate_c(records, "src/data/ch2_shops.json").encode("utf-8")
         expected_inventory = schema.build_inventory(records).encode("utf-8")
-        script_body = (
-            "from pathlib import Path\n"
-            "import sys\n"
-            "sys.path.insert(0, '/repo')\n"
-            "from scripts.generated_data.diagnostics import DiagnosticCollector\n"
-            "from scripts.generated_data.registry import REGISTRY\n"
-            "source = sys.argv[1]\n"
-            "schema = REGISTRY.resolve('shops')\n"
-            "records = schema.load_records(str(Path('/repo') / Path(source)))\n"
-            "diagnostics = DiagnosticCollector()\n"
-            "schema.validate(records, diagnostics)\n"
-            "if diagnostics.errors:\n"
-            " raise diagnostics.errors[0]\n"
-            "outputs = (\n"
-            " (sys.argv[2], schema.generate_c(records, source)),\n"
-            " (sys.argv[3], schema.build_inventory(records)),\n"
-            ")\n"
-            "for relative, content in outputs:\n"
-            " path = Path('/work') / Path(relative)\n"
-            " path.parent.mkdir(parents=True, exist_ok=True)\n"
-            " path.write_text(content, encoding='utf-8')\n"
-        )
-        self.add("generate_shops.py", script_body)
         body = (
             "from pathlib import Path\n"
             "import sys\n"
@@ -4544,6 +4526,7 @@ raise AssertionError("default termination was lost")
             " path.parent.mkdir(parents=True, exist_ok=True)\n"
             " path.write_text(content, encoding='utf-8')\n"
         )
+        self.add("generate_shops.py", body)
         with self.session(seconds=60) as planning_session:
             planning = python_command(
                 planning_session,
