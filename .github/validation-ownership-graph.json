@@ -1969,6 +1969,10 @@
         },
         {
           "kind": "exact",
+          "path": "scripts/validation_ownership/tests/test_metadata_transport.py"
+        },
+        {
+          "kind": "exact",
           "path": "scripts/validation_ownership/tests/test_producer.py"
         },
         {

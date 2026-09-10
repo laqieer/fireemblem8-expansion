@@ -100,12 +100,14 @@ class AssetOwnershipTests(unittest.TestCase):
                 actual = reporter._resolve_path(path, self.graph, model)
                 self.assertNotIn("target-scenario", {owner["edge_type"] for owner in actual["owners"]})
 
-    def test_archival_dependency_sources_keep_precise_existing_owners(self):
+    def test_new_framework_sources_keep_precise_existing_owners(self):
         model = self.model()
         for path, reference in (
             ("archival_dependencies.mk", "Makefile"),
             ("scripts/modernize/tests/test_archival_dependencies.py",
              "scripts/modernize/tests/test_build_default_lane.py"),
+            ("scripts/validation_ownership/tests/test_metadata_transport.py",
+             "scripts/validation_ownership/tests/test_foundation.py"),
         ):
             with self.subTest(path=path):
                 actual = reporter._resolve_path(path, self.graph, model)
