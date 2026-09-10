@@ -150,12 +150,24 @@ class WrappedCandidateReader:
 
     def __init__(self, delegate, *, mutate=None, failure=None):
         self.delegate = delegate
-        self.root = delegate.root
-        self.base = delegate.base
-        self.head = delegate.head
+        self.base_tree = delegate.base_tree
+        self.head_tree = delegate.head_tree
+        self.candidate_binding = dict(delegate.candidate_binding)
         self.mutate = mutate
         self.failure = failure
         self.calls = 0
+
+    @property
+    def root(self):
+        return Path(self.candidate_binding["resolved_root"])
+
+    @property
+    def base(self):
+        return self.candidate_binding["base"]
+
+    @property
+    def head(self):
+        return self.candidate_binding["head"]
 
     def preview(self, *args, **kwargs):
         return self.delegate.preview(*args, **kwargs)
@@ -410,7 +422,7 @@ class CandidateCoverageTests(unittest.TestCase):
                         report, other_changes, base_sha=fixture["base"], head_sha=fixture["head"],
                         resolved_root=str(other_root.resolve()))
                 for field, value in (
-                    ("root", other_root),
+                    ("resolved_root", str(other_root.resolve())),
                     ("base", fixture["head"]),
                     ("head", fixture["base"]),
                 ):
@@ -419,11 +431,57 @@ class CandidateCoverageTests(unittest.TestCase):
                     session, _ = self.start_session(
                         tools, fixture["base"], fixture["head"], max_files=1,
                         readers={"read-candidate": reader})
-                    setattr(reader, field, value)
+                    reader.candidate_binding[field] = value
                     with self.subTest(field=field), self.assertRaisesRegex(
                             tools.model.ReviewError, "changed after review start"):
                         session.read_action("read-candidate", fixture["paths"]["added"])
                     self.assertEqual(reader.calls, 0)
+
+    def test_prebegin_candidate_binding_tamper_is_rejected_or_assignment_raises(self):
+        with snapshot() as repo:
+            fixture = candidate_fixture(repo)
+            tools = gate.ReviewTools(gate.GitTree(repo.root, fixture["head"]), repo.root)
+            scratch = repo.root / "build"
+            scratch.mkdir(exist_ok=True)
+            with tempfile.TemporaryDirectory(prefix="review-root-prebegin-", dir=scratch) as directory:
+                other_root = Path(directory) / "clone"
+                subprocess.run(["git", "clone", "--quiet", str(repo.root), str(other_root)], check=True)
+
+                reader = tools.candidate_reader(fixture["base"], fixture["head"])
+                original = (reader.root, reader.base, reader.head)
+                for field, value in (
+                    ("root", other_root.resolve()),
+                    ("base", fixture["head"]),
+                    ("head", fixture["base"]),
+                ):
+                    with self.subTest(actual_reader_field=field):
+                        with self.assertRaises(AttributeError):
+                            setattr(reader, field, value)
+                        self.assertEqual((reader.root, reader.base, reader.head), original)
+
+                reader = WrappedCandidateReader(tools.candidate_reader(
+                    fixture["base"], fixture["head"]))
+                for field, value in (
+                    ("resolved_root", str(other_root.resolve())),
+                    ("base", fixture["head"]),
+                    ("head", fixture["base"]),
+                ):
+                    data = request(base=fixture["base"], head=fixture["head"])
+                    scope = frozenset({tools.model.subject_key(data["subjects"][0])})
+                    session = tools.model.ReviewSession(
+                        "coordinator", "implementer", scope, fixture["head"],
+                        identity=("owner/repo", 1, fixture["base"]),
+                        owners=tools.model.ReviewOwnership(),
+                        readers={"read-candidate": reader},
+                    )
+                    runtime = Runtime(fixture["head"], scope)
+                    reader.candidate_binding = dict(tools.candidate_reader(
+                        fixture["base"], fixture["head"]).candidate_binding)
+                    reader.candidate_binding[field] = value
+                    with self.subTest(wrapped_binding_field=field), self.assertRaisesRegex(
+                            tools.model.ReviewError, "immutable Git tree binding"):
+                        session.begin(runtime, "reviewer", max_files=1)
+                    self.assertEqual(runtime.calls, [])
 
     def test_distinct_failed_describe_paths_spend_capacity_before_describe_and_allow_retry(self):
         with snapshot() as repo:
