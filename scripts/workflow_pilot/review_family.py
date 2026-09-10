@@ -95,16 +95,28 @@ def git_mode(value: Any, label: str, *, regular_only=False) -> str:
     return value
 
 
-def resolved_repo_root(value: Any, label: str, *, must_exist: bool) -> str:
+def resolve_existing_repo_root(value: Any, label: str) -> str:
     require(isinstance(value, (str, os.PathLike)) and not isinstance(value, bytes),
             f"invalid {label}")
     try:
-        candidate = Path(value).resolve(strict=must_exist)
+        candidate = Path(value).resolve(strict=True)
     except (OSError, RuntimeError, TypeError) as error:
         raise ReviewError(f"invalid {label}") from error
-    require(candidate.is_absolute() and (not must_exist or candidate.is_dir()),
+    require(candidate.is_absolute() and candidate.is_dir(),
             f"invalid {label}")
-    return str(candidate)
+    return frozen_repo_root(str(candidate), label)
+
+
+def frozen_repo_root(value: Any, label: str) -> str:
+    require(isinstance(value, (str, os.PathLike)) and not isinstance(value, bytes),
+            f"invalid {label}")
+    path = os.fspath(value)
+    require(isinstance(path, str) and bool(path), f"invalid {label}")
+    candidate = PurePosixPath(path)
+    require("\0" not in path and "\\" not in path and candidate.is_absolute() and
+            "." not in candidate.parts and ".." not in candidate.parts and
+            candidate.as_posix() == path, f"invalid {label}")
+    return path
 
 
 def unique(values, label: str) -> None:
@@ -292,7 +304,7 @@ class CandidateRequirements:
 
 def validate_candidate_binding(value: Any, label: str) -> CandidateBinding:
     return CandidateBinding(
-        resolved_repo_root(field_value(value, "resolved_root"), label + " root", must_exist=True),
+        frozen_repo_root(field_value(value, "resolved_root"), label + " root"),
         sha(field_value(value, "base")),
         sha(field_value(value, "head")),
     )
@@ -304,14 +316,14 @@ def candidate_tree_binding(reader: Any) -> CandidateBinding:
     require(base_tree is not _MISSING and head_tree is not _MISSING,
             "trusted candidate reader requires both immutable Git tree bindings")
     binding = CandidateBinding(
-        resolved_repo_root(field_value(base_tree, "root"),
-                           "trusted candidate reader Git tree root", must_exist=True),
+        frozen_repo_root(field_value(base_tree, "root"),
+                         "trusted candidate reader Git tree root"),
         sha(field_value(base_tree, "revision")),
         sha(field_value(head_tree, "revision")),
     )
-    require(binding.resolved_root == resolved_repo_root(
+    require(binding.resolved_root == frozen_repo_root(
         field_value(head_tree, "root"),
-        "trusted candidate reader Git tree root", must_exist=True),
+        "trusted candidate reader Git tree root"),
         "trusted candidate reader Git trees disagree about root")
     return binding
 
@@ -319,7 +331,7 @@ def candidate_tree_binding(reader: Any) -> CandidateBinding:
 def candidate_requirements(value) -> CandidateRequirements:
     require(type(value) is CandidateRequirements,
             "actual immutable candidate path requirements required")
-    root = resolved_repo_root(value.resolved_root, "candidate path requirements root", must_exist=True)
+    root = frozen_repo_root(value.resolved_root, "candidate path requirements root")
     base = sha(value.base)
     head = sha(value.head)
     changes = value.changes
@@ -423,7 +435,7 @@ def candidate_coverage(report) -> CandidateCoverage | None:
     if base is None:
         require(root is None and reads == (), "review report has unexpected candidate coverage state")
         return None
-    root = resolved_repo_root(root, "candidate coverage root", must_exist=False)
+    root = frozen_repo_root(root, "candidate coverage root")
     base = sha(base)
     head = sha(report.head)
     require(type(reads) is tuple, "candidate coverage must be an immutable tuple")
@@ -802,8 +814,8 @@ class ReviewSession:
         source = field_value(reader, "candidate_binding")
         binding = (validate_candidate_binding(source, "trusted candidate reader binding")
                    if source is not _MISSING else CandidateBinding(
-                       resolved_repo_root(getattr(reader, "root", None),
-                                          "trusted candidate reader root", must_exist=True),
+                       resolve_existing_repo_root(getattr(reader, "root", None),
+                                                 "trusted candidate reader root"),
                        sha(getattr(reader, "base", None)),
                        sha(getattr(reader, "head", None)),
                    ))
