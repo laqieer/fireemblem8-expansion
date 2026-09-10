@@ -290,11 +290,11 @@ def validate_candidate_binding(value: Any, label: str) -> CandidateBinding:
     )
 
 
-def candidate_tree_binding(reader: Any) -> CandidateBinding | None:
+def candidate_tree_binding(reader: Any) -> CandidateBinding:
     base_tree = field_value(reader, "base_tree")
     head_tree = field_value(reader, "head_tree")
-    if base_tree is _MISSING or head_tree is _MISSING:
-        return None
+    require(base_tree is not _MISSING and head_tree is not _MISSING,
+            "trusted candidate reader requires both immutable Git tree bindings")
     binding = CandidateBinding(
         resolved_repo_root(field_value(base_tree, "root"),
                            "trusted candidate reader Git tree root", must_exist=True),
@@ -795,12 +795,11 @@ class ReviewSession:
             require(binding == self.candidate_binding,
                     "trusted candidate reader root/base/head changed after review start")
         tree_binding = candidate_tree_binding(reader)
-        if tree_binding is not None:
-            if self.candidate_binding is not None:
-                require(tree_binding == self.candidate_binding,
-                        "trusted candidate reader immutable Git tree binding changed after review start")
-            require(binding == tree_binding,
-                    "trusted candidate reader binding differs from immutable Git tree binding")
+        if self.candidate_binding is not None:
+            require(tree_binding == self.candidate_binding,
+                    "trusted candidate reader immutable Git tree binding changed after review start")
+        require(binding == tree_binding,
+                "trusted candidate reader binding differs from immutable Git tree binding")
         return reader, preview, describe, binding
 
     def begin(self, runtime, owner: str, *, duration=1200, max_files=MAX_REVIEW_FILES):
