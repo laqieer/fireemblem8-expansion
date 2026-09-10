@@ -4808,6 +4808,93 @@ malformed-input cases. It proves view binding, not whole-repository resource
 fit; larger attempted view fixtures that hit unchanged resource limits are
 not counted as successful acceptance.
 
+## TC-PROBE-DEPENDENCY-FUSION-001: Fuse generated dependency producer stages
+
+### Feature and configuration
+
+Issue [#242](https://github.com/laqieer/fireemblem8-expansion/issues/242);
+the supported Linux x86-64/GNU Make 4.3 ownership-probe host with Python 3,
+the existing namespace/watchdog route, and the delivered producer/view/runtime/
+dependency/source-selection foundations. Start from a clean source checkout.
+The public API remains `generated_dependency_command(...)` in
+`scripts/validation_ownership/python_commands.py`; no new router, importer,
+runtime service or workflow job is introduced.
+
+### Actions
+
+1. Run the existing native owner:
+   `python3 -m unittest scripts.validation_ownership.tests.test_producer -v`.
+   This keeps dependency fusion under the same producer-native owner already
+   used by the existing foundation workflow.
+2. Capture actual capsule counts for all three audited dependency modules.
+   Compare a legacy three-stage reconstruction against the corrected helper:
+   chapterobjectives drops from five command capsules to four, autoplay from
+   three to two, and the eventlists file-plus-bundle-directory case from three
+   to two. The existing selector and bundle-support capsules stay intact; only
+   the separate cold collector execution disappears.
+3. Compare each module's confined depfile bytes with the ordinary module CLI
+   and consume the published depfiles through native Make. Require the same
+   include/restart behavior and one real output publication per invocation.
+4. Preserve CURRENT/BASE/CURRENT binding for support-from-bundle modules.
+   Change the selected bundle bytes, the target deps module and one declared
+   bundle dependency module, then require chapterobjectives and autoplay to
+   return current output, base output, then restored current output with input
+   identities bound to the selected snapshot.
+5. Mutate actual collected inputs so the module omits, adds, duplicates or
+   escapes a path beyond the admitted selector/support evidence. Reject before
+   output publication. Missing and extra named options still reject before any
+   capsule starts. Missing/conflicting output targets and the forbidden rename
+   guard remain unchanged.
+6. Invoke the same output-producing registration twice through the existing
+   producer workflow. Require two real executions/publications while equivalent
+   provenance still deduplicates under the existing producer contract.
+
+### Expected result
+
+The helper still derives authority only from the existing `source_paths`
+selectors and the existing chapterbundle-support capsule, including the actual
+implementation-module `.py` inputs reported by
+`chapterobjectives.deps._implementation_module_paths()` in the selected
+snapshot. One final output command normally imports the real module, checks its
+actual `collect_input_paths(...)` result for exact canonical duplicate-free
+agreement with that admitted set, validates tracked source identities, calls
+the real `render_depfile(...)`, and writes fresh private `/work` output. No
+second cold collector execution remains.
+
+### Negative control
+
+Do not add a second importer, namespace shim, whole-tree source grant, new
+runtime platform, output cache bypass or ordinary Make workaround. Missing and
+extra options, unexpected/omitted/duplicate/escaping collected paths, missing
+companions, conflicting outputs and forbidden rename behavior must still reject
+before publication. Repeated output registrations still execute and publish
+twice; the fusion only removes the redundant collector stage.
+
+### Interactions and save compatibility
+
+Depends on the delivered #206 / PR #212 core, producer (#225), view (#226),
+runtime (#227), dependency (#228) and Python producer (#238) APIs. #240 / #241
+metadata transport is independent because the public producer ABI and metadata
+replay format remain unchanged. #180 / PR #186 consumes this correction later;
+graph query fit, new quotas and broader resource acceptance remain outside this
+issue. No gameplay, save/config identity, localization, generated game content,
+ROM/RAM, workflow topology or accounting-meaning changes land here.
+
+### Automation
+
+`python3 -m unittest scripts.validation_ownership.tests.test_producer -v`
+provides the native command, Make, CURRENT/BASE, negative-control and capsule-
+count evidence. The existing `make -f scripts/validation_ownership/foundation.mk
+ownership-probe-test` owner remains the wider integration command; no new CI
+job or alternate owner is added.
+
+### Cleanup and limitations
+
+All owned fixture trees, depfiles, selected views and private session roots
+clean through the existing watchdog/session cleanup. This case proves the
+shared helper correction only; it does not claim full #180 graph fit, a fresh
+full-query run, resource calibration or any manual-only criterion.
+
 ## TC-WORKFLOW-PROBE-DEPENDENCY-001: Observe real confined compiler dependencies
 
 ### Feature and configuration
