@@ -50,21 +50,8 @@ def observe_declarations(loader: AuthorityLoader, session: ProbeSession):
     return parse_json(output.stdout, "candidate generated-data registry declarations")
 
 
-def observe_directory_sources(loader: AuthorityLoader, session: ProbeSession, record):
-    source = relative_path(record["default_source"])
-    result = probe_generated_registry(
-        loader, session=session,
-        command=generated_registry_command(session, record["name"], source),
-    )
-    if result["name"] != record["name"] or result["version"] != record["version"]:
-        raise MakeProbeError("resolved registry identity differs from its declaration")
-    return result["source_paths"]
-
-
 def observe_source_paths(loader: AuthorityLoader, session: ProbeSession, record):
     source = relative_path(record["default_source"])
-    if source not in session.snapshot.files:
-        return observe_directory_sources(loader, session, record)
     result = probe_generated_registry(
         loader, session=session,
         command=generated_registry_command(session, record["name"], source),

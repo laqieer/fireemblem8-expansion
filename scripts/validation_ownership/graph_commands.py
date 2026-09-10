@@ -184,28 +184,6 @@ def _long_option_values(arguments, label):
     return values
 
 
-def _generated_dependency_selector_options(module, details, values):
-    expected = {option for option, _selector in details["selectors"]}
-    expected.update(("--make-target", "--depfile"))
-    actual = set(values)
-    if actual != expected:
-        missing = sorted(expected - actual)
-        extra = sorted(actual - expected)
-        detail = []
-        if missing:
-            detail.append("missing " + ", ".join(missing))
-        if extra:
-            detail.append("extra " + ", ".join(extra))
-        raise MakeProbeError(
-            f"{module} options differ from the declared command contract ({'; '.join(detail)})"
-        )
-    return (
-        {option: values[option] for option, _selector in details["selectors"]},
-        values["--make-target"],
-        values["--depfile"],
-    )
-
-
 def _supported_modern_toolchain_roots():
     return (Path("/usr/bin"), Path("/bin"))
 
@@ -545,13 +523,13 @@ class MakeCommands:
                 if environment or stdin is not None:
                     raise MakeProbeError("generated dependency producer uses an unsupported shell wrapper")
                 values = _long_option_values(arguments[2:], arguments[1])
-                option_values, make_target, depfile = _generated_dependency_selector_options(
-                    arguments[1], GENERATED_DEPENDENCY_MODULES[arguments[1]], values,
-                )
+                if not {"--make-target", "--depfile"} <= values.keys():
+                    raise MakeProbeError("generated dependency producer requires target and depfile")
+                make_target, depfile = values.pop("--make-target"), values.pop("--depfile")
                 return generated_dependency_command(
                     self.session,
                     arguments[1],
-                    option_values=option_values,
+                    option_values=values,
                     make_target=make_target,
                     depfile=depfile,
                     code=python_code,
