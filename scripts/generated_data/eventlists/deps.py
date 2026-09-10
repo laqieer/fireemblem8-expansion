@@ -25,8 +25,12 @@ def collect_input_paths(strategy_source, bundle_source):
     return tuple(sorted(paths))
 
 
+def render_depfile(target, inputs):
+    return "{}: {}\n".format(target, " ".join(inputs))
+
+
 def write_depfile(depfile, target, inputs):
-    content = "{}: {}\n".format(target, " ".join(inputs))
+    content = render_depfile(target, inputs)
     directory = os.path.dirname(depfile)
     os.makedirs(directory, exist_ok=True)
     try:

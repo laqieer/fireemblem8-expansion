@@ -5030,6 +5030,96 @@ localization/chapterbundle pair is complete #180 CURRENT/BASE/112-domain,
 census, graph, oracle, lifecycle or public-gate acceptance. User-namespace
 evidence does not imply a separately untested sudo credential transition.
 
+## TC-WORKFLOW-PROBE-PYTHON-PRODUCERS-001: Share source-only Python producer commands
+
+### Feature and configuration
+
+Issue [#238](https://github.com/laqieer/fireemblem8-expansion/issues/238);
+the supported Linux x86-64/GNU Make 4.3 ownership-probe host with Python 3,
+the existing namespace/watchdog route, and the delivered generated-data source
+selection foundations. Start from a clean source checkout. The public API lives
+in `scripts/validation_ownership/python_commands.py`; see
+[live producers](../ownership-probe-producers.md). Fixtures remain under owned
+ignored `build/test-artifacts`; no ROM, remote action, graph planner or new
+workflow job is involved.
+
+### Actions
+
+1. Run the existing native owner:
+   `make -f scripts/validation_ownership/foundation.mk ownership-probe-test`.
+   This selects the same foundation, producer and dependency modules as the
+   `extended-host-tests` Build worker; no standalone job or runner is added.
+2. Exercise the shared `python_command(...)` closure in small owned fixtures.
+   Import one helper through another Python module and require only the actual
+   imported code paths in the closure and execution receipt; unrelated modules
+   must stay outside the declaration.
+3. Use a real top-level gitlink fixture plus standard `import scripts`.
+   A raw immutable capture without admitted gitlink sources must still fail at
+   `nonregular namespace in source enumeration: /repo`. The same command under
+   a complete gitlink-aware capture must succeed with Python's ordinary
+   `NamespaceLoader`, `__spec__.origin == None` and `['/repo/scripts']`.
+4. Run the metadata-only registry source selector through the shared command
+   helper. The schema's public `source_paths(...)` must drive the returned
+   bundle list; `load_records(...)` must not execute for the selector path.
+5. Capture BASE, change the same source file and helper module path in CURRENT,
+   then run the same `python_command(...)` before, during and after
+   `select_view(BASE)`. Require CURRENT bytes, BASE bytes, then restored
+   CURRENT bytes with no stale cross-view reuse.
+6. In a compact real generated-data fixture, adapt all three audited deps
+   modules through `generated_dependency_command(...)`:
+   `chapterobjectives`, `autoplaystrategies`, `eventlists`. Compare ordinary
+   CLI depfile bytes with the confined producer hashes, publish the three
+   depfiles into live Make and require `MAKE_RESTARTS=1`.
+7. Reorder the autoplay strategies named options in ordinary CLI form and in
+   the typed option mapping. Require identical semantic depfile inputs. Omit a
+   required option and add an extra one: both must reject before a result.
+8. Reject an output path that collides with an immutable source and a missing
+   admitted companion such as `assets/manifest.json`. No helper may fabricate
+   depfile output, widen admission or rewrite metadata when those negatives fail.
+
+### Expected result
+
+The shared source-only API preserves normal Python import behavior while
+binding source/code/directory rights to the active selected view. Complete
+capture plus declared ancestors succeeds; incomplete capture and missing
+ancestors still fail at their actual guard boundaries. Registry source
+selection uses only the explicit `source_paths` API. The typed generated
+dependency helper binds exact named options, concrete file/directory inputs,
+module code and one declared depfile output, and native Make consumes the
+published depfiles with one real restart.
+
+### Negative control
+
+Do not reintroduce a synthetic package loader, alternate import mode, private
+cache or guessed depfile renderer. Raw immutable capture without admitted
+gitlinks, missing source ancestors, unrelated closure members, stale selected
+views, missing/extra options, conflicting outputs and missing companions must
+reject instead of returning success-shaped fallback results.
+
+### Interactions and save compatibility
+
+Depends on the delivered #206 / PR #212 core and composes with the delivered
+producer (#225), view (#226), runtime (#227), dependency (#228) and source
+selection (#234) APIs. #180 / PR #186 and #196 consume this seam later; graph
+dispatch, shell normalization, review/oracle/coordinator logic and full-root
+resource acceptance remain outside this issue. No gameplay, save/config
+identity, localization, generated game content, ROM/RAM, workflow topology or
+resource-budget meaning changes.
+
+### Automation
+
+`make -f scripts/validation_ownership/foundation.mk ownership-probe-test`
+remains the sole native owner. Its existing command expands to the foundation,
+producer and dependency modules exactly once; no new workflow, required
+context or duplicate unittest owner is added.
+
+### Cleanup and limitations
+
+All owned fixture trees, selected views, depfiles and private session roots
+clean through the existing watchdog/session cleanup. This case does not prove
+#180's graph dispatch, shell-line continuation normalization, full repository
+query fit or resource calibration. No manual-only criterion applies.
+
 ## TC-WORKFLOW-PROBE-DEPENDENCY-001: Observe real confined compiler dependencies
 
 ### Feature and configuration

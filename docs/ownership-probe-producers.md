@@ -87,6 +87,52 @@ If the captured runtime makes an include-search directory present, the caller
 must also admit the exact legitimate search input or its actual absence; the
 producer contract does not grant a whole runtime include tree implicitly.
 
+## Shared source-only Python producer commands
+
+Issue [#238](https://github.com/laqieer/fireemblem8-expansion/issues/238)
+extracts the reusable source-only Python command helpers from downstream graph
+work into `scripts/validation_ownership/python_commands.py`. The public seam
+keeps ordinary Python import semantics on the selected `/repo` tree:
+
+```python
+from scripts.validation_ownership.python_commands import (
+    python_command,
+    directory_python_command,
+    generated_dependency_command,
+)
+```
+
+- `python_command(...)` returns a typed `Command` with the exact imported
+  closure of the declared Python body and code roots.
+- `directory_python_command(...)` adds the declared source-directory ancestors
+  needed for metadata/enumeration without widening file-content admission.
+- `generated_dependency_command(...)` adapts the three audited generated-data
+  dependency CLIs (`chapterobjectives`, `autoplaystrategies`, `eventlists`)
+  into one typed producer command using the modules' real `source_paths`,
+  `collect_input_paths` and `render_depfile`/writer contracts.
+
+The helper does **not** add a second importer, import mode or package shim.
+Normal namespace-package behavior is preserved: with a complete gitlink-aware
+capture, `import scripts` keeps Python's `NamespaceLoader`,
+`__spec__.origin is None`, and `/repo/scripts` in `__path__`. A raw immutable
+capture missing gitlink admission still fails at the actual `/repo`
+enumeration boundary instead of falling back to synthetic package objects.
+
+Generated-dependency registrations validate their exact named option set before
+lookup, order selector arguments by the declared module signature rather than
+the caller's CLI order, and keep every support/discovery step inside the
+existing selected-view `ProbeSession` cache. Directory-backed selection uses
+the schema's public `source_paths` API; concrete depfile bytes and output
+publication come from the real module render/writer behavior, not guessed
+filenames or fabricated empty output. The same API is reusable for asset
+discovery/publication, registry source selection and later graph adoption
+without importing graph-specific code into the foundation.
+Each command writes the real renderer's bytes into its fresh private output
+directory; the existing native publication protocol owns installation into
+Make's source view. The ordinary CLI writer's temporary-file rename is not
+invoked inside the command capsule, where directory-entry relocation remains
+forbidden. No existing-output read error is swallowed by this adapter.
+
 ## One live native execution
 
 The native observer preserves Make's original target, arguments, variables,
