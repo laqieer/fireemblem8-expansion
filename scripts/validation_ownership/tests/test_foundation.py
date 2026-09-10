@@ -42,6 +42,7 @@ from scripts.validation_ownership.metadata_transport import (
 )
 from scripts.validation_ownership.python_commands import (
     directory_python_command,
+    generated_registry_command,
     generated_registry_source_paths_command,
     generated_registry_source_paths,
     python_command,
@@ -4392,6 +4393,42 @@ raise AssertionError("default termination was lost")
         self.assertFalse(budget.children)
         self.assertEqual(list(scratch.iterdir()), [])
         scratch.rmdir()
+
+    def test_real_generated_registry_commands_keep_lazy_runtime_imports_and_complete_static_code_admission(self):
+        from scripts.validation_ownership.consumer import registry_entries
+        budget = ProbeBudget()
+        scratch = self.directory / "registry-receipts-shops-command"
+        scratch.mkdir()
+        loader = AuthorityLoader(
+            ROOT, registry_entries(ROOT, "HEAD", budget), "HEAD",
+            scratch_root=scratch, budget=budget,
+        )
+        try:
+            with ProbeSession(loader, scratch_root=scratch, budget=budget) as session:
+                resolve = python_command(
+                    session,
+                    "from scripts.generated_data.registry import REGISTRY\n"
+                    "print(REGISTRY.resolve('autoplaystrategies').name)\n",
+                    code=("scripts/generated_data/registry.py",),
+                )
+                self.assertIn("scripts/generated_data/shops/schema.py", resolve.code)
+                self.assertIn("scripts/generated_data/autoplaystrategies/schema.py", resolve.code)
+                self.assertIn("scripts/generated_data/chapterbundle/schema.py", resolve.code)
+                shops_registry = generated_registry_command(session, "shops", "src/data/ch2_shops.json")
+                shops_result = session.command(shops_registry)
+                self.assertEqual(parse_json(shops_result.stdout, "shops registry source receipt"), {
+                    "name": "shops",
+                    "version": 1,
+                    "record_count": 1,
+                    "source_paths": ["src/data/ch2_shops.json"],
+                })
+                self.assertEqual(shops_result.consumed, ("src/data/ch2_shops.json",))
+            self.assertFalse(budget.children)
+            self.assertEqual(list(scratch.iterdir()), [])
+        finally:
+            budget.close()
+            if scratch.exists():
+                scratch.rmdir()
 
     def test_python_command_root_enumeration_requires_declaration(self):
         self.add("data/value.txt", "captured")

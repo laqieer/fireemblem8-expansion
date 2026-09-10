@@ -389,12 +389,14 @@
       "issue_urls": [
         "https://github.com/laqieer/fireemblem8-expansion/issues/5",
         "https://github.com/laqieer/fireemblem8-expansion/issues/57",
-        "https://github.com/laqieer/fireemblem8-expansion/issues/234"
+        "https://github.com/laqieer/fireemblem8-expansion/issues/234",
+        "https://github.com/laqieer/fireemblem8-expansion/issues/248"
       ],
       "reference": "docs/generated_data_tutorial.md",
       "status": "current",
       "required_cases": [
-        "TC-CORE-004"
+        "TC-CORE-004",
+        "TC-GENERATED-LAZY-REGISTRY-001"
       ]
     },
     {
@@ -2036,6 +2038,47 @@
         {
           "command": "python3 -m unittest scripts.generated_data.tests.test_chapterbundle_schema.ChapterBundleValidFixtureTests.test_source_path_discovery_does_not_parse_members_or_change_load_errors -v",
           "evidence": "scripts/generated_data/tests/test_chapterbundle_schema.py"
+        }
+      ]
+    },
+    {
+      "id": "TC-GENERATED-LAZY-REGISTRY-001",
+      "title": "Construct generated-data schemas lazily",
+      "feature_id": "generated-data-platform",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/248"
+      ],
+      "document": "docs/test-cases/core-framework.md",
+      "anchor": "tc-generated-lazy-registry-001-construct-generated-data-schemas-lazily",
+      "profiles": [
+        "Clean source checkout with Python 3",
+        "Existing validation-ownership host helpers"
+      ],
+      "purpose": "Prove lazy generated-data schema construction preserves the existing registry, selected imports, ownership receipts, and chosen generated outputs.",
+      "prerequisites": "Start at the repository root, use only owned scratch directories, and compare against direct eager schema construction in the same checkout.",
+      "actions": "Register mixed eager and lazy schemas, resolve exact and latest versions, and observe factory call counts. Reject duplicate eager/lazy keys, noncallable factories, wrong returned identities, raising factories, and recursive same-key resolution without caching failures. Resolve real `shops` and `autoplaystrategies` through isolated generated-registry commands, compare actual code and source receipts against an eager baseline command that imports every schema module, and keep the same 16 declarations. Run the chosen `shops` validate/generate/check commands in owned output paths and compare the generated C and inventory text to direct eager `ShopsTableSchema()` output.",
+      "expected_result": "Declared names and latest-version selection do not construct unrelated schemas. Only the selected lazy factory runs, repeated success returns the identical cached object, and failures are not cached. The real registry still declares the same 16 names, static code admission still covers all factory-local imports, actual runtime imports stay limited to the selected schema and its genuine transitive dependencies, and the chosen `shops` validate/generate/check outputs match direct eager schema construction.",
+      "negative_control": "Duplicate eager/lazy keys, noncallable factories, wrong returned identities, recursive same-key resolution, and raising factories reject explicitly. Lazy construction does not bypass `load_records()`, malformed-input rejection, generated output checks, or source/receipt accounting.",
+      "interactions": "Reuses the existing generated-data registry, CLI, and validation-ownership command seams. It does not add a second registry, a new importer, graph-private batching, source-path caching, save/config changes, localization changes, or ROM/RAM behavior changes.",
+      "save_compatibility": "Internal source-only registry construction policy; no gameplay, save format, localization, generated game content, ROM/RAM, or profile ABI change.",
+      "cleanup": "Remove only the owned scratch directories and generated output paths created by the focused tests.",
+      "limitations": "This proves lazy construction through the existing registry seam only. Runtime import reduction is not by itself proof of byte-budget savings or full ownership-graph fit.",
+      "automation": [
+        {
+          "command": "python3 -m unittest scripts.generated_data.tests.test_schema.SchemaRegistryTests -v",
+          "evidence": "scripts/generated_data/tests/test_schema.py"
+        },
+        {
+          "command": "python3 -m unittest scripts.generated_data.tests.test_cli_new_tables.CliShopsTests.test_lazy_registry_shops_cli_matches_direct_eager_schema_outputs -v",
+          "evidence": "scripts/generated_data/tests/test_cli_new_tables.py"
+        },
+        {
+          "command": "python3 -m unittest scripts.validation_ownership.tests.test_foundation.FoundationTests.test_real_generated_registry_commands_keep_lazy_runtime_imports_and_complete_static_code_admission -v",
+          "evidence": "scripts/validation_ownership/tests/test_foundation.py"
+        },
+        {
+          "command": "python3 -m unittest scripts.docs_check_tests.test_check_docs.TesterCaseRegistryTests.test_generated_data_platform_cases_are_indexed_with_complete_procedures -v",
+          "evidence": "scripts/docs_check_tests/test_check_docs.py"
         }
       ]
     },
