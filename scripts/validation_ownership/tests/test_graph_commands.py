@@ -18,7 +18,7 @@ from scripts.validation_ownership.authority import (
 from scripts.validation_ownership.budget import MakeProbeError, ProbeBudget
 from scripts.validation_ownership.graph_commands import (
     CODE_PREFIXES, FIND_DIRECTORY_BODY, ROOT_RUNTIME_FILES, MakeCommands,
-    asset_discovery_command,
+    TRUSTED_REPO_MODULE_LOADER, _trusted_python_command, asset_discovery_command,
 )
 from scripts.validation_ownership import make_probe
 from scripts.validation_ownership.make_probe import Command, ProbeSession
@@ -234,6 +234,15 @@ class GraphCommandTests(unittest.TestCase):
         ]
         return cases
 
+    def rewrite_generated_dependency_bundle(self, *, units_source):
+        bundle_path = self.root / "testdata/bundles/el_bundle.json"
+        bundle = json.loads(bundle_path.read_text(encoding="utf-8"))
+        bundle["tables"]["units"]["source"] = units_source
+        self.add(
+            "testdata/bundles/el_bundle.json",
+            json.dumps(bundle, indent=2) + "\n",
+        )
+
     def normalize_repo_bytes(self, data):
         return data.replace(os.fsencode(str(self.root)), b"/repo")
 
@@ -300,6 +309,55 @@ class GraphCommandTests(unittest.TestCase):
                 MakeProbeError, "unsupported multi-command shell shape",
             ):
                 MakeCommands(probe, contract)['python3 -c "print(1)"\npython3 -c "print(2)"']
+
+    def test_trusted_repo_module_loader_matches_ordinary_package_imports(self):
+        for name, data in (
+            ("scripts/__init__.py", "ROOT_VALUE='root-init'\n"),
+            ("scripts/generated_data/__init__.py", "DATA_VALUE='generated-init'\n"),
+            ("scripts/generated_data/demo/__init__.py", "DEMO_VALUE='demo-init'\n"),
+            ("scripts/generated_data/demo/helper.py",
+             "from . import DEMO_VALUE\nfrom scripts.generated_data import DATA_VALUE\n"
+             "HELPER_VALUE = DEMO_VALUE + ':' + DATA_VALUE\n"),
+            ("scripts/generated_data/demo/tool.py",
+             "from scripts import ROOT_VALUE\nfrom .helper import HELPER_VALUE\n"
+             "RESULT = ROOT_VALUE + ':' + HELPER_VALUE\n"),
+        ):
+            self.add(name, data)
+        ordinary = subprocess.run(
+            [
+                "/usr/bin/python3", "-I", "-S", "-B", "-c",
+                "import sys;sys.path.insert(0,'.');"
+                "from scripts.generated_data.demo import tool;print(tool.RESULT)",
+            ],
+            cwd=self.root, env={**ENVIRONMENT, "TMPDIR": str(self.directory)},
+            capture_output=True, check=True, timeout=15,
+        )
+        with self.session() as probe:
+            command = _trusted_python_command(
+                probe,
+                TRUSTED_REPO_MODULE_LOADER
+                + "module=load_repo_module('scripts.generated_data.demo.tool');"
+                "print(module.RESULT)",
+                code=(
+                    "scripts/__init__.py",
+                    "scripts/generated_data/__init__.py",
+                    "scripts/generated_data/demo/__init__.py",
+                    "scripts/generated_data/demo/helper.py",
+                    "scripts/generated_data/demo/tool.py",
+                ),
+            )
+            actual = probe.command(command)
+            self.assertEqual(actual.stdout, ordinary.stdout)
+            self.assertEqual(
+                set(actual.code_consumed),
+                {
+                    "scripts/__init__.py",
+                    "scripts/generated_data/__init__.py",
+                    "scripts/generated_data/demo/__init__.py",
+                    "scripts/generated_data/demo/helper.py",
+                    "scripts/generated_data/demo/tool.py",
+                },
+            )
 
     def test_scaninc_uses_real_parser_search_order_and_recursive_include_closure(self):
         self.add("data/root.s", '.include "leaf.inc"\n.include "missing.inc"\n.incbin "asset.bin"\n')
@@ -682,6 +740,56 @@ class GraphCommandTests(unittest.TestCase):
         self.assertIsNone(probe.base)
         self.assertFalse(probe.budget.children)
 
+    def test_generated_dependency_uses_named_option_semantics_and_rejects_key_drift(self):
+        cases = {case["name"]: case for case in self.add_generated_dependency_fixture()}
+        canonical = cases["autoplaystrategies"]["command"]
+        reordered = (
+            'python3 -m scripts.generated_data.autoplaystrategies.deps \\\n'
+            '\t--bundle-source "testdata/bundles" \\\n'
+            '\t--make-target "build/generated/data/data_autoplay_strategies.c" \\\n'
+            '\t--source "testdata/strategies" \\\n'
+            '\t--objectives-source "testdata/objectives" \\\n'
+            '\t--depfile "build/generated/data/autoplaystrategies.inputs.mk"'
+        )
+        ordinary = {}
+        for label, command in (("canonical", canonical), ("reordered", reordered)):
+            completed = subprocess.run(
+                ["/bin/sh", "-c", command],
+                cwd=self.root, env={**ENVIRONMENT, "TMPDIR": str(self.directory)},
+                capture_output=True, timeout=60,
+            )
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            ordinary[label] = (self.root / "build/generated/data/autoplaystrategies.inputs.mk").read_bytes()
+        self.assertEqual(ordinary["reordered"], ordinary["canonical"])
+        with self.session() as probe:
+            canonical_command = MakeCommands(probe, self.contracts)[canonical]
+            canonical_output = probe.command(canonical_command).generated[0].data
+            canonical_inputs = json.loads(canonical_command.argv[-3])
+        with self.session() as probe:
+            reordered_command = MakeCommands(probe, self.contracts)[reordered]
+            reordered_output = probe.command(reordered_command).generated[0].data
+            reordered_inputs = json.loads(reordered_command.argv[-3])
+            self.assertEqual(reordered_output, canonical_output)
+            self.assertEqual(reordered_inputs, canonical_inputs)
+            for bad, expected in (
+                (
+                    canonical.replace(
+                        '\t--objectives-source "testdata/objectives" \\\n', "",
+                    ),
+                    "missing --objectives-source",
+                ),
+                (
+                    canonical.replace(
+                        '\t--depfile "build/generated/data/autoplaystrategies.inputs.mk"',
+                        '\t--extra "ignored" \\\n\t--depfile "build/generated/data/autoplaystrategies.inputs.mk"',
+                    ),
+                    "extra --extra",
+                ),
+            ):
+                with self.subTest(command=bad):
+                    with self.assertRaisesRegex(MakeProbeError, expected):
+                        MakeCommands(probe, self.contracts)[bad]
+
     def test_generated_dependency_adapter_respects_selected_views_and_missing_companions(self):
         cases = {case["name"]: case for case in self.add_generated_dependency_fixture()}
         removed = "assets/tmx/Example.tmx"
@@ -718,6 +826,39 @@ class GraphCommandTests(unittest.TestCase):
                 MakeProbeError, r"(missing declared owner input 'assets/manifest\.json'|source declaration resolves no regular inputs: assets/manifest\.json)",
             ):
                 MakeCommands(probe, self.contracts)[command]
+
+    def test_generated_dependency_chapterbundle_support_cache_is_view_bound(self):
+        self.add_generated_dependency_fixture()
+        self.add(
+            "testdata/deps/deps_units_second.json",
+            (ROOT / "scripts/generated_data/tests/fixtures/chapterbundle/deps_units_second.json").read_bytes(),
+        )
+        budget = ProbeBudget()
+        base_loader = self.capture_loader(budget)
+        self.rewrite_generated_dependency_bundle(units_source="testdata/deps/deps_units_second.json")
+        current_loader = self.capture_loader(budget)
+        bundle_source = "testdata/bundles"
+        bundle_sources = ("testdata/bundles/el_bundle.json",)
+        with ProbeSession(
+            current_loader, scratch_root=self.root / "build/scratch", budget=budget,
+        ) as probe:
+            commands = MakeCommands(probe, self.contracts)
+            _code, current_refs, _dirs, _members, _sources = commands._chapterbundle_dependency_support(
+                bundle_source, bundle_sources,
+            )
+            self.assertIn("testdata/deps/deps_units_second.json", current_refs)
+            self.assertNotIn("testdata/deps/deps_units.json", current_refs)
+            with probe.select_view(base_loader) as selected:
+                self.assertIs(selected, probe)
+                _code, base_refs, _dirs, _members, _sources = commands._chapterbundle_dependency_support(
+                    bundle_source, bundle_sources,
+                )
+                self.assertIn("testdata/deps/deps_units.json", base_refs)
+                self.assertNotIn("testdata/deps/deps_units_second.json", base_refs)
+            _code, current_again, _dirs, _members, _sources = commands._chapterbundle_dependency_support(
+                bundle_source, bundle_sources,
+            )
+            self.assertEqual(current_again, current_refs)
 
     def test_registered_find_reduces_actual_directory_observation_traffic(self):
         self.add("Makefile", "all: ;\n")

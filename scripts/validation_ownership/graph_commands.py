@@ -33,6 +33,9 @@ MODERN_DIRECTORY_CONTRACTS = {
     "modern-libgcc-directory": "-print-libgcc-file-name",
     "modern-libc-directory": "-print-file-name=libc.a",
 }
+# Trusted helpers cannot hand root-directory enumeration to candidate import
+# discovery on this repository, so they load the exact captured package chain
+# from its real __init__.py/module files instead.
 TRUSTED_REPO_MODULE_LOADER = (
     "import importlib.util,os,sys,types\n"
     "def load_repo_module(name):\n"
@@ -336,6 +339,24 @@ def _long_option_values(arguments, label):
     return values
 
 
+def _generated_dependency_option_values(module, details, values):
+    expected = {option for option, _selector in details["selectors"]}
+    expected.update(("--make-target", "--depfile"))
+    actual = set(values)
+    if actual != expected:
+        missing = sorted(expected - actual)
+        extra = sorted(actual - expected)
+        detail = []
+        if missing:
+            detail.append("missing " + ", ".join(missing))
+        if extra:
+            detail.append("extra " + ", ".join(extra))
+        raise MakeProbeError(
+            f"{module} options differ from the declared command contract ({'; '.join(detail)})"
+        )
+    return tuple(values[option] for option, _selector in details["selectors"])
+
+
 def _directory_closure(paths):
     return tuple(sorted({
         relative_path(path)
@@ -348,35 +369,52 @@ def _directory_closure(paths):
     }))
 
 
-def _run_trusted_python(session, body, arguments=(), *, sources=(), outputs=(), directories=(), code=()):
+def _python_registration(
+    session,
+    body,
+    arguments=(),
+    *,
+    sources=(),
+    outputs=(),
+    directories=(),
+    code=(),
+    prepend_repo_path,
+    close_directories=False,
+):
     modules = python_code_closure(session, body, code)
-    declared = _directory_closure(directories)
-    imports = tuple(path for path in python_import_directories(modules) if path != ".")
-    return session.command(Command(
+    if prepend_repo_path:
+        body = "import sys;sys.path.insert(0,'/repo');" + body
+    import_directories = set(python_import_directories(modules))
+    if not prepend_repo_path:
+        import_directories.discard(".")
+    declared = set(_directory_closure(directories) if close_directories else directories)
+    return Command(
         (PYTHON, "-I", "-S", "-B", "-c", body, *arguments),
         code=modules, sources=tuple(sources), outputs=tuple(outputs),
-        directories=tuple(sorted(set(declared) | set(imports))),
+        directories=tuple(sorted(declared | import_directories)),
+    )
+
+
+def _run_trusted_python(session, body, arguments=(), *, sources=(), outputs=(), directories=(), code=()):
+    return session.command(_python_registration(
+        session, body, arguments, sources=sources, outputs=outputs,
+        directories=directories, code=code, prepend_repo_path=False,
+        close_directories=True,
     ))
 
 
 def _trusted_python_command(session, body, arguments=(), *, sources=(), outputs=(), directories=(), code=()):
-    modules = python_code_closure(session, body, code)
-    declared = _directory_closure(directories)
-    imports = tuple(path for path in python_import_directories(modules) if path != ".")
-    return Command(
-        (PYTHON, "-I", "-S", "-B", "-c", body, *arguments),
-        code=modules, sources=tuple(sources), outputs=tuple(outputs),
-        directories=tuple(sorted(set(declared) | set(imports))),
+    return _python_registration(
+        session, body, arguments, sources=sources, outputs=outputs,
+        directories=directories, code=code, prepend_repo_path=False,
+        close_directories=True,
     )
 
 
 def python_command(session, body, arguments=(), *, sources=(), outputs=(), directories=(), code=()):
-    modules = python_code_closure(session, body, code)
-    return Command(
-        (PYTHON, "-I", "-S", "-B", "-c",
-         "import sys;sys.path.insert(0,'/repo');" + body, *arguments),
-        code=modules, sources=tuple(sources), outputs=tuple(outputs),
-        directories=tuple(sorted(set(directories) | set(python_import_directories(modules)))),
+    return _python_registration(
+        session, body, arguments, sources=sources, outputs=outputs,
+        directories=directories, code=code, prepend_repo_path=True,
     )
 
 
@@ -513,7 +551,7 @@ class MakeCommands:
         self.registrations = {}
         self.scanner = None
         self.scanner_directories = None
-        self.chapterbundle_support = None
+        self.chapterbundle_support = {}
         self.includes = {}
 
     def _matches(self, command):
@@ -668,8 +706,12 @@ class MakeCommands:
         )
 
     def _chapterbundle_dependency_support(self, bundle_source, bundle_sources):
-        key = relative_path(bundle_source), tuple(bundle_sources)
-        if self.chapterbundle_support is None or self.chapterbundle_support[0] != key:
+        key = (
+            self.session.snapshot.digest,
+            relative_path(bundle_source),
+            tuple(bundle_sources),
+        )
+        if key not in self.chapterbundle_support:
             code = (
                 *_python_module_code(self.session, "scripts.generated_data.chapterbundle.schema"),
                 *_python_module_code(self.session, "scripts.generated_data.chapterobjectives.schema"),
@@ -746,15 +788,14 @@ class MakeCommands:
             code_paths = []
             for module in result["dependency_modules"]:
                 code_paths.extend(_python_module_code(self.session, module))
-            self.chapterbundle_support = (
-                key,
+            self.chapterbundle_support[key] = (
                 tuple(sorted(set(code_paths))),
                 tuple(sorted(relative_path(path) for path in result["bundle_refs"])),
                 tuple(sorted(relative_path(path) for path in result["directories"])),
                 tuple(sorted(relative_path(path) for path in result["members"])),
                 tuple(sorted(relative_path(path) for path in result["sources"])),
             )
-        return self.chapterbundle_support[1:]
+        return self.chapterbundle_support[key]
 
     def _generated_dependency_primary_sources(self, details, values):
         resolved = {}
@@ -829,8 +870,7 @@ class MakeCommands:
         if details is None:
             raise MakeProbeError(f"unsupported generated dependency module: {module}")
         values = _long_option_values(arguments, module)
-        if "--make-target" not in values or "--depfile" not in values:
-            raise MakeProbeError("generated dependency producer requires declared target and depfile")
+        selector_arguments = _generated_dependency_option_values(module, details, values)
         code = list(
             path for path in contract["input_files"]
             if path.endswith(".py")
@@ -842,8 +882,6 @@ class MakeCommands:
         bundle_source = None
         primary = self._generated_dependency_primary_sources(details, values)
         for option, _selector in details["selectors"]:
-            if option not in values:
-                raise MakeProbeError(f"generated dependency producer is missing {option}")
             paths = primary[option]
             discovery_sources.extend(paths)
             if option == "--bundle-source":
@@ -887,10 +925,7 @@ class MakeCommands:
                     " for path in module.collect_input_paths(*(rooted(value) for value in arguments))\n"
                     "],separators=(',',':')))\n"
                 ),
-                (json.dumps([
-                    value for key, value in zip(arguments[::2], arguments[1::2])
-                    if key not in {"--make-target", "--depfile"}
-                ], separators=(",", ":")),),
+                (json.dumps(selector_arguments, separators=(",", ":")),),
                 sources=tuple(sorted(set(discovery_sources))),
                 directories=tuple(sorted(directories)),
                 code=tuple(sorted(set(code))),
