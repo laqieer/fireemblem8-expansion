@@ -27,12 +27,18 @@ from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 from scripts.validation_ownership.authority import (
-    AuthorityLoader, ENVIRONMENT, GitlinkSource, GitTreeEntries, GitTreeEntry, Snapshot, git_tree_entries,
+    AuthorityLoader, ENVIRONMENT, GitlinkSource, GitTreeEntries, GitTreeEntry, Snapshot, encoded, git_tree_entries,
+    parse_json,
 )
 from scripts.validation_ownership.budget import Limits, MakeProbeError, NAMESPACE_LAUNCHER, ProbeBudget
 from scripts.validation_ownership.make_probe import (
     Command, NativeTool, ProbeSession, TRUSTED_ROOT, _command_hash, _event_command, _make_interpreter, _make_runtime,
-    _read_events, _read_observation, _trusted_runtime_bytes, probe_generated_registry,
+    _metadata_frame, _read_events, _read_observation, _trusted_runtime_bytes, probe_generated_registry,
+)
+from scripts.validation_ownership.metadata_transport import (
+    HEX_DECODE_SCRATCH_BYTES,
+    decode_metadata_transport,
+    encode_metadata_transport,
 )
 from scripts.validation_ownership.python_commands import (
     directory_python_command,
@@ -86,6 +92,58 @@ class FoundationTests(unittest.TestCase):
         self.assertIsNone(session.base)
         self.assertEqual(session.pending_commands, 0)
         self.assertFalse(self.scratch.exists())
+
+    def capture_supervisor_report(self, session, operation):
+        original = session.budget.read_bytes
+        captured = {}
+
+        def read_bytes(path, category):
+            data = original(path, category)
+            if category == "control" and Path(path).name.startswith("report-"):
+                captured["report"] = data
+            return data
+
+        with patch.object(session.budget, "read_bytes", side_effect=read_bytes), patch.object(
+            session.budget, "charge", wraps=session.budget.charge,
+        ) as charge:
+            result = operation()
+        self.assertIn("report", captured)
+        return result, parse_json(captured["report"], "supervisor JSON"), captured["report"], charge.call_args_list
+
+    def assert_metadata_transport(
+        self, session, report, report_bytes, charges, metadata, *,
+        runtime_paths=(), runtime_absent=(),
+    ):
+        frame = _metadata_frame(metadata)
+        reserved = []
+        decoded = decode_metadata_transport(
+            report["metadata"], report["observations"], decoded_limit=len(frame),
+            runtime_paths=runtime_paths, runtime_absent=runtime_absent,
+            reserve=reserved.append,
+        )
+        self.assertEqual(decoded, metadata)
+        payload_bytes = len(report["metadata"]["payload"])
+        self.assertEqual(reserved, [len(frame), payload_bytes])
+        self.assertEqual(report["metadata"]["record_count"], len(metadata))
+        self.assertEqual(report["metadata"]["decoded_size"], len(frame))
+        self.assertIn(("cache", len(encoded(metadata))), [call.args for call in charges])
+        self.assertIn(("control", len(frame)), [call.args for call in charges])
+        self.assertIn(("control", payload_bytes), [call.args for call in charges])
+        legacy_report = {**report, "metadata": metadata}
+        old_report_bytes = len(encoded(legacy_report))
+        new_report_bytes = len(report_bytes)
+        envelope_bytes = len(encoded(report["metadata"]))
+        control_saving = old_report_bytes - new_report_bytes - len(frame) - payload_bytes
+        self.assertGreater(control_saving, 0)
+        return {
+            "old_report_bytes": old_report_bytes,
+            "new_report_bytes": new_report_bytes,
+            "envelope_bytes": envelope_bytes,
+            "frame_bytes": len(frame),
+            "retained_payload_bytes": payload_bytes,
+            "scratch_bytes": HEX_DECODE_SCRATCH_BYTES,
+            "control_saving_bytes": control_saving,
+        }
 
     def test_literal_source_selectors_are_repository_relative(self):
         name = "linker_script_banim.txt"
@@ -3445,6 +3503,113 @@ raise AssertionError("default termination was lost")
                     )
         self.assert_clean(session)
 
+    def test_metadata_transport_preserves_mixed_syscalls_cache_and_replay(self):
+        self.add("data/module.py", "VALUE=1\n")
+        self.add("reader.py", (
+            "import ctypes,json,os\n"
+            "libc=ctypes.CDLL(None,use_errno=True); libc.syscall.restype=ctypes.c_long\n"
+            "fd=os.open('data',os.O_RDONLY|os.O_DIRECTORY)\nresults=[]\n"
+            "path=ctypes.c_char_p(b'data/module.py')\n"
+            "for number,flags,mask,size in "
+            "((4,0,0,144),(6,0,0,144),(5,0,0,144),(262,256,0,144),"
+            "(332,256,2047,256),(332,0,8191,256),(138,0,0,120),"
+            "(21,0,0,0),(269,0,4,0),(439,512,2,0),(89,0,0,32),(267,0,0,32)):\n"
+            " buffer=ctypes.create_string_buffer(bytes([165])*size,size) if size else None\n"
+            " target=ctypes.byref(buffer) if size else None\n"
+            " if number in (4,6): args=(path,target)\n"
+            " elif number in (5,138): args=(ctypes.c_long(fd),target)\n"
+            " elif number==262: args=(ctypes.c_long(-100),path,target,ctypes.c_ulong(flags))\n"
+            " elif number==332: args=(ctypes.c_long(-100),path,ctypes.c_ulong(flags),ctypes.c_ulong(mask),target)\n"
+            " elif number==21: args=(path,ctypes.c_ulong(flags))\n"
+            " elif number==269: args=(ctypes.c_long(-100),path,ctypes.c_ulong(mask))\n"
+            " elif number==439: args=(ctypes.c_long(-100),path,ctypes.c_ulong(mask),ctypes.c_ulong(flags))\n"
+            " elif number==89: args=(path,target,ctypes.c_ulong(size))\n"
+            " else: args=(ctypes.c_long(-100),path,target,ctypes.c_ulong(size))\n"
+            " ctypes.set_errno(0); result=libc.syscall(ctypes.c_long(number),*args)\n"
+            " results.append([number,flags,mask,result if result>=0 else -ctypes.get_errno(),"
+            " '' if buffer is None else buffer.raw.hex()])\n"
+            "os.close(fd); print(json.dumps(results))\n"
+        ))
+        command = Command(
+            ("/usr/bin/python3", "/repo/reader.py"), code=("reader.py", "data/module.py"),
+        )
+        with self.session() as session:
+            output, report, report_bytes, charges = self.capture_supervisor_report(
+                session, lambda: session.command(command),
+            )
+            returned = json.loads(output.stdout)
+            for number, flags, mask, status, data in returned:
+                path = "/repo/data" if number in {5, 138} else "/repo/data/module.py"
+                with self.subTest(number=number, flags=flags, mask=mask):
+                    self.assertTrue(any(
+                        record[:4] == (number, path, flags, mask)
+                        and record[6] == status and record[8] == data
+                        for record in output.metadata
+                    ))
+            sizes = self.assert_metadata_transport(session, report, report_bytes, charges, output.metadata)
+            self.assertGreater(sizes["control_saving_bytes"], 0)
+            self.assertLess(sizes["envelope_bytes"], len(encoded(output.metadata)))
+            stable = tuple(record for record in output.metadata if record[0] not in {138, 332})
+            self.assertTrue(session._metadata_matches(stable))
+            self.assertIsNot(session.command(command), output)
+        self.assert_clean(session)
+
+    def test_metadata_transport_preserves_directory_enumeration_offsets_and_savings(self):
+        for index in range(40):
+            self.add(f"texts/file{index:02d}.txt", f"value-{index}\n")
+        self.add("reader.py", (
+            "import ctypes,json,os\n"
+            "libc=ctypes.CDLL(None,use_errno=True); libc.syscall.restype=ctypes.c_long\n"
+            "fd=os.open('texts',os.O_RDONLY|os.O_DIRECTORY)\nresults=[]\n"
+            "while True:\n"
+            " buffer=ctypes.create_string_buffer(bytes([165])*4096,4096)\n"
+            " ctypes.set_errno(0)\n"
+            " result=libc.syscall(ctypes.c_long(217),ctypes.c_long(fd),ctypes.byref(buffer),ctypes.c_ulong(4096))\n"
+            " results.append([result if result>=0 else -ctypes.get_errno(),buffer.raw.hex()])\n"
+            " if result<=0:\n"
+            "  break\n"
+            "os.close(fd); print(json.dumps(results))\n"
+        ))
+        command = Command(("/usr/bin/python3", "/repo/reader.py"), code=("reader.py",), directories=("texts",))
+        with self.session() as session:
+            output, report, report_bytes, charges = self.capture_supervisor_report(
+                session, lambda: session.command(command),
+            )
+            records = tuple(record for record in output.metadata if record[0] == 217)
+            returned = json.loads(output.stdout)
+            self.assertEqual(len(records), len(returned))
+            self.assertEqual(records[0][1], "/repo/texts")
+            self.assertEqual(records[0][5], 0)
+            self.assertTrue(all(record[4] == 4096 for record in records))
+            self.assertEqual([record[6] for record in records], [row[0] for row in returned])
+            self.assertEqual(records[-1][6], 0)
+            self.assertGreater(records[-1][5], 0)
+            self.assertTrue(all(len(record[7]) == len(record[8]) == 2*record[4] for record in records))
+            sizes = self.assert_metadata_transport(session, report, report_bytes, charges, output.metadata)
+            self.assertGreater(sizes["control_saving_bytes"], 0)
+            self.assertTrue(session._metadata_matches(output.metadata))
+            self.assertIs(session.command(command), output)
+        self.assert_clean(session)
+
+    def test_metadata_transport_keeps_selected_view_metadata_boundaries(self):
+        command, _ = self.static_metadata_fixture()
+        budget = ProbeBudget()
+        base = self.capture_view(budget)
+        self.add("unrelated.txt", "current only")
+        current = self.capture_view(budget)
+        with ProbeSession(current, scratch_root=self.scratch, budget=budget) as session:
+            first = session.command(command)
+            with session.select_view(base):
+                self.assertFalse(session._metadata_matches(first.metadata))
+                selected, report, report_bytes, charges = self.capture_supervisor_report(
+                    session, lambda: session.command(command),
+                )
+                self.assert_metadata_transport(session, report, report_bytes, charges, selected.metadata)
+                self.assertTrue(session._metadata_matches(selected.metadata))
+                self.assertIs(session.command(command), selected)
+            self.assertFalse(session._metadata_matches(first.metadata))
+        self.assert_clean(session)
+
     def test_changed_metadata_forces_real_execution_without_mutating_validation(self):
         command, _ = self.static_metadata_fixture()
         with self.session() as session:
@@ -4565,10 +4730,16 @@ raise AssertionError("default termination was lost")
         for field, value in (
             ("metadata", None),
             ("metadata", [[1, "/repo/data", 0, 0, 0, 0, 0, "", ""]]),
-            ("metadata", [[262, "/repo/../data", 0, 0, 144, 0, 0, "00"*144, "00"*144]]),
-            ("metadata", [[262, "/repo/data", True, 0, 144, 0, 0, "00"*144, "00"*144]]),
-            ("metadata", [[262, "/repo/data", 0, 0, 1, 0, 0, "00", "00"]]),
-            ("metadata", [[262, "/repo/data", 0, 0, 144, 0, 0, "gg"*144, "00"*144]]),
+            ("metadata", encode_metadata_transport([[1, "/repo/data", 0, 0, 0, 0, 0, "", ""]])),
+            ("metadata", encode_metadata_transport([
+                [262, "/repo/../data", 0, 0, 144, 0, 0, "00"*144, "00"*144],
+            ])),
+            ("metadata", {**encode_metadata_transport([]), "record_count": True}),
+            ("metadata", encode_metadata_transport([[262, "/repo/data", 0, 0, 1, 0, 0, "00", "00"]])),
+            ("metadata", encode_metadata_transport([
+                [262, "/repo/data", 0, 0, 144, 0, 0, "00"*143, "00"*144],
+            ])),
+            ("metadata", {**encode_metadata_transport([]), "payload": "bm90LXpsaWI="}),
             ("events", None),
             ("events", [True]),
             ("events", ["00"]),
@@ -6693,7 +6864,7 @@ int main(int argc, char **argv) {
                         "consumed": [], "code_consumed": [], "accessed": [],
                         "processes": 1, "live_process_peak": 1, "syscalls": 1, "written_bytes": 0,
                         "created_files": 0, "memory_peak": 1, "observation_bytes": 0, "observations": 0,
-                        "metadata": [], "events": [],
+                        "metadata": encode_metadata_transport([]), "events": [],
                     }))
                 return subprocess.CompletedProcess(argv, 0, b"", b"")
             return original_run(argv, **kwargs)

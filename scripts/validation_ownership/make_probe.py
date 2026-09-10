@@ -30,6 +30,7 @@ from .authority import (
 )
 from .budget import Limits, MakeProbeError, NAMESPACE_LAUNCHER, ProbeBudget, text
 from .lifecycle import cleanup_scope, finish_cleanup
+from . import metadata_transport
 from .producer_channel import ChannelError, ProducerChannel
 
 
@@ -46,8 +47,8 @@ ALIASES = (
     )),
 )
 STOCK_RUNTIME_ALIASES = {"/bin": "/usr/bin"}
-METADATA_CALLS = {4, 5, 6, 21, 78, 89, 138, 217, 262, 267, 269, 332, 439}
-METADATA_HEADER = struct.Struct("<IIIQQqIII")
+METADATA_CALLS = metadata_transport.METADATA_CALLS
+METADATA_HEADER = metadata_transport.METADATA_HEADER
 
 
 def terminal_failure(method):
@@ -134,59 +135,13 @@ class MakeObservation:
 
 
 def _metadata_records(value, limit, *, runtime_paths=(), runtime_absent=()):
-    if not isinstance(value, list) or len(value) > limit:
-        raise MakeProbeError("malformed/excessive guest metadata records")
-    records = []
-    seen = set()
-    for record in value:
-        if not isinstance(record, list) or len(record) != 9:
-            raise MakeProbeError("malformed guest metadata record")
-        number, path, flags, mask, size, offset, result, before, after = record
-        if (
-            type(number) is not int or number not in METADATA_CALLS
-            or not isinstance(path, str) or not (
-                path == "/repo" or path.startswith("/repo/") or path in runtime_paths
-                or any(path.startswith(absent + "/") for absent in runtime_absent)
-            )
-            or not path.startswith("/") or path != "/" and relative_path(path[1:]) != path[1:]
-            or any(type(item) is not int or not 0 <= item < 1 << 32 for item in (flags, mask))
-            or any(type(item) is not int or not 0 <= item < 1 << 64 for item in (size, offset))
-            or type(result) is not int or not -(1 << 63) <= result < 1 << 63
-        ):
-            raise MakeProbeError("malformed guest metadata operation")
-        for data in (before, after):
-            if data is not None and (
-                not isinstance(data, str) or len(data) != 2*size
-                or size > 65536 or not re.fullmatch(r"(?:[0-9a-f]{2})*", data)
-            ):
-                raise MakeProbeError("malformed guest metadata buffer")
-        fixed = {4: 144, 5: 144, 6: 144, 21: 0, 138: 120, 262: 144, 269: 0, 332: 256, 439: 0}
-        if number in fixed and size != fixed[number] or number not in {78, 217} and offset:
-            raise MakeProbeError("guest metadata disagrees with its syscall ABI")
-        if tuple(record) in seen:
-            raise MakeProbeError("duplicate guest metadata record")
-        seen.add(tuple(record))
-        records.append(tuple(record))
-    return tuple(records)
+    return metadata_transport.validate_legacy_metadata_records(
+        value, limit, runtime_paths=runtime_paths, runtime_absent=runtime_absent,
+    )
 
 
 def _metadata_frame(records):
-    data = bytearray(struct.pack("<I", len(records)))
-    for number, path, flags, mask, size, offset, result, before, after in records:
-        name = path.encode("utf-8")
-        seed = None if before is None else bytes.fromhex(before)
-        returned = None if after is None else bytes.fromhex(after)
-        data.extend(METADATA_HEADER.pack(
-            number, flags, mask, size, offset, result, len(name),
-            0xFFFFFFFF if seed is None else len(seed),
-            0xFFFFFFFF if returned is None else len(returned),
-        ))
-        data.extend(name)
-        if seed is not None:
-            data.extend(seed)
-        if returned is not None:
-            data.extend(returned)
-    return bytes(data)
+    return metadata_transport.metadata_frame(records)
 
 
 def _read_observation(raw: bytes, target: str, variables: tuple[str, ...]):
@@ -1226,10 +1181,15 @@ class ProbeSession:
                 or observed["observation_bytes"] < 128 * observations
             ):
                 raise MakeProbeError("malformed supervisor observation accounting")
-            observed["metadata"] = _metadata_records(
+            observed["metadata"] = metadata_transport.decode_metadata_transport(
                 observed["metadata"], config["observation_count"],
+                decoded_limit=min(
+                    self.budget.limits.file_bytes,
+                    self.budget.limits.control_bytes - self.budget.bytes.get("control", 0),
+                ),
                 runtime_paths=set(config["runtime_files"]) | set(config["runtime_parents"]),
                 runtime_absent=config["runtime_absent"],
+                reserve=lambda size: self.budget.charge("control", size),
             )
             if len(observed["metadata"]) > observations:
                 raise MakeProbeError("unaccounted guest metadata records")
