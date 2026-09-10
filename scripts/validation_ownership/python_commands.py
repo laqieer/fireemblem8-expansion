@@ -208,6 +208,14 @@ def _python_module_code(session, module, *, main=False):
     return result
 
 
+def _python_module_closure(session: ProbeSession, module: str):
+    return python_code_closure(
+        session,
+        "import importlib;importlib.import_module(" + repr(module) + ")",
+        code=_python_module_code(session, module),
+    )
+
+
 def _registry_code(session: ProbeSession):
     if "scripts/generated_data/registry.py" not in session.snapshot.files:
         raise MakeProbeError("generated-data registry has no captured Python authority")
@@ -278,6 +286,37 @@ def _repository_report_path(path):
     return relative_path(path)
 
 
+def _bundle_dependency_module_names(session: ProbeSession):
+    schema_path = next(
+        path for path in _python_module_code(session, "scripts.generated_data.chapterbundle.schema")
+        if path.endswith("chapterbundle/schema.py")
+    )
+    try:
+        tree = ast.parse(
+            text(session.snapshot.files[schema_path], f"Python code {schema_path}", "utf-8"),
+            filename=schema_path,
+        )
+    except SyntaxError as error:
+        raise MakeProbeError(f"Python code {schema_path!r} is not valid Python: {error}") from error
+    for node in tree.body:
+        if not isinstance(node, ast.Assign):
+            continue
+        if not any(isinstance(target, ast.Name) and target.id == "DEPENDENCY_SCHEMA_MODULES"
+                   for target in node.targets):
+            continue
+        try:
+            value = ast.literal_eval(node.value)
+        except (ValueError, SyntaxError) as error:
+            raise MakeProbeError("chapterbundle dependency module declaration is not literal") from error
+        if (
+            not isinstance(value, dict)
+            or any(not isinstance(key, str) or not isinstance(item, str) for key, item in value.items())
+        ):
+            raise MakeProbeError("chapterbundle dependency module declaration is malformed")
+        return tuple(sorted(set(value.values())))
+    raise MakeProbeError("chapterbundle dependency module declaration is missing")
+
+
 def _generated_dependency_option_values(module, details, option_values):
     expected = {option for option, _selector in details["selectors"]}
     actual = set(option_values)
@@ -337,27 +376,31 @@ def _generated_dependency_source_paths(session, selector, source):
     return paths
 
 
-def _chapterbundle_support(session, bundle_source, bundle_sources):
-    code = (
-        *_python_module_code(session, "scripts.generated_data.chapterbundle.schema"),
-        *_python_module_code(session, "scripts.generated_data.chapterobjectives.schema"),
-    )
+def _chapterbundle_support(session, module, bundle_source, bundle_sources):
+    code = set(_python_module_closure(session, module))
+    code.update(_python_module_closure(session, "scripts.generated_data.chapterobjectives.deps"))
+    for dependency in _bundle_dependency_module_names(session):
+        code.update(_python_module_closure(session, dependency))
     bundle_directories = ("assets/tmx", "graphics/map/layout")
     if bundle_source not in session.snapshot.files:
         bundle_directories = (*bundle_directories, bundle_source)
     observed = session.command(directory_python_command(
         session,
         (
-            "import glob,json\n"
+            "import glob,importlib,json\n"
             "from pathlib import Path\n"
             "from scripts.generated_data.chapterbundle import schema as bundle_schema\n"
-            "from scripts.generated_data.chapterobjectives import schema as objectives_schema\n"
+            "from scripts.generated_data.chapterobjectives import deps as objectives_deps\n"
             "root=Path(bundle_schema.REPO_ROOT)\n"
+            "importlib.import_module(sys.argv[2])\n"
+            "bundle_schema.dependency_module_paths()\n"
             "records=bundle_schema.load_records(str(Path('/repo') / Path(sys.argv[1])))\n"
             "def rel(value):\n"
             " path=Path(value)\n"
             " if path.is_absolute():\n"
             "  path=path.relative_to(root)\n"
+            " if '..' in path.parts:\n"
+            "  raise ValueError('dependency source must be repository-relative without parent components')\n"
             " return path.as_posix()\n"
             "bundle_refs=set()\n"
             "for bundle in records:\n"
@@ -365,12 +408,12 @@ def _chapterbundle_support(session, bundle_source, bundle_sources):
             "  bundle_refs.add(rel(table.source))\n"
             " bundle_refs.add(rel(bundle.support_owners.source))\n"
             "print(json.dumps({\n"
-            " 'dependency_modules':sorted(bundle_schema.DEPENDENCY_SCHEMA_MODULES.values()),\n"
             " 'directories':sorted({\n"
             "  rel(Path(bundle_schema.ASSET_MANIFEST_PATH).parent),\n"
             "  rel(root / 'assets' / 'tmx'),\n"
             "  rel(bundle_schema.MAP_LAYOUT_DIR),\n"
             " }),\n"
+            " 'implementation':sorted(rel(path) for path in objectives_deps._implementation_module_paths()),\n"
             " 'bundle_refs':sorted(bundle_refs),\n"
             " 'members':sorted({rel(path) for path in glob.glob(str(root / 'assets' / 'tmx' / '*.tmx'))}\n"
             "          | {rel(path) for path in glob.glob(str(root / 'graphics' / 'map' / 'layout' / '*.json'))}),\n"
@@ -378,34 +421,37 @@ def _chapterbundle_support(session, bundle_source, bundle_sources):
             "  rel(bundle_schema.ASSET_MANIFEST_PATH),\n"
             "  rel(bundle_schema.CHAPTER_DATA_ASSET_TABLE_SOURCE),\n"
             "  rel(bundle_schema.CHAPTER_SETTINGS_JSON),\n"
-            "  rel(objectives_schema.CHAPTERS_HEADER),\n"
-            "  rel(objectives_schema.EVENT_FLAGS_HEADER),\n"
-            "  rel(objectives_schema.character_refs.CHARACTERS_HEADER),\n"
+            "  rel(objectives_deps.objectives_schema.CHAPTERS_HEADER),\n"
+            "  rel(objectives_deps.objectives_schema.EVENT_FLAGS_HEADER),\n"
+            "  rel(objectives_deps.objectives_schema.character_refs.CHARACTERS_HEADER),\n"
             " })\n"
             "},sort_keys=True,separators=(',',':')))\n"
         ),
-        (bundle_source,),
+        (bundle_source, module),
         sources=bundle_sources,
         directories=bundle_directories,
-        code=code,
+        code=tuple(sorted(code)),
     ))
     result = parse_json(observed.stdout, "chapterbundle dependency support")
     if (
         not isinstance(result, dict)
-        or set(result) != {"bundle_refs", "dependency_modules", "directories", "members", "sources"}
-        or not isinstance(result["dependency_modules"], list)
+        or set(result) != {"bundle_refs", "directories", "implementation", "members", "sources"}
         or not isinstance(result["bundle_refs"], list)
         or not isinstance(result["directories"], list)
+        or not isinstance(result["implementation"], list)
         or not isinstance(result["members"], list)
         or not isinstance(result["sources"], list)
         or any(not isinstance(item, str) or not item for group in result.values() for item in group)
     ):
         raise MakeProbeError("chapterbundle dependency support is malformed")
-    code_paths = []
-    for module in result["dependency_modules"]:
-        code_paths.extend(_python_module_code(session, module))
+    implementation = tuple(sorted(relative_path(path) for path in result["implementation"]))
+    if any(
+        not path.endswith(".py") or path not in session.snapshot.files or path not in code
+        for path in implementation
+    ):
+        raise MakeProbeError("chapterbundle dependency support exceeded its admitted Python closure")
     return (
-        tuple(sorted(set(code_paths))),
+        implementation,
         tuple(sorted(relative_path(path) for path in result["bundle_refs"])),
         tuple(sorted(relative_path(path) for path in result["directories"])),
         tuple(sorted(relative_path(path) for path in result["members"])),
@@ -431,12 +477,13 @@ def generated_dependency_command(
     ]
     python_code.extend(_python_module_code(session, module, main=True))
     directories = set()
-    discovery_sources = []
+    expected_inputs = set()
     bundle_sources = ()
     bundle_source = None
     for (option, selector), source in zip(details["selectors"], selector_arguments):
         paths = _generated_dependency_source_paths(session, selector, source)
-        discovery_sources.extend(paths)
+        expected_inputs.update(paths)
+        expected_inputs.add(relative_path(source))
         if option == "--bundle-source":
             bundle_source = source
             bundle_sources = paths
@@ -446,47 +493,18 @@ def generated_dependency_command(
         elif source not in session.snapshot.files and (session.tree / source).is_dir():
             directories.add(source)
     if details["support_from_bundle"]:
-        dependency_code, bundle_refs, dependency_directories, dependency_members, dependency_sources = (
-            _chapterbundle_support(session, bundle_source, bundle_sources)
+        implementation_code, bundle_refs, dependency_directories, dependency_members, dependency_sources = (
+            _chapterbundle_support(session, module, bundle_source, bundle_sources)
         )
-        python_code.extend(dependency_code)
+        python_code.extend(implementation_code)
         directories.update(dependency_directories)
         directories.update(("assets", "graphics", "include", "include/constants", "src", "src/data"))
-        discovery_sources.extend(bundle_refs)
-        discovery_sources.extend(dependency_members)
-        discovery_sources.extend(dependency_sources)
-    observed = session.command(directory_python_command(
-        session,
-        (
-            "import importlib,json\n"
-            "from pathlib import Path\n"
-            "module=importlib.import_module(sys.argv[1])\n"
-            "arguments=json.loads(sys.argv[2])\n"
-            "def rooted(value):\n"
-            " path=Path(value)\n"
-            " return str(Path('/repo') / path)\n"
-            "def report(value):\n"
-            " path=Path(value)\n"
-            " if path.is_absolute():\n"
-            "  return '/repo/' + path.relative_to('/repo').as_posix()\n"
-            " return '/repo/' + path.as_posix()\n"
-            "print(json.dumps([\n"
-            " report(path)\n"
-            " for path in module.collect_input_paths(*(rooted(value) for value in arguments))\n"
-            "],separators=(',',':')))\n"
-        ),
-        (module, json.dumps(selector_arguments, separators=(",", ":"))),
-        sources=tuple(sorted(set(discovery_sources))),
-        directories=tuple(sorted(directories)),
-        code=tuple(sorted(set(python_code))),
-    ))
-    discovery = parse_json(observed.stdout, "generated dependency input discovery")
-    if (
-        not isinstance(discovery, list) or not discovery
-        or any(not isinstance(path, str) or not path for path in discovery)
-    ):
-        raise MakeProbeError("generated dependency discovery returned no inputs")
-    reported = tuple(discovery)
+        expected_inputs.update(bundle_refs)
+        expected_inputs.update(dependency_directories)
+        expected_inputs.update(dependency_members)
+        expected_inputs.update(dependency_sources)
+        expected_inputs.update(implementation_code)
+    reported = tuple(sorted(expected_inputs))
     files = []
     declared_directories = set(directories)
     for path in reported:
@@ -495,8 +513,10 @@ def generated_dependency_command(
             python_code.append(relative)
         elif relative in session.snapshot.files:
             files.append(relative)
-        else:
+        elif (session.tree / relative).is_dir():
             declared_directories.add(relative)
+        else:
+            raise MakeProbeError(f"source declaration resolves no regular inputs: {relative}")
     files = tuple(sorted(set(files)))
     source_identities = session.source_owners(files)
     return directory_python_command(
@@ -505,11 +525,28 @@ def generated_dependency_command(
             "import hashlib,importlib,json,stat\n"
             "from pathlib import Path\n"
             "module=importlib.import_module(sys.argv[1])\n"
-            "inputs=json.loads(sys.argv[4])\n"
-            "tracked=json.loads(sys.argv[5])\n"
-            "identities={row[0]:tuple(row[1:]) for row in json.loads(sys.argv[6])}\n"
+            "arguments=json.loads(sys.argv[2])\n"
+            "expected=json.loads(sys.argv[5])\n"
+            "tracked=json.loads(sys.argv[6])\n"
+            "identities={row[0]:tuple(row[1:]) for row in json.loads(sys.argv[7])}\n"
+            "collected=[]\n"
             "if set(identities) != set(tracked):\n"
             " raise ValueError('dependency publication source identities must match tracked inputs exactly')\n"
+            "def rooted(value):\n"
+            " path=Path(value)\n"
+            " return str(Path('/repo') / path)\n"
+            "def report(value):\n"
+            " path=Path(value)\n"
+            " if path.is_absolute():\n"
+            "  path=path.relative_to('/repo')\n"
+            " if '..' in path.parts:\n"
+            "  raise ValueError('dependency source must be repository-relative without parent components')\n"
+            " return path.as_posix()\n"
+            "collected=[report(path) for path in module.collect_input_paths(*(rooted(value) for value in arguments))]\n"
+            "if collected != sorted(set(collected)):\n"
+            " raise ValueError('dependency collection must be canonical, unique and sorted')\n"
+            "if collected != expected:\n"
+            " raise ValueError('dependency collection differs from admitted selector/support evidence')\n"
             "for path in tracked:\n"
             " source=Path('/repo') / Path(path)\n"
             " status=source.stat()\n"
@@ -517,18 +554,14 @@ def generated_dependency_command(
             " mode=f'{stat.S_IFREG | stat.S_IMODE(status.st_mode):06o}'\n"
             " if (mode,digest) != identities[path]:\n"
             "  raise ValueError(f'captured source identity changed: {path}')\n"
-            "def rooted(value):\n"
-            " path=Path(value)\n"
-            " if path.is_absolute():\n"
-            "  return '/repo/' + path.relative_to('/repo').as_posix()\n"
-            " return '/repo/' + path.as_posix()\n"
-            "output=Path('/work') / Path(sys.argv[2])\n"
+            "output=Path('/work') / Path(sys.argv[3])\n"
             "output.parent.mkdir(parents=True,exist_ok=True)\n"
-            "content=module.render_depfile(sys.argv[3],[rooted(path) for path in inputs])\n"
+            "content=module.render_depfile(sys.argv[4],[rooted(path) for path in collected])\n"
             "output.write_text(content,encoding='utf-8')\n"
         ),
         (
             module,
+            json.dumps(selector_arguments, separators=(",", ":")),
             relative_path(depfile),
             make_target,
             json.dumps(reported, separators=(",", ":")),
