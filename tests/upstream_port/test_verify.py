@@ -551,7 +551,7 @@ class VerifyGatesMirrorWorkflowTests(unittest.TestCase):
 
     def test_dry_run_never_executes_subprocess(self):
         results = verify_mod.run_gates(REPO_ROOT, dry_run=True)
-        self.assertEqual(len(results), 29)
+        self.assertEqual(len(results), len(verify_mod.gates()))
         self.assertTrue(all(r.ran is False for r in results))
         self.assertTrue(all(r.passed is False for r in results))  # not-ran != passed
 
@@ -562,7 +562,7 @@ class VerifyGatesMirrorWorkflowTests(unittest.TestCase):
         dry = [r.gate.name for r in verify_mod.run_gates(REPO_ROOT, dry_run=True)]
         real_names = [g.name for g in verify_mod.gates()]
         self.assertEqual(dry, real_names)
-        self.assertEqual(len(dry), 29)
+        self.assertEqual(len(dry), len(real_names))
 
 
 class VerifyGateSelectionRemovedTests(unittest.TestCase):
@@ -627,7 +627,7 @@ class VerifyGateSelectionRemovedTests(unittest.TestCase):
             self.assertIn(name, printed)
         # Every line for a dry-run gate is explicitly marked SKIPPED(dry-run)
         # -- never silently omitted, never marked PASS/FAIL without running.
-        self.assertEqual(printed.count("[SKIPPED(dry-run)]"), 29)
+        self.assertEqual(printed.count("[SKIPPED(dry-run)]"), len(verify_mod.gates()))
 
 
 class HostOnlyEnvGateMirrorTests(unittest.TestCase):
@@ -749,9 +749,9 @@ class HostOnlyEnvGateMirrorTests(unittest.TestCase):
                 "run_gates must not mutate the parent environment",
             )
 
-        self.assertEqual(len(results), 29)
+        self.assertEqual(len(results), len(verify_mod.gates()))
         self.assertTrue(all(result.passed for result in results))
-        self.assertEqual(len(seen), 29)
+        self.assertEqual(len(seen), len(verify_mod.gates()))
 
         host_argv, host_env = seen[0]
         self.assertEqual(host_argv[0], "python3")
@@ -795,7 +795,7 @@ class HostOnlyEnvGateMirrorTests(unittest.TestCase):
         self.assertEqual([argv for argv, _ in seen], expected_argv)
         self.assertEqual(
             [kwargs["cwd"] for _, kwargs in seen],
-            [REPO_ROOT] * 29,
+            [REPO_ROOT] * len(verify_mod.gates()),
         )
         baseline_argv = seen[
             [gate.name for gate in verify_mod.gates()].index(
@@ -996,10 +996,10 @@ class VerifyCliCwdTests(unittest.TestCase):
                     ):
                         self.assertEqual(cli.main(arguments), 0)
 
-                    self.assertEqual(len(seen), 29)
+                    self.assertEqual(len(seen), len(verify_mod.gates()))
                     self.assertEqual(
                         [kwargs["cwd"] for _, kwargs in seen],
-                        [expected_root] * 29,
+                        [expected_root] * len(verify_mod.gates()),
                     )
                     baseline = seen[
                         [gate.name for gate in verify_mod.gates()].index(
@@ -1029,7 +1029,7 @@ class VerifyCliCwdTests(unittest.TestCase):
                 original = handle.read()
             self.assertEqual(
                 len(verify_mod.run_gates(target_root, dry_run=True)),
-                29,
+                len(verify_mod.gates()),
             )
 
             upstream_step = (
@@ -1137,7 +1137,7 @@ class VerifyCliCwdTests(unittest.TestCase):
                 "summary",
             ),
         )
-        self.assertEqual(len(verify_mod.gates()), 29)
+        self.assertEqual(len(verify_mod.gates()), 30)
         gate_jobs = {
             job_name
             for job_name, _, _ in verify_mod._workflow_gate_contract(
@@ -1246,7 +1246,10 @@ class VerifyCliCwdTests(unittest.TestCase):
         )
         gate_jobs = {job for job, _, _ in verify_mod._workflow_gate_contract(structure)}
         self.assertTrue({"event-router", "event-classifier"}.isdisjoint(gate_jobs))
-        self.assertEqual(len(verify_mod.run_gates(REPO_ROOT, dry_run=True)), 29)
+        self.assertEqual(
+            len(verify_mod.run_gates(REPO_ROOT, dry_run=True)),
+            len(verify_mod.gates()),
+        )
 
         blocks = topology_tests._job_blocks(original)
         producer = topology_tests._step_blocks(blocks["event-router"])[-1]
@@ -1632,7 +1635,7 @@ class VerifyCliCwdTests(unittest.TestCase):
                 original = handle.read()
             self.assertEqual(
                 len(verify_mod.run_gates(target_root, dry_run=True)),
-                29,
+                len(verify_mod.gates()),
             )
 
             for job_name in verify_mod._COMBINED_JOBS:
@@ -1874,7 +1877,7 @@ class VerifyCliCwdTests(unittest.TestCase):
     def test_source_root_gate_equivalence_remains_supported(self):
         self.assertEqual(
             len(verify_mod.run_gates(REPO_ROOT, dry_run=True)),
-            29,
+            len(verify_mod.gates()),
         )
 
     def test_dry_run_and_normal_cli_select_the_same_target_root(self):
@@ -1920,7 +1923,9 @@ class VerifyCliCwdTests(unittest.TestCase):
             text=True,
         )
         self.assertEqual(completed.returncode, 0, completed.stderr)
-        self.assertEqual(completed.stdout.count("[SKIPPED(dry-run)]"), 29)
+        self.assertEqual(
+            completed.stdout.count("[SKIPPED(dry-run)]"), len(verify_mod.gates())
+        )
 
     def test_invalid_explicit_repo_is_a_normal_cli_error(self):
         cases = (
