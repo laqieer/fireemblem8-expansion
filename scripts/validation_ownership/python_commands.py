@@ -42,7 +42,7 @@ GENERATED_DEPENDENCY_MODULES = {
 
 def python_import_directories(code):
     return tuple(sorted({
-        ".", *(parent.as_posix() for path in code for parent in PurePosixPath(path).parents),
+        parent.as_posix() for path in code for parent in PurePosixPath(path).parents
     }))
 
 
@@ -66,7 +66,7 @@ def _python_package_inits(path, available):
 
 
 def _python_module_paths(available, module, *, main=False):
-    if not module or module.split(".", 1)[0] != "scripts":
+    if not module:
         return ()
     base = module.replace(".", "/")
     candidates = ([base + "/__main__.py"] if main else []) + [base + ".py", base + "/__init__.py"]
@@ -106,7 +106,7 @@ def _python_import_targets(tree, package=""):
 def _available_python_paths(session):
     return {
         path for path in session.snapshot.files
-        if path.endswith(".py") and path.startswith("scripts/")
+        if path.endswith(".py")
     }
 
 
@@ -168,25 +168,30 @@ def python_code_closure(session, body, code=()):
 
 def python_command(session, body, arguments=(), *, sources=(), outputs=(), directories=(), code=()):
     modules = python_code_closure(session, body, code)
+    prefix = "import sys;"
+    if modules:
+        prefix += "sys.path.insert(0,'/repo');"
     return Command(
         (PYTHON, "-I", "-S", "-B", "-c",
-         "import sys;sys.path.insert(0,'/repo');" + body, *arguments),
+         prefix + body, *arguments),
         code=modules, sources=tuple(sources), outputs=tuple(outputs),
         directories=tuple(sorted(set(directories) | set(python_import_directories(modules)))),
     )
 
 
 def _directory_closure(paths):
-    return tuple(sorted({
-        relative_path(path)
-        for directory in paths
-        if directory != "."
-        for path in (
-            directory,
-            *(parent.as_posix() for parent in PurePosixPath(relative_path(directory)).parents),
+    result = set()
+    for directory in paths:
+        if directory == ".":
+            result.add(directory)
+            continue
+        directory = relative_path(directory)
+        result.add(directory)
+        result.update(
+            parent.as_posix() for parent in PurePosixPath(directory).parents
+            if parent.as_posix() != "."
         )
-        if path != "."
-    }))
+    return tuple(sorted(result))
 
 
 def directory_python_command(session, body, arguments=(), *, sources=(), outputs=(), directories=(), code=()):
@@ -204,16 +209,9 @@ def _python_module_code(session, module, *, main=False):
 
 
 def _registry_code(session: ProbeSession):
-    code = tuple(sorted(
-        path for path in session.snapshot.files
-        if path.endswith(".py") and (
-            path.startswith(("scripts/generated_data/", "scripts/assets/"))
-            or path == "scripts/__init__.py"
-        )
-    ))
-    if "scripts/generated_data/registry.py" not in code:
+    if "scripts/generated_data/registry.py" not in session.snapshot.files:
         raise MakeProbeError("generated-data registry has no captured Python authority")
-    return code
+    return python_code_closure(session, "from scripts.generated_data.registry import REGISTRY")
 
 
 def _registry_driver(session: ProbeSession):

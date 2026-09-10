@@ -36,6 +36,7 @@ from scripts.validation_ownership.make_probe import (
 )
 from scripts.validation_ownership.python_commands import (
     directory_python_command,
+    generated_registry_source_paths_command,
     generated_registry_source_paths,
     python_command,
 )
@@ -4261,6 +4262,62 @@ raise AssertionError("default termination was lost")
         self.assertFalse(budget.children)
         self.assertEqual(list(scratch.iterdir()), [])
         scratch.rmdir()
+
+    def test_python_command_root_enumeration_requires_declaration(self):
+        self.add("data/value.txt", "captured")
+        body = "import os;print(','.join(sorted(os.listdir('.'))))"
+        with self.session() as session:
+            with self.assertRaisesRegex(MakeProbeError, "undeclared source directory enumeration"):
+                session.command(python_command(session, body))
+        self.assert_clean(session)
+        with self.session() as session:
+            result = session.command(directory_python_command(session, body, directories=(".",)))
+            self.assertEqual(result.stdout, b"data\n")
+        self.assert_clean(session)
+
+    def test_python_command_tracks_repository_packages_outside_scripts(self):
+        self.add("tools/pkg/helper.py", "VALUE=7\n")
+        self.add("tools/pkg/producer.py", "from .helper import VALUE\n")
+        self.add("tools/pkg/unrelated.py", "raise AssertionError('not imported')\n")
+        with self.session() as session:
+            command = python_command(
+                session, "from tools.pkg.producer import VALUE;print(VALUE)",
+                code=("tools/pkg/producer.py",),
+            )
+            result = session.command(command)
+            self.assertEqual(result.stdout, b"7\n")
+            self.assertNotIn("tools/pkg/unrelated.py", command.code)
+        self.assert_clean(session)
+
+    def test_registry_command_does_not_admit_unrelated_test_code(self):
+        self.add("data/a_bundle.json", "{}")
+        self.add("scripts/generated_data/tests/unrelated.py", "VALUE=1\n")
+        source = (
+            "import glob\nfrom pathlib import Path\n"
+            "class Schema:\n"
+            " def source_paths(self, source):\n"
+            "  Path('/repo/scripts/generated_data/tests/unrelated.py').read_text()\n"
+            "  return sorted(glob.glob(source + '/*_bundle.json'))\n"
+            "class Registry:\n"
+            " def resolve(self, name): return Schema()\n"
+            "REGISTRY=Registry()\n"
+        )
+        self.add("scripts/generated_data/registry.py", source)
+        with self.session() as session:
+            command = generated_registry_source_paths_command(session, "chapterbundle", "data")
+            with self.assertRaises(MakeProbeError):
+                session.command(command)
+        self.assert_clean(session)
+        self.add(
+            "scripts/generated_data/registry.py",
+            source.replace("  Path('/repo/scripts/generated_data/tests/unrelated.py').read_text()\n", ""),
+        )
+        with self.session() as session:
+            command = generated_registry_source_paths_command(session, "chapterbundle", "data")
+            result = session.command(command)
+            self.assertEqual(json.loads(result.stdout), ["data/a_bundle.json"])
+            self.assertNotIn("scripts/generated_data/tests/unrelated.py", command.code)
+        self.assert_clean(session)
 
     def test_directory_python_command_preserves_root_marker_and_rejects_aliases(self):
         self.add("data/value.txt", "captured")

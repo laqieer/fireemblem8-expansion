@@ -103,9 +103,13 @@ from scripts.validation_ownership.python_commands import (
 ```
 
 - `python_command(...)` returns a typed `Command` with the exact imported
-  closure of the declared Python body and code roots.
+  closure of the declared Python body and code roots, including repository
+  packages outside `scripts/`. A standard-library-only body receives no
+  implicit repository-root enumeration or repository import path.
 - `directory_python_command(...)` adds the declared source-directory ancestors
   needed for metadata/enumeration without widening file-content admission.
+  `directories=(".",)` explicitly requests the existing root marker;
+  noncanonical aliases remain rejected.
 - `generated_dependency_command(...)` adapts the three audited generated-data
   dependency CLIs (`chapterobjectives`, `autoplaystrategies`, `eventlists`)
   into one typed producer command using the modules' real `source_paths`,
@@ -121,7 +125,9 @@ enumeration boundary instead of falling back to synthetic package objects.
 Generated-dependency registrations validate their exact named option set before
 lookup, order selector arguments by the declared module signature rather than
 the caller's CLI order, and keep every support/discovery step inside the
-existing selected-view `ProbeSession` cache. Directory-backed selection uses
+existing selected-view `ProbeSession` cache. Registry commands seed code
+authority from the registry's actual captured import closure, not entire
+implementation/test directory trees. Directory-backed selection uses
 the schema's public `source_paths` API; concrete depfile bytes and output
 publication come from the real module render/writer behavior, not guessed
 filenames or fabricated empty output. The same API is reusable for asset
