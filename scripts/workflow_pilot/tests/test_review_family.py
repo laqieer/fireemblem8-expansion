@@ -255,6 +255,22 @@ class CandidateCoverageTests(unittest.TestCase):
             with self.assertRaises(FrozenInstanceError):
                 report.candidate_reads[0].path = "changed"
 
+    def test_modified_path_default_coverage_needs_only_its_head_read(self):
+        with snapshot() as repo:
+            fixture = candidate_fixture(repo)
+            tools = gate.ReviewTools(gate.GitTree(repo.root, fixture["head"]), repo.root)
+            session, runtime = self.start_session(
+                tools, fixture["base"], fixture["head"], max_files=1)
+            path = fixture["paths"]["modified"]
+            self.assertEqual(session.read_action("read-candidate", path).data, b"head revision\n")
+            runtime.result.files = 1
+            report = session.finish(runtime)
+            coverage = tools.model.require_candidate_path_coverage(
+                report, tools.candidate_changes(fixture["base"], fixture["head"], paths=[path]),
+                base_sha=fixture["base"], head_sha=fixture["head"],
+                resolved_root=str(repo.root.resolve()))
+            self.assertEqual([(item.path, item.side) for item in coverage.reads], [(path, "head")])
+
     def test_counts_runtime_claims_and_read_evidence_do_not_supply_coverage(self):
         with snapshot() as repo:
             fixture = candidate_fixture(repo, support_paths=4)
