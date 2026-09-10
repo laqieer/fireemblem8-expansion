@@ -223,6 +223,16 @@ class BasePinnedVerifierTests(unittest.TestCase):
                 self.assertIn(path, ci_verifier.BASE_AUTHORITY_PATHS)
                 self.assertNotIn(path, ci_verifier.BASE_BOOTSTRAP_SENTINELS)
 
+    def test_trusted_paths_inventory_includes_the_shared_bash_parser(self):
+        self.assertEqual(
+            ci_verifier.TRUSTED_SHARED_RUNTIME_PATHS,
+            frozenset({"scripts/bash_parser.py"}),
+        )
+        self.assertIn(
+            "scripts/bash_parser.py",
+            ci_verifier.TRUSTED_RUNTIME_PATHS,
+        )
+
     def test_exact_owner_pair_authority_comparison_rejects_redirects(self):
         graph = {
             "nodes": [
@@ -316,6 +326,40 @@ class ReviewedEvolutionVerifierTests(unittest.TestCase):
         missing_authority = self.verify(trusted, *self.exact_arguments(revision, revision))
         self.assertNotEqual(missing_authority.returncode, 0)
         self.assertFalse(missing_authority.stdout.strip())
+
+    def test_complete_direct_verifier_requires_shared_bash_parser_from_exact_base(self):
+        revision = self.fixture.git("rev-parse", "HEAD").decode().strip()
+        trusted = self.trusted_root(revision)
+        wrong = self.fixture.directory / ("trusted-parser-wrong-" + revision[:12])
+        staged = self.fixture.directory / ("trusted-parser-staged-" + revision[:12])
+        shutil.copytree(trusted, wrong)
+        shutil.copytree(trusted, staged)
+        self.addCleanup(lambda: trusted.exists() and shutil.rmtree(trusted))
+        self.addCleanup(lambda: wrong.exists() and shutil.rmtree(wrong))
+        self.addCleanup(lambda: staged.exists() and shutil.rmtree(staged))
+
+        completed = self.verify(trusted, *self.exact_arguments(revision, revision))
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+
+        missing_path = trusted / "scripts/bash_parser.py"
+        missing_path.unlink()
+        missing = self.verify(trusted, *self.exact_arguments(revision, revision))
+        self.assertNotEqual(missing.returncode, 0)
+        self.assertRegex(missing.stderr, r"scripts\.bash_parser|scripts/bash_parser\.py")
+
+        wrong_path = wrong / "scripts/bash_parser.py"
+        wrong_path.write_text(wrong_path.read_text(encoding="utf-8") + "# drift\n", encoding="utf-8")
+        drifted = self.verify(wrong, *self.exact_arguments(revision, revision))
+        self.assertNotEqual(drifted.returncode, 0)
+        self.assertRegex(drifted.stderr, r"scripts\.bash_parser|scripts/bash_parser\.py")
+
+        self.fixture.add("scripts/bash_parser.py", "# candidate-only parser\n")
+        staged_candidate = self.fixture.commit("Stage candidate-only parser drift")
+        staged_trusted = staged / "scripts/bash_parser.py"
+        staged_trusted.unlink()
+        staged_result = self.verify(staged, *self.exact_arguments(revision, staged_candidate))
+        self.assertNotEqual(staged_result.returncode, 0)
+        self.assertRegex(staged_result.stderr, r"scripts\.bash_parser|scripts/bash_parser\.py")
 
     def test_exact_verifier_reuses_one_trusted_tree_for_two_actual_captures(self):
         revision = self.fixture.git("rev-parse", "HEAD").decode().strip()

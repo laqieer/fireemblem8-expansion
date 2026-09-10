@@ -67,6 +67,7 @@ GRAPH_BOOTSTRAP_MARKERS = frozenset(
 BASE_BOOTSTRAP_SENTINELS = frozenset(
     {CI_VERIFIER_PATH, *FOUNDATION_BOOTSTRAP_PATHS, *GRAPH_BOOTSTRAP_MARKERS}
 )
+TRUSTED_SHARED_RUNTIME_PATHS = frozenset({"scripts/bash_parser.py"})
 TRUSTED_RUNTIME_PATHS = frozenset(
     {
         CI_VERIFIER_PATH,
@@ -74,7 +75,7 @@ TRUSTED_RUNTIME_PATHS = frozenset(
         f"{TRUSTED_PREFIX}graph.schema.json",
         f"{TRUSTED_PREFIX}isolated_launcher.py",
         f"{TRUSTED_PREFIX}make_probe.py",
-        "scripts/bash_parser.py",
+        *TRUSTED_SHARED_RUNTIME_PATHS,
         f"{TRUSTED_PREFIX}python_commands.py",
         f"{TRUSTED_PREFIX}reporter.py",
         f"{TRUSTED_PREFIX}sandbox_exec.py",
@@ -266,7 +267,7 @@ def _trusted_paths(
     paths = {
         path
         for path, entry in base_loader.entries.items()
-        if path.startswith(TRUSTED_PREFIX)
+        if (path.startswith(TRUSTED_PREFIX) or path in TRUSTED_SHARED_RUNTIME_PATHS)
         and entry.object_type == "blob"
         and entry.mode in {"100644", "100755"}
     }
@@ -292,6 +293,10 @@ def _trusted_paths(
         for item in (trusted_root / TRUSTED_PREFIX).rglob("*")
         if item.is_file() and "__pycache__" not in item.parts
     }
+    actual.update(
+        path for path in TRUSTED_SHARED_RUNTIME_PATHS
+        if (trusted_root / path).is_file() and "__pycache__" not in (trusted_root / path).parts
+    )
     if actual != paths:
         raise reporter.OwnershipError(
             "trusted verifier package has missing or extra files"
