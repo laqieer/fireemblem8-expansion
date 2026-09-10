@@ -19,6 +19,12 @@ from .python_commands import GENERATED_DEPENDENCY_MODULES, generated_dependency_
 
 
 PYTHON = "/usr/bin/python3"
+SCANINC_SOURCES = tuple(
+    f"tools/scaninc/{name}.{extension}"
+    for name in ("asm_file", "c_file", "scaninc", "source_file") for extension in ("cpp", "h")
+)
+SCANINC_WRAPPER = "scripts/validation_ownership/scaninc_sources.cpp"
+SCANINC_MAKEFILE = "tools/scaninc/Makefile"
 CODE_PREFIXES = (
     "scripts/assets/", "scripts/generated_data/", "scripts/modernize/",
     "scripts/localization/",
@@ -359,12 +365,9 @@ class MakeCommands:
     def scaninc(self, source):
         source = relative_path(source)
         if self.scanner is None:
-            files = tuple(path for path in self.session.snapshot.files
-                          if path.startswith("tools/scaninc/"))
             self.scanner = self.session.compile_native(
-                (*sorted(path for path in files if path.endswith(".cpp")),
-                 "scripts/validation_ownership/scaninc_sources.cpp"),
-                headers=tuple(sorted(path for path in files if path.endswith(".h"))),
+                (*(path for path in SCANINC_SOURCES if path.endswith(".cpp")), SCANINC_WRAPPER),
+                headers=tuple(path for path in SCANINC_SOURCES if path.endswith(".h")),
                 cxx=True, defines=("SCANINC_NO_MAIN",),
             )
             self.scanner_directories = {

@@ -1,11 +1,13 @@
 """Owned real-Git graph fixture; no backend or authority substitutions."""
 
 import copy
+from io import BytesIO
 import json
 from pathlib import Path
 import secrets
 import shutil
 import subprocess
+import tarfile
 
 from scripts.validation_ownership import reporter
 from scripts.validation_ownership.authority import ENVIRONMENT
@@ -27,7 +29,7 @@ class ReportFixture:
             self.add("scripts/validation_ownership/" + name,
                      (ROOT / "scripts/validation_ownership" / name).read_text())
         for name in ("scaninc.cpp", "scaninc.h", "source_file.cpp", "source_file.h",
-                     "asm_file.cpp", "asm_file.h", "c_file.cpp", "c_file.h"):
+                     "asm_file.cpp", "asm_file.h", "c_file.cpp", "c_file.h", "Makefile"):
             self.add("tools/scaninc/" + name, (ROOT / "tools/scaninc" / name).read_text())
         self.add(".github/workflows/build.yml", (ROOT / ".github/workflows/build.yml").read_text())
         self.add("Makefile", "validation-ownership-check:\n\t@true\n")
@@ -156,8 +158,38 @@ class ReportFixture:
         self.git("commit", "--quiet", "-m", message)
         return self.git("rev-parse", "HEAD").decode().strip()
 
+    def extract_revision(self, revision, name):
+        destination = self.directory / name
+        destination.mkdir()
+        with tarfile.open(fileobj=BytesIO(self.git("archive", revision))) as archive:
+            archive.extractall(destination, filter="data")
+        return destination
+
     def close(self):
         shutil.rmtree(self.directory)
+
+
+def _commit_evolution(fixture, base, message, graph=None):
+    head = fixture.commit(message)
+    return {
+        "base": base,
+        "head": head,
+        "reviewed_paths": sorted(fixture.git("diff", "--name-only", base, head).decode().splitlines()),
+        "reviewed_edges": sorted(edge["id"] for edge in graph["edges"]) if graph else [],
+        "affected_consumers": sorted(
+            node["id"] for node in graph["nodes"] if node["kind"] == "surface"
+        ) if graph else [],
+    }
+
+
+def reviewed_code_evolution_case(fixture: ReportFixture):
+    base = fixture.git("rev-parse", "HEAD").decode().strip()
+    path = "scripts/validation_ownership/ci_verifier.py"
+    source = (fixture.root / path).read_text()
+    marker = '"candidate_trusted_changes": candidate_changes,'
+    assert source.count(marker) == 1
+    fixture.add(path, source.replace(marker, marker + '\n            "reviewed_code_executed": True,'))
+    return _commit_evolution(fixture, base, "Exercise independently reviewed verifier-only evolution")
 
 
 def reviewed_evolution_case(fixture: ReportFixture):
@@ -175,41 +207,20 @@ def reviewed_evolution_case(fixture: ReportFixture):
             node["authority"]["target"] = "validation-ownership-reviewed"
             break
     graph["artifact"]["executable_consumer"] = "validation-ownership-reviewed"
-    graph["nodes"].append(
-        {
-            "id": "surface.docs",
-            "kind": "surface",
-            "label": "Reviewed documentation surface",
-            "surface_type": "source",
-            "requirements": ["positive", "adversarial"],
-            "dependencies": ["surface.source"],
-        }
-    )
-    graph["edges"].extend(
-        (
-            {
-                "id": "docs.owns-test",
-                "type": "owns-test",
-                "source": "surface.docs",
-                "target": "owner.make",
-                "reason": "Reviewed documentation remains owned by the managed Make authority",
-            },
-            {
-                "id": "docs.adversarial-control",
-                "type": "adversarial-control",
-                "source": "surface.docs",
-                "target": "owner.case",
-                "reason": "Reviewed documentation keeps the exact adversarial control",
-            },
-            {
-                "id": "docs-source.depends",
-                "type": "depends-on",
-                "source": "surface.docs",
-                "target": "surface.source",
-                "reason": "Reviewed documentation depends on the measured source consumer",
-            },
-        )
-    )
+    docs = copy.deepcopy(next(node for node in graph["nodes"] if node["id"] == "surface.source"))
+    docs.update(id="surface.docs", label="Reviewed documentation surface", dependencies=["surface.source"])
+    graph["nodes"].append(docs)
+    for edge_id, edge_type, target, reason in (
+        ("docs.owns-test", "owns-test", "owner.make",
+         "Reviewed documentation remains owned by the managed Make authority"),
+        ("docs.adversarial-control", "adversarial-control", "owner.case",
+         "Reviewed documentation keeps the exact adversarial control"),
+        ("docs-source.depends", "depends-on", "surface.source",
+         "Reviewed documentation depends on the measured source consumer"),
+    ):
+        graph["edges"].append({
+            "id": edge_id, "type": edge_type, "source": "surface.docs", "target": target, "reason": reason,
+        })
     for rule in graph["path_rules"]:
         if rule["id"] == "paths.source":
             rule["exclude"].append({"kind": "exact", "path": path})
@@ -224,38 +235,14 @@ def reviewed_evolution_case(fixture: ReportFixture):
     )
     fixture.add(reporter.GRAPH_PATH, json.dumps(graph))
     oracle = reporter.load_json(fixture.root / reporter.PROBE_ORACLE_PATH)
-    oracle["probes"].append(
-        {
-            "path": path,
-            "expected_surface": "surface.docs",
-            "expected_owners": [
-                {"edge_type": "owns-test", "evidence_id": "owner.make"},
-                {"edge_type": "adversarial-control", "evidence_id": "owner.case"},
-            ],
-        }
-    )
+    probe = copy.deepcopy(next(item for item in oracle["probes"] if item["expected_surface"] == "surface.source"))
+    probe.update(path=path, expected_surface="surface.docs")
+    oracle["probes"].append(probe)
     oracle["seal"] = reporter._sha256(
         reporter.PROBE_SEAL_DOMAIN, reporter.canonical_probe_oracle_payload(oracle),
     )
     fixture.add(reporter.PROBE_ORACLE_PATH, json.dumps(oracle))
-    head = fixture.commit("Reviewed evolution fixture")
-    return {
-        "base": base,
-        "head": head,
-        "reviewed_paths": sorted(
-            (
-                "Makefile",
-                reporter.GRAPH_PATH.as_posix(),
-                reporter.PROBE_ORACLE_PATH.as_posix(),
-                path,
-            )
-        ),
-        "reviewed_edges": sorted(
-            edge["id"]
-            for edge in graph["edges"]
-        ),
-        "affected_consumers": ["surface.docs", "surface.schema", "surface.source"],
-    }
+    return _commit_evolution(fixture, base, "Reviewed evolution fixture", graph)
 
 
 def reviewed_exclusion_case(fixture: ReportFixture):
@@ -274,11 +261,4 @@ def reviewed_exclusion_case(fixture: ReportFixture):
         }
     )
     fixture.add(reporter.GRAPH_PATH, json.dumps(graph))
-    head = fixture.commit("Reviewed exclusion evolution fixture")
-    return {
-        "base": base,
-        "head": head,
-        "reviewed_paths": sorted((reporter.GRAPH_PATH.as_posix(), path)),
-        "reviewed_edges": sorted(edge["id"] for edge in graph["edges"]),
-        "affected_consumers": ["surface.schema", "surface.source"],
-    }
+    return _commit_evolution(fixture, base, "Reviewed exclusion evolution fixture", graph)

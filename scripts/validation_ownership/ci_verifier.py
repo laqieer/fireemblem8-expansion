@@ -33,7 +33,9 @@ from scripts.validation_ownership import reporter
 from scripts.validation_ownership.authority import AuthorityLoader, ENVIRONMENT, git_command, relative_path
 from scripts.validation_ownership.budget import ProbeBudget
 from scripts.validation_ownership.graph_report import capture, inventory
-from scripts.validation_ownership.graph_commands import ROOT_RUNTIME_FILES
+from scripts.validation_ownership.graph_commands import (
+    ROOT_RUNTIME_FILES, SCANINC_MAKEFILE, SCANINC_SOURCES, SCANINC_WRAPPER,
+)
 from scripts.validation_ownership.lifecycle import finish_cleanup
 from scripts.validation_ownership.make_probe import ProbeSession
 
@@ -67,7 +69,9 @@ GRAPH_BOOTSTRAP_MARKERS = frozenset(
 BASE_BOOTSTRAP_SENTINELS = frozenset(
     {CI_VERIFIER_PATH, *FOUNDATION_BOOTSTRAP_PATHS, *GRAPH_BOOTSTRAP_MARKERS}
 )
-TRUSTED_SHARED_RUNTIME_PATHS = frozenset({"scripts/bash_parser.py"})
+TRUSTED_SHARED_RUNTIME_PATHS = frozenset({
+    "scripts/bash_parser.py", SCANINC_MAKEFILE, *SCANINC_SOURCES,
+})
 TRUSTED_RUNTIME_PATHS = frozenset(
     {
         CI_VERIFIER_PATH,
@@ -261,22 +265,78 @@ def _base_authority_mode(
     return "exact-base-pinned"
 
 
-def _trusted_paths(
-    trusted_root: Path,
-    base_loader: reporter.AuthorityLoader,
-) -> set[str]:
-    paths = {
-        path
-        for path, entry in base_loader.entries.items()
-        if (path.startswith(TRUSTED_PREFIX) or path in TRUSTED_SHARED_RUNTIME_PATHS)
-        and entry.object_type == "blob"
-        and entry.mode in {"100644", "100755"}
+def _scaninc_build_contract(source: str):
+    """Recognize the supported Make execution contract without evaluating Make functions."""
+    variables = {
+        "CXX": ("g++",), "CXXFLAGS": ("-Wall", "-Werror", "-std=c++11", "-O2"),
+        "SRCS": tuple(Path(path).name for path in SCANINC_SOURCES if path.endswith(".cpp")),
+        "HEADERS": tuple(Path(path).name for path in SCANINC_SOURCES if path.endswith(".h")),
+        "LDFLAGS": (),
     }
+    prerequisites = {".PHONY": ("clean",), "scaninc": ("$(HEADERS)", "$(SRCS)"), "clean": ()}
+    recipes = {
+        ".PHONY": (),
+        "scaninc": ("$(CXX)", "$(CXXFLAGS)", "$(SRCS)", "-o", "$@", "$(LDFLAGS)"),
+        "clean": ("$(RM)", "scaninc", "scaninc.exe"),
+    }
+    assignments, rules = set(), {}
+    target = default = None
+    error = reporter.OwnershipError("unsupported trusted scanner Makefile build contract")
+    for raw in source.replace("\\\n", " ").splitlines():
+        line = re.sub(r"\$\{(\w+|@)\}", r"$(\1)", raw.partition("#")[0].strip()).replace("$(@)", "$@")
+        if not line:
+            continue
+        if raw.startswith("\t"):
+            if target is None or rules[target] or tuple(line.removeprefix("@").split()) != recipes[target]:
+                raise error
+            rules[target] = True
+            continue
+        target = None
+        assignment = re.fullmatch(r"(\w+)\s*(?::=|=)\s*(.*)", line)
+        if assignment is not None:
+            name, value = assignment.groups()
+            if name not in variables or sorted(value.split()) != sorted(variables[name]):
+                raise error
+            assignments.add(name)
+            continue
+        rule = re.fullmatch(r"(\.PHONY|scaninc|clean)\s*:\s*(.*)", line)
+        if rule is None:
+            raise error
+        target, dependencies = rule.groups()
+        if target in rules or tuple(sorted(dependencies.split())) != prerequisites[target]:
+            raise error
+        if target == "scaninc" and not {"SRCS", "HEADERS"} <= assignments:
+            raise error
+        if target != ".PHONY" and default is None:
+            default = target
+        rules[target] = False
+    if (
+        assignments - {"LDFLAGS"} != set(variables) - {"LDFLAGS"}
+        or default != "scaninc" or rules != {".PHONY": False, "scaninc": True, "clean": True}
+    ):
+        raise error
+
+
+def _trusted_namespace(loader):
+    return {
+        path for path in loader.entries
+        if path.startswith(TRUSTED_PREFIX) or path in TRUSTED_SHARED_RUNTIME_PATHS
+    }
+
+
+def _trusted_changes(before, after, modules=()):
+    paths = _trusted_namespace(before) | _trusted_namespace(after) | set(modules)
+    return sorted(path for path in paths if before.entries.get(path) != after.entries.get(path))
+
+
+def _trusted_paths(trusted_root: Path, base_loader: reporter.AuthorityLoader) -> set[str]:
+    paths = _trusted_namespace(base_loader)
     if not TRUSTED_RUNTIME_PATHS <= paths:
         raise reporter.OwnershipError(
             "exact base lacks the complete validation ownership verifier"
         )
     for path in sorted(paths):
+        base_loader.entry(path, "trusted verifier source")
         target = trusted_root / path
         if not target.is_file() or target.is_symlink():
             raise reporter.OwnershipError(
@@ -569,26 +629,21 @@ def _reviewed_evolution_selection(
         raise reporter.OwnershipError("reviewed evolution requires an exact repository/owner")
     if type(pull_request) is not int or pull_request < 1:
         raise reporter.OwnershipError("reviewed evolution requires a positive pull request number")
-    if (
-        not isinstance(changed_paths, list)
-        or not changed_paths
-        or changed_paths != sorted(set(changed_paths))
+    changed_edge_ids = [] if changed_edge_ids is None else changed_edge_ids
+    affected_consumers = [] if affected_consumers is None else affected_consumers
+    for label, values, required in (
+        ("changed path", changed_paths, True),
+        ("changed edge", changed_edge_ids, False),
+        ("affected consumer", affected_consumers, False),
     ):
-        raise reporter.OwnershipError("reviewed evolution requires a sorted exact changed path scope")
-    if (
-        not isinstance(changed_edge_ids, list)
-        or not changed_edge_ids
-        or changed_edge_ids != sorted(set(changed_edge_ids))
-        or any(not isinstance(edge_id, str) or not edge_id for edge_id in changed_edge_ids)
-    ):
-        raise reporter.OwnershipError("reviewed evolution requires a sorted exact changed edge scope")
-    if (
-        not isinstance(affected_consumers, list)
-        or not affected_consumers
-        or affected_consumers != sorted(set(affected_consumers))
-        or any(not isinstance(consumer_id, str) or not consumer_id for consumer_id in affected_consumers)
-    ):
-        raise reporter.OwnershipError("reviewed evolution requires a sorted exact affected consumer scope")
+        if (
+            not isinstance(values, list) or required and not values
+            or any(not isinstance(value, str) or not value for value in values)
+            or values != sorted(set(values))
+        ):
+            raise reporter.OwnershipError(f"reviewed evolution requires a sorted exact {label} scope")
+    if bool(changed_edge_ids) != bool(affected_consumers):
+        raise reporter.OwnershipError("reviewed edge and consumer scopes must both be empty or nonempty")
     return {
         "repository": repository,
         "pull_request": pull_request,
@@ -886,10 +941,10 @@ def _verify(trusted_root, repository_root, base_sha, candidate_sha, *,
     loader = capture(repository_root, candidate_sha, budget, scratch_root=runtime_root)
     trusted_paths = _trusted_paths(trusted_root, source_loader)
     loaded_before = _verify_loaded_modules(trusted_root, source_loader)
-    candidate_changes = sorted(
-        path for path in trusted_paths
-        if loader.entries.get(path) != source_loader.entries[path]
-    )
+    candidate_changes = _trusted_changes(source_loader, loader, loaded_before)
+    if candidate_changes:
+        raise reporter.OwnershipError(f"candidate trusted sources differ from selected source: {candidate_changes}")
+    _scaninc_build_contract(source_loader.read_blob(SCANINC_MAKEFILE, "trusted scanner build").decode("utf-8"))
     if expected_mode == "exact-base-pinned":
         _verify_base_step(loader, base_loader)
     entries = inventory(loader)
@@ -933,8 +988,6 @@ def _verify(trusted_root, repository_root, base_sha, candidate_sha, *,
                     model,
                     loader,
                 )
-                if not invalidation["invalidated"]:
-                    raise reporter.OwnershipError("reviewed evolution requires an actual authoritative graph change")
                 if invalidation["changed_edge_ids"] != reviewed["changed_edge_ids"]:
                     raise reporter.OwnershipError(
                         "reviewed evolution relationship scope differs from actual invalidation"
@@ -957,14 +1010,22 @@ def _verify(trusted_root, repository_root, base_sha, candidate_sha, *,
             pairs = hashlib.sha256(reporter.normalized_json(measured["probes"])).hexdigest()
             authorities = hashlib.sha256(reporter.normalized_json(model["authorities"])).hexdigest()
         loaded_after = _verify_loaded_modules(trusted_root, source_loader)
+        modules = sorted(set(loaded_before) | set(loaded_after))
+        candidate_changes = _trusted_changes(source_loader, loader, modules)
+        if candidate_changes:
+            raise reporter.OwnershipError(f"candidate trusted sources differ from selected source: {candidate_changes}")
+        source_changes = _trusted_changes(base_loader, source_loader, modules)
+        if reviewed is not None and not invalidation["invalidated"] and not source_changes:
+            raise reporter.OwnershipError("reviewed evolution requires an actual graph or trusted source change")
         result = {
             "authority": AUTHORITY_BY_MODE[expected_mode],
             "base_sha": base_sha, "candidate_sha": candidate_sha, "trusted_sha": source_sha,
             "candidate_trusted_changes": candidate_changes,
+            "trusted_source_changes": source_changes,
             "candidate_changed_paths": candidate_changed_paths,
             "coverage_paths": len(model["coverage"]), "evidence_authorities": len(model["authorities"]),
             "mode": expected_mode, "oracle_authority_sha256": authorities, "oracle_pairs_sha256": pairs,
-            "trusted_modules": sorted(set(loaded_before) | set(loaded_after)),
+            "trusted_modules": modules,
             "trusted_package_files": len(trusted_paths),
             "runs": budget.runs, "states": budget.states, "processes": session.processes_used,
             "lifecycle": lifecycle,

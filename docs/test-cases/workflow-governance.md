@@ -3274,123 +3274,59 @@ game behavior needs a compensating change.
 4. Confirm each result identifies one surface, every applicable typed edge,
    its existing authority, and a plain-language reason. Confirm the graph
    remains `report-only` with `narrowing_authorized` false.
-5. Inspect the suite's non-destructive fixtures. They remove and redirect
-   every edge family, delete and restore the graph copy, mutate Make/workflow
-   authority, add unknown and overlapping paths, create cycles, duplicate
-   owners, remove dependents, replace targets with stale identities, introduce
-   symlink/gitlink modes, replace every scratch path component with an external
-   symlink, retarget an oracle owner to another live workflow step, and
-   disconnect each lifecycle trigger. Add, remove, and change a valid
-   fail-closed external-enforcement exclusion without changing path rules or
-   owner edges; every existing edge must invalidate. Reordering exclusions,
-   selectors, or JSON keys with equal semantics must remain stable. Confirm
-   that valid artifact consumer/consistency redirects, owner changes and
-   lifecycle-authority edits invalidate every owner edge. The actual strict
-   BASE verifier must reject an unreviewed artifact-only change, while the
-   exact reviewed mode accepts it with truthful complete invalidation.
-   Reordering the same lifecycle event set or artifact object keys remains
-   stable. Confirm
-   that deleting a real unprobed tracked path while retaining an exact
-   path-rule include or exclude selector rejects as stale. Removing that exact
-   selector must restore current validation while `resolve --changed` still
-   explains the deletion from the validated BASE model. Prefix selectors need
-   not match a current member, and valid generated-source selectors remain
-   admitted. Confirm
-   that exact external-enforcement and gitlink exclusions also reject when
-   their current target disappears. Removing stale CURRENT exclusion metadata
-   repairs whole-tree validation without weakening explicit BASE fail-closed
-   deleted-path explanations. Confirm
-   outside sentinels survive and no
-   external directory is created. Confirm direct
-   GNU Make comparisons cover all 112 live CLI domains from the parsed
-   `.github/validation-ownership-make-dynamics.json` prerequisite model
-   (`load_make_prerequisite_domains`: 111 tracked fallbacks plus explicit
-   `NODEP` values `""`, `"0"`, `"1"`), environment/fallback origins,
-   `MODE=two`, `$(eval $(RULE))`, a concrete `%.out: %.in` recipe mutation,
-   target-local/automatic/braced/one-character variables, literal missing
-   prerequisites, active `$(error)`, unknown direct shell, and unused `!=`.
-   The scanner controls must compile the real native parser, compare the
-   actual `sound/voicegroups/voicegroup038.s` output and Make prerequisites
-   against ordinary scaninc, and cover recursive includes, first-match search
-   precedence, missing include candidates, escaping paths and nonregular
-   sources. The captured-source adapter uses the existing scanner traversal,
-   not a substitute dependency parser. Require real consumed sources and final
-   Make command provenance; a successful standalone producer with an empty
-   Make value or missing dispatch event is a failure, not adoption evidence.
-   Include the actual `banim/banim_lorm_sp1_motion.s` parent-component inputs.
-   Require the same ordinary dependency bytes/search spellings and canonical
-   consumed-source set. A missing intermediate directory before `..` must
-   remain a failed candidate lookup rather than collapsing to an existing
-   file; repository escape and nonregular boundaries still reject.
-   For the asset producer, capture the real three-record manifest as BASE,
-   remove its battle record and script from CURRENT, then inspect both generated
-   includes through one shared session and one BASE view. CURRENT must omit the
-   battle consumer; BASE must consume the genuinely deleted source and restore
-   `LORM_SP1_PROOF`. Both Make queries restart once. This source/output control
-   does not replace the complete graph-level BASE/deletion requirements.
-   Separately capture a generated registry whose declared source changes from
-   an actually deleted BASE file to a CURRENT file. The reporter's declaration
-   query must execute in the selected shared view. Resolving the deleted file
-   must use BASE's generated classification and BASE owner, not CURRENT's
-   broad source prefix; filenames alone are insufficient. Wrong selected
-   loaders, stale declaration paths and invalid schema identities reject.
-   Verify that Python import/root listings see the complete selected view,
-   including an extra captured member, while reading that member without a
-   separate code/source declaration still fails. Import directories and "."
-   must be explicit; code/source ancestry alone grants metadata, not listing.
-   Compare the dependency adapter with the real host C preprocessor using
-   ordered include directories and a conflicting unused header. Require equal
-   dependency bytes, the actual source/header closure, a real included `.d`,
-   restart1 and dependency provenance. Wrong output directories or drivers
-   reject; unsupported compiler flags must reach the public action's rejection
-   rather than being silently discarded.
-6. Exercise the standalone launcher with a controlled `MAKEFILES` preload and
-   ambient Make flags: its actual Make payload must run without the preload or
-   dry-run effect. Supplying `--eval` as a reporter argument must reject without
-   creating its marker. Compare directly invoked GNU Make, where those
-   pre-evaluation effects occur before a root Makefile could guard them.
-   Separately test the trusted-Make convenience controls, including
-   `make MAKECMDGOALS= -n validation-ownership-check`,
-   `make AUTOTOOLS_CONFIG_MK=/dev/stdin SHELL=/bin/false validation-ownership-check`,
-   every execution-control alias/control variable, and
-   `make -n validation-ownership-check compare`. Require a parse-time bootstrap
-   failure before that convenience branch's configurable includes or dependency
-   suppression, not before Make's own startup evaluation.
+5. Inspect the suite's non-destructive fixtures against the complete canonical
+   [typed contract](../validation-ownership.md#typed-contract),
+   [path-coverage contract](../validation-ownership.md#maintainable-path-coverage),
+   and [artifact lifecycle, measurement, and seal contract](../validation-ownership.md#artifact-lifecycle-measurements-and-seals).
+   Confirm every edge, graph/schema/oracle, exclusion, artifact, lifecycle,
+   authority, stale-selector, unknown/overlap, symlink/gitlink, and external
+   scratch-boundary positive and negative control described there. Equivalent
+   parsed ordering must remain stable; semantic changes must invalidate the
+   documented scope, and outside sentinels must survive.
+   Confirm actual GNU Make comparison covers the complete parsed 112-domain
+   model, including environment/fallback origins and adversarial Make syntax.
+   Confirm the real native scanner matches ordinary scaninc dependency bytes
+   and source closure, then rejects every listed compilation-input content,
+   absence, mode, and symlink mutation before `ProbeSession`. Independently
+   selected reviewed scanner evolution must pass, while unlisted error-bearing
+   `.cpp`/`.h` files, missing intermediate `..` components, repository escapes,
+   and nonregular inputs remain outside or rejected as specified.
+   Confirm one shared session and BASE view reproduce the asset producer's
+   CURRENT omission and genuine deleted-source `LORM_SP1_PROOF` restoration,
+   with one restart per Make query. Confirm generated-registry declarations use
+   their selected view and BASE ownership for deleted sources; wrong loaders,
+   stale declarations, invalid schemas, and filename-only classification fail.
+   Finally, confirm explicit import/root listings see the complete selected
+   view without granting undeclared reads, and that the dependency adapter
+   matches the real host C preprocessor's bytes, closure, included `.d`,
+   restart, and provenance while rejecting wrong drivers, output directories,
+   and unsupported flags.
+6. Exercise the documented standalone-launcher and trusted-Make boundaries:
+   controlled `MAKEFILES`, ambient/dry-run flags, and reporter `--eval` must
+   prove that only the direct Python entry precedes Make startup evaluation.
+   The convenience target must reject every execution-control override before
+   configurable includes or dependency suppression.
    Invoke the actual launcher/reporter from the repository's parent using
    both absolute and relative repository-root arguments. Require the same
    complete report coverage; a symlink root must still reject before payload.
    Prepend an inert copied verifier step while disabling the real host step,
    then duplicate the verifier within its host job. The structural staging
    guard must reject both, while a nonsemantic YAML comment remains stable.
-   For a reviewed graph evolution, complete one actual independent
-   `ReviewSession` over the exact changed paths, invalidated edges, affected
-   consumers and immutable checker revision. Represent that complete scope as
-   four bounded subjects: exact checker plus domain-separated canonical
-   full-path, full-edge-ID and full-consumer-set digests, while retaining all
-   explicit arrays. Prove the complete actual graph fits both
-   unchanged 40-subject schemas; any changed set/checker or legacy exploded
-   subject list must reject. Register and capture the real
-   standalone verifier with that qualification, then prove the same record is
-   carried through the production `assess_observed` refresh and required by
-   local readiness, review-first dispatch, and final `workflow_dispatch`
-   admission. Repeating the same observed assessment without its live
-   qualification must report `exact-local-handoff` and deny both dispatch and
-   final admission. Wrong repository/PR/BASE/head/worktree,
-   omitted consumers, stale review scope, a candidate-only reseal and a
-   freshly copied counterfeit checker must reject. The positive adds a real
-   path/surface, complete owner and dependency edges, and coherent oracle;
-   BASE and candidate use their respective immutable oracles and preserve
-   truthful document-aware invalidation.
-   Separately complete a real valid delegated handoff with no local validation:
-   it remains ready without reviewed qualification, but supplying an actual
-   live qualification must produce `exact-local-handoff` and deny dispatch
-   until the coordinator-owned qualified capture exists.
-   Observe the actual review start request: it must contain the complete
-   explicit path/edge/consumer sets and immutable identities, not only hashes.
-   Missing or changed native context observations must reject. Remove the
-   qualification marker from a reviewed capture assignment and exercise a
-   legacy reviewed-labelled delegation without a live object: neither can
-   become ordinary delegated readiness.
+   Complete the canonical
+   [coordinator-owned review and capture procedure](../validation-ownership.md#coordinator-owned-review-and-capture)
+   with one actual independent `ReviewSession`. Require the exact immutable
+   checker and complete explicit path/edge/consumer arrays, plus their three
+   domain-separated digests, to fit both unchanged 40-subject schemas.
+   Register and capture the real verifier, then carry the same live
+   qualification through `assess_observed`, local readiness, review-first
+   dispatch, and final admission. A changed identity or scope, missing native
+   context, omitted consumer, stale/candidate-only qualification, counterfeit
+   checker, or legacy reviewed label without the live object must reject.
+   Repeat assessment without the live qualification and require
+   `exact-local-handoff` with dispatch and admission denied. Also prove an
+   otherwise valid delegated handoff remains ready without reviewed
+   qualification but cannot substitute for the coordinator-owned capture once
+   a live qualification is supplied.
 7. For the focused A/V correction, run
    `python3 -m unittest scripts.validation_ownership.tests.test_reporter.AssetOwnershipTests`.
    Inspect positive title/package selections, incorrect runtime-owner and

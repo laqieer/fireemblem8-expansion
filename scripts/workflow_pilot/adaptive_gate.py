@@ -1156,8 +1156,10 @@ def validate_review_qualification(value):
     for path in handoff.items(value["changed_paths"], minimum=1, maximum=MAX_REVIEW_FILES, unique=True):
         handoff.path(path)
     for key in ("changed_edge_ids", "affected_consumers"):
-        for item in handoff.items(value[key], minimum=1, maximum=256, unique=True):
+        for item in handoff.items(value[key], minimum=0, maximum=256, unique=True):
             handoff.text(item, maximum=256, pattern=handoff.ID_RE)
+    require(bool(value["changed_edge_ids"]) == bool(value["affected_consumers"]),
+            "reviewed edge and consumer scopes must both be empty or nonempty")
     for item in handoff.items(value["review_scope"], minimum=4, maximum=40, unique=True):
         handoff.text(item, maximum=1024)
     try:

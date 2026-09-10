@@ -1,11 +1,8 @@
-from io import BytesIO
 import copy
 from dataclasses import replace
 from datetime import datetime, timezone
 import json
 from pathlib import Path
-import shutil
-import tarfile
 import unittest
 from unittest.mock import patch
 
@@ -26,7 +23,7 @@ from scripts.workflow_pilot import pr_metadata as github, raw_diff_check as raw,
 from scripts.workflow_pilot.tests.coordinator_support import at_offset, decisions, model_control
 from scripts.workflow_pilot.tests.review_support import Runtime
 from scripts.workflow_pilot.trusted_review_gate import CandidateReader, GitTree, ReviewTools
-from .report_fixture import ReportFixture, reviewed_evolution_case
+from .report_fixture import ReportFixture, reviewed_code_evolution_case, reviewed_evolution_case
 
 
 class CoordinatorCaptureTests(unittest.TestCase):
@@ -34,10 +31,7 @@ class CoordinatorCaptureTests(unittest.TestCase):
         self.fixture = ReportFixture()
         self.addCleanup(self.fixture.close)
         self.base = self.fixture.git("rev-parse", "HEAD").decode().strip()
-        self.trusted = self.fixture.directory / "trusted"
-        self.trusted.mkdir()
-        with tarfile.open(fileobj=BytesIO(self.fixture.git("archive", self.base))) as archive:
-            archive.extractall(self.trusted, filter="data")
+        self.trusted = self.fixture.extract_revision(self.base, "trusted")
         self.entry = {
             "assignment": {
                 "allowed_worktree": str(self.fixture.root), "assigned_parent_sha": self.base,
@@ -74,6 +68,7 @@ class CoordinatorCaptureTests(unittest.TestCase):
         head = self.fixture.commit("Replace candidate checker")
         result = capture(self.entry, self.expectation(head))
         self.assertEqual(result["result_sha"], head)
+        self.assertNotEqual(result["exit_code"], 0, result)
         self.assertFalse(marker.exists())
         self.assertGreater(result["pid"], 0)
 
@@ -113,10 +108,7 @@ class IntroductionCaptureTests(unittest.TestCase):
         fixture = ReportFixture(foundation_base=True)
         self.addCleanup(fixture.close)
         head = fixture.git("rev-parse", "HEAD").decode().strip()
-        trusted = fixture.directory / "trusted"
-        trusted.mkdir()
-        with tarfile.open(fileobj=BytesIO(fixture.git("archive", head))) as archive:
-            archive.extractall(trusted, filter="data")
+        trusted = fixture.extract_revision(head, "trusted")
         entry = {
             "assignment": {
                 "allowed_worktree": str(fixture.root), "assigned_parent_sha": fixture.foundation_base,
@@ -137,20 +129,21 @@ class ReviewedEvolutionCaptureTests(unittest.TestCase):
     def setUp(self):
         self.fixture = ReportFixture()
         self.addCleanup(self.fixture.close)
-        self.case = reviewed_evolution_case(self.fixture)
+        self.select_case(reviewed_evolution_case(self.fixture))
+
+    def select_case(self, case):
+        self.case = case
         self.fixture.git("checkout", "-B", "candidate", self.case["head"])
-        self.trusted = self.fixture.directory / "trusted-reviewed"
-        self.trusted.mkdir()
-        self.addCleanup(lambda: self.trusted.exists() and shutil.rmtree(self.trusted))
-        with tarfile.open(fileobj=BytesIO(self.fixture.git("archive", self.case["base"]))) as archive:
-            archive.extractall(self.trusted, filter="data")
+        self.trusted = self.fixture.extract_revision(
+            self.case["head"], "trusted-reviewed-" + self.case["head"],
+        )
 
     def coordinator(self, *, head=None, paths=None, edges=None, consumers=None, session_changes=None,
                     reads=None, reader=None):
         head = head or self.case["head"]
-        paths = tuple(paths or self.case["reviewed_paths"])
-        edges = tuple(edges or self.case["reviewed_edges"])
-        consumers = tuple(consumers or self.case["affected_consumers"])
+        paths = tuple(self.case["reviewed_paths"] if paths is None else paths)
+        edges = tuple(self.case["reviewed_edges"] if edges is None else edges)
+        consumers = tuple(self.case["affected_consumers"] if consumers is None else consumers)
         state = handoff.new_state("owner/repository", "coordinator-one", {
             "mode": "plan", "observed_at": at_offset(-10),
             "valid_until": at_offset(300),
@@ -175,7 +168,7 @@ class ReviewedEvolutionCaptureTests(unittest.TestCase):
         )
         decision = model_control(decision, pr)
         record = gate.begin_candidate(state, pr, pr.base_sha, decision, runs=())
-        checker_revision = self.case["base"]
+        checker_revision = self.case["head"]
         scope = reviewed_evolution_scope(checker_revision, paths, edges, consumers)
         tools = ReviewTools(GitTree(self.fixture.root, checker_revision), self.fixture.root)
         owners = tools.model.ReviewOwnership()
@@ -231,6 +224,17 @@ class ReviewedEvolutionCaptureTests(unittest.TestCase):
         )
         return state, record, pr, decision, session, qualification, expected
 
+    def capture_entry(self, pr, qualification, expected):
+        return {
+            "assignment": {
+                "repository": pr.repository, "pull_request": pr.number,
+                "allowed_worktree": str(self.fixture.root),
+                "assigned_parent_sha": self.case["base"], "max_lifetime_seconds": 300,
+                "required_checks": {CHECK_ID: expected.check_definition()},
+                "review_qualification": qualification.record(),
+            }, "checks": [],
+        }
+
     def build_run(self, pr, number, mode):
         now = datetime.now(timezone.utc).replace(microsecond=0)
         preflight = mode == "review-first"
@@ -280,25 +284,29 @@ class ReviewedEvolutionCaptureTests(unittest.TestCase):
     def test_actual_reviewed_evolution_capture_passes_and_defines_local_check(self):
         state, record, pr, _, _, qualification, expected = self.coordinator()
         qualification_record = qualification.record()
-        self.assertEqual(qualification_record["checker_revision"], self.case["base"])
+        self.assertEqual(qualification_record["checker_revision"], self.case["head"])
         self.assertNotIn("checker_objects", qualification_record)
-        entry = {
-            "assignment": {
-                "repository": pr.repository,
-                "pull_request": pr.number,
-                "allowed_worktree": str(self.fixture.root),
-                "assigned_parent_sha": self.case["base"],
-                "max_lifetime_seconds": 300,
-                "required_checks": {CHECK_ID: expected.check_definition()},
-                "review_qualification": qualification_record,
-            },
-            "checks": [],
-        }
+        entry = self.capture_entry(pr, qualification, expected)
         captured = capture(entry, expected)
         self.assertEqual(captured["exit_code"], 0, captured)
         self.assertEqual(captured["evidence_id"], expected.evidence_id())
         self.assertGreater(captured["pid"], 0)
         self.assertEqual(captured["parent_sha"], record["base_sha"])
+
+    def test_code_only_evolution_has_actual_capture_and_empty_graph_scope(self):
+        self.fixture.git("switch", "--detach", self.case["base"])
+        self.select_case(reviewed_code_evolution_case(self.fixture))
+        state, record, pr, _, _, qualification, expected = self.coordinator()
+        self.assertEqual(qualification.changed_edge_ids, ())
+        self.assertEqual(qualification.affected_consumers, ())
+        gate.register_local_validation(state, record, pr, self.fixture.root, {
+            "raw": {"contract": "git-diff-check", "evidence_id": "raw", "inputs": []},
+            CHECK_ID: expected.check_definition(),
+        }, review_qualification=qualification.record())
+        gate.capture_local_check(state, record, pr, "raw")
+        result = gate.capture_local_check(state, record, pr, CHECK_ID, trusted_executor(expected))
+        self.assertEqual(result["exit_code"], 0, result)
+        self.assertTrue(gate.coordinator_local_ready(state, record, pr, qualification))
 
     def test_explicit_review_context_is_delivered_before_qualification(self):
         started = []
@@ -373,14 +381,10 @@ class ReviewedEvolutionCaptureTests(unittest.TestCase):
     def test_reviewed_capture_requires_exact_assignment_record(self):
         _, _, pr, _, _, qualification, expected = self.coordinator()
         for marker in ("missing", None, {}):
-            entry = {"assignment": {
-                "repository": pr.repository, "pull_request": pr.number,
-                "allowed_worktree": str(self.fixture.root),
-                "assigned_parent_sha": self.case["base"],
-                "max_lifetime_seconds": 300,
-                "required_checks": {CHECK_ID: expected.check_definition()},
-            }, "checks": []}
-            if marker != "missing":
+            entry = self.capture_entry(pr, qualification, expected)
+            if marker == "missing":
+                del entry["assignment"]["review_qualification"]
+            else:
                 entry["assignment"]["review_qualification"] = marker
             with self.subTest(marker=marker):
                 with self.assertRaisesRegex(MakeProbeError, "assignment"):
@@ -461,29 +465,13 @@ class ReviewedEvolutionCaptureTests(unittest.TestCase):
         end = text.find("\n    - name:", start + 1)
         path.write_text(text[:start] + (text[end + 1:] if end >= 0 else ""))
         head = self.fixture.commit("Remove candidate verifier invocation for reviewed evolution")
-        trusted = self.fixture.directory / "trusted-reviewed-removed-step"
-        trusted.mkdir()
-        self.addCleanup(lambda: trusted.exists() and shutil.rmtree(trusted))
-        with tarfile.open(fileobj=BytesIO(self.fixture.git("archive", head))) as archive:
-            archive.extractall(trusted, filter="data")
         paths = tuple(sorted((*self.case["reviewed_paths"], ".github/workflows/build.yml")))
         state, record, pr, _, _, qualification, _ = self.coordinator(head=head, paths=paths)
         updated = VerifierExpectation(
-            self.fixture.root, self.trusted, self.case["base"], head, self.case["base"],
+            self.fixture.root, self.trusted, self.case["base"], head, self.case["head"],
             "reviewed-evolution", qualification,
         )
-        entry = {
-            "assignment": {
-                "repository": pr.repository,
-                "pull_request": pr.number,
-                "allowed_worktree": str(self.fixture.root),
-                "assigned_parent_sha": self.case["base"],
-                "max_lifetime_seconds": 300,
-                "required_checks": {CHECK_ID: updated.check_definition()},
-                "review_qualification": qualification.record(),
-            },
-            "checks": [],
-        }
+        entry = self.capture_entry(pr, qualification, updated)
         captured = capture(entry, updated)
         self.assertNotEqual(captured["exit_code"], 0, captured)
         self.assertGreater(captured["pid"], 0)
@@ -497,27 +485,12 @@ class ReviewedEvolutionCaptureTests(unittest.TestCase):
         head = self.fixture.commit("Counterfeit candidate checker")
         paths = tuple(sorted((*self.case["reviewed_paths"], "scripts/validation_ownership/ci_verifier.py")))
         state, record, pr, _, _, qualification, expected = self.coordinator(head=head, paths=paths)
-        entry = {
-            "assignment": {
-                "repository": pr.repository,
-                "pull_request": pr.number,
-                "allowed_worktree": str(self.fixture.root),
-                "assigned_parent_sha": self.case["base"],
-                "max_lifetime_seconds": 300,
-                "required_checks": {CHECK_ID: expected.check_definition()},
-                "review_qualification": qualification.record(),
-            },
-            "checks": [],
-        }
+        entry = self.capture_entry(pr, qualification, expected)
         captured = capture(entry, expected)
-        self.assertEqual(captured["exit_code"], 0, captured)
+        self.assertNotEqual(captured["exit_code"], 0, captured)
         self.assertFalse(marker.exists())
 
-        copied = self.fixture.directory / "counterfeit-copy"
-        copied.mkdir()
-        self.addCleanup(lambda: copied.exists() and shutil.rmtree(copied))
-        with tarfile.open(fileobj=BytesIO(self.fixture.git("archive", head))) as archive:
-            archive.extractall(copied, filter="data")
+        copied = self.fixture.extract_revision(head, "counterfeit-copy")
         with self.assertRaisesRegex(MakeProbeError, "differs from its qualification"):
             VerifierExpectation(
                 self.fixture.root,
@@ -559,11 +532,9 @@ class ReviewedEvolutionCaptureTests(unittest.TestCase):
             ),
         )
 
-        strict_root = self.fixture.directory / "strict-pr-event-checker"
-        strict_root.mkdir()
-        self.addCleanup(lambda: strict_root.exists() and shutil.rmtree(strict_root))
-        with tarfile.open(fileobj=BytesIO(self.fixture.git("archive", self.case["base"]))) as archive:
-            archive.extractall(strict_root, filter="data")
+        strict_root = self.fixture.extract_revision(
+            self.case["base"], "strict-pr-event-checker",
+        )
         strict = raw.run_process(
             [
                 "/usr/bin/python3",

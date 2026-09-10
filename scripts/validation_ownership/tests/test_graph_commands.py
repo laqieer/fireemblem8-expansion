@@ -329,9 +329,15 @@ class GraphCommandTests(unittest.TestCase):
         self.add("leaf.inc", '.incbin "wrong-root.bin"\n')
         self.add("data/leaf.inc", '.incbin "wrong-local.bin"\n')
         ordinary = self.ordinary_scaninc("data/root.s")
+        self.add("tools/scaninc/unlisted.cpp", "#error unlisted source entered compilation\n")
+        self.add("tools/scaninc/unlisted.h", "#error unlisted header entered compilation\n")
         with self.session() as probe:
             commands = MakeCommands(probe, self.contracts)
             result = probe.command(commands.scaninc("data/root.s"))
+            compiler_inputs = {path for path, _, _ in commands.scanner.inputs}
+            self.assertIn("tools/scaninc/scaninc.cpp", compiler_inputs)
+            self.assertNotIn("tools/scaninc/unlisted.cpp", compiler_inputs)
+            self.assertNotIn("tools/scaninc/unlisted.h", compiler_inputs)
             self.assertEqual(result.stdout, ordinary)
             self.assertEqual(result.consumed, (
                 "data/root.s", "include/leaf.inc", "include/nested.inc",

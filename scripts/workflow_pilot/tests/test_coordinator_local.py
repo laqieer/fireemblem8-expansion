@@ -328,6 +328,16 @@ class CoordinatorLocalTests(unittest.TestCase):
             (ROOT / "scripts/workflow_pilot/agent_handoff.schema.json").read_text()))
         self.assertTrue(handoff_schema.is_valid(self.state))
         handoff.validate_state(self.state)
+        code_only = review_qualification(local, ("scripts/validation_ownership/ci_verifier.py",), (), ())
+        local["review_qualification"] = code_only
+        self.assertTrue(handoff_schema.is_valid(self.state))
+        handoff.validate_state(self.state)
+        for key in ("changed_edge_ids", "affected_consumers"):
+            local["review_qualification"] = {**code_only, key: ["unexpected"]}
+            self.assertFalse(handoff_schema.is_valid(self.state))
+            with self.assertRaises(ValueError):
+                handoff.validate_state(self.state)
+        local["review_qualification"] = qualification
         review_schema = Draft202012Validator(json.loads(
             (ROOT / "scripts/workflow_pilot/review_family.schema.json").read_text()))
         request = {

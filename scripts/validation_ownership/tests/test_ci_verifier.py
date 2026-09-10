@@ -1,13 +1,12 @@
 import copy
 import errno
-from io import BytesIO, StringIO
+from io import StringIO
 import json
 import os
 from pathlib import Path
 import secrets
 import shutil
 import subprocess
-import tarfile
 from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
@@ -15,7 +14,9 @@ from unittest.mock import patch
 from scripts.validation_ownership import ci_verifier, reporter
 from scripts.validation_ownership.authority import ENVIRONMENT
 from scripts.validation_ownership.budget import MakeProbeError
-from .report_fixture import ReportFixture, reviewed_evolution_case, reviewed_exclusion_case
+from .report_fixture import (
+    ReportFixture, reviewed_code_evolution_case, reviewed_evolution_case, reviewed_exclusion_case,
+)
 
 
 class BasePinnedVerifierTests(unittest.TestCase):
@@ -198,6 +199,45 @@ class BasePinnedVerifierTests(unittest.TestCase):
         changed = text.replace(marker, marker + "      # Same executed step mapping.\n", 1)
         self.assertEqual(ci_verifier._base_step(text), ci_verifier._base_step(changed))
 
+    def test_scanner_build_contract_preserves_make_semantics_and_rejects_redirects(self):
+        root = Path(__file__).resolve().parents[3]
+        original = (root / ci_verifier.SCANINC_MAKEFILE).read_text()
+        lines = original.splitlines()
+        assignments = [line for line in lines if "=" in line]
+        changed = "\n".join([
+            "# Same supported scanner build\n", *reversed(assignments),
+            *(line for line in lines if line not in assignments),
+        ]).replace("$(CXX)", "${CXX}").replace(
+            "-Wall -Werror -std=c++11 -O2", "-O2 -std=c++11 -Werror -Wall",
+        )
+        commands = []
+        for source in (original, changed):
+            ci_verifier._scaninc_build_contract(source)
+            fixture = self.runtime_root()
+            (fixture / "Makefile").write_text(source)
+            for path in ci_verifier.SCANINC_SOURCES:
+                (fixture / Path(path).name).touch()
+            result = subprocess.run(
+                ["make", "--no-print-directory", "-n"], cwd=fixture,
+                env=ENVIRONMENT, capture_output=True, text=True, check=True, timeout=15,
+            )
+            argv = result.stdout.split()
+            commands.append((argv[0], sorted(argv[1:-2]), argv[-2:]))
+        self.assertEqual(commands[0], commands[1])
+        for old, new in (
+            ("CXX = g++", "CXX = clang++"),
+            ("CXX = g++", "CXX := $(shell printf g++)"),
+            ("-O2", "-O2 -DUNAPPROVED"),
+            ("-O2", "-O2 -include injected.h"),
+            ("asm_file.cpp", "unlisted.cpp"),
+            ("asm_file.h", "unlisted.h"),
+            ("$(SRCS) $(HEADERS)", "$(SRCS)"),
+            ("-o $@", "-o $@ -fplugin=unlisted.so"),
+            ("\t$(CXX)", "\t-$(CXX)"),
+        ):
+            with self.subTest(replacement=new), self.assertRaisesRegex(MakeProbeError, "build contract"):
+                ci_verifier._scaninc_build_contract(original.replace(old, new))
+
     def test_base_mode_distinguishes_bootstrap_foundation_and_partial_authority(self):
         self.assertEqual(ci_verifier._base_authority_mode({}), "bootstrap-not-authoritative")
         foundation = {
@@ -258,20 +298,27 @@ class ReviewedEvolutionVerifierTests(unittest.TestCase):
         self.addCleanup(self.fixture.close)
 
     def trusted_root(self, revision, label=""):
-        trusted = self.fixture.directory / ("trusted-" + revision[:12] + label)
-        trusted.mkdir()
-        with tarfile.open(fileobj=BytesIO(self.fixture.git("archive", revision))) as archive:
-            archive.extractall(trusted, filter="data")
-        return trusted
+        return self.fixture.extract_revision(revision, "trusted-" + revision[:12] + label)
 
-    def verify(self, trusted, *arguments):
+    def verify(self, trusted, *arguments, stop_at_session=False):
+        entry = [str(trusted / "scripts/validation_ownership/ci_verifier.py")]
+        if stop_at_session:
+            entry = ["-c", (
+                "import sys\n"
+                "sys.path.insert(0, sys.argv.pop(1))\n"
+                "from scripts.validation_ownership import ci_verifier\n"
+                "def entered(*args, **kwargs):\n"
+                "    raise RuntimeError('controlled scanner session entry')\n"
+                "ci_verifier.ProbeSession = entered\n"
+                "raise SystemExit(ci_verifier.main())\n"
+            ), str(trusted)]
         return subprocess.run(
             [
                 "/usr/bin/python3",
                 "-I",
                 "-S",
                 "-B",
-                str(trusted / "scripts/validation_ownership/ci_verifier.py"),
+                *entry,
                 "--trusted-root",
                 str(trusted),
                 "--repository-root",
@@ -293,11 +340,89 @@ class ReviewedEvolutionVerifierTests(unittest.TestCase):
             "--expected-mode", "exact-base-pinned",
         )
 
+    def reviewed_arguments(self, case):
+        return (
+            "--base-sha", case["base"],
+            "--candidate-sha", case["head"],
+            "--trusted-sha", case.get("trusted_sha", case["head"]),
+            "--expected-mode", "reviewed-evolution",
+            "--reviewed-repository", "owner/repository",
+            "--reviewed-pull-request", "186",
+            *(item for path in case["reviewed_paths"] for item in ("--reviewed-path", path)),
+            *(item for edge in case["reviewed_edges"] for item in ("--reviewed-edge", edge)),
+            *(item for consumer in case["affected_consumers"]
+              for item in ("--reviewed-consumer", consumer)),
+        )
+
+    def test_trusted_sources_reject_candidate_drift_before_session(self):
+        base = self.fixture.git("rev-parse", "HEAD").decode().strip()
+        trusted = self.trusted_root(base)
+        reached = self.verify(trusted, *self.exact_arguments(base, base), stop_at_session=True)
+        self.assertIn("controlled scanner session entry", reached.stderr)
+        for relative in (
+            *ci_verifier.SCANINC_SOURCES, ci_verifier.SCANINC_WRAPPER, ci_verifier.SCANINC_MAKEFILE,
+            ci_verifier.CI_VERIFIER_PATH, "scripts/validation_ownership/reporter.py", "scripts/check_docs.py",
+        ):
+            for mutation in ("bytes", "missing", "mode", "symlink"):
+                with self.subTest(path=relative, mutation=mutation):
+                    self.fixture.git("switch", "--detach", base)
+                    path = self.fixture.root / relative
+                    if mutation == "bytes":
+                        path.write_text("#error unapproved scanner\n")
+                    elif mutation == "mode":
+                        path.chmod(0o755)
+                    else:
+                        path.unlink()
+                        if mutation == "symlink":
+                            path.symlink_to("not-a-scanner-input")
+                    head = self.fixture.commit("Change scanner " + mutation)
+                    failed = self.verify(
+                        trusted, *self.exact_arguments(base, head), stop_at_session=True,
+                    )
+                    self.assertNotEqual(failed.returncode, 0)
+                    self.assertIn("candidate trusted sources differ", failed.stderr)
+                    self.assertNotIn("controlled scanner session entry", failed.stderr)
+                    self.assertFalse((trusted / ".validation-ownership-runtime").exists())
+
+    def test_code_only_evolution_executes_selected_code_and_requires_an_actual_boundary(self):
+        case = reviewed_code_evolution_case(self.fixture)
+        base_trusted = self.trusted_root(case["base"])
+        trusted = self.trusted_root(case["head"])
+        exact = self.verify(base_trusted, *self.exact_arguments(case["base"], case["head"]))
+        self.assertNotEqual(exact.returncode, 0, exact.stdout)
+        self.assertIn("candidate trusted sources differ", exact.stderr)
+        completed = self.verify(trusted, *self.reviewed_arguments(case))
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        result = json.loads(completed.stdout)
+        self.assertTrue(result["reviewed_code_executed"])
+        self.assertEqual(result["trusted_source_changes"], case["reviewed_paths"])
+        self.assertFalse(result["review_invalidation"]["invalidated"])
+        self.assertEqual(result["review_invalidation"]["changed_edge_ids"], [])
+
+        extra = "scripts/validation_ownership/unreviewed.py"
+        self.fixture.add(extra, "VALUE = 1\n")
+        later = self.fixture.commit("Add unselected verifier code")
+        drift = {**case, "head": later, "trusted_sha": case["head"],
+                 "reviewed_paths": sorted([*case["reviewed_paths"], extra])}
+        rejected = self.verify(trusted, *self.reviewed_arguments(drift), stop_at_session=True)
+        self.assertNotEqual(rejected.returncode, 0)
+        self.assertIn("candidate trusted sources differ", rejected.stderr)
+        self.assertNotIn("controlled scanner session entry", rejected.stderr)
+
+        self.fixture.git("switch", "--detach", case["base"])
+        self.fixture.add("src/data/table.json", '{"version":2}\n')
+        unchanged = self.fixture.commit("Change data without verifier or graph authority")
+        no_boundary = {**case, "head": unchanged, "reviewed_paths": ["src/data/table.json"]}
+        rejected = self.verify(self.trusted_root(unchanged), *self.reviewed_arguments(no_boundary))
+        self.assertNotEqual(rejected.returncode, 0)
+        self.assertIn("actual graph or trusted source change", rejected.stderr)
+
     def test_complete_direct_verifier_needs_used_authority_not_auxiliary_make_gate(self):
         (self.fixture.root / "scripts/validation_ownership/ci_gate.mk").unlink(missing_ok=True)
         self.fixture.add("src/data/table.json", '{"version":2}\n')
         revision = self.fixture.commit("Exercise direct verifier without auxiliary Make gate")
         for relative in ("scripts/bash_parser.py",
+                         "tools/scaninc/c_file.cpp",
                          "scripts/validation_ownership/metadata_transport.py",
                          "scripts/validation_ownership/reporter.py"):
             with self.subTest(dependency=relative):
@@ -332,7 +457,6 @@ class ReviewedEvolutionVerifierTests(unittest.TestCase):
     def test_exact_verifier_reuses_one_trusted_tree_for_two_actual_captures(self):
         revision = self.fixture.git("rev-parse", "HEAD").decode().strip()
         trusted = self.trusted_root(revision)
-        self.addCleanup(lambda: trusted.exists() and shutil.rmtree(trusted))
         runtime = trusted / ".validation-ownership-runtime"
         results = []
         for _ in range(2):
@@ -348,7 +472,6 @@ class ReviewedEvolutionVerifierTests(unittest.TestCase):
     def test_failed_actual_capture_cleans_before_valid_retry(self):
         base = self.fixture.git("rev-parse", "HEAD").decode().strip()
         trusted = self.trusted_root(base)
-        self.addCleanup(lambda: trusted.exists() and shutil.rmtree(trusted))
         runtime = trusted / ".validation-ownership-runtime"
         workflow = (self.fixture.root / reporter.BUILD_WORKFLOW_PATH).read_text()
         self.fixture.add(
@@ -377,27 +500,14 @@ class ReviewedEvolutionVerifierTests(unittest.TestCase):
 
     def test_reviewed_evolution_accepts_exact_new_surface_and_authority_change(self):
         case = reviewed_evolution_case(self.fixture)
+        relative = "tools/scaninc/c_file.cpp"
+        self.fixture.add(relative, (self.fixture.root / relative).read_text().replace(
+            "std::rewind(fp);", "std::fseek(fp, 0, SEEK_SET);",
+        ))
+        case["head"] = self.fixture.commit("Review scanner evolution with graph authority")
+        case["reviewed_paths"] = sorted([*case["reviewed_paths"], relative])
         trusted = self.trusted_root(case["head"])
-        self.addCleanup(lambda: trusted.exists() and shutil.rmtree(trusted))
-        completed = self.verify(
-            trusted,
-            "--base-sha",
-            case["base"],
-            "--candidate-sha",
-            case["head"],
-            "--trusted-sha",
-            case["head"],
-            "--expected-mode",
-            "reviewed-evolution",
-            "--reviewed-repository",
-            "owner/repository",
-            "--reviewed-pull-request",
-            "186",
-            *(item for path in case["reviewed_paths"] for item in ("--reviewed-path", path)),
-            *(item for edge_id in case["reviewed_edges"] for item in ("--reviewed-edge", edge_id)),
-            *(item for consumer_id in case["affected_consumers"]
-              for item in ("--reviewed-consumer", consumer_id)),
-        )
+        completed = self.verify(trusted, *self.reviewed_arguments(case))
         self.assertEqual(completed.returncode, 0, completed.stderr)
         result = json.loads(completed.stdout)
         self.assertEqual(result["authority"], "reviewed-evolution")
@@ -421,86 +531,23 @@ class ReviewedEvolutionVerifierTests(unittest.TestCase):
         case = reviewed_evolution_case(self.fixture)
         trusted = self.trusted_root(case["head"])
         base_trusted = self.trusted_root(case["base"])
-        self.addCleanup(lambda: trusted.exists() and shutil.rmtree(trusted))
-        self.addCleanup(lambda: base_trusted.exists() and shutil.rmtree(base_trusted))
-        strict = self.verify(
-            base_trusted,
-            "--base-sha",
-            case["base"],
-            "--candidate-sha",
-            case["head"],
-            "--trusted-sha",
-            case["base"],
-            "--expected-mode",
-            "exact-base-pinned",
-        )
+        strict = self.verify(base_trusted, *self.exact_arguments(case["base"], case["head"]))
         self.assertNotEqual(strict.returncode, 0)
-        self.assertIn("leaves graph surfaces unprobed", strict.stderr)
+        self.assertIn("candidate trusted sources differ", strict.stderr)
         wrong_paths = self.verify(
-            trusted,
-            "--base-sha",
-            case["base"],
-            "--candidate-sha",
-            case["head"],
-            "--trusted-sha",
-            case["head"],
-            "--expected-mode",
-            "reviewed-evolution",
-            "--reviewed-repository",
-            "owner/repository",
-            "--reviewed-pull-request",
-            "186",
-            *(item for path in case["reviewed_paths"][1:] for item in ("--reviewed-path", path)),
-            *(item for edge_id in case["reviewed_edges"] for item in ("--reviewed-edge", edge_id)),
-            *(item for consumer_id in case["affected_consumers"]
-              for item in ("--reviewed-consumer", consumer_id)),
+            trusted, *self.reviewed_arguments({**case, "reviewed_paths": case["reviewed_paths"][1:]}),
         )
         self.assertNotEqual(wrong_paths.returncode, 0)
         self.assertIn("path scope differs", wrong_paths.stderr)
         wrong_edges = self.verify(
-            trusted,
-            "--base-sha",
-            case["base"],
-            "--candidate-sha",
-            case["head"],
-            "--trusted-sha",
-            case["head"],
-            "--expected-mode",
-            "reviewed-evolution",
-            "--reviewed-repository",
-            "owner/repository",
-            "--reviewed-pull-request",
-            "186",
-            *(item for path in case["reviewed_paths"] for item in ("--reviewed-path", path)),
-            *(item for edge_id in case["reviewed_edges"][:-1] for item in ("--reviewed-edge", edge_id)),
-            *(item for consumer_id in case["affected_consumers"]
-              for item in ("--reviewed-consumer", consumer_id)),
+            trusted, *self.reviewed_arguments({**case, "reviewed_edges": case["reviewed_edges"][:-1]}),
         )
         self.assertNotEqual(wrong_edges.returncode, 0)
         self.assertIn("relationship scope differs", wrong_edges.stderr)
-        consumer_trusted = self.fixture.directory / ("trusted-consumers-" + case["head"][:12])
-        consumer_trusted.mkdir()
-        self.addCleanup(lambda: consumer_trusted.exists() and shutil.rmtree(consumer_trusted))
-        with tarfile.open(fileobj=BytesIO(self.fixture.git("archive", case["head"]))) as archive:
-            archive.extractall(consumer_trusted, filter="data")
+        consumer_trusted = self.trusted_root(case["head"], "-consumers")
         wrong_consumers = self.verify(
             consumer_trusted,
-            "--base-sha",
-            case["base"],
-            "--candidate-sha",
-            case["head"],
-            "--trusted-sha",
-            case["head"],
-            "--expected-mode",
-            "reviewed-evolution",
-            "--reviewed-repository",
-            "owner/repository",
-            "--reviewed-pull-request",
-            "186",
-            *(item for path in case["reviewed_paths"] for item in ("--reviewed-path", path)),
-            *(item for edge_id in case["reviewed_edges"] for item in ("--reviewed-edge", edge_id)),
-            *(item for consumer_id in case["affected_consumers"][:-1]
-              for item in ("--reviewed-consumer", consumer_id)),
+            *self.reviewed_arguments({**case, "affected_consumers": case["affected_consumers"][:-1]}),
         )
         self.assertNotEqual(wrong_consumers.returncode, 0)
         self.assertIn("consumer scope differs", wrong_consumers.stderr)
@@ -508,44 +555,11 @@ class ReviewedEvolutionVerifierTests(unittest.TestCase):
     def test_exclusion_evolution_rejects_strict_default_and_invalidates_all_edges(self):
         case = reviewed_exclusion_case(self.fixture)
         base_trusted = self.trusted_root(case["base"])
-        reviewed_trusted = self.fixture.directory / ("trusted-exclusion-" + case["head"][:12])
-        reviewed_trusted.mkdir()
-        with tarfile.open(fileobj=BytesIO(self.fixture.git("archive", case["head"]))) as archive:
-            archive.extractall(reviewed_trusted, filter="data")
-        self.addCleanup(lambda: base_trusted.exists() and shutil.rmtree(base_trusted))
-        self.addCleanup(lambda: reviewed_trusted.exists() and shutil.rmtree(reviewed_trusted))
-        strict = self.verify(
-            base_trusted,
-            "--base-sha",
-            case["base"],
-            "--candidate-sha",
-            case["head"],
-            "--trusted-sha",
-            case["base"],
-            "--expected-mode",
-            "exact-base-pinned",
-        )
+        reviewed_trusted = self.trusted_root(case["head"], "-exclusion")
+        strict = self.verify(base_trusted, *self.exact_arguments(case["base"], case["head"]))
         self.assertNotEqual(strict.returncode, 0)
         self.assertIn("retargets exact-base oracle authority", strict.stderr)
-        reviewed = self.verify(
-            reviewed_trusted,
-            "--base-sha",
-            case["base"],
-            "--candidate-sha",
-            case["head"],
-            "--trusted-sha",
-            case["head"],
-            "--expected-mode",
-            "reviewed-evolution",
-            "--reviewed-repository",
-            "owner/repository",
-            "--reviewed-pull-request",
-            "186",
-            *(item for path in case["reviewed_paths"] for item in ("--reviewed-path", path)),
-            *(item for edge_id in case["reviewed_edges"] for item in ("--reviewed-edge", edge_id)),
-            *(item for consumer_id in case["affected_consumers"]
-              for item in ("--reviewed-consumer", consumer_id)),
-        )
+        reviewed = self.verify(reviewed_trusted, *self.reviewed_arguments(case))
         self.assertEqual(reviewed.returncode, 0, reviewed.stderr)
         result = json.loads(reviewed.stdout)
         self.assertEqual(result["review_invalidation"]["changed_edge_ids"], case["reviewed_edges"])

@@ -25,13 +25,12 @@ REVIEW_SCOPE_DOMAIN = b"fe8-validation-ownership-reviewed-scope-v1\0"
 REVIEWED_EVIDENCE_PREFIX = "ownership-reviewed-"
 
 
-def _sorted_scope(values, label, maximum=256):
+def _sorted_scope(values, label, maximum=256, *, minimum=1):
     values = tuple(values)
     if (
-        not values
-        or len(values) > maximum
-        or tuple(sorted(set(values))) != values
+        not minimum <= len(values) <= maximum
         or any(not isinstance(value, str) or not value for value in values)
+        or tuple(sorted(set(values))) != values
     ):
         raise MakeProbeError(f"reviewed evolution requires a sorted exact {label} scope")
     return values
@@ -42,8 +41,8 @@ def reviewed_evolution_scope(checker_revision, paths, edge_ids, consumer_ids):
         raise MakeProbeError("reviewed evolution scope requires an exact checker revision")
     members = (
         ("paths", _sorted_scope(paths, "changed path", MAX_REVIEW_FILES)),
-        ("edges", _sorted_scope(edge_ids, "changed edge")),
-        ("consumers", _sorted_scope(consumer_ids, "affected consumer")),
+        ("edges", _sorted_scope(edge_ids, "changed edge", minimum=0)),
+        ("consumers", _sorted_scope(consumer_ids, "affected consumer", minimum=0)),
     )
     subjects = {f"{REVIEW_CASE_ID}/checker:{checker_revision}"}
     for domain, values in members:
@@ -66,8 +65,8 @@ def reviewed_evolution_context(checker_revision, paths, edge_ids, consumer_ids, 
         "base_sha": base_sha, "candidate_sha": candidate_sha, "worktree": str(worktree),
         "checker_revision": checker_revision,
         "changed_paths": list(_sorted_scope(paths, "changed path", MAX_REVIEW_FILES)),
-        "changed_edge_ids": list(_sorted_scope(edge_ids, "changed edge")),
-        "affected_consumers": list(_sorted_scope(consumer_ids, "affected consumer")),
+        "changed_edge_ids": list(_sorted_scope(edge_ids, "changed edge", minimum=0)),
+        "affected_consumers": list(_sorted_scope(consumer_ids, "affected consumer", minimum=0)),
     }
 
 
@@ -254,8 +253,8 @@ def qualify_reviewed_evolution(
 
     worktree = Path(worktree).resolve(strict=True)
     paths = _sorted_scope(changed_paths, "changed path")
-    edges = _sorted_scope(changed_edge_ids, "changed edge")
-    consumers = _sorted_scope(affected_consumers, "affected consumer")
+    edges = _sorted_scope(changed_edge_ids, "changed edge", minimum=0)
+    consumers = _sorted_scope(affected_consumers, "affected consumer", minimum=0)
     current = adaptive_gate._coordinator_git(state, record, pr, worktree)
     qualification = ReviewedEvolutionQualification(
         repository=pr.repository,
@@ -341,29 +340,13 @@ def trusted_executor(expectation: VerifierExpectation):
         ]
         if expectation.mode == "reviewed-evolution":
             reviewed = expectation.reviewed_evolution()
-            argv.extend(
-                [
-                    "--reviewed-repository",
-                    reviewed["repository"],
-                    "--reviewed-pull-request",
-                    str(reviewed["pull_request"]),
-                    *(
-                        item
-                        for path in reviewed["changed_paths"]
-                        for item in ("--reviewed-path", path)
-                    ),
-                    *(
-                        item
-                        for edge_id in reviewed["changed_edge_ids"]
-                        for item in ("--reviewed-edge", edge_id)
-                    ),
-                    *(
-                        item
-                        for consumer_id in reviewed["affected_consumers"]
-                        for item in ("--reviewed-consumer", consumer_id)
-                    ),
-                ]
-            )
+            argv.extend(("--reviewed-repository", reviewed["repository"],
+                         "--reviewed-pull-request", str(reviewed["pull_request"])))
+            for key, flag in (
+                ("changed_paths", "--reviewed-path"), ("changed_edge_ids", "--reviewed-edge"),
+                ("affected_consumers", "--reviewed-consumer"),
+            ):
+                argv.extend(item for value in reviewed[key] for item in (flag, value))
         actual = raw_diff_check.run_process(
             argv, cwd=expectation.trusted_root, env=raw_diff_check.git_environment(),
             timeout=min(3600, current_assignment.get("max_lifetime_seconds", 3600)),
@@ -382,16 +365,25 @@ def trusted_executor(expectation: VerifierExpectation):
             }
             if not isinstance(result, dict) or any(result.get(key) != value for key, value in expected.items()):
                 raise MakeProbeError("captured verifier result differs from coordinator expectation")
+            if result.get("candidate_trusted_changes") != []:
+                raise MakeProbeError("captured candidate differs from its selected trusted source")
             if any(type(result.get(name)) is not int or result[name] < 1 for name in (
                 "coverage_paths", "evidence_authorities", "trusted_package_files",
             )):
                 raise MakeProbeError("captured ownership verification is incomplete")
             if expectation.mode == "reviewed-evolution":
+                source_changes = result.get("trusted_source_changes")
+                invalidation = result.get("review_invalidation")
+                if not isinstance(source_changes, list) or not isinstance(invalidation, dict):
+                    raise MakeProbeError("captured reviewed evolution lacks its actual change boundaries")
+                source_changes = _sorted_scope(source_changes, "trusted source change", MAX_REVIEW_FILES, minimum=0)
                 if (
                     result.get("reviewed_evolution") != expectation.reviewed_evolution()
-                    or result.get("review_invalidation", {}).get("invalidated") is not True
-                    or result.get("review_invalidation", {}).get("changed_edge_ids")
-                    != expectation.reviewed_evolution()["changed_edge_ids"]
+                    or type(invalidation.get("invalidated")) is not bool
+                    or invalidation["invalidated"] != bool(reviewed["changed_edge_ids"])
+                    or not invalidation["invalidated"] and not source_changes
+                    or invalidation.get("changed_edge_ids") != reviewed["changed_edge_ids"]
+                    or not set(source_changes) <= set(reviewed["changed_paths"])
                 ):
                     raise MakeProbeError("captured reviewed evolution result differs from coordinator expectation")
         return actual, dict.fromkeys(agent_handoff.METRICS)

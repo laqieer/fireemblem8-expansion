@@ -123,6 +123,21 @@ open undeclared absent candidates such as
 invent dependency output. Missing initial inputs, escaping includes and
 symlink/gitlink matches fail. Native command consumption must equal its
 declaration, and the resulting dependency text must reach actual GNU Make.
+The four scanner C++ sources, four headers, native wrapper and scanner Makefile are trusted code,
+not candidate dependency data. Before creating `ProbeSession`, the verifier
+requires their candidate regular Git blobs and modes to match the independently
+selected `source_sha`. Compilation admits only that explicit closure, never
+extra files selected by a candidate directory listing. Intentional scanner
+evolution requires a reviewed source revision containing the approved change;
+ordinary candidate source data and the independently approved BASE view remain
+separate. This is a narrow compiler-code authority boundary, not a whole-tree
+identity gate or a committed content-hash ledger.
+The named scanner-build contract admits literal `=`/`:=` assignments, the
+four-source/four-header `g++` profile and the existing scaninc/clean recipes.
+It is parsed before any Make evaluation: extra flags, sources, functions or
+recipes cannot execute. Comments, assignment order and equivalent variable
+braces retain ordinary Make behavior; unsupported build forms require reviewed
+contract evolution rather than speculative execution.
 Include names are resolved only after joining each original search directory,
 so repository-contained parent components in real banim sources remain valid.
 The planner checks every intermediate component against the captured namespace
@@ -669,9 +684,12 @@ staged verifier package file and every loaded transitive `scripts.*` module
 against independently selected immutable source, excludes the candidate
 checkout from `sys.path`, and reads CURRENT and BASE through separate real
 public views. There is no hybrid loader overwriting candidate entry identities
-with BASE bytes. Candidate modifications to
-`reporter.py`, `make_probe.py`, the interceptor, or their tests therefore
-cannot authorize themselves. After trusted validation of both exact-base and
+with BASE bytes. Every managed mode compares the union of candidate and
+selected-source verifier namespaces, including new files, types and modes.
+Actual transitive modules are bound before and after execution. Candidate
+modifications to `reporter.py`, `make_probe.py`, the interceptor, or their tests
+must match the independently selected source rather than merely being reported.
+After trusted validation of both exact-base and
 candidate graphs, the verifier resolves every independent-oracle probe,
 requires byte-identical `(edge_type, evidence_id)` selections, compares the
 resolved base/candidate authority fingerprints, and intersects trusted
@@ -743,6 +761,12 @@ fails instead of downgrading. A complete graph BASE uses `exact-base-pinned`
 and exact BASE verifier source. A coordinator-qualified graph update may use
 `reviewed-evolution`: the verifier comes from the independently reviewed
 revision selected by the qualification, not from candidate/revision equality.
+Code-only verifier evolution is also explicit: `trusted_source_changes`
+records the actual selected-source/BASE difference. Exact changed-path reads
+remain mandatory; edge and consumer scopes are both empty only when graph
+authority is unchanged. An evolution with neither a graph-authority change nor
+a trusted-source change rejects. No dummy graph edit or unexecuted future
+verifier can manufacture acceptance.
 BASE and candidate each validate against their own immutable schema, oracle,
 graph and model. The shared document-aware authority comparison supplies
 schema/oracle/authority invalidation; dependency edges are covered only when
