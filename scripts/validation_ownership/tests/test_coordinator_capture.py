@@ -202,8 +202,8 @@ class ReviewedEvolutionCaptureTests(unittest.TestCase):
         if reads is None:
             changes = tools.candidate_changes(pr.base_sha, head, paths=paths)
             reads = [
-                (change["path"], side) for change in changes
-                for side in tools.model.validate_candidate_change(change).required_reads()
+                (change.path, side) for change in changes.changes
+                for side in change.required_reads()
             ]
         for path, side in reads:
             session.read_action("read-candidate", path, side)

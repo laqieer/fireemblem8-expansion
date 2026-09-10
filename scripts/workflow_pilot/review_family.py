@@ -292,6 +292,14 @@ class CandidateCoverage:
     reads: tuple[CandidateReadSummary, ...]
 
 
+@dataclass(frozen=True)
+class CandidateRequirements:
+    resolved_root: str
+    base: str
+    head: str
+    changes: tuple[CandidatePathChange, ...]
+
+
 def validate_candidate_binding(value: Any, label: str) -> CandidateBinding:
     return CandidateBinding(
         resolved_repo_root(field_value(value, "resolved_root"), label + " root", must_exist=True),
@@ -316,6 +324,22 @@ def candidate_tree_binding(reader: Any) -> CandidateBinding:
         "trusted candidate reader Git tree root", must_exist=True),
         "trusted candidate reader Git trees disagree about root")
     return binding
+
+
+def candidate_requirements(value) -> CandidateRequirements:
+    require(type(value) is CandidateRequirements,
+            "actual immutable candidate path requirements required")
+    root = resolved_repo_root(value.resolved_root, "candidate path requirements root", must_exist=True)
+    base = sha(value.base)
+    head = sha(value.head)
+    changes = value.changes
+    require(type(changes) is tuple and bool(changes),
+            "candidate path requirements must be a nonempty immutable tuple")
+    require(all(type(item) is CandidatePathChange for item in changes),
+            "candidate path requirements rows must be exact candidate path changes")
+    validated = tuple(validate_candidate_change(item) for item in changes)
+    unique([item.path for item in validated], "candidate path requirements")
+    return CandidateRequirements(root, base, head, validated)
 
 
 def validate_candidate_read_request(value: Any, *, base_sha: str, head_sha: str) -> CandidateReadRequest:
@@ -420,24 +444,16 @@ def candidate_coverage(report) -> CandidateCoverage | None:
     return CandidateCoverage(root, base, head, validated)
 
 
-def require_candidate_path_coverage(report, changes, *, base_sha: str, head_sha: str,
-                                    resolved_root: str) -> CandidateCoverage:
-    base_sha = sha(base_sha)
-    head_sha = sha(head_sha)
-    resolved_root = resolved_repo_root(
-        resolved_root, "expected candidate coverage root", must_exist=True)
+def require_candidate_path_coverage(report, requirements) -> CandidateCoverage:
+    expected = candidate_requirements(requirements)
     coverage = candidate_coverage(report)
     require(coverage is not None, "review report has no trusted candidate path coverage")
-    require(coverage.resolved_root == resolved_root,
+    require(coverage.resolved_root == expected.resolved_root,
             "review candidate path coverage root mismatch")
-    require((coverage.base, coverage.head) == (base_sha, head_sha),
+    require((coverage.base, coverage.head) == (expected.base, expected.head),
             "review candidate path coverage pair mismatch")
-    require(isinstance(changes, (tuple, list)) and bool(changes),
-            "candidate path requirements must be a nonempty list")
-    expected = tuple(validate_candidate_change(item) for item in changes)
-    unique([item.path for item in expected], "candidate path requirements")
     observed = {(item.path, item.side): item for item in coverage.reads}
-    for change in expected:
+    for change in expected.changes:
         for side in change.required_reads():
             item = observed.get((change.path, side))
             require(item is not None and item.present is True,

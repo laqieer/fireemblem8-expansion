@@ -202,7 +202,6 @@ class ReviewedEvolutionQualification:
         try:
             tools.model.require_candidate_path_coverage(
                 report, tools.candidate_changes(self.base_sha, self.candidate_sha, paths=self.changed_paths),
-                base_sha=self.base_sha, head_sha=self.candidate_sha, resolved_root=str(self.worktree),
             )
         except (AttributeError, ValueError) as error:
             raise MakeProbeError(f"reviewed evolution lacks actual changed-path coverage: {error}") from error
