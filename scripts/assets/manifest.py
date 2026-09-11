@@ -347,7 +347,7 @@ def _captured_source_digest(manifest_path, records, identities):
         try:
             descriptor = os.open(
                 os.path.join(REPO_ROOT, relative),
-                os.O_RDONLY | os.O_NOFOLLOW | getattr(os, "O_NONBLOCK", 0),
+                os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK,
             )
             before = os.fstat(descriptor)
             if not stat.S_ISREG(before.st_mode):

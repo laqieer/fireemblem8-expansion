@@ -1303,10 +1303,11 @@ evidence and all final quality gates. No manual-only criterion applies.
    outputs, missing/extra/duplicate identity rows, nonregular identity modes,
    and mode/content digest mismatches. Every input must fail explicitly.
 7. Execute the native FIFO regression with regular, no-writer FIFO, and
-   attached-writer FIFO variants. The regular variant must match the captured
-   identity digest. Both FIFO variants must reject promptly, close every opened
-   descriptor, and the attached writer must not complete its large payload
-   marker.
+   same-process sentinel-holder FIFO variants. The regular variant must match
+   the captured identity digest. Both FIFO variants must reject promptly, close
+   every captured descriptor, keep the holder descriptor separately accounted
+   and closed in `finally`, and read the sentinel back unchanged after
+   rejection.
 
 ### Expected result
 
@@ -1324,9 +1325,9 @@ rejected before reads.
 The pre-fix a616 implementation blocks indefinitely when the validated regular
 source is replaced by a FIFO without a writer. Removing nonblocking descriptor
 acquisition recreates that bounded timeout. Removing the pre-read regular-file
-rejection lets the attached writer's nonregular FIFO payload be consumed and
-complete its marker. Missing, extra, duplicate, malformed or mismatched
-captured identities cannot produce a successful include.
+rejection consumes the same-process holder's nonregular FIFO sentinel payload.
+Missing, extra, duplicate, malformed or mismatched captured identities cannot
+produce a successful include.
 
 ### Interactions and save compatibility
 
@@ -1344,8 +1345,9 @@ identity, modern debug/release profile, or archival-lane behavior.
 The listed unittest selectors exercise the public API, real manifest, parsed
 Make include behavior, identity mismatch controls, and bounded native FIFO
 race. The regression uses real POSIX FIFOs and subprocess timeouts rather than
-source spelling assertions. It kills/reaps only its owned writer/child and
-keeps all scratch paths below the unittest-owned test root.
+source spelling assertions. It closes the same-process FIFO holder in
+`finally`, kills/reaps only its owned outer child on timeout, and keeps all
+scratch paths below the unittest-owned test root.
 
 ### Cleanup and limitations
 

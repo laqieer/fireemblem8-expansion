@@ -52,7 +52,6 @@ import hashlib
 import json
 import os
 import stat
-import subprocess
 import sys
 from pathlib import Path
 from unittest import mock
@@ -66,7 +65,7 @@ variant = sys.argv[3]
 manifest_path = root / "manifest.json"
 source = root / "source.json"
 portrait_registry = root / "assets" / "portrait_registry.json"
-writer_marker = root / "writer-completed"
+sentinel = b"captured-fifo-sentinel"
 root.mkdir(parents=True, exist_ok=True)
 portrait_registry.parent.mkdir(parents=True, exist_ok=True)
 manifest_path.write_text(json.dumps({
@@ -105,9 +104,12 @@ for relative in sorted({"manifest.json", "source.json", "assets/portrait_registr
         ))
 
 opened = []
+initial_descriptors = set(os.listdir("/proc/self/fd"))
 original_open = os.open
 original_repo_path = manifest._repo_path
-writer = None
+fifo_holder = None
+fifo_holder_closed = False
+sentinel_unchanged = None
 
 def checked_open(*args, **kwargs):
     descriptor = original_open(*args, **kwargs)
@@ -115,59 +117,50 @@ def checked_open(*args, **kwargs):
     return descriptor
 
 def checked_path(*args, **kwargs):
-    global writer
+    global fifo_holder
     relative = original_repo_path(*args, **kwargs)
-    if relative == "source.json" and variant in ("fifo-no-writer", "fifo-writer"):
+    if relative == "source.json" and variant in ("fifo-no-writer", "fifo-holder"):
         source.unlink()
         os.mkfifo(source, 0o600)
         print("FIFO_REPLACED_AFTER_PATH_VALIDATION", flush=True)
-        if variant == "fifo-writer":
-            writer = subprocess.Popen([
-                sys.executable, "-I", "-S", "-B", "-c",
-                "import os, pathlib, sys\n"
-                "fifo = sys.argv[1]\n"
-                "marker = pathlib.Path(sys.argv[2])\n"
-                "payload = b'nonregular payload' * 524288\n"
-                "try:\n"
-                "    with open(fifo, 'wb', buffering=0) as handle:\n"
-                "        handle.write(payload)\n"
-                "    marker.write_text('complete\\n', encoding='ascii')\n"
-                "except BrokenPipeError:\n"
-                "    pass\n",
-                str(source), str(writer_marker),
-            ])
+        if variant == "fifo-holder":
+            fifo_holder = original_open(str(source), os.O_RDWR | os.O_NONBLOCK)
+            os.write(fifo_holder, sentinel)
+            print("FIFO_SENTINEL_ENQUEUED", flush=True)
     return relative
 
-with mock.patch.object(manifest, "REPO_ROOT", str(root)), mock.patch.object(
-    manifest, "_repo_path", side_effect=checked_path
-), mock.patch.object(os, "open", side_effect=checked_open):
-    try:
-        digest = manifest._captured_source_digest(str(manifest_path), records, identities)
-    except GeneratedDataError as error:
-        print("ERROR:" + str(error), flush=True)
-    else:
-        expected = hashlib.sha256(json.dumps({"captured_sources": [
-            {"path": path, "mode": mode, "sha256": digest} for path, mode, digest in identities
-        ]}, sort_keys=True, separators=(",", ":")).encode("ascii")).hexdigest()
-        if digest != expected:
-            raise SystemExit("regular digest mismatch")
-        print("REGULAR_SOURCE_DIGEST_MATCHED", flush=True)
-
-if writer is not None:
-    try:
-        writer.wait(timeout=1)
-    except subprocess.TimeoutExpired:
-        writer.kill()
-        writer.wait(timeout=1)
-closed = []
-for descriptor in opened:
-    try:
-        os.fstat(descriptor)
-    except OSError:
-        closed.append(descriptor)
-print("OPENED_DESCRIPTORS={}".format(len(opened)), flush=True)
-print("CLOSED_DESCRIPTORS={}".format(len(closed)), flush=True)
-print("WRITER_COMPLETED={}".format(writer_marker.exists()), flush=True)
+try:
+    with mock.patch.object(manifest, "REPO_ROOT", str(root)), mock.patch.object(
+        manifest, "_repo_path", side_effect=checked_path
+    ), mock.patch.object(os, "open", side_effect=checked_open):
+        try:
+            digest = manifest._captured_source_digest(str(manifest_path), records, identities)
+        except GeneratedDataError as error:
+            print("ERROR:" + str(error), flush=True)
+        else:
+            expected = hashlib.sha256(json.dumps({"captured_sources": [
+                {"path": path, "mode": mode, "sha256": digest} for path, mode, digest in identities
+            ]}, sort_keys=True, separators=(",", ":")).encode("ascii")).hexdigest()
+            if digest != expected:
+                raise SystemExit("regular digest mismatch")
+            print("REGULAR_SOURCE_DIGEST_MATCHED", flush=True)
+    if fifo_holder is not None:
+        try:
+            observed = os.read(fifo_holder, len(sentinel))
+        except BlockingIOError:
+            observed = b""
+        sentinel_unchanged = observed == sentinel
+        print("FIFO_SENTINEL_UNCHANGED={}".format(sentinel_unchanged), flush=True)
+finally:
+    if fifo_holder is not None:
+        os.close(fifo_holder)
+        fifo_holder_closed = True
+final_descriptors = set(os.listdir("/proc/self/fd"))
+leaked_descriptors = sorted(final_descriptors - initial_descriptors)
+print("CAPTURED_OPENED_DESCRIPTORS={}".format(len(opened)), flush=True)
+print("HOLDER_OPENED={}".format(fifo_holder is not None), flush=True)
+print("HOLDER_CLOSED={}".format(fifo_holder_closed), flush=True)
+print("LEAKED_DESCRIPTORS={}".format(len(leaked_descriptors)), flush=True)
 """
 
 
@@ -1002,7 +995,7 @@ class AssetManifestTests(unittest.TestCase):
         self.assertNotEqual(changed, actual)
 
     def test_captured_source_digest_rejects_raced_fifo_without_blocking_or_leaking(self):
-        for variant in ("regular", "fifo-no-writer", "fifo-writer"):
+        for variant in ("regular", "fifo-no-writer", "fifo-holder"):
             with self.subTest(variant=variant):
                 root = os.path.join(TEST_ROOT, "fifo-race", variant)
                 completed = subprocess.run(
@@ -1017,18 +1010,23 @@ class AssetManifestTests(unittest.TestCase):
                     check=False,
                 )
                 self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
-                self.assertIn("OPENED_DESCRIPTORS=", completed.stdout)
-                self.assertIn("CLOSED_DESCRIPTORS=", completed.stdout)
+                self.assertIn("CAPTURED_OPENED_DESCRIPTORS=3", completed.stdout)
+                self.assertIn("LEAKED_DESCRIPTORS=0", completed.stdout)
                 if variant == "regular":
                     self.assertIn("REGULAR_SOURCE_DIGEST_MATCHED", completed.stdout)
-                    self.assertIn("OPENED_DESCRIPTORS=3", completed.stdout)
-                    self.assertIn("CLOSED_DESCRIPTORS=3", completed.stdout)
+                    self.assertIn("HOLDER_OPENED=False", completed.stdout)
+                    self.assertIn("HOLDER_CLOSED=False", completed.stdout)
                 else:
                     self.assertIn("FIFO_REPLACED_AFTER_PATH_VALIDATION", completed.stdout)
                     self.assertIn("captured discovery source identity mismatch", completed.stdout)
-                    self.assertIn("OPENED_DESCRIPTORS=3", completed.stdout)
-                    self.assertIn("CLOSED_DESCRIPTORS=3", completed.stdout)
-                    self.assertIn("WRITER_COMPLETED=False", completed.stdout)
+                    if variant == "fifo-no-writer":
+                        self.assertIn("HOLDER_OPENED=False", completed.stdout)
+                        self.assertIn("HOLDER_CLOSED=False", completed.stdout)
+                    else:
+                        self.assertIn("FIFO_SENTINEL_ENQUEUED", completed.stdout)
+                        self.assertIn("FIFO_SENTINEL_UNCHANGED=True", completed.stdout)
+                        self.assertIn("HOLDER_OPENED=True", completed.stdout)
+                        self.assertIn("HOLDER_CLOSED=True", completed.stdout)
 
     def test_make_supports_isolated_output_override_with_portrait_incbin_consumer(self):
         result = self.run_assets_make(
