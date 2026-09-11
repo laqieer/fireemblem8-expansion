@@ -391,14 +391,16 @@
         "https://github.com/laqieer/fireemblem8-expansion/issues/57",
         "https://github.com/laqieer/fireemblem8-expansion/issues/234",
         "https://github.com/laqieer/fireemblem8-expansion/issues/248",
-        "https://github.com/laqieer/fireemblem8-expansion/issues/250"
+        "https://github.com/laqieer/fireemblem8-expansion/issues/250",
+        "https://github.com/laqieer/fireemblem8-expansion/issues/254"
       ],
       "reference": "docs/generated_data_tutorial.md",
       "status": "current",
       "required_cases": [
         "TC-CORE-004",
         "TC-GENERATED-LAZY-REGISTRY-001",
-        "TC-GENERATED-MAP-PARSER-001"
+        "TC-GENERATED-MAP-PARSER-001",
+        "TC-GENERATED-MANIFEST-INPUTS-001"
       ]
     },
     {
@@ -2130,6 +2132,43 @@
         {
           "command": "python3 -m unittest scripts.validation_ownership.tests.test_foundation.FoundationTests.test_real_generated_registry_commands_keep_lazy_runtime_imports_and_complete_static_code_admission -v",
           "evidence": "scripts/validation_ownership/tests/test_foundation.py"
+        }
+      ]
+    },
+    {
+      "id": "TC-GENERATED-MANIFEST-INPUTS-001",
+      "title": "Declare real manifest count support inputs",
+      "feature_id": "generated-data-platform",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/254"
+      ],
+      "document": "docs/test-cases/core-framework.md",
+      "anchor": "tc-generated-manifest-inputs-001-declare-real-manifest-count-support-inputs",
+      "profiles": [
+        "Clean source checkout with Python 3 and the Linux native ownership-probe environment",
+        "Ordinary item-count controls at default cap and cap 0xCE"
+      ],
+      "purpose": "Declare actual manifest count support inputs without changing cardinality or weakening native source admission.",
+      "prerequisites": "Run from the repository root with test-owned captured fixtures and scratch directories; the confined registry keeps its fixed default environment.",
+      "actions": "Execute the real items registry command, inspect native source receipts and its parsed result, exercise file/directory structured fixtures and CURRENT/BASE/CURRENT support values, and reject missing/extra/unreported/noncanonical/escaping/nonregular declarations and reads during selection. Run ordinary item count controls at default cap and 0xCE.",
+      "expected_result": "The real items result contains 206 records and exactly its primary JSON plus item enum header as consumed sources, not header code. Counts follow the selected immutable bytes; all declaration/consumption/report mismatches reject. Ordinary item committed counts stay 206 and active counts remain 206/207.",
+      "negative_control": "Pre-fix master rejects the real items header read. Removing only the support declaration in the captured actual schema restores that native denial. Unread extra support fails declared/consumed equality and omitted final support fails declared/reported/consumed equality.",
+      "interactions": "Reuses existing schema, selected-view and source-only command seams; no new dependency, profile conflict, loader shortcut, permission broadening or accounting discount.",
+      "save_compatibility": "Host-only declaration/reporting fix; no gameplay, generated content, localization, save/config identity, ROM/RAM, modern or archival output change.",
+      "cleanup": "Remove only test-owned scratch directories and require native session child/cache/view cleanup.",
+      "limitations": "Does not prove full graph resource fit, native AI-review qualification or a new confined item-cap configuration. No manual-only criterion.",
+      "automation": [
+        {
+          "command": "python3 -m unittest scripts.validation_ownership.tests.test_foundation.FoundationTests.test_real_items_registry_declares_and_consumes_the_count_header scripts.validation_ownership.tests.test_foundation.FoundationTests.test_manifest_support_inputs_match_actual_file_and_directory_receipts scripts.validation_ownership.tests.test_foundation.FoundationTests.test_manifest_support_inputs_reject_invalid_declarations_and_receipts scripts.validation_ownership.tests.test_foundation.FoundationTests.test_manifest_support_inputs_follow_selected_immutable_view -v",
+          "evidence": "scripts/validation_ownership/tests/test_foundation.py"
+        },
+        {
+          "command": "python3 -m unittest scripts.validation_ownership.tests.test_foundation.FoundationTests.test_generated_registry_uses_actual_structured_and_sequence_schema_counts scripts.validation_ownership.tests.test_foundation.FoundationTests.test_generated_registry_source_paths_uses_schema_selector_without_loading_records scripts.validation_ownership.tests.test_foundation.FoundationTests.test_generated_registry_requires_the_existing_schema_count_contract -v",
+          "evidence": "scripts/validation_ownership/tests/test_foundation.py"
+        },
+        {
+          "command": "python3 -m unittest scripts.generated_data.tests.test_manifest.CollectEntriesTests.test_count_support_selection_is_metadata_only scripts.generated_data.tests.test_manifest.CollectEntriesTests.test_items_count_support_preserves_committed_and_active_counts -v",
+          "evidence": "scripts/generated_data/tests/test_manifest.py"
         }
       ]
     },

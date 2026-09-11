@@ -540,6 +540,76 @@ initialization and preserved parsing/receipt behavior, not complete ownership
 graph resource fit or an end-to-end performance percentage. No manual-only
 criterion applies.
 
+## TC-GENERATED-MANIFEST-INPUTS-001: Declare real manifest count support inputs
+
+- **Feature / originating issue:** `generated-data-platform` /
+  [#254](https://github.com/laqieer/fireemblem8-expansion/issues/254).
+- **Supported configuration or artifact:** clean source checkout with Python
+  3 and the existing Linux native ownership-probe environment; no ROM needed.
+- **Prerequisites and clean starting state:** run from the repository root
+  with only test-owned scratch directories. The confined registry keeps its
+  fixed default environment; ordinary item-count controls also use cap `0xCE`.
+
+### Actions
+
+1. Run the real items registry regression below. It captures the actual
+   schema, loader, primary JSON and item enum header, invokes the shared
+   command factory and inspects native consumption and the parsed result.
+2. Run file-backed and directory-backed structured fixtures whose count
+   depends on an actual support-file value. Change that value at the same
+   path in another immutable view and switch CURRENT/BASE/CURRENT.
+3. Omit the support declaration, add an unread file, omit a consumed path
+   from the final report, or provide duplicate, overlapping, absent,
+   nonregular, escaping or noncanonical declarations. Also attempt a real
+   source read during declaration.
+4. Run the existing ordinary file/directory/no-support registry and schema
+   count controls. Inspect the actual item counts at default cap and `0xCE`.
+
+### Expected result
+
+The real default items result reports 206 records and exactly
+`src/data/items.json` plus `include/constants/items.h` as consumed sources.
+The header is not code. File/directory fixtures retain their actual selected
+JSON paths; their counts follow the selected immutable header bytes without
+stale reuse. All invalid declarations and incomplete consumption/reporting
+reject. Ordinary items retain 206 committed records at both caps and 206/207
+active records. The selector itself performs no content reads.
+
+### Negative control
+
+On pre-fix master the single real items command rejects an undeclared header
+read. The real-schema regression removes only the new support declaration
+inside its captured candidate and requires that original denial again.
+The unchanged count method still reads the actual enum. Extra unread support
+fails declared/consumed equality; omitted final paths fail
+declared/reported/consumed equality. Changing implementation spelling without
+changing these behaviors does not alter the expected result.
+
+### Interactions and save compatibility
+
+Reuses the delivered schema registry, immutable views and source-only command
+adapters. Primary source selection and symbolic dependency names retain their
+separate contracts. There are no new feature dependencies or profile
+conflicts. No loader, observation, accounting or cleanup step is skipped.
+No gameplay, generated-content, localization, save/config identity, ROM/RAM,
+modern debug/release or archival output changes.
+
+### Automation
+
+- `python3 -m unittest scripts.validation_ownership.tests.test_foundation.FoundationTests.test_real_items_registry_declares_and_consumes_the_count_header scripts.validation_ownership.tests.test_foundation.FoundationTests.test_manifest_support_inputs_match_actual_file_and_directory_receipts scripts.validation_ownership.tests.test_foundation.FoundationTests.test_manifest_support_inputs_reject_invalid_declarations_and_receipts scripts.validation_ownership.tests.test_foundation.FoundationTests.test_manifest_support_inputs_follow_selected_immutable_view -v`
+  -- `scripts/validation_ownership/tests/test_foundation.py`.
+- `python3 -m unittest scripts.validation_ownership.tests.test_foundation.FoundationTests.test_generated_registry_uses_actual_structured_and_sequence_schema_counts scripts.validation_ownership.tests.test_foundation.FoundationTests.test_generated_registry_source_paths_uses_schema_selector_without_loading_records scripts.validation_ownership.tests.test_foundation.FoundationTests.test_generated_registry_requires_the_existing_schema_count_contract -v`
+  -- `scripts/validation_ownership/tests/test_foundation.py`.
+- `python3 -m unittest scripts.generated_data.tests.test_manifest.CollectEntriesTests.test_count_support_selection_is_metadata_only scripts.generated_data.tests.test_manifest.CollectEntriesTests.test_items_count_support_preserves_committed_and_active_counts -v`
+  -- `scripts/generated_data/tests/test_manifest.py`.
+
+### Cleanup and limitations
+
+Each test removes only its owned scratch directories and checks native
+session cleanup. This proves a host-only count-support declaration contract,
+not complete graph resource fit or native AI-review qualification. No new
+confined environment/profile surface or manual-only criterion is introduced.
+
 ## TC-CORE-005: Typed ID cap preserves default boundary
 
 - **Feature / originating issue:** `typed-id-item-cap` /

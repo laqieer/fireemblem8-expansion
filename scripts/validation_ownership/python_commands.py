@@ -232,17 +232,46 @@ def _registry_driver(session: ProbeSession):
 def generated_registry_command(session: ProbeSession, name: str, source: str):
     relative_path(source)
     code = _registry_code(session)
-    directories = ()
-    if source in session.snapshot.files:
-        sources = (source,)
-    else:
-        sources = generated_registry_source_paths(session, name, source)
-        directories = (source,)
+    directories = () if source in session.snapshot.files else (source,)
+    pool = (
+        {source} if source in session.snapshot.files
+        else {path for path in session.snapshot.files if path.startswith(source + "/")}
+    )
+    if not pool:
+        raise MakeProbeError("registry input has no captured source candidates")
+    driver = _registry_driver(session)
+    observed = session.command(directory_python_command(
+        session, driver, (name, source, "--manifest-inputs", "directory" if directories else "file"),
+        directories=directories, code=code,
+    ))
+    declaration = parse_json(observed.stdout, "registry manifest input discovery")
+    if (
+        not isinstance(declaration, dict)
+        or set(declaration) != {"source_paths", "support_paths"}
+        or any(
+            not isinstance(paths, list)
+            or any(not isinstance(path, str) for path in paths)
+            for paths in declaration.values()
+        )
+    ):
+        raise MakeProbeError("registry manifest input declaration is invalid")
+    selected = {
+        key: tuple(_repository_report_path(path) for path in paths)
+        for key, paths in declaration.items()
+    }
+    primary, support = selected["source_paths"], selected["support_paths"]
+    if (
+        any(paths != tuple(sorted(set(paths))) for paths in selected.values())
+        or not primary or not set(primary) <= pool
+        or not set(support) <= session.snapshot.files.keys()
+        or set(primary) & set(support)
+    ):
+        raise MakeProbeError("registry manifest input declaration is invalid")
     return directory_python_command(
         session,
-        _registry_driver(session),
+        driver,
         (name, source),
-        sources=sources,
+        sources=tuple(sorted((*primary, *support))),
         directories=directories,
         code=code,
     )
