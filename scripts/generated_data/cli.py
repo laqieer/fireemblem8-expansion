@@ -20,7 +20,8 @@ Commands:
   CI/pre-commit use.
 
 Every table is driven exclusively through the :class:`~.schema.TableSchema`
-interface (``registry.py`` registers one instance per table) -- there is no
+interface (``registry.py`` registers one eager instance or lazy factory per
+table) -- there is no
 per-table ``if table == "...":`` dispatch here. A table that has nothing to
 generate (metadata-only, e.g. ``eventscripts``) simply leaves
 ``default_output_name`` (and ``generate_c``) as ``None``; ``generate``/

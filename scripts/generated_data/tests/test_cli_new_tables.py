@@ -3,6 +3,8 @@ import os
 import shutil
 import unittest
 
+from scripts.generated_data.diagnostics import DiagnosticCollector
+from scripts.generated_data.shops.schema import ShopsTableSchema
 from scripts.generated_data.tests._util import fixture_path, scratch_dir
 from scripts.generated_data.tests.test_cli import run_cli
 
@@ -46,6 +48,40 @@ class CliShopsTests(unittest.TestCase):
     def test_check_real_ch2_shops_table_has_no_drift(self):
         code, out, err = run_cli(["check", "--table", "shops"])
         self.assertEqual(code, 0, msg=out + err)
+
+    def test_lazy_registry_shops_cli_matches_direct_eager_schema_outputs(self):
+        schema = ShopsTableSchema()
+        records = schema.load_records(fixture_path("shops", "valid.json"))
+        diagnostics = DiagnosticCollector()
+        schema.validate(records, diagnostics)
+        self.assertEqual(diagnostics.errors, [])
+        expected_c = schema.generate_c(records, fixture_path("shops", "valid.json"))
+        expected_inventory = schema.build_inventory(records)
+
+        with scratch_dir() as tmp:
+            out_dir = os.path.join(tmp, "out")
+            inventory_path = os.path.join(tmp, "inventory.md")
+            validate_args = [
+                "--table", "shops",
+                "--source", fixture_path("shops", "valid.json"),
+                "--no-roundtrip",
+            ]
+            output_args = validate_args + [
+                "--out-dir", out_dir,
+                "--inventory", inventory_path,
+            ]
+            code, out, err = run_cli(["validate"] + validate_args)
+            self.assertEqual(code, 0, msg=out + err)
+            code, out, err = run_cli(["generate"] + output_args)
+            self.assertEqual(code, 0, msg=out + err)
+            generated_path = os.path.join(out_dir, "data_ch2_shops.c")
+            with open(generated_path, encoding="utf-8") as handle:
+                self.assertEqual(handle.read(), expected_c)
+            with open(inventory_path, encoding="utf-8") as handle:
+                self.assertEqual(handle.read(), expected_inventory)
+            code, out, err = run_cli(["check"] + output_args)
+            self.assertEqual(code, 0, msg=out + err)
+            self.assertIn("no drift", out)
 
 
 class CliTrapsTests(unittest.TestCase):

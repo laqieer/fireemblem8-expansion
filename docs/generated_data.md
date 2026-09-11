@@ -389,7 +389,7 @@ scripts/generated_data/
   cgen.py             C89 emission helpers + write_if_changed
   cparse.py           shared brace-depth-aware C block/initializer parsing
                        helpers reused by the units/traps round-trip parsers
-  registry.py         registers every table schema (import this to dispatch)
+  registry.py         declares every table schema (import this to dispatch)
   cli.py              validate / generate / check subcommands (fully
                        generic -- no per-table `if table == ...:` branches)
   supports/
@@ -531,12 +531,15 @@ line comments) -- it is not a general-purpose JSON5 parser.
 ## Schema/version dispatch and dependency graph
 
 `schema.SchemaRegistry` maps `(table_name, version)` to a `TableSchema`.
-`registry.py` is the single place every table registers itself -- now
-`supports`, `units`, `shops`, `traps`, `eventscripts`, `eventlists`, and
-`chapterbundle` (all v1); the CLI resolves `--table NAME` through this
-registry instead of hardcoding imports, so `cli.py` has zero per-table
-branches -- adding a table means adding a package + one line in
-`registry.py`, nothing else.
+`registry.py` is the single place every table declares itself -- either by
+eagerly `register(...)`-ing a schema instance or by
+`register_factory(name, version, factory)`-ing a zero-argument constructor.
+The generated-data registry uses factory-local ordinary imports so static
+source admission still sees every registered schema module while runtime table
+selection constructs only the resolved schema. The CLI resolves `--table NAME`
+through this registry instead of hardcoding imports, so `cli.py` has zero
+per-table branches -- adding a table means adding a package plus its
+registration seam in `registry.py`, nothing else.
 
 `schema.DependencyGraph` records which headers/tables a schema depends on
 (`supports` depends on `constants/characters.h` and

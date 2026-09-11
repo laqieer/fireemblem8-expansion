@@ -24,34 +24,98 @@ class SchemaRegistry:
     """Maps ``(name, version)`` to a registered :class:`TableSchema`."""
 
     def __init__(self):
+        self._declared = set()
         self._schemas = {}
+        self._factories = {}
+        self._resolving = set()
+
+    def _declare_key(self, key):
+        if key in self._declared:
+            raise GeneratedDataError(
+                "schema '{}' version {} already registered".format(key[0], key[1])
+            )
+        self._declared.add(key)
+
+    def _declared_versions(self, name):
+        return sorted(version for declared_name, version in self._declared if declared_name == name)
+
+    def _validate_declared_name(self, name):
+        if type(name) is not str or not name:
+            raise GeneratedDataError("schema name must be a nonempty string")
+
+    def _validate_declared_version(self, version):
+        if type(version) is not int or version < 1:
+            raise GeneratedDataError("schema version must be a positive integer")
 
     def register(self, schema):
         key = (schema.name, schema.version)
-        if key in self._schemas:
-            raise GeneratedDataError(
-                "schema '{}' version {} already registered".format(schema.name, schema.version)
-            )
+        self._declare_key(key)
         self._schemas[key] = schema
         return schema
 
+    def register_factory(self, name, version, factory):
+        self._validate_declared_name(name)
+        self._validate_declared_version(version)
+        key = (name, version)
+        if key in self._declared:
+            raise GeneratedDataError(
+                "schema '{}' version {} already registered".format(name, version)
+            )
+        if not callable(factory):
+            raise GeneratedDataError(
+                "schema '{}' version {} factory is not callable".format(name, version)
+            )
+        self._declared.add(key)
+        self._factories[key] = factory
+        return factory
+
     def resolve(self, name, version=None):
+        self._validate_declared_name(name)
         if version is None:
-            candidates = sorted(v for (n, v) in self._schemas if n == name)
+            candidates = self._declared_versions(name)
             if not candidates:
                 raise GeneratedDataError(
-                    "unknown schema '{}'; known tables: {}".format(name, sorted({n for n, _ in self._schemas}))
+                    "unknown schema '{}'; known tables: {}".format(
+                        name, sorted({declared_name for declared_name, _ in self._declared})
+                    )
                 )
             version = candidates[-1]
+        else:
+            self._validate_declared_version(version)
         key = (name, version)
-        if key not in self._schemas:
+        if key in self._schemas:
+            return self._schemas[key]
+        if key not in self._declared:
             raise GeneratedDataError(
-                "unknown schema '{}' version {}; known: {}".format(name, version, sorted(self._schemas))
+                "unknown schema '{}' version {}; known: {}".format(name, version, sorted(self._declared))
             )
-        return self._schemas[key]
+        if key in self._resolving:
+            raise GeneratedDataError(
+                "schema '{}' version {} cannot resolve recursively".format(name, version)
+            )
+        factory = self._factories.get(key)
+        if factory is None:
+            return self._schemas[key]
+        self._resolving.add(key)
+        try:
+            schema = factory()
+            actual_name = getattr(schema, "name", None)
+            actual_version = getattr(schema, "version", None)
+            self._validate_declared_name(actual_name)
+            self._validate_declared_version(actual_version)
+            if (actual_name, actual_version) != key:
+                raise GeneratedDataError(
+                    "schema '{}' version {} factory returned '{}' version {}".format(
+                        name, version, actual_name, actual_version
+                    )
+                )
+            self._schemas[key] = schema
+            return schema
+        finally:
+            self._resolving.remove(key)
 
     def all_names(self):
-        return sorted({n for n, _ in self._schemas})
+        return sorted({name for name, _ in self._declared})
 
 
 REGISTRY = SchemaRegistry()
