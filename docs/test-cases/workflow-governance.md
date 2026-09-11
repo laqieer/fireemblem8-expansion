@@ -1247,6 +1247,114 @@ state supply operational evidence during delivery.
 The source-only checks create no remote state and need no cleanup. They do not
 grant credentials or make remote publication atomic; preserve failed-push
 evidence and all final quality gates. No manual-only criterion applies.
+
+## TC-WORKFLOW-ASSET-DISCOVERY-001: Render captured-source asset discovery without FIFO races
+
+- **Feature / originating issue:** `workflow-governance` /
+  [issue #252](https://github.com/laqieer/fireemblem8-expansion/issues/252).
+- **Supported configuration or artifact:** Linux/POSIX source checkout with
+  Python 3 and GNU Make. No ROM, emulator, ARM scenario, GitHub credential,
+  graph module, or live workflow is required.
+- **Prerequisites and clean starting state:** start from the repository root
+  with the committed asset manifest framework and an empty owned test root
+  under `build/generated/assets/test-work`. The case uses the committed
+  `assets/manifest.json`, its declared discovery dependencies, and
+  subprocess-owned FIFO fixtures only.
+
+### Actions
+
+1. Reproduce or preserve the pre-fix negative control on exact
+   `a616aaa63f8a976717bf5d38182ac325861adbc7`: build the complete captured
+   source identity set for an owned manifest fixture, verify regular-source
+   digest success, replace `source.json` with a FIFO immediately after real
+   `_repo_path` validation, and require the bounded three-second controller to
+   kill and reap the blocked child. Do not modify the reproduction artifact.
+2. Run the focused public API selectors:
+
+   ```bash
+   python3 -m unittest \
+     scripts.assets.tests.test_manifest.AssetManifestTests.test_captured_discovery_matches_git_validated_rendering \
+     scripts.assets.tests.test_manifest.AssetManifestTests.test_captured_discovery_rejects_missing_source_membership \
+     scripts.assets.tests.test_manifest.AssetManifestTests.test_captured_discovery_rejects_malformed_admission \
+     scripts.assets.tests.test_manifest.AssetManifestTests.test_captured_discovery_keeps_source_path_validation \
+     scripts.assets.tests.test_manifest.AssetManifestTests.test_discovery_artifact_uses_same_validation_rendering_and_logical_path \
+     scripts.assets.tests.test_manifest.AssetManifestTests.test_discovery_artifact_rejects_malformed_or_escaping_outputs \
+     scripts.assets.tests.test_manifest.AssetManifestTests.test_discovery_artifact_requires_complete_captured_identity \
+     scripts.assets.tests.test_manifest.AssetManifestTests.test_discovery_artifact_does_not_require_new_hashlib_file_digest_api \
+     scripts.assets.tests.test_manifest.AssetManifestTests.test_discovery_artifact_make_behavior_uses_equivalent_input_metadata \
+     scripts.assets.tests.test_manifest.AssetManifestTests.test_captured_source_digest_rejects_raced_fifo_without_blocking_or_leaking \
+     -v
+   ```
+3. Confirm ordinary Git-backed discovery and captured discovery render the same
+   consumer groups on the real manifest. The captured path must not invoke a
+   Git subprocess internally.
+4. Render
+   `build/generated/asset-discovery/captured.mk` from the repository root, a
+   nested directory, and an external working directory. The returned path and
+   content must be identical, repository-relative, below `build/`, and no
+   destination file may be created.
+5. Consume the ordinary and captured include bytes with GNU Make. Require the
+   real `ASSET_*_INCBIN_CONSUMERS` values to match, the captured source digest
+   to be a different 64-hex identity digest, a nonsemantic producer comment to
+   leave the Make values unchanged, and a changed consumer assignment to be
+   detected by parsed Make output.
+6. Exercise adversarial inputs: missing tracked membership, malformed tracked
+   source sets, escaping manifest source paths, absolute or malformed logical
+   outputs, missing/extra/duplicate identity rows, nonregular identity modes,
+   and mode/content digest mismatches. Every input must fail explicitly.
+7. Execute the native FIFO regression with regular, no-writer FIFO, and
+   attached-writer FIFO variants. The regular variant must match the captured
+   identity digest. Both FIFO variants must reject promptly, close every opened
+   descriptor, and the attached writer must not complete its large payload
+   marker.
+
+### Expected result
+
+`load_discovery(path, *, tracked_sources=None)` preserves ordinary Git source
+verification by default and accepts only a canonical captured tracked-source set
+when supplied. `render_discovery_artifact()` validates the same records and
+complete `(path, mode, sha256)` identities, returns a safe
+repository-relative output path plus the real rendered Make include content,
+and writes nothing. Captured digests are stable identity hashes while ordinary
+CLI discovery retains its mtime digest. Raced nonregular descriptors are
+rejected before reads.
+
+### Negative control
+
+The pre-fix a616 implementation blocks indefinitely when the validated regular
+source is replaced by a FIFO without a writer. Removing nonblocking descriptor
+acquisition recreates that bounded timeout. Removing the pre-read regular-file
+rejection lets the attached writer's nonregular FIFO payload be consumed and
+complete its marker. Missing, extra, duplicate, malformed or mismatched
+captured identities cannot produce a successful include.
+
+### Interactions and save compatibility
+
+The case depends on the existing asset manifest framework and the external
+captured-source authority that supplies canonical membership and identities.
+#180/#186 is a dependent graph integration and keeps its graph-specific
+resource accounting, schema, workflows, and Make routing. The only declared
+conflict is duplicate implementation delta with that graph branch, resolved by
+a normal merge. This case introduces no feature flag, gameplay behavior,
+generated game content, localization payload, ROM/RAM allocation, save/config
+identity, modern debug/release profile, or archival-lane behavior.
+
+### Automation
+
+The listed unittest selectors exercise the public API, real manifest, parsed
+Make include behavior, identity mismatch controls, and bounded native FIFO
+race. The regression uses real POSIX FIFOs and subprocess timeouts rather than
+source spelling assertions. It kills/reaps only its owned writer/child and
+keeps all scratch paths below the unittest-owned test root.
+
+### Cleanup and limitations
+
+`unittest` teardown removes `build/generated/assets/test-work`, including the
+FIFO and Make fixtures. The pre-fix reproduction artifact is read-only evidence
+and is not modified. Caller-owned source admission, immutable source context,
+declared private output, capture storage, and publication remain outside the
+asset adapter. No manual-only criterion applies.
+
 ## TC-WORKFLOW-CI-WAIT-001: Keep CI waiting centralized and trusted pushes owner-scoped
 
 - **Feature / originating issue:** `workflow-governance` /
