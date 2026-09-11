@@ -1280,6 +1280,9 @@ evidence and all final quality gates. No manual-only criterion applies.
      scripts.assets.tests.test_manifest.AssetManifestTests.test_discovery_artifact_uses_same_validation_rendering_and_logical_path \
      scripts.assets.tests.test_manifest.AssetManifestTests.test_discovery_artifact_rejects_malformed_or_escaping_outputs \
      scripts.assets.tests.test_manifest.AssetManifestTests.test_discovery_artifact_requires_complete_captured_identity \
+     scripts.assets.tests.test_manifest.AssetManifestTests.test_discovery_artifact_rejects_nonregular_identity_modes_before_opening_sources \
+     scripts.assets.tests.test_manifest.AssetManifestTests.test_discovery_artifact_rejects_manifest_fifo_before_parsing \
+     scripts.assets.tests.test_manifest.AssetManifestTests.test_discovery_artifact_parses_replaced_manifest_from_verified_bytes \
      scripts.assets.tests.test_manifest.AssetManifestTests.test_discovery_artifact_does_not_require_new_hashlib_file_digest_api \
      scripts.assets.tests.test_manifest.AssetManifestTests.test_discovery_artifact_make_behavior_uses_equivalent_input_metadata \
      scripts.assets.tests.test_manifest.AssetManifestTests.test_captured_source_digest_rejects_raced_fifo_without_blocking_or_leaking \
@@ -1310,6 +1313,11 @@ evidence and all final quality gates. No manual-only criterion applies.
    every captured descriptor, keep the holder descriptor separately accounted
    and closed in `finally`, and read the sentinel back unchanged after
    rejection.
+8. Replace the manifest itself with a FIFO at its first captured acquisition.
+   It must reject promptly before parsing and close the opened descriptor.
+   Replace the same manifest path with different attested bytes between path
+   validation and descriptor acquisition. The rendered consumer group and
+   digest must come from those verified bytes, not from an earlier path parse.
 
 ### Expected result
 
@@ -1321,7 +1329,8 @@ repository-relative output path plus the real rendered Make include content,
 and writes nothing. Captured digests are stable identity hashes while ordinary
 CLI discovery retains its mtime digest. Raced nonregular descriptors are
 rejected before reads; malformed nonregular identity claims reject before any
-source is opened.
+source is opened. The manifest records are parsed from the same verified
+descriptor bytes whose identity participates in the captured digest.
 
 ### Negative control
 
@@ -1332,7 +1341,9 @@ rejection consumes the same-process holder's nonregular FIFO sentinel payload.
 Removing the early regular-mode identity guard attempts source acquisition for
 malformed FIFO or directory identity rows. Missing, extra, duplicate,
 malformed or mismatched captured identities cannot produce a successful
-include.
+include. Parsing the manifest before verified descriptor acquisition can render
+stale consumer records with a new attested digest and fails the replacement
+control.
 
 ### Interactions and save compatibility
 

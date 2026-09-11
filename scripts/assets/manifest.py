@@ -22,7 +22,7 @@ from scripts.generated_data.diagnostics import (
     GeneratedDataError,
     GeneratedDataValidationError,
 )
-from scripts.generated_data.json_loader import load_json_file
+from scripts.generated_data.json_loader import load_json_file, parse_json_text
 
 from . import banim, custom_spell
 
@@ -182,7 +182,10 @@ def _parse_record(node):
 
 
 def load_manifest(path):
-    root = load_json_file(path)
+    return _load_manifest_root(load_json_file(path))
+
+
+def _load_manifest_root(root):
     _ensure_exact_keys(root, ("schemaVersion", "assets"), "manifest")
     schema_node = root.require("schemaVersion")
     schema_version = schema_node.as_int()
@@ -197,8 +200,7 @@ def load_manifest(path):
     return [_parse_record(node) for node in root.require("assets").as_list()]
 
 
-def load_discovery(path, *, tracked_sources=None):
-    """Validate discovery using Git, or an already captured tracked-source set."""
+def _validate_captured_tracked_sources(tracked_sources):
     if tracked_sources is not None and (
         not isinstance(tracked_sources, (set, frozenset))
         or any(
@@ -209,7 +211,15 @@ def load_discovery(path, *, tracked_sources=None):
         )
     ):
         raise GeneratedDataError("captured tracked sources must be a set of canonical repository paths")
-    records = load_manifest(path)
+
+
+def load_discovery(path, *, tracked_sources=None):
+    """Validate discovery using Git, or an already captured tracked-source set."""
+    _validate_captured_tracked_sources(tracked_sources)
+    return _validate_discovery_records(load_manifest(path), tracked_sources=tracked_sources)
+
+
+def _validate_discovery_records(records, *, tracked_sources=None):
     diagnostics = DiagnosticCollector()
     tracked_paths = []
     for record in records:
@@ -320,10 +330,8 @@ def _render_discovery_makefile(records, source_digest):
     return "".join(lines)
 
 
-def _captured_source_digest(manifest_path, records, identities):
-    manifest_relative = os.path.relpath(os.path.abspath(manifest_path), REPO_ROOT).replace(os.sep, "/")
-    expected = {manifest_relative, *discovery_sources(records)}
-    if not isinstance(identities, (list, tuple)) or len(identities) != len(expected):
+def _captured_identity_claims(identities):
+    if not isinstance(identities, (list, tuple)):
         raise GeneratedDataError("discovery artifact requires complete captured source identities")
     supplied = {}
     for entry in identities:
@@ -331,53 +339,103 @@ def _captured_source_digest(manifest_path, records, identities):
             raise GeneratedDataError("captured source identity must contain path, mode and digest")
         path, mode, digest = entry
         if (
-            not isinstance(path, str) or path not in expected or path in supplied
+            not isinstance(path, str) or not path or path in supplied
+            or os.path.isabs(path) or "\\" in path
+            or any(part in ("", ".", "..") for part in path.split("/"))
+            or any(ord(character) < 32 or ord(character) == 127 for character in path)
             or not isinstance(mode, str) or not re.fullmatch(r"[0-7]{6}", mode)
             or not stat.S_ISREG(int(mode, 8))
             or not isinstance(digest, str) or not re.fullmatch(r"[0-9a-f]{64}", digest)
         ):
             raise GeneratedDataError("captured source identity is invalid or duplicated")
         supplied[path] = (mode, digest)
+    return supplied
+
+
+def _verified_captured_source(path, supplied):
+    relative = _repo_path(path, None, "captured discovery source", verify_tracked=False)
+    descriptor = None
+    try:
+        descriptor = os.open(
+            os.path.join(REPO_ROOT, relative),
+            os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK,
+        )
+        before = os.fstat(descriptor)
+        if not stat.S_ISREG(before.st_mode):
+            raise GeneratedDataError(
+                "captured discovery source identity mismatch: '{}'".format(path)
+            )
+        with os.fdopen(descriptor, "rb") as source:
+            descriptor = None
+            hasher = hashlib.sha256()
+            content = bytearray()
+            for chunk in iter(lambda: source.read(65536), b""):
+                hasher.update(chunk)
+                content.extend(chunk)
+            digest = hasher.hexdigest()
+            after = os.fstat(source.fileno())
+    except OSError as error:
+        raise GeneratedDataError(
+            "cannot read captured discovery source '{}': {}".format(path, error)
+        ) from error
+    finally:
+        if descriptor is not None:
+            os.close(descriptor)
+    fields = ("st_dev", "st_ino", "st_mode", "st_size", "st_mtime_ns", "st_ctime_ns")
+    mode = "{:06o}".format(stat.S_IFMT(before.st_mode) | stat.S_IMODE(before.st_mode))
+    if (
+        any(getattr(before, field) != getattr(after, field) for field in fields)
+        or supplied[path] != (mode, digest)
+    ):
+        raise GeneratedDataError("captured discovery source identity mismatch: '{}'".format(path))
+    return bytes(content), {"path": path, "mode": mode, "sha256": digest}
+
+
+def _captured_source_digest(manifest_path, records, identities):
+    supplied = _captured_identity_claims(identities)
+    manifest_relative = os.path.relpath(os.path.abspath(manifest_path), REPO_ROOT).replace(os.sep, "/")
+    expected = {manifest_relative, *discovery_sources(records)}
+    if len(supplied) != len(expected):
+        raise GeneratedDataError("discovery artifact requires complete captured source identities")
     if set(supplied) != expected:
         raise GeneratedDataError("captured source identities differ from required discovery inputs")
     stamp = []
     for path in sorted(expected):
-        relative = _repo_path(path, None, "captured discovery source", verify_tracked=False)
-        descriptor = None
-        try:
-            descriptor = os.open(
-                os.path.join(REPO_ROOT, relative),
-                os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK,
-            )
-            before = os.fstat(descriptor)
-            if not stat.S_ISREG(before.st_mode):
-                raise GeneratedDataError(
-                    "captured discovery source identity mismatch: '{}'".format(path)
-                )
-            with os.fdopen(descriptor, "rb") as source:
-                descriptor = None
-                hasher = hashlib.sha256()
-                for chunk in iter(lambda: source.read(65536), b""):
-                    hasher.update(chunk)
-                digest = hasher.hexdigest()
-                after = os.fstat(source.fileno())
-        except OSError as error:
-            raise GeneratedDataError(
-                "cannot read captured discovery source '{}': {}".format(path, error)
-            ) from error
-        finally:
-            if descriptor is not None:
-                os.close(descriptor)
-        fields = ("st_dev", "st_ino", "st_mode", "st_size", "st_mtime_ns", "st_ctime_ns")
-        mode = "{:06o}".format(stat.S_IFMT(before.st_mode) | stat.S_IMODE(before.st_mode))
-        if (
-            any(getattr(before, field) != getattr(after, field) for field in fields)
-            or supplied[path] != (mode, digest)
-        ):
-            raise GeneratedDataError("captured discovery source identity mismatch: '{}'".format(path))
-        stamp.append({"path": path, "mode": mode, "sha256": digest})
+        _content, entry = _verified_captured_source(path, supplied)
+        stamp.append(entry)
     encoded = json.dumps({"captured_sources": stamp}, sort_keys=True, separators=(",", ":")).encode("ascii")
     return hashlib.sha256(encoded).hexdigest()
+
+
+def _captured_discovery(manifest_path, tracked_sources, identities):
+    _validate_captured_tracked_sources(tracked_sources)
+    supplied = _captured_identity_claims(identities)
+    manifest_relative = os.path.relpath(os.path.abspath(manifest_path), REPO_ROOT).replace(os.sep, "/")
+    if manifest_relative not in supplied:
+        raise GeneratedDataError("captured source identities differ from required discovery inputs")
+    manifest_content, manifest_entry = _verified_captured_source(manifest_relative, supplied)
+    try:
+        root = parse_json_text(manifest_content.decode("utf-8"), path=str(manifest_path))
+    except UnicodeDecodeError as error:
+        raise GeneratedDataError("cannot decode captured discovery manifest: {}".format(error)) from error
+    records = _validate_discovery_records(
+        _load_manifest_root(root),
+        tracked_sources=tracked_sources,
+    )
+    expected = {manifest_relative, *discovery_sources(records)}
+    if len(supplied) != len(expected):
+        raise GeneratedDataError("discovery artifact requires complete captured source identities")
+    if set(supplied) != expected:
+        raise GeneratedDataError("captured source identities differ from required discovery inputs")
+    stamp = []
+    for path in sorted(expected):
+        if path == manifest_relative:
+            entry = manifest_entry
+        else:
+            _content, entry = _verified_captured_source(path, supplied)
+        stamp.append(entry)
+    encoded = json.dumps({"captured_sources": stamp}, sort_keys=True, separators=(",", ":")).encode("ascii")
+    return records, hashlib.sha256(encoded).hexdigest()
 
 
 def render_discovery_artifact(manifest_path, logical_path, *, tracked_sources, source_identities=None):
@@ -385,8 +443,7 @@ def render_discovery_artifact(manifest_path, logical_path, *, tracked_sources, s
     if tracked_sources is None:
         raise GeneratedDataError("discovery artifact requires captured tracked-source identities")
     destination = _output_path(logical_path, ASSET_BUILD_ROOT, repository_relative=True)
-    records = load_discovery(manifest_path, tracked_sources=tracked_sources)
-    digest = _captured_source_digest(manifest_path, records, source_identities)
+    records, digest = _captured_discovery(manifest_path, tracked_sources, source_identities)
     return os.path.relpath(destination, REPO_ROOT), _render_discovery_makefile(records, digest)
 
 
