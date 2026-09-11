@@ -1416,7 +1416,11 @@ class TesterCaseRegistryTests(unittest.TestCase):
         feature = next(
             entry for entry in registry["features"] if entry["id"] == "generated-data-platform"
         )
-        case_ids = ["TC-CORE-004", "TC-GENERATED-LAZY-REGISTRY-001"]
+        case_ids = [
+            "TC-CORE-004",
+            "TC-GENERATED-LAZY-REGISTRY-001",
+            "TC-GENERATED-MAP-PARSER-001",
+        ]
         self.assertEqual(feature["required_cases"], case_ids)
         cases = {entry["id"]: entry for entry in registry["cases"]}
 

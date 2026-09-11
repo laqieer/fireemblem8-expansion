@@ -459,6 +459,76 @@ schema construction through the existing registry seam; it does not add a new
 registry protocol, weaken malformed-input rejection, or claim whole-report
 resource fit.
 
+## TC-GENERATED-MAP-PARSER-001: Initialize the map parser only for TMX validation
+
+- **Feature / originating issue:** `generated-data-platform` /
+  [#250](https://github.com/laqieer/fireemblem8-expansion/issues/250).
+- **Supported configuration or artifact:** clean source checkout with Python
+  3 and the existing native ownership-probe host environment; no ROM needed.
+- **Prerequisites and clean starting state:** start at the repository root.
+  Fresh isolated interpreters ensure a prior import cannot hide initialization.
+  Use only the test-owned scratch directories.
+
+### Actions
+
+1. Run the isolated registry regression below. It makes TMX initialization
+   unavailable, resolves all 16 real schema declarations, selects the
+   chapter-bundle, chapter-objective and autoplay file/directory inputs, and
+   actually loads them. Inspect unchanged versions, source paths, record
+   counts and equal file/directory inventories.
+2. Give each selected loader malformed JSON under the same guard. Each must
+   raise its generated-data parse error naming the input, not skip the load.
+3. With TMX parsing available, read Chapter 2's actual authored map dimensions.
+   Change the manifest width, remove the TMX source, and supply malformed XML;
+   each invalid input must retain the generated-data diagnostic.
+4. Under the initialization guard, read a valid JSON fallback layout and
+   observe its dimensions. Run the existing malformed/nonpositive fallback
+   controls to retain their owner-facing rejection.
+5. Run the real native registry control below. Ordinary local imports must
+   remain statically admitted; actual selected code/source receipts and
+   loaders remain independently observed.
+
+### Expected result
+
+Discovery/loading and JSON fallback maps work without initializing the TMX
+parser. All declarations retain version 1; the committed bundle, objective
+and autoplay inputs retain 1, 0 and 2 records respectively. File and directory
+loads produce equal inventories. Actual TMX parsing still returns authored
+dimensions and rejects invalid sources or inconsistent manifest dimensions.
+
+### Negative control
+
+The pre-fix eager import fails the isolated initialization guard before
+primary-source loading. Restoring it makes the regression fail. Malformed
+primary JSON and malformed/missing/inconsistent maps remain rejected after
+deferral; the optimization must not replace their validation.
+
+### Interactions and save compatibility
+
+Reuses the delivered lazy registry, TMX parser and native producer seams.
+There are no new dependencies or conflicting profiles. All loaders, static
+admission, source receipts and byte accounting remain required. There is no
+gameplay, generated-content, localization, save/config, ROM/RAM, modern or
+archival behavior change.
+
+### Automation
+
+- `python3 -m unittest scripts.generated_data.tests.test_schema.SchemaRegistryTests.test_registry_discovery_and_primary_loads_do_not_initialize_map_parser -v`
+  — `scripts/generated_data/tests/test_schema.py`.
+- `python3 -m unittest scripts.generated_data.tests.test_chapterbundle_schema.ChapterBundleValidFixtureTests.test_map_dimensions_keep_actual_tmx_validation_and_errors -v`
+  — `scripts/generated_data/tests/test_chapterbundle_schema.py`.
+- `python3 -m unittest scripts.generated_data.tests.test_chapterobjectives_schema.ChapterObjectivesSchemaTests.test_fallback_layout_metadata_fails_closed_with_owner_diagnostic -v`
+  — `scripts/generated_data/tests/test_chapterobjectives_schema.py`.
+- `python3 -m unittest scripts.validation_ownership.tests.test_foundation.FoundationTests.test_real_generated_registry_commands_keep_lazy_runtime_imports_and_complete_static_code_admission -v`
+  — `scripts/validation_ownership/tests/test_foundation.py`.
+
+### Cleanup and limitations
+
+Each test removes only its owned scratch directories. This proves deferred
+initialization and preserved parsing/receipt behavior, not complete ownership
+graph resource fit or an end-to-end performance percentage. No manual-only
+criterion applies.
+
 ## TC-CORE-005: Typed ID cap preserves default boundary
 
 - **Feature / originating issue:** `typed-id-item-cap` /

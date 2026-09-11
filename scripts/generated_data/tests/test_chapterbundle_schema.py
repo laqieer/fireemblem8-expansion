@@ -93,6 +93,42 @@ def _messages(diagnostics):
 
 
 class ChapterBundleValidFixtureTests(unittest.TestCase):
+    def test_map_dimensions_keep_actual_tmx_validation_and_errors(self):
+        with open(repo_path("assets", "manifest.json"), encoding="utf-8") as handle:
+            manifest = json.load(handle)
+        asset = next(
+            entry for entry in manifest["assets"]
+            if entry.get("ownership", {}).get("symbol") == "Ch2Map"
+        )
+        expected = (asset["resources"]["mapWidth"], asset["resources"]["mapHeight"])
+        with scratch_dir() as temporary:
+            manifest_path = Path(temporary) / "manifest.json"
+            source = Path(temporary) / "invalid.tmx"
+            kwargs = {
+                "chapter_settings_path": repo_path("src", "data", "chapter_settings.json"),
+                "asset_table_path": repo_path("src", "data", "data_8B363C.c"),
+                "asset_manifest_path": str(manifest_path),
+            }
+            manifest_path.write_text(json.dumps({"assets": [asset]}), encoding="utf-8")
+            self.assertEqual(chapterbundle_schema.read_chapter_map_dimensions(2, **kwargs), expected)
+
+            mismatched = copy.deepcopy(asset)
+            mismatched["resources"]["mapWidth"] += 1
+            manifest_path.write_text(json.dumps({"assets": [mismatched]}), encoding="utf-8")
+            with self.assertRaises(GeneratedDataError):
+                chapterbundle_schema.read_chapter_map_dimensions(2, **kwargs)
+
+            missing = copy.deepcopy(asset)
+            missing["sources"] = [str(source)]
+            manifest_path.write_text(json.dumps({"assets": [missing]}), encoding="utf-8")
+            for content in (None, "<map"):
+                with self.subTest(tmx_content=content):
+                    if content is not None:
+                        source.write_text(content, encoding="utf-8")
+                    with self.assertRaises(GeneratedDataError) as failure:
+                        chapterbundle_schema.read_chapter_map_dimensions(2, **kwargs)
+                    self.assertIn(str(source), str(failure.exception))
+
     def test_source_path_discovery_does_not_parse_members_or_change_load_errors(self):
         for name, suffix in (
             ("chapterbundle", "bundle"),
