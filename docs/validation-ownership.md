@@ -804,6 +804,10 @@ failure remains primary and the cleanup failure is reported alongside it.
 
 Git remains the identity authority; no source ledger, new service, signer,
 privileged PR event or human approval is introduced.
+Before/after worktree checks retain complete porcelain-v1/NUL status, including
+staged, unstaged, deleted and untracked paths. They disable only Git's optional
+parallel index preload so its helper-thread allocation does not prevent a
+bounded status read; no status entries, errors or repository checks are hidden.
 
 Domain-separated seals continue to cover the strict schema, probe oracle,
 complete graph, resolved edges, and live evidence-authority fingerprints.

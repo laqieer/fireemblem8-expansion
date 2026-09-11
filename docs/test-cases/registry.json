@@ -2874,6 +2874,10 @@
           "evidence": "scripts/validation_ownership/tests/test_report_views.py"
         },
         {
+          "command": "python3 -m unittest scripts.validation_ownership.tests.test_reporter.RepositoryStatusTests -v",
+          "evidence": "scripts/validation_ownership/tests/test_reporter.py"
+        },
+        {
           "command": "/usr/bin/python3 -I -S -B scripts/validation_ownership/isolated_launcher.py check --repository-root .",
           "evidence": "scripts/validation_ownership/reporter.py"
         }

@@ -411,6 +411,8 @@ def tracked_paths(root: Path, *, budget: ProbeBudget) -> tuple[str, ...]:
 def repository_status(root: Path, *, budget: ProbeBudget) -> bytes:
     return _git(
         root,
+        "-c",
+        "core.preloadIndex=false",
         "status",
         "--porcelain=v1",
         "-z",

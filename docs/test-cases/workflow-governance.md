@@ -3490,6 +3490,12 @@ game behavior needs a compensating change.
     successfully terminated, unchanged owned workspace. Pre-existing,
     substituted, residual, or unconfirmed-process work must remain untouched
     and reject with primary and cleanup diagnostics preserved.
+    Run `python3 -m unittest scripts.validation_ownership.tests.test_reporter.RepositoryStatusTests -v`
+    to compare complete staged/unstaged/deleted/untracked status with stock Git,
+    retain Git errors, and read the actual large repository within the 512 MiB
+    process address-space bound. The pre-fix optional preload fails with
+    threaded-lstat allocation exhaustion on the recorded host; disabling
+    that optional optimization must not omit paths or alter status bytes.
 
 ### Expected result
 

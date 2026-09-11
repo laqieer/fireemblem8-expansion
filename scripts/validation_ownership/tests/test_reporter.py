@@ -12,8 +12,10 @@ from unittest import mock
 import sys
 
 from scripts.validation_ownership import reporter
-from scripts.validation_ownership.authority import AuthorityLoader, git_tree_entries
-from scripts.validation_ownership.budget import ProbeBudget
+from scripts.validation_ownership.authority import (
+    AuthorityLoader, ENVIRONMENT, git_command, git_tree_entries,
+)
+from scripts.validation_ownership.budget import Limits, ProbeBudget
 from scripts.validation_ownership.graph_report import check
 
 
@@ -395,6 +397,75 @@ class AssetOwnershipTests(unittest.TestCase):
             parsed = self.playtest.parse_scenario_data(scenarios[0])
             self.assertTrue(parsed.checkpoints)
             self.assertTrue(all(not checkpoint.framebuffer for checkpoint in parsed.checkpoints))
+
+
+class RepositoryStatusTests(unittest.TestCase):
+    def test_complete_status_preserves_staged_unstaged_deleted_and_untracked(self):
+        with tempfile.TemporaryDirectory(prefix="ownership-status-") as directory:
+            root = Path(directory)
+            def git(*args):
+                return subprocess.check_output([*git_command(root), *args], env=ENVIRONMENT)
+            git("init", "--quiet")
+            for name in ("staged.txt", "both.txt", "deleted.txt"):
+                (root / name).write_text("before\n")
+            (root / ".gitignore").write_text("ignored.txt\n")
+            git("add", ".")
+            git("-c", "user.name=Ownership fixture", "-c", "user.email=fixture@example.invalid",
+                "-c", "core.hooksPath=/dev/null", "commit", "--quiet", "-m", "status fixture",
+                "-m", "Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>")
+            (root / "staged.txt").write_text("staged\n")
+            (root / "both.txt").write_text("staged\n")
+            git("add", "staged.txt", "both.txt")
+            (root / "both.txt").write_text("unstaged\n")
+            (root / "deleted.txt").unlink()
+            (root / "untracked space.txt").write_text("untracked\n")
+            (root / "ignored.txt").write_text("ignored\n")
+            expected = git("-c", "core.preloadIndex=true", "status", "--porcelain=v1",
+                           "-z", "--untracked-files=all")
+            budget = ProbeBudget()
+            try:
+                actual = reporter.repository_status(root, budget=budget)
+                self.assertEqual(actual, expected)
+                self.assertEqual(
+                    {row[3:].decode(): row[:2].decode() for row in actual.split(b"\0") if row},
+                    {"staged.txt": "M ", "both.txt": "MM", "deleted.txt": " D",
+                     "untracked space.txt": "??"},
+                )
+                with self.assertRaises(reporter.OwnershipError):
+                    reporter.repository_status(root / "missing", budget=budget)
+            finally:
+                budget.close()
+            self.assertFalse(budget.children)
+
+    def test_actual_repository_status_fits_the_address_space_bound(self):
+        expected = subprocess.check_output(
+            [*git_command(ROOT), "status", "--porcelain=v1", "-z", "--untracked-files=all"],
+            env=ENVIRONMENT,
+        )
+        body = (
+            "import resource,sys\n"
+            f"resource.setrlimit(resource.RLIMIT_AS,({Limits().address_space_bytes},)*2)\n"
+            f"sys.path.insert(0,{str(ROOT)!r})\n"
+            "from pathlib import Path\n"
+            "from scripts.validation_ownership.budget import Limits,ProbeBudget\n"
+            "from scripts.validation_ownership.reporter import repository_status\n"
+            "budget=ProbeBudget(Limits(seconds=15,runs=1))\n"
+            "try:\n"
+            f" sys.stdout.buffer.write(repository_status(Path({str(ROOT)!r}),budget=budget))\n"
+            "finally:\n"
+            " budget.close()\n"
+        )
+        budget = ProbeBudget(Limits(seconds=20, runs=1))
+        try:
+            result = budget.run(
+                ["/usr/bin/python3", "-I", "-S", "-B", "-c", body],
+                env=ENVIRONMENT,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(result.stdout, expected)
+        finally:
+            budget.close()
+        self.assertFalse(budget.children)
 
 
 class FullRepositoryAcceptanceTests(unittest.TestCase):
