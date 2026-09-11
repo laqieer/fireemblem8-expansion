@@ -382,6 +382,83 @@ Reset the disposable source edit and run `make clean_fast` if needed. This
 does not create a content pack, alter default Chapter 2, or replace a
 hand-written callback with a second event router.
 
+## TC-GENERATED-LAZY-REGISTRY-001: Construct generated-data schemas lazily
+
+- **Feature / originating issue:** `generated-data-platform` /
+  [#248](https://github.com/laqieer/fireemblem8-expansion/issues/248).
+- **Supported configuration or artifact:** clean source checkout with Python
+  3 and the existing validation-ownership host helpers; generated output and
+  temporary repositories remain owned build-local artifacts.
+- **Prerequisites and clean starting state:** start from the repository root,
+  use only owned scratch directories, and compare results against direct eager
+  schema construction inside the same checkout instead of inventing a new
+  importer or registry.
+
+### Actions
+
+1. Create a `SchemaRegistry`, register mixed eager and lazy schemas, and
+   resolve an exact version and the latest version while observing which
+   factories actually run.
+2. Attempt duplicate eager/lazy keys, noncallable factories, wrong returned
+   identities, a raising factory, and recursive same-key resolution. Confirm
+   failures are explicit and that a later valid resolve still succeeds.
+3. Import the real generated-data registry in isolated commands and resolve a
+   simple table (`shops`) and a transitive one (`autoplaystrategies`).
+   Compare actual code and source receipts against an eager baseline command
+   that imports every schema module. Static source admission must still cover
+   all 16 factory-local schema imports while runtime imports remain limited to
+   the selected schema and its genuine transitive dependencies.
+4. Run `python3 -m scripts.generated_data validate --table shops`,
+   `python3 -m scripts.generated_data generate --table shops`, and
+   `python3 -m scripts.generated_data check --table shops` in owned output
+   paths and compare the generated C and inventory text to direct eager
+   `ShopsTableSchema()` output.
+
+### Expected result
+
+`all_names()` and latest-version selection inspect declared keys without
+constructing unrelated schemas. `resolve()` invokes only the selected factory,
+returns the same cached object on repeated success, and leaves failures
+uncached. The real registry still declares the same 16 table names. Isolated
+registry commands preserve complete static code admission while actual runtime
+imports and source receipts stay bound to the selected schema. The chosen
+`shops` validate/generate/check commands produce the same records, generated
+bytes, and inventory text as direct eager schema construction.
+
+### Negative control
+
+Duplicate eager/lazy keys, noncallable factories, wrong returned identities,
+recursive same-key resolution, and raising factories all fail explicitly.
+Failed lazy construction must not poison later valid resolution. Lazy registry
+construction does not bypass `load_records()`, input validation, generated
+output checks, or source/receipt accounting.
+
+### Interactions and save compatibility
+
+This is an internal generated-data construction policy only. The public table
+names, versions, source selection, validation, generated output, inventories,
+ownership receipts, gameplay data, save format, localization, and ROM/RAM
+behavior remain unchanged. Runtime import reduction is a construction effect,
+not proof that broader ownership graphs fit their budgets.
+
+### Automation
+
+- `python3 -m unittest scripts.generated_data.tests.test_schema.SchemaRegistryTests -v`
+  — `scripts/generated_data/tests/test_schema.py`.
+- `python3 -m unittest scripts.generated_data.tests.test_cli_new_tables.CliShopsTests.test_lazy_registry_shops_cli_matches_direct_eager_schema_outputs -v`
+  — `scripts/generated_data/tests/test_cli_new_tables.py`.
+- `python3 -m unittest scripts.validation_ownership.tests.test_foundation.FoundationTests.test_real_generated_registry_commands_keep_lazy_runtime_imports_and_complete_static_code_admission scripts.validation_ownership.tests.test_foundation.FoundationTests.test_lazy_generated_registry_shops_generation_publishes_expected_outputs_through_make -v`
+  — `scripts/validation_ownership/tests/test_foundation.py`.
+- `python3 -m unittest scripts.docs_check_tests.test_check_docs.TesterCaseRegistryTests.test_generated_data_platform_cases_are_indexed_with_complete_procedures -v`
+  — `scripts/docs_check_tests/test_check_docs.py`.
+
+### Cleanup and limitations
+
+Remove only the owned scratch directories each test creates. This proves lazy
+schema construction through the existing registry seam; it does not add a new
+registry protocol, weaken malformed-input rejection, or claim whole-report
+resource fit.
+
 ## TC-CORE-005: Typed ID cap preserves default boundary
 
 - **Feature / originating issue:** `typed-id-item-cap` /
