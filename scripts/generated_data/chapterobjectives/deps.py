@@ -24,6 +24,8 @@ def _owner_source(source):
 
 def _implementation_module_paths():
     """Return every loaded generated-data implementation module, excluding tests."""
+    from scripts.assets import tmx
+
     package_root = _canonical(os.path.join(bundle_schema.REPO_ROOT, "scripts", "generated_data"))
     modules = (objectives_schema, generate, inventory, enabled, bundle_schema)
     bundle_schema.dependency_module_paths()
@@ -35,7 +37,7 @@ def _implementation_module_paths():
         module_path = _canonical(module_path)
         if module_path.startswith(package_root + os.sep) and "/tests/" not in module_path:
             paths.add(module_path)
-    tmx_path = getattr(bundle_schema.tmx, "__file__", None)
+    tmx_path = getattr(tmx, "__file__", None)
     if tmx_path is not None:
         paths.add(_canonical(tmx_path))
     return tuple(sorted(paths))

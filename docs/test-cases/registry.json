@@ -390,13 +390,15 @@
         "https://github.com/laqieer/fireemblem8-expansion/issues/5",
         "https://github.com/laqieer/fireemblem8-expansion/issues/57",
         "https://github.com/laqieer/fireemblem8-expansion/issues/234",
-        "https://github.com/laqieer/fireemblem8-expansion/issues/248"
+        "https://github.com/laqieer/fireemblem8-expansion/issues/248",
+        "https://github.com/laqieer/fireemblem8-expansion/issues/250"
       ],
       "reference": "docs/generated_data_tutorial.md",
       "status": "current",
       "required_cases": [
         "TC-CORE-004",
-        "TC-GENERATED-LAZY-REGISTRY-001"
+        "TC-GENERATED-LAZY-REGISTRY-001",
+        "TC-GENERATED-MAP-PARSER-001"
       ]
     },
     {
@@ -2081,6 +2083,51 @@
         {
           "command": "python3 -m unittest scripts.docs_check_tests.test_check_docs.TesterCaseRegistryTests.test_generated_data_platform_cases_are_indexed_with_complete_procedures -v",
           "evidence": "scripts/docs_check_tests/test_check_docs.py"
+        }
+      ]
+    },
+    {
+      "id": "TC-GENERATED-MAP-PARSER-001",
+      "title": "Initialize the map parser only for TMX validation",
+      "feature_id": "generated-data-platform",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/250"
+      ],
+      "document": "docs/test-cases/core-framework.md",
+      "anchor": "tc-generated-map-parser-001-initialize-the-map-parser-only-for-tmx-validation",
+      "profiles": [
+        "Clean source checkout with Python 3",
+        "Existing native ownership-probe host environment"
+      ],
+      "purpose": "Prove schema discovery and primary loading avoid unused TMX initialization while real TMX and fallback-map validation remain intact.",
+      "prerequisites": "Run at the repository root in fresh isolated interpreters, using only test-owned scratch directories; no ROM or external service is needed.",
+      "actions": "Disallow TMX initialization, resolve all real schema declarations, and select/load chapter-bundle, chapter-objective and autoplay file/directory inputs. Compare paths, versions, record counts and inventories; reject malformed primary JSON. Parse an actual valid TMX map and reject missing/malformed sources or mismatched manifest dimensions. Resolve a valid JSON fallback under the import guard and retain invalid fallback rejection. Run the existing native registry admission/receipt control. Execute objective/autoplay dependency-discovery CLIs, compare their sorted inputs with emitted depfiles including TMX source, and preserve a complete depfile on malformed input.",
+      "expected_result": "Discovery/loading and JSON fallback maps do not initialize the TMX parser. The 16 declarations remain version 1, the bundle/objective/autoplay sources retain 1/0/2 records and equal file/directory inventories, actual TMX dimensions remain correct, and static admission plus actual native source/code receipts remain intact. Dependency discovery directly binds the parser's owning module and emits the complete prerequisite set without a removed transitive attribute.",
+      "negative_control": "The original eager import fails the fresh-process initialization guard before loading records. Restoring that import must fail the regression; malformed primary JSON and missing/malformed/inconsistent map data remain rejected after deferral. The initial import-only correction raises AttributeError during real dependency discovery; the CLI regression rejects that coupled failure and preserves complete depfiles on later input errors.",
+      "interactions": "Reuses the existing lazy schema registry, TMX parser and native producer APIs. No new dependency or conflicting profile, alternate registry/importer, skipped loader, permission change or accounting discount.",
+      "save_compatibility": "Host-only initialization timing; no gameplay, save/config, generated game content, localization, ROM/RAM, modern or archival behavior change.",
+      "cleanup": "Each test removes only its owned scratch directories.",
+      "limitations": "Deferred initialization is not proof of complete graph resource fit or an end-to-end performance percentage. All deterministic assertions are automated; no manual-only criterion.",
+      "automation": [
+        {
+          "command": "python3 -m unittest scripts.generated_data.tests.test_schema.SchemaRegistryTests.test_registry_discovery_and_primary_loads_do_not_initialize_map_parser -v",
+          "evidence": "scripts/generated_data/tests/test_schema.py"
+        },
+        {
+          "command": "python3 -m unittest scripts.generated_data.tests.test_chapterbundle_schema.ChapterBundleValidFixtureTests.test_map_dimensions_keep_actual_tmx_validation_and_errors -v",
+          "evidence": "scripts/generated_data/tests/test_chapterbundle_schema.py"
+        },
+        {
+          "command": "python3 -m unittest scripts.generated_data.tests.test_chapterobjectives_schema.ChapterObjectivesSchemaTests.test_fallback_layout_metadata_fails_closed_with_owner_diagnostic -v",
+          "evidence": "scripts/generated_data/tests/test_chapterobjectives_schema.py"
+        },
+        {
+          "command": "python3 -m unittest scripts.generated_data.tests.test_autoplaystrategies_deps.AutoplayStrategiesDependencyTests -v",
+          "evidence": "scripts/generated_data/tests/test_autoplaystrategies_deps.py"
+        },
+        {
+          "command": "python3 -m unittest scripts.validation_ownership.tests.test_foundation.FoundationTests.test_real_generated_registry_commands_keep_lazy_runtime_imports_and_complete_static_code_admission -v",
+          "evidence": "scripts/validation_ownership/tests/test_foundation.py"
         }
       ]
     },

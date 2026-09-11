@@ -541,6 +541,20 @@ through this registry instead of hardcoding imports, so `cli.py` has zero
 per-table branches -- adding a table means adding a package plus its
 registration seam in `registry.py`, nothing else.
 
+Schema discovery, primary-source selection/loading, and JSON fallback map
+dimensions do not initialize the TMX parser. `chapterbundle` imports that
+parser only when `read_chapter_map_dimensions()` reaches an actual TMX source;
+valid dimensions and malformed/missing-source diagnostics are unchanged.
+Keep validation-only dependencies at their actual consumer rather than
+eagerly initializing them for every schema operation. This uses ordinary
+function-local imports, which remain visible to static source admission, and
+does not skip loaders or discount actual observations. See
+[`TC-GENERATED-MAP-PARSER-001`](test-cases/core-framework.md#tc-generated-map-parser-001-initialize-the-map-parser-only-for-tmx-validation).
+Explicit objective/autoplay dependency discovery obtains the TMX implementation
+from its owning module when collecting prerequisites; it does not rely on a
+transitive `chapterbundle` module attribute. Its depfiles still include the
+TMX source and all other generation inputs.
+
 `schema.DependencyGraph` records which headers/tables a schema depends on
 (`supports` depends on `constants/characters.h` and
 `UNIT_SUPPORT_MAX_COUNT` from `types.h`). It provides a deterministic

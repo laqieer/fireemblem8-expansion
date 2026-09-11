@@ -360,6 +360,99 @@ class SchemaRegistryTests(unittest.TestCase):
             "weapontriangle",
         ])
 
+    def test_registry_discovery_and_primary_loads_do_not_initialize_map_parser(self):
+        repository_root = os.path.abspath(
+            os.path.join(os.path.dirname(__file__), "..", "..", "..")
+        )
+        program = """
+import json
+import os
+import sys
+import tempfile
+from pathlib import Path
+
+sys.path.insert(0, sys.argv[1])
+
+class UnavailableMapParser:
+    def find_spec(self, fullname, path=None, target=None):
+        if fullname == "scripts.assets.tmx":
+            raise ImportError("TMX initialization is unavailable during discovery/loading")
+
+sys.meta_path.insert(0, UnavailableMapParser())
+from scripts.generated_data.registry import REGISTRY
+from scripts.generated_data.diagnostics import GeneratedDataError
+from scripts.generated_data.chapterbundle.schema import read_chapter_map_dimensions
+
+root = Path(sys.argv[1])
+declarations = [(name, REGISTRY.resolve(name).version) for name in REGISTRY.all_names()]
+loads = {}
+with tempfile.TemporaryDirectory() as temporary:
+    scratch = Path(temporary)
+    malformed = scratch / "invalid.json"
+    malformed.write_text("{", encoding="utf-8")
+    for name, relative_source in (
+        ("chapterbundle", "src/data/ch2_bundle.json"),
+        ("chapterobjectives", "src/data/chapter_objectives.json"),
+        ("autoplaystrategies", "src/data/autoplay_strategies.json"),
+    ):
+        schema = REGISTRY.resolve(name)
+        source = root / relative_source
+        file_records = schema.load_records(str(source))
+        directory_paths = schema.source_paths(str(source.parent))
+        directory_records = schema.load_records(str(source.parent))
+        assert schema.build_inventory(file_records) == schema.build_inventory(directory_records)
+        try:
+            schema.load_records(str(malformed))
+        except GeneratedDataError as error:
+            assert str(malformed) in str(error)
+        else:
+            raise AssertionError("malformed primary input was accepted")
+        loads[name] = {
+            "source": relative_source,
+            "directory_paths": [os.path.relpath(path, root) for path in directory_paths],
+            "file_count": schema.manifest_record_count(file_records),
+            "directory_count": schema.manifest_record_count(directory_records),
+        }
+    (scratch / "Ch3Map.json").write_text(
+        json.dumps({"width": 17, "height": 16}), encoding="utf-8"
+    )
+    fallback = read_chapter_map_dimensions(
+        3,
+        chapter_settings_path=str(root / "src/data/chapter_settings.json"),
+        asset_table_path=str(root / "src/data/data_8B363C.c"),
+        asset_manifest_path=str(scratch / "missing-manifest.json"),
+        map_layout_dir=str(scratch),
+    )
+print(json.dumps({"declarations": declarations, "loads": loads, "fallback": fallback}))
+"""
+        completed = subprocess.run(
+            [sys.executable, "-I", "-S", "-B", "-c", program, repository_root],
+            cwd=repository_root,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        result = json.loads(completed.stdout)
+        from scripts.generated_data.registry import REGISTRY
+
+        self.assertEqual(result["declarations"], [[name, 1] for name in REGISTRY.all_names()])
+        for name, source, count in (
+            ("chapterbundle", "src/data/ch2_bundle.json", 1),
+            ("chapterobjectives", "src/data/chapter_objectives.json", 0),
+            ("autoplaystrategies", "src/data/autoplay_strategies.json", 2),
+        ):
+            self.assertEqual(
+                result["loads"][name],
+                {
+                    "source": source,
+                    "directory_paths": [source],
+                    "file_count": count,
+                    "directory_count": count,
+                },
+            )
+        self.assertEqual(result["fallback"], [17, 16])
+
     def test_real_registry_runtime_imports_only_selected_factories_in_isolated_processes(self):
         repository_root = os.path.abspath(
             os.path.join(os.path.dirname(__file__), "..", "..", "..")

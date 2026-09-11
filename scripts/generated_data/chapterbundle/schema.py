@@ -70,8 +70,6 @@ import importlib
 import json
 import os
 
-from scripts.assets import tmx
-
 from ..diagnostics import GeneratedDataError
 from ..cparse import find_c_array_blocks, split_top_level_entries
 from ..json_loader import load_json_file
@@ -670,6 +668,8 @@ def read_chapter_map_dimensions(chapter_settings_index, chapter_settings_path=CH
                         "map asset '{}' has no TMX source".format(asset.get("id", map_symbol))
                     )
                 source_path = _source_path(sources[0])
+                from scripts.assets import tmx
+
                 try:
                     source_width, source_height, _values = tmx.parse_tmx(source_path)
                 except (OSError, tmx.TmxError) as error:
