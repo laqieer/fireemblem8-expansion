@@ -4595,6 +4595,7 @@ printf '%s\t%s\t%s\n' "$result" \
             "TC-PROBE-DEPENDENCY-FUSION-001",
             "TC-PROBE-PYTHON-PRODUCERS-001",
             "TC-PROBE-METADATA-TRANSPORT-001",
+            "TC-WORKFLOW-ASSET-DISCOVERY-001",
         ]
         self.assertEqual(
             [],
