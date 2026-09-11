@@ -918,6 +918,32 @@ class AssetManifestTests(unittest.TestCase):
                     tracked_sources=tracked, source_identities=supplied,
                 )
 
+    def test_discovery_artifact_rejects_nonregular_identity_modes_before_opening_sources(self):
+        source = os.path.join(REPO_ROOT, "assets", "manifest.json")
+        records = manifest.load_discovery(source)
+        tracked = frozenset(manifest.discovery_sources(records))
+        identities = captured_discovery_identities(source, records)
+        path, _mode, digest = identities[0]
+        for mode in ("010600", "040700"):
+            supplied = list(identities)
+            supplied[0] = (path, mode, digest)
+            with self.subTest(mode=mode):
+                with mock.patch.object(
+                    manifest.os,
+                    "open",
+                    side_effect=AssertionError("source acquisition attempted"),
+                ) as open_spy:
+                    with self.assertRaisesRegex(
+                        GeneratedDataError, "captured source identity is invalid"
+                    ):
+                        manifest.render_discovery_artifact(
+                            source,
+                            "build/generated/asset-discovery/captured.mk",
+                            tracked_sources=tracked,
+                            source_identities=supplied,
+                        )
+                open_spy.assert_not_called()
+
     def test_discovery_artifact_does_not_require_new_hashlib_file_digest_api(self):
         source = os.path.join(REPO_ROOT, "assets", "manifest.json")
         records = manifest.load_discovery(source)

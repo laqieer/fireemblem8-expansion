@@ -1301,7 +1301,9 @@ evidence and all final quality gates. No manual-only criterion applies.
 6. Exercise adversarial inputs: missing tracked membership, malformed tracked
    source sets, escaping manifest source paths, absolute or malformed logical
    outputs, missing/extra/duplicate identity rows, nonregular identity modes,
-   and mode/content digest mismatches. Every input must fail explicitly.
+   and mode/content digest mismatches. FIFO (`010600`) and directory
+   (`040700`) identity-mode claims must fail before source acquisition, proven
+   by an `os.open` spy with zero calls. Every input must fail explicitly.
 7. Execute the native FIFO regression with regular, no-writer FIFO, and
    same-process sentinel-holder FIFO variants. The regular variant must match
    the captured identity digest. Both FIFO variants must reject promptly, close
@@ -1318,7 +1320,8 @@ complete `(path, mode, sha256)` identities, returns a safe
 repository-relative output path plus the real rendered Make include content,
 and writes nothing. Captured digests are stable identity hashes while ordinary
 CLI discovery retains its mtime digest. Raced nonregular descriptors are
-rejected before reads.
+rejected before reads; malformed nonregular identity claims reject before any
+source is opened.
 
 ### Negative control
 
@@ -1326,8 +1329,10 @@ The pre-fix a616 implementation blocks indefinitely when the validated regular
 source is replaced by a FIFO without a writer. Removing nonblocking descriptor
 acquisition recreates that bounded timeout. Removing the pre-read regular-file
 rejection consumes the same-process holder's nonregular FIFO sentinel payload.
-Missing, extra, duplicate, malformed or mismatched captured identities cannot
-produce a successful include.
+Removing the early regular-mode identity guard attempts source acquisition for
+malformed FIFO or directory identity rows. Missing, extra, duplicate,
+malformed or mismatched captured identities cannot produce a successful
+include.
 
 ### Interactions and save compatibility
 
