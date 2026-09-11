@@ -568,6 +568,8 @@ The [confined registry adapter](ownership-probe-producers.md) discovers these
 declarations without source reads, then runs the real loader and count method
 with exactly the captured primary/support files. It reports their combined
 source paths and independently requires actual consumption to agree.
+The validated support declaration is passed to the final command as data;
+the selector is never invoked again with source-read authority.
 Schemas without the optional support method declare no additional inputs;
 an undeclared read still rejects. This host-only seam introduces no new
 configuration, generated content, save migration, ROM/RAM change or conflicting

@@ -4275,7 +4275,7 @@ raise AssertionError("default termination was lost")
             self.assertLessEqual(session.files_created, session.budget.limits.created_files)
         self.assert_clean(session)
 
-    def manifest_support_fixture(self, selector="return ('/repo/include/count.h',)"):
+    def manifest_support_fixture(self, selector="return ('/repo/include/count.h',)", *, count_action="pass"):
         self.add("data/first.json", "[1,2,3]")
         self.add("data/second.json", "[4]")
         self.add("data/ignored.txt", "not JSON")
@@ -4296,6 +4296,7 @@ raise AssertionError("default termination was lost")
             "'records':[entry for path in paths for entry in json.loads(path.read_text())]}\n"
             " def manifest_record_count(self,records):\n"
             "  self.counted=True\n"
+            f"  {count_action}\n"
             "  return min(len(records['records']),int(Path('/repo/include/count.h').read_text()))\n"
             "class Registry:\n"
             " def resolve(self,name): return Schema()\n"
@@ -4325,8 +4326,6 @@ raise AssertionError("default termination was lost")
         for selector, message in (
             ("return ()", "undeclared source read"),
             ("return ('include/count.h','include/extra.h')", "declared/consumed source mismatch"),
-            ("return () if self.counted else ('include/count.h',)",
-             "declared/reported/consumed generated-source contract mismatch"),
             ("return ('include/count.h','include/count.h')", "input declaration is invalid"),
             ("return ('data/first.json','include/count.h')", "input declaration is invalid"),
             ("return ('include/missing.h',)", "input declaration is invalid"),
@@ -4368,6 +4367,38 @@ raise AssertionError("default termination was lost")
             self.assertEqual(count(), 1)
         self.assert_clean(session)
         budget.close()
+
+    def test_manifest_support_selector_cannot_consume_an_unread_extra_input(self):
+        self.manifest_support_fixture(
+            "self.counted and Path('/repo/include/extra.h').read_text(); "
+            "return ('include/count.h','include/extra.h')",
+        )
+        with self.session() as session:
+            with self.assertRaisesRegex(MakeProbeError, "declared/consumed source mismatch"):
+                session.registry(generated_registry_command(session, "fixture", "data/first.json"))
+        self.assert_clean(session)
+
+    def test_manifest_support_selector_runs_only_in_the_read_free_capsule(self):
+        self.manifest_support_fixture(
+            "assert not self.counted; return ('include/count.h',)",
+        )
+        with self.session() as session:
+            result = session.registry(generated_registry_command(session, "fixture", "data/first.json"))
+            self.assertEqual(result["record_count"], 2)
+            self.assertEqual(result["source_paths"], ["data/first.json", "include/count.h"])
+        self.assert_clean(session)
+
+    def test_manifest_support_report_cannot_omit_validated_inputs(self):
+        self.manifest_support_fixture(count_action=(
+            "render=json.dumps; json.dumps=lambda value,**options: "
+            "render({**value,'source_paths':value['source_paths'][:-1]},**options)"
+        ))
+        with self.session() as session:
+            with self.assertRaisesRegex(
+                MakeProbeError, "declared/reported/consumed generated-source contract mismatch",
+            ):
+                session.registry(generated_registry_command(session, "fixture", "data/first.json"))
+        self.assert_clean(session)
 
     def test_real_items_registry_declares_and_consumes_the_count_header(self):
         from scripts.generated_data.items.schema import ItemsTableSchema

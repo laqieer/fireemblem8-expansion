@@ -151,9 +151,12 @@ pool. Support paths must be concrete captured regular files, disjoint from
 primary inputs. Missing, malformed, escaping or nonregular claims reject
 before source-content authority is granted.
 
-The final capsule runs the actual loader and `manifest_record_count`, then
-reports the loader's primary paths plus the schema's count-support paths in
-the unchanged four-field registry record. The native observed read set must
+The validated support declaration is passed as exact argv data to the final
+capsule, which runs the actual loader and `manifest_record_count`, then
+reports the loader's primary paths plus those support paths in the unchanged
+four-field registry record. The selector is not called with source-read
+authority: a stateful selector cannot consume a count-unused extra input
+while assembling the final report. The native observed read set must
 equal both the exact admitted set and the final reported set. Declared but
 unread support, unreported consumption and reads during declaration reject;
 support headers are not reclassified as code. The items schema's actual enum

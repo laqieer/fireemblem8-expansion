@@ -561,7 +561,8 @@ criterion applies.
 3. Omit the support declaration, add an unread file, omit a consumed path
    from the final report, or provide duplicate, overlapping, absent,
    nonregular, escaping or noncanonical declarations. Also attempt a real
-   source read during declaration.
+   source read during declaration, and a stateful selector that would read
+   an otherwise unused extra support file after the count runs.
 4. Run the existing ordinary file/directory/no-support registry and schema
    count controls. Inspect the actual item counts at default cap and `0xCE`.
 
@@ -582,7 +583,11 @@ read. The real-schema regression removes only the new support declaration
 inside its captured candidate and requires that original denial again.
 The unchanged count method still reads the actual enum. Extra unread support
 fails declared/consumed equality; omitted final paths fail
-declared/reported/consumed equality. Changing implementation spelling without
+declared/reported/consumed equality. The original final-capsule selector call
+let a stateful selector consume an otherwise unread extra file; the native
+regression reproduces that incorrect acceptance and now rejects it. A guarded
+selector proves it is invoked only in the read-free declaration capsule.
+Changing implementation spelling without
 changing these behaviors does not alter the expected result.
 
 ### Interactions and save compatibility
@@ -597,6 +602,8 @@ modern debug/release or archival output changes.
 ### Automation
 
 - `python3 -m unittest scripts.validation_ownership.tests.test_foundation.FoundationTests.test_real_items_registry_declares_and_consumes_the_count_header scripts.validation_ownership.tests.test_foundation.FoundationTests.test_manifest_support_inputs_match_actual_file_and_directory_receipts scripts.validation_ownership.tests.test_foundation.FoundationTests.test_manifest_support_inputs_reject_invalid_declarations_and_receipts scripts.validation_ownership.tests.test_foundation.FoundationTests.test_manifest_support_inputs_follow_selected_immutable_view -v`
+  -- `scripts/validation_ownership/tests/test_foundation.py`.
+- `python3 -m unittest scripts.validation_ownership.tests.test_foundation.FoundationTests.test_manifest_support_selector_cannot_consume_an_unread_extra_input scripts.validation_ownership.tests.test_foundation.FoundationTests.test_manifest_support_selector_runs_only_in_the_read_free_capsule scripts.validation_ownership.tests.test_foundation.FoundationTests.test_manifest_support_report_cannot_omit_validated_inputs -v`
   -- `scripts/validation_ownership/tests/test_foundation.py`.
 - `python3 -m unittest scripts.validation_ownership.tests.test_foundation.FoundationTests.test_generated_registry_uses_actual_structured_and_sequence_schema_counts scripts.validation_ownership.tests.test_foundation.FoundationTests.test_generated_registry_source_paths_uses_schema_selector_without_loading_records scripts.validation_ownership.tests.test_foundation.FoundationTests.test_generated_registry_requires_the_existing_schema_count_contract -v`
   -- `scripts/validation_ownership/tests/test_foundation.py`.

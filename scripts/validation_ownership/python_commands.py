@@ -270,7 +270,7 @@ def generated_registry_command(session: ProbeSession, name: str, source: str):
     return directory_python_command(
         session,
         driver,
-        (name, source),
+        (name, source, "--support-paths", *support),
         sources=tuple(sorted((*primary, *support))),
         directories=directories,
         code=code,

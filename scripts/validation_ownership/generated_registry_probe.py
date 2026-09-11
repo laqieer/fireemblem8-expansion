@@ -43,7 +43,10 @@ elif sys.argv[3:] in (["--manifest-inputs", "file"], ["--manifest-inputs", "dire
         ),
         "support_paths": support_paths(schema),
     }, sort_keys=True, separators=(",", ":")))
-elif len(sys.argv) == 3:
+elif len(sys.argv) == 3 or sys.argv[3:4] == ["--support-paths"]:
+    support = [repository_path(path).as_posix() for path in sys.argv[4:]]
+    if support != sorted(set(support)):
+        raise ValueError("registry count-support arguments must be sorted and unique")
     records = schema.load_records(str(source))
     paths = getattr(records, "source_paths", None)
     if paths is None and isinstance(records, dict):
@@ -53,7 +56,7 @@ elif len(sys.argv) == 3:
     record_count = schema.manifest_record_count(records)
     concrete = sorted(
         [repository_path(path, reported=True).as_posix() for path in paths]
-        + support_paths(schema)
+        + support
     )
     sys.stdout.write(json.dumps({
         "name": schema.name,
