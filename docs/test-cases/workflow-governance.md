@@ -3496,6 +3496,12 @@ game behavior needs a compensating change.
     process address-space bound. The pre-fix optional preload fails with
     threaded-lstat allocation exhaustion on the recorded host; disabling
     that optional optimization must not omit paths or alter status bytes.
+11. Run `python3 -m unittest scripts.validation_ownership.tests.test_graph_regex.GraphRegexTests -v`.
+    A schema request at the exact 1 MiB boundary must succeed, while a larger
+    cumulative pending allowance must not admit oversized requests or pattern
+    batches. Direct compressed-worker and oversized wire declarations must
+    also reject. Retain stricter caller bounds, real matching/schema results,
+    the original dialect, deadline, memory and cleanup controls.
 
 ### Expected result
 

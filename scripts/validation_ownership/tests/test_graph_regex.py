@@ -1,5 +1,6 @@
 import json
 import os
+from dataclasses import dataclass
 from pathlib import Path
 import signal
 import threading
@@ -41,6 +42,67 @@ class GraphRegexTests(unittest.TestCase):
             if isinstance(value, dict) and "phase" in value:
                 result.append(value)
         return result
+
+    def test_larger_pending_allowance_does_not_widen_request_or_pattern_bounds(self):
+        @dataclass(frozen=True)
+        class WorkLimits(Limits):
+            pending_bytes: int = 16 * 1024 * 1024
+
+        cases = (
+            ("schema", lambda budget: evaluate(
+                budget, "schema", ["x" * (1024 * 1024), {"type": "string"}, {"type": "string"}],
+            )),
+            ("patterns", lambda budget: CommandPatterns(budget, ["a" * 8192] * 128)),
+        )
+        for name, operation in cases:
+            with self.subTest(operation=name):
+                budget = ProbeBudget(WorkLimits())
+                try:
+                    with self.assertRaises(MakeProbeError):
+                        operation(budget)
+                    self.assertEqual(budget.runs, 0)
+                    self.assertTrue(budget.failed)
+                finally:
+                    budget.close()
+                self.assertFalse(budget.children)
+
+    def test_schema_request_accepts_exact_leaf_bound_and_preserves_smaller_allowances(self):
+        schema = {"type": "string"}
+        payload = ["", schema, schema]
+        payload[0] = "x" * (1024 * 1024 - len(encoded(payload)))
+        self.assertEqual(len(encoded(payload)), 1024 * 1024)
+        budget = self.budget()
+        self.assertIsNone(evaluate(budget, "schema", payload))
+        self.assertFalse(budget.children)
+        small = self.budget(pending_bytes=1024)
+        with self.assertRaises(MakeProbeError):
+            evaluate(small, "schema", payload)
+        self.assertEqual(small.runs, 0)
+
+    def test_direct_worker_cannot_expand_the_leaf_bound_through_compressed_input(self):
+        budget = self.budget()
+        schema = {"type": "string"}
+        raw = encoded(["x" * (1024 * 1024), schema, schema])
+        packed = zlib.compress(raw)
+        small = encoded(["ok", schema, schema])
+        for encoding, wire, wire_limit, decoded_limit in (
+            ("zlib", packed, len(packed), len(raw)),
+            ("identity", small, 1024 * 1024 + 1, len(small)),
+        ):
+            with self.subTest(encoding=encoding):
+                result = budget.run(
+                    [
+                        "/usr/bin/python3", "-I", "-S", "-B", str(WORKER_PATH),
+                        "schema", str(budget.limits.address_space_bytes),
+                        str(wire_limit), str(ROOT), encoding, str(decoded_limit),
+                    ],
+                    env=ENVIRONMENT, input_data=wire,
+                )
+                self.assertNotEqual(result.returncode, 0)
+                records = [json.loads(line) for line in result.stdout.splitlines()]
+                self.assertEqual(len(records), 1)
+                self.assertFalse(records[0]["ok"])
+                self.assertFalse(budget.children)
 
     def test_worker_input_bound_tracks_actual_request_not_aggregate_pending_budget(self):
         budget = self.budget()

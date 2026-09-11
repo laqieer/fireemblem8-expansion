@@ -589,9 +589,12 @@ DOTALL semantics. It applies the existing address-space bound before parsing
 inputs or compiling patterns and retains the report's original deadline,
 launch/input/output budgets and owned cleanup. No engine, dependency, dialect,
 service or numeric allowance is added.
-The caller first validates the encoded JSON against the existing file and
-pending bounds, then gives the worker the actual wire length as its input
-ceiling. A cumulative pending allowance is not an allocation request: small
+The caller first validates encoded JSON against the explicit 1 MiB request
+maximum and any stricter file/pending bound, then gives the worker the actual
+wire length as its input ceiling. Pattern batches retain that same 1 MiB
+maximum; the worker independently rejects larger wire or decoded declarations.
+Increasing a cumulative pending allowance cannot widen those leaf limits.
+A cumulative pending allowance is not an allocation request: small
 messages must not reserve the report-wide traffic budget before parsing.
 Repeated pattern batches use lossless zlib transport only when it is smaller
 than the identity representation. The original decoded JSON still satisfies

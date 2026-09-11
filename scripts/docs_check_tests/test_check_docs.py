@@ -1220,6 +1220,8 @@ class TesterCaseRegistryTests(unittest.TestCase):
                             "test_registry_count_support_ownership_follows_the_selected_view -v",
                             "python3 -m unittest scripts.validation_ownership.tests."
                             "test_reporter.RepositoryStatusTests -v",
+                            "python3 -m unittest scripts.validation_ownership.tests."
+                            "test_graph_regex.GraphRegexTests -v",
                         },
                     },
                     "TC-WORKFLOW-OWNERSHIP-PROBE-SANDBOX-001": {

@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 
+MAX_REQUEST_BYTES = 1024 * 1024
+
+
 def _worker():
     import json
     import resource
@@ -19,11 +22,13 @@ def _worker():
         }, separators=(",", ":")), flush=True)
 
     try:
+        if not 0 < limit <= MAX_REQUEST_BYTES:
+            raise ValueError("input byte bound")
         raw = sys.stdin.buffer.read(limit + 1)
         if len(raw) > limit:
             raise ValueError("input byte bound")
         decoded_limit = int(sys.argv[6])
-        if decoded_limit < 0:
+        if not 0 <= decoded_limit <= MAX_REQUEST_BYTES:
             raise ValueError("decoded input bound")
         if sys.argv[5] == "zlib":
             decoder = zlib.decompressobj()
@@ -93,7 +98,7 @@ def evaluate(budget: ProbeBudget, operation: str, payload):
         raise MakeProbeError("unsupported ownership regex operation")
     budget.remaining()
     request = encoded(payload)
-    if len(request) > min(budget.limits.file_bytes, budget.limits.pending_bytes):
+    if len(request) > min(MAX_REQUEST_BYTES, budget.limits.file_bytes, budget.limits.pending_bytes):
         budget.reject("ownership regex request exceeds the existing input byte bound")
     compressed = zlib.compress(request)
     encoding = "zlib" if len(compressed) < len(request) else "identity"
@@ -155,7 +160,7 @@ def _patterns(budget, patterns):
     size = 2
     for pattern in patterns:
         size += len(encoded(pattern)) + 1
-        if size > budget.limits.pending_bytes:
+        if size > min(MAX_REQUEST_BYTES, budget.limits.pending_bytes):
             budget.reject("ownership regex pattern batch exceeds its input byte bound")
     return tuple(patterns)
 
