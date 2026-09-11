@@ -550,6 +550,10 @@ eagerly initializing them for every schema operation. This uses ordinary
 function-local imports, which remain visible to static source admission, and
 does not skip loaders or discount actual observations. See
 [`TC-GENERATED-MAP-PARSER-001`](test-cases/core-framework.md#tc-generated-map-parser-001-initialize-the-map-parser-only-for-tmx-validation).
+Explicit objective/autoplay dependency discovery obtains the TMX implementation
+from its owning module when collecting prerequisites; it does not rely on a
+transitive `chapterbundle` module attribute. Its depfiles still include the
+TMX source and all other generation inputs.
 
 `schema.DependencyGraph` records which headers/tables a schema depends on
 (`supports` depends on `constants/characters.h` and

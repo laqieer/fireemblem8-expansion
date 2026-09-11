@@ -487,6 +487,10 @@ resource fit.
 5. Run the real native registry control below. Ordinary local imports must
    remain statically admitted; actual selected code/source receipts and
    loaders remain independently observed.
+6. Execute both objective and autoplay dependency-discovery CLIs. Compare
+   their sorted inputs with their emitted depfiles, including the TMX
+   implementation. Malformed primary JSON must fail without replacing a
+   previously complete depfile.
 
 ### Expected result
 
@@ -495,6 +499,8 @@ parser. All declarations retain version 1; the committed bundle, objective
 and autoplay inputs retain 1, 0 and 2 records respectively. File and directory
 loads produce equal inventories. Actual TMX parsing still returns authored
 dimensions and rejects invalid sources or inconsistent manifest dimensions.
+Explicit dependency collection still discovers the parser's source without
+depending on the removed transitive module attribute.
 
 ### Negative control
 
@@ -502,6 +508,9 @@ The pre-fix eager import fails the isolated initialization guard before
 primary-source loading. Restoring it makes the regression fail. Malformed
 primary JSON and malformed/missing/inconsistent maps remain rejected after
 deferral; the optimization must not replace their validation.
+The initial import-only correction fails actual dependency discovery with an
+`AttributeError`; the direct collector binding and CLI regression cover that
+coupled negative control.
 
 ### Interactions and save compatibility
 
@@ -519,6 +528,8 @@ archival behavior change.
   — `scripts/generated_data/tests/test_chapterbundle_schema.py`.
 - `python3 -m unittest scripts.generated_data.tests.test_chapterobjectives_schema.ChapterObjectivesSchemaTests.test_fallback_layout_metadata_fails_closed_with_owner_diagnostic -v`
   — `scripts/generated_data/tests/test_chapterobjectives_schema.py`.
+- `python3 -m unittest scripts.generated_data.tests.test_autoplaystrategies_deps.AutoplayStrategiesDependencyTests -v`
+  — `scripts/generated_data/tests/test_autoplaystrategies_deps.py`.
 - `python3 -m unittest scripts.validation_ownership.tests.test_foundation.FoundationTests.test_real_generated_registry_commands_keep_lazy_runtime_imports_and_complete_static_code_admission -v`
   — `scripts/validation_ownership/tests/test_foundation.py`.
 
