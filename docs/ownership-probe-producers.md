@@ -17,9 +17,11 @@ resolved code/source paths, modes and bytes at actual execution; native build
 inputs and Make provenance use that receipt, not a later view's hashes.
 
 Only commands with no declared `outputs` enter the reuse cache. Declared-output
-commands still execute on every dispatch and incur every original charge;
-their complete results remain with callers, active Make receipts, publication
-owners and returned observations for as long as those owners need them.
+commands still execute on every dispatch and incur every original charge.
+Callers and active Make receipts retain complete `ProcessOutput` objects;
+live publication state owns the generated files it needs. Returned
+`MakeObservation` values retain semantic/provenance, stdout/stderr and event
+records, not complete producer results or their generated-file bytes.
 After the last real owner releases a result, the reuse cache does not pin an
 object it can never reuse. Native compiler artifacts with `outputs=()` and
 pure-reader metadata revalidation retain their existing caching behavior.
