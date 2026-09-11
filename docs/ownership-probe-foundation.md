@@ -620,6 +620,11 @@ The generated-registry driver obtains cardinality through the selected schema's
 existing `manifest_record_count(records)` API. Structured records and
 sequence-backed tables therefore retain their schema-defined meaning; a schema
 missing that contract fails rather than falling back to container length.
+The shared command factory also obtains the schema's optional metadata-only
+`manifest_support_paths()` declaration. The final reported source set includes
+those actual count inputs, and native declared/consumed/reported equality still
+applies. See the [shared producer contract](ownership-probe-producers.md) for
+the separate primary/support selection boundary.
 Malformed UTF-8, duplicate/nonfinite JSON, stale/omitted/extra paths, malformed
 frames and unused source declarations reject. Directory source selectors must
 be explicit: the foundation does not infer a generator's ownership from a

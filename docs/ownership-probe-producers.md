@@ -137,6 +137,39 @@ publication come from the real module render/writer behavior, not guessed
 filenames or fabricated empty output. The same API is reusable for asset
 discovery/publication, registry source selection and later graph adoption
 without importing graph-specific code into the foundation.
+
+Issue [#254](https://github.com/laqieer/fireemblem8-expansion/issues/254)
+corrects generated-registry count-support admission. The existing
+`generated_registry_command(session, name, source)` factory runs one
+read-free native declaration capsule for both primary selection and the
+schema's optional `manifest_support_paths()`. Directory selection still uses
+the real `source_paths`; file-backed input remains the named primary file.
+The captured input kind selects those two declaration modes without granting
+file metadata or content access merely to rediscover a known file type.
+Canonical, duplicate-free primary paths must remain within that original
+pool. Support paths must be concrete captured regular files, disjoint from
+primary inputs. Missing, malformed, escaping or nonregular claims reject
+before source-content authority is granted.
+
+The validated support declaration is passed as exact argv data to the final
+capsule, which runs the actual loader and `manifest_record_count`, then
+reports the loader's primary paths plus those support paths in the unchanged
+four-field registry record. The selector is not called with source-read
+authority: a stateful selector cannot consume a count-unused extra input
+while assembling the final report. The native observed read set must
+equal both the exact admitted set and the final reported set. Declared but
+unread support, unreported consumption and reads during declaration reject;
+support headers are not reclassified as code. The items schema's actual enum
+header is therefore admitted truthfully without changing its archival count.
+The default support declaration is empty, including for older schemas that
+do not implement the optional selector. A missing count method still fails.
+The primary-only `generated_registry_source_paths` API remains unchanged.
+All discovery, loading, import, receipt, cache and replay work remains charged
+to the same selected-view report budget. This does not add a configurable
+item-cap environment to the confined registry or establish full graph fit.
+The source-build procedure and positive/adversarial automation are indexed as
+[`TC-GENERATED-MANIFEST-INPUTS-001`](test-cases/core-framework.md#tc-generated-manifest-inputs-001-declare-real-manifest-count-support-inputs).
+
 For chapterobjectives/autoplay, the support capsule also returns the actual
 implementation-module `.py` inputs discovered through
 `chapterobjectives.deps._implementation_module_paths()` after the admitted
