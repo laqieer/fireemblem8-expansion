@@ -4310,6 +4310,163 @@ raise AssertionError("default termination was lost")
             self.assertLessEqual(session.files_created, session.budget.limits.created_files)
         self.assert_clean(session)
 
+    def manifest_support_fixture(self, selector="return ('/repo/include/count.h',)", *, count_action="pass"):
+        self.add("data/first.json", "[1,2,3]")
+        self.add("data/second.json", "[4]")
+        self.add("data/ignored.txt", "not JSON")
+        self.add("include/count.h", "2\n")
+        self.add("include/extra.h", "unused\n")
+        self.add("scripts/generated_data/registry.py", (
+            "import json\nfrom pathlib import Path\n"
+            "class Schema:\n"
+            " name='fixture'\n version=1\n counted=False\n"
+            " def source_paths(self,source):\n"
+            "  path=Path(source)\n"
+            "  return sorted(path.glob('*.json')) if path.is_dir() else (path,)\n"
+            " def manifest_support_paths(self):\n"
+            f"  {selector}\n"
+            " def load_records(self,source):\n"
+            "  paths=self.source_paths(source)\n"
+            "  return {'source_paths':[str(path) for path in paths],"
+            "'records':[entry for path in paths for entry in json.loads(path.read_text())]}\n"
+            " def manifest_record_count(self,records):\n"
+            "  self.counted=True\n"
+            f"  {count_action}\n"
+            "  return min(len(records['records']),int(Path('/repo/include/count.h').read_text()))\n"
+            "class Registry:\n"
+            " def resolve(self,name): return Schema()\n"
+            "REGISTRY=Registry()\n"
+        ))
+
+    def test_manifest_support_inputs_match_actual_file_and_directory_receipts(self):
+        self.manifest_support_fixture()
+        for source, primary in (
+            ("data/first.json", ("data/first.json",)),
+            ("data", ("data/first.json", "data/second.json")),
+        ):
+            with self.subTest(source=source), self.session() as session:
+                command = generated_registry_command(session, "fixture", source)
+                expected = tuple(sorted((*primary, "include/count.h")))
+                self.assertEqual(command.sources, expected)
+                observed = session.command(command)
+                self.assertEqual(observed.consumed, expected)
+                self.assertNotIn("include/count.h", observed.code_consumed)
+                self.assertEqual(json.loads(observed.stdout), {
+                    "name": "fixture", "version": 1,
+                    "record_count": 2, "source_paths": list(expected),
+                })
+            self.assert_clean(session)
+
+    def test_manifest_support_inputs_reject_invalid_declarations_and_receipts(self):
+        for selector, message in (
+            ("return ()", "undeclared source read"),
+            ("return ('include/count.h','include/extra.h')", "declared/consumed source mismatch"),
+            ("return ('include/count.h','include/count.h')", "input declaration is invalid"),
+            ("return ('data/first.json','include/count.h')", "input declaration is invalid"),
+            ("return ('include/missing.h',)", "input declaration is invalid"),
+            ("return ('include',)", "input declaration is invalid"),
+            ("return ('../include/count.h',)", "repository-relative"),
+            ("return ('/outside/count.h',)", "not in the subpath"),
+            ("return ('include/./count.h',)", "canonical path"),
+            ("return ('include//count.h',)", "canonical path"),
+            ("return 'include/count.h'", "list or tuple"),
+            ("return None", "list or tuple"),
+            ("Path('/repo/include/count.h').read_text(); return ('include/count.h',)",
+             "undeclared source read"),
+        ):
+            with self.subTest(selector=selector):
+                self.manifest_support_fixture(selector)
+                with self.session() as session:
+                    with self.assertRaisesRegex(MakeProbeError, message):
+                        session.registry(generated_registry_command(
+                            session, "fixture", "data/first.json",
+                        ))
+                self.assert_clean(session)
+
+    def test_manifest_support_inputs_follow_selected_immutable_view(self):
+        self.manifest_support_fixture()
+        budget = ProbeBudget()
+        base_entries, base_revision = self.capture_tree(budget)
+        base_loader = AuthorityLoader(self.root, base_entries, base_revision, budget=budget)
+        self.add("include/count.h", "1\n")
+        current_entries, current_revision = self.capture_tree(budget)
+        current_loader = AuthorityLoader(self.root, current_entries, current_revision, budget=budget)
+        with ProbeSession(current_loader, scratch_root=self.scratch, budget=budget) as session:
+            def count():
+                return session.registry(generated_registry_command(
+                    session, "fixture", "data/first.json",
+                ))["record_count"]
+            self.assertEqual(count(), 1)
+            with session.select_view(base_loader):
+                self.assertEqual(count(), 2)
+            self.assertEqual(count(), 1)
+        self.assert_clean(session)
+        budget.close()
+
+    def test_manifest_support_selector_cannot_consume_an_unread_extra_input(self):
+        self.manifest_support_fixture(
+            "self.counted and Path('/repo/include/extra.h').read_text(); "
+            "return ('include/count.h','include/extra.h')",
+        )
+        with self.session() as session:
+            with self.assertRaisesRegex(MakeProbeError, "declared/consumed source mismatch"):
+                session.registry(generated_registry_command(session, "fixture", "data/first.json"))
+        self.assert_clean(session)
+
+    def test_manifest_support_selector_runs_only_in_the_read_free_capsule(self):
+        self.manifest_support_fixture(
+            "assert not self.counted; return ('include/count.h',)",
+        )
+        with self.session() as session:
+            result = session.registry(generated_registry_command(session, "fixture", "data/first.json"))
+            self.assertEqual(result["record_count"], 2)
+            self.assertEqual(result["source_paths"], ["data/first.json", "include/count.h"])
+        self.assert_clean(session)
+
+    def test_manifest_support_report_cannot_omit_validated_inputs(self):
+        self.manifest_support_fixture(count_action=(
+            "render=json.dumps; json.dumps=lambda value,**options: "
+            "render({**value,'source_paths':value['source_paths'][:-1]},**options)"
+        ))
+        with self.session() as session:
+            with self.assertRaisesRegex(
+                MakeProbeError, "declared/reported/consumed generated-source contract mismatch",
+            ):
+                session.registry(generated_registry_command(session, "fixture", "data/first.json"))
+        self.assert_clean(session)
+
+    def test_real_items_registry_declares_and_consumes_the_count_header(self):
+        from scripts.generated_data.items.schema import ItemsTableSchema
+
+        for directory in ("scripts/generated_data", "scripts/assets"):
+            for path in (ROOT / directory).rglob("*.py"):
+                if "tests" not in path.parts:
+                    self.add(path.relative_to(ROOT).as_posix(), path.read_bytes())
+        for path in ("src/data/items.json", "include/constants/items.h"):
+            self.add(path, (ROOT / path).read_bytes())
+        with self.session() as session:
+            command = generated_registry_command(session, "items", "src/data/items.json")
+            self.assertEqual(command.sources, ("include/constants/items.h", "src/data/items.json"))
+            observed = session.command(command)
+            self.assertEqual(observed.consumed, command.sources)
+            self.assertNotIn("include/constants/items.h", observed.code_consumed)
+            self.assertEqual(json.loads(observed.stdout), {
+                "name": "items", "version": ItemsTableSchema.version,
+                "record_count": 206, "source_paths": list(command.sources),
+            })
+        self.assert_clean(session)
+        registry = "scripts/generated_data/registry.py"
+        self.add(registry, (self.root / registry).read_bytes() + (
+            b"\nfrom .items.schema import ItemsTableSchema\n"
+            b"ItemsTableSchema.manifest_support_paths = lambda self: ()\n"
+        ))
+        with self.session() as session:
+            with self.assertRaisesRegex(
+                MakeProbeError, "undeclared source read: /repo/include/constants/items.h",
+            ):
+                session.registry(generated_registry_command(session, "items", "src/data/items.json"))
+        self.assert_clean(session)
+
     def test_registry_driver_normalizes_only_repository_source_paths(self):
         self.add("data/value.json", "[1]")
         self.add("value.json", "[1,2]")

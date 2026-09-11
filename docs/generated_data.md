@@ -555,6 +555,27 @@ from its owning module when collecting prerequisites; it does not rely on a
 transitive `chapterbundle` module attribute. Its depfiles still include the
 TMX source and all other generation inputs.
 
+`TableSchema.manifest_support_paths()` declares additional concrete source
+files read by `manifest_record_count(records)`. It returns a list or tuple
+without reading their contents; the default is empty. Primary loader inputs
+still belong to `source_paths(source_path)`, and symbolic `dependencies()`
+entries are not file-read authority. The items schema declares its actual
+`include/constants/items.h` input rather than replacing its archival enum-based
+count with the active count or container length. Default and cap `0xCE` loads
+therefore retain 206 committed records and 206/207 active records respectively.
+
+The [confined registry adapter](ownership-probe-producers.md) discovers these
+declarations without source reads, then runs the real loader and count method
+with exactly the captured primary/support files. It reports their combined
+source paths and independently requires actual consumption to agree.
+The validated support declaration is passed to the final command as data;
+the selector is never invoked again with source-read authority.
+Schemas without the optional support method declare no additional inputs;
+an undeclared read still rejects. This host-only seam introduces no new
+configuration, generated content, save migration, ROM/RAM change or conflicting
+profile. See
+[`TC-GENERATED-MANIFEST-INPUTS-001`](test-cases/core-framework.md#tc-generated-manifest-inputs-001-declare-real-manifest-count-support-inputs).
+
 `schema.DependencyGraph` records which headers/tables a schema depends on
 (`supports` depends on `constants/characters.h` and
 `UNIT_SUPPORT_MAX_COUNT` from `types.h`). It provides a deterministic

@@ -218,6 +218,15 @@ class TableSchema:
         """
         return len(records)
 
+    def manifest_support_paths(self):
+        """Declare additional source files read by ``manifest_record_count``.
+
+        Return a list or tuple of concrete paths without reading file
+        contents. Primary loader inputs remain the separate ``source_paths``
+        contract.
+        """
+        return ()
+
     def active_manifest_record_count(self, records):
         """Record count exposed by the configured active manifest.
 

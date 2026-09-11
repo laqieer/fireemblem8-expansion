@@ -2,10 +2,11 @@
 
 import os
 import unittest
+from unittest import mock
 
 from scripts.generated_data import manifest as m
 from scripts.generated_data import registry  # noqa: F401  (registers schemas)
-from scripts.generated_data.schema import REGISTRY
+from scripts.generated_data.schema import REGISTRY, TableSchema
 
 REPO_ROOT = os.path.abspath(
     os.path.join(os.path.dirname(__file__), "..", "..", "..")
@@ -14,6 +15,26 @@ COMMITTED_MANIFEST = os.path.join(REPO_ROOT, "reports", "generated_data_manifest
 
 
 class CollectEntriesTests(unittest.TestCase):
+    def test_count_support_selection_is_metadata_only(self):
+        from scripts.generated_data.items.schema import ITEMS_HEADER, ItemsTableSchema
+
+        with mock.patch("builtins.open", side_effect=AssertionError("content read during selection")):
+            self.assertEqual(TableSchema().manifest_support_paths(), ())
+            schema = ItemsTableSchema()
+            self.assertEqual(schema.source_paths(schema.default_source), (schema.default_source,))
+            self.assertEqual(schema.manifest_support_paths(), (ITEMS_HEADER,))
+
+    def test_items_count_support_preserves_committed_and_active_counts(self):
+        from scripts.generated_data import idspace
+        from scripts.generated_data.items.schema import ItemsTableSchema
+
+        schema = ItemsTableSchema()
+        for cap, active in (("0xCD", 206), ("0xCE", 207)):
+            with self.subTest(cap=cap), mock.patch.dict(os.environ, {idspace.ITEM_CAP_ENV: cap}):
+                records = schema.load_records(schema.default_source)
+                self.assertEqual(schema.manifest_record_count(records), 206)
+                self.assertEqual(schema.active_manifest_record_count(records), active)
+
     def test_covers_every_registered_table(self):
         entries = m.collect_entries()
         names = sorted(e.name for e in entries)
