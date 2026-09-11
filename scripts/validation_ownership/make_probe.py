@@ -1526,7 +1526,8 @@ class ProbeSession:
             self.budget.charge("cache", len(encoded(result.input_identities)))
             if result.executed:
                 self.budget.charge("cache", len(encoded(result.executed)))
-            self.cache.setdefault(key, []).append(result)
+            if not outputs:
+                self.cache.setdefault(key, []).append(result)
             return result
 
     def _dependency_runtime(self):

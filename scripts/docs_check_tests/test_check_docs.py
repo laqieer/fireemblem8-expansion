@@ -1284,6 +1284,26 @@ class TesterCaseRegistryTests(unittest.TestCase):
                             "make -f scripts/validation_ownership/foundation.mk ownership-probe-test",
                         },
                     },
+                    "TC-PROBE-PRODUCER-CACHE-LIFETIME-001": {
+                        "document": "docs/test-cases/workflow-governance.md",
+                        "commands": {
+                            "python3 -m unittest "
+                            "scripts.validation_ownership.tests.test_producer.ProducerTests."
+                            "test_declared_output_results_are_retained_only_by_actual_owners "
+                            "scripts.validation_ownership.tests.test_producer.ProducerTests."
+                            "test_generated_publication_creation_mapping_cache_and_write_charges_are_cumulative "
+                            "scripts.validation_ownership.tests.test_producer.ProducerTests."
+                            "test_unreachable_generated_input_changes_do_not_become_provenance_or_effects "
+                            "scripts.validation_ownership.tests.test_producer.ProducerTests."
+                            "test_effectful_replacement_keeps_every_real_call_across_native_restart "
+                            "scripts.validation_ownership.tests.test_producer.ProducerTests."
+                            "test_nested_generated_query_keeps_one_live_view_until_outer_completion "
+                            "scripts.validation_ownership.tests.test_producer.ProducerTests."
+                            "test_immutable_views_isolate_cache_native_files_and_generated_make_outputs -v",
+                            "python3 -m unittest scripts.validation_ownership.tests.test_foundation."
+                            "FoundationTests.test_immutable_views_isolate_cache_native_files_and_static_make -v",
+                        },
+                    },
                     "TC-WORKFLOW-ASSET-DISCOVERY-001": {
                         "document": "docs/test-cases/workflow-governance.md",
                         "commands": {
