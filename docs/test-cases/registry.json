@@ -506,7 +506,8 @@
         "https://github.com/laqieer/fireemblem8-expansion/issues/223",
         "https://github.com/laqieer/fireemblem8-expansion/issues/243",
         "https://github.com/laqieer/fireemblem8-expansion/issues/246",
-        "https://github.com/laqieer/fireemblem8-expansion/issues/252"
+        "https://github.com/laqieer/fireemblem8-expansion/issues/252",
+        "https://github.com/laqieer/fireemblem8-expansion/issues/256"
       ],
       "reference": ".github/skills/development-workflow/SKILL.md",
       "status": "current",
@@ -533,7 +534,8 @@
         "TC-WORKFLOW-AGENT-HANDOFF-001",
         "TC-WORKFLOW-WORKTREE-CLEANUP-001",
         "TC-WORKFLOW-HOST-PYTHON-DEPS-001",
-        "TC-WORKFLOW-ASSET-DISCOVERY-001"
+        "TC-WORKFLOW-ASSET-DISCOVERY-001",
+        "TC-PROBE-PRODUCER-CACHE-LIFETIME-001"
       ]
     },
     {
@@ -3953,6 +3955,38 @@
         },
         {
           "command": "python3 -m unittest scripts.validation_ownership.tests.test_foundation.FoundationTests.test_immutable_view_foreign_exit_preserves_correct_owner_unwind scripts.validation_ownership.tests.test_foundation.FoundationTests.test_immutable_view_foreign_exit_during_command_preserves_backing_and_cache_owner -v",
+          "evidence": "scripts/validation_ownership/tests/test_foundation.py"
+        }
+      ]
+    },
+    {
+      "id": "TC-PROBE-PRODUCER-CACHE-LIFETIME-001",
+      "title": "Release non-reusable results after their owners finish",
+      "feature_id": "workflow-governance",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/256"
+      ],
+      "document": "docs/test-cases/workflow-governance.md",
+      "anchor": "tc-probe-producer-cache-lifetime-001-release-non-reusable-results-after-their-owners-finish",
+      "profiles": [
+        "Linux source checkout with the existing native ownership-probe toolchain"
+      ],
+      "purpose": "Remove redundant reuse-cache ownership of results that declared-output commands cannot reuse, without changing effects, receipts or charges.",
+      "prerequisites": "Run from the repository root using only owned temporary fixtures and the existing producer/foundation unittest runners; no ROM or new dependency.",
+      "actions": "Dispatch one real declared-output writer twice, inspect full results and charges, release one result before session close and hold the other across cleanup, then release it. Exercise low-cache/creation/mapping/publication failures, actual unreachable-producer nonexecution, replacement/nested publication, and pure-reader/native-artifact CURRENT/BASE/CURRENT reuse.",
+      "expected_result": "Both output commands execute. Released results are not pinned by the reuse cache, while actual callers/receipts/publication/observations retain complete data for their real lifetimes. Pure-reader/native-artifact caching and every cumulative charge remain unchanged.",
+      "negative_control": "The pre-fix native reproduction pins two released output results until session close; unconditional cache insertion fails the weak-reference regression. Repeated writers still reject exhausted cache budgets, and unreachable producers are absent from real submissions/events, not merely absent from cache.",
+      "interactions": "Uses existing producer, selected-view and native-artifact ownership. No new dependency/profile conflict, output deduplication or write/no-op policy change. #180/#186 and #196 are dependents.",
+      "save_compatibility": "Host-only lifetime correction; no gameplay, save/config, generated game data, locale, ROM/RAM, modern or archival behavior change.",
+      "cleanup": "Existing watchdog/session cleanup removes only owned fixtures and requires no owned children, stale views or scratch state.",
+      "limitations": "Active Make receipts still retain needed results. This is not a first-Make pending-budget fix, accounting refund, full-report resource proof or manual-only criterion.",
+      "automation": [
+        {
+          "command": "python3 -m unittest scripts.validation_ownership.tests.test_producer.ProducerTests.test_declared_output_results_are_retained_only_by_actual_owners scripts.validation_ownership.tests.test_producer.ProducerTests.test_generated_publication_creation_mapping_cache_and_write_charges_are_cumulative scripts.validation_ownership.tests.test_producer.ProducerTests.test_unreachable_generated_input_changes_do_not_become_provenance_or_effects scripts.validation_ownership.tests.test_producer.ProducerTests.test_effectful_replacement_keeps_every_real_call_across_native_restart scripts.validation_ownership.tests.test_producer.ProducerTests.test_nested_generated_query_keeps_one_live_view_until_outer_completion scripts.validation_ownership.tests.test_producer.ProducerTests.test_immutable_views_isolate_cache_native_files_and_generated_make_outputs -v",
+          "evidence": "scripts/validation_ownership/tests/test_producer.py"
+        },
+        {
+          "command": "python3 -m unittest scripts.validation_ownership.tests.test_foundation.FoundationTests.test_immutable_views_isolate_cache_native_files_and_static_make -v",
           "evidence": "scripts/validation_ownership/tests/test_foundation.py"
         }
       ]

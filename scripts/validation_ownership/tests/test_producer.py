@@ -2,6 +2,7 @@
 
 import hashlib
 import errno
+import gc
 import json
 import os
 import signal
@@ -11,6 +12,7 @@ import struct
 import subprocess
 import time
 import unittest
+import weakref
 import zlib
 from collections import Counter
 from pathlib import Path
@@ -56,6 +58,44 @@ class ProducerTests(unittest.TestCase):
         return Command(
             ("/usr/bin/python3", "/repo/producer.py"), code=("producer.py",), outputs=("generated.txt",),
         )
+
+    def test_declared_output_results_are_retained_only_by_actual_owners(self):
+        command = self.producer_fixture()
+        with self.fixture.session() as session:
+            execute, executions = session._sandbox_run, []
+            def record(root, **kwargs):
+                result = execute(root, **kwargs)
+                if kwargs["mode"] == "command" and "/repo/producer.py" in kwargs["argv"]:
+                    executions.append(tuple(kwargs["argv"]))
+                return result
+            with patch.object(session, "_sandbox_run", record):
+                first = session.command(command)
+                self.assertEqual(first.stdout, b"observed\n")
+                self.assertEqual(first.generated[0].data, b"actual")
+                self.assertEqual(first.generated[0].path, "generated.txt")
+                self.assertTrue(first.input_identities)
+                first_mode = first.generated[0].mode
+                charged = session.budget.bytes["cache"]
+                self.assertGreater(charged, len(first.generated[0].data))
+                released = weakref.ref(first)
+                del first
+                gc.collect()
+                self.assertIsNone(released())
+                second = session.command(command)
+            self.assertEqual(len(executions), 2)
+            self.assertEqual(executions[0], executions[1])
+            self.assertEqual(second.generated[0].mode, first_mode)
+            self.assertGreater(session.budget.bytes["cache"], charged)
+            self.assertFalse(session.cache)
+            retained = weakref.ref(second)
+        self.fixture.assert_clean(session)
+        self.assertIs(retained(), second)
+        self.assertEqual(second.stdout, b"observed\n")
+        self.assertEqual(second.generated[0].data, b"actual")
+        self.assertTrue(second.input_identities)
+        del second
+        gc.collect()
+        self.assertIsNone(retained())
 
     def add_repo_file(self, path):
         source = foundation.ROOT / path
@@ -1653,12 +1693,18 @@ class ProducerTests(unittest.TestCase):
                 }
                 with self.fixture.session(seconds=30, **limits) as session:
                     run, completed, reports = session._sandbox_run, [], []
+                    execute, returned = session.command, []
                     def record(root, **kwargs):
                         result = run(root, **kwargs)
                         if kwargs["mode"] == "command" and "/repo/producer.py" in kwargs["argv"]:
                             completed.append(result[1])
                         return result
-                    with patch.object(session, "_sandbox_run", record), self.capture_reports(session, reports):
+                    def record_result(registration):
+                        result = execute(registration)
+                        returned.append(result)
+                        return result
+                    with patch.object(session, "_sandbox_run", record), \
+                         patch.object(session, "command", record_result), self.capture_reports(session, reports):
                         if case == "positive":
                             result = session.make("all", commands={"python3 producer.py": command})
                             self.assertEqual(len(result.events), 2)
@@ -1672,7 +1718,7 @@ class ProducerTests(unittest.TestCase):
                                 self.assertEqual(reports[-1]["error"], "aggregate generated publication byte budget exhausted")
                                 self.assertTrue(any(
                                     result.generated and len(result.generated[0].data) == amount
-                                    for variants in session.cache.values() for result in variants
+                                    for result in returned
                                 ))
                     self.assertFalse((session.tree / "generated.bin").exists())
                     self.assertFalse(session.budget.children)
@@ -1823,14 +1869,17 @@ class ProducerTests(unittest.TestCase):
             if path is not None:
                 self.fixture.add(path, value)
             with self.fixture.session(seconds=30) as session:
-                observed = session.make("all", commands=commands, owner_inputs=("Makefile",))
+                execute, submitted = session.command, []
+                def record(registration):
+                    submitted.append(registration)
+                    return execute(registration)
+                with patch.object(session, "command", record):
+                    observed = session.make("all", commands=commands, owner_inputs=("Makefile",))
                 results.append(observed)
                 dynamic, = observed.semantics["dynamic_commands"]
                 self.assertNotIn("generated_outputs", dynamic)
                 self.assertEqual(len(observed.events), 1)
-                self.assertFalse(any(
-                    output.generated for variants in session.cache.values() for output in variants
-                ))
+                self.assertEqual(submitted, [commands["python3 choice.py"]])
                 self.assertFalse((session.tree / "unused.mk").exists())
             self.fixture.assert_clean(session)
         self.assertEqual(len({result.semantic_digest for result in results[:3]}), 1)
