@@ -3422,6 +3422,12 @@ game behavior needs a compensating change.
    with one restart per Make query. Confirm generated-registry declarations use
    their selected view and BASE ownership for deleted sources; wrong loaders,
    stale declarations, invalid schemas, and filename-only classification fail.
+   Count-support headers must appear alongside their actually consumed primary
+   JSON inputs. Changing the support declaration and header in CURRENT must
+   not replace BASE ownership, include unrelated headers, or survive restoration
+   of CURRENT as stale cached membership. Run
+   `python3 -m unittest scripts.validation_ownership.tests.test_report_views.ReportViewTests.test_registry_count_support_ownership_follows_the_selected_view -v`
+   for this focused control; it does not replace the complete report above.
    Finally, confirm explicit import/root listings see the complete selected
    view without granting undeclared reads, and that the dependency adapter
    matches the real host C preprocessor's bytes, closure, included `.d`,

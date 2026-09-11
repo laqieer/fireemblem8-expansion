@@ -1215,6 +1215,9 @@ class TesterCaseRegistryTests(unittest.TestCase):
                             "/usr/bin/python3 -I -S -B "
                             "scripts/validation_ownership/isolated_launcher.py "
                             "check --repository-root .",
+                            "python3 -m unittest scripts.validation_ownership.tests."
+                            "test_report_views.ReportViewTests."
+                            "test_registry_count_support_ownership_follows_the_selected_view -v",
                         },
                     },
                     "TC-WORKFLOW-OWNERSHIP-PROBE-SANDBOX-001": {

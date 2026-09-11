@@ -110,6 +110,40 @@ class ReportViewTests(unittest.TestCase):
             self.assertEqual(records[0]["source_paths"], ["src/data/table.json"])
         self.assertFalse(self.budget.children)
 
+    def test_registry_count_support_ownership_follows_the_selected_view(self):
+        def registry(header):
+            self.registry("src/data/table.json")
+            path = self.root / "scripts/generated_data/registry.py"
+            path.write_text(path.read_text() + (
+                f"\nSUPPORT='/repo/{header}'\n"
+                "Schema.manifest_support_paths=lambda self: (SUPPORT,)\n"
+                "Schema.manifest_record_count=lambda self,records: int(Path(SUPPORT).read_text())\n"
+            ))
+
+        self.add("src/data/table.json", '{"value":1}\n')
+        self.add("include/unrelated.h", "not a count input\n")
+        self.add("include/base-count.h", "2\n")
+        registry("include/base-count.h")
+        base = self.capture()
+        (self.root / "include/base-count.h").unlink()
+        self.add("include/current-count.h", "3\n")
+        registry("include/current-count.h")
+        current = self.capture()
+        with ProbeSession(
+            current, scratch_root=self.root / "build/probe", budget=self.budget,
+        ) as probe:
+            def check(loader, header):
+                records, paths = reporter._generated_registry_records(loader, session=probe)
+                expected = {"src/data/table.json", header}
+                self.assertEqual(paths, expected)
+                self.assertEqual(records[0]["source_paths"], sorted(expected))
+            check(current, "include/current-count.h")
+            with probe.select_view(base):
+                check(base, "include/base-count.h")
+            check(current, "include/current-count.h")
+        self.assertIsNone(probe.base)
+        self.assertFalse(self.budget.children)
+
     def test_registry_declarations_do_not_grant_unrelated_test_code(self):
         from scripts.validation_ownership.graph_registry import observe_declarations
 
