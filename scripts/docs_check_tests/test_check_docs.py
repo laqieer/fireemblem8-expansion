@@ -1284,6 +1284,38 @@ class TesterCaseRegistryTests(unittest.TestCase):
                             "make -f scripts/validation_ownership/foundation.mk ownership-probe-test",
                         },
                     },
+                    "TC-WORKFLOW-ASSET-DISCOVERY-001": {
+                        "document": "docs/test-cases/workflow-governance.md",
+                        "commands": {
+                            "python3 -m unittest "
+                            "scripts.assets.tests.test_manifest.AssetManifestTests."
+                            "test_captured_discovery_matches_git_validated_rendering "
+                            "scripts.assets.tests.test_manifest.AssetManifestTests."
+                            "test_captured_discovery_rejects_missing_source_membership "
+                            "scripts.assets.tests.test_manifest.AssetManifestTests."
+                            "test_captured_discovery_rejects_malformed_admission "
+                            "scripts.assets.tests.test_manifest.AssetManifestTests."
+                            "test_captured_discovery_keeps_source_path_validation "
+                            "scripts.assets.tests.test_manifest.AssetManifestTests."
+                            "test_discovery_artifact_uses_same_validation_rendering_and_logical_path "
+                            "scripts.assets.tests.test_manifest.AssetManifestTests."
+                            "test_discovery_artifact_rejects_malformed_or_escaping_outputs "
+                            "scripts.assets.tests.test_manifest.AssetManifestTests."
+                            "test_discovery_artifact_requires_complete_captured_identity "
+                            "scripts.assets.tests.test_manifest.AssetManifestTests."
+                            "test_discovery_artifact_rejects_nonregular_identity_modes_before_opening_sources "
+                            "scripts.assets.tests.test_manifest.AssetManifestTests."
+                            "test_discovery_artifact_rejects_manifest_fifo_before_parsing "
+                            "scripts.assets.tests.test_manifest.AssetManifestTests."
+                            "test_discovery_artifact_parses_replaced_manifest_from_verified_bytes "
+                            "scripts.assets.tests.test_manifest.AssetManifestTests."
+                            "test_discovery_artifact_does_not_require_new_hashlib_file_digest_api "
+                            "scripts.assets.tests.test_manifest.AssetManifestTests."
+                            "test_discovery_artifact_make_behavior_uses_equivalent_input_metadata "
+                            "scripts.assets.tests.test_manifest.AssetManifestTests."
+                            "test_captured_source_digest_rejects_raced_fifo_without_blocking_or_leaking -v",
+                        },
+                    },
                 },
             },
         }

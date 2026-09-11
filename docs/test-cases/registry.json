@@ -503,7 +503,8 @@
         "https://github.com/laqieer/fireemblem8-expansion/issues/216",
         "https://github.com/laqieer/fireemblem8-expansion/issues/223",
         "https://github.com/laqieer/fireemblem8-expansion/issues/243",
-        "https://github.com/laqieer/fireemblem8-expansion/issues/246"
+        "https://github.com/laqieer/fireemblem8-expansion/issues/246",
+        "https://github.com/laqieer/fireemblem8-expansion/issues/252"
       ],
       "reference": ".github/skills/development-workflow/SKILL.md",
       "status": "current",
@@ -529,7 +530,8 @@
         "TC-WORKFLOW-REVIEW-FIRST-001",
         "TC-WORKFLOW-AGENT-HANDOFF-001",
         "TC-WORKFLOW-WORKTREE-CLEANUP-001",
-        "TC-WORKFLOW-HOST-PYTHON-DEPS-001"
+        "TC-WORKFLOW-HOST-PYTHON-DEPS-001",
+        "TC-WORKFLOW-ASSET-DISCOVERY-001"
       ]
     },
     {
@@ -3909,6 +3911,34 @@
         {
           "command": "python3 -m unittest scripts.validation_ownership.tests.test_foundation.FoundationTests.test_immutable_view_foreign_exit_preserves_correct_owner_unwind scripts.validation_ownership.tests.test_foundation.FoundationTests.test_immutable_view_foreign_exit_during_command_preserves_backing_and_cache_owner -v",
           "evidence": "scripts/validation_ownership/tests/test_foundation.py"
+        }
+      ]
+    },
+    {
+      "id": "TC-WORKFLOW-ASSET-DISCOVERY-001",
+      "title": "Render captured-source asset discovery without FIFO races",
+      "feature_id": "workflow-governance",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/252"
+      ],
+      "document": "docs/test-cases/workflow-governance.md",
+      "anchor": "tc-workflow-asset-discovery-001-render-captured-source-asset-discovery-without-fifo-races",
+      "profiles": [
+        "Linux/POSIX source checkout with Python 3 and GNU Make"
+      ],
+      "purpose": "Expose the standalone captured-source asset discovery API for source archives and isolated Make-include consumers while rejecting raced nonregular source descriptors before reading.",
+      "prerequisites": "Clean source checkout at the issue branch. Use the committed asset manifest and owned temporary paths below build/generated/assets/test-work; no ROM, emulator, GitHub credential, graph module, or remote workflow is required.",
+      "actions": "Run the focused asset-manifest discovery selectors. Compare ordinary Git discovery with captured membership, render the declared private build/generated/asset-discovery include from multiple working directories, consume its real Make variables, reject malformed membership/output/identity inputs before source acquisition when possible, execute bounded regular/FIFO subprocess controls with no writer and with a same-process sentinel holder, and prove the manifest itself is parsed only from verified descriptor bytes.",
+      "expected_result": "Captured discovery preserves the real consumer groups and rendered Make semantics without invoking Git internally; the artifact renderer returns only a safe repository-relative path plus content and writes no destination. Malformed identity structure, duplicate or escaping paths, and nonregular identity-mode claims reject before source acquisition. Exact missing/extra membership is checked after parsing the verified manifest, and mode/content mismatches reject after observing the opened source. Complete valid identities produce a stable captured digest. Manifest FIFO replacement rejects before parsing; same-path manifest byte replacement renders the attested new records and digest self-consistently.",
+      "negative_control": "The exact pre-fix a616aaa captured digest blocks when source.json is swapped to a FIFO after validated path resolution. Removing nonblocking descriptor acquisition hangs the no-writer fixture; removing the pre-read regular-file rejection consumes the same-process FIFO holder's sentinel payload; removing the early regular-mode identity guard attempts source acquisition for malformed FIFO/directory identity claims; parsing the manifest before verified descriptor acquisition renders stale records with the new attested digest.",
+      "interactions": "Depends on the delivered asset manifest framework and source-capture authority. Dependent #180/#186 owns full graph integration and resource accounting. Conflicts only with the duplicate graph-local implementation, to be reconciled by normal merge. No Make validation-ownership routing, graph schema, runtime importer, policy, budget, calibration, or profile conflict is introduced.",
+      "save_compatibility": "Host-only Python API and documentation change; no gameplay, save/config identity, localization, generated game content, ROM/RAM, modern debug/release, archival compiler, or feature flag impact.",
+      "cleanup": "Fixtures use only owned temporary directories below build/generated/assets/test-work. Bounded subprocess tests close the same-process FIFO holder in finally, kill or reap only their owned outer child on timeout, and cleanup is handled by unittest teardown; no public output file is written.",
+      "limitations": "Caller-owned admission, immutable source context, declared private output, capture storage, and publication remain outside this asset adapter. No manual-only criterion applies and no graph resource-fit claim is made.",
+      "automation": [
+        {
+          "command": "python3 -m unittest scripts.assets.tests.test_manifest.AssetManifestTests.test_captured_discovery_matches_git_validated_rendering scripts.assets.tests.test_manifest.AssetManifestTests.test_captured_discovery_rejects_missing_source_membership scripts.assets.tests.test_manifest.AssetManifestTests.test_captured_discovery_rejects_malformed_admission scripts.assets.tests.test_manifest.AssetManifestTests.test_captured_discovery_keeps_source_path_validation scripts.assets.tests.test_manifest.AssetManifestTests.test_discovery_artifact_uses_same_validation_rendering_and_logical_path scripts.assets.tests.test_manifest.AssetManifestTests.test_discovery_artifact_rejects_malformed_or_escaping_outputs scripts.assets.tests.test_manifest.AssetManifestTests.test_discovery_artifact_requires_complete_captured_identity scripts.assets.tests.test_manifest.AssetManifestTests.test_discovery_artifact_rejects_nonregular_identity_modes_before_opening_sources scripts.assets.tests.test_manifest.AssetManifestTests.test_discovery_artifact_rejects_manifest_fifo_before_parsing scripts.assets.tests.test_manifest.AssetManifestTests.test_discovery_artifact_parses_replaced_manifest_from_verified_bytes scripts.assets.tests.test_manifest.AssetManifestTests.test_discovery_artifact_does_not_require_new_hashlib_file_digest_api scripts.assets.tests.test_manifest.AssetManifestTests.test_discovery_artifact_make_behavior_uses_equivalent_input_metadata scripts.assets.tests.test_manifest.AssetManifestTests.test_captured_source_digest_rejects_raced_fifo_without_blocking_or_leaking -v",
+          "evidence": "scripts/assets/tests/test_manifest.py"
         }
       ]
     },

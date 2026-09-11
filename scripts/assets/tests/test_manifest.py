@@ -31,6 +31,297 @@ TMX_FIXTURE_ROOT = os.path.join(
 )
 
 
+def captured_discovery_identities(source, records):
+    paths = {os.path.relpath(source, REPO_ROOT), *manifest.discovery_sources(records)}
+    identities = []
+    for path in sorted(paths):
+        absolute = os.path.join(REPO_ROOT, path)
+        with open(absolute, "rb") as handle:
+            hasher = hashlib.sha256()
+            for chunk in iter(lambda: handle.read(65536), b""):
+                hasher.update(chunk)
+            identities.append((
+                path, "{:06o}".format(os.fstat(handle.fileno()).st_mode),
+                hasher.hexdigest(),
+            ))
+    return identities
+
+
+CAPTURED_FIFO_PROGRAM = r"""
+import errno
+import hashlib
+import json
+import os
+import stat
+import sys
+from pathlib import Path
+from unittest import mock
+
+sys.path.insert(0, sys.argv[1])
+from scripts.assets import manifest
+from scripts.generated_data.diagnostics import GeneratedDataError
+
+root = Path(sys.argv[2])
+variant = sys.argv[3]
+manifest_path = root / "manifest.json"
+source = root / "source.json"
+portrait_registry = root / "assets" / "portrait_registry.json"
+sentinel = b"captured-fifo-sentinel"
+root.mkdir(parents=True, exist_ok=True)
+portrait_registry.parent.mkdir(parents=True, exist_ok=True)
+manifest_path.write_text(json.dumps({
+    "schemaVersion": 1,
+    "assets": [{
+        "id": "RACE_SOURCE",
+        "kind": "unknown-race-kind",
+        "sources": ["source.json"],
+        "dependsOn": [],
+        "options": {},
+        "ownership": {},
+        "resources": {},
+        "provenance": {
+            "origin": "synthetic test fixture",
+            "license": "test-only",
+            "modifications": "none",
+            "tools": [],
+        },
+    }],
+}) + "\n", encoding="utf-8")
+source.write_bytes(b'{"source":true}\n')
+portrait_registry.write_bytes(b'{"schemaVersion":1,"entries":[]}\n')
+records = manifest.load_manifest(str(manifest_path))
+identities = []
+for relative in sorted({"manifest.json", "source.json", "assets/portrait_registry.json"}):
+    current = root / relative
+    with current.open("rb") as handle:
+        hasher = hashlib.sha256()
+        for chunk in iter(lambda: handle.read(65536), b""):
+            hasher.update(chunk)
+        info = os.fstat(handle.fileno())
+        identities.append((
+            relative,
+            format(stat.S_IFMT(info.st_mode) | stat.S_IMODE(info.st_mode), "06o"),
+            hasher.hexdigest(),
+        ))
+
+opened = []
+original_open = os.open
+original_repo_path = manifest._repo_path
+fifo_holder = None
+fifo_holder_closed = False
+sentinel_unchanged = None
+
+def descriptor_identity(descriptor):
+   info = os.fstat(descriptor)
+   return (info.st_dev, info.st_ino, info.st_mode, info.st_size)
+
+def descriptor_still_matches(snapshot):
+   descriptor, identity = snapshot
+   try:
+       current = descriptor_identity(descriptor)
+   except OSError as error:
+       if error.errno == errno.EBADF:
+           return False
+       raise
+   return current == identity
+
+def checked_open(*args, **kwargs):
+   descriptor = original_open(*args, **kwargs)
+   opened.append((descriptor, descriptor_identity(descriptor)))
+   return descriptor
+
+def checked_path(*args, **kwargs):
+    global fifo_holder
+    relative = original_repo_path(*args, **kwargs)
+    if relative == "source.json" and variant in ("fifo-no-writer", "fifo-holder"):
+        source.unlink()
+        os.mkfifo(source, 0o600)
+        print("FIFO_REPLACED_AFTER_PATH_VALIDATION", flush=True)
+        if variant == "fifo-holder":
+            fifo_holder = original_open(str(source), os.O_RDWR | os.O_NONBLOCK)
+            os.write(fifo_holder, sentinel)
+            print("FIFO_SENTINEL_ENQUEUED", flush=True)
+    return relative
+
+try:
+    with mock.patch.object(manifest, "REPO_ROOT", str(root)), mock.patch.object(
+        manifest, "_repo_path", side_effect=checked_path
+    ), mock.patch.object(os, "open", side_effect=checked_open):
+        try:
+            digest = manifest._captured_source_digest(str(manifest_path), records, identities)
+        except GeneratedDataError as error:
+            print("ERROR:" + str(error), flush=True)
+        else:
+            expected = hashlib.sha256(json.dumps({"captured_sources": [
+                {"path": path, "mode": mode, "sha256": digest} for path, mode, digest in identities
+            ]}, sort_keys=True, separators=(",", ":")).encode("ascii")).hexdigest()
+            if digest != expected:
+                raise SystemExit("regular digest mismatch")
+            print("REGULAR_SOURCE_DIGEST_MATCHED", flush=True)
+    if fifo_holder is not None:
+        try:
+            observed = os.read(fifo_holder, len(sentinel))
+        except BlockingIOError:
+            observed = b""
+        sentinel_unchanged = observed == sentinel
+        print("FIFO_SENTINEL_UNCHANGED={}".format(sentinel_unchanged), flush=True)
+finally:
+    if fifo_holder is not None:
+        holder_identity = descriptor_identity(fifo_holder)
+        os.close(fifo_holder)
+        fifo_holder_closed = True
+        try:
+            os.fstat(fifo_holder)
+        except OSError as error:
+            if error.errno != errno.EBADF:
+                raise
+        else:
+            raise SystemExit("holder descriptor remained open")
+        if descriptor_still_matches((fifo_holder, holder_identity)):
+            raise SystemExit("holder descriptor still matches after close")
+captured_open = sum(1 for snapshot in opened if descriptor_still_matches(snapshot))
+print("CAPTURED_OPENED_DESCRIPTORS={}".format(len(opened)), flush=True)
+print("CAPTURED_DESCRIPTORS_STILL_OPEN={}".format(captured_open), flush=True)
+print("HOLDER_OPENED={}".format(fifo_holder is not None), flush=True)
+print("HOLDER_CLOSED={}".format(fifo_holder_closed), flush=True)
+"""
+
+
+CAPTURED_DISCOVERY_ARTIFACT_PROGRAM = r"""
+import errno
+import hashlib
+import json
+import os
+import stat
+import sys
+from pathlib import Path
+from unittest import mock
+
+sys.path.insert(0, sys.argv[1])
+from scripts.assets import manifest
+from scripts.generated_data.diagnostics import GeneratedDataError
+
+root = Path(sys.argv[2])
+variant = sys.argv[3]
+manifest_path = root / "manifest.json"
+source = root / "source.json"
+portrait_registry = root / "assets" / "portrait_registry.json"
+new_document = {
+    "schemaVersion": 1,
+    "assets": [{
+        "id": "NEW_FORMATTED_PORTRAIT",
+        "kind": "formatted-portrait-package",
+        "sources": ["source.json"],
+        "dependsOn": [],
+        "options": {},
+        "ownership": {
+            "registrySource": "assets/portrait_registry.json",
+            "tableSource": "src/portrait_data.c",
+            "portraitId": 1,
+            "seam": "portrait-data-table",
+            "symbol": "NewPortrait",
+            "consumer": "GetPortraitData",
+        },
+        "resources": {},
+        "provenance": {
+            "origin": "synthetic test fixture",
+            "license": "test-only",
+            "modifications": "none",
+            "tools": [],
+        },
+    }],
+}
+old_document = json.loads(json.dumps(new_document))
+old_document["assets"][0]["id"] = "OLD_FORMATTED_PORTRAIT"
+old_document["assets"][0]["ownership"]["symbol"] = "OldPortrait"
+root.mkdir(parents=True, exist_ok=True)
+portrait_registry.parent.mkdir(parents=True, exist_ok=True)
+source.write_bytes(b'{"source":true}\n')
+portrait_registry.write_bytes(b'{"schemaVersion":1,"entries":[]}\n')
+new_bytes = (json.dumps(new_document, sort_keys=True) + "\n").encode("utf-8")
+old_bytes = (json.dumps(old_document, sort_keys=True) + "\n").encode("utf-8")
+manifest_path.write_bytes(new_bytes)
+
+def identities_for(paths):
+    result = []
+    for relative in sorted(paths):
+        current = root / relative
+        with current.open("rb") as handle:
+            hasher = hashlib.sha256()
+            for chunk in iter(lambda: handle.read(65536), b""):
+                hasher.update(chunk)
+            info = os.fstat(handle.fileno())
+            result.append((
+                relative,
+                format(stat.S_IFMT(info.st_mode) | stat.S_IMODE(info.st_mode), "06o"),
+                hasher.hexdigest(),
+            ))
+    return result
+
+identities = identities_for(("manifest.json", "source.json", "assets/portrait_registry.json"))
+if variant == "replace-manifest":
+    manifest_path.write_bytes(old_bytes)
+
+opened = []
+original_open = os.open
+original_repo_path = manifest._repo_path
+
+def descriptor_identity(descriptor):
+    info = os.fstat(descriptor)
+    return (info.st_dev, info.st_ino, info.st_mode, info.st_size)
+
+def descriptor_still_matches(snapshot):
+    descriptor, identity = snapshot
+    try:
+        current = descriptor_identity(descriptor)
+    except OSError as error:
+        if error.errno == errno.EBADF:
+            return False
+        raise
+    return current == identity
+
+def checked_open(*args, **kwargs):
+    descriptor = original_open(*args, **kwargs)
+    opened.append((descriptor, descriptor_identity(descriptor)))
+    return descriptor
+
+def checked_path(*args, **kwargs):
+    relative = original_repo_path(*args, **kwargs)
+    if relative == "manifest.json":
+        if variant == "manifest-fifo":
+            manifest_path.unlink()
+            os.mkfifo(manifest_path, 0o600)
+            print("MANIFEST_FIFO_REPLACED_AFTER_PATH_VALIDATION", flush=True)
+        elif variant == "replace-manifest":
+            manifest_path.write_bytes(new_bytes)
+            print("MANIFEST_BYTES_REPLACED_AFTER_PATH_VALIDATION", flush=True)
+    return relative
+
+with mock.patch.object(manifest, "REPO_ROOT", str(root)), mock.patch.object(
+    manifest, "ASSET_BUILD_ROOT", str(root / "build")
+), mock.patch.object(manifest, "_repo_path", side_effect=checked_path), mock.patch.object(
+    os, "open", side_effect=checked_open
+):
+    try:
+        path, content = manifest.render_discovery_artifact(
+            str(manifest_path),
+            "build/generated/asset-discovery/captured.mk",
+            tracked_sources=frozenset({"source.json", "assets/portrait_registry.json"}),
+            source_identities=identities,
+        )
+    except GeneratedDataError as error:
+        print("ERROR:" + str(error), flush=True)
+    else:
+        print("OUTPUT_PATH=" + path, flush=True)
+        print("HAS_NEW={}".format("NEW_FORMATTED_PORTRAIT" in content), flush=True)
+        print("HAS_OLD={}".format("OLD_FORMATTED_PORTRAIT" in content), flush=True)
+        print("HAS_DIGEST={}".format("ASSET_MANIFEST_SOURCE_DIGEST := " in content), flush=True)
+captured_open = sum(1 for snapshot in opened if descriptor_still_matches(snapshot))
+print("CAPTURED_OPENED_DESCRIPTORS={}".format(len(opened)), flush=True)
+print("CAPTURED_DESCRIPTORS_STILL_OPEN={}".format(captured_open), flush=True)
+"""
+
+
 def valid_record():
     return {
         "id": "CH2_MAIN_MAP",
@@ -667,6 +958,299 @@ class AssetManifestTests(unittest.TestCase):
                 banim_convert.assert_not_called()
                 portrait_convert.assert_not_called()
                 write_output.assert_not_called()
+
+    def test_captured_discovery_matches_git_validated_rendering(self):
+        source = os.path.join(REPO_ROOT, "assets", "manifest.json")
+        ordinary = manifest.load_discovery(source)
+        expected = manifest.render_discovery_makefile(ordinary)
+        tracked = frozenset(subprocess.check_output(
+            ["git", "-C", REPO_ROOT, "ls-files", "-z"],
+        ).decode("utf-8").split("\0")) - {""}
+        with mock.patch.object(
+            manifest.subprocess, "run", side_effect=AssertionError("unexpected Git subprocess"),
+        ):
+            captured = manifest.load_discovery(source, tracked_sources=tracked)
+            self.assertEqual(manifest.render_discovery_makefile(captured), expected)
+        self.assertEqual(manifest.discovery_sources(captured), manifest.discovery_sources(ordinary))
+
+    def test_captured_discovery_rejects_missing_source_membership(self):
+        source = os.path.join(REPO_ROOT, "assets", "manifest.json")
+        records = manifest.load_discovery(source)
+        tracked = frozenset(manifest.discovery_sources(records))
+        with mock.patch.object(
+            manifest.subprocess, "run", side_effect=AssertionError("unexpected Git subprocess"),
+        ):
+            with self.assertRaisesRegex(GeneratedDataValidationError, "not a tracked committed source"):
+                manifest.load_discovery(
+                    source, tracked_sources=tracked - {"assets/portrait_registry.json"},
+                )
+
+    def test_captured_discovery_rejects_malformed_admission(self):
+        source = os.path.join(REPO_ROOT, "assets", "manifest.json")
+        for tracked in ("assets/portrait_registry.json", [1], {1}, {"../outside"}):
+            with self.subTest(tracked=tracked):
+                with self.assertRaises(GeneratedDataError):
+                    manifest.load_discovery(source, tracked_sources=tracked)
+
+    def test_captured_discovery_keeps_source_path_validation(self):
+        with open(os.path.join(REPO_ROOT, "assets", "manifest.json"), encoding="utf-8") as handle:
+            document = json.load(handle)
+        document["assets"][0]["sources"][0] = "../outside"
+        source = self.write_document(document)
+        with mock.patch.object(
+            manifest.subprocess, "run", side_effect=AssertionError("unexpected Git subprocess"),
+        ):
+            with self.assertRaisesRegex(GeneratedDataValidationError, "unsafe source path"):
+                manifest.load_discovery(source, tracked_sources=frozenset())
+
+    def test_discovery_artifact_uses_same_validation_rendering_and_logical_path(self):
+        source = os.path.join(REPO_ROOT, "assets", "manifest.json")
+        ordinary = manifest.load_discovery(source)
+        identities = captured_discovery_identities(source, ordinary)
+        tracked = frozenset(manifest.discovery_sources(ordinary))
+        logical = "build/generated/asset-discovery/captured.mk"
+        expected = None
+        for directory in (REPO_ROOT, TEST_ROOT, os.path.dirname(REPO_ROOT)):
+            with self.subTest(directory=directory), contextlib.chdir(directory), mock.patch.object(
+                manifest.subprocess, "run", side_effect=AssertionError("unexpected Git subprocess"),
+            ):
+                path, content = manifest.render_discovery_artifact(
+                    source, logical, tracked_sources=tracked, source_identities=identities,
+                )
+                if expected is None:
+                    expected = content
+                self.assertEqual(path, logical)
+                self.assertEqual(content, expected)
+        self.assertEqual(len(ordinary), 3)
+        self.assertFalse(os.path.exists(os.path.join(REPO_ROOT, logical)))
+
+    def test_discovery_artifact_rejects_malformed_or_escaping_outputs(self):
+        source = os.path.join(REPO_ROOT, "assets", "manifest.json")
+        records = manifest.load_discovery(source)
+        tracked = frozenset(manifest.discovery_sources(records))
+        identities = captured_discovery_identities(source, records)
+        for logical in (
+            "", "build", "src/forged.mk", "build/../../forged.mk",
+            "/work/build/generated/asset-discovery/forged.mk", "build/bad\0.mk",
+            os.path.join(REPO_ROOT, "build/generated/asset-discovery/forged.mk"),
+            None, 3, b"build/generated/asset-discovery/forged.mk",
+            *("build/generated/asset-discovery/" + part + "/selected.mk"
+              for part in (".", "dir/..", "dir/", "dir\\name", "bad\nname", "bad\tname", "bad\x7fname")),
+        ):
+            with self.subTest(logical=logical):
+                with self.assertRaises(GeneratedDataError):
+                    manifest.render_discovery_artifact(
+                        source, logical, tracked_sources=tracked, source_identities=identities,
+                    )
+
+    def test_discovery_artifact_requires_complete_captured_identity(self):
+        source = os.path.join(REPO_ROOT, "assets", "manifest.json")
+        records = manifest.load_discovery(source)
+        tracked = frozenset(manifest.discovery_sources(records))
+        identities = captured_discovery_identities(source, records)
+        with mock.patch.object(
+            manifest.subprocess, "run", side_effect=AssertionError("unexpected Git subprocess"),
+        ):
+            for admitted, error in (
+                (None, GeneratedDataError),
+                (tracked - {"assets/portrait_registry.json"}, GeneratedDataValidationError),
+            ):
+                with self.subTest(admitted=admitted):
+                    with self.assertRaises(error):
+                        manifest.render_discovery_artifact(
+                            source, "build/generated/asset-discovery/captured.mk",
+                            tracked_sources=admitted, source_identities=identities,
+                        )
+        changed_mode = list(identities)
+        path, mode, digest = changed_mode[0]
+        changed_mode[0] = (path, "100755" if mode != "100755" else "100644", digest)
+        changed_digest = list(identities)
+        changed_digest[0] = (path, mode, "0" * 64)
+        for supplied in (
+            None, [], identities[:-1], [*identities, ("extra.json", "100644", "0" * 64)],
+            [*identities[:-1], identities[0]], changed_mode, changed_digest,
+        ):
+            with self.subTest(identities=supplied), self.assertRaises(GeneratedDataError):
+                manifest.render_discovery_artifact(
+                    source, "build/generated/asset-discovery/captured.mk",
+                    tracked_sources=tracked, source_identities=supplied,
+                )
+
+    def test_discovery_artifact_rejects_nonregular_identity_modes_before_opening_sources(self):
+        source = os.path.join(REPO_ROOT, "assets", "manifest.json")
+        records = manifest.load_discovery(source)
+        tracked = frozenset(manifest.discovery_sources(records))
+        identities = captured_discovery_identities(source, records)
+        path, _mode, digest = identities[0]
+        for mode in ("010600", "040700"):
+            supplied = list(identities)
+            supplied[0] = (path, mode, digest)
+            with self.subTest(mode=mode):
+                with mock.patch.object(
+                    manifest.os,
+                    "open",
+                    side_effect=AssertionError("source acquisition attempted"),
+                ) as open_spy:
+                    with self.assertRaisesRegex(
+                        GeneratedDataError, "captured source identity is invalid"
+                    ):
+                        manifest.render_discovery_artifact(
+                            source,
+                            "build/generated/asset-discovery/captured.mk",
+                            tracked_sources=tracked,
+                            source_identities=supplied,
+                        )
+                open_spy.assert_not_called()
+
+    def test_discovery_artifact_rejects_manifest_fifo_before_parsing(self):
+        completed = subprocess.run(
+            [
+                sys.executable, "-I", "-S", "-B", "-c", CAPTURED_DISCOVERY_ARTIFACT_PROGRAM,
+                REPO_ROOT, os.path.join(TEST_ROOT, "manifest-race", "fifo"), "manifest-fifo",
+            ],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            timeout=3,
+            check=False,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+        self.assertIn("MANIFEST_FIFO_REPLACED_AFTER_PATH_VALIDATION", completed.stdout)
+        self.assertIn("captured discovery source identity mismatch: 'manifest.json'", completed.stdout)
+        self.assertIn("CAPTURED_OPENED_DESCRIPTORS=1", completed.stdout)
+        self.assertIn("CAPTURED_DESCRIPTORS_STILL_OPEN=0", completed.stdout)
+        self.assertNotIn("HAS_OLD=True", completed.stdout)
+
+    def test_discovery_artifact_parses_replaced_manifest_from_verified_bytes(self):
+        completed = subprocess.run(
+            [
+                sys.executable, "-I", "-S", "-B", "-c", CAPTURED_DISCOVERY_ARTIFACT_PROGRAM,
+                REPO_ROOT, os.path.join(TEST_ROOT, "manifest-race", "replace"), "replace-manifest",
+            ],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            timeout=3,
+            check=False,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+        self.assertIn("MANIFEST_BYTES_REPLACED_AFTER_PATH_VALIDATION", completed.stdout)
+        self.assertIn("OUTPUT_PATH=build/generated/asset-discovery/captured.mk", completed.stdout)
+        self.assertIn("HAS_NEW=True", completed.stdout)
+        self.assertIn("HAS_OLD=False", completed.stdout)
+        self.assertIn("HAS_DIGEST=True", completed.stdout)
+        self.assertIn("CAPTURED_OPENED_DESCRIPTORS=3", completed.stdout)
+        self.assertIn("CAPTURED_DESCRIPTORS_STILL_OPEN=0", completed.stdout)
+
+    def test_discovery_artifact_does_not_require_new_hashlib_file_digest_api(self):
+        source = os.path.join(REPO_ROOT, "assets", "manifest.json")
+        records = manifest.load_discovery(source)
+        identities = captured_discovery_identities(source, records)
+        with mock.patch.dict(hashlib.__dict__):
+            hashlib.__dict__.pop("file_digest", None)
+            path, content = manifest.render_discovery_artifact(
+                source, "build/generated/asset-discovery/captured.mk",
+                tracked_sources=frozenset(manifest.discovery_sources(records)),
+                source_identities=identities,
+            )
+            self.assertEqual(captured_discovery_identities(source, records), identities)
+        self.assertEqual(path, "build/generated/asset-discovery/captured.mk")
+        self.assertIn("ASSET_MANIFEST_SOURCE_DIGEST := ", content)
+
+    def test_discovery_artifact_make_behavior_uses_equivalent_input_metadata(self):
+        source = os.path.join(REPO_ROOT, "assets", "manifest.json")
+        records = manifest.load_discovery(source)
+        sources = manifest.discovery_sources(records)
+        before = {path: os.stat(os.path.join(REPO_ROOT, path)).st_mtime_ns for path in sources}
+        ordinary = manifest.render_discovery_makefile(records)
+        _, adapted = manifest.render_discovery_artifact(
+            source, "build/generated/asset-discovery/captured.mk",
+            tracked_sources=frozenset(sources),
+            source_identities=captured_discovery_identities(source, records),
+        )
+        cli_output = os.path.join(TEST_ROOT, "ordinary-cli.mk")
+        with contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(cli.main([
+                "--item-id-cap", "0xCD", "--manifest", source,
+                "--discovery-makefile", cli_output, "discovery-makefile",
+            ]), 0)
+        with open(cli_output, encoding="utf-8") as handle:
+            self.assertEqual(handle.read(), ordinary)
+        self.assertEqual(
+            {path: os.stat(os.path.join(REPO_ROOT, path)).st_mtime_ns for path in sources},
+            before,
+        )
+        self.assertNotEqual(adapted, ordinary)
+        variables = (
+            "ASSET_MANIFEST_SOURCE_DIGEST", "ASSET_TMX_INCBIN_CONSUMERS",
+            "ASSET_PORTRAIT_INCBIN_CONSUMERS", "ASSET_BANIM_INCBIN_CONSUMERS",
+            "ASSET_CUSTOM_SPELL_INCBIN_CONSUMERS",
+        )
+        makefile = os.path.join(TEST_ROOT, "consumer.mk")
+        artifact = os.path.join(TEST_ROOT, "artifact.mk")
+        with open(makefile, "w", encoding="utf-8") as handle:
+            handle.write(
+                "include artifact.mk\n.PHONY: observe\nobserve:\n"
+                "\t@printf '%s\\n' " + " ".join("'$({})'".format(name) for name in variables) + "\n"
+            )
+
+        def observe(content):
+            with open(artifact, "w", encoding="utf-8") as handle:
+                handle.write(content)
+            completed = subprocess.run(
+                ["/usr/bin/make", "--no-print-directory", "-f", makefile, "observe"],
+                cwd=TEST_ROOT,
+                env={"PATH": "/usr/bin:/bin", "LC_ALL": "C"},
+                capture_output=True, text=True, check=True,
+            )
+            return dict(zip(variables, completed.stdout.splitlines()))
+
+        expected = observe(ordinary)
+        actual = observe(adapted)
+        ordinary_digest = expected.pop("ASSET_MANIFEST_SOURCE_DIGEST")
+        captured_digest = actual.pop("ASSET_MANIFEST_SOURCE_DIGEST")
+        self.assertNotEqual(captured_digest, ordinary_digest)
+        self.assertRegex(captured_digest, r"^[0-9a-f]{64}$")
+        self.assertEqual(actual, expected)
+        actual["ASSET_MANIFEST_SOURCE_DIGEST"] = captured_digest
+        self.assertEqual(observe("# Nonsemantic producer comment\n" + adapted), actual)
+        self.assertEqual(expected["ASSET_TMX_INCBIN_CONSUMERS"], "CH2_MAIN_MAP")
+        changed = observe(adapted + "ASSET_TMX_INCBIN_CONSUMERS := WRONG_CONSUMER\n")
+        self.assertNotEqual(changed, actual)
+
+    def test_captured_source_digest_rejects_raced_fifo_without_blocking_or_leaking(self):
+        for variant in ("regular", "fifo-no-writer", "fifo-holder"):
+            with self.subTest(variant=variant):
+                root = os.path.join(TEST_ROOT, "fifo-race", variant)
+                completed = subprocess.run(
+                    [
+                        sys.executable, "-I", "-S", "-B", "-c", CAPTURED_FIFO_PROGRAM,
+                        REPO_ROOT, root, variant,
+                    ],
+                    cwd=REPO_ROOT,
+                    capture_output=True,
+                    text=True,
+                    timeout=3,
+                    check=False,
+                )
+                self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+                self.assertIn("CAPTURED_OPENED_DESCRIPTORS=3", completed.stdout)
+                self.assertIn("CAPTURED_DESCRIPTORS_STILL_OPEN=0", completed.stdout)
+                if variant == "regular":
+                    self.assertIn("REGULAR_SOURCE_DIGEST_MATCHED", completed.stdout)
+                    self.assertIn("HOLDER_OPENED=False", completed.stdout)
+                    self.assertIn("HOLDER_CLOSED=False", completed.stdout)
+                else:
+                    self.assertIn("FIFO_REPLACED_AFTER_PATH_VALIDATION", completed.stdout)
+                    self.assertIn("captured discovery source identity mismatch", completed.stdout)
+                    if variant == "fifo-no-writer":
+                        self.assertIn("HOLDER_OPENED=False", completed.stdout)
+                        self.assertIn("HOLDER_CLOSED=False", completed.stdout)
+                    else:
+                        self.assertIn("FIFO_SENTINEL_ENQUEUED", completed.stdout)
+                        self.assertIn("FIFO_SENTINEL_UNCHANGED=True", completed.stdout)
+                        self.assertIn("HOLDER_OPENED=True", completed.stdout)
+                        self.assertIn("HOLDER_CLOSED=True", completed.stdout)
 
     def test_make_supports_isolated_output_override_with_portrait_incbin_consumer(self):
         result = self.run_assets_make(
@@ -1366,9 +1950,7 @@ class AssetManifestTests(unittest.TestCase):
         os.symlink(TEST_ROOT, link_path)
         self.addCleanup(lambda: os.path.lexists(link_path) and os.unlink(link_path))
         with self.assertRaises(GeneratedDataError):
-            manifest_path = os.path.join(
-                "build", "generated", "assets", "test-work", "linked-output"
-            )
+            manifest_path = os.path.relpath(link_path, REPO_ROOT)
             manifest.safe_output_dir(manifest_path)
 
     def test_generate_and_check_reject_descendant_output_symlinks(self):
