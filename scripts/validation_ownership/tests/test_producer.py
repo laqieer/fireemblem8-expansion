@@ -61,6 +61,9 @@ class ProducerTests(unittest.TestCase):
 
     def test_declared_output_results_are_retained_only_by_actual_owners(self):
         command = self.producer_fixture()
+        expected_inputs = (
+            ("producer.py", "100644", hashlib.sha256((self.root / "producer.py").read_bytes()).hexdigest()),
+        )
         with self.fixture.session() as session:
             execute, executions = session._sandbox_run, []
             def record(root, **kwargs):
@@ -73,7 +76,7 @@ class ProducerTests(unittest.TestCase):
                 self.assertEqual(first.stdout, b"observed\n")
                 self.assertEqual(first.generated[0].data, b"actual")
                 self.assertEqual(first.generated[0].path, "generated.txt")
-                self.assertTrue(first.input_identities)
+                self.assertEqual(first.input_identities, expected_inputs)
                 first_mode = first.generated[0].mode
                 charged = session.budget.bytes["cache"]
                 self.assertGreater(charged, len(first.generated[0].data))
@@ -85,6 +88,8 @@ class ProducerTests(unittest.TestCase):
             self.assertEqual(len(executions), 2)
             self.assertEqual(executions[0], executions[1])
             self.assertEqual(second.generated[0].mode, first_mode)
+            self.assertEqual(second.input_identities, expected_inputs)
+            second_metadata, second_execution = second.metadata, second.executed
             self.assertGreater(session.budget.bytes["cache"], charged)
             self.assertFalse(session.cache)
             retained = weakref.ref(second)
@@ -92,7 +97,8 @@ class ProducerTests(unittest.TestCase):
         self.assertIs(retained(), second)
         self.assertEqual(second.stdout, b"observed\n")
         self.assertEqual(second.generated[0].data, b"actual")
-        self.assertTrue(second.input_identities)
+        self.assertEqual(second.input_identities, expected_inputs)
+        self.assertEqual((second.metadata, second.executed), (second_metadata, second_execution))
         del second
         gc.collect()
         self.assertIsNone(retained())
