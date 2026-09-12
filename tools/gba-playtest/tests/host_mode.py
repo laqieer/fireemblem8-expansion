@@ -55,6 +55,8 @@ Classification of every module under tools/gba-playtest/tests:
   reads a ROM/ELF and never treats a pre-existing artifact as an oracle.
 
   Category B -- ROM-dependent live integration, skipped in host-only mode.
+  This includes tests invoking full project ROM builds, even if their final
+  assertions examine generated assets or object files rather than the ROM.
   Registered in LIVE_TEST_CLASSES below; test_host_only_mode.py fails if a
   registered class is not guarded, or if a module builds a repository ROM
   path without being registered.
@@ -127,6 +129,7 @@ BACKEND_UNAVAILABLE_MARKERS = (
 # Category B registry: (module name, TestCase class name).
 LIVE_TEST_CLASSES = (
     ("test_combat_scenario", "CombatRuntimeTests"),
+    ("test_custom_spell_effect", "CustomSpellProfileAssetIsolationTests"),
     ("test_new_game_scenario", "NewGameRuntimeTests"),
     ("test_portrait_package_runtime", "PortraitPackageRuntimeTests"),
     ("test_prep_positive_scenario", "PrepPositiveRuntimeTests"),

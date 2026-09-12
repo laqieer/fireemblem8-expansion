@@ -9,6 +9,7 @@ import io
 import json
 import os
 import re
+import shlex
 import shutil
 import stat
 import subprocess
@@ -21,6 +22,8 @@ from pathlib import Path
 from unittest import mock
 from scripts.upstream_port import verify
 
+from scripts.validation_ownership import ci_verifier as ownership_ci_verifier
+from scripts.validation_ownership import reporter as ownership_reporter
 from scripts.workflow_pilot import (
     candidate_evidence,
     event_classifier,
@@ -242,6 +245,82 @@ WORKFLOW_PILOT_BASELINE_GATE = (
     "--expected scripts/workflow_pilot/tests/fixtures/baseline_expected.json "
     "> /dev/null"
 )
+VALIDATION_OWNERSHIP_TEST_GATE = (
+    "/usr/bin/python3 -I -S -B scripts/validation_ownership/isolated_launcher.py tests"
+)
+VALIDATION_OWNERSHIP_CHECK_GATE = (
+    "/usr/bin/python3 -I -S -B scripts/validation_ownership/isolated_launcher.py "
+    'check --repository-root "$GITHUB_WORKSPACE"'
+)
+VALIDATION_OWNERSHIP_BASE_STEP = (
+    "Validate ownership with exact PR-base verifier"
+)
+VALIDATION_OWNERSHIP_BASE_SHA_ENV = (
+    "        EXPECTED_BASE_SHA: ${{ (needs.event-classifier.result == "
+    "'success' && needs.event-classifier.outputs.expected_base) || "
+    "(github.event_name == 'pull_request' && "
+    "github.event.pull_request.base.sha) || '' }}"
+)
+VALIDATION_OWNERSHIP_CANDIDATE_SHA_ENV = (
+    "        EXPECTED_CANDIDATE_SHA: ${{ (needs.event-classifier.result == "
+    "'success' && needs.event-classifier.outputs.expected_head) || "
+    "needs.event-identity.outputs.fallback_sha || '' }}"
+)
+VALIDATION_OWNERSHIP_TEMP_ENV = (
+    "        VALIDATION_OWNERSHIP_TEMP: ${{ runner.temp }}"
+)
+VALIDATION_OWNERSHIP_BASE_BOOTSTRAP_PATHS = (
+    "scripts/validation_ownership/ci_verifier.py",
+    ".github/validation-ownership-graph.json",
+    ".github/validation-ownership-make-dynamics.json",
+    "scripts/validation_ownership/graph.schema.json",
+    "scripts/validation_ownership/probe-oracle.json",
+    "scripts/validation_ownership/reporter.py",
+    *("scripts/validation_ownership/" + name for name in (
+        "authority.py", "budget.py", "make_probe.py", "syscall_guard.py",
+        "sandbox_exec.py", "shell_interceptor.c", "make_observer.c", "lifecycle.py",
+    )),
+)
+VALIDATION_OWNERSHIP_GIT_PATH_REDIRECTS = (
+    "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+    "GIT_CEILING_DIRECTORIES",
+    "GIT_COMMON_DIR",
+    "GIT_DIR",
+    "GIT_EXEC_PATH",
+    "GIT_INDEX_FILE",
+    "GIT_NAMESPACE",
+    "GIT_OBJECT_DIRECTORY",
+    "GIT_REPLACE_REF_BASE",
+    "GIT_WORK_TREE",
+)
+VALIDATION_OWNERSHIP_BASE_CONTRACT = (
+    f"      if: {FULL_WORKER_STEP_CONDITION}",
+    "        BUILD_EVENT_NAME: ${{ github.event_name }}",
+    VALIDATION_OWNERSHIP_BASE_SHA_ENV,
+    VALIDATION_OWNERSHIP_CANDIDATE_SHA_ENV,
+    'if [ "$BUILD_EVENT_NAME" != pull_request ]; then',
+    '/usr/bin/git archive --format=tar "$EXPECTED_BASE_SHA"',
+    "/usr/bin/python3 -I -S -B",
+    '"$trusted_root/scripts/validation_ownership/ci_verifier.py"',
+    '--trusted-root "$trusted_root"',
+    '--repository-root "$GITHUB_WORKSPACE"',
+    '--base-sha "$EXPECTED_BASE_SHA"',
+    '--candidate-sha "$EXPECTED_CANDIDATE_SHA"',
+    'test ! -L "$VALIDATION_OWNERSHIP_TEMP"',
+    "/usr/bin/mktemp --directory",
+    'validation-ownership-base.XXXXXXXXXX',
+    '/bin/rm -rf --one-file-system -- "$trusted_root"',
+    "unset GIT_ALTERNATE_OBJECT_DIRECTORIES",
+    "base_verifier_present=0",
+    "foundation_present=0",
+    "foundation_missing=0",
+    "graph_marker_present=0",
+    'if [ "$base_verifier_present" -ne 0 ]; then',
+    'elif [ "$foundation_present" -eq 0 ] && [ "$graph_marker_present" -eq 0 ]; then',
+    'elif [ "$foundation_missing" -eq 0 ] && [ "$graph_marker_present" -eq 0 ]; then',
+    *VALIDATION_OWNERSHIP_BASE_BOOTSTRAP_PATHS,
+    "validation-ownership: bootstrap-not-authoritative",
+)
 EXPECTED_BUILD_SHA_EXPRESSION = (
     "${{ (needs.event-classifier.result == 'success' && "
     "needs.event-classifier.outputs.expected_head) || "
@@ -306,6 +385,14 @@ SCRUBBED_STEP_ENV = (
     "        GIT_WORK_TREE: ''",
     "        PATH: /usr/bin:/bin",
     "        PYTHONPATH: ''",
+)
+VALIDATION_OWNERSHIP_STEP_ENV = (
+    *SCRUBBED_STEP_ENV[:-2],
+    "        GNUMAKEFLAGS: ''",
+    "        MAKEFLAGS: ''",
+    "        MAKEOVERRIDES: ''",
+    "        MFLAGS: ''",
+    *SCRUBBED_STEP_ENV[-2:],
 )
 
 
@@ -1319,9 +1406,12 @@ def _contains_exact_command(
         expected_env = env_lines
         if expected_env is not None:
             expected_fields.add("env")
-        elif _step_env_entries(step) == SCRUBBED_STEP_ENV:
+        elif _step_env_entries(step) in {
+            SCRUBBED_STEP_ENV,
+            VALIDATION_OWNERSHIP_STEP_ENV,
+        }:
             expected_fields.add("env")
-            expected_env = SCRUBBED_STEP_ENV
+            expected_env = _step_env_entries(step)
         if fields is not None and len(fields) == len(expected_fields) and set(fields) == expected_fields:
             if if_expression is not None and f"      if: {if_expression}" not in step:
                 continue
@@ -1350,9 +1440,65 @@ def _step_has_scrubbed_environment(step: str) -> bool:
     return _step_env_entries(step) == SCRUBBED_STEP_ENV
 
 
+def _base_step_has_bootstrap_sentinel_loop(step: str) -> bool:
+    script = _multiline_step_script(step)
+    matched = re.search(r"(?ms)^for required in(?P<paths>.*?)^do\s*$", script)
+    if matched is None:
+        return False
+    try:
+        paths = shlex.split(matched["paths"].replace("\\\n", " "))
+    except ValueError:
+        return False
+    return len(paths) == len(set(paths)) and set(paths) == set(VALIDATION_OWNERSHIP_BASE_BOOTSTRAP_PATHS)
+
+
+def _base_step_has_scrubbed_environment(step: str) -> bool:
+    lines = step.splitlines()
+    try:
+        env_index = lines.index("      env:")
+    except ValueError:
+        return False
+    entries = []
+    for line in lines[env_index + 1 :]:
+        if line.strip() and len(line) - len(line.lstrip(" ")) <= 6:
+            break
+        if line.strip() and not line.lstrip().startswith("#"):
+            entries.append(line)
+    expected = (
+        SCRUBBED_STEP_ENV[0],
+        "        BUILD_EVENT_NAME: ${{ github.event_name }}",
+        SCRUBBED_STEP_ENV[1],
+        VALIDATION_OWNERSHIP_BASE_SHA_ENV,
+        VALIDATION_OWNERSHIP_CANDIDATE_SHA_ENV,
+        *VALIDATION_OWNERSHIP_STEP_ENV[2:],
+        VALIDATION_OWNERSHIP_TEMP_ENV,
+    )
+    return tuple(entries) == expected
+
+
+def _validation_step_has_scrubbed_environment(step: str) -> bool:
+    lines = step.splitlines()
+    try:
+        env_index = lines.index("      env:")
+    except ValueError:
+        return False
+    entries = []
+    for line in lines[env_index + 1 :]:
+        if line.strip() and len(line) - len(line.lstrip(" ")) <= 6:
+            break
+        if line.strip() and not line.lstrip().startswith("#"):
+            entries.append(line)
+    return tuple(entries) == VALIDATION_OWNERSHIP_STEP_ENV
+
+
 def _step_name(step: str) -> str | None:
     match = re.search(r"^    - name: (?P<name>.+)$", step, re.MULTILINE)
     return match.group("name") if match is not None else None
+
+
+def _multiline_step_script(step: str) -> str:
+    run_block = step.split("      run: |\n", 1)[1]
+    return "\n".join(line[8:] for line in run_block.splitlines())
 
 
 def _checkout_step_is_exact(step: str, *, if_expression: str | None = None) -> bool:
@@ -1495,10 +1641,11 @@ def _protected_host_prefix_errors(host: str) -> list[str]:
         ),
         _run_step_is_exact(
             steps[4],
-            "Install host-only dependencies (no arm-none-eabi toolchain)",
+            "Install host and ownership-query dependencies",
             (
                 "sudo apt-get update && sudo apt-get install -y "
-                "build-essential libmgba-dev python3-venv",
+                "build-essential binutils-arm-none-eabi gcc-arm-none-eabi "
+                "libmgba-dev libnewlib-arm-none-eabi libpng-dev python3-venv pkg-config",
                 "/usr/bin/python3 -I scripts/host_python.py create",
             ),
             if_expression=FULL_WORKER_STEP_CONDITION,
@@ -2349,6 +2496,50 @@ def _errors(text: str, retired_workflow_exists: bool) -> list[str]:
             errors.append(
                 f"candidate host lost exact fail-closed Build evidence: {command}"
             )
+    for command in (
+        VALIDATION_OWNERSHIP_TEST_GATE,
+        VALIDATION_OWNERSHIP_CHECK_GATE,
+    ):
+        if not _contains_exact_command(
+            jobs["host-tests"],
+            command,
+            if_expression=FULL_WORKER_STEP_CONDITION,
+            env_lines=VALIDATION_OWNERSHIP_STEP_ENV,
+        ):
+            errors.append(
+                f"candidate host lost exact validation ownership evidence: {command}"
+            )
+    host_steps = _step_blocks(jobs["host-tests"])
+    base_steps = [
+        step
+        for step in host_steps
+        if f"    - name: {VALIDATION_OWNERSHIP_BASE_STEP}\n" in step
+    ]
+    if (
+        len(base_steps) != 1
+        or any(item not in base_steps[0] for item in VALIDATION_OWNERSHIP_BASE_CONTRACT)
+        or "scripts/validation_ownership/ci_verifier.py"
+        not in base_steps[0]
+        or not _base_step_has_scrubbed_environment(base_steps[0])
+        or not _base_step_has_bootstrap_sentinel_loop(base_steps[0])
+    ):
+        errors.append(
+            "candidate host lost exact PR-base validation ownership authority"
+        )
+    for name in (
+        "Run validation ownership regression suite (issue #180)",
+        "Validate validation ownership graph (issue #180)",
+    ):
+        matching = [
+            step for step in host_steps if f"    - name: {name}\n" in step
+        ]
+        if (
+            len(matching) != 1
+            or not _validation_step_has_scrubbed_environment(matching[0])
+        ):
+            errors.append(
+                f"validation ownership step {name!r} changes its scrubbed environment"
+            )
     if not _contains_exact_command(
         jobs["host-tests"],
         WORKFLOW_PILOT_AUTHORITY_HYDRATION,
@@ -2524,9 +2715,9 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
             ),
             self.text.replace(
                 "sudo apt-get update && sudo apt-get install -y "
-                "build-essential libmgba-dev",
+                "build-essential binutils-arm-none-eabi",
                 "sudo apt-get update && sudo apt-get install -y "
-                "build-essential libmgba-dev && "
+                "build-essential binutils-arm-none-eabi && "
                 'echo build/bin >> "$GITHUB_PATH"',
                 1,
             ),
@@ -2568,7 +2759,7 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
         )
         protected_names = (
             "Verify checked-out revision",
-            "Install host-only dependencies (no arm-none-eabi toolchain)",
+            "Install host and ownership-query dependencies",
             "Run gba-playtest host test suite",
             "Run upstream-port tooling test suite",
             "Run workflow contract test suite",
@@ -2613,26 +2804,53 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                 )
 
     def test_protected_pilot_steps_require_exact_scrubbed_environment(self):
-        names = (
-            "Hydrate workflow-pilot Git authority",
-            "Run workflow-pilot reporter regression suite (issue #176)",
-            "Validate workflow-pilot baseline against checked-out Git history",
-        )
-        env_block = "      env:\n" + "\n".join(SCRUBBED_STEP_ENV) + "\n"
-        variants = (
-            "",
-            *(
-                env_block.replace(f"{entry}\n", "")
-                for entry in SCRUBBED_STEP_ENV
+        steps = (
+            (
+                "Hydrate workflow-pilot Git authority",
+                SCRUBBED_STEP_ENV,
             ),
-            env_block.replace("        PATH: /usr/bin:/bin", "        PATH: /untrusted"),
-            env_block + "        GITHUB_ENV: build/mask\n",
-            env_block.replace("      env:", '      "env":'),
-            env_block.replace("        BASH_ENV:", "        BASH_ENV :"),
-            env_block.replace("        ENV: ''", "        ENV: &mask ''"),
-            env_block.replace("        PYTHONPATH: ''", "        <<: *mask"),
+            (
+                "Run workflow-pilot reporter regression suite (issue #176)",
+                SCRUBBED_STEP_ENV,
+            ),
+            (
+                "Validate workflow-pilot baseline against checked-out Git history",
+                SCRUBBED_STEP_ENV,
+            ),
+            (
+                "Run validation ownership regression suite (issue #180)",
+                VALIDATION_OWNERSHIP_STEP_ENV,
+            ),
+            (
+                "Validate validation ownership graph (issue #180)",
+                VALIDATION_OWNERSHIP_STEP_ENV,
+            ),
         )
-        for name in names:
+        for name, expected_environment in steps:
+            env_block = (
+                "      env:\n"
+                + "\n".join(expected_environment)
+                + "\n"
+            )
+            variants = (
+                "",
+                *(
+                    env_block.replace(f"{entry}\n", "")
+                    for entry in expected_environment
+                ),
+                env_block.replace(
+                    "        PATH: /usr/bin:/bin",
+                    "        PATH: /untrusted",
+                ),
+                env_block + "        GITHUB_ENV: build/mask\n",
+                env_block.replace("      env:", '      "env":'),
+                env_block.replace("        BASH_ENV:", "        BASH_ENV :"),
+                env_block.replace("        ENV: ''", "        ENV: &mask ''"),
+                env_block.replace(
+                    "        PYTHONPATH: ''",
+                    "        <<: *mask",
+                ),
+            )
             for variant in variants:
                 with self.subTest(name=name, variant=variant):
                     step_start = self.text.index(f"    - name: {name}\n")
@@ -2647,6 +2865,8 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                         any(
                             "protected pre-pilot step sequence differs" in error
                             or "lost exact workflow-pilot" in error
+                            or "lost exact validation ownership" in error
+                            or "changes its scrubbed environment" in error
                             for error in _errors(changed, False)
                         )
                     )
@@ -5656,14 +5876,16 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
 
         _, _, jobs = verify._parse_workflow_structure_text(self.text)
         host = next(steps for name, _, steps in jobs if name == "host-tests")
-        setup_name = "Install host-only dependencies (no arm-none-eabi toolchain)"
+        setup_name = "Install host and ownership-query dependencies"
         setup = next(dict(fields) for _, name, fields in host if name == setup_name)
         self.assertEqual(
             setup["run"],
             (
                 (
                     "sudo", "apt-get", "update", "&&", "sudo", "apt-get", "install",
-                    "-y", "build-essential", "libmgba-dev", "python3-venv",
+                    "-y", "build-essential", "binutils-arm-none-eabi",
+                    "gcc-arm-none-eabi", "libmgba-dev", "libnewlib-arm-none-eabi",
+                    "libpng-dev", "python3-venv", "pkg-config",
                 ),
                 ("/usr/bin/python3", "-I", "scripts/host_python.py", "create"),
             ),
@@ -5685,7 +5907,15 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
             self.text.replace(
                 "        /usr/bin/python3 -I scripts/host_python.py create\n", "", 1
             ),
-            self.text.replace("libmgba-dev python3-venv", "libmgba-dev", 1),
+            self.text.replace("libpng-dev python3-venv", "libpng-dev", 1),
+            self.text.replace("libnewlib-arm-none-eabi libpng-dev",
+                              "libnewlib-arm-none-eabi", 1),
+            self.text.replace("binutils-arm-none-eabi gcc-arm-none-eabi",
+                              "gcc-arm-none-eabi", 1),
+            self.text.replace("gcc-arm-none-eabi libmgba-dev", "libmgba-dev", 1),
+            self.text.replace("libmgba-dev libnewlib-arm-none-eabi",
+                              "libmgba-dev", 1),
+            self.text.replace("python3-venv pkg-config", "python3-venv", 1),
             self.text.replace(
                 '"$GITHUB_WORKSPACE/build/host-python/bin/python3"',
                 '"/usr/bin/python3"', 1,
@@ -5742,6 +5972,413 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                 for error in _errors(changed, False)
             )
         )
+
+    def test_validation_ownership_gates_are_required_host_steps(self):
+        host_tests = _job_blocks(self.text)["host-tests"]
+        for command in (
+            VALIDATION_OWNERSHIP_TEST_GATE,
+            VALIDATION_OWNERSHIP_CHECK_GATE,
+        ):
+            with self.subTest(command=command):
+                self.assertTrue(
+                    _contains_exact_command(
+                        host_tests,
+                        command,
+                        if_expression=FULL_WORKER_STEP_CONDITION,
+                        env_lines=VALIDATION_OWNERSHIP_STEP_ENV,
+                    )
+                )
+                changed = self.text.replace(f"      run: {command}\n", "      run: true\n", 1)
+                self.assertTrue(
+                    any(
+                        "candidate host lost exact validation ownership evidence"
+                        in error
+                        for error in _errors(changed, False)
+                    )
+                )
+
+    def test_validation_ownership_verifier_is_exact_base_pinned(self):
+        host_tests = _job_blocks(self.text)["host-tests"]
+        self.assertEqual(
+            set(VALIDATION_OWNERSHIP_BASE_BOOTSTRAP_PATHS),
+            set(ownership_ci_verifier.BASE_BOOTSTRAP_SENTINELS),
+        )
+        self.assertLess(
+            host_tests.index(VALIDATION_OWNERSHIP_BASE_STEP),
+            host_tests.index(
+                "Run validation ownership regression suite (issue #180)"
+            ),
+        )
+        step = next(
+            item
+            for item in _step_blocks(host_tests)
+            if _step_name(item) == VALIDATION_OWNERSHIP_BASE_STEP
+        )
+        script = _multiline_step_script(step)
+        unset_match = re.search(
+            r'(?ms)^unset (?P<variables>.*?)^test "\$\(/usr/bin/git rev-parse HEAD\)"',
+            script,
+        )
+        self.assertIsNotNone(unset_match)
+        unset_variables = shlex.split(
+            unset_match.group("variables").replace("\\\n", " ")
+        )
+        self.assertCountEqual(
+            unset_variables,
+            VALIDATION_OWNERSHIP_GIT_PATH_REDIRECTS,
+        )
+        self.assertEqual(
+            len(unset_variables),
+            len(VALIDATION_OWNERSHIP_GIT_PATH_REDIRECTS),
+        )
+        mutations = (
+            (
+                '"$trusted_root/scripts/validation_ownership/ci_verifier.py"',
+                '"scripts/validation_ownership/ci_verifier.py"',
+            ),
+            (
+                '/usr/bin/git archive --format=tar "$EXPECTED_BASE_SHA"',
+                '/usr/bin/git archive --format=tar "$EXPECTED_CANDIDATE_SHA"',
+            ),
+            (
+                '--base-sha "$EXPECTED_BASE_SHA"',
+                '--base-sha "$EXPECTED_CANDIDATE_SHA"',
+            ),
+            (
+                "validation-ownership: bootstrap-not-authoritative",
+                "validation-ownership: candidate-authoritative",
+            ),
+            (
+                'if [ "$BUILD_EVENT_NAME" != pull_request ]; then',
+                'if [ "$BUILD_EVENT_NAME" = pull_request ]; then',
+            ),
+            (
+                '--tmpdir="$validation_temp" validation-ownership-base.XXXXXXXXXX',
+                '--tmpdir="$GITHUB_WORKSPACE/build" validation-ownership-base',
+            ),
+            (
+                'test ! -L "$VALIDATION_OWNERSHIP_TEMP"',
+                'test -d "$VALIDATION_OWNERSHIP_TEMP"',
+            ),
+            (
+                "base_verifier_present=0",
+                "base_verifier_present=1",
+            ),
+            (
+                "unset GIT_ALTERNATE_OBJECT_DIRECTORIES",
+                "true # GIT redirects retained",
+            ),
+            (
+                "scripts/validation_ownership/graph.schema.json",
+                "scripts/validation_ownership/missing.schema.json",
+            ),
+        )
+        for original, replacement in mutations:
+            with self.subTest(original=original):
+                changed = self.text.replace(original, replacement, 1)
+                self.assertNotEqual(changed, self.text)
+                self.assertTrue(
+                    any(
+                        "lost exact PR-base validation ownership authority"
+                        in error
+                        for error in _errors(changed, False)
+                    )
+                )
+
+    def test_validation_ownership_base_scratch_ignores_candidate_build_symlink(self):
+        host_tests = _job_blocks(self.text)["host-tests"]
+        step = next(
+            item
+            for item in _step_blocks(host_tests)
+            if _step_name(item) == VALIDATION_OWNERSHIP_BASE_STEP
+        )
+        script = _multiline_step_script(step)
+        prelude = script[
+            : script.index('test "$(/usr/bin/git rev-parse HEAD)"')
+        ]
+        scratch = ownership_reporter.prepare_validation_scratch(ROOT)
+        try:
+            with tempfile.TemporaryDirectory(dir=scratch.path) as directory:
+                base = Path(directory)
+                candidate = base / "candidate"
+                outside = base / "outside"
+                runner_temp = base / "runner-temp"
+                candidate.mkdir()
+                outside.mkdir()
+                runner_temp.mkdir()
+                sentinel = outside / "sentinel"
+                sentinel.write_text("preserve\n", encoding="ascii")
+                (candidate / "build").symlink_to(
+                    outside,
+                    target_is_directory=True,
+                )
+                environment = {
+                    "BASH_ENV": "",
+                    "BUILD_EVENT_NAME": "pull_request",
+                    "ENV": "",
+                    "PATH": "/usr/bin:/bin",
+                    "VALIDATION_OWNERSHIP_TEMP": str(runner_temp),
+                }
+                completed = subprocess.run(
+                    [
+                        "/bin/bash",
+                        "--noprofile",
+                        "--norc",
+                        "-c",
+                        prelude,
+                    ],
+                    cwd=candidate,
+                    env=environment,
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                )
+                self.assertEqual(completed.returncode, 0, completed.stderr)
+                self.assertEqual(
+                    sentinel.read_text(encoding="ascii"),
+                    "preserve\n",
+                )
+                self.assertEqual(
+                    {item.name for item in outside.iterdir()},
+                    {"sentinel"},
+                )
+                self.assertEqual(list(runner_temp.iterdir()), [])
+
+                runner_link = base / "runner-link"
+                runner_link.symlink_to(outside, target_is_directory=True)
+                environment["VALIDATION_OWNERSHIP_TEMP"] = str(runner_link)
+                rejected = subprocess.run(
+                    [
+                        "/bin/bash",
+                        "--noprofile",
+                        "--norc",
+                        "-c",
+                        prelude,
+                    ],
+                    cwd=candidate,
+                    env=environment,
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                )
+                self.assertNotEqual(rejected.returncode, 0)
+                self.assertEqual(
+                    {item.name for item in outside.iterdir()},
+                    {"sentinel"},
+                )
+        finally:
+            ownership_reporter.cleanup_validation_scratch(scratch)
+
+    def test_validation_ownership_hosted_introduction_and_partial_modes(self):
+        host_tests = _job_blocks(self.text)["host-tests"]
+        step = next(
+            item
+            for item in _step_blocks(host_tests)
+            if _step_name(item) == VALIDATION_OWNERSHIP_BASE_STEP
+        )
+        script = _multiline_step_script(step)
+        scratch = ownership_reporter.prepare_validation_scratch(ROOT)
+        try:
+            with tempfile.TemporaryDirectory(dir=scratch.path) as directory:
+                base = Path(directory)
+
+                def run_case(name, base_files, candidate_files=None):
+                    repository = base / name / "repository"
+                    runner_temp = base / name / "runner-temp"
+                    repository.mkdir(parents=True)
+                    runner_temp.mkdir()
+                    subprocess.run(
+                        ["git", "init", "-q", "-b", "master"],
+                        cwd=repository,
+                        check=True,
+                    )
+                    commit_environment = {
+                        "GIT_AUTHOR_NAME": "Hosted Verifier Fixture",
+                        "GIT_AUTHOR_EMAIL": "hosted@example.invalid",
+                        "GIT_COMMITTER_NAME": "Hosted Verifier Fixture",
+                        "GIT_COMMITTER_EMAIL": "hosted@example.invalid",
+                        "HOME": "/nonexistent",
+                        "PATH": "/usr/bin:/bin",
+                    }
+                    files = {
+                        "base.txt": "base\n",
+                        **base_files,
+                    }
+                    candidate_files = candidate_files or {}
+                    for relative, content in files.items():
+                        target = repository / relative
+                        target.parent.mkdir(parents=True, exist_ok=True)
+                        target.write_text(content, encoding="ascii")
+                    subprocess.run(
+                        ["git", "add", "."],
+                        cwd=repository,
+                        check=True,
+                    )
+                    subprocess.run(
+                        ["git", "commit", "-q", "-m", "base"],
+                        cwd=repository,
+                        env=commit_environment,
+                        check=True,
+                    )
+                    base_sha = subprocess.check_output(
+                        ["git", "rev-parse", "HEAD"],
+                        cwd=repository,
+                        text=True,
+                    ).strip()
+                    (repository / "candidate.txt").write_text(
+                        "candidate\n",
+                        encoding="ascii",
+                    )
+                    for relative, content in candidate_files.items():
+                        target = repository / relative
+                        target.parent.mkdir(parents=True, exist_ok=True)
+                        target.write_text(content, encoding="ascii")
+                    subprocess.run(
+                        ["git", "add", "."],
+                        cwd=repository,
+                        check=True,
+                    )
+                    subprocess.run(
+                        ["git", "commit", "-q", "-m", "candidate"],
+                        cwd=repository,
+                        env=commit_environment,
+                        check=True,
+                    )
+                    candidate_sha = subprocess.check_output(
+                        ["git", "rev-parse", "HEAD"],
+                        cwd=repository,
+                        text=True,
+                    ).strip()
+                    environment = {
+                        "BASH_ENV": "",
+                        "BUILD_EVENT_NAME": "pull_request",
+                        "ENV": "",
+                        "EXPECTED_BASE_SHA": base_sha,
+                        "EXPECTED_CANDIDATE_SHA": candidate_sha,
+                        "GIT_CONFIG_COUNT": "0",
+                        "GIT_CONFIG_GLOBAL": "/dev/null",
+                        "GIT_CONFIG_NOSYSTEM": "1",
+                        "GIT_CONFIG_SYSTEM": "/dev/null",
+                        "GIT_NO_LAZY_FETCH": "1",
+                        "GIT_NO_REPLACE_OBJECTS": "1",
+                        "GITHUB_WORKSPACE": str(repository),
+                        "PATH": "/usr/bin:/bin",
+                        "PYTHONPATH": "",
+                        "VALIDATION_OWNERSHIP_TEMP": str(runner_temp),
+                    }
+                    environment.update(
+                        {
+                            variable: "/untrusted/git-redirect"
+                            for variable in VALIDATION_OWNERSHIP_GIT_PATH_REDIRECTS
+                        }
+                    )
+                    completed = subprocess.run(
+                        [
+                            "/bin/bash",
+                            "--noprofile",
+                            "--norc",
+                            "-c",
+                            script,
+                        ],
+                        cwd=repository,
+                        env=environment,
+                        check=False,
+                        capture_output=True,
+                        text=True,
+                    )
+                    self.assertEqual(list(runner_temp.iterdir()), [])
+                    return completed
+
+                introduction = run_case("introduction", {})
+                self.assertEqual(
+                    introduction.returncode,
+                    0,
+                    introduction.stderr,
+                )
+                self.assertIn(
+                    "validation-ownership: bootstrap-not-authoritative",
+                    introduction.stdout,
+                )
+
+                partial = run_case(
+                    "partial",
+                    {
+                        ".github/validation-ownership-make-dynamics.json": (
+                            "{}\n"
+                        )
+                    },
+                )
+                self.assertNotEqual(partial.returncode, 0)
+                self.assertIn(
+                    "validation-ownership: incomplete exact-base authority",
+                    partial.stderr,
+                )
+
+                exact_base = run_case(
+                    "exact-base-runtime",
+                    {
+                        "scripts/validation_ownership/ci_verifier.py": (
+                            "import argparse\n"
+                            "from pathlib import Path\n"
+                            "import sys\n"
+                            "trusted_root = Path(__file__).resolve().parents[2]\n"
+                            "if str(trusted_root) not in sys.path:\n"
+                            "    sys.path.insert(0, str(trusted_root))\n"
+                            "from scripts.validation_ownership import verifier_runtime\n"
+                            "parser = argparse.ArgumentParser()\n"
+                            "parser.add_argument('--trusted-root', required=True)\n"
+                            "parser.add_argument('--repository-root', required=True)\n"
+                            "parser.add_argument('--base-sha', required=True)\n"
+                            "parser.add_argument('--candidate-sha', required=True)\n"
+                            "args = parser.parse_args()\n"
+                            "runtime = Path(args.trusted_root) / 'scripts/validation_ownership/verifier_runtime.py'\n"
+                            "if not runtime.is_file():\n"
+                            "    raise SystemExit('missing trusted verifier runtime')\n"
+                            "if verifier_runtime.VALUE != 'base-runtime':\n"
+                            "    raise SystemExit('unexpected trusted verifier runtime')\n"
+                            "print('validation-ownership: exact-base-pinned helper=base-runtime')\n"
+                        ),
+                        "scripts/validation_ownership/verifier_runtime.py": (
+                            "VALUE = 'base-runtime'\n"
+                        ),
+                    },
+                    candidate_files={
+                        "scripts/validation_ownership/current_only_helper.py": (
+                            "VALUE = 'candidate-only'\n"
+                        ),
+                    },
+                )
+                self.assertEqual(exact_base.returncode, 0, exact_base.stderr)
+                self.assertIn(
+                    "validation-ownership: exact-base-pinned helper=base-runtime",
+                    exact_base.stdout,
+                )
+
+                missing_runtime = run_case(
+                    "exact-base-missing-runtime",
+                    {
+                        "scripts/validation_ownership/ci_verifier.py": (
+                            "import argparse\n"
+                            "from pathlib import Path\n"
+                            "parser = argparse.ArgumentParser()\n"
+                            "parser.add_argument('--trusted-root', required=True)\n"
+                            "parser.add_argument('--repository-root', required=True)\n"
+                            "parser.add_argument('--base-sha', required=True)\n"
+                            "parser.add_argument('--candidate-sha', required=True)\n"
+                            "args = parser.parse_args()\n"
+                            "runtime = Path(args.trusted_root) / 'scripts/validation_ownership/verifier_runtime.py'\n"
+                            "if not runtime.is_file():\n"
+                            "    raise SystemExit('missing trusted verifier runtime')\n"
+                        ),
+                    },
+                )
+                self.assertNotEqual(missing_runtime.returncode, 0)
+                self.assertIn(
+                    "missing trusted verifier runtime",
+                    missing_runtime.stderr,
+                )
+        finally:
+            ownership_reporter.cleanup_validation_scratch(scratch)
 
     def test_workflow_pilot_steps_reject_spaced_protected_keys(self):
         changed = self.text

@@ -4,7 +4,8 @@ MAKEDEP = mkdir -p $(DEPS_DIR)/$(dir $*) && $(CPP) $(CPPFLAGS) $< -MM -MG -MT $*
 # archival dependency files or expand the explicit legacy object rules'
 # scaninc prerequisites. Direct non-C object goals still need scaninc-based
 # freshness, so they extend only the depfile-safe list, not the scan-safe one.
-MAKECMDGOALS_NOSCANINC := all clean tag codeql-alerts-test codeql-fanalyzer-test $(MODERN_GOALS) \
+MAKECMDGOALS_NOSCANINC := all clean tag codeql-alerts-test codeql-fanalyzer-test \
+	validation-ownership-check $(MODERN_GOALS) \
 	assets-validate assets-generate assets-check assets-test \
 	generated-data-validate generated-data-generate generated-data-check generated-data-test \
 	localization-validate localization-generate localization-check localization-test localization-budget \

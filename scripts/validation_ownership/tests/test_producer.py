@@ -1853,6 +1853,9 @@ class ProducerTests(unittest.TestCase):
                 ["1", "1", "1"],
             )
             self.assertEqual(len(observed.events), 4)
+            published = {item.path: item for item in observed.generated}
+            self.assertEqual(published["data/value"], writers[-1].generated[0])
+            self.assertEqual(published["data/value"].data, b"1")
             self.assertFalse((session.tree / "data").exists())
         self.fixture.assert_clean(session)
 
@@ -2214,6 +2217,11 @@ class ProducerTests(unittest.TestCase):
                 ["2", "observed", "3"],
             )
             child, = nested
+            self.assertEqual(child.generated, observed.generated)
+            self.assertEqual(
+                {item.path: item.data for item in observed.generated}["data/nested/value"],
+                b"observed",
+            )
             self.assertEqual(child.semantics["domains"]["SELECTED"]["value"], "observed")
             self.assertEqual(child.semantics["domains"]["MAKE_RESTARTS"]["value"], "1")
             self.assertEqual(child.semantics["domains"]["MAKEFILE_LIST"]["value"], "inner.mk inner.generated.mk")

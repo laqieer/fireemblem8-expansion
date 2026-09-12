@@ -754,6 +754,15 @@ consume `semantic_digest`, not `execution_digest`. These are ephemeral
 execution/semantic boundaries, not committed source ledgers or ROM identity
 requirements.
 
+`MakeObservation.file_open_attempts` retains unique `(resolved_path,
+syscall_spelling)` pairs for the live Make process's repository file-open
+requests, including requests whose absence Make ignores. These are attempted
+opens, not successful reads; directory enumeration and actual kernel statuses
+retain their existing separate observations. The spelling is what Make passed
+to the syscall after its own normalization, not reconstructed Makefile text.
+The records use the existing protected observation channel and cumulative
+bookkeeping allowance, without granting additional access.
+
 ## Aggregate lifetime and resources
 
 The [content-only producer policy](ownership-probe-producers.md#content-only-publication)
@@ -863,8 +872,9 @@ an attempted launch before a pre-`Popen` rejection, as before.
 Caller-side states, argv and serialized Python objects can already exist
 before admission; this is not a claim that their allocation was prevented.
 No coordinator AS/NNP policy or aggregate host-RAM guarantee is added.
-The graph planner's use of this shared seam belongs to #180's later normal
-integration, not this foundation root. Dependencies are the existing budget,
+The graph planner uses the same seam for newly queued replacement states;
+repeated queries share admission without counting queued states as executions.
+Dependencies are the existing budget,
 producer and view APIs; other feature/profile conflicts are none. Save/config,
 generated content, locale, ROM/GBA RAM and modern/archival behavior are unchanged.
 

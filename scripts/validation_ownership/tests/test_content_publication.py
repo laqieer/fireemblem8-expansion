@@ -135,6 +135,7 @@ class ContentPublicationTests(unittest.TestCase):
             ]
             self.assertEqual(differing["generated_outputs"][0][1], "100600")
         self.fixture.assert_clean(session)
+        self.assertEqual([(item.data, item.mode) for item in observed.generated], [(b"same", 0o600)])
 
     def test_native_changed_content_replaces_then_retains_the_new_effective_mode(self):
         self.fixture.add("writer.py", (
@@ -539,12 +540,14 @@ class ContentPublicationTests(unittest.TestCase):
             self.assertEqual(effects[0]["identity"], effects[1]["identity"])
             self.assertEqual(result.semantics["published_sources"][0][2], 0o600)
             self.assertEqual(nested[0].semantics["published_sources"], result.semantics["published_sources"])
+            self.assertEqual(nested[0].generated, result.generated)
             self.assertEqual(len(result.events), 2)
             self.assertEqual(len(nested[0].events), 1)
             self.assertFalse(session.published_sources)
             self.assertFalse(session.published_versions)
             self.assertFalse((session.tree / "output.bin").exists())
         self.fixture.assert_clean(session)
+        self.assertEqual([(item.data, item.mode) for item in result.generated], [(b"same", 0o600)])
 
     def test_content_only_current_base_current_uses_each_actual_source_view(self):
         self.fixture.add("value.txt", "base")

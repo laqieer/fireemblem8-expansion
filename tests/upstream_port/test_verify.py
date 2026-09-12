@@ -19,7 +19,7 @@ UPSTREAM_PORTING_PATH = os.path.join(REPO_ROOT, "docs", "upstream-porting.md")
 # Issues #7/#17 remediation: the documentation step is a genuine required
 # workflow gate, but it is the sole correctness step deliberately excluded
 # from verify.gates(). Its exact commands and position are asserted separately
-# below; localization remains part of the current 30-gate candidate mirror.
+# below; localization remains part of the current 32-gate candidate mirror.
 _DOCS_GOVERNANCE_STEP_NAME = "Check documentation (issues #7/#17)"
 _CODEQL_ALERTS_STEP_NAME = "Run CodeQL alert regression suite (issue #84)"
 _LOCALIZATION_HOST_STEP_NAME = "Run localization host test suite (issue #18)"
@@ -28,6 +28,12 @@ _WORKFLOW_CONTRACT_STEP_NAME = "Run workflow contract test suite"
 _WORKFLOW_PILOT_TEST_STEP_NAME = verify_mod._WORKFLOW_PILOT_TEST_STEP_NAME
 _WORKFLOW_PILOT_BASELINE_STEP_NAME = (
     verify_mod._WORKFLOW_PILOT_BASELINE_STEP_NAME
+)
+_VALIDATION_OWNERSHIP_TEST_STEP_NAME = (
+    verify_mod._VALIDATION_OWNERSHIP_TEST_STEP_NAME
+)
+_VALIDATION_OWNERSHIP_CHECK_STEP_NAME = (
+    verify_mod._VALIDATION_OWNERSHIP_CHECK_STEP_NAME
 )
 
 
@@ -153,7 +159,7 @@ class VerifyGatesMirrorWorkflowTests(unittest.TestCase):
         )
 
     def test_issue_7_17_docs_governance_is_a_standalone_workflow_step_not_a_verify_gate(self):
-        """Docs governance stays outside the current 30-gate candidate mirror
+        """Docs governance stays outside the current 32-gate candidate mirror
         while remaining required, argv-identical, and immediately after the
         artifact guard in build.yml."""
         names = [g.name for g in verify_mod.gates()]
@@ -233,7 +239,7 @@ class VerifyGatesMirrorWorkflowTests(unittest.TestCase):
         localization_index = ordered_unique_steps.index(_LOCALIZATION_HOST_STEP_NAME)
         self.assertEqual(
             ordered_unique_steps[localization_index - 1],
-            _WORKFLOW_PILOT_BASELINE_STEP_NAME,
+            _VALIDATION_OWNERSHIP_CHECK_STEP_NAME,
         )
 
     def test_issue_18_full_game_width_contract_is_in_mirrored_gate_set(self):
@@ -470,7 +476,7 @@ class VerifyGatesMirrorWorkflowTests(unittest.TestCase):
         )
 
     def test_gate_list_full_ordered_names(self):
-        # All 30 current candidate Build gates remain; docs governance is
+        # All 32 current candidate Build gates remain; docs governance is
         # deliberately absent and asserted as a standalone workflow step.
         names = [g.name for g in verify_mod.gates()]
         self.assertEqual(
@@ -481,6 +487,8 @@ class VerifyGatesMirrorWorkflowTests(unittest.TestCase):
                 "workflow-contract-tests",
                 "workflow-pilot-reporter-tests",
                 "workflow-pilot-baseline",
+                "validation-ownership-tests",
+                "validation-ownership-check",
                 "localization-host-suite",
                 "game-localization-width-contract",
                 "game-localization-catalog-check",
@@ -510,8 +518,9 @@ class VerifyGatesMirrorWorkflowTests(unittest.TestCase):
         )
         # The merged CI runs the fast `host-tests` lane textually before the
         # ROM `build` job, so the host-only gates are first. The first six
-        # remain pure Python/native checks; the seventh runs the full-game
-        # localization Make target but still never builds a ROM.
+        # remain pure Python/native checks; the seventh runs the source-only
+        # ownership Make target and the ninth runs the full-game localization
+        # Make target, but neither builds a ROM.
         # stay host-only -- never a ROM/linker `make` build (that belongs
         # solely to the modern-linker gates) -- so the fast host job and the
         # ROM build job never duplicate work.
@@ -538,7 +547,7 @@ class VerifyGatesMirrorWorkflowTests(unittest.TestCase):
     def test_artifact_guard_command(self):
         # Full-game closure and artifact-guard unit checks precede the
         # immutable-tree check in the mirrored Build gate order.
-        g = verify_mod.gates()[11]
+        g = verify_mod.gates()[13]
         self.assertEqual(g.name, "artifact-guard")
         self.assertEqual(g.command, ["python3", "scripts/artifact_guard.py", "--revision", "HEAD"])
 
@@ -1137,7 +1146,7 @@ class VerifyCliCwdTests(unittest.TestCase):
                 "summary",
             ),
         )
-        self.assertEqual(len(verify_mod.gates()), 30)
+        self.assertEqual(len(verify_mod.gates()), 32)
         gate_jobs = {
             job_name
             for job_name, _, _ in verify_mod._workflow_gate_contract(
@@ -1328,7 +1337,6 @@ class VerifyCliCwdTests(unittest.TestCase):
             ),
             structure,
         )
-
 
 
 

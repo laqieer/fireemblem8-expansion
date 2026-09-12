@@ -109,6 +109,32 @@ class ProbeExecutionOwnershipTests(unittest.TestCase):
         self.assertTrue(workflow)
         self.assertEqual(native & workflow, set())
 
+    def test_graph_discovery_partitions_all_cases_without_repeating_native_owner(self):
+        directory = ROOT / "scripts/validation_ownership/tests"
+        loader = unittest.TestLoader()
+        native = {
+            name
+            for module in PROBE_TEST_MODULES
+            for name in case_ids(loader.loadTestsFromModule(importlib.import_module(module)))
+        }
+        graph = list(case_ids(loader.discover(
+            str(directory), pattern="test_*.py", top_level_dir=str(ROOT),
+        )))
+        complete = {
+            name
+            for path in directory.glob("test_*.py")
+            for name in case_ids(loader.loadTestsFromModule(importlib.import_module(
+                "scripts.validation_ownership.tests." + path.stem,
+            )))
+        }
+        self.assertEqual(loader.errors, [])
+        self.assertTrue(native)
+        self.assertTrue(graph)
+        duplicated = sorted(native & set(graph))
+        self.assertEqual(len(duplicated), 0, duplicated[:5])
+        self.assertEqual(len(graph), len(set(graph)))
+        self.assertEqual(set(graph), complete - native)
+
     def native_dependencies(self, text):
         steps = topology._step_blocks(topology._job_blocks(text)["extended-host-tests"])
         owner = self.owner_step(text)

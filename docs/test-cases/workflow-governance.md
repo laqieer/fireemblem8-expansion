@@ -1349,6 +1349,8 @@ traffic accounting, establish full graph fit or add a manual-only criterion.
    active/nested bindings and returned metadata report mode 0600. Different
    content and a missing output use actual replacement/create behavior and
    the produced mode. Atime is observed, not normalized.
+   Graph queries also retain those effective bytes/modes in
+   `MakeObservation.generated` after cleanup, including nested observations.
 4. Supply invalid policies, malformed or forged effective confirmations,
    wrong slots/owners/digests/modes/identities, immutable-source or nonregular
    outputs, and failed/racy comparison reads. Each fails closed. A read error
@@ -1472,8 +1474,10 @@ comment, spelling or ordering changes are not mutation evidence.
 ### Interactions and save compatibility
 
 Uses the existing `ProbeBudget`, `ProbeSession.variants`, producer and immutable
-view APIs; preserves #256 and #258. #180/#186 will integrate the shared plan
-seam after this root lands, and #196 follows that graph contract. There are no
+view APIs; preserves #256 and #258. The graph planner also admits each newly
+queued replacement through the same budget without resetting admission across
+queries or incrementing attempted states at enqueue. #196 follows that graph
+contract. There are no
 other feature/profile conflicts, gameplay or modern/archival changes, save or
 configuration migration, locale/generated-content format change, or ROM/GBA
 RAM effect. No runtime feature flag or manual-only judgment is required.
@@ -2250,10 +2254,11 @@ while candidate eligibility remains bound to that prior full run.
 workflow and asserts exact trigger, job, head, worker-condition, summary, setup,
 pin, and environment semantics, including the pre-fix negative selection.
 
-`python3 -m unittest tests.upstream_port.test_verify -v` preserves the 29 local
+`python3 -m unittest tests.upstream_port.test_verify -v` preserves the 31 local
 gates while requiring complete eight-job source/target equivalence: the retained
 issue #176 jobs remain closed and the identity/router/classifier are closed
-setup-only jobs, never 29th/30th/31st local gates.
+setup-only jobs, never additional local gates. The two ownership checks remain
+part of the host gate set.
 
 `python3 -m unittest scripts.docs_check_tests.test_development_workflow_skill -v`
 parses the frozen PR template/body and comment collection, requiring exactly
@@ -3541,7 +3546,7 @@ is host-only delivery orchestration.
    recover it with lazy fetching disabled. The strict exact-commit seam
    restores it without changing `HEAD`, refs, or `FETCH_HEAD`. Separately,
    confirm production extraction returns exactly the unique commit identities
-   in the committed full baseline and that setup remains absent from the 28
+   in the committed full baseline and that setup remains absent from the 30
    local gates.
 9. Mutate every combined worker with container/services/strategy/permissions/
    defaults/advisory/environment/concurrency/uses/secrets/shell execution
@@ -3724,6 +3729,511 @@ criterion applies.
 
 Rollback is a normal revert of issue #176's dedicated commit; no workflow or
 game behavior needs a compensating change.
+
+## TC-WORKFLOW-GATE-OWNERSHIP-001: Resolve every admitted path to complete validation ownership
+
+- **Feature / originating issue:** `workflow-governance` /
+  [issue #180](https://github.com/laqieer/fireemblem8-expansion/issues/180).
+- **Supported configuration or artifact:** clean source checkout with Python
+  3, Git, and the committed report-only validation ownership graph.
+- **Prerequisites and clean starting state:** start at the exact repository
+  root with `.github/validation-ownership-graph.json`, its strict schema,
+  reporter, generated-data and tester-case registries, Build workflow,
+  Makefiles, `/usr/bin/make`, `/usr/bin/unshare` with mount/network/PID
+  namespaces plus either user namespaces or passwordless exact
+  `/usr/bin/sudo`, a static-capable `/usr/bin/cc`, the host C++ compiler,
+  libpng/zlib development headers and libraries plus `pkg-config`
+  (`libpng-dev` and `pkg-config` on Ubuntu),
+  the existing pinned host Python environment, and the manual-handoff
+  contract unchanged. No token, ROM, emulator, or remote workflow is required.
+
+### Actions
+
+1. Run
+   `/usr/bin/python3 -I -S -B scripts/validation_ownership/isolated_launcher.py tests`.
+2. Run
+   `/usr/bin/python3 -I -S -B scripts/validation_ownership/isolated_launcher.py check --repository-root .`.
+   The Make alias is a convenience for a trusted invocation, not the boundary
+   against GNU Make's preloaded `MAKEFILES` or `--eval`.
+3. Use the isolated reporter's `resolve` mode with `--changed` for
+   `src/bm.c`, `include/global.h`, `scripts/check_docs.py`,
+   `src/data/items.json`, `texts/expansion/catalog.en.json`, `config.mk`,
+   `graphics/titlescreen/title_main_background_1.png`,
+   `assets/banim/lorm_sp1/script.txt`,
+   `graphics/banim/banim_lorm_sp1_sheet_0.png`,
+   `assets/portraits/eirika/metadata.json`,
+   `graphics/portrait/portrait_Eirika_chibi.png`,
+   `banim/banim_lorm_sp1_motion.s`,
+   `graphics/titlescreen/title_demon_king.png`,
+   `sound/direct_sound_data.s`, `assets/tmx/Ch2Map.tmx`,
+   `preview/tsa/MANIFEST.tsv`, `.github/manual-testing-handoff.json`,
+   `.github/workflows/build.yml`, `.github/validation-ownership-graph.json`,
+   `.github/CODEOWNERS`, `.github/ISSUE_TEMPLATE/bug_report.yml`,
+   `scripts/modernize/package_ci_patch.sh`, and
+   `tests/workflows/test_patch_release_workflow.py`, plus
+   `scripts/validation_ownership/tests/test_content_publication.py`.
+4. Confirm each result identifies one surface, every applicable typed edge,
+   its existing authority, and a plain-language reason. Confirm the graph
+   remains `report-only` with `narrowing_authorized` false.
+   The content-publication test module has the native producer module's exact
+   host ownership. Removing its exact admission or adding an unclassified
+   neighboring test must fail; a prefix does not grant admission.
+5. Inspect the suite's non-destructive fixtures against the complete canonical
+   [typed contract](../validation-ownership.md#typed-contract),
+   [path-coverage contract](../validation-ownership.md#maintainable-path-coverage),
+   and [artifact lifecycle, measurement, and seal contract](../validation-ownership.md#artifact-lifecycle-measurements-and-seals).
+   Confirm every edge, graph/schema/oracle, exclusion, artifact, lifecycle,
+   authority, stale-selector, unknown/overlap, symlink/gitlink, and external
+   scratch-boundary positive and negative control described there. Equivalent
+   parsed ordering must remain stable; semantic changes must invalidate the
+   documented scope, and outside sentinels must survive.
+   Confirm actual GNU Make comparison covers the complete parsed 112-domain
+   model, including environment/fallback origins and adversarial Make syntax.
+   Confirm the real native scanner matches ordinary scaninc dependency bytes
+   and source closure, then rejects every listed compilation-input content,
+   absence, mode, and symlink mutation before `ProbeSession`. Independently
+   selected reviewed scanner evolution must pass, while unlisted error-bearing
+   `.cpp`/`.h` files, missing intermediate `..` components, repository escapes,
+   and nonregular inputs remain outside or rejected as specified.
+   Confirm one shared session and BASE view reproduce the asset producer's
+   CURRENT omission and genuine deleted-source `LORM_SP1_PROOF` restoration,
+   with one restart per Make query. Confirm generated-registry declarations use
+   their selected view and BASE ownership for deleted sources; wrong loaders,
+   stale declarations, invalid schemas, and filename-only classification fail.
+   Count-support headers must appear alongside their actually consumed primary
+   JSON inputs. Changing the support declaration and header in CURRENT must
+   not replace BASE ownership, include unrelated headers, or survive restoration
+   of CURRENT as stale cached membership. Run
+   `python3 -m unittest scripts.validation_ownership.tests.test_report_views.ReportViewTests.test_registry_count_support_ownership_follows_the_selected_view -v`
+   for this focused control; it does not replace the complete report above.
+   Finally, confirm explicit import/root listings see the complete selected
+   view without granting undeclared reads, and that the dependency adapter
+   matches the real host C preprocessor's bytes, closure, included `.d`,
+   restart, and provenance while rejecting wrong drivers, output directories,
+   and unsupported flags.
+6. Exercise the documented standalone-launcher and trusted-Make boundaries:
+   controlled `MAKEFILES`, ambient/dry-run flags, and reporter `--eval` must
+   prove that only the direct Python entry precedes Make startup evaluation.
+   Reporter top-level imports and their subprocesses must receive cleared
+   Git/Make/shell execution controls, while benign environment values and
+   caller-relative repository-root arguments keep their intended meaning.
+   The convenience target must reject every execution-control override before
+   configurable includes or dependency suppression.
+   Invoke the actual launcher/reporter from the repository's parent using
+   both absolute and relative repository-root arguments. Require the same
+   complete report coverage; a symlink root must still reject before payload.
+   Prepend an inert copied verifier step while disabling the real host step,
+   then duplicate the verifier within its host job. The structural staging
+   guard must reject both, while a nonsemantic YAML comment remains stable.
+   Complete the canonical
+   [coordinator-owned review and capture procedure](../validation-ownership.md#coordinator-owned-review-and-capture)
+   with one actual independent `ReviewSession`. Require the exact immutable
+   checker and complete explicit path/edge/consumer arrays, plus their three
+   domain-separated digests, to fit both unchanged 40-subject schemas.
+   Register and capture the real verifier, then carry the same live
+   qualification through `assess_observed`, local readiness, review-first
+   dispatch, and final admission. A changed identity or scope, missing native
+   context, omitted consumer, stale/candidate-only qualification, counterfeit
+   checker, or legacy reviewed label without the live object must reject.
+   Repeat assessment without the live qualification and require
+   `exact-local-handoff` with dispatch and admission denied. Also prove an
+   otherwise valid delegated handoff remains ready without reviewed
+   qualification but cannot substitute for the coordinator-owned capture once
+   a live qualification is supplied.
+7. For the focused A/V correction, run
+   `python3 -m unittest scripts.validation_ownership.tests.test_reporter.AssetOwnershipTests`.
+   Inspect positive title/package selections, incorrect runtime-owner and
+   broad-selector mutations, retained generated/build/manual pairs, and
+   unknown/mode/exclusion boundaries. The fixtures run the real selector,
+   oracle and consumer checkers with Make execution/emulator capture
+   substituted; they do not replace steps 1–2 or prove live ROM behavior.
+8. In that focused suite, inspect the package helper/test probes: both retain
+   the complete `surface.host` positive/adversarial owner pair, bound to the
+   host workflow test step. Removing or redirecting either role must fail.
+   The removed `scripts/workflow_pilot/publisher_shell_contract.py` must fail
+   current-tree resolution; with an explicitly selected old base, its deletion
+   must still explain the nonempty host owner pair. A `patch-release` job
+   authority must reject as stale. Run
+   `python3 -m unittest tests.workflows.test_patch_release_workflow -v`
+   to exercise the parsed eight-job/full-gate contract and the actual packaging
+   helper with owned synthetic inputs. Require one profile build, no build by
+   packaging, authenticated master-only publication, correct source/profile,
+   real BPS round trip, patch-only outputs, private cleanup and visible
+   failures. This does not prove actual private-base publication or the still
+   blocked full112-domain ownership acceptance.
+9. Exercise the canonical path-admission fixtures: broad prefixes must reject
+   immutable new source/script/documentation/graphics members until an exact
+   selector supplies complete ownership. Generated-source and verifier-runtime
+   registry admissions remain valid; no duplicate inventory or commit pin is
+   introduced.
+10. Exercise the canonical trusted-runtime reuse and cleanup fixtures. Repeated
+    captures and failure/retry must preserve identities and remove only a
+    successfully terminated, unchanged owned workspace. Pre-existing,
+    substituted, residual, or unconfirmed-process work must remain untouched
+    and reject with primary and cleanup diagnostics preserved.
+    Run `python3 -m unittest scripts.validation_ownership.tests.test_reporter.RepositoryStatusTests -v`
+    to compare complete staged/unstaged/deleted/untracked status with stock Git,
+    retain Git errors, and read the actual large repository within the 512 MiB
+    process address-space bound. The pre-fix optional preload fails with
+    threaded-lstat allocation exhaustion on the recorded host; disabling
+    that optional optimization must not omit paths or alter status bytes.
+11. Run `python3 -m unittest scripts.validation_ownership.tests.test_graph_regex.GraphRegexTests -v`.
+    A schema request at the exact 1 MiB boundary must succeed, while a larger
+    cumulative pending allowance must not admit oversized requests or pattern
+    batches. Direct compressed-worker and oversized wire declarations must
+    also reject. Retain stricter caller bounds, real matching/schema results,
+    the original dialect, deadline, memory and cleanup controls.
+
+### Expected result
+
+Every Git-tracked path resolves to exactly one complete owner set. The sole
+gitlink is a named fail-closed exclusion whose selection cannot silently
+succeed. Representative runtime/ABI, host-only, generated, localization,
+configuration, manual A/V, workflow, governance, repository configuration,
+issue-template, and pull-request-template paths resolve with no missing or
+unexpected edge/evidence owners. `.github/PULL_REQUEST_TEMPLATE.md` selects
+documentation governance; `.github/CODEOWNERS` selects the named fail-closed
+external-enforcement exclusion only. Generated paths derive from
+the typed generated-data registry; gate commands derive from existing Make
+targets, workflow jobs/steps, and tester cases rather than a duplicate command
+list. Both ownership commands are required, scrubbed `host-tests` gates and
+members of the complete upstream gate inventory.
+
+With the ARM compiler installed for ownership metadata queries, the explicit
+host-only suite must still skip the concurrent custom-spell full-project
+build before artifact cleanup or process launch. Configuration and host
+checks in that module must still run. The host-only regression supplies an
+available compiler and intercepts the first mutating operation: host-only
+mode never reaches it, while normal mode still enters the unchanged build
+body. This is not a claim that the controlled normal-mode probe builds a ROM.
+
+Resolve the asset implementation package separately from its `tests/` namespace.
+Implementation paths must retain asset host, generation, drift, compilation
+and linked-consumer owners without inventing manual judgments. `assets.mk`
+must retain its existing configuration/default/profile/boot owners in addition
+to asset generation/drift/consumer evidence. Remove or redirect each new
+pipeline relationship to another live owner: the independent oracle must
+reject it. Authored asset manual routes and unrelated host tests remain intact.
+
+The exact main-title inputs select `expansion-modern-title-check`, whose
+title-progression scenario asserts four framebuffer checkpoints. Only the
+three imported LORM_SP1_PROOF inputs select
+`expansion-modern-banim-package-runtime-check`: its positive/control checks
+cover selection, script/palette/OAM consumption and battle lifecycle, not
+framebuffer pixels or audible sound. Eirika's three package inputs and four
+existing component aliases select
+`expansion-modern-portrait-package-runtime-check`, which observes palette/VRAM
+words and face/minimug/mouth state, not all portraits or a full framebuffer.
+Both packages retain asset generation, drift and compiled-consumer owners.
+Remaining manifest sources retain generated/build owners without inventing
+one scenario for arbitrary manifests. Remaining ROM A/V paths retain
+host/compile/link plus manual handoff; review-only `preview/` files claim no
+ROM compile/link/runtime observation. Handoff JSON itself selects governance
+host checks. No reliable deterministic automation is replaced by a manual
+criterion, and all broader checks remain mandatory.
+
+The canonical report and lifecycle results must satisfy the complete
+[artifact lifecycle, measurement, and seal contract](../validation-ownership.md#artifact-lifecycle-measurements-and-seals):
+zero oracle pair mismatches, semantic-only seal/invalidation changes, and one
+real removal/restoration cycle for both declared routes at every trigger.
+Either route failing independently, stale proof reuse, unrelated check
+substitution, or exact-base authority-fingerprint drift must reject. Equivalent
+parsed reordering remains stable, and tester-case authority changes remain
+scoped to their affected edges.
+
+### Negative control
+
+Unknown paths or edge types, uncovered or overlapping path patterns, cycles,
+duplicate or ambiguous owners, stale Make/workflow/tester/generated/manual
+targets, missing profiles or negative controls, and every removed or
+redirected edge family fail with the missing contract named.
+
+The pre-fix graph assigned every A/V path, including title graphics, sound,
+review-only previews and handoff metadata, to
+`expansion-modern-banim-presentation-check`. That runner explicitly captures
+HP/policy probes with framebuffer disabled and no audio assertions. Replacing
+a corrected title/package runtime edge with that still-live owner, or widening
+the title selector to claim sound/unobserved manifest paths, must fail the
+independent owner oracle. Removing an applicable runtime requirement together
+with its edge must also fail; a manual handoff is not a substitute. Untracked
+files fail before prefix matching; newly tracked files in generic asset
+namespaces do not inherit exact observed-consumer ownership.
+
+Make authority is observed from confined `/usr/bin/make`, never from a
+handwritten parser. A fresh exact-tree + exact-gitlink scratch root, empty
+generated-output overlay, fixed locale/time/environment, and trusted absolute
+GNU Make/interceptor binaries are mandatory. Every 112-domain command-line
+variant and each environment-sensitive origin executes the actual parser and
+evaluator; exact concrete closures, pattern stems, expanded recipes, terminal
+inputs, includes, dynamic outputs, errors, argv, environment, and tool
+identities participate in authority. Comments and unrelated targets stay
+stable only when their observed target semantics stay stable.
+The closed external-selector syntax boundary enumerates static `?=` names,
+direct/secondary references, definition dependencies, and graph-versus-recipe
+positions from GNU Make-loaded inputs, while GNU Make undefined-variable
+warnings cover evaluated undefined and computed references. Undeclared
+`MODE`, dynamic default names, a symbolic `DEP` used as a prerequisite, and
+references reached through `define`/`eval`/`call`/`foreach`/computed names
+reject; a finite sealed MODE or DEP domain passes and changes concrete closure.
+An unused `UNUSED` finite domain, unobserved typed variable, or stale generated
+path fails registry completeness: the registry is never copied into the
+observed census.
+Every fallback and domain/origin variant contributes loaded sources, selector
+positions, closures, and generated prerequisites to a deterministic fixed
+point. A `MODE=b` branch that first loads `b.mk` must reject an undeclared
+`DEP`, enumerate all sealed `DEP` values under the retained `MODE=b` context,
+and continue through a `DEP`-selected include's next finite selector.
+Conversely, an unselected branch's `DEP = $(SELECT)` definition cannot
+backfill `SELECT` into the observed `MODE=a` census.
+Branch-only recipe symbolic inputs are recorded but never enumerated, and a
+finite recipe-only default such as `MESSAGE ?= fallback` stays in the observed
+census without spawning closure-expansion variants. Reversed domain
+declaration order produces identical authority. State/source/domain/
+combination/depth/time cap fixtures reject rather than returning a partial
+census, with one deadline and aggregate budget shared by the entire report.
+Environment-origin graph variants are spawned only for names observed as
+loaded-source defaults or actual undefined authority; explicit graph
+assignments collapse that unrelated environment dimension.
+Every target is a standalone native GNU Make observation; no combined-root
+result is attributed to another target. Referenced recipe variables are
+observed through bounded native variable pages, and inconsistent graph or
+command provenance across pages rejects. A semantic recipe-variable change
+must change its authority while a comment-only refactor remains stable.
+Preserve references after a quoted recipe `#`, including inline recipes.
+Use a computed `value`/`origin`/`flavor` selector whose native prerequisites
+change under a sealed domain: the graph must reject the unsupported selector
+instead of reporting an incomplete successful census. Unconsumed debug
+recipes and semicolons inside Make expressions retain native behavior.
+The shared foundation owns snapshot/command caches within the report and
+selected immutable view; there is no reporter-global graph cache or per-target
+session/deadline reset. Wildcard-visible paths, modes, source bytes and generated
+outputs retain their actual captured identity. BASE registry/models are measured
+in one grouped public view, and lifecycle removal/restoration reuses that
+already validated model without recursive report execution.
+Count actual output-producing dispatches through the graph consumer: a single
+dependency-include remake must execute once, not once for registration and
+again for Make. The completed observation must retain the real final bytes
+used by the source census while the temporary publication is removed.
+Create two independent captures of identical asset Git inputs and execute the
+real producer/remake in each. Generated bytes, dynamic-command identity and
+Make authority must agree even when actual source mtimes differ, and the
+source mtimes must remain untouched. A real source content/mode/membership
+change must still affect the captured digest. Preserve ordinary CLI stamping
+and consumer behavior; do not compare its mtime digest as if it were the
+captured identity digest.
+Exercise unknown optional includes in relative, `./` and `/repo/` forms.
+Native Make may ignore the real absence, but the graph must reject the
+unadmitted attempted input even when `MAKEFILE_LIST` omits it. A tracked include
+and a genuine producer-created include still pass. The captured syscall
+spelling is not claimed to be the original pre-normalization Makefile token.
+For a directory-backed table, add and remove matching bundle members between
+CURRENT and BASE while retaining a nonmatching JSON neighbor. Only the schema's
+real selected members receive generated-source ownership. Discovery must not
+read member contents; the subsequent loader must reject an unreported read.
+Ordinary bundle loading and inventory results remain unchanged.
+Inspect the real graph discovery plan alongside the required
+`ownership-probe-test` selection. Foundation, producer and dependency cases
+must remain in their one extended-host owner, absent from both graph and
+workflow discovery. The union must still contain every allocated case;
+neither duplicate execution nor omitting a case is an acceptable correction.
+Owned Git fixture commands disable automatic maintenance/GC, detachment and
+hooks through per-command configuration. A real Trace2 control with locally
+enabled maintenance must show ordinary Git spawning maintenance while the
+fixture helper does not. Cleanup still reports real failures; it does not
+ignore racing filenames or sleep until maintenance might finish.
+Make metadata sections share one fully validated registry object per selected
+loader/budget. Repeated references reuse funded input bytes, not a second Git
+read for each section. Cross-view reuse, stale/missing inputs and malformed
+seals still reject; the actual full-report result must remain unchanged.
+Run the bounded-regex controls under one report lifetime. The
+worker input ceiling must follow the actual validated encoded message length,
+not the cumulative pending allowance. Exercise differently sized compile,
+Unicode fullmatch, and schema requests through the real worker under unchanged
+limits; preserve oversized-input and output-bound rejection. The
+worker transport must reconstruct the complete original JSON before execution.
+Compare real identity and lossless transports for the same repository pattern
+requests and require reduced actual pending traffic; truncated, trailing or
+over-expanding compressed input must fail. Identity transport remains available
+when compression would grow the message. The catastrophic
+command input and candidate-schema pattern must actually enter their worker
+before the report deadline terminates them. Verify preserved ordinary and
+multiline matches, standard-engine syntax, the actual address-space limit,
+malformed/deep patterns, oversized input/output, cache-after-deadline failure
+and interruption cleanup. The old unbounded matcher is reproduced only in an
+owned externally watched child; its outer safety timeout is not production
+budget evidence. Do not raise report limits or relax sources/seals to pass.
+Every local scratch path component is opened relative to the trusted
+repository descriptor with no symlink following before any temporary
+directory is created. Tracked `build` and intermediate `test-artifacts` or
+`validation-ownership` symlinks reject without touching their destinations.
+
+Behavioral fixtures compare direct GNU Make with `MODE=two` conditional
+selection, multiple words, nested functions and variables, `$(eval $(RULE))`,
+`define`/`call`, pattern and static-pattern stems, target-specific values,
+secondary prerequisites, `${NAME}`, one-character `$C`, and automatic
+variables. Mutating a `%.out: %.in` child recipe changes its concrete parent
+authority. Literal missing prerequisites and active `$(error)` reject.
+Each target is probed with its standalone `MAKECMDGOALS`; an `a b` invocation
+whose `a` branch differs from solo `a` must record the solo branch for `a` in
+both input orders.
+Unbounded/unregistered domains, malformed or oversized values, cyclic/dynamic/
+escaping/unknown targets, stale finite domains, and symbolic recipe
+classifications that reach any graph-shaping position reject.
+
+The Make sandbox exposes no executable shell other than the static
+interceptor. Trace or normalized recipe text never authorizes an interceptor
+event. Unknown direct `$(shell)` in a recipe, an unused eager `!=` (including
+the exact same or normalized multiline command as a printed recipe),
+unregistered include-remake command, ambiguous registry regex, output
+nonconvergence, or any attempted unsandboxed process rejects. Registered
+source-dependent commands execute only in the second networkless exact-tree
+command sandbox and bind their concrete output hash plus tool/input authority.
+Normal `-n` recipes emit no event; forced-recursive/include-remake commands
+must match one sealed contract and are intercepted rather than executed by
+Make.
+Absolute `/dev/stdin`, dynamic, escaping, symlink, missing, and untracked
+includes reject. `build/../../work/evil.mk`, dot/repeated/encoded separator
+aliases, and intermediate symlinks cannot acquire `build/` authority;
+canonical regular build descendants are rebuilt from an empty overlay.
+Supervisor mappings and events are absent from candidate-visible paths. The
+trusted launcher opens a read-only mapping-directory descriptor and an
+append-only event descriptor before chroot; no `/proc` or `/dev/fd` alias is
+mounted. Make scratch, registered-command scratch, and build output are
+separate. Candidate `$(file ...)` attempts and a registered Python forgery
+script can create only private decoys, while truncated, wrong-count,
+wrong-hash, malformed, or unknown-match event records reject.
+
+Generated-data ownership comes from a trusted typed probe of the exact
+candidate registry in a credential-free, networkless, read-only-tree process,
+not an import of the base registry into the trusted reporter. Its bounded JSON
+must have sorted unique schema names/dependencies, valid versions, and confined
+tracked source/inventory paths. A synthetic candidate adds a new typed table
+and path successfully; write/control forgery and malformed output reject.
+
+The namespace launcher uses unprivileged user/mount/network/PID namespaces
+when available. A mocked Ubuntu-24.04 control blocks that probe and admits only
+passwordless `/usr/bin/sudo -n /usr/bin/unshare`; before Make starts, the
+launcher clears groups/capabilities, drops to the original runner UID/GID, and
+sets no-new-privileges. The local positive control selects user-namespace mode.
+Loss of both modes, a different sudo/unshare path, or retained root identity
+rejects.
+
+For pull requests whose exact base contains the verifier package, host CI
+archives the clean base into an unpredictable, inode-checked directory below
+the trusted runner temporary root and directly invokes its `ci_verifier.py`
+with `-I -S -B` against the exact candidate Git tree, without starting Make
+first. It never creates or recursively removes
+staging below candidate `build`; trusted Make and registry probes also use
+that external verifier runtime. Every trusted package and loaded module
+identity comes from base Git objects, and candidate paths never enter verifier
+`sys.path`; compromised candidate reporter/interceptor fixtures remain data,
+not authority. After full trusted validation of both graph versions, resolved
+candidate `(edge_type, evidence_id)` pairs must equal the independent base
+oracle byte-for-byte, oracle-backed authority fingerprints must equal the
+exact base, and trusted edge invalidation must be empty for those edges. A
+shape-valid retarget from `owner.validation-check` to the live gba-playtest
+workflow step therefore rejects; an unrelated semantics-stable change passes.
+Real docs and generated-schema paths ensure every graph surface and every
+non-dependency owner edge is oracle-backed. Removing either probe, omitting
+`generated-schema.owns-test`, or changing an unrepresented dependency edge
+fails before exact-base authority can succeed.
+For this introducing PR, the complete merged foundation-only BASE selects
+`foundation-introduction`; its independently selected verifier source and
+actual exact-head capture must report that mode, not authority-none bootstrap.
+A genuine earlier base lacking every package/graph/oracle marker instead emits
+`bootstrap-not-authoritative` with no claimed graph authority. Preserve that
+separate historical/negative case rather than treating it as this PR's current
+base. A complete graph-bearing base selects `exact-base-pinned`; partial
+authority rejects instead of downgrading, including a base containing only the
+Make-dynamics marker. Before the first Git command, the hosted step must unset
+the exact ten path-bearing Git redirects while retaining its config,
+replacement, and lazy-fetch scrubs. Missing/changed base staging, candidate
+gate paths, candidate-as-base SHA substitution, or loss of the bootstrap state
+rejects.
+
+The root Makefile rejects command-line ownership of `MAKECMDGOALS` before
+reading any include. `MAKECMDGOALS= -n`, all dry-run/touch/question/silent/
+ignore aliases, hostile `MAKEFLAGS`/`MFLAGS`/`GNUMAKEFLAGS`/`MAKEOVERRIDES`,
+mixed goals, and `AUTOTOOLS_CONFIG_MK=/dev/stdin SHELL=...` therefore fail
+during trusted bootstrap. The exact sole goal skips every normal config,
+generated, asset, and dependency include; plain and allowed parallel public
+invocations execute the checker rather than printing success.
+
+Lifecycle checks reuse the report's already validated complete model and
+recheck the copied artifact's schema, graph identity and exact oracle pairs;
+the consistency route also checks its captured tester-case registry. The
+driver never recursively repeats the whole report. Every trigger has its own
+real removal/restoration cycle, and both declared routes run before removal,
+while absent and after restoration. Missing graph must fail with the named
+reason and restoration must pass; no earlier trigger's successful cycle can
+stand in for a later checkpoint, dependency-change or pre-graduation proof.
+
+Exact current/base Git mode and provenance is mandatory. Symlinks, synthetic
+gitlinks under owned prefixes, untracked/ignored/nonexistent changed paths,
+mode changes, escaping authorities, untracked recursive Make includes, and
+nonblob authority entries reject. Only the actual `mgfembp` gitlink reaches
+the named exclusion.
+
+A manual visual/audio/UX edge must point to
+`.github/manual-testing-handoff.json` and remains supplementary. Removing a
+required host, adversarial, compile, link, generated or observing runtime edge
+fails. Applicability follows the actual consumer: preview-only files have no
+ROM build/runtime roles, and unobserved art/audio cannot claim runtime
+evidence. The independently sealed oracle also rejects removing a requirement
+and its owner together.
+
+### Interactions and save compatibility
+
+This capability depends on issue #176's artifact admission/deletion lifecycle,
+strict source boundaries, isolated startup, clean-Git checks, seals, and
+maintenance reporting. Each checkpoint, dependency-change, and pre-graduation
+event executes the declared consumer and consistency check against a bounded
+remove/restore sandbox with one fixed failure reason. It reuses existing Make targets, Build workflow
+structure, the generated-data registry, tester-case registry, and manual
+handoff contract. Issue #181 is parallel and not a dependency. There is no
+feature flag and no gameplay, runtime, save, localization payload, generated
+game data, ABI, ROM/RAM, modern debug/release, or archival behavior change.
+
+The graph does not execute selected gates and cannot skip or narrow validation.
+A later independently accepted issue must prove selection non-inferiority
+before any delivery behavior can consume these explanations.
+
+### Automation
+
+The focused unittest suite owns parsed schema and graph invariants,
+whole-repository coverage, target existence and drift, every edge-family
+mutation, exact Git modes, confined authorities, independent oracle mutation,
+executable lifecycle deletion/restoration, review invalidation, canonical
+reporting, mixed-goal rejection, bounded scratch symlink rejection, and
+unchanged source bytes/Git state across simulated fixture exceptions.
+`make validation-ownership-check` runs the same reporter through
+`/usr/bin/python3 -I`.
+
+The focused A/V fixtures also execute the title fingerprint comparator with
+missing/changed framebuffer controls, the actual presentation runner's
+scenario construction, and the package checker's successful/resource-failure
+inputs. The live parsed model, not the older 80-variable synthetic Make fixture,
+owns the tester procedure's 112-domain scope. Parsing that count is not
+complete domain execution: full112-domain graph/oracle/lifecycle/public-gate
+adoption of the independent
+[issue #206 foundation](https://github.com/laqieer/fireemblem8-expansion/issues/206)
+remains a separate acceptance requirement.
+This is a required dependency, including registered native-tool results and
+generated include outputs reaching the shared Make observer through admitted
+APIs. Do not accept an old duplicated probe or a successful command whose
+generated include never reached Make as that evidence. The existing host setup
+must supply `png.h` and libpng/zlib for actual native `gbagfx` compilation;
+either supported namespace mode is valid, while unavailable confinement or
+native dependencies must still fail.
+
+### Cleanup and limitations
+
+Scratch fixtures are bounded beneath ignored
+`build/test-artifacts/validation-ownership` and are removed automatically. No
+remote state is read or changed. No manual-only criterion applies.
+
+Rollback is a normal revert of issue #180's dedicated commit; existing broader
+validation behavior is unchanged.
 
 ## TC-WORKFLOW-OWNERSHIP-PROBE-SANDBOX-001: Confine and bound authentic probe execution
 

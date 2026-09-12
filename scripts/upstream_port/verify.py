@@ -25,6 +25,10 @@ import subprocess
 from dataclasses import dataclass
 from typing import List
 
+from scripts.bash_parser import (
+    bash_line_state as _bash_line_state,
+    parse_bash_script_commands as _parse_bash_run_script_commands,
+)
 from scripts.workflow_pilot import (
     metadata_adapter_contract,
     summary_continuity_contract,
@@ -1020,7 +1024,8 @@ _NON_GATE_STEP_NAMES = {
     _METADATA_ADAPTER_STEP_NAME,
     "Verify checked-out revision",
     "Hydrate workflow-pilot Git authority",
-    "Install host-only dependencies (no arm-none-eabi toolchain)",
+    "Validate ownership with exact PR-base verifier",
+    "Install host and ownership-query dependencies",
     "Install dependencies",
     "Build tools",
     "Install extended host dependencies",
@@ -1035,15 +1040,27 @@ _WORKFLOW_PILOT_TEST_STEP_NAME = (
 _WORKFLOW_PILOT_BASELINE_STEP_NAME = (
     "Validate workflow-pilot baseline against checked-out Git history"
 )
+_VALIDATION_OWNERSHIP_TEST_STEP_NAME = (
+    "Run validation ownership regression suite (issue #180)"
+)
+_VALIDATION_OWNERSHIP_CHECK_STEP_NAME = (
+    "Validate validation ownership graph (issue #180)"
+)
+_VALIDATION_OWNERSHIP_BASE_STEP_NAME = (
+    "Validate ownership with exact PR-base verifier"
+)
 _FULL_MODE_ONLY_JOB_STEPS = {
     ("host-tests", "Verify checked-out revision"),
     ("host-tests", "Hydrate workflow-pilot Git authority"),
-    ("host-tests", "Install host-only dependencies (no arm-none-eabi toolchain)"),
+    ("host-tests", "Install host and ownership-query dependencies"),
     ("host-tests", "Run gba-playtest host test suite"),
     ("host-tests", "Run upstream-port tooling test suite"),
     ("host-tests", "Run workflow contract test suite"),
     ("host-tests", _WORKFLOW_PILOT_TEST_STEP_NAME),
     ("host-tests", _WORKFLOW_PILOT_BASELINE_STEP_NAME),
+    ("host-tests", _VALIDATION_OWNERSHIP_BASE_STEP_NAME),
+    ("host-tests", _VALIDATION_OWNERSHIP_TEST_STEP_NAME),
+    ("host-tests", _VALIDATION_OWNERSHIP_CHECK_STEP_NAME),
     ("host-tests", "Run localization host test suite (issue #18)"),
     ("host-tests", "Run full-game localization width contract (issue #18)"),
     ("build", "Verify checked-out revision"),
@@ -1083,6 +1100,25 @@ _SCRUBBED_PILOT_ENV = (
     "PATH: /usr/bin:/bin",
     "PYTHONPATH: ''",
 )
+_VALIDATION_OWNERSHIP_ENV = (
+    *_SCRUBBED_PILOT_ENV,
+    "GNUMAKEFLAGS: ''",
+    "MAKEFLAGS: ''",
+    "MAKEOVERRIDES: ''",
+    "MFLAGS: ''",
+)
+_BASE_VERIFIER_ENV = (
+    *_VALIDATION_OWNERSHIP_ENV,
+    "BUILD_EVENT_NAME: ${{ github.event_name }}",
+    "EXPECTED_BASE_SHA: ${{ (needs.event-classifier.result == 'success' && "
+    "needs.event-classifier.outputs.expected_base) || "
+    "(github.event_name == 'pull_request' && github.event.pull_request.base.sha) "
+    "|| '' }}",
+    "EXPECTED_CANDIDATE_SHA: ${{ (needs.event-classifier.result == 'success' && "
+    "needs.event-classifier.outputs.expected_head) || "
+    "needs.event-identity.outputs.fallback_sha || '' }}",
+    "VALIDATION_OWNERSHIP_TEMP: ${{ runner.temp }}",
+)
 _EXPECTED_STEP_ROLES = {
     "event-identity": (
         ("setup", "Validate trusted event identities"),
@@ -1105,12 +1141,15 @@ _EXPECTED_STEP_ROLES = {
         ("setup", None),
         ("setup", "Verify checked-out revision"),
         ("setup", "Hydrate workflow-pilot Git authority"),
-        ("setup", "Install host-only dependencies (no arm-none-eabi toolchain)"),
+        ("setup", "Install host and ownership-query dependencies"),
         ("gate", "Run gba-playtest host test suite"),
         ("gate", "Run upstream-port tooling test suite"),
         ("gate", "Run workflow contract test suite"),
         ("gate", _WORKFLOW_PILOT_TEST_STEP_NAME),
         ("gate", _WORKFLOW_PILOT_BASELINE_STEP_NAME),
+        ("setup", _VALIDATION_OWNERSHIP_BASE_STEP_NAME),
+        ("gate", _VALIDATION_OWNERSHIP_TEST_STEP_NAME),
+        ("gate", _VALIDATION_OWNERSHIP_CHECK_STEP_NAME),
         ("gate", "Run localization host test suite (issue #18)"),
         ("gate", "Run full-game localization width contract (issue #18)"),
     ),
@@ -1658,77 +1697,6 @@ def _literal_run_script(lines, start, end, value, step_label):
         script.append(line[8:] if line else "")
     return "\n".join(script) + "\n"
 
-
-def _bash_line_state(line, state):
-    index = 0
-    word_start = state == "normal"
-    while index < len(line):
-        character = line[index]
-        if state == "normal":
-            if character in " \t":
-                word_start = True
-            elif character == "#" and word_start:
-                break
-            elif character == "'":
-                state = "single"
-                word_start = False
-            elif character == '"':
-                state = "double"
-                word_start = False
-            elif character == "\\":
-                if index == len(line) - 1:
-                    return state, True
-                index += 2
-                word_start = False
-                continue
-            elif character in "&|;":
-                if character in "&|" and index + 1 < len(line) and line[index + 1] == character:
-                    index += 1
-                word_start = True
-            else:
-                word_start = False
-        elif state == "single":
-            if character == "'":
-                state = "normal"
-        else:
-            if character == '"':
-                state = "normal"
-            elif character == "\\":
-                if index == len(line) - 1:
-                    return state, True
-                if line[index + 1] in '$`"\\':
-                    index += 2
-                    continue
-        index += 1
-    return state, False
-
-
-def _parse_bash_run_script_commands(script, step_label):
-    state = "normal"
-    current = ""
-    parsed = []
-    for line in script.splitlines():
-        current += line
-        state, continued = _bash_line_state(line, state)
-        if continued:
-            current = current[:-1]
-            continue
-        if state != "normal":
-            current += "\n"
-            continue
-        if current.strip() and not current.lstrip().startswith("#"):
-            command = tuple(shlex.split(current))
-            if not command:
-                raise ValueError(f"{step_label} run command is empty")
-            parsed.append(command)
-        current = ""
-    if current:
-        raise ValueError(f"{step_label} has unterminated quoting or continuation")
-    if not parsed:
-        raise ValueError(f"{step_label} run command is empty")
-    return tuple(parsed)
-
-
 def _parse_step(block, job_name, index):
     lines = block.split("\n")
     first_index = next(
@@ -2036,6 +2004,9 @@ def _parse_step(block, job_name, index):
                 in {
                     _WORKFLOW_PILOT_TEST_STEP_NAME,
                     _WORKFLOW_PILOT_BASELINE_STEP_NAME,
+                    _VALIDATION_OWNERSHIP_TEST_STEP_NAME,
+                    _VALIDATION_OWNERSHIP_CHECK_STEP_NAME,
+                    _VALIDATION_OWNERSHIP_BASE_STEP_NAME,
                     "Hydrate workflow-pilot Git authority",
                 }
                 else {"name", "run"}
@@ -2049,6 +2020,17 @@ def _parse_step(block, job_name, index):
                 )
             if (job_name, name) in _FULL_MODE_ONLY_JOB_STEPS and values["if"] != _FULL_WORKER_STEP_CONDITION:
                 raise ValueError(f"{step_label} full-mode if differs")
+            expected_environment = (
+                _BASE_VERIFIER_ENV
+                if name == _VALIDATION_OWNERSHIP_BASE_STEP_NAME
+                else _VALIDATION_OWNERSHIP_ENV
+                if name
+                in {
+                    _VALIDATION_OWNERSHIP_TEST_STEP_NAME,
+                    _VALIDATION_OWNERSHIP_CHECK_STEP_NAME,
+                }
+                else _SCRUBBED_PILOT_ENV
+            )
             if "env" in values and values["env"] != tuple(
                 sorted(
                     tuple(
@@ -2056,7 +2038,7 @@ def _parse_step(block, job_name, index):
                         if ": " in entry
                         else (entry[:-1], "")
                     )
-                    for entry in _SCRUBBED_PILOT_ENV
+                    for entry in expected_environment
                 )
             ):
                 raise ValueError(
@@ -2350,6 +2332,40 @@ def gates(jobs: int = 2) -> List[Gate]:
             applicable_note=(
                 "issue #176 host lane: validates the frozen workflow-pilot "
                 "baseline against checked-out Git history"
+            ),
+        ),
+        Gate(
+            name="validation-ownership-tests",
+            command=[
+                "/usr/bin/python3",
+                "-I",
+                "-S",
+                "-B",
+                "scripts/validation_ownership/isolated_launcher.py",
+                "tests",
+            ],
+            applicable_note=(
+                "issue #180 host lane: isolated fail-closed ownership graph "
+                "schema, path-mode, authority, mutation, and lifecycle tests"
+            ),
+        ),
+        Gate(
+            name="validation-ownership-check",
+            command=[
+                "/usr/bin/python3",
+                "-I",
+                "-S",
+                "-B",
+                "scripts/validation_ownership/isolated_launcher.py",
+                "check",
+                "--repository-root",
+                "$GITHUB_WORKSPACE",
+            ],
+            applicable_note=(
+                "issue #180 host lane: validates exact Git-tree coverage, "
+                "independent probes, and executable lifecycle through the "
+                "trusted standalone entry before any Make evaluation, without "
+                "narrowing or executing graph-selected gates"
             ),
         ),
         Gate(

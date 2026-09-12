@@ -26,26 +26,12 @@ from scripts.workflow_pilot import coordinator_observations as observations
 from scripts.workflow_pilot import pr_metadata as github
 from scripts.workflow_pilot import reporter, review_family as review
 from scripts.workflow_pilot import event_classifier
+from scripts.workflow_pilot.tests.coordinator_support import decisions, model_control
 from scripts.workflow_pilot.tests.review_support import Runtime
 from scripts.workflow_pilot.tests.test_agent_handoff import GitFixture, at_offset, write_json, git
 
 
 ROOT = Path(__file__).resolve().parents[3]
-
-
-def decisions(number=191, risks=("none",), mode="concurrent", *, paused=False):
-    return {"schema_version": 1, "artifacts": [], "pull_requests": [{
-        "pull_request": number, "risk_boundaries": list(risks), "gate_mode": mode,
-        "threshold": {"triggers": ["none"], "override_history": []},
-        "stack": {"depth": 0, "parent_pr": None, "exception_reason": None},
-        "pilot": {"included": False, "disposition": "paused" if paused else "excluded"},
-    }]}
-
-
-def model_control(decision, pr):
-    """Explicit typed observation for reducer-only fixtures, not provider evidence."""
-    return replace(decision, control=gate.PilotControl(
-        pr.repository, pr.repository_id, "master", pr.base_sha, "c" * 40, False, at_offset(-150)))
 
 
 def git_scope_files(root, base, head):
@@ -574,6 +560,7 @@ class GateTests(unittest.TestCase):
         self.assertFalse(self.assess(facts=(replace(self.fact, head="a" * 40),))["dispatchable"])
         self.dispatched()
         self.assertTrue(self.assess()["merge_eligible"])
+
         for run in (
             replace(self.runs[-1], head_sha="a" * 40),
             replace(self.runs[-1], candidate_binding=(191, self.pr.head_sha, "b" * 40)),
@@ -589,6 +576,48 @@ class GateTests(unittest.TestCase):
                              replace(self.decision, head_sha=other.head_sha), runs=())
         self.assertEqual(self.record["abandoned_reason"], "superseded-head-or-base")
         self.assertFalse(self.assess()["merge_eligible"])
+
+    def test_live_review_qualification_cannot_use_delegated_readiness_without_local_capture(self):
+        self.assertNotIn("local_validation", self.record)
+        self.assertTrue(gate._local_ready(self.state, self.pr, self.record))
+        from scripts.validation_ownership.tests.test_coordinator_capture import (
+            ReviewedEvolutionCaptureTests,
+        )
+
+        owner = ReviewedEvolutionCaptureTests()
+        self.addCleanup(owner.doCleanups)
+        owner.setUp()
+        qualification = owner.coordinator()[5]
+        self.assertFalse(gate._local_ready(
+            self.state, self.pr, self.record, qualification,
+        ))
+        assessment = self.assess(local_qualification=qualification)
+        self.assertFalse(assessment["dispatchable"])
+        self.assertIn("exact-local-handoff", assessment["missing"])
+
+    def test_legacy_reviewed_evidence_cannot_become_ordinary_delegated_readiness(self):
+        fixture_type = GitFixture
+
+        def legacy_fixture():
+            fixture = fixture_type(assign=False)
+            evidence = "ownership-reviewed-" + "0" * 16
+            fixture.assignment["required_checks"] = {
+                "validation-ownership": {"contract": "git-diff-check", "evidence_id": evidence, "inputs": []},
+            }
+            fixture.assignment["acceptance_criteria"]["case-one"]["evidence_ids"] = [evidence]
+            fixture.entry = handoff.assign(fixture.state, fixture.assignment)
+            return fixture
+
+        legacy = GateTests()
+        self.addCleanup(legacy.doCleanups)
+        with patch(__name__ + ".GitFixture", side_effect=legacy_fixture):
+            legacy.setUp()
+        self.assertTrue(legacy.fixture.entry["validation"]["handoff_ready"])
+        self.assertNotIn("local_validation", legacy.record)
+        self.assertFalse(gate._local_ready(legacy.state, legacy.pr, legacy.record))
+        self.assertFalse(legacy.assess()["dispatchable"])
+        self.assertIn("exact-local-handoff", legacy.assess()["missing"])
+        self.assertTrue(gate._local_ready(self.state, self.pr, self.record))
 
     def test_unrelated_live_base_movement_does_not_cancel_a_candidate(self):
         from scripts.workflow_pilot.trusted_review_gate import GitTree, ReviewTools
