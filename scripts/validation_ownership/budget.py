@@ -25,6 +25,8 @@ class MakeProbeError(RuntimeError):
 
 
 MAX_PROBE_SECONDS = 3600
+MAX_PENDING_RECORD_BYTES = 1024 * 1024
+MAX_PLANNED_STATE_BYTES = 1024 * 1024
 NAMESPACE_LAUNCHER = (
     "/usr/bin/unshare", "--mount", "--net", "--pid", "--fork",
     "--kill-child", "--propagation", "private",
@@ -73,6 +75,7 @@ class ProbeBudget:
     bytes: dict[str, int] = field(default_factory=dict, init=False)
     runs: int = field(default=0, init=False)
     states: int = field(default=0, init=False)
+    planned_state_bytes: int = field(default=0, init=False)
     children: dict[subprocess.Popen, bool] = field(default_factory=dict, init=False)
     failed: bool = field(default=False, init=False)
     closed: bool = field(default=False, init=False)
@@ -104,10 +107,22 @@ class ProbeBudget:
         cap = getattr(self.limits, f"{category}_bytes", None)
         if cap is None or isinstance(size, bool) or not isinstance(size, int) or size < 0:
             self.reject("invalid byte-accounting request")
+        if category == "pending" and size > MAX_PENDING_RECORD_BYTES:
+            self.reject("pending record exceeds 1048576-byte admission limit")
         used = self.bytes.get(category, 0) + size
         if used > cap or sum(self.bytes.values()) + size > self.limits.total_bytes:
             self.reject(f"aggregate {category} byte budget exhausted")
         self.bytes[category] = used
+
+    def admit_planned_state(self, size: int):
+        """Admit serialized plan bytes once without counting an attempted state."""
+        self.remaining()
+        if isinstance(size, bool) or not isinstance(size, int) or size < 0:
+            self.reject("invalid planned-state byte-admission request")
+        if self.planned_state_bytes + size > MAX_PLANNED_STATE_BYTES:
+            self.reject("aggregate planned-state admission exceeds 1048576-byte limit")
+        self.charge("pending", size)
+        self.planned_state_bytes += size
 
     def plan(self, states: int, pending: int = 1):
         self.remaining()

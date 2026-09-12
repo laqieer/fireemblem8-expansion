@@ -1342,6 +1342,13 @@ class TesterCaseRegistryTests(unittest.TestCase):
                             "test_invalid_reply_never_retries_an_effectful_producer -v",
                         },
                     },
+                    "TC-PROBE-PENDING-ADMISSION-001": {
+                        "document": "docs/test-cases/workflow-governance.md",
+                        "commands": {
+                            "python3 -m unittest "
+                            "scripts.validation_ownership.tests.test_foundation.PendingAdmissionTests -v",
+                        },
+                    },
                     "TC-WORKFLOW-ASSET-DISCOVERY-001": {
                         "document": "docs/test-cases/workflow-governance.md",
                         "commands": {

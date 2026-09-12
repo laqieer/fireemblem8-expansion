@@ -508,7 +508,8 @@
         "https://github.com/laqieer/fireemblem8-expansion/issues/246",
         "https://github.com/laqieer/fireemblem8-expansion/issues/252",
         "https://github.com/laqieer/fireemblem8-expansion/issues/256",
-        "https://github.com/laqieer/fireemblem8-expansion/issues/258"
+        "https://github.com/laqieer/fireemblem8-expansion/issues/258",
+        "https://github.com/laqieer/fireemblem8-expansion/issues/260"
       ],
       "reference": ".github/skills/development-workflow/SKILL.md",
       "status": "current",
@@ -537,7 +538,8 @@
         "TC-WORKFLOW-HOST-PYTHON-DEPS-001",
         "TC-WORKFLOW-ASSET-DISCOVERY-001",
         "TC-PROBE-PRODUCER-CACHE-LIFETIME-001",
-        "TC-PROBE-CONTENT-PUBLICATION-001"
+        "TC-PROBE-CONTENT-PUBLICATION-001",
+        "TC-PROBE-PENDING-ADMISSION-001"
       ]
     },
     {
@@ -4022,6 +4024,42 @@
         {
           "command": "python3 -m unittest scripts.validation_ownership.tests.test_producer.ProducerTests.test_declared_output_results_are_retained_only_by_actual_owners scripts.validation_ownership.tests.test_producer.ProducerTests.test_generated_publication_creation_mapping_cache_and_write_charges_are_cumulative scripts.validation_ownership.tests.test_producer.ProducerTests.test_nested_scope_inherits_ownership_and_preserves_all_file_stat_fields scripts.validation_ownership.tests.test_producer.ProducerTests.test_invalid_request_rejects_before_any_producer_execution scripts.validation_ownership.tests.test_producer.ProducerTests.test_invalid_reply_never_retries_an_effectful_producer -v",
           "evidence": "scripts/validation_ownership/tests/test_producer.py"
+        }
+      ]
+    },
+    {
+      "id": "TC-PROBE-PENDING-ADMISSION-001",
+      "title": "Preserve whole-record and lifetime plan admission",
+      "feature_id": "workflow-governance",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/260"
+      ],
+      "document": "docs/test-cases/workflow-governance.md",
+      "anchor": "tc-probe-pending-admission-001-preserve-whole-record-and-lifetime-plan-admission",
+      "profiles": [
+        "Linux x86-64 source checkout with existing native probe tools; bounded test-only larger pending traffic for separation controls"
+      ],
+      "purpose": "Keep whole pending records and lifetime aggregate planned-state admission independently bounded to the original 1 MiB without changing production limits or original charging.",
+      "prerequisites": "Clean owned temporary fixtures and existing Python 3, GNU Make, host compiler and native isolation tools; no ROM, new dependency or privilege change.",
+      "actions": "Run real small stdin/argv/Command traffic beyond cumulative 1 MiB in the bounded test profile. Exercise exact/over whole records and combined normalized authority before Popen, actual small variants, aggregate plan rejection before execution, repeated-call and CURRENT/BASE/CURRENT accounting, default/smaller/global and invalid-size failures, and independent record/plan guard mutations.",
+      "expected_result": "Each whole pending record and the one-budget cumulative planned-state total stay at most 1 MiB. Accepted states spend original pending/global bytes exactly once and do not count as attempted execution until existing callers do so. No completion/view/cleanup refund occurs; actual results, ownership, failure and cleanup remain intact.",
+      "negative_control": "Clean master473 with only the bounded test profile change actually consumes a 1,048,577-byte stdin record and admits a 1,080,522-byte plan before one actual variant and an owned stop. Removing either independent guard fails its relevant admission regression, not an unrelated setup assertion.",
+      "interactions": "Depends on delivered budget, producer and selected-view seams; preserves #256/#258. #180/#186 integrates the shared plan seam later; #196 follows the graph. No other feature/profile conflict, new planner or shipping policy.",
+      "save_compatibility": "Host-only admission capability; no gameplay, save/config migration, locale/generated-content format, ROM/GBA-RAM, modern or archival behavior change.",
+      "cleanup": "Existing budget/watchdog/session teardown requires no owned children, waiters, views or scratch. Preserve preimage/mutation logs and remove only owned fixtures after confirmed cleanup.",
+      "limitations": "Counters are cumulative admission/traffic, not live heap or RSS. Caller objects can already exist before admission. No larger production caps, coordinator AS claim, full graph/prefix/matrix/sizing workload, native AI review or manual-only criterion.",
+      "automation": [
+        {
+          "command": "python3 -m unittest scripts.validation_ownership.tests.test_foundation.PendingAdmissionTests -v",
+          "evidence": "scripts/validation_ownership/tests/test_foundation.py"
+        },
+        {
+          "command": "python3 -m unittest scripts.validation_ownership.tests.test_foundation.FoundationTests.test_pending_request_bytes_accumulate_after_completed_commands scripts.validation_ownership.tests.test_foundation.FoundationTests.test_variant_limit_rejects_before_any_variant_launch scripts.validation_ownership.tests.test_foundation.FoundationTests.test_authority_composition_rejects_foreign_and_detached_budgets scripts.validation_ownership.tests.test_foundation.FoundationTests.test_report_budget_binds_one_terminal_session_lifetime -v",
+          "evidence": "scripts/validation_ownership/tests/test_foundation.py"
+        },
+        {
+          "command": "python3 -m unittest scripts.docs_check_tests.test_check_docs.TesterCaseRegistryTests.test_late_shipped_contracts_are_complete_and_fail_closed scripts.docs_check_tests.test_development_workflow_skill.DevelopmentWorkflowSkillTests.test_manual_handoff_json_contract_and_human_links -v",
+          "evidence": "scripts/docs_check_tests/test_check_docs.py"
         }
       ]
     },
