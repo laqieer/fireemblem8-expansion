@@ -717,6 +717,16 @@ bookkeeping allowance, without granting additional access.
 
 ## Aggregate lifetime and resources
 
+The [content-only producer policy](ownership-probe-producers.md#content-only-publication)
+is an explicit `Command.publication_policy` choice, defaulting to `replace`.
+It preserves real unchanged-content outputs without erasing an invocation,
+weakening source/owner/nofollow checks or treating requested mode as effective
+mode. Effective metadata is confirmed through the existing private protocol
+and selected publication view; private `ProcessOutput.generated` stays
+distinct. No-op comparisons and confirmations remain charged, while actual
+public writes/creations occur only when needed. No budget is increased or
+refunded, and no full-report affordability is implied.
+
 Create **one** `ProbeBudget` before loading a report's tree, then share one
 `ProbeSession` across all Make targets, variants, commands and registry calls:
 

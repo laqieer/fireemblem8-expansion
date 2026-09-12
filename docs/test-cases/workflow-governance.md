@@ -1315,6 +1315,96 @@ principally after query cleanup or standalone caller release. It does not
 free results while active receipts still own them, fix a remake loop, refund
 traffic accounting, establish full graph fit or add a manual-only criterion.
 
+## TC-PROBE-CONTENT-PUBLICATION-001: Preserve content-only publication and Make convergence
+
+- **Feature / issue:** `workflow-governance` /
+  [#258](https://github.com/laqieer/fireemblem8-expansion/issues/258).
+- **Profile:** Linux x86-64 source checkout with the existing native ownership
+  probe tools. No ROM, new package, privileged policy change or AI reviewer is
+  required.
+- **Starting state:** use a clean owned temporary fixture and the original
+  byte limits. Guard against an unexpected second Make restart rather than
+  waiting for a resource-consuming loop. Preserve the exact source revision
+  and ordinary/native observations.
+
+### Actions and expected results
+
+1. Run the focused content-publication runner below. Its tiny FORCE-dependent
+   included depfile and the real eventlists CLI/adapter must converge after
+   the actual first restart. Repeat with a real new bundle member and verify
+   selected/consumed inputs and emitted dependencies, not only exit status.
+   The chapterobjectives and autoplay adapters must also use their real
+   collection/rendering paths and converge.
+2. Run the default unconditional same-byte writer. It still executes twice
+   and performs its physical effects; the fixture rejects restart `2`.
+   This is the negative control against blanket output deduplication.
+3. For each real dependency CLI, seed an identical-content depfile at mode
+   0600. Its next ordinary invocation must preserve inode, mode, mtime and
+   ctime. Add an actual selected bundle member and require new dependencies
+   in a replacement object at mode 0644; the fixture explicitly sets only
+   the CLI child's umask to 0022. Then create a same-owner mode-0600 native
+   publication and produce equal bytes in a
+   private mode-0644 result with explicit content-only policy. The actual
+   public object and mode remain unchanged, and effective confirmations,
+   active/nested bindings and returned metadata report mode 0600. Different
+   content and a missing output use actual replacement/create behavior and
+   the produced mode. Atime is observed, not normalized.
+   Graph queries also retain those effective bytes/modes in
+   `MakeObservation.generated` after cleanup, including nested observations.
+4. Supply invalid policies, malformed or forged effective confirmations,
+   wrong slots/owners/digests/modes/identities, immutable-source or nonregular
+   outputs, and failed/racy comparison reads. Each fails closed. A read error
+   is not an instruction to overwrite or retain successfully.
+5. Exercise nested publication and CURRENT/BASE/CURRENT fixtures. Preserve
+   real effective modes/bytes and every invocation/receipt across view and
+   outer cleanup. No view borrows another view's generated object.
+6. The runner repeats the real eventlists registration with the original
+   unconditional publication policy in its owned fixture. Require the actual
+   native restart-`2` failure, two real produced results with the expected
+   consumed inputs, and created/replaced publication effects, not merely a
+   policy-name assertion. Keep every required creation/write/comparison/
+   transport/cache charge and original bound.
+
+### Expected result
+
+The ordinary and native content-only queries converge with the same selected
+dependencies. Effective metadata describes the actual retained or replaced
+object, and default unconditional effects, every invocation, original resource
+bounds and fail-closed ownership/protocol checks remain intact.
+
+### Automation
+
+- `python3 -m unittest scripts.validation_ownership.tests.test_content_publication -v`
+  -- `scripts/validation_ownership/tests/test_content_publication.py`.
+- `python3 -m unittest scripts.validation_ownership.tests.test_producer.ProducerTests.test_declared_output_results_are_retained_only_by_actual_owners scripts.validation_ownership.tests.test_producer.ProducerTests.test_generated_publication_creation_mapping_cache_and_write_charges_are_cumulative scripts.validation_ownership.tests.test_producer.ProducerTests.test_nested_scope_inherits_ownership_and_preserves_all_file_stat_fields scripts.validation_ownership.tests.test_producer.ProducerTests.test_invalid_request_rejects_before_any_producer_execution scripts.validation_ownership.tests.test_producer.ProducerTests.test_invalid_reply_never_retries_an_effectful_producer -v`
+  -- existing producer/lifetime/protocol compatibility.
+
+### Negative control
+
+The preserved d091 ordinary/native preimage converges at restart `1` ordinarily
+but reaches the finite restart-`2` guard through the old real eventlists
+adapter. The committed runner retains that real-adapter negative control;
+the separately preserved source-copy mutation also reached the same native
+failure. Stable-content mode 0600 is retained by the ordinary writer;
+comparing bytes plus requested mode would be incorrect. The negative control
+must restore the behavioral failure, not an unrelated setup error.
+
+### Interactions and save compatibility
+
+Reuses the delivered producer/publication/view APIs and preserves #256's
+cache-lifetime fix. Dependents are #180/#186 and #196; their integration is
+separate. There are no other feature/profile conflicts, save migrations,
+configuration/locale/generated-content format changes or ROM/GBA-RAM effects.
+Modern debug/release and archival target behavior is unchanged. No subjective
+manual-only criterion or full-workload resource claim is added.
+
+### Cleanup and limitations
+
+The existing watchdog/session owns all child, waiter, source-view and scratch
+teardown; remove only owned fixtures after terminal cleanup. Source identities,
+native events and receipts remain actual. No full graph/prefix/matrix or sizing
+run belongs in this case.
+
 ## TC-WORKFLOW-ASSET-DISCOVERY-001: Render captured-source asset discovery without FIFO races
 
 - **Feature / originating issue:** `workflow-governance` /

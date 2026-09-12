@@ -985,6 +985,26 @@ class TesterCaseRegistryTests(unittest.TestCase):
         ):
             self.assertTrue(markdown_section(section, heading), heading)
 
+    def test_content_publication_case_is_indexed_with_complete_contract(self):
+        registry, errors = check_docs.parse_test_case_registry(REAL_REPO_ROOT)
+        self.assertEqual(errors, [])
+        case_id = "TC-PROBE-CONTENT-PUBLICATION-001"
+        feature = next(item for item in registry["features"] if item["id"] == "workflow-governance")
+        case, = [item for item in registry["cases"] if item["id"] == case_id]
+        self.assertEqual(feature["required_cases"].count(case_id), 1)
+        self.assertEqual(case["issue_urls"], ["https://github.com/laqieer/fireemblem8-expansion/issues/258"])
+        selected = {
+            "schema_version": registry["schema_version"],
+            "coverage": {"mode": "complete", "expected_feature_ids": [feature["id"]], "deferred_issues": []},
+            "features": [{**feature, "required_cases": [case_id]}],
+            "cases": [case],
+        }
+        with mock.patch.object(check_docs, "parse_test_case_registry", return_value=(selected, [])):
+            self.assertEqual(check_docs.check_test_case_registry(REAL_REPO_ROOT), [])
+        self.assertEqual(case["automation"][0]["command"], (
+            "python3 -m unittest scripts.validation_ownership.tests.test_content_publication -v"
+        ))
+
     def test_review_path_coverage_case_is_indexed_with_focused_procedure(self):
         registry, errors = check_docs.parse_test_case_registry(REAL_REPO_ROOT)
         self.assertEqual(errors, [])
@@ -1319,6 +1339,24 @@ class TesterCaseRegistryTests(unittest.TestCase):
                             "test_immutable_views_isolate_cache_native_files_and_generated_make_outputs -v",
                             "python3 -m unittest scripts.validation_ownership.tests.test_foundation."
                             "FoundationTests.test_immutable_views_isolate_cache_native_files_and_static_make -v",
+                        },
+                    },
+                    "TC-PROBE-CONTENT-PUBLICATION-001": {
+                        "document": "docs/test-cases/workflow-governance.md",
+                        "commands": {
+                            "python3 -m unittest "
+                            "scripts.validation_ownership.tests.test_content_publication -v",
+                            "python3 -m unittest "
+                            "scripts.validation_ownership.tests.test_producer.ProducerTests."
+                            "test_declared_output_results_are_retained_only_by_actual_owners "
+                            "scripts.validation_ownership.tests.test_producer.ProducerTests."
+                            "test_generated_publication_creation_mapping_cache_and_write_charges_are_cumulative "
+                            "scripts.validation_ownership.tests.test_producer.ProducerTests."
+                            "test_nested_scope_inherits_ownership_and_preserves_all_file_stat_fields "
+                            "scripts.validation_ownership.tests.test_producer.ProducerTests."
+                            "test_invalid_request_rejects_before_any_producer_execution "
+                            "scripts.validation_ownership.tests.test_producer.ProducerTests."
+                            "test_invalid_reply_never_retries_an_effectful_producer -v",
                         },
                     },
                     "TC-WORKFLOW-ASSET-DISCOVERY-001": {
