@@ -1482,6 +1482,7 @@ class ProducerTests(unittest.TestCase):
             )
             self.assertEqual(output.generated[0].data, b"SELECTED := observed\n")
             self.assertEqual(output.consumed, ("input.mk",))
+            self.assertFalse((session.tree / "generated.mk").exists())
             observed = session.make("all", variables=("MAKE_RESTARTS",), commands={
                 "tools/native input.mk generated.mk;": Command(
                     ("/native/tool", "input.mk", "/work/generated.mk"),

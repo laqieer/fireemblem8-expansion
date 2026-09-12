@@ -317,9 +317,13 @@ command = Command(
 )
 ```
 
-`python_command`, `directory_python_command` and `ProbeSession.native` forward
-the same optional policy. Invalid policies, and content-only policies without
-declared outputs, reject before command execution. The chapterobjectives,
+`python_command` and `directory_python_command` return a `Command` carrying
+the same optional policy for registration with `make()`. Native producers use
+the existing `Command(..., native_tool=tool)` registration seam. In contrast,
+`ProbeSession.native` executes directly and returns private `ProcessOutput`;
+it does not publish into a Make view or expose a publication-policy option.
+Invalid policies, and content-only policies without declared outputs, reject
+before command execution. The chapterobjectives,
 autoplaystrategies and eventlists dependency adapters explicitly opt in;
 ordinary CLI loaders, selectors, renderers and generated content stay unchanged.
 

@@ -1338,7 +1338,12 @@ traffic accounting, establish full graph fit or add a manual-only criterion.
 2. Run the default unconditional same-byte writer. It still executes twice
    and performs its physical effects; the fixture rejects restart `2`.
    This is the negative control against blanket output deduplication.
-3. Create a same-owner mode-0600 publication, then produce equal bytes in a
+3. For each real dependency CLI, seed an identical-content depfile at mode
+   0600. Its next ordinary invocation must preserve inode, mode, mtime and
+   ctime. Add an actual selected bundle member and require new dependencies
+   in a replacement object at mode 0644; the fixture explicitly sets only
+   the CLI child's umask to 0022. Then create a same-owner mode-0600 native
+   publication and produce equal bytes in a
    private mode-0644 result with explicit content-only policy. The actual
    public object and mode remain unchanged, and effective confirmations,
    active/nested bindings and returned metadata report mode 0600. Different

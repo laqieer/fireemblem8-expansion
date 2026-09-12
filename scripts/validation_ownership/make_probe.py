@@ -1759,13 +1759,11 @@ class ProbeSession:
             raise MakeProbeError("native ELF has no loadable program")
 
     @terminal_failure
-    def native(self, tool: NativeTool, arguments=(), *, sources=(), directories=(), outputs=(),
-               publication_policy="replace"):
+    def native(self, tool: NativeTool, arguments=(), *, sources=(), directories=(), outputs=()):
         return self._command(
             Command(
                 ("/native/tool", *arguments), sources=tuple(sources), directories=tuple(directories),
                 outputs=tuple(outputs),
-                publication_policy=publication_policy,
             ),
             native=tool,
         )

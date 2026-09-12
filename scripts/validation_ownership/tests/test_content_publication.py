@@ -353,21 +353,25 @@ class ContentPublicationTests(unittest.TestCase):
                 self.assertTrue(changed)
             self.fixture.assert_clean(session)
 
-    def assert_real_adapter(self, name, *, membership=False, unconditional=False):
+    def real_adapter_arguments(self, name, *, directory=False):
         cases = {item["name"]: item for item in self.support.add_generated_dependency_fixture()}
         case = cases[name]
         options = dict(case["options"])
-        options["--bundle-source"] = "testdata/bundles" if membership else "testdata/bundles/el_bundle.json"
+        options["--bundle-source"] = "testdata/bundles" if directory else "testdata/bundles/el_bundle.json"
         for flag, value in tuple(options.items()):
             if value == "testdata/objectives":
                 options[flag] = "testdata/objectives/el_objectives.json"
         arguments = [value for pair in options.items() for value in pair]
         arguments.extend(("--make-target", "all", "--depfile", "build/real.inputs.mk"))
-        command = shlex.join(["python3", "-m", case["module"], *arguments])
+        return case["module"], options, arguments
+
+    def assert_real_adapter(self, name, *, membership=False, unconditional=False):
+        module, options, arguments = self.real_adapter_arguments(name, directory=membership)
+        command = shlex.join(["python3", "-m", module, *arguments])
         self.fixture.add("Makefile", self.makefile(command, "build/real.inputs.mk"))
         if membership:
             seed = subprocess.run(
-                ["/usr/bin/python3", "-m", case["module"], *arguments],
+                ["/usr/bin/python3", "-m", module, *arguments],
                 cwd=self.root, env=ENVIRONMENT, capture_output=True, timeout=15,
             )
             self.assertEqual(seed.returncode, 0, seed.stderr)
@@ -389,7 +393,7 @@ class ContentPublicationTests(unittest.TestCase):
         produced, effects = [], []
         with self.fixture.session(seconds=45, runs=64) as session:
             registration = generated_dependency_command(
-                session, case["module"], option_values=options,
+                session, module, option_values=options,
                 make_target="all", depfile="build/real.inputs.mk",
             )
             if unconditional:
@@ -436,6 +440,56 @@ class ContentPublicationTests(unittest.TestCase):
                     [effects[-1]["mode"], effects[-1]["size"], effects[-1]["sha256"]],
                 )
         self.fixture.assert_clean(session)
+
+    def assert_real_cli_modes(self, name):
+        module, _, arguments = self.real_adapter_arguments(name, directory=True)
+
+        def run_cli():
+            result = subprocess.run(
+                ["/usr/bin/python3", "-m", module, *arguments],
+                cwd=self.root, env=ENVIRONMENT, capture_output=True, timeout=15, umask=0o022,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+
+        run_cli()
+        output = self.root / "build/real.inputs.mk"
+        original = output.read_bytes()
+        produced_mode = stat.S_IMODE(output.stat().st_mode)
+        self.assertEqual(produced_mode, 0o644)
+        output.chmod(0o600)
+        with output.open("rb") as retained:
+            before = os.fstat(retained.fileno())
+            run_cli()
+            self.assertEqual(output.read_bytes(), original)
+            unchanged = output.stat()
+            for field in (
+                "st_dev", "st_ino", "st_mode", "st_size", "st_mtime_ns", "st_ctime_ns", "st_nlink",
+            ):
+                self.assertEqual(getattr(unchanged, field), getattr(before, field), field)
+            self.assertEqual(stat.S_IMODE(unchanged.st_mode), 0o600)
+
+            other = json.loads((self.root / "testdata/bundles/el_bundle.json").read_text())
+            other["chapter"]["id"] = "CHAPTER_L_2"
+            member = "testdata/bundles/new_bundle.json"
+            self.fixture.add(member, json.dumps(other))
+            run_cli()
+            after = output.stat()
+            self.assertEqual(stat.S_IMODE(after.st_mode), produced_mode)
+            self.assertNotEqual((after.st_dev, after.st_ino), (before.st_dev, before.st_ino))
+            self.assertEqual(retained.read(), original)
+            changed = output.read_bytes()
+            self.assertNotEqual(changed, original)
+            self.assertNotIn(str(self.root / member).encode(), original)
+            self.assertIn(str(self.root / member).encode(), changed)
+
+    def test_real_eventlists_cli_preserves_mode_then_replaces_changed_membership(self):
+        self.assert_real_cli_modes("eventlists")
+
+    def test_real_chapterobjectives_cli_preserves_mode_then_replaces_changed_membership(self):
+        self.assert_real_cli_modes("chapterobjectives")
+
+    def test_real_autoplay_cli_preserves_mode_then_replaces_changed_membership(self):
+        self.assert_real_cli_modes("autoplaystrategies")
 
     def test_real_eventlists_adapter_converges_like_ordinary_cli(self):
         self.assert_real_adapter("eventlists")
